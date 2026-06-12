@@ -46,6 +46,17 @@ type Client struct {
 	// capCache memoizes probed model capabilities per endpoint+model so a
 	// session re-uses one probe. Guarded by capCacheMu; lazily allocated.
 	capCache map[string]Capabilities
+
+	// baseTransport is the TLS-configured RoundTripper assembled at construction,
+	// captured so Use() can re-wrap it with the registered middleware chain
+	// without losing the TLS settings. nil means "http.DefaultTransport" was in
+	// effect (the plain-client path); Use() resolves that lazily.
+	baseTransport http.RoundTripper
+
+	// middlewares is the ordered list of registered HTTP middlewares. Index 0 is
+	// the OUTERMOST wrapper (its request hook runs first). Empty (the default)
+	// means the base transport is used directly, with zero wrapping overhead.
+	middlewares []Middleware
 }
 
 // New constructs a Client. timeout bounds a single completion round-trip.
@@ -81,7 +92,40 @@ func NewWithTLS(baseURL, apiKey, model string, timeout time.Duration, tlsOpts TL
 		HTTP:    httpClient,
 		Retry:   DefaultRetryPolicy,
 		sleep:   ctxSleep,
+		// Capture the TLS-configured base transport (nil here means the default
+		// transport, which Use() resolves lazily) so middleware can wrap it
+		// without discarding the TLS configuration.
+		baseTransport: httpClient.Transport,
 	}, nil
+}
+
+// Use registers one or more HTTP middlewares on the client and rebuilds the
+// transport so subsequent requests — both Complete and Stream, which share this
+// *http.Client — flow through them. Middlewares are appended in order; the
+// FIRST registered is the OUTERMOST wrapper (its request hook runs first on the
+// way out, its response hook runs last on the way back). Calling Use multiple
+// times accumulates the chain in registration order.
+//
+// When no middleware has ever been registered, the client uses the base
+// transport directly with zero wrapping overhead — behavior identical to today.
+//
+// Use is NOT safe to call concurrently with in-flight requests; register
+// middleware at setup time, before issuing requests.
+func (c *Client) Use(mws ...Middleware) {
+	if len(mws) == 0 {
+		return
+	}
+	c.middlewares = append(c.middlewares, mws...)
+	if c.HTTP == nil {
+		c.HTTP = &http.Client{}
+	}
+	// Resolve the base transport once: a nil baseTransport means the plain client
+	// path where http.DefaultTransport applies. Capture and reuse it so repeated
+	// Use() calls keep wrapping the SAME base, not a previously-wrapped chain.
+	if c.baseTransport == nil {
+		c.baseTransport = http.DefaultTransport
+	}
+	c.HTTP.Transport = chainMiddleware(c.baseTransport, c.middlewares)
 }
 
 // sleeper returns the configured sleeper, defaulting to ctxSleep when a Client
