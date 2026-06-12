@@ -104,6 +104,13 @@ func run() error {
 		client.Model = discovered
 	}
 
+	// Probe the model's capabilities (context window, max output, tool support)
+	// so they are available to adapt truncation/iteration limits. This never
+	// fails: it degrades to a built-in table and conservative defaults, and the
+	// result is cached per endpoint+model on the client.
+	caps := client.ProbeCapabilities(context.Background())
+	fmt.Fprintf(os.Stderr, "model capabilities: %s\n", caps)
+
 	reg := tools.NewRegistry(
 		tools.ReadFile(cfg.RootDir),
 		tools.ListFiles(cfg.RootDir),

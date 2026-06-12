@@ -28,6 +28,10 @@ type Client struct {
 	// sleep performs the backoff wait; injectable so tests stay fast and
 	// deterministic. Defaults to ctxSleep (a real, context-aware timer).
 	sleep sleepFn
+
+	// capCache memoizes probed model capabilities per endpoint+model so a
+	// session re-uses one probe. Guarded by capCacheMu; lazily allocated.
+	capCache map[string]Capabilities
 }
 
 // New constructs a Client. timeout bounds a single completion round-trip.
