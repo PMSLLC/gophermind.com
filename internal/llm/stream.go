@@ -61,6 +61,14 @@ func (c *Client) Stream(ctx context.Context, msgs []Message, tools []Tool, onTok
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
+		// Honor cancellation between frames so a mid-stream Ctrl-C aborts promptly
+		// with context.Canceled instead of processing buffered chunks or waiting
+		// on the next read. The request's context also unblocks the underlying
+		// Read, so a stall mid-frame is cut short too; this check makes the abort
+		// deterministic and the returned error a clean ctx.Err().
+		if err := ctx.Err(); err != nil {
+			return Message{}, Usage{}, err
+		}
 		line := strings.TrimSpace(scanner.Text())
 		if !strings.HasPrefix(line, "data:") {
 			continue
@@ -103,6 +111,13 @@ func (c *Client) Stream(ctx context.Context, msgs []Message, tools []Tool, onTok
 		}
 	}
 	if err := scanner.Err(); err != nil {
+		// A cancelled/expired context unblocks the body read with a transport
+		// error that wraps the ctx error; surface it as the clean ctx.Err() so
+		// callers (and the agent loop) can recognize cancellation uniformly and
+		// discard the partial turn rather than treating it as a stream fault.
+		if cerr := ctx.Err(); cerr != nil {
+			return Message{}, Usage{}, cerr
+		}
 		return Message{}, Usage{}, fmt.Errorf("read stream: %w", err)
 	}
 

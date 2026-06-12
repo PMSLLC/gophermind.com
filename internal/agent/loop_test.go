@@ -281,3 +281,82 @@ func TestLoopDeniedGatedTool(t *testing.T) {
 		t.Error("denial was not reported back to the model")
 	}
 }
+
+// TestSendCancelDiscardsPartialTurn streams a couple of tokens then stalls; a
+// mid-stream cancel must abort Send promptly with context.Canceled AND leave
+// a.msgs rolled back to the pre-Send state — no dangling user turn, no partial
+// assistant message — so the next request the loop would build is well-formed.
+func TestSendCancelDiscardsPartialTurn(t *testing.T) {
+	released := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		f, _ := w.(http.Flusher)
+		for _, l := range []string{
+			`{"choices":[{"delta":{"content":"par"}}]}`,
+			`{"choices":[{"delta":{"content":"tial"}}]}`,
+		} {
+			w.Write([]byte("data: " + l + "\n\n"))
+			if f != nil {
+				f.Flush()
+			}
+		}
+		// Stall until the request context is cancelled (or the test cleans up),
+		// so a hung read can't wedge CI past the test's own deadline.
+		select {
+		case <-r.Context().Done():
+		case <-released:
+		}
+	}))
+	defer srv.Close()
+	defer close(released)
+
+	client := llm.New(srv.URL, "", "m", 5*time.Second, false)
+	reg := tools.NewRegistry(tools.ReadFile(t.TempDir()))
+
+	gotToken := make(chan struct{}, 1)
+	a := New(client, reg, 25, nil, func(e Event) {
+		if e.Type == "token" {
+			select {
+			case gotToken <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	// Record the clean baseline (just the system prompt) before the turn.
+	baseLen := len(a.msgs)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := a.Send(ctx, "do the thing")
+		done <- err
+	}()
+
+	select {
+	case <-gotToken:
+	case <-time.After(2 * time.Second):
+		cancel()
+		t.Fatal("never received a streamed token")
+	}
+	cancel()
+
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), context.Canceled.Error()) {
+			t.Fatalf("Send err = %v, want a context.Canceled wrap", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Send did not return promptly after cancel (hung)")
+	}
+
+	// State integrity: the cancelled turn must have been fully discarded.
+	if len(a.msgs) != baseLen {
+		t.Fatalf("msgs len = %d, want %d (cancelled turn not rolled back)", len(a.msgs), baseLen)
+	}
+	for _, m := range a.msgs {
+		if m.Role == "user" {
+			t.Errorf("dangling user turn left after cancel: %+v", m)
+		}
+	}
+}

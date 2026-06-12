@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -133,6 +134,77 @@ func TestSlashTempNoArgReportsCurrent(t *testing.T) {
 	}
 	if !strings.Contains(m2.content, "temperature is 0.42") {
 		t.Errorf("expected current value report, got: %q", m2.content)
+	}
+}
+
+// TestCtrlCMidStreamCancelsWithoutQuitting verifies that Ctrl-C while a turn is
+// in flight cancels that turn's context and stays in the session (no tea.Quit),
+// rather than exiting the program.
+func TestCtrlCMidStreamCancelsWithoutQuitting(t *testing.T) {
+	m := testModel()
+	ctx, cancel := context.WithCancel(context.Background())
+	m.st = stateWorking
+	m.cancel = cancel
+
+	m2, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlC})
+
+	// Must NOT quit while working.
+	if cmd != nil {
+		if _, ok := cmd().(tea.QuitMsg); ok {
+			t.Fatal("Ctrl-C mid-stream quit the program; want cancel-and-stay")
+		}
+	}
+	// The in-flight context must have been cancelled.
+	if ctx.Err() != context.Canceled {
+		t.Errorf("ctx.Err() = %v, want context.Canceled", ctx.Err())
+	}
+	// Still in the session (state unchanged here; idle transition happens when the
+	// cancelled Send reports back via errMsg).
+	_ = m2.(model)
+}
+
+// TestCtrlCIdleQuits verifies Ctrl-C with no in-flight request still quits.
+func TestCtrlCIdleQuits(t *testing.T) {
+	m := testModel()
+	m.st = stateIdle
+	m.cancel = nil
+
+	_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if cmd == nil {
+		t.Fatal("expected quit command when idle")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Errorf("got %T, want tea.QuitMsg", cmd())
+	}
+}
+
+// TestCancelledErrMsgShowsCancelledAndReturnsIdle verifies a context.Canceled
+// error from the agent renders as a clean "cancelled" line and returns the model
+// to idle with the partial stream and cancel func cleared.
+func TestCancelledErrMsgShowsCancelledAndReturnsIdle(t *testing.T) {
+	m := testModel()
+	m.st = stateWorking
+	m.stream = "partial output"
+	_, cancel := context.WithCancel(context.Background())
+	m.cancel = cancel
+
+	m2, _ := m.Update(errMsg{err: context.Canceled})
+	mm := m2.(model)
+
+	if mm.st != stateIdle {
+		t.Errorf("state = %v, want idle", mm.st)
+	}
+	if mm.stream != "" {
+		t.Errorf("stream not cleared: %q", mm.stream)
+	}
+	if mm.cancel != nil {
+		t.Error("cancel func not cleared")
+	}
+	if !strings.Contains(mm.content, "cancelled") {
+		t.Errorf("transcript missing cancelled indication: %q", mm.content)
+	}
+	if strings.Contains(mm.content, "context canceled") {
+		t.Errorf("raw error leaked into transcript: %q", mm.content)
 	}
 }
 

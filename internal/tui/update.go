@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -93,7 +94,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitFor(m.sub)
 
 	case errMsg:
-		m.appendLine("error: " + msg.err.Error())
+		// A cancelled turn (Ctrl-C / Esc mid-stream) is a user action, not a
+		// fault: show a brief "cancelled" line and drop the partial stream rather
+		// than surfacing a raw "context canceled" error.
+		if errors.Is(msg.err, context.Canceled) {
+			m.appendLine("⨯ cancelled")
+		} else {
+			m.appendLine("error: " + msg.err.Error())
+		}
 		m.stream = ""
 		m.st = stateIdle
 		m.cancel = nil
@@ -105,7 +113,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
-	case tea.KeyCtrlC, tea.KeyCtrlD:
+	case tea.KeyCtrlC:
+		// Mid-stream Ctrl-C cancels the in-flight turn (snappy abort) and returns
+		// to the prompt; the cancelled stream surfaces as a "cancelled" line via
+		// the errMsg path. Ctrl-C while idle (no active request) quits as usual.
+		if m.st == stateWorking && m.cancel != nil {
+			m.cancel()
+			return m, nil
+		}
+		return m, tea.Quit
+
+	case tea.KeyCtrlD:
 		return m, tea.Quit
 
 	case tea.KeyPgUp, tea.KeyPgDown:

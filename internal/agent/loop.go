@@ -86,11 +86,18 @@ func (a *Agent) TopP() *float64 { return a.llm.TopP() }
 // model produces a final answer (a reply with no tool calls). The conversation
 // is retained, so subsequent Send calls continue the same session.
 func (a *Agent) Send(ctx context.Context, userInput string) (string, error) {
+	// Snapshot the history length so a turn that fails mid-stream (e.g. a Ctrl-C
+	// cancellation) can be rolled back to exactly the prior completed state. This
+	// drops both the user message added here and any committed assistant/tool
+	// turns from this Send, so the next request is never malformed (no trailing
+	// user turn without a reply, no assistant tool_call without tool results).
+	base := len(a.msgs)
 	a.msgs = append(a.msgs, llm.Message{Role: "user", Content: userInput})
 	defs := a.reg.Definitions()
 
 	for i := 0; i < a.maxIter; i++ {
 		if err := ctx.Err(); err != nil {
+			a.msgs = a.msgs[:base]
 			return "", err
 		}
 
@@ -98,6 +105,9 @@ func (a *Agent) Send(ctx context.Context, userInput string) (string, error) {
 			a.onEvent(Event{Type: "token", Text: tok})
 		})
 		if err != nil {
+			// Discard the partial assistant turn (never appended) and the rest of
+			// this Send's messages, restoring the last clean conversation state.
+			a.msgs = a.msgs[:base]
 			return "", fmt.Errorf("iteration %d: %w", i, err)
 		}
 		a.usage.Add(usage)
