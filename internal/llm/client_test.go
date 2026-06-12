@@ -28,7 +28,7 @@ func TestCompleteDecodesToolCall(t *testing.T) {
 
 	c := New(srv.URL, "", "m", 5*time.Second, false)
 	tools := []Tool{{Type: "function", Function: Function{Name: "read_file"}}}
-	msg, err := c.Complete(context.Background(), []Message{{Role: "user", Content: "hi"}}, tools)
+	msg, _, err := c.Complete(context.Background(), []Message{{Role: "user", Content: "hi"}}, tools)
 	if err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestCompleteFinalMessage(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "", "m", 5*time.Second, false)
-	msg, err := c.Complete(context.Background(), nil, nil)
+	msg, _, err := c.Complete(context.Background(), nil, nil)
 	if err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestCompleteSurfacesError(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "", "m", 5*time.Second, false)
-	_, err := c.Complete(context.Background(), nil, nil)
+	_, _, err := c.Complete(context.Background(), nil, nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}

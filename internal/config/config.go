@@ -5,6 +5,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -25,6 +26,11 @@ type Config struct {
 	MaxIter      int           // GOPHERMIND_MAX_ITER (default: 25)
 	HTTPTimeout  time.Duration // GOPHERMIND_HTTP_TIMEOUT_S (default: 300s)
 	CmdTimeout   time.Duration // GOPHERMIND_CMD_TIMEOUT_S (default: 120s)
+
+	// Per-1,000-token prices (USD) for the running cost meter. Both default to
+	// 0, so the meter reports $0.00 until configured.
+	InputPricePer1K  float64 // GOPHERMIND_PRICE_INPUT_PER_1K
+	OutputPricePer1K float64 // GOPHERMIND_PRICE_OUTPUT_PER_1K
 }
 
 // Load reads configuration from the environment and applies defaults. The
@@ -49,6 +55,9 @@ func Load() (Config, error) {
 		MaxIter:      envIntOr("GOPHERMIND_MAX_ITER", 25),
 		HTTPTimeout:  time.Duration(envIntOr("GOPHERMIND_HTTP_TIMEOUT_S", 300)) * time.Second,
 		CmdTimeout:   time.Duration(envIntOr("GOPHERMIND_CMD_TIMEOUT_S", 120)) * time.Second,
+
+		InputPricePer1K:  envFloatOr("GOPHERMIND_PRICE_INPUT_PER_1K", 0),
+		OutputPricePer1K: envFloatOr("GOPHERMIND_PRICE_OUTPUT_PER_1K", 0),
 	}, nil
 }
 
@@ -64,6 +73,9 @@ func (c Config) Validate() error {
 	}
 	if c.MaxIter < 1 {
 		return fmt.Errorf("max iterations must be >= 1, got %d", c.MaxIter)
+	}
+	if c.InputPricePer1K < 0 || c.OutputPricePer1K < 0 {
+		return fmt.Errorf("token prices must be >= 0, got input=%v output=%v", c.InputPricePer1K, c.OutputPricePer1K)
 	}
 	return nil
 }
@@ -91,6 +103,18 @@ func envIntOr(key string, fallback int) int {
 	}
 	var n int
 	if _, err := fmt.Sscanf(v, "%d", &n); err != nil {
+		return fallback
+	}
+	return n
+}
+
+func envFloatOr(key string, fallback float64) float64 {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.ParseFloat(v, 64)
+	if err != nil {
 		return fallback
 	}
 	return n

@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	"gophermind/internal/agent"
 )
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -48,8 +49,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tokenMsg:
 		m.stream += string(msg)
-		m.tokens++
 		m.sync()
+		return m, waitFor(m.sub)
+
+	case usageMsg:
+		m.usage = agent.UsageSnapshot(msg)
 		return m, waitFor(m.sub)
 
 	case assistantMsg:

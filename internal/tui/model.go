@@ -67,7 +67,7 @@ type model struct {
 	pending approvalMsg // valid when st == stateApproval
 	cancel  context.CancelFunc
 
-	tokens int
+	usage  agent.UsageSnapshot // running session token + cost meter
 	width  int
 	height int
 	ready  bool

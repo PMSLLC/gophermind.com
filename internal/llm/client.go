@@ -39,8 +39,9 @@ func New(baseURL, apiKey, model string, timeout time.Duration, insecureTLS bool)
 }
 
 // Complete performs one non-streaming chat round-trip and returns the
-// assistant message, which may carry tool calls.
-func (c *Client) Complete(ctx context.Context, msgs []Message, tools []Tool) (Message, error) {
+// assistant message (which may carry tool calls) and the response's token
+// usage. Usage is the zero value when the endpoint omits the block.
+func (c *Client) Complete(ctx context.Context, msgs []Message, tools []Tool) (Message, Usage, error) {
 	reqBody := ChatRequest{
 		Model:       c.Model,
 		Messages:    msgs,
@@ -54,12 +55,12 @@ func (c *Client) Complete(ctx context.Context, msgs []Message, tools []Tool) (Me
 
 	body, err := json.Marshal(reqBody)
 	if err != nil {
-		return Message{}, fmt.Errorf("marshal request: %w", err)
+		return Message{}, Usage{}, fmt.Errorf("marshal request: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return Message{}, fmt.Errorf("create request: %w", err)
+		return Message{}, Usage{}, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.APIKey != "" {
@@ -68,30 +69,34 @@ func (c *Client) Complete(ctx context.Context, msgs []Message, tools []Tool) (Me
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return Message{}, fmt.Errorf("perform request: %w", err)
+		return Message{}, Usage{}, fmt.Errorf("perform request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return Message{}, fmt.Errorf("read response: %w", err)
+		return Message{}, Usage{}, fmt.Errorf("read response: %w", err)
 	}
 
 	var parsed ChatResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
 		// Decode failed; surface the raw body and status for debugging.
-		return Message{}, fmt.Errorf("status %d: unmarshal response: %w; body=%s", resp.StatusCode, err, truncate(respBody))
+		return Message{}, Usage{}, fmt.Errorf("status %d: unmarshal response: %w; body=%s", resp.StatusCode, err, truncate(respBody))
 	}
 	if parsed.Error != nil && parsed.Error.Message != "" {
-		return Message{}, fmt.Errorf("provider error: %s", parsed.Error.Message)
+		return Message{}, Usage{}, fmt.Errorf("provider error: %s", parsed.Error.Message)
 	}
 	if resp.StatusCode >= 300 {
-		return Message{}, fmt.Errorf("status %d: %s", resp.StatusCode, truncate(respBody))
+		return Message{}, Usage{}, fmt.Errorf("status %d: %s", resp.StatusCode, truncate(respBody))
 	}
 	if len(parsed.Choices) == 0 {
-		return Message{}, fmt.Errorf("no choices in response; body=%s", truncate(respBody))
+		return Message{}, Usage{}, fmt.Errorf("no choices in response; body=%s", truncate(respBody))
 	}
-	return parsed.Choices[0].Message, nil
+	var usage Usage
+	if parsed.Usage != nil {
+		usage = *parsed.Usage
+	}
+	return parsed.Choices[0].Message, usage, nil
 }
 
 // DiscoverModel queries GET /v1/models and returns the id of the first model

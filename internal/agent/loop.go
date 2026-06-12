@@ -16,9 +16,10 @@ import (
 
 // Event reports loop progress to an observer (e.g. the CLI), for display only.
 type Event struct {
-	Type string // "assistant" | "tool_call" | "tool_result"
-	Name string // tool name (for tool_call / tool_result)
-	Text string // assistant prose, tool args, or tool result
+	Type  string // "token" | "assistant" | "tool_call" | "tool_result" | "usage"
+	Name  string // tool name (for tool_call / tool_result)
+	Text  string // assistant prose, tool args, or tool result
+	Usage UsageSnapshot // populated for Type == "usage": running session totals
 }
 
 // Agent drives the tool-calling loop and retains the conversation across
@@ -30,6 +31,7 @@ type Agent struct {
 	approve safety.ApprovalFunc
 	onEvent func(Event)
 	msgs    []llm.Message // persistent conversation, seeded with the system prompt
+	usage   UsageMeter    // running per-session token + cost accumulator
 }
 
 // New builds an Agent. If onEvent is nil, progress events are discarded.
@@ -50,6 +52,17 @@ func New(client *llm.Client, reg *tools.Registry, maxIter int, approve safety.Ap
 	}
 }
 
+// SetPrices configures the per-1,000-token input and output prices (USD) used
+// to estimate session cost. Both default to 0, so cost reads 0 when unset.
+func (a *Agent) SetPrices(inputPer1K, outputPer1K float64) {
+	a.usage.InputPricePer1K = inputPer1K
+	a.usage.OutputPricePer1K = outputPer1K
+}
+
+// Usage returns a snapshot of the running per-session token totals and
+// estimated cost.
+func (a *Agent) Usage() UsageSnapshot { return a.usage.Snapshot() }
+
 // Send adds a user turn to the conversation and runs the tool loop until the
 // model produces a final answer (a reply with no tool calls). The conversation
 // is retained, so subsequent Send calls continue the same session.
@@ -62,12 +75,14 @@ func (a *Agent) Send(ctx context.Context, userInput string) (string, error) {
 			return "", err
 		}
 
-		reply, err := a.llm.Stream(ctx, a.msgs, defs, func(tok string) {
+		reply, usage, err := a.llm.Stream(ctx, a.msgs, defs, func(tok string) {
 			a.onEvent(Event{Type: "token", Text: tok})
 		})
 		if err != nil {
 			return "", fmt.Errorf("iteration %d: %w", i, err)
 		}
+		a.usage.Add(usage)
+		a.onEvent(Event{Type: "usage", Usage: a.usage.Snapshot()})
 		a.msgs = append(a.msgs, reply) // append the assistant turn before any tool results
 
 		// A reply with no tool calls is the final answer; the caller prints it.

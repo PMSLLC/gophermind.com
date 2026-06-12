@@ -42,12 +42,28 @@ type Function struct {
 
 // ChatRequest is the request body for POST /v1/chat/completions.
 type ChatRequest struct {
-	Model       string    `json:"model"`
-	Messages    []Message `json:"messages"`
-	Tools       []Tool    `json:"tools,omitempty"`
-	ToolChoice  string    `json:"tool_choice,omitempty"` // "auto"
-	Temperature float64   `json:"temperature"`
-	Stream      bool      `json:"stream"`
+	Model         string         `json:"model"`
+	Messages      []Message      `json:"messages"`
+	Tools         []Tool         `json:"tools,omitempty"`
+	ToolChoice    string         `json:"tool_choice,omitempty"` // "auto"
+	Temperature   float64        `json:"temperature"`
+	Stream        bool           `json:"stream"`
+	StreamOptions *StreamOptions `json:"stream_options,omitempty"`
+}
+
+// StreamOptions tweaks streaming behavior. IncludeUsage asks the server to emit
+// a final SSE chunk carrying the usage block (omitted by default when streaming).
+type StreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
+}
+
+// Usage is the token-accounting block returned with a chat completion. Counts
+// are reported by the server and are treated as untrusted: negative or absurd
+// values are clamped before they reach the session accumulator.
+type Usage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
 }
 
 // ChatResponse is the (non-streaming) response body.
@@ -56,6 +72,7 @@ type ChatResponse struct {
 		Message      Message `json:"message"`
 		FinishReason string  `json:"finish_reason"`
 	} `json:"choices"`
+	Usage *Usage `json:"usage,omitempty"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error,omitempty"`

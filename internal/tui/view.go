@@ -22,11 +22,11 @@ func (m model) View() string {
 	var status string
 	switch m.st {
 	case stateWorking:
-		status = fmt.Sprintf("%s %s · %s mode · %d tokens · working", m.spin.View(), m.model, m.mode, m.tokens)
+		status = fmt.Sprintf("%s %s · %s mode · %s · working", m.spin.View(), m.model, m.mode, m.usage.String())
 	case stateApproval:
 		status = fmt.Sprintf("approve %s %s ? (y)es (n)o (a)lways", m.pending.tool, oneLine(m.pending.args))
 	default:
-		status = fmt.Sprintf("%s · %s mode · ready · /help", m.model, m.mode)
+		status = fmt.Sprintf("%s · %s mode · %s · ready · /help", m.model, m.mode, m.usage.String())
 	}
 
 	width := m.width - 2

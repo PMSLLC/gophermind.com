@@ -56,6 +56,39 @@ func TestEnvOverrides(t *testing.T) {
 	}
 }
 
+func TestPriceEnvParsing(t *testing.T) {
+	t.Setenv("GOPHERMIND_BASE_URL", "http://x")
+	t.Setenv("GOPHERMIND_MODEL", "m")
+	t.Setenv("GOPHERMIND_PRICE_INPUT_PER_1K", "0.50")
+	t.Setenv("GOPHERMIND_PRICE_OUTPUT_PER_1K", "1.50")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.InputPricePer1K != 0.50 {
+		t.Errorf("InputPricePer1K = %v, want 0.50", cfg.InputPricePer1K)
+	}
+	if cfg.OutputPricePer1K != 1.50 {
+		t.Errorf("OutputPricePer1K = %v, want 1.50", cfg.OutputPricePer1K)
+	}
+}
+
+func TestPriceDefaultsZero(t *testing.T) {
+	t.Setenv("GOPHERMIND_BASE_URL", "http://x")
+	t.Setenv("GOPHERMIND_MODEL", "m")
+	t.Setenv("GOPHERMIND_PRICE_INPUT_PER_1K", "")
+	t.Setenv("GOPHERMIND_PRICE_OUTPUT_PER_1K", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.InputPricePer1K != 0 || cfg.OutputPricePer1K != 0 {
+		t.Errorf("prices should default to 0, got input=%v output=%v", cfg.InputPricePer1K, cfg.OutputPricePer1K)
+	}
+}
+
 func TestValidate(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -67,6 +100,7 @@ func TestValidate(t *testing.T) {
 		{"no base url", Config{Model: "m", ApprovalMode: "ask", MaxIter: 1}, true},
 		{"bad mode", Config{BaseURL: "http://x", Model: "m", ApprovalMode: "yolo", MaxIter: 1}, true},
 		{"zero iter", Config{BaseURL: "http://x", Model: "m", ApprovalMode: "ask", MaxIter: 0}, true},
+		{"negative price", Config{BaseURL: "http://x", Model: "m", ApprovalMode: "ask", MaxIter: 1, InputPricePer1K: -1}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

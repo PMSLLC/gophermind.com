@@ -34,7 +34,7 @@ func TestStreamProseAndToolCalls(t *testing.T) {
 
 	c := New(srv.URL, "", "m", 5*time.Second, false)
 	var got string
-	msg, err := c.Stream(context.Background(), nil, nil, func(tok string) { got += tok })
+	msg, _, err := c.Stream(context.Background(), nil, nil, func(tok string) { got += tok })
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}

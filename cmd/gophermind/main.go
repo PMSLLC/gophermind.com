@@ -97,11 +97,13 @@ func run() error {
 			return fmt.Errorf("interactive session needs a terminal; use `run`/`ask` for non-interactive use")
 		}
 		return tui.Run(tui.Config{
-			Client:   client,
-			Registry: reg,
-			Model:    cfg.Model,
-			Mode:     cfg.ApprovalMode,
-			MaxIter:  cfg.MaxIter,
+			Client:           client,
+			Registry:         reg,
+			Model:            cfg.Model,
+			Mode:             cfg.ApprovalMode,
+			MaxIter:          cfg.MaxIter,
+			InputPricePer1K:  cfg.InputPricePer1K,
+			OutputPricePer1K: cfg.OutputPricePer1K,
 		})
 	case "run", "ask":
 		if task == "" {
@@ -114,11 +116,14 @@ func run() error {
 		defer stop()
 		printer := ui.Printer{Verbose: *verboseFlag}
 		ag := agent.New(client, reg, cfg.MaxIter, approve, printer.Event)
+		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
 		answer, err := ag.Send(ctx, task)
 		if err != nil {
 			return err
 		}
 		fmt.Println(answer)
+		// Token + cost meter goes to stderr so stdout stays pipeable.
+		fmt.Fprintln(os.Stderr, ag.Usage().String())
 		return nil
 	default:
 		usage()

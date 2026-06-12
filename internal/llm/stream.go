@@ -12,6 +12,8 @@ import (
 )
 
 // streamChunk is one SSE delta frame from /v1/chat/completions with stream=true.
+// The final chunk (when stream_options.include_usage is set) carries usage and
+// an empty choices array, so Usage is parsed alongside the deltas.
 type streamChunk struct {
 	Choices []struct {
 		Delta struct {
@@ -28,24 +30,33 @@ type streamChunk struct {
 		} `json:"delta"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
+	Usage *Usage `json:"usage"`
 }
 
 // Stream performs a streaming chat completion. onToken (if non-nil) is called for
 // each prose delta as it arrives. The fully assembled assistant message — including
 // tool calls reassembled from fragmented argument deltas — is returned when the
-// stream ends.
-func (c *Client) Stream(ctx context.Context, msgs []Message, tools []Tool, onToken func(string)) (Message, error) {
-	reqBody := ChatRequest{Model: c.Model, Messages: msgs, Tools: tools, Temperature: 0, Stream: true}
+// stream ends, along with the token usage reported in the final chunk (zero value
+// when the endpoint omits it).
+func (c *Client) Stream(ctx context.Context, msgs []Message, tools []Tool, onToken func(string)) (Message, Usage, error) {
+	reqBody := ChatRequest{
+		Model:         c.Model,
+		Messages:      msgs,
+		Tools:         tools,
+		Temperature:   0,
+		Stream:        true,
+		StreamOptions: &StreamOptions{IncludeUsage: true},
+	}
 	if len(tools) > 0 {
 		reqBody.ToolChoice = "auto"
 	}
 	body, err := json.Marshal(reqBody)
 	if err != nil {
-		return Message{}, fmt.Errorf("marshal request: %w", err)
+		return Message{}, Usage{}, fmt.Errorf("marshal request: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return Message{}, fmt.Errorf("create request: %w", err)
+		return Message{}, Usage{}, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
@@ -54,12 +65,12 @@ func (c *Client) Stream(ctx context.Context, msgs []Message, tools []Tool, onTok
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return Message{}, fmt.Errorf("perform request: %w", err)
+		return Message{}, Usage{}, fmt.Errorf("perform request: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(resp.Body)
-		return Message{}, fmt.Errorf("status %d: %s", resp.StatusCode, truncate(b))
+		return Message{}, Usage{}, fmt.Errorf("status %d: %s", resp.StatusCode, truncate(b))
 	}
 
 	var content strings.Builder
@@ -69,6 +80,7 @@ func (c *Client) Stream(ctx context.Context, msgs []Message, tools []Tool, onTok
 	}
 	calls := map[int]*acc{}
 	var order []int
+	var usage Usage
 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -84,6 +96,9 @@ func (c *Client) Stream(ctx context.Context, msgs []Message, tools []Tool, onTok
 		var chunk streamChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue // tolerate keep-alives / partial frames
+		}
+		if chunk.Usage != nil {
+			usage = *chunk.Usage // final chunk; usually carries no choices
 		}
 		if len(chunk.Choices) == 0 {
 			continue
@@ -112,7 +127,7 @@ func (c *Client) Stream(ctx context.Context, msgs []Message, tools []Tool, onTok
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return Message{}, fmt.Errorf("read stream: %w", err)
+		return Message{}, Usage{}, fmt.Errorf("read stream: %w", err)
 	}
 
 	msg := Message{Role: "assistant", Content: content.String()}
@@ -124,5 +139,5 @@ func (c *Client) Stream(ctx context.Context, msgs []Message, tools []Tool, onTok
 			Function: FunctionCall{Name: a.name, Arguments: a.args.String()},
 		})
 	}
-	return msg, nil
+	return msg, usage, nil
 }

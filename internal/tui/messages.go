@@ -16,6 +16,7 @@ type approvalMsg struct {
 	tool, args string
 	reply      chan bool
 }
+type usageMsg agent.UsageSnapshot
 type doneMsg struct{ answer string }
 type errMsg struct{ err error }
 
@@ -31,6 +32,8 @@ func eventToMsg(e agent.Event) tea.Msg {
 		return toolCallMsg{name: e.Name, args: e.Text}
 	case "tool_result":
 		return toolResultMsg{name: e.Name, text: e.Text}
+	case "usage":
+		return usageMsg(e.Usage)
 	default:
 		return nil
 	}
