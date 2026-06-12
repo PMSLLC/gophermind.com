@@ -57,10 +57,11 @@ func run() error {
 
 	args := flag.Args()
 	cmd := "chat"
+	task := ""
 	if len(args) > 0 {
 		cmd = strings.ToLower(args[0])
+		task = strings.TrimSpace(strings.Join(args[1:], " "))
 	}
-	task := strings.TrimSpace(strings.Join(args[1:], " "))
 
 	client := llm.New(cfg.BaseURL, cfg.APIKey, cfg.Model, cfg.HTTPTimeout, cfg.InsecureTLS)
 
