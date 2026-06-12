@@ -64,3 +64,10 @@ branch `security/audit-2026-06-12`, leave pre-existing untracked files alone.
   Build command recorded in DEPLOY_QUEUE.md. No IaC in repo.
 
 DONE: full audit pass clean, tests green, deploy staged. See BUILD_AUDIT_REPORT.md.
+
+## Coordination decision (2026-06-12)
+- cwd item (gophermind.com) DONE; no todo.pm in cwd to source further items.
+- All machine-wide todo.pm items are DONE (report committed) or owned by a live
+  agent in the running overnight fleet (run.sh PID 9588, 12 jobs active).
+- Decision: stand down. Taking any remaining item would collide with a running
+  agent or redo a completed audit. Do not disturb the fleet. Nothing left to do.
