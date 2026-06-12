@@ -127,6 +127,15 @@ type Config struct {
 	CacheEnabled bool          // GOPHERMIND_CACHE_ENABLED (default: false)
 	CacheDir     string        // GOPHERMIND_CACHE_DIR (default: <os user cache>/gophermind/cache, else .gophermind/cache under root)
 	CacheTTL     time.Duration // GOPHERMIND_CACHE_TTL (default: 24h)
+
+	// TranscriptPath, when non-empty, is a user-chosen destination for a
+	// JSONL dump of the full wire-level message history at session end. The
+	// transcript contains full prompt and response content (potentially
+	// sensitive); the writer creates the file with 0600 perms and any parent
+	// dir with 0700. Empty (the default) means no transcript is written and
+	// there is zero overhead. It is an explicit, user-provided output path
+	// (like `-o outfile`), so it is NOT contained to the repo root.
+	TranscriptPath string // GOPHERMIND_TRANSCRIPT (default: unset; also --transcript)
 }
 
 // Load reads configuration from the environment and applies defaults. The
@@ -166,6 +175,8 @@ func Load() (Config, error) {
 		CacheEnabled: envBool("GOPHERMIND_CACHE_ENABLED"),
 		CacheDir:     envOr("GOPHERMIND_CACHE_DIR", defaultCacheDir(root)),
 		CacheTTL:     envDurationOr("GOPHERMIND_CACHE_TTL", 24*time.Hour),
+
+		TranscriptPath: envOr("GOPHERMIND_TRANSCRIPT", ""),
 	}, nil
 }
 

@@ -420,3 +420,27 @@ func TestValidate(t *testing.T) {
 		})
 	}
 }
+
+func TestTranscriptPathDefaultsEmpty(t *testing.T) {
+	t.Setenv("GOPHERMIND_BASE_URL", "http://x")
+	t.Setenv("GOPHERMIND_TRANSCRIPT", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.TranscriptPath != "" {
+		t.Errorf("TranscriptPath = %q, want empty (unset => no export)", cfg.TranscriptPath)
+	}
+}
+
+func TestTranscriptPathFromEnv(t *testing.T) {
+	t.Setenv("GOPHERMIND_BASE_URL", "http://x")
+	t.Setenv("GOPHERMIND_TRANSCRIPT", "/tmp/session.jsonl")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.TranscriptPath != "/tmp/session.jsonl" {
+		t.Errorf("TranscriptPath = %q, want /tmp/session.jsonl", cfg.TranscriptPath)
+	}
+}

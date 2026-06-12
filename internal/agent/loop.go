@@ -5,9 +5,14 @@
 package agent
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"gophermind/internal/llm"
 	"gophermind/internal/safety"
@@ -119,6 +124,62 @@ func (a *Agent) Send(ctx context.Context, userInput string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("hit max iterations (%d) without a final answer", a.maxIter)
+}
+
+// ExportJSONL writes the full wire-level message history as JSONL: one JSON
+// object per line, each the exact llm.Message as sent to / received from the
+// API (role, content, tool_calls, tool_call_id, name). Lines are emitted in
+// conversation order and each round-trips back to an llm.Message. Only the
+// message history is written — no API key, Authorization header, base URL, or
+// other client config is ever included. The writer is buffered internally and
+// flushed before returning; messages are serialized one line at a time rather
+// than buffering the whole transcript in memory.
+func (a *Agent) ExportJSONL(w io.Writer) error {
+	bw := bufio.NewWriter(w)
+	enc := json.NewEncoder(bw)
+	// json.Encoder.Encode writes a trailing newline after each value and
+	// escapes any embedded newlines in content, so every message is exactly
+	// one line of valid JSON.
+	for i := range a.msgs {
+		if err := enc.Encode(a.msgs[i]); err != nil {
+			return fmt.Errorf("encode message %d: %w", i, err)
+		}
+	}
+	return bw.Flush()
+}
+
+// WriteTranscript dumps the full message history as JSONL to path, an explicit
+// user-provided destination. Because the transcript can contain sensitive
+// prompt/response content, the file is created with 0600 permissions and any
+// parent directory it must create with 0700. The file is truncated and
+// overwritten so the dump always reflects the complete current session (for the
+// one-shot run/ask modes this runs once at session end). An empty path is an
+// error. Symlink/overwrite surprises are bounded by opening with O_CREATE|
+// O_WRONLY|O_TRUNC and restrictive perms; the path is the user's own choice, so
+// it is intentionally not contained to the repo root.
+func (a *Agent) WriteTranscript(path string) error {
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("transcript path is empty")
+	}
+	if dir := filepath.Dir(path); dir != "" && dir != "." {
+		// 0700: the directory may hold sensitive transcripts; keep it private.
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return fmt.Errorf("create transcript dir: %w", err)
+		}
+	}
+	// O_TRUNC overwrites a prior dump; 0600 keeps the file owner-only at rest.
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return fmt.Errorf("open transcript file: %w", err)
+	}
+	if err := a.ExportJSONL(f); err != nil {
+		f.Close()
+		return fmt.Errorf("write transcript: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close transcript file: %w", err)
+	}
+	return nil
 }
 
 // Reset clears the conversation back to just the system prompt.

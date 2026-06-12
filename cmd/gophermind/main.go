@@ -44,6 +44,7 @@ func run() error {
 	maxFlag := flag.Int("max", cfg.MaxIter, "maximum loop iterations per turn")
 	insecureFlag := flag.Bool("insecure", cfg.InsecureTLS, "skip TLS verification (self-signed internal endpoints)")
 	verboseFlag := flag.Bool("v", false, "verbose: stream assistant text and tool results")
+	transcriptFlag := flag.String("transcript", cfg.TranscriptPath, "write the full wire-level message history (JSONL) to this path at session end; MAY CONTAIN SENSITIVE PROMPTS/RESPONSES (file written 0600, no credentials included)")
 	flag.Usage = usage
 	flag.Parse()
 
@@ -60,6 +61,7 @@ func run() error {
 	cfg.ApprovalMode = *modeFlag
 	cfg.MaxIter = *maxFlag
 	cfg.InsecureTLS = *insecureFlag
+	cfg.TranscriptPath = *transcriptFlag
 	cfg, err = cfg.ApplyProfile()
 	if err != nil {
 		return err
@@ -143,6 +145,7 @@ func run() error {
 			MaxIter:          cfg.MaxIter,
 			InputPricePer1K:  cfg.InputPricePer1K,
 			OutputPricePer1K: cfg.OutputPricePer1K,
+			TranscriptPath:   cfg.TranscriptPath,
 		})
 	case "run", "ask":
 		if task == "" {
@@ -156,9 +159,16 @@ func run() error {
 		printer := ui.Printer{Verbose: *verboseFlag}
 		ag := agent.New(client, reg, cfg.MaxIter, approve, printer.Event)
 		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
-		answer, err := ag.Send(ctx, task)
-		if err != nil {
-			return err
+		answer, sendErr := ag.Send(ctx, task)
+		// Write the transcript even when the turn errored: a partial history is
+		// still useful for debugging. The dump never includes credentials.
+		if cfg.TranscriptPath != "" {
+			if err := ag.WriteTranscript(cfg.TranscriptPath); err != nil {
+				fmt.Fprintln(os.Stderr, "warning: transcript export failed:", err)
+			}
+		}
+		if sendErr != nil {
+			return sendErr
 		}
 		fmt.Println(answer)
 		// Token + cost meter goes to stderr so stdout stays pipeable.
@@ -192,6 +202,9 @@ Environment (all optional; flags override):
   GOPHERMIND_TEMPERATURE  sampling temperature [0,2] (default: 0; also /temp)
   GOPHERMIND_TOP_P        nucleus top_p (0,1] (default: unset; also /topp)
   GOPHERMIND_PROFILE    provider profile to select (also -profile/-p)
+  GOPHERMIND_TRANSCRIPT JSONL dump of the full message history at session end
+                        (also --transcript); MAY CONTAIN SENSITIVE PROMPTS/
+                        RESPONSES — written 0600, never includes credentials
 
 Provider profiles (selectable with -profile/-p):
   Built-ins: local-llama, openai, anthropic-proxy. Each profile resolves its
