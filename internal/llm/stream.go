@@ -150,11 +150,13 @@ func (c *Client) connectStreamChain(ctx context.Context, msgs []Message, tools [
 // fallback-eligible (advance to the next model). Retries happen only here,
 // before any token is emitted.
 func (c *Client) connectStreamModel(ctx context.Context, model string, msgs []Message, tools []Tool) (*http.Response, bool, error) {
+	temp, topP := c.sampling()
 	reqBody := ChatRequest{
 		Model:         model,
 		Messages:      msgs,
 		Tools:         tools,
-		Temperature:   0,
+		Temperature:   temp,
+		TopP:          topP,
 		Stream:        true,
 		StreamOptions: &StreamOptions{IncludeUsage: true},
 	}

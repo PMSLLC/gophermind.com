@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -36,6 +37,12 @@ type Client struct {
 	// sleep performs the backoff wait; injectable so tests stay fast and
 	// deterministic. Defaults to ctxSleep (a real, context-aware timer).
 	sleep sleepFn
+
+	// sampleMu guards temperature/topP, which can be mutated at runtime (the TUI
+	// /temp and /topp commands) while the agent goroutine reads them per request.
+	sampleMu    sync.RWMutex
+	temperature float64  // sent with every request; 0 by default (deterministic)
+	topP        *float64 // sent only when non-nil; nil (default) omits top_p
 
 	// capCache memoizes probed model capabilities per endpoint+model so a
 	// session re-uses one probe. Guarded by capCacheMu; lazily allocated.
@@ -69,6 +76,61 @@ func (c *Client) sleeper() sleepFn {
 		return c.sleep
 	}
 	return ctxSleep
+}
+
+// SetTemperature sets the sampling temperature sent with subsequent requests.
+// It is safe to call concurrently with in-flight requests; the new value takes
+// effect on the next request. The caller is responsible for validating the
+// range (see config.ValidateTemperature).
+func (c *Client) SetTemperature(t float64) {
+	c.sampleMu.Lock()
+	c.temperature = t
+	c.sampleMu.Unlock()
+}
+
+// SetTopP sets the nucleus-sampling top_p sent with subsequent requests. A nil
+// argument unsets top_p (it is then omitted from requests). Concurrency-safe;
+// effective on the next request. Range validation is the caller's job (see
+// config.ValidateTopP).
+func (c *Client) SetTopP(p *float64) {
+	c.sampleMu.Lock()
+	if p == nil {
+		c.topP = nil
+	} else {
+		v := *p // copy so the caller can't mutate our stored value later
+		c.topP = &v
+	}
+	c.sampleMu.Unlock()
+}
+
+// Temperature returns the current sampling temperature.
+func (c *Client) Temperature() float64 {
+	c.sampleMu.RLock()
+	defer c.sampleMu.RUnlock()
+	return c.temperature
+}
+
+// TopP returns the current top_p (nil when unset).
+func (c *Client) TopP() *float64 {
+	c.sampleMu.RLock()
+	defer c.sampleMu.RUnlock()
+	if c.topP == nil {
+		return nil
+	}
+	v := *c.topP
+	return &v
+}
+
+// sampling reads the current temperature and top_p under one lock, for building
+// a request body. The returned top_p is a copy, safe to embed in a request.
+func (c *Client) sampling() (float64, *float64) {
+	c.sampleMu.RLock()
+	defer c.sampleMu.RUnlock()
+	if c.topP == nil {
+		return c.temperature, nil
+	}
+	v := *c.topP
+	return c.temperature, &v
 }
 
 // Complete performs one non-streaming chat round-trip and returns the
@@ -105,11 +167,13 @@ func (c *Client) Complete(ctx context.Context, msgs []Message, tools []Tool) (Me
 // produced under a fallback is cached under the fallback's key and usage is
 // attributed to the model that actually answered.
 func (c *Client) completeModel(ctx context.Context, model string, msgs []Message, tools []Tool) (Message, Usage, bool, error) {
+	temp, topP := c.sampling()
 	reqBody := ChatRequest{
 		Model:       model,
 		Messages:    msgs,
 		Tools:       tools,
-		Temperature: 0,
+		Temperature: temp,
+		TopP:        topP,
 		Stream:      false,
 	}
 	if len(tools) > 0 {

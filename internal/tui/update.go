@@ -158,6 +158,14 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Commands taking an argument are matched by their first field so the value
+	// can follow (e.g. "/temp 0.7").
+	if cmd := strings.Fields(text)[0]; cmd == "/temp" || cmd == "/topp" {
+		m.handleSamplingCommand(cmd, text)
+		m.sync()
+		return m, nil
+	}
+
 	switch text {
 	case "/exit", "/quit":
 		return m, tea.Quit
@@ -171,7 +179,7 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		m.sync()
 		return m, nil
 	case "/help":
-		m.appendLine("Commands: /help  /clear  /exit · y/n/a to approve · Esc to interrupt")
+		m.appendLine("Commands: /help  /clear  /temp <0-2>  /topp <0-1>  /exit · y/n/a to approve · Esc to interrupt")
 		m.sync()
 		return m, nil
 	}

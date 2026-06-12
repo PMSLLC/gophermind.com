@@ -86,6 +86,8 @@ func run() error {
 
 	client := llm.New(cfg.BaseURL, cfg.APIKey, cfg.Model, cfg.HTTPTimeout, cfg.InsecureTLS)
 	client.Fallbacks = cfg.FallbackModels
+	client.SetTemperature(cfg.Temperature)
+	client.SetTopP(cfg.TopP)
 	client.Retry = llm.RetryPolicy{
 		MaxAttempts: cfg.MaxAttempts,
 		BaseDelay:   cfg.RetryBaseDelay,
@@ -187,6 +189,8 @@ Environment (all optional; flags override):
   GOPHERMIND_MODEL      model name (default: auto-discovered)
   GOPHERMIND_API_KEY    bearer token (omit when reached over VPN)
   GOPHERMIND_APPROVAL   auto|ask (default: ask)
+  GOPHERMIND_TEMPERATURE  sampling temperature [0,2] (default: 0; also /temp)
+  GOPHERMIND_TOP_P        nucleus top_p (0,1] (default: unset; also /topp)
   GOPHERMIND_PROFILE    provider profile to select (also -profile/-p)
 
 Provider profiles (selectable with -profile/-p):

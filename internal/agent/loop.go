@@ -63,6 +63,20 @@ func (a *Agent) SetPrices(inputPer1K, outputPer1K float64) {
 // estimated cost.
 func (a *Agent) Usage() UsageSnapshot { return a.usage.Snapshot() }
 
+// SetTemperature updates the sampling temperature on the underlying client; it
+// takes effect on the next request. Range validation is the caller's job.
+func (a *Agent) SetTemperature(t float64) { a.llm.SetTemperature(t) }
+
+// SetTopP updates the sampling top_p on the underlying client (nil unsets it);
+// it takes effect on the next request. Range validation is the caller's job.
+func (a *Agent) SetTopP(p *float64) { a.llm.SetTopP(p) }
+
+// Temperature returns the client's current sampling temperature.
+func (a *Agent) Temperature() float64 { return a.llm.Temperature() }
+
+// TopP returns the client's current top_p (nil when unset).
+func (a *Agent) TopP() *float64 { return a.llm.TopP() }
+
 // Send adds a user turn to the conversation and runs the tool loop until the
 // model produces a final answer (a reply with no tool calls). The conversation
 // is retained, so subsequent Send calls continue the same session.

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -54,6 +55,113 @@ func TestEnvOverrides(t *testing.T) {
 	}
 	if cfg.CmdTimeout != 30*time.Second {
 		t.Errorf("CmdTimeout = %v, want 30s", cfg.CmdTimeout)
+	}
+}
+
+func TestSamplingDefaults(t *testing.T) {
+	t.Setenv("GOPHERMIND_BASE_URL", "http://x")
+	t.Setenv("GOPHERMIND_MODEL", "m")
+	t.Setenv("GOPHERMIND_TEMPERATURE", "")
+	t.Setenv("GOPHERMIND_TOP_P", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Temperature != 0 {
+		t.Errorf("Temperature = %v, want 0 (deterministic default)", cfg.Temperature)
+	}
+	if cfg.TopP != nil {
+		t.Errorf("TopP = %v, want nil (unset default)", *cfg.TopP)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate with defaults: %v", err)
+	}
+}
+
+func TestSamplingEnvParsing(t *testing.T) {
+	t.Setenv("GOPHERMIND_BASE_URL", "http://x")
+	t.Setenv("GOPHERMIND_MODEL", "m")
+	t.Setenv("GOPHERMIND_TEMPERATURE", "0.7")
+	t.Setenv("GOPHERMIND_TOP_P", "0.9")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Temperature != 0.7 {
+		t.Errorf("Temperature = %v, want 0.7", cfg.Temperature)
+	}
+	if cfg.TopP == nil || *cfg.TopP != 0.9 {
+		t.Errorf("TopP = %v, want 0.9", cfg.TopP)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate: %v", err)
+	}
+}
+
+func TestSamplingZeroTemperatureExplicit(t *testing.T) {
+	t.Setenv("GOPHERMIND_BASE_URL", "http://x")
+	t.Setenv("GOPHERMIND_MODEL", "m")
+	t.Setenv("GOPHERMIND_TEMPERATURE", "0")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Temperature != 0 {
+		t.Errorf("Temperature = %v, want explicit 0", cfg.Temperature)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate: %v", err)
+	}
+}
+
+func TestSamplingValidationRejectsOutOfRange(t *testing.T) {
+	t.Setenv("GOPHERMIND_BASE_URL", "http://x")
+	t.Setenv("GOPHERMIND_MODEL", "m")
+
+	cases := []struct {
+		name string
+		temp string
+		topp string
+	}{
+		{"temp too high", "2.5", ""},
+		{"temp negative", "-0.1", ""},
+		{"topp too high", "0", "1.5"},
+		{"topp zero", "0", "0"},
+		{"topp negative", "0", "-0.2"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("GOPHERMIND_TEMPERATURE", tc.temp)
+			t.Setenv("GOPHERMIND_TOP_P", tc.topp)
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if err := cfg.Validate(); err == nil {
+				t.Errorf("Validate accepted out-of-range temp=%q topp=%q", tc.temp, tc.topp)
+			}
+		})
+	}
+}
+
+func TestValidateTemperatureRejectsNonFinite(t *testing.T) {
+	if err := ValidateTemperature(math.NaN()); err == nil {
+		t.Error("ValidateTemperature(NaN) should error")
+	}
+	if err := ValidateTemperature(math.Inf(1)); err == nil {
+		t.Error("ValidateTemperature(+Inf) should error")
+	}
+}
+
+func TestValidateTopPRejectsNonFinite(t *testing.T) {
+	if err := ValidateTopP(math.NaN()); err == nil {
+		t.Error("ValidateTopP(NaN) should error")
+	}
+	if err := ValidateTopP(math.Inf(1)); err == nil {
+		t.Error("ValidateTopP(+Inf) should error")
 	}
 }
 

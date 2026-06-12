@@ -4,6 +4,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,6 +12,41 @@ import (
 	"strings"
 	"time"
 )
+
+// Sampling parameter bounds. Temperature is the OpenAI-conventional [0,2];
+// top_p is a probability mass in (0,1]. These are the single source of truth
+// for both config validation and the TUI /temp and /topp commands.
+const (
+	TemperatureMin = 0.0
+	TemperatureMax = 2.0
+	TopPMin        = 0.0 // exclusive lower bound (0 would mask all tokens)
+	TopPMax        = 1.0
+)
+
+// ValidateTemperature rejects NaN, Inf, and out-of-range temperatures. It never
+// clamps silently: a bad value is an explicit error so garbage never reaches
+// the API. 0 is valid and meaningful (deterministic).
+func ValidateTemperature(v float64) error {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return fmt.Errorf("temperature must be a finite number, got %v", v)
+	}
+	if v < TemperatureMin || v > TemperatureMax {
+		return fmt.Errorf("temperature must be in [%g,%g], got %v", TemperatureMin, TemperatureMax, v)
+	}
+	return nil
+}
+
+// ValidateTopP rejects NaN, Inf, and out-of-range top_p values. The lower bound
+// is exclusive (top_p of 0 masks every token); the upper bound 1.0 is inclusive.
+func ValidateTopP(v float64) error {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return fmt.Errorf("top_p must be a finite number, got %v", v)
+	}
+	if v <= TopPMin || v > TopPMax {
+		return fmt.Errorf("top_p must be in (%g,%g], got %v", TopPMin, TopPMax, v)
+	}
+	return nil
+}
 
 // defaultBaseURL points at the local llama.cpp server. Override with
 // GOPHERMIND_BASE_URL or -base.
@@ -76,6 +112,14 @@ type Config struct {
 	InputPricePer1K  float64 // GOPHERMIND_PRICE_INPUT_PER_1K
 	OutputPricePer1K float64 // GOPHERMIND_PRICE_OUTPUT_PER_1K
 
+	// Sampling parameters sent with each completion. Temperature defaults to 0
+	// (deterministic) and is always sent, preserving prior behavior. TopP is a
+	// pointer so "unset" (nil) is distinguishable from an explicit 0.0: when nil
+	// it is omitted from the request entirely, again matching prior behavior.
+	// Both are runtime-adjustable via the TUI /temp and /topp commands.
+	Temperature float64  // GOPHERMIND_TEMPERATURE (default: 0; range [0,2])
+	TopP        *float64 // GOPHERMIND_TOP_P (default: unset/nil; range (0,1] when set)
+
 	// Response cache for non-streaming completions, keyed by a hash of the
 	// request inputs. Off by default: caching writes prompt/response content to
 	// disk (a privacy consideration), and stale entries can surprise normal use,
@@ -115,6 +159,9 @@ func Load() (Config, error) {
 
 		InputPricePer1K:  envFloatOr("GOPHERMIND_PRICE_INPUT_PER_1K", 0),
 		OutputPricePer1K: envFloatOr("GOPHERMIND_PRICE_OUTPUT_PER_1K", 0),
+
+		Temperature: envFloatOr("GOPHERMIND_TEMPERATURE", 0),
+		TopP:        envFloatPtr("GOPHERMIND_TOP_P"),
 
 		CacheEnabled: envBool("GOPHERMIND_CACHE_ENABLED"),
 		CacheDir:     envOr("GOPHERMIND_CACHE_DIR", defaultCacheDir(root)),
@@ -233,6 +280,14 @@ func (c Config) Validate() error {
 	if c.RetryBaseDelay < 0 {
 		return fmt.Errorf("retry base delay must be >= 0, got %v", c.RetryBaseDelay)
 	}
+	if err := ValidateTemperature(c.Temperature); err != nil {
+		return err
+	}
+	if c.TopP != nil {
+		if err := ValidateTopP(*c.TopP); err != nil {
+			return err
+		}
+	}
 	// MaxAttempts is normalized (values < 1 mean a single attempt) by the
 	// client's RetryPolicy, so it is intentionally not rejected here.
 	return nil
@@ -293,6 +348,22 @@ func envFloatOr(key string, fallback float64) float64 {
 		return fallback
 	}
 	return n
+}
+
+// envFloatPtr parses an optional float env var into a *float64: an unset or
+// empty var yields nil (the value is "not configured"), distinguishing it from
+// an explicit 0. A malformed value also yields nil so a typo can't silently
+// flip behavior; range validation happens later in Validate.
+func envFloatPtr(key string) *float64 {
+	v := os.Getenv(key)
+	if v == "" {
+		return nil
+	}
+	n, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return nil
+	}
+	return &n
 }
 
 // envDurationOr parses a Go duration string (e.g. "24h", "30m"). An empty,

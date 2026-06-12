@@ -47,7 +47,11 @@ type ChatRequest struct {
 	Tools         []Tool         `json:"tools,omitempty"`
 	ToolChoice    string         `json:"tool_choice,omitempty"` // "auto"
 	Temperature   float64        `json:"temperature"`
-	Stream        bool           `json:"stream"`
+	// TopP is nucleus-sampling mass. It is a pointer so an unset top_p (nil) is
+	// omitted from the wire entirely, while an explicit 0-or-greater value is
+	// sent. Temperature, by contrast, is always sent (0 is the default).
+	TopP   *float64 `json:"top_p,omitempty"`
+	Stream bool     `json:"stream"`
 	StreamOptions *StreamOptions `json:"stream_options,omitempty"`
 }
 

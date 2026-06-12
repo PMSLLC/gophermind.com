@@ -40,6 +40,7 @@ type cacheKeyInput struct {
 	Messages    []Message `json:"messages"`
 	Tools       []Tool    `json:"tools"`
 	Temperature float64   `json:"temperature"`
+	TopP        *float64  `json:"top_p,omitempty"`
 	ToolChoice  string    `json:"tool_choice"`
 }
 
@@ -58,6 +59,7 @@ func (c *Cache) key(req ChatRequest) (string, error) {
 		Messages:    req.Messages,
 		Tools:       req.Tools,
 		Temperature: req.Temperature,
+		TopP:        req.TopP,
 		ToolChoice:  req.ToolChoice,
 	}
 	b, err := json.Marshal(in)

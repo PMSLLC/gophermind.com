@@ -55,6 +55,9 @@ type model struct {
 	model string // model name, for the status line
 	mode  string // "auto" | "ask"
 
+	temperature float64  // current sampling temperature, mirrored from the client
+	topP        *float64 // current top_p (nil when unset), mirrored from the client
+
 	input    textarea.Model
 	viewport viewport.Model
 	spin     spinner.Model
@@ -92,8 +95,9 @@ func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent,
 
 	r, _ := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(80))
 
-	return model{
-		agent:    buildAgent(sub, allowed),
+	ag := buildAgent(sub, allowed)
+	m := model{
+		agent:    ag,
 		sub:      sub,
 		allowed:  allowed,
 		model:    modelName,
@@ -104,6 +108,13 @@ func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent,
 		render:   r,
 		st:       stateIdle,
 	}
+	// Mirror the client's startup sampling settings so /temp and /topp with no
+	// argument report the truth even before the user changes anything.
+	if ag != nil {
+		m.temperature = ag.Temperature()
+		m.topP = ag.TopP()
+	}
+	return m
 }
 
 func (m model) Init() tea.Cmd {
