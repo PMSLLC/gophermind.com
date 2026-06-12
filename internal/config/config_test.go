@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -86,6 +87,172 @@ func TestPriceDefaultsZero(t *testing.T) {
 	}
 	if cfg.InputPricePer1K != 0 || cfg.OutputPricePer1K != 0 {
 		t.Errorf("prices should default to 0, got input=%v output=%v", cfg.InputPricePer1K, cfg.OutputPricePer1K)
+	}
+}
+
+func TestApplyProfileDefaultPreservesLegacy(t *testing.T) {
+	t.Setenv("GOPHERMIND_BASE_URL", "http://legacy:9000")
+	t.Setenv("GOPHERMIND_API_KEY", "legacy-key")
+	t.Setenv("GOPHERMIND_MODEL", "legacy-model")
+	t.Setenv("GOPHERMIND_PROFILE", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got, err := cfg.ApplyProfile()
+	if err != nil {
+		t.Fatalf("ApplyProfile: %v", err)
+	}
+	if got.BaseURL != "http://legacy:9000" || got.APIKey != "legacy-key" || got.Model != "legacy-model" {
+		t.Errorf("legacy single-endpoint behavior changed: %+v", got.BaseURL)
+	}
+}
+
+func TestApplyProfileBuiltinDefaults(t *testing.T) {
+	// Clear any per-profile overrides.
+	for _, k := range []string{"GOPHERMIND_PROFILE_OPENAI_BASE_URL", "GOPHERMIND_PROFILE_OPENAI_MODEL", "GOPHERMIND_PROFILE_OPENAI_API_KEY", "GOPHERMIND_PROFILE_OPENAI_TIMEOUT"} {
+		t.Setenv(k, "")
+	}
+	cfg := Config{Profile: "openai", BaseURL: "http://legacy", Model: "legacy", APIKey: "legacy"}
+	got, err := cfg.ApplyProfile()
+	if err != nil {
+		t.Fatalf("ApplyProfile: %v", err)
+	}
+	if got.BaseURL != "https://api.openai.com/v1" {
+		t.Errorf("BaseURL = %q, want openai default", got.BaseURL)
+	}
+	if got.Model != "gpt-4o-mini" {
+		t.Errorf("Model = %q, want gpt-4o-mini", got.Model)
+	}
+	// A built-in profile carries no key; legacy key must NOT leak into it.
+	if got.APIKey != "" {
+		t.Errorf("APIKey should be empty for built-in profile, got non-empty")
+	}
+	if got.HTTPTimeout != 120*time.Second {
+		t.Errorf("HTTPTimeout = %v, want 120s", got.HTTPTimeout)
+	}
+}
+
+func TestApplyProfileEnvOverridesDefaults(t *testing.T) {
+	t.Setenv("GOPHERMIND_PROFILE_OPENAI_BASE_URL", "http://proxy:8000/v1")
+	t.Setenv("GOPHERMIND_PROFILE_OPENAI_MODEL", "gpt-custom")
+	t.Setenv("GOPHERMIND_PROFILE_OPENAI_API_KEY", "sk-secret")
+	t.Setenv("GOPHERMIND_PROFILE_OPENAI_TIMEOUT", "45")
+
+	cfg := Config{Profile: "openai"}
+	got, err := cfg.ApplyProfile()
+	if err != nil {
+		t.Fatalf("ApplyProfile: %v", err)
+	}
+	if got.BaseURL != "http://proxy:8000/v1" {
+		t.Errorf("BaseURL = %q, want env override", got.BaseURL)
+	}
+	if got.Model != "gpt-custom" {
+		t.Errorf("Model = %q, want env override", got.Model)
+	}
+	if got.APIKey != "sk-secret" {
+		t.Errorf("APIKey not picked up from per-profile env")
+	}
+	if got.HTTPTimeout != 45*time.Second {
+		t.Errorf("HTTPTimeout = %v, want 45s", got.HTTPTimeout)
+	}
+}
+
+func TestApplyProfileHyphenatedName(t *testing.T) {
+	t.Setenv("GOPHERMIND_PROFILE_ANTHROPIC_PROXY_BASE_URL", "http://shim:9999/v1")
+	cfg := Config{Profile: "anthropic-proxy"}
+	got, err := cfg.ApplyProfile()
+	if err != nil {
+		t.Fatalf("ApplyProfile: %v", err)
+	}
+	if got.BaseURL != "http://shim:9999/v1" {
+		t.Errorf("BaseURL = %q, want hyphenated env override", got.BaseURL)
+	}
+}
+
+func TestApplyProfileCustomViaEnv(t *testing.T) {
+	t.Setenv("GOPHERMIND_PROFILE_MYBOX_BASE_URL", "http://mybox:1234/v1")
+	t.Setenv("GOPHERMIND_PROFILE_MYBOX_MODEL", "qwen")
+	cfg := Config{Profile: "mybox"}
+	got, err := cfg.ApplyProfile()
+	if err != nil {
+		t.Fatalf("ApplyProfile custom: %v", err)
+	}
+	if got.BaseURL != "http://mybox:1234/v1" || got.Model != "qwen" {
+		t.Errorf("custom profile not resolved: base=%q model=%q", got.BaseURL, got.Model)
+	}
+}
+
+func TestApplyProfileUnknown(t *testing.T) {
+	t.Setenv("GOPHERMIND_PROFILE_NOPE_BASE_URL", "")
+	cfg := Config{Profile: "nope"}
+	_, err := cfg.ApplyProfile()
+	if err == nil {
+		t.Fatal("expected error for unknown profile, got nil")
+	}
+	if !strings.Contains(err.Error(), "nope") {
+		t.Errorf("error should name the bad profile, got: %v", err)
+	}
+}
+
+func TestApplyProfileRejectsUnsafeNames(t *testing.T) {
+	for _, name := range []string{"  ", "../etc", "a/b", "foo bar", "x\ty", "dot.name"} {
+		cfg := Config{Profile: name}
+		if _, err := cfg.ApplyProfile(); err == nil {
+			t.Errorf("expected rejection for unsafe profile name %q", name)
+		}
+	}
+}
+
+func TestApplyProfileErrorDoesNotLeakSecrets(t *testing.T) {
+	// Even with key material in the environment, an unknown-profile error must
+	// not include it.
+	t.Setenv("GOPHERMIND_PROFILE_SECRETBOX_API_KEY", "sk-super-secret-value")
+	cfg := Config{Profile: "secretbox"} // no _BASE_URL => unknown
+	_, err := cfg.ApplyProfile()
+	if err == nil {
+		t.Fatal("expected unknown-profile error")
+	}
+	if strings.Contains(err.Error(), "sk-super-secret-value") {
+		t.Errorf("error leaked API key material: %v", err)
+	}
+}
+
+func TestProfileSelectionPrecedence(t *testing.T) {
+	// Env selects a profile; a non-empty flag value (simulated by overwriting
+	// Config.Profile) takes precedence — matching main.go's flag > env order.
+	t.Setenv("GOPHERMIND_PROFILE", "openai")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Profile != "openai" {
+		t.Errorf("Profile from env = %q, want openai", cfg.Profile)
+	}
+	// Flag override.
+	cfg.Profile = "local-llama"
+	got, err := cfg.ApplyProfile()
+	if err != nil {
+		t.Fatalf("ApplyProfile: %v", err)
+	}
+	if got.BaseURL != "http://127.0.0.1:8080" {
+		t.Errorf("flag-selected profile not applied: BaseURL=%q", got.BaseURL)
+	}
+}
+
+func TestConfigStringHasNoStringerLeak(t *testing.T) {
+	// Config has no custom Stringer; ensure default formatting that an operator
+	// might print never trips up — and that we don't accidentally add one that
+	// dumps the key. This guards the secrets-handling contract.
+	cfg := Config{Profile: "openai", APIKey: "sk-leak-me"}
+	// %v on a struct prints field values; that's expected for a plain struct.
+	// The contract we enforce elsewhere is that error/log paths never print the
+	// key. Here we simply assert ApplyProfile's error path stays clean.
+	cfg.Profile = "unknownxyz"
+	cfg.APIKey = "sk-leak-me"
+	if _, err := cfg.ApplyProfile(); err != nil && strings.Contains(err.Error(), "sk-leak-me") {
+		t.Errorf("ApplyProfile error leaked key: %v", err)
 	}
 }
 

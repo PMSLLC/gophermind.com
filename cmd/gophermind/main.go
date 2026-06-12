@@ -35,6 +35,8 @@ func run() error {
 		return err
 	}
 
+	profileFlag := flag.String("profile", cfg.Profile, "provider profile to select (e.g. local-llama, openai, anthropic-proxy)")
+	flag.StringVar(profileFlag, "p", cfg.Profile, "alias for -profile")
 	baseFlag := flag.String("base", cfg.BaseURL, "OpenAI-compatible endpoint base URL")
 	rootFlag := flag.String("root", cfg.RootDir, "repository root directory")
 	modelFlag := flag.String("model", cfg.Model, "model name (default: auto-discover from the endpoint)")
@@ -45,12 +47,31 @@ func run() error {
 	flag.Usage = usage
 	flag.Parse()
 
-	cfg.BaseURL = *baseFlag
+	// Which flags the user set explicitly — these take precedence over a
+	// profile's resolved values.
+	set := map[string]bool{}
+	flag.Visit(func(f *flag.Flag) { set[f.Name] = true })
+
+	// Select and resolve the profile first (flag > env). When a profile is
+	// active it fills BaseURL/Model/APIKey/HTTPTimeout from per-profile env >
+	// built-in defaults; an unknown name is a hard error.
+	cfg.Profile = *profileFlag
 	cfg.RootDir = *rootFlag
-	cfg.Model = *modelFlag
 	cfg.ApprovalMode = *modeFlag
 	cfg.MaxIter = *maxFlag
 	cfg.InsecureTLS = *insecureFlag
+	cfg, err = cfg.ApplyProfile()
+	if err != nil {
+		return err
+	}
+
+	// Explicit endpoint flags override the profile's resolved values.
+	if set["base"] {
+		cfg.BaseURL = *baseFlag
+	}
+	if set["model"] {
+		cfg.Model = *modelFlag
+	}
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
@@ -150,6 +171,17 @@ Environment (all optional; flags override):
   GOPHERMIND_MODEL      model name (default: auto-discovered)
   GOPHERMIND_API_KEY    bearer token (omit when reached over VPN)
   GOPHERMIND_APPROVAL   auto|ask (default: ask)
+  GOPHERMIND_PROFILE    provider profile to select (also -profile/-p)
+
+Provider profiles (selectable with -profile/-p):
+  Built-ins: local-llama, openai, anthropic-proxy. Each profile resolves its
+  endpoint from per-profile env vars over built-in defaults. Define your own by
+  setting GOPHERMIND_PROFILE_<NAME>_BASE_URL (the name's '-' becomes '_', e.g.
+  anthropic-proxy => GOPHERMIND_PROFILE_ANTHROPIC_PROXY_*):
+    GOPHERMIND_PROFILE_<NAME>_BASE_URL
+    GOPHERMIND_PROFILE_<NAME>_API_KEY
+    GOPHERMIND_PROFILE_<NAME>_MODEL
+    GOPHERMIND_PROFILE_<NAME>_TIMEOUT   (seconds)
 
 Flags:`)
 	flag.PrintDefaults()
