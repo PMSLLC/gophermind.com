@@ -28,23 +28,64 @@ func (s *scriptedProvider) handler(t *testing.T) http.HandlerFunc {
 			t.Errorf("decode request: %v", err)
 		}
 		s.requests = append(s.requests, req)
-		resp := `{"choices":[{"message":{"role":"assistant","content":"done"}}]}`
+		resp := finalResp("done")
 		if s.i < len(s.responses) {
 			resp = s.responses[s.i]
 			s.i++
 		}
+		w.Header().Set("Content-Type", "text/event-stream")
 		w.Write([]byte(resp))
 	}
 }
 
+// toolCallResp builds an SSE body whose single delta carries a tool call.
 func toolCallResp(id, name, args string) string {
-	b, _ := json.Marshal(args)
-	return `{"choices":[{"message":{"role":"assistant","content":"","tool_calls":[{"id":"` + id +
+	b, _ := json.Marshal(args) // JSON-string-escape the arguments
+	frame := `{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"` + id +
 		`","type":"function","function":{"name":"` + name + `","arguments":` + string(b) + `}}]}}]}`
+	return "data: " + frame + "\n\ndata: [DONE]\n\n"
 }
 
+// finalResp builds an SSE body whose single delta carries final prose.
 func finalResp(text string) string {
-	return `{"choices":[{"message":{"role":"assistant","content":"` + text + `"}}]}`
+	b, _ := json.Marshal(text)
+	frame := `{"choices":[{"delta":{"content":` + string(b) + `},"finish_reason":"stop"}]}`
+	return "data: " + frame + "\n\ndata: [DONE]\n\n"
+}
+
+func TestSendStreamsTokens(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, l := range []string{
+			`{"choices":[{"delta":{"content":"Hi "}}]}`,
+			`{"choices":[{"delta":{"content":"there"}}]}`,
+			`{"choices":[{"delta":{},"finish_reason":"stop"}]}`,
+			`[DONE]`,
+		} {
+			w.Write([]byte("data: " + l + "\n\n"))
+			w.(http.Flusher).Flush()
+		}
+	}))
+	defer srv.Close()
+
+	client := llm.New(srv.URL, "", "m", 5*time.Second, false)
+	reg := tools.NewRegistry(tools.ReadFile(t.TempDir()))
+	var tokens string
+	a := New(client, reg, 25, nil, func(e Event) {
+		if e.Type == "token" {
+			tokens += e.Text
+		}
+	})
+	out, err := a.Send(context.Background(), "hi")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if out != "Hi there" {
+		t.Errorf("answer = %q", out)
+	}
+	if tokens != "Hi there" {
+		t.Errorf("tokens = %q", tokens)
+	}
 }
 
 func newTestAgent(t *testing.T, sp *scriptedProvider, root string) *Agent {

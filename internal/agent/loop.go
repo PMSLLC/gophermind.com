@@ -62,7 +62,9 @@ func (a *Agent) Send(ctx context.Context, userInput string) (string, error) {
 			return "", err
 		}
 
-		reply, err := a.llm.Complete(ctx, a.msgs, defs)
+		reply, err := a.llm.Stream(ctx, a.msgs, defs, func(tok string) {
+			a.onEvent(Event{Type: "token", Text: tok})
+		})
 		if err != nil {
 			return "", fmt.Errorf("iteration %d: %w", i, err)
 		}
@@ -88,6 +90,13 @@ func (a *Agent) Send(ctx context.Context, userInput string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("hit max iterations (%d) without a final answer", a.maxIter)
+}
+
+// Reset clears the conversation back to just the system prompt.
+func (a *Agent) Reset() {
+	if len(a.msgs) > 0 {
+		a.msgs = a.msgs[:1]
+	}
 }
 
 // dispatch runs one tool call and returns the result string to feed back to
