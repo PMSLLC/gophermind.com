@@ -20,6 +20,14 @@ type Client struct {
 	HTTP    *http.Client
 	Retry   RetryPolicy // bounded exponential backoff for transient failures
 
+	// Fallbacks is an optional ordered list of models tried, in order, after the
+	// primary Model when a request fails with a fallback-eligible error (after
+	// that model's own retries are exhausted) — graceful degradation when the
+	// primary is down or missing. Empty (the default) means single-model behavior
+	// exactly as before: no fallback. The effective try-order is Model first,
+	// then these; see chain() for trimming/dedup/cap rules.
+	Fallbacks []string
+
 	// Cache, when non-nil, serves and stores non-streaming Complete results on
 	// disk keyed by a hash of the request inputs. Nil (the default) disables
 	// caching entirely: no disk I/O, behavior identical to a direct request.
@@ -67,8 +75,38 @@ func (c *Client) sleeper() sleepFn {
 // assistant message (which may carry tool calls) and the response's token
 // usage. Usage is the zero value when the endpoint omits the block.
 func (c *Client) Complete(ctx context.Context, msgs []Message, tools []Tool) (Message, Usage, error) {
+	models := c.chain()
+	var lastErr error
+	tried := make([]string, 0, len(models))
+	for _, model := range models {
+		// Respect the overall deadline across the whole chain: a context already
+		// done must not start another model's attempts.
+		if err := ctx.Err(); err != nil {
+			return Message{}, Usage{}, err
+		}
+		tried = append(tried, model)
+		msg, usage, eligible, err := c.completeModel(ctx, model, msgs, tools)
+		if err == nil {
+			return msg, usage, nil
+		}
+		lastErr = err
+		// A cancelled/deadline-exceeded context aborts the chain immediately.
+		if !fallbackEligible(ctx, eligible, err) {
+			break
+		}
+	}
+	return Message{}, Usage{}, wrapChainError(tried, lastErr)
+}
+
+// completeModel performs one model's full attempt budget (its own retries) for a
+// non-streaming completion. It returns the result on success, or the final error
+// plus whether that error is fallback-eligible (i.e. the chain should advance to
+// the next model). Cache lookup and store are keyed by THIS model, so a result
+// produced under a fallback is cached under the fallback's key and usage is
+// attributed to the model that actually answered.
+func (c *Client) completeModel(ctx context.Context, model string, msgs []Message, tools []Tool) (Message, Usage, bool, error) {
 	reqBody := ChatRequest{
-		Model:       c.Model,
+		Model:       model,
 		Messages:    msgs,
 		Tools:       tools,
 		Temperature: 0,
@@ -83,44 +121,50 @@ func (c *Client) Complete(ctx context.Context, msgs []Message, tools []Tool) (Me
 	// reflects actual spend, not re-counted cached tokens.
 	if c.Cache != nil {
 		if msg, _, ok := c.Cache.get(reqBody); ok {
-			return msg, Usage{}, nil
+			return msg, Usage{}, false, nil
 		}
 	}
 
 	body, err := json.Marshal(reqBody)
 	if err != nil {
-		return Message{}, Usage{}, fmt.Errorf("marshal request: %w", err)
+		return Message{}, Usage{}, false, fmt.Errorf("marshal request: %w", err)
 	}
 
 	attempts := c.Retry.attempts()
 	var lastErr error
+	var eligible bool
 	for attempt := 0; attempt < attempts; attempt++ {
-		msg, usage, retryAfter, retryable, err := c.completeOnce(ctx, body)
+		msg, usage, retryAfter, retryable, fbEligible, err := c.completeOnce(ctx, body)
 		if err == nil {
 			if c.Cache != nil {
 				c.Cache.put(reqBody, msg, usage)
 			}
-			return msg, usage, nil
+			return msg, usage, false, nil
 		}
 		lastErr = err
-		// Terminal error, or no attempts left: stop now.
+		eligible = fbEligible
+		// Terminal error, or no attempts left: stop retrying this model.
 		if !retryable || attempt == attempts-1 {
 			break
 		}
 		if err := c.sleeper()(ctx, c.Retry.backoff(attempt, retryAfter)); err != nil {
-			return Message{}, Usage{}, err // context cancelled/deadline during backoff
+			// Context cancelled/deadline during backoff: propagate; not eligible.
+			return Message{}, Usage{}, false, err
 		}
 	}
-	return Message{}, Usage{}, lastErr
+	return Message{}, Usage{}, eligible, lastErr
 }
 
 // completeOnce performs a single non-streaming round-trip. It returns the parsed
-// result on success, or an error plus whether that error is retryable and any
-// server-supplied Retry-After to honor on the next attempt.
-func (c *Client) completeOnce(ctx context.Context, body []byte) (Message, Usage, time.Duration, bool, error) {
+// result on success, or an error plus: whether that error is retryable (same
+// model), any server-supplied Retry-After, and whether the error is
+// fallback-eligible (advance to the next model). retryable and fbEligible are
+// independent: a 5xx is both (retry this model, then fall back); a 404 is
+// fallback-eligible but not retried; a 401/400 is neither.
+func (c *Client) completeOnce(ctx context.Context, body []byte) (msg Message, usage Usage, retryAfter time.Duration, retryable, fbEligible bool, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return Message{}, Usage{}, 0, false, fmt.Errorf("create request: %w", err)
+		return Message{}, Usage{}, 0, false, false, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.APIKey != "" {
@@ -129,45 +173,60 @@ func (c *Client) completeOnce(ctx context.Context, body []byte) (Message, Usage,
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		// Transport-level failure: retryable unless the context is done.
-		return Message{}, Usage{}, 0, retryableErr(ctx, err), fmt.Errorf("perform request: %w", err)
+		// Transport-level failure: retryable, and fallback-eligible, unless the
+		// context is done (then neither).
+		live := retryableErr(ctx, err)
+		return Message{}, Usage{}, 0, live, live, fmt.Errorf("perform request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Retryable status: drain a bounded slice of the body for the error message
-	// (don't grow memory on a hostile/huge error body) and report it.
+	// Retryable status (429/5xx): drain a bounded slice of the body for the error
+	// message (don't grow memory on a hostile/huge error body) and report it.
+	// These are also fallback-eligible once this model's retries are exhausted.
 	if retryableStatus(resp.StatusCode) {
 		errBody := readCapped(resp.Body)
-		return Message{}, Usage{}, parseRetryAfter(resp.Header), true,
+		return Message{}, Usage{}, parseRetryAfter(resp.Header), true, true,
 			fmt.Errorf("status %d: %s", resp.StatusCode, truncate(errBody))
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		// Reading the body failed mid-flight: a transient read error, retryable.
-		return Message{}, Usage{}, 0, retryableErr(ctx, err), fmt.Errorf("read response: %w", err)
+		// Reading the body failed mid-flight: a transient read error, retryable
+		// and fallback-eligible (unless the context is done).
+		live := retryableErr(ctx, err)
+		return Message{}, Usage{}, 0, live, live, fmt.Errorf("read response: %w", err)
 	}
 
 	var parsed ChatResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
 		// Decode failed; surface the raw body and status for debugging. Not retried.
-		return Message{}, Usage{}, 0, false, fmt.Errorf("status %d: unmarshal response: %w; body=%s", resp.StatusCode, err, truncate(respBody))
+		// On a >=300 status the body is an error page, not a real completion — a 404
+		// (model not found) or 5xx there is still fallback-eligible even when the
+		// body isn't JSON; a 2xx decode failure is a client-side problem (same for
+		// any model), so it is terminal.
+		fb := resp.StatusCode >= 300 && statusFallbackEligible(resp.StatusCode)
+		return Message{}, Usage{}, 0, false, fb, fmt.Errorf("status %d: unmarshal response: %w; body=%s", resp.StatusCode, err, truncate(respBody))
 	}
 	if parsed.Error != nil && parsed.Error.Message != "" {
-		return Message{}, Usage{}, 0, false, fmt.Errorf("provider error: %s", parsed.Error.Message)
+		// A model-not-found provider error justifies trying the next model even
+		// when the endpoint reported it with a non-404 status.
+		return Message{}, Usage{}, 0, false, looksLikeModelNotFound(parsed.Error.Message),
+			fmt.Errorf("provider error: %s", parsed.Error.Message)
 	}
 	if resp.StatusCode >= 300 {
-		// A non-retryable >=300 (e.g. 4xx other than 429): terminal.
-		return Message{}, Usage{}, 0, false, fmt.Errorf("status %d: %s", resp.StatusCode, truncate(respBody))
+		// A non-retryable >=300 (e.g. 4xx other than 429): terminal for this model;
+		// 404 (model not found) is fallback-eligible, 401/403/400 are not.
+		return Message{}, Usage{}, 0, false, statusFallbackEligible(resp.StatusCode),
+			fmt.Errorf("status %d: %s", resp.StatusCode, truncate(respBody))
 	}
 	if len(parsed.Choices) == 0 {
-		return Message{}, Usage{}, 0, false, fmt.Errorf("no choices in response; body=%s", truncate(respBody))
+		return Message{}, Usage{}, 0, false, false, fmt.Errorf("no choices in response; body=%s", truncate(respBody))
 	}
-	var usage Usage
+	var u Usage
 	if parsed.Usage != nil {
-		usage = *parsed.Usage
+		u = *parsed.Usage
 	}
-	return parsed.Choices[0].Message, usage, 0, false, nil
+	return parsed.Choices[0].Message, u, 0, false, false, nil
 }
 
 // DiscoverModel queries GET /v1/models and returns the id of the first model

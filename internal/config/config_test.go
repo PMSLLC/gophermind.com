@@ -57,6 +57,41 @@ func TestEnvOverrides(t *testing.T) {
 	}
 }
 
+func TestFallbackModelsParsing(t *testing.T) {
+	t.Setenv("GOPHERMIND_BASE_URL", "http://x")
+	t.Setenv("GOPHERMIND_MODEL", "m")
+	// Trims whitespace and drops empty entries.
+	t.Setenv("GOPHERMIND_FALLBACK_MODELS", " a , b ,, c ")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := []string{"a", "b", "c"}
+	if len(cfg.FallbackModels) != len(want) {
+		t.Fatalf("FallbackModels = %v, want %v", cfg.FallbackModels, want)
+	}
+	for i := range want {
+		if cfg.FallbackModels[i] != want[i] {
+			t.Errorf("FallbackModels[%d] = %q, want %q", i, cfg.FallbackModels[i], want[i])
+		}
+	}
+}
+
+func TestFallbackModelsDefaultsNil(t *testing.T) {
+	t.Setenv("GOPHERMIND_BASE_URL", "http://x")
+	t.Setenv("GOPHERMIND_MODEL", "m")
+	t.Setenv("GOPHERMIND_FALLBACK_MODELS", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.FallbackModels != nil {
+		t.Errorf("FallbackModels = %v, want nil (unset => no fallback)", cfg.FallbackModels)
+	}
+}
+
 func TestPriceEnvParsing(t *testing.T) {
 	t.Setenv("GOPHERMIND_BASE_URL", "http://x")
 	t.Setenv("GOPHERMIND_MODEL", "m")

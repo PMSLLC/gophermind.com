@@ -85,6 +85,7 @@ func run() error {
 	}
 
 	client := llm.New(cfg.BaseURL, cfg.APIKey, cfg.Model, cfg.HTTPTimeout, cfg.InsecureTLS)
+	client.Fallbacks = cfg.FallbackModels
 	client.Retry = llm.RetryPolicy{
 		MaxAttempts: cfg.MaxAttempts,
 		BaseDelay:   cfg.RetryBaseDelay,

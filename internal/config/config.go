@@ -52,16 +52,17 @@ var builtinProfiles = map[string]builtinProfile{
 // Config holds everything the harness needs to run. Every field has a sensible
 // default; an empty Model is auto-discovered from the endpoint at startup.
 type Config struct {
-	Profile      string        // GOPHERMIND_PROFILE: selected provider profile ("" => legacy/default endpoint)
-	BaseURL      string        // GOPHERMIND_BASE_URL (required), e.g. http://10.0.0.5:8000
-	APIKey       string        // GOPHERMIND_API_KEY (optional; empty when reached over VPN)
-	Model        string        // GOPHERMIND_MODEL
-	RootDir      string        // GOPHERMIND_ROOT (default: cwd)
-	ApprovalMode string        // GOPHERMIND_APPROVAL: auto|ask (default: ask)
-	InsecureTLS  bool          // GOPHERMIND_INSECURE_TLS: skip TLS verify (self-signed internal endpoints)
-	MaxIter      int           // GOPHERMIND_MAX_ITER (default: 25)
-	HTTPTimeout  time.Duration // GOPHERMIND_HTTP_TIMEOUT_S (default: 300s)
-	CmdTimeout   time.Duration // GOPHERMIND_CMD_TIMEOUT_S (default: 120s)
+	Profile        string        // GOPHERMIND_PROFILE: selected provider profile ("" => legacy/default endpoint)
+	BaseURL        string        // GOPHERMIND_BASE_URL (required), e.g. http://10.0.0.5:8000
+	APIKey         string        // GOPHERMIND_API_KEY (optional; empty when reached over VPN)
+	Model          string        // GOPHERMIND_MODEL
+	FallbackModels []string      // GOPHERMIND_FALLBACK_MODELS: comma-separated, tried in order after Model on a fallback-eligible failure
+	RootDir        string        // GOPHERMIND_ROOT (default: cwd)
+	ApprovalMode   string        // GOPHERMIND_APPROVAL: auto|ask (default: ask)
+	InsecureTLS    bool          // GOPHERMIND_INSECURE_TLS: skip TLS verify (self-signed internal endpoints)
+	MaxIter        int           // GOPHERMIND_MAX_ITER (default: 25)
+	HTTPTimeout    time.Duration // GOPHERMIND_HTTP_TIMEOUT_S (default: 300s)
+	CmdTimeout     time.Duration // GOPHERMIND_CMD_TIMEOUT_S (default: 120s)
 
 	// Bounded retry with exponential backoff for the LLM client. MaxAttempts is
 	// the total number of tries (1 disables retries; a single attempt still
@@ -97,16 +98,17 @@ func Load() (Config, error) {
 	}
 
 	return Config{
-		Profile:      envOr("GOPHERMIND_PROFILE", ""),
-		BaseURL:      envOr("GOPHERMIND_BASE_URL", defaultBaseURL),
-		APIKey:       envOr("GOPHERMIND_API_KEY", ""),
-		Model:        envOr("GOPHERMIND_MODEL", ""), // empty => auto-discover from /v1/models
-		RootDir:      root,
-		ApprovalMode: envOr("GOPHERMIND_APPROVAL", "ask"),
-		InsecureTLS:  envBool("GOPHERMIND_INSECURE_TLS"),
-		MaxIter:      envIntOr("GOPHERMIND_MAX_ITER", 25),
-		HTTPTimeout:  time.Duration(envIntOr("GOPHERMIND_HTTP_TIMEOUT_S", 300)) * time.Second,
-		CmdTimeout:   time.Duration(envIntOr("GOPHERMIND_CMD_TIMEOUT_S", 120)) * time.Second,
+		Profile:        envOr("GOPHERMIND_PROFILE", ""),
+		BaseURL:        envOr("GOPHERMIND_BASE_URL", defaultBaseURL),
+		APIKey:         envOr("GOPHERMIND_API_KEY", ""),
+		Model:          envOr("GOPHERMIND_MODEL", ""), // empty => auto-discover from /v1/models
+		FallbackModels: envList("GOPHERMIND_FALLBACK_MODELS"),
+		RootDir:        root,
+		ApprovalMode:   envOr("GOPHERMIND_APPROVAL", "ask"),
+		InsecureTLS:    envBool("GOPHERMIND_INSECURE_TLS"),
+		MaxIter:        envIntOr("GOPHERMIND_MAX_ITER", 25),
+		HTTPTimeout:    time.Duration(envIntOr("GOPHERMIND_HTTP_TIMEOUT_S", 300)) * time.Second,
+		CmdTimeout:     time.Duration(envIntOr("GOPHERMIND_CMD_TIMEOUT_S", 120)) * time.Second,
 
 		MaxAttempts:    envIntOr("GOPHERMIND_MAX_ATTEMPTS", 3),
 		RetryBaseDelay: time.Duration(envIntOr("GOPHERMIND_RETRY_BASE_DELAY_MS", 250)) * time.Millisecond,
@@ -241,6 +243,23 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// envList parses a comma-separated env var into a slice: each element is
+// trimmed and empties are dropped. An unset/empty var yields a nil slice (no
+// fallback). It does not dedup or cap — the llm client owns those concerns.
+func envList(key string) []string {
+	v := os.Getenv(key)
+	if v == "" {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.Split(v, ",") {
+		if s := strings.TrimSpace(part); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func envBool(key string) bool {

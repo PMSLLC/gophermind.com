@@ -39,27 +39,11 @@ type streamChunk struct {
 // stream ends, along with the token usage reported in the final chunk (zero value
 // when the endpoint omits it).
 func (c *Client) Stream(ctx context.Context, msgs []Message, tools []Tool, onToken func(string)) (Message, Usage, error) {
-	reqBody := ChatRequest{
-		Model:         c.Model,
-		Messages:      msgs,
-		Tools:         tools,
-		Temperature:   0,
-		Stream:        true,
-		StreamOptions: &StreamOptions{IncludeUsage: true},
-	}
-	if len(tools) > 0 {
-		reqBody.ToolChoice = "auto"
-	}
-	body, err := json.Marshal(reqBody)
-	if err != nil {
-		return Message{}, Usage{}, fmt.Errorf("marshal request: %w", err)
-	}
-
-	// Retry ONLY the initial connect/handshake: transport errors and retryable
-	// non-2xx statuses received before any byte of the stream is consumed. Once
-	// a 2xx body is in hand we hand off to streamBody, which never replays —
-	// surfacing a mid-stream break rather than re-emitting tokens.
-	resp, err := c.connectStream(ctx, body)
+	// Fall back across models ONLY on the initial connect (pre-token). Once a 2xx
+	// body is in hand, streaming begins and we never switch models mid-output: a
+	// mid-stream break is surfaced rather than re-issued under another model, so
+	// no tokens are ever duplicated or replayed.
+	resp, err := c.connectStreamChain(ctx, msgs, tools)
 	if err != nil {
 		return Message{}, Usage{}, err
 	}
@@ -134,37 +118,83 @@ func (c *Client) Stream(ctx context.Context, msgs []Message, tools []Tool, onTok
 	return msg, usage, nil
 }
 
-// connectStream establishes the streaming connection, retrying transient connect
-// failures (transport errors, 429, 5xx) with bounded backoff. It returns a live
-// 2xx response whose body has NOT yet been read, so the caller can stream it
-// exactly once. Retries happen only here, before any token is emitted.
-func (c *Client) connectStream(ctx context.Context, body []byte) (*http.Response, error) {
-	attempts := c.Retry.attempts()
+// connectStreamChain establishes the streaming connection, trying each model in
+// the chain in order. For each model it exhausts that model's own connect
+// retries; if the final connect error is fallback-eligible it advances to the
+// next model. It returns the first live 2xx response (body unread, to be
+// streamed exactly once), or the aggregated error when the whole chain fails.
+// Falling back happens only pre-token, here.
+func (c *Client) connectStreamChain(ctx context.Context, msgs []Message, tools []Tool) (*http.Response, error) {
+	models := c.chain()
 	var lastErr error
-	for attempt := 0; attempt < attempts; attempt++ {
-		resp, retryAfter, retryable, err := c.streamConnectOnce(ctx, body)
+	tried := make([]string, 0, len(models))
+	for _, model := range models {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		tried = append(tried, model)
+		resp, eligible, err := c.connectStreamModel(ctx, model, msgs, tools)
 		if err == nil {
 			return resp, nil
 		}
 		lastErr = err
+		if !fallbackEligible(ctx, eligible, err) {
+			break
+		}
+	}
+	return nil, wrapChainError(tried, lastErr)
+}
+
+// connectStreamModel runs one model's connect attempt budget (its own retries)
+// and returns a live 2xx response, or the final error plus whether it is
+// fallback-eligible (advance to the next model). Retries happen only here,
+// before any token is emitted.
+func (c *Client) connectStreamModel(ctx context.Context, model string, msgs []Message, tools []Tool) (*http.Response, bool, error) {
+	reqBody := ChatRequest{
+		Model:         model,
+		Messages:      msgs,
+		Tools:         tools,
+		Temperature:   0,
+		Stream:        true,
+		StreamOptions: &StreamOptions{IncludeUsage: true},
+	}
+	if len(tools) > 0 {
+		reqBody.ToolChoice = "auto"
+	}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, false, fmt.Errorf("marshal request: %w", err)
+	}
+
+	attempts := c.Retry.attempts()
+	var lastErr error
+	var eligible bool
+	for attempt := 0; attempt < attempts; attempt++ {
+		resp, retryAfter, retryable, fbEligible, err := c.streamConnectOnce(ctx, body)
+		if err == nil {
+			return resp, false, nil
+		}
+		lastErr = err
+		eligible = fbEligible
 		if !retryable || attempt == attempts-1 {
 			break
 		}
 		if err := c.sleeper()(ctx, c.Retry.backoff(attempt, retryAfter)); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 	}
-	return nil, lastErr
+	return nil, eligible, lastErr
 }
 
 // streamConnectOnce performs a single connect attempt. On a non-2xx it consumes
 // and closes the body so the connection can be reused, and reports whether the
-// failure is retryable plus any Retry-After. On success it returns the live
+// failure is retryable (same model), any Retry-After, and whether it is
+// fallback-eligible (advance to the next model). On success it returns the live
 // response with its body intact for streaming.
-func (c *Client) streamConnectOnce(ctx context.Context, body []byte) (*http.Response, time.Duration, bool, error) {
+func (c *Client) streamConnectOnce(ctx context.Context, body []byte) (*http.Response, time.Duration, bool, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return nil, 0, false, fmt.Errorf("create request: %w", err)
+		return nil, 0, false, false, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
@@ -173,7 +203,8 @@ func (c *Client) streamConnectOnce(ctx context.Context, body []byte) (*http.Resp
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return nil, 0, retryableErr(ctx, err), fmt.Errorf("perform request: %w", err)
+		live := retryableErr(ctx, err)
+		return nil, 0, live, live, fmt.Errorf("perform request: %w", err)
 	}
 	if resp.StatusCode >= 300 {
 		b := readCapped(resp.Body)
@@ -183,7 +214,7 @@ func (c *Client) streamConnectOnce(ctx context.Context, body []byte) (*http.Resp
 		if retry {
 			ra = parseRetryAfter(resp.Header)
 		}
-		return nil, ra, retry, fmt.Errorf("status %d: %s", resp.StatusCode, truncate(b))
+		return nil, ra, retry, statusFallbackEligible(resp.StatusCode), fmt.Errorf("status %d: %s", resp.StatusCode, truncate(b))
 	}
-	return resp, 0, false, nil
+	return resp, 0, false, false, nil
 }
