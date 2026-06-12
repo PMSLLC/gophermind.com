@@ -43,3 +43,24 @@ branch `security/audit-2026-06-12`, leave pre-existing untracked files alone.
   approval gate is the primary shell control. `internal/safety/safety.go`.
   Test: `TestCheckCommandWhitespaceBypass`.
 - Result: `go vet` clean, `go test ./...` PASS (no regressions).
+
+### Pass 2 (re-audit — no new actionable findings)
+- Secrets: API key only set as Authorization header (stream.go/client.go);
+  never logged/printed. OK.
+- TLS: `InsecureTLS` is opt-in, default-false, documented (self-signed internal
+  endpoints). Acceptable; noted, not changed.
+- exec surface: only `bash -lc` (shell, gated + deny-list) and rg/grep (search,
+  now `--`-terminated). No other exec.
+- SSRF/CSRF/CORS/authn/authz/PII: N/A for a single-user local CLI; LLM BaseURL
+  is operator-configured, not user-controlled.
+- Observation (non-security, not fixed): `read_file` returns full file content
+  unbounded (shell/search/list are truncated) — a context-window concern, not a
+  vuln; left as-is to avoid changing legitimate read semantics.
+- Dependency CVEs: `govulncheck ./...` → 0 reachable vulnerabilities (your code
+  calls none). 7 imported / 3 module advisories exist but are unreachable.
+
+### Deploy
+- Staged only. No production ship (gophermind has no remote deploy pipeline).
+  Build command recorded in DEPLOY_QUEUE.md. No IaC in repo.
+
+DONE: full audit pass clean, tests green, deploy staged. See BUILD_AUDIT_REPORT.md.
