@@ -90,6 +90,9 @@ func run() error {
 		BaseDelay:   cfg.RetryBaseDelay,
 		MaxDelay:    llm.DefaultRetryPolicy.MaxDelay,
 	}
+	if cfg.CacheEnabled {
+		client.Cache = &llm.Cache{Dir: cfg.CacheDir, TTL: cfg.CacheTTL}
+	}
 
 	// Auto-discover the model when none was configured.
 	if cfg.Model == "" {

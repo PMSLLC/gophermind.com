@@ -5,6 +5,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -73,6 +74,14 @@ type Config struct {
 	// 0, so the meter reports $0.00 until configured.
 	InputPricePer1K  float64 // GOPHERMIND_PRICE_INPUT_PER_1K
 	OutputPricePer1K float64 // GOPHERMIND_PRICE_OUTPUT_PER_1K
+
+	// Response cache for non-streaming completions, keyed by a hash of the
+	// request inputs. Off by default: caching writes prompt/response content to
+	// disk (a privacy consideration), and stale entries can surprise normal use,
+	// so it is opt-in for iterative dev and tests.
+	CacheEnabled bool          // GOPHERMIND_CACHE_ENABLED (default: false)
+	CacheDir     string        // GOPHERMIND_CACHE_DIR (default: <os user cache>/gophermind/cache, else .gophermind/cache under root)
+	CacheTTL     time.Duration // GOPHERMIND_CACHE_TTL (default: 24h)
 }
 
 // Load reads configuration from the environment and applies defaults. The
@@ -104,7 +113,22 @@ func Load() (Config, error) {
 
 		InputPricePer1K:  envFloatOr("GOPHERMIND_PRICE_INPUT_PER_1K", 0),
 		OutputPricePer1K: envFloatOr("GOPHERMIND_PRICE_OUTPUT_PER_1K", 0),
+
+		CacheEnabled: envBool("GOPHERMIND_CACHE_ENABLED"),
+		CacheDir:     envOr("GOPHERMIND_CACHE_DIR", defaultCacheDir(root)),
+		CacheTTL:     envDurationOr("GOPHERMIND_CACHE_TTL", 24*time.Hour),
 	}, nil
+}
+
+// defaultCacheDir picks a contained location for cached completions: the OS user
+// cache dir under gophermind/cache when available, otherwise .gophermind/cache
+// under the repo root. Both keep cache files out of the working tree's path of
+// fire and within a predictable, per-user location.
+func defaultCacheDir(root string) string {
+	if dir, err := os.UserCacheDir(); err == nil && dir != "" {
+		return filepath.Join(dir, "gophermind", "cache")
+	}
+	return filepath.Join(root, ".gophermind", "cache")
 }
 
 // profileNameRe constrains profile names to a safe, predictable charset. This
@@ -250,4 +274,18 @@ func envFloatOr(key string, fallback float64) float64 {
 		return fallback
 	}
 	return n
+}
+
+// envDurationOr parses a Go duration string (e.g. "24h", "30m"). An empty,
+// malformed, or negative value falls back to the default.
+func envDurationOr(key string, fallback time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		return fallback
+	}
+	return d
 }

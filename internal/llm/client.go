@@ -20,6 +20,11 @@ type Client struct {
 	HTTP    *http.Client
 	Retry   RetryPolicy // bounded exponential backoff for transient failures
 
+	// Cache, when non-nil, serves and stores non-streaming Complete results on
+	// disk keyed by a hash of the request inputs. Nil (the default) disables
+	// caching entirely: no disk I/O, behavior identical to a direct request.
+	Cache *Cache
+
 	// sleep performs the backoff wait; injectable so tests stay fast and
 	// deterministic. Defaults to ctxSleep (a real, context-aware timer).
 	sleep sleepFn
@@ -69,6 +74,15 @@ func (c *Client) Complete(ctx context.Context, msgs []Message, tools []Tool) (Me
 		reqBody.ToolChoice = "auto"
 	}
 
+	// On a fresh cache hit, return without touching the network. A hit incurred
+	// no real token spend, so it reports zero Usage — the session meter then
+	// reflects actual spend, not re-counted cached tokens.
+	if c.Cache != nil {
+		if msg, _, ok := c.Cache.get(reqBody); ok {
+			return msg, Usage{}, nil
+		}
+	}
+
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return Message{}, Usage{}, fmt.Errorf("marshal request: %w", err)
@@ -79,6 +93,9 @@ func (c *Client) Complete(ctx context.Context, msgs []Message, tools []Tool) (Me
 	for attempt := 0; attempt < attempts; attempt++ {
 		msg, usage, retryAfter, retryable, err := c.completeOnce(ctx, body)
 		if err == nil {
+			if c.Cache != nil {
+				c.Cache.put(reqBody, msg, usage)
+			}
 			return msg, usage, nil
 		}
 		lastErr = err
