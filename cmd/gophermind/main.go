@@ -7,7 +7,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -19,6 +18,7 @@ import (
 	"gophermind/internal/llm"
 	"gophermind/internal/safety"
 	"gophermind/internal/tools"
+	"gophermind/internal/tui"
 	"gophermind/internal/ui"
 )
 
@@ -92,9 +92,16 @@ func run() error {
 
 	switch cmd {
 	case "chat":
-		printer := ui.Printer{Verbose: true} // interactive: always show activity
-		ag := agent.New(client, reg, cfg.MaxIter, approve, printer.Event)
-		return repl(stdin, ag, cfg)
+		if !isatty() {
+			return fmt.Errorf("interactive session needs a terminal; use `run`/`ask` for non-interactive use")
+		}
+		return tui.Run(tui.Config{
+			Client:   client,
+			Registry: reg,
+			Model:    cfg.Model,
+			Mode:     cfg.ApprovalMode,
+			MaxIter:  cfg.MaxIter,
+		})
 	case "run", "ask":
 		if task == "" {
 			return fmt.Errorf("%s requires a task argument", cmd)
@@ -118,61 +125,10 @@ func run() error {
 	}
 }
 
-// repl runs the interactive session. Each line is one turn; Ctrl-C interrupts
-// the current turn and returns to the prompt; Ctrl-D (EOF) or "exit"/"quit"
-// ends the session.
-func repl(stdin *bufio.Reader, ag *agent.Agent, cfg config.Config) error {
-	fmt.Fprintf(os.Stderr, "gophermind — %s @ %s  [%s mode, root %s]\n", cfg.Model, cfg.BaseURL, cfg.ApprovalMode, cfg.RootDir)
-	fmt.Fprintln(os.Stderr, "Type a task. Ctrl-C interrupts, Ctrl-D or \"exit\" quits.")
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt)
-	defer signal.Stop(sigCh)
-
-	for {
-		fmt.Fprint(os.Stderr, "\n› ")
-		line, err := stdin.ReadString('\n')
-		if err != nil { // EOF
-			fmt.Fprintln(os.Stderr)
-			return nil
-		}
-		line = strings.TrimSpace(line)
-		switch line {
-		case "":
-			continue
-		case "exit", "quit":
-			return nil
-		}
-
-		// Drop any stray interrupt that arrived while idle at the prompt.
-		select {
-		case <-sigCh:
-		default:
-		}
-
-		turnCtx, cancel := context.WithCancel(context.Background())
-		done := make(chan struct{})
-		go func() {
-			select {
-			case <-sigCh:
-				cancel()
-			case <-done:
-			}
-		}()
-
-		answer, err := ag.Send(turnCtx, line)
-		close(done)
-		cancel()
-
-		switch {
-		case errors.Is(err, context.Canceled):
-			fmt.Fprintln(os.Stderr, "\n(interrupted)")
-		case err != nil:
-			fmt.Fprintln(os.Stderr, "error:", err)
-		case answer != "":
-			fmt.Println("\n" + answer)
-		}
-	}
+// isatty reports whether stdin is an interactive terminal.
+func isatty() bool {
+	fi, err := os.Stdin.Stat()
+	return err == nil && (fi.Mode()&os.ModeCharDevice) != 0
 }
 
 func usage() {
