@@ -31,16 +31,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitFor(m.sub)
 
 	case assistantMsg:
-		m.transcript += "\n" + string(msg) + "\n"
-		return m, waitFor(m.sub)
+		return m, tea.Batch(tea.Println(string(msg)), waitFor(m.sub))
 
 	case toolCallMsg:
-		m.transcript += "\n● " + msg.name + "  " + oneLine(msg.args) + "\n"
-		return m, waitFor(m.sub)
+		return m, tea.Batch(tea.Println("● "+msg.name+"  "+oneLine(msg.args)), waitFor(m.sub))
 
 	case toolResultMsg:
-		m.transcript += "  " + oneLine(msg.text) + "\n"
-		return m, waitFor(m.sub)
+		return m, tea.Batch(tea.Println("  "+oneLine(msg.text)), waitFor(m.sub))
 
 	case approvalMsg:
 		m.st = stateApproval
@@ -48,24 +45,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitFor(m.sub)
 
 	case doneMsg:
+		var cmd tea.Cmd
 		if s := strings.TrimSpace(m.stream); s != "" {
-			if out, err := m.render.Render(s); err == nil {
-				m.transcript += "\n" + out
-			} else {
-				m.transcript += "\n" + s + "\n"
+			out := s
+			if m.render != nil {
+				if rendered, err := m.render.Render(s); err == nil {
+					out = rendered
+				}
 			}
+			cmd = tea.Println(strings.TrimRight(out, "\n"))
 		}
 		m.stream = ""
 		m.st = stateIdle
 		m.cancel = nil
-		return m, waitFor(m.sub)
+		return m, tea.Batch(cmd, waitFor(m.sub))
 
 	case errMsg:
 		m.stream = ""
 		m.st = stateIdle
 		m.cancel = nil
-		m.transcript += "\nerror: " + msg.err.Error() + "\n"
-		return m, waitFor(m.sub)
+		return m, tea.Batch(tea.Println("error: "+msg.err.Error()), waitFor(m.sub))
 	}
 	return m, nil
 }
@@ -124,21 +123,19 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 	case "/exit", "/quit":
 		return m, tea.Quit
 	case "/clear":
-		m.transcript = ""
 		m.stream = ""
+		m.st = stateIdle
 		if m.agent != nil {
 			m.agent.Reset()
 		}
-		return m, nil
+		return m, tea.ClearScreen
 	case "/help":
-		m.transcript += "\nCommands: /help  /clear  /exit · y/n/a to approve · Esc to interrupt\n"
-		return m, nil
+		return m, tea.Println("Commands: /help  /clear  /exit · y/n/a to approve · Esc to interrupt")
 	}
 
-	m.transcript += "\n› " + text + "\n"
 	m.st = stateWorking
 	if m.agent == nil {
-		return m, nil
+		return m, tea.Println("› " + text)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -153,7 +150,7 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 			sub <- doneMsg{answer: ans}
 		}
 	}()
-	return m, nil
+	return m, tea.Println("› " + text)
 }
 
 func oneLine(s string) string {

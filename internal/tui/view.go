@@ -19,9 +19,9 @@ func (m model) View() string {
 		return "starting…"
 	}
 
-	body := m.transcript
+	body := ""
 	if m.st == stateWorking && m.stream != "" {
-		body += "\n" + m.stream
+		body = m.stream + "\n"
 	}
 
 	var status string

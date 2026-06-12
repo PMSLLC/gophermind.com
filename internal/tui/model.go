@@ -53,8 +53,7 @@ type model struct {
 	spin   spinner.Model
 	render *glamour.TermRenderer
 
-	transcript string // committed scrollback
-	stream     string // prose buffered during the current streaming turn
+	stream string // prose buffered during the current streaming turn (shown live)
 
 	st      state
 	pending approvalMsg // valid when st == stateApproval
@@ -64,7 +63,6 @@ type model struct {
 	width  int
 	height int
 	ready  bool
-	err    error
 }
 
 // newModel builds the model. buildAgent receives the bridge channel and the

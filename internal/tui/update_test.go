@@ -13,16 +13,19 @@ func testModel() model {
 	return m
 }
 
-func TestSlashClearResetsTranscript(t *testing.T) {
+func TestSlashClearResetsState(t *testing.T) {
 	m := testModel()
-	m.transcript = "old stuff"
+	m.stream = "leftover"
 	m.input.SetValue("/clear")
-	m2, _ := m.handleSubmit()
-	if m2.transcript != "" {
-		t.Errorf("transcript not cleared: %q", m2.transcript)
+	m2, cmd := m.handleSubmit()
+	if m2.stream != "" {
+		t.Errorf("stream not cleared: %q", m2.stream)
 	}
 	if m2.st != stateIdle {
 		t.Errorf("state = %v, want idle", m2.st)
+	}
+	if cmd == nil {
+		t.Error("expected a clear-screen command")
 	}
 }
 
