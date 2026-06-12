@@ -27,11 +27,15 @@ func Search(root string) Tool {
 				return "", fmt.Errorf("empty pattern")
 			}
 
+			// The "--" terminator forces the user-supplied pattern to be parsed
+			// as a positional argument, never as an option. Without it a pattern
+			// like "--pre=…" or "-f…" would be interpreted as a flag (rg's
+			// --pre can run an external preprocessor) — argument injection.
 			var cmd *exec.Cmd
 			if _, err := exec.LookPath("rg"); err == nil {
-				cmd = exec.CommandContext(ctx, "rg", "-n", "--hidden", "--glob", "!.git", a.Pattern)
+				cmd = exec.CommandContext(ctx, "rg", "-n", "--hidden", "--glob", "!.git", "--", a.Pattern)
 			} else {
-				cmd = exec.CommandContext(ctx, "grep", "-rn", "--exclude-dir=.git", a.Pattern, ".")
+				cmd = exec.CommandContext(ctx, "grep", "-rn", "--exclude-dir=.git", "-e", a.Pattern, "--", ".")
 			}
 			cmd.Dir = root
 

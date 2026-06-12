@@ -107,6 +107,23 @@ func TestListFiles(t *testing.T) {
 	}
 }
 
+// A pattern beginning with "-" must be treated as a literal search pattern,
+// not parsed as a command-line flag (argument injection — e.g. rg's --pre
+// preprocessor). With the "--" terminator the search runs and matches the
+// literal text rather than erroring on an "unknown flag".
+func TestSearchPatternNotTreatedAsFlag(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "notes.txt"), []byte("this line needs --pre review\n"), 0o644)
+
+	out, err := Search(root).Run(context.Background(), args(t, map[string]string{"pattern": "--pre"}))
+	if err != nil {
+		t.Fatalf("search with dash-pattern should not error (arg injection guard): %v", err)
+	}
+	if !strings.Contains(out, "--pre") {
+		t.Errorf("expected literal match for %q, got %q", "--pre", out)
+	}
+}
+
 func TestRunShell(t *testing.T) {
 	root := t.TempDir()
 	ctx := context.Background()
