@@ -421,6 +421,71 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+func TestClientCertEnvParsing(t *testing.T) {
+	t.Setenv("GOPHERMIND_BASE_URL", "http://x")
+	t.Setenv("GOPHERMIND_MODEL", "m")
+	t.Setenv("GOPHERMIND_CLIENT_CERT", "/etc/certs/client.crt")
+	t.Setenv("GOPHERMIND_CLIENT_KEY", "/etc/certs/client.key")
+	t.Setenv("GOPHERMIND_CA_CERT", "/etc/certs/ca.crt")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ClientCertPath != "/etc/certs/client.crt" {
+		t.Errorf("ClientCertPath = %q", cfg.ClientCertPath)
+	}
+	if cfg.ClientKeyPath != "/etc/certs/client.key" {
+		t.Errorf("ClientKeyPath = %q", cfg.ClientKeyPath)
+	}
+	if cfg.CACertPath != "/etc/certs/ca.crt" {
+		t.Errorf("CACertPath = %q", cfg.CACertPath)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate with both cert+key: %v", err)
+	}
+}
+
+func TestClientCertDefaultsEmpty(t *testing.T) {
+	t.Setenv("GOPHERMIND_BASE_URL", "http://x")
+	t.Setenv("GOPHERMIND_MODEL", "m")
+	for _, k := range []string{"GOPHERMIND_CLIENT_CERT", "GOPHERMIND_CLIENT_KEY", "GOPHERMIND_CA_CERT"} {
+		t.Setenv(k, "")
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ClientCertPath != "" || cfg.ClientKeyPath != "" || cfg.CACertPath != "" {
+		t.Errorf("cert paths should default empty, got cert=%q key=%q ca=%q", cfg.ClientCertPath, cfg.ClientKeyPath, cfg.CACertPath)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate with no cert config: %v", err)
+	}
+}
+
+func TestValidateRejectsCertWithoutKey(t *testing.T) {
+	cfg := Config{BaseURL: "http://x", Model: "m", ApprovalMode: "ask", MaxIter: 1, ClientCertPath: "/c.crt"}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error: cert without key")
+	}
+}
+
+func TestValidateRejectsKeyWithoutCert(t *testing.T) {
+	cfg := Config{BaseURL: "http://x", Model: "m", ApprovalMode: "ask", MaxIter: 1, ClientKeyPath: "/c.key"}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error: key without cert")
+	}
+}
+
+func TestValidateAcceptsCAAlone(t *testing.T) {
+	// A custom CA without client-cert auth is valid (server-trust only).
+	cfg := Config{BaseURL: "http://x", Model: "m", ApprovalMode: "ask", MaxIter: 1, CACertPath: "/ca.crt"}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("CA-only config should validate: %v", err)
+	}
+}
+
 func TestTranscriptPathDefaultsEmpty(t *testing.T) {
 	t.Setenv("GOPHERMIND_BASE_URL", "http://x")
 	t.Setenv("GOPHERMIND_TRANSCRIPT", "")

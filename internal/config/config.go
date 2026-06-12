@@ -96,6 +96,16 @@ type Config struct {
 	RootDir        string        // GOPHERMIND_ROOT (default: cwd)
 	ApprovalMode   string        // GOPHERMIND_APPROVAL: auto|ask (default: ask)
 	InsecureTLS    bool          // GOPHERMIND_INSECURE_TLS: skip TLS verify (self-signed internal endpoints)
+
+	// Optional mutual-TLS / custom-CA for reaching internal endpoints SECURELY
+	// (the safe alternative to InsecureTLS). ClientCertPath + ClientKeyPath
+	// enable client-certificate auth and are required together; CACertPath adds
+	// a private CA to trust for the server while keeping verification ON. The
+	// key path's CONTENTS are never logged; see internal/llm.TLSOptions.
+	ClientCertPath string // GOPHERMIND_CLIENT_CERT: PEM client certificate (with GOPHERMIND_CLIENT_KEY)
+	ClientKeyPath  string // GOPHERMIND_CLIENT_KEY: PEM client private key (with GOPHERMIND_CLIENT_CERT)
+	CACertPath     string // GOPHERMIND_CA_CERT: PEM CA bundle to trust for the server (appended to system roots)
+
 	MaxIter        int           // GOPHERMIND_MAX_ITER (default: 25)
 	HTTPTimeout    time.Duration // GOPHERMIND_HTTP_TIMEOUT_S (default: 300s)
 	CmdTimeout     time.Duration // GOPHERMIND_CMD_TIMEOUT_S (default: 120s)
@@ -159,6 +169,9 @@ func Load() (Config, error) {
 		RootDir:        root,
 		ApprovalMode:   envOr("GOPHERMIND_APPROVAL", "ask"),
 		InsecureTLS:    envBool("GOPHERMIND_INSECURE_TLS"),
+		ClientCertPath: envOr("GOPHERMIND_CLIENT_CERT", ""),
+		ClientKeyPath:  envOr("GOPHERMIND_CLIENT_KEY", ""),
+		CACertPath:     envOr("GOPHERMIND_CA_CERT", ""),
 		MaxIter:        envIntOr("GOPHERMIND_MAX_ITER", 25),
 		HTTPTimeout:    time.Duration(envIntOr("GOPHERMIND_HTTP_TIMEOUT_S", 300)) * time.Second,
 		CmdTimeout:     time.Duration(envIntOr("GOPHERMIND_CMD_TIMEOUT_S", 120)) * time.Second,
@@ -290,6 +303,13 @@ func (c Config) Validate() error {
 	}
 	if c.RetryBaseDelay < 0 {
 		return fmt.Errorf("retry base delay must be >= 0, got %v", c.RetryBaseDelay)
+	}
+	// Client-certificate auth requires BOTH a cert and a key; one without the
+	// other is a configuration error. (The files' existence and PEM validity are
+	// checked at client construction so startup fails fast.) The error names the
+	// env vars but never any file contents.
+	if (c.ClientCertPath != "") != (c.ClientKeyPath != "") {
+		return fmt.Errorf("client certificate auth requires BOTH GOPHERMIND_CLIENT_CERT and GOPHERMIND_CLIENT_KEY (got only one)")
 	}
 	if err := ValidateTemperature(c.Temperature); err != nil {
 		return err

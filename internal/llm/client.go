@@ -3,7 +3,6 @@ package llm
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -52,12 +51,28 @@ type Client struct {
 // New constructs a Client. timeout bounds a single completion round-trip.
 // When insecureTLS is true, server certificate verification is skipped — used
 // for self-signed internal endpoints reached over a trusted VPN.
+//
+// New is the simple, backward-compatible constructor and cannot fail. For
+// optional client-certificate (mutual TLS) auth or a custom CA bundle — the
+// SECURE alternative to insecureTLS — use NewWithTLS, which validates the cert
+// material and returns a config-time error.
 func New(baseURL, apiKey, model string, timeout time.Duration, insecureTLS bool) *Client {
-	httpClient := &http.Client{Timeout: timeout}
-	if insecureTLS {
-		httpClient.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
+	// The bool-only path never has cert/key/CA, so buildTLSConfig cannot error;
+	// NewWithTLS is the same code with validation surfaced.
+	c, _ := NewWithTLS(baseURL, apiKey, model, timeout, TLSOptions{InsecureSkipVerify: insecureTLS})
+	return c
+}
+
+// NewWithTLS constructs a Client with explicit TLS options, supporting optional
+// mutual-TLS (client certificate) and a custom CA bundle for verifying the
+// server — the secure way to reach internal endpoints without disabling
+// verification. It returns a config-time error if the cert/key/CA material is
+// missing, unreadable, malformed, or only one of cert/key is supplied. The
+// private key is loaded via tls.LoadX509KeyPair and never logged.
+func NewWithTLS(baseURL, apiKey, model string, timeout time.Duration, tlsOpts TLSOptions) (*Client, error) {
+	httpClient, err := httpClientFor(timeout, tlsOpts)
+	if err != nil {
+		return nil, err
 	}
 	return &Client{
 		BaseURL: strings.TrimRight(baseURL, "/"),
@@ -66,7 +81,7 @@ func New(baseURL, apiKey, model string, timeout time.Duration, insecureTLS bool)
 		HTTP:    httpClient,
 		Retry:   DefaultRetryPolicy,
 		sleep:   ctxSleep,
-	}
+	}, nil
 }
 
 // sleeper returns the configured sleeper, defaulting to ctxSleep when a Client

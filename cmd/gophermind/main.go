@@ -43,6 +43,9 @@ func run() error {
 	modeFlag := flag.String("mode", cfg.ApprovalMode, "approval mode for mutating tools: auto|ask")
 	maxFlag := flag.Int("max", cfg.MaxIter, "maximum loop iterations per turn")
 	insecureFlag := flag.Bool("insecure", cfg.InsecureTLS, "skip TLS verification (self-signed internal endpoints)")
+	clientCertFlag := flag.String("client-cert", cfg.ClientCertPath, "PEM client certificate for mutual TLS (requires -client-key); secure alternative to -insecure")
+	clientKeyFlag := flag.String("client-key", cfg.ClientKeyPath, "PEM client private key for mutual TLS (requires -client-cert)")
+	caCertFlag := flag.String("ca-cert", cfg.CACertPath, "PEM CA bundle to trust for the server (appended to system roots; keeps verification ON)")
 	verboseFlag := flag.Bool("v", false, "verbose: stream assistant text and tool results")
 	transcriptFlag := flag.String("transcript", cfg.TranscriptPath, "write the full wire-level message history (JSONL) to this path at session end; MAY CONTAIN SENSITIVE PROMPTS/RESPONSES (file written 0600, no credentials included)")
 	flag.Usage = usage
@@ -61,6 +64,9 @@ func run() error {
 	cfg.ApprovalMode = *modeFlag
 	cfg.MaxIter = *maxFlag
 	cfg.InsecureTLS = *insecureFlag
+	cfg.ClientCertPath = *clientCertFlag
+	cfg.ClientKeyPath = *clientKeyFlag
+	cfg.CACertPath = *caCertFlag
 	cfg.TranscriptPath = *transcriptFlag
 	cfg, err = cfg.ApplyProfile()
 	if err != nil {
@@ -86,7 +92,18 @@ func run() error {
 		task = strings.TrimSpace(strings.Join(args[1:], " "))
 	}
 
-	client := llm.New(cfg.BaseURL, cfg.APIKey, cfg.Model, cfg.HTTPTimeout, cfg.InsecureTLS)
+	// NewWithTLS fails fast on bad cert/key/CA material so a misconfigured secure
+	// deployment errors at startup rather than mid-request. The zero TLSOptions
+	// (no cert/key/CA, insecure=false) reproduces the prior default transport.
+	client, err := llm.NewWithTLS(cfg.BaseURL, cfg.APIKey, cfg.Model, cfg.HTTPTimeout, llm.TLSOptions{
+		InsecureSkipVerify: cfg.InsecureTLS,
+		ClientCertPath:     cfg.ClientCertPath,
+		ClientKeyPath:      cfg.ClientKeyPath,
+		CACertPath:         cfg.CACertPath,
+	})
+	if err != nil {
+		return fmt.Errorf("TLS setup: %w", err)
+	}
 	client.Fallbacks = cfg.FallbackModels
 	client.SetTemperature(cfg.Temperature)
 	client.SetTopP(cfg.TopP)
@@ -199,6 +216,12 @@ Environment (all optional; flags override):
   GOPHERMIND_MODEL      model name (default: auto-discovered)
   GOPHERMIND_API_KEY    bearer token (omit when reached over VPN)
   GOPHERMIND_APPROVAL   auto|ask (default: ask)
+  GOPHERMIND_CLIENT_CERT  PEM client cert for mutual TLS (with _CLIENT_KEY; also -client-cert)
+  GOPHERMIND_CLIENT_KEY   PEM client key for mutual TLS (with _CLIENT_CERT; also -client-key)
+  GOPHERMIND_CA_CERT      PEM CA to trust for the server, appended to system roots,
+                          verification stays ON — the secure alternative to -insecure
+                          (also -ca-cert). Precedence: with -insecure, verification is
+                          OFF but a configured client cert is still presented.
   GOPHERMIND_TEMPERATURE  sampling temperature [0,2] (default: 0; also /temp)
   GOPHERMIND_TOP_P        nucleus top_p (0,1] (default: unset; also /topp)
   GOPHERMIND_PROFILE    provider profile to select (also -profile/-p)
