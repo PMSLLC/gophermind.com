@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"gophermind/internal/agent"
@@ -41,6 +42,11 @@ func (a *allowSet) has(tool string) bool {
 	return a.m[tool]
 }
 
+const (
+	inputHeight  = 3 // bordered single-line textarea
+	statusHeight = 1
+)
+
 type model struct {
 	agent   *agent.Agent
 	sub     chan tea.Msg // agent events + approval requests + done/err arrive here
@@ -49,11 +55,13 @@ type model struct {
 	model string // model name, for the status line
 	mode  string // "auto" | "ask"
 
-	input  textarea.Model
-	spin   spinner.Model
-	render *glamour.TermRenderer
+	input    textarea.Model
+	viewport viewport.Model
+	spin     spinner.Model
+	render   *glamour.TermRenderer
 
-	stream string // prose buffered during the current streaming turn (shown live)
+	content string // committed transcript shown in the viewport
+	stream  string // prose buffered during the current streaming turn
 
 	st      state
 	pending approvalMsg // valid when st == stateApproval
@@ -85,18 +93,44 @@ func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent,
 	r, _ := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(80))
 
 	return model{
-		agent:   buildAgent(sub, allowed),
-		sub:     sub,
-		allowed: allowed,
-		model:   modelName,
-		mode:    mode,
-		input:   ta,
-		spin:    sp,
-		render:  r,
-		st:      stateIdle,
+		agent:    buildAgent(sub, allowed),
+		sub:      sub,
+		allowed:  allowed,
+		model:    modelName,
+		mode:     mode,
+		input:    ta,
+		viewport: viewport.New(0, 0),
+		spin:     sp,
+		render:   r,
+		st:       stateIdle,
 	}
 }
 
 func (m model) Init() tea.Cmd {
 	return tea.Batch(textarea.Blink, m.spin.Tick, waitFor(m.sub))
+}
+
+// appendLine adds one line to the committed transcript.
+func (m *model) appendLine(s string) {
+	if m.content != "" {
+		m.content += "\n"
+	}
+	m.content += s
+}
+
+// sync pushes the committed content plus any in-progress stream into the
+// viewport and scrolls to the bottom.
+func (m *model) sync() {
+	if !m.ready {
+		return
+	}
+	body := m.content
+	if m.stream != "" {
+		if body != "" {
+			body += "\n"
+		}
+		body += m.stream
+	}
+	m.viewport.SetContent(body)
+	m.viewport.GotoBottom()
 }

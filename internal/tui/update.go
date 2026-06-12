@@ -5,7 +5,9 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 )
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -13,9 +15,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		vpH := msg.Height - inputHeight - statusHeight
+		if vpH < 1 {
+			vpH = 1
+		}
+		if !m.ready {
+			m.viewport = viewport.New(msg.Width, vpH)
+			m.ready = true
+		} else {
+			m.viewport.Width = msg.Width
+			m.viewport.Height = vpH
+		}
 		m.input.SetWidth(msg.Width - 2)
-		m.ready = true
+		if r, err := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(msg.Width-2)); err == nil {
+			m.render = r
+		}
+		m.sync()
 		return m, nil
+
+	case tea.MouseMsg:
+		var cmd tea.Cmd
+		m.viewport, cmd = m.viewport.Update(msg)
+		return m, cmd
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -28,16 +49,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tokenMsg:
 		m.stream += string(msg)
 		m.tokens++
+		m.sync()
 		return m, waitFor(m.sub)
 
 	case assistantMsg:
-		return m, tea.Batch(tea.Println(string(msg)), waitFor(m.sub))
+		m.appendLine(string(msg))
+		m.sync()
+		return m, waitFor(m.sub)
 
 	case toolCallMsg:
-		return m, tea.Batch(tea.Println("● "+msg.name+"  "+oneLine(msg.args)), waitFor(m.sub))
+		m.appendLine("● " + msg.name + "  " + oneLine(msg.args))
+		m.sync()
+		return m, waitFor(m.sub)
 
 	case toolResultMsg:
-		return m, tea.Batch(tea.Println("  "+oneLine(msg.text)), waitFor(m.sub))
+		m.appendLine("  " + oneLine(msg.text))
+		m.sync()
+		return m, waitFor(m.sub)
 
 	case approvalMsg:
 		m.st = stateApproval
@@ -45,26 +73,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitFor(m.sub)
 
 	case doneMsg:
-		var cmd tea.Cmd
 		if s := strings.TrimSpace(m.stream); s != "" {
 			out := s
 			if m.render != nil {
 				if rendered, err := m.render.Render(s); err == nil {
-					out = rendered
+					out = strings.TrimRight(rendered, "\n")
 				}
 			}
-			cmd = tea.Println(strings.TrimRight(out, "\n"))
+			m.appendLine(out)
 		}
 		m.stream = ""
 		m.st = stateIdle
 		m.cancel = nil
-		return m, tea.Batch(cmd, waitFor(m.sub))
+		m.sync()
+		return m, waitFor(m.sub)
 
 	case errMsg:
+		m.appendLine("error: " + msg.err.Error())
 		m.stream = ""
 		m.st = stateIdle
 		m.cancel = nil
-		return m, tea.Batch(tea.Println("error: "+msg.err.Error()), waitFor(m.sub))
+		m.sync()
+		return m, waitFor(m.sub)
 	}
 	return m, nil
 }
@@ -73,6 +103,11 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyCtrlC, tea.KeyCtrlD:
 		return m, tea.Quit
+
+	case tea.KeyPgUp, tea.KeyPgDown:
+		var cmd tea.Cmd
+		m.viewport, cmd = m.viewport.Update(msg)
+		return m, cmd
 
 	case tea.KeyEsc:
 		if m.st == stateApproval {
@@ -123,19 +158,26 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 	case "/exit", "/quit":
 		return m, tea.Quit
 	case "/clear":
+		m.content = ""
 		m.stream = ""
 		m.st = stateIdle
 		if m.agent != nil {
 			m.agent.Reset()
 		}
-		return m, tea.ClearScreen
+		m.sync()
+		return m, nil
 	case "/help":
-		return m, tea.Println("Commands: /help  /clear  /exit · y/n/a to approve · Esc to interrupt")
+		m.appendLine("Commands: /help  /clear  /exit · y/n/a to approve · Esc to interrupt")
+		m.sync()
+		return m, nil
 	}
 
+	m.appendLine("")
+	m.appendLine("› " + text)
 	m.st = stateWorking
+	m.sync()
 	if m.agent == nil {
-		return m, tea.Println("› " + text)
+		return m, nil
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -150,7 +192,7 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 			sub <- doneMsg{answer: ans}
 		}
 	}()
-	return m, tea.Println("› " + text)
+	return m, nil
 }
 
 func oneLine(s string) string {

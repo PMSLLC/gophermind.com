@@ -19,11 +19,6 @@ func (m model) View() string {
 		return "starting…"
 	}
 
-	body := ""
-	if m.st == stateWorking && m.stream != "" {
-		body = m.stream + "\n"
-	}
-
 	var status string
 	switch m.st {
 	case stateWorking:
@@ -31,14 +26,18 @@ func (m model) View() string {
 	case stateApproval:
 		status = fmt.Sprintf("approve %s %s ? (y)es (n)o (a)lways", m.pending.tool, oneLine(m.pending.args))
 	default:
-		status = fmt.Sprintf("%s · %s mode · ready", m.model, m.mode)
+		status = fmt.Sprintf("%s · %s mode · ready · /help", m.model, m.mode)
 	}
 
 	width := m.width - 2
 	if width < 1 {
 		width = 1
 	}
-	return body + "\n" +
-		boxStyle.Width(width).Render(m.input.View()) + "\n" +
-		statusStyle.Render(status)
+
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		m.viewport.View(),
+		boxStyle.Width(width).Render(m.input.View()),
+		statusStyle.Render(status),
+	)
 }

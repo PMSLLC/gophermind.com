@@ -36,6 +36,6 @@ func Run(cfg Config) error {
 	}
 
 	m := newModel(build, cfg.Model, cfg.Mode)
-	_, err := tea.NewProgram(m).Run()
+	_, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
 	return err
 }
