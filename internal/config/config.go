@@ -62,6 +62,13 @@ type Config struct {
 	HTTPTimeout  time.Duration // GOPHERMIND_HTTP_TIMEOUT_S (default: 300s)
 	CmdTimeout   time.Duration // GOPHERMIND_CMD_TIMEOUT_S (default: 120s)
 
+	// Bounded retry with exponential backoff for the LLM client. MaxAttempts is
+	// the total number of tries (1 disables retries; a single attempt still
+	// works). RetryBaseDelay is the first backoff interval; later attempts grow
+	// it exponentially (with jitter) up to an internal cap.
+	MaxAttempts    int           // GOPHERMIND_MAX_ATTEMPTS (default: 3; min 1)
+	RetryBaseDelay time.Duration // GOPHERMIND_RETRY_BASE_DELAY_MS (default: 250ms)
+
 	// Per-1,000-token prices (USD) for the running cost meter. Both default to
 	// 0, so the meter reports $0.00 until configured.
 	InputPricePer1K  float64 // GOPHERMIND_PRICE_INPUT_PER_1K
@@ -91,6 +98,9 @@ func Load() (Config, error) {
 		MaxIter:      envIntOr("GOPHERMIND_MAX_ITER", 25),
 		HTTPTimeout:  time.Duration(envIntOr("GOPHERMIND_HTTP_TIMEOUT_S", 300)) * time.Second,
 		CmdTimeout:   time.Duration(envIntOr("GOPHERMIND_CMD_TIMEOUT_S", 120)) * time.Second,
+
+		MaxAttempts:    envIntOr("GOPHERMIND_MAX_ATTEMPTS", 3),
+		RetryBaseDelay: time.Duration(envIntOr("GOPHERMIND_RETRY_BASE_DELAY_MS", 250)) * time.Millisecond,
 
 		InputPricePer1K:  envFloatOr("GOPHERMIND_PRICE_INPUT_PER_1K", 0),
 		OutputPricePer1K: envFloatOr("GOPHERMIND_PRICE_OUTPUT_PER_1K", 0),
@@ -194,6 +204,11 @@ func (c Config) Validate() error {
 	if c.InputPricePer1K < 0 || c.OutputPricePer1K < 0 {
 		return fmt.Errorf("token prices must be >= 0, got input=%v output=%v", c.InputPricePer1K, c.OutputPricePer1K)
 	}
+	if c.RetryBaseDelay < 0 {
+		return fmt.Errorf("retry base delay must be >= 0, got %v", c.RetryBaseDelay)
+	}
+	// MaxAttempts is normalized (values < 1 mean a single attempt) by the
+	// client's RetryPolicy, so it is intentionally not rejected here.
 	return nil
 }
 

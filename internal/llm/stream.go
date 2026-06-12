@@ -6,9 +6,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // streamChunk is one SSE delta frame from /v1/chat/completions with stream=true.
@@ -54,24 +54,16 @@ func (c *Client) Stream(ctx context.Context, msgs []Message, tools []Tool, onTok
 	if err != nil {
 		return Message{}, Usage{}, fmt.Errorf("marshal request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/v1/chat/completions", bytes.NewReader(body))
+
+	// Retry ONLY the initial connect/handshake: transport errors and retryable
+	// non-2xx statuses received before any byte of the stream is consumed. Once
+	// a 2xx body is in hand we hand off to streamBody, which never replays —
+	// surfacing a mid-stream break rather than re-emitting tokens.
+	resp, err := c.connectStream(ctx, body)
 	if err != nil {
-		return Message{}, Usage{}, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "text/event-stream")
-	if c.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.APIKey)
-	}
-	resp, err := c.HTTP.Do(req)
-	if err != nil {
-		return Message{}, Usage{}, fmt.Errorf("perform request: %w", err)
+		return Message{}, Usage{}, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return Message{}, Usage{}, fmt.Errorf("status %d: %s", resp.StatusCode, truncate(b))
-	}
 
 	var content strings.Builder
 	type acc struct {
@@ -140,4 +132,58 @@ func (c *Client) Stream(ctx context.Context, msgs []Message, tools []Tool, onTok
 		})
 	}
 	return msg, usage, nil
+}
+
+// connectStream establishes the streaming connection, retrying transient connect
+// failures (transport errors, 429, 5xx) with bounded backoff. It returns a live
+// 2xx response whose body has NOT yet been read, so the caller can stream it
+// exactly once. Retries happen only here, before any token is emitted.
+func (c *Client) connectStream(ctx context.Context, body []byte) (*http.Response, error) {
+	attempts := c.Retry.attempts()
+	var lastErr error
+	for attempt := 0; attempt < attempts; attempt++ {
+		resp, retryAfter, retryable, err := c.streamConnectOnce(ctx, body)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		if !retryable || attempt == attempts-1 {
+			break
+		}
+		if err := c.sleeper()(ctx, c.Retry.backoff(attempt, retryAfter)); err != nil {
+			return nil, err
+		}
+	}
+	return nil, lastErr
+}
+
+// streamConnectOnce performs a single connect attempt. On a non-2xx it consumes
+// and closes the body so the connection can be reused, and reports whether the
+// failure is retryable plus any Retry-After. On success it returns the live
+// response with its body intact for streaming.
+func (c *Client) streamConnectOnce(ctx context.Context, body []byte) (*http.Response, time.Duration, bool, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/v1/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return nil, 0, false, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	if c.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, 0, retryableErr(ctx, err), fmt.Errorf("perform request: %w", err)
+	}
+	if resp.StatusCode >= 300 {
+		b := readCapped(resp.Body)
+		resp.Body.Close()
+		retry := retryableStatus(resp.StatusCode)
+		var ra time.Duration
+		if retry {
+			ra = parseRetryAfter(resp.Header)
+		}
+		return nil, ra, retry, fmt.Errorf("status %d: %s", resp.StatusCode, truncate(b))
+	}
+	return resp, 0, false, nil
 }
