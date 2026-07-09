@@ -59,6 +59,8 @@ func run() error {
 	outputFmtFlag := flag.String("output-format", "text", "print mode output format: text|stream-json")
 	sessionIDFlag := flag.String("session-id", "", "print mode: pre-assign a session id (persisted for resume)")
 	resumeFlag := flag.String("resume", "", "print mode: resume a saved session by id")
+	appendSysFlag := flag.String("append-system-prompt", "", "print mode: append text to the system prompt")
+	permModeFlag := flag.String("permission-mode", "", "print mode: auto (full access) | plan (read-only: denies edits/shell)")
 	transcriptFlag := flag.String("transcript", cfg.TranscriptPath, "write the full wire-level message history (JSONL) to this path at session end; MAY CONTAIN SENSITIVE PROMPTS/RESPONSES (file written 0600, no credentials included)")
 	flag.Usage = usage
 	flag.Parse()
@@ -246,7 +248,11 @@ func run() error {
 			TranscriptPath:   cfg.TranscriptPath,
 		})
 	case "print":
-		return runPrint(client, reg, cfg, task, *inputFmtFlag, *outputFmtFlag, *sessionIDFlag, *resumeFlag)
+		return runPrint(client, reg, cfg, printOptions{
+			prompt: task, inputFmt: *inputFmtFlag, outputFmt: *outputFmtFlag,
+			sessionID: *sessionIDFlag, resumeID: *resumeFlag,
+			appendSys: *appendSysFlag, permMode: *permModeFlag,
+		})
 	case "run", "ask":
 		if task == "" {
 			return fmt.Errorf("%s requires a task argument", cmd)
@@ -280,17 +286,32 @@ func run() error {
 	}
 }
 
-// runPrint drives non-interactive print mode. With stream-json output it speaks
-// a Claude-Code-compatible protocol (an init line, assistant/tool messages, and
-// a result line per turn) so external drivers can run gophermind programmatically;
-// with text output it behaves like `run`, printing only the final answer.
-// Mutating tools are auto-approved here — print mode is for programmatic driving,
-// and a read-only/plan permission mode is a planned follow-up.
-func runPrint(client *llm.Client, reg *tools.Registry, cfg config.Config, prompt, inputFmt, outputFmt, sessionID, resumeID string) error {
+// printOptions carries the resolved flags for print mode.
+type printOptions struct {
+	prompt    string
+	inputFmt  string
+	outputFmt string
+	sessionID string
+	resumeID  string
+	appendSys string
+	permMode  string
+}
+
+func runPrint(client *llm.Client, reg *tools.Registry, cfg config.Config, o printOptions) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	approve := safety.ApprovalFunc(safety.Auto)
 
+	// Permission mode maps the driver's access level to gophermind's approval
+	// gate: "plan"/read-only denies the mutating (gated) tools so the model can
+	// explore and propose but not edit or run shell; the default auto-approves
+	// (print mode is programmatic, so there's no human to prompt).
+	approve := safety.ApprovalFunc(safety.Auto)
+	switch o.permMode {
+	case "plan", "read_only", "read-only":
+		approve = safety.ApprovalFunc(func(tool, _ string) bool { return !safety.Gated(tool) })
+	}
+
+	sessionID, resumeID := o.sessionID, o.resumeID
 	// Resolve the session id and whether it should be persisted: --resume loads
 	// and continues an existing session; --session-id pre-assigns one; otherwise
 	// the session is ephemeral (no disk footprint).
@@ -304,7 +325,7 @@ func runPrint(client *llm.Client, reg *tools.Registry, cfg config.Config, prompt
 		sessionID = stream.NewSessionID()
 	}
 
-	streamOut := outputFmt == "stream-json"
+	streamOut := o.outputFmt == "stream-json"
 	var enc *stream.Encoder
 	onEvent := func(agent.Event) {}
 	if streamOut {
@@ -319,6 +340,10 @@ func runPrint(client *llm.Client, reg *tools.Registry, cfg config.Config, prompt
 		if err := session.Load(resumeID, ag); err != nil {
 			return fmt.Errorf("resume %q: %w", resumeID, err)
 		}
+	} else if o.appendSys != "" {
+		// Apply the driver's appended system prompt on a fresh session only; on
+		// resume the loaded history already carries its system prompt.
+		ag.AppendSystemPrompt(o.appendSys)
 	}
 	save := func() error {
 		if !persist {
@@ -338,8 +363,8 @@ func runPrint(client *llm.Client, reg *tools.Registry, cfg config.Config, prompt
 		}
 		return stream.Run(ctx, enc, ag, stream.Options{
 			In:          os.Stdin,
-			InputFormat: inputFmt,
-			Prompt:      prompt,
+			InputFormat: o.inputFmt,
+			Prompt:      o.prompt,
 			Model:       cfg.Model,
 			Tools:       toolNames,
 			Cwd:         cfg.RootDir,
@@ -348,7 +373,7 @@ func runPrint(client *llm.Client, reg *tools.Registry, cfg config.Config, prompt
 	}
 
 	// text output: behave like `run`, printing only the final answer.
-	answer, err := ag.Send(ctx, prompt)
+	answer, err := ag.Send(ctx, o.prompt)
 	if serr := save(); serr != nil && err == nil {
 		err = serr
 	}

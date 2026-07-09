@@ -33,3 +33,13 @@ func (a *Agent) LoadHistory(r io.Reader) error {
 	a.msgs = msgs
 	return nil
 }
+
+// AppendSystemPrompt appends text to the seeded system prompt. It must be called
+// before the first Send, as it edits the system message in place. An empty text
+// is a no-op.
+func (a *Agent) AppendSystemPrompt(text string) {
+	if text == "" || len(a.msgs) == 0 || a.msgs[0].Role != "system" {
+		return
+	}
+	a.msgs[0].Content += "\n\n" + text
+}

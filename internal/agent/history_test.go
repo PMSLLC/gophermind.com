@@ -34,3 +34,17 @@ func TestLoadHistoryEmptyErrors(t *testing.T) {
 		t.Error("want error loading an empty session history")
 	}
 }
+
+func TestAppendSystemPrompt(t *testing.T) {
+	a := New(nil, nil, 1, nil, nil)
+	a.AppendSystemPrompt("EXTRA INSTRUCTIONS")
+	var b strings.Builder
+	if err := a.ExportJSONL(&b); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(b.String(), "EXTRA INSTRUCTIONS") {
+		t.Errorf("system prompt not appended:\n%s", b.String())
+	}
+	// empty is a no-op (no panic, still one system message)
+	a.AppendSystemPrompt("")
+}
