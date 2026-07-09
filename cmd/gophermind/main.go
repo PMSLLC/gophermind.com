@@ -21,6 +21,7 @@ import (
 	"gophermind/internal/llm"
 	"gophermind/internal/safety"
 	"gophermind/internal/setup"
+	"gophermind/internal/stream"
 	"gophermind/internal/tools"
 	"gophermind/internal/tui"
 	"gophermind/internal/ui"
@@ -52,6 +53,10 @@ func run() error {
 	clientKeyFlag := flag.String("client-key", cfg.ClientKeyPath, "PEM client private key for mutual TLS (requires -client-cert)")
 	caCertFlag := flag.String("ca-cert", cfg.CACertPath, "PEM CA bundle to trust for the server (appended to system roots; keeps verification ON)")
 	verboseFlag := flag.Bool("v", false, "verbose: stream assistant text and tool results")
+	printFlag := flag.Bool("print", false, "non-interactive print mode for external drivers (Claude-Code-compatible stream-json)")
+	inputFmtFlag := flag.String("input-format", "text", "print mode input format: text|stream-json")
+	outputFmtFlag := flag.String("output-format", "text", "print mode output format: text|stream-json")
+	sessionIDFlag := flag.String("session-id", "", "print mode: session id to report in stream-json output")
 	transcriptFlag := flag.String("transcript", cfg.TranscriptPath, "write the full wire-level message history (JSONL) to this path at session end; MAY CONTAIN SENSITIVE PROMPTS/RESPONSES (file written 0600, no credentials included)")
 	flag.Usage = usage
 	flag.Parse()
@@ -89,7 +94,13 @@ func run() error {
 	args := flag.Args()
 	cmd := "chat"
 	task := ""
-	if len(args) > 0 {
+	switch {
+	case *printFlag:
+		// In print mode the whole positional tail is the prompt, not a subcommand,
+		// so it bypasses the chat/config/version/wizard paths entirely.
+		cmd = "print"
+		task = strings.TrimSpace(strings.Join(args, " "))
+	case len(args) > 0:
 		cmd = strings.ToLower(args[0])
 		task = strings.TrimSpace(strings.Join(args[1:], " "))
 	}
@@ -232,6 +243,8 @@ func run() error {
 			OutputPricePer1K: cfg.OutputPricePer1K,
 			TranscriptPath:   cfg.TranscriptPath,
 		})
+	case "print":
+		return runPrint(client, reg, cfg, task, *inputFmtFlag, *outputFmtFlag, *sessionIDFlag)
 	case "run", "ask":
 		if task == "" {
 			return fmt.Errorf("%s requires a task argument", cmd)
@@ -263,6 +276,49 @@ func run() error {
 		usage()
 		return fmt.Errorf("unknown command: %s", cmd)
 	}
+}
+
+// runPrint drives non-interactive print mode. With stream-json output it speaks
+// a Claude-Code-compatible protocol (an init line, assistant/tool messages, and
+// a result line per turn) so external drivers can run gophermind programmatically;
+// with text output it behaves like `run`, printing only the final answer.
+// Mutating tools are auto-approved here — print mode is for programmatic driving,
+// and a read-only/plan permission mode is a planned follow-up.
+func runPrint(client *llm.Client, reg *tools.Registry, cfg config.Config, prompt, inputFmt, outputFmt, sessionID string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	approve := safety.ApprovalFunc(safety.Auto)
+
+	if outputFmt == "stream-json" {
+		if sessionID == "" {
+			sessionID = stream.NewSessionID()
+		}
+		enc := stream.NewEncoder(os.Stdout, sessionID)
+		ag := agent.New(client, reg, cfg.MaxIter, approve, func(e agent.Event) { _ = enc.Handle(e) })
+		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
+		var toolNames []string
+		for _, d := range reg.Definitions() {
+			toolNames = append(toolNames, d.Function.Name)
+		}
+		return stream.Run(ctx, enc, ag, stream.Options{
+			In:          os.Stdin,
+			InputFormat: inputFmt,
+			Prompt:      prompt,
+			Model:       cfg.Model,
+			Tools:       toolNames,
+			Cwd:         cfg.RootDir,
+		})
+	}
+
+	// text output
+	ag := agent.New(client, reg, cfg.MaxIter, approve, func(agent.Event) {})
+	ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
+	answer, err := ag.Send(ctx, prompt)
+	if err != nil {
+		return err
+	}
+	fmt.Println(answer)
+	return nil
 }
 
 // isatty reports whether stdin is an interactive terminal.

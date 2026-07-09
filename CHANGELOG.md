@@ -5,6 +5,8 @@ All notable changes to GopherMind are documented here. The format follows
 [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+### Added
+- `gophermind --print` non-interactive mode that speaks a Claude-Code-compatible **stream-json** protocol (init / assistant / tool_use / tool_result / result messages), so external drivers such as OpenCoven's Coven can run gophermind programmatically. Supports text and stream-json input/output. First step toward being an OpenCoven streaming runtime.
 
 ## [0.1.0] - 2026-07-09
 ### Added
