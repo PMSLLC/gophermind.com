@@ -16,6 +16,9 @@ node_modules/
 .next/
 dist/
 build/
+
+# compiled gophermind binary (produced by `go build`/`make build`/`bin/build.sh`)
+/gophermind
 __pycache__/
 *.pyc
 .venv/
