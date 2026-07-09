@@ -2,6 +2,8 @@ package config
 
 import (
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -507,5 +509,110 @@ func TestTranscriptPathFromEnv(t *testing.T) {
 	}
 	if cfg.TranscriptPath != "/tmp/session.jsonl" {
 		t.Errorf("TranscriptPath = %q, want /tmp/session.jsonl", cfg.TranscriptPath)
+	}
+}
+
+// writeEnvFile drops a .env file with the given contents into dir.
+func writeEnvFile(t *testing.T, dir, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(content), 0o600); err != nil {
+		t.Fatalf("write .env: %v", err)
+	}
+}
+
+// unsetEnv makes a var genuinely absent for the duration of the test. The
+// t.Setenv call first registers restoration of any ambient value; the following
+// Unsetenv then clears it so loadDotEnv sees it as unset rather than empty.
+func unsetEnv(t *testing.T, keys ...string) {
+	t.Helper()
+	for _, k := range keys {
+		t.Setenv(k, "")
+		os.Unsetenv(k)
+	}
+}
+
+func TestLoadDotEnvSeedsUnsetVars(t *testing.T) {
+	dir := t.TempDir()
+	writeEnvFile(t, dir, "GOPHERMIND_BASE_URL=http://fromdotenv:9000\nGOPHERMIND_MODEL=dotenv-model\nGOPHERMIND_MAX_ITER=9\n")
+	t.Chdir(dir)
+	unsetEnv(t, "GOPHERMIND_BASE_URL", "GOPHERMIND_MODEL", "GOPHERMIND_MAX_ITER", "GOPHERMIND_ROOT")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.BaseURL != "http://fromdotenv:9000" {
+		t.Errorf("BaseURL = %q, want http://fromdotenv:9000 (from .env)", cfg.BaseURL)
+	}
+	if cfg.Model != "dotenv-model" {
+		t.Errorf("Model = %q, want dotenv-model (from .env)", cfg.Model)
+	}
+	if cfg.MaxIter != 9 {
+		t.Errorf("MaxIter = %d, want 9 (from .env)", cfg.MaxIter)
+	}
+}
+
+func TestLoadDotEnvRealEnvWins(t *testing.T) {
+	dir := t.TempDir()
+	writeEnvFile(t, dir, "GOPHERMIND_MODEL=dotenv-model\n")
+	t.Chdir(dir)
+	t.Setenv("GOPHERMIND_BASE_URL", "http://real")
+	t.Setenv("GOPHERMIND_MODEL", "real-model") // exported => must beat .env
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Model != "real-model" {
+		t.Errorf("Model = %q, want real-model (real env must win over .env)", cfg.Model)
+	}
+}
+
+func TestLoadDotEnvSyntax(t *testing.T) {
+	dir := t.TempDir()
+	content := strings.Join([]string{
+		"# a comment",
+		"",
+		"   # indented comment",
+		"export GOPHERMIND_BASE_URL=http://exported:8000",
+		`GOPHERMIND_MODEL="quoted-model"`,
+		"GOPHERMIND_APPROVAL='auto'",
+		"notakeyline",
+		"GOPHERMIND_MAX_ITER = 12 ",
+	}, "\n")
+	writeEnvFile(t, dir, content)
+	t.Chdir(dir)
+	unsetEnv(t, "GOPHERMIND_BASE_URL", "GOPHERMIND_MODEL", "GOPHERMIND_APPROVAL", "GOPHERMIND_MAX_ITER", "GOPHERMIND_ROOT")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.BaseURL != "http://exported:8000" {
+		t.Errorf("BaseURL = %q, want http://exported:8000 (export prefix stripped)", cfg.BaseURL)
+	}
+	if cfg.Model != "quoted-model" {
+		t.Errorf("Model = %q, want quoted-model (double quotes stripped)", cfg.Model)
+	}
+	if cfg.ApprovalMode != "auto" {
+		t.Errorf("ApprovalMode = %q, want auto (single quotes stripped)", cfg.ApprovalMode)
+	}
+	if cfg.MaxIter != 12 {
+		t.Errorf("MaxIter = %d, want 12 (key/value trimmed)", cfg.MaxIter)
+	}
+}
+
+func TestLoadDotEnvMissingFileOK(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	unsetEnv(t, "GOPHERMIND_MAX_ITER", "GOPHERMIND_ROOT")
+	t.Setenv("GOPHERMIND_BASE_URL", "http://x")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load with no .env should not error: %v", err)
+	}
+	if cfg.MaxIter != 25 {
+		t.Errorf("MaxIter = %d, want 25 (default holds with no .env)", cfg.MaxIter)
 	}
 }

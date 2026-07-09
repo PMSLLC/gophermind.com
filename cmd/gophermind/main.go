@@ -11,15 +11,20 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
+	"time"
 
+	"golang.org/x/term"
 	"gophermind/internal/agent"
 	"gophermind/internal/config"
 	"gophermind/internal/llm"
 	"gophermind/internal/safety"
+	"gophermind/internal/setup"
 	"gophermind/internal/tools"
 	"gophermind/internal/tui"
 	"gophermind/internal/ui"
+	"gophermind/internal/version"
 )
 
 func main() {
@@ -80,9 +85,6 @@ func run() error {
 	if set["model"] {
 		cfg.Model = *modelFlag
 	}
-	if err := cfg.Validate(); err != nil {
-		return err
-	}
 
 	args := flag.Args()
 	cmd := "chat"
@@ -90,6 +92,64 @@ func run() error {
 	if len(args) > 0 {
 		cmd = strings.ToLower(args[0])
 		task = strings.TrimSpace(strings.Join(args[1:], " "))
+	}
+
+	// `gophermind version` prints build metadata and exits (needs no config).
+	if cmd == "version" {
+		fmt.Println(version.String())
+		return nil
+	}
+
+	// `gophermind config` always (re-)runs the setup wizard, pre-filled with the
+	// current values, then saves and exits.
+	if cmd == "config" {
+		res, err := runSetupWizard(cfg)
+		if err != nil {
+			return err
+		}
+		p, err := config.ConfigFilePath()
+		if err != nil {
+			return err
+		}
+		if err := setup.WriteEnv(p, res.Pairs()); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "✓ saved to %s\n", p)
+		return nil
+	}
+
+	// First-run setup: only for an interactive chat session with nothing yet
+	// configured (no saved config, and no base URL from env/flag/profile). This
+	// never fires for `run`/`ask`, piped input, or an already-configured user.
+	_, baseEnvSet := os.LookupEnv("GOPHERMIND_BASE_URL")
+	baseProvided := baseEnvSet || set["base"] || cfg.Profile != ""
+	if cmd == "chat" && setup.NeedsSetup(baseProvided, config.GlobalConfigExists(), isatty()) {
+		fmt.Fprintln(os.Stderr, "No config found — let's set you up. (re-run anytime with `gophermind config`)")
+		res, err := runSetupWizard(cfg)
+		if err != nil {
+			return err
+		}
+		if p, perr := config.ConfigFilePath(); perr != nil {
+			fmt.Fprintln(os.Stderr, "warning: could not resolve config path:", perr)
+		} else if werr := setup.WriteEnv(p, res.Pairs()); werr != nil {
+			fmt.Fprintln(os.Stderr, "warning: could not save config:", werr)
+		} else {
+			fmt.Fprintf(os.Stderr, "✓ saved to %s\n", p)
+		}
+		// Apply the just-captured values to this session (the file is for next time).
+		cfg.BaseURL = res.BaseURL
+		if res.APIKey != "" {
+			cfg.APIKey = res.APIKey
+		}
+		cfg.Model = res.Model
+		cfg.ApprovalMode = res.ApprovalMode
+		if res.MaxIter > 0 {
+			cfg.MaxIter = res.MaxIter
+		}
+	}
+
+	if err := cfg.Validate(); err != nil {
+		return err
 	}
 
 	// NewWithTLS fails fast on bad cert/key/CA material so a misconfigured secure
@@ -116,7 +176,12 @@ func run() error {
 		client.Cache = &llm.Cache{Dir: cfg.CacheDir, TTL: cfg.CacheTTL}
 	}
 
-	// Auto-discover the model when none was configured.
+	// Resolve the model. With none configured, auto-discover the first the
+	// endpoint serves. With one configured, validate it against /v1/models so a
+	// typo fails fast at startup — dumping the models the endpoint actually
+	// offers — instead of surfacing as a cryptic error mid-request. The check is
+	// best-effort: if /v1/models errors or lists nothing we cannot validate, so
+	// we proceed and let the completion request surface any real error.
 	if cfg.Model == "" {
 		discovered, err := client.DiscoverModel(context.Background())
 		if err != nil {
@@ -124,6 +189,9 @@ func run() error {
 		}
 		cfg.Model = discovered
 		client.Model = discovered
+	} else if models, err := client.ListModels(context.Background()); err == nil && len(models) > 0 && !slices.Contains(models, cfg.Model) {
+		return fmt.Errorf("model %q not found at %s\nmodels available at this endpoint:\n  %s\n(set -model or GOPHERMIND_MODEL to one of these)",
+			cfg.Model, cfg.BaseURL, strings.Join(models, "\n  "))
 	}
 
 	// Probe the model's capabilities (context window, max output, tool support)
@@ -203,13 +271,54 @@ func isatty() bool {
 	return err == nil && (fi.Mode()&os.ModeCharDevice) != 0
 }
 
+// runSetupWizard drives the first-run/`config` setup wizard against stdin/stderr.
+// Model discovery uses a short-lived client honoring the current TLS settings, so
+// the picker reflects what the chosen endpoint actually serves. On an interactive
+// terminal the API key is read without echo; otherwise (piped input) it is read
+// as a normal line through the wizard's own reader.
+func runSetupWizard(cfg config.Config) (setup.Result, error) {
+	opts := setup.Options{
+		In:       os.Stdin,
+		Out:      os.Stderr,
+		Profiles: config.BuiltinProfileNames(),
+		ListModels: func(baseURL, apiKey string) ([]string, error) {
+			c, err := llm.NewWithTLS(baseURL, apiKey, "", 15*time.Second, llm.TLSOptions{
+				InsecureSkipVerify: cfg.InsecureTLS,
+				ClientCertPath:     cfg.ClientCertPath,
+				ClientKeyPath:      cfg.ClientKeyPath,
+				CACertPath:         cfg.CACertPath,
+			})
+			if err != nil {
+				return nil, err
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			return c.ListModels(ctx)
+		},
+		Defaults: setup.Result{BaseURL: cfg.BaseURL, Model: cfg.Model, ApprovalMode: cfg.ApprovalMode, MaxIter: cfg.MaxIter},
+	}
+	if isatty() {
+		opts.ReadSecret = func() (string, error) {
+			b, err := term.ReadPassword(int(os.Stdin.Fd()))
+			fmt.Fprintln(os.Stderr) // ReadPassword swallows the echoed newline
+			return strings.TrimSpace(string(b)), err
+		}
+	}
+	return setup.Run(opts)
+}
+
 func usage() {
 	fmt.Fprintln(os.Stderr, `gophermind - a minimal agentic coding harness
 
 Usage:
   gophermind                    interactive session (default)
+  gophermind config             (re-)run the setup wizard and save config
+  gophermind version            print build version and exit
   gophermind run "task"         one-shot: run a task and exit
   gophermind ask "question"     one-shot: answer without modifying files
+
+On first interactive launch with nothing configured, a short setup wizard runs
+and saves your choices to the global config (see below); later launches skip it.
 
 Environment (all optional; flags override):
   GOPHERMIND_BASE_URL   endpoint (default: built-in)

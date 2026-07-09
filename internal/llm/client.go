@@ -352,19 +352,21 @@ func (c *Client) completeOnce(ctx context.Context, body []byte) (msg Message, us
 	return parsed.Choices[0].Message, u, 0, false, false, nil
 }
 
-// DiscoverModel queries GET /v1/models and returns the id of the first model
-// the endpoint serves. Used when no model is configured.
-func (c *Client) DiscoverModel(ctx context.Context) (string, error) {
+// ListModels queries GET /v1/models and returns the ids of every model the
+// endpoint serves, in the order returned (empty ids are skipped). It backs both
+// auto-discovery and startup validation of a configured model, so a typo can be
+// reported against the actual list of what the endpoint offers.
+func (c *Client) ListModels(ctx context.Context) ([]string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/v1/models", nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if c.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("list models: %w", err)
+		return nil, fmt.Errorf("list models: %w", err)
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
@@ -375,12 +377,28 @@ func (c *Client) DiscoverModel(ctx context.Context) (string, error) {
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return "", fmt.Errorf("status %d: parse models: %w; body=%s", resp.StatusCode, err, truncate(body))
+		return nil, fmt.Errorf("status %d: parse models: %w; body=%s", resp.StatusCode, err, truncate(body))
 	}
-	if len(parsed.Data) == 0 {
+	ids := make([]string, 0, len(parsed.Data))
+	for _, m := range parsed.Data {
+		if m.ID != "" {
+			ids = append(ids, m.ID)
+		}
+	}
+	return ids, nil
+}
+
+// DiscoverModel queries GET /v1/models and returns the id of the first model
+// the endpoint serves. Used when no model is configured.
+func (c *Client) DiscoverModel(ctx context.Context) (string, error) {
+	ids, err := c.ListModels(ctx)
+	if err != nil {
+		return "", err
+	}
+	if len(ids) == 0 {
 		return "", fmt.Errorf("endpoint served no models")
 	}
-	return parsed.Data[0].ID, nil
+	return ids[0], nil
 }
 
 // readCapped reads at most a bounded prefix of r, so a hostile server cannot

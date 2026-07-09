@@ -6,7 +6,7 @@
 
 GopherMind is a Go agentic coding harness. Its engine already works: a true
 agentic tool loop (`internal/agent`) talking to an OpenAI-compatible endpoint
-(llama.cpp at `http://10.0.0.5:8081`, model auto-discovered) with file /
+(llama.cpp at a user-configured endpoint, model auto-discovered) with file /
 search / shell tools, safety guards, and a basic line-based REPL.
 
 The goal of this work is to replace the basic REPL with a polished, conversational

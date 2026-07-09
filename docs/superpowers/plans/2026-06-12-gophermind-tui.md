@@ -1087,7 +1087,7 @@ Expected: binary produced.
 
 - [ ] **Step 2: Launch the interactive session**
 
-Run: `./gophermind` (with VPN up so `http://10.0.0.5:8081` is reachable)
+Run: `./gophermind` (with VPN up so your configured endpoint is reachable)
 Expected: banner + input box; model auto-discovered.
 
 - [ ] **Step 3: Exercise a real coding turn**

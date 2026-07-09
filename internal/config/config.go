@@ -3,11 +3,13 @@
 package config
 
 import (
+	"bufio"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -48,9 +50,10 @@ func ValidateTopP(v float64) error {
 	return nil
 }
 
-// defaultBaseURL points at the local llama.cpp server. Override with
-// GOPHERMIND_BASE_URL or -base.
-const defaultBaseURL = "http://10.0.0.5:8081"
+// defaultBaseURL is intentionally empty: no endpoint is baked in. A user supplies
+// their own OpenAI-compatible endpoint via the first-run setup wizard, a provider
+// profile, GOPHERMIND_BASE_URL, or -base. Validate requires one to be set.
+const defaultBaseURL = ""
 
 // builtinProfile is a named set of per-endpoint defaults. A profile only
 // carries the fields that distinguish one backend from another; everything
@@ -88,14 +91,14 @@ var builtinProfiles = map[string]builtinProfile{
 // Config holds everything the harness needs to run. Every field has a sensible
 // default; an empty Model is auto-discovered from the endpoint at startup.
 type Config struct {
-	Profile        string        // GOPHERMIND_PROFILE: selected provider profile ("" => legacy/default endpoint)
-	BaseURL        string        // GOPHERMIND_BASE_URL (required), e.g. http://10.0.0.5:8000
-	APIKey         string        // GOPHERMIND_API_KEY (optional; empty when reached over VPN)
-	Model          string        // GOPHERMIND_MODEL
-	FallbackModels []string      // GOPHERMIND_FALLBACK_MODELS: comma-separated, tried in order after Model on a fallback-eligible failure
-	RootDir        string        // GOPHERMIND_ROOT (default: cwd)
-	ApprovalMode   string        // GOPHERMIND_APPROVAL: auto|ask (default: ask)
-	InsecureTLS    bool          // GOPHERMIND_INSECURE_TLS: skip TLS verify (self-signed internal endpoints)
+	Profile        string   // GOPHERMIND_PROFILE: selected provider profile ("" => legacy/default endpoint)
+	BaseURL        string   // GOPHERMIND_BASE_URL (required), e.g. http://10.0.0.5:8000
+	APIKey         string   // GOPHERMIND_API_KEY (optional; empty when reached over VPN)
+	Model          string   // GOPHERMIND_MODEL
+	FallbackModels []string // GOPHERMIND_FALLBACK_MODELS: comma-separated, tried in order after Model on a fallback-eligible failure
+	RootDir        string   // GOPHERMIND_ROOT (default: cwd)
+	ApprovalMode   string   // GOPHERMIND_APPROVAL: auto|ask (default: ask)
+	InsecureTLS    bool     // GOPHERMIND_INSECURE_TLS: skip TLS verify (self-signed internal endpoints)
 
 	// Optional mutual-TLS / custom-CA for reaching internal endpoints SECURELY
 	// (the safe alternative to InsecureTLS). ClientCertPath + ClientKeyPath
@@ -106,9 +109,9 @@ type Config struct {
 	ClientKeyPath  string // GOPHERMIND_CLIENT_KEY: PEM client private key (with GOPHERMIND_CLIENT_CERT)
 	CACertPath     string // GOPHERMIND_CA_CERT: PEM CA bundle to trust for the server (appended to system roots)
 
-	MaxIter        int           // GOPHERMIND_MAX_ITER (default: 25)
-	HTTPTimeout    time.Duration // GOPHERMIND_HTTP_TIMEOUT_S (default: 300s)
-	CmdTimeout     time.Duration // GOPHERMIND_CMD_TIMEOUT_S (default: 120s)
+	MaxIter     int           // GOPHERMIND_MAX_ITER (default: 25)
+	HTTPTimeout time.Duration // GOPHERMIND_HTTP_TIMEOUT_S (default: 300s)
+	CmdTimeout  time.Duration // GOPHERMIND_CMD_TIMEOUT_S (default: 120s)
 
 	// Bounded retry with exponential backoff for the LLM client. MaxAttempts is
 	// the total number of tries (1 disables retries; a single attempt still
@@ -151,12 +154,28 @@ type Config struct {
 // Load reads configuration from the environment and applies defaults. The
 // returned Config is not yet validated; call Validate after flags are applied.
 func Load() (Config, error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return Config{}, fmt.Errorf("getwd: %w", err)
+	}
+
+	// Seed the environment from optional .env files before reading any variable,
+	// so even GOPHERMIND_ROOT can be set there. Precedence (highest first): real
+	// environment > working-directory .env > global config .env > built-in
+	// defaults. Because each loader only fills gaps, the working-directory file
+	// wins over the global one, and real env wins over both. Missing files are
+	// not errors.
+	if err := loadDotEnvFile(filepath.Join(wd, ".env")); err != nil {
+		return Config{}, fmt.Errorf("load .env: %w", err)
+	}
+	if p, perr := ConfigFilePath(); perr == nil {
+		if err := loadDotEnvFile(p); err != nil {
+			return Config{}, fmt.Errorf("load global config: %w", err)
+		}
+	}
+
 	root := envOr("GOPHERMIND_ROOT", "")
 	if root == "" {
-		wd, err := os.Getwd()
-		if err != nil {
-			return Config{}, fmt.Errorf("getwd: %w", err)
-		}
 		root = wd
 	}
 
@@ -191,6 +210,109 @@ func Load() (Config, error) {
 
 		TranscriptPath: envOr("GOPHERMIND_TRANSCRIPT", ""),
 	}, nil
+}
+
+// loadDotEnvFile reads KEY=VALUE pairs from the .env file at path and sets any
+// that are not already present in the process environment. Real (already-exported)
+// environment variables always take precedence — a .env only fills gaps — so a
+// deployment's real config can never be silently overridden by a stray file. A
+// missing file is not an error (it is optional); malformed lines are skipped
+// rather than failing the whole load. This is deliberately the only implicit
+// source in config loading; every other value is an explicit os.Getenv.
+//
+// Supported syntax (a practical subset of dotenv): blank lines and lines whose
+// first non-space char is '#' are ignored; an optional leading "export " is
+// stripped; the value is everything after the first '='; surrounding single or
+// double quotes are removed. No variable interpolation is performed.
+func loadDotEnvFile(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "export ")
+
+		key, val, ok := strings.Cut(line, "=")
+		if !ok {
+			continue // no '=' — not a KEY=VALUE line
+		}
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if _, present := os.LookupEnv(key); present {
+			continue // real environment wins
+		}
+		if err := os.Setenv(key, unquoteEnv(strings.TrimSpace(val))); err != nil {
+			return err
+		}
+	}
+	return scanner.Err()
+}
+
+// unquoteEnv strips a single matching pair of surrounding single or double
+// quotes from a .env value, leaving everything else (including inner quotes)
+// untouched. Unquoted and mismatched values are returned as-is.
+func unquoteEnv(v string) string {
+	if len(v) >= 2 {
+		if (v[0] == '"' && v[len(v)-1] == '"') || (v[0] == '\'' && v[len(v)-1] == '\'') {
+			return v[1 : len(v)-1]
+		}
+	}
+	return v
+}
+
+// ConfigFilePath returns the path to gophermind's global config .env, written by
+// the first-run setup wizard and read by Load as a gap-filler. It lives under
+// the OS user config dir (e.g. ~/.config/gophermind/.env), so a user configures
+// once and it applies in every directory.
+func ConfigFilePath() (string, error) {
+	// GOPHERMIND_CONFIG_DIR overrides the location (the .env is placed directly
+	// inside it). Useful for relocating config and for hermetic tests.
+	if dir := os.Getenv("GOPHERMIND_CONFIG_DIR"); dir != "" {
+		return filepath.Join(dir, ".env"), nil
+	}
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "gophermind", ".env"), nil
+}
+
+// GlobalConfigExists reports whether the global config .env has been written.
+// It is the "already configured" signal for the first-run wizard trigger.
+func GlobalConfigExists() bool {
+	p, err := ConfigFilePath()
+	if err != nil {
+		return false
+	}
+	info, err := os.Stat(p)
+	return err == nil && !info.IsDir()
+}
+
+// BuiltinProfileNames returns the built-in provider profiles as {name, baseURL}
+// pairs in stable (name-sorted) order, for the setup wizard's endpoint menu.
+func BuiltinProfileNames() [][2]string {
+	names := make([]string, 0, len(builtinProfiles))
+	for name := range builtinProfiles {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	pairs := make([][2]string, 0, len(names))
+	for _, name := range names {
+		pairs = append(pairs, [2]string{name, builtinProfiles[name].BaseURL})
+	}
+	return pairs
 }
 
 // defaultCacheDir picks a contained location for cached completions: the OS user
