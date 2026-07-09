@@ -54,6 +54,7 @@ func run() error {
 	clientKeyFlag := flag.String("client-key", cfg.ClientKeyPath, "PEM client private key for mutual TLS (requires -client-cert)")
 	caCertFlag := flag.String("ca-cert", cfg.CACertPath, "PEM CA bundle to trust for the server (appended to system roots; keeps verification ON)")
 	verboseFlag := flag.Bool("v", false, "verbose: stream assistant text and tool results")
+	versionFlag := flag.Bool("version", false, "print version and exit")
 	printFlag := flag.Bool("print", false, "non-interactive print mode for external drivers (Claude-Code-compatible stream-json)")
 	inputFmtFlag := flag.String("input-format", "text", "print mode input format: text|stream-json")
 	outputFmtFlag := flag.String("output-format", "text", "print mode output format: text|stream-json")
@@ -69,6 +70,14 @@ func run() error {
 	// profile's resolved values.
 	set := map[string]bool{}
 	flag.Visit(func(f *flag.Flag) { set[f.Name] = true })
+
+	// `--version` (and the `version` subcommand) print build metadata and exit 0.
+	// The flag form keeps conformance probes (e.g. OpenCoven's `conjure test`,
+	// which calls `--version`) happy.
+	if *versionFlag {
+		fmt.Println(version.String())
+		return nil
+	}
 
 	// Select and resolve the profile first (flag > env). When a profile is
 	// active it fills BaseURL/Model/APIKey/HTTPTimeout from per-profile env >
