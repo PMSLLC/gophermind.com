@@ -12,6 +12,14 @@
 set -euo pipefail
 
 archive="${1:?usage: notarize.sh <archive.tar.gz>}"
+
+# Only macOS artifacts get notarized; the signs stage also passes Linux/Windows
+# archives, which we skip.
+case "$archive" in
+  *darwin*) ;;
+  *) echo "skip notarize (not a macOS artifact): $(basename "$archive")"; exit 0 ;;
+esac
+
 profile="${MACOS_NOTARY_PROFILE:?set MACOS_NOTARY_PROFILE to a notarytool keychain profile name}"
 
 workdir="$(mktemp -d)"

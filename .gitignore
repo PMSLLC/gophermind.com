@@ -23,6 +23,11 @@ build/
 
 # compiled gophermind binary (produced by `go build`/`make build`/`bin/build.sh`)
 /gophermind
+
+# npm package build artifacts
+npm/vendor/
+npm/node_modules/
+*.tgz
 __pycache__/
 *.pyc
 .venv/

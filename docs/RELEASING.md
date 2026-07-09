@@ -86,6 +86,28 @@ GoReleaser will:
 
 ---
 
+## Publish to npm (after the GitHub release exists)
+
+The npm package (`npm/`) downloads the platform binary from the GitHub Release on
+install, so publish it **after** `make release` has uploaded the assets, and keep
+its version identical to the tag.
+
+```sh
+cd npm
+npm version 0.1.0 --no-git-tag-version --allow-same-version   # match the release tag
+npm login                                                     # or set NPM_TOKEN in ~/.npmrc
+npm publish --access public
+```
+
+Sanity-check the download against the real release before/after publishing:
+
+```sh
+cd npm && npm pack && GOPHERMIND_DOWNLOAD_BASE=https://github.com/jbrahy/gophermind.com/releases/download/v0.1.0 \
+  node scripts/download.js && ./vendor/gophermind version
+```
+
+---
+
 ## Verify the published artifact
 
 ```sh

@@ -10,6 +10,8 @@ All notable changes to GopherMind are documented here. The format follows
 - **Session persistence**: `--session-id` pre-assigns a session and `--resume` continues a saved one, so a driver can keep state across processes. Histories are stored per-id (path-traversal-guarded) as JSONL.
 - Print-mode `--append-system-prompt` and `--permission-mode` (`auto` full access / `plan` read-only, which denies edits & shell).
 - An **OpenCoven runtime manifest** (`coven/gophermind.json`, schema-validated) declaring GopherMind as a streaming Coven runtime (stream + pre-assigned sessions + sandbox mapping).
+- **npm distribution** (`npm install -g gophermind`): cross-platform (macOS/Linux/Windows, x64/arm64) prebuilt binaries via a postinstall downloader; GoReleaser now builds Linux and Windows archives too.
+- A `--version` flag (alongside the `version` subcommand).
 
 ## [0.1.0] - 2026-07-09
 ### Added

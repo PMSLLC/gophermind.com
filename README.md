@@ -61,11 +61,13 @@ actually understand and extend in an afternoon.
 Once the first release is out:
 
 ```sh
-brew install jbrahy/tap/gophermind
+brew install jbrahy/tap/gophermind     # macOS (signed + notarized, no Gatekeeper warnings)
+npm install -g gophermind              # macOS / Linux / Windows, x64 / arm64
 ```
 
-The binary is a **signed + notarized universal macOS build** — no Gatekeeper
-warnings. Or build from source (Go 1.24+):
+The Homebrew build is a signed + notarized universal macOS binary; the npm
+package downloads the prebuilt binary for your platform. Or build from source
+(Go 1.24+):
 
 ```sh
 git clone https://github.com/jbrahy/gophermind.com

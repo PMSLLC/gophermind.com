@@ -14,7 +14,7 @@ builds:
     binary: gophermind
     env:
       - CGO_ENABLED=0
-    goos: [darwin]
+    goos: [darwin, linux, windows]
     goarch: [amd64, arm64]
     mod_timestamp: "{{ .CommitTimestamp }}"
     ldflags:
@@ -38,7 +38,13 @@ universal_binaries:
 archives:
   - id: gophermind
     ids: [gophermind]
+    # Predictable names the npm postinstall downloader relies on. The macOS
+    # universal binary is "<name>_<version>_darwin_all.tar.gz".
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
     files:
       - LICENSE
       - README.md

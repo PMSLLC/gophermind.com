@@ -1,0 +1,48 @@
+{
+  "name": "gophermind",
+  "version": "0.1.0",
+  "description": "A tiny, hackable AI coding agent for your terminal — pointed at your own OpenAI-compatible LLM.",
+  "bin": {
+    "gophermind": "bin/gophermind.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/download.js"
+  },
+  "files": [
+    "bin/gophermind.js",
+    "scripts/download.js",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "keywords": [
+    "ai",
+    "agent",
+    "llm",
+    "coding",
+    "cli",
+    "openai",
+    "tui",
+    "gopher"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jbrahy/gophermind.com.git"
+  },
+  "homepage": "https://github.com/jbrahy/gophermind.com",
+  "bugs": {
+    "url": "https://github.com/jbrahy/gophermind.com/issues"
+  },
+  "author": "John Brahy",
+  "license": "MIT"
+}
