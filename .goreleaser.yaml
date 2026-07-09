@@ -1,0 +1,85 @@
+# GoReleaser config for gophermind — signed + notarized macOS binary,
+# distributed via a Homebrew cask. Run releases locally on a Mac (see
+# docs/RELEASING.md). Validate with `goreleaser check`.
+version: 2
+project_name: gophermind
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: gophermind
+    main: ./cmd/gophermind
+    binary: gophermind
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin]
+    goarch: [amd64, arm64]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    ldflags:
+      - -s -w
+      - -X gophermind/internal/version.Version={{ .Version }}
+      - -X gophermind/internal/version.Commit={{ .ShortCommit }}
+      - -X gophermind/internal/version.Date={{ .CommitDate }}
+
+# Merge the two arches into one universal binary, then code-sign it with a
+# Developer ID Application identity (hardened runtime + secure timestamp). The
+# identity is read from the environment so it never lives in this public repo.
+universal_binaries:
+  - id: gophermind
+    replace: true
+    hooks:
+      post: >-
+        codesign --sign "{{ .Env.MACOS_SIGN_IDENTITY }}" --timestamp
+        --options runtime --force "{{ .Path }}"
+
+archives:
+  - id: gophermind
+    ids: [gophermind]
+    formats: [tar.gz]
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+# Notarize each archive before publishing. scripts/notarize.sh extracts the
+# signed universal binary, zips it, and submits it to Apple via a stored
+# notarytool keychain profile (name from $MACOS_NOTARY_PROFILE). OSS-friendly —
+# no GoReleaser Pro required. Skipped in snapshot builds via `--skip=sign`.
+signs:
+  - id: notarize
+    ids: [gophermind]
+    artifacts: archive
+    output: true
+    cmd: ./scripts/notarize.sh
+    args:
+      - "{{ .Env.MACOS_NOTARY_PROFILE }}"
+      - "${artifact}"
+
+homebrew_casks:
+  - name: gophermind
+    ids: [gophermind]
+    binaries:
+      - gophermind
+    repository:
+      owner: jbrahy
+      name: homebrew-tap
+    homepage: "https://github.com/jbrahy/gophermind.com"
+    description: "A minimal agentic coding harness for OpenAI-compatible LLMs"
+    license: MIT
+    # Belt-and-suspenders: strip the quarantine xattr on install. The binary is
+    # already signed + notarized, so this just guarantees no first-run prompt.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/gophermind"]
+          end
+
+release:
+  github:
+    owner: jbrahy
+    name: gophermind.com

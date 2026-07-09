@@ -1,0 +1,30 @@
+BINARY := gophermind
+
+.PHONY: build test vet check snapshot release clean
+
+build: ## Build a local (unstamped) binary
+	go build -o $(BINARY) ./cmd/gophermind
+
+test: ## Run the full test suite
+	go test ./...
+
+vet:
+	go vet ./...
+
+check: ## Validate the GoReleaser config
+	goreleaser check
+
+snapshot: ## Dry-run release: build + archive + cask, no sign/notarize/publish
+	goreleaser release --snapshot --clean --skip=sign
+
+# Full signed + notarized release to GitHub + the Homebrew tap. Requires:
+#   - a pushed git tag (e.g. `git tag v0.1.0 && git push origin v0.1.0`)
+#   - MACOS_SIGN_IDENTITY   (e.g. "Developer ID Application: Your Name (TEAMID)")
+#   - MACOS_NOTARY_PROFILE  (a notarytool keychain profile name)
+#   - GITHUB_TOKEN          (or an authenticated `gh`)
+# See docs/RELEASING.md.
+release: ## Cut a full signed+notarized release
+	goreleaser release --clean
+
+clean:
+	rm -rf dist $(BINARY)
