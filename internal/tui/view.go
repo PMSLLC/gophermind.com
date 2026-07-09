@@ -5,7 +5,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"gophermind/internal/prompt"
 )
 
 var _ tea.Model = model{}
@@ -14,7 +13,7 @@ var boxStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1
 
 func (m model) View() string {
 	if !m.ready {
-		return prompt.GopherArt
+		return m.banner
 	}
 
 	var status string

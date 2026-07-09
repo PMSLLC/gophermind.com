@@ -10,7 +10,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"gophermind/internal/agent"
-	"gophermind/internal/prompt"
 )
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -26,7 +25,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.ready {
 			m.viewport = viewport.New(msg.Width, vpH)
 			m.ready = true
-			m.appendLine(prompt.GopherArt)
+			m.appendLine(m.banner)
 		} else {
 			m.viewport.Width = msg.Width
 			m.viewport.Height = vpH

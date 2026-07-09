@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"gophermind/internal/agent"
+	"gophermind/internal/banner"
 )
 
 type state int
@@ -81,6 +82,11 @@ type model struct {
 	// whose reply would otherwise race Bubble Tea's stdin reader and leak into the
 	// textarea.
 	glamourStyle string
+
+	// banner is the startup splash (gopher art + version + recent changes + a
+	// random fortune), rendered once at construction so the fortune is stable for
+	// the session.
+	banner string
 }
 
 // newModel builds the model. buildAgent receives the bridge channel and the
@@ -115,6 +121,7 @@ func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent,
 		render:       r,
 		st:           stateIdle,
 		glamourStyle: glamourStyle,
+		banner:       banner.Render(),
 	}
 	// Mirror the client's startup sampling settings so /temp and /topp with no
 	// argument report the truth even before the user changes anything.
