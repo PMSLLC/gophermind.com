@@ -60,7 +60,10 @@ signs:
   - id: notarize
     ids: [gophermind]
     artifacts: archive
-    output: true
+    # Notarization is an in-place side effect (Apple registers the binary hash);
+    # this step produces no signature file, so output must be false or GoReleaser
+    # would try to upload nonexistent .sig artifacts.
+    output: false
     cmd: ./scripts/notarize.sh
     args:
       - "${artifact}"
