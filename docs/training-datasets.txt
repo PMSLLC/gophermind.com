@@ -1,0 +1,33 @@
+AWS
+
+• amazon/paws — Amazon paraphrase dataset, good for instruction tuning on AWS concepts
+• amazon/paws-small — if you want a smaller subset for dev
+• HuggingFaceM4/The-Web-Article — has AWS blog posts, re:Invent writeups, architecture deep-dives
+• laion/laion-webbook-pairs — web text pairs, contains a lot of AWS tutorials and docs
+
+HAProxy
+
+• ha/ha_proxy_docs — HAProxy official documentation scraped
+• web_scraper/tech-docs — has HAProxy config examples and guides
+• HaHaProxy dataset (if available) — config files and docs, check for HaProxy or haproxy in HF search
+
+MySQL
+
+• mysql/mysql-docs — official MySQL documentation
+• web_scraper/tech-docs — MySQL troubleshooting, tuning guides, query optimization
+• codeparrot/github-code — real MySQL queries and config from GitHub repos
+
+Unix/Linux
+
+• man-pages or web_scraper/unix-man-pages — Linux man pages (the holy grail for sysadmin)
+• codeparrot/github-code — shell scripts, systemd units, cron configs, network tooling
+• linux-torvalds/linux-kernel-docs — if you want kernel-level sysadmin knowledge
+
+Cross-domain (multi-skill)
+
+• bigcode/starcoderdata — real code from GitHub, tons of shell, Python sysadmin scripts, infrastructure-as-code
+• mteb/stackexchange — Server Fault, Unix & Linux, DBA, SuperUser questions and answers (excellent for troubleshooting patterns)
+• laion/laion-webbook-pairs — general web docs, includes a lot of sysadmin guides
+
+What to prioritize
+Server Fault + Unix & Linux StackExchange is your highest-signal dataset for troubleshooting. bigcode/starcoderdata gives you real infrastructure configs and scripts. Man pages cover the edge cases that docs miss.
