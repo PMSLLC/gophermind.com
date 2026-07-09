@@ -52,21 +52,11 @@ archives:
 checksum:
   name_template: checksums.txt
 
-# Notarize each archive before publishing. scripts/notarize.sh extracts the
-# signed universal binary, zips it, and submits it to Apple via a stored
-# notarytool keychain profile (name from $MACOS_NOTARY_PROFILE). OSS-friendly —
-# no GoReleaser Pro required. Skipped in snapshot builds via `--skip=sign`.
-signs:
-  - id: notarize
-    ids: [gophermind]
-    artifacts: archive
-    # Notarization is an in-place side effect (Apple registers the binary hash);
-    # this step produces no signature file, so output must be false or GoReleaser
-    # would try to upload nonexistent .sig artifacts.
-    output: false
-    cmd: ./scripts/notarize.sh
-    args:
-      - "${artifact}"
+# Notarization is NOT done here (GoReleaser's `signs` always registers a .sig
+# artifact, which doesn't fit an in-place notarize). The macOS binary is
+# codesigned in the universal_binaries hook above; `make release` notarizes the
+# published darwin archive afterward via scripts/notarize.sh — the archive's
+# binary is byte-identical, so Apple's hash registration still validates it.
 
 homebrew_casks:
   - name: gophermind
