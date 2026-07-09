@@ -30,9 +30,10 @@ universal_binaries:
   - id: gophermind
     replace: true
     hooks:
-      post: >-
-        codesign --sign "{{ .Env.MACOS_SIGN_IDENTITY }}" --timestamp
-        --options runtime --force "{{ .Path }}"
+      # codesign.sh reads $MACOS_SIGN_IDENTITY itself and no-ops when it is unset,
+      # so a credential-free `--snapshot` build still succeeds (this hook is NOT
+      # covered by --skip=sign).
+      post: ./scripts/codesign.sh "{{ .Path }}"
 
 archives:
   - id: gophermind
@@ -56,7 +57,6 @@ signs:
     output: true
     cmd: ./scripts/notarize.sh
     args:
-      - "{{ .Env.MACOS_NOTARY_PROFILE }}"
       - "${artifact}"
 
 homebrew_casks:
