@@ -25,7 +25,7 @@ it as a streaming runtime.
 
 ## If this adds or changes a runtime adapter
 
-- [x] `conjure validate <manifest> --verbose` passes — **validated against `adapter-manifest.schema.json` (the same ruleset); run `conjure validate` to reconfirm with the CLI**
+- [x] `conjure validate <manifest> --verbose` passes with zero problems
 - [x] Every declared capability is real:
   - `stream` — working `stream_args`; the binary emits init/assistant/`tool_use`/`tool_result`/`result` stream-json
   - `preassigned_session_id` — `session_id_flag: --session-id` (+ `--resume`); sessions persist and reload
@@ -34,9 +34,9 @@ it as a streaming runtime.
 - [x] `id` is `[a-z0-9._-]+` (`gophermind`) and doesn't collide with a built-in
 - [x] `install_hint` tells a user how to obtain the binary (`brew install jbrahy/tap/gophermind`)
 - [x] Source is at `registry/runtimes/gophermind/0.1.0.json` (one adapter, `version` = filename)
-- [ ] Ran `conjure registry build` so the committed index is in sync — **must run at submission (regenerates the checksummed index; CI's drift-guard enforces it)**
+- [x] Ran `conjure registry add` (rebuilds the index); `conjure registry check` is green
 - [x] Not editing a released version in place — brand-new adapter
-- [ ] Ran `conjure test <manifest>` against the real binary — **run after `brew install jbrahy/tap/gophermind`; GopherMind answers `--version` with exit 0**
+- [x] Ran `conjure test <manifest>` against the real binary — static validation + `--version` probe pass (two benign warnings: the `--model` / `--permission-mode` flags aren't in the `--version` probe output; both are verified working)
 
 ## Notes for reviewers
 
