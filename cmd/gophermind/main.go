@@ -20,6 +20,7 @@ import (
 	"gophermind/internal/config"
 	"gophermind/internal/llm"
 	"gophermind/internal/safety"
+	"gophermind/internal/session"
 	"gophermind/internal/setup"
 	"gophermind/internal/stream"
 	"gophermind/internal/tools"
@@ -56,7 +57,8 @@ func run() error {
 	printFlag := flag.Bool("print", false, "non-interactive print mode for external drivers (Claude-Code-compatible stream-json)")
 	inputFmtFlag := flag.String("input-format", "text", "print mode input format: text|stream-json")
 	outputFmtFlag := flag.String("output-format", "text", "print mode output format: text|stream-json")
-	sessionIDFlag := flag.String("session-id", "", "print mode: session id to report in stream-json output")
+	sessionIDFlag := flag.String("session-id", "", "print mode: pre-assign a session id (persisted for resume)")
+	resumeFlag := flag.String("resume", "", "print mode: resume a saved session by id")
 	transcriptFlag := flag.String("transcript", cfg.TranscriptPath, "write the full wire-level message history (JSONL) to this path at session end; MAY CONTAIN SENSITIVE PROMPTS/RESPONSES (file written 0600, no credentials included)")
 	flag.Usage = usage
 	flag.Parse()
@@ -244,7 +246,7 @@ func run() error {
 			TranscriptPath:   cfg.TranscriptPath,
 		})
 	case "print":
-		return runPrint(client, reg, cfg, task, *inputFmtFlag, *outputFmtFlag, *sessionIDFlag)
+		return runPrint(client, reg, cfg, task, *inputFmtFlag, *outputFmtFlag, *sessionIDFlag, *resumeFlag)
 	case "run", "ask":
 		if task == "" {
 			return fmt.Errorf("%s requires a task argument", cmd)
@@ -284,21 +286,55 @@ func run() error {
 // with text output it behaves like `run`, printing only the final answer.
 // Mutating tools are auto-approved here — print mode is for programmatic driving,
 // and a read-only/plan permission mode is a planned follow-up.
-func runPrint(client *llm.Client, reg *tools.Registry, cfg config.Config, prompt, inputFmt, outputFmt, sessionID string) error {
+func runPrint(client *llm.Client, reg *tools.Registry, cfg config.Config, prompt, inputFmt, outputFmt, sessionID, resumeID string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	approve := safety.ApprovalFunc(safety.Auto)
 
-	if outputFmt == "stream-json" {
-		if sessionID == "" {
-			sessionID = stream.NewSessionID()
+	// Resolve the session id and whether it should be persisted: --resume loads
+	// and continues an existing session; --session-id pre-assigns one; otherwise
+	// the session is ephemeral (no disk footprint).
+	persist := false
+	if resumeID != "" {
+		sessionID, persist = resumeID, true
+	} else if sessionID != "" {
+		persist = true
+	}
+	if sessionID == "" {
+		sessionID = stream.NewSessionID()
+	}
+
+	streamOut := outputFmt == "stream-json"
+	var enc *stream.Encoder
+	onEvent := func(agent.Event) {}
+	if streamOut {
+		enc = stream.NewEncoder(os.Stdout, sessionID)
+		onEvent = func(e agent.Event) { _ = enc.Handle(e) }
+	}
+
+	ag := agent.New(client, reg, cfg.MaxIter, approve, onEvent)
+	ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
+
+	if resumeID != "" {
+		if err := session.Load(resumeID, ag); err != nil {
+			return fmt.Errorf("resume %q: %w", resumeID, err)
 		}
-		enc := stream.NewEncoder(os.Stdout, sessionID)
-		ag := agent.New(client, reg, cfg.MaxIter, approve, func(e agent.Event) { _ = enc.Handle(e) })
-		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
+	}
+	save := func() error {
+		if !persist {
+			return nil
+		}
+		return session.Save(sessionID, ag)
+	}
+
+	if streamOut {
 		var toolNames []string
 		for _, d := range reg.Definitions() {
 			toolNames = append(toolNames, d.Function.Name)
+		}
+		afterTurn := (func() error)(nil)
+		if persist {
+			afterTurn = save
 		}
 		return stream.Run(ctx, enc, ag, stream.Options{
 			In:          os.Stdin,
@@ -307,13 +343,15 @@ func runPrint(client *llm.Client, reg *tools.Registry, cfg config.Config, prompt
 			Model:       cfg.Model,
 			Tools:       toolNames,
 			Cwd:         cfg.RootDir,
+			AfterTurn:   afterTurn,
 		})
 	}
 
-	// text output
-	ag := agent.New(client, reg, cfg.MaxIter, approve, func(agent.Event) {})
-	ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
+	// text output: behave like `run`, printing only the final answer.
 	answer, err := ag.Send(ctx, prompt)
+	if serr := save(); serr != nil && err == nil {
+		err = serr
+	}
 	if err != nil {
 		return err
 	}

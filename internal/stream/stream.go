@@ -42,6 +42,9 @@ type Options struct {
 	Model       string
 	Tools       []string
 	Cwd         string
+	// AfterTurn, if set, runs after each completed turn's result line — used to
+	// persist the session so it can be resumed.
+	AfterTurn func() error
 }
 
 // Run drives print mode: writes the init line, then one turn per input (a single
@@ -53,10 +56,19 @@ func Run(ctx context.Context, enc *Encoder, sess Session, opts Options) error {
 	}
 	turn := func(input string) error {
 		answer, sErr := sess.Send(ctx, input)
+		var rErr error
 		if sErr != nil {
-			return enc.Result(sErr.Error(), true)
+			rErr = enc.Result(sErr.Error(), true)
+		} else {
+			rErr = enc.Result(answer, false)
 		}
-		return enc.Result(answer, false)
+		if rErr != nil {
+			return rErr
+		}
+		if opts.AfterTurn != nil {
+			return opts.AfterTurn()
+		}
+		return nil
 	}
 
 	if opts.InputFormat == "stream-json" {

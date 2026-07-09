@@ -6,7 +6,8 @@ All notable changes to GopherMind are documented here. The format follows
 
 ## [Unreleased]
 ### Added
-- `gophermind --print` non-interactive mode that speaks a Claude-Code-compatible **stream-json** protocol (init / assistant / tool_use / tool_result / result messages), so external drivers such as OpenCoven's Coven can run gophermind programmatically. Supports text and stream-json input/output. First step toward being an OpenCoven streaming runtime.
+- `gophermind --print` non-interactive mode that speaks a Claude-Code-compatible **stream-json** protocol (init / assistant / tool_use / tool_result / result messages), so external drivers such as OpenCoven's Coven can run gophermind programmatically. Supports text and stream-json input/output.
+- **Session persistence**: `--session-id` pre-assigns a session and `--resume` continues a saved one, so a driver can keep state across processes. Histories are stored per-id (path-traversal-guarded) as JSONL.
 
 ## [0.1.0] - 2026-07-09
 ### Added
