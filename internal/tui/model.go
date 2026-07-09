@@ -74,11 +74,18 @@ type model struct {
 	width  int
 	height int
 	ready  bool
+
+	// glamourStyle is a fixed glamour style name ("dark"/"light"), resolved once
+	// before the program starts. Using a fixed style (never glamour.WithAutoStyle)
+	// keeps the running Update loop from issuing an OSC background-color query,
+	// whose reply would otherwise race Bubble Tea's stdin reader and leak into the
+	// textarea.
+	glamourStyle string
 }
 
 // newModel builds the model. buildAgent receives the bridge channel and the
 // shared always-allow set so the agent's approval closure can consult them.
-func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent, modelName, mode string) model {
+func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent, modelName, mode, glamourStyle string) model {
 	sub := make(chan tea.Msg, 64)
 	allowed := newAllowSet()
 
@@ -93,20 +100,21 @@ func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent,
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
-	r, _ := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(80))
+	r, _ := glamour.NewTermRenderer(glamour.WithStandardStyle(glamourStyle), glamour.WithWordWrap(80))
 
 	ag := buildAgent(sub, allowed)
 	m := model{
-		agent:    ag,
-		sub:      sub,
-		allowed:  allowed,
-		model:    modelName,
-		mode:     mode,
-		input:    ta,
-		viewport: viewport.New(0, 0),
-		spin:     sp,
-		render:   r,
-		st:       stateIdle,
+		agent:        ag,
+		sub:          sub,
+		allowed:      allowed,
+		model:        modelName,
+		mode:         mode,
+		input:        ta,
+		viewport:     viewport.New(0, 0),
+		spin:         sp,
+		render:       r,
+		st:           stateIdle,
+		glamourStyle: glamourStyle,
 	}
 	// Mirror the client's startup sampling settings so /temp and /topp with no
 	// argument report the truth even before the user changes anything.

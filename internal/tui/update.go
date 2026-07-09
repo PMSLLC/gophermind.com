@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"gophermind/internal/agent"
+	"gophermind/internal/prompt"
 )
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -21,18 +22,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if vpH < 1 {
 			vpH = 1
 		}
+		justReady := !m.ready
 		if !m.ready {
 			m.viewport = viewport.New(msg.Width, vpH)
 			m.ready = true
+			m.appendLine(prompt.GopherArt)
 		} else {
 			m.viewport.Width = msg.Width
 			m.viewport.Height = vpH
 		}
 		m.input.SetWidth(msg.Width - 2)
-		if r, err := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(msg.Width-2)); err == nil {
+		if r, err := glamour.NewTermRenderer(glamour.WithStandardStyle(m.glamourStyle), glamour.WithWordWrap(msg.Width-2)); err == nil {
 			m.render = r
 		}
 		m.sync()
+		if justReady {
+			// The banner is taller than the viewport; anchor the first paint
+			// to the top so the gopher's face is what greets the user.
+			m.viewport.GotoTop()
+		}
 		return m, nil
 
 	case tea.MouseMsg:
@@ -58,17 +66,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitFor(m.sub)
 
 	case assistantMsg:
-		m.appendLine(string(msg))
+		// Intermediate narration accompanying a tool call. It already streamed
+		// live into m.stream; commit it as a styled line and clear the buffer so
+		// the final answer render doesn't repeat it.
+		m.appendLine(renderNarration(string(msg)))
+		m.stream = ""
 		m.sync()
 		return m, waitFor(m.sub)
 
 	case toolCallMsg:
-		m.appendLine("● " + msg.name + "  " + oneLine(msg.args))
+		m.appendLine(renderToolCall(msg.name, msg.args))
 		m.sync()
 		return m, waitFor(m.sub)
 
 	case toolResultMsg:
-		m.appendLine("  " + oneLine(msg.text))
+		m.appendLine(renderToolResult(msg.text))
 		m.sync()
 		return m, waitFor(m.sub)
 
@@ -98,9 +110,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// fault: show a brief "cancelled" line and drop the partial stream rather
 		// than surfacing a raw "context canceled" error.
 		if errors.Is(msg.err, context.Canceled) {
-			m.appendLine("⨯ cancelled")
+			m.appendLine(renderError("⨯ cancelled"))
 		} else {
-			m.appendLine("error: " + msg.err.Error())
+			m.appendLine(renderError("error: " + msg.err.Error()))
 		}
 		m.stream = ""
 		m.st = stateIdle
@@ -203,7 +215,7 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 	}
 
 	m.appendLine("")
-	m.appendLine("› " + text)
+	m.appendLine(renderUserPrompt(text))
 	m.st = stateWorking
 	m.sync()
 	if m.agent == nil {

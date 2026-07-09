@@ -10,7 +10,7 @@ import (
 )
 
 func testModel() model {
-	m := newModel(func(sub chan tea.Msg, allowed *allowSet) *agent.Agent { return nil }, "m", "auto")
+	m := newModel(func(sub chan tea.Msg, allowed *allowSet) *agent.Agent { return nil }, "m", "auto", "dark")
 	m.width, m.height, m.ready = 80, 24, true
 	return m
 }

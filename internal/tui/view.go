@@ -5,28 +5,26 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"gophermind/internal/prompt"
 )
 
 var _ tea.Model = model{}
 
-var (
-	statusStyle = lipgloss.NewStyle().Faint(true)
-	boxStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
-)
+var boxStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
 
 func (m model) View() string {
 	if !m.ready {
-		return "starting…"
+		return prompt.GopherArt
 	}
 
 	var status string
 	switch m.st {
 	case stateWorking:
-		status = fmt.Sprintf("%s %s · %s mode · %s · working", m.spin.View(), m.model, m.mode, m.usage.String())
+		status = statusWorkingStyle.Render(fmt.Sprintf("%s %s · %s mode · %s · working", m.spin.View(), m.model, m.mode, m.usage.String()))
 	case stateApproval:
-		status = fmt.Sprintf("approve %s %s ? (y)es (n)o (a)lways", m.pending.tool, oneLine(m.pending.args))
+		status = statusApprovalStyle.Render(fmt.Sprintf("⏸ approve  %s %s  ? (y)es (n)o (a)lways", m.pending.tool, oneLine(m.pending.args)))
 	default:
-		status = fmt.Sprintf("%s · %s mode · %s · ready · /help", m.model, m.mode, m.usage.String())
+		status = statusReadyStyle.Render(fmt.Sprintf("%s · %s mode · %s · ready · /help", m.model, m.mode, m.usage.String()))
 	}
 
 	width := m.width - 2
@@ -38,6 +36,6 @@ func (m model) View() string {
 		lipgloss.Left,
 		m.viewport.View(),
 		boxStyle.Width(width).Render(m.input.View()),
-		statusStyle.Render(status),
+		status,
 	)
 }

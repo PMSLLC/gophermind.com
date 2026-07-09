@@ -5,6 +5,7 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"gophermind/internal/agent"
 	"gophermind/internal/llm"
 	"gophermind/internal/tools"
@@ -46,7 +47,18 @@ func Run(cfg Config) error {
 		return ag
 	}
 
-	m := newModel(build, cfg.Model, cfg.Mode)
+	// Detect the terminal background ONCE, here, before tea.Run() puts stdin into
+	// raw mode and starts its input reader. lipgloss caches the result (sync.Once),
+	// so every AdaptiveColor render during the session reuses it without re-querying,
+	// and we pass a fixed glamour style so the render loop never issues an OSC
+	// background-color query either. Doing this at runtime instead would leak the
+	// terminal's escape-sequence reply into the textarea.
+	glamourStyle := "light"
+	if lipgloss.HasDarkBackground() {
+		glamourStyle = "dark"
+	}
+
+	m := newModel(build, cfg.Model, cfg.Mode, glamourStyle)
 	final, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
 	// On exit, flush the full message history if a transcript path was set. This
 	// runs once, after the UI has torn down, so it never interferes with the
