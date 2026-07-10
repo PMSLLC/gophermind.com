@@ -360,6 +360,7 @@ func run() error {
 		tools.DBExplain(cfg.RootDir),                         // read-only EXPLAIN QUERY PLAN + full-scan warnings
 		tools.Chart(),                                        // render sparkline/bar chart from a numeric series
 		tools.DataTransform(cfg.RootDir),                     // read-only filter/group/aggregate over CSV/JSONL
+		tools.LogMetrics(cfg.RootDir),                        // read-only time-bucketed log counts (spikes)
 	)
 
 	// A single shared stdin reader, used by both the REPL and approval prompts.
