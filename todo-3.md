@@ -17,7 +17,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [x] **2. think/speed toggles.** Implement `--think` (reasoning effort) and `--speed` (faster fallback model) so those capabilities can be declared `true`. Value: first-class streaming runtime.
 - [x] **3. Richer result subtypes.** `error_max_turns`, `error_during_execution`, with codes. Value: drivers branch on failure mode.
 - [ ] **4. Stdin control messages.** Accept `system`/control lines (interrupt, set-model) on the stream-json input. Value: mid-session control from the driver.
-- [ ] **5. `--output-format json` for run/ask.** Machine-readable one-shot output beyond print mode. Value: scriptability everywhere.
+- [x] **5. `--output-format json` for run/ask.** Machine-readable one-shot output beyond print mode. Value: scriptability everywhere.
 - [ ] **6. Conformance CI.** A GitHub Action that builds `conjure` and runs `validate`/`test` on the manifest each PR. Value: the manifest never drifts from the binary.
 - [ ] **7. Multi-adapter manifest.** A `gophermind-plan` read-only variant alongside the default. Value: Coven exposes both access levels.
 - [x] **8. Cost in result line.** Surface `total_cost_usd` and token counts from the meter per turn. Value: drivers track spend.

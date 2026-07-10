@@ -374,13 +374,23 @@ func run() error {
 				fmt.Fprintln(os.Stderr, "warning: transcript export failed:", err)
 			}
 		}
-		if sendErr != nil {
-			return sendErr
+		// --output-format json: emit one machine-readable result object (errors
+		// included) so run/ask is scriptable. Default text mode prints the answer
+		// to stdout and the usage meter to stderr.
+		switch *outputFmtFlag {
+		case "json":
+			return renderJSONResult(os.Stdout, answer, ag.Usage(), cfg.Model, sendErr)
+		case "text", "":
+			if sendErr != nil {
+				return sendErr
+			}
+			fmt.Println(answer)
+			// Token + cost meter goes to stderr so stdout stays pipeable.
+			fmt.Fprintln(os.Stderr, ag.Usage().String())
+			return nil
+		default:
+			return fmt.Errorf("invalid -output-format %q for %s: use text or json", *outputFmtFlag, cmd)
 		}
-		fmt.Println(answer)
-		// Token + cost meter goes to stderr so stdout stays pipeable.
-		fmt.Fprintln(os.Stderr, ag.Usage().String())
-		return nil
 	default:
 		usage()
 		return fmt.Errorf("unknown command: %s", cmd)
