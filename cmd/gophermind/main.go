@@ -770,6 +770,14 @@ func run() error {
 				Time: time.Now(), Model: cfg.Model,
 				PromptTokens: u.PromptTokens, CompletionTokens: u.CompletionTokens, CostUSD: u.CostUSD,
 			})
+			// Budget alert: warn when cumulative recorded spend exceeds a ceiling.
+			if b, err := strconv.ParseFloat(strings.TrimSpace(os.Getenv("GOPHERMIND_BUDGET_USD")), 64); err == nil && b > 0 {
+				if recs, err := usagelog.Load(lp); err == nil {
+					if total := usagelog.TotalCost(recs); total >= b {
+						fmt.Fprintf(os.Stderr, "⚠ budget alert: cumulative spend $%.4f has reached the $%.2f ceiling (GOPHERMIND_BUDGET_USD)\n", total, b)
+					}
+				}
+			}
 		}
 		// --report writes a self-contained HTML record of the run (task, answer,
 		// usage) for sharing.

@@ -50,3 +50,10 @@ func TestReportEmpty(t *testing.T) {
 		t.Errorf("empty report should say so: %q", out)
 	}
 }
+
+func TestTotalCost(t *testing.T) {
+	recs := []Record{{CostUSD: 0.01}, {CostUSD: 0.03}, {CostUSD: 0.06}}
+	if got := TotalCost(recs); got != 0.10 {
+		t.Errorf("TotalCost = %f, want 0.10", got)
+	}
+}

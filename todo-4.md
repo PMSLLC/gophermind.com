@@ -109,7 +109,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [ ] **71. OpenTelemetry tracing.** Emit spans for turns, tool calls, and LLM requests. Value: end-to-end latency/why-is-it-slow visibility.
 - [ ] **72. Prometheus metrics endpoint.** Export tokens, cost, tool counts, and error rates on `serve`. Value: dashboards and alerting.
 - [x] **73. Cost dashboard.** A `usage report` subcommand summarizing spend by day/model/session. Value: understand where budget goes.
-- [ ] **74. Budget alerts.** Warn (or halt) at configurable spend thresholds beyond per-run guardrails. Value: no surprise bills.
+- [x] **74. Budget alerts.** Warn (or halt) at configurable spend thresholds beyond per-run guardrails. Value: no surprise bills.
 - [ ] **75. Live status TUI.** A `top`-style view of active fleet workers, their tasks, and spend. Value: operate multi-agent runs at a glance.
 - [x] **76. Structured JSON logs.** Optional machine-readable logs for every event. Value: pipe into log tooling.
 - [x] **77. Slow-request tracing.** Flag and record LLM/tool calls over a latency threshold. Value: find the bottleneck.

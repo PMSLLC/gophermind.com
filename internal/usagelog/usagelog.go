@@ -129,3 +129,12 @@ func writeGroup(b *strings.Builder, m map[string]*agg) {
 func roundCost(c float64) float64 {
 	return float64(int64(c*10000+0.5)) / 10000
 }
+
+// TotalCost sums the cost across records — used for cumulative budget alerts.
+func TotalCost(recs []Record) float64 {
+	var t float64
+	for _, r := range recs {
+		t += r.CostUSD
+	}
+	return roundCost(t)
+}
