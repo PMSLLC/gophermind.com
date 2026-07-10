@@ -37,6 +37,7 @@ import (
 	"gophermind/internal/setup"
 	"gophermind/internal/stream"
 	"gophermind/internal/tools"
+	"gophermind/internal/trace"
 	"gophermind/internal/tui"
 	"gophermind/internal/ui"
 	"gophermind/internal/update"
@@ -878,7 +879,18 @@ func run() error {
 				return ag.SelfConsistent(ctx, task, inner, *samplesFlag)
 			}
 		}
+		// Optional tracing (GOPHERMIND_TRACE_FILE): emit a span for the turn.
+		var endSpan func(map[string]string)
+		if tf := strings.TrimSpace(os.Getenv("GOPHERMIND_TRACE_FILE")); tf != "" {
+			if f, err := os.OpenFile(tf, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); err == nil {
+				defer f.Close()
+				endSpan = trace.New(f).Start("turn")
+			}
+		}
 		answer, sendErr := send(ctx, task)
+		if endSpan != nil {
+			endSpan(map[string]string{"model": client.Model, "cmd": cmd})
+		}
 		// Write the transcript even when the turn errored: a partial history is
 		// still useful for debugging. The dump never includes credentials.
 		if cfg.TranscriptPath != "" {
