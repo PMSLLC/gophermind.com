@@ -219,6 +219,10 @@ func run() error {
 		} else {
 			fmt.Fprintf(os.Stderr, "✓ saved to %s\n", p)
 		}
+		// First-run welcome tour: a short guided intro after initial setup.
+		if !*quietFlag {
+			fmt.Fprintln(os.Stderr, welcomeTour())
+		}
 		// Apply the just-captured values to this session (the file is for next time).
 		cfg.BaseURL = res.BaseURL
 		if res.APIKey != "" {

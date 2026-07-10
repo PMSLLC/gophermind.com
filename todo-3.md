@@ -70,7 +70,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [ ] **43. HubTou historical fortunes.** Add the historical set (license-checked) as a second embedded source. Value: richer variety.
 - [x] **44. Fortune categories / `--fortune off`.** Value: user control over startup flavor.
 - [x] **45. Tip-of-the-day.** Rotating tips with docs links under the banner. Value: progressive discovery of features.
-- [ ] **46. First-run welcome tour.** A short guided intro after the setup wizard. Value: faster onboarding.
+- [x] **46. First-run welcome tour.** A short guided intro after the setup wizard. Value: faster onboarding.
 - [x] **47. `gophermind doctor`.** Check endpoint/model/`rg`/git/tap reachability. Value: fast setup diagnosis.
 - [x] **48. Update-available notice.** Compare version to latest release on startup (opt-in). Value: nudge upgrades.
 - [ ] **49. ASCII-art variants.** Seasonal/random gopher poses. Value: delight.
