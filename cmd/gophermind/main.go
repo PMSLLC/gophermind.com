@@ -100,6 +100,7 @@ func run() error {
 	dryRunFlag := flag.Bool("dry-run", false, "preview the mutating tool calls the agent would make without executing them")
 	samplesFlag := flag.Int("samples", 1, "run/ask: sample the turn N times and majority-vote the answer (self-consistency)")
 	reportFlag := flag.String("report", "", "run/ask: write a self-contained HTML report of the run to this file")
+	debateFlag := flag.Bool("debate", false, "run/ask: produce two candidate answers and synthesize the better one (debate/consensus)")
 	promptTemplateFlag := flag.String("prompt-template", "", "use a custom structured prompt template (.md with frontmatter + XML sections) as the base system prompt")
 	toolBudgetFlag := flag.Int("tool-budget", 0, "run/ask: max tool calls per turn (0 = default)")
 	maxCostFlag := flag.Float64("max-cost", 0, "run/ask: abort when estimated cost (USD) exceeds this (0 = unlimited)")
@@ -863,6 +864,11 @@ func run() error {
 			send = func(ctx context.Context, task string) (string, error) {
 				return ag.VerifyResult(ctx, task, inner)
 			}
+		}
+		// --debate produces two candidate answers and has the model synthesize
+		// the better one (skipped when they already agree).
+		if *debateFlag {
+			send = ag.SendDebate
 		}
 		// --samples N runs the chosen strategy N times and majority-votes the
 		// answer (self-consistency) for robustness on reasoning tasks.

@@ -41,7 +41,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 
 ## AE. Agent Reasoning & Multi-Agent II (builds on the verifier pass, fleet mode, `spawn_agent`, checkpoints)
 
-- [ ] **21. Debate/consensus mode.** Two agents argue a solution; a judge picks or synthesizes. Value: higher-quality answers on ambiguous tasks.
+- [x] **21. Debate/consensus mode.** Two agents argue a solution; a judge picks or synthesizes. Value: higher-quality answers on ambiguous tasks.
 - [ ] **22. Planner/executor split.** A dedicated planner agent emits a task graph; executor agents (fleet) run leaves in dependency order. Value: parallelism with correct ordering.
 - [x] **23. Tool-use critic.** A lightweight critic reviews each proposed tool call against the task before it runs. Value: fewer wasted/wrong tool calls.
 - [x] **24. Self-consistency sampling.** Run N samples of a turn and majority-vote the answer. Value: robustness on reasoning tasks.
