@@ -108,6 +108,7 @@ func run() error {
 	debateFlag := flag.Bool("debate", false, "run/ask: produce two candidate answers and synthesize the better one (debate/consensus)")
 	everyFlag := flag.Duration("every", 0, "run/ask: re-run the task on this interval (e.g. 30m) until interrupted — a built-in scheduler")
 	watchFlag := flag.String("watch", "", "run/ask: re-run the task whenever this path (file/dir) changes")
+	reflexionFlag := flag.Bool("reflexion", false, "run/ask: on failed verification, retry once with a structured lesson")
 	promptTemplateFlag := flag.String("prompt-template", "", "use a custom structured prompt template (.md with frontmatter + XML sections) as the base system prompt")
 	toolBudgetFlag := flag.Int("tool-budget", 0, "run/ask: max tool calls per turn (0 = default)")
 	maxCostFlag := flag.Float64("max-cost", 0, "run/ask: abort when estimated cost (USD) exceeds this (0 = unlimited)")
@@ -1015,6 +1016,9 @@ func run() error {
 		// the better one (skipped when they already agree).
 		if *debateFlag {
 			send = ag.SendDebate
+		}
+		if *reflexionFlag {
+			send = ag.SendWithReflexion
 		}
 		// --samples N runs the chosen strategy N times and majority-votes the
 		// answer (self-consistency) for robustness on reasoning tasks.
