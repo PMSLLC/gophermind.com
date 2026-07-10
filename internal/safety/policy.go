@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -88,7 +89,7 @@ func (p *Policy) IsSecret(content string) bool {
 		`-----BEGIN (RSA |EC )?PRIVATE KEY-----`, // Private keys
 	}
 	for _, pattern := range secretPatterns {
-		if strings.Contains(content, pattern) {
+		if matched, _ := regexp.MatchString(pattern, content); matched {
 			return true
 		}
 	}
@@ -205,7 +206,7 @@ func NewSecretScanner() *SecretScanner {
 // Scan checks if content contains potential secrets.
 func (ss *SecretScanner) Scan(content string) bool {
 	for _, pattern := range ss.patterns {
-		if strings.Contains(content, pattern) {
+		if matched, _ := regexp.MatchString(pattern, content); matched {
 			return true
 		}
 	}

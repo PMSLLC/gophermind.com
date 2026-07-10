@@ -227,12 +227,17 @@ func run() error {
 	fmt.Fprintf(os.Stderr, "model capabilities: %s\n", caps)
 
 	reg := tools.NewRegistry(
-		tools.ReadFile(cfg.RootDir),
-		tools.ListFiles(cfg.RootDir),
-		tools.Search(cfg.RootDir),
+		tools.ReadFileRange(cfg.RootDir),      // read_file + optional line ranges
+		tools.ListFilesGlob(cfg.RootDir),      // list_files + include/exclude globs
+		tools.SearchEnhanced(cfg.RootDir),     // search + context/flags/paging
 		tools.WriteFile(cfg.RootDir),
-		tools.EditFile(cfg.RootDir),
-		tools.RunShell(cfg.RootDir, cfg.CmdTimeout),
+		tools.EditFileMulti(cfg.RootDir),      // edit_file + replace_all
+		tools.RunShellEnhanced(cfg.RootDir, cfg.CmdTimeout), // run_shell + timeout/workdir
+		tools.FileStat(cfg.RootDir),
+		tools.MoveFile(cfg.RootDir),
+		tools.DeleteFile(cfg.RootDir),
+		tools.Mkdir(cfg.RootDir),
+		tools.PatchApply(cfg.RootDir),
 	)
 
 	// A single shared stdin reader, used by both the REPL and approval prompts.
