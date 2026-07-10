@@ -765,6 +765,16 @@ func run() error {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
 		return runAB(ctx, client, reg, cfg, basePrompt, *abVariantsFlag, *abFixturesFlag, *abMinScoreFlag)
+	case "benchmark":
+		// Run a standardized task set and report pass rate + wall time, to
+		// compare a model/version over time (default set: docs/benchmarks/tasks.jsonl).
+		fixturesFile := "docs/benchmarks/tasks.jsonl"
+		if *abFixturesFlag != "" {
+			fixturesFile = *abFixturesFlag
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		return runBenchmark(ctx, client, reg, cfg, basePrompt, fixturesFile)
 	case "serve":
 		// Webhook mode: each POST /run spawns a fresh agent turn, isolated from
 		// other requests. Blocks until the process is stopped.
@@ -1901,4 +1911,36 @@ func telemetryPath() string {
 		return filepath.Join(".gophermind", "telemetry.json")
 	}
 	return filepath.Join(filepath.Dir(p), "telemetry.json")
+}
+
+// runBenchmark runs a standardized task set through a read-only agent and reports
+// pass rate and wall-clock time, for comparing a model/version over time.
+func runBenchmark(ctx context.Context, client *llm.Client, reg *tools.Registry, cfg config.Config, basePrompt, fixturesFile string) error {
+	data, err := os.ReadFile(fixturesFile)
+	if err != nil {
+		return fmt.Errorf("read benchmark tasks: %w", err)
+	}
+	var fixtures []abtest.Fixture
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var f abtest.Fixture
+		if err := json.Unmarshal([]byte(line), &f); err != nil {
+			return fmt.Errorf("parse benchmark task: %w", err)
+		}
+		fixtures = append(fixtures, f)
+	}
+	if len(fixtures) == 0 {
+		return fmt.Errorf("no benchmark tasks in %s", fixturesFile)
+	}
+	run := func(ctx context.Context, _, p string) (string, error) {
+		a := agent.New(client, reg, cfg.MaxIter, safety.ReadMode(), nil)
+		a.SetSystemPrompt(basePrompt)
+		return a.Send(ctx, p)
+	}
+	res := abtest.Benchmark(ctx, fixtures, run, func() int64 { return time.Now().UnixMilli() })
+	fmt.Printf("benchmark: %d/%d passed in %dms (%s, %s)\n",
+		res.Passed, res.Total, res.DurationMs, cfg.Model, version.Version)
+	return nil
 }

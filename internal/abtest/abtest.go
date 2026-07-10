@@ -103,3 +103,29 @@ func RunMatrixScored(ctx context.Context, variants []Variant, fixtures []Fixture
 	}
 	return results
 }
+
+// BenchResult is the outcome of a benchmark run: pass rate and wall-clock time.
+type BenchResult struct {
+	Passed     int
+	Total      int
+	DurationMs int64
+}
+
+// Benchmark runs each fixture through run (scored by SubstringScorer), timing
+// the whole set — a standardized way to compare a model/version's quality and
+// latency over time. now is injectable for testing.
+func Benchmark(ctx context.Context, fixtures []Fixture, run Runner, now func() int64) BenchResult {
+	start := now()
+	res := BenchResult{Total: len(fixtures)}
+	for _, f := range fixtures {
+		if ctx.Err() != nil {
+			break
+		}
+		out, err := run(ctx, "", f.Prompt)
+		if err == nil && matches(out, f.Expect) {
+			res.Passed++
+		}
+	}
+	res.DurationMs = now() - start
+	return res
+}
