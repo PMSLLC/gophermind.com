@@ -130,7 +130,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 
 ## AB. Developer Experience & Community (builds on README/CONTRIBUTING, the public repo)
 
-- [ ] **91. Issue/PR templates + Code of Conduct.** Value: smoother contributions.
+- [x] **91. Issue/PR templates + Code of Conduct.** Value: smoother contributions.
 - [ ] **92. Labeled "good first issues".** Seed starter tasks from these backlogs. Value: onboarding contributors.
 - [ ] **93. Landing page (gophermind.com).** A real site for the project. Value: discoverability.
 - [ ] **94. Demo recording.** asciinema/GIF of a real session in the README. Value: shows, not tells.
@@ -138,5 +138,5 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [ ] **96. Plugin/tool SDK + docs.** Stable interface + loader for third-party tools. Value: ecosystem growth.
 - [ ] **97. Push toward homebrew/core.** Graduate from the tap once popular. Value: `brew install gophermind` with no tap.
 - [ ] **98. Discussions / community channel.** Value: a place for users to gather.
-- [ ] **99. Contributor CI gates.** Lint, `go vet`, tests, coverage on every PR. Value: quality stays high as contributors grow.
+- [x] **99. Contributor CI gates.** Lint, `go vet`, tests, coverage on every PR. Value: quality stays high as contributors grow.
 - [ ] **100. Public roadmap / project board.** Turn these backlogs into a tracked board. Value: transparency and coordination.

@@ -75,5 +75,9 @@ larger before diving in.
 Include: what you ran, what you expected, what happened, your OS, and your
 endpoint/model (e.g. "llama.cpp, Qwen"). A minimal repro helps a lot.
 
+All contributors are expected to follow our
+[Code of Conduct](CODE_OF_CONDUCT.md). Every PR is checked by CI (gofmt, `go
+vet`, build, and `go test -race`), so run those locally before pushing.
+
 By contributing, you agree your contributions are licensed under the project's
 [MIT License](LICENSE).
