@@ -282,6 +282,43 @@ func run() error {
 		return nil
 	}
 
+	// `gophermind plugins [list|install <source>]` manages out-of-process tool
+	// plugins in .gophermind/plugins (the community tool marketplace).
+	if cmd == "plugins" {
+		dir := filepath.Join(cfg.RootDir, ".gophermind", "plugins")
+		sub := "list"
+		if len(args) > 1 {
+			sub = strings.ToLower(args[1])
+		}
+		switch sub {
+		case "list":
+			plugins, err := tools.LoadPlugins(dir)
+			if err != nil {
+				return err
+			}
+			if len(plugins) == 0 {
+				fmt.Fprintln(os.Stderr, "no plugins installed")
+				return nil
+			}
+			for _, p := range plugins {
+				fmt.Printf("%-20s %s\n", p.Name, p.Description)
+			}
+			return nil
+		case "install":
+			if len(args) < 3 {
+				return fmt.Errorf("usage: gophermind plugins install <file-or-url>")
+			}
+			name, err := tools.InstallPlugin(dir, args[2])
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "✓ installed plugin %q\n", name)
+			return nil
+		default:
+			return fmt.Errorf("usage: gophermind plugins [list|install <source>]")
+		}
+	}
+
 	// `gophermind completion <bash|zsh|fish>` prints a shell-completion script.
 	if cmd == "completion" {
 		shell := ""
