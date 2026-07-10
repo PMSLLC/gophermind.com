@@ -659,6 +659,14 @@ func run() error {
 		if systemSuffix != "" {
 			ag.AppendSystemPrompt(systemSuffix)
 		}
+		// RAG context injection: when GOPHERMIND_RAG is enabled and a semantic
+		// index exists, retrieve the top chunks for the task and inject them so the
+		// model starts grounded (fewer tool round-trips).
+		if envTruthy("GOPHERMIND_RAG") && embedProvider != nil {
+			if rc := retrieveContext(ctx, embedProvider, indexPath, task, 5); rc != "" {
+				ag.AppendSystemPrompt(rc)
+			}
+		}
 		// Few-shot example bank: when GOPHERMIND_EXAMPLES names a JSON bank, inject
 		// the most task-relevant examples (top 3 by term overlap) into the prompt.
 		if p := strings.TrimSpace(os.Getenv("GOPHERMIND_EXAMPLES")); p != "" {
@@ -1313,6 +1321,35 @@ func braveEndpoint(cfg config.Config) string {
 		return cfg.BraveEndpoint
 	}
 	return tools.BraveSearchEndpoint
+}
+
+// retrieveContext loads the semantic index, embeds the task, and formats the
+// top-k chunks as a <retrieved_context> prompt section. Best-effort: any failure
+// (no index, embed error) yields "" so the run proceeds ungrounded.
+func retrieveContext(ctx context.Context, p embed.Provider, indexPath, task string, k int) string {
+	idx, err := embed.LoadIndex(indexPath)
+	if err != nil || len(idx.Vectors) == 0 {
+		return ""
+	}
+	qv, err := p.Embed(ctx, []string{task})
+	if err != nil || len(qv) == 0 {
+		return ""
+	}
+	hits := embed.TopK(qv[0], idx.Vectors, k)
+	if len(hits) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("<retrieved_context>\nRelevant excerpts from this repository (use as grounding):\n")
+	for _, h := range hits {
+		snippet := h.Text
+		if len(snippet) > 400 {
+			snippet = snippet[:400] + "…"
+		}
+		fmt.Fprintf(&b, "\n[%s]\n%s\n", h.ID, snippet)
+	}
+	b.WriteString("</retrieved_context>")
+	return b.String()
 }
 
 // buildEmbedProvider returns an embeddings provider when configured, else nil.
