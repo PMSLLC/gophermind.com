@@ -927,7 +927,13 @@ func run() error {
 			if sendErr != nil {
 				return sendErr
 			}
-			fmt.Println(answer)
+			// Syntax-highlight the answer's markdown on a terminal; keep plain
+			// output when piped so stdout stays clean.
+			if isatty() {
+				fmt.Println(ui.HighlightMarkdown(answer))
+			} else {
+				fmt.Println(answer)
+			}
 			// Token + cost meter goes to stderr so stdout stays pipeable.
 			fmt.Fprintln(os.Stderr, ag.Usage().String())
 			return nil
