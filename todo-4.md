@@ -55,7 +55,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 ## AF. Prompt Engineering & Evaluation II (builds on `internal/prompt`, `internal/abtest`, `--persona`, skills)
 
 - [x] **31. Prompt registry & versioning.** Store named prompt templates with versions and a `prompts` subcommand to list/diff/rollback. Value: manage prompts like code.
-- [ ] **32. Eval harness + scoreboard.** Extend `ab` to score variants across multiple **models** and print a leaderboard (builds on `abtest`). Value: pick the best prompt×model pair on data.
+- [x] **32. Eval harness + scoreboard.** Extend `ab` to score variants across multiple **models** and print a leaderboard (builds on `abtest`). Value: pick the best prompt×model pair on data.
 - [x] **33. LLM-as-judge scoring.** Add a rubric-based judge scorer to `abtest` beyond substring match. Value: grade open-ended answers.
 - [x] **34. Regression gate for prompts.** Fail CI if a prompt change drops the eval score below a threshold. Value: prompts can't silently regress.
 - [x] **35. Persona authoring UX.** A `persona new` scaffolder that writes a template + registers it. Value: easy custom personas beyond the built-ins.

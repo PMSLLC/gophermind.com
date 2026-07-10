@@ -5,6 +5,7 @@ package abtest
 
 import (
 	"context"
+	"fmt"
 	"strings"
 )
 
@@ -128,4 +129,36 @@ func Benchmark(ctx context.Context, fixtures []Fixture, run Runner, now func() i
 	}
 	res.DurationMs = now() - start
 	return res
+}
+
+// Leaderboard renders results ranked by pass rate (best first) as a table, so
+// the best variant×model pair is obvious at a glance.
+func Leaderboard(results []Result) string {
+	ranked := make([]Result, len(results))
+	copy(ranked, results)
+	sortByScore(ranked)
+	var b strings.Builder
+	b.WriteString("rank  variant                        score\n")
+	for i, r := range ranked {
+		score := 0.0
+		if r.Total > 0 {
+			score = float64(r.Passed) / float64(r.Total) * 100
+		}
+		fmt.Fprintf(&b, "%-4d  %-30s %d/%d (%.0f%%)\n", i+1, r.Variant, r.Passed, r.Total, score)
+	}
+	return b.String()
+}
+
+func sortByScore(rs []Result) {
+	rate := func(r Result) float64 {
+		if r.Total == 0 {
+			return 0
+		}
+		return float64(r.Passed) / float64(r.Total)
+	}
+	for i := 1; i < len(rs); i++ {
+		for j := i; j > 0 && rate(rs[j]) > rate(rs[j-1]); j-- {
+			rs[j], rs[j-1] = rs[j-1], rs[j]
+		}
+	}
 }

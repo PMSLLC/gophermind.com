@@ -1314,6 +1314,21 @@ func runAB(ctx context.Context, client *llm.Client, reg *tools.Registry, cfg con
 		return a.Send(ctx, p)
 	}
 
+	// Multi-model scoreboard: when GOPHERMIND_AB_MODELS lists models, score every
+	// variant against each model and print a ranked leaderboard.
+	if models := splitCSV(os.Getenv("GOPHERMIND_AB_MODELS")); len(models) > 0 {
+		var all []abtest.Result
+		for _, m := range models {
+			client.Model = m
+			for _, r := range abtest.RunMatrix(ctx, variants, fixtures, run) {
+				r.Variant = r.Variant + "@" + m
+				all = append(all, r)
+			}
+		}
+		fmt.Print(abtest.Leaderboard(all))
+		return nil
+	}
+
 	results := abtest.RunMatrix(ctx, variants, fixtures, run)
 	fmt.Printf("A/B over %d fixtures:\n", len(fixtures))
 	belowThreshold := false
