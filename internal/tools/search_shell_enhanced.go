@@ -243,7 +243,20 @@ func RunShellEnhanced(root string, timeout time.Duration, limits ShellLimits) To
 				args = []string{"-c", shellCmd}
 			}
 
-			cmd := exec.CommandContext(runCtx, loginShell, args...)
+			// Optional stronger isolation for run_shell: run inside a disposable
+			// container, or a network-disabled namespace (Linux). Container-exec
+			// takes precedence; both fall through to the plain shell otherwise.
+			var cmd *exec.Cmd
+			switch {
+			case containerImage() != "":
+				argv := containerArgv(shellEngine(), containerImage(), cmdDir, shellCmd)
+				cmd = exec.CommandContext(runCtx, argv[0], argv[1:]...)
+			case netnsEnabled():
+				argv := netnsArgv(shellCmd)
+				cmd = exec.CommandContext(runCtx, argv[0], argv[1:]...)
+			default:
+				cmd = exec.CommandContext(runCtx, loginShell, args...)
+			}
 			cmd.Dir = cmdDir
 			cmd.Env = env
 			var out bytes.Buffer

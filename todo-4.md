@@ -93,8 +93,8 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 
 ## AI. Security, Sandboxing & Governance III (builds on the audit log, judge model, policy, redaction, `SafeJoin`)
 
-- [ ] **61. Container-exec backend.** Run `run_shell` inside a disposable container (Docker/Podman) with mounts limited to the repo. Value: strong isolation beyond ulimits.
-- [ ] **62. Network-namespace shell.** A truly network-disabled `run_shell` on Linux via `unshare -n`. Value: exfiltration-proof command execution.
+- [x] **61. Container-exec backend.** Run `run_shell` inside a disposable container (Docker/Podman) with mounts limited to the repo. Value: strong isolation beyond ulimits.
+- [x] **62. Network-namespace shell.** A truly network-disabled `run_shell` on Linux via `unshare -n`. Value: exfiltration-proof command execution.
 - [x] **63. Secrets vault integration.** Resolve credentials from Vault/1Password/env-file at call time, never storing them. Value: no secrets in config or transcripts.
 - [x] **64. RBAC for tools.** Roles map to allowed tool sets (reviewer = read-only, operator = shell). Value: least privilege per user.
 - [x] **65. Signed audit log.** Sign the tamper-evident chain with a key so integrity is externally verifiable (extends AA#81). Value: non-repudiable audit trail.
