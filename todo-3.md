@@ -21,7 +21,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [ ] **6. Conformance CI.** A GitHub Action that builds `conjure` and runs `validate`/`test` on the manifest each PR. Value: the manifest never drifts from the binary.
 - [ ] **7. Multi-adapter manifest.** A `gophermind-plan` read-only variant alongside the default. Value: Coven exposes both access levels.
 - [x] **8. Cost in result line.** Surface `total_cost_usd` and token counts from the meter per turn. Value: drivers track spend.
-- [ ] **9. Mid-turn cancel over stream.** Honor a driver-sent cancel control. Value: responsive interruption.
+- [x] **9. Mid-turn cancel over stream.** Honor a driver-sent cancel control. Value: responsive interruption.
 - [x] **10. Protocol version field.** Advertise the stream-json subset version in the init line. Value: forward-compatible drivers.
 
 ## T. Sessions & Continuity (builds on `internal/session`, `--session-id`/`--resume`)
@@ -54,7 +54,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 
 - [ ] **31. Build the structured prompt system.** Ship `PLAN.md`: `internal/prompt` template parser + builder (YAML frontmatter + XML sections). Value: composable, maintainable prompts.
 - [x] **32. Persona presets.** `--persona reviewer|architect|tester`. Value: task-tuned behavior on demand.
-- [ ] **33. `CLAUDE.md`/`AGENTS.md` auto-load.** Inject repo instruction files into the system prompt. Value: per-repo conventions respected.
+- [x] **33. `CLAUDE.md`/`AGENTS.md` auto-load.** Inject repo instruction files into the system prompt. Value: per-repo conventions respected.
 - [x] **34. Per-repo prompt overrides.** `.gophermind/prompt.md`. Value: project-specific behavior.
 - [ ] **35. Prompt fragments / includes.** Reusable snippets composed into the prompt. Value: DRY prompt maintenance.
 - [ ] **36. Dynamic context injection.** Git status + a compact repo map at session start. Value: the model orients without tool calls.
@@ -78,16 +78,16 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 
 ## X. Agent Orchestration & Multi-Agent (builds on `internal/agent`, the fleet-mode idea)
 
-- [ ] **51. `spawn_agent` tool.** A focused child agent with its own context. Value: parallel decomposition without context pollution.
+- [x] **51. `spawn_agent` tool.** A focused child agent with its own context. Value: parallel decomposition without context pollution.
 - [ ] **52. Fleet/overseer mode.** Supervise multiple sessions via `onEvent` + `ApprovalFunc` with spec rules. Value: coordinated multi-agent runs.
-- [ ] **53. Plan-then-execute mode.** Emit a reviewable plan before acting. Value: redirect before changes happen.
-- [ ] **54. Parallel tool execution.** Run independent tool calls in a turn concurrently. Value: faster multi-file reads/searches.
+- [x] **53. Plan-then-execute mode.** Emit a reviewable plan before acting. Value: redirect before changes happen.
+- [x] **54. Parallel tool execution.** Run independent tool calls in a turn concurrently. Value: faster multi-file reads/searches.
 - [ ] **55. Agent-to-agent (A2A) client.** Speak an A2A protocol to other agents. Value: interop beyond OpenCoven.
 - [ ] **56. Task queue / job runner.** Enqueue and run tasks with status. Value: batch/background work.
-- [ ] **57. Reflection-on-failure.** Inject a "what went wrong / next step" after a tool error. Value: better recovery than blind retry.
+- [x] **57. Reflection-on-failure.** Inject a "what went wrong / next step" after a tool error. Value: better recovery than blind retry.
 - [ ] **58. Verifier pass.** A second agent checks the result before finalizing. Value: fewer wrong "done"s.
-- [ ] **59. Budgeted autonomy.** Wall-clock/token ceilings that abort with partial progress. Value: bounded unattended runs.
-- [ ] **60. Conversation checkpoints.** Snapshot/rollback `msgs` to a prior turn. Value: undo a bad branch.
+- [x] **59. Budgeted autonomy.** Wall-clock/token ceilings that abort with partial progress. Value: bounded unattended runs.
+- [x] **60. Conversation checkpoints.** Snapshot/rollback `msgs` to a prior turn. Value: undo a bad branch.
 
 ## Y. Web, Network & External Data (builds on `internal/safety`, the fetch gap)
 
@@ -118,12 +118,12 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 ## AA. Security, Audit & Compliance II (builds on `internal/safety`, `--permission-mode`)
 
 - [ ] **81. Tamper-evident audit log.** Every tool call + decision + result hash, appended locally. Value: traceability of what the agent did.
-- [ ] **82. Policy file.** `.gophermind/policy` for deny/allow patterns and gated-tool config. Value: per-repo tuning without recompiling.
-- [ ] **83. Secret-scanning on writes.** Block/warn on credential patterns in `write_file`/`edit_file`. Value: stops committing secrets.
+- [x] **82. Policy file.** `.gophermind/policy` for deny/allow patterns and gated-tool config. Value: per-repo tuning without recompiling.
+- [x] **83. Secret-scanning on writes.** Block/warn on credential patterns in `write_file`/`edit_file`. Value: stops committing secrets.
 - [ ] **84. Per-tool approval policies.** "always allow read, ask on write, never auto shell". Value: matches real trust boundaries.
 - [ ] **85. Subprocess resource limits.** CPU/mem/fd caps on `run_shell`. Value: contains runaway commands.
 - [ ] **86. Network-disabled shell.** Run commands with no network. Value: exfiltration prevention.
-- [ ] **87. Read-only repo mode.** A flag disabling all mutating tools. Value: safe exploration by construction.
+- [x] **87. Read-only repo mode.** A flag disabling all mutating tools. Value: safe exploration by construction.
 - [x] **88. PII redaction.** Redact secrets/PII from transcripts and sessions. Value: data-handling compliance.
 - [ ] **89. Approval by a judge model.** Route ambiguous approvals to a small local model against a spec. Value: smarter-than-regex gating.
 - [ ] **90. Container-exec backend.** Run `run_shell` in a container. Value: stronger isolation than process limits.
