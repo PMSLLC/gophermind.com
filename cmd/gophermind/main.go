@@ -359,6 +359,7 @@ func run() error {
 		tools.DBSchema(cfg.RootDir),                          // read-only SQLite schema explorer (tables/cols/FKs)
 		tools.DBExplain(cfg.RootDir),                         // read-only EXPLAIN QUERY PLAN + full-scan warnings
 		tools.Chart(),                                        // render sparkline/bar chart from a numeric series
+		tools.DataTransform(cfg.RootDir),                     // read-only filter/group/aggregate over CSV/JSONL
 	)
 
 	// A single shared stdin reader, used by both the REPL and approval prompts.
