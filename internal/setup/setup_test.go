@@ -144,7 +144,7 @@ func TestResultPairsOmitsZeroMaxIter(t *testing.T) {
 
 func TestNeedsSetup(t *testing.T) {
 	cases := []struct {
-		name                                        string
+		name                                          string
 		baseProvided, globalExists, interactive, want bool
 	}{
 		{"fresh interactive -> yes", false, false, true, true},

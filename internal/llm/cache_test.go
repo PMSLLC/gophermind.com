@@ -74,9 +74,9 @@ func TestCacheKeyDistinguishesInputs(t *testing.T) {
 	tools := []Tool{{Type: "function", Function: Function{Name: "read_file"}}}
 
 	// Each distinct request must reach the network once.
-	c.Complete(context.Background(), base, nil)                                       // 1: model m, msgs base, no tools
-	c.Complete(context.Background(), []Message{{Role: "user", Content: "bye"}}, nil)  // 2: different message
-	c.Complete(context.Background(), base, tools)                                     // 3: different tools
+	c.Complete(context.Background(), base, nil)                                      // 1: model m, msgs base, no tools
+	c.Complete(context.Background(), []Message{{Role: "user", Content: "bye"}}, nil) // 2: different message
+	c.Complete(context.Background(), base, tools)                                    // 3: different tools
 	c2 := cachedClient(srv.URL, "other-model", dir, time.Hour)
 	c2.Complete(context.Background(), base, nil) // 4: different model
 

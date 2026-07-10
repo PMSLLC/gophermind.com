@@ -50,11 +50,11 @@ func TestSafeJoinAllowsContained(t *testing.T) {
 func TestCheckCommandWhitespaceBypass(t *testing.T) {
 	blocked := []string{
 		"rm -rf /",
-		"rm  -rf /",       // extra space
-		"rm\t-rf /tmp/x",  // tab
-		"rm -fr /tmp/x",   // reordered flags
-		"rm -r -f build",  // split flags
-		"sudo\trm x",      // tab after sudo
+		"rm  -rf /",         // extra space
+		"rm\t-rf /tmp/x",    // tab
+		"rm -fr /tmp/x",     // reordered flags
+		"rm -r -f build",    // split flags
+		"sudo\trm x",        // tab after sudo
 		"echo x >/etc/cron", // no-space redirect to root
 		"echo x > /etc/y",   // spaced redirect to root
 		"dd if=/dev/zero of=/dev/sda",
@@ -68,7 +68,7 @@ func TestCheckCommandWhitespaceBypass(t *testing.T) {
 	allowed := []string{
 		"go test ./...",
 		"git status",
-		"rm tmpfile",       // non-recursive single file
+		"rm tmpfile", // non-recursive single file
 		"grep -rn foo .",
 	}
 	for _, c := range allowed {

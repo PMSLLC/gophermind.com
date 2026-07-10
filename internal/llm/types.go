@@ -42,16 +42,16 @@ type Function struct {
 
 // ChatRequest is the request body for POST /v1/chat/completions.
 type ChatRequest struct {
-	Model         string         `json:"model"`
-	Messages      []Message      `json:"messages"`
-	Tools         []Tool         `json:"tools,omitempty"`
-	ToolChoice    string         `json:"tool_choice,omitempty"` // "auto"
-	Temperature   float64        `json:"temperature"`
+	Model       string    `json:"model"`
+	Messages    []Message `json:"messages"`
+	Tools       []Tool    `json:"tools,omitempty"`
+	ToolChoice  any       `json:"tool_choice,omitempty"` // string "auto"/"none"/"required" or {"type":"function","function":{"name":"..."}}
+	Temperature float64   `json:"temperature"`
 	// TopP is nucleus-sampling mass. It is a pointer so an unset top_p (nil) is
 	// omitted from the wire entirely, while an explicit 0-or-greater value is
 	// sent. Temperature, by contrast, is always sent (0 is the default).
-	TopP   *float64 `json:"top_p,omitempty"`
-	Stream bool     `json:"stream"`
+	TopP          *float64       `json:"top_p,omitempty"`
+	Stream        bool           `json:"stream"`
 	StreamOptions *StreamOptions `json:"stream_options,omitempty"`
 }
 

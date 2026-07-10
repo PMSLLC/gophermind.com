@@ -12,9 +12,9 @@ import (
 // the encoder (mimicking the agent's onEvent → Encoder.Handle wiring) and
 // returns a canned answer.
 type fakeSession struct {
-	enc     *Encoder
-	answer  string
-	inputs  []string
+	enc    *Encoder
+	answer string
+	inputs []string
 }
 
 func (f *fakeSession) Send(_ context.Context, input string) (string, error) {

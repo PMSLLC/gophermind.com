@@ -19,6 +19,7 @@ import (
 	"gophermind/internal/agent"
 	"gophermind/internal/config"
 	"gophermind/internal/llm"
+	"gophermind/internal/project"
 	"gophermind/internal/safety"
 	"gophermind/internal/session"
 	"gophermind/internal/setup"
@@ -255,6 +256,7 @@ func run() error {
 			InputPricePer1K:  cfg.InputPricePer1K,
 			OutputPricePer1K: cfg.OutputPricePer1K,
 			TranscriptPath:   cfg.TranscriptPath,
+			SystemSuffix:     project.Instructions(cfg.RootDir),
 		})
 	case "print":
 		return runPrint(client, reg, cfg, printOptions{
@@ -274,6 +276,9 @@ func run() error {
 		printer := ui.Printer{Verbose: *verboseFlag}
 		ag := agent.New(client, reg, cfg.MaxIter, approve, printer.Event)
 		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
+		if instr := project.Instructions(cfg.RootDir); instr != "" {
+			ag.AppendSystemPrompt(instr)
+		}
 		answer, sendErr := ag.Send(ctx, task)
 		// Write the transcript even when the turn errored: a partial history is
 		// still useful for debugging. The dump never includes credentials.
@@ -349,10 +354,15 @@ func runPrint(client *llm.Client, reg *tools.Registry, cfg config.Config, o prin
 		if err := session.Load(resumeID, ag); err != nil {
 			return fmt.Errorf("resume %q: %w", resumeID, err)
 		}
-	} else if o.appendSys != "" {
-		// Apply the driver's appended system prompt on a fresh session only; on
-		// resume the loaded history already carries its system prompt.
-		ag.AppendSystemPrompt(o.appendSys)
+	} else {
+		// Fresh session only; on resume the loaded history already carries its
+		// system prompt (re-appending would stack).
+		if instr := project.Instructions(cfg.RootDir); instr != "" {
+			ag.AppendSystemPrompt(instr)
+		}
+		if o.appendSys != "" {
+			ag.AppendSystemPrompt(o.appendSys)
+		}
 	}
 	save := func() error {
 		if !persist {

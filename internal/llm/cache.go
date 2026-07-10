@@ -41,7 +41,7 @@ type cacheKeyInput struct {
 	Tools       []Tool    `json:"tools"`
 	Temperature float64   `json:"temperature"`
 	TopP        *float64  `json:"top_p,omitempty"`
-	ToolChoice  string    `json:"tool_choice"`
+	ToolChoice  any       `json:"tool_choice"`
 }
 
 // cacheEntry is the on-disk record. CreatedAt drives TTL expiry.

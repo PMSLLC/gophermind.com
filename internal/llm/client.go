@@ -57,6 +57,12 @@ type Client struct {
 	// the OUTERMOST wrapper (its request hook runs first). Empty (the default)
 	// means the base transport is used directly, with zero wrapping overhead.
 	middlewares []Middleware
+
+	// toolChoice is the default tool_choice to send with each request. When nil
+	// (the default), the client sends "auto" when tools are present and omits
+	// the field entirely when tools are absent. Set to a non-nil ToolChoiceConfig
+	// to override: force a specific tool, require tool calls, or forbid them.
+	toolChoice *ToolChoiceConfig
 }
 
 // New constructs a Client. timeout bounds a single completion round-trip.
@@ -180,6 +186,25 @@ func (c *Client) TopP() *float64 {
 	return &v
 }
 
+// SetToolChoice sets the default tool_choice for subsequent requests. Pass nil
+// to restore the default behavior (auto when tools are present, omitted otherwise).
+func (c *Client) SetToolChoice(tc *ToolChoiceConfig) {
+	c.toolChoice = tc
+}
+
+// toolChoiceValue returns the tool_choice value to embed in a request body.
+// When c.toolChoice is set it is used verbatim; otherwise it falls back to
+// "auto" when tools are present.
+func (c *Client) toolChoiceValue(tools []Tool) any {
+	if c.toolChoice != nil {
+		return c.toolChoice.toolChoiceString()
+	}
+	if len(tools) > 0 {
+		return "auto"
+	}
+	return nil
+}
+
 // sampling reads the current temperature and top_p under one lock, for building
 // a request body. The returned top_p is a copy, safe to embed in a request.
 func (c *Client) sampling() (float64, *float64) {
@@ -235,8 +260,8 @@ func (c *Client) completeModel(ctx context.Context, model string, msgs []Message
 		TopP:        topP,
 		Stream:      false,
 	}
-	if len(tools) > 0 {
-		reqBody.ToolChoice = "auto"
+	if tc := c.toolChoiceValue(tools); tc != nil {
+		reqBody.ToolChoice = tc
 	}
 
 	// On a fresh cache hit, return without touching the network. A hit incurred

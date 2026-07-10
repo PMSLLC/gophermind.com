@@ -176,12 +176,13 @@ func (e *Encoder) Init(model string, tools []string, cwd string) error {
 		tools = []string{}
 	}
 	return e.writeLine(map[string]any{
-		"type":       "system",
-		"subtype":    "init",
-		"session_id": e.sessionID,
-		"model":      model,
-		"tools":      tools,
-		"cwd":        cwd,
+		"type":             "system",
+		"subtype":          "init",
+		"session_id":       e.sessionID,
+		"model":            model,
+		"tools":            tools,
+		"cwd":              cwd,
+		"protocol_version": "1", // the stream-json subset version this build speaks
 	})
 }
 

@@ -175,8 +175,8 @@ func (c *Client) connectStreamModel(ctx context.Context, model string, msgs []Me
 		Stream:        true,
 		StreamOptions: &StreamOptions{IncludeUsage: true},
 	}
-	if len(tools) > 0 {
-		reqBody.ToolChoice = "auto"
+	if tc := c.toolChoiceValue(tools); tc != nil {
+		reqBody.ToolChoice = tc
 	}
 	body, err := json.Marshal(reqBody)
 	if err != nil {

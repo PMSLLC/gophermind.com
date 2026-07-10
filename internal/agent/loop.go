@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gophermind/internal/llm"
 	"gophermind/internal/safety"
@@ -21,22 +22,27 @@ import (
 
 // Event reports loop progress to an observer (e.g. the CLI), for display only.
 type Event struct {
-	Type  string // "token" | "assistant" | "tool_call" | "tool_result" | "usage"
-	Name  string // tool name (for tool_call / tool_result)
-	Text  string // assistant prose, tool args, or tool result
+	Type  string        // "token" | "assistant" | "tool_call" | "tool_result" | "usage"
+	Name  string        // tool name (for tool_call / tool_result)
+	Text  string        // assistant prose, tool args, or tool result
 	Usage UsageSnapshot // populated for Type == "usage": running session totals
 }
 
 // Agent drives the tool-calling loop and retains the conversation across
 // turns so it can be used as an interactive session.
 type Agent struct {
-	llm     *llm.Client
-	reg     *tools.Registry
-	maxIter int
-	approve safety.ApprovalFunc
-	onEvent func(Event)
-	msgs    []llm.Message // persistent conversation, seeded with the system prompt
-	usage   UsageMeter    // running per-session token + cost accumulator
+	llm         *llm.Client
+	reg         *tools.Registry
+	maxIter     int
+	approve     safety.ApprovalFunc
+	onEvent     func(Event)
+	msgs        []llm.Message    // persistent conversation, seeded with the system prompt
+	usage       UsageMeter       // running per-session token + cost accumulator
+	caps        llm.Capabilities // probed model capabilities (context window, etc.)
+	budget      int              // per-turn tool-call budget (0 = unlimited)
+	checkpoints *checkpoints     // named conversation snapshots
+	guardrails  Guardrails       // cost/time limits for autonomous runs
+	startTime   time.Time        // when the agent was created (for duration tracking)
 }
 
 // New builds an Agent. If onEvent is nil, progress events are discarded.
@@ -48,12 +54,14 @@ func New(client *llm.Client, reg *tools.Registry, maxIter int, approve safety.Ap
 		approve = safety.Auto
 	}
 	return &Agent{
-		llm:     client,
-		reg:     reg,
-		maxIter: maxIter,
-		approve: approve,
-		onEvent: onEvent,
-		msgs:    []llm.Message{{Role: "system", Content: systemPrompt}},
+		llm:         client,
+		reg:         reg,
+		maxIter:     maxIter,
+		approve:     approve,
+		onEvent:     onEvent,
+		msgs:        []llm.Message{{Role: "system", Content: systemPrompt}},
+		checkpoints: newCheckpoints(),
+		startTime:   time.Now(),
 	}
 }
 
@@ -75,6 +83,10 @@ func (a *Agent) SetTemperature(t float64) { a.llm.SetTemperature(t) }
 // SetTopP updates the sampling top_p on the underlying client (nil unsets it);
 // it takes effect on the next request. Range validation is the caller's job.
 func (a *Agent) SetTopP(p *float64) { a.llm.SetTopP(p) }
+
+// SetCapabilities records the probed model capabilities so the agent can adapt
+// trimming and iteration limits to the real backend.
+func (a *Agent) SetCapabilities(caps llm.Capabilities) { a.caps = caps }
 
 // Temperature returns the client's current sampling temperature.
 func (a *Agent) Temperature() float64 { return a.llm.Temperature() }
@@ -99,6 +111,17 @@ func (a *Agent) Send(ctx context.Context, userInput string) (string, error) {
 		if err := ctx.Err(); err != nil {
 			a.msgs = a.msgs[:base]
 			return "", err
+		}
+
+		// Token-aware request trimming: if the conversation exceeds the model's
+		// context window, drop the oldest user/tool turns so the request fits.
+		// This prevents hard-failing on context-length errors during long sessions.
+		if a.caps.ContextWindow > 0 {
+			// Reserve 20% of the window for the response.
+			budget := int(float64(a.caps.ContextWindow) * 0.8)
+			if est := llm.EstimateMessagesTokens(a.msgs); est > budget {
+				a.msgs, _ = llm.TrimToBudget(a.msgs, budget)
+			}
 		}
 
 		reply, usage, err := a.llm.Stream(ctx, a.msgs, defs, func(tok string) {

@@ -24,6 +24,9 @@ type Config struct {
 	// history when the session exits. It may contain sensitive prompt/response
 	// content; the agent writes it 0600 and never includes credentials.
 	TranscriptPath string
+	// SystemSuffix is appended to the agent's system prompt (e.g. project
+	// instructions from CLAUDE.md/AGENTS.md).
+	SystemSuffix string
 }
 
 // Run starts the interactive TUI and blocks until the user quits.
@@ -44,6 +47,9 @@ func Run(cfg Config) error {
 		}
 		ag := agent.New(cfg.Client, cfg.Registry, cfg.MaxIter, approve, onEvent)
 		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
+		if cfg.SystemSuffix != "" {
+			ag.AppendSystemPrompt(cfg.SystemSuffix)
+		}
 		return ag
 	}
 
