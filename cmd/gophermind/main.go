@@ -82,6 +82,7 @@ func run() error {
 	readOnlyFlag := flag.Bool("read-only", false, "deny all mutating tools (write/edit/shell/move/delete/mkdir/patch) in every mode")
 	planFlag := flag.Bool("plan", false, "run/ask: emit a structured plan before executing")
 	parallelFlag := flag.Bool("parallel", false, "run/ask: execute independent tool calls in a turn concurrently")
+	verifyFlag := flag.Bool("verify", false, "run/ask: have a second (verifier) agent check the result and trigger one correction round if incomplete")
 	toolBudgetFlag := flag.Int("tool-budget", 0, "run/ask: max tool calls per turn (0 = default)")
 	maxCostFlag := flag.Float64("max-cost", 0, "run/ask: abort when estimated cost (USD) exceeds this (0 = unlimited)")
 	maxTokensFlag := flag.Int("max-tokens", 0, "run/ask: abort when total tokens exceed this (0 = unlimited)")
@@ -431,6 +432,13 @@ func run() error {
 		case *toolBudgetFlag > 0:
 			ag = ag.WithToolCallBudget(*toolBudgetFlag)
 			send = ag.SendWithBudget
+		}
+		// --verify wraps the chosen strategy with a second-agent verification pass.
+		if *verifyFlag {
+			inner := send
+			send = func(ctx context.Context, task string) (string, error) {
+				return ag.VerifyResult(ctx, task, inner)
+			}
 		}
 		answer, sendErr := send(ctx, task)
 		// Write the transcript even when the turn errored: a partial history is
