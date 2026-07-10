@@ -49,6 +49,43 @@ archives:
       - LICENSE
       - README.md
 
+# Linux native packages (deb/rpm/apk) via nfpm — `native installs everywhere`.
+nfpms:
+  - id: gophermind
+    ids: [gophermind]
+    package_name: gophermind
+    vendor: jbrahy
+    homepage: "https://github.com/jbrahy/gophermind.com"
+    maintainer: "John Brahy <john@example.com>"
+    description: "A minimal agentic coding harness for OpenAI-compatible LLMs"
+    license: MIT
+    formats: [deb, rpm, apk]
+    bindir: /usr/bin
+
+# Windows Scoop manifest published to a bucket repo.
+scoops:
+  - name: gophermind
+    ids: [gophermind]
+    repository:
+      owner: jbrahy
+      name: scoop-bucket
+    homepage: "https://github.com/jbrahy/gophermind.com"
+    description: "A minimal agentic coding harness for OpenAI-compatible LLMs"
+    license: MIT
+
+# Windows winget manifest published to a fork of microsoft/winget-pkgs.
+winget:
+  - name: gophermind
+    ids: [gophermind]
+    publisher: jbrahy
+    short_description: "A minimal agentic coding harness for OpenAI-compatible LLMs"
+    license: MIT
+    homepage: "https://github.com/jbrahy/gophermind.com"
+    repository:
+      owner: jbrahy
+      name: winget-pkgs
+      branch: "gophermind-{{ .Version }}"
+
 checksum:
   name_template: checksums.txt
 

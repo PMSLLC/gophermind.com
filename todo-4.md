@@ -137,7 +137,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [x] **93. Ship gophermind as an MCP server.** Expose its tools over the Model Context Protocol. Value: any MCP client (incl. Claude) can drive it.
 - [ ] **94. WASM tool sandbox.** Run untrusted community tools in a WASM runtime with capability grants. Value: safe third-party extensions.
 - [x] **95. Config profiles bundle.** Shareable, versioned config+policy+prompt bundles per team. Value: consistent setup across a team.
-- [ ] **96. deb/rpm/scoop/winget packaging.** Finish the packaging matrix via nfpm + manifests. Value: native installs everywhere.
+- [x] **96. deb/rpm/scoop/winget packaging.** Finish the packaging matrix via nfpm + manifests. Value: native installs everywhere.
 - [ ] **97. `gophermind upgrade`.** Signed self-update from GitHub Releases (fulfills batch-3 U#26 with cosign verification). Value: stay current safely.
 - [ ] **98. Reproducible builds + SBOM.** Deterministic builds with a published SBOM and attestation. Value: verifiable supply chain.
 - [x] **99. Telemetry (opt-in, privacy-first).** Aggregate anonymous feature/latency stats with a hard off switch. Value: data-driven roadmap without surveillance.
