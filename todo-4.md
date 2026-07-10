@@ -49,7 +49,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [x] **26. Cost-aware routing.** Route easy subtasks to `--speed` model, hard ones to the strong model (uses the capability probe). Value: quality where it matters, cheap elsewhere.
 - [x] **27. Reflexion loop.** On a failed verification, generate a structured lesson and retry with it appended. Value: better recovery than a blind re-run.
 - [x] **28. Subtask budget allocation.** Split the turn's cost/token budget across `spawn_agent` children. Value: no single child blows the whole budget.
-- [ ] **29. Interruptible long runs.** Checkpoint after each plan step so a cancelled run resumes from the last step. Value: no lost work on interruption.
+- [x] **29. Interruptible long runs.** Checkpoint after each plan step so a cancelled run resumes from the last step. Value: no lost work on interruption.
 - [x] **30. Deterministic replay tests.** Record a session's LLM responses and replay them offline to test agent logic. Value: fast, hermetic agent tests.
 
 ## AF. Prompt Engineering & Evaluation II (builds on `internal/prompt`, `internal/abtest`, `--persona`, skills)
