@@ -28,9 +28,9 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 
 - [x] **11. `gophermind sessions` command.** list / show / rm saved sessions. Value: manage the store from the CLI.
 - [ ] **12. Session branching.** Fork a session at a turn into a new id. Value: explore alternatives without losing state.
-- [ ] **13. Session TTL / GC.** Auto-expire old sessions. Value: bounded disk footprint.
+- [x] **13. Session TTL / GC.** Auto-expire old sessions. Value: bounded disk footprint.
 - [ ] **14. Named sessions.** Human aliases mapping to ids (`--resume my-refactor`). Value: no uuids to remember.
-- [ ] **15. Session export/import.** Pack history + metadata into a shareable file. Value: hand off a debugging session.
+- [x] **15. Session export/import.** Pack history + metadata into a shareable file. Value: hand off a debugging session.
 - [x] **16. Auto session titles.** Summarize a session for the list view. Value: find the right one fast.
 - [ ] **17. Interactive resume in the TUI.** Pick a saved session at chat startup. Value: continuity in interactive mode.
 - [ ] **18. Session diff.** Show files/messages changed across a session. Value: review an agent's work.

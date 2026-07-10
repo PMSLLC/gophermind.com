@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -623,8 +624,41 @@ func runSessions(args []string) error {
 		}
 		fmt.Fprintf(os.Stderr, "✓ removed session %q\n", args[1])
 		return nil
+	case "gc":
+		days := 30
+		if len(args) >= 2 {
+			n, err := strconv.Atoi(args[1])
+			if err != nil || n <= 0 {
+				return fmt.Errorf("sessions gc: days must be a positive integer, got %q", args[1])
+			}
+			days = n
+		}
+		removed, err := session.GC(time.Duration(days) * 24 * time.Hour)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "✓ removed %d session(s) older than %d days\n", len(removed), days)
+		return nil
+	case "export":
+		if len(args) < 3 {
+			return fmt.Errorf("usage: sessions export <id> <file>")
+		}
+		if err := session.Export(args[1], args[2]); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "✓ exported session %q to %s\n", args[1], args[2])
+		return nil
+	case "import":
+		if len(args) < 3 {
+			return fmt.Errorf("usage: sessions import <file> <id>")
+		}
+		if err := session.Import(args[1], args[2]); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "✓ imported %s as session %q\n", args[1], args[2])
+		return nil
 	default:
-		return fmt.Errorf("unknown sessions action %q (use list, show <id>, or rm <id>)", action)
+		return fmt.Errorf("unknown sessions action %q (use list, show <id>, rm <id>, gc [days], export <id> <file>, import <file> <id>)", action)
 	}
 }
 
@@ -657,7 +691,7 @@ func usage() {
 Usage:
   gophermind                    interactive session (default)
   gophermind config             (re-)run the setup wizard and save config
-  gophermind sessions [list|show <id>|rm <id>]  manage saved sessions
+  gophermind sessions [list|show <id>|rm <id>|gc [days]|export <id> <file>|import <file> <id>]
   gophermind doctor             run environment/config diagnostics and exit
   gophermind version            print build version and exit
   gophermind run "task"         one-shot: run a task and exit
