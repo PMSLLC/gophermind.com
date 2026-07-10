@@ -349,7 +349,7 @@ func run() error {
 	if envTruthy("GOPHERMIND_REPO_CONTEXT") {
 		repoContext = project.RepoContext(cfg.RootDir)
 	}
-	systemSuffix := composeSystem(personaText, project.Instructions(cfg.RootDir), repoContext)
+	systemSuffix := composeSystem(personaText, project.Instructions(cfg.RootDir), project.Skills(cfg.RootDir), repoContext)
 	// Prompt token-budget guardrail: keep injected context (persona + repo
 	// instructions + repo map) under ~25% of the model's context window so the
 	// task itself always has room. Skipped when the window is unknown.
