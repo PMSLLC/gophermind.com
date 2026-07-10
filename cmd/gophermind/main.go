@@ -29,6 +29,7 @@ import (
 	"gophermind/internal/project"
 	"gophermind/internal/prompt"
 	"gophermind/internal/safety"
+	"gophermind/internal/schemas"
 	"gophermind/internal/session"
 	"gophermind/internal/setup"
 	"gophermind/internal/stream"
@@ -90,7 +91,7 @@ func run() error {
 	fleetFlag := flag.Int("fleet", 1, "queue: run up to N tasks concurrently under the shared approval policy (fleet/overseer mode)")
 	abFixturesFlag := flag.String("fixtures", "", "ab: JSONL fixtures file ({\"prompt\":..,\"expect\":..} per line)")
 	abVariantsFlag := flag.String("variants", "", "ab: comma-separated prompt-template files to compare (default: the built-in template)")
-	schemaFlag := flag.String("schema", "", "run/ask: force a JSON-schema-constrained response, reading the schema from this file")
+	schemaFlag := flag.String("schema", "", "run/ask: force a JSON-schema-constrained response; a file path, or @name for a built-in (diff/review/plan)")
 	promptTemplateFlag := flag.String("prompt-template", "", "use a custom structured prompt template (.md with frontmatter + XML sections) as the base system prompt")
 	toolBudgetFlag := flag.Int("tool-budget", 0, "run/ask: max tool calls per turn (0 = default)")
 	maxCostFlag := flag.Float64("max-cost", 0, "run/ask: abort when estimated cost (USD) exceeds this (0 = unlimited)")
@@ -1101,16 +1102,24 @@ func newJudge(client *llm.Client) safety.JudgeFunc {
 	}
 }
 
-// loadJSONSchema reads and parses a JSON-schema object from a file, for
-// --schema-constrained responses.
-func loadJSONSchema(path string) (map[string]any, error) {
-	data, err := os.ReadFile(path)
+// loadJSONSchema resolves a --schema value to a JSON-schema object. A value of
+// the form "@name" selects a built-in schema from the library (diff/review/
+// plan); anything else is read from that file path.
+func loadJSONSchema(ref string) (map[string]any, error) {
+	if name, ok := strings.CutPrefix(ref, "@"); ok {
+		schema, ok := schemas.Get(name)
+		if !ok {
+			return nil, fmt.Errorf("unknown built-in schema %q (available: %s)", name, strings.Join(schemas.Names(), ", "))
+		}
+		return schema, nil
+	}
+	data, err := os.ReadFile(ref)
 	if err != nil {
 		return nil, fmt.Errorf("read schema: %w", err)
 	}
 	var schema map[string]any
 	if err := json.Unmarshal(data, &schema); err != nil {
-		return nil, fmt.Errorf("parse schema %s: %w", path, err)
+		return nil, fmt.Errorf("parse schema %s: %w", ref, err)
 	}
 	return schema, nil
 }

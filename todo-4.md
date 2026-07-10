@@ -61,7 +61,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [ ] **35. Persona authoring UX.** A `persona new` scaffolder that writes a template + registers it. Value: easy custom personas beyond the built-ins.
 - [ ] **36. Few-shot example bank.** Attach curated examples to a template section, auto-selected by task similarity. Value: better in-context steering.
 - [x] **37. Prompt token accounting.** Report per-section token cost of the built prompt (builds on the token estimator). Value: see what's eating the window.
-- [ ] **38. Structured-output schemas library.** Ship reusable JSON schemas for `--schema` (diff, review, plan). Value: consistent machine-readable results.
+- [x] **38. Structured-output schemas library.** Ship reusable JSON schemas for `--schema` (diff, review, plan). Value: consistent machine-readable results.
 - [ ] **39. Auto prompt-compression.** Summarize long injected context to fit the budget instead of hard truncation (`CapContext`). Value: keep meaning, lose bytes.
 - [ ] **40. Golden-transcript tests.** Snapshot a canonical session and diff on prompt changes. Value: catch unintended behavior shifts.
 
