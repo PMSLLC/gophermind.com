@@ -165,6 +165,19 @@ func run() error {
 		return runSessions(args[1:])
 	}
 
+	// `gophermind persona new <name>` scaffolds a custom persona template.
+	if cmd == "persona" {
+		if len(args) < 3 || strings.ToLower(args[1]) != "new" {
+			return fmt.Errorf("usage: gophermind persona new <name>")
+		}
+		path, err := persona.Scaffold(cfg.RootDir, args[2])
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "✓ created persona %q at %s — edit it, then run with --persona %s\n", args[2], path, args[2])
+		return nil
+	}
+
 	// `gophermind completion <bash|zsh|fish>` prints a shell-completion script.
 	if cmd == "completion" {
 		shell := ""
@@ -438,9 +451,9 @@ func run() error {
 	// (CLAUDE.md/AGENTS.md) into the system-prompt suffix used by chat and run/ask.
 	personaText := ""
 	if *personaFlag != "" {
-		p, ok := persona.Preset(*personaFlag)
+		p, ok := persona.Resolve(cfg.RootDir, *personaFlag)
 		if !ok {
-			return fmt.Errorf("unknown -persona %q: choose one of %s", *personaFlag, strings.Join(persona.Names(), ", "))
+			return fmt.Errorf("unknown -persona %q: choose a built-in (%s) or a custom one in .gophermind/personas/", *personaFlag, strings.Join(persona.Names(), ", "))
 		}
 		personaText = p
 	}
@@ -1289,6 +1302,7 @@ Usage:
   gophermind status             print a compact prompt line (model + branch)
   gophermind prompt-tokens      print per-section token cost of the base system prompt
   gophermind completion <shell> print a bash/zsh/fish completion script
+  gophermind persona new <name> scaffold a custom persona in .gophermind/personas/
   gophermind audit verify <file>  verify a tamper-evident audit log's chain
   gophermind policy test <p> <s>  assert a policy's decisions against a scenarios file
   gophermind version            print build version and exit

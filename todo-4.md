@@ -58,7 +58,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [ ] **32. Eval harness + scoreboard.** Extend `ab` to score variants across multiple **models** and print a leaderboard (builds on `abtest`). Value: pick the best prompt×model pair on data.
 - [ ] **33. LLM-as-judge scoring.** Add a rubric-based judge scorer to `abtest` beyond substring match. Value: grade open-ended answers.
 - [ ] **34. Regression gate for prompts.** Fail CI if a prompt change drops the eval score below a threshold. Value: prompts can't silently regress.
-- [ ] **35. Persona authoring UX.** A `persona new` scaffolder that writes a template + registers it. Value: easy custom personas beyond the built-ins.
+- [x] **35. Persona authoring UX.** A `persona new` scaffolder that writes a template + registers it. Value: easy custom personas beyond the built-ins.
 - [ ] **36. Few-shot example bank.** Attach curated examples to a template section, auto-selected by task similarity. Value: better in-context steering.
 - [x] **37. Prompt token accounting.** Report per-section token cost of the built prompt (builds on the token estimator). Value: see what's eating the window.
 - [x] **38. Structured-output schemas library.** Ship reusable JSON schemas for `--schema` (diff, review, plan). Value: consistent machine-readable results.
