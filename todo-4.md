@@ -44,7 +44,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [ ] **21. Debate/consensus mode.** Two agents argue a solution; a judge picks or synthesizes. Value: higher-quality answers on ambiguous tasks.
 - [ ] **22. Planner/executor split.** A dedicated planner agent emits a task graph; executor agents (fleet) run leaves in dependency order. Value: parallelism with correct ordering.
 - [ ] **23. Tool-use critic.** A lightweight critic reviews each proposed tool call against the task before it runs. Value: fewer wasted/wrong tool calls.
-- [ ] **24. Self-consistency sampling.** Run N samples of a turn and majority-vote the answer. Value: robustness on reasoning tasks.
+- [x] **24. Self-consistency sampling.** Run N samples of a turn and majority-vote the answer. Value: robustness on reasoning tasks.
 - [ ] **25. Episodic memory.** Persist "what worked / what failed" summaries per repo and retrieve them at task start. Value: the agent learns across sessions.
 - [ ] **26. Cost-aware routing.** Route easy subtasks to `--speed` model, hard ones to the strong model (uses the capability probe). Value: quality where it matters, cheap elsewhere.
 - [ ] **27. Reflexion loop.** On a failed verification, generate a structured lesson and retry with it appended. Value: better recovery than a blind re-run.

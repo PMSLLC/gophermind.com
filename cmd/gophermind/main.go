@@ -93,6 +93,7 @@ func run() error {
 	abVariantsFlag := flag.String("variants", "", "ab: comma-separated prompt-template files to compare (default: the built-in template)")
 	schemaFlag := flag.String("schema", "", "run/ask: force a JSON-schema-constrained response; a file path, or @name for a built-in (diff/review/plan)")
 	dryRunFlag := flag.Bool("dry-run", false, "preview the mutating tool calls the agent would make without executing them")
+	samplesFlag := flag.Int("samples", 1, "run/ask: sample the turn N times and majority-vote the answer (self-consistency)")
 	promptTemplateFlag := flag.String("prompt-template", "", "use a custom structured prompt template (.md with frontmatter + XML sections) as the base system prompt")
 	toolBudgetFlag := flag.Int("tool-budget", 0, "run/ask: max tool calls per turn (0 = default)")
 	maxCostFlag := flag.Float64("max-cost", 0, "run/ask: abort when estimated cost (USD) exceeds this (0 = unlimited)")
@@ -679,6 +680,14 @@ func run() error {
 			inner := send
 			send = func(ctx context.Context, task string) (string, error) {
 				return ag.VerifyResult(ctx, task, inner)
+			}
+		}
+		// --samples N runs the chosen strategy N times and majority-votes the
+		// answer (self-consistency) for robustness on reasoning tasks.
+		if *samplesFlag > 1 {
+			inner := send
+			send = func(ctx context.Context, task string) (string, error) {
+				return ag.SelfConsistent(ctx, task, inner, *samplesFlag)
 			}
 		}
 		answer, sendErr := send(ctx, task)
