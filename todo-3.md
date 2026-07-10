@@ -61,7 +61,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [ ] **37. Prompt linting.** Warn on overly long or conflicting instructions. Value: catch prompt bloat/contradiction.
 - [ ] **38. A/B prompt experiments.** Run variants against fixtures and score. Value: data-driven prompt tuning.
 - [ ] **39. Skill files.** Discover `.gophermind/skills/*.md` and inject relevant ones. Value: modular capability packs.
-- [ ] **40. Prompt token-budget guardrail.** Cap injected context to a share of the window. Value: leaves room for the task.
+- [x] **40. Prompt token-budget guardrail.** Cap injected context to a share of the window. Value: leaves room for the task.
 
 ## W. Startup, Branding & Delight (builds on `internal/banner`, `internal/fortune`, `internal/version`)
 

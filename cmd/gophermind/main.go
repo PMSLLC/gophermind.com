@@ -348,6 +348,12 @@ func run() error {
 		repoContext = project.RepoContext(cfg.RootDir)
 	}
 	systemSuffix := composeSystem(personaText, project.Instructions(cfg.RootDir), repoContext)
+	// Prompt token-budget guardrail: keep injected context (persona + repo
+	// instructions + repo map) under ~25% of the model's context window so the
+	// task itself always has room. Skipped when the window is unknown.
+	if caps.ContextWindow > 0 {
+		systemSuffix = project.CapContext(systemSuffix, caps.ContextWindow/4)
+	}
 
 	switch cmd {
 	case "chat":
