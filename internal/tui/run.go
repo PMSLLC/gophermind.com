@@ -9,6 +9,7 @@ import (
 	"gophermind/internal/agent"
 	"gophermind/internal/llm"
 	"gophermind/internal/safety"
+	"gophermind/internal/session"
 	"gophermind/internal/tools"
 )
 
@@ -41,6 +42,8 @@ type Config struct {
 	RedactTranscript bool
 	// AuditPath, when non-empty, records tool calls to a tamper-evident log.
 	AuditPath string
+	// ResumeID, when non-empty, loads that saved session's history at startup.
+	ResumeID string
 }
 
 // Run starts the interactive TUI and blocks until the user quits.
@@ -73,6 +76,12 @@ func Run(cfg Config) error {
 		}
 		if cfg.SystemSuffix != "" {
 			ag.AppendSystemPrompt(cfg.SystemSuffix)
+		}
+		// Resume a saved session: load its history so the chat continues it.
+		if cfg.ResumeID != "" {
+			if err := session.Load(cfg.ResumeID, ag); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: could not resume %q: %v\n", cfg.ResumeID, err)
+			}
 		}
 		return ag
 	}

@@ -413,6 +413,24 @@ func run() error {
 		}
 	}
 
+	// Resolve a session to resume in chat: an explicit --resume <id> (alias-aware),
+	// or the `resume` subcommand's interactive picker. `resume` then behaves as chat.
+	resumeID := ""
+	if *resumeFlag != "" {
+		resumeID = session.Resolve(*resumeFlag)
+	}
+	if cmd == "resume" {
+		if !isatty() {
+			return fmt.Errorf("`resume` needs a terminal; use --resume <id> with print mode instead")
+		}
+		picked, err := pickSession(stdin, os.Stderr)
+		if err != nil {
+			return err
+		}
+		resumeID = picked
+		cmd = "chat"
+	}
+
 	switch cmd {
 	case "chat":
 		if !isatty() {
@@ -438,6 +456,7 @@ func run() error {
 			TranscriptPath:   cfg.TranscriptPath,
 			SystemPrompt:     basePrompt,
 			SystemSuffix:     systemSuffix,
+			ResumeID:         resumeID,
 			ReadOnly:         *readOnlyFlag,
 			NoBanner:         *noBannerFlag || *quietFlag,
 			NoFortune:        strings.EqualFold(*fortuneFlag, "off"),
@@ -1016,6 +1035,7 @@ func usage() {
 
 Usage:
   gophermind                    interactive session (default)
+  gophermind resume             pick a saved session to resume, then chat
   gophermind config             (re-)run the setup wizard and save config
   gophermind sessions [list|show <id>|rm <id>|gc [days]|export <id> <file>|import <file> <id>]
   gophermind doctor             run environment/config diagnostics and exit
