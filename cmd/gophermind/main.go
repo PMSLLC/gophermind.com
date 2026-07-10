@@ -342,6 +342,7 @@ func run() error {
 		tools.InspectData(cfg.RootDir),                    // read-only CSV/JSON schema + preview
 		tools.AnalyzeLog(cfg.RootDir),                     // read-only log severity summary
 		tools.CreateMigration(cfg.RootDir),                // gated: scaffold a timestamped SQL migration
+		tools.Scratchpad(cfg.RootDir),                     // durable cross-turn task notes
 	)
 
 	// A single shared stdin reader, used by both the REPL and approval prompts.
