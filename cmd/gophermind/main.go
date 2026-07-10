@@ -27,6 +27,7 @@ import (
 	"gophermind/internal/fewshot"
 	"gophermind/internal/jobs"
 	"gophermind/internal/llm"
+	"gophermind/internal/mcp"
 	"gophermind/internal/persona"
 	"gophermind/internal/project"
 	"gophermind/internal/prompt"
@@ -694,6 +695,12 @@ func run() error {
 		// Report the per-section token cost of the built base system prompt.
 		fmt.Print(pb.RenderAccounting())
 		return nil
+	case "mcp":
+		// Expose gophermind's tools over the Model Context Protocol (stdio),
+		// so any MCP client can discover and call them.
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		return mcp.Serve(ctx, mcp.NewServer(reg, "gophermind"), os.Stdin, os.Stdout)
 	case "chat":
 		if !isatty() {
 			return fmt.Errorf("interactive session needs a terminal; use `run`/`ask` for non-interactive use")

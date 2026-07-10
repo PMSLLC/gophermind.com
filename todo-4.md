@@ -134,7 +134,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 
 - [ ] **91. Plugin/tool SDK.** A stable Go interface + out-of-process (gRPC/stdio) protocol so third parties ship tools. Value: an ecosystem, not a fork.
 - [ ] **92. Tool marketplace/registry.** Discover and install community tools/skills by name. Value: capabilities without recompiling.
-- [ ] **93. Ship gophermind as an MCP server.** Expose its tools over the Model Context Protocol. Value: any MCP client (incl. Claude) can drive it.
+- [x] **93. Ship gophermind as an MCP server.** Expose its tools over the Model Context Protocol. Value: any MCP client (incl. Claude) can drive it.
 - [ ] **94. WASM tool sandbox.** Run untrusted community tools in a WASM runtime with capability grants. Value: safe third-party extensions.
 - [ ] **95. Config profiles bundle.** Shareable, versioned config+policy+prompt bundles per team. Value: consistent setup across a team.
 - [ ] **96. deb/rpm/scoop/winget packaging.** Finish the packaging matrix via nfpm + manifests. Value: native installs everywhere.
