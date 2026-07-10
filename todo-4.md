@@ -100,7 +100,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [x] **65. Signed audit log.** Sign the tamper-evident chain with a key so integrity is externally verifiable (extends AA#81). Value: non-repudiable audit trail.
 - [ ] **66. Audit log shipping.** Stream audit entries to syslog/OTLP/a file collector. Value: central security monitoring.
 - [x] **67. Policy-as-code tests.** Unit-test `.gophermind/policy` decisions against scenarios. Value: prove the guardrails do what you think.
-- [ ] **68. Prompt-injection defense.** Detect and neutralize tool-output that tries to hijack instructions. Value: resist malicious repo/web content.
+- [x] **68. Prompt-injection defense.** Detect and neutralize tool-output that tries to hijack instructions. Value: resist malicious repo/web content.
 - [x] **69. Data-egress classifier.** Warn/deny when a network tool would send content matching secret/PII patterns (builds on the redactor). Value: stop accidental exfiltration.
 - [ ] **70. Approval delegation & timeout policy.** Route approvals to a second person or auto-deny after a window (extends `ApprovalWithTimeout`). Value: safe unattended operation.
 

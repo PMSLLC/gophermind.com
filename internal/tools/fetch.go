@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"gophermind/internal/safety"
 )
 
 // defaultFetchLimit caps how many bytes fetch_url reads from a response body.
@@ -125,6 +127,11 @@ func fetchTool(allowHosts []string, allowLoopback bool, budget *NetBudget) Tool 
 			// Persist for offline reuse (only cache successful responses).
 			if cacheDir != "" && resp.StatusCode < 400 {
 				cachePut(cacheDir, u.String(), result)
+			}
+			// Opt-in prompt-injection defense: wrap fetched content that looks like
+			// it is trying to hijack instructions in an untrusted-data marker.
+			if injectionGuardEnabled() {
+				result = safety.NeutralizeInjection(result)
 			}
 			return result, nil
 		},

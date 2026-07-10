@@ -26,6 +26,17 @@ func egressMode() string {
 	}
 }
 
+// injectionGuardEnabled reports whether prompt-injection neutralization of
+// fetched/untrusted tool output is enabled (GOPHERMIND_INJECTION_GUARD).
+func injectionGuardEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("GOPHERMIND_INJECTION_GUARD"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
 // classifyEgress returns the categories of sensitive data found in an outbound
 // payload ("secret" for credentials, "email" for PII email addresses).
 func classifyEgress(payload string) []string {
