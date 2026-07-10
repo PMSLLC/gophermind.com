@@ -165,6 +165,20 @@ func run() error {
 		return runSessions(args[1:])
 	}
 
+	// `gophermind completion <bash|zsh|fish>` prints a shell-completion script.
+	if cmd == "completion" {
+		shell := ""
+		if len(args) > 1 {
+			shell = args[1]
+		}
+		script, err := generateCompletion(shell)
+		if err != nil {
+			return err
+		}
+		fmt.Print(script)
+		return nil
+	}
+
 	// `gophermind status` prints a compact prompt line (model + branch) for
 	// PS1/starship integration and exits.
 	if cmd == "status" {
@@ -1231,6 +1245,7 @@ Usage:
   gophermind doctor             run environment/config diagnostics and exit
   gophermind status             print a compact prompt line (model + branch)
   gophermind prompt-tokens      print per-section token cost of the base system prompt
+  gophermind completion <shell> print a bash/zsh/fish completion script
   gophermind audit verify <file>  verify a tamper-evident audit log's chain
   gophermind version            print build version and exit
   gophermind run "task"         one-shot: run a task and exit
