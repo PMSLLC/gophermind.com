@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -164,8 +165,14 @@ func (a *Agent) Send(ctx context.Context, userInput string) (string, error) {
 			})
 		}
 	}
-	return "", fmt.Errorf("hit max iterations (%d) without a final answer", a.maxIter)
+	return "", fmt.Errorf("hit max iterations (%d) without a final answer: %w", a.maxIter, ErrMaxIterations)
 }
+
+// ErrMaxIterations is the sentinel wrapped when a turn exhausts the iteration
+// budget without producing a final answer. Callers (e.g. the stream runner) use
+// errors.Is to distinguish it from an execution error and report a distinct
+// result subtype.
+var ErrMaxIterations = errors.New("max iterations reached")
 
 // ExportJSONL writes the full wire-level message history as JSONL: one JSON
 // object per line, each the exact llm.Message as sent to / received from the

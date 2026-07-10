@@ -11,6 +11,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -58,9 +59,9 @@ func Run(ctx context.Context, enc *Encoder, sess Session, opts Options) error {
 		answer, sErr := sess.Send(ctx, input)
 		var rErr error
 		if sErr != nil {
-			rErr = enc.Result(sErr.Error(), true)
+			rErr = enc.ResultErr(sErr)
 		} else {
-			rErr = enc.Result(answer, false)
+			rErr = enc.Result(answer)
 		}
 		if rErr != nil {
 			return rErr
@@ -229,14 +230,30 @@ func (e *Encoder) message(lineType, role string, content []contentBlock) error {
 	})
 }
 
-// Result writes the terminal result line for a turn and advances the turn count.
-func (e *Encoder) Result(finalText string, isError bool) error {
-	e.turns++
-	subtype := "success"
-	if isError {
-		subtype = "error"
+// Result writes a successful terminal result line for a turn.
+func (e *Encoder) Result(finalText string) error {
+	return e.result("success", "", finalText, false)
+}
+
+// ResultErr writes an error terminal result line, classifying the failure into a
+// distinct subtype and error_code so drivers can branch on the failure mode.
+func (e *Encoder) ResultErr(err error) error {
+	subtype, code := classifyError(err)
+	return e.result(subtype, code, err.Error(), true)
+}
+
+// classifyError maps a turn error to a stream-json result subtype and a stable
+// machine-readable error code.
+func classifyError(err error) (subtype, code string) {
+	if errors.Is(err, agent.ErrMaxIterations) {
+		return "error_max_turns", "max_turns"
 	}
-	return e.writeLine(map[string]any{
+	return "error_during_execution", "execution_error"
+}
+
+func (e *Encoder) result(subtype, code, finalText string, isError bool) error {
+	e.turns++
+	line := map[string]any{
 		"type":           "result",
 		"subtype":        subtype,
 		"is_error":       isError,
@@ -246,5 +263,9 @@ func (e *Encoder) Result(finalText string, isError bool) error {
 		"input_tokens":   e.usage.PromptTokens,
 		"output_tokens":  e.usage.CompletionTokens,
 		"total_cost_usd": e.usage.CostUSD,
-	})
+	}
+	if code != "" {
+		line["error_code"] = code
+	}
+	return e.writeLine(line)
 }

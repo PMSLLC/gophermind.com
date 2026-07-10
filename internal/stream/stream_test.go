@@ -96,7 +96,7 @@ func TestAssistantNarrationLine(t *testing.T) {
 func TestResultLine(t *testing.T) {
 	var b strings.Builder
 	e := NewEncoder(&b, "s")
-	if err := e.Result("all done", false); err != nil {
+	if err := e.Result("all done"); err != nil {
 		t.Fatal(err)
 	}
 	m := decodeLines(t, b.String())[0]

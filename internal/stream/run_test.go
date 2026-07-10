@@ -2,6 +2,7 @@ package stream
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -14,11 +15,15 @@ import (
 type fakeSession struct {
 	enc    *Encoder
 	answer string
+	err    error
 	inputs []string
 }
 
 func (f *fakeSession) Send(_ context.Context, input string) (string, error) {
 	f.inputs = append(f.inputs, input)
+	if f.err != nil {
+		return "", f.err
+	}
 	_ = f.enc.Handle(agent.Event{Type: "tool_call", Name: "read_file", Text: `{"path":"x"}`})
 	_ = f.enc.Handle(agent.Event{Type: "tool_result", Name: "read_file", Text: "data"})
 	return f.answer, nil
@@ -48,6 +53,42 @@ func TestRunTextEmitsInitToolAndResult(t *testing.T) {
 	}
 	if lines[3]["result"] != "done" {
 		t.Errorf("result text = %v", lines[3]["result"])
+	}
+}
+
+func TestResultSubtypeClassification(t *testing.T) {
+	cases := []struct {
+		name        string
+		err         error
+		wantSubtype string
+		wantCode    string
+	}{
+		{"max turns", fmt.Errorf("wrapped: %w", agent.ErrMaxIterations), "error_max_turns", "max_turns"},
+		{"execution", fmt.Errorf("tool blew up"), "error_during_execution", "execution_error"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var b strings.Builder
+			enc := NewEncoder(&b, "s")
+			sess := &fakeSession{enc: enc, err: c.err}
+			if err := Run(context.Background(), enc, sess, Options{InputFormat: "text", Prompt: "go"}); err != nil {
+				t.Fatal(err)
+			}
+			lines := decodeLines(t, b.String())
+			res := lines[len(lines)-1]
+			if res["type"] != "result" {
+				t.Fatalf("last line is %v, want result", res["type"])
+			}
+			if res["subtype"] != c.wantSubtype {
+				t.Errorf("subtype = %v, want %v", res["subtype"], c.wantSubtype)
+			}
+			if res["error_code"] != c.wantCode {
+				t.Errorf("error_code = %v, want %v", res["error_code"], c.wantCode)
+			}
+			if res["is_error"] != true {
+				t.Errorf("is_error = %v, want true", res["is_error"])
+			}
+		})
 	}
 }
 
