@@ -37,13 +37,24 @@ type Agent struct {
 	maxIter     int
 	approve     safety.ApprovalFunc
 	onEvent     func(Event)
-	msgs        []llm.Message    // persistent conversation, seeded with the system prompt
-	usage       UsageMeter       // running per-session token + cost accumulator
-	caps        llm.Capabilities // probed model capabilities (context window, etc.)
-	budget      int              // per-turn tool-call budget (0 = unlimited)
-	checkpoints *checkpoints     // named conversation snapshots
-	guardrails  Guardrails       // cost/time limits for autonomous runs
-	startTime   time.Time        // when the agent was created (for duration tracking)
+	msgs        []llm.Message         // persistent conversation, seeded with the system prompt
+	usage       UsageMeter            // running per-session token + cost accumulator
+	caps        llm.Capabilities      // probed model capabilities (context window, etc.)
+	budget      int                   // per-turn tool-call budget (0 = unlimited)
+	checkpoints *checkpoints          // named conversation snapshots
+	guardrails  Guardrails            // cost/time limits for autonomous runs
+	startTime   time.Time             // when the agent was created (for duration tracking)
+	redactor    *safety.SecretScanner // when non-nil, transcript content is scrubbed on export
+}
+
+// SetRedactTranscript enables (or disables) secret/PII redaction of message
+// content when the transcript is exported. Off by default.
+func (a *Agent) SetRedactTranscript(on bool) {
+	if on {
+		a.redactor = safety.NewSecretScanner()
+	} else {
+		a.redactor = nil
+	}
 }
 
 // New builds an Agent. If onEvent is nil, progress events are discarded.
@@ -189,7 +200,11 @@ func (a *Agent) ExportJSONL(w io.Writer) error {
 	// escapes any embedded newlines in content, so every message is exactly
 	// one line of valid JSON.
 	for i := range a.msgs {
-		if err := enc.Encode(a.msgs[i]); err != nil {
+		m := a.msgs[i]
+		if a.redactor != nil {
+			m.Content = a.redactor.Redact(m.Content)
+		}
+		if err := enc.Encode(m); err != nil {
 			return fmt.Errorf("encode message %d: %w", i, err)
 		}
 	}

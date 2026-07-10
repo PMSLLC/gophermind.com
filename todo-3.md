@@ -124,7 +124,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [ ] **85. Subprocess resource limits.** CPU/mem/fd caps on `run_shell`. Value: contains runaway commands.
 - [ ] **86. Network-disabled shell.** Run commands with no network. Value: exfiltration prevention.
 - [ ] **87. Read-only repo mode.** A flag disabling all mutating tools. Value: safe exploration by construction.
-- [ ] **88. PII redaction.** Redact secrets/PII from transcripts and sessions. Value: data-handling compliance.
+- [x] **88. PII redaction.** Redact secrets/PII from transcripts and sessions. Value: data-handling compliance.
 - [ ] **89. Approval by a judge model.** Route ambiguous approvals to a small local model against a spec. Value: smarter-than-regex gating.
 - [ ] **90. Container-exec backend.** Run `run_shell` in a container. Value: stronger isolation than process limits.
 

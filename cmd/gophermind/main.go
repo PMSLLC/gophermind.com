@@ -359,6 +359,7 @@ func run() error {
 			ReadOnly:         *readOnlyFlag,
 			NoBanner:         *noBannerFlag || *quietFlag,
 			NoFortune:        strings.EqualFold(*fortuneFlag, "off"),
+			RedactTranscript: redactTranscriptEnabled(),
 		})
 	case "print":
 		return runPrint(client, reg, cfg, printOptions{
@@ -378,6 +379,7 @@ func run() error {
 		printer := ui.Printer{Verbose: *verboseFlag}
 		ag := agent.New(client, reg, cfg.MaxIter, approve, printer.Event)
 		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
+		ag.SetRedactTranscript(redactTranscriptEnabled())
 		if systemSuffix != "" {
 			ag.AppendSystemPrompt(systemSuffix)
 		}
@@ -678,7 +680,18 @@ func composeSystem(parts ...string) string {
 // updateCheckEnabled reports whether the opt-in startup update check is on,
 // via a truthy GOPHERMIND_UPDATE_CHECK value.
 func updateCheckEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("GOPHERMIND_UPDATE_CHECK"))) {
+	return envTruthy("GOPHERMIND_UPDATE_CHECK")
+}
+
+// redactTranscriptEnabled reports whether transcripts/sessions should have
+// secrets and PII scrubbed on write (GOPHERMIND_REDACT_TRANSCRIPT).
+func redactTranscriptEnabled() bool {
+	return envTruthy("GOPHERMIND_REDACT_TRANSCRIPT")
+}
+
+// envTruthy reports whether the named env var holds a truthy value.
+func envTruthy(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
 	case "1", "true", "yes", "on":
 		return true
 	default:

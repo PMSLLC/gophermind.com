@@ -34,6 +34,8 @@ type Config struct {
 	NoBanner bool
 	// NoFortune keeps the banner but drops the fortune line (--fortune off).
 	NoFortune bool
+	// RedactTranscript scrubs secrets/PII from the exported transcript.
+	RedactTranscript bool
 }
 
 // Run starts the interactive TUI and blocks until the user quits.
@@ -57,6 +59,7 @@ func Run(cfg Config) error {
 		}
 		ag := agent.New(cfg.Client, cfg.Registry, cfg.MaxIter, approve, onEvent)
 		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
+		ag.SetRedactTranscript(cfg.RedactTranscript)
 		if cfg.SystemSuffix != "" {
 			ag.AppendSystemPrompt(cfg.SystemSuffix)
 		}
