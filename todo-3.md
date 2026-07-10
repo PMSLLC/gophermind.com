@@ -27,7 +27,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 ## T. Sessions & Continuity (builds on `internal/session`, `--session-id`/`--resume`)
 
 - [x] **11. `gophermind sessions` command.** list / show / rm saved sessions. Value: manage the store from the CLI.
-- [ ] **12. Session branching.** Fork a session at a turn into a new id. Value: explore alternatives without losing state.
+- [x] **12. Session branching.** Fork a session at a turn into a new id. Value: explore alternatives without losing state.
 - [x] **13. Session TTL / GC.** Auto-expire old sessions. Value: bounded disk footprint.
 - [x] **14. Named sessions.** Human aliases mapping to ids (`--resume my-refactor`). Value: no uuids to remember.
 - [x] **15. Session export/import.** Pack history + metadata into a shareable file. Value: hand off a debugging session.

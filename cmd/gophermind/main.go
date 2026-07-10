@@ -705,6 +705,23 @@ func runSessions(args []string) error {
 				s.ID, s.ModTime.Format("2006-01-02 15:04"), s.Messages, s.Title)
 		}
 		return nil
+	case "branch", "fork":
+		if len(args) < 3 {
+			return fmt.Errorf("usage: sessions branch <src-id> <new-id> [turn]")
+		}
+		atTurn := 0
+		if len(args) >= 4 {
+			n, err := strconv.Atoi(args[3])
+			if err != nil || n < 0 {
+				return fmt.Errorf("sessions branch: turn must be a non-negative integer, got %q", args[3])
+			}
+			atTurn = n
+		}
+		if err := session.Branch(session.Resolve(args[1]), args[2], atTurn); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "✓ branched %q → %q\n", args[1], args[2])
+		return nil
 	case "alias":
 		if len(args) < 3 {
 			return fmt.Errorf("usage: sessions alias <name> <id>")
@@ -771,7 +788,7 @@ func runSessions(args []string) error {
 		fmt.Fprintf(os.Stderr, "✓ imported %s as session %q\n", args[1], args[2])
 		return nil
 	default:
-		return fmt.Errorf("unknown sessions action %q (use list, show <id>, rm <id>, gc [days], export <id> <file>, import <file> <id>, alias <name> <id>)", action)
+		return fmt.Errorf("unknown sessions action %q (use list, show <id>, rm <id>, gc [days], export <id> <file>, import <file> <id>, alias <name> <id>, branch <src> <new> [turn])", action)
 	}
 }
 
