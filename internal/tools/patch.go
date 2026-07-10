@@ -33,7 +33,13 @@ func PatchApply(root string) Tool {
 			if err != nil {
 				return "", fmt.Errorf("parse patch: %w", err)
 			}
-			var b strings.Builder
+			// Phase 1: read every target and compute its updated content WITHOUT
+			// writing. If any file is missing or a hunk fails to apply, abort here
+			// so nothing is modified (true atomicity).
+			type pendingWrite struct {
+				full, orig, updated string
+			}
+			var pending []pendingWrite
 			for path, hunkList := range hunks {
 				full, err := safety.SafeJoin(root, path)
 				if err != nil {
@@ -47,10 +53,20 @@ func PatchApply(root string) Tool {
 				if err != nil {
 					return "", fmt.Errorf("apply to %s: %w", path, err)
 				}
-				if err := atomicWrite(full, []byte(updated)); err != nil {
-					return "", fmt.Errorf("write %s: %w", path, err)
+				pending = append(pending, pendingWrite{full: full, orig: string(data), updated: updated})
+			}
+
+			// Phase 2: write all files. If a write fails, roll back the ones already
+			// written to their original content so the tree is left consistent.
+			var written []pendingWrite
+			for _, p := range pending {
+				if err := atomicWrite(p.full, []byte(p.updated)); err != nil {
+					for _, w := range written {
+						_ = atomicWrite(w.full, []byte(w.orig))
+					}
+					return "", fmt.Errorf("write %s (rolled back %d file(s)): %w", p.full, len(written), err)
 				}
-				fmt.Fprintf(&b, "Applied %d hunks to %s\n", len(hunkList), path)
+				written = append(written, p)
 			}
 			return fmt.Sprintf("Applied patch: %d files, %d hunks.", len(files), len(hunks)), nil
 		},
