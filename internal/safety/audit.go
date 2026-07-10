@@ -35,7 +35,8 @@ type AuditLog struct {
 	last    string // running chain head (previous entry's Hash)
 	seq     int
 	entries []AuditEntry
-	key     []byte // HMAC signing key; nil = unsigned chain
+	key     []byte           // HMAC signing key; nil = unsigned chain
+	ship    func(AuditEntry) // optional sink streaming each entry to a collector
 }
 
 // NewAuditLog creates an audit log that appends to path (empty path = in-memory).
@@ -75,6 +76,9 @@ func (al *AuditLog) Record(tool, args, decision, result string) error {
 	}
 	al.last = e.Hash
 	al.entries = append(al.entries, e)
+	if al.ship != nil {
+		al.ship(e)
+	}
 
 	if al.path != "" {
 		f, err := os.OpenFile(al.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)

@@ -1552,10 +1552,17 @@ func auditLog() *safety.AuditLog {
 	if path == "" {
 		return nil
 	}
+	var al *safety.AuditLog
 	if key := strings.TrimSpace(os.Getenv("GOPHERMIND_AUDIT_KEY")); key != "" {
-		return safety.NewSignedAuditLog(path, []byte(key))
+		al = safety.NewSignedAuditLog(path, []byte(key))
+	} else {
+		al = safety.NewAuditLog(path)
 	}
-	return safety.NewAuditLog(path)
+	// Optional shipping to a central collector for security monitoring.
+	if url := strings.TrimSpace(os.Getenv("GOPHERMIND_AUDIT_SHIP_URL")); url != "" {
+		al.SetShipper(safety.HTTPShipper(url))
+	}
+	return al
 }
 
 // newJudge builds a JudgeFunc that asks the model whether a gated tool call is

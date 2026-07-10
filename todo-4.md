@@ -98,7 +98,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [x] **63. Secrets vault integration.** Resolve credentials from Vault/1Password/env-file at call time, never storing them. Value: no secrets in config or transcripts.
 - [x] **64. RBAC for tools.** Roles map to allowed tool sets (reviewer = read-only, operator = shell). Value: least privilege per user.
 - [x] **65. Signed audit log.** Sign the tamper-evident chain with a key so integrity is externally verifiable (extends AA#81). Value: non-repudiable audit trail.
-- [ ] **66. Audit log shipping.** Stream audit entries to syslog/OTLP/a file collector. Value: central security monitoring.
+- [x] **66. Audit log shipping.** Stream audit entries to syslog/OTLP/a file collector. Value: central security monitoring.
 - [x] **67. Policy-as-code tests.** Unit-test `.gophermind/policy` decisions against scenarios. Value: prove the guardrails do what you think.
 - [x] **68. Prompt-injection defense.** Detect and neutralize tool-output that tries to hijack instructions. Value: resist malicious repo/web content.
 - [x] **69. Data-egress classifier.** Warn/deny when a network tool would send content matching secret/PII patterns (builds on the redactor). Value: stop accidental exfiltration.
