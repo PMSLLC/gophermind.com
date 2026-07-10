@@ -54,7 +54,7 @@ func EditFileMulti(root string) Tool {
 				if err := atomicWrite(full, []byte(updated)); err != nil {
 					return "", fmt.Errorf("write %s: %w", a.Path, err)
 				}
-				return fmt.Sprintf("edited %s (1 occurrence)", a.Path), nil
+				return fmt.Sprintf("edited %s (1 occurrence)", a.Path) + secretWarning(updated), nil
 			}
 			// replace_all mode.
 			if n == 0 {
@@ -64,7 +64,7 @@ func EditFileMulti(root string) Tool {
 			if err := atomicWrite(full, []byte(updated)); err != nil {
 				return "", fmt.Errorf("write %s: %w", a.Path, err)
 			}
-			return fmt.Sprintf("edited %s (%d occurrences replaced)", a.Path, n), nil
+			return fmt.Sprintf("edited %s (%d occurrences replaced)", a.Path, n) + secretWarning(updated), nil
 		},
 	}
 }

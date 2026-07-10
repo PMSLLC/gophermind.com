@@ -128,3 +128,18 @@ func TestPatchApplySingleHunk(t *testing.T) {
 		t.Errorf("patched content = %q", b)
 	}
 }
+
+func TestWriteFileSecretWarning(t *testing.T) {
+	dir := t.TempDir()
+	out, err := run(t, WriteFile(dir), `{"path":"c.txt","content":"token=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "secret") {
+		t.Errorf("expected a secret warning, got %q", out)
+	}
+	out, _ = run(t, WriteFile(dir), `{"path":"d.txt","content":"just some ordinary text here"}`)
+	if strings.Contains(out, "secret") {
+		t.Errorf("clean write should not warn: %q", out)
+	}
+}

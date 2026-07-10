@@ -77,7 +77,7 @@ func WriteFile(root string) Tool {
 			if err := os.WriteFile(full, []byte(a.Content), 0o644); err != nil {
 				return "", fmt.Errorf("write %s: %w", a.Path, err)
 			}
-			return fmt.Sprintf("wrote %d bytes to %s", len(a.Content), a.Path), nil
+			return fmt.Sprintf("wrote %d bytes to %s", len(a.Content), a.Path) + secretWarning(a.Content), nil
 		},
 	}
 }
