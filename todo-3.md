@@ -74,7 +74,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [x] **47. `gophermind doctor`.** Check endpoint/model/`rg`/git/tap reachability. Value: fast setup diagnosis.
 - [x] **48. Update-available notice.** Compare version to latest release on startup (opt-in). Value: nudge upgrades.
 - [ ] **49. ASCII-art variants.** Seasonal/random gopher poses. Value: delight.
-- [ ] **50. Shell prompt integration.** Emit session status for PS1/starship. Value: ambient awareness.
+- [x] **50. Shell prompt integration.** Emit session status for PS1/starship. Value: ambient awareness.
 
 ## X. Agent Orchestration & Multi-Agent (builds on `internal/agent`, the fleet-mode idea)
 

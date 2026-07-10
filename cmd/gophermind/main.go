@@ -158,6 +158,13 @@ func run() error {
 		return runSessions(args[1:])
 	}
 
+	// `gophermind status` prints a compact prompt line (model + branch) for
+	// PS1/starship integration and exits.
+	if cmd == "status" {
+		fmt.Println(promptLine(cfg.Model, gitBranchOf(cfg.RootDir)))
+		return nil
+	}
+
 	// `gophermind audit verify <file>` checks a tamper-evident audit log's chain.
 	if cmd == "audit" {
 		if len(args) < 3 || strings.ToLower(args[1]) != "verify" {
@@ -977,6 +984,7 @@ Usage:
   gophermind config             (re-)run the setup wizard and save config
   gophermind sessions [list|show <id>|rm <id>|gc [days]|export <id> <file>|import <file> <id>]
   gophermind doctor             run environment/config diagnostics and exit
+  gophermind status             print a compact prompt line (model + branch)
   gophermind audit verify <file>  verify a tamper-evident audit log's chain
   gophermind version            print build version and exit
   gophermind run "task"         one-shot: run a task and exit
