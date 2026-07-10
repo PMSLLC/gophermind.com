@@ -628,6 +628,11 @@ func run() error {
 	basePrompt := pb.Build()
 
 	systemSuffix := composeSystem(personaText, project.Instructions(cfg.RootDir), project.Skills(cfg.RootDir), repoContext)
+	// Answer-with-citations: when web search is available, require the final
+	// answer to cite the source URLs it relied on (verifiable, traceable).
+	if cfg.BraveAPIKey != "" {
+		systemSuffix = composeSystem(systemSuffix, citationDirective())
+	}
 	// Prompt token-budget guardrail: keep injected context (persona + repo
 	// instructions + repo map) under ~25% of the model's context window so the
 	// task itself always has room. Skipped when the window is unknown.
@@ -1724,4 +1729,10 @@ func approvalTimeout() time.Duration {
 		return 0
 	}
 	return d
+}
+
+// citationDirective is the system instruction appended when web search is
+// available, requiring the model to cite the source URLs it relied on.
+func citationDirective() string {
+	return "When you use web_search results to answer, cite the specific source URLs you relied on at the end of your answer under a 'Sources:' list. Do not cite sources you did not actually use."
 }

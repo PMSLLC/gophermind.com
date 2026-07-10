@@ -20,7 +20,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [x] **3. RAG context injection.** At turn start, retrieve top-k chunks for the user's task and inject them under a `<retrieved_context>` prompt section. Value: grounded answers, fewer tool round-trips.
 - [ ] **4. Docs-retrieval tool.** A `docs_lookup` tool that fetches + caches library docs (Context7-style) keyed by `library@version`. Value: accurate API usage over stale training data.
 - [x] **5. Web-search result re-ranking.** Score `web_search` hits by embedding similarity to the query before returning. Value: the top result is actually the most relevant, not just Brave's default order.
-- [ ] **6. Answer-with-citations mode.** When `web_search`/`docs_lookup` were used, require the final answer to cite the source URLs it relied on. Value: verifiable, traceable answers.
+- [x] **6. Answer-with-citations mode.** When `web_search`/`docs_lookup` were used, require the final answer to cite the source URLs it relied on. Value: verifiable, traceable answers.
 - [x] **7. Incremental index updates.** Re-embed only files changed since the last index (via `git_info` diff). Value: fast re-index on large repos.
 - [ ] **8. Hybrid search.** Combine BM25 (SQLite FTS5) with vector similarity for `semantic_search`. Value: recall on exact terms + concepts together.
 - [x] **9. Knowledge packs.** Import a folder of markdown/PDF into the vector store as a named pack the model can query. Value: bring domain docs into the agent's reach.
