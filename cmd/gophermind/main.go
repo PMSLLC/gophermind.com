@@ -136,6 +136,12 @@ func run() error {
 		return nil
 	}
 
+	// `gophermind sessions [list|show <id>|rm <id>]` manages the saved session
+	// store and exits (needs no endpoint).
+	if cmd == "sessions" {
+		return runSessions(args[1:])
+	}
+
 	// `gophermind config` always (re-)runs the setup wizard, pre-filled with the
 	// current values, then saves and exits.
 	if cmd == "config" {
@@ -503,12 +509,63 @@ func runSetupWizard(cfg config.Config) (setup.Result, error) {
 	return setup.Run(opts)
 }
 
+// runSessions implements the `sessions` subcommand: list (default), show <id>,
+// and rm <id>, operating on the persisted session store.
+func runSessions(args []string) error {
+	action := "list"
+	if len(args) > 0 {
+		action = strings.ToLower(args[0])
+	}
+	switch action {
+	case "list", "ls":
+		infos, err := session.List()
+		if err != nil {
+			return err
+		}
+		if len(infos) == 0 {
+			fmt.Fprintln(os.Stderr, "no saved sessions")
+			return nil
+		}
+		for _, s := range infos {
+			fmt.Printf("%-24s  %s  %3d msgs  %s\n",
+				s.ID, s.ModTime.Format("2006-01-02 15:04"), s.Messages, s.Title)
+		}
+		return nil
+	case "show", "cat":
+		if len(args) < 2 {
+			return fmt.Errorf("sessions show requires a session id")
+		}
+		p, err := session.Path(args[1])
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return fmt.Errorf("session %q not found", args[1])
+		}
+		os.Stdout.Write(data)
+		return nil
+	case "rm", "remove", "delete":
+		if len(args) < 2 {
+			return fmt.Errorf("sessions rm requires a session id")
+		}
+		if err := session.Remove(args[1]); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "✓ removed session %q\n", args[1])
+		return nil
+	default:
+		return fmt.Errorf("unknown sessions action %q (use list, show <id>, or rm <id>)", action)
+	}
+}
+
 func usage() {
 	fmt.Fprintln(os.Stderr, `gophermind - a minimal agentic coding harness
 
 Usage:
   gophermind                    interactive session (default)
   gophermind config             (re-)run the setup wizard and save config
+  gophermind sessions [list|show <id>|rm <id>]  manage saved sessions
   gophermind doctor             run environment/config diagnostics and exit
   gophermind version            print build version and exit
   gophermind run "task"         one-shot: run a task and exit
