@@ -33,7 +33,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [x] **13. Query plan / EXPLAIN helper.** Surface `EXPLAIN QUERY PLAN` and flag full-table scans. Value: performance-aware SQL suggestions.
 - [ ] **14. Safe write migrations preview.** Pair `create_migration` with a dry-run that runs the up-migration against a throwaway copy and diffs the schema. Value: catch broken migrations before commit.
 - [ ] **15. Dataframe tool.** A `data_transform` tool for filter/group/aggregate over CSV/JSONL (builds on `inspect_data`). Value: analysis without writing a script.
-- [ ] **16. Chart/spark output.** Render a compact ASCII/Unicode sparkline or bar chart from a query result. Value: at-a-glance trends in the terminal.
+- [x] **16. Chart/spark output.** Render a compact ASCII/Unicode sparkline or bar chart from a query result. Value: at-a-glance trends in the terminal.
 - [ ] **17. Parquet & Arrow support.** Teach `inspect_data`/`data_transform` to read columnar formats. Value: modern data-lake files.
 - [ ] **18. Log-to-metrics.** `analyze_log` emits time-bucketed counts (errors/min) as a series. Value: spot spikes, not just totals.
 - [ ] **19. Fixture/seed generator.** Generate realistic seed rows from a schema for tests. Value: faster test-data setup.
