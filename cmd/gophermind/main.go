@@ -185,6 +185,55 @@ func run() error {
 		return nil
 	}
 
+	// `gophermind prompts [list|show <name>|save <name> <file>]` manages the
+	// repo-local named prompt registry (versioned; save backs up the prior copy).
+	if cmd == "prompts" {
+		sub := "list"
+		if len(args) > 1 {
+			sub = strings.ToLower(args[1])
+		}
+		switch sub {
+		case "list":
+			names, err := prompt.ListNamed(cfg.RootDir)
+			if err != nil {
+				return err
+			}
+			if len(names) == 0 {
+				fmt.Fprintln(os.Stderr, "no saved prompts")
+				return nil
+			}
+			for _, n := range names {
+				fmt.Println(n)
+			}
+			return nil
+		case "show":
+			if len(args) < 3 {
+				return fmt.Errorf("usage: gophermind prompts show <name>")
+			}
+			body, err := prompt.ShowNamed(cfg.RootDir, args[2])
+			if err != nil {
+				return err
+			}
+			fmt.Print(body)
+			return nil
+		case "save":
+			if len(args) < 4 {
+				return fmt.Errorf("usage: gophermind prompts save <name> <file>")
+			}
+			data, err := os.ReadFile(args[3])
+			if err != nil {
+				return err
+			}
+			if err := prompt.SaveNamed(cfg.RootDir, args[2], string(data)); err != nil {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "✓ saved prompt %q\n", args[2])
+			return nil
+		default:
+			return fmt.Errorf("usage: gophermind prompts [list|show <name>|save <name> <file>]")
+		}
+	}
+
 	// `gophermind usage report` summarizes recorded spend by day and model.
 	if cmd == "usage" {
 		if len(args) < 2 || strings.ToLower(args[1]) != "report" {
