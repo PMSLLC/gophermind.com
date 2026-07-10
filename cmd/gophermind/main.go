@@ -334,6 +334,7 @@ func run() error {
 		tools.GitInfo(cfg.RootDir),                        // read-only structured git (log/status/diff)
 		tools.InspectData(cfg.RootDir),                    // read-only CSV/JSON schema + preview
 		tools.AnalyzeLog(cfg.RootDir),                     // read-only log severity summary
+		tools.CreateMigration(cfg.RootDir),                // gated: scaffold a timestamped SQL migration
 	)
 
 	// A single shared stdin reader, used by both the REPL and approval prompts.
