@@ -770,7 +770,13 @@ func run() error {
 	// instructions + repo map) under ~25% of the model's context window so the
 	// task itself always has room. Skipped when the window is unknown.
 	if caps.ContextWindow > 0 {
-		systemSuffix = project.CapContext(systemSuffix, caps.ContextWindow/4)
+		// GOPHERMIND_COMPRESS_CONTEXT keeps the most informative lines instead of
+		// hard-truncating; otherwise cap by byte budget.
+		if envTruthy("GOPHERMIND_COMPRESS_CONTEXT") {
+			systemSuffix = project.CompressContext(systemSuffix, caps.ContextWindow/4)
+		} else {
+			systemSuffix = project.CapContext(systemSuffix, caps.ContextWindow/4)
+		}
 	}
 	// Prompt linting: surface overly long or self-contradicting instructions so
 	// the user can fix them (advisory only; suppressed by --quiet).

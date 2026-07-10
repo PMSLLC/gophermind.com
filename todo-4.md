@@ -62,7 +62,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [x] **36. Few-shot example bank.** Attach curated examples to a template section, auto-selected by task similarity. Value: better in-context steering.
 - [x] **37. Prompt token accounting.** Report per-section token cost of the built prompt (builds on the token estimator). Value: see what's eating the window.
 - [x] **38. Structured-output schemas library.** Ship reusable JSON schemas for `--schema` (diff, review, plan). Value: consistent machine-readable results.
-- [ ] **39. Auto prompt-compression.** Summarize long injected context to fit the budget instead of hard truncation (`CapContext`). Value: keep meaning, lose bytes.
+- [x] **39. Auto prompt-compression.** Summarize long injected context to fit the budget instead of hard truncation (`CapContext`). Value: keep meaning, lose bytes.
 - [x] **40. Golden-transcript tests.** Snapshot a canonical session and diff on prompt changes. Value: catch unintended behavior shifts.
 
 ## AG. Memory, Sessions & Continuity III (builds on the session store, branch/diff/alias, scratchpad, encryption)
