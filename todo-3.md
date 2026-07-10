@@ -55,7 +55,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [ ] **31. Build the structured prompt system.** Ship `PLAN.md`: `internal/prompt` template parser + builder (YAML frontmatter + XML sections). Value: composable, maintainable prompts.
 - [x] **32. Persona presets.** `--persona reviewer|architect|tester`. Value: task-tuned behavior on demand.
 - [ ] **33. `CLAUDE.md`/`AGENTS.md` auto-load.** Inject repo instruction files into the system prompt. Value: per-repo conventions respected.
-- [ ] **34. Per-repo prompt overrides.** `.gophermind/prompt.md`. Value: project-specific behavior.
+- [x] **34. Per-repo prompt overrides.** `.gophermind/prompt.md`. Value: project-specific behavior.
 - [ ] **35. Prompt fragments / includes.** Reusable snippets composed into the prompt. Value: DRY prompt maintenance.
 - [ ] **36. Dynamic context injection.** Git status + a compact repo map at session start. Value: the model orients without tool calls.
 - [ ] **37. Prompt linting.** Warn on overly long or conflicting instructions. Value: catch prompt bloat/contradiction.
