@@ -80,6 +80,15 @@ func summarize(path string) (count int, title string) {
 	}
 	defer f.Close()
 
+	// Encrypted sessions can't be summarized without the key; label them.
+	head := make([]byte, len(encMagic))
+	if n, _ := f.Read(head); isEncrypted(head[:n]) {
+		return 0, "(encrypted)"
+	}
+	if _, err := f.Seek(0, 0); err != nil {
+		return 0, ""
+	}
+
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	for sc.Scan() {

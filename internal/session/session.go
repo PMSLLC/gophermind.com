@@ -5,6 +5,7 @@
 package session
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -60,25 +61,55 @@ func Exists(id string) bool {
 	return err == nil && !fi.IsDir()
 }
 
-// Save writes the agent's conversation to the session file (0600 file, 0700 dir).
+// Save writes the agent's conversation to the session file (0600 file, 0700
+// dir). When GOPHERMIND_SESSION_KEY is set, the history is encrypted at rest
+// with AES-256-GCM (magic-prefixed); otherwise it is plain JSONL as before.
 func Save(id string, a *agent.Agent) error {
 	p, err := Path(id)
 	if err != nil {
 		return err
 	}
-	return a.WriteTranscript(p)
+	key := sessionKey()
+	if key == nil {
+		return a.WriteTranscript(p)
+	}
+	var buf bytes.Buffer
+	if err := a.ExportJSONL(&buf); err != nil {
+		return err
+	}
+	ct, err := encryptBytes(key, buf.Bytes())
+	if err != nil {
+		return fmt.Errorf("encrypt session: %w", err)
+	}
+	if dir := filepath.Dir(p); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return err
+		}
+	}
+	return os.WriteFile(p, append([]byte(encMagic), ct...), 0o600)
 }
 
-// Load restores a saved session's conversation into the agent.
+// Load restores a saved session's conversation into the agent, transparently
+// decrypting an encrypted store (requires GOPHERMIND_SESSION_KEY).
 func Load(id string, a *agent.Agent) error {
 	p, err := Path(id)
 	if err != nil {
 		return err
 	}
-	f, err := os.Open(p)
+	data, err := os.ReadFile(p)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	return a.LoadHistory(f)
+	if isEncrypted(data) {
+		key := sessionKey()
+		if key == nil {
+			return fmt.Errorf("session %q is encrypted; set GOPHERMIND_SESSION_KEY to resume it", id)
+		}
+		plain, err := decryptBytes(key, data[len(encMagic):])
+		if err != nil {
+			return fmt.Errorf("decrypt session %q (wrong key?): %w", id, err)
+		}
+		return a.LoadHistory(bytes.NewReader(plain))
+	}
+	return a.LoadHistory(bytes.NewReader(data))
 }

@@ -35,7 +35,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [ ] **17. Interactive resume in the TUI.** Pick a saved session at chat startup. Value: continuity in interactive mode.
 - [ ] **18. Session diff.** Show files/messages changed across a session. Value: review an agent's work.
 - [ ] **19. Session-scoped scratchpad.** Durable notes per session. Value: task state survives resume.
-- [ ] **20. Encrypted session store.** Optional at-rest encryption for histories. Value: sensitive-repo safety.
+- [x] **20. Encrypted session store.** Optional at-rest encryption for histories. Value: sensitive-repo safety.
 
 ## U. Distribution & Packaging II (builds on `.goreleaser.yaml`, `npm/`, `homebrew-tap`)
 
