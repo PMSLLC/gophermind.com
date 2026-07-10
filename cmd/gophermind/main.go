@@ -469,6 +469,7 @@ func run() error {
 		tools.LogMetrics(cfg.RootDir),                        // read-only time-bucketed log counts (spikes)
 		tools.SeedData(cfg.RootDir),                          // generate INSERT seed data from a table schema
 		tools.OpenAPIOps(cfg.RootDir),                        // list operations from an OpenAPI 3 spec
+		tools.DetectAnomalies(),                              // flag statistical outliers in a numeric series
 	}
 	// --dry-run: wrap gated (mutating) tools so the agent previews the calls it
 	// would make without executing any mutation.
