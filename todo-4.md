@@ -128,7 +128,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [ ] **87. `doctor --fix`.** Offer to auto-remediate common setup issues doctor finds. Value: from diagnosis to fixed in one step.
 - [x] **88. Shell completions.** Generate bash/zsh/fish completion for subcommands and flags. Value: ergonomic CLI.
 - [ ] **89. Interactive setup for integrations.** Extend the wizard to configure Brave/GitHub/DB credentials. Value: guided, not doc-hunting, onboarding.
-- [ ] **90. Dry-run mode.** `--dry-run` shows the tool calls the agent *would* make without executing mutations. Value: preview before committing to a run.
+- [x] **90. Dry-run mode.** `--dry-run` shows the tool calls the agent *would* make without executing mutations. Value: preview before committing to a run.
 
 ## AL. Distribution, Ecosystem & Platform II (builds on GoReleaser/npm/Homebrew, the OpenCoven manifest, the plugin idea)
 

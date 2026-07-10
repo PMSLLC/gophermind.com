@@ -92,6 +92,7 @@ func run() error {
 	abFixturesFlag := flag.String("fixtures", "", "ab: JSONL fixtures file ({\"prompt\":..,\"expect\":..} per line)")
 	abVariantsFlag := flag.String("variants", "", "ab: comma-separated prompt-template files to compare (default: the built-in template)")
 	schemaFlag := flag.String("schema", "", "run/ask: force a JSON-schema-constrained response; a file path, or @name for a built-in (diff/review/plan)")
+	dryRunFlag := flag.Bool("dry-run", false, "preview the mutating tool calls the agent would make without executing them")
 	promptTemplateFlag := flag.String("prompt-template", "", "use a custom structured prompt template (.md with frontmatter + XML sections) as the base system prompt")
 	toolBudgetFlag := flag.Int("tool-budget", 0, "run/ask: max tool calls per turn (0 = default)")
 	maxCostFlag := flag.Float64("max-cost", 0, "run/ask: abort when estimated cost (USD) exceeds this (0 = unlimited)")
@@ -394,7 +395,7 @@ func run() error {
 	// Shared session-wide budget for the network tools (0/0 = unlimited).
 	netBudget := tools.NewNetBudget(cfg.NetMaxRequests, cfg.NetMaxBytes)
 
-	reg := tools.NewRegistry(
+	toolset := []tools.Tool{
 		tools.ReadFileRange(cfg.RootDir),  // read_file + optional line ranges
 		tools.ListFilesGlob(cfg.RootDir),  // list_files + include/exclude globs
 		tools.SearchEnhanced(cfg.RootDir), // search + context/flags/paging
@@ -427,7 +428,13 @@ func run() error {
 		tools.DataTransform(cfg.RootDir),                     // read-only filter/group/aggregate over CSV/JSONL
 		tools.LogMetrics(cfg.RootDir),                        // read-only time-bucketed log counts (spikes)
 		tools.SeedData(cfg.RootDir),                          // generate INSERT seed data from a table schema
-	)
+	}
+	// --dry-run: wrap gated (mutating) tools so the agent previews the calls it
+	// would make without executing any mutation.
+	if *dryRunFlag {
+		toolset = tools.WrapDryRun(toolset)
+	}
+	reg := tools.NewRegistry(toolset...)
 
 	// A single shared stdin reader, used by both the REPL and approval prompts.
 	stdin := bufio.NewReader(os.Stdin)
@@ -1321,6 +1328,7 @@ Selected flags:
   -think low|medium|high  send a reasoning-effort hint with each request
   -speed                  use a faster model as primary (GOPHERMIND_SPEED_MODEL or first fallback)
   -no-banner, -quiet/-q   suppress the startup splash (and, with -quiet, stderr chatter)
+  -dry-run                preview mutating tool calls without executing them
 
 Environment (all optional; flags override):
   GOPHERMIND_BASE_URL   endpoint (default: built-in)
