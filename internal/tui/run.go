@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"gophermind/internal/agent"
 	"gophermind/internal/llm"
+	"gophermind/internal/safety"
 	"gophermind/internal/tools"
 )
 
@@ -27,6 +28,8 @@ type Config struct {
 	// SystemSuffix is appended to the agent's system prompt (e.g. project
 	// instructions from CLAUDE.md/AGENTS.md).
 	SystemSuffix string
+	// ReadOnly denies all mutating (gated) tools when set.
+	ReadOnly bool
 }
 
 // Run starts the interactive TUI and blocks until the user quits.
@@ -39,6 +42,9 @@ func Run(cfg Config) error {
 			reply := make(chan bool, 1)
 			sub <- approvalMsg{tool: tool, args: args, reply: reply}
 			return <-reply
+		}
+		if cfg.ReadOnly {
+			approve = safety.ReadMode() // deny gated tools; no prompt
 		}
 		onEvent := func(e agent.Event) {
 			if msg := eventToMsg(e); msg != nil {

@@ -63,6 +63,10 @@ func run() error {
 	resumeFlag := flag.String("resume", "", "print mode: resume a saved session by id")
 	appendSysFlag := flag.String("append-system-prompt", "", "print mode: append text to the system prompt")
 	permModeFlag := flag.String("permission-mode", "", "print mode: auto (full access) | plan (read-only: denies edits/shell)")
+	readOnlyFlag := flag.Bool("read-only", false, "deny all mutating tools (write/edit/shell/move/delete/mkdir/patch) in every mode")
+	planFlag := flag.Bool("plan", false, "run/ask: emit a structured plan before executing")
+	parallelFlag := flag.Bool("parallel", false, "run/ask: execute independent tool calls in a turn concurrently")
+	toolBudgetFlag := flag.Int("tool-budget", 0, "run/ask: max tool calls per turn (0 = default)")
 	transcriptFlag := flag.String("transcript", cfg.TranscriptPath, "write the full wire-level message history (JSONL) to this path at session end; MAY CONTAIN SENSITIVE PROMPTS/RESPONSES (file written 0600, no credentials included)")
 	flag.Usage = usage
 	flag.Parse()
@@ -246,6 +250,9 @@ func run() error {
 	if cfg.ApprovalMode == "ask" {
 		approve = func(tool, argsJSON string) bool { return ui.Confirm(stdin, tool, argsJSON) }
 	}
+	if *readOnlyFlag {
+		approve = safety.ReadMode() // deny every gated (mutating) tool
+	}
 
 	switch cmd {
 	case "chat":
@@ -262,12 +269,13 @@ func run() error {
 			OutputPricePer1K: cfg.OutputPricePer1K,
 			TranscriptPath:   cfg.TranscriptPath,
 			SystemSuffix:     project.Instructions(cfg.RootDir),
+			ReadOnly:         *readOnlyFlag,
 		})
 	case "print":
 		return runPrint(client, reg, cfg, printOptions{
 			prompt: task, inputFmt: *inputFmtFlag, outputFmt: *outputFmtFlag,
 			sessionID: *sessionIDFlag, resumeID: *resumeFlag,
-			appendSys: *appendSysFlag, permMode: *permModeFlag,
+			appendSys: *appendSysFlag, permMode: *permModeFlag, readOnly: *readOnlyFlag,
 		})
 	case "run", "ask":
 		if task == "" {
@@ -284,7 +292,18 @@ func run() error {
 		if instr := project.Instructions(cfg.RootDir); instr != "" {
 			ag.AppendSystemPrompt(instr)
 		}
-		answer, sendErr := ag.Send(ctx, task)
+		// Pick the turn strategy from flags (all share Send's signature).
+		send := ag.Send
+		switch {
+		case *planFlag:
+			send = ag.PlanThenExecute
+		case *parallelFlag:
+			send = ag.DispatchParallel
+		case *toolBudgetFlag > 0:
+			ag = ag.WithToolCallBudget(*toolBudgetFlag)
+			send = ag.SendWithBudget
+		}
+		answer, sendErr := send(ctx, task)
 		// Write the transcript even when the turn errored: a partial history is
 		// still useful for debugging. The dump never includes credentials.
 		if cfg.TranscriptPath != "" {
@@ -314,6 +333,7 @@ type printOptions struct {
 	resumeID  string
 	appendSys string
 	permMode  string
+	readOnly  bool
 }
 
 func runPrint(client *llm.Client, reg *tools.Registry, cfg config.Config, o printOptions) error {
@@ -327,7 +347,10 @@ func runPrint(client *llm.Client, reg *tools.Registry, cfg config.Config, o prin
 	approve := safety.ApprovalFunc(safety.Auto)
 	switch o.permMode {
 	case "plan", "read_only", "read-only":
-		approve = safety.ApprovalFunc(func(tool, _ string) bool { return !safety.Gated(tool) })
+		approve = safety.ReadMode()
+	}
+	if o.readOnly {
+		approve = safety.ReadMode()
 	}
 
 	sessionID, resumeID := o.sessionID, o.resumeID

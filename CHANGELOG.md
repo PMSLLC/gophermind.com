@@ -12,6 +12,9 @@ All notable changes to GopherMind are documented here. The format follows
 - An **OpenCoven runtime manifest** (`coven/gophermind.json`, schema-validated) declaring GopherMind as a streaming Coven runtime (stream + pre-assigned sessions + sandbox mapping).
 - **npm distribution** (`npm install -g gophermind`): cross-platform (macOS/Linux/Windows, x64/arm64) prebuilt binaries via a postinstall downloader; GoReleaser now builds Linux and Windows archives too.
 - A `--version` flag (alongside the `version` subcommand).
+- Six more tools: `file_stat`, `move_file`, `delete_file`, `mkdir`, `apply_patch`, plus ranged `read_file`, `replace_all` `edit_file`, glob `list_files`, and context/flag/paging-enhanced `search`/`run_shell` (11 tools total; the new mutating ones are gated).
+- `--read-only` mode (denies every mutating tool in all modes) and `run`/`ask` turn strategies `--plan`, `--parallel`, and `--tool-budget`.
+- Auto-load of `CLAUDE.md`/`AGENTS.md` into the system prompt, and token-aware context trimming for long sessions.
 
 ## [0.1.0] - 2026-07-09
 ### Added
