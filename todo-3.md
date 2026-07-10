@@ -79,7 +79,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 ## X. Agent Orchestration & Multi-Agent (builds on `internal/agent`, the fleet-mode idea)
 
 - [x] **51. `spawn_agent` tool.** A focused child agent with its own context. Value: parallel decomposition without context pollution.
-- [ ] **52. Fleet/overseer mode.** Supervise multiple sessions via `onEvent` + `ApprovalFunc` with spec rules. Value: coordinated multi-agent runs.
+- [x] **52. Fleet/overseer mode.** Supervise multiple sessions via `onEvent` + `ApprovalFunc` with spec rules. Value: coordinated multi-agent runs.
 - [x] **53. Plan-then-execute mode.** Emit a reviewable plan before acting. Value: redirect before changes happen.
 - [x] **54. Parallel tool execution.** Run independent tool calls in a turn concurrently. Value: faster multi-file reads/searches.
 - [ ] **55. Agent-to-agent (A2A) client.** Speak an A2A protocol to other agents. Value: interop beyond OpenCoven.

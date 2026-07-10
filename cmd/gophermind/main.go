@@ -86,6 +86,7 @@ func run() error {
 	planFlag := flag.Bool("plan", false, "run/ask: emit a structured plan before executing")
 	parallelFlag := flag.Bool("parallel", false, "run/ask: execute independent tool calls in a turn concurrently")
 	verifyFlag := flag.Bool("verify", false, "run/ask: have a second (verifier) agent check the result and trigger one correction round if incomplete")
+	fleetFlag := flag.Int("fleet", 1, "queue: run up to N tasks concurrently under the shared approval policy (fleet/overseer mode)")
 	schemaFlag := flag.String("schema", "", "run/ask: force a JSON-schema-constrained response, reading the schema from this file")
 	promptTemplateFlag := flag.String("prompt-template", "", "use a custom structured prompt template (.md with frontmatter + XML sections) as the base system prompt")
 	toolBudgetFlag := flag.Int("tool-budget", 0, "run/ask: max tool calls per turn (0 = default)")
@@ -489,7 +490,7 @@ func run() error {
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
-		return runQueue(ctx, client, reg, cfg, approve, basePrompt, systemSuffix, task, *verboseFlag)
+		return runQueue(ctx, client, reg, cfg, approve, basePrompt, systemSuffix, task, *verboseFlag, *fleetFlag)
 	case "run", "ask":
 		if task == "" {
 			return fmt.Errorf("%s requires a task argument", cmd)
@@ -734,7 +735,7 @@ func runSetupWizard(cfg config.Config) (setup.Result, error) {
 // line; blank lines and #comments ignored), runs each through the agent in
 // order with a live status trail, prints a per-job summary, and exits non-zero
 // if any task failed.
-func runQueue(ctx context.Context, client *llm.Client, reg *tools.Registry, cfg config.Config, approve safety.ApprovalFunc, basePrompt, systemSuffix, file string, verbose bool) error {
+func runQueue(ctx context.Context, client *llm.Client, reg *tools.Registry, cfg config.Config, approve safety.ApprovalFunc, basePrompt, systemSuffix, file string, verbose bool, fleet int) error {
 	data, err := os.ReadFile(file)
 	if err != nil {
 		return fmt.Errorf("read task file: %w", err)
@@ -753,19 +754,32 @@ func runQueue(ctx context.Context, client *llm.Client, reg *tools.Registry, cfg 
 	}
 
 	printer := ui.Printer{Verbose: verbose}
-	ag := agent.New(client, reg, cfg.MaxIter, approve, printer.Event)
-	ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
-	ag.SetAuditLog(auditLog())
-	ag.SetSystemPrompt(basePrompt)
-	if systemSuffix != "" {
-		ag.AppendSystemPrompt(systemSuffix)
+	newAgent := func() *agent.Agent {
+		a := agent.New(client, reg, cfg.MaxIter, approve, printer.Event)
+		a.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
+		a.SetAuditLog(auditLog())
+		a.SetSystemPrompt(basePrompt)
+		if systemSuffix != "" {
+			a.AppendSystemPrompt(systemSuffix)
+		}
+		return a
 	}
-
-	q.Run(ctx, ag.Send, func(j *jobs.Job) {
+	onUpdate := func(j *jobs.Job) {
 		if j.Status == jobs.Running {
 			fmt.Fprintf(os.Stderr, "▶ [%d/%d] %s\n", j.ID, total, j.Task)
 		}
-	})
+	}
+
+	if fleet > 1 {
+		// Fleet/overseer mode: each task runs in its own isolated agent, up to
+		// `fleet` concurrently, all sharing the one approval policy (the overseer).
+		q.RunConcurrent(ctx, func(ctx context.Context, t string) (string, error) {
+			return newAgent().Send(ctx, t)
+		}, fleet, onUpdate)
+	} else {
+		// Sequential: one shared agent, so later tasks build on earlier context.
+		q.Run(ctx, newAgent().Send, onUpdate)
+	}
 
 	// Per-job summary to stdout (pipeable), counts to stderr.
 	for _, j := range q.Jobs() {
@@ -1045,6 +1059,7 @@ Usage:
   gophermind run "task"         one-shot: run a task and exit
   gophermind ask "question"     one-shot: answer without modifying files
   gophermind queue <file>       run a file of tasks (one per line) in order
+                                (add --fleet N to run N concurrently)
   gophermind serve              webhook server: POST /run {task} runs one task
 
 On first interactive launch with nothing configured, a short setup wizard runs
