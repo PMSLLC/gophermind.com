@@ -297,6 +297,7 @@ func run() error {
 		tools.Mkdir(cfg.RootDir),
 		tools.PatchApply(cfg.RootDir),
 		tools.FetchURL(cfg.FetchAllowHosts), // gated, egress-controlled URL fetch
+		tools.FindSymbol(cfg.RootDir),       // definition-aware symbol search
 	)
 
 	// A single shared stdin reader, used by both the REPL and approval prompts.
