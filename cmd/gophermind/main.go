@@ -364,6 +364,16 @@ func run() error {
 	if cfg.CacheEnabled {
 		client.Cache = &llm.Cache{Dir: cfg.CacheDir, TTL: cfg.CacheTTL}
 	}
+	// Deterministic replay/record of LLM responses for hermetic testing:
+	// GOPHERMIND_LLM_REPLAY serves from a cassette (offline); GOPHERMIND_LLM_RECORD
+	// captures real interactions to one. Replay takes precedence.
+	if p := strings.TrimSpace(os.Getenv("GOPHERMIND_LLM_REPLAY")); p != "" {
+		if err := client.EnableReplay(p); err != nil {
+			return fmt.Errorf("llm replay: %w", err)
+		}
+	} else if p := strings.TrimSpace(os.Getenv("GOPHERMIND_LLM_RECORD")); p != "" {
+		client.EnableRecording(p)
+	}
 
 	// Resolve the model. With none configured, auto-discover the first the
 	// endpoint serves. With one configured, validate it against /v1/models so a

@@ -109,6 +109,44 @@ func NewWithTLS(baseURL, apiKey, model string, timeout time.Duration, tlsOpts TL
 	}, nil
 }
 
+// currentBase resolves the base transport, treating nil as the default.
+func (c *Client) currentBase() http.RoundTripper {
+	if c.baseTransport != nil {
+		return c.baseTransport
+	}
+	return http.DefaultTransport
+}
+
+// rebuildTransport re-chains any registered middleware on top of the (possibly
+// updated) base transport.
+func (c *Client) rebuildTransport() {
+	if c.HTTP == nil {
+		c.HTTP = &http.Client{}
+	}
+	c.HTTP.Transport = chainMiddleware(c.baseTransport, c.middlewares)
+}
+
+// EnableRecording wraps the client's base transport with a recorder that appends
+// each real interaction to the cassette at path, so a session can be captured
+// and later replayed offline. Non-streaming (Complete) use only.
+func (c *Client) EnableRecording(path string) {
+	c.baseTransport = NewRecorder(c.currentBase(), path)
+	c.rebuildTransport()
+}
+
+// EnableReplay replaces the client's base transport with a replayer that serves
+// responses from the cassette at path, never touching the network — for
+// hermetic, deterministic agent tests.
+func (c *Client) EnableReplay(path string) error {
+	rp, err := NewReplayer(path)
+	if err != nil {
+		return err
+	}
+	c.baseTransport = rp
+	c.rebuildTransport()
+	return nil
+}
+
 // Use registers one or more HTTP middlewares on the client and rebuilds the
 // transport so subsequent requests — both Complete and Stream, which share this
 // *http.Client — flow through them. Middlewares are appended in order; the
