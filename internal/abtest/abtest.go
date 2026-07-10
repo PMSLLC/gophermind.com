@@ -59,3 +59,47 @@ func matches(answer, expect string) bool {
 	}
 	return strings.Contains(strings.ToLower(answer), strings.ToLower(expect))
 }
+
+// Scorer decides whether an answer passes for a fixture. The default is a
+// substring match; a JudgeScorer uses an LLM rubric for open-ended answers.
+type Scorer func(ctx context.Context, prompt, answer, expect string) bool
+
+// SubstringScorer is the default scorer: case-insensitive substring match.
+func SubstringScorer(_ context.Context, _, answer, expect string) bool {
+	return matches(answer, expect)
+}
+
+// JudgeFn asks an LLM whether an answer satisfies a rubric for a prompt.
+type JudgeFn func(ctx context.Context, rubric, prompt, answer string) (bool, error)
+
+// JudgeScorer builds a Scorer that grades open-ended answers with an LLM judge,
+// using the fixture's Expect field as the rubric. A judge error counts as a fail.
+func JudgeScorer(judge JudgeFn) Scorer {
+	return func(ctx context.Context, prompt, answer, expect string) bool {
+		ok, err := judge(ctx, expect, prompt, answer)
+		return err == nil && ok
+	}
+}
+
+// RunMatrixScored is RunMatrix with a pluggable scorer (RunMatrix uses
+// SubstringScorer).
+func RunMatrixScored(ctx context.Context, variants []Variant, fixtures []Fixture, run Runner, score Scorer) []Result {
+	if score == nil {
+		score = SubstringScorer
+	}
+	results := make([]Result, 0, len(variants))
+	for _, v := range variants {
+		r := Result{Variant: v.Name, Total: len(fixtures)}
+		for _, f := range fixtures {
+			if ctx.Err() != nil {
+				break
+			}
+			out, err := run(ctx, v.System, f.Prompt)
+			if err == nil && score(ctx, f.Prompt, out, f.Expect) {
+				r.Passed++
+			}
+		}
+		results = append(results, r)
+	}
+	return results
+}
