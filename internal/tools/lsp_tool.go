@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"gophermind/internal/lsp"
+	"gophermind/internal/safety"
 )
 
 // LSPDefinition returns a read-only tool that resolves a symbol's definition via
@@ -32,6 +33,12 @@ func LSPDefinition(root string, argv []string) Tool {
 			}
 			if err := json.Unmarshal(raw, &a); err != nil {
 				return "", fmt.Errorf("invalid arguments: %w", err)
+			}
+			// Contain the file to the repo root — the path flows into a
+			// filepath.Join + os.ReadFile inside lsp.Definition, so an
+			// unvalidated "../.." would escape the sandbox (path traversal).
+			if _, err := safety.SafeJoin(root, a.File); err != nil {
+				return "", err
 			}
 			locs, err := lsp.Definition(ctx, argv, root, a.File, a.Line, a.Column)
 			if err != nil {

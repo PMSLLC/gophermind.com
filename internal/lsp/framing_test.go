@@ -1,6 +1,7 @@
 package lsp
 
 import (
+	"context"
 	"bufio"
 	"bytes"
 	"encoding/json"
@@ -53,3 +54,12 @@ func TestReadMissingHeader(t *testing.T) {
 		t.Error("missing Content-Length should error")
 	}
 }
+
+func TestDefinitionRejectsTraversal(t *testing.T) {
+	// The path check happens before any subprocess work, so a bogus argv is fine.
+	if _, err := Definition(contextTODO(), []string{"true"}, "/repo", "../../etc/passwd", 0, 0); err == nil {
+		t.Error("a file escaping the workspace root must be rejected")
+	}
+}
+
+func contextTODO() context.Context { return context.Background() }

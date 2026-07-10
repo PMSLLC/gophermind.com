@@ -25,6 +25,12 @@ func Definition(ctx context.Context, argv []string, rootDir, file string, line, 
 	if len(argv) == 0 {
 		return nil, fmt.Errorf("no LSP command configured")
 	}
+	// Defense in depth: contain file to rootDir — it is joined and os.ReadFile'd
+	// below, so an unvalidated "../.." would read files outside the workspace.
+	if rel, err := filepath.Rel(rootDir, filepath.Join(rootDir, file)); err != nil ||
+		rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil, fmt.Errorf("file %q escapes the workspace root", file)
+	}
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
