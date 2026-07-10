@@ -582,9 +582,14 @@ func run() error {
 		// decision: always/never resolve without prompting, ask defers to it.
 		approve = safety.PolicyApproval(pol, approve)
 		// RBAC: GOPHERMIND_ROLE restricts the agent to a role's allowed tool set
-		// (least privilege); tools outside the set are denied outright.
+		// (least privilege). An unknown role fails CLOSED — the run is refused
+		// rather than silently granted full access.
 		if role := strings.TrimSpace(os.Getenv("GOPHERMIND_ROLE")); role != "" {
-			approve = safety.RoleGate(safety.RoleTools(pol.Roles, role), approve)
+			allowed, known := safety.RoleTools(pol.Roles, role)
+			if !known {
+				return fmt.Errorf("GOPHERMIND_ROLE=%q is not defined in .gophermind/policy roles", role)
+			}
+			approve = safety.RoleGate(allowed, approve)
 		}
 	}
 	// Opt-in judge model (GOPHERMIND_JUDGE): route gated approvals to a small

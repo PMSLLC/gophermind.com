@@ -32,14 +32,17 @@ func TestRoleGateEmptyMeansUnrestricted(t *testing.T) {
 
 func TestRoleTools(t *testing.T) {
 	roles := map[string][]string{"reviewer": {"read_file", "search"}, "operator": {"*"}}
-	if got := RoleTools(roles, "reviewer"); len(got) != 2 {
-		t.Errorf("reviewer tools = %v", got)
+
+	got, known := RoleTools(roles, "reviewer")
+	if !known || len(got) != 2 {
+		t.Errorf("reviewer tools = %v (known=%v)", got, known)
 	}
-	if got := RoleTools(roles, "unknown"); got != nil {
-		t.Errorf("unknown role should return nil, got %v", got)
+	// Unknown role must report known=false so callers fail closed.
+	if got, known := RoleTools(roles, "unknown"); known || got != nil {
+		t.Errorf("unknown role should be (nil,false), got (%v,%v)", got, known)
 	}
-	// "*" means unrestricted -> nil (no restriction).
-	if got := RoleTools(roles, "operator"); got != nil {
-		t.Errorf("wildcard role should be unrestricted (nil), got %v", got)
+	// Known wildcard: unrestricted but known.
+	if got, known := RoleTools(roles, "operator"); !known || got != nil {
+		t.Errorf("wildcard role should be (nil,true), got (%v,%v)", got, known)
 	}
 }

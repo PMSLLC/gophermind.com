@@ -20,19 +20,19 @@ func RoleGate(allowed []string, fallback ApprovalFunc) ApprovalFunc {
 	}
 }
 
-// RoleTools resolves a role name to its allowed tool list from a roles map. A
-// role containing "*" (or an unknown role) returns nil, meaning "no
-// restriction" for the wildcard and "no access defined" for unknown — callers
-// treat nil as unrestricted, so only define restrictive roles.
-func RoleTools(roles map[string][]string, role string) []string {
+// RoleTools resolves a role name to its allowed tool list from a roles map.
+// The second return value reports whether the role is KNOWN — callers must fail
+// closed (deny) on an unknown role rather than treating it as unrestricted. A
+// known role containing "*" returns (nil, true), meaning "known + unrestricted".
+func RoleTools(roles map[string][]string, role string) (allowed []string, known bool) {
 	tools, ok := roles[role]
 	if !ok {
-		return nil
+		return nil, false // unknown role: caller must fail closed
 	}
 	for _, t := range tools {
 		if t == "*" {
-			return nil // wildcard: unrestricted
+			return nil, true // known wildcard: unrestricted
 		}
 	}
-	return tools
+	return tools, true
 }
