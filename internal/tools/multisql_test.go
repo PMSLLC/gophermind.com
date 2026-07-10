@@ -2,25 +2,24 @@ package tools
 
 import "testing"
 
-func TestDSNAllowed(t *testing.T) {
-	allow := []string{"host=readonly.db", "@replica:"}
-	if !dsnAllowed("host=readonly.db port=5432", allow) {
-		t.Error("matching DSN should be allowed")
+func TestDSNAllowedExactMatch(t *testing.T) {
+	allow := []string{"host=readonly.db port=5432 user=ro", "postgres://ro@replica:5432/app"}
+	if !dsnAllowed("host=readonly.db port=5432 user=ro", allow) {
+		t.Error("an exact-match DSN should be allowed")
 	}
-	if !dsnAllowed("user:pw@replica:3306/app", allow) {
-		t.Error("second-pattern DSN should be allowed")
+	// Substring of an allowed entry inside a different DSN must NOT be allowed.
+	if dsnAllowed("host=evil.db password=host=readonly.db port=5432 user=ro", allow) {
+		t.Error("substring/semantic-escape DSN must be denied")
 	}
 	if dsnAllowed("host=prod.db", allow) {
 		t.Error("non-matching DSN must be denied")
 	}
-	// Empty allowlist denies everything (fail closed).
 	if dsnAllowed("anything", nil) {
 		t.Error("empty allowlist should deny all (fail closed)")
 	}
 }
 
 func TestMultiSQLRejectsWrites(t *testing.T) {
-	root := t.TempDir()
 	tool := MultiSQL([]string{"host=x"})
 	for _, q := range []string{
 		`{"engine":"postgres","dsn":"host=x","query":"DELETE FROM t"}`,
@@ -30,7 +29,14 @@ func TestMultiSQLRejectsWrites(t *testing.T) {
 			t.Errorf("write query should be rejected: %s", q)
 		}
 	}
-	_ = root
+}
+
+func TestMultiSQLRejectsDataModifyingCTE(t *testing.T) {
+	// A data-modifying CTE (Postgres) must be rejected despite the leading WITH.
+	q := `{"engine":"postgres","dsn":"host=x","query":"WITH d AS (DELETE FROM t RETURNING *) SELECT * FROM d"}`
+	if _, err := run(t, MultiSQL([]string{"host=x"}), q); err == nil {
+		t.Error("data-modifying CTE must be rejected")
+	}
 }
 
 func TestMultiSQLDeniesUnlistedDSN(t *testing.T) {
