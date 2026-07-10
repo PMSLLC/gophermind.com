@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -150,4 +153,59 @@ func TestReadyHandler(t *testing.T) {
 	if rr.Code != 200 {
 		t.Errorf("ready status = %d, want 200", rr.Code)
 	}
+}
+
+func TestVerifyHMAC(t *testing.T) {
+	secret := "topsecret"
+	body := []byte(`{"task":"do it"}`)
+	// Correct signature (compute the same way the verifier does).
+	mac := hmacSHA256Hex(secret, body)
+	if !verifyHMAC(secret, body, "sha256="+mac) {
+		t.Error("valid sha256= signature should verify")
+	}
+	if !verifyHMAC(secret, body, mac) {
+		t.Error("valid bare-hex signature should verify")
+	}
+	if verifyHMAC(secret, body, "sha256=deadbeef") {
+		t.Error("wrong signature must not verify")
+	}
+	if verifyHMAC(secret, body, "") {
+		t.Error("empty signature must not verify")
+	}
+	if verifyHMAC(secret, append(body, '!'), "sha256="+mac) {
+		t.Error("signature over different body must not verify")
+	}
+}
+
+func TestWebhookRejectsBadSignature(t *testing.T) {
+	t.Setenv("GOPHERMIND_SERVE_HMAC_SECRET", "s3cr3t")
+	h := webhookHandler(func(context.Context, string) (string, error) { return "ok", nil }, "")
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/run", strings.NewReader("payload"))
+	req.Header.Set("X-Hub-Signature-256", "sha256=bad")
+	h(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("bad signature status = %d, want 401", rr.Code)
+	}
+}
+
+func TestWebhookAcceptsGoodSignature(t *testing.T) {
+	t.Setenv("GOPHERMIND_SERVE_HMAC_SECRET", "s3cr3t")
+	h := webhookHandler(func(_ context.Context, task string) (string, error) { return "ok:" + task, nil }, "")
+
+	body := "payload"
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/run", strings.NewReader(body))
+	req.Header.Set("X-Hub-Signature-256", "sha256="+hmacSHA256Hex("s3cr3t", []byte(body)))
+	h(rr, req)
+	if rr.Code != 200 {
+		t.Errorf("good signature status = %d, want 200; body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func hmacSHA256Hex(secret string, body []byte) string {
+	m := hmac.New(sha256.New, []byte(secret))
+	m.Write(body)
+	return hex.EncodeToString(m.Sum(nil))
 }

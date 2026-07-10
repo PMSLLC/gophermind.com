@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -36,6 +39,15 @@ func webhookHandler(run func(ctx context.Context, task string) (string, error), 
 		if err != nil {
 			http.Error(w, "read body", http.StatusBadRequest)
 			return
+		}
+		// Optional HMAC payload verification (GitHub/Stripe style): when a shared
+		// secret is configured, the request must carry a matching signature so the
+		// trigger source is trusted, not just the bearer token.
+		if secret := serveHMACSecret(); secret != "" {
+			if !verifyHMAC(secret, body, r.Header.Get("X-Hub-Signature-256")) {
+				http.Error(w, "bad signature", http.StatusUnauthorized)
+				return
+			}
 		}
 		task := strings.TrimSpace(string(body))
 		if strings.Contains(r.Header.Get("Content-Type"), "json") {
@@ -84,6 +96,26 @@ func readyHandler(ready func() bool) http.HandlerFunc {
 		}
 		http.Error(w, "not ready", http.StatusServiceUnavailable)
 	}
+}
+
+// serveHMACSecret returns the configured HMAC secret for inbound payload
+// verification (GOPHERMIND_SERVE_HMAC_SECRET), or "" to disable it.
+func serveHMACSecret() string {
+	return strings.TrimSpace(os.Getenv("GOPHERMIND_SERVE_HMAC_SECRET"))
+}
+
+// verifyHMAC reports whether sigHeader is a valid HMAC-SHA256 signature of body
+// under secret. The header may be bare hex or "sha256=<hex>" (GitHub style).
+// The comparison is constant-time.
+func verifyHMAC(secret string, body []byte, sigHeader string) bool {
+	sig := strings.TrimPrefix(strings.TrimSpace(sigHeader), "sha256=")
+	got, err := hex.DecodeString(sig)
+	if err != nil || len(got) == 0 {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(body)
+	return hmac.Equal(got, mac.Sum(nil))
 }
 
 // serveAddr returns the webhook listen address (GOPHERMIND_SERVE_ADDR or :8080).
