@@ -92,7 +92,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 ## Y. Web, Network & External Data (builds on `internal/safety`, the fetch gap)
 
 - [x] **61. `fetch_url` tool.** Gated, egress-controlled URL fetch → readable text. Value: safe external context (vs. shelling out to `curl`).
-- [ ] **62. `web_search` tool.** Pluggable search provider. Value: current information.
+- [x] **62. `web_search` tool.** Pluggable search provider. Value: current information.
 - [ ] **63. Docs-retrieval tool.** Context7-style library docs lookup. Value: accurate API usage.
 - [x] **64. HTTP API caller.** OpenAPI-aware request tool. Value: integrate external services.
 - [ ] **65. Sandboxed headless browser.** Render/interact with pages under egress control. Value: debug UI / scrape safely.

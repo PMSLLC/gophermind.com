@@ -345,15 +345,16 @@ func run() error {
 		tools.DeleteFile(cfg.RootDir),
 		tools.Mkdir(cfg.RootDir),
 		tools.PatchApply(cfg.RootDir),
-		tools.FetchURL(cfg.FetchAllowHosts, netBudget),    // gated, egress-controlled URL fetch
-		tools.HTTPRequest(cfg.FetchAllowHosts, netBudget), // gated HTTP API caller (methods/headers/body)
-		tools.FindSymbol(cfg.RootDir),                     // definition-aware symbol search
-		tools.GitInfo(cfg.RootDir),                        // read-only structured git (log/status/diff)
-		tools.InspectData(cfg.RootDir),                    // read-only CSV/JSON schema + preview
-		tools.AnalyzeLog(cfg.RootDir),                     // read-only log severity summary
-		tools.CreateMigration(cfg.RootDir),                // gated: scaffold a timestamped SQL migration
-		tools.Scratchpad(cfg.RootDir),                     // durable cross-turn task notes
-		tools.SetCSVCell(cfg.RootDir),                     // gated: edit a single CSV cell
+		tools.FetchURL(cfg.FetchAllowHosts, netBudget),       // gated, egress-controlled URL fetch
+		tools.HTTPRequest(cfg.FetchAllowHosts, netBudget),    // gated HTTP API caller (methods/headers/body)
+		tools.FindSymbol(cfg.RootDir),                        // definition-aware symbol search
+		tools.GitInfo(cfg.RootDir),                           // read-only structured git (log/status/diff)
+		tools.InspectData(cfg.RootDir),                       // read-only CSV/JSON schema + preview
+		tools.AnalyzeLog(cfg.RootDir),                        // read-only log severity summary
+		tools.CreateMigration(cfg.RootDir),                   // gated: scaffold a timestamped SQL migration
+		tools.Scratchpad(cfg.RootDir),                        // durable cross-turn task notes
+		tools.SetCSVCell(cfg.RootDir),                        // gated: edit a single CSV cell
+		tools.WebSearch(braveEndpoint(cfg), cfg.BraveAPIKey), // Brave web search
 	)
 
 	// A single shared stdin reader, used by both the REPL and approval prompts.
@@ -1019,6 +1020,14 @@ func updateCheckEnabled() bool {
 // secrets and PII scrubbed on write (GOPHERMIND_REDACT_TRANSCRIPT).
 func redactTranscriptEnabled() bool {
 	return envTruthy("GOPHERMIND_REDACT_TRANSCRIPT")
+}
+
+// braveEndpoint returns the configured Brave Search endpoint, or the default.
+func braveEndpoint(cfg config.Config) string {
+	if cfg.BraveEndpoint != "" {
+		return cfg.BraveEndpoint
+	}
+	return tools.BraveSearchEndpoint
 }
 
 // auditLog returns a tamper-evident audit log when GOPHERMIND_AUDIT_LOG names a

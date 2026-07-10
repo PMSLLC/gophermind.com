@@ -125,6 +125,10 @@ type Config struct {
 	NetMaxRequests int   // GOPHERMIND_NET_MAX_REQUESTS (0 = unlimited)
 	NetMaxBytes    int64 // GOPHERMIND_NET_MAX_BYTES (0 = unlimited)
 
+	// Brave Search API for the web_search tool (empty key => tool disabled).
+	BraveAPIKey   string // GOPHERMIND_BRAVE_API_KEY
+	BraveEndpoint string // GOPHERMIND_BRAVE_API_URL (default: Brave web endpoint)
+
 	// Bounded retry with exponential backoff for the LLM client. MaxAttempts is
 	// the total number of tries (1 disables retries; a single attempt still
 	// works). RetryBaseDelay is the first backoff interval; later attempts grow
@@ -213,6 +217,8 @@ func Load() (Config, error) {
 		ShellMaxProcs:   envIntOr("GOPHERMIND_SHELL_MAX_PROCS", 0),
 		NetMaxRequests:  envIntOr("GOPHERMIND_NET_MAX_REQUESTS", 0),
 		NetMaxBytes:     int64(envIntOr("GOPHERMIND_NET_MAX_BYTES", 0)),
+		BraveAPIKey:     envOr("GOPHERMIND_BRAVE_API_KEY", ""),
+		BraveEndpoint:   envOr("GOPHERMIND_BRAVE_API_URL", ""),
 
 		MaxAttempts:    envIntOr("GOPHERMIND_MAX_ATTEMPTS", 3),
 		RetryBaseDelay: time.Duration(envIntOr("GOPHERMIND_RETRY_BASE_DELAY_MS", 250)) * time.Millisecond,
