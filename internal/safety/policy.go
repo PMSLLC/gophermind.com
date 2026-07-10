@@ -29,6 +29,10 @@ type Policy struct {
 
 	// SecretPatterns are regex patterns for credential detection.
 	SecretPatterns []string `json:"secret_patterns,omitempty"`
+
+	// Roles maps a role name to its allowed tool set (for RBAC). A role listing
+	// "*" is unrestricted. Selected at runtime via GOPHERMIND_ROLE.
+	Roles map[string][]string `json:"roles,omitempty"`
 }
 
 // LoadPolicy reads a policy file from the given path.

@@ -579,6 +579,11 @@ func run() error {
 		// A .gophermind/policy file layers per-tool approval on top of the base
 		// decision: always/never resolve without prompting, ask defers to it.
 		approve = safety.PolicyApproval(pol, approve)
+		// RBAC: GOPHERMIND_ROLE restricts the agent to a role's allowed tool set
+		// (least privilege); tools outside the set are denied outright.
+		if role := strings.TrimSpace(os.Getenv("GOPHERMIND_ROLE")); role != "" {
+			approve = safety.RoleGate(safety.RoleTools(pol.Roles, role), approve)
+		}
 	}
 	// Opt-in judge model (GOPHERMIND_JUDGE): route gated approvals to a small
 	// model against a spec; a judge outage defers to the base decision above.
