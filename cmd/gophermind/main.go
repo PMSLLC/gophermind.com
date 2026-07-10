@@ -682,6 +682,7 @@ func run() error {
 		tools.RetrievalEval(cfg.RootDir, embedProvider, indexPath),            // score index retrieval quality (hit@k)
 		tools.HybridSearch(cfg.RootDir, embedProvider, indexPath),             // BM25 + vector hybrid retrieval
 		tools.MultiSQL(splitCSV(os.Getenv("GOPHERMIND_SQL_DSN_ALLOW"))),       // read-only Postgres/MySQL (DSN allowlist)
+		tools.LSPDefinition(cfg.RootDir, splitCSV(os.Getenv("GOPHERMIND_LSP_CMD"))), // semantic go-to-definition via LSP
 	)
 	// --dry-run: wrap gated (mutating) tools so the agent previews the calls it
 	// would make without executing any mutation.
