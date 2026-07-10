@@ -85,7 +85,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [x] **53. Jira/Linear tool.** Read tickets and (gated) transition status. Value: close the loop from task to tracker.
 - [ ] **54. OAuth device flow.** Acquire and refresh tokens for integrations securely. Value: first-class auth without pasting long-lived tokens.
 - [x] **55. Webhook signature verification.** HMAC-verify inbound `serve` payloads (GitHub/Stripe style). Value: trust the trigger source, not just the bearer token.
-- [ ] **56. Scheduled runs.** A `cron`-like scheduler that fires a task file on an interval (builds on `queue`). Value: recurring maintenance without external cron.
+- [x] **56. Scheduled runs.** A `cron`-like scheduler that fires a task file on an interval (builds on `queue`). Value: recurring maintenance without external cron.
 - [ ] **57. Event-driven triggers.** Watch a branch/RSS/file and enqueue a run on change (fulfills the batch-3 watcher idea, now concrete). Value: proactive automation.
 - [x] **58. Response streaming over `serve`.** Server-Sent Events from the webhook so callers see tokens live. Value: responsive remote UIs.
 - [x] **59. Rate limiting & quotas per caller.** Token-bucket limits on `serve` keyed by token. Value: safe multi-tenant exposure.

@@ -105,6 +105,7 @@ func run() error {
 	samplesFlag := flag.Int("samples", 1, "run/ask: sample the turn N times and majority-vote the answer (self-consistency)")
 	reportFlag := flag.String("report", "", "run/ask: write a self-contained HTML report of the run to this file")
 	debateFlag := flag.Bool("debate", false, "run/ask: produce two candidate answers and synthesize the better one (debate/consensus)")
+	everyFlag := flag.Duration("every", 0, "run/ask: re-run the task on this interval (e.g. 30m) until interrupted — a built-in scheduler")
 	promptTemplateFlag := flag.String("prompt-template", "", "use a custom structured prompt template (.md with frontmatter + XML sections) as the base system prompt")
 	toolBudgetFlag := flag.Int("tool-budget", 0, "run/ask: max tool calls per turn (0 = default)")
 	maxCostFlag := flag.Float64("max-cost", 0, "run/ask: abort when estimated cost (USD) exceeds this (0 = unlimited)")
@@ -1021,6 +1022,11 @@ func run() error {
 				defer f.Close()
 				endSpan = trace.New(f).Start("turn")
 			}
+		}
+		// --every turns the run into a recurring schedule: the task fires on the
+		// interval until interrupted (a built-in cron for maintenance tasks).
+		if *everyFlag > 0 {
+			return runEvery(ctx, send, task, *everyFlag)
 		}
 		answer, sendErr := send(ctx, task)
 		if endSpan != nil {
@@ -2047,4 +2053,25 @@ func runBenchmark(ctx context.Context, client *llm.Client, reg *tools.Registry, 
 	fmt.Printf("benchmark: %d/%d passed in %dms (%s, %s)\n",
 		res.Passed, res.Total, res.DurationMs, cfg.Model, version.Version)
 	return nil
+}
+
+// runEvery re-runs a task on a fixed interval until the context is cancelled,
+// printing each run's answer — a built-in scheduler for recurring maintenance.
+func runEvery(ctx context.Context, send func(context.Context, string) (string, error), task string, every time.Duration) error {
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+	fmt.Fprintf(os.Stderr, "scheduling task every %s (Ctrl-C to stop)\n", every)
+	for {
+		answer, err := send(ctx, task)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "run failed:", err)
+		} else {
+			fmt.Println(answer)
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+		}
+	}
 }
