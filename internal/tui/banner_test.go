@@ -13,7 +13,7 @@ import (
 // fresh (not-yet-ready) model receives its first WindowSizeMsg, which flips
 // m.ready. The banner must remain visible in the ready view, not vanish.
 func TestBannerSurvivesFirstWindowSize(t *testing.T) {
-	m := newModel(func(sub chan tea.Msg, allowed *allowSet) *agent.Agent { return nil }, "m", "auto", "dark", false)
+	m := newModel(func(sub chan tea.Msg, allowed *allowSet) *agent.Agent { return nil }, "m", "auto", "dark", false, false)
 
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	rm := updated.(model)
@@ -36,7 +36,7 @@ func TestBannerSurvivesFirstWindowSize(t *testing.T) {
 // TestNoBannerSuppressesSplash verifies the --no-banner path: the model is built
 // with the banner suppressed, so the gopher art never appears in the view.
 func TestNoBannerSuppressesSplash(t *testing.T) {
-	m := newModel(func(sub chan tea.Msg, allowed *allowSet) *agent.Agent { return nil }, "m", "auto", "dark", true)
+	m := newModel(func(sub chan tea.Msg, allowed *allowSet) *agent.Agent { return nil }, "m", "auto", "dark", true, false)
 
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	rm := updated.(model)

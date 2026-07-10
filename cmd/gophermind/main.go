@@ -61,6 +61,11 @@ func run() error {
 	personaFlag := flag.String("persona", "", "task-tuned system-prompt preset: reviewer|architect|tester")
 	thinkFlag := flag.String("think", "", "reasoning effort sent with each request: low|medium|high (empty = off)")
 	speedFlag := flag.Bool("speed", false, "use the faster model (GOPHERMIND_SPEED_MODEL, or the first fallback) as primary")
+	fortuneDefault := "on"
+	if v := strings.TrimSpace(os.Getenv("GOPHERMIND_FORTUNE")); v != "" {
+		fortuneDefault = v
+	}
+	fortuneFlag := flag.String("fortune", fortuneDefault, "startup fortune: on|off")
 	noBannerFlag := flag.Bool("no-banner", false, "suppress the startup banner/splash (clean output in scripts/CI)")
 	quietFlag := flag.Bool("quiet", false, "quiet: suppress the banner and non-essential stderr chatter")
 	flag.BoolVar(quietFlag, "q", false, "alias for -quiet")
@@ -351,6 +356,7 @@ func run() error {
 			SystemSuffix:     systemSuffix,
 			ReadOnly:         *readOnlyFlag,
 			NoBanner:         *noBannerFlag || *quietFlag,
+			NoFortune:        strings.EqualFold(*fortuneFlag, "off"),
 		})
 	case "print":
 		return runPrint(client, reg, cfg, printOptions{

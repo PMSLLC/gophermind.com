@@ -68,7 +68,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [ ] **41. Themeable banner.** Color profiles honoring terminal capabilities. Value: taste + accessibility.
 - [x] **42. `--no-banner` / `--quiet`.** Suppress the splash. Value: clean output in scripts/CI.
 - [ ] **43. HubTou historical fortunes.** Add the historical set (license-checked) as a second embedded source. Value: richer variety.
-- [ ] **44. Fortune categories / `--fortune off`.** Value: user control over startup flavor.
+- [x] **44. Fortune categories / `--fortune off`.** Value: user control over startup flavor.
 - [ ] **45. Tip-of-the-day.** Rotating tips with docs links under the banner. Value: progressive discovery of features.
 - [ ] **46. First-run welcome tour.** A short guided intro after the setup wizard. Value: faster onboarding.
 - [x] **47. `gophermind doctor`.** Check endpoint/model/`rg`/git/tap reachability. Value: fast setup diagnosis.

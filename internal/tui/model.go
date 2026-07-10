@@ -91,7 +91,7 @@ type model struct {
 
 // newModel builds the model. buildAgent receives the bridge channel and the
 // shared always-allow set so the agent's approval closure can consult them.
-func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent, modelName, mode, glamourStyle string, noBanner bool) model {
+func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent, modelName, mode, glamourStyle string, noBanner, noFortune bool) model {
 	sub := make(chan tea.Msg, 64)
 	allowed := newAllowSet()
 
@@ -121,7 +121,7 @@ func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent,
 		render:       r,
 		st:           stateIdle,
 		glamourStyle: glamourStyle,
-		banner:       renderBanner(noBanner),
+		banner:       renderBanner(noBanner, noFortune),
 	}
 	// Mirror the client's startup sampling settings so /temp and /topp with no
 	// argument report the truth even before the user changes anything.
@@ -133,12 +133,13 @@ func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent,
 }
 
 // renderBanner returns the startup splash, or an empty string when suppressed
-// (via --no-banner/--quiet) for clean output in scripts and CI.
-func renderBanner(noBanner bool) string {
+// (via --no-banner/--quiet). noFortune (--fortune off) keeps the banner but drops
+// the fortune line.
+func renderBanner(noBanner, noFortune bool) string {
 	if noBanner {
 		return ""
 	}
-	return banner.Render()
+	return banner.RenderWith(banner.Options{Fortune: !noFortune})
 }
 
 func (m model) Init() tea.Cmd {

@@ -32,6 +32,8 @@ type Config struct {
 	ReadOnly bool
 	// NoBanner suppresses the startup splash (--no-banner/--quiet).
 	NoBanner bool
+	// NoFortune keeps the banner but drops the fortune line (--fortune off).
+	NoFortune bool
 }
 
 // Run starts the interactive TUI and blocks until the user quits.
@@ -72,7 +74,7 @@ func Run(cfg Config) error {
 		glamourStyle = "dark"
 	}
 
-	m := newModel(build, cfg.Model, cfg.Mode, glamourStyle, cfg.NoBanner)
+	m := newModel(build, cfg.Model, cfg.Mode, glamourStyle, cfg.NoBanner, cfg.NoFortune)
 	final, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
 	// On exit, flush the full message history if a transcript path was set. This
 	// runs once, after the UI has torn down, so it never interferes with the

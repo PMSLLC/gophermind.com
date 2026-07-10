@@ -12,8 +12,19 @@ import (
 	"gophermind/internal/version"
 )
 
-// Render builds the full startup banner string.
+// Options controls optional banner sections.
+type Options struct {
+	Fortune bool // include a random fortune under the banner
+}
+
+// Render builds the full startup banner string, including a fortune.
 func Render() string {
+	return RenderWith(Options{Fortune: true})
+}
+
+// RenderWith builds the startup banner, honoring the given options (e.g.
+// --fortune off suppresses the fortune while keeping art/version/changes).
+func RenderWith(o Options) string {
 	var b strings.Builder
 	b.WriteString(prompt.GopherArt)
 	b.WriteString("\n")
@@ -27,8 +38,10 @@ func Render() string {
 		}
 	}
 
-	if f := fortune.Random(); f != "" {
-		b.WriteString("\n" + f + "\n")
+	if o.Fortune {
+		if f := fortune.Random(); f != "" {
+			b.WriteString("\n" + f + "\n")
+		}
 	}
 	return b.String()
 }
