@@ -1157,15 +1157,34 @@ func runSessions(args []string) error {
 		fmt.Fprintf(os.Stderr, "✓ removed session %q\n", args[1])
 		return nil
 	case "gc":
+		// `sessions gc [days] [--keep-tag <tag>]...` — --keep-tag protects tagged
+		// sessions from expiry (per-tag retention).
 		days := 30
-		if len(args) >= 2 {
-			n, err := strconv.Atoi(args[1])
-			if err != nil || n <= 0 {
-				return fmt.Errorf("sessions gc: days must be a positive integer, got %q", args[1])
+		var keepTags []string
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--keep-tag":
+				if i+1 >= len(args) {
+					return fmt.Errorf("--keep-tag needs a tag value")
+				}
+				i++
+				keepTags = append(keepTags, args[i])
+			default:
+				n, err := strconv.Atoi(args[i])
+				if err != nil || n <= 0 {
+					return fmt.Errorf("sessions gc: days must be a positive integer, got %q", args[i])
+				}
+				days = n
 			}
-			days = n
 		}
-		removed, err := session.GC(time.Duration(days) * 24 * time.Hour)
+		maxAge := time.Duration(days) * 24 * time.Hour
+		var removed []string
+		var err error
+		if len(keepTags) > 0 {
+			removed, err = session.GCProtecting(maxAge, keepTags)
+		} else {
+			removed, err = session.GC(maxAge)
+		}
 		if err != nil {
 			return err
 		}

@@ -76,7 +76,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [x] **47. Redacted session export.** Combine `export` with the existing redactor to share a scrubbed session. Value: safe sharing of debugging sessions.
 - [x] **48. Session tags & filters.** Tag sessions and filter `sessions list` by tag/date/repo. Value: organize a growing store.
 - [ ] **49. Continuity across repos.** A global "profile memory" separate from per-repo session state. Value: user preferences follow you everywhere.
-- [ ] **50. TTL policies per tag.** Different GC windows for tagged sessions (keep "important", expire "scratch"). Value: smarter retention.
+- [x] **50. TTL policies per tag.** Different GC windows for tagged sessions (keep "important", expire "scratch"). Value: smarter retention.
 
 ## AH. Integrations, Webhooks & the Outside World II (builds on `http_request`, `web_search`, the `serve` webhook, `fetch_url`)
 
