@@ -83,7 +83,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [x] **51. GitHub tool.** Read-only issues/PRs/reviews via the GitHub API (token-gated), plus a gated "comment" action. Value: work with the repo's collaboration surface.
 - [x] **52. Slack/Discord notifier.** Post run results/approvals to a channel (egress-allowlisted). Value: team visibility and remote approvals.
 - [x] **53. Jira/Linear tool.** Read tickets and (gated) transition status. Value: close the loop from task to tracker.
-- [ ] **54. OAuth device flow.** Acquire and refresh tokens for integrations securely. Value: first-class auth without pasting long-lived tokens.
+- [x] **54. OAuth device flow.** Acquire and refresh tokens for integrations securely. Value: first-class auth without pasting long-lived tokens.
 - [x] **55. Webhook signature verification.** HMAC-verify inbound `serve` payloads (GitHub/Stripe style). Value: trust the trigger source, not just the bearer token.
 - [x] **56. Scheduled runs.** A `cron`-like scheduler that fires a task file on an interval (builds on `queue`). Value: recurring maintenance without external cron.
 - [x] **57. Event-driven triggers.** Watch a branch/RSS/file and enqueue a run on change (fulfills the batch-3 watcher idea, now concrete). Value: proactive automation.
