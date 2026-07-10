@@ -956,6 +956,22 @@ func runSessions(args []string) error {
 				s.ID, s.ModTime.Format("2006-01-02 15:04"), s.Messages, s.Title, tagStr)
 		}
 		return nil
+	case "search", "grep":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: sessions search <query>")
+		}
+		hits, err := session.Search(strings.Join(args[1:], " "))
+		if err != nil {
+			return err
+		}
+		if len(hits) == 0 {
+			fmt.Fprintln(os.Stderr, "no matching sessions")
+			return nil
+		}
+		for _, h := range hits {
+			fmt.Printf("%-24s  %3d match  %s\n", h.ID, h.Matches, h.Snippet)
+		}
+		return nil
 	case "tag":
 		if len(args) < 3 {
 			return fmt.Errorf("usage: sessions tag <id> <tag> [tag...]")
@@ -1211,7 +1227,7 @@ Usage:
   gophermind                    interactive session (default)
   gophermind resume             pick a saved session to resume, then chat
   gophermind config             (re-)run the setup wizard and save config
-  gophermind sessions [list [--tag t] [--since d] [--until d]|tag <id> <t..>|show <id>|rm <id>|gc [days]|export <id> <file>|import <file> <id>]
+  gophermind sessions [list [--tag t] [--since d] [--until d]|search <q>|tag <id> <t..>|show <id>|rm <id>|gc [days]|export <id> <file>|import <file> <id>]
   gophermind doctor             run environment/config diagnostics and exit
   gophermind status             print a compact prompt line (model + branch)
   gophermind prompt-tokens      print per-section token cost of the base system prompt

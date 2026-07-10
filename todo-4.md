@@ -69,7 +69,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 
 - [ ] **41. Long-term vector memory.** Persist salient facts across sessions in the vector store, retrieved by relevance. Value: the agent remembers project context long-term.
 - [ ] **42. Session merge.** Combine two branched sessions' histories with conflict handling. Value: reconcile parallel explorations.
-- [ ] **43. Session search.** Full-text (FTS5) search across all saved sessions. Value: "where did we discuss the parser bug?"
+- [x] **43. Session search.** Full-text (FTS5) search across all saved sessions. Value: "where did we discuss the parser bug?"
 - [ ] **44. Auto-checkpoint on risk.** Snapshot the session before any gated mutation so it's trivially revertible. Value: undo an agent's bad change.
 - [ ] **45. Shared session store.** Optional remote (S3/HTTP) backend for the session dir so a team shares sessions. Value: hand off work across machines.
 - [ ] **46. Session replay viewer.** A TUI/`--print` mode that steps through a saved session turn by turn. Value: review an agent's reasoning.
