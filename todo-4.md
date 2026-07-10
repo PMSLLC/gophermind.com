@@ -139,6 +139,6 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [x] **95. Config profiles bundle.** Shareable, versioned config+policy+prompt bundles per team. Value: consistent setup across a team.
 - [x] **96. deb/rpm/scoop/winget packaging.** Finish the packaging matrix via nfpm + manifests. Value: native installs everywhere.
 - [ ] **97. `gophermind upgrade`.** Signed self-update from GitHub Releases (fulfills batch-3 U#26 with cosign verification). Value: stay current safely.
-- [ ] **98. Reproducible builds + SBOM.** Deterministic builds with a published SBOM and attestation. Value: verifiable supply chain.
+- [x] **98. Reproducible builds + SBOM.** Deterministic builds with a published SBOM and attestation. Value: verifiable supply chain.
 - [x] **99. Telemetry (opt-in, privacy-first).** Aggregate anonymous feature/latency stats with a hard off switch. Value: data-driven roadmap without surveillance.
 - [x] **100. Public benchmark suite.** A standardized task set + harness to compare gophermind across models/versions over time. Value: measurable, honest progress.

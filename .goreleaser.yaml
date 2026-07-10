@@ -17,6 +17,10 @@ builds:
     goos: [darwin, linux, windows]
     goarch: [amd64, arm64]
     mod_timestamp: "{{ .CommitTimestamp }}"
+    # Reproducible builds: strip local paths so the output is path-independent
+    # (combined with mod_timestamp + pinned deps this yields deterministic binaries).
+    flags:
+      - -trimpath
     ldflags:
       - -s -w
       - -X gophermind/internal/version.Version={{ .Version }}
@@ -88,6 +92,14 @@ winget:
 
 checksum:
   name_template: checksums.txt
+
+# Software Bill of Materials (SBOM) per archive via syft — a verifiable supply
+# chain. Published alongside the release artifacts.
+sboms:
+  - id: archive
+    artifacts: archive
+    documents:
+      - "{{ .ArtifactName }}.sbom.json"
 
 # Notarization is NOT done here (GoReleaser's `signs` always registers a .sig
 # artifact, which doesn't fit an in-place notarize). The macOS binary is
