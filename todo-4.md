@@ -112,7 +112,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [ ] **74. Budget alerts.** Warn (or halt) at configurable spend thresholds beyond per-run guardrails. Value: no surprise bills.
 - [ ] **75. Live status TUI.** A `top`-style view of active fleet workers, their tasks, and spend. Value: operate multi-agent runs at a glance.
 - [x] **76. Structured JSON logs.** Optional machine-readable logs for every event. Value: pipe into log tooling.
-- [ ] **77. Slow-request tracing.** Flag and record LLM/tool calls over a latency threshold. Value: find the bottleneck.
+- [x] **77. Slow-request tracing.** Flag and record LLM/tool calls over a latency threshold. Value: find the bottleneck.
 - [x] **78. Health/readiness endpoints.** `/healthz` and `/readyz` on `serve`. Value: deploy behind a load balancer / k8s.
 - [ ] **79. Run report artifact.** After `run`/`queue`, write a self-contained HTML report (transcript + diffs + cost). Value: shareable record of what happened.
 - [ ] **80. Anomaly detection on cost.** Flag turns whose token use is a statistical outlier. Value: catch runaway loops early.

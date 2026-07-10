@@ -398,6 +398,10 @@ func run() error {
 			client.Use(llm.LoggingMiddleware(os.Stderr))
 		}
 	}
+	// Slow-request tracing: log only round-trips slower than GOPHERMIND_SLOW_MS.
+	if ms, err := strconv.Atoi(strings.TrimSpace(os.Getenv("GOPHERMIND_SLOW_MS"))); err == nil && ms > 0 {
+		client.Use(llm.SlowRequestMiddleware(os.Stderr, time.Duration(ms)*time.Millisecond))
+	}
 
 	// Resolve the model. With none configured, auto-discover the first the
 	// endpoint serves. With one configured, validate it against /v1/models so a

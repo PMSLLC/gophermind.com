@@ -330,3 +330,33 @@ func TestJSONLoggingMiddleware(t *testing.T) {
 		t.Errorf("status field wrong: %v", rec["status"])
 	}
 }
+
+// TestSlowRequestMiddleware asserts only over-threshold requests are logged.
+func TestSlowRequestMiddleware(t *testing.T) {
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(30 * time.Millisecond)
+		io.WriteString(w, jsonChatResponse)
+	}))
+	defer slow.Close()
+
+	var buf bytes.Buffer
+	c := newTestClient(t, slow, "")
+	c.Use(SlowRequestMiddleware(&buf, 10*time.Millisecond))
+	if _, _, err := c.Complete(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if !strings.Contains(buf.String(), "slow") {
+		t.Errorf("a request over the threshold should be logged: %q", buf.String())
+	}
+
+	// A high threshold suppresses the log for the same request.
+	var buf2 bytes.Buffer
+	c2 := newTestClient(t, slow, "")
+	c2.Use(SlowRequestMiddleware(&buf2, 10*time.Second))
+	if _, _, err := c2.Complete(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if buf2.Len() != 0 {
+		t.Errorf("a fast-enough request should not be logged: %q", buf2.String())
+	}
+}

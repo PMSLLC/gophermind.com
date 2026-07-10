@@ -233,6 +233,34 @@ func JSONLoggingMiddleware(w io.Writer) Middleware {
 	}
 }
 
+// SlowRequestMiddleware returns a Middleware that logs a one-line record to w
+// ONLY for requests whose round-trip exceeds threshold, so slow LLM/tool calls
+// can be spotted without the noise of logging every request. It reads no bodies
+// and redacts the URL of userinfo. A nil w or non-positive threshold disables
+// it.
+func SlowRequestMiddleware(w io.Writer, threshold time.Duration) Middleware {
+	return func(next http.RoundTripper) http.RoundTripper {
+		return roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if w == nil || threshold <= 0 {
+				return next.RoundTrip(req)
+			}
+			start := time.Now()
+			resp, err := next.RoundTrip(req)
+			dur := time.Since(start)
+			if dur < threshold {
+				return resp, err
+			}
+			status := 0
+			if resp != nil {
+				status = resp.StatusCode
+			}
+			fmt.Fprintf(w, "llm slow request: %s %s -> %d in %s (threshold %s)\n",
+				req.Method, req.URL.Redacted(), status, dur, threshold)
+			return resp, err
+		})
+	}
+}
+
 // redactHeaders returns a copy of h with sensitive values replaced by
 // "<redacted>". It is exported-adjacent helper kept unexported; callers that
 // want to log headers safely can build on LoggingMiddleware instead. Provided
