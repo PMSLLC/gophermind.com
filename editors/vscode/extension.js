@@ -11,7 +11,13 @@ function activate(context) {
     const question = await vscode.window.showInputBox({ prompt: "Ask gophermind about the selection" });
     if (!question) return;
 
-    const bin = vscode.workspace.getConfiguration("gophermind").get("binary", "gophermind");
+    // SECURITY: read the binary path ONLY from trusted (user/global) settings,
+    // never from workspace settings — otherwise a malicious repo's
+    // .vscode/settings.json could point it at an arbitrary executable (ACE). The
+    // setting is also declared "scope": "machine" so VS Code ignores workspace
+    // overrides; inspect().globalValue is a belt-and-suspenders on top.
+    const inspected = vscode.workspace.getConfiguration("gophermind").inspect("binary");
+    const bin = inspected?.globalValue || "gophermind";
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     // --print with stream-json output; the task includes the selection as context.
     const proc = spawn(bin, ["--output-format", "json", "ask", `${question}\n\nContext:\n${sel}`], { cwd });

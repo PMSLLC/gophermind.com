@@ -14,7 +14,7 @@
     "configuration": {
       "title": "gophermind",
       "properties": {
-        "gophermind.binary": { "type": "string", "default": "gophermind", "description": "Path to the gophermind binary." }
+        "gophermind.binary": { "type": "string", "default": "gophermind", "scope": "machine", "description": "Path to the gophermind binary. Machine-scoped so a workspace cannot override it (prevents arbitrary-binary execution from an untrusted repo)." }
       }
     }
   }
