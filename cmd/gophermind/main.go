@@ -547,6 +547,7 @@ func run() error {
 		tools.GitHubTool("https://api.github.com", strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))), // read-only GitHub API
 		tools.Notify(strings.TrimSpace(os.Getenv("GOPHERMIND_NOTIFY_WEBHOOK"))),                 // Slack/Discord notifier
 		tools.DocsLookup(docsTemplate(), docsCacheDir(cfg.RootDir)),                             // fetch+cache library docs
+		tools.JiraTool(os.Getenv("GOPHERMIND_JIRA_URL"), os.Getenv("GOPHERMIND_JIRA_EMAIL"), os.Getenv("GOPHERMIND_JIRA_TOKEN")), // read Jira issues
 	}
 	// Semantic index tools when embeddings are configured (nil provider = the
 	// tools return a configuration hint instead of running).
