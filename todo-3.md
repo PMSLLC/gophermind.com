@@ -112,7 +112,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [ ] **76. Spreadsheet edit tool.** Read/modify tabular files. Value: data-wrangling tasks.
 - [ ] **77. Log analyzer tool.** Parse and summarize logs. Value: incident/debugging support.
 - [ ] **78. Metrics query tool.** Prometheus/PromQL reads. Value: observability-aware agents.
-- [ ] **79. Structured git tool.** blame/log/diff as data (not shell text). Value: reliable VCS reasoning.
+- [x] **79. Structured git tool.** blame/log/diff as data (not shell text). Value: reliable VCS reasoning.
 - [x] **80. Symbol index tool.** tree-sitter "find function/type X". Value: semantic navigation beyond grep.
 
 ## AA. Security, Audit & Compliance II (builds on `internal/safety`, `--permission-mode`)
