@@ -544,10 +544,10 @@ func run() error {
 		tools.OpenAPIOps(cfg.RootDir),                        // list operations from an OpenAPI 3 spec
 		tools.DetectAnomalies(),                              // flag statistical outliers in a numeric series
 		tools.MigrationDryRun(cfg.RootDir),                   // apply a migration to a throwaway db copy + schema diff
-		tools.GitHubTool("https://api.github.com", strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))), // read-only GitHub API
-		tools.Notify(strings.TrimSpace(os.Getenv("GOPHERMIND_NOTIFY_WEBHOOK"))),                 // Slack/Discord notifier
+		tools.GitHubTool("https://api.github.com", secretEnv("GITHUB_TOKEN")), // read-only GitHub API
+		tools.Notify(secretEnv("GOPHERMIND_NOTIFY_WEBHOOK")),                 // Slack/Discord notifier
 		tools.DocsLookup(docsTemplate(), docsCacheDir(cfg.RootDir)),                             // fetch+cache library docs
-		tools.JiraTool(os.Getenv("GOPHERMIND_JIRA_URL"), os.Getenv("GOPHERMIND_JIRA_EMAIL"), os.Getenv("GOPHERMIND_JIRA_TOKEN")), // read Jira issues
+		tools.JiraTool(os.Getenv("GOPHERMIND_JIRA_URL"), os.Getenv("GOPHERMIND_JIRA_EMAIL"), secretEnv("GOPHERMIND_JIRA_TOKEN")), // read Jira issues
 	}
 	// Semantic index tools when embeddings are configured (nil provider = the
 	// tools return a configuration hint instead of running).
@@ -1756,4 +1756,11 @@ func docsTemplate() string {
 // docsCacheDir returns the on-disk cache directory for fetched docs.
 func docsCacheDir(root string) string {
 	return filepath.Join(root, ".gophermind", "docs-cache")
+}
+
+// secretEnv reads an environment variable and resolves an "@name" reference
+// against the secrets file (GOPHERMIND_SECRETS_FILE) at call time, so tokens can
+// live in one gitignored file instead of the environment/config.
+func secretEnv(name string) string {
+	return safety.ResolveSecret(strings.TrimSpace(os.Getenv(name)), strings.TrimSpace(os.Getenv("GOPHERMIND_SECRETS_FILE")))
 }
