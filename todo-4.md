@@ -60,7 +60,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [ ] **34. Regression gate for prompts.** Fail CI if a prompt change drops the eval score below a threshold. Value: prompts can't silently regress.
 - [ ] **35. Persona authoring UX.** A `persona new` scaffolder that writes a template + registers it. Value: easy custom personas beyond the built-ins.
 - [ ] **36. Few-shot example bank.** Attach curated examples to a template section, auto-selected by task similarity. Value: better in-context steering.
-- [ ] **37. Prompt token accounting.** Report per-section token cost of the built prompt (builds on the token estimator). Value: see what's eating the window.
+- [x] **37. Prompt token accounting.** Report per-section token cost of the built prompt (builds on the token estimator). Value: see what's eating the window.
 - [ ] **38. Structured-output schemas library.** Ship reusable JSON schemas for `--schema` (diff, review, plan). Value: consistent machine-readable results.
 - [ ] **39. Auto prompt-compression.** Summarize long injected context to fit the budget instead of hard truncation (`CapContext`). Value: keep meaning, lose bytes.
 - [ ] **40. Golden-transcript tests.** Snapshot a canonical session and diff on prompt changes. Value: catch unintended behavior shifts.

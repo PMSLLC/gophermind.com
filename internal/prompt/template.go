@@ -113,10 +113,16 @@ func parseSections(body string, t *Template) error {
 	return nil
 }
 
-// Build assembles a template's sections into a final prompt string, in canonical
-// order (extras appended sorted), each wrapped in its tags, with {{.Var}}
-// placeholders replaced from context (unknown vars left as-is).
-func Build(t *Template, context map[string]string) string {
+// Section is a rendered template section: its name and resolved content.
+type Section struct {
+	Name    string
+	Content string
+}
+
+// OrderedSections renders a template's non-empty sections in canonical order
+// (extras appended sorted), with {{.Var}} placeholders resolved from context.
+// Sections that resolve to nothing (e.g. empty project_context) are dropped.
+func OrderedSections(t *Template, context map[string]string) []Section {
 	seen := map[string]bool{}
 	var order []string
 	for _, name := range sectionOrder {
@@ -134,18 +140,27 @@ func Build(t *Template, context map[string]string) string {
 	sort.Strings(extras)
 	order = append(order, extras...)
 
-	var b strings.Builder
-	first := true
+	var out []Section
 	for _, name := range order {
 		content := strings.TrimSpace(injectContext(t.Sections[name], context))
 		if content == "" {
-			continue // drop sections that resolve to nothing (e.g. empty context)
+			continue
 		}
-		if !first {
+		out = append(out, Section{Name: name, Content: content})
+	}
+	return out
+}
+
+// Build assembles a template's sections into a final prompt string, in canonical
+// order (extras appended sorted), each wrapped in its tags, with {{.Var}}
+// placeholders replaced from context (unknown vars left as-is).
+func Build(t *Template, context map[string]string) string {
+	var b strings.Builder
+	for i, s := range OrderedSections(t, context) {
+		if i > 0 {
 			b.WriteString("\n\n")
 		}
-		first = false
-		fmt.Fprintf(&b, "<%s>\n%s\n</%s>", name, content, name)
+		fmt.Fprintf(&b, "<%s>\n%s\n</%s>", s.Name, s.Content, s.Name)
 	}
 	return b.String()
 }

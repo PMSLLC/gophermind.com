@@ -447,6 +447,10 @@ func run() error {
 	}
 
 	switch cmd {
+	case "prompt-tokens":
+		// Report the per-section token cost of the built base system prompt.
+		fmt.Print(pb.RenderAccounting())
+		return nil
 	case "chat":
 		if !isatty() {
 			return fmt.Errorf("interactive session needs a terminal; use `run`/`ask` for non-interactive use")
@@ -1147,6 +1151,7 @@ Usage:
   gophermind sessions [list|show <id>|rm <id>|gc [days]|export <id> <file>|import <file> <id>]
   gophermind doctor             run environment/config diagnostics and exit
   gophermind status             print a compact prompt line (model + branch)
+  gophermind prompt-tokens      print per-section token cost of the base system prompt
   gophermind audit verify <file>  verify a tamper-evident audit log's chain
   gophermind version            print build version and exit
   gophermind run "task"         one-shot: run a task and exit
