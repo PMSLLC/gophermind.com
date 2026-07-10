@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,7 +15,7 @@ func TestFetchURL(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tool := FetchURL(nil)
+	tool := fetchTool(nil, true) // allow loopback so httptest is reachable
 
 	// happy path: HTML is stripped to readable text
 	out, err := run(t, tool, `{"url":"`+srv.URL+`"}`)
@@ -51,6 +52,66 @@ func TestFetchURLAllowlist(t *testing.T) {
 	}
 }
 
+func TestFetchURLBlocksPrivateAndLoopback(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("secret"))
+	}))
+	defer srv.Close()
+
+	// Production constructor: loopback must be refused (SSRF guard).
+	tool := FetchURL(nil)
+	_, err := run(t, tool, `{"url":"`+srv.URL+`"}`)
+	if err == nil {
+		t.Fatal("expected loopback target to be blocked")
+	}
+	if !strings.Contains(err.Error(), "blocked") {
+		t.Errorf("error should mention a blocked address, got %v", err)
+	}
+}
+
+func TestFetchURLRedirectReChecked(t *testing.T) {
+	// A loopback server that redirects to a private-range IP. Even with loopback
+	// allowed for the initial hop, the redirect target must be refused.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://10.0.0.1/internal", http.StatusFound)
+	}))
+	defer srv.Close()
+
+	tool := fetchTool(nil, true) // loopback allowed, private still blocked
+	_, err := run(t, tool, `{"url":"`+srv.URL+`"}`)
+	if err == nil {
+		t.Fatal("expected redirect to a private IP to be blocked")
+	}
+}
+
+func TestDisallowedIP(t *testing.T) {
+	cases := []struct {
+		ip            string
+		allowLoopback bool
+		want          bool
+	}{
+		{"127.0.0.1", false, true},
+		{"127.0.0.1", true, false},
+		{"::1", false, true},
+		{"10.0.0.1", true, true},
+		{"172.16.0.1", true, true},
+		{"192.168.1.1", true, true},
+		{"169.254.169.254", true, true}, // cloud metadata
+		{"0.0.0.0", true, true},
+		{"8.8.8.8", false, false},
+		{"1.1.1.1", true, false},
+	}
+	for _, c := range cases {
+		ip := net.ParseIP(c.ip)
+		if ip == nil {
+			t.Fatalf("bad test ip %q", c.ip)
+		}
+		if got := disallowedIP(ip, c.allowLoopback); got != c.want {
+			t.Errorf("disallowedIP(%s, allowLoopback=%v) = %v, want %v", c.ip, c.allowLoopback, got, c.want)
+		}
+	}
+}
+
 func TestFetchURLMaxBytes(t *testing.T) {
 	body := strings.Repeat("A", 5000)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -59,7 +120,7 @@ func TestFetchURLMaxBytes(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tool := FetchURL(nil)
+	tool := fetchTool(nil, true) // allow loopback so httptest is reachable
 	out, err := run(t, tool, `{"url":"`+srv.URL+`","max_bytes":100}`)
 	if err != nil {
 		t.Fatal(err)

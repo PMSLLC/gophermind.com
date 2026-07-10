@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -24,10 +25,19 @@ var (
 
 // FetchURL returns a gated tool that performs an HTTP(S) GET and returns the
 // response body as readable text (HTML tags stripped). It is egress-controlled:
-// only http/https URLs are allowed, and if allowHosts is non-empty the request
-// host (ignoring port) must match one of the entries, otherwise it is refused.
-// This is the safe alternative to shelling out to curl.
+// only http/https URLs are allowed, if allowHosts is non-empty the request host
+// must match one of the entries, and requests (including every redirect hop) to
+// loopback/private/link-local addresses — e.g. the cloud metadata endpoint
+// 169.254.169.254 — are refused to prevent SSRF. Safe alternative to curl.
 func FetchURL(allowHosts []string) Tool {
+	return fetchTool(allowHosts, false)
+}
+
+// fetchTool is the constructor behind FetchURL. allowLoopback relaxes only the
+// loopback (127.0.0.0/8, ::1) block so tests can target httptest servers; it
+// never relaxes the private/link-local blocks, and production always passes
+// false.
+func fetchTool(allowHosts []string, allowLoopback bool) Tool {
 	return Tool{
 		Name:        "fetch_url",
 		Description: "Fetch an http(s) URL with a GET request and return the response body as readable text (HTML is stripped). Egress-controlled and size-limited.",
@@ -47,8 +57,8 @@ func FetchURL(allowHosts []string) Tool {
 			if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 				return "", fmt.Errorf("invalid url %q: only http/https URLs are allowed", a.URL)
 			}
-			if !hostAllowed(u.Hostname(), allowHosts) {
-				return "", fmt.Errorf("host %q is not in the fetch allowlist", u.Hostname())
+			if err := guardURL(u, allowHosts, allowLoopback); err != nil {
+				return "", err
 			}
 
 			limit := a.MaxBytes
@@ -62,7 +72,17 @@ func FetchURL(allowHosts []string) Tool {
 			}
 			req.Header.Set("User-Agent", "gophermind/fetch_url")
 
-			client := &http.Client{Timeout: 30 * time.Second}
+			client := &http.Client{
+				Timeout: 30 * time.Second,
+				// Re-apply the egress guard to every redirect target so an allowed
+				// host cannot bounce us to a blocked host or an internal IP.
+				CheckRedirect: func(r *http.Request, via []*http.Request) error {
+					if len(via) >= 10 {
+						return fmt.Errorf("stopped after 10 redirects")
+					}
+					return guardURL(r.URL, allowHosts, allowLoopback)
+				},
+			}
 			resp, err := client.Do(req)
 			if err != nil {
 				return "", fmt.Errorf("fetch %s: %w", u.Host, err)
@@ -89,6 +109,41 @@ func FetchURL(allowHosts []string) Tool {
 			return b.String(), nil
 		},
 	}
+}
+
+// guardURL enforces the egress policy for a single URL (used for the initial
+// request and each redirect hop): host allowlist, then a resolved-IP check that
+// blocks loopback/private/link-local/unspecified targets to prevent SSRF into
+// the local host, internal networks, or the cloud metadata service.
+func guardURL(u *url.URL, allow []string, allowLoopback bool) error {
+	host := u.Hostname()
+	if !hostAllowed(host, allow) {
+		return fmt.Errorf("host %q is not in the fetch allowlist", host)
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return fmt.Errorf("resolve %q: %w", host, err)
+	}
+	for _, ip := range ips {
+		if disallowedIP(ip, allowLoopback) {
+			return fmt.Errorf("refusing to fetch %q: resolves to a blocked address %s (loopback/private/link-local)", host, ip)
+		}
+	}
+	return nil
+}
+
+// disallowedIP reports whether ip must be refused. Private (RFC1918/ULA),
+// link-local (incl. 169.254.169.254 metadata), unspecified, and multicast are
+// always blocked; loopback is blocked unless allowLoopback (tests only).
+func disallowedIP(ip net.IP, allowLoopback bool) bool {
+	if ip.IsLoopback() {
+		return !allowLoopback
+	}
+	return ip.IsPrivate() ||
+		ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() ||
+		ip.IsUnspecified() ||
+		ip.IsMulticast()
 }
 
 // hostAllowed reports whether host passes the allowlist. An empty allowlist
