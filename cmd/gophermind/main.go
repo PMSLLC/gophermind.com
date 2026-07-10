@@ -357,6 +357,7 @@ func run() error {
 		tools.WebSearch(braveEndpoint(cfg), cfg.BraveAPIKey), // Brave web search
 		tools.SQLQuery(cfg.RootDir),                          // read-only SQLite queries
 		tools.DBSchema(cfg.RootDir),                          // read-only SQLite schema explorer (tables/cols/FKs)
+		tools.DBExplain(cfg.RootDir),                         // read-only EXPLAIN QUERY PLAN + full-scan warnings
 	)
 
 	// A single shared stdin reader, used by both the REPL and approval prompts.
