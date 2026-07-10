@@ -245,6 +245,7 @@ func run() error {
 		tools.DeleteFile(cfg.RootDir),
 		tools.Mkdir(cfg.RootDir),
 		tools.PatchApply(cfg.RootDir),
+		tools.FetchURL(cfg.FetchAllowHosts), // gated, egress-controlled URL fetch
 	)
 
 	// A single shared stdin reader, used by both the REPL and approval prompts.

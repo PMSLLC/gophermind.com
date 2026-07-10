@@ -113,6 +113,8 @@ type Config struct {
 	HTTPTimeout time.Duration // GOPHERMIND_HTTP_TIMEOUT_S (default: 300s)
 	CmdTimeout  time.Duration // GOPHERMIND_CMD_TIMEOUT_S (default: 120s)
 
+	FetchAllowHosts []string // GOPHERMIND_FETCH_ALLOW_HOSTS: comma-separated host allowlist for fetch_url (empty => any host)
+
 	// Bounded retry with exponential backoff for the LLM client. MaxAttempts is
 	// the total number of tries (1 disables retries; a single attempt still
 	// works). RetryBaseDelay is the first backoff interval; later attempts grow
@@ -180,20 +182,21 @@ func Load() (Config, error) {
 	}
 
 	return Config{
-		Profile:        envOr("GOPHERMIND_PROFILE", ""),
-		BaseURL:        envOr("GOPHERMIND_BASE_URL", defaultBaseURL),
-		APIKey:         envOr("GOPHERMIND_API_KEY", ""),
-		Model:          envOr("GOPHERMIND_MODEL", ""), // empty => auto-discover from /v1/models
-		FallbackModels: envList("GOPHERMIND_FALLBACK_MODELS"),
-		RootDir:        root,
-		ApprovalMode:   envOr("GOPHERMIND_APPROVAL", "ask"),
-		InsecureTLS:    envBool("GOPHERMIND_INSECURE_TLS"),
-		ClientCertPath: envOr("GOPHERMIND_CLIENT_CERT", ""),
-		ClientKeyPath:  envOr("GOPHERMIND_CLIENT_KEY", ""),
-		CACertPath:     envOr("GOPHERMIND_CA_CERT", ""),
-		MaxIter:        envIntOr("GOPHERMIND_MAX_ITER", 25),
-		HTTPTimeout:    time.Duration(envIntOr("GOPHERMIND_HTTP_TIMEOUT_S", 300)) * time.Second,
-		CmdTimeout:     time.Duration(envIntOr("GOPHERMIND_CMD_TIMEOUT_S", 120)) * time.Second,
+		Profile:         envOr("GOPHERMIND_PROFILE", ""),
+		BaseURL:         envOr("GOPHERMIND_BASE_URL", defaultBaseURL),
+		APIKey:          envOr("GOPHERMIND_API_KEY", ""),
+		Model:           envOr("GOPHERMIND_MODEL", ""), // empty => auto-discover from /v1/models
+		FallbackModels:  envList("GOPHERMIND_FALLBACK_MODELS"),
+		RootDir:         root,
+		ApprovalMode:    envOr("GOPHERMIND_APPROVAL", "ask"),
+		InsecureTLS:     envBool("GOPHERMIND_INSECURE_TLS"),
+		ClientCertPath:  envOr("GOPHERMIND_CLIENT_CERT", ""),
+		ClientKeyPath:   envOr("GOPHERMIND_CLIENT_KEY", ""),
+		CACertPath:      envOr("GOPHERMIND_CA_CERT", ""),
+		MaxIter:         envIntOr("GOPHERMIND_MAX_ITER", 25),
+		HTTPTimeout:     time.Duration(envIntOr("GOPHERMIND_HTTP_TIMEOUT_S", 300)) * time.Second,
+		CmdTimeout:      time.Duration(envIntOr("GOPHERMIND_CMD_TIMEOUT_S", 120)) * time.Second,
+		FetchAllowHosts: envList("GOPHERMIND_FETCH_ALLOW_HOSTS"),
 
 		MaxAttempts:    envIntOr("GOPHERMIND_MAX_ATTEMPTS", 3),
 		RetryBaseDelay: time.Duration(envIntOr("GOPHERMIND_RETRY_BASE_DELAY_MS", 250)) * time.Millisecond,
