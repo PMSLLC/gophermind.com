@@ -1163,13 +1163,31 @@ func runSessions(args []string) error {
 		fmt.Fprintf(os.Stderr, "✓ removed %d session(s) older than %d days\n", len(removed), days)
 		return nil
 	case "export":
-		if len(args) < 3 {
-			return fmt.Errorf("usage: sessions export <id> <file>")
+		// `sessions export [--redact] <id> <file>` — --redact scrubs secrets/PII.
+		rest := args[1:]
+		redact := false
+		if len(rest) > 0 && rest[0] == "--redact" {
+			redact = true
+			rest = rest[1:]
 		}
-		if err := session.Export(args[1], args[2]); err != nil {
+		if len(rest) < 2 {
+			return fmt.Errorf("usage: sessions export [--redact] <id> <file>")
+		}
+		id, dst := session.Resolve(rest[0]), rest[1]
+		var err error
+		if redact {
+			err = session.ExportRedacted(id, dst)
+		} else {
+			err = session.Export(id, dst)
+		}
+		if err != nil {
 			return err
 		}
-		fmt.Fprintf(os.Stderr, "✓ exported session %q to %s\n", args[1], args[2])
+		note := ""
+		if redact {
+			note = " (redacted)"
+		}
+		fmt.Fprintf(os.Stderr, "✓ exported session %q to %s%s\n", id, dst, note)
 		return nil
 	case "import":
 		if len(args) < 3 {
@@ -1339,7 +1357,7 @@ Usage:
   gophermind                    interactive session (default)
   gophermind resume             pick a saved session to resume, then chat
   gophermind config             (re-)run the setup wizard and save config
-  gophermind sessions [list [--tag t] [--since d] [--until d]|search <q>|tag <id> <t..>|show <id>|rm <id>|gc [days]|export <id> <file>|import <file> <id>]
+  gophermind sessions [list [--tag t] [--since d] [--until d]|search <q>|tag <id> <t..>|show <id>|rm <id>|gc [days]|export [--redact] <id> <file>|import <file> <id>]
   gophermind doctor [fix]       run environment/config diagnostics (fix: auto-remediate)
   gophermind status             print a compact prompt line (model + branch)
   gophermind prompt-tokens      print per-section token cost of the base system prompt
