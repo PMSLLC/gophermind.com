@@ -145,7 +145,15 @@ func runServe(run func(ctx context.Context, task string) (string, error)) error 
 	}
 	addr := serveAddr()
 	mux := http.NewServeMux()
-	mux.HandleFunc("/run", webhookHandler(run, token))
+	var runHandler http.Handler = webhookHandler(run, token)
+	// Optional per-caller rate limiting (GOPHERMIND_SERVE_RATE req/min), keyed by
+	// the bearer token so one caller can't monopolize the agent.
+	if rl := serveRateLimiter(); rl != nil {
+		runHandler = rateLimitMiddleware(runHandler, rl, func(r *http.Request) string {
+			return r.Header.Get("Authorization")
+		})
+	}
+	mux.Handle("/run", runHandler)
 	// Unauthenticated liveness/readiness probes for load balancers / k8s.
 	mux.HandleFunc("/healthz", healthHandler())
 	mux.HandleFunc("/readyz", readyHandler(func() bool { return true }))
