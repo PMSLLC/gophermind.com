@@ -37,7 +37,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [ ] **17. Parquet & Arrow support.** Teach `inspect_data`/`data_transform` to read columnar formats. Value: modern data-lake files.
 - [x] **18. Log-to-metrics.** `analyze_log` emits time-bucketed counts (errors/min) as a series. Value: spot spikes, not just totals.
 - [ ] **19. Fixture/seed generator.** Generate realistic seed rows from a schema for tests. Value: faster test-data setup.
-- [ ] **20. Query result caching.** Cache `sql_query` results by (db-mtime, query, params) hash. Value: instant repeats during analysis.
+- [x] **20. Query result caching.** Cache `sql_query` results by (db-mtime, query, params) hash. Value: instant repeats during analysis.
 
 ## AE. Agent Reasoning & Multi-Agent II (builds on the verifier pass, fleet mode, `spawn_agent`, checkpoints)
 

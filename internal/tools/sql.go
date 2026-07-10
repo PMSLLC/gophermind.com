@@ -2,10 +2,13 @@ package tools
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"gophermind/internal/safety"
@@ -48,8 +51,20 @@ func SQLQuery(root string) Tool {
 			if err != nil {
 				return "", err
 			}
-			if _, err := os.Stat(full); err != nil {
+			info, err := os.Stat(full)
+			if err != nil {
 				return "", fmt.Errorf("database %q not found", a.DB)
+			}
+
+			// Optional result cache keyed by (db-mtime, query, params) so repeat
+			// queries during analysis are instant.
+			cacheDir := sqlCacheDir()
+			var key string
+			if cacheDir != "" {
+				key = sqlCacheKey(full, info.ModTime().UnixNano(), a.Query, a.Params)
+				if cached, ok := cacheGetKey(cacheDir, key); ok {
+					return cached, nil
+				}
 			}
 
 			db, err := sql.Open("sqlite", "file:"+full+"?mode=ro")
@@ -63,7 +78,14 @@ func SQLQuery(root string) Tool {
 				return "", fmt.Errorf("query: %w", err)
 			}
 			defer rows.Close()
-			return formatRows(rows)
+			out, err := formatRows(rows)
+			if err != nil {
+				return "", err
+			}
+			if cacheDir != "" {
+				cachePutKey(cacheDir, key, out)
+			}
+			return out, nil
 		},
 	}
 }
@@ -125,6 +147,39 @@ func formatRows(rows *sql.Rows) (string, error) {
 		b.WriteString("(no rows)\n")
 	}
 	return truncate(b.String()), nil
+}
+
+// sqlCacheDir returns the configured SQL result-cache directory, or "" when
+// caching is disabled (the default).
+func sqlCacheDir() string {
+	return os.Getenv("GOPHERMIND_SQL_CACHE_DIR")
+}
+
+// sqlCacheKey derives a stable cache key from the db path, its mtime, and the
+// query + params, so a modified database (new mtime) invalidates the entry.
+func sqlCacheKey(dbPath string, mtimeNano int64, query string, params []any) string {
+	h := sha256.New()
+	fmt.Fprintf(h, "%s\x00%d\x00%s\x00", dbPath, mtimeNano, query)
+	pb, _ := json.Marshal(params)
+	h.Write(pb)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// cacheGetKey returns a cached result for a precomputed key, if present.
+func cacheGetKey(dir, key string) (string, bool) {
+	data, err := os.ReadFile(filepath.Join(dir, key+".txt"))
+	if err != nil {
+		return "", false
+	}
+	return string(data), true
+}
+
+// cachePutKey stores a result under a precomputed key, best-effort.
+func cachePutKey(dir, key, content string) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	_ = os.WriteFile(filepath.Join(dir, key+".txt"), []byte(content), 0o644)
 }
 
 func cellString(v any) string {
