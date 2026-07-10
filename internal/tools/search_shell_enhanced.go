@@ -141,9 +141,40 @@ func SearchEnhanced(root string) Tool {
 	}
 }
 
+// ShellLimits are optional resource ceilings applied to each shell command via
+// `ulimit` inside the bash invocation. A zero field means "no limit". They
+// contain a runaway command (fork bombs, memory hogs, endless CPU) beyond the
+// wall-clock timeout.
+type ShellLimits struct {
+	CPUSeconds  int // ulimit -t: max CPU seconds
+	MaxMemoryMB int // ulimit -v: max virtual memory (converted to KiB)
+	MaxProcs    int // ulimit -u: max user processes
+}
+
+// ulimitPrefix builds a "ulimit …; " prefix that constrains the command that
+// follows. Returns "" when no limits are set. Failures to set a limit are
+// silenced (2>/dev/null) so a platform that rejects one option still runs.
+func ulimitPrefix(l ShellLimits) string {
+	var parts []string
+	if l.CPUSeconds > 0 {
+		parts = append(parts, fmt.Sprintf("ulimit -t %d 2>/dev/null", l.CPUSeconds))
+	}
+	if l.MaxMemoryMB > 0 {
+		parts = append(parts, fmt.Sprintf("ulimit -v %d 2>/dev/null", l.MaxMemoryMB*1024))
+	}
+	if l.MaxProcs > 0 {
+		parts = append(parts, fmt.Sprintf("ulimit -u %d 2>/dev/null", l.MaxProcs))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, "; ") + "; "
+}
+
 // RunShellEnhanced returns an enhanced shell tool with per-command timeout,
-// working directory, environment allow-list, and exit-code-aware results.
-func RunShellEnhanced(root string, timeout time.Duration) Tool {
+// working directory, environment allow-list, optional resource limits, and
+// exit-code-aware results.
+func RunShellEnhanced(root string, timeout time.Duration, limits ShellLimits) Tool {
 	return Tool{
 		Name:        "run_shell",
 		Description: "Run a shell command via bash with timeout, safety deny-list, and structured exit-code result. Supports working directory and environment allow-list.",
@@ -204,9 +235,12 @@ func RunShellEnhanced(root string, timeout time.Duration) Tool {
 				loginShell = "bash"
 				// Use -lc for login shell (default), -c for non-login.
 			}
-			args := []string{"-lc", a.Command}
+			// Prepend resource limits (if any) so they apply to the command and
+			// any subprocesses it spawns within this shell.
+			shellCmd := ulimitPrefix(limits) + a.Command
+			args := []string{"-lc", shellCmd}
 			if a.LoginShell != nil && !*a.LoginShell {
-				args = []string{"-c", a.Command}
+				args = []string{"-c", shellCmd}
 			}
 
 			cmd := exec.CommandContext(runCtx, loginShell, args...)

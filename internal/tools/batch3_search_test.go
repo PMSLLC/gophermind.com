@@ -43,7 +43,7 @@ func TestSearchEnhanced(t *testing.T) {
 
 func TestRunShellEnhanced(t *testing.T) {
 	dir := t.TempDir()
-	out, err := run(t, RunShellEnhanced(dir, 10_000_000_000), `{"command":"echo hello-shell"}`)
+	out, err := run(t, RunShellEnhanced(dir, 10_000_000_000, ShellLimits{}), `{"command":"echo hello-shell"}`)
 	if err != nil {
 		t.Fatalf("shell: %v", err)
 	}

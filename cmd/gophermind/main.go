@@ -298,8 +298,12 @@ func run() error {
 		tools.ListFilesGlob(cfg.RootDir),  // list_files + include/exclude globs
 		tools.SearchEnhanced(cfg.RootDir), // search + context/flags/paging
 		tools.WriteFile(cfg.RootDir),
-		tools.EditFileMulti(cfg.RootDir),                    // edit_file + replace_all
-		tools.RunShellEnhanced(cfg.RootDir, cfg.CmdTimeout), // run_shell + timeout/workdir
+		tools.EditFileMulti(cfg.RootDir), // edit_file + replace_all
+		tools.RunShellEnhanced(cfg.RootDir, cfg.CmdTimeout, tools.ShellLimits{
+			CPUSeconds:  cfg.ShellCPUSeconds,
+			MaxMemoryMB: cfg.ShellMaxMemMB,
+			MaxProcs:    cfg.ShellMaxProcs,
+		}), // run_shell + timeout/workdir/resource-limits
 		tools.FileStat(cfg.RootDir),
 		tools.MoveFile(cfg.RootDir),
 		tools.DeleteFile(cfg.RootDir),

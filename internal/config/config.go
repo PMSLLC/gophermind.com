@@ -116,6 +116,11 @@ type Config struct {
 
 	FetchAllowHosts []string // GOPHERMIND_FETCH_ALLOW_HOSTS: comma-separated host allowlist for fetch_url (empty => any host)
 
+	// Optional resource ceilings for run_shell, applied via ulimit. 0 = no limit.
+	ShellCPUSeconds int // GOPHERMIND_SHELL_CPU_SECONDS
+	ShellMaxMemMB   int // GOPHERMIND_SHELL_MAX_MEM_MB
+	ShellMaxProcs   int // GOPHERMIND_SHELL_MAX_PROCS
+
 	// Bounded retry with exponential backoff for the LLM client. MaxAttempts is
 	// the total number of tries (1 disables retries; a single attempt still
 	// works). RetryBaseDelay is the first backoff interval; later attempts grow
@@ -199,6 +204,9 @@ func Load() (Config, error) {
 		HTTPTimeout:     time.Duration(envIntOr("GOPHERMIND_HTTP_TIMEOUT_S", 300)) * time.Second,
 		CmdTimeout:      time.Duration(envIntOr("GOPHERMIND_CMD_TIMEOUT_S", 120)) * time.Second,
 		FetchAllowHosts: envList("GOPHERMIND_FETCH_ALLOW_HOSTS"),
+		ShellCPUSeconds: envIntOr("GOPHERMIND_SHELL_CPU_SECONDS", 0),
+		ShellMaxMemMB:   envIntOr("GOPHERMIND_SHELL_MAX_MEM_MB", 0),
+		ShellMaxProcs:   envIntOr("GOPHERMIND_SHELL_MAX_PROCS", 0),
 
 		MaxAttempts:    envIntOr("GOPHERMIND_MAX_ATTEMPTS", 3),
 		RetryBaseDelay: time.Duration(envIntOr("GOPHERMIND_RETRY_BASE_DELAY_MS", 250)) * time.Millisecond,
