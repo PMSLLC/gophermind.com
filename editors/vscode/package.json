@@ -1,0 +1,21 @@
+{
+  "name": "gophermind",
+  "displayName": "gophermind",
+  "description": "Ask gophermind about the current file/selection from VS Code.",
+  "version": "0.1.0",
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Other"],
+  "activationEvents": [],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "gophermind.ask", "title": "gophermind: Ask about selection" }
+    ],
+    "configuration": {
+      "title": "gophermind",
+      "properties": {
+        "gophermind.binary": { "type": "string", "default": "gophermind", "description": "Path to the gophermind binary." }
+      }
+    }
+  }
+}
