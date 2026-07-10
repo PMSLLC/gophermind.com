@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"golang.org/x/term"
+	"gophermind/internal/abtest"
 	"gophermind/internal/agent"
 	"gophermind/internal/config"
 	"gophermind/internal/doctor"
@@ -87,6 +88,8 @@ func run() error {
 	parallelFlag := flag.Bool("parallel", false, "run/ask: execute independent tool calls in a turn concurrently")
 	verifyFlag := flag.Bool("verify", false, "run/ask: have a second (verifier) agent check the result and trigger one correction round if incomplete")
 	fleetFlag := flag.Int("fleet", 1, "queue: run up to N tasks concurrently under the shared approval policy (fleet/overseer mode)")
+	abFixturesFlag := flag.String("fixtures", "", "ab: JSONL fixtures file ({\"prompt\":..,\"expect\":..} per line)")
+	abVariantsFlag := flag.String("variants", "", "ab: comma-separated prompt-template files to compare (default: the built-in template)")
 	schemaFlag := flag.String("schema", "", "run/ask: force a JSON-schema-constrained response, reading the schema from this file")
 	promptTemplateFlag := flag.String("prompt-template", "", "use a custom structured prompt template (.md with frontmatter + XML sections) as the base system prompt")
 	toolBudgetFlag := flag.Int("tool-budget", 0, "run/ask: max tool calls per turn (0 = default)")
@@ -470,6 +473,13 @@ func run() error {
 			sessionID: *sessionIDFlag, resumeID: *resumeFlag,
 			appendSys: *appendSysFlag, permMode: *permModeFlag, readOnly: *readOnlyFlag,
 		})
+	case "ab":
+		if *abFixturesFlag == "" {
+			return fmt.Errorf("ab requires --fixtures <file.jsonl>")
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		return runAB(ctx, client, reg, cfg, basePrompt, *abVariantsFlag, *abFixturesFlag)
 	case "serve":
 		// Webhook mode: each POST /run spawns a fresh agent turn, isolated from
 		// other requests. Blocks until the process is stopped.
@@ -736,6 +746,63 @@ func runSetupWizard(cfg config.Config) (setup.Result, error) {
 		}
 	}
 	return setup.Run(opts)
+}
+
+// runAB implements the `ab` subcommand: score one or more prompt-template
+// variants against a fixtures file (JSONL prompt/expect) and print a table.
+func runAB(ctx context.Context, client *llm.Client, reg *tools.Registry, cfg config.Config, basePrompt, variantsCSV, fixturesFile string) error {
+	// Load fixtures.
+	data, err := os.ReadFile(fixturesFile)
+	if err != nil {
+		return fmt.Errorf("read fixtures: %w", err)
+	}
+	var fixtures []abtest.Fixture
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var f abtest.Fixture
+		if err := json.Unmarshal([]byte(line), &f); err != nil {
+			return fmt.Errorf("parse fixture: %w", err)
+		}
+		fixtures = append(fixtures, f)
+	}
+	if len(fixtures) == 0 {
+		return fmt.Errorf("no fixtures in %s", fixturesFile)
+	}
+
+	// Build variants (default template, or the named template files).
+	var variants []abtest.Variant
+	if strings.TrimSpace(variantsCSV) == "" {
+		variants = []abtest.Variant{{Name: "default", System: basePrompt}}
+	} else {
+		for _, f := range strings.Split(variantsCSV, ",") {
+			f = strings.TrimSpace(f)
+			if f == "" {
+				continue
+			}
+			b, err := prompt.LoadBuilder(f)
+			if err != nil {
+				return err
+			}
+			variants = append(variants, abtest.Variant{Name: filepath.Base(f), System: b.Build()})
+		}
+	}
+
+	// Each run: a fresh read-only agent seeded with the variant's system prompt.
+	run := func(ctx context.Context, system, p string) (string, error) {
+		a := agent.New(client, reg, cfg.MaxIter, safety.ReadMode(), nil)
+		a.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
+		a.SetSystemPrompt(system)
+		return a.Send(ctx, p)
+	}
+
+	results := abtest.RunMatrix(ctx, variants, fixtures, run)
+	fmt.Printf("A/B over %d fixtures:\n", len(fixtures))
+	for _, r := range results {
+		fmt.Printf("  %-24s %d/%d passed\n", r.Variant, r.Passed, r.Total)
+	}
+	return nil
 }
 
 // runQueue implements the `queue` subcommand: it reads a file of tasks (one per
