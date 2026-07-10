@@ -331,7 +331,14 @@ func run() error {
 		}
 		personaText = p
 	}
-	systemSuffix := composeSystem(personaText, project.Instructions(cfg.RootDir))
+	// Opt-in dynamic context (GOPHERMIND_REPO_CONTEXT): inject a compact repo
+	// orientation (git branch/status + top-level tree) so the model orients
+	// without spending tool calls.
+	repoContext := ""
+	if envTruthy("GOPHERMIND_REPO_CONTEXT") {
+		repoContext = project.RepoContext(cfg.RootDir)
+	}
+	systemSuffix := composeSystem(personaText, project.Instructions(cfg.RootDir), repoContext)
 
 	switch cmd {
 	case "chat":
