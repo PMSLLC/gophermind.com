@@ -37,6 +37,7 @@ import (
 	"gophermind/internal/session"
 	"gophermind/internal/setup"
 	"gophermind/internal/stream"
+	"gophermind/internal/telemetry"
 	"gophermind/internal/tools"
 	"gophermind/internal/trace"
 	"gophermind/internal/tui"
@@ -236,6 +237,19 @@ func run() error {
 		default:
 			return fmt.Errorf("usage: gophermind prompts [list|show <name>|save <name> <file>]")
 		}
+	}
+
+	// `gophermind telemetry report` prints opt-in local usage counters.
+	if cmd == "telemetry" {
+		if len(args) < 2 || strings.ToLower(args[1]) != "report" {
+			return fmt.Errorf("usage: gophermind telemetry report")
+		}
+		out, err := telemetry.Report(telemetryPath())
+		if err != nil {
+			return err
+		}
+		fmt.Print(out)
+		return nil
 	}
 
 	// `gophermind usage report` summarizes recorded spend by day and model.
@@ -802,6 +816,7 @@ func run() error {
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
+		telemetry.New(telemetryPath(), envTruthy("GOPHERMIND_TELEMETRY")).Incr(cmd)
 		// Cost-aware routing: pick the cheap or strong model for this task.
 		if envTruthy("GOPHERMIND_AUTO_ROUTE") && cfg.SpeedModel != "" {
 			if chosen := routeModel(task, cfg.SpeedModel, cfg.Model); chosen != client.Model {
@@ -1877,4 +1892,13 @@ func routeModel(task, speedModel, strongModel string) string {
 // episodesPath returns the per-repo episodic-memory store path.
 func episodesPath(root string) string {
 	return filepath.Join(root, ".gophermind", "episodes.json")
+}
+
+// telemetryPath returns the local opt-in telemetry counter file (config dir).
+func telemetryPath() string {
+	p, err := config.ConfigFilePath()
+	if err != nil {
+		return filepath.Join(".gophermind", "telemetry.json")
+	}
+	return filepath.Join(filepath.Dir(p), "telemetry.json")
 }
