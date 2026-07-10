@@ -23,6 +23,7 @@ import (
 	"gophermind/internal/agent"
 	"gophermind/internal/config"
 	"gophermind/internal/doctor"
+	"gophermind/internal/embed"
 	"gophermind/internal/fewshot"
 	"gophermind/internal/jobs"
 	"gophermind/internal/llm"
@@ -472,6 +473,14 @@ func run() error {
 		tools.OpenAPIOps(cfg.RootDir),                        // list operations from an OpenAPI 3 spec
 		tools.DetectAnomalies(),                              // flag statistical outliers in a numeric series
 	}
+	// Semantic index tools when embeddings are configured (nil provider = the
+	// tools return a configuration hint instead of running).
+	embedProvider := buildEmbedProvider(cfg)
+	indexPath := filepath.Join(cfg.RootDir, ".gophermind", "index.json")
+	toolset = append(toolset,
+		tools.EmbedIndex(cfg.RootDir, embedProvider, indexPath),     // build a semantic index over the repo
+		tools.SemanticSearch(cfg.RootDir, embedProvider, indexPath), // retrieve relevant chunks by meaning
+	)
 	// --dry-run: wrap gated (mutating) tools so the agent previews the calls it
 	// would make without executing any mutation.
 	if *dryRunFlag {
@@ -1304,6 +1313,28 @@ func braveEndpoint(cfg config.Config) string {
 		return cfg.BraveEndpoint
 	}
 	return tools.BraveSearchEndpoint
+}
+
+// buildEmbedProvider returns an embeddings provider when configured, else nil.
+// GOPHERMIND_EMBED_MODEL is required; the endpoint and key default to the main
+// LLM endpoint/key but can be overridden with GOPHERMIND_EMBED_URL/_KEY.
+func buildEmbedProvider(cfg config.Config) embed.Provider {
+	model := strings.TrimSpace(os.Getenv("GOPHERMIND_EMBED_MODEL"))
+	if model == "" {
+		return nil
+	}
+	url := strings.TrimSpace(os.Getenv("GOPHERMIND_EMBED_URL"))
+	if url == "" {
+		url = cfg.BaseURL
+	}
+	key := strings.TrimSpace(os.Getenv("GOPHERMIND_EMBED_KEY"))
+	if key == "" {
+		key = cfg.APIKey
+	}
+	if url == "" {
+		return nil
+	}
+	return embed.NewHTTPProvider(url, key, model)
 }
 
 // auditLog returns a tamper-evident audit log when GOPHERMIND_AUDIT_LOG names a

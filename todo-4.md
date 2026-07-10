@@ -15,7 +15,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 
 ## AC. Retrieval, Embeddings & Knowledge (builds on `web_search`, `sql_query`, `find_symbol`, the fetch cache)
 
-- [ ] **1. Embeddings-backed repo index.** An `embed_index` builder + `semantic_search` tool over a local vector store (sqlite-vec on top of the existing SQLite dep). Value: relevance-ranked context without exhaustive grep.
+- [x] **1. Embeddings-backed repo index.** An `embed_index` builder + `semantic_search` tool over a local vector store (sqlite-vec on top of the existing SQLite dep). Value: relevance-ranked context without exhaustive grep.
 - [x] **2. Pluggable embeddings provider.** An `internal/embed` interface with OpenAI-compatible `/v1/embeddings` and a local fallback. Value: the vector store works against any endpoint the LLM client already talks to.
 - [ ] **3. RAG context injection.** At turn start, retrieve top-k chunks for the user's task and inject them under a `<retrieved_context>` prompt section. Value: grounded answers, fewer tool round-trips.
 - [ ] **4. Docs-retrieval tool.** A `docs_lookup` tool that fetches + caches library docs (Context7-style) keyed by `library@version`. Value: accurate API usage over stale training data.
