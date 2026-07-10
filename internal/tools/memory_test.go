@@ -38,3 +38,22 @@ func TestRememberFactEmpty(t *testing.T) {
 		t.Error("empty fact should error")
 	}
 }
+
+func TestRememberProfileUsesOwnStore(t *testing.T) {
+	dir := t.TempDir()
+	profilePath := filepath.Join(dir, "profile.json")
+	tool := RememberProfile(fakeEmbed{}, profilePath)
+	if tool.Name != "remember_profile" {
+		t.Errorf("tool name = %q, want remember_profile", tool.Name)
+	}
+	if _, err := run(t, tool, `{"text":"the user prefers Go"}`); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(profilePath)
+	if err != nil {
+		t.Fatalf("profile store not written: %v", err)
+	}
+	if !strings.Contains(string(data), "prefers Go") {
+		t.Errorf("profile fact not persisted:\n%s", data)
+	}
+}

@@ -552,7 +552,8 @@ func run() error {
 	toolset = append(toolset,
 		tools.EmbedIndex(cfg.RootDir, embedProvider, indexPath),               // build a semantic index over the repo
 		tools.SemanticSearch(cfg.RootDir, embedProvider, indexPath, packsDir), // retrieve relevant chunks by meaning
-		tools.RememberFact(embedProvider, memoryPath),                         // persist a fact to long-term vector memory
+		tools.RememberFact(embedProvider, memoryPath),                         // persist a fact to per-repo memory
+		tools.RememberProfile(embedProvider, profileMemoryPath()),             // persist a fact to global profile memory
 		tools.ImportPack(cfg.RootDir, embedProvider, packsDir),                // index a doc folder as a knowledge pack
 		tools.RetrievalEval(cfg.RootDir, embedProvider, indexPath),            // score index retrieval quality (hit@k)
 	)
@@ -748,10 +749,14 @@ func run() error {
 				ag.AppendSystemPrompt(rc)
 			}
 		}
-		// Long-term memory: inject the most relevant remembered facts at task start.
+		// Long-term memory: inject the most relevant remembered facts at task start
+		// (per-repo memory, then global profile memory).
 		if envTruthy("GOPHERMIND_MEMORY") && embedProvider != nil {
 			if mc := retrieveContext(ctx, embedProvider, memoryPath, task, 5); mc != "" {
 				ag.AppendSystemPrompt(strings.Replace(mc, "retrieved_context", "long_term_memory", 2))
+			}
+			if pc := retrieveContext(ctx, embedProvider, profileMemoryPath(), task, 3); pc != "" {
+				ag.AppendSystemPrompt(strings.Replace(pc, "retrieved_context", "profile_memory", 2))
 			}
 		}
 		// Few-shot example bank: when GOPHERMIND_EXAMPLES names a JSON bank, inject
@@ -1463,6 +1468,16 @@ func retrieveContext(ctx context.Context, p embed.Provider, indexPath, task stri
 	}
 	b.WriteString("</retrieved_context>")
 	return b.String()
+}
+
+// profileMemoryPath returns the global (cross-repo) profile-memory store path,
+// under the config directory, so user preferences follow them everywhere.
+func profileMemoryPath() string {
+	p, err := config.ConfigFilePath()
+	if err != nil {
+		return filepath.Join(".gophermind", "profile-memory.json")
+	}
+	return filepath.Join(filepath.Dir(p), "profile-memory.json")
 }
 
 // buildEmbedProvider returns an embeddings provider when configured, else nil.

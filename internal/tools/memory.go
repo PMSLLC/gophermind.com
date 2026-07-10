@@ -11,13 +11,26 @@ import (
 	"gophermind/internal/embed"
 )
 
-// RememberFact returns a tool that persists a salient fact to a long-term vector
-// memory store, so it can be retrieved by relevance in future sessions. A nil
-// provider means embeddings are unconfigured.
+// RememberFact returns a tool that persists a salient fact to this repo's
+// long-term vector memory, retrievable by relevance in future sessions.
 func RememberFact(p embed.Provider, memPath string) Tool {
+	return rememberTool(p, memPath, "remember_fact",
+		"Save a durable fact about this project to long-term memory (embedded), retrievable by relevance in later sessions.")
+}
+
+// RememberProfile returns a tool that persists a fact to the user's GLOBAL
+// profile memory (shared across repos), so preferences follow the user
+// everywhere — distinct from per-repo remember_fact.
+func RememberProfile(p embed.Provider, memPath string) Tool {
+	return rememberTool(p, memPath, "remember_profile",
+		"Save a durable preference or fact about the USER to global profile memory (shared across all repos).")
+}
+
+// rememberTool builds a fact-remembering tool over the given store path.
+func rememberTool(p embed.Provider, memPath, name, desc string) Tool {
 	return Tool{
-		Name:        "remember_fact",
-		Description: "Save a durable fact about this project to long-term memory (embedded), retrievable by relevance in later sessions.",
+		Name:        name,
+		Description: desc,
 		Schema:      object(map[string]any{"text": str("The fact to remember (a concise sentence).")}, "text"),
 		Run: func(ctx context.Context, raw json.RawMessage) (string, error) {
 			if p == nil {
