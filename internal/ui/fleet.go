@@ -8,10 +8,10 @@ import (
 
 // WorkerStatus is a snapshot of one fleet worker for the status view.
 type WorkerStatus struct {
-	ID     int
-	Task   string
-	State  string // "running" | "done" | "failed" | "idle"
-	Tokens int
+	ID      int
+	Task    string
+	State   string // "running" | "done" | "failed" | "idle"
+	Tokens  int
 	CostUSD float64
 }
 

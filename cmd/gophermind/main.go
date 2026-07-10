@@ -642,29 +642,29 @@ func run() error {
 		tools.DeleteFile(cfg.RootDir),
 		tools.Mkdir(cfg.RootDir),
 		tools.PatchApply(cfg.RootDir),
-		tools.FetchURL(cfg.FetchAllowHosts, netBudget),       // gated, egress-controlled URL fetch
-		tools.HTTPRequest(cfg.FetchAllowHosts, netBudget),    // gated HTTP API caller (methods/headers/body)
-		tools.FindSymbol(cfg.RootDir),                        // definition-aware symbol search
-		tools.GitInfo(cfg.RootDir),                           // read-only structured git (log/status/diff)
-		tools.InspectData(cfg.RootDir),                       // read-only CSV/JSON schema + preview
-		tools.AnalyzeLog(cfg.RootDir),                        // read-only log severity summary
-		tools.CreateMigration(cfg.RootDir),                   // gated: scaffold a timestamped SQL migration
-		tools.Scratchpad(cfg.RootDir),                        // durable cross-turn task notes
-		tools.SetCSVCell(cfg.RootDir),                        // gated: edit a single CSV cell
-		tools.WebSearch(braveEndpoint(cfg), cfg.BraveAPIKey, embedProvider), // Brave web search (+ embedding rerank)
-		tools.SQLQuery(cfg.RootDir),                          // read-only SQLite queries
-		tools.DBSchema(cfg.RootDir),                          // read-only SQLite schema explorer (tables/cols/FKs)
-		tools.DBExplain(cfg.RootDir),                         // read-only EXPLAIN QUERY PLAN + full-scan warnings
-		tools.Chart(),                                        // render sparkline/bar chart from a numeric series
-		tools.DataTransform(cfg.RootDir),                     // read-only filter/group/aggregate over CSV/JSONL
-		tools.LogMetrics(cfg.RootDir),                        // read-only time-bucketed log counts (spikes)
-		tools.SeedData(cfg.RootDir),                          // generate INSERT seed data from a table schema
-		tools.OpenAPIOps(cfg.RootDir),                        // list operations from an OpenAPI 3 spec
-		tools.DetectAnomalies(),                              // flag statistical outliers in a numeric series
-		tools.MigrationDryRun(cfg.RootDir),                   // apply a migration to a throwaway db copy + schema diff
+		tools.FetchURL(cfg.FetchAllowHosts, netBudget),                        // gated, egress-controlled URL fetch
+		tools.HTTPRequest(cfg.FetchAllowHosts, netBudget),                     // gated HTTP API caller (methods/headers/body)
+		tools.FindSymbol(cfg.RootDir),                                         // definition-aware symbol search
+		tools.GitInfo(cfg.RootDir),                                            // read-only structured git (log/status/diff)
+		tools.InspectData(cfg.RootDir),                                        // read-only CSV/JSON schema + preview
+		tools.AnalyzeLog(cfg.RootDir),                                         // read-only log severity summary
+		tools.CreateMigration(cfg.RootDir),                                    // gated: scaffold a timestamped SQL migration
+		tools.Scratchpad(cfg.RootDir),                                         // durable cross-turn task notes
+		tools.SetCSVCell(cfg.RootDir),                                         // gated: edit a single CSV cell
+		tools.WebSearch(braveEndpoint(cfg), cfg.BraveAPIKey, embedProvider),   // Brave web search (+ embedding rerank)
+		tools.SQLQuery(cfg.RootDir),                                           // read-only SQLite queries
+		tools.DBSchema(cfg.RootDir),                                           // read-only SQLite schema explorer (tables/cols/FKs)
+		tools.DBExplain(cfg.RootDir),                                          // read-only EXPLAIN QUERY PLAN + full-scan warnings
+		tools.Chart(),                                                         // render sparkline/bar chart from a numeric series
+		tools.DataTransform(cfg.RootDir),                                      // read-only filter/group/aggregate over CSV/JSONL
+		tools.LogMetrics(cfg.RootDir),                                         // read-only time-bucketed log counts (spikes)
+		tools.SeedData(cfg.RootDir),                                           // generate INSERT seed data from a table schema
+		tools.OpenAPIOps(cfg.RootDir),                                         // list operations from an OpenAPI 3 spec
+		tools.DetectAnomalies(),                                               // flag statistical outliers in a numeric series
+		tools.MigrationDryRun(cfg.RootDir),                                    // apply a migration to a throwaway db copy + schema diff
 		tools.GitHubTool("https://api.github.com", secretEnv("GITHUB_TOKEN")), // read-only GitHub API
-		tools.Notify(secretEnv("GOPHERMIND_NOTIFY_WEBHOOK")),                 // Slack/Discord notifier
-		tools.DocsLookup(docsTemplate(), docsCacheDir(cfg.RootDir)),                             // fetch+cache library docs
+		tools.Notify(secretEnv("GOPHERMIND_NOTIFY_WEBHOOK")),                  // Slack/Discord notifier
+		tools.DocsLookup(docsTemplate(), docsCacheDir(cfg.RootDir)),           // fetch+cache library docs
 		tools.JiraTool(os.Getenv("GOPHERMIND_JIRA_URL"), os.Getenv("GOPHERMIND_JIRA_EMAIL"), secretEnv("GOPHERMIND_JIRA_TOKEN")), // read Jira issues
 	}
 	// Semantic index tools when embeddings are configured (nil provider = the
@@ -673,18 +673,18 @@ func run() error {
 	memoryPath := filepath.Join(cfg.RootDir, ".gophermind", "memory.json")
 	packsDir := filepath.Join(cfg.RootDir, ".gophermind", "packs")
 	toolset = append(toolset,
-		tools.EmbedIndex(cfg.RootDir, embedProvider, indexPath),               // build a semantic index over the repo
-		tools.SemanticSearch(cfg.RootDir, embedProvider, indexPath, packsDir), // retrieve relevant chunks by meaning
-		tools.RememberFact(embedProvider, memoryPath),                         // persist a fact to per-repo memory
-		tools.RememberProfile(embedProvider, profileMemoryPath()),             // persist a fact to global profile memory
-		tools.RecordEpisode(embedProvider, episodesPath(cfg.RootDir)),         // record task outcomes to episodic memory
-		tools.ImportPack(cfg.RootDir, embedProvider, packsDir),                // index a doc folder as a knowledge pack
-		tools.RetrievalEval(cfg.RootDir, embedProvider, indexPath),            // score index retrieval quality (hit@k)
-		tools.HybridSearch(cfg.RootDir, embedProvider, indexPath),             // BM25 + vector hybrid retrieval
-		tools.MultiSQL(splitCSV(os.Getenv("GOPHERMIND_SQL_DSN_ALLOW"))),       // read-only Postgres/MySQL (DSN allowlist)
+		tools.EmbedIndex(cfg.RootDir, embedProvider, indexPath),                     // build a semantic index over the repo
+		tools.SemanticSearch(cfg.RootDir, embedProvider, indexPath, packsDir),       // retrieve relevant chunks by meaning
+		tools.RememberFact(embedProvider, memoryPath),                               // persist a fact to per-repo memory
+		tools.RememberProfile(embedProvider, profileMemoryPath()),                   // persist a fact to global profile memory
+		tools.RecordEpisode(embedProvider, episodesPath(cfg.RootDir)),               // record task outcomes to episodic memory
+		tools.ImportPack(cfg.RootDir, embedProvider, packsDir),                      // index a doc folder as a knowledge pack
+		tools.RetrievalEval(cfg.RootDir, embedProvider, indexPath),                  // score index retrieval quality (hit@k)
+		tools.HybridSearch(cfg.RootDir, embedProvider, indexPath),                   // BM25 + vector hybrid retrieval
+		tools.MultiSQL(splitCSV(os.Getenv("GOPHERMIND_SQL_DSN_ALLOW"))),             // read-only Postgres/MySQL (DSN allowlist)
 		tools.LSPDefinition(cfg.RootDir, splitCSV(os.Getenv("GOPHERMIND_LSP_CMD"))), // semantic go-to-definition via LSP
-		tools.WASMTool(cfg.RootDir), // run sandboxed WASI community tools
-		tools.ReadParquet(cfg.RootDir), // read Parquet columnar data files
+		tools.WASMTool(cfg.RootDir),                                                 // run sandboxed WASI community tools
+		tools.ReadParquet(cfg.RootDir),                                              // read Parquet columnar data files
 	)
 	// --dry-run: wrap gated (mutating) tools so the agent previews the calls it
 	// would make without executing any mutation.

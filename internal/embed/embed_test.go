@@ -29,9 +29,9 @@ func TestCosine(t *testing.T) {
 func TestTopK(t *testing.T) {
 	query := []float32{1, 0}
 	items := []Vector{
-		{ID: "a", Values: []float32{1, 0}},    // sim 1
+		{ID: "a", Values: []float32{1, 0}},     // sim 1
 		{ID: "b", Values: []float32{0.9, 0.1}}, // high
-		{ID: "c", Values: []float32{0, 1}},    // sim 0
+		{ID: "c", Values: []float32{0, 1}},     // sim 0
 	}
 	hits := TopK(query, items, 2)
 	if len(hits) != 2 {

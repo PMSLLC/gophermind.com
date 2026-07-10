@@ -1,9 +1,9 @@
 package lsp
 
 import (
-	"context"
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"

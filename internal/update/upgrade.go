@@ -19,7 +19,7 @@ import (
 )
 
 // runtimeGOOS/runtimeGOARCH are indirections so tests could stub them if needed.
-func runtimeGOOS() string  { return runtime.GOOS }
+func runtimeGOOS() string   { return runtime.GOOS }
 func runtimeGOARCH() string { return runtime.GOARCH }
 
 // AssetName returns the release archive name for a platform, matching the

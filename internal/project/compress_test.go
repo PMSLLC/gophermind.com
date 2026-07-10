@@ -14,7 +14,7 @@ func TestCompressContextFitsBudget(t *testing.T) {
 	sb.WriteString("- a key bullet point\n")
 	text := sb.String()
 
-	out := CompressContext(text, 20) // ~80 bytes
+	out := CompressContext(text, 20)    // ~80 bytes
 	if len(out) > 20*bytesPerToken+80 { // allow the trailing note
 		t.Errorf("compressed output too large: %d bytes", len(out))
 	}

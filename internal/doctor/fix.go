@@ -15,10 +15,10 @@ type FixResult struct {
 // fixHints maps a failing check to advice when it cannot be auto-remediated.
 var fixHints = map[string]string{
 	"endpoint configured": "run `gophermind config` or set GOPHERMIND_BASE_URL",
-	"endpoint reachable":   "check the endpoint URL, network, and that the server is up",
-	"model":                "set -model or GOPHERMIND_MODEL",
-	"ripgrep (rg)":         "install ripgrep (e.g. `brew install ripgrep` / `apt install ripgrep`)",
-	"git":                  "install git",
+	"endpoint reachable":  "check the endpoint URL, network, and that the server is up",
+	"model":               "set -model or GOPHERMIND_MODEL",
+	"ripgrep (rg)":        "install ripgrep (e.g. `brew install ripgrep` / `apt install ripgrep`)",
+	"git":                 "install git",
 }
 
 // AutoFix attempts to remediate the fixable failing checks in results and
