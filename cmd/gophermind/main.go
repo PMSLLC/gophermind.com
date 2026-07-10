@@ -1115,6 +1115,15 @@ func runSessions(args []string) error {
 		}
 		fmt.Fprintf(os.Stderr, "✓ branched %q → %q\n", args[1], args[2])
 		return nil
+	case "merge":
+		if len(args) < 4 {
+			return fmt.Errorf("usage: sessions merge <id-a> <id-b> <dest-id>")
+		}
+		if err := session.Merge(session.Resolve(args[1]), session.Resolve(args[2]), args[3]); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "✓ merged %q + %q → %q\n", args[1], args[2], args[3])
+		return nil
 	case "alias":
 		if len(args) < 3 {
 			return fmt.Errorf("usage: sessions alias <name> <id>")
