@@ -40,6 +40,7 @@ import (
 	"gophermind/internal/tui"
 	"gophermind/internal/ui"
 	"gophermind/internal/update"
+	"gophermind/internal/usagelog"
 	"gophermind/internal/version"
 )
 
@@ -181,6 +182,23 @@ func run() error {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "✓ created persona %q at %s — edit it, then run with --persona %s\n", args[2], path, args[2])
+		return nil
+	}
+
+	// `gophermind usage report` summarizes recorded spend by day and model.
+	if cmd == "usage" {
+		if len(args) < 2 || strings.ToLower(args[1]) != "report" {
+			return fmt.Errorf("usage: gophermind usage report")
+		}
+		lp := strings.TrimSpace(os.Getenv("GOPHERMIND_USAGE_LOG"))
+		if lp == "" {
+			return fmt.Errorf("set GOPHERMIND_USAGE_LOG to the usage log path first")
+		}
+		recs, err := usagelog.Load(lp)
+		if err != nil {
+			return err
+		}
+		fmt.Print(usagelog.Report(recs))
 		return nil
 	}
 
@@ -744,6 +762,14 @@ func run() error {
 			if err := ag.WriteTranscript(cfg.TranscriptPath); err != nil {
 				fmt.Fprintln(os.Stderr, "warning: transcript export failed:", err)
 			}
+		}
+		// Persist usage for the cost dashboard when GOPHERMIND_USAGE_LOG is set.
+		if lp := strings.TrimSpace(os.Getenv("GOPHERMIND_USAGE_LOG")); lp != "" {
+			u := ag.Usage()
+			_ = usagelog.Append(lp, usagelog.Record{
+				Time: time.Now(), Model: cfg.Model,
+				PromptTokens: u.PromptTokens, CompletionTokens: u.CompletionTokens, CostUSD: u.CostUSD,
+			})
 		}
 		// --report writes a self-contained HTML record of the run (task, answer,
 		// usage) for sharing.
@@ -1510,6 +1536,7 @@ Usage:
   gophermind sessions [list [--tag t] [--since d] [--until d]|search <q>|tag <id> <t..>|show <id>|rm <id>|gc [days]|export [--redact] <id> <file>|import <file> <id>]
   gophermind doctor [fix]       run environment/config diagnostics (fix: auto-remediate)
   gophermind status             print a compact prompt line (model + branch)
+  gophermind usage report       summarize recorded spend by day/model (GOPHERMIND_USAGE_LOG)
   gophermind prompt-tokens      print per-section token cost of the base system prompt
   gophermind completion <shell> print a bash/zsh/fish completion script
   gophermind persona new <name> scaffold a custom persona in .gophermind/personas/
