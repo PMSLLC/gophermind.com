@@ -590,6 +590,11 @@ func run() error {
 	if !*readOnlyFlag && envTruthy("GOPHERMIND_JUDGE") {
 		approve = safety.JudgeApproval(newJudge(client), approve)
 	}
+	// Approval timeout (GOPHERMIND_APPROVAL_TIMEOUT, e.g. 30s): auto-deny a gated
+	// tool that isn't approved within the window, for safe unattended operation.
+	if d := approvalTimeout(); d > 0 {
+		approve = safety.ApprovalWithTimeout(approve, d)
+	}
 
 	// Resolve an optional persona preset and compose it with repo instructions
 	// (CLAUDE.md/AGENTS.md) into the system-prompt suffix used by chat and run/ask.
@@ -1704,4 +1709,19 @@ Provider profiles (selectable with -profile/-p):
 
 Flags:`)
 	flag.PrintDefaults()
+}
+
+// approvalTimeout parses GOPHERMIND_APPROVAL_TIMEOUT (a Go duration, e.g. "30s")
+// into a timeout after which an un-actioned gated approval auto-denies; a
+// missing/invalid value returns 0 (no timeout).
+func approvalTimeout() time.Duration {
+	v := strings.TrimSpace(os.Getenv("GOPHERMIND_APPROVAL_TIMEOUT"))
+	if v == "" {
+		return 0
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		return 0
+	}
+	return d
 }

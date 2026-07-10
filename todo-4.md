@@ -102,7 +102,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [x] **67. Policy-as-code tests.** Unit-test `.gophermind/policy` decisions against scenarios. Value: prove the guardrails do what you think.
 - [x] **68. Prompt-injection defense.** Detect and neutralize tool-output that tries to hijack instructions. Value: resist malicious repo/web content.
 - [x] **69. Data-egress classifier.** Warn/deny when a network tool would send content matching secret/PII patterns (builds on the redactor). Value: stop accidental exfiltration.
-- [ ] **70. Approval delegation & timeout policy.** Route approvals to a second person or auto-deny after a window (extends `ApprovalWithTimeout`). Value: safe unattended operation.
+- [x] **70. Approval delegation & timeout policy.** Route approvals to a second person or auto-deny after a window (extends `ApprovalWithTimeout`). Value: safe unattended operation.
 
 ## AJ. Observability, Cost & Operations (builds on the usage meter, guardrails, cost-in-result, audit log)
 
