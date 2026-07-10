@@ -33,7 +33,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [x] **15. Session export/import.** Pack history + metadata into a shareable file. Value: hand off a debugging session.
 - [x] **16. Auto session titles.** Summarize a session for the list view. Value: find the right one fast.
 - [ ] **17. Interactive resume in the TUI.** Pick a saved session at chat startup. Value: continuity in interactive mode.
-- [ ] **18. Session diff.** Show files/messages changed across a session. Value: review an agent's work.
+- [x] **18. Session diff.** Show files/messages changed across a session. Value: review an agent's work.
 - [ ] **19. Session-scoped scratchpad.** Durable notes per session. Value: task state survives resume.
 - [x] **20. Encrypted session store.** Optional at-rest encryption for histories. Value: sensitive-repo safety.
 

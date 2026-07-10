@@ -746,6 +746,16 @@ func runSessions(args []string) error {
 				s.ID, s.ModTime.Format("2006-01-02 15:04"), s.Messages, s.Title)
 		}
 		return nil
+	case "diff":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: sessions diff <id>")
+		}
+		out, err := session.Diff(session.Resolve(args[1]))
+		if err != nil {
+			return err
+		}
+		fmt.Print(out)
+		return nil
 	case "branch", "fork":
 		if len(args) < 3 {
 			return fmt.Errorf("usage: sessions branch <src-id> <new-id> [turn]")
@@ -829,7 +839,7 @@ func runSessions(args []string) error {
 		fmt.Fprintf(os.Stderr, "✓ imported %s as session %q\n", args[1], args[2])
 		return nil
 	default:
-		return fmt.Errorf("unknown sessions action %q (use list, show <id>, rm <id>, gc [days], export <id> <file>, import <file> <id>, alias <name> <id>, branch <src> <new> [turn])", action)
+		return fmt.Errorf("unknown sessions action %q (use list, show <id>, rm <id>, gc [days], export <id> <file>, import <file> <id>, alias <name> <id>, branch <src> <new> [turn], diff <id>)", action)
 	}
 }
 
