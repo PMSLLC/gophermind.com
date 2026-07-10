@@ -100,3 +100,23 @@ func TestImportPackBadName(t *testing.T) {
 		t.Error("bad pack name should be rejected")
 	}
 }
+
+func TestRetrievalEval(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "parser.txt"), []byte("parser parser parser"), 0o644)
+	os.WriteFile(filepath.Join(root, "db.txt"), []byte("database database"), 0o644)
+	indexPath := filepath.Join(root, "index.json")
+	if _, err := run(t, EmbedIndex(root, fakeEmbed{}, indexPath), `{"exts":[".txt"]}`); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(root, "fix.jsonl"),
+		[]byte(`{"query":"parser","expect":"parser.txt"}`+"\n"+`{"query":"database","expect":"db.txt"}`+"\n"), 0o644)
+
+	out, err := run(t, RetrievalEval(root, fakeEmbed{}, indexPath), `{"fixtures":"fix.jsonl","k":1}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "100") {
+		t.Errorf("expected 100%% hit@1:\n%s", out)
+	}
+}

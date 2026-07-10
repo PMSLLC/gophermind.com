@@ -24,7 +24,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [ ] **7. Incremental index updates.** Re-embed only files changed since the last index (via `git_info` diff). Value: fast re-index on large repos.
 - [ ] **8. Hybrid search.** Combine BM25 (SQLite FTS5) with vector similarity for `semantic_search`. Value: recall on exact terms + concepts together.
 - [x] **9. Knowledge packs.** Import a folder of markdown/PDF into the vector store as a named pack the model can query. Value: bring domain docs into the agent's reach.
-- [ ] **10. Retrieval eval.** Score retrieval quality (hit@k) against fixtures using the `ab`/`abtest` harness. Value: tune chunking/embeddings on data, not vibes.
+- [x] **10. Retrieval eval.** Score retrieval quality (hit@k) against fixtures using the `ab`/`abtest` harness. Value: tune chunking/embeddings on data, not vibes.
 
 ## AD. Data, Databases & Analytics (builds on `sql_query`, `inspect_data`, `set_csv_cell`, `analyze_log`)
 

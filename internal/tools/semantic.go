@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -168,6 +169,65 @@ func ImportPack(root string, p embed.Provider, packsDir string) Tool {
 				return "", fmt.Errorf("save pack: %w", err)
 			}
 			return fmt.Sprintf("Imported knowledge pack %q: %d chunks. Query with semantic_search pack=%q.", a.Name, len(idx.Vectors), a.Name), nil
+		},
+	}
+}
+
+// RetrievalEval returns a read-only tool that scores retrieval quality (hit@k)
+// of the semantic index against a JSONL fixtures file ({"query":..,"expect":..}
+// per line), so chunking/embeddings can be tuned on data.
+func RetrievalEval(root string, p embed.Provider, indexPath string) Tool {
+	return Tool{
+		Name:        "retrieval_eval",
+		Description: "Score the semantic index's retrieval quality (hit@k) against a JSONL fixtures file with {\"query\":..,\"expect\":..} lines. Read-only.",
+		Schema: object(map[string]any{
+			"fixtures": str("Path to a JSONL fixtures file, relative to the repo root."),
+			"k":        map[string]any{"type": "integer", "description": "Top-k to consider a hit (default 5)."},
+		}, "fixtures"),
+		Run: func(ctx context.Context, raw json.RawMessage) (string, error) {
+			if p == nil {
+				return "", fmt.Errorf("embeddings are not configured; set GOPHERMIND_EMBED_MODEL")
+			}
+			var a struct {
+				Fixtures string `json:"fixtures"`
+				K        int    `json:"k"`
+			}
+			if err := json.Unmarshal(raw, &a); err != nil {
+				return "", fmt.Errorf("invalid arguments: %w", err)
+			}
+			k := a.K
+			if k <= 0 {
+				k = 5
+			}
+			full, err := safety.SafeJoin(root, a.Fixtures)
+			if err != nil {
+				return "", err
+			}
+			data, err := os.ReadFile(full)
+			if err != nil {
+				return "", fmt.Errorf("read fixtures: %w", err)
+			}
+			var cases []embed.EvalCase
+			for _, line := range strings.Split(string(data), "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+				var c embed.EvalCase
+				if err := json.Unmarshal([]byte(line), &c); err != nil {
+					return "", fmt.Errorf("parse fixture line: %w", err)
+				}
+				cases = append(cases, c)
+			}
+			idx, err := embed.LoadIndex(indexPath)
+			if err != nil {
+				return "", fmt.Errorf("no index found (run embed_index first): %w", err)
+			}
+			score, err := embed.HitAtK(ctx, p, idx, cases, k)
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("hit@%d = %.2f%% over %d fixtures", k, score*100, len(cases)), nil
 		},
 	}
 }

@@ -484,6 +484,7 @@ func run() error {
 		tools.SemanticSearch(cfg.RootDir, embedProvider, indexPath, packsDir), // retrieve relevant chunks by meaning
 		tools.RememberFact(embedProvider, memoryPath),                         // persist a fact to long-term vector memory
 		tools.ImportPack(cfg.RootDir, embedProvider, packsDir),                // index a doc folder as a knowledge pack
+		tools.RetrievalEval(cfg.RootDir, embedProvider, indexPath),            // score index retrieval quality (hit@k)
 	)
 	// --dry-run: wrap gated (mutating) tools so the agent previews the calls it
 	// would make without executing any mutation.
