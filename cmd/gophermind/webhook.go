@@ -64,6 +64,28 @@ func webhookHandler(run func(ctx context.Context, task string) (string, error), 
 	}
 }
 
+// healthHandler is a liveness probe: it always returns 200 while the process is
+// running. Unauthenticated so a load balancer / k8s can reach it.
+func healthHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = io.WriteString(w, "ok\n")
+	}
+}
+
+// readyHandler is a readiness probe: 200 when ready returns true, else 503, so
+// traffic is only routed once the server can serve it.
+func readyHandler(ready func() bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		if ready() {
+			_, _ = io.WriteString(w, "ready\n")
+			return
+		}
+		http.Error(w, "not ready", http.StatusServiceUnavailable)
+	}
+}
+
 // serveAddr returns the webhook listen address (GOPHERMIND_SERVE_ADDR or :8080).
 func serveAddr() string {
 	if a := strings.TrimSpace(os.Getenv("GOPHERMIND_SERVE_ADDR")); a != "" {
@@ -92,6 +114,9 @@ func runServe(run func(ctx context.Context, task string) (string, error)) error 
 	addr := serveAddr()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/run", webhookHandler(run, token))
-	fmt.Fprintf(os.Stderr, "gophermind serving webhook on %s (POST /run)\n", addr)
+	// Unauthenticated liveness/readiness probes for load balancers / k8s.
+	mux.HandleFunc("/healthz", healthHandler())
+	mux.HandleFunc("/readyz", readyHandler(func() bool { return true }))
+	fmt.Fprintf(os.Stderr, "gophermind serving webhook on %s (POST /run, GET /healthz, /readyz)\n", addr)
 	return http.ListenAndServe(addr, mux)
 }

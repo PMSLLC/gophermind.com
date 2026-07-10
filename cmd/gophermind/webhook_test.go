@@ -121,3 +121,33 @@ func TestWebhookRunError(t *testing.T) {
 		t.Errorf("error status = %d, want 500", rr.Code)
 	}
 }
+
+func TestHealthHandler(t *testing.T) {
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	healthHandler()(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("healthz status = %d, want 200", rr.Code)
+	}
+	if !strings.Contains(strings.ToLower(rr.Body.String()), "ok") {
+		t.Errorf("healthz body = %q", rr.Body.String())
+	}
+}
+
+func TestReadyHandler(t *testing.T) {
+	ready := false
+	h := readyHandler(func() bool { return ready })
+
+	rr := httptest.NewRecorder()
+	h(rr, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Errorf("not-ready status = %d, want 503", rr.Code)
+	}
+
+	ready = true
+	rr = httptest.NewRecorder()
+	h(rr, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if rr.Code != 200 {
+		t.Errorf("ready status = %d, want 200", rr.Code)
+	}
+}
