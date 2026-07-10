@@ -66,7 +66,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 ## W. Startup, Branding & Delight (builds on `internal/banner`, `internal/fortune`, `internal/version`)
 
 - [ ] **41. Themeable banner.** Color profiles honoring terminal capabilities. Value: taste + accessibility.
-- [ ] **42. `--no-banner` / `--quiet`.** Suppress the splash. Value: clean output in scripts/CI.
+- [x] **42. `--no-banner` / `--quiet`.** Suppress the splash. Value: clean output in scripts/CI.
 - [ ] **43. HubTou historical fortunes.** Add the historical set (license-checked) as a second embedded source. Value: richer variety.
 - [ ] **44. Fortune categories / `--fortune off`.** Value: user control over startup flavor.
 - [ ] **45. Tip-of-the-day.** Rotating tips with docs links under the banner. Value: progressive discovery of features.
@@ -91,7 +91,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 
 ## Y. Web, Network & External Data (builds on `internal/safety`, the fetch gap)
 
-- [ ] **61. `fetch_url` tool.** Gated, egress-controlled URL fetch → readable text. Value: safe external context (vs. shelling out to `curl`).
+- [x] **61. `fetch_url` tool.** Gated, egress-controlled URL fetch → readable text. Value: safe external context (vs. shelling out to `curl`).
 - [ ] **62. `web_search` tool.** Pluggable search provider. Value: current information.
 - [ ] **63. Docs-retrieval tool.** Context7-style library docs lookup. Value: accurate API usage.
 - [ ] **64. HTTP API caller.** OpenAPI-aware request tool. Value: integrate external services.

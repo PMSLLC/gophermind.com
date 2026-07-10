@@ -55,6 +55,9 @@ func run() error {
 	clientKeyFlag := flag.String("client-key", cfg.ClientKeyPath, "PEM client private key for mutual TLS (requires -client-cert)")
 	caCertFlag := flag.String("ca-cert", cfg.CACertPath, "PEM CA bundle to trust for the server (appended to system roots; keeps verification ON)")
 	verboseFlag := flag.Bool("v", false, "verbose: stream assistant text and tool results")
+	noBannerFlag := flag.Bool("no-banner", false, "suppress the startup banner/splash (clean output in scripts/CI)")
+	quietFlag := flag.Bool("quiet", false, "quiet: suppress the banner and non-essential stderr chatter")
+	flag.BoolVar(quietFlag, "q", false, "alias for -quiet")
 	versionFlag := flag.Bool("version", false, "print version and exit")
 	printFlag := flag.Bool("print", false, "non-interactive print mode for external drivers (Claude-Code-compatible stream-json)")
 	inputFmtFlag := flag.String("input-format", "text", "print mode input format: text|stream-json")
@@ -231,7 +234,9 @@ func run() error {
 	// fails: it degrades to a built-in table and conservative defaults, and the
 	// result is cached per endpoint+model on the client.
 	caps := client.ProbeCapabilities(context.Background())
-	fmt.Fprintf(os.Stderr, "model capabilities: %s\n", caps)
+	if !*quietFlag {
+		fmt.Fprintf(os.Stderr, "model capabilities: %s\n", caps)
+	}
 
 	reg := tools.NewRegistry(
 		tools.ReadFileRange(cfg.RootDir),      // read_file + optional line ranges
@@ -274,6 +279,7 @@ func run() error {
 			TranscriptPath:   cfg.TranscriptPath,
 			SystemSuffix:     project.Instructions(cfg.RootDir),
 			ReadOnly:         *readOnlyFlag,
+			NoBanner:         *noBannerFlag || *quietFlag,
 		})
 	case "print":
 		return runPrint(client, reg, cfg, printOptions{

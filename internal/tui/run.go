@@ -30,6 +30,8 @@ type Config struct {
 	SystemSuffix string
 	// ReadOnly denies all mutating (gated) tools when set.
 	ReadOnly bool
+	// NoBanner suppresses the startup splash (--no-banner/--quiet).
+	NoBanner bool
 }
 
 // Run starts the interactive TUI and blocks until the user quits.
@@ -70,7 +72,7 @@ func Run(cfg Config) error {
 		glamourStyle = "dark"
 	}
 
-	m := newModel(build, cfg.Model, cfg.Mode, glamourStyle)
+	m := newModel(build, cfg.Model, cfg.Mode, glamourStyle, cfg.NoBanner)
 	final, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
 	// On exit, flush the full message history if a transcript path was set. This
 	// runs once, after the UI has torn down, so it never interferes with the
