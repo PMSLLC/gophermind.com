@@ -20,9 +20,9 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [ ] **5. `--output-format json` for run/ask.** Machine-readable one-shot output beyond print mode. Value: scriptability everywhere.
 - [ ] **6. Conformance CI.** A GitHub Action that builds `conjure` and runs `validate`/`test` on the manifest each PR. Value: the manifest never drifts from the binary.
 - [ ] **7. Multi-adapter manifest.** A `gophermind-plan` read-only variant alongside the default. Value: Coven exposes both access levels.
-- [ ] **8. Cost in result line.** Surface `total_cost_usd` and token counts from the meter per turn. Value: drivers track spend.
+- [x] **8. Cost in result line.** Surface `total_cost_usd` and token counts from the meter per turn. Value: drivers track spend.
 - [ ] **9. Mid-turn cancel over stream.** Honor a driver-sent cancel control. Value: responsive interruption.
-- [ ] **10. Protocol version field.** Advertise the stream-json subset version in the init line. Value: forward-compatible drivers.
+- [x] **10. Protocol version field.** Advertise the stream-json subset version in the init line. Value: forward-compatible drivers.
 
 ## T. Sessions & Continuity (builds on `internal/session`, `--session-id`/`--resume`)
 
