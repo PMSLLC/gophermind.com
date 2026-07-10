@@ -1337,6 +1337,10 @@ func runSessions(args []string) error {
 		if err != nil {
 			return err
 		}
+		// Colorize the diff when writing to a terminal.
+		if isatty() {
+			out = ui.ColorizeDiff(out)
+		}
 		fmt.Print(out)
 		return nil
 	case "branch", "fork":

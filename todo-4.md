@@ -120,7 +120,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 ## AK. Developer Experience & Editor Integration (builds on the TUI, `status`, `doctor`, `git_info`, the CLI)
 
 - [ ] **81. Language Server (LSP) client.** Use a project's LSP for go-to-def/references instead of grep (upgrades `find_symbol`). Value: precise, semantic navigation.
-- [ ] **82. Unified-diff review UI.** Render proposed edits as a colored diff with per-hunk approve/reject in the TUI. Value: reviewable, surgical changes.
+- [x] **82. Unified-diff review UI.** Render proposed edits as a colored diff with per-hunk approve/reject in the TUI. Value: reviewable, surgical changes.
 - [ ] **83. Editor plugins.** Thin VS Code / Neovim clients that drive `--print` stream-json. Value: gophermind inside the editor.
 - [x] **84. Inline patch application.** Apply a model-produced unified diff atomically with rollback (hardens `apply_patch`). Value: safe multi-file edits.
 - [ ] **85. TUI command palette.** Fuzzy-find slash commands, sessions, and tools. Value: fast discovery in chat.
