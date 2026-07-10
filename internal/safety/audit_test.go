@@ -76,3 +76,45 @@ func indexOf(s, sub string) int {
 	}
 	return -1
 }
+
+func TestSignedAuditVerifies(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "signed.jsonl")
+	key := []byte("audit-signing-key")
+	al := NewSignedAuditLog(path, key)
+	al.Record("write_file", `{"path":"a"}`, "approved", "ok")
+	al.Record("run_shell", `{"command":"ls"}`, "auto", "listing")
+
+	for _, e := range al.Entries() {
+		if e.Sig == "" {
+			t.Errorf("signed entry missing signature: %+v", e)
+		}
+	}
+	if err := VerifyAuditFileWithKey(path, key); err != nil {
+		t.Errorf("signed chain should verify with the right key: %v", err)
+	}
+}
+
+func TestSignedAuditWrongKeyFails(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "signed.jsonl")
+	al := NewSignedAuditLog(path, []byte("right-key"))
+	al.Record("write_file", `{"path":"a"}`, "approved", "ok")
+
+	if err := VerifyAuditFileWithKey(path, []byte("wrong-key")); err == nil {
+		t.Error("verification with the wrong signing key should fail")
+	}
+}
+
+func TestSignedAuditTamperBreaksSignature(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "signed.jsonl")
+	key := []byte("k")
+	al := NewSignedAuditLog(path, key)
+	al.Record("write_file", `{"path":"a"}`, "approved", "ok")
+
+	data, _ := os.ReadFile(path)
+	tampered := replaceFirst(string(data), `"decision":"approved"`, `"decision":"denied"`)
+	os.WriteFile(path, []byte(tampered), 0o600)
+
+	if err := VerifyAuditFileWithKey(path, key); err == nil {
+		t.Error("tampered signed entry should fail verification")
+	}
+}

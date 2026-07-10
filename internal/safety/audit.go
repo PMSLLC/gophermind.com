@@ -2,6 +2,7 @@ package safety
 
 import (
 	"bufio"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -24,6 +25,7 @@ type AuditEntry struct {
 	ResultHash string `json:"result_hash"`
 	PrevHash   string `json:"prev_hash"`
 	Hash       string `json:"hash"`
+	Sig        string `json:"sig,omitempty"` // HMAC-SHA256(key, Hash), hex — set on signed logs
 }
 
 // AuditLog appends tamper-evident tool-call entries to a local JSONL file.
@@ -33,11 +35,19 @@ type AuditLog struct {
 	last    string // running chain head (previous entry's Hash)
 	seq     int
 	entries []AuditEntry
+	key     []byte // HMAC signing key; nil = unsigned chain
 }
 
 // NewAuditLog creates an audit log that appends to path (empty path = in-memory).
 func NewAuditLog(path string) *AuditLog {
 	return &AuditLog{path: path}
+}
+
+// NewSignedAuditLog creates an audit log that additionally HMAC-signs each
+// entry's chained Hash with key, so the log's integrity is externally verifiable
+// (only a holder of the key can forge or re-sign entries).
+func NewSignedAuditLog(path string, key []byte) *AuditLog {
+	return &AuditLog{path: path, key: key}
 }
 
 // Record appends a tool-call entry, chaining it to the previous one, and (when a
@@ -60,6 +70,9 @@ func (al *AuditLog) Record(tool, args, decision, result string) error {
 		PrevHash:   al.last,
 	}
 	e.Hash = entryHash(e)
+	if al.key != nil {
+		e.Sig = signHash(al.key, e.Hash)
+	}
 	al.last = e.Hash
 	al.entries = append(al.entries, e)
 
@@ -97,10 +110,28 @@ func hashString(s string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// signHash returns the hex HMAC-SHA256 of an entry hash under key.
+func signHash(key []byte, hash string) string {
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(hash))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
 // VerifyAuditFile re-reads a JSONL audit file and checks the hash chain: each
 // entry's recomputed Hash must match, and its PrevHash must equal the prior
 // entry's Hash. A missing or empty file verifies trivially.
 func VerifyAuditFile(path string) error {
+	return verifyAuditFile(path, nil)
+}
+
+// VerifyAuditFileWithKey verifies the hash chain and additionally checks each
+// entry's HMAC signature against key — proving the log was produced by a holder
+// of that key and not re-signed after tampering.
+func VerifyAuditFileWithKey(path string, key []byte) error {
+	return verifyAuditFile(path, key)
+}
+
+func verifyAuditFile(path string, key []byte) error {
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -128,9 +159,16 @@ func VerifyAuditFile(path string) error {
 			return fmt.Errorf("line %d: broken chain (prev_hash mismatch)", line)
 		}
 		want := e.Hash
+		sig := e.Sig
 		e.Hash = ""
+		e.Sig = ""
 		if entryHash(e) != want {
 			return fmt.Errorf("line %d: tampered entry (hash mismatch)", line)
+		}
+		if key != nil {
+			if !hmac.Equal([]byte(sig), []byte(signHash(key, want))) {
+				return fmt.Errorf("line %d: invalid signature (wrong key or tampered)", line)
+			}
 		}
 		prev = want
 	}

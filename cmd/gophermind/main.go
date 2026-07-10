@@ -191,8 +191,15 @@ func run() error {
 		if len(args) < 3 || strings.ToLower(args[1]) != "verify" {
 			return fmt.Errorf("usage: gophermind audit verify <file>")
 		}
-		if err := safety.VerifyAuditFile(args[2]); err != nil {
-			return fmt.Errorf("audit verification FAILED: %w", err)
+		// Verify signatures too when a signing key is configured.
+		var vErr error
+		if key := strings.TrimSpace(os.Getenv("GOPHERMIND_AUDIT_KEY")); key != "" {
+			vErr = safety.VerifyAuditFileWithKey(args[2], []byte(key))
+		} else {
+			vErr = safety.VerifyAuditFile(args[2])
+		}
+		if vErr != nil {
+			return fmt.Errorf("audit verification FAILED: %w", vErr)
 		}
 		fmt.Fprintln(os.Stderr, "✓ audit log intact")
 		return nil
@@ -1126,12 +1133,18 @@ func braveEndpoint(cfg config.Config) string {
 }
 
 // auditLog returns a tamper-evident audit log when GOPHERMIND_AUDIT_LOG names a
-// path, or nil (auditing disabled) otherwise. SetAuditLog(nil) is safe.
+// path, or nil (auditing disabled) otherwise. When GOPHERMIND_AUDIT_KEY is set,
+// the chain is additionally HMAC-signed for external verifiability.
+// SetAuditLog(nil) is safe.
 func auditLog() *safety.AuditLog {
-	if path := strings.TrimSpace(os.Getenv("GOPHERMIND_AUDIT_LOG")); path != "" {
-		return safety.NewAuditLog(path)
+	path := strings.TrimSpace(os.Getenv("GOPHERMIND_AUDIT_LOG"))
+	if path == "" {
+		return nil
 	}
-	return nil
+	if key := strings.TrimSpace(os.Getenv("GOPHERMIND_AUDIT_KEY")); key != "" {
+		return safety.NewSignedAuditLog(path, []byte(key))
+	}
+	return safety.NewAuditLog(path)
 }
 
 // newJudge builds a JudgeFunc that asks the model whether a gated tool call is
