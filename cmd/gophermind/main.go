@@ -307,6 +307,7 @@ func run() error {
 		tools.FetchURL(cfg.FetchAllowHosts), // gated, egress-controlled URL fetch
 		tools.FindSymbol(cfg.RootDir),       // definition-aware symbol search
 		tools.GitInfo(cfg.RootDir),          // read-only structured git (log/status/diff)
+		tools.InspectData(cfg.RootDir),      // read-only CSV/JSON schema + preview
 	)
 
 	// A single shared stdin reader, used by both the REPL and approval prompts.

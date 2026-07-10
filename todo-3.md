@@ -105,7 +105,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 ## Z. Data, DB & Structured Tools (builds on the tool registry)
 
 - [ ] **71. SQL query tool.** Read-only by default, parameterized. Value: reason over real data safely.
-- [ ] **72. Tabular inspector.** CSV/JSON/Parquet schema + preview tool. Value: understand data files without dumping them.
+- [x] **72. Tabular inspector.** CSV/JSON/Parquet schema + preview tool. Value: understand data files without dumping them.
 - [ ] **73. Embeddings retrieve tool.** Vector store over the repo/docs. Value: relevant context without exhaustive search.
 - [ ] **74. Migration helper.** Draft schema migrations in the project's format. Value: schema changes follow conventions.
 - [ ] **75. Schema-constrained output.** JSON-schema-guided responses. Value: reliable structured results.
