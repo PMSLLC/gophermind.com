@@ -36,7 +36,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [x] **16. Chart/spark output.** Render a compact ASCII/Unicode sparkline or bar chart from a query result. Value: at-a-glance trends in the terminal.
 - [ ] **17. Parquet & Arrow support.** Teach `inspect_data`/`data_transform` to read columnar formats. Value: modern data-lake files.
 - [x] **18. Log-to-metrics.** `analyze_log` emits time-bucketed counts (errors/min) as a series. Value: spot spikes, not just totals.
-- [ ] **19. Fixture/seed generator.** Generate realistic seed rows from a schema for tests. Value: faster test-data setup.
+- [x] **19. Fixture/seed generator.** Generate realistic seed rows from a schema for tests. Value: faster test-data setup.
 - [x] **20. Query result caching.** Cache `sql_query` results by (db-mtime, query, params) hash. Value: instant repeats during analysis.
 
 ## AE. Agent Reasoning & Multi-Agent II (builds on the verifier pass, fleet mode, `spawn_agent`, checkpoints)

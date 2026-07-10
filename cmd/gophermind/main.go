@@ -426,6 +426,7 @@ func run() error {
 		tools.Chart(),                                        // render sparkline/bar chart from a numeric series
 		tools.DataTransform(cfg.RootDir),                     // read-only filter/group/aggregate over CSV/JSONL
 		tools.LogMetrics(cfg.RootDir),                        // read-only time-bucketed log counts (spikes)
+		tools.SeedData(cfg.RootDir),                          // generate INSERT seed data from a table schema
 	)
 
 	// A single shared stdin reader, used by both the REPL and approval prompts.
