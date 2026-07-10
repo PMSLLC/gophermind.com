@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -25,20 +26,42 @@ func EmbedIndex(root string, p embed.Provider, indexPath string) Tool {
 		Name:        "embed_index",
 		Description: "Build a semantic (embeddings) index over the repository's files and save it, so semantic_search can retrieve relevant code by meaning. Specify file extensions to include.",
 		Schema: object(map[string]any{
-			"exts": map[string]any{"type": "array", "description": "File extensions to index (e.g. [\".go\",\".md\"]); empty means all files.", "items": map[string]any{"type": "string"}},
+			"exts":        map[string]any{"type": "array", "description": "File extensions to index (e.g. [\".go\",\".md\"]); empty means all files.", "items": map[string]any{"type": "string"}},
+			"incremental": map[string]any{"type": "boolean", "description": "Re-embed only files changed since the last index (via git), keeping the rest."},
 		}),
 		Run: func(ctx context.Context, raw json.RawMessage) (string, error) {
 			if p == nil {
 				return "", fmt.Errorf("embeddings are not configured; set GOPHERMIND_EMBED_URL and GOPHERMIND_EMBED_MODEL")
 			}
 			var a struct {
-				Exts []string `json:"exts"`
+				Exts        []string `json:"exts"`
+				Incremental bool     `json:"incremental"`
 			}
 			if len(raw) > 0 {
 				if err := json.Unmarshal(raw, &a); err != nil {
 					return "", fmt.Errorf("invalid arguments: %w", err)
 				}
 			}
+
+			// Incremental path: refresh only git-changed files against the existing
+			// index. Falls back to a full build when no index exists yet.
+			if a.Incremental {
+				if existing, err := embed.LoadIndex(indexPath); err == nil {
+					changed := gitChangedFiles(root)
+					if len(changed) == 0 {
+						return "Index is up to date (no changed files).", nil
+					}
+					idx, err := embed.UpdateIndex(ctx, p, root, a.Exts, existing, changed)
+					if err != nil {
+						return "", fmt.Errorf("update index: %w", err)
+					}
+					if err := idx.Save(indexPath); err != nil {
+						return "", fmt.Errorf("save index: %w", err)
+					}
+					return fmt.Sprintf("Updated semantic index: %d changed file(s), %d chunks total.", len(changed), len(idx.Vectors)), nil
+				}
+			}
+
 			idx, err := embed.BuildIndex(ctx, p, root, a.Exts)
 			if err != nil {
 				return "", fmt.Errorf("build index: %w", err)
@@ -230,4 +253,30 @@ func RetrievalEval(root string, p embed.Provider, indexPath string) Tool {
 			return fmt.Sprintf("hit@%d = %.2f%% over %d fixtures", k, score*100, len(cases)), nil
 		},
 	}
+}
+
+// gitChangedFiles returns repo-relative paths that git reports as modified or
+// untracked (via `git status --porcelain`), used for incremental re-indexing.
+// Returns nil when git is unavailable or the dir is not a repo.
+func gitChangedFiles(root string) []string {
+	cmd := exec.Command("git", "-C", root, "status", "--porcelain", "--untracked-files=all")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	var files []string
+	for _, line := range strings.Split(string(out), "\n") {
+		if len(line) < 4 {
+			continue
+		}
+		// Porcelain format: "XY <path>" (or "XY <old> -> <new>" for renames).
+		path := strings.TrimSpace(line[3:])
+		if i := strings.Index(path, " -> "); i >= 0 {
+			path = path[i+4:]
+		}
+		if path != "" {
+			files = append(files, path)
+		}
+	}
+	return files
 }
