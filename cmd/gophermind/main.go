@@ -478,10 +478,12 @@ func run() error {
 	embedProvider := buildEmbedProvider(cfg)
 	indexPath := filepath.Join(cfg.RootDir, ".gophermind", "index.json")
 	memoryPath := filepath.Join(cfg.RootDir, ".gophermind", "memory.json")
+	packsDir := filepath.Join(cfg.RootDir, ".gophermind", "packs")
 	toolset = append(toolset,
-		tools.EmbedIndex(cfg.RootDir, embedProvider, indexPath),     // build a semantic index over the repo
-		tools.SemanticSearch(cfg.RootDir, embedProvider, indexPath), // retrieve relevant chunks by meaning
-		tools.RememberFact(embedProvider, memoryPath),               // persist a fact to long-term vector memory
+		tools.EmbedIndex(cfg.RootDir, embedProvider, indexPath),               // build a semantic index over the repo
+		tools.SemanticSearch(cfg.RootDir, embedProvider, indexPath, packsDir), // retrieve relevant chunks by meaning
+		tools.RememberFact(embedProvider, memoryPath),                         // persist a fact to long-term vector memory
+		tools.ImportPack(cfg.RootDir, embedProvider, packsDir),                // index a doc folder as a knowledge pack
 	)
 	// --dry-run: wrap gated (mutating) tools so the agent previews the calls it
 	// would make without executing any mutation.

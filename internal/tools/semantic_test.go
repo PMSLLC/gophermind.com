@@ -43,7 +43,7 @@ func TestEmbedIndexThenSemanticSearch(t *testing.T) {
 	}
 
 	// Search for parser content.
-	out, err = run(t, SemanticSearch(root, fakeEmbed{}, indexPath), `{"query":"parser","k":1}`)
+	out, err = run(t, SemanticSearch(root, fakeEmbed{}, indexPath, filepath.Join(root, "packs")), `{"query":"parser","k":1}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestEmbedIndexThenSemanticSearch(t *testing.T) {
 
 func TestSemanticSearchNoIndex(t *testing.T) {
 	root := t.TempDir()
-	if _, err := run(t, SemanticSearch(root, fakeEmbed{}, filepath.Join(root, "missing.json")), `{"query":"x"}`); err == nil {
+	if _, err := run(t, SemanticSearch(root, fakeEmbed{}, filepath.Join(root, "missing.json"), ""), `{"query":"x"}`); err == nil {
 		t.Error("search without an index should error with guidance")
 	}
 }
@@ -66,5 +66,37 @@ func TestEmbedIndexNilProvider(t *testing.T) {
 	root := t.TempDir()
 	if _, err := run(t, EmbedIndex(root, nil, filepath.Join(root, "i.json")), `{}`); err == nil {
 		t.Error("nil provider should error explaining configuration")
+	}
+}
+
+func TestImportPackThenSearch(t *testing.T) {
+	root := t.TempDir()
+	docs := filepath.Join(root, "docs")
+	os.MkdirAll(docs, 0o755)
+	os.WriteFile(filepath.Join(docs, "net.md"), []byte("network network retries"), 0o644)
+	packsDir := filepath.Join(root, ".gophermind", "packs")
+
+	out, err := run(t, ImportPack(root, fakeEmbed{}, packsDir), `{"name":"kb","dir":"docs"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "kb") {
+		t.Errorf("import output should name the pack: %s", out)
+	}
+
+	// Search the pack.
+	out, err = run(t, SemanticSearch(root, fakeEmbed{}, filepath.Join(root, "index.json"), packsDir), `{"query":"network","pack":"kb","k":1}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "net.md") {
+		t.Errorf("pack search should surface net.md:\n%s", out)
+	}
+}
+
+func TestImportPackBadName(t *testing.T) {
+	root := t.TempDir()
+	if _, err := run(t, ImportPack(root, fakeEmbed{}, filepath.Join(root, "packs")), `{"name":"../evil","dir":"."}`); err == nil {
+		t.Error("bad pack name should be rejected")
 	}
 }

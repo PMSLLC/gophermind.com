@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"regexp"
 	"strings"
 
 	"gophermind/internal/embed"
+	"gophermind/internal/safety"
 )
 
 // semanticSnippetMax caps how many characters of a matched chunk are shown.
@@ -49,14 +52,15 @@ func EmbedIndex(root string, p embed.Provider, indexPath string) Tool {
 
 // SemanticSearch returns a read-only tool that embeds a query and returns the
 // most relevant indexed chunks (by cosine similarity). Requires a prior
-// embed_index run.
-func SemanticSearch(root string, p embed.Provider, indexPath string) Tool {
+// embed_index run (or an imported pack, when the pack argument is given).
+func SemanticSearch(root string, p embed.Provider, indexPath, packsDir string) Tool {
 	return Tool{
 		Name:        "semantic_search",
-		Description: "Search the semantic index (built by embed_index) for chunks most relevant to a query, returning file references and snippets. Read-only.",
+		Description: "Search the semantic index (built by embed_index) for chunks most relevant to a query, returning file references and snippets. Pass 'pack' to search an imported knowledge pack instead. Read-only.",
 		Schema: object(map[string]any{
 			"query": str("The natural-language query to search for."),
 			"k":     map[string]any{"type": "integer", "description": "How many results to return (default 5)."},
+			"pack":  str("Optional name of an imported knowledge pack to search instead of the repo index."),
 		}, "query"),
 		Run: func(ctx context.Context, raw json.RawMessage) (string, error) {
 			if p == nil {
@@ -65,6 +69,7 @@ func SemanticSearch(root string, p embed.Provider, indexPath string) Tool {
 			var a struct {
 				Query string `json:"query"`
 				K     int    `json:"k"`
+				Pack  string `json:"pack"`
 			}
 			if err := json.Unmarshal(raw, &a); err != nil {
 				return "", fmt.Errorf("invalid arguments: %w", err)
@@ -76,9 +81,17 @@ func SemanticSearch(root string, p embed.Provider, indexPath string) Tool {
 			if k <= 0 {
 				k = 5
 			}
-			idx, err := embed.LoadIndex(indexPath)
+			searchPath := indexPath
+			if a.Pack != "" {
+				pp, err := packPath(packsDir, a.Pack)
+				if err != nil {
+					return "", err
+				}
+				searchPath = pp
+			}
+			idx, err := embed.LoadIndex(searchPath)
 			if err != nil {
-				return "", fmt.Errorf("no index found (run embed_index first): %w", err)
+				return "", fmt.Errorf("no index found (run embed_index or import_pack first): %w", err)
 			}
 			qv, err := p.Embed(ctx, []string{a.Query})
 			if err != nil || len(qv) == 0 {
@@ -97,6 +110,64 @@ func SemanticSearch(root string, p embed.Provider, indexPath string) Tool {
 				b.WriteString("(no results)\n")
 			}
 			return b.String(), nil
+		},
+	}
+}
+
+// packNameRe constrains knowledge-pack names so they stay inside the packs dir.
+var packNameRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
+// packPath returns the on-disk path for a named knowledge pack.
+func packPath(packsDir, name string) (string, error) {
+	if !packNameRe.MatchString(name) {
+		return "", fmt.Errorf("invalid pack name %q: use only letters, digits, '.', '_' and '-'", name)
+	}
+	return filepath.Join(packsDir, name+".json"), nil
+}
+
+// ImportPack returns a gated tool that indexes a folder of docs (markdown/text)
+// into a named knowledge pack the model can later query via semantic_search.
+func ImportPack(root string, p embed.Provider, packsDir string) Tool {
+	return Tool{
+		Name:        "import_pack",
+		Description: "Index a folder of documents into a named knowledge pack (embeddings) that semantic_search can query with pack=<name>.",
+		Schema: object(map[string]any{
+			"name": str("Name for the knowledge pack."),
+			"dir":  str("Folder (relative to the repo root) of documents to import."),
+			"exts": map[string]any{"type": "array", "description": "File extensions to include (default [\".md\",\".txt\"]).", "items": map[string]any{"type": "string"}},
+		}, "name", "dir"),
+		Run: func(ctx context.Context, raw json.RawMessage) (string, error) {
+			if p == nil {
+				return "", fmt.Errorf("embeddings are not configured; set GOPHERMIND_EMBED_MODEL to import packs")
+			}
+			var a struct {
+				Name string   `json:"name"`
+				Dir  string   `json:"dir"`
+				Exts []string `json:"exts"`
+			}
+			if err := json.Unmarshal(raw, &a); err != nil {
+				return "", fmt.Errorf("invalid arguments: %w", err)
+			}
+			dst, err := packPath(packsDir, a.Name)
+			if err != nil {
+				return "", err
+			}
+			srcDir, err := safety.SafeJoin(root, a.Dir)
+			if err != nil {
+				return "", err
+			}
+			exts := a.Exts
+			if len(exts) == 0 {
+				exts = []string{".md", ".txt"}
+			}
+			idx, err := embed.BuildIndex(ctx, p, srcDir, exts)
+			if err != nil {
+				return "", fmt.Errorf("build pack: %w", err)
+			}
+			if err := idx.Save(dst); err != nil {
+				return "", fmt.Errorf("save pack: %w", err)
+			}
+			return fmt.Sprintf("Imported knowledge pack %q: %d chunks. Query with semantic_search pack=%q.", a.Name, len(idx.Vectors), a.Name), nil
 		},
 	}
 }
