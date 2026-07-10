@@ -23,6 +23,7 @@ import (
 	"gophermind/internal/agent"
 	"gophermind/internal/config"
 	"gophermind/internal/doctor"
+	"gophermind/internal/fewshot"
 	"gophermind/internal/jobs"
 	"gophermind/internal/llm"
 	"gophermind/internal/persona"
@@ -648,6 +649,17 @@ func run() error {
 		ag.SetSystemPrompt(basePrompt)
 		if systemSuffix != "" {
 			ag.AppendSystemPrompt(systemSuffix)
+		}
+		// Few-shot example bank: when GOPHERMIND_EXAMPLES names a JSON bank, inject
+		// the most task-relevant examples (top 3 by term overlap) into the prompt.
+		if p := strings.TrimSpace(os.Getenv("GOPHERMIND_EXAMPLES")); p != "" {
+			if bank, err := fewshot.Load(p); err == nil {
+				if sel := fewshot.Format(fewshot.Select(bank, task, 3)); sel != "" {
+					ag.AppendSystemPrompt(sel)
+				}
+			} else {
+				fmt.Fprintln(os.Stderr, "warning: examples bank:", err)
+			}
 		}
 		// Cost/time guardrails apply to the default Send strategy.
 		if *maxCostFlag > 0 || *maxTokensFlag > 0 || *maxDurationFlag > 0 {
