@@ -32,20 +32,21 @@ type Event struct {
 // Agent drives the tool-calling loop and retains the conversation across
 // turns so it can be used as an interactive session.
 type Agent struct {
-	llm         *llm.Client
-	reg         *tools.Registry
-	maxIter     int
-	approve     safety.ApprovalFunc
-	onEvent     func(Event)
-	msgs        []llm.Message         // persistent conversation, seeded with the system prompt
-	usage       UsageMeter            // running per-session token + cost accumulator
-	caps        llm.Capabilities      // probed model capabilities (context window, etc.)
-	budget      int                   // per-turn tool-call budget (0 = unlimited)
-	checkpoints *checkpoints          // named conversation snapshots
-	guardrails  Guardrails            // cost/time limits for autonomous runs
-	startTime   time.Time             // when the agent was created (for duration tracking)
-	redactor    *safety.SecretScanner // when non-nil, transcript content is scrubbed on export
-	audit       *safety.AuditLog      // when non-nil, tool calls are recorded to a tamper-evident log
+	llm            *llm.Client
+	reg            *tools.Registry
+	maxIter        int
+	approve        safety.ApprovalFunc
+	onEvent        func(Event)
+	msgs           []llm.Message         // persistent conversation, seeded with the system prompt
+	usage          UsageMeter            // running per-session token + cost accumulator
+	caps           llm.Capabilities      // probed model capabilities (context window, etc.)
+	budget         int                   // per-turn tool-call budget (0 = unlimited)
+	checkpoints    *checkpoints          // named conversation snapshots
+	autoCheckpoint bool                  // snapshot before each gated mutation
+	guardrails     Guardrails            // cost/time limits for autonomous runs
+	startTime      time.Time             // when the agent was created (for duration tracking)
+	redactor       *safety.SecretScanner // when non-nil, transcript content is scrubbed on export
+	audit          *safety.AuditLog      // when non-nil, tool calls are recorded to a tamper-evident log
 }
 
 // SetAuditLog attaches a tamper-evident audit log; every tool call, its approval
@@ -276,6 +277,9 @@ func (a *Agent) dispatch(ctx context.Context, call llm.ToolCall) string {
 			return "denied by user"
 		}
 		decision = "approved"
+		// Snapshot the conversation just before the approved mutation so it can be
+		// reverted (opt-in via SetAutoCheckpoint).
+		a.maybeAutoCheckpoint(name)
 	}
 
 	out, err := t.Run(ctx, json.RawMessage(rawArgs))

@@ -678,6 +678,7 @@ func run() error {
 		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
 		ag.SetRedactTranscript(redactTranscriptEnabled())
 		ag.SetAuditLog(auditLog())
+		ag.SetAutoCheckpoint(envTruthy("GOPHERMIND_AUTO_CHECKPOINT"))
 		ag.SetSystemPrompt(basePrompt)
 		if systemSuffix != "" {
 			ag.AppendSystemPrompt(systemSuffix)
