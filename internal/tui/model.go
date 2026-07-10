@@ -139,7 +139,7 @@ func renderBanner(noBanner, noFortune bool) string {
 	if noBanner {
 		return ""
 	}
-	return banner.RenderWith(banner.Options{Fortune: !noFortune})
+	return banner.RenderWith(banner.Options{Fortune: !noFortune, Tip: true})
 }
 
 func (m model) Init() tea.Cmd {

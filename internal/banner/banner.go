@@ -9,17 +9,19 @@ import (
 	root "gophermind"
 	"gophermind/internal/fortune"
 	"gophermind/internal/prompt"
+	"gophermind/internal/tips"
 	"gophermind/internal/version"
 )
 
 // Options controls optional banner sections.
 type Options struct {
 	Fortune bool // include a random fortune under the banner
+	Tip     bool // include a rotating tip-of-the-day line
 }
 
-// Render builds the full startup banner string, including a fortune.
+// Render builds the full startup banner string, including a fortune and a tip.
 func Render() string {
-	return RenderWith(Options{Fortune: true})
+	return RenderWith(Options{Fortune: true, Tip: true})
 }
 
 // RenderWith builds the startup banner, honoring the given options (e.g.
@@ -36,6 +38,10 @@ func RenderWith(o Options) string {
 		for _, c := range changes {
 			b.WriteString("  • " + c + "\n")
 		}
+	}
+
+	if o.Tip {
+		b.WriteString("\n💡 " + tips.Random() + "\n")
 	}
 
 	if o.Fortune {
