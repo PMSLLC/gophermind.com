@@ -109,7 +109,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [ ] **73. Embeddings retrieve tool.** Vector store over the repo/docs. Value: relevant context without exhaustive search.
 - [x] **74. Migration helper.** Draft schema migrations in the project's format. Value: schema changes follow conventions.
 - [x] **75. Schema-constrained output.** JSON-schema-guided responses. Value: reliable structured results.
-- [ ] **76. Spreadsheet edit tool.** Read/modify tabular files. Value: data-wrangling tasks.
+- [x] **76. Spreadsheet edit tool.** Read/modify tabular files. Value: data-wrangling tasks.
 - [x] **77. Log analyzer tool.** Parse and summarize logs. Value: incident/debugging support.
 - [ ] **78. Metrics query tool.** Prometheus/PromQL reads. Value: observability-aware agents.
 - [x] **79. Structured git tool.** blame/log/diff as data (not shell text). Value: reliable VCS reasoning.
