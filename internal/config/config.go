@@ -96,6 +96,7 @@ type Config struct {
 	APIKey         string   // GOPHERMIND_API_KEY (optional; empty when reached over VPN)
 	Model          string   // GOPHERMIND_MODEL
 	FallbackModels []string // GOPHERMIND_FALLBACK_MODELS: comma-separated, tried in order after Model on a fallback-eligible failure
+	SpeedModel     string   // GOPHERMIND_SPEED_MODEL: faster model selected by --speed (falls back to the first FallbackModels entry)
 	RootDir        string   // GOPHERMIND_ROOT (default: cwd)
 	ApprovalMode   string   // GOPHERMIND_APPROVAL: auto|ask (default: ask)
 	InsecureTLS    bool     // GOPHERMIND_INSECURE_TLS: skip TLS verify (self-signed internal endpoints)
@@ -187,6 +188,7 @@ func Load() (Config, error) {
 		APIKey:          envOr("GOPHERMIND_API_KEY", ""),
 		Model:           envOr("GOPHERMIND_MODEL", ""), // empty => auto-discover from /v1/models
 		FallbackModels:  envList("GOPHERMIND_FALLBACK_MODELS"),
+		SpeedModel:      envOr("GOPHERMIND_SPEED_MODEL", ""),
 		RootDir:         root,
 		ApprovalMode:    envOr("GOPHERMIND_APPROVAL", "ask"),
 		InsecureTLS:     envBool("GOPHERMIND_INSECURE_TLS"),

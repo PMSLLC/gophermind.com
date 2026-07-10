@@ -50,9 +50,13 @@ type ChatRequest struct {
 	// TopP is nucleus-sampling mass. It is a pointer so an unset top_p (nil) is
 	// omitted from the wire entirely, while an explicit 0-or-greater value is
 	// sent. Temperature, by contrast, is always sent (0 is the default).
-	TopP          *float64       `json:"top_p,omitempty"`
-	Stream        bool           `json:"stream"`
-	StreamOptions *StreamOptions `json:"stream_options,omitempty"`
+	TopP *float64 `json:"top_p,omitempty"`
+	// ReasoningEffort is the OpenAI-compatible reasoning-effort hint
+	// (low|medium|high). Omitted when empty (the default), so non-reasoning
+	// endpoints are unaffected. Enabled via --think.
+	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
+	Stream          bool           `json:"stream"`
+	StreamOptions   *StreamOptions `json:"stream_options,omitempty"`
 }
 
 // StreamOptions tweaks streaming behavior. IncludeUsage asks the server to emit

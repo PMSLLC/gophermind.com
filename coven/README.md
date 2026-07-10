@@ -14,7 +14,7 @@ that drives agent CLIs. It is validated against Coven's
 | sandbox mapping | ✅ | `--permission-mode auto` (full) / `plan` (read-only: denies edits & shell) |
 | system prompt | ✅ | `--append-system-prompt <text>` |
 | model selection | ✅ | `--model <name>` |
-| `think` / `speed` | ❌ | GopherMind has no equivalent toggles; declared `false` (honest baseline) |
+| `think` / `speed` | ✅ | `--think low\|medium\|high` sends a reasoning-effort hint; `--speed` swaps in a faster model (GOPHERMIND_SPEED_MODEL or the first fallback) |
 
 ## Verifying it
 

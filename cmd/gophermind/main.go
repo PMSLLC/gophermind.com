@@ -18,6 +18,7 @@ import (
 	"golang.org/x/term"
 	"gophermind/internal/agent"
 	"gophermind/internal/config"
+	"gophermind/internal/doctor"
 	"gophermind/internal/llm"
 	"gophermind/internal/project"
 	"gophermind/internal/safety"
@@ -27,7 +28,6 @@ import (
 	"gophermind/internal/tools"
 	"gophermind/internal/tui"
 	"gophermind/internal/ui"
-	"gophermind/internal/doctor"
 	"gophermind/internal/version"
 )
 
@@ -56,6 +56,8 @@ func run() error {
 	clientKeyFlag := flag.String("client-key", cfg.ClientKeyPath, "PEM client private key for mutual TLS (requires -client-cert)")
 	caCertFlag := flag.String("ca-cert", cfg.CACertPath, "PEM CA bundle to trust for the server (appended to system roots; keeps verification ON)")
 	verboseFlag := flag.Bool("v", false, "verbose: stream assistant text and tool results")
+	thinkFlag := flag.String("think", "", "reasoning effort sent with each request: low|medium|high (empty = off)")
+	speedFlag := flag.Bool("speed", false, "use the faster model (GOPHERMIND_SPEED_MODEL, or the first fallback) as primary")
 	noBannerFlag := flag.Bool("no-banner", false, "suppress the startup banner/splash (clean output in scripts/CI)")
 	quietFlag := flag.Bool("quiet", false, "quiet: suppress the banner and non-essential stderr chatter")
 	flag.BoolVar(quietFlag, "q", false, "alias for -quiet")
@@ -220,6 +222,31 @@ func run() error {
 	client.Fallbacks = cfg.FallbackModels
 	client.SetTemperature(cfg.Temperature)
 	client.SetTopP(cfg.TopP)
+
+	// --think: send a reasoning-effort hint with each request.
+	if *thinkFlag != "" {
+		switch *thinkFlag {
+		case "low", "medium", "high":
+			client.SetReasoningEffort(*thinkFlag)
+		default:
+			return fmt.Errorf("invalid -think %q: use low, medium, or high", *thinkFlag)
+		}
+	}
+
+	// --speed: swap the primary model for a faster one (explicit GOPHERMIND_SPEED_MODEL,
+	// else the first configured fallback). With neither available it is a no-op warning.
+	if *speedFlag {
+		speed := cfg.SpeedModel
+		if speed == "" && len(cfg.FallbackModels) > 0 {
+			speed = cfg.FallbackModels[0]
+		}
+		if speed == "" {
+			fmt.Fprintln(os.Stderr, "warning: -speed set but no speed model configured (set GOPHERMIND_SPEED_MODEL or a fallback); ignoring")
+		} else {
+			cfg.Model = speed
+			client.Model = speed
+		}
+	}
 	client.Retry = llm.RetryPolicy{
 		MaxAttempts: cfg.MaxAttempts,
 		BaseDelay:   cfg.RetryBaseDelay,
@@ -257,11 +284,11 @@ func run() error {
 	}
 
 	reg := tools.NewRegistry(
-		tools.ReadFileRange(cfg.RootDir),      // read_file + optional line ranges
-		tools.ListFilesGlob(cfg.RootDir),      // list_files + include/exclude globs
-		tools.SearchEnhanced(cfg.RootDir),     // search + context/flags/paging
+		tools.ReadFileRange(cfg.RootDir),  // read_file + optional line ranges
+		tools.ListFilesGlob(cfg.RootDir),  // list_files + include/exclude globs
+		tools.SearchEnhanced(cfg.RootDir), // search + context/flags/paging
 		tools.WriteFile(cfg.RootDir),
-		tools.EditFileMulti(cfg.RootDir),      // edit_file + replace_all
+		tools.EditFileMulti(cfg.RootDir),                    // edit_file + replace_all
 		tools.RunShellEnhanced(cfg.RootDir, cfg.CmdTimeout), // run_shell + timeout/workdir
 		tools.FileStat(cfg.RootDir),
 		tools.MoveFile(cfg.RootDir),
@@ -573,6 +600,11 @@ Usage:
 
 On first interactive launch with nothing configured, a short setup wizard runs
 and saves your choices to the global config (see below); later launches skip it.
+
+Selected flags:
+  -think low|medium|high  send a reasoning-effort hint with each request
+  -speed                  use a faster model as primary (GOPHERMIND_SPEED_MODEL or first fallback)
+  -no-banner, -quiet/-q   suppress the startup splash (and, with -quiet, stderr chatter)
 
 Environment (all optional; flags override):
   GOPHERMIND_BASE_URL   endpoint (default: built-in)

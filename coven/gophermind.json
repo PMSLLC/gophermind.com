@@ -12,8 +12,8 @@
       "capabilities": {
         "stream": true,
         "preassigned_session_id": true,
-        "think": false,
-        "speed": false
+        "think": true,
+        "speed": true
       },
       "sandbox": {
         "flag": "--permission-mode",

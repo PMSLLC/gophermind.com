@@ -30,7 +30,7 @@ it as a streaming runtime.
   - `stream` — working `stream_args`; the binary emits init/assistant/`tool_use`/`tool_result`/`result` stream-json
   - `preassigned_session_id` — `session_id_flag: --session-id` (+ `--resume`); sessions persist and reload
   - `sandbox` — `--permission-mode` maps `auto` (full) / `plan` (read-only: denies edits & shell)
-  - `think` / `speed` — declared **`false`** (GopherMind has no equivalent; not claimed)
+  - `think` / `speed` — declared **`true`**: `--think low|medium|high` sends a reasoning-effort hint; `--speed` swaps in a faster model (GOPHERMIND_SPEED_MODEL or first fallback)
 - [x] `id` is `[a-z0-9._-]+` (`gophermind`) and doesn't collide with a built-in
 - [x] `install_hint` tells a user how to obtain the binary (`brew install jbrahy/tap/gophermind`)
 - [x] Source is at `registry/runtimes/gophermind/0.1.0.json` (one adapter, `version` = filename)
@@ -44,7 +44,7 @@ it as a streaming runtime.
   `harness_id == "claude"` per `docs/integration.md`), so this adapter is
   schema-valid and stream-ready but inert until the planned core PRs land. Happy
   to land it ahead of that or wait — your call.
-- `think` / `speed` are intentionally `false` — an honest baseline, not an oversight.
+- `think` / `speed` are now backed by real flags (`--think`, `--speed`) and declared `true`.
 - GopherMind's stream-json is a documented *subset* of Claude Code's schema
   (complete messages rather than token deltas) — sufficient for Coven to parse
   turns, tool use, and results.

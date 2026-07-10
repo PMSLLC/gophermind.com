@@ -42,6 +42,10 @@ type Client struct {
 	sampleMu    sync.RWMutex
 	temperature float64  // sent with every request; 0 by default (deterministic)
 	topP        *float64 // sent only when non-nil; nil (default) omits top_p
+	// reasoningEffort is the OpenAI-compatible reasoning-effort level sent with
+	// each request; empty (the default) omits it. Guarded by sampleMu. Set via
+	// --think.
+	reasoningEffort string
 
 	// capCache memoizes probed model capabilities per endpoint+model so a
 	// session re-uses one probe. Guarded by capCacheMu; lazily allocated.
@@ -168,6 +172,22 @@ func (c *Client) SetTopP(p *float64) {
 	c.sampleMu.Unlock()
 }
 
+// SetReasoningEffort sets the reasoning-effort hint (low|medium|high) sent with
+// subsequent requests. An empty string unsets it (then omitted from requests).
+// Concurrency-safe; effective on the next request.
+func (c *Client) SetReasoningEffort(level string) {
+	c.sampleMu.Lock()
+	c.reasoningEffort = level
+	c.sampleMu.Unlock()
+}
+
+// ReasoningEffort returns the current reasoning-effort level ("" when unset).
+func (c *Client) ReasoningEffort() string {
+	c.sampleMu.RLock()
+	defer c.sampleMu.RUnlock()
+	return c.reasoningEffort
+}
+
 // Temperature returns the current sampling temperature.
 func (c *Client) Temperature() float64 {
 	c.sampleMu.RLock()
@@ -207,14 +227,14 @@ func (c *Client) toolChoiceValue(tools []Tool) any {
 
 // sampling reads the current temperature and top_p under one lock, for building
 // a request body. The returned top_p is a copy, safe to embed in a request.
-func (c *Client) sampling() (float64, *float64) {
+func (c *Client) sampling() (float64, *float64, string) {
 	c.sampleMu.RLock()
 	defer c.sampleMu.RUnlock()
 	if c.topP == nil {
-		return c.temperature, nil
+		return c.temperature, nil, c.reasoningEffort
 	}
 	v := *c.topP
-	return c.temperature, &v
+	return c.temperature, &v, c.reasoningEffort
 }
 
 // Complete performs one non-streaming chat round-trip and returns the
@@ -251,14 +271,15 @@ func (c *Client) Complete(ctx context.Context, msgs []Message, tools []Tool) (Me
 // produced under a fallback is cached under the fallback's key and usage is
 // attributed to the model that actually answered.
 func (c *Client) completeModel(ctx context.Context, model string, msgs []Message, tools []Tool) (Message, Usage, bool, error) {
-	temp, topP := c.sampling()
+	temp, topP, effort := c.sampling()
 	reqBody := ChatRequest{
-		Model:       model,
-		Messages:    msgs,
-		Tools:       tools,
-		Temperature: temp,
-		TopP:        topP,
-		Stream:      false,
+		Model:           model,
+		Messages:        msgs,
+		Tools:           tools,
+		Temperature:     temp,
+		TopP:            topP,
+		ReasoningEffort: effort,
+		Stream:          false,
 	}
 	if tc := c.toolChoiceValue(tools); tc != nil {
 		reqBody.ToolChoice = tc

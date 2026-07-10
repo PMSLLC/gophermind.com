@@ -14,7 +14,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 ## S. OpenCoven & Streaming-Runtime Depth (builds on `internal/stream`, `--print`, `coven/gophermind.json`)
 
 - [ ] **1. Token-delta streaming.** Emit `content_block_delta` events from the `token` events the encoder currently drops. Value: true incremental output for drivers, closer Claude-Code parity.
-- [ ] **2. think/speed toggles.** Implement `--think` (reasoning effort) and `--speed` (faster fallback model) so those capabilities can be declared `true`. Value: first-class streaming runtime.
+- [x] **2. think/speed toggles.** Implement `--think` (reasoning effort) and `--speed` (faster fallback model) so those capabilities can be declared `true`. Value: first-class streaming runtime.
 - [ ] **3. Richer result subtypes.** `error_max_turns`, `error_during_execution`, with codes. Value: drivers branch on failure mode.
 - [ ] **4. Stdin control messages.** Accept `system`/control lines (interrupt, set-model) on the stream-json input. Value: mid-session control from the driver.
 - [ ] **5. `--output-format json` for run/ask.** Machine-readable one-shot output beyond print mode. Value: scriptability everywhere.
