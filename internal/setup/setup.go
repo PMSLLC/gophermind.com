@@ -28,6 +28,11 @@ type Result struct {
 	Model        string
 	ApprovalMode string // "ask" | "auto"
 	MaxIter      int    // agent loop-iteration budget per turn
+
+	// Optional integration credentials.
+	BraveAPIKey   string
+	GitHubToken   string
+	NotifyWebhook string
 }
 
 // Pairs renders the result as ordered GOPHERMIND_* env pairs for persistence.
@@ -44,6 +49,15 @@ func (r Result) Pairs() [][2]string {
 	pairs = append(pairs, [2]string{"GOPHERMIND_APPROVAL", r.ApprovalMode})
 	if r.MaxIter > 0 {
 		pairs = append(pairs, [2]string{"GOPHERMIND_MAX_ITER", strconv.Itoa(r.MaxIter)})
+	}
+	if r.BraveAPIKey != "" {
+		pairs = append(pairs, [2]string{"GOPHERMIND_BRAVE_API_KEY", r.BraveAPIKey})
+	}
+	if r.GitHubToken != "" {
+		pairs = append(pairs, [2]string{"GITHUB_TOKEN", r.GitHubToken})
+	}
+	if r.NotifyWebhook != "" {
+		pairs = append(pairs, [2]string{"GOPHERMIND_NOTIFY_WEBHOOK", r.NotifyWebhook})
 	}
 	return pairs
 }
@@ -177,7 +191,28 @@ func Run(opts Options) (Result, error) {
 		maxIter = maxDefault
 	}
 
-	return Result{BaseURL: baseURL, APIKey: apiKey, Model: model, ApprovalMode: mode, MaxIter: maxIter}, nil
+	// 6) Optional integration credentials (blank to skip). These enable the
+	// web_search, github, and notify tools respectively.
+	fmt.Fprint(out, "Brave Search API key (optional): ")
+	brave, err := readLine()
+	if err != nil {
+		return Result{}, err
+	}
+	fmt.Fprint(out, "GitHub token (optional): ")
+	ghToken, err := readLine()
+	if err != nil {
+		return Result{}, err
+	}
+	fmt.Fprint(out, "Slack/Discord notify webhook URL (optional): ")
+	notify, err := readLine()
+	if err != nil {
+		return Result{}, err
+	}
+
+	return Result{
+		BaseURL: baseURL, APIKey: apiKey, Model: model, ApprovalMode: mode, MaxIter: maxIter,
+		BraveAPIKey: strings.TrimSpace(brave), GitHubToken: strings.TrimSpace(ghToken), NotifyWebhook: strings.TrimSpace(notify),
+	}, nil
 }
 
 func listModels(opts Options, baseURL, apiKey string) ([]string, error) {

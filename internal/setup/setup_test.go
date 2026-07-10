@@ -197,3 +197,22 @@ func TestWriteEnvPermsAndQuoting(t *testing.T) {
 		t.Errorf("model with space should be quoted:\n%s", content)
 	}
 }
+
+func TestPairsIncludesIntegrations(t *testing.T) {
+	r := Result{BaseURL: "http://x", ApprovalMode: "ask", BraveAPIKey: "bk", GitHubToken: "gh", NotifyWebhook: "http://hook"}
+	pairs := r.Pairs()
+	got := map[string]string{}
+	for _, p := range pairs {
+		got[p[0]] = p[1]
+	}
+	if got["GOPHERMIND_BRAVE_API_KEY"] != "bk" || got["GITHUB_TOKEN"] != "gh" || got["GOPHERMIND_NOTIFY_WEBHOOK"] != "http://hook" {
+		t.Errorf("integration pairs missing: %v", got)
+	}
+	// Empty integrations are omitted.
+	empty := Result{BaseURL: "http://x", ApprovalMode: "ask"}.Pairs()
+	for _, p := range empty {
+		if p[0] == "GITHUB_TOKEN" || p[0] == "GOPHERMIND_BRAVE_API_KEY" {
+			t.Errorf("empty integration should be omitted, got %v", p)
+		}
+	}
+}
