@@ -305,9 +305,23 @@ func run() error {
 	// work even when the endpoint is unset or unreachable (that's what it checks),
 	// so it runs before Validate and before the client is built.
 	if cmd == "doctor" {
-		results := doctor.Checks(doctor.Params{BaseURL: cfg.BaseURL, Model: cfg.Model, Root: cfg.RootDir})
-		if !doctor.Report(os.Stdout, results) {
-			return fmt.Errorf("doctor: some checks failed")
+		params := doctor.Params{BaseURL: cfg.BaseURL, Model: cfg.Model, Root: cfg.RootDir}
+		results := doctor.Checks(params)
+		allOK := doctor.Report(os.Stdout, results)
+		// `doctor fix` / `doctor --fix` attempts to auto-remediate failing checks.
+		if !allOK && (hasArg(args[1:], "fix") || hasArg(args[1:], "--fix")) {
+			fmt.Fprintln(os.Stdout, "\napplying fixes:")
+			for _, f := range doctor.AutoFix(params, results) {
+				mark := "✗"
+				if f.Fixed {
+					mark = "✓"
+				}
+				fmt.Fprintf(os.Stdout, "%s %-20s %s\n", mark, f.Name, f.Detail)
+			}
+			return nil
+		}
+		if !allOK {
+			return fmt.Errorf("doctor: some checks failed (run `gophermind doctor fix` to auto-remediate)")
 		}
 		return nil
 	}
@@ -1316,7 +1330,7 @@ Usage:
   gophermind resume             pick a saved session to resume, then chat
   gophermind config             (re-)run the setup wizard and save config
   gophermind sessions [list [--tag t] [--since d] [--until d]|search <q>|tag <id> <t..>|show <id>|rm <id>|gc [days]|export <id> <file>|import <file> <id>]
-  gophermind doctor             run environment/config diagnostics and exit
+  gophermind doctor [fix]       run environment/config diagnostics (fix: auto-remediate)
   gophermind status             print a compact prompt line (model + branch)
   gophermind prompt-tokens      print per-section token cost of the base system prompt
   gophermind completion <shell> print a bash/zsh/fish completion script

@@ -17,6 +17,16 @@ var completionFlags = []string{
 	"--schema", "--resume", "--fleet", "--verify", "--plan", "--read-only",
 }
 
+// hasArg reports whether args contains want.
+func hasArg(args []string, want string) bool {
+	for _, a := range args {
+		if a == want {
+			return true
+		}
+	}
+	return false
+}
+
 // generateCompletion returns a shell-completion script for bash, zsh, or fish.
 func generateCompletion(shell string) (string, error) {
 	subs := strings.Join(completionSubcommands, " ")

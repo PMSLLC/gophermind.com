@@ -125,7 +125,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [ ] **84. Inline patch application.** Apply a model-produced unified diff atomically with rollback (hardens `apply_patch`). Value: safe multi-file edits.
 - [ ] **85. TUI command palette.** Fuzzy-find slash commands, sessions, and tools. Value: fast discovery in chat.
 - [ ] **86. Rich markdown/code rendering.** Syntax-highlight code blocks in the TUI transcript. Value: readable output.
-- [ ] **87. `doctor --fix`.** Offer to auto-remediate common setup issues doctor finds. Value: from diagnosis to fixed in one step.
+- [x] **87. `doctor --fix`.** Offer to auto-remediate common setup issues doctor finds. Value: from diagnosis to fixed in one step.
 - [x] **88. Shell completions.** Generate bash/zsh/fish completion for subcommands and flags. Value: ergonomic CLI.
 - [ ] **89. Interactive setup for integrations.** Extend the wizard to configure Brave/GitHub/DB credentials. Value: guided, not doc-hunting, onboarding.
 - [x] **90. Dry-run mode.** `--dry-run` shows the tool calls the agent *would* make without executing mutations. Value: preview before committing to a run.

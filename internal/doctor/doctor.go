@@ -29,6 +29,7 @@ type Params struct {
 
 	HTTPGet  func(url string) (int, error)     // returns HTTP status code
 	lookPath func(name string) (string, error) // resolves a binary on PATH
+	GitInit  func(dir string) error            // runs `git init`; injectable for --fix
 }
 
 // Checks runs all diagnostics and returns their results in a stable order.
