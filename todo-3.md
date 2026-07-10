@@ -58,7 +58,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [x] **34. Per-repo prompt overrides.** `.gophermind/prompt.md`. Value: project-specific behavior.
 - [ ] **35. Prompt fragments / includes.** Reusable snippets composed into the prompt. Value: DRY prompt maintenance.
 - [x] **36. Dynamic context injection.** Git status + a compact repo map at session start. Value: the model orients without tool calls.
-- [ ] **37. Prompt linting.** Warn on overly long or conflicting instructions. Value: catch prompt bloat/contradiction.
+- [x] **37. Prompt linting.** Warn on overly long or conflicting instructions. Value: catch prompt bloat/contradiction.
 - [ ] **38. A/B prompt experiments.** Run variants against fixtures and score. Value: data-driven prompt tuning.
 - [ ] **39. Skill files.** Discover `.gophermind/skills/*.md` and inject relevant ones. Value: modular capability packs.
 - [x] **40. Prompt token-budget guardrail.** Cap injected context to a share of the window. Value: leaves room for the task.

@@ -354,6 +354,13 @@ func run() error {
 	if caps.ContextWindow > 0 {
 		systemSuffix = project.CapContext(systemSuffix, caps.ContextWindow/4)
 	}
+	// Prompt linting: surface overly long or self-contradicting instructions so
+	// the user can fix them (advisory only; suppressed by --quiet).
+	if !*quietFlag {
+		for _, w := range project.LintInstructions(systemSuffix) {
+			fmt.Fprintln(os.Stderr, "prompt lint:", w)
+		}
+	}
 
 	switch cmd {
 	case "chat":
