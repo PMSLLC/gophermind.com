@@ -698,6 +698,7 @@ func run() error {
 	case "serve":
 		// Webhook mode: each POST /run spawns a fresh agent turn, isolated from
 		// other requests. Blocks until the process is stopped.
+		metrics := &serveMetrics{}
 		run := func(ctx context.Context, t string) (string, error) {
 			ag := agent.New(client, reg, cfg.MaxIter, approve, nil)
 			ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
@@ -706,9 +707,13 @@ func run() error {
 			if systemSuffix != "" {
 				ag.AppendSystemPrompt(systemSuffix)
 			}
-			return ag.Send(ctx, t)
+			answer, err := ag.Send(ctx, t)
+			u := ag.Usage()
+			metrics.promptTokens.Add(int64(u.PromptTokens))
+			metrics.completionTokens.Add(int64(u.CompletionTokens))
+			return answer, err
 		}
-		return runServe(run)
+		return runServe(run, metrics)
 	case "queue":
 		if task == "" {
 			return fmt.Errorf("queue requires a file of tasks (one per line)")

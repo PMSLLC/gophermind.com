@@ -138,12 +138,25 @@ func serveToken() (string, error) {
 }
 
 // runServe starts the webhook HTTP server, dispatching each POST /run to run.
-func runServe(run func(ctx context.Context, task string) (string, error)) error {
+// metrics (when non-nil) counts requests/errors and is exposed on /metrics.
+func runServe(run func(ctx context.Context, task string) (string, error), metrics *serveMetrics) error {
 	token, err := serveToken()
 	if err != nil {
 		return err
 	}
 	addr := serveAddr()
+	// Wrap run to record request/error counters for the metrics endpoint.
+	if metrics != nil {
+		inner := run
+		run = func(ctx context.Context, task string) (string, error) {
+			metrics.requests.Add(1)
+			out, err := inner(ctx, task)
+			if err != nil {
+				metrics.errors.Add(1)
+			}
+			return out, err
+		}
+	}
 	mux := http.NewServeMux()
 	var runHandler http.Handler = webhookHandler(run, token)
 	// Optional per-caller rate limiting (GOPHERMIND_SERVE_RATE req/min), keyed by
@@ -157,6 +170,9 @@ func runServe(run func(ctx context.Context, task string) (string, error)) error 
 	// Unauthenticated liveness/readiness probes for load balancers / k8s.
 	mux.HandleFunc("/healthz", healthHandler())
 	mux.HandleFunc("/readyz", readyHandler(func() bool { return true }))
+	if metrics != nil {
+		mux.HandleFunc("/metrics", metricsHandler(metrics))
+	}
 	fmt.Fprintf(os.Stderr, "gophermind serving webhook on %s (POST /run, GET /healthz, /readyz)\n", addr)
 	return http.ListenAndServe(addr, mux)
 }
