@@ -28,6 +28,7 @@ import (
 	"gophermind/internal/persona"
 	"gophermind/internal/project"
 	"gophermind/internal/prompt"
+	"gophermind/internal/report"
 	"gophermind/internal/safety"
 	"gophermind/internal/schemas"
 	"gophermind/internal/session"
@@ -94,6 +95,7 @@ func run() error {
 	schemaFlag := flag.String("schema", "", "run/ask: force a JSON-schema-constrained response; a file path, or @name for a built-in (diff/review/plan)")
 	dryRunFlag := flag.Bool("dry-run", false, "preview the mutating tool calls the agent would make without executing them")
 	samplesFlag := flag.Int("samples", 1, "run/ask: sample the turn N times and majority-vote the answer (self-consistency)")
+	reportFlag := flag.String("report", "", "run/ask: write a self-contained HTML report of the run to this file")
 	promptTemplateFlag := flag.String("prompt-template", "", "use a custom structured prompt template (.md with frontmatter + XML sections) as the base system prompt")
 	toolBudgetFlag := flag.Int("tool-budget", 0, "run/ask: max tool calls per turn (0 = default)")
 	maxCostFlag := flag.Float64("max-cost", 0, "run/ask: abort when estimated cost (USD) exceeds this (0 = unlimited)")
@@ -700,6 +702,21 @@ func run() error {
 		if cfg.TranscriptPath != "" {
 			if err := ag.WriteTranscript(cfg.TranscriptPath); err != nil {
 				fmt.Fprintln(os.Stderr, "warning: transcript export failed:", err)
+			}
+		}
+		// --report writes a self-contained HTML record of the run (task, answer,
+		// usage) for sharing.
+		if *reportFlag != "" && sendErr == nil {
+			u := ag.Usage()
+			html := report.HTML(report.Data{
+				Task: task, Answer: answer,
+				PromptTokens: u.PromptTokens, CompletionTokens: u.CompletionTokens,
+				TotalTokens: u.TotalTokens, CostUSD: u.CostUSD,
+			})
+			if err := os.WriteFile(*reportFlag, []byte(html), 0o644); err != nil {
+				fmt.Fprintln(os.Stderr, "warning: report write failed:", err)
+			} else {
+				fmt.Fprintf(os.Stderr, "✓ wrote run report to %s\n", *reportFlag)
 			}
 		}
 		// --output-format json: emit one machine-readable result object (errors
