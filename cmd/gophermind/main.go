@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -319,6 +320,10 @@ func run() error {
 	}
 	if *readOnlyFlag {
 		approve = safety.ReadMode() // deny every gated (mutating) tool
+	} else if pol := loadRepoPolicy(cfg.RootDir); pol != nil {
+		// A .gophermind/policy file layers per-tool approval on top of the base
+		// decision: always/never resolve without prompting, ask defers to it.
+		approve = safety.PolicyApproval(pol, approve)
 	}
 
 	// Resolve an optional persona preset and compose it with repo instructions
@@ -695,6 +700,22 @@ func updateCheckEnabled() bool {
 // secrets and PII scrubbed on write (GOPHERMIND_REDACT_TRANSCRIPT).
 func redactTranscriptEnabled() bool {
 	return envTruthy("GOPHERMIND_REDACT_TRANSCRIPT")
+}
+
+// loadRepoPolicy loads .gophermind/policy from the repo root if present. A
+// missing file returns nil (no policy); a malformed file warns and returns nil
+// so a typo never silently changes trust boundaries.
+func loadRepoPolicy(root string) *safety.Policy {
+	path := filepath.Join(root, ".gophermind", "policy")
+	if _, err := os.Stat(path); err != nil {
+		return nil
+	}
+	pol, err := safety.LoadPolicy(path)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "warning: ignoring .gophermind/policy:", err)
+		return nil
+	}
+	return pol
 }
 
 // envTruthy reports whether the named env var holds a truthy value.

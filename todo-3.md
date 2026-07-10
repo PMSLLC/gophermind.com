@@ -120,7 +120,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [ ] **81. Tamper-evident audit log.** Every tool call + decision + result hash, appended locally. Value: traceability of what the agent did.
 - [x] **82. Policy file.** `.gophermind/policy` for deny/allow patterns and gated-tool config. Value: per-repo tuning without recompiling.
 - [x] **83. Secret-scanning on writes.** Block/warn on credential patterns in `write_file`/`edit_file`. Value: stops committing secrets.
-- [ ] **84. Per-tool approval policies.** "always allow read, ask on write, never auto shell". Value: matches real trust boundaries.
+- [x] **84. Per-tool approval policies.** "always allow read, ask on write, never auto shell". Value: matches real trust boundaries.
 - [ ] **85. Subprocess resource limits.** CPU/mem/fd caps on `run_shell`. Value: contains runaway commands.
 - [ ] **86. Network-disabled shell.** Run commands with no network. Value: exfiltration prevention.
 - [x] **87. Read-only repo mode.** A flag disabling all mutating tools. Value: safe exploration by construction.
