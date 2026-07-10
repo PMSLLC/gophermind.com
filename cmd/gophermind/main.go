@@ -28,6 +28,7 @@ import (
 	"gophermind/internal/tools"
 	"gophermind/internal/tui"
 	"gophermind/internal/ui"
+	"gophermind/internal/update"
 	"gophermind/internal/version"
 )
 
@@ -313,6 +314,15 @@ func run() error {
 		if !isatty() {
 			return fmt.Errorf("interactive session needs a terminal; use `run`/`ask` for non-interactive use")
 		}
+		// Opt-in update notice (GOPHERMIND_UPDATE_CHECK): nudge upgrades without
+		// ever blocking startup — a failed/slow check is silent.
+		if updateCheckEnabled() && !*quietFlag {
+			if notice, ok := update.Check(version.Version, func() (string, error) {
+				return update.LatestFromGitHub("jbrahy/gophermind.com")
+			}); ok {
+				fmt.Fprintln(os.Stderr, notice)
+			}
+		}
 		return tui.Run(tui.Config{
 			Client:           client,
 			Registry:         reg,
@@ -593,6 +603,17 @@ func runSessions(args []string) error {
 		return nil
 	default:
 		return fmt.Errorf("unknown sessions action %q (use list, show <id>, or rm <id>)", action)
+	}
+}
+
+// updateCheckEnabled reports whether the opt-in startup update check is on,
+// via a truthy GOPHERMIND_UPDATE_CHECK value.
+func updateCheckEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("GOPHERMIND_UPDATE_CHECK"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
 	}
 }
 

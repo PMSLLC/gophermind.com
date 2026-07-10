@@ -72,7 +72,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [ ] **45. Tip-of-the-day.** Rotating tips with docs links under the banner. Value: progressive discovery of features.
 - [ ] **46. First-run welcome tour.** A short guided intro after the setup wizard. Value: faster onboarding.
 - [x] **47. `gophermind doctor`.** Check endpoint/model/`rg`/git/tap reachability. Value: fast setup diagnosis.
-- [ ] **48. Update-available notice.** Compare version to latest release on startup (opt-in). Value: nudge upgrades.
+- [x] **48. Update-available notice.** Compare version to latest release on startup (opt-in). Value: nudge upgrades.
 - [ ] **49. ASCII-art variants.** Seasonal/random gopher poses. Value: delight.
 - [ ] **50. Shell prompt integration.** Emit session status for PS1/starship. Value: ambient awareness.
 
