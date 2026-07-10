@@ -83,7 +83,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [x] **53. Plan-then-execute mode.** Emit a reviewable plan before acting. Value: redirect before changes happen.
 - [x] **54. Parallel tool execution.** Run independent tool calls in a turn concurrently. Value: faster multi-file reads/searches.
 - [ ] **55. Agent-to-agent (A2A) client.** Speak an A2A protocol to other agents. Value: interop beyond OpenCoven.
-- [ ] **56. Task queue / job runner.** Enqueue and run tasks with status. Value: batch/background work.
+- [x] **56. Task queue / job runner.** Enqueue and run tasks with status. Value: batch/background work.
 - [x] **57. Reflection-on-failure.** Inject a "what went wrong / next step" after a tool error. Value: better recovery than blind retry.
 - [x] **58. Verifier pass.** A second agent checks the result before finalizing. Value: fewer wrong "done"s.
 - [x] **59. Budgeted autonomy.** Wall-clock/token ceilings that abort with partial progress. Value: bounded unattended runs.

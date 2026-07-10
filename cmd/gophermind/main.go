@@ -21,6 +21,7 @@ import (
 	"gophermind/internal/agent"
 	"gophermind/internal/config"
 	"gophermind/internal/doctor"
+	"gophermind/internal/jobs"
 	"gophermind/internal/llm"
 	"gophermind/internal/persona"
 	"gophermind/internal/project"
@@ -398,6 +399,13 @@ func run() error {
 			sessionID: *sessionIDFlag, resumeID: *resumeFlag,
 			appendSys: *appendSysFlag, permMode: *permModeFlag, readOnly: *readOnlyFlag,
 		})
+	case "queue":
+		if task == "" {
+			return fmt.Errorf("queue requires a file of tasks (one per line)")
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		return runQueue(ctx, client, reg, cfg, approve, systemSuffix, task, *verboseFlag)
 	case "run", "ask":
 		if task == "" {
 			return fmt.Errorf("%s requires a task argument", cmd)
@@ -621,6 +629,60 @@ func runSetupWizard(cfg config.Config) (setup.Result, error) {
 	return setup.Run(opts)
 }
 
+// runQueue implements the `queue` subcommand: it reads a file of tasks (one per
+// line; blank lines and #comments ignored), runs each through the agent in
+// order with a live status trail, prints a per-job summary, and exits non-zero
+// if any task failed.
+func runQueue(ctx context.Context, client *llm.Client, reg *tools.Registry, cfg config.Config, approve safety.ApprovalFunc, systemSuffix, file string, verbose bool) error {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return fmt.Errorf("read task file: %w", err)
+	}
+	q := jobs.New()
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		q.Add(line)
+	}
+	total := len(q.Jobs())
+	if total == 0 {
+		return fmt.Errorf("no tasks found in %s", file)
+	}
+
+	printer := ui.Printer{Verbose: verbose}
+	ag := agent.New(client, reg, cfg.MaxIter, approve, printer.Event)
+	ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
+	if systemSuffix != "" {
+		ag.AppendSystemPrompt(systemSuffix)
+	}
+
+	q.Run(ctx, ag.Send, func(j *jobs.Job) {
+		if j.Status == jobs.Running {
+			fmt.Fprintf(os.Stderr, "▶ [%d/%d] %s\n", j.ID, total, j.Task)
+		}
+	})
+
+	// Per-job summary to stdout (pipeable), counts to stderr.
+	for _, j := range q.Jobs() {
+		switch j.Status {
+		case jobs.Done:
+			fmt.Printf("✓ #%d %s\n", j.ID, j.Task)
+		case jobs.Failed:
+			fmt.Printf("✗ #%d %s\n   error: %s\n", j.ID, j.Task, j.Err)
+		default:
+			fmt.Printf("· #%d %s (not run)\n", j.ID, j.Task)
+		}
+	}
+	done, failed, pending := q.Counts()
+	fmt.Fprintf(os.Stderr, "\n%d done, %d failed, %d not run\n", done, failed, pending)
+	if failed > 0 {
+		return fmt.Errorf("%d task(s) failed", failed)
+	}
+	return nil
+}
+
 // runSessions implements the `sessions` subcommand: list (default), show <id>,
 // and rm <id>, operating on the persisted session store.
 func runSessions(args []string) error {
@@ -774,6 +836,7 @@ Usage:
   gophermind version            print build version and exit
   gophermind run "task"         one-shot: run a task and exit
   gophermind ask "question"     one-shot: answer without modifying files
+  gophermind queue <file>       run a file of tasks (one per line) in order
 
 On first interactive launch with nothing configured, a short setup wizard runs
 and saves your choices to the global config (see below); later launches skip it.
