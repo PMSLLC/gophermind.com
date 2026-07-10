@@ -890,6 +890,38 @@ func runQueue(ctx context.Context, client *llm.Client, reg *tools.Registry, cfg 
 	return nil
 }
 
+// parseSessionFilter reads --tag/--since/--until flags from a `sessions list`
+// argument tail into a session.Filter. Dates are YYYY-MM-DD.
+func parseSessionFilter(args []string) (session.Filter, error) {
+	var f session.Filter
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--tag":
+			if i+1 >= len(args) {
+				return f, fmt.Errorf("--tag needs a value")
+			}
+			i++
+			f.Tag = args[i]
+		case "--since", "--until":
+			if i+1 >= len(args) {
+				return f, fmt.Errorf("%s needs a YYYY-MM-DD date", args[i])
+			}
+			flag := args[i]
+			i++
+			d, err := time.Parse("2006-01-02", args[i])
+			if err != nil {
+				return f, fmt.Errorf("%s: %v", flag, err)
+			}
+			if flag == "--since" {
+				f.Since = d
+			} else {
+				f.Until = d.Add(24 * time.Hour) // inclusive of the whole day
+			}
+		}
+	}
+	return f, nil
+}
+
 // runSessions implements the `sessions` subcommand: list (default), show <id>,
 // and rm <id>, operating on the persisted session store.
 func runSessions(args []string) error {
@@ -903,14 +935,36 @@ func runSessions(args []string) error {
 		if err != nil {
 			return err
 		}
+		// Optional filters: --tag <name>, --since <YYYY-MM-DD>, --until <YYYY-MM-DD>.
+		f, err := parseSessionFilter(args[1:])
+		if err != nil {
+			return err
+		}
+		if f.Tag != "" || !f.Since.IsZero() || !f.Until.IsZero() {
+			infos = session.FilterInfos(infos, f, session.Tags)
+		}
 		if len(infos) == 0 {
 			fmt.Fprintln(os.Stderr, "no saved sessions")
 			return nil
 		}
 		for _, s := range infos {
-			fmt.Printf("%-24s  %s  %3d msgs  %s\n",
-				s.ID, s.ModTime.Format("2006-01-02 15:04"), s.Messages, s.Title)
+			tagStr := ""
+			if tags := session.Tags(s.ID); len(tags) > 0 {
+				tagStr = "  [" + strings.Join(tags, ",") + "]"
+			}
+			fmt.Printf("%-24s  %s  %3d msgs  %s%s\n",
+				s.ID, s.ModTime.Format("2006-01-02 15:04"), s.Messages, s.Title, tagStr)
 		}
+		return nil
+	case "tag":
+		if len(args) < 3 {
+			return fmt.Errorf("usage: sessions tag <id> <tag> [tag...]")
+		}
+		id := session.Resolve(args[1])
+		if err := session.AddTags(id, args[2:]); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "✓ tagged %q: %s\n", id, strings.Join(session.Tags(id), ", "))
 		return nil
 	case "diff":
 		if len(args) < 2 {
@@ -1157,7 +1211,7 @@ Usage:
   gophermind                    interactive session (default)
   gophermind resume             pick a saved session to resume, then chat
   gophermind config             (re-)run the setup wizard and save config
-  gophermind sessions [list|show <id>|rm <id>|gc [days]|export <id> <file>|import <file> <id>]
+  gophermind sessions [list [--tag t] [--since d] [--until d]|tag <id> <t..>|show <id>|rm <id>|gc [days]|export <id> <file>|import <file> <id>]
   gophermind doctor             run environment/config diagnostics and exit
   gophermind status             print a compact prompt line (model + branch)
   gophermind prompt-tokens      print per-section token cost of the base system prompt
