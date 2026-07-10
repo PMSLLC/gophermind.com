@@ -65,6 +65,13 @@ func httpTool(allowHosts []string, allowLoopback bool, budget *NetBudget) Tool {
 				return "", err
 			}
 
+			// Data-egress guard: inspect the outbound body + headers for
+			// secrets/PII and warn or deny per GOPHERMIND_EGRESS_GUARD.
+			egressWarn, err := guardEgress(egressMode(), a.Body+"\n"+headerValues(a.Headers))
+			if err != nil {
+				return "", err
+			}
+
 			limit := a.MaxBytes
 			if limit <= 0 {
 				limit = defaultFetchLimit
@@ -118,9 +125,19 @@ func httpTool(allowHosts []string, allowLoopback bool, budget *NetBudget) Tool {
 			if len(body) >= limit {
 				fmt.Fprintf(&b, "\n\n[truncated at %d bytes]", limit)
 			}
+			b.WriteString(egressWarn)
 			return b.String(), nil
 		},
 	}
+}
+
+// headerValues joins request header values into one string for egress scanning.
+func headerValues(h map[string]string) string {
+	vs := make([]string, 0, len(h))
+	for _, v := range h {
+		vs = append(vs, v)
+	}
+	return strings.Join(vs, "\n")
 }
 
 // writeSortedHeaders writes response headers in stable order for readability.

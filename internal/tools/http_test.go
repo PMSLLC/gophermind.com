@@ -69,3 +69,34 @@ func TestHTTPRequestSchema(t *testing.T) {
 		}
 	}
 }
+
+func TestHTTPRequestEgressDeny(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	t.Setenv("GOPHERMIND_EGRESS_GUARD", "deny")
+	tool := httpTool(nil, true, nil)
+	_, err := run(t, tool, `{"method":"POST","url":"`+srv.URL+`","body":"secret AKIA0123456789ABCDEF"}`)
+	if err == nil {
+		t.Error("deny mode should block a body containing a secret")
+	}
+}
+
+func TestHTTPRequestEgressWarn(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	t.Setenv("GOPHERMIND_EGRESS_GUARD", "warn")
+	tool := httpTool(nil, true, nil)
+	out, err := run(t, tool, `{"method":"POST","url":"`+srv.URL+`","body":"secret AKIA0123456789ABCDEF"}`)
+	if err != nil {
+		t.Fatalf("warn mode should not block: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(out), "egress warning") {
+		t.Errorf("expected egress warning in output:\n%s", out)
+	}
+}
