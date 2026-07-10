@@ -355,6 +355,7 @@ func run() error {
 		tools.Scratchpad(cfg.RootDir),                        // durable cross-turn task notes
 		tools.SetCSVCell(cfg.RootDir),                        // gated: edit a single CSV cell
 		tools.WebSearch(braveEndpoint(cfg), cfg.BraveAPIKey), // Brave web search
+		tools.SQLQuery(cfg.RootDir),                          // read-only SQLite queries
 	)
 
 	// A single shared stdin reader, used by both the REPL and approval prompts.
