@@ -477,9 +477,11 @@ func run() error {
 	// tools return a configuration hint instead of running).
 	embedProvider := buildEmbedProvider(cfg)
 	indexPath := filepath.Join(cfg.RootDir, ".gophermind", "index.json")
+	memoryPath := filepath.Join(cfg.RootDir, ".gophermind", "memory.json")
 	toolset = append(toolset,
 		tools.EmbedIndex(cfg.RootDir, embedProvider, indexPath),     // build a semantic index over the repo
 		tools.SemanticSearch(cfg.RootDir, embedProvider, indexPath), // retrieve relevant chunks by meaning
+		tools.RememberFact(embedProvider, memoryPath),               // persist a fact to long-term vector memory
 	)
 	// --dry-run: wrap gated (mutating) tools so the agent previews the calls it
 	// would make without executing any mutation.
@@ -665,6 +667,12 @@ func run() error {
 		if envTruthy("GOPHERMIND_RAG") && embedProvider != nil {
 			if rc := retrieveContext(ctx, embedProvider, indexPath, task, 5); rc != "" {
 				ag.AppendSystemPrompt(rc)
+			}
+		}
+		// Long-term memory: inject the most relevant remembered facts at task start.
+		if envTruthy("GOPHERMIND_MEMORY") && embedProvider != nil {
+			if mc := retrieveContext(ctx, embedProvider, memoryPath, task, 5); mc != "" {
+				ag.AppendSystemPrompt(strings.Replace(mc, "retrieved_context", "long_term_memory", 2))
 			}
 		}
 		// Few-shot example bank: when GOPHERMIND_EXAMPLES names a JSON bank, inject
