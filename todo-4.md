@@ -72,7 +72,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [x] **43. Session search.** Full-text (FTS5) search across all saved sessions. Value: "where did we discuss the parser bug?"
 - [x] **44. Auto-checkpoint on risk.** Snapshot the session before any gated mutation so it's trivially revertible. Value: undo an agent's bad change.
 - [ ] **45. Shared session store.** Optional remote (S3/HTTP) backend for the session dir so a team shares sessions. Value: hand off work across machines.
-- [ ] **46. Session replay viewer.** A TUI/`--print` mode that steps through a saved session turn by turn. Value: review an agent's reasoning.
+- [x] **46. Session replay viewer.** A TUI/`--print` mode that steps through a saved session turn by turn. Value: review an agent's reasoning.
 - [x] **47. Redacted session export.** Combine `export` with the existing redactor to share a scrubbed session. Value: safe sharing of debugging sessions.
 - [x] **48. Session tags & filters.** Tag sessions and filter `sessions list` by tag/date/repo. Value: organize a growing store.
 - [ ] **49. Continuity across repos.** A global "profile memory" separate from per-repo session state. Value: user preferences follow you everywhere.

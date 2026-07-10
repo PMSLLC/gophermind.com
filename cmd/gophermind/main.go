@@ -1221,6 +1221,16 @@ func runSessions(args []string) error {
 		}
 		fmt.Fprintf(os.Stderr, "✓ branched %q → %q\n", args[1], args[2])
 		return nil
+	case "replay":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: sessions replay <id>")
+		}
+		out, err := session.Replay(session.Resolve(args[1]))
+		if err != nil {
+			return err
+		}
+		fmt.Print(out)
+		return nil
 	case "merge":
 		if len(args) < 4 {
 			return fmt.Errorf("usage: sessions merge <id-a> <id-b> <dest-id>")
