@@ -28,6 +28,35 @@
       "version": "0.1.0",
       "homepage": "https://github.com/jbrahy/gophermind.com",
       "description": "A minimal agentic coding harness for OpenAI-compatible LLMs. Streams via a Claude-Code-compatible stream-json protocol with pre-assigned sessions and resume; maps sandbox to a read-only plan mode."
+    },
+    {
+      "id": "gophermind-plan",
+      "label": "GopherMind (read-only)",
+      "executable": "gophermind",
+      "interactive_prompt_prefix_args": ["--read-only"],
+      "non_interactive_prompt_prefix_args": ["--print", "--read-only"],
+      "install_hint": "brew install jbrahy/tap/gophermind — or build from https://github.com/jbrahy/gophermind.com",
+      "system_prompt_flag": "--append-system-prompt",
+      "model_flag": "--model",
+      "capabilities": {
+        "stream": true,
+        "preassigned_session_id": true,
+        "think": true,
+        "speed": true
+      },
+      "sandbox": {
+        "flag": "--permission-mode",
+        "full": "plan",
+        "read_only": "plan"
+      },
+      "stream_args": {
+        "prefix_args": ["--print", "--read-only", "--input-format", "stream-json", "--output-format", "stream-json"],
+        "session_id_flag": "--session-id",
+        "resume_flag": "--resume"
+      },
+      "version": "0.1.0",
+      "homepage": "https://github.com/jbrahy/gophermind.com",
+      "description": "Read-only variant of the GopherMind adapter: every invocation passes --read-only, so all mutating tools (write/edit/shell/move/delete/mkdir/patch) are denied. Use for safe exploration and planning."
     }
   ]
 }

@@ -19,7 +19,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [ ] **4. Stdin control messages.** Accept `system`/control lines (interrupt, set-model) on the stream-json input. Value: mid-session control from the driver.
 - [x] **5. `--output-format json` for run/ask.** Machine-readable one-shot output beyond print mode. Value: scriptability everywhere.
 - [ ] **6. Conformance CI.** A GitHub Action that builds `conjure` and runs `validate`/`test` on the manifest each PR. Value: the manifest never drifts from the binary.
-- [ ] **7. Multi-adapter manifest.** A `gophermind-plan` read-only variant alongside the default. Value: Coven exposes both access levels.
+- [x] **7. Multi-adapter manifest.** A `gophermind-plan` read-only variant alongside the default. Value: Coven exposes both access levels.
 - [x] **8. Cost in result line.** Surface `total_cost_usd` and token counts from the meter per turn. Value: drivers track spend.
 - [x] **9. Mid-turn cancel over stream.** Honor a driver-sent cancel control. Value: responsive interruption.
 - [x] **10. Protocol version field.** Advertise the stream-json subset version in the init line. Value: forward-compatible drivers.
@@ -98,7 +98,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [ ] **65. Sandboxed headless browser.** Render/interact with pages under egress control. Value: debug UI / scrape safely.
 - [ ] **66. Changelog/RSS watcher.** Trigger a run on upstream changes. Value: event-driven maintenance.
 - [ ] **67. Webhook trigger.** Start a one-shot run from an inbound webhook. Value: CI/automation entry point.
-- [ ] **68. Egress allowlist enforcement.** Restrict all network tools to approved hosts. Value: exfiltration guardrail.
+- [x] **68. Egress allowlist enforcement.** Restrict all network tools to approved hosts. Value: exfiltration guardrail.
 - [ ] **69. Network budget.** Rate/byte limits on network tools. Value: bounded, predictable usage.
 - [ ] **70. Offline docs cache.** Persist fetched docs for reuse offline. Value: speed + air-gapped support.
 
