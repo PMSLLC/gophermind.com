@@ -7,6 +7,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -84,6 +85,7 @@ func run() error {
 	planFlag := flag.Bool("plan", false, "run/ask: emit a structured plan before executing")
 	parallelFlag := flag.Bool("parallel", false, "run/ask: execute independent tool calls in a turn concurrently")
 	verifyFlag := flag.Bool("verify", false, "run/ask: have a second (verifier) agent check the result and trigger one correction round if incomplete")
+	schemaFlag := flag.String("schema", "", "run/ask: force a JSON-schema-constrained response, reading the schema from this file")
 	toolBudgetFlag := flag.Int("tool-budget", 0, "run/ask: max tool calls per turn (0 = default)")
 	maxCostFlag := flag.Float64("max-cost", 0, "run/ask: abort when estimated cost (USD) exceeds this (0 = unlimited)")
 	maxTokensFlag := flag.Int("max-tokens", 0, "run/ask: abort when total tokens exceed this (0 = unlimited)")
@@ -430,6 +432,20 @@ func run() error {
 				MaxTokens:   *maxTokensFlag,
 				MaxDuration: *maxDurationFlag,
 			})
+		}
+		// --schema forces a single schema-constrained JSON response (bypasses the
+		// tool loop and other strategies).
+		if *schemaFlag != "" {
+			schema, err := loadJSONSchema(*schemaFlag)
+			if err != nil {
+				return err
+			}
+			out, sErr := ag.StructuredOutput(ctx, task, schema)
+			if sErr != nil {
+				return sErr
+			}
+			fmt.Println(out)
+			return nil
 		}
 		// Pick the turn strategy from flags (all share Send's signature).
 		send := ag.Send
@@ -815,6 +831,20 @@ func updateCheckEnabled() bool {
 // secrets and PII scrubbed on write (GOPHERMIND_REDACT_TRANSCRIPT).
 func redactTranscriptEnabled() bool {
 	return envTruthy("GOPHERMIND_REDACT_TRANSCRIPT")
+}
+
+// loadJSONSchema reads and parses a JSON-schema object from a file, for
+// --schema-constrained responses.
+func loadJSONSchema(path string) (map[string]any, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read schema: %w", err)
+	}
+	var schema map[string]any
+	if err := json.Unmarshal(data, &schema); err != nil {
+		return nil, fmt.Errorf("parse schema %s: %w", path, err)
+	}
+	return schema, nil
 }
 
 // loadRepoPolicy loads .gophermind/policy from the repo root if present. A

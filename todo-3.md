@@ -108,7 +108,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [x] **72. Tabular inspector.** CSV/JSON/Parquet schema + preview tool. Value: understand data files without dumping them.
 - [ ] **73. Embeddings retrieve tool.** Vector store over the repo/docs. Value: relevant context without exhaustive search.
 - [ ] **74. Migration helper.** Draft schema migrations in the project's format. Value: schema changes follow conventions.
-- [ ] **75. Schema-constrained output.** JSON-schema-guided responses. Value: reliable structured results.
+- [x] **75. Schema-constrained output.** JSON-schema-guided responses. Value: reliable structured results.
 - [ ] **76. Spreadsheet edit tool.** Read/modify tabular files. Value: data-wrangling tasks.
 - [x] **77. Log analyzer tool.** Parse and summarize logs. Value: incident/debugging support.
 - [ ] **78. Metrics query tool.** Prometheus/PromQL reads. Value: observability-aware agents.
