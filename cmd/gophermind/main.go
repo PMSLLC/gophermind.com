@@ -431,6 +431,19 @@ func run() error {
 			sessionID: *sessionIDFlag, resumeID: *resumeFlag,
 			appendSys: *appendSysFlag, permMode: *permModeFlag, readOnly: *readOnlyFlag,
 		})
+	case "serve":
+		// Webhook mode: each POST /run spawns a fresh agent turn, isolated from
+		// other requests. Blocks until the process is stopped.
+		run := func(ctx context.Context, t string) (string, error) {
+			ag := agent.New(client, reg, cfg.MaxIter, approve, nil)
+			ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
+			ag.SetAuditLog(auditLog())
+			if systemSuffix != "" {
+				ag.AppendSystemPrompt(systemSuffix)
+			}
+			return ag.Send(ctx, t)
+		}
+		return runServe(run)
 	case "queue":
 		if task == "" {
 			return fmt.Errorf("queue requires a file of tasks (one per line)")
@@ -990,6 +1003,7 @@ Usage:
   gophermind run "task"         one-shot: run a task and exit
   gophermind ask "question"     one-shot: answer without modifying files
   gophermind queue <file>       run a file of tasks (one per line) in order
+  gophermind serve              webhook server: POST /run {task} runs one task
 
 On first interactive launch with nothing configured, a short setup wizard runs
 and saves your choices to the global config (see below); later launches skip it.

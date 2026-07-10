@@ -97,7 +97,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [x] **64. HTTP API caller.** OpenAPI-aware request tool. Value: integrate external services.
 - [ ] **65. Sandboxed headless browser.** Render/interact with pages under egress control. Value: debug UI / scrape safely.
 - [ ] **66. Changelog/RSS watcher.** Trigger a run on upstream changes. Value: event-driven maintenance.
-- [ ] **67. Webhook trigger.** Start a one-shot run from an inbound webhook. Value: CI/automation entry point.
+- [x] **67. Webhook trigger.** Start a one-shot run from an inbound webhook. Value: CI/automation entry point.
 - [x] **68. Egress allowlist enforcement.** Restrict all network tools to approved hosts. Value: exfiltration guardrail.
 - [x] **69. Network budget.** Rate/byte limits on network tools. Value: bounded, predictable usage.
 - [ ] **70. Offline docs cache.** Persist fetched docs for reuse offline. Value: speed + air-gapped support.
