@@ -46,6 +46,9 @@ type Options struct {
 	// AfterTurn, if set, runs after each completed turn's result line — used to
 	// persist the session so it can be resumed.
 	AfterTurn func() error
+	// OnControl, if set, handles a stream-json control line (e.g. set-model,
+	// interrupt) so a driver can steer the session mid-stream.
+	OnControl func(action, value string) error
 }
 
 // Run drives print mode: writes the init line, then one turn per input (a single
@@ -80,6 +83,16 @@ func Run(ctx context.Context, enc *Encoder, sess Session, opts Options) error {
 			if len(line) == 0 {
 				continue
 			}
+			// A control line steers the session (set-model, interrupt) rather than
+			// starting a turn.
+			if action, value, ok := parseControl(line); ok {
+				if opts.OnControl != nil {
+					if err := opts.OnControl(action, value); err != nil {
+						return fmt.Errorf("control %q: %w", action, err)
+					}
+				}
+				continue
+			}
 			text, err := parseUserText(line)
 			if err != nil {
 				return fmt.Errorf("parse input: %w", err)
@@ -91,6 +104,25 @@ func Run(ctx context.Context, enc *Encoder, sess Session, opts Options) error {
 		return sc.Err()
 	}
 	return turn(opts.Prompt)
+}
+
+// parseControl detects a stream-json control line and returns its action and a
+// value (the model for set-model, else empty). Non-control lines return ok=false.
+func parseControl(line []byte) (action, value string, ok bool) {
+	var c struct {
+		Type   string `json:"type"`
+		Action string `json:"action"`
+		Model  string `json:"model"`
+		Value  string `json:"value"`
+	}
+	if err := json.Unmarshal(line, &c); err != nil || c.Type != "control" || c.Action == "" {
+		return "", "", false
+	}
+	value = c.Value
+	if c.Model != "" {
+		value = c.Model
+	}
+	return c.Action, value, true
 }
 
 // parseUserText extracts the prompt text from a stream-json user message line.

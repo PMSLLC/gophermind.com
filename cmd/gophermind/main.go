@@ -674,6 +674,13 @@ func runPrint(client *llm.Client, reg *tools.Registry, cfg config.Config, o prin
 			Tools:       toolNames,
 			Cwd:         cfg.RootDir,
 			AfterTurn:   afterTurn,
+			OnControl: func(action, value string) error {
+				// Driver control: set-model switches the model for later turns.
+				if action == "set-model" && value != "" {
+					client.Model = value
+				}
+				return nil
+			},
 		})
 	}
 
