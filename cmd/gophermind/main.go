@@ -585,6 +585,12 @@ func run() error {
 	if *dryRunFlag {
 		toolset = tools.WrapDryRun(toolset)
 	}
+	// Load out-of-process plugin tools from .gophermind/plugins/*.plugin.json.
+	if plugins, err := tools.LoadPlugins(filepath.Join(cfg.RootDir, ".gophermind", "plugins")); err != nil {
+		fmt.Fprintln(os.Stderr, "warning: plugin load:", err)
+	} else {
+		toolset = append(toolset, plugins...)
+	}
 	reg := tools.NewRegistry(toolset...)
 
 	// A single shared stdin reader, used by both the REPL and approval prompts.
