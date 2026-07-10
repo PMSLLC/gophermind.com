@@ -123,7 +123,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [x] **82. Unified-diff review UI.** Render proposed edits as a colored diff with per-hunk approve/reject in the TUI. Value: reviewable, surgical changes.
 - [ ] **83. Editor plugins.** Thin VS Code / Neovim clients that drive `--print` stream-json. Value: gophermind inside the editor.
 - [x] **84. Inline patch application.** Apply a model-produced unified diff atomically with rollback (hardens `apply_patch`). Value: safe multi-file edits.
-- [ ] **85. TUI command palette.** Fuzzy-find slash commands, sessions, and tools. Value: fast discovery in chat.
+- [x] **85. TUI command palette.** Fuzzy-find slash commands, sessions, and tools. Value: fast discovery in chat.
 - [x] **86. Rich markdown/code rendering.** Syntax-highlight code blocks in the TUI transcript. Value: readable output.
 - [x] **87. `doctor --fix`.** Offer to auto-remediate common setup issues doctor finds. Value: from diagnosis to fixed in one step.
 - [x] **88. Shell completions.** Generate bash/zsh/fish completion for subcommands and flags. Value: ergonomic CLI.

@@ -7,7 +7,7 @@ import (
 
 // completionSubcommands are the top-level subcommands offered by tab-completion.
 var completionSubcommands = []string{
-	"chat", "resume", "config", "sessions", "doctor", "status", "prompt-tokens",
+	"commands", "chat", "resume", "config", "sessions", "doctor", "status", "prompt-tokens",
 	"audit", "policy", "persona", "prompts", "usage", "version", "run", "ask", "queue", "serve", "ab", "print", "completion",
 }
 

@@ -254,6 +254,19 @@ func run() error {
 		return nil
 	}
 
+	// `gophermind commands [query]` fuzzy-searches available subcommands (the
+	// palette's core, usable from the CLI).
+	if cmd == "commands" {
+		q := ""
+		if len(args) > 1 {
+			q = args[1]
+		}
+		for _, c := range ui.FuzzyFilter(q, completionSubcommands) {
+			fmt.Println(c)
+		}
+		return nil
+	}
+
 	// `gophermind completion <bash|zsh|fish>` prints a shell-completion script.
 	if cmd == "completion" {
 		shell := ""
