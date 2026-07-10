@@ -80,7 +80,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 
 ## AH. Integrations, Webhooks & the Outside World II (builds on `http_request`, `web_search`, the `serve` webhook, `fetch_url`)
 
-- [ ] **51. GitHub tool.** Read-only issues/PRs/reviews via the GitHub API (token-gated), plus a gated "comment" action. Value: work with the repo's collaboration surface.
+- [x] **51. GitHub tool.** Read-only issues/PRs/reviews via the GitHub API (token-gated), plus a gated "comment" action. Value: work with the repo's collaboration surface.
 - [ ] **52. Slack/Discord notifier.** Post run results/approvals to a channel (egress-allowlisted). Value: team visibility and remote approvals.
 - [ ] **53. Jira/Linear tool.** Read tickets and (gated) transition status. Value: close the loop from task to tracker.
 - [ ] **54. OAuth device flow.** Acquire and refresh tokens for integrations securely. Value: first-class auth without pasting long-lived tokens.
