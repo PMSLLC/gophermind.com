@@ -67,6 +67,9 @@ func run() error {
 	planFlag := flag.Bool("plan", false, "run/ask: emit a structured plan before executing")
 	parallelFlag := flag.Bool("parallel", false, "run/ask: execute independent tool calls in a turn concurrently")
 	toolBudgetFlag := flag.Int("tool-budget", 0, "run/ask: max tool calls per turn (0 = default)")
+	maxCostFlag := flag.Float64("max-cost", 0, "run/ask: abort when estimated cost (USD) exceeds this (0 = unlimited)")
+	maxTokensFlag := flag.Int("max-tokens", 0, "run/ask: abort when total tokens exceed this (0 = unlimited)")
+	maxDurationFlag := flag.Duration("max-duration", 0, "run/ask: abort when wall-clock exceeds this (e.g. 2m; 0 = unlimited)")
 	transcriptFlag := flag.String("transcript", cfg.TranscriptPath, "write the full wire-level message history (JSONL) to this path at session end; MAY CONTAIN SENSITIVE PROMPTS/RESPONSES (file written 0600, no credentials included)")
 	flag.Usage = usage
 	flag.Parse()
@@ -291,6 +294,14 @@ func run() error {
 		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
 		if instr := project.Instructions(cfg.RootDir); instr != "" {
 			ag.AppendSystemPrompt(instr)
+		}
+		// Cost/time guardrails apply to the default Send strategy.
+		if *maxCostFlag > 0 || *maxTokensFlag > 0 || *maxDurationFlag > 0 {
+			ag = ag.WithGuardrails(agent.Guardrails{
+				MaxCostUSD:  *maxCostFlag,
+				MaxTokens:   *maxTokensFlag,
+				MaxDuration: *maxDurationFlag,
+			})
 		}
 		// Pick the turn strategy from flags (all share Send's signature).
 		send := ag.Send

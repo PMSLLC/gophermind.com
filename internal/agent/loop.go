@@ -137,6 +137,14 @@ func (a *Agent) Send(ctx context.Context, userInput string) (string, error) {
 		a.onEvent(Event{Type: "usage", Usage: a.usage.Snapshot()})
 		a.msgs = append(a.msgs, reply) // append the assistant turn before any tool results
 
+		// Cost/time guardrails: abort an autonomous run that exceeds its ceilings,
+		// returning whatever progress the model produced. All ceilings default to 0
+		// (unlimited), so this is a no-op unless guardrails are configured.
+		if msg, stop := a.guardrails.check(a.usage.Snapshot(), time.Since(a.startTime)); stop {
+			a.onEvent(Event{Type: "assistant", Text: "⚠ " + msg})
+			return reply.Content, nil
+		}
+
 		// A reply with no tool calls is the final answer; the caller prints it.
 		if len(reply.ToolCalls) == 0 {
 			return reply.Content, nil

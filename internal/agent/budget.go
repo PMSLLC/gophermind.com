@@ -35,15 +35,18 @@ func (a *Agent) WithToolCallBudget(budget int) *Agent {
 		budget = defaultToolCallBudget
 	}
 	return &Agent{
-		llm:     a.llm,
-		reg:     a.reg,
-		maxIter: a.maxIter,
-		approve: a.approve,
-		onEvent: a.onEvent,
-		msgs:    a.msgs,
-		usage:   a.usage,
-		caps:    a.caps,
-		budget:  budget,
+		llm:         a.llm,
+		reg:         a.reg,
+		maxIter:     a.maxIter,
+		approve:     a.approve,
+		onEvent:     a.onEvent,
+		msgs:        a.msgs,
+		usage:       a.usage,
+		caps:        a.caps,
+		budget:      budget,
+		checkpoints: a.checkpoints,
+		guardrails:  a.guardrails,
+		startTime:   a.startTime,
 	}
 }
 
