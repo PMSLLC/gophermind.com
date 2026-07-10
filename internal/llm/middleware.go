@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -197,6 +198,37 @@ func LoggingMiddleware(w io.Writer) Middleware {
 			}
 			fmt.Fprintf(w, "llm http %s %s -> %d in %s\n", method, url, resp.StatusCode, dur)
 			return resp, nil
+		})
+	}
+}
+
+// JSONLoggingMiddleware is like LoggingMiddleware but emits one JSON object per
+// request (fields: time, method, url, status, duration_ms, and error when the
+// round-trip failed) for machine-readable logs. It applies the same safety
+// guarantees: it never reads bodies and the URL is redacted of userinfo, so no
+// bearer token / API key is logged. A nil w disables it.
+func JSONLoggingMiddleware(w io.Writer) Middleware {
+	return func(next http.RoundTripper) http.RoundTripper {
+		return roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if w == nil {
+				return next.RoundTrip(req)
+			}
+			start := time.Now()
+			resp, err := next.RoundTrip(req)
+			rec := map[string]any{
+				"time":        start.UTC().Format(time.RFC3339Nano),
+				"method":      req.Method,
+				"url":         req.URL.Redacted(),
+				"duration_ms": time.Since(start).Milliseconds(),
+			}
+			if err != nil {
+				rec["error"] = err.Error()
+			} else {
+				rec["status"] = resp.StatusCode
+			}
+			b, _ := json.Marshal(rec)
+			fmt.Fprintf(w, "%s\n", b)
+			return resp, err
 		})
 	}
 }

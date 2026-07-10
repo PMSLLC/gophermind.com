@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"encoding/json"
 	"bytes"
 	"context"
 	"errors"
@@ -292,5 +293,40 @@ func TestRedactHeaders(t *testing.T) {
 	}
 	if got := red.Get("Content-Type"); got != "application/json" {
 		t.Errorf("Content-Type was altered: %q", got)
+	}
+}
+
+// TestJSONLoggingMiddleware asserts JSON records with the expected fields and no
+// bearer-token leakage.
+func TestJSONLoggingMiddleware(t *testing.T) {
+	const secret = "sk-supersecret-bearer-token-value"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, jsonChatResponse)
+	}))
+	defer srv.Close()
+
+	var buf bytes.Buffer
+	c := newTestClient(t, srv, secret)
+	c.Use(JSONLoggingMiddleware(&buf))
+
+	if _, _, err := c.Complete(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+
+	out := buf.String()
+	if strings.Contains(out, secret) {
+		t.Fatalf("json log leaked the bearer token: %q", out)
+	}
+	var rec map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &rec); err != nil {
+		t.Fatalf("log line is not valid JSON: %v\n%s", err, out)
+	}
+	for _, k := range []string{"time", "method", "url", "status", "duration_ms"} {
+		if _, ok := rec[k]; !ok {
+			t.Errorf("json log missing field %q: %s", k, out)
+		}
+	}
+	if rec["status"].(float64) != 200 {
+		t.Errorf("status field wrong: %v", rec["status"])
 	}
 }

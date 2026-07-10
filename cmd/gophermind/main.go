@@ -388,6 +388,15 @@ func run() error {
 	} else if p := strings.TrimSpace(os.Getenv("GOPHERMIND_LLM_RECORD")); p != "" {
 		client.EnableRecording(p)
 	}
+	// Optional HTTP request logging to stderr: GOPHERMIND_HTTP_LOG enables it;
+	// GOPHERMIND_LOG_FORMAT=json emits machine-readable JSON lines (default text).
+	if envTruthy("GOPHERMIND_HTTP_LOG") {
+		if strings.EqualFold(strings.TrimSpace(os.Getenv("GOPHERMIND_LOG_FORMAT")), "json") {
+			client.Use(llm.JSONLoggingMiddleware(os.Stderr))
+		} else {
+			client.Use(llm.LoggingMiddleware(os.Stderr))
+		}
+	}
 
 	// Resolve the model. With none configured, auto-discover the first the
 	// endpoint serves. With one configured, validate it against /v1/models so a
