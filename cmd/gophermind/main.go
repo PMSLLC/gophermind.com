@@ -21,6 +21,7 @@ import (
 	"golang.org/x/term"
 	"gophermind/internal/abtest"
 	"gophermind/internal/agent"
+	"gophermind/internal/bundle"
 	"gophermind/internal/config"
 	"gophermind/internal/doctor"
 	"gophermind/internal/embed"
@@ -280,6 +281,30 @@ func run() error {
 			fmt.Println(c)
 		}
 		return nil
+	}
+
+	// `gophermind bundle [export <file>|import <file>]` shares the repo's
+	// .gophermind config (policy/prompts/personas) as a versioned tar.gz.
+	if cmd == "bundle" {
+		if len(args) < 3 {
+			return fmt.Errorf("usage: gophermind bundle [export <file>|import <file>]")
+		}
+		switch strings.ToLower(args[1]) {
+		case "export":
+			if err := bundle.Export(cfg.RootDir, args[2]); err != nil {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "✓ exported config bundle to %s\n", args[2])
+			return nil
+		case "import":
+			if err := bundle.Import(args[2], cfg.RootDir); err != nil {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "✓ imported config bundle from %s\n", args[2])
+			return nil
+		default:
+			return fmt.Errorf("usage: gophermind bundle [export <file>|import <file>]")
+		}
 	}
 
 	// `gophermind plugins [list|install <source>]` manages out-of-process tool
