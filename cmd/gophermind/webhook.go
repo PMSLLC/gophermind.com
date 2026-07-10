@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,9 +21,16 @@ func webhookHandler(run func(ctx context.Context, task string) (string, error), 
 			http.Error(w, "use POST", http.StatusMethodNotAllowed)
 			return
 		}
-		if token != "" && r.Header.Get("Authorization") != "Bearer "+token {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
+		// Constant-time bearer-token check (avoids leaking the token via response
+		// timing). An empty token means the handler itself is unauthenticated —
+		// runServe refuses to start in that case, so this path is test-only.
+		if token != "" {
+			want := "Bearer " + token
+			got := r.Header.Get("Authorization")
+			if subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
 		}
 		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 		if err != nil {
@@ -45,7 +53,10 @@ func webhookHandler(run func(ctx context.Context, task string) (string, error), 
 
 		answer, err := run(r.Context(), task)
 		if err != nil {
-			http.Error(w, "run failed: "+err.Error(), http.StatusInternalServerError)
+			// Log details server-side; return a generic message so internal error
+			// text (endpoints, paths) is not disclosed to the caller.
+			fmt.Fprintln(os.Stderr, "serve: run failed:", err)
+			http.Error(w, "run failed", http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -61,11 +72,26 @@ func serveAddr() string {
 	return ":8080"
 }
 
+// serveToken returns the configured webhook token, or an error when it is
+// unset. A webhook that can run tools (shell, file writes) must never be exposed
+// unauthenticated, so serve refuses to start without a token.
+func serveToken() (string, error) {
+	token := strings.TrimSpace(os.Getenv("GOPHERMIND_SERVE_TOKEN"))
+	if token == "" {
+		return "", fmt.Errorf("refusing to start webhook without GOPHERMIND_SERVE_TOKEN: it can run tools (shell, file writes)")
+	}
+	return token, nil
+}
+
 // runServe starts the webhook HTTP server, dispatching each POST /run to run.
 func runServe(run func(ctx context.Context, task string) (string, error)) error {
+	token, err := serveToken()
+	if err != nil {
+		return err
+	}
 	addr := serveAddr()
 	mux := http.NewServeMux()
-	mux.HandleFunc("/run", webhookHandler(run, strings.TrimSpace(os.Getenv("GOPHERMIND_SERVE_TOKEN"))))
+	mux.HandleFunc("/run", webhookHandler(run, token))
 	fmt.Fprintf(os.Stderr, "gophermind serving webhook on %s (POST /run)\n", addr)
 	return http.ListenAndServe(addr, mux)
 }

@@ -79,6 +79,40 @@ func TestWebhookTokenAuth(t *testing.T) {
 	}
 }
 
+func TestWebhookWrongTokenRejected(t *testing.T) {
+	h := webhookHandler(func(context.Context, string) (string, error) { return "ok", nil }, "secret")
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/run", strings.NewReader("t"))
+	req.Header.Set("Authorization", "Bearer wrong")
+	h(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("wrong token status = %d, want 401", rr.Code)
+	}
+}
+
+func TestServeTokenRequired(t *testing.T) {
+	t.Setenv("GOPHERMIND_SERVE_TOKEN", "")
+	if _, err := serveToken(); err == nil {
+		t.Error("serve must refuse to start without a token")
+	}
+	t.Setenv("GOPHERMIND_SERVE_TOKEN", "abc")
+	tok, err := serveToken()
+	if err != nil || tok != "abc" {
+		t.Errorf("serveToken() = %q, %v; want abc, nil", tok, err)
+	}
+}
+
+func TestWebhookErrorDoesNotLeakDetail(t *testing.T) {
+	h := webhookHandler(func(context.Context, string) (string, error) {
+		return "", errors.New("dial tcp 10.0.0.5:8000: secret internal detail")
+	}, "")
+	rr := httptest.NewRecorder()
+	h(rr, httptest.NewRequest(http.MethodPost, "/run", strings.NewReader("t")))
+	if strings.Contains(rr.Body.String(), "secret internal detail") {
+		t.Errorf("internal error detail leaked to client: %q", rr.Body.String())
+	}
+}
+
 func TestWebhookRunError(t *testing.T) {
 	h := webhookHandler(func(context.Context, string) (string, error) { return "", errors.New("boom") }, "")
 	rr := httptest.NewRecorder()
