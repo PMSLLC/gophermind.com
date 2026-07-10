@@ -27,6 +27,7 @@ import (
 	"gophermind/internal/tools"
 	"gophermind/internal/tui"
 	"gophermind/internal/ui"
+	"gophermind/internal/doctor"
 	"gophermind/internal/version"
 )
 
@@ -181,6 +182,17 @@ func run() error {
 		if res.MaxIter > 0 {
 			cfg.MaxIter = res.MaxIter
 		}
+	}
+
+	// `gophermind doctor` runs environment/config diagnostics and exits. It must
+	// work even when the endpoint is unset or unreachable (that's what it checks),
+	// so it runs before Validate and before the client is built.
+	if cmd == "doctor" {
+		results := doctor.Checks(doctor.Params{BaseURL: cfg.BaseURL, Model: cfg.Model, Root: cfg.RootDir})
+		if !doctor.Report(os.Stdout, results) {
+			return fmt.Errorf("doctor: some checks failed")
+		}
+		return nil
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -497,6 +509,7 @@ func usage() {
 Usage:
   gophermind                    interactive session (default)
   gophermind config             (re-)run the setup wizard and save config
+  gophermind doctor             run environment/config diagnostics and exit
   gophermind version            print build version and exit
   gophermind run "task"         one-shot: run a task and exit
   gophermind ask "question"     one-shot: answer without modifying files
