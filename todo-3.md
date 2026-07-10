@@ -125,7 +125,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [ ] **86. Network-disabled shell.** Run commands with no network. Value: exfiltration prevention.
 - [x] **87. Read-only repo mode.** A flag disabling all mutating tools. Value: safe exploration by construction.
 - [x] **88. PII redaction.** Redact secrets/PII from transcripts and sessions. Value: data-handling compliance.
-- [ ] **89. Approval by a judge model.** Route ambiguous approvals to a small local model against a spec. Value: smarter-than-regex gating.
+- [x] **89. Approval by a judge model.** Route ambiguous approvals to a small local model against a spec. Value: smarter-than-regex gating.
 - [ ] **90. Container-exec backend.** Run `run_shell` in a container. Value: stronger isolation than process limits.
 
 ## AB. Developer Experience & Community (builds on README/CONTRIBUTING, the public repo)

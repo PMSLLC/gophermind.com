@@ -337,6 +337,11 @@ func run() error {
 		// decision: always/never resolve without prompting, ask defers to it.
 		approve = safety.PolicyApproval(pol, approve)
 	}
+	// Opt-in judge model (GOPHERMIND_JUDGE): route gated approvals to a small
+	// model against a spec; a judge outage defers to the base decision above.
+	if !*readOnlyFlag && envTruthy("GOPHERMIND_JUDGE") {
+		approve = safety.JudgeApproval(newJudge(client), approve)
+	}
 
 	// Resolve an optional persona preset and compose it with repo instructions
 	// (CLAUDE.md/AGENTS.md) into the system-prompt suffix used by chat and run/ask.
@@ -834,6 +839,58 @@ func updateCheckEnabled() bool {
 // secrets and PII scrubbed on write (GOPHERMIND_REDACT_TRANSCRIPT).
 func redactTranscriptEnabled() bool {
 	return envTruthy("GOPHERMIND_REDACT_TRANSCRIPT")
+}
+
+// newJudge builds a JudgeFunc that asks the model whether a gated tool call is
+// allowed, against a spec (GOPHERMIND_JUDGE_SPEC or a safe default). It forces a
+// structured judge_verdict tool call and parses the decision. The verdict tool
+// choice is set only for this call and restored afterward.
+func newJudge(client *llm.Client) safety.JudgeFunc {
+	spec := strings.TrimSpace(os.Getenv("GOPHERMIND_JUDGE_SPEC"))
+	if spec == "" {
+		spec = "Allow safe, task-relevant actions. Deny anything destructive, anything that exfiltrates secrets, or anything acting outside the repository."
+	}
+	verdictTool := llm.Tool{
+		Type: "function",
+		Function: llm.Function{
+			Name:        "judge_verdict",
+			Description: "Decide whether the proposed tool call should be allowed.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"approve": map[string]any{"type": "boolean", "description": "True to allow the tool call."},
+					"reason":  map[string]any{"type": "string", "description": "Brief justification."},
+				},
+				"required": []string{"approve"},
+			},
+		},
+	}
+	return func(tool, argsJSON string) (bool, string, error) {
+		msgs := []llm.Message{
+			{Role: "system", Content: "You are a security gate for an autonomous coding agent. " + spec + " Respond ONLY by calling judge_verdict."},
+			{Role: "user", Content: fmt.Sprintf("Proposed tool call:\ntool: %s\narguments: %s\n\nAllow it?", tool, argsJSON)},
+		}
+		client.SetToolChoice(&llm.ToolChoiceConfig{Forced: &llm.ToolChoiceForced{Name: "judge_verdict"}})
+		defer client.SetToolChoice(nil)
+		reply, _, err := client.Complete(context.Background(), msgs, []llm.Tool{verdictTool})
+		if err != nil {
+			return false, "", err
+		}
+		for _, tc := range reply.ToolCalls {
+			if tc.Function.Name != "judge_verdict" {
+				continue
+			}
+			var v struct {
+				Approve bool   `json:"approve"`
+				Reason  string `json:"reason"`
+			}
+			if json.Unmarshal([]byte(tc.Function.Arguments), &v) != nil {
+				return false, "", fmt.Errorf("judge verdict parse failed")
+			}
+			return v.Approve, v.Reason, nil
+		}
+		return false, "", fmt.Errorf("judge produced no verdict")
+	}
 }
 
 // loadJSONSchema reads and parses a JSON-schema object from a file, for
