@@ -24,7 +24,7 @@ func Instructions(root string) string {
 		if err != nil {
 			continue
 		}
-		content := strings.TrimSpace(string(b))
+		content := strings.TrimSpace(expandIncludes(root, string(b), 0))
 		if content == "" {
 			continue
 		}
