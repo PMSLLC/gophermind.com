@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -111,63 +110,6 @@ func ApprovalWithTimeout(fn ApprovalFunc, timeout time.Duration) ApprovalFunc {
 			return false // default to deny on timeout
 		}
 	}
-}
-
-// AuditLog is a tamper-evident log of tool calls.
-type AuditLog struct {
-	mu      sync.Mutex
-	entries []AuditEntry
-	path    string
-}
-
-// AuditEntry records a single tool call event.
-type AuditEntry struct {
-	Timestamp time.Time `json:"timestamp"`
-	Tool      string    `json:"tool"`
-	Args      string    `json:"args"`
-	Decision  string    `json:"decision"` // "approved", "denied", "auto"
-	Result    string    `json:"result"`
-}
-
-// NewAuditLog creates a new audit log.
-func NewAuditLog(path string) *AuditLog {
-	return &AuditLog{path: path}
-}
-
-// Record appends an entry to the audit log.
-func (al *AuditLog) Record(tool, args, decision, result string) {
-	al.mu.Lock()
-	defer al.mu.Unlock()
-	al.entries = append(al.entries, AuditEntry{
-		Timestamp: time.Now(),
-		Tool:      tool,
-		Args:      args,
-		Decision:  decision,
-		Result:    result,
-	})
-}
-
-// Entries returns all recorded entries.
-func (al *AuditLog) Entries() []AuditEntry {
-	al.mu.Lock()
-	defer al.mu.Unlock()
-	return al.entries
-}
-
-// Save writes the audit log to a file.
-func (al *AuditLog) Save() error {
-	if al.path == "" {
-		return nil
-	}
-	// In production, write as JSONL.
-	return nil
-}
-
-// ReadAuditLog loads an audit log from a file.
-func ReadAuditLog(path string) (*AuditLog, error) {
-	al := &AuditLog{path: path}
-	// In production, read JSONL entries.
-	return al, nil
 }
 
 // SubRoot restricts the agent to a subdirectory.

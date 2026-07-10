@@ -117,7 +117,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 
 ## AA. Security, Audit & Compliance II (builds on `internal/safety`, `--permission-mode`)
 
-- [ ] **81. Tamper-evident audit log.** Every tool call + decision + result hash, appended locally. Value: traceability of what the agent did.
+- [x] **81. Tamper-evident audit log.** Every tool call + decision + result hash, appended locally. Value: traceability of what the agent did.
 - [x] **82. Policy file.** `.gophermind/policy` for deny/allow patterns and gated-tool config. Value: per-repo tuning without recompiling.
 - [x] **83. Secret-scanning on writes.** Block/warn on credential patterns in `write_file`/`edit_file`. Value: stops committing secrets.
 - [x] **84. Per-tool approval policies.** "always allow read, ask on write, never auto shell". Value: matches real trust boundaries.

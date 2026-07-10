@@ -45,7 +45,12 @@ type Agent struct {
 	guardrails  Guardrails            // cost/time limits for autonomous runs
 	startTime   time.Time             // when the agent was created (for duration tracking)
 	redactor    *safety.SecretScanner // when non-nil, transcript content is scrubbed on export
+	audit       *safety.AuditLog      // when non-nil, tool calls are recorded to a tamper-evident log
 }
+
+// SetAuditLog attaches a tamper-evident audit log; every tool call, its approval
+// decision, and a hash of its result are recorded. Nil disables auditing.
+func (a *Agent) SetAuditLog(al *safety.AuditLog) { a.audit = al }
 
 // SetRedactTranscript enables (or disables) secret/PII redaction of message
 // content when the transcript is exported. Off by default.
@@ -264,14 +269,20 @@ func (a *Agent) dispatch(ctx context.Context, call llm.ToolCall) string {
 	if !ok {
 		return "error: unknown tool " + name
 	}
-	if safety.Gated(name) && !a.approve(name, rawArgs) {
-		return "denied by user"
+	decision := "auto"
+	if safety.Gated(name) {
+		if !a.approve(name, rawArgs) {
+			_ = a.audit.Record(name, rawArgs, "denied", "")
+			return "denied by user"
+		}
+		decision = "approved"
 	}
 
 	out, err := t.Run(ctx, json.RawMessage(rawArgs))
 	if err != nil {
 		out = "error: " + err.Error()
 	}
+	_ = a.audit.Record(name, rawArgs, decision, out)
 	a.onEvent(Event{Type: "tool_result", Name: name, Text: out})
 	return out
 }

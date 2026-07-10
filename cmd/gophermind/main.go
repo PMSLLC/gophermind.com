@@ -158,6 +158,18 @@ func run() error {
 		return runSessions(args[1:])
 	}
 
+	// `gophermind audit verify <file>` checks a tamper-evident audit log's chain.
+	if cmd == "audit" {
+		if len(args) < 3 || strings.ToLower(args[1]) != "verify" {
+			return fmt.Errorf("usage: gophermind audit verify <file>")
+		}
+		if err := safety.VerifyAuditFile(args[2]); err != nil {
+			return fmt.Errorf("audit verification FAILED: %w", err)
+		}
+		fmt.Fprintln(os.Stderr, "✓ audit log intact")
+		return nil
+	}
+
 	// `gophermind config` always (re-)runs the setup wizard, pre-filled with the
 	// current values, then saves and exits.
 	if cmd == "config" {
@@ -403,6 +415,7 @@ func run() error {
 			NoBanner:         *noBannerFlag || *quietFlag,
 			NoFortune:        strings.EqualFold(*fortuneFlag, "off"),
 			RedactTranscript: redactTranscriptEnabled(),
+			AuditPath:        strings.TrimSpace(os.Getenv("GOPHERMIND_AUDIT_LOG")),
 		})
 	case "print":
 		return runPrint(client, reg, cfg, printOptions{
@@ -430,6 +443,7 @@ func run() error {
 		ag := agent.New(client, reg, cfg.MaxIter, approve, printer.Event)
 		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
 		ag.SetRedactTranscript(redactTranscriptEnabled())
+		ag.SetAuditLog(auditLog())
 		if systemSuffix != "" {
 			ag.AppendSystemPrompt(systemSuffix)
 		}
@@ -558,6 +572,7 @@ func runPrint(client *llm.Client, reg *tools.Registry, cfg config.Config, o prin
 
 	ag := agent.New(client, reg, cfg.MaxIter, approve, onEvent)
 	ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
+	ag.SetAuditLog(auditLog())
 
 	if resumeID != "" {
 		if err := session.Load(resumeID, ag); err != nil {
@@ -679,6 +694,7 @@ func runQueue(ctx context.Context, client *llm.Client, reg *tools.Registry, cfg 
 	printer := ui.Printer{Verbose: verbose}
 	ag := agent.New(client, reg, cfg.MaxIter, approve, printer.Event)
 	ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
+	ag.SetAuditLog(auditLog())
 	if systemSuffix != "" {
 		ag.AppendSystemPrompt(systemSuffix)
 	}
@@ -841,6 +857,15 @@ func redactTranscriptEnabled() bool {
 	return envTruthy("GOPHERMIND_REDACT_TRANSCRIPT")
 }
 
+// auditLog returns a tamper-evident audit log when GOPHERMIND_AUDIT_LOG names a
+// path, or nil (auditing disabled) otherwise. SetAuditLog(nil) is safe.
+func auditLog() *safety.AuditLog {
+	if path := strings.TrimSpace(os.Getenv("GOPHERMIND_AUDIT_LOG")); path != "" {
+		return safety.NewAuditLog(path)
+	}
+	return nil
+}
+
 // newJudge builds a JudgeFunc that asks the model whether a gated tool call is
 // allowed, against a spec (GOPHERMIND_JUDGE_SPEC or a safe default). It forces a
 // structured judge_verdict tool call and parses the decision. The verdict tool
@@ -941,6 +966,7 @@ Usage:
   gophermind config             (re-)run the setup wizard and save config
   gophermind sessions [list|show <id>|rm <id>|gc [days]|export <id> <file>|import <file> <id>]
   gophermind doctor             run environment/config diagnostics and exit
+  gophermind audit verify <file>  verify a tamper-evident audit log's chain
   gophermind version            print build version and exit
   gophermind run "task"         one-shot: run a task and exit
   gophermind ask "question"     one-shot: answer without modifying files
