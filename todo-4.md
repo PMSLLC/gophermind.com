@@ -86,7 +86,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [ ] **54. OAuth device flow.** Acquire and refresh tokens for integrations securely. Value: first-class auth without pasting long-lived tokens.
 - [x] **55. Webhook signature verification.** HMAC-verify inbound `serve` payloads (GitHub/Stripe style). Value: trust the trigger source, not just the bearer token.
 - [x] **56. Scheduled runs.** A `cron`-like scheduler that fires a task file on an interval (builds on `queue`). Value: recurring maintenance without external cron.
-- [ ] **57. Event-driven triggers.** Watch a branch/RSS/file and enqueue a run on change (fulfills the batch-3 watcher idea, now concrete). Value: proactive automation.
+- [x] **57. Event-driven triggers.** Watch a branch/RSS/file and enqueue a run on change (fulfills the batch-3 watcher idea, now concrete). Value: proactive automation.
 - [x] **58. Response streaming over `serve`.** Server-Sent Events from the webhook so callers see tokens live. Value: responsive remote UIs.
 - [x] **59. Rate limiting & quotas per caller.** Token-bucket limits on `serve` keyed by token. Value: safe multi-tenant exposure.
 - [x] **60. OpenAPI request tool.** Load an OpenAPI spec and expose typed operations as callable actions (builds on `http_request`). Value: correct, discoverable API calls.

@@ -46,6 +46,7 @@ import (
 	"gophermind/internal/update"
 	"gophermind/internal/usagelog"
 	"gophermind/internal/version"
+	"gophermind/internal/watch"
 )
 
 func main() {
@@ -106,6 +107,7 @@ func run() error {
 	reportFlag := flag.String("report", "", "run/ask: write a self-contained HTML report of the run to this file")
 	debateFlag := flag.Bool("debate", false, "run/ask: produce two candidate answers and synthesize the better one (debate/consensus)")
 	everyFlag := flag.Duration("every", 0, "run/ask: re-run the task on this interval (e.g. 30m) until interrupted — a built-in scheduler")
+	watchFlag := flag.String("watch", "", "run/ask: re-run the task whenever this path (file/dir) changes")
 	promptTemplateFlag := flag.String("prompt-template", "", "use a custom structured prompt template (.md with frontmatter + XML sections) as the base system prompt")
 	toolBudgetFlag := flag.Int("tool-budget", 0, "run/ask: max tool calls per turn (0 = default)")
 	maxCostFlag := flag.Float64("max-cost", 0, "run/ask: abort when estimated cost (USD) exceeds this (0 = unlimited)")
@@ -1027,6 +1029,11 @@ func run() error {
 		// interval until interrupted (a built-in cron for maintenance tasks).
 		if *everyFlag > 0 {
 			return runEvery(ctx, send, task, *everyFlag)
+		}
+		// --watch <path> fires the task whenever the watched path changes
+		// (event-driven automation).
+		if wp := strings.TrimSpace(*watchFlag); wp != "" {
+			return runWatch(ctx, send, task, wp)
 		}
 		answer, sendErr := send(ctx, task)
 		if endSpan != nil {
@@ -2072,6 +2079,39 @@ func runEvery(ctx context.Context, send func(context.Context, string) (string, e
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
+		}
+	}
+}
+
+// runWatch re-runs a task whenever the watched path changes (polling mtime),
+// until the context is cancelled.
+func runWatch(ctx context.Context, send func(context.Context, string) (string, error), task, path string) error {
+	last, err := watch.LatestModTime(path)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "watching %s (Ctrl-C to stop)\n", path)
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			changed, newMod, err := watch.Changed(path, last)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "watch error:", err)
+				continue
+			}
+			if changed {
+				last = newMod
+				answer, err := send(ctx, task)
+				if err != nil {
+					fmt.Fprintln(os.Stderr, "run failed:", err)
+				} else {
+					fmt.Println(answer)
+				}
+			}
 		}
 	}
 }
