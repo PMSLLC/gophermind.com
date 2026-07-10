@@ -94,7 +94,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [x] **61. `fetch_url` tool.** Gated, egress-controlled URL fetch → readable text. Value: safe external context (vs. shelling out to `curl`).
 - [ ] **62. `web_search` tool.** Pluggable search provider. Value: current information.
 - [ ] **63. Docs-retrieval tool.** Context7-style library docs lookup. Value: accurate API usage.
-- [ ] **64. HTTP API caller.** OpenAPI-aware request tool. Value: integrate external services.
+- [x] **64. HTTP API caller.** OpenAPI-aware request tool. Value: integrate external services.
 - [ ] **65. Sandboxed headless browser.** Render/interact with pages under egress control. Value: debug UI / scrape safely.
 - [ ] **66. Changelog/RSS watcher.** Trigger a run on upstream changes. Value: event-driven maintenance.
 - [ ] **67. Webhook trigger.** Start a one-shot run from an inbound webhook. Value: CI/automation entry point.

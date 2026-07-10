@@ -113,7 +113,7 @@ func Auto(tool, argsJSON string) bool { return true }
 // Gated reports whether a tool requires approval before running.
 func Gated(tool string) bool {
 	switch tool {
-	case "write_file", "edit_file", "run_shell", "move_file", "delete_file", "mkdir", "apply_patch", "fetch_url":
+	case "write_file", "edit_file", "run_shell", "move_file", "delete_file", "mkdir", "apply_patch", "fetch_url", "http_request":
 		return true
 	default:
 		return false

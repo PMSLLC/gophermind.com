@@ -311,11 +311,12 @@ func run() error {
 		tools.DeleteFile(cfg.RootDir),
 		tools.Mkdir(cfg.RootDir),
 		tools.PatchApply(cfg.RootDir),
-		tools.FetchURL(cfg.FetchAllowHosts), // gated, egress-controlled URL fetch
-		tools.FindSymbol(cfg.RootDir),       // definition-aware symbol search
-		tools.GitInfo(cfg.RootDir),          // read-only structured git (log/status/diff)
-		tools.InspectData(cfg.RootDir),      // read-only CSV/JSON schema + preview
-		tools.AnalyzeLog(cfg.RootDir),       // read-only log severity summary
+		tools.FetchURL(cfg.FetchAllowHosts),    // gated, egress-controlled URL fetch
+		tools.HTTPRequest(cfg.FetchAllowHosts), // gated HTTP API caller (methods/headers/body)
+		tools.FindSymbol(cfg.RootDir),          // definition-aware symbol search
+		tools.GitInfo(cfg.RootDir),             // read-only structured git (log/status/diff)
+		tools.InspectData(cfg.RootDir),         // read-only CSV/JSON schema + preview
+		tools.AnalyzeLog(cfg.RootDir),          // read-only log severity summary
 	)
 
 	// A single shared stdin reader, used by both the REPL and approval prompts.
