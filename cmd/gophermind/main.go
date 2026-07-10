@@ -205,6 +205,36 @@ func run() error {
 		return nil
 	}
 
+	// `gophermind policy test <policy> <scenarios>` runs policy-as-code tests:
+	// it asserts a policy's decisions against a JSON scenarios file.
+	if cmd == "policy" {
+		if len(args) < 4 || strings.ToLower(args[1]) != "test" {
+			return fmt.Errorf("usage: gophermind policy test <policy-file> <scenarios-file>")
+		}
+		pol, err := safety.LoadPolicy(args[2])
+		if err != nil {
+			return err
+		}
+		scenarios, err := safety.LoadPolicyScenarios(args[3])
+		if err != nil {
+			return err
+		}
+		failed := 0
+		for _, r := range safety.RunPolicyScenarios(pol, scenarios) {
+			status := "PASS"
+			if !r.Pass {
+				status = "FAIL"
+				failed++
+			}
+			fmt.Printf("%-4s  %-30s expect=%s got=%s\n", status, r.Name, r.Expect, r.Got)
+		}
+		if failed > 0 {
+			return fmt.Errorf("%d policy scenario(s) failed", failed)
+		}
+		fmt.Fprintln(os.Stderr, "✓ all policy scenarios passed")
+		return nil
+	}
+
 	// `gophermind config` always (re-)runs the setup wizard, pre-filled with the
 	// current values, then saves and exits.
 	if cmd == "config" {
@@ -1260,6 +1290,7 @@ Usage:
   gophermind prompt-tokens      print per-section token cost of the base system prompt
   gophermind completion <shell> print a bash/zsh/fish completion script
   gophermind audit verify <file>  verify a tamper-evident audit log's chain
+  gophermind policy test <p> <s>  assert a policy's decisions against a scenarios file
   gophermind version            print build version and exit
   gophermind run "task"         one-shot: run a task and exit
   gophermind ask "question"     one-shot: answer without modifying files
