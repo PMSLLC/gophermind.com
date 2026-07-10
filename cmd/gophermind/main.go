@@ -491,6 +491,7 @@ func runPrint(client *llm.Client, reg *tools.Registry, cfg config.Config, o prin
 	// the session is ephemeral (no disk footprint).
 	persist := false
 	if resumeID != "" {
+		resumeID = session.Resolve(resumeID) // a friendly alias -> its session id
 		sessionID, persist = resumeID, true
 	} else if sessionID != "" {
 		persist = true
@@ -627,11 +628,20 @@ func runSessions(args []string) error {
 				s.ID, s.ModTime.Format("2006-01-02 15:04"), s.Messages, s.Title)
 		}
 		return nil
+	case "alias":
+		if len(args) < 3 {
+			return fmt.Errorf("usage: sessions alias <name> <id>")
+		}
+		if err := session.SetAlias(args[1], args[2]); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "✓ alias %q → session %q\n", args[1], args[2])
+		return nil
 	case "show", "cat":
 		if len(args) < 2 {
 			return fmt.Errorf("sessions show requires a session id")
 		}
-		p, err := session.Path(args[1])
+		p, err := session.Path(session.Resolve(args[1]))
 		if err != nil {
 			return err
 		}
@@ -645,7 +655,7 @@ func runSessions(args []string) error {
 		if len(args) < 2 {
 			return fmt.Errorf("sessions rm requires a session id")
 		}
-		if err := session.Remove(args[1]); err != nil {
+		if err := session.Remove(session.Resolve(args[1])); err != nil {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "✓ removed session %q\n", args[1])
@@ -684,7 +694,7 @@ func runSessions(args []string) error {
 		fmt.Fprintf(os.Stderr, "✓ imported %s as session %q\n", args[1], args[2])
 		return nil
 	default:
-		return fmt.Errorf("unknown sessions action %q (use list, show <id>, rm <id>, gc [days], export <id> <file>, import <file> <id>)", action)
+		return fmt.Errorf("unknown sessions action %q (use list, show <id>, rm <id>, gc [days], export <id> <file>, import <file> <id>, alias <name> <id>)", action)
 	}
 }
 
