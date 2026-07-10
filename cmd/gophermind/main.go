@@ -94,6 +94,7 @@ func run() error {
 	verifyFlag := flag.Bool("verify", false, "run/ask: have a second (verifier) agent check the result and trigger one correction round if incomplete")
 	fleetFlag := flag.Int("fleet", 1, "queue: run up to N tasks concurrently under the shared approval policy (fleet/overseer mode)")
 	abFixturesFlag := flag.String("fixtures", "", "ab: JSONL fixtures file ({\"prompt\":..,\"expect\":..} per line)")
+	abMinScoreFlag := flag.Float64("min-score", 0, "ab: fail (non-zero exit) if any variant scores below this fraction (0..1) — CI gate")
 	abVariantsFlag := flag.String("variants", "", "ab: comma-separated prompt-template files to compare (default: the built-in template)")
 	schemaFlag := flag.String("schema", "", "run/ask: force a JSON-schema-constrained response; a file path, or @name for a built-in (diff/review/plan)")
 	dryRunFlag := flag.Bool("dry-run", false, "preview the mutating tool calls the agent would make without executing them")
@@ -720,7 +721,7 @@ func run() error {
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
-		return runAB(ctx, client, reg, cfg, basePrompt, *abVariantsFlag, *abFixturesFlag)
+		return runAB(ctx, client, reg, cfg, basePrompt, *abVariantsFlag, *abFixturesFlag, *abMinScoreFlag)
 	case "serve":
 		// Webhook mode: each POST /run spawns a fresh agent turn, isolated from
 		// other requests. Blocks until the process is stopped.
@@ -1081,7 +1082,7 @@ func runSetupWizard(cfg config.Config) (setup.Result, error) {
 
 // runAB implements the `ab` subcommand: score one or more prompt-template
 // variants against a fixtures file (JSONL prompt/expect) and print a table.
-func runAB(ctx context.Context, client *llm.Client, reg *tools.Registry, cfg config.Config, basePrompt, variantsCSV, fixturesFile string) error {
+func runAB(ctx context.Context, client *llm.Client, reg *tools.Registry, cfg config.Config, basePrompt, variantsCSV, fixturesFile string, minScore float64) error {
 	// Load fixtures.
 	data, err := os.ReadFile(fixturesFile)
 	if err != nil {
@@ -1130,8 +1131,21 @@ func runAB(ctx context.Context, client *llm.Client, reg *tools.Registry, cfg con
 
 	results := abtest.RunMatrix(ctx, variants, fixtures, run)
 	fmt.Printf("A/B over %d fixtures:\n", len(fixtures))
+	belowThreshold := false
 	for _, r := range results {
-		fmt.Printf("  %-24s %d/%d passed\n", r.Variant, r.Passed, r.Total)
+		score := 0.0
+		if r.Total > 0 {
+			score = float64(r.Passed) / float64(r.Total)
+		}
+		fmt.Printf("  %-24s %d/%d passed (%.0f%%)\n", r.Variant, r.Passed, r.Total, score*100)
+		if minScore > 0 && score < minScore {
+			belowThreshold = true
+		}
+	}
+	// Regression gate: a non-zero exit fails CI when a variant scores below the
+	// configured minimum, so a prompt change can't silently regress.
+	if belowThreshold {
+		return fmt.Errorf("A/B gate failed: a variant scored below the --min-score threshold of %.0f%%", minScore*100)
 	}
 	return nil
 }
