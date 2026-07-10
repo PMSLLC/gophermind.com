@@ -22,7 +22,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [x] **5. Web-search result re-ranking.** Score `web_search` hits by embedding similarity to the query before returning. Value: the top result is actually the most relevant, not just Brave's default order.
 - [x] **6. Answer-with-citations mode.** When `web_search`/`docs_lookup` were used, require the final answer to cite the source URLs it relied on. Value: verifiable, traceable answers.
 - [x] **7. Incremental index updates.** Re-embed only files changed since the last index (via `git_info` diff). Value: fast re-index on large repos.
-- [ ] **8. Hybrid search.** Combine BM25 (SQLite FTS5) with vector similarity for `semantic_search`. Value: recall on exact terms + concepts together.
+- [x] **8. Hybrid search.** Combine BM25 (SQLite FTS5) with vector similarity for `semantic_search`. Value: recall on exact terms + concepts together.
 - [x] **9. Knowledge packs.** Import a folder of markdown/PDF into the vector store as a named pack the model can query. Value: bring domain docs into the agent's reach.
 - [x] **10. Retrieval eval.** Score retrieval quality (hit@k) against fixtures using the `ab`/`abtest` harness. Value: tune chunking/embeddings on data, not vibes.
 

@@ -630,6 +630,7 @@ func run() error {
 		tools.RecordEpisode(embedProvider, episodesPath(cfg.RootDir)),         // record task outcomes to episodic memory
 		tools.ImportPack(cfg.RootDir, embedProvider, packsDir),                // index a doc folder as a knowledge pack
 		tools.RetrievalEval(cfg.RootDir, embedProvider, indexPath),            // score index retrieval quality (hit@k)
+		tools.HybridSearch(cfg.RootDir, embedProvider, indexPath),             // BM25 + vector hybrid retrieval
 	)
 	// --dry-run: wrap gated (mutating) tools so the agent previews the calls it
 	// would make without executing any mutation.
