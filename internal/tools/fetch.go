@@ -29,15 +29,15 @@ var (
 // must match one of the entries, and requests (including every redirect hop) to
 // loopback/private/link-local addresses — e.g. the cloud metadata endpoint
 // 169.254.169.254 — are refused to prevent SSRF. Safe alternative to curl.
-func FetchURL(allowHosts []string) Tool {
-	return fetchTool(allowHosts, false)
+func FetchURL(allowHosts []string, budget *NetBudget) Tool {
+	return fetchTool(allowHosts, false, budget)
 }
 
 // fetchTool is the constructor behind FetchURL. allowLoopback relaxes only the
 // loopback (127.0.0.0/8, ::1) block so tests can target httptest servers; it
 // never relaxes the private/link-local blocks, and production always passes
 // false.
-func fetchTool(allowHosts []string, allowLoopback bool) Tool {
+func fetchTool(allowHosts []string, allowLoopback bool, budget *NetBudget) Tool {
 	return Tool{
 		Name:        "fetch_url",
 		Description: "Fetch an http(s) URL with a GET request and return the response body as readable text (HTML is stripped). Egress-controlled and size-limited.",
@@ -72,6 +72,9 @@ func fetchTool(allowHosts []string, allowLoopback bool) Tool {
 			}
 			req.Header.Set("User-Agent", "gophermind/fetch_url")
 
+			if err := budget.begin(); err != nil {
+				return "", err
+			}
 			client := &http.Client{
 				Timeout: 30 * time.Second,
 				// Re-apply the egress guard to every redirect target so an allowed
@@ -92,6 +95,9 @@ func fetchTool(allowHosts []string, allowLoopback bool) Tool {
 			body, err := io.ReadAll(io.LimitReader(resp.Body, int64(limit)))
 			if err != nil {
 				return "", fmt.Errorf("read body: %w", err)
+			}
+			if err := budget.add(len(body)); err != nil {
+				return "", err
 			}
 			truncated := len(body) >= limit
 

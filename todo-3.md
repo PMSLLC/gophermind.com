@@ -99,7 +99,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [ ] **66. Changelog/RSS watcher.** Trigger a run on upstream changes. Value: event-driven maintenance.
 - [ ] **67. Webhook trigger.** Start a one-shot run from an inbound webhook. Value: CI/automation entry point.
 - [x] **68. Egress allowlist enforcement.** Restrict all network tools to approved hosts. Value: exfiltration guardrail.
-- [ ] **69. Network budget.** Rate/byte limits on network tools. Value: bounded, predictable usage.
+- [x] **69. Network budget.** Rate/byte limits on network tools. Value: bounded, predictable usage.
 - [ ] **70. Offline docs cache.** Persist fetched docs for reuse offline. Value: speed + air-gapped support.
 
 ## Z. Data, DB & Structured Tools (builds on the tool registry)

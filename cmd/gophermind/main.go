@@ -297,6 +297,9 @@ func run() error {
 		fmt.Fprintf(os.Stderr, "model capabilities: %s\n", caps)
 	}
 
+	// Shared session-wide budget for the network tools (0/0 = unlimited).
+	netBudget := tools.NewNetBudget(cfg.NetMaxRequests, cfg.NetMaxBytes)
+
 	reg := tools.NewRegistry(
 		tools.ReadFileRange(cfg.RootDir),  // read_file + optional line ranges
 		tools.ListFilesGlob(cfg.RootDir),  // list_files + include/exclude globs
@@ -313,12 +316,12 @@ func run() error {
 		tools.DeleteFile(cfg.RootDir),
 		tools.Mkdir(cfg.RootDir),
 		tools.PatchApply(cfg.RootDir),
-		tools.FetchURL(cfg.FetchAllowHosts),    // gated, egress-controlled URL fetch
-		tools.HTTPRequest(cfg.FetchAllowHosts), // gated HTTP API caller (methods/headers/body)
-		tools.FindSymbol(cfg.RootDir),          // definition-aware symbol search
-		tools.GitInfo(cfg.RootDir),             // read-only structured git (log/status/diff)
-		tools.InspectData(cfg.RootDir),         // read-only CSV/JSON schema + preview
-		tools.AnalyzeLog(cfg.RootDir),          // read-only log severity summary
+		tools.FetchURL(cfg.FetchAllowHosts, netBudget),    // gated, egress-controlled URL fetch
+		tools.HTTPRequest(cfg.FetchAllowHosts, netBudget), // gated HTTP API caller (methods/headers/body)
+		tools.FindSymbol(cfg.RootDir),                     // definition-aware symbol search
+		tools.GitInfo(cfg.RootDir),                        // read-only structured git (log/status/diff)
+		tools.InspectData(cfg.RootDir),                    // read-only CSV/JSON schema + preview
+		tools.AnalyzeLog(cfg.RootDir),                     // read-only log severity summary
 	)
 
 	// A single shared stdin reader, used by both the REPL and approval prompts.

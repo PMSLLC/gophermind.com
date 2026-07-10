@@ -121,6 +121,10 @@ type Config struct {
 	ShellMaxMemMB   int // GOPHERMIND_SHELL_MAX_MEM_MB
 	ShellMaxProcs   int // GOPHERMIND_SHELL_MAX_PROCS
 
+	// Optional session-wide budget for network tools (fetch_url/http_request).
+	NetMaxRequests int   // GOPHERMIND_NET_MAX_REQUESTS (0 = unlimited)
+	NetMaxBytes    int64 // GOPHERMIND_NET_MAX_BYTES (0 = unlimited)
+
 	// Bounded retry with exponential backoff for the LLM client. MaxAttempts is
 	// the total number of tries (1 disables retries; a single attempt still
 	// works). RetryBaseDelay is the first backoff interval; later attempts grow
@@ -207,6 +211,8 @@ func Load() (Config, error) {
 		ShellCPUSeconds: envIntOr("GOPHERMIND_SHELL_CPU_SECONDS", 0),
 		ShellMaxMemMB:   envIntOr("GOPHERMIND_SHELL_MAX_MEM_MB", 0),
 		ShellMaxProcs:   envIntOr("GOPHERMIND_SHELL_MAX_PROCS", 0),
+		NetMaxRequests:  envIntOr("GOPHERMIND_NET_MAX_REQUESTS", 0),
+		NetMaxBytes:     int64(envIntOr("GOPHERMIND_NET_MAX_BYTES", 0)),
 
 		MaxAttempts:    envIntOr("GOPHERMIND_MAX_ATTEMPTS", 3),
 		RetryBaseDelay: time.Duration(envIntOr("GOPHERMIND_RETRY_BASE_DELAY_MS", 250)) * time.Millisecond,

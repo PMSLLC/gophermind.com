@@ -15,7 +15,7 @@ func TestFetchURL(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tool := fetchTool(nil, true) // allow loopback so httptest is reachable
+	tool := fetchTool(nil, true, nil) // allow loopback so httptest is reachable
 
 	// happy path: HTML is stripped to readable text
 	out, err := run(t, tool, `{"url":"`+srv.URL+`"}`)
@@ -31,7 +31,7 @@ func TestFetchURL(t *testing.T) {
 }
 
 func TestFetchURLSchemeGuard(t *testing.T) {
-	tool := FetchURL(nil)
+	tool := FetchURL(nil, nil)
 	for _, bad := range []string{`{"url":"file:///etc/passwd"}`, `{"url":"ftp://x/y"}`, `{"url":"not a url"}`} {
 		if _, err := run(t, tool, bad); err == nil {
 			t.Errorf("expected error for %s", bad)
@@ -46,7 +46,7 @@ func TestFetchURLAllowlist(t *testing.T) {
 	defer srv.Close()
 
 	// allowlist that does not include the test host -> blocked
-	tool := FetchURL([]string{"example.com"})
+	tool := FetchURL([]string{"example.com"}, nil)
 	if _, err := run(t, tool, `{"url":"`+srv.URL+`"}`); err == nil {
 		t.Error("expected host to be blocked by allowlist")
 	}
@@ -59,7 +59,7 @@ func TestFetchURLBlocksPrivateAndLoopback(t *testing.T) {
 	defer srv.Close()
 
 	// Production constructor: loopback must be refused (SSRF guard).
-	tool := FetchURL(nil)
+	tool := FetchURL(nil, nil)
 	_, err := run(t, tool, `{"url":"`+srv.URL+`"}`)
 	if err == nil {
 		t.Fatal("expected loopback target to be blocked")
@@ -77,7 +77,7 @@ func TestFetchURLRedirectReChecked(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tool := fetchTool(nil, true) // loopback allowed, private still blocked
+	tool := fetchTool(nil, true, nil) // loopback allowed, private still blocked
 	_, err := run(t, tool, `{"url":"`+srv.URL+`"}`)
 	if err == nil {
 		t.Fatal("expected redirect to a private IP to be blocked")
@@ -120,7 +120,7 @@ func TestFetchURLMaxBytes(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tool := fetchTool(nil, true) // allow loopback so httptest is reachable
+	tool := fetchTool(nil, true, nil) // allow loopback so httptest is reachable
 	out, err := run(t, tool, `{"url":"`+srv.URL+`","max_bytes":100}`)
 	if err != nil {
 		t.Fatal(err)

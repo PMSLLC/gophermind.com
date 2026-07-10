@@ -22,13 +22,13 @@ var httpMethods = map[string]bool{
 // and a body. It shares fetch_url's egress controls: http/https only, optional
 // host allowlist, and refusal of loopback/private/link-local targets (including
 // on redirects) to prevent SSRF.
-func HTTPRequest(allowHosts []string) Tool {
-	return httpTool(allowHosts, false)
+func HTTPRequest(allowHosts []string, budget *NetBudget) Tool {
+	return httpTool(allowHosts, false, budget)
 }
 
 // httpTool is the constructor behind HTTPRequest; allowLoopback relaxes only the
 // loopback block for tests.
-func httpTool(allowHosts []string, allowLoopback bool) Tool {
+func httpTool(allowHosts []string, allowLoopback bool, budget *NetBudget) Tool {
 	return Tool{
 		Name:        "http_request",
 		Description: "Call an HTTP(S) API: choose method (GET/POST/PUT/PATCH/DELETE/HEAD), headers, and body; returns status, headers, and body. Egress-controlled and size-limited.",
@@ -83,6 +83,9 @@ func httpTool(allowHosts []string, allowLoopback bool) Tool {
 				req.Header.Set(k, v)
 			}
 
+			if err := budget.begin(); err != nil {
+				return "", err
+			}
 			client := &http.Client{
 				Timeout: 30 * time.Second,
 				CheckRedirect: func(r *http.Request, via []*http.Request) error {
@@ -101,6 +104,9 @@ func httpTool(allowHosts []string, allowLoopback bool) Tool {
 			body, err := io.ReadAll(io.LimitReader(resp.Body, int64(limit)))
 			if err != nil {
 				return "", fmt.Errorf("read body: %w", err)
+			}
+			if err := budget.add(len(body)); err != nil {
+				return "", err
 			}
 
 			var b strings.Builder
