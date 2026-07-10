@@ -773,6 +773,13 @@ func run() error {
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
+		// Cost-aware routing: pick the cheap or strong model for this task.
+		if envTruthy("GOPHERMIND_AUTO_ROUTE") && cfg.SpeedModel != "" {
+			if chosen := routeModel(task, cfg.SpeedModel, cfg.Model); chosen != client.Model {
+				fmt.Fprintf(os.Stderr, "auto-route: using %s for this task\n", chosen)
+				client.Model = chosen
+			}
+		}
 		printer := ui.Printer{Verbose: *verboseFlag}
 		ag := agent.New(client, reg, cfg.MaxIter, approve, printer.Event)
 		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
@@ -1784,4 +1791,26 @@ func docsCacheDir(root string) string {
 // live in one gitignored file instead of the environment/config.
 func secretEnv(name string) string {
 	return safety.ResolveSecret(strings.TrimSpace(os.Getenv(name)), strings.TrimSpace(os.Getenv("GOPHERMIND_SECRETS_FILE")))
+}
+
+// complexityKeywords mark a task as hard enough to warrant the strong model.
+var complexityKeywords = []string{"refactor", "debug", "design", "architect", "optimiz", "concurren", "race condition", "security", "migrate"}
+
+// routeModel picks the model for a task (cost-aware routing): easy/short tasks
+// go to the cheap speed model; tasks with complexity keywords or long prompts go
+// to the strong model. An empty speedModel disables routing (always strong).
+func routeModel(task, speedModel, strongModel string) string {
+	if speedModel == "" {
+		return strongModel
+	}
+	lt := strings.ToLower(task)
+	for _, kw := range complexityKeywords {
+		if strings.Contains(lt, kw) {
+			return strongModel
+		}
+	}
+	if len(task) > 600 {
+		return strongModel
+	}
+	return speedModel
 }
