@@ -546,6 +546,7 @@ func run() error {
 		tools.MigrationDryRun(cfg.RootDir),                   // apply a migration to a throwaway db copy + schema diff
 		tools.GitHubTool("https://api.github.com", strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))), // read-only GitHub API
 		tools.Notify(strings.TrimSpace(os.Getenv("GOPHERMIND_NOTIFY_WEBHOOK"))),                 // Slack/Discord notifier
+		tools.DocsLookup(docsTemplate(), docsCacheDir(cfg.RootDir)),                             // fetch+cache library docs
 	}
 	// Semantic index tools when embeddings are configured (nil provider = the
 	// tools return a configuration hint instead of running).
@@ -1735,4 +1736,18 @@ func approvalTimeout() time.Duration {
 // available, requiring the model to cite the source URLs it relied on.
 func citationDirective() string {
 	return "When you use web_search results to answer, cite the specific source URLs you relied on at the end of your answer under a 'Sources:' list. Do not cite sources you did not actually use."
+}
+
+// docsTemplate returns the docs_lookup URL template (GOPHERMIND_DOCS_URL_TEMPLATE
+// or the pkg.go.dev default).
+func docsTemplate() string {
+	if t := strings.TrimSpace(os.Getenv("GOPHERMIND_DOCS_URL_TEMPLATE")); t != "" {
+		return t
+	}
+	return tools.DefaultDocsTemplate
+}
+
+// docsCacheDir returns the on-disk cache directory for fetched docs.
+func docsCacheDir(root string) string {
+	return filepath.Join(root, ".gophermind", "docs-cache")
 }
