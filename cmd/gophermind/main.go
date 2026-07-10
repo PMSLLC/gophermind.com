@@ -545,6 +545,7 @@ func run() error {
 		tools.DetectAnomalies(),                              // flag statistical outliers in a numeric series
 		tools.MigrationDryRun(cfg.RootDir),                   // apply a migration to a throwaway db copy + schema diff
 		tools.GitHubTool("https://api.github.com", strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))), // read-only GitHub API
+		tools.Notify(strings.TrimSpace(os.Getenv("GOPHERMIND_NOTIFY_WEBHOOK"))),                 // Slack/Discord notifier
 	}
 	// Semantic index tools when embeddings are configured (nil provider = the
 	// tools return a configuration hint instead of running).
