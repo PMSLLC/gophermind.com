@@ -684,6 +684,7 @@ func run() error {
 		tools.MultiSQL(splitCSV(os.Getenv("GOPHERMIND_SQL_DSN_ALLOW"))),       // read-only Postgres/MySQL (DSN allowlist)
 		tools.LSPDefinition(cfg.RootDir, splitCSV(os.Getenv("GOPHERMIND_LSP_CMD"))), // semantic go-to-definition via LSP
 		tools.WASMTool(cfg.RootDir), // run sandboxed WASI community tools
+		tools.ReadParquet(cfg.RootDir), // read Parquet columnar data files
 	)
 	// --dry-run: wrap gated (mutating) tools so the agent previews the calls it
 	// would make without executing any mutation.
