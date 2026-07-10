@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -13,6 +14,10 @@ import (
 
 	_ "modernc.org/sqlite"
 )
+
+// attachRe matches SQLite statements that can write files at arbitrary paths
+// (ATTACH DATABASE, VACUUM ... INTO), which would escape the repo sandbox.
+var attachRe = regexp.MustCompile(`(?is)\b(attach\s+database|vacuum\b.*\binto)\b`)
 
 // MigrationDryRun returns a tool that applies a migration's SQL to a THROWAWAY
 // copy of a SQLite database and reports the resulting schema diff
@@ -36,6 +41,11 @@ func MigrationDryRun(root string) Tool {
 			}
 			if strings.TrimSpace(a.SQL) == "" {
 				return "", fmt.Errorf("sql is empty")
+			}
+			// SQLite's ATTACH DATABASE can create/write files at arbitrary paths,
+			// escaping the repo sandbox — refuse it in the dry-run.
+			if attachRe.MatchString(a.SQL) {
+				return "", fmt.Errorf("ATTACH DATABASE is not allowed in a migration dry-run")
 			}
 			full, err := safety.SafeJoin(root, a.DB)
 			if err != nil {

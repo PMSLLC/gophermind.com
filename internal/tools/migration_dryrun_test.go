@@ -65,3 +65,15 @@ func TestMigrationDryRunContainsPath(t *testing.T) {
 		t.Error("db path escaping the root should be rejected")
 	}
 }
+
+func TestMigrationDryRunBlocksAttach(t *testing.T) {
+	root := makeMigrationDB(t)
+	for _, sql := range []string{
+		`{"db":"app.db","sql":"ATTACH DATABASE '/tmp/evil.db' AS evil;"}`,
+		`{"db":"app.db","sql":"VACUUM main INTO '/tmp/exfil.db';"}`,
+	} {
+		if _, err := run(t, MigrationDryRun(root), sql); err == nil {
+			t.Errorf("file-writing SQL should be rejected: %s", sql)
+		}
+	}
+}

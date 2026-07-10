@@ -119,6 +119,14 @@ func sseHandler(run func(ctx context.Context, task string, emit func(string)) er
 			http.Error(w, "read body", http.StatusBadRequest)
 			return
 		}
+		// Enforce the same optional HMAC payload verification as /run, so the
+		// streaming endpoint is not a weaker authentication path.
+		if secret := serveHMACSecret(); secret != "" {
+			if !verifyHMAC(secret, body, r.Header.Get("X-Hub-Signature-256")) {
+				http.Error(w, "bad signature", http.StatusUnauthorized)
+				return
+			}
+		}
 		task := strings.TrimSpace(string(body))
 		if task == "" {
 			http.Error(w, "empty task", http.StatusBadRequest)
@@ -130,7 +138,9 @@ func sseHandler(run func(ctx context.Context, task string, emit func(string)) er
 		w.Header().Set("Connection", "keep-alive")
 		flusher, _ := w.(http.Flusher)
 		emit := func(s string) {
-			fmt.Fprintf(w, "data: %s\n\n", s)
+			// Normalize newlines and prefix every line with "data: " so token
+			// content can never inject additional SSE fields or events.
+			writeSSEData(w, s)
 			if flusher != nil {
 				flusher.Flush()
 			}
@@ -145,6 +155,18 @@ func sseHandler(run func(ctx context.Context, task string, emit func(string)) er
 			flusher.Flush()
 		}
 	}
+}
+
+// writeSSEData writes s as one or more SSE `data:` lines. Every line of s is
+// prefixed with "data: " and CR/LF are normalized, so content (e.g. model
+// tokens) can never inject additional SSE fields or events (frame injection).
+func writeSSEData(w io.Writer, s string) {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	for _, line := range strings.Split(s, "\n") {
+		fmt.Fprintf(w, "data: %s\n", line)
+	}
+	fmt.Fprint(w, "\n")
 }
 
 // serveHMACSecret returns the configured HMAC secret for inbound payload
@@ -208,15 +230,19 @@ func runServe(run func(ctx context.Context, task string) (string, error), metric
 		}
 	}
 	mux := http.NewServeMux()
-	var runHandler http.Handler = webhookHandler(run, token)
-	// Optional per-caller rate limiting (GOPHERMIND_SERVE_RATE req/min), keyed by
-	// the bearer token so one caller can't monopolize the agent.
-	if rl := serveRateLimiter(); rl != nil {
-		runHandler = rateLimitMiddleware(runHandler, rl, func(r *http.Request) string {
-			return r.Header.Get("Authorization")
-		})
+	// A single rate limiter (GOPHERMIND_SERVE_RATE req/min), keyed by the bearer
+	// token, SHARED across every task-running endpoint so /run/stream cannot be
+	// used to bypass /run's budget.
+	rl := serveRateLimiter()
+	keyOf := func(r *http.Request) string { return r.Header.Get("Authorization") }
+	limited := func(h http.Handler) http.Handler {
+		if rl == nil {
+			return h
+		}
+		return rateLimitMiddleware(h, rl, keyOf)
 	}
-	mux.Handle("/run", runHandler)
+
+	mux.Handle("/run", limited(webhookHandler(run, token)))
 	// Unauthenticated liveness/readiness probes for load balancers / k8s.
 	mux.HandleFunc("/healthz", healthHandler())
 	mux.HandleFunc("/readyz", readyHandler(func() bool { return true }))
@@ -224,7 +250,8 @@ func runServe(run func(ctx context.Context, task string) (string, error), metric
 		mux.HandleFunc("/metrics", metricsHandler(metrics))
 	}
 	if stream != nil {
-		mux.HandleFunc("/run/stream", sseHandler(stream, token))
+		// Same auth (bearer + HMAC) and rate limit as /run — full sibling parity.
+		mux.Handle("/run/stream", limited(sseHandler(stream, token)))
 	}
 	fmt.Fprintf(os.Stderr, "gophermind serving webhook on %s (POST /run, GET /healthz, /readyz)\n", addr)
 	return http.ListenAndServe(addr, mux)

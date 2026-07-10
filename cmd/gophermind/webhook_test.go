@@ -246,3 +246,31 @@ func TestSSEHandlerRejectsBadToken(t *testing.T) {
 		t.Errorf("bad token status = %d, want 401", rr.Code)
 	}
 }
+
+func TestWriteSSEDataPreventsInjection(t *testing.T) {
+	var buf strings.Builder
+	// A token trying to inject a new SSE event via embedded newlines.
+	writeSSEData(&buf, "hello\n\nevent: hijack\ndata: evil")
+	out := buf.String()
+	// Every content line must be a data: line — no bare "event:" line injected.
+	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+		if line != "" && !strings.HasPrefix(line, "data: ") {
+			t.Errorf("non-data line leaked into SSE stream: %q\nfull:\n%s", line, out)
+		}
+	}
+	if strings.Contains(out, "\nevent: hijack") {
+		t.Errorf("event injection not neutralized:\n%s", out)
+	}
+}
+
+func TestSSEHandlerEnforcesHMAC(t *testing.T) {
+	t.Setenv("GOPHERMIND_SERVE_HMAC_SECRET", "s3cr3t")
+	h := sseHandler(func(context.Context, string, func(string)) error { return nil }, "")
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/run/stream", strings.NewReader("x"))
+	req.Header.Set("X-Hub-Signature-256", "sha256=bad")
+	h(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("SSE with bad HMAC should be 401, got %d", rr.Code)
+	}
+}
