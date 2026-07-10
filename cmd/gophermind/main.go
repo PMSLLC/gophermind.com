@@ -1466,6 +1466,26 @@ func runSessions(args []string) error {
 		}
 		fmt.Fprintf(os.Stderr, "✓ branched %q → %q\n", args[1], args[2])
 		return nil
+	case "push", "pull":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: sessions %s <id> (set GOPHERMIND_SESSION_REMOTE)", action)
+		}
+		remote := strings.TrimSpace(os.Getenv("GOPHERMIND_SESSION_REMOTE"))
+		if remote == "" {
+			return fmt.Errorf("set GOPHERMIND_SESSION_REMOTE to the remote store base URL")
+		}
+		id := session.Resolve(args[1])
+		var err error
+		if action == "push" {
+			err = session.PushRemote(id, remote)
+		} else {
+			err = session.PullRemote(id, remote)
+		}
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "✓ %sed session %q\n", action, id)
+		return nil
 	case "replay":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: sessions replay <id>")
