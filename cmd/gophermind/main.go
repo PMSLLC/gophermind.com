@@ -356,6 +356,7 @@ func run() error {
 		tools.SetCSVCell(cfg.RootDir),                        // gated: edit a single CSV cell
 		tools.WebSearch(braveEndpoint(cfg), cfg.BraveAPIKey), // Brave web search
 		tools.SQLQuery(cfg.RootDir),                          // read-only SQLite queries
+		tools.DBSchema(cfg.RootDir),                          // read-only SQLite schema explorer (tables/cols/FKs)
 	)
 
 	// A single shared stdin reader, used by both the REPL and approval prompts.
