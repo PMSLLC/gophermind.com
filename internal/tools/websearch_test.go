@@ -20,7 +20,7 @@ func TestWebSearchParsesResults(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tool := WebSearch(srv.URL, "secret-key")
+	tool := WebSearch(srv.URL, "secret-key", nil)
 	out, err := run(t, tool, `{"query":"go generics","count":2}`)
 	if err != nil {
 		t.Fatal(err)
@@ -39,14 +39,14 @@ func TestWebSearchParsesResults(t *testing.T) {
 }
 
 func TestWebSearchRequiresKey(t *testing.T) {
-	tool := WebSearch("https://api.example.com", "")
+	tool := WebSearch("https://api.example.com", "", nil)
 	if _, err := run(t, tool, `{"query":"x"}`); err == nil {
 		t.Error("missing API key should error")
 	}
 }
 
 func TestWebSearchRequiresQuery(t *testing.T) {
-	tool := WebSearch("https://api.example.com", "k")
+	tool := WebSearch("https://api.example.com", "k", nil)
 	if _, err := run(t, tool, `{"query":"  "}`); err == nil {
 		t.Error("empty query should error")
 	}
@@ -57,11 +57,33 @@ func TestWebSearchNoResults(t *testing.T) {
 		w.Write([]byte(`{"web":{"results":[]}}`))
 	}))
 	defer srv.Close()
-	out, err := run(t, WebSearch(srv.URL, "k"), `{"query":"zzz"}`)
+	out, err := run(t, WebSearch(srv.URL, "k", nil), `{"query":"zzz"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out, "no results") {
 		t.Errorf("expected a no-results message: %q", out)
+	}
+}
+
+func TestWebSearchRerank(t *testing.T) {
+	// Brave returns an off-topic result first, then the relevant one.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"web":{"results":[
+			{"title":"unrelated database stuff","url":"http://a","description":"database database"},
+			{"title":"the network guide","url":"http://b","description":"network network"}
+		]}}`))
+	}))
+	defer srv.Close()
+
+	out, err := run(t, WebSearch(srv.URL, "k", fakeEmbed{}), `{"query":"network"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// After reranking for "network", http://b should come before http://a.
+	ib := strings.Index(out, "http://b")
+	ia := strings.Index(out, "http://a")
+	if ib < 0 || ia < 0 || ib > ia {
+		t.Errorf("network result should be ranked first after rerank:\n%s", out)
 	}
 }

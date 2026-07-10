@@ -10,16 +10,26 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gophermind/internal/embed"
 )
 
 // BraveSearchEndpoint is the default Brave Search API web endpoint.
 const BraveSearchEndpoint = "https://api.search.brave.com/res/v1/web/search"
 
+// searchResult is one web result.
+type searchResult struct {
+	Title       string `json:"title"`
+	URL         string `json:"url"`
+	Description string `json:"description"`
+}
+
 // WebSearch returns a tool that queries the Brave Search API and returns the top
 // results (title, url, description). It requires an API subscription token; the
-// endpoint is overridable for testing. Read-only information retrieval from a
-// single fixed host, so it is not gated (but it is off unless a key is set).
-func WebSearch(endpoint, apiKey string) Tool {
+// endpoint is overridable for testing. When an embeddings provider is given,
+// results are re-ranked by semantic similarity to the query so the top hit is
+// the most relevant, not just Brave's default order. Read-only.
+func WebSearch(endpoint, apiKey string, p embed.Provider) Tool {
 	return Tool{
 		Name:        "web_search",
 		Description: "Search the web via the Brave Search API and return the top results (title, URL, snippet). Use for current information.",
@@ -78,24 +88,54 @@ func WebSearch(endpoint, apiKey string) Tool {
 
 			var parsed struct {
 				Web struct {
-					Results []struct {
-						Title       string `json:"title"`
-						URL         string `json:"url"`
-						Description string `json:"description"`
-					} `json:"results"`
+					Results []searchResult `json:"results"`
 				} `json:"web"`
 			}
 			if err := json.Unmarshal(body, &parsed); err != nil {
 				return "", fmt.Errorf("parse search response: %w", err)
 			}
-			if len(parsed.Web.Results) == 0 {
+			results := parsed.Web.Results
+			if len(results) == 0 {
 				return fmt.Sprintf("(no results for %q)", q), nil
 			}
+			// Re-rank by embedding similarity when a provider is configured.
+			if p != nil {
+				if reranked, err := rerankResults(ctx, p, q, results); err == nil {
+					results = reranked
+				}
+			}
 			var b strings.Builder
-			for i, r := range parsed.Web.Results {
+			for i, r := range results {
 				fmt.Fprintf(&b, "%d. %s\n   %s\n   %s\n", i+1, r.Title, r.URL, r.Description)
 			}
 			return truncate(b.String()), nil
 		},
 	}
+}
+
+// rerankResults reorders results by cosine similarity of each result's
+// title+description to the query, most-relevant first. It reuses the embeddings
+// provider and the tested TopK ranking.
+func rerankResults(ctx context.Context, p embed.Provider, query string, results []searchResult) ([]searchResult, error) {
+	texts := make([]string, 0, len(results)+1)
+	texts = append(texts, query)
+	for _, r := range results {
+		texts = append(texts, r.Title+" "+r.Description)
+	}
+	vecs, err := p.Embed(ctx, texts)
+	if err != nil || len(vecs) != len(texts) {
+		return nil, fmt.Errorf("embed for rerank: %w", err)
+	}
+	items := make([]embed.Vector, len(results))
+	for i := range results {
+		items[i] = embed.Vector{ID: strconv.Itoa(i), Values: vecs[i+1]}
+	}
+	hits := embed.TopK(vecs[0], items, len(items))
+	out := make([]searchResult, 0, len(results))
+	for _, h := range hits {
+		if idx, err := strconv.Atoi(h.ID); err == nil && idx >= 0 && idx < len(results) {
+			out = append(out, results[idx])
+		}
+	}
+	return out, nil
 }

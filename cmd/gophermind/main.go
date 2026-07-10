@@ -504,6 +504,10 @@ func run() error {
 	// Shared session-wide budget for the network tools (0/0 = unlimited).
 	netBudget := tools.NewNetBudget(cfg.NetMaxRequests, cfg.NetMaxBytes)
 
+	// Embeddings provider (nil when unconfigured) — used by web_search reranking
+	// and the semantic index/memory tools below.
+	embedProvider := buildEmbedProvider(cfg)
+
 	toolset := []tools.Tool{
 		tools.ReadFileRange(cfg.RootDir),  // read_file + optional line ranges
 		tools.ListFilesGlob(cfg.RootDir),  // list_files + include/exclude globs
@@ -529,7 +533,7 @@ func run() error {
 		tools.CreateMigration(cfg.RootDir),                   // gated: scaffold a timestamped SQL migration
 		tools.Scratchpad(cfg.RootDir),                        // durable cross-turn task notes
 		tools.SetCSVCell(cfg.RootDir),                        // gated: edit a single CSV cell
-		tools.WebSearch(braveEndpoint(cfg), cfg.BraveAPIKey), // Brave web search
+		tools.WebSearch(braveEndpoint(cfg), cfg.BraveAPIKey, embedProvider), // Brave web search (+ embedding rerank)
 		tools.SQLQuery(cfg.RootDir),                          // read-only SQLite queries
 		tools.DBSchema(cfg.RootDir),                          // read-only SQLite schema explorer (tables/cols/FKs)
 		tools.DBExplain(cfg.RootDir),                         // read-only EXPLAIN QUERY PLAN + full-scan warnings
@@ -542,7 +546,6 @@ func run() error {
 	}
 	// Semantic index tools when embeddings are configured (nil provider = the
 	// tools return a configuration hint instead of running).
-	embedProvider := buildEmbedProvider(cfg)
 	indexPath := filepath.Join(cfg.RootDir, ".gophermind", "index.json")
 	memoryPath := filepath.Join(cfg.RootDir, ".gophermind", "memory.json")
 	packsDir := filepath.Join(cfg.RootDir, ".gophermind", "packs")
