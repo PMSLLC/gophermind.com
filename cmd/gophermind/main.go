@@ -543,6 +543,7 @@ func run() error {
 		tools.SeedData(cfg.RootDir),                          // generate INSERT seed data from a table schema
 		tools.OpenAPIOps(cfg.RootDir),                        // list operations from an OpenAPI 3 spec
 		tools.DetectAnomalies(),                              // flag statistical outliers in a numeric series
+		tools.MigrationDryRun(cfg.RootDir),                   // apply a migration to a throwaway db copy + schema diff
 	}
 	// Semantic index tools when embeddings are configured (nil provider = the
 	// tools return a configuration hint instead of running).
