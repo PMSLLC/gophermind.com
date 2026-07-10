@@ -786,6 +786,7 @@ func run() error {
 		ag.SetRedactTranscript(redactTranscriptEnabled())
 		ag.SetAuditLog(auditLog())
 		ag.SetAutoCheckpoint(envTruthy("GOPHERMIND_AUTO_CHECKPOINT"))
+		ag.SetToolCritic(envTruthy("GOPHERMIND_TOOL_CRITIC"))
 		ag.SetSystemPrompt(basePrompt)
 		if systemSuffix != "" {
 			ag.AppendSystemPrompt(systemSuffix)

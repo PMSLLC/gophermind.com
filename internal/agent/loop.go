@@ -43,6 +43,7 @@ type Agent struct {
 	budget         int                   // per-turn tool-call budget (0 = unlimited)
 	checkpoints    *checkpoints          // named conversation snapshots
 	autoCheckpoint bool                  // snapshot before each gated mutation
+	toolCritic     bool                  // emit heuristic warnings for risky tool calls
 	guardrails     Guardrails            // cost/time limits for autonomous runs
 	startTime      time.Time             // when the agent was created (for duration tracking)
 	redactor       *safety.SecretScanner // when non-nil, transcript content is scrubbed on export
@@ -269,6 +270,12 @@ func (a *Agent) dispatch(ctx context.Context, call llm.ToolCall) string {
 	t, ok := a.reg.Get(name)
 	if !ok {
 		return "error: unknown tool " + name
+	}
+	// Tool-use critic: surface a heuristic warning for risky calls (opt-in).
+	if a.toolCritic {
+		if w := critiqueToolCall(name, rawArgs); w != "" {
+			a.onEvent(Event{Type: "assistant", Text: "⚠ critic: " + w})
+		}
 	}
 	decision := "auto"
 	if safety.Gated(name) {
