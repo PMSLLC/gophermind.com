@@ -25,6 +25,9 @@ type Config struct {
 	// history when the session exits. It may contain sensitive prompt/response
 	// content; the agent writes it 0600 and never includes credentials.
 	TranscriptPath string
+	// SystemPrompt, when non-empty, replaces the agent's base system prompt (the
+	// structured prompt built by internal/prompt).
+	SystemPrompt string
 	// SystemSuffix is appended to the agent's system prompt (e.g. project
 	// instructions from CLAUDE.md/AGENTS.md).
 	SystemSuffix string
@@ -64,6 +67,9 @@ func Run(cfg Config) error {
 		ag.SetRedactTranscript(cfg.RedactTranscript)
 		if cfg.AuditPath != "" {
 			ag.SetAuditLog(safety.NewAuditLog(cfg.AuditPath))
+		}
+		if cfg.SystemPrompt != "" {
+			ag.SetSystemPrompt(cfg.SystemPrompt)
 		}
 		if cfg.SystemSuffix != "" {
 			ag.AppendSystemPrompt(cfg.SystemSuffix)

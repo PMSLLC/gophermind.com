@@ -26,6 +26,7 @@ import (
 	"gophermind/internal/llm"
 	"gophermind/internal/persona"
 	"gophermind/internal/project"
+	"gophermind/internal/prompt"
 	"gophermind/internal/safety"
 	"gophermind/internal/session"
 	"gophermind/internal/setup"
@@ -86,6 +87,7 @@ func run() error {
 	parallelFlag := flag.Bool("parallel", false, "run/ask: execute independent tool calls in a turn concurrently")
 	verifyFlag := flag.Bool("verify", false, "run/ask: have a second (verifier) agent check the result and trigger one correction round if incomplete")
 	schemaFlag := flag.String("schema", "", "run/ask: force a JSON-schema-constrained response, reading the schema from this file")
+	promptTemplateFlag := flag.String("prompt-template", "", "use a custom structured prompt template (.md with frontmatter + XML sections) as the base system prompt")
 	toolBudgetFlag := flag.Int("tool-budget", 0, "run/ask: max tool calls per turn (0 = default)")
 	maxCostFlag := flag.Float64("max-cost", 0, "run/ask: abort when estimated cost (USD) exceeds this (0 = unlimited)")
 	maxTokensFlag := flag.Int("max-tokens", 0, "run/ask: abort when total tokens exceed this (0 = unlimited)")
@@ -382,6 +384,20 @@ func run() error {
 	if envTruthy("GOPHERMIND_REPO_CONTEXT") {
 		repoContext = project.RepoContext(cfg.RootDir)
 	}
+	// Base system prompt: the structured prompt system (default template, or a
+	// custom --prompt-template). Project context is appended via systemSuffix, so
+	// the base carries only the role/workflow/tools/safety/rules structure.
+	var pb *prompt.Builder
+	if *promptTemplateFlag != "" {
+		pb, err = prompt.LoadBuilder(*promptTemplateFlag)
+	} else {
+		pb, err = prompt.NewBuilder()
+	}
+	if err != nil {
+		return fmt.Errorf("prompt template: %w", err)
+	}
+	basePrompt := pb.Build()
+
 	systemSuffix := composeSystem(personaText, project.Instructions(cfg.RootDir), project.Skills(cfg.RootDir), repoContext)
 	// Prompt token-budget guardrail: keep injected context (persona + repo
 	// instructions + repo map) under ~25% of the model's context window so the
@@ -420,6 +436,7 @@ func run() error {
 			InputPricePer1K:  cfg.InputPricePer1K,
 			OutputPricePer1K: cfg.OutputPricePer1K,
 			TranscriptPath:   cfg.TranscriptPath,
+			SystemPrompt:     basePrompt,
 			SystemSuffix:     systemSuffix,
 			ReadOnly:         *readOnlyFlag,
 			NoBanner:         *noBannerFlag || *quietFlag,
@@ -440,6 +457,7 @@ func run() error {
 			ag := agent.New(client, reg, cfg.MaxIter, approve, nil)
 			ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
 			ag.SetAuditLog(auditLog())
+			ag.SetSystemPrompt(basePrompt)
 			if systemSuffix != "" {
 				ag.AppendSystemPrompt(systemSuffix)
 			}
@@ -452,7 +470,7 @@ func run() error {
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
-		return runQueue(ctx, client, reg, cfg, approve, systemSuffix, task, *verboseFlag)
+		return runQueue(ctx, client, reg, cfg, approve, basePrompt, systemSuffix, task, *verboseFlag)
 	case "run", "ask":
 		if task == "" {
 			return fmt.Errorf("%s requires a task argument", cmd)
@@ -467,6 +485,7 @@ func run() error {
 		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
 		ag.SetRedactTranscript(redactTranscriptEnabled())
 		ag.SetAuditLog(auditLog())
+		ag.SetSystemPrompt(basePrompt)
 		if systemSuffix != "" {
 			ag.AppendSystemPrompt(systemSuffix)
 		}
@@ -696,7 +715,7 @@ func runSetupWizard(cfg config.Config) (setup.Result, error) {
 // line; blank lines and #comments ignored), runs each through the agent in
 // order with a live status trail, prints a per-job summary, and exits non-zero
 // if any task failed.
-func runQueue(ctx context.Context, client *llm.Client, reg *tools.Registry, cfg config.Config, approve safety.ApprovalFunc, systemSuffix, file string, verbose bool) error {
+func runQueue(ctx context.Context, client *llm.Client, reg *tools.Registry, cfg config.Config, approve safety.ApprovalFunc, basePrompt, systemSuffix, file string, verbose bool) error {
 	data, err := os.ReadFile(file)
 	if err != nil {
 		return fmt.Errorf("read task file: %w", err)
@@ -718,6 +737,7 @@ func runQueue(ctx context.Context, client *llm.Client, reg *tools.Registry, cfg 
 	ag := agent.New(client, reg, cfg.MaxIter, approve, printer.Event)
 	ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
 	ag.SetAuditLog(auditLog())
+	ag.SetSystemPrompt(basePrompt)
 	if systemSuffix != "" {
 		ag.AppendSystemPrompt(systemSuffix)
 	}
@@ -1011,6 +1031,7 @@ On first interactive launch with nothing configured, a short setup wizard runs
 and saves your choices to the global config (see below); later launches skip it.
 
 Selected flags:
+  -prompt-template <file> use a custom structured prompt template (.md) as the base system prompt
   -think low|medium|high  send a reasoning-effort hint with each request
   -speed                  use a faster model as primary (GOPHERMIND_SPEED_MODEL or first fallback)
   -no-banner, -quiet/-q   suppress the startup splash (and, with -quiet, stderr chatter)
