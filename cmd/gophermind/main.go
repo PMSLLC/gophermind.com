@@ -560,6 +560,7 @@ func run() error {
 		tools.SemanticSearch(cfg.RootDir, embedProvider, indexPath, packsDir), // retrieve relevant chunks by meaning
 		tools.RememberFact(embedProvider, memoryPath),                         // persist a fact to per-repo memory
 		tools.RememberProfile(embedProvider, profileMemoryPath()),             // persist a fact to global profile memory
+		tools.RecordEpisode(embedProvider, episodesPath(cfg.RootDir)),         // record task outcomes to episodic memory
 		tools.ImportPack(cfg.RootDir, embedProvider, packsDir),                // index a doc folder as a knowledge pack
 		tools.RetrievalEval(cfg.RootDir, embedProvider, indexPath),            // score index retrieval quality (hit@k)
 	)
@@ -807,6 +808,9 @@ func run() error {
 			}
 			if pc := retrieveContext(ctx, embedProvider, profileMemoryPath(), task, 3); pc != "" {
 				ag.AppendSystemPrompt(strings.Replace(pc, "retrieved_context", "profile_memory", 2))
+			}
+			if ec := retrieveContext(ctx, embedProvider, episodesPath(cfg.RootDir), task, 3); ec != "" {
+				ag.AppendSystemPrompt(strings.Replace(ec, "retrieved_context", "episodic_memory", 2))
 			}
 		}
 		// Few-shot example bank: when GOPHERMIND_EXAMPLES names a JSON bank, inject
@@ -1814,4 +1818,9 @@ func routeModel(task, speedModel, strongModel string) string {
 		return strongModel
 	}
 	return speedModel
+}
+
+// episodesPath returns the per-repo episodic-memory store path.
+func episodesPath(root string) string {
+	return filepath.Join(root, ".gophermind", "episodes.json")
 }
