@@ -172,6 +172,27 @@ func run() error {
 		return nil
 	}
 
+	// `gophermind upgrade` self-updates from the latest GitHub release, verifying
+	// the download's checksum before replacing the binary.
+	if cmd == "upgrade" {
+		latest, err := update.LatestFromGitHub("jbrahy/gophermind.com")
+		if err != nil {
+			return fmt.Errorf("check latest release: %w", err)
+		}
+		if notice, newer := update.Check(version.Version, func() (string, error) { return latest, nil }); !newer {
+			fmt.Fprintf(os.Stderr, "already up to date (%s)\n", version.Version)
+			return nil
+		} else {
+			fmt.Fprintln(os.Stderr, notice)
+		}
+		ver := strings.TrimPrefix(latest, "v")
+		if err := update.PerformUpgrade("jbrahy/gophermind.com", "gophermind", ver, ""); err != nil {
+			return fmt.Errorf("upgrade failed: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "✓ upgraded to %s\n", latest)
+		return nil
+	}
+
 	// `gophermind sessions [list|show <id>|rm <id>]` manages the saved session
 	// store and exits (needs no endpoint).
 	if cmd == "sessions" {
