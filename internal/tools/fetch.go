@@ -66,6 +66,15 @@ func fetchTool(allowHosts []string, allowLoopback bool, budget *NetBudget) Tool 
 				limit = defaultFetchLimit
 			}
 
+			// Offline docs cache: serve a previously fetched copy when enabled,
+			// without touching the network (or the network budget).
+			cacheDir := fetchCacheDir()
+			if cacheDir != "" {
+				if cached, ok := cacheGet(cacheDir, u.String()); ok {
+					return cached, nil
+				}
+			}
+
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 			if err != nil {
 				return "", err
@@ -112,7 +121,12 @@ func fetchTool(allowHosts []string, allowLoopback bool, budget *NetBudget) Tool 
 			if truncated {
 				fmt.Fprintf(&b, "\n\n[truncated at %d bytes]", limit)
 			}
-			return b.String(), nil
+			result := b.String()
+			// Persist for offline reuse (only cache successful responses).
+			if cacheDir != "" && resp.StatusCode < 400 {
+				cachePut(cacheDir, u.String(), result)
+			}
+			return result, nil
 		},
 	}
 }
