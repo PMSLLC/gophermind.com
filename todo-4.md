@@ -89,7 +89,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 - [ ] **57. Event-driven triggers.** Watch a branch/RSS/file and enqueue a run on change (fulfills the batch-3 watcher idea, now concrete). Value: proactive automation.
 - [ ] **58. Response streaming over `serve`.** Server-Sent Events from the webhook so callers see tokens live. Value: responsive remote UIs.
 - [x] **59. Rate limiting & quotas per caller.** Token-bucket limits on `serve` keyed by token. Value: safe multi-tenant exposure.
-- [ ] **60. OpenAPI request tool.** Load an OpenAPI spec and expose typed operations as callable actions (builds on `http_request`). Value: correct, discoverable API calls.
+- [x] **60. OpenAPI request tool.** Load an OpenAPI spec and expose typed operations as callable actions (builds on `http_request`). Value: correct, discoverable API calls.
 
 ## AI. Security, Sandboxing & Governance III (builds on the audit log, judge model, policy, redaction, `SafeJoin`)
 

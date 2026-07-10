@@ -461,6 +461,7 @@ func run() error {
 		tools.DataTransform(cfg.RootDir),                     // read-only filter/group/aggregate over CSV/JSONL
 		tools.LogMetrics(cfg.RootDir),                        // read-only time-bucketed log counts (spikes)
 		tools.SeedData(cfg.RootDir),                          // generate INSERT seed data from a table schema
+		tools.OpenAPIOps(cfg.RootDir),                        // list operations from an OpenAPI 3 spec
 	}
 	// --dry-run: wrap gated (mutating) tools so the agent previews the calls it
 	// would make without executing any mutation.
