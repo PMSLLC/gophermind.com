@@ -209,3 +209,40 @@ func hmacSHA256Hex(secret string, body []byte) string {
 	m.Write(body)
 	return hex.EncodeToString(m.Sum(nil))
 }
+
+func TestSSEHandlerStreamsTokens(t *testing.T) {
+	run := func(_ context.Context, task string, emit func(string)) error {
+		emit("hello ")
+		emit(task)
+		return nil
+	}
+	h := sseHandler(run, "")
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/run/stream", strings.NewReader("world"))
+	h(rr, req)
+
+	if rr.Code != 200 {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); !strings.Contains(ct, "event-stream") {
+		t.Errorf("Content-Type = %q, want event-stream", ct)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "data: hello ") || !strings.Contains(body, "data: world") {
+		t.Errorf("SSE body missing streamed tokens:\n%s", body)
+	}
+	if !strings.Contains(body, "event: done") {
+		t.Errorf("SSE should end with a done event:\n%s", body)
+	}
+}
+
+func TestSSEHandlerRejectsBadToken(t *testing.T) {
+	h := sseHandler(func(context.Context, string, func(string)) error { return nil }, "secret")
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/run/stream", strings.NewReader("x"))
+	h(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("bad token status = %d, want 401", rr.Code)
+	}
+}

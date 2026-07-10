@@ -98,6 +98,55 @@ func readyHandler(ready func() bool) http.HandlerFunc {
 	}
 }
 
+// sseHandler streams a run's tokens to the caller as Server-Sent Events, so
+// remote UIs see output live. Each token is sent as a `data:` frame and the
+// stream ends with an `event: done` frame. Auth mirrors webhookHandler.
+func sseHandler(run func(ctx context.Context, task string, emit func(string)) error, token string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "use POST", http.StatusMethodNotAllowed)
+			return
+		}
+		if token != "" {
+			want := "Bearer " + token
+			if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte(want)) != 1 {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+		}
+		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if err != nil {
+			http.Error(w, "read body", http.StatusBadRequest)
+			return
+		}
+		task := strings.TrimSpace(string(body))
+		if task == "" {
+			http.Error(w, "empty task", http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		flusher, _ := w.(http.Flusher)
+		emit := func(s string) {
+			fmt.Fprintf(w, "data: %s\n\n", s)
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+		if err := run(r.Context(), task, emit); err != nil {
+			fmt.Fprintln(os.Stderr, "serve: stream run failed:", err)
+			fmt.Fprintf(w, "event: error\ndata: run failed\n\n")
+			return
+		}
+		fmt.Fprintf(w, "event: done\ndata: \n\n")
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+}
+
 // serveHMACSecret returns the configured HMAC secret for inbound payload
 // verification (GOPHERMIND_SERVE_HMAC_SECRET), or "" to disable it.
 func serveHMACSecret() string {
@@ -139,7 +188,8 @@ func serveToken() (string, error) {
 
 // runServe starts the webhook HTTP server, dispatching each POST /run to run.
 // metrics (when non-nil) counts requests/errors and is exposed on /metrics.
-func runServe(run func(ctx context.Context, task string) (string, error), metrics *serveMetrics) error {
+// stream (when non-nil) backs a POST /run/stream Server-Sent-Events endpoint.
+func runServe(run func(ctx context.Context, task string) (string, error), metrics *serveMetrics, stream func(ctx context.Context, task string, emit func(string)) error) error {
 	token, err := serveToken()
 	if err != nil {
 		return err
@@ -172,6 +222,9 @@ func runServe(run func(ctx context.Context, task string) (string, error), metric
 	mux.HandleFunc("/readyz", readyHandler(func() bool { return true }))
 	if metrics != nil {
 		mux.HandleFunc("/metrics", metricsHandler(metrics))
+	}
+	if stream != nil {
+		mux.HandleFunc("/run/stream", sseHandler(stream, token))
 	}
 	fmt.Fprintf(os.Stderr, "gophermind serving webhook on %s (POST /run, GET /healthz, /readyz)\n", addr)
 	return http.ListenAndServe(addr, mux)

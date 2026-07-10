@@ -714,7 +714,23 @@ func run() error {
 			metrics.completionTokens.Add(int64(u.CompletionTokens))
 			return answer, err
 		}
-		return runServe(run, metrics)
+		// Streaming variant for /run/stream: emit assistant tokens as they arrive.
+		stream := func(ctx context.Context, t string, emit func(string)) error {
+			ag := agent.New(client, reg, cfg.MaxIter, approve, func(e agent.Event) {
+				if e.Type == "token" {
+					emit(e.Text)
+				}
+			})
+			ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
+			ag.SetAuditLog(auditLog())
+			ag.SetSystemPrompt(basePrompt)
+			if systemSuffix != "" {
+				ag.AppendSystemPrompt(systemSuffix)
+			}
+			_, err := ag.Send(ctx, t)
+			return err
+		}
+		return runServe(run, metrics, stream)
 	case "queue":
 		if task == "" {
 			return fmt.Errorf("queue requires a file of tasks (one per line)")
@@ -1638,7 +1654,7 @@ Usage:
   gophermind ask "question"     one-shot: answer without modifying files
   gophermind queue <file>       run a file of tasks (one per line) in order
                                 (add --fleet N to run N concurrently)
-  gophermind serve              webhook server: POST /run {task} runs one task
+  gophermind serve              webhook server: POST /run {task}; POST /run/stream (SSE); /healthz /readyz /metrics
 
 On first interactive launch with nothing configured, a short setup wizard runs
 and saves your choices to the global config (see below); later launches skip it.
