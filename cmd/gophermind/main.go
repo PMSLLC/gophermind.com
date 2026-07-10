@@ -20,6 +20,7 @@ import (
 	"gophermind/internal/config"
 	"gophermind/internal/doctor"
 	"gophermind/internal/llm"
+	"gophermind/internal/persona"
 	"gophermind/internal/project"
 	"gophermind/internal/safety"
 	"gophermind/internal/session"
@@ -57,6 +58,7 @@ func run() error {
 	clientKeyFlag := flag.String("client-key", cfg.ClientKeyPath, "PEM client private key for mutual TLS (requires -client-cert)")
 	caCertFlag := flag.String("ca-cert", cfg.CACertPath, "PEM CA bundle to trust for the server (appended to system roots; keeps verification ON)")
 	verboseFlag := flag.Bool("v", false, "verbose: stream assistant text and tool results")
+	personaFlag := flag.String("persona", "", "task-tuned system-prompt preset: reviewer|architect|tester")
 	thinkFlag := flag.String("think", "", "reasoning effort sent with each request: low|medium|high (empty = off)")
 	speedFlag := flag.Bool("speed", false, "use the faster model (GOPHERMIND_SPEED_MODEL, or the first fallback) as primary")
 	noBannerFlag := flag.Bool("no-banner", false, "suppress the startup banner/splash (clean output in scripts/CI)")
@@ -311,6 +313,18 @@ func run() error {
 		approve = safety.ReadMode() // deny every gated (mutating) tool
 	}
 
+	// Resolve an optional persona preset and compose it with repo instructions
+	// (CLAUDE.md/AGENTS.md) into the system-prompt suffix used by chat and run/ask.
+	personaText := ""
+	if *personaFlag != "" {
+		p, ok := persona.Preset(*personaFlag)
+		if !ok {
+			return fmt.Errorf("unknown -persona %q: choose one of %s", *personaFlag, strings.Join(persona.Names(), ", "))
+		}
+		personaText = p
+	}
+	systemSuffix := composeSystem(personaText, project.Instructions(cfg.RootDir))
+
 	switch cmd {
 	case "chat":
 		if !isatty() {
@@ -334,7 +348,7 @@ func run() error {
 			InputPricePer1K:  cfg.InputPricePer1K,
 			OutputPricePer1K: cfg.OutputPricePer1K,
 			TranscriptPath:   cfg.TranscriptPath,
-			SystemSuffix:     project.Instructions(cfg.RootDir),
+			SystemSuffix:     systemSuffix,
 			ReadOnly:         *readOnlyFlag,
 			NoBanner:         *noBannerFlag || *quietFlag,
 		})
@@ -356,8 +370,8 @@ func run() error {
 		printer := ui.Printer{Verbose: *verboseFlag}
 		ag := agent.New(client, reg, cfg.MaxIter, approve, printer.Event)
 		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
-		if instr := project.Instructions(cfg.RootDir); instr != "" {
-			ag.AppendSystemPrompt(instr)
+		if systemSuffix != "" {
+			ag.AppendSystemPrompt(systemSuffix)
 		}
 		// Cost/time guardrails apply to the default Send strategy.
 		if *maxCostFlag > 0 || *maxTokensFlag > 0 || *maxDurationFlag > 0 {
@@ -606,6 +620,18 @@ func runSessions(args []string) error {
 	default:
 		return fmt.Errorf("unknown sessions action %q (use list, show <id>, or rm <id>)", action)
 	}
+}
+
+// composeSystem joins a persona preset and repo instructions into one system
+// suffix, dropping empties so either may be absent.
+func composeSystem(parts ...string) string {
+	var kept []string
+	for _, p := range parts {
+		if strings.TrimSpace(p) != "" {
+			kept = append(kept, p)
+		}
+	}
+	return strings.Join(kept, "\n\n")
 }
 
 // updateCheckEnabled reports whether the opt-in startup update check is on,

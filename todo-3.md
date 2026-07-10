@@ -53,7 +53,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 ## V. Prompt System & Personas (builds on `PLAN.md`, `systemPrompt`, `--append-system-prompt`)
 
 - [ ] **31. Build the structured prompt system.** Ship `PLAN.md`: `internal/prompt` template parser + builder (YAML frontmatter + XML sections). Value: composable, maintainable prompts.
-- [ ] **32. Persona presets.** `--persona reviewer|architect|tester`. Value: task-tuned behavior on demand.
+- [x] **32. Persona presets.** `--persona reviewer|architect|tester`. Value: task-tuned behavior on demand.
 - [ ] **33. `CLAUDE.md`/`AGENTS.md` auto-load.** Inject repo instruction files into the system prompt. Value: per-repo conventions respected.
 - [ ] **34. Per-repo prompt overrides.** `.gophermind/prompt.md`. Value: project-specific behavior.
 - [ ] **35. Prompt fragments / includes.** Reusable snippets composed into the prompt. Value: DRY prompt maintenance.
