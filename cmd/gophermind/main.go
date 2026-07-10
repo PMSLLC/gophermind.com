@@ -1412,6 +1412,24 @@ func runQueue(ctx context.Context, client *llm.Client, reg *tools.Registry, cfg 
 		q.Run(ctx, newAgent().Send, onUpdate)
 	}
 
+	// Fleet mode: a top-style status table of the workers (to stderr).
+	if fleet > 1 {
+		var workers []ui.WorkerStatus
+		for _, j := range q.Jobs() {
+			state := "idle"
+			switch j.Status {
+			case jobs.Done:
+				state = "done"
+			case jobs.Failed:
+				state = "failed"
+			case jobs.Running:
+				state = "running"
+			}
+			workers = append(workers, ui.WorkerStatus{ID: j.ID, Task: j.Task, State: state})
+		}
+		fmt.Fprint(os.Stderr, ui.RenderFleetStatus(workers))
+	}
+
 	// Per-job summary to stdout (pipeable), counts to stderr.
 	for _, j := range q.Jobs() {
 		switch j.Status {
