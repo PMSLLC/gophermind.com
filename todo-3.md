@@ -31,7 +31,7 @@ value. **Priority/milestone TBD — backlog, not a committed plan.**
 - [ ] **13. Session TTL / GC.** Auto-expire old sessions. Value: bounded disk footprint.
 - [ ] **14. Named sessions.** Human aliases mapping to ids (`--resume my-refactor`). Value: no uuids to remember.
 - [ ] **15. Session export/import.** Pack history + metadata into a shareable file. Value: hand off a debugging session.
-- [ ] **16. Auto session titles.** Summarize a session for the list view. Value: find the right one fast.
+- [x] **16. Auto session titles.** Summarize a session for the list view. Value: find the right one fast.
 - [ ] **17. Interactive resume in the TUI.** Pick a saved session at chat startup. Value: continuity in interactive mode.
 - [ ] **18. Session diff.** Show files/messages changed across a session. Value: review an agent's work.
 - [ ] **19. Session-scoped scratchpad.** Durable notes per session. Value: task state survives resume.
