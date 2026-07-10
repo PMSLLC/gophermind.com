@@ -28,7 +28,7 @@ it does, and its value. **Priority/milestone TBD — backlog, not a committed pl
 
 ## AD. Data, Databases & Analytics (builds on `sql_query`, `inspect_data`, `set_csv_cell`, `analyze_log`)
 
-- [ ] **11. Multi-engine SQL.** Extend `sql_query` with read-only Postgres/MySQL drivers behind a DSN allowlist. Value: reason over real app databases, not just SQLite.
+- [x] **11. Multi-engine SQL.** Extend `sql_query` with read-only Postgres/MySQL drivers behind a DSN allowlist. Value: reason over real app databases, not just SQLite.
 - [x] **12. Schema explorer tool.** A `db_schema` tool returning tables, columns, types, and FKs as structured JSON. Value: the model orients before querying.
 - [x] **13. Query plan / EXPLAIN helper.** Surface `EXPLAIN QUERY PLAN` and flag full-table scans. Value: performance-aware SQL suggestions.
 - [x] **14. Safe write migrations preview.** Pair `create_migration` with a dry-run that runs the up-migration against a throwaway copy and diffs the schema. Value: catch broken migrations before commit.

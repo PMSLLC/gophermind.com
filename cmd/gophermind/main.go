@@ -680,6 +680,7 @@ func run() error {
 		tools.ImportPack(cfg.RootDir, embedProvider, packsDir),                // index a doc folder as a knowledge pack
 		tools.RetrievalEval(cfg.RootDir, embedProvider, indexPath),            // score index retrieval quality (hit@k)
 		tools.HybridSearch(cfg.RootDir, embedProvider, indexPath),             // BM25 + vector hybrid retrieval
+		tools.MultiSQL(splitCSV(os.Getenv("GOPHERMIND_SQL_DSN_ALLOW"))),       // read-only Postgres/MySQL (DSN allowlist)
 	)
 	// --dry-run: wrap gated (mutating) tools so the agent previews the calls it
 	// would make without executing any mutation.
@@ -2114,4 +2115,15 @@ func runWatch(ctx context.Context, send func(context.Context, string) (string, e
 			}
 		}
 	}
+}
+
+// splitCSV splits a comma-separated env value into trimmed non-empty parts.
+func splitCSV(v string) []string {
+	var out []string
+	for _, p := range strings.Split(v, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
