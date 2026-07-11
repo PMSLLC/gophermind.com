@@ -12,6 +12,8 @@ All notable changes to GopherMind are documented here. The format follows
 - Integrated [PhaseFlow](https://github.com/jbrahy/metaphaseflow) as a first-class, native subsystem: the **Roadmap → Phases → Plan → Execute → Verify → Milestone** loop, with workflow state persisted under `.planning/` (`ROADMAP.md`, `STATE.md`, `PROJECT.md`, `config.json`) — interchangeable with upstream PhaseFlow.
 - `gophermind phase <cmd>` CLI and `/phase <cmd>` TUI slash command. State commands (`init`, `status`, `next`, `commands`) run locally; loop steps (`roadmap`, `plan`, `execute`, `verify`, `milestone`) build a state-seeded prompt from the embedded upstream command and run it through gophermind's agent.
 - Go roadmap parser with decimal-phase (inserted-phase) ordering, progress computation, and in-place checkbox mutation that preserves human edits.
+- **Deterministic bookkeeping ported to Go** (no model calls, cannot drift from the checkboxes): `phase done <plan-id>` marks a plan complete, auto-ticks a finished phase, and recomputes STATE.md's position/progress; `phase sync` refreshes STATE.md from the roadmap; `phase archive <version>` snapshots a shipped milestone and appends a stat-bearing entry to `.planning/MILESTONES.md`.
+- The full embedded PhaseFlow command surface (not just the five loop steps) is runnable by name, e.g. `phase map-codebase`, `phase code-review`, `phase ship`.
 - Vendored and embedded PhaseFlow's phase commands, subagent definitions, and templates (MIT, © 2025 Lex Christopherson — see `internal/phaseflow/assets/LICENSE.upstream` and `CREDITS.md`).
 
 ## [0.2.0] - 2026-07-11
