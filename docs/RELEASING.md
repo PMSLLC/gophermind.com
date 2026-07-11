@@ -71,8 +71,8 @@ and a generated `Casks/gophermind.rb`.
 export MACOS_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
 export MACOS_NOTARY_PROFILE="gophermind"
 
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 
 make release     # goreleaser: build → sign → notarize → GitHub Release → push cask
 ```
@@ -81,8 +81,20 @@ GoReleaser will:
 1. cross-compile `amd64` + `arm64` and merge into one **universal** binary,
 2. **codesign** it (Developer ID, hardened runtime, timestamp),
 3. **notarize** the archive via `scripts/notarize.sh` (notarytool, `--wait`),
-4. create the **GitHub Release** with the `.tar.gz` + checksums,
-5. commit `Casks/gophermind.rb` to `jbrahy/homebrew-tap`.
+4. build `.deb`/`.rpm`/`.apk` Linux packages and generate an **SBOM** per archive,
+5. create the **GitHub Release** with all archives + packages + `checksums.txt`,
+6. commit `Casks/gophermind.rb` to `jbrahy/homebrew-tap`.
+
+> **Note:** the release also has Scoop and winget config, but those steps are
+> skipped until their repos exist — `jbrahy/scoop-bucket` and a fork of
+> `microsoft/winget-pkgs`. Until then, run `make release` (or `goreleaser
+> release --clean`) with `--skip=scoop,winget`. SBOM generation needs `syft`
+> (`brew install syft`).
+
+> **Duplicate signing certs:** if `security find-identity -v -p codesigning`
+> lists two `Developer ID Application` entries with the **same name**, `codesign`
+> errors with `ambiguous (matches …)`. Set `MACOS_SIGN_IDENTITY` to the cert's
+> **SHA-1 hash** (the 40-hex prefix in that listing) instead of the name.
 
 ---
 
@@ -94,7 +106,7 @@ its version identical to the tag.
 
 ```sh
 cd npm
-npm version 0.1.0 --no-git-tag-version --allow-same-version   # match the release tag
+npm version 0.2.0 --no-git-tag-version --allow-same-version   # match the release tag
 npm login                                                     # or set NPM_TOKEN in ~/.npmrc
 npm publish --access public
 ```
@@ -102,7 +114,7 @@ npm publish --access public
 Sanity-check the download against the real release before/after publishing:
 
 ```sh
-cd npm && npm pack && GOPHERMIND_DOWNLOAD_BASE=https://github.com/jbrahy/gophermind.com/releases/download/v0.1.0 \
+cd npm && npm pack && GOPHERMIND_DOWNLOAD_BASE=https://github.com/jbrahy/gophermind.com/releases/download/v0.2.0 \
   node scripts/download.js && ./vendor/gophermind version
 ```
 

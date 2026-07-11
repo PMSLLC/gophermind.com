@@ -21,9 +21,10 @@
 
 **A tiny, hackable AI coding agent for your terminal — pointed at *your* LLM.**
 
-[![Go](https://img.shields.io/badge/go-1.24-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![Go](https://img.shields.io/badge/go-1.25-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey?logo=apple)](#install)
+[![Platform: macOS · Linux · Windows](https://img.shields.io/badge/platform-macOS%20·%20Linux%20·%20Windows-lightgrey)](#install)
+[![Release](https://img.shields.io/github/v/release/jbrahy/gophermind.com?sort=semver)](https://github.com/jbrahy/gophermind.com/releases)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 </div>
@@ -53,12 +54,16 @@ actually understand and extend in an afternoon.
 - 🖥️ **A terminal UI that's actually pleasant.** Built on [Charm](https://charm.sh)
   — scrollback, syntax-aware rendering, inline approvals, and a gopher that
   greets you with a fortune.
-- 🪶 **Small and hackable.** Pure Go, no CGO, ~a dozen packages. Adding a new
-  tool is one struct and one function.
+- 🪶 **Small and hackable.** Pure Go, no CGO. Adding a new tool is still one
+  struct and one function — the codebase stays readable even as it grows.
+- 🧰 **Batteries included (opt-in).** A local **semantic index** & RAG, a
+  read-only **SQL**/Parquet/CSV data toolkit, multi-agent strategies
+  (`--debate`, `--samples`, `--reflexion`), an **MCP server** so any MCP client
+  can drive it, a plugin SDK + **WASM** sandbox, and observability (Prometheus
+  `/metrics`, tracing, cost dashboard). Every integration is inert until you
+  configure it.
 
 ## Install
-
-Once the first release is out:
 
 ```sh
 brew install jbrahy/tap/gophermind     # macOS (signed + notarized, no Gatekeeper warnings)
@@ -66,8 +71,12 @@ npm install -g gophermind              # macOS / Linux / Windows, x64 / arm64
 ```
 
 The Homebrew build is a signed + notarized universal macOS binary; the npm
-package downloads the prebuilt binary for your platform. Or build from source
-(Go 1.24+):
+package downloads the prebuilt binary for your platform. **Linux** users can
+also grab a `.deb`/`.rpm`/`.apk` (or a `.tar.gz`) straight from the
+[latest release](https://github.com/jbrahy/gophermind.com/releases/latest);
+**Windows** users a `.zip`. Every release ships an SBOM and `checksums.txt`.
+
+Or build from source (Go 1.25+):
 
 ```sh
 git clone https://github.com/jbrahy/gophermind.com
@@ -126,12 +135,18 @@ Secure options for internal endpoints (mTLS, custom CA), a response cache,
 sampling controls, and JSONL transcript export are all supported — see
 [`.env.example`](.env.example).
 
+Beyond `chat`/`run`/`ask`, the CLI exposes subcommands for sessions, prompts,
+plugins, config bundles, the MCP server, benchmarks, diagnostics, and more —
+run `gophermind --help` (and `gophermind completion <shell>`) for the full list.
+
 ## Contributing
 
-**We'd love your help — and there's a lot to do.** GopherMind ships with a
-200-item idea backlog ([`todo.md`](todo.md), [`todo-2.md`](todo-2.md)) spanning
-new tools, an MCP client, a richer TUI, evals, and more. Good first areas:
-adding a tool, improving search, or wiring up an idea from the backlog.
+**We'd love your help.** GopherMind ships with a large idea backlog across four
+batches ([`todo.md`](todo.md) → [`todo-4.md`](todo-4.md)) — the batch-4 set
+landed in 0.2.0 (MCP server, embeddings, WASM sandbox, packaging, and more), so
+the remaining tail is a good source of scoped work. Good first areas: adding a
+tool, improving search, a `scoop-bucket`/`winget` publish path, or wiring up an
+idea from the backlog.
 
 Start with [CONTRIBUTING.md](CONTRIBUTING.md). The codebase is test-driven and
 small enough to hold in your head.

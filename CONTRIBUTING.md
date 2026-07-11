@@ -5,7 +5,7 @@ jumping in is easy. This guide gets you productive in a few minutes.
 
 ## Prerequisites
 
-- **Go 1.24+**
+- **Go 1.25+**
 - [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) recommended — the
   `search` tool uses it (falls back to `grep`)
 - An **OpenAI-compatible endpoint** to test against (local `llama.cpp`, Ollama,
@@ -59,16 +59,19 @@ write those carefully; they *are* the interface.
 - Make sure `make test` and `make vet` pass.
 - Follow the surrounding style; match existing patterns rather than introducing
   new ones.
-- Reference the backlog item (from [`todo.md`](todo.md) / [`todo-2.md`](todo-2.md))
+- Reference the backlog item (from [`todo.md`](todo.md) … [`todo-4.md`](todo-4.md))
   if your change implements one.
 - Describe what changed and how you verified it.
 
 ## Where to start
 
-The two backlog files list ~200 concrete ideas with the existing code they build
-on. Great starters: a new file/search tool option, an MCP client, richer diff
-rendering in the TUI, or a `doctor` command. Open an issue to discuss anything
-larger before diving in.
+Four backlog files ([`todo.md`](todo.md) … [`todo-4.md`](todo-4.md)) list
+concrete ideas with the existing code they build on; the batch-4 set shipped in
+0.2.0 (MCP server, embeddings, WASM sandbox, packaging, …), so the remaining
+tail is a good source of scoped work. Great starters: a new file/search tool
+option, richer diff rendering in the TUI, a `scoop-bucket`/`winget` publish
+path, or an unclaimed backlog item. Open an issue to discuss anything larger
+before diving in.
 
 ## Filing issues
 
