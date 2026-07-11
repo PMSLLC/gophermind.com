@@ -1,0 +1,100 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"strings"
+
+	"gophermind/internal/phaseflow"
+)
+
+// phaseUsage is printed for `gophermind phase help` and on unknown subcommands.
+const phaseUsage = `PhaseFlow — spec-driven development workflow
+
+Usage: gophermind phase <command> [args]
+
+State commands (run locally, no agent):
+  init <name>     scaffold .planning/ for a new project
+  status          show progress and the current phase (alias: progress)
+  next            print the next incomplete phase
+  commands        list the embedded PhaseFlow command prompts
+
+Loop steps (run the agent with a state-seeded prompt):
+  roadmap [desc]  draft the project roadmap (Roadmap)
+  plan <phase>    plan the given phase (Plan)
+  execute <phase> execute a phase's plans (Execute)
+  verify <phase>  verify a phase against its success criteria (Verify)
+  milestone       archive completed phases and ship (Milestone)
+
+The loop: Roadmap -> Phases -> Plan -> Execute -> Verify -> Milestone.
+`
+
+// runPhase handles the `gophermind phase ...` subcommand. args is the tail after
+// "phase" (i.e. os.Args positional args with "phase" removed).
+//
+// It returns handled=true when it fully served the request locally (a state
+// command), in which case the caller should return nil. For an agentic loop
+// step it returns handled=false and a seeded task prompt; the caller runs that
+// prompt through the standard agent path.
+func runPhase(root string, args []string) (handled bool, task string, err error) {
+	e := phaseflow.New(root)
+
+	sub := "help"
+	if len(args) > 0 {
+		sub = strings.ToLower(args[0])
+	}
+	rest := strings.TrimSpace(strings.Join(args[1:], " "))
+
+	switch sub {
+	case "init":
+		if rest == "" {
+			return true, "", fmt.Errorf("usage: gophermind phase init <project-name>")
+		}
+		if err := e.Init(rest); err != nil {
+			return true, "", err
+		}
+		fmt.Fprintf(os.Stderr, "✓ initialized PhaseFlow project %q under %s/\n", rest, phaseflow.PlanningDirName)
+		fmt.Fprintln(os.Stderr, "next: gophermind phase roadmap")
+		return true, "", nil
+
+	case "status", "progress":
+		out, err := e.Status()
+		if err != nil {
+			return true, "", err
+		}
+		fmt.Print(out)
+		return true, "", nil
+
+	case "next":
+		p, err := e.Next()
+		if err != nil {
+			return true, "", err
+		}
+		if p == nil {
+			fmt.Println("All phases complete — run `gophermind phase milestone` to ship.")
+			return true, "", nil
+		}
+		fmt.Printf("Next: Phase %s — %s\n", p.Number, p.Name)
+		return true, "", nil
+
+	case "commands", "list":
+		for _, n := range phaseflow.CommandNames() {
+			fmt.Println(n)
+		}
+		return true, "", nil
+
+	case "help", "-h", "--help":
+		fmt.Fprint(os.Stderr, phaseUsage)
+		return true, "", nil
+
+	case "roadmap", "plan", "execute", "verify", "milestone":
+		prompt, err := e.BuildStepPrompt(sub, rest)
+		if err != nil {
+			return true, "", err
+		}
+		return false, prompt, nil
+
+	default:
+		return true, "", fmt.Errorf("unknown phase subcommand %q\n\n%s", sub, phaseUsage)
+	}
+}
