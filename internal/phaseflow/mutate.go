@@ -6,9 +6,16 @@ import (
 	"strings"
 )
 
-// setCheckbox rewrites the "[ ]"/"[x]" marker of the first line for which match
-// returns true. It returns the updated content and whether a line was changed.
-// Only the checkbox marker is touched; the rest of the line is preserved.
+// ROADMAP.md is hand-authored prose, so completing a plan edits its checkbox in
+// place rather than parsing the file and re-rendering it — round-tripping would
+// silently reflow the author's formatting, comments, and section ordering. Every
+// mutation here is therefore surgical: it touches exactly the one marker it must.
+
+// setCheckbox flips the "[ ]"/"[x]" marker on the first line for which match
+// reports true, leaving the rest of that line — and the whole rest of the file —
+// byte-for-byte intact. The returned bool reports whether such a line was found
+// (not whether its value differed), so callers can turn a miss into a clear
+// "no such plan/phase" error instead of silently writing nothing.
 func setCheckbox(content string, done bool, match func(line string) bool) (string, bool) {
 	want := "[ ]"
 	if done {

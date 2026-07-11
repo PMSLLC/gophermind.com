@@ -8,18 +8,15 @@ import (
 	"time"
 )
 
-// This file is the Go port of the deterministic half of upstream PhaseFlow's
-// state.cjs: recomputing STATE.md's "Current Position" block from the roadmap.
-// Upstream spends an agent turn (or a Node SDK call) to keep this file honest;
-// here it is a pure function of the roadmap, so it costs no tokens and cannot
-// drift from the checkboxes it summarizes.
+// STATE.md is PhaseFlow's "read-first" file — the digest a session opens with to
+// learn where the project stands. Upstream keeps its Current Position block
+// current by spending an agent turn (or a Node SDK call) after every change;
+// this file makes that block a pure function of the roadmap instead, so it costs
+// no tokens and can never disagree with the checkboxes it claims to summarize.
 
-// stateBar renders STATE.md's progress bar, which uses the same glyphs as the
-// status view but is embedded in a "Progress: [..] N%" line.
-func stateBar(pct int) string { return progressBar(pct) }
-
-// position summarizes where the project stands, derived entirely from the
-// roadmap's phases and plan checkboxes.
+// position is the fully-derived snapshot of where the project stands. Every
+// field comes from the roadmap's phases and plan checkboxes — nothing here is
+// read back from STATE.md, so a stale or hand-edited STATE.md cannot poison it.
 type position struct {
 	PhaseIndex int    // 1-based ordinal of the current phase among all phases
 	PhaseCount int    // total number of phases
@@ -91,7 +88,7 @@ func applyPosition(content string, p position, activity string) string {
 	repl(reStatePlan, fmt.Sprintf("Plan: %d of %d in current phase", p.PlansDone, p.PlansTotal))
 	repl(reStateStatus, "Status: "+p.Status)
 	repl(reStateActivity, fmt.Sprintf("Last activity: %s — %s", today, activity))
-	repl(reStateProgress, fmt.Sprintf("Progress: %s %d%%", stateBar(p.Percent), p.Percent))
+	repl(reStateProgress, fmt.Sprintf("Progress: %s %d%%", progressBar(p.Percent), p.Percent))
 	return content
 }
 

@@ -74,10 +74,13 @@ func names(dir string) []string {
 	return out
 }
 
-// parseAsset splits a markdown file into its YAML-ish frontmatter and body.
-// Only scalar "key: value" frontmatter lines are captured; block/list values
-// are skipped (their raw text remains available in Body-adjacent context, but
-// the engine only needs name/description here).
+// parseAsset splits an upstream command/agent markdown file into its "---"
+// frontmatter and the body. This is a deliberately tiny frontmatter reader, not
+// a YAML parser: it keeps only scalar "key: value" pairs (all the engine needs
+// is name and description) and ignores multi-line block and list values such as
+// the commands' allowed-tools arrays. Dropping those is intentional — they list
+// Claude Code tool names, which gophermind neither needs nor honors, and only
+// Body (the instructions after the frontmatter) is ever sent to the agent.
 func parseAsset(name, kind, content string) Asset {
 	a := Asset{Name: name, Kind: kind, Frontmatter: map[string]string{}, Body: content}
 	if !strings.HasPrefix(content, "---") {

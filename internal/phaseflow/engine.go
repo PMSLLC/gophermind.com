@@ -94,8 +94,11 @@ func (e *Engine) Status() (string, error) {
 	return b.String(), nil
 }
 
-// agenticSteps maps a loop step name to the embedded command asset that drives
-// it. These are the steps BuildStepPrompt seeds for the agent.
+// agenticSteps maps the five short loop-step verbs a gophermind user types to
+// the embedded upstream command file that implements each. The names diverge on
+// purpose: the verb is what reads well at the prompt ("phase roadmap"), while the
+// value is upstream PhaseFlow's own filename ("new-project.md"), kept verbatim so
+// re-vendoring the assets never silently breaks the mapping.
 var agenticSteps = map[string]string{
 	"roadmap":   "new-project",
 	"plan":      "plan-phase",
@@ -154,8 +157,11 @@ func (e *Engine) buildCommandPrompt(cmd, label, args string, needInit bool) (str
 	return ctx + "\n\n" + body, nil
 }
 
-// contextBlock builds the <phaseflow-context> preamble injected ahead of a
-// step's command body, giving the agent the project state it needs.
+// contextBlock builds the <phaseflow-context> preamble stitched ahead of a
+// step's command body. Upstream PhaseFlow's commands assume the agent will go
+// read .planning/ itself; injecting the resolved config and current status up
+// front hands the agent that state directly, saving the opening round of
+// file-reading tool calls and anchoring it to the real position before it acts.
 func (e *Engine) contextBlock(step, args string) (string, error) {
 	var b strings.Builder
 	b.WriteString("<phaseflow-context>\n")
