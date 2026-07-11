@@ -17,6 +17,9 @@ State commands (run locally, no agent):
   init <name>     scaffold .planning/ for a new project
   status          show progress and the current phase (alias: progress)
   next            print the next incomplete phase
+  done <plan-id>  mark a plan complete and refresh STATE.md (e.g. 02-01)
+  sync            recompute STATE.md position/progress from the roadmap
+  archive <ver>   archive a shipped milestone (all phases must be complete)
   commands        list the embedded PhaseFlow command prompts
 
 Loop steps (run the agent with a state-seeded prompt):
@@ -75,6 +78,39 @@ func runPhase(root string, args []string) (handled bool, task string, err error)
 			return true, "", nil
 		}
 		fmt.Printf("Next: Phase %s — %s\n", p.Number, p.Name)
+		return true, "", nil
+
+	case "done":
+		if rest == "" {
+			return true, "", fmt.Errorf("usage: gophermind phase done <plan-id>")
+		}
+		if err := e.CompletePlan(rest); err != nil {
+			return true, "", err
+		}
+		fmt.Fprintf(os.Stderr, "✓ marked plan %s complete\n", rest)
+		out, err := e.Status()
+		if err == nil {
+			fmt.Print(out)
+		}
+		return true, "", nil
+
+	case "sync":
+		if err := e.SyncState("manual sync"); err != nil {
+			return true, "", err
+		}
+		fmt.Fprintln(os.Stderr, "✓ STATE.md synced to the roadmap")
+		return true, "", nil
+
+	case "archive":
+		if rest == "" {
+			return true, "", fmt.Errorf("usage: gophermind phase archive <version> [name]")
+		}
+		version, name, _ := strings.Cut(rest, " ")
+		summary, err := e.ArchiveMilestone(version, strings.TrimSpace(name))
+		if err != nil {
+			return true, "", err
+		}
+		fmt.Fprintf(os.Stderr, "✓ %s\n", summary)
 		return true, "", nil
 
 	case "commands", "list":

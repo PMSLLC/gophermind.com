@@ -58,6 +58,35 @@ func (m *model) handlePhaseCommand(full string) (reply string, agentTask string)
 		}
 		return "Next: Phase " + p.Number.String() + " — " + p.Name, ""
 
+	case "done":
+		if rest == "" {
+			return "usage: /phase done <plan-id>", ""
+		}
+		if err := e.CompletePlan(rest); err != nil {
+			return "phase: " + err.Error(), ""
+		}
+		if out, err := e.Status(); err == nil {
+			return "✓ marked plan " + rest + " complete\n" + out, ""
+		}
+		return "✓ marked plan " + rest + " complete", ""
+
+	case "sync":
+		if err := e.SyncState("manual sync"); err != nil {
+			return "phase: " + err.Error(), ""
+		}
+		return "✓ STATE.md synced to the roadmap", ""
+
+	case "archive":
+		if rest == "" {
+			return "usage: /phase archive <version> [name]", ""
+		}
+		version, name, _ := strings.Cut(rest, " ")
+		summary, err := e.ArchiveMilestone(version, strings.TrimSpace(name))
+		if err != nil {
+			return "phase: " + err.Error(), ""
+		}
+		return "✓ " + summary, ""
+
 	case "commands", "list":
 		return strings.Join(phaseflow.CommandNames(), "  "), ""
 
@@ -85,8 +114,8 @@ func (m *model) handlePhaseCommand(full string) (reply string, agentTask string)
 }
 
 // phaseSlashHelp is shown for "/phase" and "/phase help".
-const phaseSlashHelp = "PhaseFlow: /phase init <name> · status · next · commands · " +
-	"roadmap · plan <n> · execute <n> · verify <n> · milestone"
+const phaseSlashHelp = "PhaseFlow: /phase init <name> · status · next · done <plan-id> · " +
+	"sync · archive <ver> · commands · roadmap · plan <n> · execute <n> · verify <n> · milestone"
 
 // handleSamplingCommand parses and applies the /temp and /topp slash commands.
 // The argument is untrusted user input: it is parsed as a float and validated
