@@ -118,6 +118,28 @@ The model requests tools by name; the harness runs them against your repo
 answer or hits the iteration budget. That's the whole idea — see
 [`internal/agent`](internal/agent) and [`internal/tools`](internal/tools).
 
+## PhaseFlow: spec-driven workflow
+
+GopherMind natively speaks [PhaseFlow](https://github.com/jbrahy/metaphaseflow),
+a spec-driven development loop: **Roadmap → Phases → Plan → Execute → Verify →
+Milestone**. Workflow state lives under `.planning/` (`ROADMAP.md`, `STATE.md`,
+`PROJECT.md`, `config.json`) — the same on-disk model as upstream, so the two
+tools are interchangeable.
+
+```
+gophermind phase init "My Project"   # scaffold .planning/
+gophermind phase roadmap             # draft the roadmap (agent)
+gophermind phase status              # progress + current phase
+gophermind phase plan 1              # plan a phase (agent)
+gophermind phase execute 1           # execute its plans (agent)
+gophermind phase verify 1            # verify success criteria (agent)
+gophermind phase milestone           # archive & ship (agent)
+```
+
+The same commands are available in the TUI as `/phase <cmd>`. State commands run
+locally; loop steps run gophermind's agent seeded with the current project
+state. See [`internal/phaseflow`](internal/phaseflow).
+
 ## Configuration
 
 Everything is optional and layered: **flags > real env > `./.env` > global

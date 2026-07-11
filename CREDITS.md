@@ -11,6 +11,15 @@ Database** collected by **Brian M. Clapper** —
 (<https://creativecommons.org/licenses/by/4.0/>); the text is redistributed
 unmodified. Thank you, Brian.
 
+## PhaseFlow
+
+GopherMind's native spec-driven workflow (`gophermind phase …` / `/phase`) is a
+port of **PhaseFlow** by **Lex Christopherson** —
+<https://github.com/jbrahy/metaphaseflow>. Its phase commands, subagent
+definitions, and workflow templates are vendored and embedded under
+`internal/phaseflow/assets/`, used under the **MIT License** (Copyright © 2025
+Lex Christopherson; see `internal/phaseflow/assets/LICENSE.upstream`). Thank you.
+
 ## Libraries
 
 GopherMind's terminal experience is built on the excellent
