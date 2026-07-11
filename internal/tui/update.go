@@ -208,9 +208,23 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		m.sync()
 		return m, nil
 	case "/help":
-		m.appendLine("Commands: /help  /clear  /temp <0-2>  /topp <0-1>  /exit · y/n/a to approve · Esc to interrupt")
+		m.appendLine("Commands: /help  /clear  /phase <cmd>  /temp <0-2>  /topp <0-1>  /exit · y/n/a to approve · Esc to interrupt")
 		m.sync()
 		return m, nil
+	}
+
+	// "/phase ..." runs the PhaseFlow workflow. State commands print to the
+	// transcript and return; a loop step yields a seeded prompt sent to the agent
+	// (the /phase line stays as the shown user prompt).
+	sendText := text
+	if strings.Fields(text)[0] == "/phase" {
+		reply, agentTask := m.handlePhaseCommand(text)
+		if agentTask == "" {
+			m.appendLine(reply)
+			m.sync()
+			return m, nil
+		}
+		sendText = agentTask
 	}
 
 	m.appendLine("")
@@ -226,7 +240,7 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 	sub := m.sub
 	ag := m.agent
 	go func() {
-		ans, err := ag.Send(ctx, text)
+		ans, err := ag.Send(ctx, sendText)
 		if err != nil {
 			sub <- errMsg{err: err}
 		} else {

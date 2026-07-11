@@ -1,11 +1,84 @@
 package tui
 
 import (
+	"os"
 	"strconv"
 	"strings"
 
 	"gophermind/internal/config"
+	"gophermind/internal/phaseflow"
 )
+
+// handlePhaseCommand parses a "/phase ..." slash command. It returns exactly one
+// non-empty result: reply is transcript text for a locally-served state command
+// (or an error message), and agentTask is a state-seeded prompt for an agentic
+// loop step that the caller should send to the agent. The project root is the
+// current working directory, where the TUI was launched.
+func (m *model) handlePhaseCommand(full string) (reply string, agentTask string) {
+	root, err := os.Getwd()
+	if err != nil {
+		return "phase: cannot determine working directory: " + err.Error(), ""
+	}
+	e := phaseflow.New(root)
+
+	fields := strings.Fields(full)
+	sub := "help"
+	if len(fields) > 1 {
+		sub = strings.ToLower(fields[1])
+	}
+	rest := ""
+	if len(fields) > 2 {
+		rest = strings.TrimSpace(strings.Join(fields[2:], " "))
+	}
+
+	switch sub {
+	case "init":
+		if rest == "" {
+			return "usage: /phase init <project-name>", ""
+		}
+		if err := e.Init(rest); err != nil {
+			return "phase: " + err.Error(), ""
+		}
+		return "✓ initialized PhaseFlow project " + strconv.Quote(rest) + " under " + phaseflow.PlanningDirName + "/ — next: /phase roadmap", ""
+
+	case "status", "progress":
+		out, err := e.Status()
+		if err != nil {
+			return "phase: " + err.Error(), ""
+		}
+		return out, ""
+
+	case "next":
+		p, err := e.Next()
+		if err != nil {
+			return "phase: " + err.Error(), ""
+		}
+		if p == nil {
+			return "All phases complete — /phase milestone to ship.", ""
+		}
+		return "Next: Phase " + p.Number.String() + " — " + p.Name, ""
+
+	case "commands", "list":
+		return strings.Join(phaseflow.CommandNames(), "  "), ""
+
+	case "help", "":
+		return phaseSlashHelp, ""
+
+	case "roadmap", "plan", "execute", "verify", "milestone":
+		prompt, err := e.BuildStepPrompt(sub, rest)
+		if err != nil {
+			return "phase: " + err.Error(), ""
+		}
+		return "", prompt
+
+	default:
+		return "unknown phase command " + strconv.Quote(sub) + "\n" + phaseSlashHelp, ""
+	}
+}
+
+// phaseSlashHelp is shown for "/phase" and "/phase help".
+const phaseSlashHelp = "PhaseFlow: /phase init <name> · status · next · commands · " +
+	"roadmap · plan <n> · execute <n> · verify <n> · milestone"
 
 // handleSamplingCommand parses and applies the /temp and /topp slash commands.
 // The argument is untrusted user input: it is parsed as a float and validated
