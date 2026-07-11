@@ -125,3 +125,27 @@ func TestBuildStepPromptNeedsInit(t *testing.T) {
 		t.Error("execute on uninitialized project should error")
 	}
 }
+
+func TestBuildCommandPromptArbitrary(t *testing.T) {
+	root := t.TempDir()
+	e := New(root)
+	if err := e.Init("Demo"); err != nil {
+		t.Fatal(err)
+	}
+	// A non-loop embedded command should seed by name.
+	prompt, err := e.BuildCommandPrompt("map-codebase", "")
+	if err != nil {
+		t.Fatalf("map-codebase: %v", err)
+	}
+	if !strings.Contains(prompt, "<phaseflow-context>") {
+		t.Error("arbitrary command should still get the context block")
+	}
+	// The "phase:" prefix is tolerated.
+	if _, err := e.BuildCommandPrompt("phase:code-review", ""); err != nil {
+		t.Errorf("phase: prefix should resolve: %v", err)
+	}
+	// An unknown command errors.
+	if _, err := e.BuildCommandPrompt("definitely-not-a-command", ""); err == nil {
+		t.Error("unknown command should error")
+	}
+}

@@ -95,6 +95,15 @@ func runPhase(root string, args []string) (handled bool, task string, err error)
 		return false, prompt, nil
 
 	default:
+		// Any other embedded PhaseFlow command (map-codebase, code-review,
+		// ship, …) runs agentically by name; unrecognized names error.
+		if _, ok := phaseflow.Command(sub); ok {
+			prompt, err := e.BuildCommandPrompt(sub, rest)
+			if err != nil {
+				return true, "", err
+			}
+			return false, prompt, nil
+		}
 		return true, "", fmt.Errorf("unknown phase subcommand %q\n\n%s", sub, phaseUsage)
 	}
 }

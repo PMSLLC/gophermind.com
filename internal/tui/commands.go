@@ -72,6 +72,14 @@ func (m *model) handlePhaseCommand(full string) (reply string, agentTask string)
 		return "", prompt
 
 	default:
+		// Any other embedded PhaseFlow command runs agentically by name.
+		if _, ok := phaseflow.Command(sub); ok {
+			prompt, err := e.BuildCommandPrompt(sub, rest)
+			if err != nil {
+				return "phase: " + err.Error(), ""
+			}
+			return "", prompt
+		}
 		return "unknown phase command " + strconv.Quote(sub) + "\n" + phaseSlashHelp, ""
 	}
 }

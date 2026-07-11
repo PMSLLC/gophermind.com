@@ -120,15 +120,33 @@ func (e *Engine) BuildStepPrompt(step, args string) (string, error) {
 		return "", fmt.Errorf("unknown step %q (want one of: roadmap, plan, execute, verify, milestone)", step)
 	}
 	// roadmap runs on a fresh project; the rest need an initialized one.
-	if step != "roadmap" && !e.Initialized() {
+	needInit := step != "roadmap"
+	return e.buildCommandPrompt(cmd, step, args, needInit)
+}
+
+// BuildCommandPrompt seeds an arbitrary embedded PhaseFlow command by name (e.g.
+// "map-codebase", "code-review", "ship"), so the full upstream command surface
+// is reachable, not just the core loop steps. Any command other than
+// new-project requires an initialized project.
+func (e *Engine) BuildCommandPrompt(name, args string) (string, error) {
+	name = strings.TrimPrefix(strings.TrimSpace(name), "phase:")
+	if _, ok := Command(name); !ok {
+		return "", fmt.Errorf("no PhaseFlow command %q (see `phase commands`)", name)
+	}
+	return e.buildCommandPrompt(name, name, args, name != "new-project")
+}
+
+// buildCommandPrompt is the shared seeding path: load the command asset, gate on
+// initialization, substitute $ARGUMENTS, and prepend the state context block.
+func (e *Engine) buildCommandPrompt(cmd, label, args string, needInit bool) (string, error) {
+	if needInit && !e.Initialized() {
 		return "", fmt.Errorf("no PhaseFlow project here — run `phase init <name>` first")
 	}
 	asset, ok := Command(cmd)
 	if !ok {
 		return "", fmt.Errorf("embedded command %q missing", cmd)
 	}
-
-	ctx, err := e.contextBlock(step, args)
+	ctx, err := e.contextBlock(label, args)
 	if err != nil {
 		return "", err
 	}
