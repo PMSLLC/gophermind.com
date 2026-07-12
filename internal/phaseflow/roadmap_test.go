@@ -1,6 +1,9 @@
 package phaseflow
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 const sampleRoadmap = `# Roadmap: Demo Project
 
@@ -133,6 +136,27 @@ func TestSetPlanDone(t *testing.T) {
 	// Unrelated plan untouched.
 	if _, changed := SetPlanDone(sampleRoadmap, "99-99", true); changed {
 		t.Error("nonexistent plan should not change content")
+	}
+}
+
+func TestSetCheckboxIgnoresMarkersInDescription(t *testing.T) {
+	// A plan whose description text itself contains checkbox tokens must have
+	// only its own (leftmost) checkbox flipped, never the description.
+	const rm = "## Phase Details\n\n### Phase 1: X\n\nPlans:\n" +
+		"- [x] 01-01: verify [ ] the box and [x] again\n"
+
+	out, changed := SetPlanDone(rm, "01-01", false)
+	if !changed {
+		t.Fatal("expected the plan checkbox to change")
+	}
+	if !strings.Contains(out, "- [ ] 01-01: verify [ ] the box and [x] again") {
+		t.Errorf("wrong marker flipped — description corrupted:\n%s", out)
+	}
+
+	// Marking it done again must likewise leave the description intact.
+	out2, _ := SetPlanDone(out, "01-01", true)
+	if !strings.Contains(out2, "- [x] 01-01: verify [ ] the box and [x] again") {
+		t.Errorf("description not preserved on re-mark:\n%s", out2)
 	}
 }
 

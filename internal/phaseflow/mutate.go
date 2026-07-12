@@ -26,11 +26,19 @@ func setCheckbox(content string, done bool, match func(line string) bool) (strin
 		if !match(line) {
 			continue
 		}
+		// Flip the *leftmost* marker on the line. The list item's own checkbox
+		// always precedes its description text, so picking the leftmost occurrence
+		// (rather than the first marker type that happens to appear anywhere)
+		// avoids corrupting a description that itself contains a "[ ]"/"[x]" token.
+		best, bestMarker := -1, ""
 		for _, marker := range []string{"[ ]", "[x]", "[X]"} {
-			if idx := strings.Index(line, marker); idx >= 0 {
-				lines[i] = line[:idx] + want + line[idx+len(marker):]
-				return strings.Join(lines, "\n"), true
+			if idx := strings.Index(line, marker); idx >= 0 && (best < 0 || idx < best) {
+				best, bestMarker = idx, marker
 			}
+		}
+		if best >= 0 {
+			lines[i] = line[:best] + want + line[best+len(bestMarker):]
+			return strings.Join(lines, "\n"), true
 		}
 	}
 	return content, false
