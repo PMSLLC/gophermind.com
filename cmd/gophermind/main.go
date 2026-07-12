@@ -808,6 +808,22 @@ func run() error {
 		cmd = "chat"
 	}
 
+	// `gophermind phase ...` runs the PhaseFlow spec-driven workflow. State
+	// commands (init/status/next) are served locally; a loop step (roadmap/plan/
+	// execute/verify/milestone) produces a state-seeded prompt that is executed
+	// through the standard agent path below by rewriting cmd to "run".
+	if cmd == "phase" {
+		handled, seeded, err := runPhase(cfg.RootDir, args[1:])
+		if err != nil {
+			return err
+		}
+		if handled {
+			return nil
+		}
+		task = seeded
+		cmd = "run"
+	}
+
 	switch cmd {
 	case "prompt-tokens":
 		// Report the per-section token cost of the built base system prompt.
