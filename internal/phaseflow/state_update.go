@@ -131,9 +131,13 @@ func (e *Engine) CompletePlan(planID string) error {
 		return err
 	}
 	// If that was the phase's last open plan, tick the phase checkbox as well.
+	// A failure here matters: leaving all plans done but the phase unchecked is a
+	// silent inconsistency, so surface it rather than swallowing it.
 	if rm, err := LoadRoadmap(e.Root); err == nil {
 		if ph := owningPhase(rm, planID); ph != nil && allPlansDone(ph) {
-			_ = MarkPhase(e.Root, ph.Number, true)
+			if err := MarkPhase(e.Root, ph.Number, true); err != nil {
+				return fmt.Errorf("plan %s marked done but ticking phase %s failed (run `phase sync`): %w", planID, ph.Number, err)
+			}
 		}
 	}
 	return e.SyncState("completed plan " + planID)

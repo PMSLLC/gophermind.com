@@ -26,7 +26,7 @@ go vet ./...              # vet
 make build                # produces ./gophermind (gitignored)
 ```
 
-Always run these from the repo root: `/Users/you/OtherProjects/gophermind.com`.
+Always run these from the repo root (the directory containing `go.mod`).
 
 ## Conventions (this repo)
 

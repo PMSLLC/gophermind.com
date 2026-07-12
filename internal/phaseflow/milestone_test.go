@@ -76,6 +76,35 @@ func TestArchiveMilestoneRequiresVersion(t *testing.T) {
 	}
 }
 
+func TestArchiveMilestoneRejectsPathTraversal(t *testing.T) {
+	root := t.TempDir()
+	e := New(root)
+	_ = e.Init("Ship It")
+	_ = os.WriteFile(RoadmapPath(root), []byte(completedRoadmap), 0o644)
+
+	// Each of these would escape .planning/milestones/ if interpolated raw.
+	for _, bad := range []string{
+		"../../evil",
+		"../../../../tmp/pwned",
+		"..",
+		"a/b",
+		`a\b`,
+		"foo/../bar",
+	} {
+		if _, err := e.ArchiveMilestone(bad, ""); err == nil {
+			t.Errorf("version %q should be rejected as unsafe", bad)
+		}
+	}
+	// Nothing should have been written outside the milestones dir.
+	if _, err := os.Stat(root + "/evil-ROADMAP.md"); err == nil {
+		t.Fatal("a traversal write escaped the milestones directory")
+	}
+	// A normal version still works.
+	if _, err := e.ArchiveMilestone("v1.0", "MVP"); err != nil {
+		t.Errorf("valid version rejected: %v", err)
+	}
+}
+
 func TestArchiveMilestoneLedgerAppends(t *testing.T) {
 	root := t.TempDir()
 	e := New(root)

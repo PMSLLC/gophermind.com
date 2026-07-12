@@ -4,9 +4,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
+
+// reMilestoneVersion constrains a milestone version to a safe, single path
+// segment. It is deliberately strict: the version is interpolated into a
+// filename (<version>-ROADMAP.md), so anything containing a path separator or a
+// ".." sequence is rejected before it can escape the milestones directory.
+var reMilestoneVersion = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // This file is the Go port of the deterministic file bookkeeping in upstream
 // PhaseFlow's milestone.cjs cmdMilestoneComplete: archiving the shipped
@@ -30,6 +37,11 @@ func (e *Engine) ArchiveMilestone(version, name string) (string, error) {
 	version = strings.TrimSpace(version)
 	if version == "" {
 		return "", fmt.Errorf("a version is required (e.g. v1.0)")
+	}
+	// The version becomes part of a filename, so reject anything that could
+	// traverse out of the milestones directory (path separators, "..", etc.).
+	if !reMilestoneVersion.MatchString(version) || strings.Contains(version, "..") {
+		return "", fmt.Errorf("invalid version %q: use only letters, digits, '.', '_' and '-' (no path separators)", version)
 	}
 	if name = strings.TrimSpace(name); name == "" {
 		name = version
