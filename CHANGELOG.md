@@ -6,6 +6,8 @@ All notable changes to GopherMind are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-12
+
 ### Added
 
 **PhaseFlow — native spec-driven workflow** (`internal/phaseflow`)
