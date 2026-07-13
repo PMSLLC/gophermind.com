@@ -48,6 +48,7 @@ type Agent struct {
 	startTime      time.Time             // when the agent was created (for duration tracking)
 	redactor       *safety.SecretScanner // when non-nil, transcript content is scrubbed on export
 	audit          *safety.AuditLog      // when non-nil, tool calls are recorded to a tamper-evident log
+	approvalMode   string                // "ask"/"auto", tracked for display and the config wizard
 }
 
 // SetAuditLog attaches a tamper-evident audit log; every tool call, its approval

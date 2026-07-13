@@ -88,6 +88,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pending = msg
 		return m, waitFor(m.sub)
 
+	case configDoneMsg:
+		// The /config wizard finished (via tea.Exec); persist and apply it.
+		m.handleConfigDone(msg)
+		return m, waitFor(m.sub)
+
 	case doneMsg:
 		if s := strings.TrimSpace(m.stream); s != "" {
 			out := s
@@ -225,6 +230,12 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 			return m, nil
 		}
 		sendText = agentTask
+	}
+
+	// "/config" launches the interactive configuration wizard, saves the result,
+	// and reports back. It reuses the same wizard that runs on first launch.
+	if strings.Fields(text)[0] == "/config" {
+		return m.handleConfigCommand()
 	}
 
 	m.appendLine("")
