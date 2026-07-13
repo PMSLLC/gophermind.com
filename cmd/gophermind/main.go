@@ -26,6 +26,7 @@ import (
 	"gophermind/internal/doctor"
 	"gophermind/internal/embed"
 	"gophermind/internal/fewshot"
+	"gophermind/internal/intro"
 	"gophermind/internal/jobs"
 	"gophermind/internal/llm"
 	"gophermind/internal/mcp"
@@ -847,6 +848,12 @@ func run() error {
 			}); ok {
 				fmt.Fprintln(os.Stderr, notice)
 			}
+		}
+		// A short, skippable animated-gopher intro plays before the TUI on a
+		// suitable terminal. It self-gates (truecolor, interactive, >=80x30) and
+		// honors --quiet/--no-banner and GOPHERMIND_INTRO=off.
+		if !*noBannerFlag && !*quietFlag {
+			intro.Play()
 		}
 		return tui.Run(tui.Config{
 			Client:           client,
