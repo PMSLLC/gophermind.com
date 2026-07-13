@@ -71,6 +71,14 @@ type model struct {
 	pending approvalMsg // valid when st == stateApproval
 	cancel  context.CancelFunc
 
+	// /project setup state machine (see project.go). proj is projNone unless a
+	// guided new-project flow is active; projTurn marks that the in-flight agent
+	// turn belongs to that flow so its completion is post-processed specially.
+	proj        projPhase
+	projName    string
+	projRetries int
+	projTurn    bool
+
 	usage  agent.UsageSnapshot // running session token + cost meter
 	width  int
 	height int

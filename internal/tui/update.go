@@ -107,6 +107,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.st = stateIdle
 		m.cancel = nil
 		m.sync()
+		// A /project turn is post-processed by its state machine (advance the
+		// interview, validate the plan, or move to review).
+		if m.projTurn {
+			m.projTurn = false
+			return m.afterProjectTurn(msg.answer)
+		}
 		return m, waitFor(m.sub)
 
 	case errMsg:
@@ -192,6 +198,13 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		return m, nil
 	}
 
+	// While a guided /project flow is active, its state machine consumes input.
+	if m.proj != projNone {
+		if nm, cmd, handled := m.handleProjectInput(text); handled {
+			return nm, cmd
+		}
+	}
+
 	// Commands taking an argument are matched by their first field so the value
 	// can follow (e.g. "/temp 0.7").
 	if cmd := strings.Fields(text)[0]; cmd == "/temp" || cmd == "/topp" {
@@ -213,7 +226,7 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		m.sync()
 		return m, nil
 	case "/help":
-		m.appendLine("Commands: /help  /clear  /phase <cmd>  /temp <0-2>  /topp <0-1>  /exit · y/n/a to approve · Esc to interrupt")
+		m.appendLine("Commands: /help  /clear  /project <name>  /phase <cmd>  /config  /temp <0-2>  /topp <0-1>  /exit · y/n/a to approve · Esc to interrupt")
 		m.sync()
 		return m, nil
 	}
@@ -236,6 +249,12 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 	// and reports back. It reuses the same wizard that runs on first launch.
 	if strings.Fields(text)[0] == "/config" {
 		return m.handleConfigCommand()
+	}
+
+	// "/project [name]" starts the guided new-project flow (interview → plan →
+	// approve). Subsequent input is consumed by the block above until it ends.
+	if strings.Fields(text)[0] == "/project" {
+		return m.handleProjectCommand(text)
 	}
 
 	m.appendLine("")

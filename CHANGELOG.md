@@ -6,6 +6,12 @@ All notable changes to GopherMind are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`/project` guided new-project flow (TUI)** — `/project <name>` opens a dialog that interviews you (iterating with the LLM) to build a comprehensive spec, then generates a validated plan: `SPEC.md`, a `ROADMAP.md`, and a machine-readable `assignments.json` that assigns **each task to an agent type** (a `prompt.md` from a per-project catalog, seeded from the embedded PhaseFlow agents) **and a model** (per-type default, overridable). You approve the plan (with a revise loop) before it's marked ready.
+- Approval **gate**: in the TUI, `/phase plan|execute|verify|milestone` are blocked until the project plan is approved (CLI `gophermind phase …` is unaffected).
+- `internal/phaseflow` plan backbone: assignments schema, agent catalog loader + seeding, `ValidatePlan`, and an approval marker. (Orchestrated verify-and-correct execution over these assignments is a planned follow-on.)
+
 ## [0.4.0] - 2026-07-13
 
 ### Added

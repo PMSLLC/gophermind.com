@@ -31,6 +31,17 @@ func (m model) View() string {
 		width = 1
 	}
 
+	// During a guided /project flow, show a dialog panel above the input.
+	if m.proj != projNone {
+		return lipgloss.JoinVertical(
+			lipgloss.Left,
+			m.viewport.View(),
+			projectDialogStyle.Width(width).Render(projectDialogText(m.proj, m.projName)),
+			boxStyle.Width(width).Render(m.input.View()),
+			status,
+		)
+	}
+
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		m.viewport.View(),
