@@ -93,7 +93,20 @@ func (m *model) handlePhaseCommand(full string) (reply string, agentTask string)
 	case "help", "":
 		return phaseSlashHelp, ""
 
-	case "roadmap", "plan", "execute", "verify", "milestone":
+	case "roadmap":
+		// roadmap is part of building the outline, so it's allowed pre-approval.
+		prompt, err := e.BuildStepPrompt(sub, rest)
+		if err != nil {
+			return "phase: " + err.Error(), ""
+		}
+		return "", prompt
+
+	case "plan", "execute", "verify", "milestone":
+		// These move development forward, so they're gated behind an approved
+		// project plan (see /project). CLI `gophermind phase` is not gated.
+		if !e.Approved() {
+			return "⚠ project outline not approved — run /project to finish it first", ""
+		}
 		prompt, err := e.BuildStepPrompt(sub, rest)
 		if err != nil {
 			return "phase: " + err.Error(), ""
