@@ -6,6 +6,18 @@ All notable changes to GopherMind are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-13
+
+### Added
+
+- **Animated gopher intro** — a short (~1.5s), dependency-free truecolor gopher plays before the interactive chat TUI (fade-in → eyes-open reflection sweep → settle). It self-gates to interactive truecolor terminals ≥80×30, honors `--quiet`/`--no-banner`/`NO_COLOR`, is skippable by any keypress, and can be disabled with `GOPHERMIND_INTRO=off`.
+- **Interactive `/config` wizard** — configure the endpoint, API key, model, approval mode, max iterations, and optional integrations from inside the chat TUI. It runs via `tea.Exec` (Bubble Tea cleanly hands over the terminal), persists to the config file, and applies changes to the running session live (switching approval mode to `ask` applies on next launch).
+- New agent configuration API (`Config`, `SetBaseURL`/`SetModel`/`SetAPIKey`/`SetMaxIter`/`SetApprovalMode`) backing the wizard.
+
+### Changed
+
+- Refreshed the README header with a new full-body gopher.
+
 ## [0.3.0] - 2026-07-12
 
 ### Added
