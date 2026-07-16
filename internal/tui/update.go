@@ -213,6 +213,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(tea.KeyMsg{Type: tea.KeyEnter})
 		applyInputHeight(&m)
+		m.queryComplete()
 		return m, cmd
 	}
 

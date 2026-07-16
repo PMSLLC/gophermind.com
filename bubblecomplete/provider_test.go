@@ -23,13 +23,13 @@ var _ Provider = (*staticProvider)(nil)
 
 func TestProviderInterface(t *testing.T) {
 	tests := []struct {
-		name       string
-		provider   *staticProvider
-		input      string
-		cursor     int
-		wantName   string
-		wantCount  int
-		wantFirst  *Candidate
+		name      string
+		provider  *staticProvider
+		input     string
+		cursor    int
+		wantName  string
+		wantCount int
+		wantFirst *Candidate
 	}{
 		{
 			name: "empty input returns candidates",
@@ -40,11 +40,11 @@ func TestProviderInterface(t *testing.T) {
 					{Text: "world", Display: "world", Desc: "noun", Replace: 0},
 				},
 			},
-			input:      "",
-			cursor:     0,
-			wantName:   "test-provider",
-			wantCount:  2,
-			wantFirst:  &Candidate{Text: "hello", Display: "hello", Desc: "greeting", Replace: 0},
+			input:     "",
+			cursor:    0,
+			wantName:  "test-provider",
+			wantCount: 2,
+			wantFirst: &Candidate{Text: "hello", Display: "hello", Desc: "greeting", Replace: 0},
 		},
 		{
 			name: "with cursor position",
@@ -54,11 +54,11 @@ func TestProviderInterface(t *testing.T) {
 					{Text: "foo", Display: "foo-display", Desc: "foo description", Replace: 3},
 				},
 			},
-			input:      "foo",
-			cursor:     3,
-			wantName:   "another-provider",
-			wantCount:  1,
-			wantFirst:  &Candidate{Text: "foo", Display: "foo-display", Desc: "foo description", Replace: 3},
+			input:     "foo",
+			cursor:    3,
+			wantName:  "another-provider",
+			wantCount: 1,
+			wantFirst: &Candidate{Text: "foo", Display: "foo-display", Desc: "foo description", Replace: 3},
 		},
 		{
 			name: "no candidates",
@@ -66,11 +66,11 @@ func TestProviderInterface(t *testing.T) {
 				name:       "empty-provider",
 				candidates: []Candidate{},
 			},
-			input:      "xyz",
-			cursor:     3,
-			wantName:   "empty-provider",
-			wantCount:  0,
-			wantFirst:  nil,
+			input:     "xyz",
+			cursor:    3,
+			wantName:  "empty-provider",
+			wantCount: 0,
+			wantFirst: nil,
 		},
 	}
 

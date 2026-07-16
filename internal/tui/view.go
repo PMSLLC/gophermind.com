@@ -59,7 +59,7 @@ func (m model) View() string {
 	// Outside that case (or when the cursor isn't at the true end of the
 	// input, or a menu/no suggestion is active) the input renders unchanged.
 	inputContent := m.input.View()
-	if m.st == stateIdle && m.complete.Mode() == bubblecomplete.ModeGhost {
+	if m.st == stateIdle && m.proj == projNone && m.complete.Mode() == bubblecomplete.ModeGhost {
 		if ghost := m.complete.Ghost(); ghost != "" && singleVisualLine(m) && cursorAtEnd(m) {
 			inputContent = m.input.Prompt + m.input.Value() + m.complete.GhostStyle().Render(ghost)
 		}

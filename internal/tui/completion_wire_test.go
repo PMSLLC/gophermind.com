@@ -204,6 +204,34 @@ func TestNoSuggestionsWhileWorking(t *testing.T) {
 	}
 }
 
+// TestNewlineKeyRequeriesCompletion covers the reviewer-reported regression:
+// the isNewlineKey branch (Alt+Enter / Ctrl+J / shift+enter) inserted a
+// literal newline via a synthetic Enter but never called queryComplete, so
+// stale candidates from before the newline lingered. Reproduction: typing
+// "/p" opens the command menu (see TestCommandProviderMenuOnMultipleMatches);
+// Ctrl+J then inserts a newline; a subsequent Tab spliced the stale
+// "/project" candidate (Replace: 0, Text: "roject") at the new cursor
+// position, corrupting the input to "/p\nroject" instead of leaving the
+// input alone (the "/p\n" prefix no longer matches any slash command, so the
+// menu should have closed).
+func TestNewlineKeyRequeriesCompletion(t *testing.T) {
+	m := testModel(t)
+	m = typeString(t, m, "/p")
+	if m.complete.Mode() != bubblecomplete.ModeMenu {
+		t.Fatalf("setup: mode = %v, want ModeMenu after typing \"/p\"", m.complete.Mode())
+	}
+
+	got, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	m2 := got.(model)
+
+	got2, _ := m2.handleKey(tea.KeyMsg{Type: tea.KeyTab})
+	m3 := got2.(model)
+
+	if m3.input.Value() == "/p\nroject" {
+		t.Errorf("input.Value() = %q after newline+Tab, want no stale-candidate corruption", m3.input.Value())
+	}
+}
+
 // TestViewSplicesMenuAboveInput covers view.go: an open popup menu is
 // spliced into the rendered view above the bordered input box.
 func TestViewSplicesMenuAboveInput(t *testing.T) {
