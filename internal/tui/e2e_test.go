@@ -33,6 +33,8 @@ func streamingServer(t *testing.T, frags ...string) *httptest.Server {
 }
 
 func TestTUIEndToEnd(t *testing.T) {
+	t.Setenv("GOPHERMIND_CONFIG_DIR", t.TempDir())
+
 	srv := streamingServer(t, "Hello ", "from ", "the ", "model.")
 	defer srv.Close()
 

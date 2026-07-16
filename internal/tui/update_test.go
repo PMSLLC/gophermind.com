@@ -9,14 +9,16 @@ import (
 	"gophermind/internal/agent"
 )
 
-func testModel() model {
+func testModel(t *testing.T) model {
+	t.Helper()
+	t.Setenv("GOPHERMIND_CONFIG_DIR", t.TempDir())
 	m := newModel(func(sub chan tea.Msg, allowed *allowSet) *agent.Agent { return nil }, "m", "auto", "dark", false, false)
 	m.width, m.height, m.ready = 80, 24, true
 	return m
 }
 
 func TestSlashClearResetsState(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	m.stream = "leftover"
 	m.content = "old transcript"
 	m.input.SetValue("/clear")
@@ -33,7 +35,7 @@ func TestSlashClearResetsState(t *testing.T) {
 }
 
 func TestSlashExitQuits(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	m.input.SetValue("/exit")
 	_, cmd := m.handleSubmit()
 	if cmd == nil {
@@ -46,7 +48,7 @@ func TestSlashExitQuits(t *testing.T) {
 }
 
 func TestSlashTempUpdatesTemperature(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	m.input.SetValue("/temp 0.7")
 	m2, _ := m.handleSubmit()
 	if m2.temperature != 0.7 {
@@ -58,7 +60,7 @@ func TestSlashTempUpdatesTemperature(t *testing.T) {
 }
 
 func TestSlashTempZeroIsValid(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	m.temperature = 0.5
 	m.input.SetValue("/temp 0")
 	m2, _ := m.handleSubmit()
@@ -68,7 +70,7 @@ func TestSlashTempZeroIsValid(t *testing.T) {
 }
 
 func TestSlashTempInvalidLeavesValueUnchanged(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	m.temperature = 0.3
 	m.input.SetValue("/temp abc")
 	m2, _ := m.handleSubmit()
@@ -81,7 +83,7 @@ func TestSlashTempInvalidLeavesValueUnchanged(t *testing.T) {
 }
 
 func TestSlashTempOutOfRangeRejected(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	m.temperature = 0.3
 	m.input.SetValue("/temp 5")
 	m2, _ := m.handleSubmit()
@@ -98,7 +100,7 @@ func TestSlashTempRejectsNonFinite(t *testing.T) {
 	// not the parser — must reject them. Guards against a non-finite value
 	// reaching the API.
 	for _, bad := range []string{"Inf", "+Inf", "NaN", "-Inf"} {
-		m := testModel()
+		m := testModel(t)
 		m.temperature = 0.3
 		m.input.SetValue("/temp " + bad)
 		m2, _ := m.handleSubmit()
@@ -109,7 +111,7 @@ func TestSlashTempRejectsNonFinite(t *testing.T) {
 }
 
 func TestSlashToppUpdatesAndUnsets(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	m.input.SetValue("/topp 0.9")
 	m2, _ := m.handleSubmit()
 	if m2.topP == nil || *m2.topP != 0.9 {
@@ -125,7 +127,7 @@ func TestSlashToppUpdatesAndUnsets(t *testing.T) {
 }
 
 func TestSlashTempNoArgReportsCurrent(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	m.temperature = 0.42
 	m.input.SetValue("/temp")
 	m2, _ := m.handleSubmit()
@@ -141,7 +143,7 @@ func TestSlashTempNoArgReportsCurrent(t *testing.T) {
 // in flight cancels that turn's context and stays in the session (no tea.Quit),
 // rather than exiting the program.
 func TestCtrlCMidStreamCancelsWithoutQuitting(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	m.st = stateWorking
 	m.cancel = cancel
@@ -165,7 +167,7 @@ func TestCtrlCMidStreamCancelsWithoutQuitting(t *testing.T) {
 
 // TestCtrlCIdleQuits verifies Ctrl-C with no in-flight request still quits.
 func TestCtrlCIdleQuits(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	m.st = stateIdle
 	m.cancel = nil
 
@@ -182,7 +184,7 @@ func TestCtrlCIdleQuits(t *testing.T) {
 // error from the agent renders as a clean "cancelled" line and returns the model
 // to idle with the partial stream and cancel func cleared.
 func TestCancelledErrMsgShowsCancelledAndReturnsIdle(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	m.st = stateWorking
 	m.stream = "partial output"
 	_, cancel := context.WithCancel(context.Background())
@@ -209,7 +211,7 @@ func TestCancelledErrMsgShowsCancelledAndReturnsIdle(t *testing.T) {
 }
 
 func TestApprovalKeysReply(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	reply := make(chan bool, 1)
 	m.st = stateApproval
 	m.pending = approvalMsg{tool: "write_file", args: "{}", reply: reply}
@@ -235,14 +237,14 @@ func TestApprovalKeysReply(t *testing.T) {
 // --- Task 9: multi-line auto-growing input ---
 
 func TestDesiredInputRowsEmptyIsOne(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	if got := desiredInputRows(m); got != 1 {
 		t.Errorf("desiredInputRows(empty) = %d, want 1", got)
 	}
 }
 
 func TestDesiredInputRowsMultiLineClampsToFour(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	// 5 short logical lines: one row each, clamped down to the 4-row max.
 	m.input.SetValue("a\nb\nc\nd\ne")
 	if got := desiredInputRows(m); got != 4 {
@@ -251,7 +253,7 @@ func TestDesiredInputRowsMultiLineClampsToFour(t *testing.T) {
 }
 
 func TestDesiredInputRowsThreeLinesNoClampNeeded(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	m.input.SetValue("a\nb\nc")
 	if got := desiredInputRows(m); got != 3 {
 		t.Errorf("desiredInputRows(3 lines) = %d, want 3", got)
@@ -259,7 +261,7 @@ func TestDesiredInputRowsThreeLinesNoClampNeeded(t *testing.T) {
 }
 
 func TestDesiredInputRowsLongLineWraps(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	textWidth := m.input.Width()
 	if textWidth < 1 {
 		t.Fatalf("textarea width = %d, want >= 1", textWidth)
@@ -273,7 +275,7 @@ func TestDesiredInputRowsLongLineWraps(t *testing.T) {
 }
 
 func TestDesiredInputRowsExactMultipleOfWidth(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	textWidth := m.input.Width()
 	if textWidth < 1 {
 		t.Fatalf("textarea width = %d, want >= 1", textWidth)
@@ -297,7 +299,7 @@ func TestDesiredInputRowsExactMultipleOfWidth(t *testing.T) {
 }
 
 func TestApplyInputHeightRecomputesViewportHeight(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	m.input.SetValue("line one\nline two") // 2 short logical lines -> 2 rows
 	applyInputHeight(&m)
 	if got := m.input.Height(); got != 2 {
@@ -313,7 +315,7 @@ func TestApplyInputHeightRecomputesViewportHeight(t *testing.T) {
 }
 
 func TestAltEnterInsertsNewlineAndGrows(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	m.input.SetValue("hello")
 	got, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter, Alt: true})
 	m2 := got.(model)
@@ -329,7 +331,7 @@ func TestAltEnterInsertsNewlineAndGrows(t *testing.T) {
 }
 
 func TestCtrlJInsertsNewlineAndGrows(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	m.input.SetValue("hello")
 	got, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlJ})
 	m2 := got.(model)
@@ -342,7 +344,7 @@ func TestCtrlJInsertsNewlineAndGrows(t *testing.T) {
 }
 
 func TestPlainEnterStillSubmits(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	m.input.SetValue("hi there")
 	got, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m2 := got.(model)
@@ -355,7 +357,7 @@ func TestPlainEnterStillSubmits(t *testing.T) {
 }
 
 func TestInputShrinksToOneRowAfterSubmit(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	m.input.SetValue("line one\nline two\nline three")
 	applyInputHeight(&m)
 	if m.input.Height() < 2 {
@@ -377,7 +379,7 @@ func TestSlashHelpListsRegisteredCommands(t *testing.T) {
 		}
 	}
 
-	m := testModel()
+	m := testModel(t)
 	m.input.SetValue("/help")
 	m2, _ := m.handleSubmit()
 	for _, name := range commandNames() {
@@ -392,7 +394,7 @@ func TestSlashHelpListsRegisteredCommands(t *testing.T) {
 // recall provider can surface it later.
 func TestSubmitNormalPromptRecordsHistory(t *testing.T) {
 	t.Setenv("GOPHERMIND_CONFIG_DIR", t.TempDir())
-	m := testModel()
+	m := testModel(t)
 	m.input.SetValue("write me a haiku about gophers")
 	m2, _ := m.handleSubmit()
 
@@ -412,7 +414,7 @@ func TestSubmitNormalPromptRecordsHistory(t *testing.T) {
 // are not real prompts and must not pollute recall/markov training data.
 func TestSubmitSlashCommandDoesNotRecordHistory(t *testing.T) {
 	t.Setenv("GOPHERMIND_CONFIG_DIR", t.TempDir())
-	m := testModel()
+	m := testModel(t)
 	m.input.SetValue("/help")
 	m2, _ := m.handleSubmit()
 
@@ -426,7 +428,7 @@ func TestSubmitSlashCommandDoesNotRecordHistory(t *testing.T) {
 // history on disk yet (a brand-new GOPHERMIND_CONFIG_DIR).
 func TestNewModelBuildsCompletionWithEmptyHistory(t *testing.T) {
 	t.Setenv("GOPHERMIND_CONFIG_DIR", t.TempDir())
-	m := testModel()
+	m := testModel(t)
 
 	if m.hist == nil {
 		t.Fatal("hist is nil, want a non-nil (possibly empty) store")
