@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	"github.com/jbrahy/bubblecomplete"
 	"gophermind/internal/agent"
 )
 
@@ -147,6 +148,16 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case tea.KeyEsc:
+		// An active suggestion (ghost or menu) eats the first Esc — dismiss it
+		// instead of the cancel/interrupt behavior below. A second Esc (or Esc
+		// with nothing active) falls through to that behavior as before.
+		if m.st == stateIdle && m.complete.Active() {
+			cm, res := m.complete.Update(msg)
+			m.complete = cm
+			if res.Consumed {
+				return m, nil
+			}
+		}
 		if m.st == stateApproval {
 			m.pending.reply <- false
 			m.st = stateWorking
@@ -174,6 +185,24 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Predictive-text gets first refusal on keys while idle (Tab/→ accept a
+	// suggestion, ↑/↓ navigate an open menu, ...). Suggestions are never
+	// queried/shown outside stateIdle (see the final Query call below and
+	// handleSubmit), so this is inert elsewhere.
+	if m.st == stateIdle {
+		cm, res := m.complete.Update(msg)
+		m.complete = cm
+		if res.Accepted != nil {
+			m.applyCandidate(*res.Accepted)
+			m.queryComplete()
+			applyInputHeight(&m)
+			return m, nil
+		}
+		if res.Consumed {
+			return m, nil
+		}
+	}
+
 	// Shift+Enter is indistinguishable from plain Enter on most terminals, so
 	// Alt+Enter and Ctrl+J are the reliable ways to insert a literal newline;
 	// msg.String() == "shift+enter" covers terminals that do report it
@@ -188,6 +217,16 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if msg.Type == tea.KeyEnter && !msg.Alt && m.st == stateIdle {
+		if m.complete.Mode() == bubblecomplete.ModeMenu {
+			cm, cand := m.complete.Accept()
+			m.complete = cm
+			if cand != nil {
+				m.applyCandidate(*cand)
+			}
+			m.queryComplete()
+			applyInputHeight(&m)
+			return m, nil
+		}
 		mm, cmd := m.handleSubmit()
 		return mm, cmd
 	}
@@ -195,6 +234,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	applyInputHeight(&m)
+	if m.st == stateIdle {
+		m.queryComplete()
+	}
 	return m, cmd
 }
 
@@ -202,6 +244,9 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 	text := strings.TrimSpace(m.input.Value())
 	m.input.Reset()
 	applyInputHeight(&m)
+	// Drop any suggestion left over from the submitted text — the input is
+	// now empty, so a stale ghost/menu must not linger over it.
+	m.queryComplete()
 	if text == "" {
 		return m, nil
 	}
