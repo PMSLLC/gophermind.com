@@ -17,20 +17,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		vpH := msg.Height - inputHeight - statusHeight
-		if vpH < 1 {
-			vpH = 1
-		}
+		m.input.SetWidth(msg.Width - 2)
 		justReady := !m.ready
 		if !m.ready {
-			m.viewport = viewport.New(msg.Width, vpH)
+			// Height is provisional here; applyInputHeight (below) recomputes
+			// it from the input's row count now that m.ready is true.
+			m.viewport = viewport.New(msg.Width, 1)
 			m.ready = true
 			m.appendLine(m.banner)
 		} else {
 			m.viewport.Width = msg.Width
-			m.viewport.Height = vpH
 		}
-		m.input.SetWidth(msg.Width - 2)
+		applyInputHeight(&m)
 		if r, err := glamour.NewTermRenderer(glamour.WithStandardStyle(m.glamourStyle), glamour.WithWordWrap(msg.Width-2)); err == nil {
 			m.render = r
 		}
@@ -176,19 +174,34 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if msg.Type == tea.KeyEnter && m.st == stateIdle {
+	// Shift+Enter is indistinguishable from plain Enter on most terminals, so
+	// Alt+Enter and Ctrl+J are the reliable ways to insert a literal newline;
+	// msg.String() == "shift+enter" covers terminals that do report it
+	// distinctly (bubbletea's own key parser has no such string as of
+	// v1.3.10, so this arm is a forward-compatible no-op today).
+	isNewlineKey := (msg.Type == tea.KeyEnter && msg.Alt) || msg.Type == tea.KeyCtrlJ || msg.String() == "shift+enter"
+	if isNewlineKey && m.st == stateIdle {
+		var cmd tea.Cmd
+		m.input, cmd = m.input.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		applyInputHeight(&m)
+		return m, cmd
+	}
+
+	if msg.Type == tea.KeyEnter && !msg.Alt && m.st == stateIdle {
 		mm, cmd := m.handleSubmit()
 		return mm, cmd
 	}
 
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
+	applyInputHeight(&m)
 	return m, cmd
 }
 
 func (m model) handleSubmit() (model, tea.Cmd) {
 	text := strings.TrimSpace(m.input.Value())
 	m.input.Reset()
+	applyInputHeight(&m)
 	if text == "" {
 		return m, nil
 	}

@@ -43,10 +43,7 @@ func (a *allowSet) has(tool string) bool {
 	return a.m[tool]
 }
 
-const (
-	inputHeight  = 3 // bordered single-line textarea
-	statusHeight = 1
-)
+const statusHeight = 1
 
 type model struct {
 	agent   *agent.Agent
@@ -110,6 +107,17 @@ func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent,
 	ta.SetHeight(1)
 	ta.CharLimit = 0
 	ta.Focus()
+	// Only the first visual row of a (possibly multi-line, auto-grown) input
+	// shows "› "; continuation rows are blank but still reserve the same
+	// column width so wrapped/typed text stays aligned. bubbles v1.0.0
+	// supports this cleanly via SetPromptFunc, keyed by display row (post
+	// wrap), so it also blanks the padding rows below the last line.
+	ta.SetPromptFunc(2, func(displayRow int) string {
+		if displayRow == 0 {
+			return "› "
+		}
+		return ""
+	})
 
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot

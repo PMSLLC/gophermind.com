@@ -232,6 +232,117 @@ func TestApprovalKeysReply(t *testing.T) {
 	}
 }
 
+// --- Task 9: multi-line auto-growing input ---
+
+func TestDesiredInputRowsEmptyIsOne(t *testing.T) {
+	m := testModel()
+	if got := desiredInputRows(m); got != 1 {
+		t.Errorf("desiredInputRows(empty) = %d, want 1", got)
+	}
+}
+
+func TestDesiredInputRowsMultiLineClampsToFour(t *testing.T) {
+	m := testModel()
+	// 5 short logical lines: one row each, clamped down to the 4-row max.
+	m.input.SetValue("a\nb\nc\nd\ne")
+	if got := desiredInputRows(m); got != 4 {
+		t.Errorf("desiredInputRows(5 lines) = %d, want 4 (clamped)", got)
+	}
+}
+
+func TestDesiredInputRowsThreeLinesNoClampNeeded(t *testing.T) {
+	m := testModel()
+	m.input.SetValue("a\nb\nc")
+	if got := desiredInputRows(m); got != 3 {
+		t.Errorf("desiredInputRows(3 lines) = %d, want 3", got)
+	}
+}
+
+func TestDesiredInputRowsLongLineWraps(t *testing.T) {
+	m := testModel()
+	textWidth := m.input.Width()
+	if textWidth < 1 {
+		t.Fatalf("textarea width = %d, want >= 1", textWidth)
+	}
+	// A single logical line more than 2x textWidth needs 3 wrapped rows.
+	long := strings.Repeat("x", textWidth*2+5)
+	m.input.SetValue(long)
+	if got, want := desiredInputRows(m), 3; got != want {
+		t.Errorf("desiredInputRows(long line, textWidth=%d) = %d, want %d", textWidth, got, want)
+	}
+}
+
+func TestApplyInputHeightRecomputesViewportHeight(t *testing.T) {
+	m := testModel()
+	m.input.SetValue("line one\nline two") // 2 short logical lines -> 2 rows
+	applyInputHeight(&m)
+	if got := m.input.Height(); got != 2 {
+		t.Fatalf("input.Height() = %d, want 2", got)
+	}
+	want := m.height - (2 + 2) - statusHeight
+	if want < 1 {
+		want = 1
+	}
+	if m.viewport.Height != want {
+		t.Errorf("viewport.Height = %d, want %d", m.viewport.Height, want)
+	}
+}
+
+func TestAltEnterInsertsNewlineAndGrows(t *testing.T) {
+	m := testModel()
+	m.input.SetValue("hello")
+	got, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter, Alt: true})
+	m2 := got.(model)
+	if !strings.Contains(m2.input.Value(), "\n") {
+		t.Fatalf("Alt+Enter did not insert a newline: %q", m2.input.Value())
+	}
+	if m2.input.Height() < 2 {
+		t.Errorf("input.Height() = %d, want >= 2 after newline insert", m2.input.Height())
+	}
+	if m2.st != stateIdle {
+		t.Errorf("state = %v, want idle (Alt+Enter must not submit)", m2.st)
+	}
+}
+
+func TestCtrlJInsertsNewlineAndGrows(t *testing.T) {
+	m := testModel()
+	m.input.SetValue("hello")
+	got, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	m2 := got.(model)
+	if !strings.Contains(m2.input.Value(), "\n") {
+		t.Fatalf("Ctrl+J did not insert a newline: %q", m2.input.Value())
+	}
+	if m2.input.Height() < 2 {
+		t.Errorf("input.Height() = %d, want >= 2 after newline insert", m2.input.Height())
+	}
+}
+
+func TestPlainEnterStillSubmits(t *testing.T) {
+	m := testModel()
+	m.input.SetValue("hi there")
+	got, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m2 := got.(model)
+	if m2.input.Value() != "" {
+		t.Errorf("input not reset after submit: %q", m2.input.Value())
+	}
+	if !strings.Contains(m2.content, "hi there") {
+		t.Errorf("submitted text missing from transcript: %q", m2.content)
+	}
+}
+
+func TestInputShrinksToOneRowAfterSubmit(t *testing.T) {
+	m := testModel()
+	m.input.SetValue("line one\nline two\nline three")
+	applyInputHeight(&m)
+	if m.input.Height() < 2 {
+		t.Fatalf("setup: expected grown input before submit, got height %d", m.input.Height())
+	}
+	m2, _ := m.handleSubmit()
+	if got := m2.input.Height(); got != 1 {
+		t.Errorf("input.Height() after submit = %d, want 1", got)
+	}
+}
+
 func TestSlashHelpListsRegisteredCommands(t *testing.T) {
 	if len(slashCommands) == 0 {
 		t.Fatal("slashCommands registry is empty")
