@@ -91,14 +91,26 @@ type Provider interface {
   - `SetProviders(...Provider)`
   - `Query(input string, cursor int) Model` — recompute suggestions (host calls
     this after the input value changes).
-  - `Update(msg tea.Msg) (Model, *Candidate)` — consumes navigation/accept keys
-    when active; returns a non-nil `*Candidate` when the user accepts one. Keys
-    it does not consume are left for the host to route to the textarea.
-  - `View() string` — the ghost-text or menu overlay (empty when inactive).
-  - `Active() bool`
+  - `Update(msg tea.Msg) (Model, Result)` — consumes navigation/accept keys
+    when active. `Result{Accepted *Candidate; Consumed bool}`: `Accepted` is
+    non-nil when the user just accepted a suggestion; `Consumed` tells the host
+    whether the completion model handled the key (if true, the host must not
+    also process it).
+  - `Accept() (Model, *Candidate)` — host-driven accept (e.g. Enter with a menu
+    open); returns nil if nothing is active.
+  - `View() string` — the popup **menu** block only (`ModeMenu`); `""` in every
+    other mode.
+  - `Ghost() string` — the inline ghost continuation text (`ModeGhost`); `""`
+    otherwise. Rendering it inline is the host's job (drawn inside the host's
+    own input widget); this library only supplies the string.
+  - `GhostStyle() lipgloss.Style` — the faint style the host uses to render the
+    inline ghost text.
+  - `Active() bool` — `Mode() != ModeNone`.
+  - `Mode() Mode` — `ModeNone` / `ModeGhost` / `ModeMenu`.
 - **Keys consumed when active:** Tab (accept ghost / accept highlighted menu
   item), → (accept ghost text when cursor is at end of line), ↑/↓ (move within an
-  open menu), Esc (dismiss the current suggestion). All other keys pass through.
+  open menu), Esc (dismiss the current suggestion). All other keys pass through,
+  and Enter / Shift+Enter / Alt+Enter / Ctrl+J are never consumed.
 - Styling is injected via options (ghost color, menu border/selected styles) so
   the host controls theming; sensible defaults provided.
 
