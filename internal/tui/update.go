@@ -266,6 +266,16 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		return m, nil
 	}
 
+	// "/goal ..." sets, shows, or clears the session-scoped steering goal that
+	// is injected into every subsequent normal prompt (see the injection
+	// below). It always prints to the transcript and returns; there is no
+	// agent turn.
+	if strings.Fields(text)[0] == "/goal" {
+		m.handleGoalCommand(text)
+		m.sync()
+		return m, nil
+	}
+
 	switch text {
 	case "/exit", "/quit":
 		return m, tea.Quit
@@ -308,6 +318,15 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 	// approve). Subsequent input is consumed by the block above until it ends.
 	if strings.Fields(text)[0] == "/project" {
 		return m.handleProjectCommand(text)
+	}
+
+	// A session goal (set via "/goal") is injected into every ordinary prompt
+	// as a steering preamble, so it reaches the model every turn regardless of
+	// backend. The transcript still shows the raw text; only sendText carries
+	// the preamble. Slash-command-derived sends (e.g. a "/phase" loop step)
+	// are excluded by the leading "/" check on text.
+	if m.goal != "" && !strings.HasPrefix(text, "/") {
+		sendText = goalPreamble(m.goal, sendText)
 	}
 
 	m.appendLine("")

@@ -23,6 +23,7 @@ var slashCommands = []slashCommand{
 	{Name: "/config", Arg: "", Desc: "open the configuration wizard"},
 	{Name: "/temp", Arg: "<0-2>", Desc: "set sampling temperature"},
 	{Name: "/topp", Arg: "<0-1>", Desc: "set top-p sampling"},
+	{Name: "/goal", Arg: "<text>", Desc: "set a persistent steering goal (\"/goal\" shows, \"/goal clear\" removes)"},
 	{Name: "/exit", Arg: "", Desc: "quit gophermind"},
 	{Name: "/quit", Arg: "", Desc: "quit gophermind (alias of /exit)"},
 }

@@ -60,6 +60,11 @@ type model struct {
 	temperature float64  // current sampling temperature, mirrored from the client
 	topP        *float64 // current top_p (nil when unset), mirrored from the client
 
+	// goal is a session-scoped steering goal set via "/goal" and injected into
+	// every subsequent normal prompt (see goalPreamble / handleSubmit). Empty
+	// means no goal is active. Session-only for v1 — no disk persistence.
+	goal string
+
 	input    textarea.Model
 	viewport viewport.Model
 	spin     spinner.Model

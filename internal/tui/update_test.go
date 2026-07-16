@@ -445,3 +445,105 @@ func TestNewModelBuildsCompletionWithEmptyHistory(t *testing.T) {
 		t.Errorf("complete.Query(%q) not active, want the command provider to suggest /help", "/he")
 	}
 }
+
+// TestSlashGoalSetsGoal covers Task GOAL: "/goal <text>" sets the
+// session-scoped steering goal and confirms in the transcript.
+func TestSlashGoalSetsGoal(t *testing.T) {
+	m := testModel(t)
+	m.input.SetValue("/goal do X")
+	m2, _ := m.handleSubmit()
+	if m2.goal != "do X" {
+		t.Errorf("goal = %q, want %q", m2.goal, "do X")
+	}
+	if !strings.Contains(m2.content, "goal set: do X") {
+		t.Errorf("missing confirmation in transcript: %q", m2.content)
+	}
+}
+
+// TestSlashGoalShowsCurrentGoal covers Task GOAL: bare "/goal" prints the
+// current goal when one is set.
+func TestSlashGoalShowsCurrentGoal(t *testing.T) {
+	m := testModel(t)
+	m.goal = "do X"
+	m.input.SetValue("/goal")
+	m2, _ := m.handleSubmit()
+	if m2.goal != "do X" {
+		t.Errorf("goal changed by a bare /goal: %q", m2.goal)
+	}
+	if !strings.Contains(m2.content, "do X") {
+		t.Errorf("missing current goal in transcript: %q", m2.content)
+	}
+}
+
+// TestSlashGoalShowsNoGoalSet covers Task GOAL: bare "/goal" with none set
+// prints "no goal set".
+func TestSlashGoalShowsNoGoalSet(t *testing.T) {
+	m := testModel(t)
+	m.input.SetValue("/goal")
+	m2, _ := m.handleSubmit()
+	if !strings.Contains(m2.content, "no goal set") {
+		t.Errorf("missing 'no goal set' in transcript: %q", m2.content)
+	}
+}
+
+// TestSlashGoalClearEmptiesGoal covers Task GOAL: "/goal clear" empties the
+// goal and confirms in the transcript.
+func TestSlashGoalClearEmptiesGoal(t *testing.T) {
+	m := testModel(t)
+	m.goal = "do X"
+	m.input.SetValue("/goal clear")
+	m2, _ := m.handleSubmit()
+	if m2.goal != "" {
+		t.Errorf("goal = %q, want empty after /goal clear", m2.goal)
+	}
+	if !strings.Contains(m2.content, "goal cleared") {
+		t.Errorf("missing confirmation in transcript: %q", m2.content)
+	}
+}
+
+// TestGoalPreambleContainsGoalAndText covers Task GOAL: the injection helper
+// used by handleSubmit's agent-send branch (ag.Send runs in a goroutine, so
+// the preamble logic is unit-tested directly here rather than via the send).
+func TestGoalPreambleContainsGoalAndText(t *testing.T) {
+	got := goalPreamble("do X", "hello")
+	if !strings.Contains(got, "do X") {
+		t.Errorf("preamble %q missing goal", got)
+	}
+	if !strings.Contains(got, "hello") {
+		t.Errorf("preamble %q missing raw text", got)
+	}
+}
+
+// TestSlashGoalRegisteredInHelp covers Task GOAL: "/goal" must appear in
+// commandNames() / the "/help" output.
+func TestSlashGoalRegisteredInHelp(t *testing.T) {
+	found := false
+	for _, name := range commandNames() {
+		if name == "/goal" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("/goal missing from commandNames()")
+	}
+
+	m := testModel(t)
+	m.input.SetValue("/help")
+	m2, _ := m.handleSubmit()
+	if !strings.Contains(m2.content, "/goal") {
+		t.Errorf("/help output missing /goal: %q", m2.content)
+	}
+}
+
+// TestSlashGoalNotRecordedToHistory covers Task GOAL: a "/goal ..." line is a
+// slash command, not a real prompt, and must not be recorded to prompt
+// history (mirrors TestSubmitSlashCommandDoesNotRecordHistory for Task 10).
+func TestSlashGoalNotRecordedToHistory(t *testing.T) {
+	m := testModel(t)
+	m.input.SetValue("/goal do X")
+	m2, _ := m.handleSubmit()
+
+	if entries := m2.hist.All(); len(entries) != 0 {
+		t.Errorf("history = %v, want empty after /goal", entries)
+	}
+}

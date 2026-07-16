@@ -199,3 +199,37 @@ func (m *model) samplingStatusLine(cmd string) string {
 func formatFloat(v float64) string {
 	return strconv.FormatFloat(v, 'g', -1, 64)
 }
+
+// handleGoalCommand parses and applies the "/goal" slash command. It has three
+// forms: "/goal <text>" sets the session-scoped steering goal, bare "/goal"
+// reports the current one (or that none is set), and "/goal clear" removes
+// it. Each form prints its result to the transcript; there is no agent turn.
+// The goal is session-only for v1 — no disk persistence.
+func (m *model) handleGoalCommand(full string) {
+	fields := strings.Fields(full)
+	if len(fields) < 2 {
+		if m.goal == "" {
+			m.appendLine("no goal set")
+			return
+		}
+		m.appendLine(m.goal)
+		return
+	}
+	rest := strings.TrimSpace(strings.Join(fields[1:], " "))
+	if rest == "clear" {
+		m.goal = ""
+		m.appendLine("✓ goal cleared")
+		return
+	}
+	m.goal = rest
+	m.appendLine("✓ goal set: " + rest)
+}
+
+// goalPreamble builds the per-turn steering preamble prepended to sendText
+// when a session goal is active (see handleSubmit). The transcript still
+// shows the user's raw text; only the text actually sent to the agent carries
+// this preamble, guaranteeing the goal reaches the model every turn
+// regardless of backend.
+func goalPreamble(goal, text string) string {
+	return "[Ongoing goal: " + goal + "]\n\n" + text
+}
