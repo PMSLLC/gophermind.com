@@ -226,7 +226,7 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		m.sync()
 		return m, nil
 	case "/help":
-		m.appendLine("Commands: /help  /clear  /project <name>  /phase <cmd>  /config  /temp <0-2>  /topp <0-1>  /exit · y/n/a to approve · Esc to interrupt")
+		m.appendLine(helpLine())
 		m.sync()
 		return m, nil
 	}

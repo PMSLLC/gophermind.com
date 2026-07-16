@@ -231,3 +231,23 @@ func TestApprovalKeysReply(t *testing.T) {
 		t.Errorf("state = %v, want working", mm.st)
 	}
 }
+
+func TestSlashHelpListsRegisteredCommands(t *testing.T) {
+	if len(slashCommands) == 0 {
+		t.Fatal("slashCommands registry is empty")
+	}
+	for _, c := range slashCommands {
+		if c.Desc == "" {
+			t.Errorf("command %q has empty Desc", c.Name)
+		}
+	}
+
+	m := testModel()
+	m.input.SetValue("/help")
+	m2, _ := m.handleSubmit()
+	for _, name := range commandNames() {
+		if !strings.Contains(m2.content, name) {
+			t.Errorf("/help output missing registered command %q: %q", name, m2.content)
+		}
+	}
+}
