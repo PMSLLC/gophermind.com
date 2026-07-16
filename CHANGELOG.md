@@ -6,11 +6,17 @@ All notable changes to GopherMind are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-16
+
 ### Added
 
 - **`/project` guided new-project flow (TUI)** — `/project <name>` opens a dialog that interviews you (iterating with the LLM) to build a comprehensive spec, then generates a validated plan: `SPEC.md`, a `ROADMAP.md`, and a machine-readable `assignments.json` that assigns **each task to an agent type** (a `prompt.md` from a per-project catalog, seeded from the embedded PhaseFlow agents) **and a model** (per-type default, overridable). You approve the plan (with a revise loop) before it's marked ready.
 - Approval **gate**: in the TUI, `/phase plan|execute|verify|milestone` are blocked until the project plan is approved (CLI `gophermind phase …` is unaffected).
 - `internal/phaseflow` plan backbone: assignments schema, agent catalog loader + seeding, `ValidatePlan`, and an approval marker. (Orchestrated verify-and-correct execution over these assignments is a planned follow-on.)
+
+### Fixed
+
+- **Streaming turns no longer time out mid-response.** The LLM client previously shared one `http.Client` whose overall `Timeout` (default 300s, `GOPHERMIND_HTTP_TIMEOUT_S`) bounded the *entire* request including reading the streamed body, so long or heavy turns were killed with `read stream: … context deadline exceeded`. Streaming now runs without a total-request cap, guarded instead by a connect/response-header timeout plus an **idle/stall watchdog** that aborts only when tokens actually stop arriving (default 300s, configurable via `GOPHERMIND_STREAM_IDLE_TIMEOUT_S`). Non-streaming `Complete` and the startup model-probe calls remain bounded by a per-request deadline.
 
 ## [0.4.0] - 2026-07-13
 
