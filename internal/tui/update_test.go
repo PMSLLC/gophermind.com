@@ -272,6 +272,30 @@ func TestDesiredInputRowsLongLineWraps(t *testing.T) {
 	}
 }
 
+func TestDesiredInputRowsExactMultipleOfWidth(t *testing.T) {
+	m := testModel()
+	textWidth := m.input.Width()
+	if textWidth < 1 {
+		t.Fatalf("textarea width = %d, want >= 1", textWidth)
+	}
+	// When a line's display width is an exact multiple of textWidth, bubbles
+	// appends a trailing padding row. The formula w/textWidth + 1 accounts for
+	// this, whereas ceil(w/textWidth) does not.
+
+	// Line with width exactly equal to textWidth should wrap to 2 rows.
+	exact := strings.Repeat("x", textWidth)
+	m.input.SetValue(exact)
+	if got, want := desiredInputRows(m), 2; got != want {
+		t.Errorf("desiredInputRows(width=%d, textWidth=%d) = %d, want %d", textWidth, textWidth, got, want)
+	}
+
+	// Line with width exactly equal to 2*textWidth should wrap to 3 rows.
+	m.input.SetValue(strings.Repeat("x", textWidth*2))
+	if got, want := desiredInputRows(m), 3; got != want {
+		t.Errorf("desiredInputRows(width=%d, textWidth=%d) = %d, want %d", textWidth*2, textWidth, got, want)
+	}
+}
+
 func TestApplyInputHeightRecomputesViewportHeight(t *testing.T) {
 	m := testModel()
 	m.input.SetValue("line one\nline two") // 2 short logical lines -> 2 rows

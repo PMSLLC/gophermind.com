@@ -40,11 +40,16 @@ func desiredInputRows(m model) int {
 	rows := 0
 	for _, line := range strings.Split(value, "\n") {
 		w := uniseg.StringWidth(line)
-		r := (w + textWidth - 1) / textWidth // ceil(w / textWidth)
-		if r < 1 {
-			r = 1
+		// bubbles textarea appends a trailing padding row when content exactly fills
+		// the last row, so we add 1 to account for it: w/textWidth + 1.
+		// For w=0: 0/textWidth + 1 = 1 (empty line = 1 row).
+		// For w=textWidth: textWidth/textWidth + 1 = 2 (exact multiple = 1 row + 1 padding).
+		// For w=textWidth+k (0<k<textWidth): (textWidth+k)/textWidth + 1 = 1 + 1 = 2.
+		lineRows := w/textWidth + 1
+		if lineRows < 1 {
+			lineRows = 1
 		}
-		rows += r
+		rows += lineRows
 	}
 	if rows < 1 {
 		rows = 1
