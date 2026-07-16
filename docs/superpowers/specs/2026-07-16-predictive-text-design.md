@@ -47,6 +47,8 @@ other Bubble Tea apps can use it. gophermind supplies its own providers on top.
 | Build order | Deterministic providers in Phase 1; LLM in Phase 2 |
 | History source | Persisted to disk from day one |
 | Markov predictor | Phase 1, alongside whole-prompt recall |
+| Input | Multi-line, auto-grows 1→4 visible lines, then scrolls internally |
+| Submit vs newline | Enter submits; Shift+Enter (fallback Alt+Enter/Ctrl+J) inserts a newline |
 
 ## Architecture
 
@@ -154,6 +156,27 @@ refactored to read from this registry, so completion and help never drift.
 - **Privacy note:** prompts are written to disk in plain text. Documented in the
   README/CHANGELOG; a config toggle can disable history entirely.
 
+## Multi-line auto-growing input
+
+The input changes from a fixed single line to a multi-line `textarea` that grows
+with its content and then scrolls.
+
+- **Auto-grow:** after any change to the input value, the textarea height is set
+  to `clamp(lineCount, 1, 4)` visible rows. At 1–4 wrapped lines it grows; beyond
+  4 it stays at 4 and the textarea scrolls its own content (native bubbles
+  behavior). Line count is measured on *wrapped* lines at the current width, not
+  just literal `\n`, so long single lines that wrap also grow the box.
+- **Layout:** `inputHeight` becomes dynamic — `currentInputRows + border (2)` —
+  instead of the hard-coded `3`. The viewport height is recomputed from it on
+  every resize and on every input-height change, so the transcript always fills
+  the remaining space. When the input shrinks, the viewport reclaims the rows.
+- **Submit vs newline:** Enter submits the prompt (as today). Shift+Enter inserts
+  a newline; because some terminals do not report Shift+Enter distinctly,
+  Alt+Enter and Ctrl+J are accepted as newline fallbacks. On submit, the input
+  resets to a single row.
+- **Completion overlay:** the menu/ghost overlay positions relative to the
+  input's *current* top edge, so it stays correct as the box grows.
+
 ## Integration into the TUI
 
 - `model` (in `internal/tui/model.go`) gains:
@@ -176,7 +199,8 @@ refactored to read from this registry, so completion and help never drift.
 - Suggestions are suppressed while `st != stateIdle` (working/approval states) so
   they never fight the approval `y/n/a` keys or a streaming turn.
 - Enter with a menu open **accepts** the highlighted item; Enter with no active
-  suggestion **submits** exactly as today.
+  suggestion **submits**. Shift+Enter (fallback Alt+Enter/Ctrl+J) always inserts
+  a newline and is never intercepted by the completion model.
 - Esc dismisses an active suggestion first; a second Esc (or Esc with nothing
   active) keeps its current cancel/interrupt meaning.
 
@@ -197,14 +221,17 @@ with **no** changes to the controller or the other providers.
   logic, markov end-to-end on a small corpus).
 - **history store:** round-trip load/append/cap/dedupe against a temp file.
 - **TUI:** extend the existing `update_test.go` / `e2e_test.go` patterns to cover
-  key routing precedence (suggestion vs approval vs submit) and that history is
-  recorded on submit.
+  key routing precedence (suggestion vs approval vs submit), that history is
+  recorded on submit, input auto-grow/shrink between 1 and 4 rows with viewport
+  recompute, and Shift+Enter (and fallbacks) inserting a newline while Enter
+  submits.
 - Full gate before done: `go test ./...` (both modules), `go vet`, `gofmt`.
 
 ## Rollout / Phasing
 
 1. **bubblecomplete module** — types, `Model`, hybrid render, key handling,
    `ngram` helper, tests, example. Wire `go.work`.
-2. **gophermind Phase 1** — command registry refactor, history store, four
-   providers, TUI integration, tests, docs (README/CHANGELOG + privacy note).
+2. **gophermind Phase 1** — multi-line auto-growing input (1→4 rows + scroll,
+   Enter/Shift+Enter), command registry refactor, history store, four providers,
+   TUI integration, tests, docs (README/CHANGELOG + privacy note).
 3. **Phase 2 (separate spec)** — LLM provider.
