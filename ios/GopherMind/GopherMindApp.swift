@@ -11,28 +11,27 @@ struct GopherMindApp: App {
     }
 }
 
-/// Placeholder root screen. Networking/streaming lands in A2.
+/// Root screen: the live conversation, with a nav link through to Settings.
 struct ContentView: View {
     @ObservedObject var settings: AppSettings
+    @StateObject private var viewModel: SessionViewModel
+
+    init(settings: AppSettings) {
+        self.settings = settings
+        _viewModel = StateObject(wrappedValue: SessionViewModel(service: GopherMindService(settings: settings)))
+    }
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 16) {
-                Text("GopherMind")
-                    .font(.largeTitle)
-                    .bold()
-                Text("No server connected yet.")
-                    .foregroundStyle(.secondary)
-            }
-            .padding()
-            .navigationTitle("GopherMind")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink("Settings") {
-                        SettingsView(settings: settings)
+            ConversationView(viewModel: viewModel)
+                .navigationTitle("GopherMind")
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        NavigationLink("Settings") {
+                            SettingsView(settings: settings)
+                        }
                     }
                 }
-            }
         }
     }
 }
