@@ -600,23 +600,43 @@ func run() error {
 	// offers — instead of surfacing as a cryptic error mid-request. The check is
 	// best-effort: if /v1/models errors or lists nothing we cannot validate, so
 	// we proceed and let the completion request surface any real error.
+	//
+	// startupTimeout bounds a total deadline for these one-shot startup calls to
+	// cfg.HTTPTimeout (the same bound Client.Timeout used to enforce before it
+	// was replaced by the streaming idle watchdog). GOPHERMIND_HTTP_TIMEOUT_S=0
+	// is a valid override to disable it, so guard against a zero/immediate
+	// deadline here and fall back to the config default.
+	startupTimeout := cfg.HTTPTimeout
+	if startupTimeout <= 0 {
+		startupTimeout = 300 * time.Second
+	}
+
 	if cfg.Model == "" {
-		discovered, err := client.DiscoverModel(context.Background())
+		discoverCtx, discoverCancel := context.WithTimeout(context.Background(), startupTimeout)
+		discovered, err := client.DiscoverModel(discoverCtx)
+		discoverCancel()
 		if err != nil {
 			return fmt.Errorf("no model set and discovery failed: %w (set -model or GOPHERMIND_MODEL)", err)
 		}
 		cfg.Model = discovered
 		client.Model = discovered
-	} else if models, err := client.ListModels(context.Background()); err == nil && len(models) > 0 && !slices.Contains(models, cfg.Model) {
-		return fmt.Errorf("model %q not found at %s\nmodels available at this endpoint:\n  %s\n(set -model or GOPHERMIND_MODEL to one of these)",
-			cfg.Model, cfg.BaseURL, strings.Join(models, "\n  "))
+	} else {
+		listCtx, listCancel := context.WithTimeout(context.Background(), startupTimeout)
+		models, err := client.ListModels(listCtx)
+		listCancel()
+		if err == nil && len(models) > 0 && !slices.Contains(models, cfg.Model) {
+			return fmt.Errorf("model %q not found at %s\nmodels available at this endpoint:\n  %s\n(set -model or GOPHERMIND_MODEL to one of these)",
+				cfg.Model, cfg.BaseURL, strings.Join(models, "\n  "))
+		}
 	}
 
 	// Probe the model's capabilities (context window, max output, tool support)
 	// so they are available to adapt truncation/iteration limits. This never
 	// fails: it degrades to a built-in table and conservative defaults, and the
 	// result is cached per endpoint+model on the client.
-	caps := client.ProbeCapabilities(context.Background())
+	probeCtx, probeCancel := context.WithTimeout(context.Background(), startupTimeout)
+	caps := client.ProbeCapabilities(probeCtx)
+	probeCancel()
 	if !*quietFlag {
 		fmt.Fprintf(os.Stderr, "model capabilities: %s\n", caps)
 	}

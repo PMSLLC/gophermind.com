@@ -108,7 +108,11 @@ func (c *Client) Stream(ctx context.Context, msgs []Message, tools []Tool, onTok
 	for scanner.Scan() {
 		// A frame just arrived: reset the idle window. Only this goroutine calls
 		// Reset, so there is no race with the AfterFunc callback (which only
-		// cancels streamCtx).
+		// cancels streamCtx). Benign boundary case: if a frame arrives at the
+		// exact instant the idle timer fires, the AfterFunc callback may already
+		// be running and still cancel with ErrStreamIdle despite the reset —
+		// harmless, since it only happens at the true stall boundary, not during
+		// normal token flow.
 		timer.Reset(idle)
 
 		// Idle-cancel is checked FIRST so a stall reported via streamCtx's cause
