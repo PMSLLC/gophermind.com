@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// Scrolling transcript + input bar for a single session. Streams a live
-/// token feed and tool activity; approvals render read-only (A4 adds
-/// Approve/Deny).
+/// token feed and tool activity; approvals render as interactive
+/// `ApprovalCard`s (see `SessionViewModel.decide`).
 struct ConversationView: View {
     @ObservedObject var viewModel: SessionViewModel
 
@@ -12,8 +12,10 @@ struct ConversationView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         ForEach(viewModel.items) { item in
-                            ConversationItemRow(item: item)
-                                .id(item.id)
+                            ConversationItemRow(item: item) { approvalID, approved in
+                                _ = viewModel.decide(approvalID: approvalID, approved: approved)
+                            }
+                            .id(item.id)
                         }
                     }
                     .padding()
@@ -52,9 +54,11 @@ struct ConversationView: View {
     }
 }
 
-/// Renders one `ConversationItem` per its `Kind`.
+/// Renders one `ConversationItem` per its `Kind`. `onDecide` is forwarded to
+/// `ApprovalCard` for `.approvalPending` rows.
 private struct ConversationItemRow: View {
     let item: ConversationItem
+    var onDecide: (String, Bool) -> Void = { _, _ in }
 
     var body: some View {
         switch item.kind {
@@ -99,14 +103,14 @@ private struct ConversationItemRow: View {
             .background(Color.secondary.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
-        case .approvalPending(_, let tool, _):
-            Text("awaiting approval: \(tool)")
-                .font(.footnote)
-                .foregroundStyle(.orange)
-                .padding(8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.orange.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+        case .approvalPending(let approvalID, let tool, let args):
+            ApprovalCard(state: .pending(approvalID: approvalID, tool: tool, args: args), onDecide: onDecide)
+
+        case .approvalDecided(_, let tool, let args, let approved):
+            ApprovalCard(state: .decided(tool: tool, args: args, approved: approved))
+
+        case .approvalExpired(_, let tool, let args):
+            ApprovalCard(state: .expired(tool: tool, args: args))
 
         case .usage(let prompt, let completion, let total, let costUSD):
             Text("tokens: \(total) (in \(prompt), out \(completion)) · $\(costUSD, specifier: "%.4f")")

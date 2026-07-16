@@ -8,12 +8,15 @@ final class SessionViewModel: ObservableObject {
     @Published var inputText: String = ""
     @Published private(set) var isStreaming: Bool = false
 
-    private let service: GopherMindService
+    private let service: GopherMindServicing
     private(set) var sessionID: String?
 
-    init(service: GopherMindService, sessionID: String? = nil) {
+    /// `items` lets tests seed a transcript (e.g. a pending approval) without
+    /// a mutable public setter; production call sites rely on the `[]` default.
+    init(service: GopherMindServicing, sessionID: String? = nil, items: [ConversationItem] = []) {
         self.service = service
         self.sessionID = sessionID
+        self.items = items
     }
 
     /// Appends a `.user` item, then streams the turn, folding each
@@ -41,9 +44,43 @@ final class SessionViewModel: ObservableObject {
         if let sessionID {
             return sessionID
         }
-        let id = try await service.createSession()
+        let id = try await service.createSession(id: nil)
         sessionID = id
         return id
+    }
+
+    /// Records the user's Approve/Deny choice for a still-pending approval,
+    /// then tells the server so it can unblock the paused (still-streaming)
+    /// turn. The item flips to `.approvalDecided` synchronously/optimistically;
+    /// the network call runs in an unstructured `Task` and, on failure,
+    /// surfaces an error line rather than reverting the decision or crashing.
+    ///
+    /// No-ops if `approvalID` doesn't match a currently-pending item (covers
+    /// double-decide: once decided, the item is no longer `.approvalPending`).
+    /// Returns the in-flight `Task` so tests can await it; `nil` when nothing
+    /// was decided.
+    @discardableResult
+    func decide(approvalID: String, approved: Bool) -> Task<Void, Never>? {
+        guard let index = items.firstIndex(where: {
+            if case .approvalPending(let id, _, _) = $0.kind { return id == approvalID }
+            return false
+        }) else { return nil }
+        guard case .approvalPending(_, let tool, let args) = items[index].kind else { return nil }
+
+        items[index].kind = .approvalDecided(approvalID: approvalID, tool: tool, args: args, approved: approved)
+
+        guard let sid = sessionID else {
+            items = Self.reduce(items, .error("No active session for approval"))
+            return nil
+        }
+
+        return Task {
+            do {
+                try await self.service.approve(sessionID: sid, approvalID: approvalID, approved: approved)
+            } catch {
+                self.items = Self.reduce(self.items, .error("Failed to send approval: \(error.localizedDescription)"))
+            }
+        }
     }
 
     // MARK: - Pure reducer
@@ -83,12 +120,26 @@ final class SessionViewModel: ObservableObject {
             items.append(ConversationItem(kind: .approvalPending(approvalID: approvalID, tool: tool, args: args)))
 
         case .done:
-            break
+            items = expirePendingApprovals(items)
 
         case .error(let text):
             items.append(ConversationItem(kind: .errorLine(text)))
+            items = expirePendingApprovals(items)
         }
 
+        return items
+    }
+
+    /// A turn ending (`.done` or `.error`) leaves no one to answer a still-open
+    /// approval — the server auto-denies on timeout — so any `.approvalPending`
+    /// rows become non-interactive `.approvalExpired` rows.
+    private nonisolated static func expirePendingApprovals(_ items: [ConversationItem]) -> [ConversationItem] {
+        var items = items
+        for index in items.indices {
+            if case .approvalPending(let id, let tool, let args) = items[index].kind {
+                items[index].kind = .approvalExpired(approvalID: id, tool: tool, args: args)
+            }
+        }
         return items
     }
 

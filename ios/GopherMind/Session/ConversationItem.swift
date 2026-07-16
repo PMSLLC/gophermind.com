@@ -19,9 +19,13 @@ struct ConversationItem: Identifiable, Equatable {
         case assistant(String)
         /// A tool invocation. `result` is `nil` until its `tool_result` lands.
         case tool(name: String, args: String, result: String?)
-        /// A gated tool call blocked on approval. Read-only here — Approve/Deny
-        /// lands in A4.
+        /// A gated tool call blocked on approval; interactive (see `ApprovalCard`).
         case approvalPending(approvalID: String, tool: String, args: String)
+        /// A pending approval the user has acted on; `approved` records the choice.
+        case approvalDecided(approvalID: String, tool: String, args: String, approved: Bool)
+        /// A pending approval still unresolved when its turn ended. The server
+        /// auto-denies on timeout, so it's no longer actionable.
+        case approvalExpired(approvalID: String, tool: String, args: String)
         /// Running per-session usage totals for the turn.
         case usage(prompt: Int, completion: Int, total: Int, costUSD: Double)
         /// A surfaced error line.

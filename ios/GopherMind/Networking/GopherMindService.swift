@@ -1,10 +1,21 @@
 import Foundation
 
+/// Server operations `SessionViewModel` depends on. `GopherMindService` is
+/// the live implementation; tests inject a fake conforming to this to
+/// capture `approve` calls without touching the network (see
+/// `GopherMindTests/ApprovalTests.swift`).
+@MainActor
+protocol GopherMindServicing {
+    func createSession(id: String?) async throws -> String
+    func approve(sessionID: String, approvalID: String, approved: Bool) async throws
+    func stream(sessionID: String, task: String) throws -> AsyncThrowingStream<AgentEvent, Error>
+}
+
 /// Thin adapter between `AppSettings` and `APIClient`. The UI (A3) calls
 /// through this rather than constructing an `APIClient` directly, so it
 /// always uses whatever server URL/credentials are currently in settings.
 @MainActor
-final class GopherMindService {
+final class GopherMindService: GopherMindServicing {
     enum ServiceError: Error {
         case invalidServerURL
     }
