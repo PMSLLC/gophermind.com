@@ -162,6 +162,23 @@ Go — they update `.planning/` deterministically with no model calls, so
 progress can never drift from the roadmap's checkboxes. See
 [`internal/phaseflow`](internal/phaseflow).
 
+### Autonomous execution: `/project-execute`
+
+Once a project plan is approved (via `/project <name>` → approve), you can run:
+
+```sh
+gophermind project-execute          # TUI: `/project-execute`
+```
+
+This autonomously executes every `pending` task in the approved `.planning/assignments.json` — **in plan-id order, all phases, each task in a fresh isolated agent**. Each task agent:
+- Runs with its assigned **model** and **catalog prompt** (seeded from the project's per-type agent catalog)
+- Verifies its output against the task's acceptance criteria (one verify-and-correct round)
+- Updates its status (`pending` → `done` on success, or `failed` with details)
+
+Failed tasks are marked `failed`, the executor continues to the next task, and a summary is printed at the end. Task agents run in **auto-approval mode** (unattended — no per-task prompts) for safety; this is a deliberate gating mechanism.
+
+**Abort handling:** Pressing Ctrl-C stops the executor; in-flight tasks cleanly revert to `pending` so they can be re-run. Like `/phase execute`, this command requires an approved plan.
+
 ## Configuration
 
 Everything is optional and layered: **flags > real env > `./.env` > global

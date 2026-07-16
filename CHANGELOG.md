@@ -6,6 +6,10 @@ All notable changes to GopherMind are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`/project-execute` autonomous executor** — autonomously runs every `pending` task in an approved project plan (`.planning/assignments.json`), each in a fresh isolated agent with its assigned model and catalog prompt. Tasks are verified against acceptance criteria (verify-and-correct, one round); failed tasks are marked `failed` and execution continues to a summary. Task agents run in auto-approval mode (unattended). Ctrl-C aborts with graceful cleanup (in-flight tasks revert to `pending`). Requires an approved plan, gated like `/phase execute`.
+
 ## [0.5.0] - 2026-07-16
 
 ### Added
