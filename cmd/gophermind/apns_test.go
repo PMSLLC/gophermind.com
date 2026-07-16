@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -249,6 +250,28 @@ func TestApnsPusherPush200ReturnsNil(t *testing.T) {
 	}
 }
 
+// TestApnsPusherPushRequestHasBoundedDeadline guards against a hung APNs
+// endpoint blocking the (detached) push goroutine forever: the request built
+// by Push must carry a context with a deadline no more than pushTimeout out.
+func TestApnsPusherPushRequestHasBoundedDeadline(t *testing.T) {
+	capture := &fakeRoundTrip{resp: fakeResp(200)}
+	p := testPusher(t, "sandbox", capture)
+
+	before := time.Now()
+	if err := p.Push("tok", "t", "b", nil); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	after := time.Now()
+
+	deadline, ok := capture.req.Context().Deadline()
+	if !ok {
+		t.Fatal("request context has no deadline, want one bounded by pushTimeout")
+	}
+	if deadline.After(after.Add(pushTimeout)) || deadline.Before(before.Add(pushTimeout).Add(-time.Second)) {
+		t.Errorf("deadline = %v, want ~%v after Push started (pushTimeout=%v)", deadline, before.Add(pushTimeout), pushTimeout)
+	}
+}
+
 func TestApnsPusherPush400ReturnsError(t *testing.T) {
 	capture := &fakeRoundTrip{resp: fakeResp(400)}
 	p := testPusher(t, "sandbox", capture)
@@ -299,6 +322,54 @@ func TestDeviceStorePersistRoundTrip(t *testing.T) {
 	list := store2.List()
 	if len(list) != 1 || list[0] != "tok-x" {
 		t.Fatalf("reloaded List() = %v, want [tok-x]", list)
+	}
+}
+
+// TestDeviceStoreConcurrentAddPersistsBoth guards against the race where the
+// mutex is released before the JSON marshal + file write: two goroutines
+// racing Add with different tokens must both survive on disk, not just in
+// memory, once the store is reloaded.
+func TestDeviceStoreConcurrentAddPersistsBoth(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("GOPHERMIND_CONFIG_DIR", dir)
+
+	store, err := newDeviceStore()
+	if err != nil {
+		t.Fatalf("newDeviceStore: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		errs <- store.Add("tok-concurrent-a", "ios")
+	}()
+	go func() {
+		defer wg.Done()
+		errs <- store.Add("tok-concurrent-b", "ios")
+	}()
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("Add: %v", err)
+		}
+	}
+
+	reloaded, err := newDeviceStore()
+	if err != nil {
+		t.Fatalf("newDeviceStore (reload): %v", err)
+	}
+	list := reloaded.List()
+	if len(list) != 2 {
+		t.Fatalf("reloaded List() = %v, want 2 tokens persisted after concurrent Adds", list)
+	}
+	want := map[string]bool{"tok-concurrent-a": true, "tok-concurrent-b": true}
+	for _, tok := range list {
+		if !want[tok] {
+			t.Errorf("unexpected token %q in reloaded store", tok)
+		}
 	}
 }
 

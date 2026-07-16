@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/sha256"
@@ -122,28 +123,30 @@ func newDeviceStore() (*deviceStore, error) {
 	return s, nil
 }
 
-// Add registers token (deduping by token) and persists the updated list.
+// Add registers token (deduping by token) and persists the updated list. The
+// mutex is held through the marshal and file write (not just the map update),
+// so two concurrent Adds can't interleave their writes and lose an update on
+// disk — the second write always reflects both tokens.
 func (s *deviceStore) Add(token, platform string) error {
 	if strings.TrimSpace(token) == "" {
 		return fmt.Errorf("device token is empty")
 	}
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.tokens[token] = deviceRecord{Token: token, Platform: platform}
 	recs := make([]deviceRecord, 0, len(s.tokens))
 	for _, r := range s.tokens {
 		recs = append(recs, r)
 	}
-	path := s.path
-	s.mu.Unlock()
 
 	b, err := json.MarshalIndent(recs, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(path, b, 0o600)
+	return os.WriteFile(s.path, b, 0o600)
 }
 
 // List returns every registered device token.
@@ -314,11 +317,17 @@ func buildAPNsJWT(key *ecdsa.PrivateKey, teamID, keyID string, now time.Time) (s
 	return signingInput + "." + base64.RawURLEncoding.EncodeToString(sig), nil
 }
 
+// pushTimeout bounds how long a single APNs push request may take. Without
+// it, a hung Apple endpoint would block the detached push goroutine (see
+// newApprovalNotifier) forever.
+const pushTimeout = 10 * time.Second
+
 // Push sends an alert push to deviceToken. data is merged at the top level
 // of the payload (alongside "aps") for deep-linking, e.g. session_id and
 // approval_id. A nil or disabled pusher is a no-op returning nil. A non-2xx
 // APNs response is returned as an error, but the caller (the best-effort
-// approval notifier) treats it as non-fatal.
+// approval notifier) treats it as non-fatal. The request is bounded by
+// pushTimeout so a hung endpoint can't block the caller forever.
 func (p *apnsPusher) Push(deviceToken, title, body string, data map[string]string) error {
 	if !p.enabled() {
 		return nil
@@ -342,8 +351,11 @@ func (p *apnsPusher) Push(deviceToken, title, body string, data map[string]strin
 		return err
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), pushTimeout)
+	defer cancel()
+
 	url := fmt.Sprintf("https://%s/3/device/%s", p.cfg.host(), deviceToken)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(b))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
 	if err != nil {
 		return err
 	}

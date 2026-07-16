@@ -280,6 +280,17 @@ func runServe(run func(ctx context.Context, task string) (string, error), metric
 		// S4 APNs device registration, same bearer+HMAC auth as /session.
 		mux.Handle("POST /devices", limited(sessionAuth(token, devicesHandler(devStore))))
 	}
-	fmt.Fprintf(os.Stderr, "gophermind serving webhook on %s (POST /run, GET /healthz, /readyz)\n", addr)
+	fmt.Fprintf(os.Stderr, "gophermind serving on %s (POST /run, /run/stream; /healthz /readyz)\n", addr)
+	if sessionTurn != nil {
+		remote := "local approval"
+		if serveApprovalRemote() {
+			remote = "remote approval"
+		}
+		apns := "APNs disabled"
+		if devStore != nil && loadAPNsConfig().enabled() {
+			apns = "APNs configured"
+		}
+		fmt.Fprintf(os.Stderr, "  sessions: POST /session, POST /session/{id}/stream, POST /session/{id}/approve, POST /devices (%s, %s)\n", remote, apns)
+	}
 	return http.ListenAndServe(addr, mux)
 }

@@ -229,6 +229,20 @@ Beyond `chat`/`run`/`ask`, the CLI exposes subcommands for sessions, prompts,
 plugins, config bundles, the MCP server, benchmarks, diagnostics, and more —
 run `gophermind --help` (and `gophermind completion <shell>`) for the full list.
 
+## Remote control from iOS / mobile
+
+`gophermind serve` also exposes a session-based, multi-turn HTTP+SSE surface
+so a phone can drive an agent running on your machine: create a session,
+stream a turn's tokens/tool calls/usage live, and — with
+`GOPHERMIND_SERVE_APPROVAL=remote` — approve or deny gated tool calls
+on-phone (optionally with a push notification via APNs) instead of at the
+machine's terminal.
+
+See [`docs/mobile-serve.md`](docs/mobile-serve.md) for the full protocol
+reference (run instructions, env vars, connectivity options, and the typed
+SSE event schema). The native iOS app that implements this contract will
+live in `ios/` (built next).
+
 ## Contributing
 
 **We'd love your help.** GopherMind ships with a large idea backlog across four

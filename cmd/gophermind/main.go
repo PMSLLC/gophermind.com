@@ -2064,6 +2064,9 @@ Usage:
   gophermind queue <file>       run a file of tasks (one per line) in order
                                 (add --fleet N to run N concurrently)
   gophermind serve              webhook server: POST /run {task}; POST /run/stream (SSE); /healthz /readyz /metrics
+                                session/mobile: POST /session, POST /session/{id}/stream (SSE),
+                                GET /session, DELETE /session/{id}, POST /session/{id}/approve,
+                                POST /devices — see docs/mobile-serve.md
 
 On first interactive launch with nothing configured, a short setup wizard runs
 and saves your choices to the global config (see below); later launches skip it.
@@ -2092,6 +2095,20 @@ Environment (all optional; flags override):
   GOPHERMIND_TRANSCRIPT JSONL dump of the full message history at session end
                         (also --transcript); MAY CONTAIN SENSITIVE PROMPTS/
                         RESPONSES — written 0600, never includes credentials
+
+Serve / mobile (see docs/mobile-serve.md):
+  GOPHERMIND_SERVE_TOKEN            bearer token, required to start serve
+  GOPHERMIND_SERVE_ADDR             listen address (default: :8080)
+  GOPHERMIND_SERVE_APPROVAL         auto|remote — remote gates tool calls on
+                                     the phone's POST /session/{id}/approve
+  GOPHERMIND_SERVE_APPROVAL_TIMEOUT_S  seconds to wait for a remote decision
+                                     before auto-denying (default: 300)
+  GOPHERMIND_SERVE_HMAC_SECRET      optional payload signing (X-Hub-Signature-256)
+  GOPHERMIND_SESSION_KEY            optional passphrase to encrypt sessions at rest
+  GOPHERMIND_APNS_KEY_P8            path to the APNs .p8 auth key (with _KEY_ID,
+                                     _TEAM_ID, _BUNDLE_ID) to push approval-needed
+                                     alerts to registered devices (POST /devices)
+  GOPHERMIND_APNS_ENV               sandbox|prod (default: sandbox)
 
 Provider profiles (selectable with -profile/-p):
   Built-ins: local-llama, openai, anthropic-proxy. Each profile resolves its
