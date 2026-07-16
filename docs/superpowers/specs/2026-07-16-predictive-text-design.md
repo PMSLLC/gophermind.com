@@ -41,7 +41,7 @@ other Bubble Tea apps can use it. gophermind supplies its own providers on top.
 | Decision | Choice |
 |---|---|
 | Architecture | Standalone completion controller beside a vanilla `textarea` (Approach A) |
-| Packaging | Separate Go module, nested in this repo, wired via `go.work` |
+| Packaging | Separate Go module, nested in this repo, wired via replace directive (+ go.work for dev) |
 | Module path | `github.com/jbrahy/bubblecomplete`, dir `./bubblecomplete/` |
 | Presentation | Hybrid — ghost text (1 candidate) / popup menu (many) |
 | Build order | Deterministic providers in Phase 1; LLM in Phase 2 |

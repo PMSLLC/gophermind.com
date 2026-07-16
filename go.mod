@@ -3,6 +3,7 @@ module gophermind
 go 1.25.0
 
 require (
+	github.com/jbrahy/bubblecomplete v0.0.0
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/glamour v1.0.0
@@ -66,3 +67,5 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
+
+replace github.com/jbrahy/bubblecomplete => ./bubblecomplete
