@@ -11,6 +11,11 @@ All notable changes to GopherMind are documented here. The format follows
 - **`/project` guided new-project flow (TUI)** — `/project <name>` opens a dialog that interviews you (iterating with the LLM) to build a comprehensive spec, then generates a validated plan: `SPEC.md`, a `ROADMAP.md`, and a machine-readable `assignments.json` that assigns **each task to an agent type** (a `prompt.md` from a per-project catalog, seeded from the embedded PhaseFlow agents) **and a model** (per-type default, overridable). You approve the plan (with a revise loop) before it's marked ready.
 - Approval **gate**: in the TUI, `/phase plan|execute|verify|milestone` are blocked until the project plan is approved (CLI `gophermind phase …` is unaffected).
 - `internal/phaseflow` plan backbone: assignments schema, agent catalog loader + seeding, `ValidatePlan`, and an approval marker. (Orchestrated verify-and-correct execution over these assignments is a planned follow-on.)
+- **Predictive text & autocomplete** — hybrid ghost-text (inline suggestion, accept with Tab or →) and popup menu (for slash commands, file paths, and multiple history matches; navigate with ↑/↓, dismiss with Esc). Built on the reusable `bubblecomplete` library with four providers: slash-command, file/path, whole-prompt history recall, and Markov (n-gram) next-word prediction.
+- **Prompt history** — submitted prompts saved to `<config dir>/gophermind/history` (plaintext JSONL, capped at 500 entries). Disable with `GOPHERMIND_HISTORY=off`.
+- **Multi-line input** — input box grows 1–4 rows, then scrolls. **Enter** submits; **Shift+Enter** newline (fallbacks **Alt+Enter**, **Ctrl+J** for terminals that don't distinguish Shift+Enter).
+- **`/goal` command** — set a session-scoped persistent steering goal (`/goal <text>` to set, bare `/goal` to show, `/goal clear` to remove) injected into every subsequent turn.
+- **Native terminal text selection** — mouse capture dropped; now you can select and copy text with click-drag. Keyboard transcript navigation (**PgUp**/**PgDn**) unchanged.
 
 ## [0.4.0] - 2026-07-13
 

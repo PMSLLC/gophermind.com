@@ -119,6 +119,35 @@ gophermind run "add a --json flag to the export command and a test for it"
 gophermind ask "how does the retry backoff work?"   # read-only, never edits
 ```
 
+## TUI Features
+
+### Predictive Text & Autocomplete
+
+As you type in the interactive TUI input box, suggestions appear in two forms:
+
+- **Inline ghost text** — a single obvious continuation appears as faded text at the cursor: accept it with **Tab** or **→** (right arrow when the cursor is at the end of the line). Sources include history recall (prompts you've submitted before) and a Markov next-word predictor trained on your history.
+- **Popup menu** — when there are multiple candidates, a popup menu appears above the input: navigate with **↑** and **↓**, accept with **Tab** (or **Enter** when the menu is open), dismiss with **Esc**. Sources include slash-command completion (when the line starts with `/`) and file/path completion for path-shaped tokens.
+
+The suggestion engine is built on the reusable [`github.com/jbrahy/bubblecomplete`](https://github.com/jbrahy/bubblecomplete) library (vendored in-repo).
+
+### Prompt History
+
+Submitted prompts are saved to `<os user config dir>/gophermind/history` for recall and training (e.g., `~/Library/Application Support/gophermind/history` on macOS; falls back to `.gophermind/history` if the system config directory is unavailable).
+
+**Privacy note:** Prompts are stored in plain text (one JSON-encoded string per line, JSONL format). Disable history persistence with `GOPHERMIND_HISTORY=off`. The history is capped at the most recent 500 entries; oldest entries are dropped first.
+
+### Multi-line Input
+
+The input box grows from 1 up to 4 rows, then scrolls. **Enter** submits; **Shift+Enter** inserts a literal newline. If your terminal does not distinguish Shift+Enter from plain Enter, use **Alt+Enter** or **Ctrl+J** instead.
+
+### `/goal` — Session Steering Goal
+
+Use `/goal <text>` to set a persistent goal that is injected into every subsequent turn, steering the agent's behavior without modifying the prompt each time. Bare `/goal` displays the current goal; `/goal clear` removes it. The goal is session-scoped and works with any backend.
+
+### Text Selection
+
+The TUI no longer captures the mouse, so you can select and copy text using your terminal's native selection (click-drag). Keyboard navigation of the transcript is unchanged: **PgUp** and **PgDn** scroll the message history.
+
 ## How it works
 
 ```
