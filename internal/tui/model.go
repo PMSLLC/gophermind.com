@@ -9,8 +9,12 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/jbrahy/bubblecomplete"
+	"github.com/jbrahy/bubblecomplete/ngram"
 	"gophermind/internal/agent"
 	"gophermind/internal/banner"
+	"gophermind/internal/prompthistory"
 )
 
 type state int
@@ -60,6 +64,16 @@ type model struct {
 	viewport viewport.Model
 	spin     spinner.Model
 	render   *glamour.TermRenderer
+
+	// complete is the predictive-text controller (ghost text / popup menu),
+	// fed by the command/file/recall/markov providers installed in newModel.
+	// hist backs the recall provider and persists submitted prompts; ngram is
+	// trained on that same history to back the markov provider. Wiring keys
+	// and rendering to complete is Task 11's scope — here it is only
+	// constructed and kept inert.
+	complete bubblecomplete.Model
+	hist     *prompthistory.Store
+	ngram    *ngram.Model
 
 	content string // committed transcript shown in the viewport
 	stream  string // prose buffered during the current streaming turn
@@ -125,6 +139,34 @@ func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent,
 	r, _ := glamour.NewTermRenderer(glamour.WithStandardStyle(glamourStyle), glamour.WithWordWrap(80))
 
 	ag := buildAgent(sub, allowed)
+
+	// hist backs recall/markov completion and is best-effort: if it fails to
+	// load (e.g. an unreadable history file), fall back to a non-nil empty
+	// Store rather than propagating the error — completion degrades to no
+	// recall/markov suggestions instead of the TUI failing to start.
+	hist, err := prompthistory.New()
+	if err != nil {
+		hist = &prompthistory.Store{}
+	}
+	ng := ngram.New()
+	ng.TrainAll(hist.All())
+
+	cm := bubblecomplete.New(
+		bubblecomplete.WithGhostStyle(lipgloss.NewStyle().Faint(true).
+			Foreground(lipgloss.AdaptiveColor{Light: "#475569", Dark: "#9CA3AF"})),
+		bubblecomplete.WithMenuStyle(
+			lipgloss.NewStyle().Border(lipgloss.RoundedBorder()),
+			lipgloss.NewStyle().Reverse(true).Bold(true),
+			lipgloss.NewStyle().Faint(true),
+		),
+	)
+	cm.SetProviders(
+		newCommandProvider(),
+		newFileProvider(),
+		newRecallProvider(hist.All),
+		newMarkovProvider(ng),
+	)
+
 	m := model{
 		agent:        ag,
 		sub:          sub,
@@ -138,6 +180,9 @@ func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent,
 		st:           stateIdle,
 		glamourStyle: glamourStyle,
 		banner:       renderBanner(noBanner, noFortune),
+		complete:     cm,
+		hist:         hist,
+		ngram:        ng,
 	}
 	// Mirror the client's startup sampling settings so /temp and /topp with no
 	// argument report the truth even before the user changes anything.

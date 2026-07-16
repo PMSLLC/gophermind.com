@@ -269,6 +269,19 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 	m.appendLine(renderUserPrompt(text))
 	m.st = stateWorking
 	m.sync()
+
+	// Record real prompts (not slash commands, e.g. "/phase ..." whose seeded
+	// agent task still starts with "/") in history so recall and markov
+	// completion see them on the next Query.
+	if !strings.HasPrefix(text, "/") {
+		if m.hist != nil {
+			m.hist.Append(text)
+		}
+		if m.ngram != nil {
+			m.ngram.Train(text)
+		}
+	}
+
 	if m.agent == nil {
 		return m, nil
 	}

@@ -386,3 +386,60 @@ func TestSlashHelpListsRegisteredCommands(t *testing.T) {
 		}
 	}
 }
+
+// TestSubmitNormalPromptRecordsHistory covers Task 10: submitting a real
+// prompt (not a slash command) must land in the prompt-history store so the
+// recall provider can surface it later.
+func TestSubmitNormalPromptRecordsHistory(t *testing.T) {
+	t.Setenv("GOPHERMIND_CONFIG_DIR", t.TempDir())
+	m := testModel()
+	m.input.SetValue("write me a haiku about gophers")
+	m2, _ := m.handleSubmit()
+
+	entries := m2.hist.All()
+	found := false
+	for _, e := range entries {
+		if e == "write me a haiku about gophers" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("history = %v, want it to contain the submitted prompt", entries)
+	}
+}
+
+// TestSubmitSlashCommandDoesNotRecordHistory covers Task 10: slash commands
+// are not real prompts and must not pollute recall/markov training data.
+func TestSubmitSlashCommandDoesNotRecordHistory(t *testing.T) {
+	t.Setenv("GOPHERMIND_CONFIG_DIR", t.TempDir())
+	m := testModel()
+	m.input.SetValue("/help")
+	m2, _ := m.handleSubmit()
+
+	if entries := m2.hist.All(); len(entries) != 0 {
+		t.Errorf("history = %v, want empty after a slash command", entries)
+	}
+}
+
+// TestNewModelBuildsCompletionWithEmptyHistory covers Task 10: newModel must
+// construct cleanly and install all four providers even when there is no
+// history on disk yet (a brand-new GOPHERMIND_CONFIG_DIR).
+func TestNewModelBuildsCompletionWithEmptyHistory(t *testing.T) {
+	t.Setenv("GOPHERMIND_CONFIG_DIR", t.TempDir())
+	m := testModel()
+
+	if m.hist == nil {
+		t.Fatal("hist is nil, want a non-nil (possibly empty) store")
+	}
+	if m.ngram == nil {
+		t.Fatal("ngram is nil, want a constructed model")
+	}
+
+	// The command provider is wired if Query on a slash-command prefix
+	// surfaces a suggestion; this proves SetProviders actually installed
+	// providers rather than the model being left with an empty list.
+	cm := m.complete.Query("/he", 3)
+	if !cm.Active() {
+		t.Errorf("complete.Query(%q) not active, want the command provider to suggest /help", "/he")
+	}
+}
