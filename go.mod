@@ -9,8 +9,10 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/charmbracelet/x/exp/teatest v0.0.0-20260608090822-c3ad58c6c9e5
 	github.com/go-sql-driver/mysql v1.10.0
+	github.com/jbrahy/bubblecomplete v0.0.0
 	github.com/lib/pq v1.12.3
 	github.com/parquet-go/parquet-go v0.30.1
+	github.com/rivo/uniseg v0.4.7
 	github.com/tetratelabs/wazero v1.12.0
 	golang.org/x/term v0.36.0
 	modernc.org/sqlite v1.53.0
@@ -53,7 +55,6 @@ require (
 	github.com/parquet-go/jsonlite v1.0.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.21 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/twpayne/go-geom v1.6.1 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/yuin/goldmark v1.7.13 // indirect
@@ -66,3 +67,5 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
+
+replace github.com/jbrahy/bubblecomplete => ./bubblecomplete

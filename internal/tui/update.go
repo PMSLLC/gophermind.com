@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	"github.com/jbrahy/bubblecomplete"
 	"gophermind/internal/agent"
 	"gophermind/internal/phaseflow"
 )
@@ -18,20 +19,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		vpH := msg.Height - inputHeight - statusHeight
-		if vpH < 1 {
-			vpH = 1
-		}
+		m.input.SetWidth(msg.Width - 2)
 		justReady := !m.ready
 		if !m.ready {
-			m.viewport = viewport.New(msg.Width, vpH)
+			// Height is provisional here; applyInputHeight (below) recomputes
+			// it from the input's row count now that m.ready is true.
+			m.viewport = viewport.New(msg.Width, 1)
 			m.ready = true
 			m.appendLine(m.banner)
 		} else {
 			m.viewport.Width = msg.Width
-			m.viewport.Height = vpH
 		}
-		m.input.SetWidth(msg.Width - 2)
+		applyInputHeight(&m)
 		if r, err := glamour.NewTermRenderer(glamour.WithStandardStyle(m.glamourStyle), glamour.WithWordWrap(msg.Width-2)); err == nil {
 			m.render = r
 		}
@@ -42,11 +41,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.GotoTop()
 		}
 		return m, nil
-
-	case tea.MouseMsg:
-		var cmd tea.Cmd
-		m.viewport, cmd = m.viewport.Update(msg)
-		return m, cmd
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -167,6 +161,16 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case tea.KeyEsc:
+		// An active suggestion (ghost or menu) eats the first Esc — dismiss it
+		// instead of the cancel/interrupt behavior below. A second Esc (or Esc
+		// with nothing active) falls through to that behavior as before.
+		if m.st == stateIdle && m.complete.Active() {
+			cm, res := m.complete.Update(msg)
+			m.complete = cm
+			if res.Consumed {
+				return m, nil
+			}
+		}
 		if m.st == stateApproval {
 			m.pending.reply <- false
 			m.st = stateWorking
@@ -194,19 +198,69 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if msg.Type == tea.KeyEnter && m.st == stateIdle {
+	// Predictive-text gets first refusal on keys while idle (Tab/→ accept a
+	// suggestion, ↑/↓ navigate an open menu, ...). Suggestions are never
+	// queried/shown outside stateIdle (see the final Query call below and
+	// handleSubmit), so this is inert elsewhere.
+	if m.st == stateIdle {
+		cm, res := m.complete.Update(msg)
+		m.complete = cm
+		if res.Accepted != nil {
+			m.applyCandidate(*res.Accepted)
+			m.queryComplete()
+			applyInputHeight(&m)
+			return m, nil
+		}
+		if res.Consumed {
+			return m, nil
+		}
+	}
+
+	// Shift+Enter is indistinguishable from plain Enter on most terminals, so
+	// Alt+Enter and Ctrl+J are the reliable ways to insert a literal newline;
+	// msg.String() == "shift+enter" covers terminals that do report it
+	// distinctly (bubbletea's own key parser has no such string as of
+	// v1.3.10, so this arm is a forward-compatible no-op today).
+	isNewlineKey := (msg.Type == tea.KeyEnter && msg.Alt) || msg.Type == tea.KeyCtrlJ || msg.String() == "shift+enter"
+	if isNewlineKey && m.st == stateIdle {
+		var cmd tea.Cmd
+		m.input, cmd = m.input.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		applyInputHeight(&m)
+		m.queryComplete()
+		return m, cmd
+	}
+
+	if msg.Type == tea.KeyEnter && !msg.Alt && m.st == stateIdle {
+		if m.complete.Mode() == bubblecomplete.ModeMenu {
+			cm, cand := m.complete.Accept()
+			m.complete = cm
+			if cand != nil {
+				m.applyCandidate(*cand)
+			}
+			m.queryComplete()
+			applyInputHeight(&m)
+			return m, nil
+		}
 		mm, cmd := m.handleSubmit()
 		return mm, cmd
 	}
 
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
+	applyInputHeight(&m)
+	if m.st == stateIdle {
+		m.queryComplete()
+	}
 	return m, cmd
 }
 
 func (m model) handleSubmit() (model, tea.Cmd) {
 	text := strings.TrimSpace(m.input.Value())
 	m.input.Reset()
+	applyInputHeight(&m)
+	// Drop any suggestion left over from the submitted text — the input is
+	// now empty, so a stale ghost/menu must not linger over it.
+	m.queryComplete()
 	if text == "" {
 		return m, nil
 	}
@@ -226,6 +280,16 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		return m, nil
 	}
 
+	// "/goal ..." sets, shows, or clears the session-scoped steering goal that
+	// is injected into every subsequent normal prompt (see the injection
+	// below). It always prints to the transcript and returns; there is no
+	// agent turn.
+	if strings.Fields(text)[0] == "/goal" {
+		m.handleGoalCommand(text)
+		m.sync()
+		return m, nil
+	}
+
 	switch text {
 	case "/exit", "/quit":
 		return m, tea.Quit
@@ -239,7 +303,7 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		m.sync()
 		return m, nil
 	case "/help":
-		m.appendLine("Commands: /help  /clear  /project <name>  /project-execute  /phase <cmd>  /config  /temp <0-2>  /topp <0-1>  /exit · y/n/a to approve · Esc to interrupt")
+		m.appendLine(helpLine())
 		m.sync()
 		return m, nil
 	}
@@ -276,10 +340,32 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		return m.handleProjectExecuteCommand()
 	}
 
+	// A session goal (set via "/goal") is injected into every ordinary prompt
+	// as a steering preamble, so it reaches the model every turn regardless of
+	// backend. The transcript still shows the raw text; only sendText carries
+	// the preamble. Slash-command-derived sends (e.g. a "/phase" loop step)
+	// are excluded by the leading "/" check on text.
+	if m.goal != "" && !strings.HasPrefix(text, "/") {
+		sendText = goalPreamble(m.goal, sendText)
+	}
+
 	m.appendLine("")
 	m.appendLine(renderUserPrompt(text))
 	m.st = stateWorking
 	m.sync()
+
+	// Record real prompts (not slash commands, e.g. "/phase ..." whose seeded
+	// agent task still starts with "/") in history so recall and markov
+	// completion see them on the next Query.
+	if !strings.HasPrefix(text, "/") {
+		if m.hist != nil {
+			m.hist.Append(text)
+		}
+		if m.ngram != nil {
+			m.ngram.Train(text)
+		}
+	}
+
 	if m.agent == nil {
 		return m, nil
 	}

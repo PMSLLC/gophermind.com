@@ -102,7 +102,7 @@ func Run(cfg Config) error {
 	}
 
 	m := newModel(build, cfg.Model, cfg.SpeedModel, cfg.Mode, glamourStyle, cfg.NoBanner, cfg.NoFortune)
-	final, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
+	final, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
 	// On exit, flush the full message history if a transcript path was set. This
 	// runs once, after the UI has torn down, so it never interferes with the
 	// alt-screen. A write failure is surfaced but does not mask a UI error.

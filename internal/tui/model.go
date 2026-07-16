@@ -9,8 +9,12 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/jbrahy/bubblecomplete"
+	"github.com/jbrahy/bubblecomplete/ngram"
 	"gophermind/internal/agent"
 	"gophermind/internal/banner"
+	"gophermind/internal/prompthistory"
 )
 
 type state int
@@ -43,10 +47,7 @@ func (a *allowSet) has(tool string) bool {
 	return a.m[tool]
 }
 
-const (
-	inputHeight  = 3 // bordered single-line textarea
-	statusHeight = 1
-)
+const statusHeight = 1
 
 type model struct {
 	agent   *agent.Agent
@@ -60,10 +61,25 @@ type model struct {
 	temperature float64  // current sampling temperature, mirrored from the client
 	topP        *float64 // current top_p (nil when unset), mirrored from the client
 
+	// goal is a session-scoped steering goal set via "/goal" and injected into
+	// every subsequent normal prompt (see goalPreamble / handleSubmit). Empty
+	// means no goal is active. Session-only for v1 — no disk persistence.
+	goal string
+
 	input    textarea.Model
 	viewport viewport.Model
 	spin     spinner.Model
 	render   *glamour.TermRenderer
+
+	// complete is the predictive-text controller (ghost text / popup menu),
+	// fed by the command/file/recall/markov providers installed in newModel.
+	// hist backs the recall provider and persists submitted prompts; ngram is
+	// trained on that same history to back the markov provider. Wiring keys
+	// and rendering to complete is Task 11's scope — here it is only
+	// constructed and kept inert.
+	complete bubblecomplete.Model
+	hist     *prompthistory.Store
+	ngram    *ngram.Model
 
 	content string // committed transcript shown in the viewport
 	stream  string // prose buffered during the current streaming turn
@@ -111,6 +127,17 @@ func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent,
 	ta.SetHeight(1)
 	ta.CharLimit = 0
 	ta.Focus()
+	// Only the first visual row of a (possibly multi-line, auto-grown) input
+	// shows "› "; continuation rows are blank but still reserve the same
+	// column width so wrapped/typed text stays aligned. bubbles v1.0.0
+	// supports this cleanly via SetPromptFunc, keyed by display row (post
+	// wrap), so it also blanks the padding rows below the last line.
+	ta.SetPromptFunc(2, func(displayRow int) string {
+		if displayRow == 0 {
+			return "› "
+		}
+		return ""
+	})
 
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -118,6 +145,34 @@ func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent,
 	r, _ := glamour.NewTermRenderer(glamour.WithStandardStyle(glamourStyle), glamour.WithWordWrap(80))
 
 	ag := buildAgent(sub, allowed)
+
+	// hist backs recall/markov completion and is best-effort: if it fails to
+	// load (e.g. an unreadable history file), fall back to a non-nil empty
+	// Store rather than propagating the error — completion degrades to no
+	// recall/markov suggestions instead of the TUI failing to start.
+	hist, err := prompthistory.New()
+	if err != nil {
+		hist = &prompthistory.Store{}
+	}
+	ng := ngram.New()
+	ng.TrainAll(hist.All())
+
+	cm := bubblecomplete.New(
+		bubblecomplete.WithGhostStyle(lipgloss.NewStyle().Faint(true).
+			Foreground(lipgloss.AdaptiveColor{Light: "#475569", Dark: "#9CA3AF"})),
+		bubblecomplete.WithMenuStyle(
+			lipgloss.NewStyle().Border(lipgloss.RoundedBorder()),
+			lipgloss.NewStyle().Reverse(true).Bold(true),
+			lipgloss.NewStyle().Faint(true),
+		),
+	)
+	cm.SetProviders(
+		newCommandProvider(),
+		newFileProvider(),
+		newRecallProvider(hist.All),
+		newMarkovProvider(ng),
+	)
+
 	m := model{
 		agent:        ag,
 		sub:          sub,
@@ -132,6 +187,9 @@ func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent,
 		st:           stateIdle,
 		glamourStyle: glamourStyle,
 		banner:       renderBanner(noBanner, noFortune),
+		complete:     cm,
+		hist:         hist,
+		ngram:        ng,
 	}
 	// Mirror the client's startup sampling settings so /temp and /topp with no
 	// argument report the truth even before the user changes anything.

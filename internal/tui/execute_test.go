@@ -19,7 +19,7 @@ import (
 func TestProjectExecuteGatedOnApproval(t *testing.T) {
 	dir := t.TempDir()
 	withWorkdir(t, dir, func() {
-		m := testModel()
+		m := testModel(t)
 		m.input.SetValue("/project-execute")
 		m2, _ := m.handleSubmit()
 		if !strings.Contains(m2.content, "not approved") {
@@ -33,7 +33,7 @@ func TestProjectExecuteGatedOnApproval(t *testing.T) {
 
 // TestProjectExecuteInHelp verifies /project-execute is discoverable via /help.
 func TestProjectExecuteInHelp(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	m.input.SetValue("/help")
 	m2, _ := m.handleSubmit()
 	if !strings.Contains(m2.content, "/project-execute") {
@@ -72,7 +72,7 @@ func TestProjectExecuteApprovedStartsRun(t *testing.T) {
 		reg := tools.NewRegistry()
 		ag := agent.New(client, reg, 5, safety.Auto, nil)
 
-		m := testModel()
+		m := testModel(t)
 		m.agent = ag
 		m.input.SetValue("/project-execute")
 		m2, _ := m.handleSubmit()
@@ -94,7 +94,7 @@ func TestProjectExecuteApprovedStartsRun(t *testing.T) {
 // TestExecProgressMsgDone verifies that execProgressMsg with a done outcome
 // appends the correctly formatted line to the transcript.
 func TestExecProgressMsgDone(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	outcome := phaseflow.TaskOutcome{ID: "02-01", Status: phaseflow.StatusDone}
 	m2, _ := m.Update(execProgressMsg(outcome))
 	mm := m2.(model)
@@ -113,7 +113,7 @@ func TestExecProgressMsgDone(t *testing.T) {
 // TestExecProgressMsgCorrected verifies that execProgressMsg with a corrected
 // outcome appends the correctly formatted line to the transcript.
 func TestExecProgressMsgCorrected(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	outcome := phaseflow.TaskOutcome{ID: "02-02", Status: phaseflow.StatusCorrected}
 	m2, _ := m.Update(execProgressMsg(outcome))
 	mm := m2.(model)
@@ -132,7 +132,7 @@ func TestExecProgressMsgCorrected(t *testing.T) {
 // TestExecProgressMsgFailed verifies that execProgressMsg with a failed outcome
 // appends the correctly formatted line including the detail text.
 func TestExecProgressMsgFailed(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	outcome := phaseflow.TaskOutcome{
 		ID:     "02-03",
 		Status: phaseflow.StatusFailed,
@@ -158,7 +158,7 @@ func TestExecProgressMsgFailed(t *testing.T) {
 // TestExecDoneMsgReset verifies that execDoneMsg appends the summary line,
 // resets state to idle, and clears the cancel function.
 func TestExecDoneMsgReset(t *testing.T) {
-	m := testModel()
+	m := testModel(t)
 	m.st = stateWorking
 	_, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel

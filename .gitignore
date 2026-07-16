@@ -24,6 +24,7 @@ node_modules/
 .next/
 dist/
 build/
+go.work.sum
 
 # compiled gophermind binary (produced by `go build`/`make build`/`bin/build.sh`)
 /gophermind

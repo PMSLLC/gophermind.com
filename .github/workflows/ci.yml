@@ -41,5 +41,8 @@ jobs:
       - name: Test (race + coverage)
         run: go test -race -coverprofile=coverage.out ./...
 
+      - name: bubblecomplete module (build/vet/test)
+        run: cd bubblecomplete && go build ./... && go vet ./... && go test ./...
+
       - name: Coverage summary
         run: go tool cover -func=coverage.out | tail -1
