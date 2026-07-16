@@ -952,6 +952,14 @@ func run() error {
 			_, err := ag.Send(ctx, t)
 			return err
 		}
+		// Remote tool-approval (GOPHERMIND_SERVE_APPROVAL=remote): session turns
+		// pause on a gated tool call, ask the phone via an "approval-needed" SSE
+		// frame, and resume on its decision (with timeout/disconnect -> deny). The
+		// registry is shared across every turn so the approve route (registered in
+		// runServe) can resolve any turn's pending approval.
+		approvals := newApprovalRegistry()
+		remoteApproval := serveApprovalRemote()
+		approvalWait := serveApprovalTimeout()
 		// Session-backed variant for /session/{id}/stream: resumes a persisted
 		// conversation when one exists for id (else starts fresh with the usual
 		// system prompt), forwards S1's typed SSE frames per agent.Event, then
@@ -965,7 +973,11 @@ func run() error {
 				}
 				_ = emit(event, data)
 			}
-			ag := agent.New(client, reg, cfg.MaxIter, approve, onEvent)
+			turnApprove := approve
+			if remoteApproval {
+				turnApprove = remoteApprovalGate(approvals, ctx, approvalWait, emit, newApprovalID)
+			}
+			ag := agent.New(client, reg, cfg.MaxIter, turnApprove, onEvent)
 			ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
 			ag.SetAuditLog(auditLog())
 			if session.Exists(id) {
@@ -984,7 +996,7 @@ func run() error {
 			}
 			return err
 		}
-		return runServe(run, metrics, stream, sessionTurn)
+		return runServe(run, metrics, stream, sessionTurn, approvals)
 	case "queue":
 		if task == "" {
 			return fmt.Errorf("queue requires a file of tasks (one per line)")

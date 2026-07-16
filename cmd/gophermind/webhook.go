@@ -216,7 +216,9 @@ func serveToken() (string, error) {
 // sessionTurn (when non-nil) backs the session-backed multi-turn endpoints
 // (POST /session, POST /session/{id}/stream, GET /session, DELETE
 // /session/{id}); nil skips registering them, mirroring metrics/stream.
-func runServe(run func(ctx context.Context, task string) (string, error), metrics *serveMetrics, stream func(ctx context.Context, task string, emit func(string)) error, sessionTurn SessionTurn) error {
+// approvals (when non-nil, alongside sessionTurn) additionally registers POST
+// /session/{id}/approve, resolving a pending remote tool-approval gate.
+func runServe(run func(ctx context.Context, task string) (string, error), metrics *serveMetrics, stream func(ctx context.Context, task string, emit func(string)) error, sessionTurn SessionTurn, approvals *approvalRegistry) error {
 	token, err := serveToken()
 	if err != nil {
 		return err
@@ -268,6 +270,9 @@ func runServe(run func(ctx context.Context, task string) (string, error), metric
 		mux.Handle("POST /session/{id}/stream", sessionWrap(sessionStreamHandler(sessionTurn, locks)))
 		mux.Handle("GET /session", sessionWrap(sessionListHandler(session.List)))
 		mux.Handle("DELETE /session/{id}", sessionWrap(sessionDeleteHandler(session.Remove)))
+		if approvals != nil {
+			mux.Handle("POST /session/{id}/approve", sessionWrap(sessionApproveHandler(approvals)))
+		}
 	}
 	fmt.Fprintf(os.Stderr, "gophermind serving webhook on %s (POST /run, GET /healthz, /readyz)\n", addr)
 	return http.ListenAndServe(addr, mux)
