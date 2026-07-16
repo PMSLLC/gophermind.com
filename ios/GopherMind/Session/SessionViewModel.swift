@@ -83,6 +83,25 @@ final class SessionViewModel: ObservableObject {
         }
     }
 
+    /// Switches to the session named by a push deep-link (A5) and, if not
+    /// already present, appends a `.approvalPending` row for its approval so
+    /// `ApprovalCard` renders Approve/Deny immediately. The live SSE frame
+    /// that would normally add this row isn't available here — streaming
+    /// doesn't run while the app is backgrounded, which is exactly when this
+    /// path fires.
+    func openApprovalRoute(_ route: ApprovalRoute) {
+        if sessionID != route.sessionID {
+            sessionID = route.sessionID
+            items = []
+        }
+        let alreadyPresent = items.contains {
+            if case .approvalPending(let id, _, _) = $0.kind { return id == route.approvalID }
+            return false
+        }
+        guard !alreadyPresent else { return }
+        items.append(ConversationItem(kind: .approvalPending(approvalID: route.approvalID, tool: route.tool ?? "tool", args: "")))
+    }
+
     // MARK: - Pure reducer
 
     /// Folds one `AgentEvent` into the current transcript. No side effects,

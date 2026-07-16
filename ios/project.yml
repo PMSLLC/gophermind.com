@@ -29,12 +29,20 @@ targets:
               - gophermind
             CFBundleURLName: com.jbrahy.gophermind
         UILaunchScreen: {}
+        # A5: lets a still-running app receive the silent wake needed for
+        # remote-notification delivery/handling.
+        UIBackgroundModes:
+          - remote-notification
     settings:
       base:
         # NOTE: bundle id must match the APNs GOPHERMIND_APNS_BUNDLE_ID env var
         # and the user's provisioning profile (see docs/mobile-serve.md, A5).
         PRODUCT_BUNDLE_IDENTIFIER: com.jbrahy.gophermind
         TARGETED_DEVICE_FAMILY: "1,2"
+        # A5: aps-environment=development — see GopherMind.entitlements for
+        # what this means and when to switch it to production. Simulator
+        # builds don't need a provisioning profile for this.
+        CODE_SIGN_ENTITLEMENTS: GopherMind/GopherMind.entitlements
     scheme:
       testTargets:
         - GopherMindTests

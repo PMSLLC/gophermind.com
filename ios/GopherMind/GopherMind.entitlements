@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	 aps-environment selects which APNs host the OS hands this app's push
+	 registration to. "development" (the sandbox host) is correct for
+	 simulator/Debug builds and doesn't require any provisioning profile.
+
+	 Switch to "production" for a release/TestFlight/App Store build — that
+	 requires a distribution provisioning profile for this bundle id
+	 (com.jbrahy.gophermind, must match GOPHERMIND_APNS_BUNDLE_ID
+	 server-side, see docs/mobile-serve.md) with the Push Notifications
+	 capability enabled, and only works on a real device.
+	-->
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
+</plist>
