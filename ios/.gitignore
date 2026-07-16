@@ -1,0 +1,9 @@
+# xcodegen-generated project — regenerate with `xcodegen generate`
+GopherMind.xcodeproj/
+
+# Xcode / build cruft
+DerivedData/
+xcuserdata/
+*.xcuserstate
+.build/
+Generated/
