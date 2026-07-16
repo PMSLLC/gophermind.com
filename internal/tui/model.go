@@ -53,8 +53,9 @@ type model struct {
 	sub     chan tea.Msg // agent events + approval requests + done/err arrive here
 	allowed *allowSet
 
-	model string // model name, for the status line
-	mode  string // "auto" | "ask"
+	model      string // model name, for the status line; also the "strong" tier for /project-execute
+	speedModel string // "speed" tier model for /project-execute (empty falls back to model)
+	mode       string // "auto" | "ask"
 
 	temperature float64  // current sampling temperature, mirrored from the client
 	topP        *float64 // current top_p (nil when unset), mirrored from the client
@@ -99,7 +100,7 @@ type model struct {
 
 // newModel builds the model. buildAgent receives the bridge channel and the
 // shared always-allow set so the agent's approval closure can consult them.
-func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent, modelName, mode, glamourStyle string, noBanner, noFortune bool) model {
+func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent, modelName, speedModel, mode, glamourStyle string, noBanner, noFortune bool) model {
 	sub := make(chan tea.Msg, 64)
 	allowed := newAllowSet()
 
@@ -122,6 +123,7 @@ func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent,
 		sub:          sub,
 		allowed:      allowed,
 		model:        modelName,
+		speedModel:   speedModel,
 		mode:         mode,
 		input:        ta,
 		viewport:     viewport.New(0, 0),

@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"gophermind/internal/agent"
+	"gophermind/internal/phaseflow"
 )
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -113,6 +114,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.projTurn = false
 			return m.afterProjectTurn(msg.answer)
 		}
+		return m, waitFor(m.sub)
+
+	case execProgressMsg:
+		m.appendLine(renderExecOutcome(phaseflow.TaskOutcome(msg)))
+		m.sync()
+		return m, waitFor(m.sub)
+
+	case execDoneMsg:
+		m.appendLine(renderExecSummary(msg.summary))
+		m.st = stateIdle
+		m.cancel = nil
+		m.sync()
 		return m, waitFor(m.sub)
 
 	case errMsg:
@@ -226,7 +239,7 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		m.sync()
 		return m, nil
 	case "/help":
-		m.appendLine("Commands: /help  /clear  /project <name>  /phase <cmd>  /config  /temp <0-2>  /topp <0-1>  /exit · y/n/a to approve · Esc to interrupt")
+		m.appendLine("Commands: /help  /clear  /project <name>  /project-execute  /phase <cmd>  /config  /temp <0-2>  /topp <0-1>  /exit · y/n/a to approve · Esc to interrupt")
 		m.sync()
 		return m, nil
 	}
@@ -255,6 +268,12 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 	// approve). Subsequent input is consumed by the block above until it ends.
 	if strings.Fields(text)[0] == "/project" {
 		return m.handleProjectCommand(text)
+	}
+
+	// "/project-execute" runs every pending task in the approved plan
+	// autonomously, streaming per-task progress; see execute.go.
+	if strings.Fields(text)[0] == "/project-execute" {
+		return m.handleProjectExecuteCommand()
 	}
 
 	m.appendLine("")

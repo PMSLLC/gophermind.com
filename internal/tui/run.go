@@ -15,9 +15,13 @@ import (
 
 // Config carries everything Run needs from the caller.
 type Config struct {
-	Client           *llm.Client
-	Registry         *tools.Registry
-	Model            string
+	Client   *llm.Client
+	Registry *tools.Registry
+	Model    string
+	// SpeedModel is the faster/cheaper model tier used for tasks whose plan
+	// assignment resolves to "speed" (see /project-execute); Model doubles as
+	// the "strong" tier. Empty disables tier resolution (falls back to Model).
+	SpeedModel       string
 	Mode             string // "auto" | "ask"
 	MaxIter          int
 	InputPricePer1K  float64 // per-1K-token input price for the cost meter
@@ -97,7 +101,7 @@ func Run(cfg Config) error {
 		glamourStyle = "dark"
 	}
 
-	m := newModel(build, cfg.Model, cfg.Mode, glamourStyle, cfg.NoBanner, cfg.NoFortune)
+	m := newModel(build, cfg.Model, cfg.SpeedModel, cfg.Mode, glamourStyle, cfg.NoBanner, cfg.NoFortune)
 	final, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
 	// On exit, flush the full message history if a transcript path was set. This
 	// runs once, after the UI has torn down, so it never interferes with the

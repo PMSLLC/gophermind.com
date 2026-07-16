@@ -880,6 +880,7 @@ func run() error {
 			Client:           client,
 			Registry:         reg,
 			Model:            cfg.Model,
+			SpeedModel:       cfg.SpeedModel,
 			Mode:             cfg.ApprovalMode,
 			MaxIter:          cfg.MaxIter,
 			InputPricePer1K:  cfg.InputPricePer1K,

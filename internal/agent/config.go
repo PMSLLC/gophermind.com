@@ -3,7 +3,9 @@ package agent
 import (
 	"strings"
 
+	"gophermind/internal/llm"
 	"gophermind/internal/safety"
+	"gophermind/internal/tools"
 )
 
 // AgentConfig is a snapshot of the agent's user-facing configuration. It exists
@@ -15,6 +17,19 @@ type AgentConfig struct {
 	ApprovalMode string // "ask" or "auto"
 	MaxIter      int
 }
+
+// LLM returns the agent's underlying LLM client, so a caller (e.g. the
+// /project-execute orchestrator) can build fresh per-task agents that share
+// the same connection/credentials.
+func (a *Agent) LLM() *llm.Client { return a.llm }
+
+// Registry returns the agent's tool registry, shared with fresh per-task
+// agents built for /project-execute.
+func (a *Agent) Registry() *tools.Registry { return a.reg }
+
+// MaxIter returns the agent's per-turn tool-iteration budget, reused as the
+// default for fresh per-task agents built for /project-execute.
+func (a *Agent) MaxIter() int { return a.maxIter }
 
 // Config returns the agent's current user-facing configuration.
 func (a *Agent) Config() AgentConfig {
