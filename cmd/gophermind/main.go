@@ -960,6 +960,16 @@ func run() error {
 		approvals := newApprovalRegistry()
 		remoteApproval := serveApprovalRemote()
 		approvalWait := serveApprovalTimeout()
+		// APNs push (S4): pings a backgrounded phone on approval-needed. Best-
+		// effort — newApprovalNotifier is a no-op whenever APNs is unconfigured
+		// or the device store fails to load, so a push failure or
+		// misconfiguration can never block or error a turn.
+		devStore, devStoreErr := newDeviceStore()
+		if devStoreErr != nil {
+			fmt.Fprintf(os.Stderr, "gophermind: apns device store disabled: %v\n", devStoreErr)
+			devStore = nil
+		}
+		notify := newApprovalNotifier(newAPNsPusher(loadAPNsConfig()), devStore)
 		// Session-backed variant for /session/{id}/stream: resumes a persisted
 		// conversation when one exists for id (else starts fresh with the usual
 		// system prompt), forwards S1's typed SSE frames per agent.Event, then
@@ -975,7 +985,16 @@ func run() error {
 			}
 			turnApprove := approve
 			if remoteApproval {
-				turnApprove = remoteApprovalGate(approvals, ctx, approvalWait, emit, newApprovalID)
+				// Wrap emit so an "approval-needed" frame also fires an APNs push
+				// (goroutine, best-effort) to registered devices — never blocking or
+				// erroring the gate itself.
+				notifyingEmit := func(event, data string) error {
+					if event == "approval-needed" {
+						go notifyApprovalNeeded(notify, id, data)
+					}
+					return emit(event, data)
+				}
+				turnApprove = remoteApprovalGate(approvals, ctx, approvalWait, notifyingEmit, newApprovalID)
 			}
 			ag := agent.New(client, reg, cfg.MaxIter, turnApprove, onEvent)
 			ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
@@ -996,7 +1015,7 @@ func run() error {
 			}
 			return err
 		}
-		return runServe(run, metrics, stream, sessionTurn, approvals)
+		return runServe(run, metrics, stream, sessionTurn, approvals, devStore)
 	case "queue":
 		if task == "" {
 			return fmt.Errorf("queue requires a file of tasks (one per line)")

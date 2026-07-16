@@ -218,7 +218,9 @@ func serveToken() (string, error) {
 // /session/{id}); nil skips registering them, mirroring metrics/stream.
 // approvals (when non-nil, alongside sessionTurn) additionally registers POST
 // /session/{id}/approve, resolving a pending remote tool-approval gate.
-func runServe(run func(ctx context.Context, task string) (string, error), metrics *serveMetrics, stream func(ctx context.Context, task string, emit func(string)) error, sessionTurn SessionTurn, approvals *approvalRegistry) error {
+// devStore (when non-nil) registers POST /devices (S4 APNs device
+// registration), behind the same sessionAuth as the /session routes.
+func runServe(run func(ctx context.Context, task string) (string, error), metrics *serveMetrics, stream func(ctx context.Context, task string, emit func(string)) error, sessionTurn SessionTurn, approvals *approvalRegistry, devStore *deviceStore) error {
 	token, err := serveToken()
 	if err != nil {
 		return err
@@ -273,6 +275,10 @@ func runServe(run func(ctx context.Context, task string) (string, error), metric
 		if approvals != nil {
 			mux.Handle("POST /session/{id}/approve", sessionWrap(sessionApproveHandler(approvals)))
 		}
+	}
+	if devStore != nil {
+		// S4 APNs device registration, same bearer+HMAC auth as /session.
+		mux.Handle("POST /devices", limited(sessionAuth(token, devicesHandler(devStore))))
 	}
 	fmt.Fprintf(os.Stderr, "gophermind serving webhook on %s (POST /run, GET /healthz, /readyz)\n", addr)
 	return http.ListenAndServe(addr, mux)
