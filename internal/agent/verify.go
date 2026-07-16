@@ -62,6 +62,16 @@ func (a *Agent) SendWithVerification(ctx context.Context, userInput string) (str
 	return a.VerifyResult(ctx, userInput, a.Send)
 }
 
+// Verify exposes the fresh verifier agent to callers (e.g. orchestrate.Runner)
+// that need to drive their own verify + correction loop with re-verification
+// after the correction, rather than the single-shot, no-re-verify behavior of
+// VerifyResult/SendWithVerification. Returns (satisfied, feedback); like
+// runVerifier, a verifier-infrastructure failure never blocks (leniently
+// returns satisfied=true).
+func (a *Agent) Verify(ctx context.Context, task, answer string) (bool, string) {
+	return a.runVerifier(ctx, task, answer)
+}
+
 // runVerifier asks a fresh verifier agent (its own minimal context, not the main
 // conversation) to judge the answer. Returns (satisfied, feedback).
 func (a *Agent) runVerifier(ctx context.Context, task, answer string) (bool, string) {
