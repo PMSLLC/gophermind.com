@@ -42,16 +42,25 @@ func NewRunner(client *llm.Client, reg *tools.Registry, root, speedModel, strong
 
 // Run implements phaseflow.TaskRunner.
 func (r *Runner) Run(ctx context.Context, t phaseflow.Task) (status, detail string, err error) {
+	if t.Agent == "" {
+		return phaseflow.StatusFailed, "no agent assigned", nil
+	}
+
 	agents, _, err := phaseflow.LoadCatalog(r.root)
 	if err != nil {
 		return "", "", fmt.Errorf("orchestrate: load catalog: %w", err)
 	}
 	var body string
+	found := false
 	for _, ca := range agents {
 		if ca.Name == t.Agent {
 			body = ca.Body
+			found = true
 			break
 		}
+	}
+	if !found {
+		return phaseflow.StatusFailed, fmt.Sprintf("catalog agent %q not found", t.Agent), nil
 	}
 
 	model := resolveModel(t.Model, r.speedModel, r.strongModel)

@@ -56,6 +56,19 @@ func Execute(ctx context.Context, root string, runner TaskRunner, emit func(Task
 		return RunSummary{}, fmt.Errorf("phaseflow: no assignments found at %s", AssignmentsPath(root))
 	}
 
+	recovered := false
+	for i, t := range a.Tasks {
+		if t.Status == StatusRunning {
+			a.Tasks[i].Status = StatusPending
+			recovered = true
+		}
+	}
+	if recovered {
+		if err := a.Save(root); err != nil {
+			return RunSummary{}, err
+		}
+	}
+
 	pending := make([]int, 0, len(a.Tasks))
 	for i, t := range a.Tasks {
 		if t.Status == StatusPending {

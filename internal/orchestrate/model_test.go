@@ -14,6 +14,7 @@ func TestResolveModel(t *testing.T) {
 		{"strong tier", "strong", "gpt-speed", "gpt-strong", "gpt-strong"},
 		{"concrete name passes through", "claude-3-5-sonnet", "gpt-speed", "gpt-strong", "claude-3-5-sonnet"},
 		{"empty tier defaults to strong", "", "gpt-speed", "gpt-strong", "gpt-strong"},
+		{"speed tier with unset speed model falls back to strong", "speed", "", "strong-x", "strong-x"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -13,6 +13,9 @@ import "gophermind/internal/phaseflow"
 func resolveModel(tier, speedModel, strongModel string) string {
 	switch tier {
 	case phaseflow.ModelSpeed:
+		if speedModel == "" {
+			return strongModel
+		}
 		return speedModel
 	case phaseflow.ModelStrong:
 		return strongModel

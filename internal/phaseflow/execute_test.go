@@ -274,6 +274,39 @@ func TestExecuteNilEmitDoesNotPanic(t *testing.T) {
 	}
 }
 
+func TestExecuteRecoversStaleRunningTask(t *testing.T) {
+	root := t.TempDir()
+	stale := pendingTask("01-01")
+	stale.Status = StatusRunning
+	writeAssignments(t, root, stale, pendingTask("01-02"))
+
+	runner := &fakeRunner{byID: map[string]scriptedResult{}}
+	summary, err := Execute(context.Background(), root, runner, nil)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	// The stale running task must actually be run, not skipped forever.
+	found01 := false
+	for _, id := range runner.calls {
+		if id == "01-01" {
+			found01 = true
+		}
+	}
+	if !found01 {
+		t.Fatalf("calls = %v, want 01-01 (recovered from stale running) to have been run", runner.calls)
+	}
+
+	reloaded, _, _ := LoadAssignments(root)
+	tk1, _ := reloaded.Task("01-01")
+	if tk1.Status != StatusDone {
+		t.Errorf("01-01 status = %q, want terminal status %q after recovery+run", tk1.Status, StatusDone)
+	}
+	if summary.Done != 2 {
+		t.Errorf("summary = %+v, want Done=2 (both recovered and normal pending tasks ran)", summary)
+	}
+}
+
 func TestExecuteMissingAssignmentsReturnsError(t *testing.T) {
 	root := t.TempDir()
 	runner := &fakeRunner{byID: map[string]scriptedResult{}}
