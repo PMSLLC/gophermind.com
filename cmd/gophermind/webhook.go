@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"gophermind/internal/session"
 )
 
 // webhookHandler builds an HTTP handler that runs a one-shot task from an
@@ -211,7 +213,10 @@ func serveToken() (string, error) {
 // runServe starts the webhook HTTP server, dispatching each POST /run to run.
 // metrics (when non-nil) counts requests/errors and is exposed on /metrics.
 // stream (when non-nil) backs a POST /run/stream Server-Sent-Events endpoint.
-func runServe(run func(ctx context.Context, task string) (string, error), metrics *serveMetrics, stream func(ctx context.Context, task string, emit func(string)) error) error {
+// sessionTurn (when non-nil) backs the session-backed multi-turn endpoints
+// (POST /session, POST /session/{id}/stream, GET /session, DELETE
+// /session/{id}); nil skips registering them, mirroring metrics/stream.
+func runServe(run func(ctx context.Context, task string) (string, error), metrics *serveMetrics, stream func(ctx context.Context, task string, emit func(string)) error, sessionTurn SessionTurn) error {
 	token, err := serveToken()
 	if err != nil {
 		return err
@@ -252,6 +257,17 @@ func runServe(run func(ctx context.Context, task string) (string, error), metric
 	if stream != nil {
 		// Same auth (bearer + HMAC) and rate limit as /run — full sibling parity.
 		mux.Handle("/run/stream", limited(sseHandler(stream, token)))
+	}
+	if sessionTurn != nil {
+		// Session endpoints share /run's bearer+HMAC auth (via sessionAuth) and
+		// rate limit (via limited), applied uniformly at registration since the
+		// handlers themselves take no auth params (see session_serve.go).
+		locks := newSessionLocks()
+		sessionWrap := func(h http.Handler) http.Handler { return limited(sessionAuth(token, h)) }
+		mux.Handle("POST /session", sessionWrap(sessionCreateHandler()))
+		mux.Handle("POST /session/{id}/stream", sessionWrap(sessionStreamHandler(sessionTurn, locks)))
+		mux.Handle("GET /session", sessionWrap(sessionListHandler(session.List)))
+		mux.Handle("DELETE /session/{id}", sessionWrap(sessionDeleteHandler(session.Remove)))
 	}
 	fmt.Fprintf(os.Stderr, "gophermind serving webhook on %s (POST /run, GET /healthz, /readyz)\n", addr)
 	return http.ListenAndServe(addr, mux)

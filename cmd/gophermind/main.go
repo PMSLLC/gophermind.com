@@ -952,7 +952,39 @@ func run() error {
 			_, err := ag.Send(ctx, t)
 			return err
 		}
-		return runServe(run, metrics, stream)
+		// Session-backed variant for /session/{id}/stream: resumes a persisted
+		// conversation when one exists for id (else starts fresh with the usual
+		// system prompt), forwards S1's typed SSE frames per agent.Event, then
+		// saves the session — the runPrint load/save pattern (main.go:1224-1276)
+		// applied per HTTP turn instead of once per process.
+		sessionTurn := func(ctx context.Context, id, t string, emit func(event, data string) error) error {
+			onEvent := func(e agent.Event) {
+				event, data, ok := sseFramesForAgentEvent(e)
+				if !ok {
+					return
+				}
+				_ = emit(event, data)
+			}
+			ag := agent.New(client, reg, cfg.MaxIter, approve, onEvent)
+			ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
+			ag.SetAuditLog(auditLog())
+			if session.Exists(id) {
+				if err := session.Load(id, ag); err != nil {
+					return err
+				}
+			} else {
+				ag.SetSystemPrompt(basePrompt)
+				if systemSuffix != "" {
+					ag.AppendSystemPrompt(systemSuffix)
+				}
+			}
+			_, err := ag.Send(ctx, t)
+			if serr := session.Save(id, ag); serr != nil && err == nil {
+				err = serr
+			}
+			return err
+		}
+		return runServe(run, metrics, stream, sessionTurn)
 	case "queue":
 		if task == "" {
 			return fmt.Errorf("queue requires a file of tasks (one per line)")
