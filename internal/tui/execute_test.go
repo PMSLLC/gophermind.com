@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -88,4 +89,100 @@ func TestProjectExecuteApprovedStartsRun(t *testing.T) {
 		// Stop the run before it can make a real network call.
 		m2.cancel()
 	})
+}
+
+// TestExecProgressMsgDone verifies that execProgressMsg with a done outcome
+// appends the correctly formatted line to the transcript.
+func TestExecProgressMsgDone(t *testing.T) {
+	m := testModel()
+	outcome := phaseflow.TaskOutcome{ID: "02-01", Status: phaseflow.StatusDone}
+	m2, _ := m.Update(execProgressMsg(outcome))
+	mm := m2.(model)
+
+	if !strings.Contains(mm.content, "02-01") {
+		t.Errorf("transcript missing task ID: %q", mm.content)
+	}
+	if !strings.Contains(mm.content, "done") {
+		t.Errorf("transcript missing status: %q", mm.content)
+	}
+	if !strings.Contains(mm.content, "✓") {
+		t.Errorf("transcript missing success marker: %q", mm.content)
+	}
+}
+
+// TestExecProgressMsgCorrected verifies that execProgressMsg with a corrected
+// outcome appends the correctly formatted line to the transcript.
+func TestExecProgressMsgCorrected(t *testing.T) {
+	m := testModel()
+	outcome := phaseflow.TaskOutcome{ID: "02-02", Status: phaseflow.StatusCorrected}
+	m2, _ := m.Update(execProgressMsg(outcome))
+	mm := m2.(model)
+
+	if !strings.Contains(mm.content, "02-02") {
+		t.Errorf("transcript missing task ID: %q", mm.content)
+	}
+	if !strings.Contains(mm.content, "corrected") {
+		t.Errorf("transcript missing status: %q", mm.content)
+	}
+	if !strings.Contains(mm.content, "✓") {
+		t.Errorf("transcript missing success marker: %q", mm.content)
+	}
+}
+
+// TestExecProgressMsgFailed verifies that execProgressMsg with a failed outcome
+// appends the correctly formatted line including the detail text.
+func TestExecProgressMsgFailed(t *testing.T) {
+	m := testModel()
+	outcome := phaseflow.TaskOutcome{
+		ID:     "02-03",
+		Status: phaseflow.StatusFailed,
+		Detail: "network timeout during execution",
+	}
+	m2, _ := m.Update(execProgressMsg(outcome))
+	mm := m2.(model)
+
+	if !strings.Contains(mm.content, "02-03") {
+		t.Errorf("transcript missing task ID: %q", mm.content)
+	}
+	if !strings.Contains(mm.content, "failed") {
+		t.Errorf("transcript missing status: %q", mm.content)
+	}
+	if !strings.Contains(mm.content, "network timeout") {
+		t.Errorf("transcript missing detail: %q", mm.content)
+	}
+	if !strings.Contains(mm.content, "✗") {
+		t.Errorf("transcript missing failure marker: %q", mm.content)
+	}
+}
+
+// TestExecDoneMsgReset verifies that execDoneMsg appends the summary line,
+// resets state to idle, and clears the cancel function.
+func TestExecDoneMsgReset(t *testing.T) {
+	m := testModel()
+	m.st = stateWorking
+	_, cancel := context.WithCancel(context.Background())
+	m.cancel = cancel
+
+	summary := phaseflow.RunSummary{Done: 2, Corrected: 1, Failed: 1}
+	m2, _ := m.Update(execDoneMsg{summary: summary})
+	mm := m2.(model)
+
+	if mm.st != stateIdle {
+		t.Errorf("state = %v, want idle", mm.st)
+	}
+	if mm.cancel != nil {
+		t.Error("cancel func not cleared")
+	}
+	if !strings.Contains(mm.content, "run complete") {
+		t.Errorf("transcript missing summary: %q", mm.content)
+	}
+	if !strings.Contains(mm.content, "2 done") {
+		t.Errorf("transcript missing done count: %q", mm.content)
+	}
+	if !strings.Contains(mm.content, "1 corrected") {
+		t.Errorf("transcript missing corrected count: %q", mm.content)
+	}
+	if !strings.Contains(mm.content, "1 failed") {
+		t.Errorf("transcript missing failed count: %q", mm.content)
+	}
 }
