@@ -40,7 +40,7 @@ func (m model) View() string {
 	// Predictive-text suggestions are only ever live while stateIdle (see
 	// handleKey), so mode is inert here otherwise.
 	var menuView string
-	if m.st == stateIdle && m.complete.Mode() == bubblecomplete.ModeMenu {
+	if m.st == stateIdle && m.proj == projNone && m.complete.Mode() == bubblecomplete.ModeMenu {
 		menuView = m.complete.View()
 		if h := lipgloss.Height(menuView); h > 0 {
 			vp.Height -= h
