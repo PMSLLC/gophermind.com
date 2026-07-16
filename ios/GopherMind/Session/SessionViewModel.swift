@@ -111,11 +111,32 @@ final class SessionViewModel: ObservableObject {
         var items = items
 
         switch event {
-        case .token(let text), .assistant(let text):
-            if case .assistant(let existing) = items.last?.kind {
+        case .token(let text):
+            // Accumulates into the current open (non-finalized) assistant
+            // item, or starts a new one.
+            if let last = items.last, case .assistant(let existing) = last.kind, !last.isFinalized {
                 items[items.count - 1].kind = .assistant(existing + text)
             } else {
                 items.append(ConversationItem(kind: .assistant(text)))
+            }
+
+        case .assistant(let text):
+            // `assistant` is the COMMITTED version of the turn's prose —
+            // gophermind streams tokens, then emits `assistant` with the same
+            // text as a whole. If an open assistant item's accumulated text
+            // is a prefix of (or equal to) this event's text, it's the same
+            // prose arriving twice: replace + finalize rather than append
+            // (which would double it, e.g. "Hel"+"lo" then "Hello" would
+            // otherwise become "HelloHello"). Once finalized, a later
+            // `token` starts a new assistant item. Otherwise (no open item,
+            // or the text diverges — a standalone note) append a new,
+            // already-finalized line.
+            if let last = items.last, case .assistant(let existing) = last.kind, !last.isFinalized, text.hasPrefix(existing) {
+                items[items.count - 1].kind = .assistant(text)
+                items[items.count - 1].isFinalized = true
+            } else {
+                items.append(ConversationItem(kind: .assistant(text)))
+                items[items.count - 1].isFinalized = true
             }
 
         case .toolCall(let name, let args):

@@ -5,6 +5,11 @@ import Foundation
 struct ConversationItem: Identifiable, Equatable {
     let id: UUID
     var kind: Kind
+    /// For `.assistant` items only: `true` once a committed `assistant` event
+    /// has landed on this item. A finalized assistant item no longer accepts
+    /// `token` deltas — the next `token` starts a new item (see
+    /// `SessionViewModel.reduce`). Irrelevant for other kinds.
+    var isFinalized: Bool = false
 
     init(id: UUID = UUID(), kind: Kind) {
         self.id = id

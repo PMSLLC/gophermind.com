@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Scrolling transcript + input bar for a single session. Streams a live
 /// token feed and tool activity; approvals render as interactive
@@ -8,22 +9,27 @@ struct ConversationView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        ForEach(viewModel.items) { item in
-                            ConversationItemRow(item: item) { approvalID, approved in
-                                _ = viewModel.decide(approvalID: approvalID, approved: approved)
+            if viewModel.items.isEmpty {
+                emptyState
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 12) {
+                            ForEach(viewModel.items) { item in
+                                ConversationItemRow(item: item) { approvalID, approved in
+                                    UINotificationFeedbackGenerator().notificationOccurred(approved ? .success : .warning)
+                                    _ = viewModel.decide(approvalID: approvalID, approved: approved)
+                                }
+                                .id(item.id)
                             }
-                            .id(item.id)
                         }
+                        .padding()
                     }
-                    .padding()
-                }
-                .onChange(of: viewModel.items) { _, newItems in
-                    guard let lastID = newItems.last?.id else { return }
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        proxy.scrollTo(lastID, anchor: .bottom)
+                    .onChange(of: viewModel.items) { _, newItems in
+                        guard let lastID = newItems.last?.id else { return }
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            proxy.scrollTo(lastID, anchor: .bottom)
+                        }
                     }
                 }
             }
@@ -31,6 +37,18 @@ struct ConversationView: View {
             Divider()
             inputBar
         }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "bubble.left.and.bubble.right")
+                .font(.system(size: 32))
+                .foregroundStyle(.secondary)
+            Text("Say something to get started")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var inputBar: some View {
@@ -43,6 +61,7 @@ struct ConversationView: View {
             Button {
                 let task = viewModel.inputText
                 viewModel.inputText = ""
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 Task { await viewModel.send(task) }
             } label: {
                 Image(systemName: "arrow.up.circle.fill")

@@ -73,4 +73,53 @@ final class ReducerTests: XCTestCase {
         XCTAssertEqual(items[2].kind, .tool(name: "weather", args: "{\"city\":\"SF\"}", result: "62F, foggy"))
         XCTAssertEqual(items[3].kind, .assistant("It's 62F and foggy."))
     }
+
+    // MARK: - token/assistant dedup (A6)
+
+    /// Tokens "Hel"+"lo" then the committed `assistant` "Hello" must not
+    /// double the prose: the assistant event replaces (not appends to) the
+    /// accumulated text since it's a prefix match.
+    func testTokensThenMatchingAssistantReplacesRatherThanDuplicates() {
+        var items: [ConversationItem] = []
+        items = SessionViewModel.reduce(items, .token("Hel"))
+        items = SessionViewModel.reduce(items, .token("lo"))
+        items = SessionViewModel.reduce(items, .assistant("Hello"))
+
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items[0].kind, .assistant("Hello"))
+    }
+
+    /// The accumulated text need only be a *prefix* of the assistant event's
+    /// text (not an exact match) to count as the same prose.
+    func testTokenThenPrefixMatchingAssistantReplaces() {
+        var items: [ConversationItem] = []
+        items = SessionViewModel.reduce(items, .token("Hi"))
+        items = SessionViewModel.reduce(items, .assistant("Hi there"))
+
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items[0].kind, .assistant("Hi there"))
+    }
+
+    /// A standalone `assistant` event with no preceding tokens (e.g. a
+    /// warning/critic note) gets its own line, not folded into anything.
+    func testStandaloneAssistantWithNoPrecedingTokensGetsItsOwnLine() {
+        var items: [ConversationItem] = [ConversationItem(kind: .user("hi"))]
+        items = SessionViewModel.reduce(items, .assistant("\u{26A0} warning"))
+
+        XCTAssertEqual(items.count, 2)
+        XCTAssertEqual(items[1].kind, .assistant("\u{26A0} warning"))
+    }
+
+    /// Once an assistant item is finalized by a committed `assistant` event,
+    /// further `token`s start a NEW assistant item rather than reopening it.
+    func testTokensAfterFinalizedAssistantStartANewItem() {
+        var items: [ConversationItem] = []
+        items = SessionViewModel.reduce(items, .token("Hel"))
+        items = SessionViewModel.reduce(items, .assistant("Hello"))
+        items = SessionViewModel.reduce(items, .token("More"))
+
+        XCTAssertEqual(items.count, 2)
+        XCTAssertEqual(items[0].kind, .assistant("Hello"))
+        XCTAssertEqual(items[1].kind, .assistant("More"))
+    }
 }

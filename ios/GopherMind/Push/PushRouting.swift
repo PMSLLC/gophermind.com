@@ -5,7 +5,7 @@ import Combine
 /// by the pure `approvalRoute(from:)` helper below and consumed by the app
 /// root to switch to the right session and surface its pending approval
 /// (see `SessionViewModel.openApprovalRoute`).
-struct ApprovalRoute: Equatable {
+struct ApprovalRoute: Equatable, Hashable {
     let sessionID: String
     let approvalID: String
     /// Not currently sent by the server (see `cmd/gophermind/apns.go`,
