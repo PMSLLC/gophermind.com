@@ -80,6 +80,44 @@ func TestCompleteSurfacesError(t *testing.T) {
 	}
 }
 
+// TestComplete_TotalTimeoutBound proves that removing http.Client.Timeout
+// (Part 1) does not un-bound the non-streaming path: completeOnce must wrap
+// each attempt's context with the client's totalTimeout (Part 2), so a
+// response body that never finishes still errors out promptly instead of
+// hanging forever.
+func TestComplete_TotalTimeoutBound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		// Hold the body open well past the client's totalTimeout, then send it
+		// (or just let the handler return; either way the ctx deadline must
+		// have already cut the read short).
+		time.Sleep(300 * time.Millisecond)
+		w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"late"}}]}`))
+	}))
+	defer srv.Close()
+
+	c, err := NewWithTLS(srv.URL, "", "m", 50*time.Millisecond, TLSOptions{})
+	if err != nil {
+		t.Fatalf("NewWithTLS: %v", err)
+	}
+	c.Retry = RetryPolicy{MaxAttempts: 1} // single attempt: isolate the per-attempt bound
+
+	start := time.Now()
+	_, _, err = c.Complete(context.Background(), nil, nil)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected Complete to time out on a body that exceeds totalTimeout")
+	}
+	if elapsed > 2*time.Second {
+		t.Errorf("Complete took %v, want bounded near totalTimeout (50ms), not the full 300ms body delay", elapsed)
+	}
+}
+
 func TestAuthHeaderOnlyWhenKeySet(t *testing.T) {
 	var gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

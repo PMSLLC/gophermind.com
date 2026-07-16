@@ -5,11 +5,34 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 )
+
+// ErrStreamIdle is the sentinel cause when a streaming turn is aborted
+// because no SSE frame arrived within the configured idle timeout (see
+// SetStreamIdleTimeout). It is distinct from context.Canceled/DeadlineExceeded
+// so callers can tell a genuine stall apart from user/parent cancellation.
+// Exported so callers can test for it with errors.Is.
+var ErrStreamIdle = errors.New("stream idle timeout")
+
+// defaultStreamIdleTimeout is used when a Client has no explicit
+// SetStreamIdleTimeout override. It is generous enough to cover slow
+// first-token latency from reasoning models (the timer is armed before the
+// first frame, not just between later frames).
+const defaultStreamIdleTimeout = 300 * time.Second
+
+// streamIdleTimeout returns the configured idle/stall timeout for Stream,
+// defaulting to defaultStreamIdleTimeout when unset.
+func (c *Client) streamIdleTimeout() time.Duration {
+	if c.streamIdleTimeoutOverride > 0 {
+		return c.streamIdleTimeoutOverride
+	}
+	return defaultStreamIdleTimeout
+}
 
 // streamChunk is one SSE delta frame from /v1/chat/completions with stream=true.
 // The final chunk (when stream_options.include_usage is set) carries usage and
@@ -39,15 +62,37 @@ type streamChunk struct {
 // stream ends, along with the token usage reported in the final chunk (zero value
 // when the endpoint omits it).
 func (c *Client) Stream(ctx context.Context, msgs []Message, tools []Tool, onToken func(string)) (Message, Usage, error) {
+	// streamCtx derives from the parent ctx but can ALSO be cancelled by the
+	// idle watchdog below, with a distinct cause (ErrStreamIdle) recoverable
+	// via context.Cause. It — not the raw ctx — is what actually governs the
+	// request/response body Read, so the watchdog can abort a stalled read.
+	// cancelCause(nil) on return is a no-op if the stream finished normally or
+	// was already cancelled for another reason.
+	streamCtx, cancelCause := context.WithCancelCause(ctx)
+	defer cancelCause(nil)
+
 	// Fall back across models ONLY on the initial connect (pre-token). Once a 2xx
 	// body is in hand, streaming begins and we never switch models mid-output: a
 	// mid-stream break is surfaced rather than re-issued under another model, so
 	// no tokens are ever duplicated or replayed.
-	resp, err := c.connectStreamChain(ctx, msgs, tools)
+	resp, err := c.connectStreamChain(streamCtx, msgs, tools)
 	if err != nil {
 		return Message{}, Usage{}, err
 	}
 	defer resp.Body.Close()
+
+	// Idle/stall watchdog: armed before the first frame (covers slow
+	// first-token/reasoning latency) and reset on every subsequent frame, so it
+	// measures the GAP between frames, not the stream's total duration. Only
+	// this goroutine (the read loop, below) ever calls timer.Reset; the
+	// AfterFunc callback only cancels streamCtx, which is safe to do from any
+	// goroutine.
+	idle := c.streamIdleTimeout()
+	timer := time.AfterFunc(idle, func() { cancelCause(ErrStreamIdle) })
+	defer timer.Stop()
+	idleErr := func() error {
+		return fmt.Errorf("stream idle timeout: no data for %s: %w", idle, ErrStreamIdle)
+	}
 
 	var content strings.Builder
 	type acc struct {
@@ -61,11 +106,21 @@ func (c *Client) Stream(ctx context.Context, msgs []Message, tools []Tool, onTok
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
-		// Honor cancellation between frames so a mid-stream Ctrl-C aborts promptly
-		// with context.Canceled instead of processing buffered chunks or waiting
-		// on the next read. The request's context also unblocks the underlying
+		// A frame just arrived: reset the idle window. Only this goroutine calls
+		// Reset, so there is no race with the AfterFunc callback (which only
+		// cancels streamCtx).
+		timer.Reset(idle)
+
+		// Idle-cancel is checked FIRST so a stall reported via streamCtx's cause
+		// is never mistaken for a bare parent cancellation. Then honor parent
+		// cancellation between frames so a mid-stream Ctrl-C aborts promptly with
+		// context.Canceled instead of processing buffered chunks or waiting on
+		// the next read. The request's context also unblocks the underlying
 		// Read, so a stall mid-frame is cut short too; this check makes the abort
 		// deterministic and the returned error a clean ctx.Err().
+		if errors.Is(context.Cause(streamCtx), ErrStreamIdle) {
+			return Message{}, Usage{}, idleErr()
+		}
 		if err := ctx.Err(); err != nil {
 			return Message{}, Usage{}, err
 		}
@@ -111,10 +166,18 @@ func (c *Client) Stream(ctx context.Context, msgs []Message, tools []Tool, onTok
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		// A cancelled/expired context unblocks the body read with a transport
-		// error that wraps the ctx error; surface it as the clean ctx.Err() so
-		// callers (and the agent loop) can recognize cancellation uniformly and
-		// discard the partial turn rather than treating it as a stream fault.
+		// Idle-cancel is checked FIRST — see the loop-top check above for why —
+		// so a stall is always reported as ErrStreamIdle, never a bare ctx error,
+		// even though cancelling streamCtx also unblocks the body Read via a
+		// transport error that wraps it.
+		if errors.Is(context.Cause(streamCtx), ErrStreamIdle) {
+			return Message{}, Usage{}, idleErr()
+		}
+		// A cancelled/expired PARENT context unblocks the body read with a
+		// transport error that wraps the ctx error; surface it as the clean
+		// ctx.Err() so callers (and the agent loop) can recognize cancellation
+		// uniformly and discard the partial turn rather than treating it as a
+		// stream fault.
 		if cerr := ctx.Err(); cerr != nil {
 			return Message{}, Usage{}, cerr
 		}

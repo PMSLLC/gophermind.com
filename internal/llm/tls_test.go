@@ -244,6 +244,61 @@ func indexOf(s, sub string) int {
 	return -1
 }
 
+// --- Timeout: 0 / ResponseHeaderTimeout regression guards ------------------
+//
+// These guard against reintroducing http.Client.Timeout as a total-request
+// cap, which killed streaming turns mid-stream (see stream_test.go for the
+// idle-watchdog tests that replace it). The client must have NO total cap and
+// a non-zero ResponseHeaderTimeout so a dead endpoint still fails fast before
+// any bytes/tokens arrive.
+
+func TestHTTPClientFor_NoTLS_TimeoutZeroAndResponseHeaderTimeoutSet(t *testing.T) {
+	client, err := httpClientFor(5*time.Second, TLSOptions{})
+	if err != nil {
+		t.Fatalf("httpClientFor: %v", err)
+	}
+	if client.Timeout != 0 {
+		t.Errorf("Timeout = %v, want 0 (no total cap; Complete bounds itself via context, Stream via idle watchdog)", client.Timeout)
+	}
+	tr, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("Transport = %T, want *http.Transport", client.Transport)
+	}
+	if tr.ResponseHeaderTimeout == 0 {
+		t.Error("ResponseHeaderTimeout must be non-zero so a dead endpoint fails fast before headers arrive")
+	}
+}
+
+func TestHTTPClientFor_WithTLSConfig_TimeoutZeroAndResponseHeaderTimeoutSet(t *testing.T) {
+	client, err := httpClientFor(5*time.Second, TLSOptions{InsecureSkipVerify: true})
+	if err != nil {
+		t.Fatalf("httpClientFor: %v", err)
+	}
+	if client.Timeout != 0 {
+		t.Errorf("Timeout = %v, want 0", client.Timeout)
+	}
+	tr, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("Transport = %T, want *http.Transport", client.Transport)
+	}
+	if tr.ResponseHeaderTimeout == 0 {
+		t.Error("ResponseHeaderTimeout must be non-zero even when a custom TLS config is set")
+	}
+	if tr.TLSClientConfig == nil || !tr.TLSClientConfig.InsecureSkipVerify {
+		t.Error("TLSClientConfig was not applied to the cloned transport")
+	}
+}
+
+func TestNewWithTLS_ClientHasNoTotalCap(t *testing.T) {
+	c, err := NewWithTLS("http://example.invalid", "", "m", 5*time.Second, TLSOptions{})
+	if err != nil {
+		t.Fatalf("NewWithTLS: %v", err)
+	}
+	if c.HTTP.Timeout != 0 {
+		t.Errorf("HTTP.Timeout = %v, want 0", c.HTTP.Timeout)
+	}
+}
+
 // --- end-to-end handshake tests -------------------------------------------
 
 // newMTLSServer starts an httptest TLS server that REQUIRES and verifies a

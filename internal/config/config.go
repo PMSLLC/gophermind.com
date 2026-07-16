@@ -114,6 +114,13 @@ type Config struct {
 	HTTPTimeout time.Duration // GOPHERMIND_HTTP_TIMEOUT_S (default: 300s)
 	CmdTimeout  time.Duration // GOPHERMIND_CMD_TIMEOUT_S (default: 120s)
 
+	// StreamIdleTimeout bounds how long a streaming completion may go without
+	// receiving any SSE frame before it is aborted (llm.Client's idle/stall
+	// watchdog). Unlike HTTPTimeout, it does NOT cap a stream's total duration
+	// — only the GAP between frames — so a long, steadily-token-producing turn
+	// is never killed just for taking a while.
+	StreamIdleTimeout time.Duration // GOPHERMIND_STREAM_IDLE_TIMEOUT_S (default: 300s)
+
 	FetchAllowHosts []string // GOPHERMIND_FETCH_ALLOW_HOSTS: comma-separated host allowlist for fetch_url (empty => any host)
 
 	// Optional resource ceilings for run_shell, applied via ulimit. 0 = no limit.
@@ -196,29 +203,30 @@ func Load() (Config, error) {
 	}
 
 	return Config{
-		Profile:         envOr("GOPHERMIND_PROFILE", ""),
-		BaseURL:         envOr("GOPHERMIND_BASE_URL", defaultBaseURL),
-		APIKey:          envOr("GOPHERMIND_API_KEY", ""),
-		Model:           envOr("GOPHERMIND_MODEL", ""), // empty => auto-discover from /v1/models
-		FallbackModels:  envList("GOPHERMIND_FALLBACK_MODELS"),
-		SpeedModel:      envOr("GOPHERMIND_SPEED_MODEL", ""),
-		RootDir:         root,
-		ApprovalMode:    envOr("GOPHERMIND_APPROVAL", "ask"),
-		InsecureTLS:     envBool("GOPHERMIND_INSECURE_TLS"),
-		ClientCertPath:  envOr("GOPHERMIND_CLIENT_CERT", ""),
-		ClientKeyPath:   envOr("GOPHERMIND_CLIENT_KEY", ""),
-		CACertPath:      envOr("GOPHERMIND_CA_CERT", ""),
-		MaxIter:         envIntOr("GOPHERMIND_MAX_ITER", 25),
-		HTTPTimeout:     time.Duration(envIntOr("GOPHERMIND_HTTP_TIMEOUT_S", 300)) * time.Second,
-		CmdTimeout:      time.Duration(envIntOr("GOPHERMIND_CMD_TIMEOUT_S", 120)) * time.Second,
-		FetchAllowHosts: envList("GOPHERMIND_FETCH_ALLOW_HOSTS"),
-		ShellCPUSeconds: envIntOr("GOPHERMIND_SHELL_CPU_SECONDS", 0),
-		ShellMaxMemMB:   envIntOr("GOPHERMIND_SHELL_MAX_MEM_MB", 0),
-		ShellMaxProcs:   envIntOr("GOPHERMIND_SHELL_MAX_PROCS", 0),
-		NetMaxRequests:  envIntOr("GOPHERMIND_NET_MAX_REQUESTS", 0),
-		NetMaxBytes:     int64(envIntOr("GOPHERMIND_NET_MAX_BYTES", 0)),
-		BraveAPIKey:     envOr("GOPHERMIND_BRAVE_API_KEY", ""),
-		BraveEndpoint:   envOr("GOPHERMIND_BRAVE_API_URL", ""),
+		Profile:           envOr("GOPHERMIND_PROFILE", ""),
+		BaseURL:           envOr("GOPHERMIND_BASE_URL", defaultBaseURL),
+		APIKey:            envOr("GOPHERMIND_API_KEY", ""),
+		Model:             envOr("GOPHERMIND_MODEL", ""), // empty => auto-discover from /v1/models
+		FallbackModels:    envList("GOPHERMIND_FALLBACK_MODELS"),
+		SpeedModel:        envOr("GOPHERMIND_SPEED_MODEL", ""),
+		RootDir:           root,
+		ApprovalMode:      envOr("GOPHERMIND_APPROVAL", "ask"),
+		InsecureTLS:       envBool("GOPHERMIND_INSECURE_TLS"),
+		ClientCertPath:    envOr("GOPHERMIND_CLIENT_CERT", ""),
+		ClientKeyPath:     envOr("GOPHERMIND_CLIENT_KEY", ""),
+		CACertPath:        envOr("GOPHERMIND_CA_CERT", ""),
+		MaxIter:           envIntOr("GOPHERMIND_MAX_ITER", 25),
+		HTTPTimeout:       time.Duration(envIntOr("GOPHERMIND_HTTP_TIMEOUT_S", 300)) * time.Second,
+		CmdTimeout:        time.Duration(envIntOr("GOPHERMIND_CMD_TIMEOUT_S", 120)) * time.Second,
+		StreamIdleTimeout: time.Duration(envIntOr("GOPHERMIND_STREAM_IDLE_TIMEOUT_S", 300)) * time.Second,
+		FetchAllowHosts:   envList("GOPHERMIND_FETCH_ALLOW_HOSTS"),
+		ShellCPUSeconds:   envIntOr("GOPHERMIND_SHELL_CPU_SECONDS", 0),
+		ShellMaxMemMB:     envIntOr("GOPHERMIND_SHELL_MAX_MEM_MB", 0),
+		ShellMaxProcs:     envIntOr("GOPHERMIND_SHELL_MAX_PROCS", 0),
+		NetMaxRequests:    envIntOr("GOPHERMIND_NET_MAX_REQUESTS", 0),
+		NetMaxBytes:       int64(envIntOr("GOPHERMIND_NET_MAX_BYTES", 0)),
+		BraveAPIKey:       envOr("GOPHERMIND_BRAVE_API_KEY", ""),
+		BraveEndpoint:     envOr("GOPHERMIND_BRAVE_API_URL", ""),
 
 		MaxAttempts:    envIntOr("GOPHERMIND_MAX_ATTEMPTS", 3),
 		RetryBaseDelay: time.Duration(envIntOr("GOPHERMIND_RETRY_BASE_DELAY_MS", 250)) * time.Millisecond,

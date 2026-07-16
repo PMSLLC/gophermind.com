@@ -123,19 +123,34 @@ func caPool(path string) (*x509.CertPool, error) {
 	return pool, nil
 }
 
-// httpClientFor builds an *http.Client for the given timeout and TLS options.
-// When the options need no TLS customization, it returns a plain client with
-// the default transport — byte-for-byte the prior behavior. Otherwise it
-// installs a transport whose TLSClientConfig is the validated config. Returns a
-// config-time error so startup fails fast on bad cert/key/CA input.
+// defaultResponseHeaderTimeout bounds how long the client waits for response
+// headers on any request. It replaces http.Client.Timeout as the "dead
+// endpoint fails fast" mechanism: unlike Client.Timeout, it does NOT bound
+// reading the response body, so a streaming SSE response can run arbitrarily
+// long past this once its 200 headers have arrived.
+const defaultResponseHeaderTimeout = 60 * time.Second
+
+// httpClientFor builds an *http.Client for the given TLS options. The client
+// has NO total-request cap (Timeout: 0): http.Client.Timeout bounds the whole
+// request including the response body read, which is wrong for a streaming
+// turn (see internal/llm/stream.go's idle watchdog, which replaces it for
+// Stream) and is not needed for Complete (which bounds each attempt via a
+// per-request context deadline in completeOnce using Client.totalTimeout).
+// The transport is always a clone of http.DefaultTransport with
+// ResponseHeaderTimeout set, so a dead endpoint still fails fast before any
+// bytes arrive, and — when TLS customization is requested — TLSClientConfig
+// applied on top. Returns a config-time error so startup fails fast on bad
+// cert/key/CA input.
 func httpClientFor(timeout time.Duration, o TLSOptions) (*http.Client, error) {
 	tlsCfg, err := buildTLSConfig(o)
 	if err != nil {
 		return nil, err
 	}
-	client := &http.Client{Timeout: timeout}
+	base := http.DefaultTransport.(*http.Transport).Clone()
+	base.ResponseHeaderTimeout = defaultResponseHeaderTimeout
 	if tlsCfg != nil {
-		client.Transport = &http.Transport{TLSClientConfig: tlsCfg}
+		base.TLSClientConfig = tlsCfg
 	}
+	client := &http.Client{Timeout: 0, Transport: base}
 	return client, nil
 }

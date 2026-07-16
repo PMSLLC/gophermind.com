@@ -13,7 +13,7 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("GOPHERMIND_BASE_URL", "http://example:8000")
 	t.Setenv("GOPHERMIND_MODEL", "test-model")
 	// Clear the rest so we observe defaults.
-	for _, k := range []string{"GOPHERMIND_API_KEY", "GOPHERMIND_APPROVAL", "GOPHERMIND_MAX_ITER", "GOPHERMIND_HTTP_TIMEOUT_S", "GOPHERMIND_CMD_TIMEOUT_S", "GOPHERMIND_ROOT"} {
+	for _, k := range []string{"GOPHERMIND_API_KEY", "GOPHERMIND_APPROVAL", "GOPHERMIND_MAX_ITER", "GOPHERMIND_HTTP_TIMEOUT_S", "GOPHERMIND_CMD_TIMEOUT_S", "GOPHERMIND_STREAM_IDLE_TIMEOUT_S", "GOPHERMIND_ROOT"} {
 		t.Setenv(k, "")
 	}
 
@@ -29,6 +29,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.HTTPTimeout != 300*time.Second {
 		t.Errorf("HTTPTimeout = %v, want 5m", cfg.HTTPTimeout)
+	}
+	if cfg.StreamIdleTimeout != 300*time.Second {
+		t.Errorf("StreamIdleTimeout = %v, want 300s default", cfg.StreamIdleTimeout)
 	}
 	if cfg.RootDir == "" {
 		t.Error("RootDir should default to cwd, got empty")
@@ -57,6 +60,20 @@ func TestEnvOverrides(t *testing.T) {
 	}
 	if cfg.CmdTimeout != 30*time.Second {
 		t.Errorf("CmdTimeout = %v, want 30s", cfg.CmdTimeout)
+	}
+}
+
+func TestStreamIdleTimeoutEnvOverride(t *testing.T) {
+	t.Setenv("GOPHERMIND_BASE_URL", "http://x")
+	t.Setenv("GOPHERMIND_MODEL", "m")
+	t.Setenv("GOPHERMIND_STREAM_IDLE_TIMEOUT_S", "45")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.StreamIdleTimeout != 45*time.Second {
+		t.Errorf("StreamIdleTimeout = %v, want 45s", cfg.StreamIdleTimeout)
 	}
 }
 

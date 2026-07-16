@@ -67,6 +67,18 @@ type Client struct {
 	// the field entirely when tools are absent. Set to a non-nil ToolChoiceConfig
 	// to override: force a specific tool, require tool calls, or forbid them.
 	toolChoice *ToolChoiceConfig
+
+	// totalTimeout is the per-attempt bound for the NON-streaming path
+	// (Complete), applied as a context deadline in completeOnce. The shared
+	// HTTP client itself has no total-request cap (see httpClientFor); this
+	// field is what preserves Complete's old "whole round-trip" timeout
+	// semantics now that Client.Timeout is 0. Zero disables the bound.
+	totalTimeout time.Duration
+
+	// streamIdleTimeoutOverride is the configured idle/stall timeout for
+	// Stream, set via SetStreamIdleTimeout. Zero (the default) means "use the
+	// package default" — see streamIdleTimeout().
+	streamIdleTimeoutOverride time.Duration
 }
 
 // New constructs a Client. timeout bounds a single completion round-trip.
@@ -106,7 +118,20 @@ func NewWithTLS(baseURL, apiKey, model string, timeout time.Duration, tlsOpts TL
 		// transport, which Use() resolves lazily) so middleware can wrap it
 		// without discarding the TLS configuration.
 		baseTransport: httpClient.Transport,
+		// totalTimeout preserves timeout's old meaning (the whole non-streaming
+		// round-trip) now that the shared HTTP client itself has no cap.
+		totalTimeout: timeout,
 	}, nil
+}
+
+// SetStreamIdleTimeout sets the idle/stall timeout used by Stream: if no SSE
+// frame arrives within this duration (measured between frames, and before the
+// first), the stream is aborted with an error wrapping ErrStreamIdle. Zero
+// restores the package default (300s). Concurrency-safe to call before
+// issuing requests; not intended to be changed concurrently with an in-flight
+// Stream call.
+func (c *Client) SetStreamIdleTimeout(d time.Duration) {
+	c.streamIdleTimeoutOverride = d
 }
 
 // currentBase resolves the base transport, treating nil as the default.
@@ -369,6 +394,15 @@ func (c *Client) completeModel(ctx context.Context, model string, msgs []Message
 // independent: a 5xx is both (retry this model, then fall back); a 404 is
 // fallback-eligible but not retried; a 401/400 is neither.
 func (c *Client) completeOnce(ctx context.Context, body []byte) (msg Message, usage Usage, retryAfter time.Duration, retryable, fbEligible bool, err error) {
+	// Bound this attempt's whole round-trip (connect + headers + body read) via
+	// context, since the shared HTTP client no longer has a total Timeout.
+	// Per-attempt (not per-chain/per-model-loop) matches the old Client.Timeout
+	// semantics, which applied per c.HTTP.Do call.
+	if c.totalTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, c.totalTimeout)
+		defer cancel()
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return Message{}, Usage{}, 0, false, false, fmt.Errorf("create request: %w", err)

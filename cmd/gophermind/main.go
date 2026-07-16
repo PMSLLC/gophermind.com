@@ -533,6 +533,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("TLS setup: %w", err)
 	}
+	client.SetStreamIdleTimeout(cfg.StreamIdleTimeout)
 	client.Fallbacks = cfg.FallbackModels
 	client.SetTemperature(cfg.Temperature)
 	client.SetTopP(cfg.TopP)
