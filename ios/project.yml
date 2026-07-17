@@ -46,7 +46,7 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # Signing: personal iOS development team (matches the working
         # AudioBooksQA setup). Automatic provisioning creates the profile.
-        DEVELOPMENT_TEAM: "7UHLT8YAFL"
+        DEVELOPMENT_TEAM: "REDACTEDTEAMID"
         CODE_SIGN_STYLE: Automatic
         # A5 push entitlement TEMPORARILY DISABLED for the first device deploy
         # (aps-environment needs a push-provisioned App ID). Re-enable with the
