@@ -30,12 +30,10 @@ targets:
             CFBundleURLName: com.jbrahy.gophermind
         UILaunchScreen: {}
         # A5: lets a still-running app receive the silent wake needed for
-        # remote-notification delivery/handling.
-        # TEMPORARILY DISABLED for the first personal-team device deploy — push
-        # needs the App ID provisioned for Push Notifications. Re-enable together
-        # with CODE_SIGN_ENTITLEMENTS below once the App ID has the capability.
-        # UIBackgroundModes:
-        #   - remote-notification
+        # remote-notification delivery/handling. Enabled — the App ID is now
+        # push-provisioned (profile carries aps-environment).
+        UIBackgroundModes:
+          - remote-notification
     settings:
       base:
         # NOTE: bundle id must match the APNs GOPHERMIND_APNS_BUNDLE_ID env var
@@ -48,10 +46,8 @@ targets:
         # AudioBooksQA setup). Automatic provisioning creates the profile.
         DEVELOPMENT_TEAM: "REDACTEDTEAMID"
         CODE_SIGN_STYLE: Automatic
-        # A5 push entitlement TEMPORARILY DISABLED for the first device deploy
-        # (aps-environment needs a push-provisioned App ID). Re-enable with the
-        # UIBackgroundModes block above once push is set up. See docs/mobile-serve.md.
-        # CODE_SIGN_ENTITLEMENTS: GopherMind/GopherMind.entitlements
+        # A5 push entitlement (aps-environment) — App ID is push-provisioned.
+        CODE_SIGN_ENTITLEMENTS: GopherMind/GopherMind.entitlements
     scheme:
       testTargets:
         - GopherMindTests
