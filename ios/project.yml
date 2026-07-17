@@ -42,6 +42,8 @@ targets:
         # and the user's provisioning profile (see docs/mobile-serve.md, A5).
         PRODUCT_BUNDLE_IDENTIFIER: com.jbrahy.gophermind
         TARGETED_DEVICE_FAMILY: "1,2"
+        # App icon from Assets.xcassets/AppIcon.appiconset (genius-gopher art).
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # Signing: personal iOS development team (matches the working
         # AudioBooksQA setup). Automatic provisioning creates the profile.
         DEVELOPMENT_TEAM: "7UHLT8YAFL"
