@@ -117,8 +117,10 @@ private struct SessionRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(session.title.isEmpty ? "Untitled session" : session.title)
-                .font(.body)
+            // The session ID is the meaningful name (for these, the repo name);
+            // the server "title" is just the first message (a long seed prompt).
+            Text(session.id.isEmpty ? "Untitled session" : session.id)
+                .font(.body.weight(.medium))
                 .lineLimit(1)
             Text("\(session.messages) messages · \(Self.dateFormatter.localizedString(for: session.modTime, relativeTo: Date()))")
                 .font(.caption)
