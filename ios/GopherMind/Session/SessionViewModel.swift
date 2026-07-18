@@ -52,6 +52,10 @@ final class SessionViewModel: ObservableObject {
             let messages = try await service.getMessages(sessionID: sessionID)
             guard items.isEmpty, !isStreaming else { return }
             items = Self.historyItems(from: messages)
+        } catch APIClient.APIError.notFound {
+            // A session created (e.g. via the New Session model picker) but
+            // never sent a turn yet has no history on disk — that's not a
+            // failure, just nothing to show.
         } catch {
             items.append(ConversationItem(kind: .errorLine("Failed to load history: \(error.localizedDescription)")))
         }
@@ -61,7 +65,7 @@ final class SessionViewModel: ObservableObject {
         if let sessionID {
             return sessionID
         }
-        let id = try await service.createSession(id: nil)
+        let id = try await service.createSession(id: nil, model: nil)
         sessionID = id
         return id
     }

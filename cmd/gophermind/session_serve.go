@@ -71,6 +71,7 @@ func sessionCreateHandler() http.HandlerFunc {
 			return
 		}
 		id := ""
+		model := ""
 		if r.Body != nil {
 			body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 			if err != nil {
@@ -79,22 +80,59 @@ func sessionCreateHandler() http.HandlerFunc {
 			}
 			if len(bytes.TrimSpace(body)) > 0 {
 				var j struct {
-					ID string `json:"id"`
+					ID    string `json:"id"`
+					Model string `json:"model"`
 				}
-				if json.Unmarshal(body, &j) == nil && j.ID != "" {
-					if err := validSessionID(j.ID); err != nil {
-						http.Error(w, err.Error(), http.StatusBadRequest)
-						return
+				if json.Unmarshal(body, &j) == nil {
+					if j.ID != "" {
+						if err := validSessionID(j.ID); err != nil {
+							http.Error(w, err.Error(), http.StatusBadRequest)
+							return
+						}
+						id = j.ID
 					}
-					id = j.ID
+					model = strings.TrimSpace(j.Model)
 				}
 			}
 		}
 		if id == "" {
 			id = stream.NewSessionID()
 		}
+		if model != "" {
+			if err := writeSessionModel(id, model); err != nil {
+				http.Error(w, "write model", http.StatusInternalServerError)
+				return
+			}
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
+		resp := map[string]string{"id": id}
+		if model != "" {
+			resp["model"] = model
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}
+}
+
+// modelsHandler handles GET /models: it returns the endpoint's available
+// models via list, or a 502 if the list can't be fetched.
+func modelsHandler(list func() ([]string, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "use GET", http.StatusMethodNotAllowed)
+			return
+		}
+		models, err := list()
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadGateway)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "models unavailable"})
+			return
+		}
+		if models == nil {
+			models = []string{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string][]string{"models": models})
 	}
 }
 

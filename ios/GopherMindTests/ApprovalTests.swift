@@ -100,8 +100,12 @@ private final class FakeGopherMindService: GopherMindServicing {
     private(set) var approveCalls: [ApproveCall] = []
     var approveError: Error?
 
-    func createSession(id: String?) async throws -> String {
+    func createSession(id: String?, model: String?) async throws -> String {
         id ?? "generated-session"
+    }
+
+    func listModels() async throws -> [String] {
+        []
     }
 
     func approve(sessionID: String, approvalID: String, approved: Bool) async throws {

@@ -1010,6 +1010,9 @@ func run() error {
 					ag.AppendSystemPrompt(systemSuffix)
 				}
 			}
+			if m := readSessionModel(id); m != "" {
+				ag.SetModel(m)
+			}
 			_, err := ag.Send(ctx, t)
 			if serr := session.Save(id, ag); serr != nil && err == nil {
 				err = serr
@@ -1044,7 +1047,15 @@ func run() error {
 			}
 			return out, true, sc.Err()
 		}
-		return runServe(run, metrics, stream, sessionTurn, approvals, devStore, loadMessages)
+		// listModels backs GET /models: it proxies the configured endpoint's
+		// model list with a bounded timeout so a slow/unreachable endpoint
+		// can't hang the request indefinitely.
+		listModels := func() ([]string, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			return client.ListModels(ctx)
+		}
+		return runServe(run, metrics, stream, sessionTurn, approvals, devStore, loadMessages, listModels)
 	case "queue":
 		if task == "" {
 			return fmt.Errorf("queue requires a file of tasks (one per line)")
