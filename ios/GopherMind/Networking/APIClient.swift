@@ -28,9 +28,29 @@ actor APIClient {
     }
 
     private static let encoder = JSONEncoder()
-    private static let decoder: JSONDecoder = {
+    // Exposed so the connection-debug screen can decode with the exact same
+    // strategy the app uses in production (so its "Decode" check is faithful).
+    static let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        // Go's time.Time marshals RFC3339 with variable fractional seconds up to
+        // nanosecond precision (e.g. "2026-07-17T23:49:34.717505559Z"), which the
+        // stock .iso8601 strategy CANNOT parse — it would throw and fail the whole
+        // response. Parse leniently: try fractional, then plain, then strip the
+        // sub-second fraction and retry. Never fail decode over a display date.
+        decoder.dateDecodingStrategy = .custom { dec in
+            let raw = try dec.singleValueContainer().decode(String.self)
+            let frac = ISO8601DateFormatter()
+            frac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let d = frac.date(from: raw) { return d }
+            let plain = ISO8601DateFormatter()
+            plain.formatOptions = [.withInternetDateTime]
+            if let d = plain.date(from: raw) { return d }
+            if let r = raw.range(of: #"\.\d+"#, options: .regularExpression) {
+                var s = raw; s.removeSubrange(r)
+                if let d = plain.date(from: s) { return d }
+            }
+            return Date(timeIntervalSince1970: 0)
+        }
         return decoder
     }()
 

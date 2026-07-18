@@ -24,6 +24,12 @@ struct SettingsView: View {
                     step: 5
                 )
             }
+
+            Section("Diagnostics") {
+                NavigationLink("Connection Debug") {
+                    ConnectionDebugView(settings: settings)
+                }
+            }
         }
         .navigationTitle("Settings")
     }
