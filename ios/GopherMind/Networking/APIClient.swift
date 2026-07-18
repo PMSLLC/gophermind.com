@@ -63,18 +63,28 @@ actor APIClient {
 
     /// `POST /session` → `{"id": "<id>"}`. Pass `id` to choose one (must
     /// match `^[A-Za-z0-9._-]+$` server-side); omit to get a generated id.
-    func createSession(id: String? = nil) async throws -> String {
-        struct CreateRequest: Encodable { let id: String }
+    /// Pass `model` to pin the session to a specific model (stored
+    /// server-side in a sidecar file next to the session); omit to use the
+    /// server's default model.
+    func createSession(id: String? = nil, model: String? = nil) async throws -> String {
+        struct CreateRequest: Encodable { let id: String?; let model: String? }
         struct CreateResponse: Decodable { let id: String }
 
         let body: RequestBuilder.Body
-        if let id {
-            body = .json(try Self.encoder.encode(CreateRequest(id: id)))
+        if id != nil || model != nil {
+            body = .json(try Self.encoder.encode(CreateRequest(id: id, model: model)))
         } else {
             body = .none
         }
         let data = try await send(path: "/session", method: "POST", body: body)
         return try Self.decoder.decode(CreateResponse.self, from: data).id
+    }
+
+    /// `GET /models` → `{"models": [...]}`, the endpoint's available models.
+    func listModels() async throws -> [String] {
+        struct ModelsResponse: Decodable { let models: [String] }
+        let data = try await send(path: "/models", method: "GET")
+        return try Self.decoder.decode(ModelsResponse.self, from: data).models
     }
 
     /// `GET /session` → array of saved sessions (never null; `[]` when empty).

@@ -223,7 +223,7 @@ func serveToken() (string, error) {
 // sessionMessages (when non-nil, alongside sessionTurn) additionally
 // registers GET /session/{id}/messages, returning a session's stored
 // conversation for history replay.
-func runServe(run func(ctx context.Context, task string) (string, error), metrics *serveMetrics, stream func(ctx context.Context, task string, emit func(string)) error, sessionTurn SessionTurn, approvals *approvalRegistry, devStore *deviceStore, sessionMessages func(id string) ([]json.RawMessage, bool, error)) error {
+func runServe(run func(ctx context.Context, task string) (string, error), metrics *serveMetrics, stream func(ctx context.Context, task string, emit func(string)) error, sessionTurn SessionTurn, approvals *approvalRegistry, devStore *deviceStore, sessionMessages func(id string) ([]json.RawMessage, bool, error), listModels func() ([]string, error)) error {
 	token, err := serveToken()
 	if err != nil {
 		return err
@@ -280,6 +280,9 @@ func runServe(run func(ctx context.Context, task string) (string, error), metric
 		}
 		if approvals != nil {
 			mux.Handle("POST /session/{id}/approve", sessionWrap(sessionApproveHandler(approvals)))
+		}
+		if listModels != nil {
+			mux.Handle("GET /models", sessionWrap(modelsHandler(listModels)))
 		}
 	}
 	if devStore != nil {

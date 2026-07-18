@@ -13,13 +13,18 @@ import SwiftUI
 struct SessionListView: View {
     @ObservedObject var settings: AppSettings
     @StateObject private var viewModel: SessionListViewModel
+    private let service: GopherMindServicing
     var onSelect: (String) -> Void
-    var onNewSession: () -> Void
+    /// Called with the id of a session just created via the New Session
+    /// sheet's model picker, so the caller can navigate straight into it.
+    var onNewSession: (String) -> Void
+    @State private var showingNewSessionSheet = false
 
-    init(settings: AppSettings, onSelect: @escaping (String) -> Void, onNewSession: @escaping () -> Void) {
+    init(settings: AppSettings, onSelect: @escaping (String) -> Void, onNewSession: @escaping (String) -> Void) {
         self.settings = settings
         self.onSelect = onSelect
         self.onNewSession = onNewSession
+        self.service = GopherMindService(settings: settings)
         _viewModel = StateObject(wrappedValue: SessionListViewModel(service: GopherMindService(settings: settings)))
     }
 
@@ -34,7 +39,7 @@ struct SessionListView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        onNewSession()
+                        showingNewSessionSheet = true
                     } label: {
                         Label("New Session", systemImage: "square.and.pencil")
                     }
@@ -45,6 +50,9 @@ struct SessionListView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(viewModel.errorMessage ?? "")
+            }
+            .sheet(isPresented: $showingNewSessionSheet) {
+                NewSessionSheet(service: service, onCreated: onNewSession)
             }
     }
 
@@ -88,7 +96,7 @@ struct SessionListView: View {
             Text("Start a new conversation to see it here.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-            Button("New Session", action: onNewSession)
+            Button("New Session") { showingNewSessionSheet = true }
                 .buttonStyle(.borderedProminent)
                 .padding(.top, 4)
         }
@@ -132,6 +140,6 @@ private struct SessionRow: View {
 
 #Preview {
     NavigationStack {
-        SessionListView(settings: AppSettings(), onSelect: { _ in }, onNewSession: {})
+        SessionListView(settings: AppSettings(), onSelect: { _ in }, onNewSession: { _ in })
     }
 }

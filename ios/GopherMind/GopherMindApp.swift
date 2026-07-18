@@ -18,11 +18,12 @@ struct GopherMindApp: App {
 }
 
 /// One entry in the root nav stack: either an existing session (continues
-/// its server-side memory — see `SessionListView`'s LIMITATION note), a
-/// fresh one, or a push-notification deep-link into a pending approval.
+/// its server-side memory — see `SessionListView`'s LIMITATION note; a
+/// session just created via the New Session sheet is also routed here,
+/// since by the time we navigate it already has an id), or a
+/// push-notification deep-link into a pending approval.
 private enum SessionRoute: Hashable {
     case existing(id: String)
-    case new
     case approval(ApprovalRoute)
 }
 
@@ -41,7 +42,7 @@ struct ContentView: View {
             SessionListView(
                 settings: settings,
                 onSelect: { id in path.append(SessionRoute.existing(id: id)) },
-                onNewSession: { path.append(SessionRoute.new) }
+                onNewSession: { id in path.append(SessionRoute.existing(id: id)) }
             )
             // Rebuild (and reload sessions) whenever the configured server changes,
             // e.g. right after a setup link is applied.
@@ -50,8 +51,6 @@ struct ContentView: View {
                 switch route {
                 case .existing(let id):
                     ConversationView(viewModel: SessionViewModel(service: GopherMindService(settings: settings), sessionID: id))
-                case .new:
-                    ConversationView(viewModel: SessionViewModel(service: GopherMindService(settings: settings)))
                 case .approval(let approvalRoute):
                     let viewModel = SessionViewModel(service: GopherMindService(settings: settings))
                     ConversationView(viewModel: viewModel)
