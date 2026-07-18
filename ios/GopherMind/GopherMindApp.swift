@@ -34,6 +34,7 @@ struct ContentView: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var router: PushRouter
     @State private var path = NavigationPath()
+    @State private var pairedHost: String?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -42,6 +43,9 @@ struct ContentView: View {
                 onSelect: { id in path.append(SessionRoute.existing(id: id)) },
                 onNewSession: { path.append(SessionRoute.new) }
             )
+            // Rebuild (and reload sessions) whenever the configured server changes,
+            // e.g. right after a setup link is applied.
+            .id(settings.serverURL)
             .navigationDestination(for: SessionRoute.self) { route in
                 switch route {
                 case .existing(let id):
@@ -59,6 +63,21 @@ struct ContentView: View {
             guard let route else { return }
             path.append(SessionRoute.approval(route))
             router.pendingRoute = nil
+        }
+        // One-tap setup: a gophermind://setup?c=<base64> link carries the whole
+        // config (server URL + token + optional HMAC) into the app.
+        .onOpenURL { url in
+            guard let cfg = PairingConfig.parse(url.absoluteString) else { return }
+            settings.apply(cfg)
+            pairedHost = URL(string: cfg.serverURL)?.host ?? cfg.serverURL
+        }
+        .alert("Configured", isPresented: Binding(
+            get: { pairedHost != nil },
+            set: { if !$0 { pairedHost = nil } }
+        )) {
+            Button("OK") { pairedHost = nil }
+        } message: {
+            Text("Connected to \(pairedHost ?? ""). Your sessions should load now.")
         }
     }
 }
