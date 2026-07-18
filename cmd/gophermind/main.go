@@ -1005,7 +1005,7 @@ func run() error {
 					return err
 				}
 			} else {
-				ag.SetSystemPrompt(basePrompt)
+				ag.SetSystemPrompt(systemPromptForMode(readSessionMode(id), basePrompt, cfg.RootDir))
 				if systemSuffix != "" {
 					ag.AppendSystemPrompt(systemSuffix)
 				}

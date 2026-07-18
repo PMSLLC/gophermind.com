@@ -58,6 +58,48 @@ final class APIClientTests: XCTestCase {
         XCTAssertNil(decoded["id"])
     }
 
+    func testCreateSessionIncludesModeInRequestBody() async throws {
+        var capturedBody: Data?
+        MockURLProtocol.requestHandler = { request in
+            capturedBody = request.capturedBodyData
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (response, Data(#"{"id":"generated"}"#.utf8))
+        }
+
+        _ = try await makeClient().createSession(mode: "conversational")
+
+        let body = try XCTUnwrap(capturedBody)
+        let decoded = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: String])
+        XCTAssertEqual(decoded["mode"], "conversational")
+        XCTAssertNil(decoded["model"])
+    }
+
+    func testGetModesDecodesModesArray() async throws {
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.url?.path, "/modes")
+            XCTAssertEqual(request.httpMethod, "GET")
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (response, Data(#"{"modes":[{"id":"coding","label":"Coding agent"},{"id":"conversational","label":"Conversational"}]}"#.utf8))
+        }
+
+        let modes = try await makeClient().getModes()
+
+        XCTAssertEqual(modes, [Mode(id: "coding", label: "Coding agent"), Mode(id: "conversational", label: "Conversational")])
+    }
+
+    func testGetSessionConfigDecodesModelAndMode() async throws {
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.url?.path, "/session/sess-1/config")
+            XCTAssertEqual(request.httpMethod, "GET")
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (response, Data(#"{"model":"gpt-4o","mode":"conversational"}"#.utf8))
+        }
+
+        let config = try await makeClient().getSessionConfig(sessionID: "sess-1")
+
+        XCTAssertEqual(config, SessionConfig(model: "gpt-4o", mode: "conversational"))
+    }
+
     func testCreateSessionWithNoIDOrModelSendsNoBody() async throws {
         var capturedBody: Data?
         var sawBody = false

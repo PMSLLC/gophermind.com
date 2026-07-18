@@ -65,14 +65,16 @@ actor APIClient {
     /// match `^[A-Za-z0-9._-]+$` server-side); omit to get a generated id.
     /// Pass `model` to pin the session to a specific model (stored
     /// server-side in a sidecar file next to the session); omit to use the
-    /// server's default model.
-    func createSession(id: String? = nil, model: String? = nil) async throws -> String {
-        struct CreateRequest: Encodable { let id: String?; let model: String? }
+    /// server's default model. Pass `mode` to pin the session to a specific
+    /// mode (also a sidecar file), which determines the system prompt a
+    /// brand-new session starts with; omit to use the default coding prompt.
+    func createSession(id: String? = nil, model: String? = nil, mode: String? = nil) async throws -> String {
+        struct CreateRequest: Encodable { let id: String?; let model: String?; let mode: String? }
         struct CreateResponse: Decodable { let id: String }
 
         let body: RequestBuilder.Body
-        if id != nil || model != nil {
-            body = .json(try Self.encoder.encode(CreateRequest(id: id, model: model)))
+        if id != nil || model != nil || mode != nil {
+            body = .json(try Self.encoder.encode(CreateRequest(id: id, model: model, mode: mode)))
         } else {
             body = .none
         }
@@ -85,6 +87,21 @@ actor APIClient {
         struct ModelsResponse: Decodable { let models: [String] }
         let data = try await send(path: "/models", method: "GET")
         return try Self.decoder.decode(ModelsResponse.self, from: data).models
+    }
+
+    /// `GET /modes` → `{"modes": [...]}`, the fixed set of session modes the
+    /// app can offer in its mode picker.
+    func getModes() async throws -> [Mode] {
+        struct ModesResponse: Decodable { let modes: [Mode] }
+        let data = try await send(path: "/modes", method: "GET")
+        return try Self.decoder.decode(ModesResponse.self, from: data).modes
+    }
+
+    /// `GET /session/{id}/config` → the session's stored model and mode, so
+    /// the app can show what it's actually running with.
+    func getSessionConfig(sessionID: String) async throws -> SessionConfig {
+        let data = try await send(path: "/session/\(sessionID)/config", method: "GET")
+        return try Self.decoder.decode(SessionConfig.self, from: data)
     }
 
     /// `GET /session` → array of saved sessions (never null; `[]` when empty).

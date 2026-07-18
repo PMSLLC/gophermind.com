@@ -72,6 +72,7 @@ func sessionCreateHandler() http.HandlerFunc {
 		}
 		id := ""
 		model := ""
+		mode := ""
 		if r.Body != nil {
 			body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 			if err != nil {
@@ -82,6 +83,7 @@ func sessionCreateHandler() http.HandlerFunc {
 				var j struct {
 					ID    string `json:"id"`
 					Model string `json:"model"`
+					Mode  string `json:"mode"`
 				}
 				if json.Unmarshal(body, &j) == nil {
 					if j.ID != "" {
@@ -92,6 +94,7 @@ func sessionCreateHandler() http.HandlerFunc {
 						id = j.ID
 					}
 					model = strings.TrimSpace(j.Model)
+					mode = strings.TrimSpace(j.Mode)
 				}
 			}
 		}
@@ -104,10 +107,19 @@ func sessionCreateHandler() http.HandlerFunc {
 				return
 			}
 		}
+		if mode != "" {
+			if err := writeSessionMode(id, mode); err != nil {
+				http.Error(w, "write mode", http.StatusInternalServerError)
+				return
+			}
+		}
 		w.Header().Set("Content-Type", "application/json")
 		resp := map[string]string{"id": id}
 		if model != "" {
 			resp["model"] = model
+		}
+		if mode != "" {
+			resp["mode"] = mode
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	}
@@ -133,6 +145,50 @@ func modelsHandler(list func() ([]string, error)) http.HandlerFunc {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string][]string{"models": models})
+	}
+}
+
+// modesResponse is the static payload GET /modes returns.
+var modesResponse = map[string][]map[string]string{
+	"modes": {
+		{"id": "coding", "label": "Coding agent"},
+		{"id": "conversational", "label": "Conversational"},
+		{"id": "reviewer", "label": "Reviewer"},
+		{"id": "architect", "label": "Architect"},
+		{"id": "tester", "label": "Tester"},
+	},
+}
+
+// modesHandler handles GET /modes: it returns the fixed set of session modes
+// the app can offer in its mode picker.
+func modesHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "use GET", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(modesResponse)
+}
+
+// sessionConfigHandler handles GET /session/{id}/config: it returns id's
+// stored model and mode (empty strings when unset), so the app can display
+// which model/mode a session is actually running with.
+func sessionConfigHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "use GET", http.StatusMethodNotAllowed)
+			return
+		}
+		id := r.PathValue("id")
+		if err := validSessionID(id); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"model": readSessionModel(id),
+			"mode":  readSessionMode(id),
+		})
 	}
 }
 

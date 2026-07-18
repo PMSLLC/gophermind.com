@@ -7,6 +7,11 @@ final class SessionViewModel: ObservableObject {
     @Published private(set) var items: [ConversationItem] = []
     @Published var inputText: String = ""
     @Published private(set) var isStreaming: Bool = false
+    /// The session's active model/mode (`GET /session/{id}/config`), for
+    /// display in the conversation header. `nil` until loaded (or for a
+    /// session whose sidecars are both unset, in which case it's still
+    /// non-nil but with empty `model`/`mode` — see `loadConfigIfNeeded`).
+    @Published private(set) var config: SessionConfig?
 
     private let service: GopherMindServicing
     private(set) var sessionID: String?
@@ -61,11 +66,26 @@ final class SessionViewModel: ObservableObject {
         }
     }
 
+    /// Fetches the session's active model/mode for display, once, for an
+    /// already-known session. A brand-new session (sessionID nil) is a
+    /// no-op — same shape as `loadHistoryIfNeeded`. A 404 (or any other
+    /// fetch failure) is treated as "defaults": `config` is left `nil`
+    /// rather than surfaced as an error, since this is a lightweight header,
+    /// not something worth interrupting the conversation over.
+    func loadConfigIfNeeded() async {
+        guard let sessionID, config == nil else { return }
+        do {
+            config = try await service.getSessionConfig(sessionID: sessionID)
+        } catch {
+            // Leave config nil — the header simply shows nothing / defaults.
+        }
+    }
+
     private func resolvedSessionID() async throws -> String {
         if let sessionID {
             return sessionID
         }
-        let id = try await service.createSession(id: nil, model: nil)
+        let id = try await service.createSession(id: nil, model: nil, mode: nil)
         sessionID = id
         return id
     }

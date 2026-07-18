@@ -9,6 +9,14 @@ struct ConversationView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if let subtitle = configSubtitle {
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 6)
+            }
+
             if viewModel.items.isEmpty {
                 emptyState
             } else {
@@ -42,7 +50,18 @@ struct ConversationView: View {
             // screen yet) loads its stored transcript; a brand-new session
             // (sessionID nil) is a no-op — see `loadHistoryIfNeeded`.
             await viewModel.loadHistoryIfNeeded()
+            await viewModel.loadConfigIfNeeded()
         }
+    }
+
+    /// "<model> · <Mode>" (e.g. "qwen3.6-35b · Conversational") for the
+    /// header, from `viewModel.config`; `nil` before it loads or when both
+    /// model and mode are unset (nothing meaningful to show).
+    private var configSubtitle: String? {
+        guard let config = viewModel.config, !(config.model.isEmpty && config.mode.isEmpty) else { return nil }
+        let modeLabel = config.mode.isEmpty ? "Coding" : config.mode.capitalized
+        guard !config.model.isEmpty else { return modeLabel }
+        return "\(config.model) · \(modeLabel)"
     }
 
     private var emptyState: some View {
