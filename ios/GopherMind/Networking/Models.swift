@@ -21,6 +21,21 @@ struct SessionInfo: Decodable, Equatable, Identifiable {
     }
 }
 
+/// One entry of `GET /modes` — a session mode the app can offer in its mode
+/// picker (`{"id":"conversational","label":"Conversational"}`).
+struct Mode: Decodable, Equatable, Identifiable {
+    let id: String
+    let label: String
+}
+
+/// `GET /session/{id}/config` — a session's stored model and mode, so the
+/// app can display what it's actually running with. Empty strings mean
+/// "unset" (server default model / coding mode).
+struct SessionConfig: Decodable, Equatable {
+    let model: String
+    let mode: String
+}
+
 /// One line of `GET /session/{id}/messages` — the agent's stored
 /// conversation, in the OpenAI chat-completion message shape it already
 /// persists as JSONL (`internal/agent.ExportJSONL`). JSON keys are

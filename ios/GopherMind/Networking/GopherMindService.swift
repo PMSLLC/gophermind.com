@@ -6,8 +6,10 @@ import Foundation
 /// `GopherMindTests/ApprovalTests.swift`).
 @MainActor
 protocol GopherMindServicing {
-    func createSession(id: String?, model: String?) async throws -> String
+    func createSession(id: String?, model: String?, mode: String?) async throws -> String
     func listModels() async throws -> [String]
+    func getModes() async throws -> [Mode]
+    func getSessionConfig(sessionID: String) async throws -> SessionConfig
     func approve(sessionID: String, approvalID: String, approved: Bool) async throws
     func stream(sessionID: String, task: String) throws -> AsyncThrowingStream<AgentEvent, Error>
     func getMessages(sessionID: String) async throws -> [StoredMessage]
@@ -53,12 +55,20 @@ final class GopherMindService: GopherMindServicing {
         return APIClient(configuration: configuration)
     }
 
-    func createSession(id: String? = nil, model: String? = nil) async throws -> String {
-        try await makeClient().createSession(id: id, model: model)
+    func createSession(id: String? = nil, model: String? = nil, mode: String? = nil) async throws -> String {
+        try await makeClient().createSession(id: id, model: model, mode: mode)
     }
 
     func listModels() async throws -> [String] {
         try await makeClient().listModels()
+    }
+
+    func getModes() async throws -> [Mode] {
+        try await makeClient().getModes()
+    }
+
+    func getSessionConfig(sessionID: String) async throws -> SessionConfig {
+        try await makeClient().getSessionConfig(sessionID: sessionID)
     }
 
     func listSessions() async throws -> [SessionInfo] {
