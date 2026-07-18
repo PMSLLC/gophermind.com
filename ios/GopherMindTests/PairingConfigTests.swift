@@ -4,7 +4,7 @@ import XCTest
 final class PairingConfigTests: XCTestCase {
     func testRoundTripThroughLink() throws {
         let cfg = PairingConfig(serverURL: "http://10.0.0.5:8090",
-                                bearerToken: "d99c92b8ca1549dd",
+                                bearerToken: "test-bearer-token-xyz",
                                 hmacSecret: nil)
         let parsed = try XCTUnwrap(PairingConfig.parse(cfg.link))
         XCTAssertEqual(parsed.serverURL, cfg.serverURL)
