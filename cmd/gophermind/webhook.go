@@ -220,7 +220,10 @@ func serveToken() (string, error) {
 // /session/{id}/approve, resolving a pending remote tool-approval gate.
 // devStore (when non-nil) registers POST /devices (S4 APNs device
 // registration), behind the same sessionAuth as the /session routes.
-func runServe(run func(ctx context.Context, task string) (string, error), metrics *serveMetrics, stream func(ctx context.Context, task string, emit func(string)) error, sessionTurn SessionTurn, approvals *approvalRegistry, devStore *deviceStore) error {
+// sessionMessages (when non-nil, alongside sessionTurn) additionally
+// registers GET /session/{id}/messages, returning a session's stored
+// conversation for history replay.
+func runServe(run func(ctx context.Context, task string) (string, error), metrics *serveMetrics, stream func(ctx context.Context, task string, emit func(string)) error, sessionTurn SessionTurn, approvals *approvalRegistry, devStore *deviceStore, sessionMessages func(id string) ([]json.RawMessage, bool, error)) error {
 	token, err := serveToken()
 	if err != nil {
 		return err
@@ -272,6 +275,9 @@ func runServe(run func(ctx context.Context, task string) (string, error), metric
 		mux.Handle("POST /session/{id}/stream", sessionWrap(sessionStreamHandler(sessionTurn, locks)))
 		mux.Handle("GET /session", sessionWrap(sessionListHandler(session.List)))
 		mux.Handle("DELETE /session/{id}", sessionWrap(sessionDeleteHandler(session.Remove)))
+		if sessionMessages != nil {
+			mux.Handle("GET /session/{id}/messages", sessionWrap(sessionMessagesHandler(sessionMessages)))
+		}
 		if approvals != nil {
 			mux.Handle("POST /session/{id}/approve", sessionWrap(sessionApproveHandler(approvals)))
 		}

@@ -40,6 +40,23 @@ final class SessionViewModel: ObservableObject {
         }
     }
 
+    /// Loads and renders an existing session's stored transcript, so opening
+    /// a session from the list doesn't show an empty conversation. Only
+    /// fires for an already-known session (`sessionID != nil`) with nothing
+    /// on screen yet, and never while a turn is streaming — re-checked after
+    /// the network round trip so a `send()` that starts mid-fetch is never
+    /// clobbered by a stale history load landing after it.
+    func loadHistoryIfNeeded() async {
+        guard let sessionID, items.isEmpty, !isStreaming else { return }
+        do {
+            let messages = try await service.getMessages(sessionID: sessionID)
+            guard items.isEmpty, !isStreaming else { return }
+            items = Self.historyItems(from: messages)
+        } catch {
+            items.append(ConversationItem(kind: .errorLine("Failed to load history: \(error.localizedDescription)")))
+        }
+    }
+
     private func resolvedSessionID() async throws -> String {
         if let sessionID {
             return sessionID
@@ -100,6 +117,77 @@ final class SessionViewModel: ObservableObject {
         }
         guard !alreadyPresent else { return }
         items.append(ConversationItem(kind: .approvalPending(approvalID: route.approvalID, tool: route.tool ?? "tool", args: "")))
+    }
+
+    // MARK: - Pure history mapper
+
+    /// Maps a session's stored OpenAI-format messages (`GET
+    /// /session/{id}/messages`) to the same `ConversationItem` rows the live
+    /// SSE reducer produces, so a reopened session renders like one that
+    /// never left: `system` rows are dropped, an `assistant` message's
+    /// `tool_calls` become `.tool` rows immediately following it, and each
+    /// `tool` message resolves the matching pending `.tool` row's result
+    /// (by `tool_call_id` when the call carried one, else the most recent
+    /// still-pending row).
+    nonisolated static func historyItems(from messages: [StoredMessage]) -> [ConversationItem] {
+        var items: [ConversationItem] = []
+        // ConversationItem.tool carries no id of its own, so track each
+        // tool-row's originating tool_call id out-of-band for id-based
+        // result matching.
+        var toolCallIDsByItemID: [UUID: String] = [:]
+
+        for message in messages {
+            switch message.role {
+            case "system":
+                continue
+
+            case "user":
+                if let content = message.content, !content.isEmpty {
+                    items.append(ConversationItem(kind: .user(content)))
+                }
+
+            case "assistant":
+                if let content = message.content, !content.isEmpty {
+                    items.append(ConversationItem(kind: .assistant(content)))
+                }
+                for call in message.toolCalls ?? [] {
+                    let item = ConversationItem(kind: .tool(name: call.function.name, args: call.function.arguments, result: nil))
+                    if let id = call.id {
+                        toolCallIDsByItemID[item.id] = id
+                    }
+                    items.append(item)
+                }
+
+            case "tool":
+                if let index = pendingToolIndex(in: items, toolCallIDs: toolCallIDsByItemID, matching: message.toolCallID),
+                   case .tool(let name, let args, _) = items[index].kind {
+                    items[index].kind = .tool(name: name, args: args, result: message.content ?? "")
+                }
+
+            default:
+                continue
+            }
+        }
+
+        return items
+    }
+
+    /// Finds the pending (`result == nil`) `.tool` row a `tool` message's
+    /// result belongs to: the row whose recorded `tool_call_id` matches, or
+    /// (when the message carries no id, or no row matches it) the most
+    /// recently appended still-pending row.
+    private nonisolated static func pendingToolIndex(in items: [ConversationItem], toolCallIDs: [UUID: String], matching toolCallID: String?) -> Int? {
+        if let toolCallID,
+           let index = items.lastIndex(where: {
+               guard case .tool(_, _, let result) = $0.kind, result == nil else { return false }
+               return toolCallIDs[$0.id] == toolCallID
+           }) {
+            return index
+        }
+        return items.lastIndex(where: {
+            guard case .tool(_, _, let result) = $0.kind else { return false }
+            return result == nil
+        })
     }
 
     // MARK: - Pure reducer

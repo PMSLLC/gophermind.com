@@ -116,4 +116,8 @@ private final class FakeGopherMindService: GopherMindServicing {
             continuation.finish()
         }
     }
+
+    func getMessages(sessionID: String) async throws -> [StoredMessage] {
+        []
+    }
 }

@@ -6,6 +6,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -1015,7 +1016,35 @@ func run() error {
 			}
 			return err
 		}
-		return runServe(run, metrics, stream, sessionTurn, approvals, devStore)
+		// loadMessages backs GET /session/{id}/messages: it replays a saved
+		// session into a fresh agent and re-exports its history as JSONL, so
+		// the phone can render the transcript of a session it did not just
+		// create in this process.
+		loadMessages := func(id string) ([]json.RawMessage, bool, error) {
+			if !session.Exists(id) {
+				return nil, false, nil
+			}
+			ag := agent.New(client, reg, cfg.MaxIter, approve, nil)
+			if err := session.Load(id, ag); err != nil {
+				return nil, true, err
+			}
+			var buf bytes.Buffer
+			if err := ag.ExportJSONL(&buf); err != nil {
+				return nil, true, err
+			}
+			var out []json.RawMessage
+			sc := bufio.NewScanner(&buf)
+			sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+			for sc.Scan() {
+				line := bytes.TrimSpace(sc.Bytes())
+				if len(line) == 0 {
+					continue
+				}
+				out = append(out, append(json.RawMessage(nil), line...))
+			}
+			return out, true, sc.Err()
+		}
+		return runServe(run, metrics, stream, sessionTurn, approvals, devStore, loadMessages)
 	case "queue":
 		if task == "" {
 			return fmt.Errorf("queue requires a file of tasks (one per line)")

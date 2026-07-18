@@ -88,6 +88,13 @@ actor APIClient {
         _ = try await send(path: "/session/\(id)", method: "DELETE")
     }
 
+    /// `GET /session/{id}/messages` → the session's stored conversation, one
+    /// `StoredMessage` per persisted JSONL line (system/user/assistant/tool).
+    func getMessages(sessionID: String) async throws -> [StoredMessage] {
+        let data = try await send(path: "/session/\(sessionID)/messages", method: "GET")
+        return try Self.decoder.decode([StoredMessage].self, from: data)
+    }
+
     // MARK: - Devices / approvals
 
     /// `POST /devices` → registers an APNs device token for push.

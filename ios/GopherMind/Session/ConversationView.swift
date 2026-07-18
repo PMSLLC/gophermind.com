@@ -37,6 +37,12 @@ struct ConversationView: View {
             Divider()
             inputBar
         }
+        .task {
+            // Opening an existing session (sessionID already set, nothing on
+            // screen yet) loads its stored transcript; a brand-new session
+            // (sessionID nil) is a no-op — see `loadHistoryIfNeeded`.
+            await viewModel.loadHistoryIfNeeded()
+        }
     }
 
     private var emptyState: some View {

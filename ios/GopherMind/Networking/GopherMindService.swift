@@ -9,6 +9,7 @@ protocol GopherMindServicing {
     func createSession(id: String?) async throws -> String
     func approve(sessionID: String, approvalID: String, approved: Bool) async throws
     func stream(sessionID: String, task: String) throws -> AsyncThrowingStream<AgentEvent, Error>
+    func getMessages(sessionID: String) async throws -> [StoredMessage]
 }
 
 /// Thin adapter between `AppSettings` and `APIClient`. The UI (A3) calls
@@ -73,5 +74,9 @@ final class GopherMindService: GopherMindServicing {
 
     func stream(sessionID: String, task: String) throws -> AsyncThrowingStream<AgentEvent, Error> {
         try makeClient().stream(sessionID: sessionID, task: task)
+    }
+
+    func getMessages(sessionID: String) async throws -> [StoredMessage] {
+        try await makeClient().getMessages(sessionID: sessionID)
     }
 }

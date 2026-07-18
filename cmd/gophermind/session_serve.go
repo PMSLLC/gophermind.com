@@ -187,6 +187,36 @@ func sessionDeleteHandler(remove func(string) error) http.HandlerFunc {
 	}
 }
 
+// sessionMessagesHandler handles GET /session/{id}/messages: it returns the
+// named session's stored conversation as a JSON array of raw OpenAI-format
+// message objects, via load (found==false -> 404, err -> 500).
+func sessionMessagesHandler(load func(id string) ([]json.RawMessage, bool, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "use GET", http.StatusMethodNotAllowed)
+			return
+		}
+		id := r.PathValue("id")
+		if err := validSessionID(id); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		messages, found, err := load(id)
+		if err != nil {
+			http.Error(w, "load failed", http.StatusInternalServerError)
+			return
+		}
+		if !found {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "no such session"})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(messages)
+	}
+}
+
 // sessionAuth wraps h with the same bearer-token and optional HMAC checks
 // webhookHandler/sseHandler apply to /run and /run/stream, so the session
 // endpoints share one auth story. HMAC verification consumes and restores the

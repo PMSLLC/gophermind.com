@@ -20,3 +20,32 @@ struct SessionInfo: Decodable, Equatable, Identifiable {
         case title = "Title"
     }
 }
+
+/// One line of `GET /session/{id}/messages` — the agent's stored
+/// conversation, in the OpenAI chat-completion message shape it already
+/// persists as JSONL (`internal/agent.ExportJSONL`). JSON keys are
+/// lowercase/snake_case (unlike `SessionInfo`, which mirrors a Go struct with
+/// no JSON tags).
+struct StoredMessage: Decodable {
+    let role: String
+    let content: String?
+    let toolCalls: [ToolCall]?
+    let toolCallID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case role
+        case content
+        case toolCalls = "tool_calls"
+        case toolCallID = "tool_call_id"
+    }
+
+    struct ToolCall: Decodable {
+        let id: String?
+        let function: Function
+    }
+
+    struct Function: Decodable {
+        let name: String
+        let arguments: String
+    }
+}
