@@ -1,6 +1,6 @@
 BINARY := gophermind
 
-.PHONY: build test vet check snapshot release clean ios-test
+.PHONY: build test vet check snapshot release clean ios-test ios-deploy
 
 build: ## Build a local (unstamped) binary
 	go build -o $(BINARY) ./cmd/gophermind
@@ -10,6 +10,9 @@ test: ## Run the full test suite
 
 ios-test: ## Run the iOS app unit tests on a simulator
 	./ios/test.sh
+
+ios-deploy: ## Build + install the iOS app on the connected iPhone
+	./ios/deploy.sh
 
 vet:
 	go vet ./...
