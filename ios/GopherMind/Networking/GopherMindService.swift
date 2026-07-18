@@ -16,8 +16,15 @@ protocol GopherMindServicing {
 /// always uses whatever server URL/credentials are currently in settings.
 @MainActor
 final class GopherMindService: GopherMindServicing {
-    enum ServiceError: Error {
+    enum ServiceError: LocalizedError {
         case invalidServerURL
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidServerURL:
+                return "No valid Server URL. Open Settings and enter your server (with http:// or https://), e.g. http://10.0.0.5:8090"
+            }
+        }
     }
 
     private let settings: AppSettings
@@ -27,7 +34,13 @@ final class GopherMindService: GopherMindServicing {
     }
 
     private func makeClient() throws -> APIClient {
-        guard !settings.serverURL.isEmpty, let url = URL(string: settings.serverURL) else {
+        // Trim pasted whitespace/newlines and require a real scheme+host —
+        // URL(string:) returns nil on a stray space, which had surfaced as the
+        // opaque "ServiceError error 0".
+        let raw = settings.serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty, let url = URL(string: raw),
+              let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              url.host?.isEmpty == false else {
             throw ServiceError.invalidServerURL
         }
         let configuration = APIClient.Configuration(
