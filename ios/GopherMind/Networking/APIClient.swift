@@ -129,15 +129,30 @@ actor APIClient {
                         throw Self.error(forStatus: http.statusCode, body: nil)
                     }
 
+                    // NOTE: do NOT use `bytes.lines` — URLSession.AsyncBytes.lines
+                    // collapses empty lines, but SSE frames are terminated by a
+                    // BLANK line, so the parser would never see a frame boundary
+                    // and no event would ever be yielded. Split the raw byte stream
+                    // ourselves, preserving empty lines.
                     var parser = SSEParser()
-                    for try await line in bytes.lines {
-                        try Task.checkCancellation()
-                        guard let event = parser.feed(line: line) else { continue }
+                    var buffer: [UInt8] = []
+                    func flushLine() -> Bool {
+                        var line = String(decoding: buffer, as: UTF8.self)
+                        buffer.removeAll(keepingCapacity: true)
+                        if line.hasSuffix("\r") { line.removeLast() }   // tolerate CRLF
+                        guard let event = parser.feed(line: line) else { return false }
                         continuation.yield(event)
-                        if case .done = event {
-                            break
+                        return { if case .done = event { return true } else { return false } }()
+                    }
+                    for try await byte in bytes {
+                        try Task.checkCancellation()
+                        if byte == 0x0A {            // \n → complete a line (may be empty)
+                            if flushLine() { break }
+                        } else {
+                            buffer.append(byte)
                         }
                     }
+                    _ = flushLine()                  // final line without a trailing newline
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
