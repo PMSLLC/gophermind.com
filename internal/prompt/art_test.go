@@ -19,6 +19,18 @@ func TestGoPherItBannerWidth(t *testing.T) {
 	}
 }
 
+// TestGopherArtWidth guards the same lockup from the other side: the gopher is
+// the wider of the two pieces, so if it grows past 46 columns the tagline no
+// longer sits centered under it and an 80-column terminal starts wrapping.
+func TestGopherArtWidth(t *testing.T) {
+	const maxCols = 46
+	for i, line := range strings.Split(GopherArt, "\n") {
+		if n := len([]rune(line)); n > maxCols {
+			t.Errorf("line %d is %d columns, want <= %d: %q", i, n, maxCols, line)
+		}
+	}
+}
+
 // TestGoPherItBannerIsASCII keeps the banner safe in a Go raw string literal and
 // in terminals without wide-character support.
 func TestGoPherItBannerIsASCII(t *testing.T) {

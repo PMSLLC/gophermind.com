@@ -9,6 +9,13 @@ import (
 	"gophermind/internal/prompt"
 )
 
+// needle is a short, distinctive slice of the art (the gopher's buck teeth)
+// that sits well within the 80-column viewport, so it survives truncation. Both
+// banner tests below share it: the presence test asserts it really is in the
+// art, which keeps the suppression test from silently going vacuous if the art
+// changes.
+const needle = "'---' '---'"
+
 // TestBannerSurvivesFirstWindowSize reproduces the real startup sequence: a
 // fresh (not-yet-ready) model receives its first WindowSizeMsg, which flips
 // m.ready. The banner must remain visible in the ready view, not vanish.
@@ -23,9 +30,6 @@ func TestBannerSurvivesFirstWindowSize(t *testing.T) {
 		t.Fatal("model not ready after first WindowSizeMsg")
 	}
 
-	// A short, distinctive slice of the art (the gopher's buck teeth) that sits
-	// well within the 80-column viewport, so it survives truncation.
-	const needle = "|==|"
 	if !strings.Contains(prompt.GopherArt, needle) {
 		t.Fatalf("needle %q not in art; pick a new one", needle)
 	}
@@ -46,7 +50,7 @@ func TestNoBannerSuppressesSplash(t *testing.T) {
 	if rm.banner != "" {
 		t.Errorf("banner should be empty when suppressed, got %q", rm.banner)
 	}
-	if strings.Contains(rm.View(), "|==|") {
+	if strings.Contains(rm.View(), needle) {
 		t.Error("gopher art present in view despite --no-banner")
 	}
 }
