@@ -115,6 +115,14 @@ actor APIClient {
         _ = try await send(path: "/session/\(id)", method: "DELETE")
     }
 
+    /// `PATCH /session/{id}` with `{"name":"..."}` → `204`. An empty name
+    /// clears the custom name, reverting to the server-derived title.
+    func renameSession(_ id: String, name: String) async throws {
+        struct RenameRequest: Encodable { let name: String }
+        let body = try Self.encoder.encode(RenameRequest(name: name))
+        _ = try await send(path: "/session/\(id)", method: "PATCH", body: .json(body))
+    }
+
     /// `GET /session/{id}/messages` → the session's stored conversation, one
     /// `StoredMessage` per persisted JSONL line (system/user/assistant/tool).
     func getMessages(sessionID: String) async throws -> [StoredMessage] {

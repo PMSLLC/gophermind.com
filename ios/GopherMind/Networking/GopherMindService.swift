@@ -79,6 +79,10 @@ final class GopherMindService: GopherMindServicing {
         try await makeClient().deleteSession(id)
     }
 
+    func renameSession(_ id: String, name: String) async throws {
+        try await makeClient().renameSession(id, name: name)
+    }
+
     func registerDevice(token: String) async throws {
         try await makeClient().registerDevice(token: token)
     }

@@ -299,3 +299,72 @@ func TestSessionDeleteHandlerPropagatesRemoveError(t *testing.T) {
 		t.Errorf("remove error should not report success, got %d", rr.Code)
 	}
 }
+
+func TestSessionRenameHandlerCallsSetName(t *testing.T) {
+	var gotID, gotName string
+	setName := func(id, name string) error {
+		gotID, gotName = id, name
+		return nil
+	}
+	h := sessionRenameHandler(setName)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPatch, "/session/abc", strings.NewReader(`{"name":"My Project"}`))
+	req.SetPathValue("id", "abc")
+	h(rr, req)
+
+	if rr.Code != http.StatusNoContent && rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200/204; body=%s", rr.Code, rr.Body.String())
+	}
+	if gotID != "abc" || gotName != "My Project" {
+		t.Errorf("SetName(%q,%q), want (abc, My Project)", gotID, gotName)
+	}
+}
+
+func TestSessionRenameHandlerRejectsWrongMethod(t *testing.T) {
+	h := sessionRenameHandler(func(string, string) error { return nil })
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/session/abc", nil)
+	req.SetPathValue("id", "abc")
+	h(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want 405", rr.Code)
+	}
+}
+
+func TestSessionRenameHandlerRejectsBadID(t *testing.T) {
+	h := sessionRenameHandler(func(string, string) error { return nil })
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPatch, "/session/../escape", strings.NewReader(`{"name":"x"}`))
+	req.SetPathValue("id", "../escape")
+	h(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rr.Code)
+	}
+}
+
+func TestSessionRenameHandlerRejectsBadJSON(t *testing.T) {
+	h := sessionRenameHandler(func(string, string) error { return nil })
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPatch, "/session/abc", strings.NewReader(`not json`))
+	req.SetPathValue("id", "abc")
+	h(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rr.Code)
+	}
+}
+
+func TestSessionRenameHandlerAllowsEmptyNameToClear(t *testing.T) {
+	var gotName = "unset"
+	h := sessionRenameHandler(func(_, name string) error { gotName = name; return nil })
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPatch, "/session/abc", strings.NewReader(`{"name":""}`))
+	req.SetPathValue("id", "abc")
+	h(rr, req)
+	if rr.Code != http.StatusNoContent && rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200/204", rr.Code)
+	}
+	if gotName != "" {
+		t.Errorf("SetName name = %q, want empty (clear)", gotName)
+	}
+}

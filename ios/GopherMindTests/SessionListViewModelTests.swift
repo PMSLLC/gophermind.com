@@ -54,6 +54,50 @@ final class SessionListViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.sessions.map(\.id), ["a"])
         XCTAssertNotNil(viewModel.errorMessage)
     }
+    func testRenameUpdatesRowOptimisticallyOnSuccess() async {
+        let session = SessionInfo(id: "a", path: "/a", size: 10, modTime: Date(), messages: 1, title: "First message", name: "")
+        let service = FakeSessionListService(sessions: [session])
+        let viewModel = SessionListViewModel(service: service)
+        await viewModel.load()
+
+        await viewModel.rename("a", to: "  My Name  ")
+
+        XCTAssertEqual(viewModel.sessions.first?.name, "My Name", "name should be trimmed and applied")
+        XCTAssertEqual(service.renameCalls.first?.name, "My Name")
+        XCTAssertNil(viewModel.errorMessage)
+    }
+
+    func testRenameFailureRestoresPreviousNameAndSurfacesError() async {
+        let session = SessionInfo(id: "a", path: "/a", size: 10, modTime: Date(), messages: 1, title: "t", name: "Old")
+        let service = FakeSessionListService(sessions: [session])
+        service.renameError = FakeSessionListService.SimulatedError.boom
+        let viewModel = SessionListViewModel(service: service)
+        await viewModel.load()
+
+        await viewModel.rename("a", to: "New")
+
+        XCTAssertEqual(viewModel.sessions.first?.name, "Old", "failed rename must roll back")
+        XCTAssertNotNil(viewModel.errorMessage)
+    }
+
+    func testRenameToBlankClearsName() async {
+        let session = SessionInfo(id: "a", path: "/a", size: 10, modTime: Date(), messages: 1, title: "t", name: "Old")
+        let service = FakeSessionListService(sessions: [session])
+        let viewModel = SessionListViewModel(service: service)
+        await viewModel.load()
+
+        await viewModel.rename("a", to: "   ")
+
+        XCTAssertEqual(viewModel.sessions.first?.name, "")
+        XCTAssertEqual(service.renameCalls.first?.name, "")
+    }
+
+    func testDisplayNamePrefersCustomNameElseID() {
+        let named = SessionInfo(id: "abc", path: "/p", size: 1, modTime: Date(), messages: 0, title: "t", name: "Custom")
+        let unnamed = SessionInfo(id: "abc", path: "/p", size: 1, modTime: Date(), messages: 0, title: "t", name: "")
+        XCTAssertEqual(named.displayName, "Custom")
+        XCTAssertEqual(unnamed.displayName, "abc")
+    }
 }
 
 @MainActor
@@ -65,7 +109,9 @@ private final class FakeSessionListService: SessionListServicing {
     private var sessions: [SessionInfo]
     var listError: Error?
     var deleteError: Error?
+    var renameError: Error?
     private(set) var deleteCalls: [String] = []
+    private(set) var renameCalls: [(id: String, name: String)] = []
 
     init(sessions: [SessionInfo]) {
         self.sessions = sessions
@@ -80,5 +126,10 @@ private final class FakeSessionListService: SessionListServicing {
         deleteCalls.append(id)
         if let deleteError { throw deleteError }
         sessions.removeAll { $0.id == id }
+    }
+
+    func renameSession(_ id: String, name: String) async throws {
+        renameCalls.append((id, name))
+        if let renameError { throw renameError }
     }
 }
