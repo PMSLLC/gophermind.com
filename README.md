@@ -138,7 +138,9 @@ Submitted prompts are saved to `<os user config dir>/gophermind/history` for rec
 
 ### Multi-line Input
 
-The input box grows from 1 up to 4 rows, then scrolls. **Enter** submits; **Shift+Enter** inserts a literal newline. If your terminal does not distinguish Shift+Enter from plain Enter, use **Alt+Enter** or **Ctrl+J** instead.
+The input box grows from 1 up to 4 rows, then scrolls. **Enter** submits; **Shift+Enter** inserts a literal newline. If your terminal does not distinguish Shift+Enter from plain Enter, use **Ctrl+J** instead.
+
+**Alt+Enter** is not bound by default. It arrives as `ESC`+`CR`, which is byte-identical to what some keyboard remaps and terminal key mappings emit for ordinary keys — so binding it caused stray newlines when an unrelated key was pressed. Set `GOPHERMIND_ALT_ENTER_NEWLINE=1` to restore it.
 
 ### `/goal` — Session Steering Goal
 

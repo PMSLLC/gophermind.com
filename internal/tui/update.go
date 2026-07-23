@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -149,6 +150,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// altEnterEnv restores Alt+Enter as a newline key for users whose terminal
+// really does send it only for Alt+Enter.
+const altEnterEnv = "GOPHERMIND_ALT_ENTER_NEWLINE"
+
+// altEnterNewlineEnabled reports whether Alt+Enter should insert a newline. It
+// is read per keypress so the setting can be flipped without a rebuild, and so
+// tests can drive it with t.Setenv.
+func altEnterNewlineEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(altEnterEnv))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyCtrlC:
@@ -235,12 +251,18 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Shift+Enter is indistinguishable from plain Enter on most terminals, so
-	// Alt+Enter and Ctrl+J are the reliable ways to insert a literal newline;
-	// msg.String() == "shift+enter" covers terminals that do report it
-	// distinctly (bubbletea's own key parser has no such string as of
-	// v1.3.10, so this arm is a forward-compatible no-op today).
-	isNewlineKey := (msg.Type == tea.KeyEnter && msg.Alt) || msg.Type == tea.KeyCtrlJ || msg.String() == "shift+enter"
+	// Ctrl+J is the newline key. Shift+Enter is honored for terminals that
+	// report it distinctly (bubbletea's parser has no such string as of
+	// v1.3.10, so that arm is forward-compatible).
+	//
+	// Alt+Enter is NOT a newline key by default. It arrives as ESC+CR, which is
+	// byte-identical to what some keyboard remaps and terminal key mappings emit
+	// for ordinary keys — a dash, in the report that prompted this. Once decoded
+	// the two are indistinguishable, so the only way to stop a remapped key from
+	// silently splitting the prompt is to not bind this sequence. Set
+	// GOPHERMIND_ALT_ENTER_NEWLINE=1 to restore it.
+	isNewlineKey := msg.Type == tea.KeyCtrlJ || msg.String() == "shift+enter" ||
+		(msg.Type == tea.KeyEnter && msg.Alt && altEnterNewlineEnabled())
 	if isNewlineKey && m.st == stateIdle {
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(tea.KeyMsg{Type: tea.KeyEnter})
