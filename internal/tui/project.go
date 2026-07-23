@@ -265,7 +265,11 @@ func (m model) afterProjectTurn(answer string) (tea.Model, tea.Cmd) {
 			}
 			m.projParseRetry = false
 			m.projPendingQ = strings.TrimSpace(answer)
-			m.appendLine("(could not parse a single question; answer the above as best you can)")
+			// The streamed reply is suppressed for interview turns, so the raw
+			// text has to be surfaced here or the user is asked to answer
+			// something they cannot see.
+			m.appendLine(strings.TrimSpace(answer))
+			m.appendLine("(could not parse a single question; answer as best you can)")
 			m.sync()
 			return m, waitFor(m.sub)
 		}

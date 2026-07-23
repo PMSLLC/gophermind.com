@@ -73,3 +73,11 @@ func (m model) handleOptimizeCommand(text string) model {
 	m.sync()
 	return m
 }
+
+// suppressStream reports whether the in-flight turn's streamed output should be
+// kept out of the transcript. True only for a /project interview turn, whose
+// reply is a JSON control message; every other turn -- ordinary chat and the
+// /project generation turn -- streams normally.
+func (m model) suppressStream() bool {
+	return m.projTurn && m.proj == projInterview
+}
