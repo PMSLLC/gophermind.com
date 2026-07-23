@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"gophermind/internal/codeindex"
 )
 
 // This file implements the autonomous per-task executor for `/project-execute`
@@ -217,6 +219,12 @@ func executeOnce(ctx context.Context, root string, runner TaskRunner, emit func(
 		} else {
 			delete(lastDetail, a.Tasks[idx].ID)
 		}
+
+		// Refresh the symbol index so the next task searches the tree as this
+		// one left it. Best-effort by design: the index is a convenience, and
+		// failing a completed task because a Markdown file could not be written
+		// would be worse than an index that is one task stale.
+		_, _ = codeindex.BuildAndWrite(root)
 
 		outcome := TaskOutcome{ID: a.Tasks[idx].ID, Status: a.Tasks[idx].Status, Detail: detail}
 		summary.Outcomes = append(summary.Outcomes, outcome)
