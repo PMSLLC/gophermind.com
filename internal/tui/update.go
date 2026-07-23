@@ -316,6 +316,13 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		m.appendLine(helpLine())
 		m.sync()
 		return m, nil
+	case "/index":
+		return m.handleIndexCommand(), nil
+	}
+
+	// "/optimize [profile]" tunes .env for a named performance profile.
+	if strings.Fields(text)[0] == "/optimize" {
+		return m.handleOptimizeCommand(text), nil
 	}
 
 	// "/phase ..." runs the PhaseFlow workflow. State commands print to the
