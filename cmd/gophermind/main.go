@@ -23,6 +23,7 @@ import (
 	"gophermind/internal/abtest"
 	"gophermind/internal/agent"
 	"gophermind/internal/bundle"
+	"gophermind/internal/codeindex"
 	"gophermind/internal/config"
 	"gophermind/internal/doctor"
 	"gophermind/internal/embed"
@@ -130,6 +131,23 @@ func run() error {
 	// which calls `--version`) happy.
 	if *versionFlag {
 		fmt.Println(version.String())
+		return nil
+	}
+
+	// `index` regenerates INDEX.md from the AST alone. It is handled here,
+	// before profile resolution and model discovery, because it needs no
+	// endpoint — probing one would only add latency and a spurious
+	// "model capabilities" line.
+	if flag.Arg(0) == "index" {
+		root := cfg.RootDir
+		if *rootFlag != "" {
+			root = *rootFlag
+		}
+		n, err := codeindex.BuildAndWrite(root)
+		if err != nil {
+			return fmt.Errorf("index: %w", err)
+		}
+		fmt.Printf("wrote %s (%d symbols)\n", codeindex.FileName, n)
 		return nil
 	}
 
@@ -656,6 +674,7 @@ func run() error {
 		tools.ReadFileRange(cfg.RootDir),  // read_file + optional line ranges
 		tools.ListFilesGlob(cfg.RootDir),  // list_files + include/exclude globs
 		tools.SearchEnhanced(cfg.RootDir), // search + context/flags/paging
+		tools.CodeIndex(cfg.RootDir),      // index: symbol lookup (where is X defined)
 		tools.WriteFile(cfg.RootDir),
 		tools.EditFileMulti(cfg.RootDir), // edit_file + replace_all
 		tools.RunShellEnhanced(cfg.RootDir, cfg.CmdTimeout, tools.ShellLimits{
