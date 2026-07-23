@@ -525,7 +525,10 @@ func run() error {
 	// NewWithTLS fails fast on bad cert/key/CA material so a misconfigured secure
 	// deployment errors at startup rather than mid-request. The zero TLSOptions
 	// (no cert/key/CA, insecure=false) reproduces the prior default transport.
-	client, err := llm.NewWithTLS(cfg.BaseURL, cfg.APIKey, cfg.Model, cfg.HTTPTimeout, llm.TLSOptions{
+	// LLMRequestTimeout bounds each completion attempt: GOPHERMIND_LLM_TIMEOUT
+	// when set, else GOPHERMIND_HTTP_TIMEOUT_S. The startup calls below stay on
+	// cfg.HTTPTimeout, so the two are tunable independently.
+	client, err := llm.NewWithTLS(cfg.BaseURL, cfg.APIKey, cfg.Model, cfg.LLMRequestTimeout(), llm.TLSOptions{
 		InsecureSkipVerify: cfg.InsecureTLS,
 		ClientCertPath:     cfg.ClientCertPath,
 		ClientKeyPath:      cfg.ClientKeyPath,

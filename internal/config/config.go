@@ -114,6 +114,17 @@ type Config struct {
 	HTTPTimeout time.Duration // GOPHERMIND_HTTP_TIMEOUT_S (default: 300s)
 	CmdTimeout  time.Duration // GOPHERMIND_CMD_TIMEOUT_S (default: 120s)
 
+	// LLMTimeout bounds a single non-streaming completion attempt (the llm
+	// Client's per-attempt context deadline). It is kept SEPARATE from
+	// HTTPTimeout, which bounds the one-shot startup HTTP calls (model
+	// discovery/listing, capability probe), so a slow local model can be given
+	// a generous completion budget without also stalling startup on a dead
+	// endpoint. Accepts a Go duration ("15m") or a bare number of seconds
+	// ("900"). Zero (unset, or malformed/negative) means "inherit HTTPTimeout",
+	// so configs that only set GOPHERMIND_HTTP_TIMEOUT_S behave exactly as
+	// before. Read it through LLMRequestTimeout, never directly.
+	LLMTimeout time.Duration // GOPHERMIND_LLM_TIMEOUT (default: inherit HTTPTimeout)
+
 	// StreamIdleTimeout bounds how long a streaming completion may go without
 	// receiving any SSE frame before it is aborted (llm.Client's idle/stall
 	// watchdog). Unlike HTTPTimeout, it does NOT cap a stream's total duration
@@ -174,6 +185,17 @@ type Config struct {
 	TranscriptPath string // GOPHERMIND_TRANSCRIPT (default: unset; also --transcript)
 }
 
+// LLMRequestTimeout returns the effective per-attempt bound for LLM completion
+// requests: LLMTimeout when configured, otherwise HTTPTimeout. A zero result
+// means "no bound" (the llm client disables its per-attempt deadline), which is
+// what GOPHERMIND_HTTP_TIMEOUT_S=0 has always meant.
+func (c Config) LLMRequestTimeout() time.Duration {
+	if c.LLMTimeout > 0 {
+		return c.LLMTimeout
+	}
+	return c.HTTPTimeout
+}
+
 // Load reads configuration from the environment and applies defaults. The
 // returned Config is not yet validated; call Validate after flags are applied.
 func Load() (Config, error) {
@@ -218,6 +240,7 @@ func Load() (Config, error) {
 		MaxIter:           envIntOr("GOPHERMIND_MAX_ITER", 25),
 		HTTPTimeout:       time.Duration(envIntOr("GOPHERMIND_HTTP_TIMEOUT_S", 300)) * time.Second,
 		CmdTimeout:        time.Duration(envIntOr("GOPHERMIND_CMD_TIMEOUT_S", 120)) * time.Second,
+		LLMTimeout:        envSecondsOrDuration("GOPHERMIND_LLM_TIMEOUT", 0),
 		StreamIdleTimeout: time.Duration(envIntOr("GOPHERMIND_STREAM_IDLE_TIMEOUT_S", 300)) * time.Second,
 		FetchAllowHosts:   envList("GOPHERMIND_FETCH_ALLOW_HOSTS"),
 		ShellCPUSeconds:   envIntOr("GOPHERMIND_SHELL_CPU_SECONDS", 0),
@@ -550,6 +573,28 @@ func envFloatPtr(key string) *float64 {
 		return nil
 	}
 	return &n
+}
+
+// envSecondsOrDuration parses either a Go duration string (e.g. "15m", "900s")
+// or a bare integer count of seconds (e.g. "900"), so the variable reads the
+// same way as the *_TIMEOUT_S vars while still accepting units. An empty,
+// malformed, or negative value falls back to the default.
+func envSecondsOrDuration(key string, fallback time.Duration) time.Duration {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	if n, err := strconv.Atoi(v); err == nil {
+		if n < 0 {
+			return fallback
+		}
+		return time.Duration(n) * time.Second
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		return fallback
+	}
+	return d
 }
 
 // envDurationOr parses a Go duration string (e.g. "24h", "30m"). An empty,
