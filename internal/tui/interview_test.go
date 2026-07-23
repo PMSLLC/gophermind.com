@@ -101,7 +101,7 @@ func TestInterviewTranscriptAccumulates(t *testing.T) {
 // prompt must ask for a single question and the JSON shape, and must not carry
 // the old "a FEW at a time" wording.
 func TestInterviewStepPromptDemandsOneQuestion(t *testing.T) {
-	p := interviewStepPrompt("myproj", interviewTranscript{})
+	p := interviewStepPrompt("myproj", interviewTranscript{}, "")
 	low := strings.ToLower(p)
 	if strings.Contains(low, "few at a time") {
 		t.Error("prompt still asks for a few questions at a time")
@@ -125,7 +125,7 @@ func TestInterviewStepPromptIncludesPriorAnswers(t *testing.T) {
 	var tr interviewTranscript
 	tr.add("What are we building?", "A CLI todo app.")
 
-	p := interviewStepPrompt("myproj", tr)
+	p := interviewStepPrompt("myproj", tr, "")
 	if !strings.Contains(p, "A CLI todo app.") {
 		t.Errorf("prompt omits prior answers:\n%s", p)
 	}
@@ -134,8 +134,39 @@ func TestInterviewStepPromptIncludesPriorAnswers(t *testing.T) {
 // TestInterviewAsksForTestCommand: the executor gate needs a test command, so
 // the interview must require it before finishing.
 func TestInterviewAsksForTestCommand(t *testing.T) {
-	p := interviewStepPrompt("myproj", interviewTranscript{})
+	p := interviewStepPrompt("myproj", interviewTranscript{}, "")
 	if !strings.Contains(strings.ToLower(p), "test command") {
 		t.Errorf("prompt never requires the test command:\n%s", p)
+	}
+}
+
+// TestInterviewPromptCarriesContext: the digest must reach the model, or
+// nothing can be prefilled.
+func TestInterviewPromptCarriesContext(t *testing.T) {
+	p := interviewStepPrompt("myproj", interviewTranscript{}, "### Existing spec\nCTX-MARKER")
+	if !strings.Contains(p, "CTX-MARKER") {
+		t.Error("repository context missing from the prompt")
+	}
+	if !strings.Contains(p, "suggested") {
+		t.Error("prompt does not ask for a suggested answer")
+	}
+}
+
+// TestInterviewPromptOmitsEmptyContext keeps a fresh repo's prompt clean.
+func TestInterviewPromptOmitsEmptyContext(t *testing.T) {
+	p := interviewStepPrompt("myproj", interviewTranscript{}, "")
+	if strings.Contains(p, "already records about itself") {
+		t.Error("context heading emitted with no context")
+	}
+}
+
+// TestParseInterviewStepReadsSuggested covers the new field.
+func TestParseInterviewStepReadsSuggested(t *testing.T) {
+	step, err := parseInterviewStep(`{"question":"Test command?","suggested":"go test ./...","done":false}`)
+	if err != nil {
+		t.Fatalf("parseInterviewStep: %v", err)
+	}
+	if step.Suggested != "go test ./..." {
+		t.Errorf("Suggested = %q", step.Suggested)
 	}
 }

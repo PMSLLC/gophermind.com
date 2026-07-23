@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"gophermind/internal/phaseflow"
+	"gophermind/internal/projectctx"
 )
 
 // This file implements the `/project` guided new-project flow: a dialog-driven
@@ -156,11 +157,16 @@ func (m model) startProject(name string) (model, tea.Cmd) {
 	m.projRetries = 0
 	m.projTranscript = interviewTranscript{}
 	m.projPendingQ = ""
+	m.projSuggested = ""
 	m.projParseRetry = false
+	m.projCtx = projectctx.Gather(root)
+	if m.projCtx != "" {
+		m.appendLine("Read .planning/, .remember/ and .superpowers/ — answers may come prefilled; press Enter to accept one.")
+	}
 	m.appendLine(projectBannerStyle.Render("Scoping “" + name + "” — one question at a time; type /generate to stop early."))
 	m.proj = projInterview
 	m.sync()
-	return m.startTurn(interviewStepPrompt(name, m.projTranscript), true), nil
+	return m.startTurn(interviewStepPrompt(name, m.projTranscript, m.projCtx), true), nil
 }
 
 // handleProjectInput routes an input line while a /project flow is active.
@@ -182,9 +188,10 @@ func (m model) handleProjectInput(text string) (model, tea.Cmd, bool) {
 		if q := m.projPendingQ; q != "" {
 			m.projTranscript.add(q, strings.TrimSpace(text))
 			m.projPendingQ = ""
+			m.projSuggested = ""
 		}
 		m.projParseRetry = false
-		return m.startTurn(interviewStepPrompt(m.projName, m.projTranscript), true), nil, true
+		return m.startTurn(interviewStepPrompt(m.projName, m.projTranscript, m.projCtx), true), nil, true
 
 	case projGenerating:
 		m.appendLine("(still working on the plan…)")
@@ -261,7 +268,7 @@ func (m model) afterProjectTurn(answer string) (tea.Model, tea.Cmd) {
 				m.projParseRetry = true
 				m.appendLine("(reformatting the question…)")
 				m.sync()
-				return m.startTurn(interviewStepPrompt(m.projName, m.projTranscript), true), waitFor(m.sub)
+				return m.startTurn(interviewStepPrompt(m.projName, m.projTranscript, m.projCtx), true), waitFor(m.sub)
 			}
 			m.projParseRetry = false
 			m.projPendingQ = strings.TrimSpace(answer)
@@ -278,7 +285,12 @@ func (m model) afterProjectTurn(answer string) (tea.Model, tea.Cmd) {
 			return m.beginGeneration(""), waitFor(m.sub)
 		}
 		m.projPendingQ = step.Question
+		m.projSuggested = step.Suggested
 		m.appendLine(projectQuestionStyle.Render("Q" + fmt.Sprint(m.projTranscript.count()+1) + ": " + step.Question))
+		if step.Suggested != "" {
+			m.appendLine("   suggested: " + step.Suggested)
+			m.appendLine("   (press Enter to accept, or type your own answer)")
+		}
 		m.sync()
 		return m, waitFor(m.sub)
 

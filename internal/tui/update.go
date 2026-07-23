@@ -281,7 +281,13 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 	// now empty, so a stale ghost/menu must not linger over it.
 	m.queryComplete()
 	if text == "" {
-		return m, nil
+		// During the interview an empty Enter accepts the prefilled answer.
+		// Everywhere else an empty submit stays a no-op.
+		if m.proj == projInterview && m.projSuggested != "" {
+			text = m.projSuggested
+		} else {
+			return m, nil
+		}
 	}
 
 	// While a guided /project flow is active, its state machine consumes input.

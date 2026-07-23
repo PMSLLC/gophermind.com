@@ -93,3 +93,59 @@ func TestUnparseableInterviewReplyIsStillShown(t *testing.T) {
 		t.Errorf("unparseable reply was swallowed:\n%s", m.content)
 	}
 }
+
+// TestEmptyEnterAcceptsSuggestion covers the editable-default contract: Enter
+// on an empty prompt records the suggestion as the answer.
+func TestEmptyEnterAcceptsSuggestion(t *testing.T) {
+	m := testModel(t)
+	m.projName = "build"
+	m.proj = projInterview
+	m.projPendingQ = "What is the test command?"
+	m.projSuggested = "go test ./..."
+
+	m.input.SetValue("")
+	m2, _ := m.handleSubmit()
+
+	if m2.projTranscript.count() != 1 {
+		t.Fatalf("transcript has %d pairs, want 1", m2.projTranscript.count())
+	}
+	if got := m2.projTranscript.String(); !strings.Contains(got, "go test ./...") {
+		t.Errorf("suggestion was not recorded as the answer:\n%s", got)
+	}
+}
+
+// TestTypedAnswerOverridesSuggestion: the default must never win over what the
+// user actually typed.
+func TestTypedAnswerOverridesSuggestion(t *testing.T) {
+	m := testModel(t)
+	m.projName = "build"
+	m.proj = projInterview
+	m.projPendingQ = "What is the test command?"
+	m.projSuggested = "go test ./..."
+
+	m.input.SetValue("make check")
+	m2, _ := m.handleSubmit()
+
+	got := m2.projTranscript.String()
+	if !strings.Contains(got, "make check") {
+		t.Errorf("typed answer missing:\n%s", got)
+	}
+	if strings.Contains(got, "go test ./...") {
+		t.Errorf("suggestion overrode the typed answer:\n%s", got)
+	}
+}
+
+// TestEmptyEnterWithoutSuggestionIsInert keeps ordinary empty submits a no-op.
+func TestEmptyEnterWithoutSuggestionIsInert(t *testing.T) {
+	m := testModel(t)
+	m.proj = projInterview
+	m.projPendingQ = "What is the test command?"
+	m.projSuggested = ""
+
+	m.input.SetValue("")
+	m2, _ := m.handleSubmit()
+
+	if m2.projTranscript.count() != 0 {
+		t.Error("an empty answer with no suggestion was recorded")
+	}
+}
