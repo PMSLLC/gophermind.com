@@ -127,6 +127,13 @@ func (a *Agent) Send(ctx context.Context, userInput string) (string, error) {
 	a.msgs = append(a.msgs, llm.Message{Role: "user", Content: userInput})
 	defs := a.reg.Definitions()
 
+	// Stuck detection: a model that leaks its own scaffolding (e.g. a bare
+	// "</tool_response>" from a Hermes-format fine-tune) tends to re-emit the
+	// identical reply every pass, burning the whole iteration budget and
+	// echoing the noise to the user each time. Bail out early instead.
+	var lastSig string
+	var sigRepeats int
+
 	for i := 0; i < a.maxIter; i++ {
 		if err := ctx.Err(); err != nil {
 			a.msgs = a.msgs[:base]
@@ -169,6 +176,19 @@ func (a *Agent) Send(ctx context.Context, userInput string) (string, error) {
 		if len(reply.ToolCalls) == 0 {
 			return reply.Content, nil
 		}
+
+		// Identical reply as last pass? Count it, and abort once the model has
+		// clearly stopped progressing. Checked before the prose is echoed so
+		// the noise stops at the threshold rather than one pass later.
+		if sig := replySignature(reply); sig == lastSig {
+			sigRepeats++
+			if sigRepeats >= stuckRepeats-1 {
+				a.msgs = a.msgs[:base]
+				return "", fmt.Errorf("aborted after %d identical replies (model may be leaking tool-call scaffolding or looping): %w", stuckRepeats, ErrStuckLoop)
+			}
+		} else {
+			lastSig, sigRepeats = sig, 0
+		}
 		// Otherwise any prose is intermediate narration ("planning…") — show it.
 		if reply.Content != "" {
 			a.onEvent(Event{Type: "assistant", Text: reply.Content})
@@ -192,6 +212,32 @@ func (a *Agent) Send(ctx context.Context, userInput string) (string, error) {
 // errors.Is to distinguish it from an execution error and report a distinct
 // result subtype.
 var ErrMaxIterations = errors.New("max iterations reached")
+
+// ErrStuckLoop is the sentinel wrapped when a turn is aborted because the model
+// repeated the byte-identical response (same prose, same tool calls with the
+// same arguments) stuckRepeats times running, which means it is looping rather
+// than working toward an answer.
+var ErrStuckLoop = errors.New("model stopped making progress")
+
+// stuckRepeats is how many consecutive identical responses count as stuck. Two
+// in a row is plausible (a model re-reading a file after a failed edit); three
+// identical prose+tool-call payloads is not.
+const stuckRepeats = 3
+
+// replySignature fingerprints a reply for stuck detection: the prose plus every
+// tool call's name and arguments. Call IDs are deliberately excluded — backends
+// mint a fresh ID per call, so including them would make every reply look new.
+func replySignature(m llm.Message) string {
+	var b strings.Builder
+	b.WriteString(m.Content)
+	for _, c := range m.ToolCalls {
+		b.WriteString("\x00")
+		b.WriteString(c.Function.Name)
+		b.WriteString("\x00")
+		b.WriteString(c.Function.Arguments)
+	}
+	return b.String()
+}
 
 // ExportJSONL writes the full wire-level message history as JSONL: one JSON
 // object per line, each the exact llm.Message as sent to / received from the
