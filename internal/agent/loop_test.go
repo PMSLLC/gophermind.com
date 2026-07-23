@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -205,11 +206,14 @@ func TestLoopRunsToolsThenFinishes(t *testing.T) {
 }
 
 func TestLoopMaxIterations(t *testing.T) {
-	// Provider always asks for another tool call -> must hit the cap.
+	// Provider always asks for another tool call -> must hit the cap. Each call
+	// reads a different path so the replies are not byte-identical: this test
+	// is about the iteration ceiling, not the stuck-loop guard (which fires on
+	// repeated identical replies -- see TestStuckModelStopsEarly).
 	sp := &scriptedProvider{}
-	always := toolCallResp("call_x", "read_file", `{"path":"x.txt"}`)
 	for i := 0; i < 100; i++ {
-		sp.responses = append(sp.responses, always)
+		path := fmt.Sprintf(`{"path":"x%d.txt"}`, i)
+		sp.responses = append(sp.responses, toolCallResp(fmt.Sprintf("call_%d", i), "read_file", path))
 	}
 	srv := httptest.NewServer(sp.handler(t))
 	defer srv.Close()
