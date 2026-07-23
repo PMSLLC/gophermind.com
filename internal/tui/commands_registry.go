@@ -22,6 +22,8 @@ var slashCommands = []slashCommand{
 	{Name: "/project-execute", Arg: "", Desc: "run every pending task in the approved plan autonomously"},
 	{Name: "/phase", Arg: "<cmd>", Desc: "run a PhaseFlow workflow command"},
 	{Name: "/config", Arg: "", Desc: "open the configuration wizard"},
+	{Name: "/index", Arg: "", Desc: "rebuild INDEX.md, the code symbol index"},
+	{Name: "/optimize", Arg: "[profile]", Desc: "tune .env for a performance profile (safe|balanced|aggressive|unattended)"},
 	{Name: "/temp", Arg: "<0-2>", Desc: "set sampling temperature"},
 	{Name: "/topp", Arg: "<0-1>", Desc: "set top-p sampling"},
 	{Name: "/goal", Arg: "<text>", Desc: "set a persistent steering goal (\"/goal\" shows, \"/goal clear\" removes)"},

@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"gophermind/internal/agent"
+	"gophermind/internal/codeindex"
 	"gophermind/internal/llm"
 	"gophermind/internal/safety"
 	"gophermind/internal/session"
@@ -99,6 +100,13 @@ func Run(cfg Config) error {
 	glamourStyle := "light"
 	if lipgloss.HasDarkBackground() {
 		glamourStyle = "dark"
+	}
+
+	// Refresh the code index on load so the very first search sees the tree as
+	// it is now, not as some earlier run left it. It costs ~60ms on this repo
+	// and is best-effort: a failure must never stop the TUI from starting.
+	if root, err := os.Getwd(); err == nil {
+		_, _ = codeindex.BuildAndWrite(root)
 	}
 
 	m := newModel(build, cfg.Model, cfg.SpeedModel, cfg.Mode, glamourStyle, cfg.NoBanner, cfg.NoFortune)

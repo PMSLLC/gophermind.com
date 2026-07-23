@@ -45,6 +45,7 @@ import (
 	"gophermind/internal/tools"
 	"gophermind/internal/trace"
 	"gophermind/internal/tui"
+	"gophermind/internal/tuning"
 	"gophermind/internal/ui"
 	"gophermind/internal/update"
 	"gophermind/internal/usagelog"
@@ -148,6 +149,34 @@ func run() error {
 			return fmt.Errorf("index: %w", err)
 		}
 		fmt.Printf("wrote %s (%d symbols)\n", codeindex.FileName, n)
+		return nil
+	}
+
+	// `optimize [profile]` tunes .env for a named performance profile. Like
+	// `index` it is handled before model discovery: the probe it needs is done
+	// explicitly below, not as a startup side effect.
+	if flag.Arg(0) == "optimize" {
+		name := flag.Arg(1)
+		if name == "" {
+			name = "aggressive"
+		}
+		prof, ok := tuning.Lookup(name)
+		if !ok {
+			return fmt.Errorf("unknown profile %q; known profiles:\n%s", name, tuning.Describe())
+		}
+		root := cfg.RootDir
+		if *rootFlag != "" {
+			root = *rootFlag
+		}
+		envPath := filepath.Join(root, ".env")
+		n, err := tuning.MergeIntoEnvFile(envPath, tuning.Settings(prof, tuning.DefaultProbe()))
+		if err != nil {
+			return fmt.Errorf("optimize: %w", err)
+		}
+		fmt.Printf("optimize: applied %q profile, %d setting(s) written to %s\n", prof.Name, n, envPath)
+		if prof.AutoApprove {
+			fmt.Println("warning: this profile sets GOPHERMIND_APPROVAL=auto — tools run with no gate")
+		}
 		return nil
 	}
 
