@@ -17,7 +17,7 @@ func TestRenderIncludesTagline(t *testing.T) {
 	}
 
 	// The gopher's buck teeth must still come first, then the tagline.
-	gopher := strings.Index(out, "|==|")
+	gopher := strings.Index(out, "'---' '---'")
 	tagline := strings.Index(out, needle)
 	if gopher == -1 {
 		t.Fatal("gopher art missing from banner")

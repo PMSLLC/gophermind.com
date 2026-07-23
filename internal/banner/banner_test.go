@@ -45,7 +45,7 @@ func TestLatestChangesEmptyWhenNoEntries(t *testing.T) {
 
 func TestRenderContainsBannerVersionAndFortune(t *testing.T) {
 	out := Render()
-	if !strings.Contains(out, "|==|") { // gopher teeth from the ASCII art
+	if !strings.Contains(out, "'---' '---'") { // gopher teeth from the ASCII art
 		t.Error("Render() missing the gopher banner")
 	}
 	if !strings.Contains(out, "gophermind ") { // version line
