@@ -81,6 +81,13 @@ type model struct {
 	hist     *prompthistory.Store
 	ngram    *ngram.Model
 
+	// histIdx is the cursor into hist.All() while browsing with Up/Down. It
+	// equals len(entries) when not browsing, which is also the reset state
+	// after every submit. histDraft stashes whatever was in the input when a
+	// browse started, so Down past the newest entry hands it back.
+	histIdx   int
+	histDraft string
+
 	content string // committed transcript shown in the viewport
 	stream  string // prose buffered during the current streaming turn
 
@@ -190,6 +197,7 @@ func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent,
 		complete:     cm,
 		hist:         hist,
 		ngram:        ng,
+		histIdx:      len(hist.All()),
 	}
 	// Mirror the client's startup sampling settings so /temp and /topp with no
 	// argument report the truth even before the user changes anything.

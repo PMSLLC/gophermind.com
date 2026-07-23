@@ -216,6 +216,16 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Up/Down recall previously submitted prompts once the completion
+	// controller above has declined them (an open menu keeps its ↑/↓
+	// navigation). recallHistory declines in turn when the key is really a
+	// cursor move — see its doc comment — and the textarea handles it below.
+	if m.st == stateIdle && (msg.Type == tea.KeyUp || msg.Type == tea.KeyDown) {
+		if nm, consumed := m.recallHistory(msg.Type); consumed {
+			return nm, nil
+		}
+	}
+
 	// Shift+Enter is indistinguishable from plain Enter on most terminals, so
 	// Alt+Enter and Ctrl+J are the reliable ways to insert a literal newline;
 	// msg.String() == "shift+enter" covers terminals that do report it
@@ -365,6 +375,9 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 			m.ngram.Train(text)
 		}
 	}
+	// Whatever was submitted, the next Up starts a fresh browse from the newest
+	// entry rather than resuming wherever the last one was parked.
+	m.resetRecall()
 
 	if m.agent == nil {
 		return m, nil
