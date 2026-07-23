@@ -77,6 +77,64 @@ func TestStreamIdleTimeoutEnvOverride(t *testing.T) {
 	}
 }
 
+func TestLLMTimeoutDefaultsToHTTPTimeout(t *testing.T) {
+	t.Setenv("GOPHERMIND_BASE_URL", "http://x")
+	t.Setenv("GOPHERMIND_MODEL", "m")
+	t.Setenv("GOPHERMIND_LLM_TIMEOUT", "")
+	t.Setenv("GOPHERMIND_HTTP_TIMEOUT_S", "120")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.LLMTimeout != 0 {
+		t.Errorf("LLMTimeout = %v, want 0 (unset)", cfg.LLMTimeout)
+	}
+	if got := cfg.LLMRequestTimeout(); got != 120*time.Second {
+		t.Errorf("LLMRequestTimeout() = %v, want 120s (inherited from HTTPTimeout)", got)
+	}
+}
+
+func TestLLMTimeoutEnvOverride(t *testing.T) {
+	cases := []struct {
+		env  string
+		want time.Duration
+	}{
+		{"900", 900 * time.Second}, // bare seconds, like the other timeout vars
+		{"900s", 900 * time.Second},
+		{"15m", 15 * time.Minute},
+		{"nonsense", 0}, // malformed => unset, inherit HTTPTimeout
+		{"-5", 0},       // negative => unset
+	}
+	for _, tc := range cases {
+		t.Run(tc.env, func(t *testing.T) {
+			t.Setenv("GOPHERMIND_BASE_URL", "http://x")
+			t.Setenv("GOPHERMIND_MODEL", "m")
+			t.Setenv("GOPHERMIND_HTTP_TIMEOUT_S", "300")
+			t.Setenv("GOPHERMIND_LLM_TIMEOUT", tc.env)
+
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.LLMTimeout != tc.want {
+				t.Errorf("LLMTimeout = %v, want %v", cfg.LLMTimeout, tc.want)
+			}
+			// HTTPTimeout must stay independent of the LLM knob.
+			if cfg.HTTPTimeout != 300*time.Second {
+				t.Errorf("HTTPTimeout = %v, want 300s (unchanged)", cfg.HTTPTimeout)
+			}
+			wantEff := tc.want
+			if wantEff == 0 {
+				wantEff = 300 * time.Second
+			}
+			if got := cfg.LLMRequestTimeout(); got != wantEff {
+				t.Errorf("LLMRequestTimeout() = %v, want %v", got, wantEff)
+			}
+		})
+	}
+}
+
 func TestSamplingDefaults(t *testing.T) {
 	t.Setenv("GOPHERMIND_BASE_URL", "http://x")
 	t.Setenv("GOPHERMIND_MODEL", "m")
