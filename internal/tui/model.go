@@ -98,10 +98,16 @@ type model struct {
 	// /project setup state machine (see project.go). proj is projNone unless a
 	// guided new-project flow is active; projTurn marks that the in-flight agent
 	// turn belongs to that flow so its completion is post-processed specially.
-	proj        projPhase
-	projName    string
-	projRetries int
-	projTurn    bool
+	proj     projPhase
+	projName string
+	// Structured interview state: the accumulated Q/A record, the question
+	// currently awaiting an answer, and whether a reparse has already been
+	// spent on a model that did not return JSON.
+	projTranscript interviewTranscript
+	projPendingQ   string
+	projParseRetry bool
+	projRetries    int
+	projTurn       bool
 
 	usage  agent.UsageSnapshot // running session token + cost meter
 	width  int

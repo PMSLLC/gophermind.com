@@ -51,13 +51,6 @@ func TestGenerationPromptMentionsArtifactsAndCatalog(t *testing.T) {
 	}
 }
 
-func TestInterviewPromptCarriesSentinel(t *testing.T) {
-	p := interviewPrompt("Demo")
-	if !strings.Contains(p, specReadySentinel) || !strings.Contains(p, "Demo") {
-		t.Errorf("interview prompt should name the project and the sentinel: %q", p)
-	}
-}
-
 func TestProjectDialogText(t *testing.T) {
 	if !strings.Contains(projectDialogText(projAwaitName, ""), "name") {
 		t.Error("await-name dialog should ask for a name")

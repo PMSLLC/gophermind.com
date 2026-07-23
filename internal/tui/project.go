@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -63,15 +64,6 @@ func parseApproval(text string) (kind projectApproval, revise string) {
 	return approvalRevise, strings.TrimSpace(text)
 }
 
-// interviewPrompt seeds the interview turn.
-func interviewPrompt(name string) string {
-	return fmt.Sprintf(`You are scoping a new software project called %q for a spec-driven workflow.
-Interview me to build a comprehensive spec. Ask focused clarifying questions a FEW at a time —
-goals, target users, core features, scope, explicit non-goals, constraints, and measurable success
-criteria — and ask follow-ups until you could write a thorough spec. Do NOT write any files yet.
-Only when you have enough, end your message with the token %s on its own line.`, name, specReadySentinel)
-}
-
 // generationPrompt instructs the agent to write the plan files using the catalog.
 func generationPrompt(name string, catalog []phaseflow.CatalogAgent) string {
 	var b strings.Builder
@@ -85,6 +77,8 @@ func generationPrompt(name string, catalog []phaseflow.CatalogAgent) string {
 	for _, a := range catalog {
 		fmt.Fprintf(&b, "- %s (default %s): %s\n", a.Name, a.DefaultModel, a.Description)
 	}
+	b.WriteString("\nEvery task MUST be test-driven: its description states the failing test to write FIRST, then the implementation that makes it pass. ")
+	b.WriteString("At least one acceptance criterion per task MUST name the test that proves it (e.g. \"test X fails before, passes after\").\n")
 	b.WriteString("\nEvery task MUST have at least one acceptance criterion, a catalog agent, a model, and status \"pending\". When done, give a one-line summary of the plan.")
 	return b.String()
 }
@@ -160,10 +154,13 @@ func (m model) startProject(name string) (model, tea.Cmd) {
 	}
 	m.projName = name
 	m.projRetries = 0
-	m.appendLine(projectBannerStyle.Render("Scoping “" + name + "” — answer the interview questions; type /generate when ready."))
+	m.projTranscript = interviewTranscript{}
+	m.projPendingQ = ""
+	m.projParseRetry = false
+	m.appendLine(projectBannerStyle.Render("Scoping “" + name + "” — one question at a time; type /generate to stop early."))
 	m.proj = projInterview
 	m.sync()
-	return m.startTurn(interviewPrompt(name), true), nil
+	return m.startTurn(interviewStepPrompt(name, m.projTranscript), true), nil
 }
 
 // handleProjectInput routes an input line while a /project flow is active.
@@ -180,7 +177,14 @@ func (m model) handleProjectInput(text string) (model, tea.Cmd, bool) {
 		if strings.EqualFold(strings.TrimSpace(text), "/generate") {
 			return m.beginGeneration(""), nil, true
 		}
-		return m.startTurn(text, true), nil, true
+		// Pair the answer with the question it answers, then ask for the next
+		// one. The transcript — not the LLM's context — is the record.
+		if q := m.projPendingQ; q != "" {
+			m.projTranscript.add(q, strings.TrimSpace(text))
+			m.projPendingQ = ""
+		}
+		m.projParseRetry = false
+		return m.startTurn(interviewStepPrompt(m.projName, m.projTranscript), true), nil, true
 
 	case projGenerating:
 		m.appendLine("(still working on the plan…)")
@@ -199,6 +203,9 @@ func (m model) beginGeneration(revise string) model {
 	root, _ := os.Getwd()
 	catalog, _, _ := phaseflow.LoadCatalog(root)
 	prompt := generationPrompt(m.projName, catalog)
+	if m.projTranscript.count() > 0 {
+		prompt += "\n\nThe interview that scoped this project:\n\n" + m.projTranscript.String()
+	}
 	if revise != "" {
 		prompt += "\n\nRevision requested: " + revise
 	}
@@ -218,6 +225,11 @@ func (m model) handleProjectReview(text string) (model, tea.Cmd, bool) {
 		if err := e.Approve(); err != nil {
 			m.appendLine("project: approve: " + err.Error())
 		} else {
+			if err := writeProjectDoc(root, m.projName); err != nil {
+				m.appendLine("project: PROJECT.md: " + err.Error())
+			} else {
+				m.appendLine("Spec and phases written to " + phaseflow.ProjectDocName)
+			}
 			m.appendLine(projectDoneStyle.Render("✓ Project approved — you can now /phase plan 1 or /phase execute 1"))
 		}
 		m.proj = projNone
@@ -241,10 +253,29 @@ func (m model) handleProjectReview(text string) (model, tea.Cmd, bool) {
 func (m model) afterProjectTurn(answer string) (tea.Model, tea.Cmd) {
 	switch m.proj {
 	case projInterview:
-		if isSpecReady(answer) {
+		step, err := parseInterviewStep(answer)
+		if err != nil {
+			// One reparse retry, then fall back to the raw reply rather than
+			// dead-ending the flow on a model that will not emit JSON.
+			if !m.projParseRetry {
+				m.projParseRetry = true
+				m.appendLine("(reformatting the question…)")
+				m.sync()
+				return m.startTurn(interviewStepPrompt(m.projName, m.projTranscript), true), waitFor(m.sub)
+			}
+			m.projParseRetry = false
+			m.projPendingQ = strings.TrimSpace(answer)
+			m.appendLine("(could not parse a single question; answer the above as best you can)")
+			m.sync()
+			return m, waitFor(m.sub)
+		}
+		m.projParseRetry = false
+		if step.Done || isSpecReady(answer) {
 			return m.beginGeneration(""), waitFor(m.sub)
 		}
-		// Otherwise the agent asked more questions (already shown); wait for input.
+		m.projPendingQ = step.Question
+		m.appendLine(projectQuestionStyle.Render("Q" + fmt.Sprint(m.projTranscript.count()+1) + ": " + step.Question))
+		m.sync()
 		return m, waitFor(m.sub)
 
 	case projGenerating:
@@ -287,6 +318,10 @@ var (
 				Foreground(lipgloss.AdaptiveColor{Light: "#7C3AED", Dark: "#A78BFA"})
 	projectDoneStyle = lipgloss.NewStyle().Bold(true).
 				Foreground(lipgloss.AdaptiveColor{Light: "#059669", Dark: "#34D399"})
+	// The single interview question, styled so it stands out from the agent's
+	// other output — it is the one thing the user must respond to.
+	projectQuestionStyle = lipgloss.NewStyle().Bold(true).
+				Foreground(lipgloss.AdaptiveColor{Light: "#0E7490", Dark: "#5AA6BC"})
 	projectDialogStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.AdaptiveColor{Light: "#7C3AED", Dark: "#A78BFA"}).
@@ -306,4 +341,21 @@ func projectDialogText(p projPhase, name string) string {
 		return "🆕 " + name + " · review · y to approve · type changes · cancel"
 	}
 	return ""
+}
+
+// writeProjectDoc renders the approved plan into PROJECT.md's managed block so
+// the agent has one root file holding the spec and every phase. The overview is
+// taken from the generated SPEC.md when present.
+func writeProjectDoc(root, name string) error {
+	a, _, err := phaseflow.LoadAssignments(root)
+	if err != nil {
+		return err
+	}
+	// The overview is best-effort: a missing SPEC.md still yields a PROJECT.md
+	// with the phase table, which is the part the executor needs.
+	var overview string
+	if b, err := os.ReadFile(filepath.Join(phaseflow.PlanningDir(root), "SPEC.md")); err == nil {
+		overview = string(b)
+	}
+	return phaseflow.UpsertProjectDoc(root, phaseflow.RenderProjectDocBody(name, overview, &a))
 }
