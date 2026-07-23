@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // This file implements the autonomous per-task executor for `/project-execute`
@@ -48,6 +49,98 @@ type TaskRunner interface {
 // DeadlineExceeded), the in-flight task is reverted to pending and the loop
 // stops immediately, leaving later tasks pending for a future run.
 func Execute(ctx context.Context, root string, runner TaskRunner, emit func(TaskOutcome)) (RunSummary, error) {
+	return ExecuteWithRounds(ctx, root, runner, emit, DefaultMaxRounds)
+}
+
+// DefaultMaxRounds bounds how many times ExecuteWithRounds re-attempts the
+// tasks that failed, so an unattended run finishes rather than spinning.
+const DefaultMaxRounds = 3
+
+// ExecuteWithRounds runs passes over the plan until every task is accounted
+// for, retrying failures with their failure detail fed back to the runner. It
+// stops at the first of: no failures left, a round that fixed nothing (further
+// retries would only repeat themselves), or maxRounds.
+//
+// The failure note is handed to the runner on the retry attempt but never
+// persisted, so assignments.json keeps the plan the user approved.
+func ExecuteWithRounds(ctx context.Context, root string, runner TaskRunner, emit func(TaskOutcome), maxRounds int) (RunSummary, error) {
+	if maxRounds < 1 {
+		maxRounds = 1
+	}
+	var summary RunSummary
+	lastDetail := map[string]string{}
+	// Only tasks this run actually attempted are tallied; work left done by an
+	// earlier run must not inflate this run's summary.
+	touched := map[string]bool{}
+
+	for round := 0; round < maxRounds; round++ {
+		passSummary, ran, err := executePass(ctx, root, runner, emit, lastDetail)
+		summary.Outcomes = append(summary.Outcomes, passSummary.Outcomes...)
+		for _, o := range passSummary.Outcomes {
+			touched[o.ID] = true
+		}
+		if err != nil {
+			return summary, err
+		}
+		if !ran || ctx.Err() != nil {
+			break
+		}
+
+		progressed := passSummary.Done + passSummary.Corrected
+		if passSummary.Failed == 0 || progressed == 0 || round == maxRounds-1 {
+			break
+		}
+		// Another round is coming: return the failures to pending so the next
+		// pass picks them up.
+		if err := resetFailedToPending(root); err != nil {
+			return summary, err
+		}
+	}
+
+	// Counts reflect the plan's final state, not the sum of every attempt, so a
+	// task that failed once and then succeeded counts once, as done.
+	final, _, err := LoadAssignments(root)
+	if err != nil {
+		return summary, err
+	}
+	for _, t := range final.Tasks {
+		if !touched[t.ID] {
+			continue
+		}
+		switch t.Status {
+		case StatusDone:
+			summary.Done++
+		case StatusCorrected:
+			summary.Corrected++
+		case StatusFailed:
+			summary.Failed++
+		}
+	}
+	return summary, nil
+}
+
+// resetFailedToPending requeues failed tasks for the next retry round.
+func resetFailedToPending(root string) error {
+	a, _, err := LoadAssignments(root)
+	if err != nil {
+		return err
+	}
+	for i, t := range a.Tasks {
+		if t.Status == StatusFailed {
+			a.Tasks[i].Status = StatusPending
+		}
+	}
+	return a.Save(root)
+}
+
+// executePass runs every currently-pending task once. It reports whether any
+// task ran, so the caller can stop when the plan is exhausted.
+func executePass(ctx context.Context, root string, runner TaskRunner, emit func(TaskOutcome), lastDetail map[string]string) (RunSummary, bool, error) {
+	summary, err := executeOnce(ctx, root, runner, emit, lastDetail)
+	return summary, len(summary.Outcomes) > 0, err
+}
+
+func executeOnce(ctx context.Context, root string, runner TaskRunner, emit func(TaskOutcome), lastDetail map[string]string) (RunSummary, error) {
 	a, found, err := LoadAssignments(root)
 	if err != nil {
 		return RunSummary{}, err
@@ -90,7 +183,16 @@ func Execute(ctx context.Context, root string, runner TaskRunner, emit func(Task
 			return summary, err
 		}
 
-		status, detail, runErr := runner.Run(ctx, a.Tasks[idx])
+		// On a retry round, hand the runner the same task plus what went wrong
+		// last time. The copy is deliberate: the note must not reach disk.
+		attempt := a.Tasks[idx]
+		if note := lastDetail[attempt.ID]; note != "" {
+			attempt.AgentAddendum = strings.TrimSpace(attempt.AgentAddendum +
+				"\n\nA previous attempt at this task failed with:\n" + note +
+				"\nFix that before proceeding.")
+		}
+
+		status, detail, runErr := runner.Run(ctx, attempt)
 
 		if ctx.Err() != nil || isCancel(runErr) {
 			a.Tasks[idx].Status = StatusPending
@@ -108,6 +210,12 @@ func Execute(ctx context.Context, root string, runner TaskRunner, emit func(Task
 		}
 		if err := a.Save(root); err != nil {
 			return summary, err
+		}
+
+		if a.Tasks[idx].Status == StatusFailed {
+			lastDetail[a.Tasks[idx].ID] = detail
+		} else {
+			delete(lastDetail, a.Tasks[idx].ID)
 		}
 
 		outcome := TaskOutcome{ID: a.Tasks[idx].ID, Status: a.Tasks[idx].Status, Detail: detail}
