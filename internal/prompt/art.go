@@ -24,11 +24,11 @@ const GopherArt = `
 `
 
 // GoPherItBanner is the "GO PHER IT" tagline wordmark shown directly under
-// GopherArt at startup. Kept to 34 columns so it locks up flush under the ~46
-// column gopher and survives an 80-column terminal. GopherMind remains the
-// product name; this is tagline art only.
+// GopherArt at startup. Kept to 42 columns and indented 8 spaces so it lines
+// up centered under the ~46 column gopher and survives an 80-column
+// terminal. GopherMind remains the product name; this is tagline art only.
 const GoPherItBanner = `
- __  __    _  | |  __  _     _ ___
-/ _|/  \  |_) |_| |_  |_)    |  |
-\__|\__/  |   | | |__ | \    |  |
+         __  __    _  | |  __  _     _ ___
+        / _|/  \  |_) |_| |_  |_)    |  |
+        \__|\__/  |   | | |__ | \    |  |
 `
