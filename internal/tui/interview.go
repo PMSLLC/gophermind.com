@@ -15,7 +15,12 @@ import (
 type interviewStep struct {
 	Question string `json:"question"`
 	Why      string `json:"why"`
-	Done     bool   `json:"done"`
+	// Suggested is an answer the model derived from the repository context in
+	// the prompt. It is offered as an editable default, never applied silently:
+	// context can be stale, and a wrong inference must not shape the spec
+	// without the user seeing it.
+	Suggested string `json:"suggested"`
+	Done      bool   `json:"done"`
 }
 
 // interviewQA is a single asked-and-answered pair.
@@ -62,6 +67,7 @@ func parseInterviewStep(reply string) (interviewStep, error) {
 		return interviewStep{}, fmt.Errorf("interview step has neither a question nor done=true")
 	}
 	step.Question = strings.TrimSpace(step.Question)
+	step.Suggested = strings.TrimSpace(step.Suggested)
 	return step, nil
 }
 
@@ -100,9 +106,17 @@ func firstJSONObject(s string) (string, bool) {
 
 // interviewStepPrompt asks for the next single question, replaying everything
 // answered so far so the model does not repeat itself.
-func interviewStepPrompt(name string, tr interviewTranscript) string {
+func interviewStepPrompt(name string, tr interviewTranscript, ctx string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are scoping a new software project called %q for a spec-driven workflow.\n\n", name)
+
+	if strings.TrimSpace(ctx) != "" {
+		b.WriteString("What this repository already records about itself:\n\n")
+		b.WriteString(ctx)
+		b.WriteString("\n\nUse it to ask better questions AND to prefill answers: whenever the context\n")
+		b.WriteString("already answers your question, put that answer in \"suggested\". Never invent a\n")
+		b.WriteString("suggestion the context does not support — leave it empty instead.\n\n")
+	}
 
 	if tr.count() == 0 {
 		b.WriteString("No questions have been asked yet.\n\n")
@@ -118,7 +132,7 @@ func interviewStepPrompt(name string, tr interviewTranscript) string {
 	b.WriteString("for the project (e.g. \"go test ./...\"), which is required before you may finish.\n\n")
 
 	b.WriteString("Reply with ONE JSON object and nothing else:\n")
-	b.WriteString(`{"question":"<your single question>","why":"<why you need it>","done":false}` + "\n\n")
+	b.WriteString(`{"question":"<your single question>","why":"<why you need it>","suggested":"<answer from the context, or empty>","done":false}` + "\n\n")
 	b.WriteString("When you have everything needed to write a thorough spec, reply instead with:\n")
 	b.WriteString(`{"done":true}` + "\n\n")
 	b.WriteString("Do not ask multiple questions. Do not write any files. Do not call any tools.")

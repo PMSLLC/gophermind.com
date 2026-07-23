@@ -105,6 +105,11 @@ type model struct {
 	// spent on a model that did not return JSON.
 	projTranscript interviewTranscript
 	projPendingQ   string
+	// projSuggested is the model's prefilled answer for projPendingQ, offered
+	// as an editable default; projCtx is the repository digest replayed into
+	// every interview prompt.
+	projSuggested  string
+	projCtx        string
 	projParseRetry bool
 	projRetries    int
 	projTurn       bool
