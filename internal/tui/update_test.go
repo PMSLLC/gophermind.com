@@ -315,6 +315,9 @@ func TestApplyInputHeightRecomputesViewportHeight(t *testing.T) {
 }
 
 func TestAltEnterInsertsNewlineAndGrows(t *testing.T) {
+	// Alt+Enter is opt-in since it is byte-identical to what some key remaps
+	// emit; see TestAltEnterDoesNotInsertNewlineByDefault.
+	t.Setenv(altEnterEnv, "1")
 	m := testModel(t)
 	m.input.SetValue("hello")
 	got, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter, Alt: true})
