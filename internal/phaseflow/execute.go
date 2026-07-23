@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -227,6 +228,11 @@ func executeOnce(ctx context.Context, root string, runner TaskRunner, emit func(
 		_, _ = codeindex.BuildAndWrite(root)
 
 		outcome := TaskOutcome{ID: a.Tasks[idx].ID, Status: a.Tasks[idx].Status, Detail: detail}
+
+		// Record run state before the next task starts. The next task runs in a
+		// cleared context, so this file is how it learns what already happened.
+		// Best-effort for the same reason as the index.
+		_ = UpsertContextDoc(root, RenderContextDocBody(projectNameFor(root), &a, outcome))
 		summary.Outcomes = append(summary.Outcomes, outcome)
 		switch outcome.Status {
 		case StatusDone:
@@ -258,4 +264,13 @@ func normalizeStatus(status string) string {
 	default:
 		return StatusFailed
 	}
+}
+
+// projectNameFor labels the context doc with the project directory's name, so
+// the doc is never anonymous.
+func projectNameFor(root string) string {
+	if abs, err := filepath.Abs(root); err == nil {
+		return filepath.Base(abs)
+	}
+	return filepath.Base(root)
 }

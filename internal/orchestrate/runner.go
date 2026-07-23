@@ -64,7 +64,7 @@ func (r *Runner) Run(ctx context.Context, t phaseflow.Task) (status, detail stri
 	}
 
 	model := resolveModel(t.Model, r.speedModel, r.strongModel)
-	system, user := buildTaskPrompts(t, body)
+	system, user := buildTaskPromptsWithContext(t, body, r.root)
 
 	ag := agent.New(r.client, r.reg, r.maxIter, safety.Auto, nil)
 	ag.SetModel(model)
