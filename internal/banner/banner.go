@@ -6,6 +6,8 @@ package banner
 import (
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
+
 	root "gophermind"
 	"gophermind/internal/fortune"
 	"gophermind/internal/prompt"
@@ -19,6 +21,11 @@ type Options struct {
 	Tip     bool // include a rotating tip-of-the-day line
 }
 
+// taglineStyle tints the "GO PHER IT" wordmark with the teal from the gopher's
+// glasses. lipgloss degrades to plain text when the output is not a color-capable
+// TTY, so piped and captured output stays escape-free.
+var taglineStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#5AA6BC"))
+
 // Render builds the full startup banner string, including a fortune and a tip.
 func Render() string {
 	return RenderWith(Options{Fortune: true, Tip: true})
@@ -29,6 +36,7 @@ func Render() string {
 func RenderWith(o Options) string {
 	var b strings.Builder
 	b.WriteString(prompt.GopherArt)
+	b.WriteString(taglineStyle.Render(prompt.GoPherItBanner))
 	b.WriteString("\n")
 	b.WriteString(version.String())
 	b.WriteByte('\n')
