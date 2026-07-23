@@ -99,7 +99,9 @@ func TestExecuteRunnerErrorMarksFailedAndContinues(t *testing.T) {
 	runner := &fakeRunner{byID: map[string]scriptedResult{
 		"01-02": {err: errors.New("boom")},
 	}}
-	summary, err := Execute(context.Background(), root, runner, nil)
+	// One round: this test is about continuing past a failure within a pass,
+	// not about the retry rounds (see TestRetryRoundsFixesFailedTask).
+	summary, err := ExecuteWithRounds(context.Background(), root, runner, nil, 1)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -245,9 +247,10 @@ func TestExecuteEmitsOutcomePerFinishedTask(t *testing.T) {
 		"01-02": {err: errors.New("boom")},
 	}}
 	var emitted []TaskOutcome
-	summary, err := Execute(context.Background(), root, runner, func(o TaskOutcome) {
+	// One round: a retry would legitimately emit a second outcome for 01-02.
+	summary, err := ExecuteWithRounds(context.Background(), root, runner, func(o TaskOutcome) {
 		emitted = append(emitted, o)
-	})
+	}, 1)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
