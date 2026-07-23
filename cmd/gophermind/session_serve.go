@@ -281,6 +281,35 @@ func sessionDeleteHandler(remove func(string) error) http.HandlerFunc {
 	}
 }
 
+// sessionRenameHandler handles PATCH /session/{id}: it sets a custom display
+// name for the session via setName. Body: {"name":"..."}. An empty name clears
+// the custom name, reverting to the derived title.
+func sessionRenameHandler(setName func(id, name string) error) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			http.Error(w, "use PATCH", http.StatusMethodNotAllowed)
+			return
+		}
+		id := r.PathValue("id")
+		if err := validSessionID(id); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var body struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+		if err := setName(id, body.Name); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
 // sessionMessagesHandler handles GET /session/{id}/messages: it returns the
 // named session's stored conversation as a JSON array of raw OpenAI-format
 // message objects, via load (found==false -> 404, err -> 500).

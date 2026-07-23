@@ -275,6 +275,7 @@ func runServe(run func(ctx context.Context, task string) (string, error), metric
 		mux.Handle("POST /session/{id}/stream", sessionWrap(sessionStreamHandler(sessionTurn, locks)))
 		mux.Handle("GET /session", sessionWrap(sessionListHandler(session.List)))
 		mux.Handle("DELETE /session/{id}", sessionWrap(sessionDeleteHandler(session.Remove)))
+		mux.Handle("PATCH /session/{id}", sessionWrap(sessionRenameHandler(session.SetName)))
 		mux.Handle("GET /modes", sessionWrap(http.HandlerFunc(modesHandler)))
 		mux.Handle("GET /session/{id}/config", sessionWrap(sessionConfigHandler()))
 		if sessionMessages != nil {

@@ -24,6 +24,7 @@ type Info struct {
 	ModTime  time.Time
 	Messages int
 	Title    string // first user message, truncated
+	Name     string // custom display name (rename), empty when unset
 }
 
 // List returns all saved sessions, newest first.
@@ -64,6 +65,7 @@ func listDir(dir string) ([]Info, error) {
 			ModTime:  fi.ModTime(),
 			Messages: msgs,
 			Title:    title,
+			Name:     nameInDir(dir, id),
 		})
 	}
 	sort.Slice(infos, func(i, j int) bool { return infos[i].ModTime.After(infos[j].ModTime) })
@@ -140,5 +142,7 @@ func removeIn(dir, id string) error {
 	if _, err := os.Stat(path); err != nil {
 		return fmt.Errorf("session %q not found", id)
 	}
+	// Best-effort: drop the sidecar name so a reused id does not inherit it.
+	_ = os.Remove(filepath.Join(dir, id+".name"))
 	return os.Remove(path)
 }

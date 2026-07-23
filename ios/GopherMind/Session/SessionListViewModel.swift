@@ -8,6 +8,7 @@ import Foundation
 protocol SessionListServicing {
     func listSessions() async throws -> [SessionInfo]
     func deleteSession(_ id: String) async throws
+    func renameSession(_ id: String, name: String) async throws
 }
 
 extension GopherMindService: SessionListServicing {}
@@ -46,6 +47,25 @@ final class SessionListViewModel: ObservableObject {
         } catch {
             sessions = previous
             errorMessage = "Couldn't delete session: \(error.localizedDescription)"
+        }
+    }
+
+    /// Renames a session, updating the row optimistically and rolling back if
+    /// the server rejects it. A blank name clears the custom name server-side.
+    func rename(_ id: String, to name: String) async {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let previous = sessions
+        if let i = sessions.firstIndex(where: { $0.id == id }) {
+            let s = sessions[i]
+            sessions[i] = SessionInfo(id: s.id, path: s.path, size: s.size,
+                                      modTime: s.modTime, messages: s.messages,
+                                      title: s.title, name: trimmed)
+        }
+        do {
+            try await service.renameSession(id, name: trimmed)
+        } catch {
+            sessions = previous
+            errorMessage = "Couldn't rename session: \(error.localizedDescription)"
         }
     }
 }

@@ -19,6 +19,8 @@ struct SessionListView: View {
     /// sheet's model picker, so the caller can navigate straight into it.
     var onNewSession: (String) -> Void
     @State private var showingNewSessionSheet = false
+    @State private var renameTarget: SessionInfo?
+    @State private var renameText = ""
 
     init(settings: AppSettings, onSelect: @escaping (String) -> Void, onNewSession: @escaping (String) -> Void) {
         self.settings = settings
@@ -54,6 +56,19 @@ struct SessionListView: View {
             .sheet(isPresented: $showingNewSessionSheet) {
                 NewSessionSheet(service: service, onCreated: onNewSession)
             }
+            .alert("Rename session", isPresented: renamePresented) {
+                TextField("Name", text: $renameText)
+                Button("Cancel", role: .cancel) { renameTarget = nil }
+                Button("Save") {
+                    if let target = renameTarget {
+                        let newName = renameText
+                        Task { await viewModel.rename(target.id, to: newName) }
+                    }
+                    renameTarget = nil
+                }
+            } message: {
+                Text("Leave blank to use the default title.")
+            }
     }
 
     @ViewBuilder
@@ -72,12 +87,19 @@ struct SessionListView: View {
                         SessionRow(session: session)
                     }
                     .tint(.primary)
-                    .swipeActions {
+                    .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
                             Task { await viewModel.delete(session.id) }
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
+                        Button {
+                            renameTarget = session
+                            renameText = session.name
+                        } label: {
+                            Label("Rename", systemImage: "pencil")
+                        }
+                        .tint(.blue)
                     }
                 }
             }
@@ -106,6 +128,13 @@ struct SessionListView: View {
         .refreshable { await viewModel.load() }
     }
 
+    private var renamePresented: Binding<Bool> {
+        Binding(
+            get: { renameTarget != nil },
+            set: { presented in if !presented { renameTarget = nil } }
+        )
+    }
+
     private var errorPresented: Binding<Bool> {
         Binding(
             get: { viewModel.errorMessage != nil },
@@ -125,9 +154,10 @@ private struct SessionRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            // The session ID is the meaningful name (for these, the repo name);
-            // the server "title" is just the first message (a long seed prompt).
-            Text(session.id.isEmpty ? "Untitled session" : session.id)
+            // Prefer the custom name (rename); fall back to the session ID,
+            // which for these is the repo name. The server "title" is just the
+            // first message (a long seed prompt), so it is not shown here.
+            Text(session.displayName.isEmpty ? "Untitled session" : session.displayName)
                 .font(.body.weight(.medium))
                 .lineLimit(1)
             Text("\(session.messages) messages · \(Self.dateFormatter.localizedString(for: session.modTime, relativeTo: Date()))")
