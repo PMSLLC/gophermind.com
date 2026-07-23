@@ -51,6 +51,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case tokenMsg:
+		// An interview turn's reply is a JSON control message between gophermind
+		// and the model, not prose for the user: only the question parsed out of
+		// it is shown (see afterProjectTurn). Dropping the tokens here rather
+		// than at commit time keeps the partial JSON from flashing in the live
+		// view while it streams. The full reply still reaches the state machine
+		// via doneMsg.answer, which comes from the agent, not this buffer.
+		if m.suppressStream() {
+			return m, waitFor(m.sub)
+		}
 		m.stream += string(msg)
 		m.sync()
 		return m, waitFor(m.sub)
@@ -89,7 +98,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitFor(m.sub)
 
 	case doneMsg:
-		if s := strings.TrimSpace(m.stream); s != "" {
+		if s := strings.TrimSpace(m.stream); s != "" && !m.suppressStream() {
 			out := s
 			if m.render != nil {
 				if rendered, err := m.render.Render(s); err == nil {
