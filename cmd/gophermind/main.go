@@ -899,6 +899,11 @@ func run() error {
 	}
 
 	switch cmd {
+	case "secaudit":
+		// Security bug-hunt over a repo: static scan (+ optional model
+		// verification) → SECURITY-AUDIT.md. Non-zero exit when findings meet
+		// the --fail-on threshold, so it can gate CI.
+		return runSecAudit(context.Background(), client, args[1:])
 	case "prompt-tokens":
 		// Report the per-section token cost of the built base system prompt.
 		fmt.Print(pb.RenderAccounting())

@@ -362,6 +362,11 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		return m.handleOptimizeCommand(text), nil
 	}
 
+	// "/secaudit [path]" runs a static security scan and writes SECURITY-AUDIT.md.
+	if strings.Fields(text)[0] == "/secaudit" {
+		return m.handleSecAuditCommand(text), nil
+	}
+
 	// "/phase ..." runs the PhaseFlow workflow. State commands print to the
 	// transcript and return; a loop step yields a seeded prompt sent to the agent
 	// (the /phase line stays as the shown user prompt).

@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"gophermind/internal/codeindex"
+	"gophermind/internal/secaudit"
 	"gophermind/internal/tuning"
 )
 
@@ -80,4 +82,44 @@ func (m model) handleOptimizeCommand(text string) model {
 // /project generation turn -- streams normally.
 func (m model) suppressStream() bool {
 	return m.projTurn && m.proj == projInterview
+}
+
+// handleSecAuditCommand implements "/secaudit [path]": a static-only security
+// scan over the given path (default the working directory), writing
+// SECURITY-AUDIT.md and printing a summary. It runs static-only so it returns
+// promptly without a model round-trip; the `gophermind secaudit` CLI does the
+// full scan-plus-verification.
+func (m model) handleSecAuditCommand(text string) model {
+	root, err := os.Getwd()
+	if err != nil {
+		m.appendLine("secaudit: " + err.Error())
+		m.sync()
+		return m
+	}
+	if fields := strings.Fields(text); len(fields) > 1 {
+		root = fields[1]
+	}
+
+	report, err := secaudit.Audit(context.Background(), root, secaudit.Options{})
+	if err != nil {
+		m.appendLine("secaudit: " + err.Error())
+		m.sync()
+		return m
+	}
+	out := filepath.Join(root, secaudit.ReportFileName)
+	if err := secaudit.WriteReport(report, out); err != nil {
+		m.appendLine("secaudit: write report: " + err.Error())
+		m.sync()
+		return m
+	}
+
+	counts := report.Counts()
+	m.appendLine(projectBannerStyle.Render(fmt.Sprintf(
+		"secaudit: %d finding(s) — %d critical, %d high, %d medium, %d low",
+		len(report.Findings), counts[secaudit.Critical], counts[secaudit.High],
+		counts[secaudit.Medium], counts[secaudit.Low])))
+	m.appendLine("report written to " + secaudit.ReportFileName + " (static-only; run `gophermind secaudit` for model verification)")
+	m.appendLine("note: a clean run means nothing was found by these checks, not that the code is secure.")
+	m.sync()
+	return m
 }
