@@ -100,3 +100,26 @@ func TestHandleOptimizeUnattendedWarns(t *testing.T) {
 		t.Errorf(".env missing auto-approval for unattended:\n%s", b)
 	}
 }
+
+// TestHandleSecAuditCommandWritesReport: /secaudit scans and writes the report.
+func TestHandleSecAuditCommandWritesReport(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.WriteFile(filepath.Join(dir, "leak.py"),
+		[]byte("password = \"hardcodedvalue123\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := testModel(t)
+	m = m.handleSecAuditCommand("/secaudit")
+
+	if !strings.Contains(m.content, "secaudit:") {
+		t.Errorf("no secaudit summary line:\n%s", m.content)
+	}
+	if !strings.Contains(strings.ToLower(m.content), "not that the code is secure") {
+		t.Errorf("missing the honesty note:\n%s", m.content)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "SECURITY-AUDIT.md")); err != nil {
+		t.Errorf("report not written: %v", err)
+	}
+}

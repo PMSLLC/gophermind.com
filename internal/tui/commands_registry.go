@@ -24,6 +24,7 @@ var slashCommands = []slashCommand{
 	{Name: "/config", Arg: "", Desc: "open the configuration wizard"},
 	{Name: "/index", Arg: "", Desc: "rebuild INDEX.md, the code symbol index"},
 	{Name: "/optimize", Arg: "[profile]", Desc: "tune .env for a performance profile (safe|balanced|aggressive|unattended)"},
+	{Name: "/secaudit", Arg: "[path]", Desc: "static security scan → SECURITY-AUDIT.md"},
 	{Name: "/temp", Arg: "<0-2>", Desc: "set sampling temperature"},
 	{Name: "/topp", Arg: "<0-1>", Desc: "set top-p sampling"},
 	{Name: "/goal", Arg: "<text>", Desc: "set a persistent steering goal (\"/goal\" shows, \"/goal clear\" removes)"},
