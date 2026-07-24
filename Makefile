@@ -1,12 +1,31 @@
 BINARY := gophermind
 
-.PHONY: build test vet check snapshot release clean ios-test ios-deploy
+.PHONY: build test vet check snapshot release clean ios-test ios-deploy \
+	predeploy deploy-local deploy-server deploy-phone deploy-all install-hooks
 
 build: ## Build a local (unstamped) binary
 	go build -o $(BINARY) ./cmd/gophermind
 
 test: ## Run the full test suite
 	go test ./...
+
+predeploy: ## Run the comprehensive pre-deploy test gate (fmt, vet, race tests, iOS)
+	./scripts/predeploy.sh
+
+deploy-local: ## Gate, then rebuild the local binary
+	./scripts/deploy.sh local
+
+deploy-server: ## Gate, then build + ship to the server
+	./scripts/deploy.sh server
+
+deploy-phone: ## Gate, then build + install on the iPhone
+	./scripts/deploy.sh phone
+
+deploy-all: ## Gate once, then deploy local + server + phone
+	./scripts/deploy.sh all
+
+install-hooks: ## Install the git pre-push hook that runs the gate before every push
+	./scripts/install-hooks.sh
 
 ios-test: ## Run the iOS app unit tests on a simulator
 	./ios/test.sh
