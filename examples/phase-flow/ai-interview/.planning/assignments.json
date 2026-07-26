@@ -1,0 +1,640 @@
+{
+  "tasks": [
+    {
+      "id": "01-01",
+      "phase": "01",
+      "title": "Go service scaffold",
+      "description": "Go module with a chi router, layered configuration (flags > env > .env > defaults, mirroring gophermind), structured logging, a /healthz endpoint reporting database connectivity, a Makefile, and CI running build, vet, and test.",
+      "acceptance_criteria": [
+        "make run starts the API and /healthz returns 200 with database connectivity reported",
+        "make test passes from a clean checkout with no manual setup beyond a running Postgres",
+        "Configuration resolves in the documented precedence order, proven by a test per layer",
+        "CI fails the build on go vet findings or any failing test"
+      ],
+      "agent": "executor",
+      "agent_addendum": "Mirror gophermind's config precedence and structured-logging conventions so both services on the box behave identically in operations.",
+      "model": "speed",
+      "status": "pending"
+    },
+    {
+      "id": "01-02",
+      "phase": "01",
+      "title": "Postgres schema v1 and migrations runner",
+      "description": "Schema v1 covering subjects, identities (email and phone, verified flag), consent_records (per channel, per jurisdiction, granted and revoked timestamps), and preferences. Forward and rollback migrations with a runner invoked from the Makefile and gated in deploy.",
+      "acceptance_criteria": [
+        "Migrations apply forward from an empty database and roll back to empty without error",
+        "consent_records model grant and revocation as immutable, timestamped rows rather than a mutable boolean",
+        "identities enforce uniqueness per channel value across the whole table, not just per subject",
+        "Schema follows the project MySQL/Postgres naming conventions in the db-api-standards skill"
+      ],
+      "agent": "executor",
+      "agent_addendum": "consent_records are append-only history, never updated in place. Current consent is derived by query. This matters for REQ-17 and for any future dispute about what was consented to and when.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "01-03",
+      "phase": "01",
+      "title": "Row-level security and tenant-scoped repositories",
+      "description": "Postgres row-level security policies on every subject-owned table, plus a repository layer that sets the tenant context per request. Tests must prove isolation holds even against deliberately unscoped queries.",
+      "acceptance_criteria": [
+        "A query issued in subject A's session returns zero rows from subject B, including when the WHERE clause omits subject_id entirely",
+        "A new subject-owned table without an RLS policy fails a schema-level test that enumerates tables and checks policy presence",
+        "The tenant context cannot leak across pooled connections, proven by a concurrent test",
+        "Attempting a write with no tenant context set fails closed rather than defaulting to any subject"
+      ],
+      "agent": "security-auditor",
+      "agent_addendum": "The enumeration test in criterion two is the load-bearing one: it is what keeps RLS correct as tables are added in Phases 2 through 9. Write it so a developer adding a table cannot forget.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "01-04",
+      "phase": "01",
+      "title": "Subject authentication and sessions",
+      "description": "Signup, login, logout, and session management using argon2id password hashing and secure, HTTP-only, SameSite session cookies.",
+      "acceptance_criteria": [
+        "A subject can sign up, log in, and receive a session that authorizes tenant-scoped requests",
+        "Passwords are argon2id with per-password salts and tuned parameters, never reversible",
+        "Session cookies are Secure, HttpOnly, and SameSite, with server-side revocation on logout",
+        "Login timing does not reveal whether an email address exists"
+      ],
+      "agent": "executor",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "02-01",
+      "phase": "02",
+      "title": "Timeline events with multi-resolution precision",
+      "description": "The timeline_events table and domain type: a start and end instant, an explicit precision (decade, year, month, day, hour, minute), a confidence score, a life domain, narrative body, and provenance back to the answer that produced it.",
+      "acceptance_criteria": [
+        "An event known only as sometime in 1994 and one known as 1994-06-12 14:30 both persist without loss, each carrying its own precision",
+        "Range queries return an event whose precision makes it partially overlap the range, with the overlap made explicit rather than silently included or excluded",
+        "Every event carries provenance to the answer and question that produced it, and orphaned events are rejected",
+        "Precision and confidence are distinct fields with distinct tests; a precise date can be low confidence and a vague one high confidence"
+      ],
+      "agent": "executor",
+      "agent_addendum": "Precision and confidence being independent is the subtle part. Someone can be certain it was the summer of 1998 (low precision, high confidence) or unsure whether it was 12 or 13 June 1998 (high precision, low confidence). Model both.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "02-02",
+      "phase": "02",
+      "title": "Entities with deduplication and reversible merge",
+      "description": "People, places, and organizations as first-class entities, linked to the events that mention them, with candidate-duplicate detection and a merge operation that can be undone.",
+      "acceptance_criteria": [
+        "Mom and Barbara referring to the same person can be merged, and every event link follows the merge",
+        "A merge can be reversed, restoring the prior entity identities and their links exactly",
+        "Duplicate candidates are surfaced with a similarity score rather than merged automatically",
+        "Entity queries are tenant-scoped and pass the Phase 1 RLS enumeration test"
+      ],
+      "agent": "executor",
+      "agent_addendum": "Never auto-merge. A wrong merge silently corrupts a life story in a way the subject may not notice for years. Surface candidates, let the subject or an explicit review step decide.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "02-03",
+      "phase": "02",
+      "title": "Coverage grid and incremental density",
+      "description": "The multi-resolution coverage grid over time bucket by life domain. Nested buckets from decade to hour, a density score per cell, and incremental recomputation of covering cells on event insert rather than a full rebuild.",
+      "acceptance_criteria": [
+        "Inserting one event updates every covering cell from hour up to decade, and no others",
+        "Recomputation cost is independent of total timeline size, proven by a benchmark across two orders of magnitude of event count",
+        "A coverage query returns the ten emptiest cells for a subject with their density scores",
+        "Grid resolution adapts: a cell only subdivides to a finer bucket once its parent has enough density to justify it"
+      ],
+      "agent": "nyquist-auditor",
+      "agent_addendum": "Criterion four is the heart of it. Uniform hour-level cells across eighty years is roughly 700,000 cells per subject, nearly all permanently empty, and the density signal drowns. Subdivide adaptively so resolution follows information, and justify the subdivision threshold explicitly.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "02-04",
+      "phase": "02",
+      "title": "Timeline query API and coverage heatmap endpoint",
+      "description": "Read API over the timeline: filter by time range, life domain, entity, and full text; plus the coverage heatmap endpoint the Phase 7 browser renders.",
+      "acceptance_criteria": [
+        "All endpoints follow the /api/v1 response envelope and error format from the db-api-standards skill",
+        "Range, domain, entity, and full-text filters compose in a single query",
+        "The heatmap endpoint returns cells for a requested zoom level and time span in one round trip",
+        "Results are pagination-stable under concurrent event insertion"
+      ],
+      "agent": "executor",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "03-01",
+      "phase": "03",
+      "title": "Life-domain taxonomy with sensitivity tiers",
+      "description": "The seeded taxonomy of life domains spanning family, work, education, health, mental health, sexuality and intimacy, money, faith and belief, substances, legal and criminal history, trauma and loss, friendship, travel, food, media, politics, body, and aspiration. Each domain carries a sensitivity tier driving channel eligibility. Subjects can mute any domain.",
+      "acceptance_criteria": [
+        "The taxonomy covers the full breadth in the description, with no domain omitted for being uncomfortable",
+        "Each domain carries a sensitivity tier that Phase 6 channel selection reads",
+        "A subject can mute a domain, and the mute is queryable at schedule time",
+        "Taxonomy is seed data, versioned by migration, not hardcoded in Go"
+      ],
+      "agent": "domain-researcher",
+      "agent_addendum": "Breadth is the requirement here, per the nothing-is-taboo stance in PROJECT.md. Sensitivity tiers govern which channel a question may travel on and how it is phrased; they never govern whether the domain exists. Omitting a domain because it is uncomfortable defeats the product.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "03-02",
+      "phase": "03",
+      "title": "Cell scoring function",
+      "description": "The pure scoring function that ranks coverage cells for interviewing: gap size, memory-recoverability decay with age, salience adjacency to known high-emotion events, and per-domain subject fatigue.",
+      "acceptance_criteria": [
+        "The function is pure with no I/O, covered by table-driven tests over each input dimension independently and in combination",
+        "Recoverability decay reflects that recent time is more retrievable than distant time, with the curve documented and tunable",
+        "A cell adjacent to a known high-salience event scores above an equally empty cell in a quiet stretch",
+        "Per-domain fatigue measurably lowers scores for a domain the subject has been answering reluctantly"
+      ],
+      "agent": "executor",
+      "agent_addendum": "This function is the intelligence ceiling of approach A. Keep every weight named, documented, and tunable from configuration rather than buried as a literal, because Phase 9 feeds prediction feedback back into it.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "03-03",
+      "phase": "03",
+      "title": "Question generation on the local model",
+      "description": "Given a target cell, generate the question text on the local qwen3.6-35b through gophermind's OpenAI-compatible endpoint. Output is schema-validated. Semantic deduplication against everything previously asked of that subject.",
+      "acceptance_criteria": [
+        "Every generated question records the target cell that motivated it, and generation without a target is impossible by construction",
+        "Malformed model output is rejected outright rather than repaired or partially accepted",
+        "A semantic near-duplicate of a previously asked question is caught and regenerated, proven with a paraphrase test set",
+        "No subject-derived text reaches any non-local endpoint, verified against the Phase 10 egress guard contract"
+      ],
+      "agent": "ai-researcher",
+      "agent_addendum": "The model writes questions; it never chooses them. If you find yourself handing the model the coverage grid and asking what to ask, stop: that is approach B and it was rejected in PROJECT.md for good reasons.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "03-04",
+      "phase": "03",
+      "title": "Question queue and subject-visible view",
+      "description": "The priority queue of generated questions, plus the API backing the subject-visible list of everything currently queued for them (REQ-18).",
+      "acceptance_criteria": [
+        "Questions dequeue in score order, with ties broken deterministically",
+        "The subject can retrieve every question queued for them, before any of them is asked",
+        "A subject can delete a queued question, and it is not regenerated for a configurable cooling period",
+        "Muting a domain removes its queued questions immediately rather than at send time"
+      ],
+      "agent": "executor",
+      "agent_addendum": "Criterion four is REQ-19 in miniature. A muted domain leaving stale questions visible in the subject's queue is exactly the failure this requirement exists to prevent.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "04-01",
+      "phase": "04",
+      "title": "Answer extraction into structured records",
+      "description": "Extract events, entities, and temporal expressions from a free-text answer using the local model, returning schema-validated JSON that is rejected wholesale if malformed.",
+      "acceptance_criteria": [
+        "A paragraph mentioning three events at differing precisions yields three events with correct ranges and precisions",
+        "Extraction output is schema-validated, and an invalid extraction fails the answer rather than persisting partial data",
+        "Entities mentioned in the answer are linked to the events they belong to, not merely listed",
+        "Extraction quality is measured against a fixed labelled fixture set, with the score recorded in CI"
+      ],
+      "agent": "ai-researcher",
+      "agent_addendum": "Build the labelled fixture set first and treat its score as a regression gate. Without it, prompt changes in later phases silently degrade extraction and nobody notices until the timeline is wrong.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "04-02",
+      "phase": "04",
+      "title": "Temporal resolution of relative expressions",
+      "description": "Resolve relative temporal expressions into absolute ranges with explicit precision and confidence, anchoring against known timeline events where possible.",
+      "acceptance_criteria": [
+        "The summer after I graduated resolves to an absolute range when the graduation date is known",
+        "The same expression persists as a low-confidence, low-precision range when no anchor exists, rather than being dropped or guessed",
+        "Resolution improves retroactively: supplying the missing anchor later re-resolves dependent expressions",
+        "Ambiguous expressions with multiple plausible anchors are flagged for follow-up rather than resolved arbitrarily"
+      ],
+      "agent": "executor",
+      "agent_addendum": "Criterion three is what makes a long interview compound. An answer given in year one becomes more precisely placed by an answer given in year three, and the timeline should sharpen on its own.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "04-03",
+      "phase": "04",
+      "title": "Open loops and resolution state machine",
+      "description": "Detect unresolved situations from extraction output and open a tracked loop with a resolution state machine and links to related events.",
+      "acceptance_criteria": [
+        "An answer stating that a parent went into hospital opens a loop in a non-terminal state",
+        "The state machine has explicit terminal states including resolved, abandoned, and closed-by-subject, with illegal transitions rejected",
+        "Loops link to the events that opened them and to any later events that advance them",
+        "A subsequent answer that resolves the situation moves the loop to terminal without a further probe"
+      ],
+      "agent": "executor",
+      "agent_addendum": "Closed-by-subject must be a distinct terminal state from resolved. Conflating them loses the fact that the system was told to stop asking, which is the record that matters if the behavior is ever questioned.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "04-04",
+      "phase": "04",
+      "title": "Open-loop sweeper with mute enforcement",
+      "description": "The worker that re-probes open loops on a decaying schedule until terminal, checking per-loop and per-domain mutes before scheduling anything (REQ-09).",
+      "acceptance_criteria": [
+        "Re-probe intervals decay rather than repeating at a fixed cadence, with the curve documented and tunable",
+        "Muting a loop stops all further probes permanently and immediately, verified by a test that mutes mid-schedule",
+        "Mutes are checked at schedule time, so a muted loop never occupies queue space nor influences scoring",
+        "A loop reaching its probe ceiling without resolution transitions to abandoned rather than probing forever"
+      ],
+      "agent": "executor",
+      "agent_addendum": "This is the single most consequential task in the roadmap for whether the product is humane. Follow up until resolved is right for did you get the job and wrong for did your mother recover when she did not. Criterion four exists because some situations never resolve and the system must be able to let go.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "05-01",
+      "phase": "05",
+      "title": "Channel interface",
+      "description": "The single Channel abstraction over Send, Receive, and Capabilities that email, SMS, and voice all implement, designed voice-ready so Phase 8 requires no engine changes.",
+      "acceptance_criteria": [
+        "The engine never branches on channel type anywhere in the codebase, enforced by a test or lint rule",
+        "Capabilities express message length limits, richness, latency class, and whether the channel supports live turn-taking",
+        "A fake channel implementation drives full end-to-end tests with no external service",
+        "Adding voice in Phase 8 requires implementing the interface only, with no engine modification"
+      ],
+      "agent": "framework-selector",
+      "agent_addendum": "Design against the voice case now even though it ships in Phase 8. Live turn-taking is the capability that breaks naive send-and-forget interfaces, so let it shape the abstraction from the start.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "05-02",
+      "phase": "05",
+      "title": "Email adapter",
+      "description": "Outbound email over SMTP, inbound via plus-addressed routing and webhook, with reliable correlation of a reply back to its thread and originating question.",
+      "acceptance_criteria": [
+        "A question sent by email and answered by reply correlates back to its thread and question",
+        "Correlation survives quoted replies, subject-line changes, and forwarded threads",
+        "Inbound mail that cannot be correlated is quarantined for review rather than discarded or misattributed",
+        "Outbound mail passes SPF, DKIM, and DMARC alignment checks"
+      ],
+      "agent": "integration-checker",
+      "agent_addendum": "Never fall back to matching on the From address alone. A subject with several email addresses, or a shared family mailbox, would misattribute one person's life into another's archive.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "05-03",
+      "phase": "05",
+      "title": "SMS adapter with A2P 10DLC compliance",
+      "description": "Twilio send and receive, A2P 10DLC brand and campaign registration, and STOP, HELP, and START keyword handling wired to consent records.",
+      "acceptance_criteria": [
+        "An inbound SMS reply reaches the extraction pipeline and updates the timeline",
+        "STOP halts all SMS immediately and writes a revocation to consent_records; START writes a new grant",
+        "HELP returns the required identification and opt-out language",
+        "Messages exceeding a segment are handled deliberately, with cost and ordering behavior tested"
+      ],
+      "agent": "integration-checker",
+      "agent_addendum": "A2P 10DLC brand and campaign approval has multi-week external lead time, flagged as a blocker in STATE.md. File during Phase 1 so it does not gate this task. Keyword handling must work even when the application is down, so keep it at the webhook edge.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "05-04",
+      "phase": "05",
+      "title": "Consent gate on every send path",
+      "description": "The fail-closed gate enforcing REQ-17: nothing is dispatched on any channel without a current valid consent record, and revocation takes effect immediately including for already-queued sends.",
+      "acceptance_criteria": [
+        "A send attempt on a channel with no valid consent record fails closed, proven by a test per channel",
+        "Revoking consent cancels already-queued sends on that channel, not merely future ones",
+        "The gate sits on a single chokepoint that no send path can bypass, verified by a test that enumerates send call sites",
+        "Every blocked send is audit-logged with the reason"
+      ],
+      "agent": "security-auditor",
+      "agent_addendum": "Criterion three is the durable one. A consent check that can be bypassed by a new code path added in Phase 8 is not a gate. Make bypass structurally impossible rather than merely absent today.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "06-01",
+      "phase": "06",
+      "title": "Contact scheduler",
+      "description": "Decide when to contact a subject from their cadence preference, timezone-aware quiet hours, and per-channel rate limits.",
+      "acceptance_criteria": [
+        "No contact is dispatched inside quiet hours across timezone and daylight-saving boundaries, proven with DST transition tests",
+        "Per-channel rate limits hold under burst conditions",
+        "A subject who moves timezone has quiet hours follow them once their profile updates",
+        "Scheduling decisions are logged with the reason, so any contact can be explained after the fact"
+      ],
+      "agent": "executor",
+      "agent_addendum": "Test the DST transitions explicitly, both the spring-forward gap and the autumn repeated hour. A quiet-hours bug means a 3am phone call about someone's trauma, which is the worst failure this system can produce short of a crisis mishandling.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "06-02",
+      "phase": "06",
+      "title": "Channel selection",
+      "description": "Choose the channel for a question from its sensitivity tier, channel fit, and subject preference (REQ-15).",
+      "acceptance_criteria": [
+        "A high-sensitivity question never routes to SMS unless the subject explicitly opted in for that tier",
+        "Long-form narrative questions prefer email; short factual ones prefer SMS; deep branching ones prefer voice",
+        "Subject preference overrides fit but never overrides the sensitivity floor",
+        "Every routing decision records the inputs that produced it"
+      ],
+      "agent": "executor",
+      "agent_addendum": "The sensitivity floor is not a preference. SMS is readable on a lock screen and often on a shared or family device, so a question about a subject's sexual history or criminal record can out them to someone standing nearby. Preference can loosen the floor only through explicit, per-tier opt-in.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "06-03",
+      "phase": "06",
+      "title": "Fatigue tracking and cadence decay",
+      "description": "Track response rate per subject and per domain, decay contact cadence automatically on sustained non-response, and feed per-domain fatigue back into Phase 3 cell scoring.",
+      "acceptance_criteria": [
+        "Sustained non-response measurably reduces contact frequency rather than holding a fixed rate",
+        "Per-domain reluctance lowers that domain's cell scores without suppressing other domains",
+        "Renewed engagement restores cadence, so decay is recoverable rather than permanent",
+        "Fatigue signals are distinguishable from a subject simply being unreachable for a period"
+      ],
+      "agent": "user-profiler",
+      "agent_addendum": "Criterion four matters: someone on a two-week holiday is not fatigued, and treating them as such permanently damps a healthy subject. Distinguish silence-everywhere from silence-in-one-domain.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "06-04",
+      "phase": "06",
+      "title": "Worker runtime",
+      "description": "The job queue and worker runtime backing scheduling, sweeping, and sending: idempotent execution, retry with jitter, and execution observability.",
+      "acceptance_criteria": [
+        "A worker killed mid-job leaves no duplicate sends on restart, proven by a kill test",
+        "Retries use exponential backoff with jitter and a dead-letter path after a bounded number of attempts",
+        "Queue depth, job latency, and failure rate are observable from the running service",
+        "Jobs are tenant-scoped and cannot process another subject's work"
+      ],
+      "agent": "executor",
+      "agent_addendum": "Idempotency is non-negotiable: a duplicate send here is a duplicate 2am text message asking someone about their divorce. Key on the question identity, not the job identity.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "07-01",
+      "phase": "07",
+      "title": "Web application scaffold and auth flow",
+      "description": "React and TypeScript on Vite, with the authentication flow, session handling, routing, and the shared component and styling foundation.",
+      "acceptance_criteria": [
+        "A subject can sign up, log in, and log out through the web application",
+        "Session expiry is handled without data loss on in-progress forms",
+        "The build produces a static bundle served by the Go API in production",
+        "Type checking and lint run in CI and fail the build"
+      ],
+      "agent": "executor",
+      "model": "speed",
+      "status": "pending"
+    },
+    {
+      "id": "07-02",
+      "phase": "07",
+      "title": "Onboarding wizard with consent capture",
+      "description": "Identity verification for email and phone, per-channel consent capture written to consent_records, and initial profile seeding to give the planner an anchor set of life events.",
+      "acceptance_criteria": [
+        "Both an email address and a phone number are verified before any consent can be granted",
+        "Consent is captured per channel, with the exact presented language stored alongside the grant",
+        "Profile seeding captures enough anchors, including birth date, to make the first coverage grid meaningful",
+        "Abandoning onboarding midway leaves no subject in a state that permits contact"
+      ],
+      "agent": "user-profiler",
+      "agent_addendum": "Store the exact consent language shown, not a reference to it. Wording changes over time and the record must show what this subject actually agreed to on that date.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "07-03",
+      "phase": "07",
+      "title": "Preferences and mute controls",
+      "description": "Screens for channel preferences, cadence, quiet hours, domain mutes, and per-loop mutes, all wired to the scheduler behavior built in Phases 4 and 6.",
+      "acceptance_criteria": [
+        "Muting a life domain removes its queued questions and stops further scheduling, observable within one scheduling cycle",
+        "Muting an individual open loop stops its sweeper probes permanently",
+        "Quiet hours and cadence changes take effect without requiring a service restart",
+        "The subject can see, in one place, every mute currently in force and undo any of them"
+      ],
+      "agent": "executor",
+      "agent_addendum": "Mutes must be as easy to find and apply as they are consequential. If a subject has to hunt for how to stop a painful line of questioning, the control has failed regardless of whether it technically works.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "07-04",
+      "phase": "07",
+      "title": "Timeline browser and coverage heatmap",
+      "description": "The multi-resolution timeline browser zooming from decade to hour, rendering the coverage heatmap over the same axes, with event edit, redact, and delete.",
+      "acceptance_criteria": [
+        "Zoom runs continuously from decade to hour, with the heatmap rendering cell density at the current level",
+        "Editing an event updates coverage density and is reflected in the heatmap",
+        "Redaction shows as a visible gap rather than silently rewriting history",
+        "The browser stays responsive on a timeline of one hundred thousand events"
+      ],
+      "agent": "executor",
+      "agent_addendum": "The heatmap is the product's clearest single artifact: a life rendered as what is known and what is not. Give it the design attention that deserves. Redaction showing as a gap is a deliberate honesty property, not an oversight.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "08-01",
+      "phase": "08",
+      "title": "Twilio Voice and Media Streams bridge",
+      "description": "The WebSocket bridge carrying mu-law 8k audio both ways, with full call lifecycle handling covering dial, answer, machine detection, hangup, and failure.",
+      "acceptance_criteria": [
+        "A call streams audio bidirectionally and terminates cleanly on either side hanging up",
+        "Answering machine detection routes to voicemail handling rather than interviewing a machine",
+        "Dropped connections mid-call are detected and the partial session is persisted, not lost",
+        "The bridge implements the Phase 5 Channel interface with no engine modification"
+      ],
+      "agent": "executor",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "08-02",
+      "phase": "08",
+      "title": "Local streaming STT and TTS within the latency budget",
+      "description": "Streaming speech-to-text on faster-whisper and text-to-speech on Piper or Kokoro, both local, with the end-to-end turn latency budget instrumented and measured.",
+      "acceptance_criteria": [
+        "Median end-of-speech to first TTS audio frame stays within the 800 ms budget, measured in CI rather than asserted",
+        "The latency figure is broken down by stage so the dominant cost is visible",
+        "STT and TTS run entirely on the local box with no external inference call",
+        "The measured budget is compared against the scripted-IVR fallback decision point recorded in STATE.md"
+      ],
+      "agent": "ai-researcher",
+      "agent_addendum": "This is the highest-risk task in the roadmap. Measure before optimizing and report honestly: if 800 ms is unreachable on a box already serving gophermind, say so here and trigger the scripted-IVR fallback rather than letting Phase 8 slip indefinitely. The fallback costs in-session follow-up and leaves every other phase intact.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "08-03",
+      "phase": "08",
+      "title": "Bounded in-session agentic loop",
+      "description": "The approach-C layer: within a call, a turn-budgeted agentic loop pursues the planner-chosen target with real follow-up questions, using timeline retrieval as context.",
+      "acceptance_criteria": [
+        "The loop pursues its target across multiple turns and produces follow-ups grounded in what the subject just said",
+        "It stops at its turn budget rather than running unbounded, and hands unfinished threads back as open loops",
+        "Barge-in works: the subject can interrupt mid-sentence and the agent yields",
+        "The loop cannot schedule contacts, alter consent, or take any action outside the current call"
+      ],
+      "agent": "ai-researcher",
+      "agent_addendum": "Criterion four is the boundary between approach C and the rejected approach B. The in-session loop is free within the conversation and has no authority outside it. Scheduling, consent, and channel decisions stay deterministic and stay in Go.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "08-04",
+      "phase": "08",
+      "title": "Recording consent and jurisdiction handling",
+      "description": "Recorded disclosure at call start, explicit handling of two-party-consent jurisdictions, and consent stored before the first dial (REQ-22).",
+      "acceptance_criteria": [
+        "No call is placed to a two-party-consent jurisdiction without stored consent and a recorded disclosure at call start",
+        "Jurisdiction is derived from the subject's number and stated location, and ambiguity resolves to the stricter rule",
+        "The disclosure is part of the recording itself, not merely logged as having played",
+        "Consent withdrawal mid-call stops recording immediately and retains only what was lawfully captured"
+      ],
+      "agent": "security-auditor",
+      "agent_addendum": "Resolve ambiguity to the stricter rule always. Getting this wrong is a criminal exposure in several states, not a compliance ticket.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "09-01",
+      "phase": "09",
+      "title": "Pattern mining over the timeline",
+      "description": "Surface recurring cycles, life arcs, and the observed cadence of life changes from a subject's timeline, with the supporting events cited.",
+      "acceptance_criteria": [
+        "Recurring annual and weekly patterns are detected from a seeded timeline fixture",
+        "Every surfaced pattern cites the specific events supporting it",
+        "Cadence of life changes such as job or address moves is estimated with a confidence interval",
+        "Patterns below a support threshold are discarded rather than reported weakly"
+      ],
+      "agent": "pattern-mapper",
+      "agent_addendum": "Citation is what separates a pattern from a hallucination. A pattern that cannot name its supporting events must not be surfaced, because Phase 9 questions are built on these and an invented pattern produces an invented question about someone's life.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "09-02",
+      "phase": "09",
+      "title": "Retrospective analogy questions",
+      "description": "Generate questions targeting gaps by observed pattern, of the form noting that something happened every summer and asking about the summer that is missing.",
+      "acceptance_criteria": [
+        "Each analogy question references a real observed pattern and a real empty cell, both traceable",
+        "Questions are phrased without asserting that the analogous event occurred",
+        "A pattern the subject has contradicted is not reused for further analogies",
+        "Analogy questions are deduplicated against the Phase 3 question history"
+      ],
+      "agent": "executor",
+      "agent_addendum": "Criterion two is the important one. Ask whether something happened, never assume it did. Telling someone their life contained an event it did not is both wrong and corrosive to their trust in the archive.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "09-03",
+      "phase": "09",
+      "title": "Forward-looking and aspiration questions",
+      "description": "Generate future-facing questions grounded in observed periodicity, covering where the subject is heading and what they intend, without inventing extrapolated events.",
+      "acceptance_criteria": [
+        "Forward questions cite the observed periodicity that grounds them",
+        "No question asserts a future event as expected fact",
+        "Aspiration questions cover intent, fear, and expectation, not only plans",
+        "Answers to forward questions persist as intentions distinguishable from recorded events"
+      ],
+      "agent": "executor",
+      "agent_addendum": "Criterion four keeps the timeline honest. An intention stated in 2026 about 2030 is not an event in 2030, and conflating them corrupts the archive the moment the intention fails to happen.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "09-04",
+      "phase": "09",
+      "title": "Prediction confidence and feedback loop",
+      "description": "Score prediction confidence, let the subject mark a prediction right or wrong, and feed that signal back into Phase 3 cell scoring.",
+      "acceptance_criteria": [
+        "Marking a prediction wrong measurably changes subsequent cell scoring for that subject",
+        "Prediction accuracy is tracked over time and observable per subject",
+        "The feedback loop is bounded and cannot drive scoring weights to a degenerate state",
+        "Feedback effects are explainable: any score change traces to the feedback that caused it"
+      ],
+      "agent": "eval-planner",
+      "agent_addendum": "Criterion three matters because this closes a loop onto the scoring function from 03-02. Bound the adjustment range and test the degenerate cases, or a run of wrong predictions can collapse the planner into asking nothing.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "10-01",
+      "phase": "10",
+      "title": "Crisis disclosure path",
+      "description": "The specified behavior when a subject discloses active self-harm, abuse, or immediate danger: a disclosure classifier, a defined per-channel response, session halt, resource surfacing, and an audit record (REQ-20).",
+      "acceptance_criteria": [
+        "A simulated self-harm disclosure halts the session, surfaces resources on that channel, and writes an audit record, on every channel including mid-call",
+        "The classifier is tuned to favor false positives over false negatives, with the threshold documented and justified",
+        "Halting stops further interviewing of that subject until a defined resumption condition is met",
+        "The behavior is documented for the operator, not only implemented in code"
+      ],
+      "agent": "domain-researcher",
+      "agent_addendum": "Decide this behavior before any real subject is interviewed, not before this code ships. An automated system probing trauma at 2am will eventually receive a live disclosure, and the response must already exist. Favor false positives: pausing an interview unnecessarily costs a little data, and the opposite error costs something that cannot be recovered.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "10-02",
+      "phase": "10",
+      "title": "Egress guard enforcing local-only inference",
+      "description": "The automated guard implementing REQ-25: the build fails if subject-derived text can reach any external client. External credentials exist for message transport only.",
+      "acceptance_criteria": [
+        "A deliberately introduced violation fails the build, demonstrated in the test suite itself",
+        "The guard covers every external client including inference, transport, logging, and error reporting",
+        "Error and crash reporting paths cannot carry subject content, verified explicitly",
+        "The guard runs in CI and cannot be skipped by a build flag"
+      ],
+      "agent": "security-auditor",
+      "agent_addendum": "Error reporting is the leak nobody anticipates: a panic carrying an answer body into an external crash reporter defeats REQ-24 entirely while every deliberate code path stays clean. Cover it explicitly in criterion three.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "10-03",
+      "phase": "10",
+      "title": "Data rights: export, redaction, and deletion",
+      "description": "Full data export, per-event redaction, and hard delete with full cascade, all audit-logged (REQ-21).",
+      "acceptance_criteria": [
+        "A subject can export everything held about them in a documented, machine-readable format",
+        "Per-event redaction removes content while preserving the visible gap described in 07-04",
+        "Hard delete cascades across events, entities, loops, questions, answers, threads, and recordings, verified by a post-delete scan for orphans",
+        "Every export, redaction, and deletion is audit-logged, and the audit log itself survives account deletion in anonymized form"
+      ],
+      "agent": "executor",
+      "agent_addendum": "Include call recordings and transcripts in the cascade. They live outside the primary schema and are the most commonly missed artifact in a deletion path, as well as the most sensitive thing left behind.",
+      "model": "strong",
+      "status": "pending"
+    },
+    {
+      "id": "10-04",
+      "phase": "10",
+      "title": "Deployment to the gophermind box",
+      "description": "Deploy to 10.0.0.5 alongside gophermind: systemd units for API and worker, reverse-proxy vhost with TLS and webhook ingress, a migration gate, healthchecks, rollback, and database backups.",
+      "acceptance_criteria": [
+        "A deploy is reversible, with a documented and exercised rollback",
+        "A failed migration blocks the release rather than half-applying",
+        "The API on 8091 and voice media on 8092 run without disturbing gophermind on 8090",
+        "Database backups run on a schedule and a restore has been performed successfully at least once"
+      ],
+      "agent": "executor",
+      "agent_addendum": "Criterion four is not complete until a restore has actually been run. An untested backup of an irreplaceable life archive is not a backup. Also confirm the local model stays responsive for gophermind under this service's inference load before declaring the deploy healthy.",
+      "model": "strong",
+      "status": "pending"
+    }
+  ]
+}
