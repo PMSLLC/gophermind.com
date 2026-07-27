@@ -760,6 +760,14 @@ func run() error {
 		tools.WASMTool(cfg.RootDir),                                                 // run sandboxed WASI community tools
 		tools.ReadParquet(cfg.RootDir),                                              // read Parquet columnar data files
 	)
+	// Stores that GOPHERMIND_RAG / GOPHERMIND_MEMORY inject from, shared by the
+	// one-shot run/ask arm and every serve turn.
+	ragPaths := retrievalPaths{
+		index:    indexPath,
+		memory:   memoryPath,
+		profile:  profileMemoryPath(),
+		episodes: episodesPath(cfg.RootDir),
+	}
 	// --dry-run: wrap gated (mutating) tools so the agent previews the calls it
 	// would make without executing any mutation.
 	if *dryRunFlag {
@@ -987,6 +995,8 @@ func run() error {
 			if systemSuffix != "" {
 				ag.AppendSystemPrompt(systemSuffix)
 			}
+			// Per-turn retrieval; this agent is discarded after the turn.
+			injectRetrieval(ctx, ag, embedProvider, ragPaths, t)
 			answer, err := ag.Send(ctx, t)
 			u := ag.Usage()
 			metrics.promptTokens.Add(int64(u.PromptTokens))
@@ -1006,6 +1016,8 @@ func run() error {
 			if systemSuffix != "" {
 				ag.AppendSystemPrompt(systemSuffix)
 			}
+			// Per-turn retrieval; this agent is discarded after the turn.
+			injectRetrieval(ctx, ag, embedProvider, ragPaths, t)
 			_, err := ag.Send(ctx, t)
 			return err
 		}
@@ -1069,7 +1081,13 @@ func run() error {
 			if m := readSessionModel(id); m != "" {
 				ag.SetModel(m)
 			}
+			// Per-turn retrieval, keyed to this turn's text rather than the session's
+			// first message, so later turns on a new topic are grounded too. The
+			// prompt is restored before Save so the persisted session never
+			// accumulates a copy of every turn's retrieved context.
+			restore := injectRetrieval(ctx, ag, embedProvider, ragPaths, t)
 			_, err := ag.Send(ctx, t)
+			restore()
 			if serr := session.Save(id, ag); serr != nil && err == nil {
 				err = serr
 			}
@@ -1147,27 +1165,11 @@ func run() error {
 		if systemSuffix != "" {
 			ag.AppendSystemPrompt(systemSuffix)
 		}
-		// RAG context injection: when GOPHERMIND_RAG is enabled and a semantic
-		// index exists, retrieve the top chunks for the task and inject them so the
-		// model starts grounded (fewer tool round-trips).
-		if envTruthy("GOPHERMIND_RAG") && embedProvider != nil {
-			if rc := retrieveContext(ctx, embedProvider, indexPath, task, 5); rc != "" {
-				ag.AppendSystemPrompt(rc)
-			}
-		}
-		// Long-term memory: inject the most relevant remembered facts at task start
-		// (per-repo memory, then global profile memory).
-		if envTruthy("GOPHERMIND_MEMORY") && embedProvider != nil {
-			if mc := retrieveContext(ctx, embedProvider, memoryPath, task, 5); mc != "" {
-				ag.AppendSystemPrompt(strings.Replace(mc, "retrieved_context", "long_term_memory", 2))
-			}
-			if pc := retrieveContext(ctx, embedProvider, profileMemoryPath(), task, 3); pc != "" {
-				ag.AppendSystemPrompt(strings.Replace(pc, "retrieved_context", "profile_memory", 2))
-			}
-			if ec := retrieveContext(ctx, embedProvider, episodesPath(cfg.RootDir), task, 3); ec != "" {
-				ag.AppendSystemPrompt(strings.Replace(ec, "retrieved_context", "episodic_memory", 2))
-			}
-		}
+		// RAG + long-term memory injection: when GOPHERMIND_RAG / GOPHERMIND_MEMORY
+		// are enabled and the stores exist, retrieve the most relevant chunks and
+		// facts for the task so the model starts grounded (fewer tool round-trips).
+		// This process exits after the turn, so there is nothing to restore.
+		injectRetrieval(ctx, ag, embedProvider, ragPaths, task)
 		// Few-shot example bank: when GOPHERMIND_EXAMPLES names a JSON bank, inject
 		// the most task-relevant examples (top 3 by term overlap) into the prompt.
 		if p := strings.TrimSpace(os.Getenv("GOPHERMIND_EXAMPLES")); p != "" {
