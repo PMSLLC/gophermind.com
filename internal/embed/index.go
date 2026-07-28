@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 )
 
 // chunkLines is the default number of lines per indexed chunk.
@@ -14,6 +15,38 @@ const chunkLines = 50
 
 // maxIndexFiles caps how many files BuildIndex will read, to bound cost.
 const maxIndexFiles = 2000
+
+// maxChunkChars caps a chunk's length in bytes. Line count alone does not bound
+// size: 50 lines of dense prose can exceed an embedding model's context window,
+// and a server that rejects one oversized input fails the whole batched request.
+// Embedding models are commonly 2048-token; at the ~3 chars/token that code and
+// English tokenize to, this leaves a wide margin.
+const maxChunkChars = 4000
+
+// embedBatchSize caps how many chunks go out per embedding request. The whole
+// index used to travel in one request, which meant a large repo could not finish
+// inside the provider's request timeout.
+const embedBatchSize = 128
+
+// embedAll embeds texts in bounded batches, preserving input order.
+func embedAll(ctx context.Context, p Provider, texts []string) ([][]float32, error) {
+	out := make([][]float32, 0, len(texts))
+	for start := 0; start < len(texts); start += embedBatchSize {
+		end := start + embedBatchSize
+		if end > len(texts) {
+			end = len(texts)
+		}
+		vecs, err := p.Embed(ctx, texts[start:end])
+		if err != nil {
+			return nil, err
+		}
+		if len(vecs) != end-start {
+			return nil, fmt.Errorf("provider returned %d embeddings for %d chunks", len(vecs), end-start)
+		}
+		out = append(out, vecs...)
+	}
+	return out, nil
+}
 
 // Index is a persisted set of embedding vectors over a repo's files.
 type Index struct {
@@ -71,7 +104,7 @@ func BuildIndex(ctx context.Context, p Provider, root string, exts []string) (*I
 		return &Index{}, nil
 	}
 
-	vecs, err := p.Embed(ctx, texts)
+	vecs, err := embedAll(ctx, p, texts)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +118,8 @@ func BuildIndex(ctx context.Context, p Provider, root string, exts []string) (*I
 	return idx, nil
 }
 
-// chunkText splits text into chunks of at most n lines.
+// chunkText splits text into chunks of at most n lines and at most
+// maxChunkChars bytes, so no chunk can exceed the embedding model's context.
 func chunkText(text string, n int) []string {
 	if n <= 0 {
 		n = chunkLines
@@ -97,9 +131,64 @@ func chunkText(text string, n int) []string {
 		if end > len(lines) {
 			end = len(lines)
 		}
-		chunks = append(chunks, strings.Join(lines[i:end], "\n"))
+		chunks = append(chunks, splitOversized(strings.Join(lines[i:end], "\n"))...)
 	}
 	return chunks
+}
+
+// splitOversized breaks a chunk longer than maxChunkChars into pieces that fit,
+// preferring line boundaries so chunks stay readable as retrieved context.
+func splitOversized(chunk string) []string {
+	if len(chunk) <= maxChunkChars {
+		return []string{chunk}
+	}
+	var out []string
+	var cur strings.Builder
+	flush := func() {
+		if cur.Len() > 0 {
+			out = append(out, cur.String())
+			cur.Reset()
+		}
+	}
+	for _, line := range strings.Split(chunk, "\n") {
+		// A single line over the cap has no usable boundary — emit whatever has
+		// accumulated, then hard-split the line itself.
+		if len(line) > maxChunkChars {
+			flush()
+			out = append(out, splitRunes(line)...)
+			continue
+		}
+		if cur.Len() > 0 && cur.Len()+1+len(line) > maxChunkChars {
+			flush()
+		}
+		if cur.Len() > 0 {
+			cur.WriteByte('\n')
+		}
+		cur.WriteString(line)
+	}
+	flush()
+	return out
+}
+
+// splitRunes hard-splits s into maxChunkChars-bounded pieces without cutting a
+// multi-byte rune in half (which would emit invalid UTF-8 into the request).
+func splitRunes(s string) []string {
+	var out []string
+	for len(s) > maxChunkChars {
+		cut := maxChunkChars
+		for cut > 0 && !utf8.RuneStart(s[cut]) {
+			cut--
+		}
+		if cut == 0 {
+			cut = maxChunkChars // no rune boundary found; cut anyway rather than loop forever
+		}
+		out = append(out, s[:cut])
+		s = s[cut:]
+	}
+	if s != "" {
+		out = append(out, s)
+	}
+	return out
 }
 
 // Save writes the index to path as JSON.

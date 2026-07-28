@@ -8,6 +8,12 @@ All notable changes to GopherMind are documented here. The format follows
 
 ### Added
 
+- **RAG + memory injection now applies to `serve`.** `GOPHERMIND_RAG` / `GOPHERMIND_MEMORY` previously only took effect in the one-shot `run`/`ask` commands — the served agent (`POST /run`, `/run/stream`, and session turns) silently ignored them, so a phone-driven or webhook-driven turn was never grounded. All three serve paths now inject the same blocks from the same stores. Injection is **per turn**, keyed to that turn's text rather than the session's first message, so later turns on a new topic are grounded too; for persisted sessions the system prompt is restored before the session is saved, so a session never accumulates a copy of each turn's retrieved context. Still opt-in and inert when embeddings are unconfigured.
+
+### Fixed
+
+- **`embed_index` no longer fails on prose-heavy repos, and can index large ones.** Chunks were split by line count only (50 lines) with no size bound, so a single dense Markdown chunk could exceed the embedding model's context and make the server reject the *entire* request — one oversized file failed the whole index build. Chunks are now also capped by length (splitting on line boundaries, and rune-safely inside a single over-long line, so minified files are handled). Separately, every chunk used to go out in one HTTP request against a 60s client timeout, which put a hard ceiling on repo size; requests are now sent in bounded batches. Both the full (`BuildIndex`) and incremental (`UpdateIndex`) paths are covered.
+
 - **`GOPHERMIND_LLM_TIMEOUT`** — per-attempt timeout for LLM completion requests, kept separate from `GOPHERMIND_HTTP_TIMEOUT_S` (which now governs only the one-shot startup calls: model discovery/listing and the capability probe). Accepts a bare number of seconds (`900`) or a Go duration (`15m`); unset means it inherits `GOPHERMIND_HTTP_TIMEOUT_S`, so existing configs are unchanged. Streaming turns remain governed by `GOPHERMIND_STREAM_IDLE_TIMEOUT_S`.
 - **`/project-execute` autonomous executor** — autonomously runs every `pending` task in an approved project plan (`.planning/assignments.json`), each in a fresh isolated agent with its assigned model and catalog prompt. Tasks are verified against acceptance criteria (verify-and-correct, one round); failed tasks are marked `failed` and execution continues to a summary. Task agents run in auto-approval mode (unattended). Ctrl-C aborts with graceful cleanup (in-flight tasks revert to `pending`). Requires an approved plan, gated like `/phase execute`.
 

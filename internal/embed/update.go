@@ -56,7 +56,7 @@ func UpdateIndex(ctx context.Context, p Provider, root string, exts []string, ex
 		}
 	}
 	if len(texts) > 0 {
-		vecs, err := p.Embed(ctx, texts)
+		vecs, err := embedAll(ctx, p, texts)
 		if err != nil {
 			return nil, err
 		}

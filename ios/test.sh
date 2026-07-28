@@ -20,9 +20,20 @@ SIM=$(xcrun simctl list devices available \
 xcrun simctl boot "$SIM" 2>/dev/null || true
 
 echo "Testing on simulator $SIM …"
+# Keep the full log: the summary filter below matches "error:" lines but not the
+# headers above them, so on its own it can render a destination failure as if
+# xcodebuild had picked some other device. On failure, show the raw tail.
+log=$(mktemp -t gophermind-ios-test)
 xcodebuild -project GopherMind.xcodeproj -scheme GopherMind \
-  -destination "id=$SIM" test "$@" 2>&1 \
-  | grep -iE "Test Suite '.*xctest' (passed|failed)|Executed [0-9]+ tests|\*\* TEST (SUCCEEDED|FAILED)|error:|: (error|failing)"
-status=${PIPESTATUS[0]}
-[ "$status" -eq 0 ] && echo "✓ tests passed" || echo "✗ tests failed (exit $status)"
+  -destination "id=$SIM" test "$@" >"$log" 2>&1
+status=$?
+grep -iE "Test Suite '.*xctest' (passed|failed)|Executed [0-9]+ tests|\*\* TEST (SUCCEEDED|FAILED)|error:|: (error|failing)" "$log"
+if [ "$status" -eq 0 ]; then
+  rm -f "$log"
+  echo "✓ tests passed"
+else
+  echo "✗ tests failed (exit $status)"
+  echo "--- unfiltered xcodebuild output (last 40 lines; full log: $log) ---" >&2
+  tail -40 "$log" >&2
+fi
 exit "$status"
