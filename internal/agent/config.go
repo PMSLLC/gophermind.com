@@ -53,6 +53,22 @@ func (a *Agent) SetModel(m string) { a.llm.Model = strings.TrimSpace(m) }
 // SetAPIKey updates the bearer token sent on subsequent requests.
 func (a *Agent) SetAPIKey(k string) { a.llm.APIKey = strings.TrimSpace(k) }
 
+// ApprovalAllows reports whether this agent's approval policy permits a tool
+// call. It exposes the decision rather than the function so callers (and tests)
+// can assert on policy without reaching into the agent's internals — the seam
+// that let an unaudited, auto-approving task agent ship unnoticed.
+func (a *Agent) ApprovalAllows(tool, argsJSON string) bool {
+	if a.approve == nil {
+		return true
+	}
+	return a.approve(tool, argsJSON)
+}
+
+// AuditLog returns the attached tamper-evident audit log, or nil when none is
+// set. Exposed so a session can hand its chain to the unattended executor,
+// which previously left no audit trail at all.
+func (a *Agent) AuditLog() *safety.AuditLog { return a.audit }
+
 // SetMaxIter sets the per-turn tool-iteration budget. A value < 1 is ignored so
 // a stray zero from a wizard never disables the loop.
 func (a *Agent) SetMaxIter(n int) {
