@@ -67,7 +67,14 @@ func (m model) handleProjectExecuteCommand() (model, tea.Cmd) {
 		return m, nil
 	}
 
-	runner := orchestrate.NewRunner(m.agent.LLM(), m.agent.Registry(), root, m.speedModel, m.model, m.agent.MaxIter())
+	// Hand the session's audit log to the executor so an unattended run leaves
+	// the same tamper-evident chain an interactive one does. The approval policy
+	// is not passed here: this session's approve closure may be the interactive
+	// prompt, which has no human behind it during an unattended run. Supplying
+	// the composed policy stack with a non-blocking fallback is the harness's
+	// job (see WithApproval).
+	runner := orchestrate.NewRunner(m.agent.LLM(), m.agent.Registry(), root, m.speedModel, m.model, m.agent.MaxIter(),
+		orchestrate.WithAuditLog(m.agent.AuditLog()))
 
 	m.appendLine(projectBannerStyle.Render(fmt.Sprintf("executing %d tasks, auto-approve", pending)))
 	m.st = stateWorking
