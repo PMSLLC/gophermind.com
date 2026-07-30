@@ -23,8 +23,14 @@ Seven verified matrix errors. **All seven run in the same direction: gophermind 
 scored as lacking something for which working code or a reusable seam already
 exists.**
 
-That one-directional pattern is the actual finding. A plan with random errors needs
-proofreading; a plan whose errors all inflate the amount of new work needed has a
+> **Amended 2026-07-30.** This section originally read *"all seven run the same
+> direction."* A later pass found an **eighth** error running the **opposite** way —
+> MCP client scored `●` "parity" when gophermind has none. That claim was overreach.
+> The skew is real but is a tendency, not a rule, and the lone counter-example turned
+> out to be the most consequential error of the eight. See *Finding 1b*.
+
+That skew is the actual finding. A plan with random errors needs
+proofreading; a plan whose errors mostly inflate the amount of new work needed has a
 methodological bias. The cause is visible in the document's own *Method* section: it
 grades confidence in the *competitors'* data carefully (high for Hermes releases,
 medium for OpenClaw aggregator detail) while asserting gophermind's column is
@@ -46,10 +52,33 @@ risk handling, so the error is not merely cosmetic.
 | 5 | Secret manager `○` | `ResolveSecret()`, `internal/safety/secrets.go:14` — file-based seam exists | **◐** |
 | 6 | Python/RPC scripting `○` | full out-of-process plugin protocol, `internal/tools/plugin.go:68` | **◐** |
 | 7 | Session archive/restore `○` | `Export`/`Import` (`manage.go:56,77`) + `GCProtecting` (`gc_policy.go:13`) | **◐** |
+| 8 | **MCP client `●` "parity"** | `internal/mcp` is server-only (`server.go`; sole call `cmd/gophermind/main.go:924`) | **○** |
 
-Errors 5–7 were found in a second pass *after* the first review, confirming the bias
-rather than exhausting it. Assume more remain: **the whole gophermind column needs
-re-baselining with citations before the plan is trusted.**
+Errors 5–7 were found in a second pass *after* the first review, and error 8 in a
+third — confirming the bias rather than exhausting it. **The whole gophermind column
+needs re-baselining with citations before the plan is trusted.** That re-baselining
+was carried out on 2026-07-30; the rewritten backlog cites every cell.
+
+## Finding 1b — the eighth error, and why it is the worst
+
+Errors 1–7 undercount gophermind, which inflates estimates: wasteful but visible.
+Error 8 runs the other way, and overclaiming does not inflate an estimate — **it
+deletes the work item entirely.**
+
+`internal/mcp` contains only `server.go`, whose own package comment describes it as
+exposing "gophermind's tools over the Model Context Protocol… so any MCP client
+(including Claude) can discover and call them." The sole call site is
+`mcp.Serve(...)` at `cmd/gophermind/main.go:924`. There is no client, no
+`mcpServers` configuration, and no client code anywhere in the tree.
+
+gophermind therefore **cannot consume any MCP server**, while both competitors can.
+For a coding harness in 2026 that is a substantive gap — it is how a harness
+acquires Playwright, Sentry, or database tooling without hand-writing each
+integration. Because the row read "parity," no phase addressed it and the gap left
+the roadmap without anyone noticing.
+
+Undercounting wastes effort. Overclaiming loses capabilities. The rewritten backlog
+restores this as **Phase 4**.
 
 ## Finding 1 — the fail-open judge (security, act independently of this plan)
 
