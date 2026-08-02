@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# Build a gophermind:// pairing link for the iOS app.
+#
+# The app decodes the link into its three connection settings (server URL,
+# bearer token, optional HMAC secret), so a device is configured in one
+# tap/scan/paste instead of hand-typing a long token. See
+# ios/GopherMind/Settings/PairingConfig.swift for the decoder.
+#
+# Usage:
+#   GOPHERMIND_SERVE_TOKEN=... scripts/gophermind-setup-link --url http://host:8090
+#   scripts/gophermind-setup-link --url http://host:8090 --prompt
+#   scripts/gophermind-setup-link --url http://host:8090 --hmac-env MY_HMAC_VAR
+#   ... | --qr        # also render a scannable QR (needs qrencode)
+#
+# The token is read from the environment or an interactive prompt, never from
+# argv: anything on a command line is visible to `ps` and lands in shell history.
+set -euo pipefail
+
+URL=""
+TOKEN_ENV="GOPHERMIND_SERVE_TOKEN"
+HMAC_ENV="GOPHERMIND_SERVE_HMAC_SECRET"
+PROMPT=0
+QR=0
+FROM_SERVICE=0
+SERVICE_ENV="/etc/gophermind/serve.env"
+
+# Read a KEY's value out of a systemd EnvironmentFile, tolerating optional
+# surrounding quotes. Uses sudo only if the file isn't already readable.
+read_service_var() {
+  local key="$1" file="$2" raw
+  if [ -r "$file" ]; then
+    raw=$(sed -n "s/^${key}=//p" "$file" | head -1)
+  else
+    raw=$(sudo -n sed -n "s/^${key}=//p" "$file" 2>/dev/null | head -1)
+  fi
+  raw="${raw%\"}"; raw="${raw#\"}"
+  raw="${raw%\'}"; raw="${raw#\'}"
+  printf '%s' "$raw"
+}
+
+usage() {
+  sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
+  exit "${1:-0}"
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --url)       URL="${2:?--url needs a value}"; shift 2 ;;
+    --token-env) TOKEN_ENV="${2:?--token-env needs a variable name}"; shift 2 ;;
+    --hmac-env)  HMAC_ENV="${2:?--hmac-env needs a variable name}"; shift 2 ;;
+    --prompt)    PROMPT=1; shift ;;
+    --qr)        QR=1; shift ;;
+    --from-service) FROM_SERVICE=1; shift ;;
+    --service-env)  SERVICE_ENV="${2:?--service-env needs a path}"; FROM_SERVICE=1; shift 2 ;;
+    -h|--help)   usage 0 ;;
+    *) echo "unknown argument: $1" >&2; usage 2 ;;
+  esac
+done
+
+[ -n "$URL" ] || { echo "error: --url is required (e.g. --url http://10.0.0.5:8090)" >&2; exit 2; }
+
+case "$URL" in
+  http://*|https://*) ;;
+  *) echo "error: --url must start with http:// or https://" >&2; exit 2 ;;
+esac
+case "$URL" in
+  http://*)
+    echo "warning: plain http — the bearer token crosses the network in clear text." >&2
+    echo "         Acceptable on a trusted LAN; use https or a tunnel otherwise." >&2 ;;
+esac
+
+if [ "$FROM_SERVICE" -eq 1 ]; then
+  [ -e "$SERVICE_ENV" ] || sudo -n test -e "$SERVICE_ENV" 2>/dev/null || {
+    echo "error: $SERVICE_ENV not found — is this the host running 'gophermind serve'?" >&2
+    exit 2
+  }
+  TOKEN=$(read_service_var GOPHERMIND_SERVE_TOKEN "$SERVICE_ENV")
+  HMAC=$(read_service_var GOPHERMIND_SERVE_HMAC_SECRET "$SERVICE_ENV")
+  [ -n "$TOKEN" ] || {
+    echo "error: could not read GOPHERMIND_SERVE_TOKEN from $SERVICE_ENV." >&2
+    echo "       Needs read access (passwordless sudo, or run as a user who can read it)." >&2
+    exit 2
+  }
+elif [ "$PROMPT" -eq 1 ]; then
+  printf 'Bearer token (input hidden): ' >&2
+  IFS= read -rs TOKEN < /dev/tty
+  printf '\n' >&2
+  HMAC="${!HMAC_ENV:-}"
+else
+  TOKEN="${!TOKEN_ENV:-}"
+  HMAC="${!HMAC_ENV:-}"
+fi
+
+if [ -z "${TOKEN:-}" ]; then
+  echo "error: no token. Set $TOKEN_ENV, pass --prompt to type it, or use" >&2
+  echo "       --from-service on the host running 'gophermind serve'." >&2
+  exit 2
+fi
+
+# Compact JSON with the short keys PairingConfig expects: u / t / h.
+# jq -n --arg keeps the values properly escaped; h is omitted when empty so the
+# app leaves its HMAC setting untouched rather than clearing it.
+if command -v jq >/dev/null 2>&1; then
+  if [ -n "$HMAC" ]; then
+    JSON=$(jq -cn --arg u "$URL" --arg t "$TOKEN" --arg h "$HMAC" '{u:$u,t:$t,h:$h}')
+  else
+    JSON=$(jq -cn --arg u "$URL" --arg t "$TOKEN" '{u:$u,t:$t}')
+  fi
+else
+  JSON=$(URL="$URL" TOKEN="$TOKEN" HMAC="$HMAC" python3 -c '
+import json, os
+d = {"u": os.environ["URL"], "t": os.environ["TOKEN"]}
+if os.environ.get("HMAC"):
+    d["h"] = os.environ["HMAC"]
+print(json.dumps(d, separators=(",", ":")))')
+fi
+
+# base64url (RFC 4648 §5), unpadded — matches Data.base64URLEncodedString().
+BLOB=$(printf '%s' "$JSON" | base64 | tr -d '\n' | tr '+/' '-_' | tr -d '=')
+LINK="gophermind://setup?c=${BLOB}"
+
+echo "$LINK"
+
+if [ "$QR" -eq 1 ]; then
+  if command -v qrencode >/dev/null 2>&1; then
+    echo >&2
+    qrencode -t ANSIUTF8 "$LINK"
+  else
+    echo "note: --qr needs qrencode ('brew install qrencode'); printed the link only." >&2
+  fi
+fi
+
+echo >&2
+echo "This link contains the bearer token in clear text. Anyone who can read it" >&2
+echo "gains the same server access it grants. Send it over a private channel and" >&2
+echo "avoid pasting it anywhere it will be logged or retained." >&2
