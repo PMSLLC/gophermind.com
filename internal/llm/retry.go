@@ -19,9 +19,13 @@ type RetryPolicy struct {
 }
 
 // DefaultRetryPolicy is used when a Client is built without an explicit policy.
+// The attempt count and base delay are sized to outlast a transient LAN
+// blackout: a host that has dropped off the link fails dial with EHOSTUNREACH
+// *instantly*, so a sub-second budget would burn every attempt before the host
+// answers ARP again. Five attempts from a 2s base cover a 15-30s window.
 var DefaultRetryPolicy = RetryPolicy{
-	MaxAttempts: 3,
-	BaseDelay:   250 * time.Millisecond,
+	MaxAttempts: 5,
+	BaseDelay:   2 * time.Second,
 	MaxDelay:    30 * time.Second,
 }
 
