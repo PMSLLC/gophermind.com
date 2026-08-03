@@ -132,7 +132,7 @@ The suggestion engine is built on the reusable [`github.com/jbrahy/bubblecomplet
 
 ### Prompt History
 
-Submitted prompts are saved to `<os user config dir>/gophermind/history` for recall and training (e.g., `~/Library/Application Support/gophermind/history` on macOS; falls back to `.gophermind/history` if the system config directory is unavailable).
+Submitted prompts are saved to `~/.gophermind/history` for recall and training (honors `GOPHERMIND_CONFIG_DIR`; falls back to `.gophermind/history` if the home directory is unavailable).
 
 **Privacy note:** Prompts are stored in plain text (one JSON-encoded string per line, JSONL format). Disable history persistence with `GOPHERMIND_HISTORY=off`. The history is capped at the most recent 500 entries; oldest entries are dropped first.
 
@@ -212,9 +212,9 @@ Failed tasks are marked `failed`, the executor continues to the next task, and a
 
 ## Configuration
 
-Everything is optional and layered: **flags > real env > `./.env` > global
-config > defaults**. Copy [`.env.example`](.env.example) to `.env` for a fully
-documented list, or just run the wizard. Highlights:
+Everything is optional and layered: **flags > real env > `./.env` >
+`~/.gophermind/config.json` > defaults**. Copy [`.env.example`](.env.example) to
+`.env` for a fully documented list, or just run the wizard. Highlights:
 
 | Setting | What it does |
 |---|---|
@@ -222,6 +222,31 @@ documented list, or just run the wizard. Highlights:
 | `GOPHERMIND_MODEL` | Model name (empty = auto-discover) |
 | `GOPHERMIND_APPROVAL` | `ask` (default) or `auto` |
 | `GOPHERMIND_PROFILE` | Named backend: `local-llama`, `openai`, … |
+
+### The global config file
+
+`gophermind config` (and `/config` in the TUI) writes `~/.gophermind/config.json`,
+which is also the directory holding sessions, prompt history, and device tokens.
+It is a flat JSON object meant to be edited by hand — a lowercase key is the
+`GOPHERMIND_` variable without its prefix, and an ALL-CAPS key is used verbatim:
+
+```json
+{
+  "base_url": "http://192.168.5.2:8080/v1",
+  "model": "qwen2.5-coder-32b",
+  "approval": "auto",
+  "max_iter": 25,
+  "fallback_models": ["qwen2.5-coder-14b"],
+  "GITHUB_TOKEN": "…"
+}
+```
+
+Real environment variables always win over the file, and saving merges rather
+than rewrites, so hand-added keys survive re-running the wizard. Set
+`GOPHERMIND_CONFIG_DIR` to put the directory somewhere else. Upgrading from a
+release that used `<os user config dir>/gophermind/.env` migrates automatically
+on first run — the `.env` becomes `config.json` and the sibling state files move
+with it.
 
 Secure options for internal endpoints (mTLS, custom CA), a response cache,
 sampling controls, and JSONL transcript export are all supported — see

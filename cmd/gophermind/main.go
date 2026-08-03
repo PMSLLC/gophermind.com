@@ -61,6 +61,18 @@ func main() {
 }
 
 func run() error {
+	// One-time upgrade of the pre-config.json layout (an OS-config-dir .env plus
+	// its sibling state files) into ~/.gophermind. It must run before Load, which
+	// reads the config file. A failure here is reported but not fatal: the
+	// session still works off the environment and flags.
+	if moved, err := config.Migrate(); err != nil {
+		fmt.Fprintln(os.Stderr, "warning: could not migrate config:", err)
+	} else if moved {
+		if p, perr := config.ConfigFilePath(); perr == nil {
+			fmt.Fprintf(os.Stderr, "✓ config moved to %s\n", p)
+		}
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -499,7 +511,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		if err := setup.WriteEnv(p, res.Pairs()); err != nil {
+		if err := config.Save(p, res.Pairs()); err != nil {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "✓ saved to %s\n", p)
@@ -519,7 +531,7 @@ func run() error {
 		}
 		if p, perr := config.ConfigFilePath(); perr != nil {
 			fmt.Fprintln(os.Stderr, "warning: could not resolve config path:", perr)
-		} else if werr := setup.WriteEnv(p, res.Pairs()); werr != nil {
+		} else if werr := config.Save(p, res.Pairs()); werr != nil {
 			fmt.Fprintln(os.Stderr, "warning: could not save config:", werr)
 		} else {
 			fmt.Fprintf(os.Stderr, "✓ saved to %s\n", p)

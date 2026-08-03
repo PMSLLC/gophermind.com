@@ -158,14 +158,21 @@ func historyEnabled() bool {
 	}
 }
 
-// historyFilePath mirrors config.ConfigFilePath's shape but returns the
-// history file path:
+// historyFilePath mirrors config.Dir's resolution but returns the history file
+// path (the history lives beside the global config):
 //   - GOPHERMIND_CONFIG_DIR set  -> <dir>/history
+//   - else os.UserHomeDir() ok   -> <home>/.gophermind/history
 //   - else os.UserConfigDir() ok -> <dir>/gophermind/history
 //   - else                       -> .gophermind/history
+//
+// Keep this in step with config.Dir; the duplication is the price of this
+// package staying stdlib-only (see the package doc).
 func historyFilePath() (string, error) {
-	if dir := os.Getenv("GOPHERMIND_CONFIG_DIR"); dir != "" {
+	if dir := strings.TrimSpace(os.Getenv("GOPHERMIND_CONFIG_DIR")); dir != "" {
 		return filepath.Join(dir, "history"), nil
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, ".gophermind", "history"), nil
 	}
 	dir, err := os.UserConfigDir()
 	if err != nil {

@@ -1,7 +1,7 @@
 // Package setup implements gophermind's first-run configuration wizard: an
 // interactive prompt sequence that captures the essentials (endpoint, API key,
-// model, approval mode) and persists them as GOPHERMIND_* pairs to a .env file
-// that config loading already reads. It has no dependency on the llm client or
+// model, approval mode) and reports them as GOPHERMIND_* pairs for the caller to
+// persist with config.Save. It has no dependency on the llm client or
 // TUI: model discovery and secret reading are injected, so the flow is fully
 // testable without a terminal or a live endpoint.
 package setup
@@ -11,8 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -227,46 +225,6 @@ func listModels(opts Options, baseURL, apiKey string) ([]string, error) {
 // by any other means (real env, a .env, or a flag).
 func NeedsSetup(baseURLProvided, globalConfigExists, interactive bool) bool {
 	return interactive && !globalConfigExists && !baseURLProvided
-}
-
-// WriteEnv atomically writes GOPHERMIND_* pairs to a .env file at path, creating
-// the parent directory 0700 and the file 0600 (it may contain an API key).
-func WriteEnv(path string, pairs [][2]string) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create config dir: %w", err)
-	}
-	var b strings.Builder
-	for _, p := range pairs {
-		fmt.Fprintf(&b, "%s=%s\n", p[0], quoteEnvValue(p[1]))
-	}
-	tmp, err := os.CreateTemp(dir, ".env-*")
-	if err != nil {
-		return fmt.Errorf("create temp: %w", err)
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName) // no-op after a successful rename
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.WriteString(b.String()); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, path)
-}
-
-// quoteEnvValue wraps a value in double quotes when it contains whitespace, a
-// '#', or is empty, matching the subset that config's .env loader unquotes.
-func quoteEnvValue(v string) string {
-	if v == "" || strings.ContainsAny(v, " \t#\"'") {
-		return `"` + v + `"`
-	}
-	return v
 }
 
 func parseIntOr(s string, fallback int) int {

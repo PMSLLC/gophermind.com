@@ -88,8 +88,8 @@ type deviceStore struct {
 	tokens map[string]deviceRecord
 }
 
-// devicesFilePath returns devices.json next to the global .env, honoring
-// GOPHERMIND_CONFIG_DIR the same way internal/session.Dir does.
+// devicesFilePath returns devices.json in the global config directory,
+// honoring GOPHERMIND_CONFIG_DIR the same way internal/session.Dir does.
 func devicesFilePath() (string, error) {
 	p, err := config.ConfigFilePath()
 	if err != nil {
