@@ -2,13 +2,15 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
 // completionSubcommands are the top-level subcommands offered by tab-completion.
 var completionSubcommands = []string{
 	"commands", "mcp", "telemetry", "benchmark", "plugins", "bundle", "upgrade", "chat", "resume", "config", "sessions", "doctor", "status", "prompt-tokens",
-	"audit", "policy", "persona", "prompts", "usage", "version", "run", "ask", "queue", "serve", "ab", "print", "completion", "phase",
+	"audit", "policy", "persona", "prompts", "usage", "version", "run", "ask", "queue", "serve", "ab", "print", "completion", "autocomplete", "phase",
 }
 
 // completionFlags are the user-facing flags offered by tab-completion.
@@ -25,6 +27,27 @@ func hasArg(args []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// supportedShells are the shells generateCompletion can emit a script for.
+var supportedShells = []string{"bash", "zsh", "fish"}
+
+// detectShell infers which shell to generate a script for from $SHELL, which
+// login sets to the user's shell. It deliberately does not guess from anything
+// else: emitting the wrong dialect into an rc file is worse than asking, so an
+// unrecognized or unset $SHELL is an error naming the supported values.
+func detectShell() (string, error) {
+	sh := strings.TrimSpace(os.Getenv("SHELL"))
+	if sh == "" {
+		return "", fmt.Errorf("cannot detect your shell: $SHELL is not set; pass one explicitly (%s)", strings.Join(supportedShells, ", "))
+	}
+	base := filepath.Base(sh)
+	for _, known := range supportedShells {
+		if base == known {
+			return known, nil
+		}
+	}
+	return "", fmt.Errorf("cannot detect your shell: $SHELL is %q; pass one explicitly (%s)", sh, strings.Join(supportedShells, ", "))
 }
 
 // generateCompletion returns a shell-completion script for bash, zsh, or fish.
@@ -60,7 +83,10 @@ _gophermind() {
         compadd -- $subcommands
     fi
 }
-compdef _gophermind gophermind
+# Guarded so the script is safe to source from .zshrc as well as to drop into
+# an fpath completion directory: compdef only exists once compinit has run, and
+# an unguarded call errors on every shell start when it has not.
+(( $+functions[compdef] )) && compdef _gophermind gophermind
 `, subs, flags), nil
 	case "fish":
 		var b strings.Builder
