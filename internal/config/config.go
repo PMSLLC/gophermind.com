@@ -183,6 +183,12 @@ type Config struct {
 	// there is zero overhead. It is an explicit, user-provided output path
 	// (like `-o outfile`), so it is NOT contained to the repo root.
 	TranscriptPath string // GOPHERMIND_TRANSCRIPT (default: unset; also --transcript)
+
+	// AttentionFlashes is how many times the TUI flashes the screen inverse when
+	// gophermind starts waiting on the user (a gated tool needs a decision, or a
+	// turn finished and handed control back). After the flashes the screen stays
+	// inverse until the next keypress. 0 disables the signal entirely.
+	AttentionFlashes int // GOPHERMIND_ATTENTION_FLASHES (default: 4)
 }
 
 // LLMRequestTimeout returns the effective per-attempt bound for LLM completion
@@ -265,6 +271,8 @@ func Load() (Config, error) {
 		CacheTTL:     envDurationOr("GOPHERMIND_CACHE_TTL", 24*time.Hour),
 
 		TranscriptPath: envOr("GOPHERMIND_TRANSCRIPT", ""),
+
+		AttentionFlashes: envIntOr("GOPHERMIND_ATTENTION_FLASHES", 4),
 	}, nil
 }
 

@@ -49,6 +49,10 @@ type Config struct {
 	AuditPath string
 	// ResumeID, when non-empty, loads that saved session's history at startup.
 	ResumeID string
+	// AttentionFlashes is how many times the screen flashes inverse when
+	// gophermind starts waiting on the user; it then stays inverse until a
+	// keypress. 0 disables the signal.
+	AttentionFlashes int
 }
 
 // Run starts the interactive TUI and blocks until the user quits.
@@ -109,7 +113,7 @@ func Run(cfg Config) error {
 		_, _ = codeindex.BuildAndWrite(root)
 	}
 
-	m := newModel(build, cfg.Model, cfg.SpeedModel, cfg.Mode, glamourStyle, cfg.NoBanner, cfg.NoFortune)
+	m := newModel(build, cfg.Model, cfg.SpeedModel, cfg.Mode, glamourStyle, cfg.NoBanner, cfg.NoFortune, cfg.AttentionFlashes)
 	final, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
 	// On exit, flush the full message history if a transcript path was set. This
 	// runs once, after the UI has torn down, so it never interferes with the

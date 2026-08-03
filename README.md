@@ -222,6 +222,7 @@ Everything is optional and layered: **flags > real env > `./.env` >
 | `GOPHERMIND_MODEL` | Model name (empty = auto-discover) |
 | `GOPHERMIND_APPROVAL` | `ask` (default) or `auto` |
 | `GOPHERMIND_PROFILE` | Named backend: `local-llama`, `openai`, … |
+| `GOPHERMIND_ATTENTION_FLASHES` | Screen flashes when the TUI needs you (default 4; 0 off) |
 
 ### The global config file
 
@@ -236,6 +237,7 @@ It is a flat JSON object meant to be edited by hand — a lowercase key is the
   "model": "qwen2.5-coder-32b",
   "approval": "auto",
   "max_iter": 25,
+  "attention_flashes": 4,
   "fallback_models": ["qwen2.5-coder-14b"],
   "GITHUB_TOKEN": "…"
 }

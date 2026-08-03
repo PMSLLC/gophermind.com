@@ -52,6 +52,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 
+	case flashMsg:
+		// Advance one flash phase. At 0 the screen settles inverse and stays
+		// there until a keypress, so no further tick is scheduled.
+		if !m.attention || m.flashLeft == 0 {
+			return m, nil
+		}
+		m.flashLeft--
+		if m.flashLeft == 0 {
+			return m, nil
+		}
+		return m, flashTick()
+
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spin, cmd = m.spin.Update(msg)
@@ -97,7 +109,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case approvalMsg:
 		m.st = stateApproval
 		m.pending = msg
-		return m, waitFor(m.sub)
+		return m, tea.Batch(m.beginAttention(), waitFor(m.sub))
 
 	case configDoneMsg:
 		// The /config wizard finished (via tea.Exec); persist and apply it.
@@ -124,7 +136,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.projTurn = false
 			return m.afterProjectTurn(msg.answer)
 		}
-		return m, waitFor(m.sub)
+		return m, tea.Batch(m.beginAttention(), waitFor(m.sub))
 
 	case execProgressMsg:
 		m.appendLine(renderExecOutcome(phaseflow.TaskOutcome(msg)))
@@ -136,7 +148,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.st = stateIdle
 		m.cancel = nil
 		m.sync()
-		return m, waitFor(m.sub)
+		return m, tea.Batch(m.beginAttention(), waitFor(m.sub))
 
 	case errMsg:
 		// A cancelled turn (Ctrl-C / Esc mid-stream) is a user action, not a
@@ -151,7 +163,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.st = stateIdle
 		m.cancel = nil
 		m.sync()
-		return m, waitFor(m.sub)
+		return m, tea.Batch(m.beginAttention(), waitFor(m.sub))
 	}
 	return m, nil
 }
@@ -172,6 +184,10 @@ func altEnterNewlineEnabled() bool {
 }
 
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Any key means the user is back at the keyboard, which is the whole point
+	// of the signal — dismiss it before doing anything else with the key.
+	m.clearAttention()
+
 	switch msg.Type {
 	case tea.KeyCtrlC:
 		// Mid-stream Ctrl-C cancels the in-flight turn (snappy abort) and returns

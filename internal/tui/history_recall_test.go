@@ -175,12 +175,12 @@ func TestRecallSurvivesRestart(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("GOPHERMIND_CONFIG_DIR", dir)
 
-	first := newModel(func(sub chan tea.Msg, allowed *allowSet) *agent.Agent { return nil }, "m", "", "auto", "dark", false, false)
+	first := newModel(func(sub chan tea.Msg, allowed *allowSet) *agent.Agent { return nil }, "m", "", "auto", "dark", false, false, DefaultAttentionFlashes)
 	first.width, first.height, first.ready = 80, 24, true
 	first = seedHistory(t, first, "prompt from the last session")
 
 	// A fresh model stands in for a restart: same config dir, new process.
-	second := newModel(func(sub chan tea.Msg, allowed *allowSet) *agent.Agent { return nil }, "m", "", "auto", "dark", false, false)
+	second := newModel(func(sub chan tea.Msg, allowed *allowSet) *agent.Agent { return nil }, "m", "", "auto", "dark", false, false, DefaultAttentionFlashes)
 	second.width, second.height, second.ready = 80, 24, true
 
 	second = press(second, tea.KeyUp)

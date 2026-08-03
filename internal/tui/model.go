@@ -120,6 +120,14 @@ type model struct {
 	height int
 	ready  bool
 
+	// Attention signal (see attention.go): attention is up from the moment
+	// gophermind starts waiting on the user until the next keypress, flashLeft
+	// counts down the remaining flash phases, and attentionFlashes is how many
+	// flashes a trigger schedules (0 disables the signal entirely).
+	attention        bool
+	flashLeft        int
+	attentionFlashes int
+
 	// glamourStyle is a fixed glamour style name ("dark"/"light"), resolved once
 	// before the program starts. Using a fixed style (never glamour.WithAutoStyle)
 	// keeps the running Update loop from issuing an OSC background-color query,
@@ -135,7 +143,7 @@ type model struct {
 
 // newModel builds the model. buildAgent receives the bridge channel and the
 // shared always-allow set so the agent's approval closure can consult them.
-func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent, modelName, speedModel, mode, glamourStyle string, noBanner, noFortune bool) model {
+func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent, modelName, speedModel, mode, glamourStyle string, noBanner, noFortune bool, attentionFlashes int) model {
 	sub := make(chan tea.Msg, 64)
 	allowed := newAllowSet()
 
@@ -210,6 +218,8 @@ func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent,
 		hist:         hist,
 		ngram:        ng,
 		histIdx:      len(hist.All()),
+
+		attentionFlashes: attentionFlashes,
 	}
 	// Mirror the client's startup sampling settings so /temp and /topp with no
 	// argument report the truth even before the user changes anything.
