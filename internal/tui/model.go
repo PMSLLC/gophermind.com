@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/jbrahy/bubblecomplete"
 	"github.com/jbrahy/bubblecomplete/ngram"
 	"gophermind/internal/agent"
@@ -253,6 +254,14 @@ func (m *model) sync() {
 			body += "\n"
 		}
 		body += m.stream
+	}
+	// The viewport does not wrap: bubbletea's renderer truncates any line wider
+	// than the terminal, so a long line (an error, a tool arg, a banner bullet)
+	// silently loses its tail. Wrap the whole body to the viewport width first.
+	// ansi.Wrap is style-aware (it carries SGR state across the break) and
+	// hard-breaks words longer than the limit, so URLs wrap instead of overflow.
+	if w := m.viewport.Width; w > 0 {
+		body = ansi.Wrap(body, w, "")
 	}
 	m.viewport.SetContent(body)
 	m.viewport.GotoBottom()

@@ -20,7 +20,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.input.SetWidth(msg.Width - 2)
+		// The input lives inside boxStyle, which is Width(msg.Width-2) with
+		// Padding(0, 1) — a content area of msg.Width-4. textarea renders rows
+		// exactly as wide as the value passed to SetWidth (it carves the prompt
+		// column out of that internally, which is why Width() reads back 2 less),
+		// so anything larger overflows the box and lipgloss wraps the remainder
+		// onto a spurious extra row.
+		m.input.SetWidth(msg.Width - 4)
 		justReady := !m.ready
 		if !m.ready {
 			// Height is provisional here; applyInputHeight (below) recomputes
