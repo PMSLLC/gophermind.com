@@ -204,17 +204,17 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("getwd: %w", err)
 	}
 
-	// Seed the environment from optional .env files before reading any variable,
-	// so even GOPHERMIND_ROOT can be set there. Precedence (highest first): real
-	// environment > working-directory .env > global config .env > built-in
-	// defaults. Because each loader only fills gaps, the working-directory file
-	// wins over the global one, and real env wins over both. Missing files are
-	// not errors.
+	// Seed the environment from the optional config files before reading any
+	// variable, so even GOPHERMIND_ROOT can be set there. Precedence (highest
+	// first): real environment > working-directory .env > global config.json >
+	// built-in defaults. Because each loader only fills gaps, the
+	// working-directory file wins over the global one, and real env wins over
+	// both. Missing files are not errors.
 	if err := loadDotEnvFile(filepath.Join(wd, ".env")); err != nil {
 		return Config{}, fmt.Errorf("load .env: %w", err)
 	}
 	if p, perr := ConfigFilePath(); perr == nil {
-		if err := loadDotEnvFile(p); err != nil {
+		if err := loadConfigFile(p); err != nil {
 			return Config{}, fmt.Errorf("load global config: %w", err)
 		}
 	}
@@ -281,15 +281,36 @@ func Load() (Config, error) {
 // stripped; the value is everything after the first '='; surrounding single or
 // double quotes are removed. No variable interpolation is performed.
 func loadDotEnvFile(path string) error {
+	pairs, err := parseDotEnv(path)
+	if err != nil {
+		return err
+	}
+	for _, kv := range pairs {
+		if _, present := os.LookupEnv(kv[0]); present {
+			continue // real environment wins
+		}
+		if err := os.Setenv(kv[0], kv[1]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// parseDotEnv reads the .env file at path into {key, value} pairs in file
+// order, applying the syntax described on loadDotEnvFile. A missing file yields
+// no pairs and no error. It is also how Migrate converts a legacy global .env
+// into config.json.
+func parseDotEnv(path string) ([][2]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return nil, nil
 		}
-		return err
+		return nil, err
 	}
 	defer f.Close()
 
+	var pairs [][2]string
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -306,14 +327,12 @@ func loadDotEnvFile(path string) error {
 		if key == "" {
 			continue
 		}
-		if _, present := os.LookupEnv(key); present {
-			continue // real environment wins
-		}
-		if err := os.Setenv(key, unquoteEnv(strings.TrimSpace(val))); err != nil {
-			return err
-		}
+		pairs = append(pairs, [2]string{key, unquoteEnv(strings.TrimSpace(val))})
 	}
-	return scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return pairs, nil
 }
 
 // unquoteEnv strips a single matching pair of surrounding single or double
@@ -326,34 +345,6 @@ func unquoteEnv(v string) string {
 		}
 	}
 	return v
-}
-
-// ConfigFilePath returns the path to gophermind's global config .env, written by
-// the first-run setup wizard and read by Load as a gap-filler. It lives under
-// the OS user config dir (e.g. ~/.config/gophermind/.env), so a user configures
-// once and it applies in every directory.
-func ConfigFilePath() (string, error) {
-	// GOPHERMIND_CONFIG_DIR overrides the location (the .env is placed directly
-	// inside it). Useful for relocating config and for hermetic tests.
-	if dir := os.Getenv("GOPHERMIND_CONFIG_DIR"); dir != "" {
-		return filepath.Join(dir, ".env"), nil
-	}
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "gophermind", ".env"), nil
-}
-
-// GlobalConfigExists reports whether the global config .env has been written.
-// It is the "already configured" signal for the first-run wizard trigger.
-func GlobalConfigExists() bool {
-	p, err := ConfigFilePath()
-	if err != nil {
-		return false
-	}
-	info, err := os.Stat(p)
-	return err == nil && !info.IsDir()
 }
 
 // BuiltinProfileNames returns the built-in provider profiles as {name, baseURL}

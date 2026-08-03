@@ -207,7 +207,7 @@ func (m *model) handleConfigDone(msg configDoneMsg) {
 		m.sync()
 		return
 	}
-	if err := setup.WriteEnv(p, res.Pairs()); err != nil {
+	if err := config.Save(p, res.Pairs()); err != nil {
 		m.appendLine("error saving config: " + err.Error())
 		m.st = stateIdle
 		m.sync()

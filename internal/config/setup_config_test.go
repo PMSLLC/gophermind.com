@@ -3,13 +3,12 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
 // TestMain isolates every test in this package from any real global config on the
 // developer's machine: it points GOPHERMIND_CONFIG_DIR at an empty temp directory
-// so Load() never reads the user's ~/.config/gophermind/.env.
+// so Load() never reads the user's ~/.gophermind/config.json.
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "gophermind-config-test")
 	if err != nil {
@@ -67,29 +66,8 @@ func TestLoadHasNoBuiltInBaseURL(t *testing.T) {
 	}
 }
 
-func TestConfigFilePathEndsWithGophermindEnv(t *testing.T) {
-	t.Setenv("GOPHERMIND_CONFIG_DIR", "") // observe the default OS-config-dir path
-	p, err := ConfigFilePath()
-	if err != nil {
-		t.Fatalf("ConfigFilePath: %v", err)
-	}
-	want := filepath.Join("gophermind", ".env")
-	if !strings.HasSuffix(p, want) {
-		t.Errorf("ConfigFilePath = %q, want suffix %q", p, want)
-	}
-}
-
-func TestConfigFilePathHonorsOverride(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("GOPHERMIND_CONFIG_DIR", dir)
-	p, err := ConfigFilePath()
-	if err != nil {
-		t.Fatalf("ConfigFilePath: %v", err)
-	}
-	if want := filepath.Join(dir, ".env"); p != want {
-		t.Errorf("ConfigFilePath = %q, want %q", p, want)
-	}
-}
+// ConfigFilePath's own layout is covered in file_test.go
+// (TestDirDefaultsToHomeDotGophermind / TestConfigDirEnvOverridesHome).
 
 func TestBuiltinProfileNamesIncludesKnownProfiles(t *testing.T) {
 	got := BuiltinProfileNames()

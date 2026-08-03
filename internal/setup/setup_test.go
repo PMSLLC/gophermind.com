@@ -2,8 +2,6 @@ package setup
 
 import (
 	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -159,44 +157,8 @@ func TestNeedsSetup(t *testing.T) {
 	}
 }
 
-func TestWriteEnvPermsAndQuoting(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "cfg", ".env")
-	pairs := [][2]string{
-		{"GOPHERMIND_BASE_URL", "http://x:8000"},
-		{"GOPHERMIND_MODEL", "qwen 3.6"}, // space must be quoted
-	}
-	if err := WriteEnv(path, pairs); err != nil {
-		t.Fatalf("WriteEnv: %v", err)
-	}
-
-	fi, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat file: %v", err)
-	}
-	if fi.Mode().Perm() != 0o600 {
-		t.Errorf("file perm = %o, want 600", fi.Mode().Perm())
-	}
-	di, err := os.Stat(filepath.Join(dir, "cfg"))
-	if err != nil {
-		t.Fatalf("stat dir: %v", err)
-	}
-	if di.Mode().Perm() != 0o700 {
-		t.Errorf("dir perm = %o, want 700", di.Mode().Perm())
-	}
-
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	content := string(b)
-	if !strings.Contains(content, "GOPHERMIND_BASE_URL=http://x:8000") {
-		t.Errorf("missing base url line:\n%s", content)
-	}
-	if !strings.Contains(content, `GOPHERMIND_MODEL="qwen 3.6"`) {
-		t.Errorf("model with space should be quoted:\n%s", content)
-	}
-}
+// Persistence perms/format are config.Save's concern now; see
+// internal/config/file_test.go.
 
 func TestPairsIncludesIntegrations(t *testing.T) {
 	r := Result{BaseURL: "http://x", ApprovalMode: "ask", BraveAPIKey: "bk", GitHubToken: "gh", NotifyWebhook: "http://hook"}
