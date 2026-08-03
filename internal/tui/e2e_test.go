@@ -48,7 +48,7 @@ func TestTUIEndToEnd(t *testing.T) {
 			}
 		}
 		return agent.New(client, reg, 25, approve, onEvent)
-	}, "m", "", "auto", "dark", false, false)
+	}, "m", "", "auto", "dark", false, false, DefaultAttentionFlashes)
 
 	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(120, 40))
 

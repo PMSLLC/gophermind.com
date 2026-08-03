@@ -13,6 +13,19 @@ var _ tea.Model = model{}
 var boxStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
 
 func (m model) View() string {
+	return m.attentionOverlay(m.frame())
+}
+
+// attentionOverlay renders the composed frame inverse while the attention
+// signal is showing (see attention.go).
+func (m model) attentionOverlay(frame string) string {
+	if !m.attentionVisible() {
+		return frame
+	}
+	return invertFrame(frame)
+}
+
+func (m model) frame() string {
 	if !m.ready {
 		return m.banner
 	}

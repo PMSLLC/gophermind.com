@@ -971,6 +971,7 @@ func run() error {
 			NoFortune:        strings.EqualFold(*fortuneFlag, "off"),
 			RedactTranscript: redactTranscriptEnabled(),
 			AuditPath:        strings.TrimSpace(os.Getenv("GOPHERMIND_AUDIT_LOG")),
+			AttentionFlashes: cfg.AttentionFlashes,
 		})
 	case "print":
 		return runPrint(client, reg, cfg, printOptions{
