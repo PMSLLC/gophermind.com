@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GopherMind — an AI coding agent that asks first</title>
+<meta name="description" content="A single Go binary that turns your own OpenAI-compatible model into a terminal coding agent. Local llama.cpp, Ollama, LM Studio, vLLM or hosted. Every mutating action stops at an approval gate.">
+<link rel="canonical" href="https://gophermind.com/">
+<meta property="og:title" content="GopherMind — an AI coding agent that asks first">
+<meta property="og:description" content="A single Go binary. Your model, your machine, your approval.">
+<meta property="og:url" content="https://gophermind.com/">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐹</text></svg>">
+<style>
+/* ─────────────────────────────────────────────────────────────
+   GopherMind — the whole page is set in monospace.
+   The product is a TUI; the page is rendered in its own medium.
+   Hierarchy comes from size, weight, tracking and colour, never
+   from a second typeface. Box-drawing glyphs are used as real
+   structure because that is this subject's vernacular.
+   ───────────────────────────────────────────────────────────── */
+:root{
+  --ink:      #12242e;   /* gopher outline — deep blue-black, never pure black */
+  --ink-soft: #4a6472;
+  --paper:    #e9eff1;   /* gopher belly */
+  --paper-hi: #f4f8f9;
+  --rule:     #c3d3d9;
+  --gopher:   #7fd8ee;   /* the mascot's own blue */
+  --go:       #00add8;   /* Go's brand cyan */
+  --gate:     #d4820f;   /* the approval moment */
+  --deny:     #c8433a;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono",
+          "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --measure: 68rem;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:var(--mono); font-size:16px; line-height:1.6;
+  /* The page is full of CLI flags. Several monospace faces ship contextual
+     alternates that fuse "--" into an em dash, which would silently misprint
+     every command on the page. Both features are switched off. */
+  font-variant-ligatures:none;
+  font-feature-settings:"liga" 0,"calt" 0;
+}
+.wrap{max-width:var(--measure); margin:0 auto; padding:0 1.5rem}
+a{color:var(--ink); text-decoration:underline; text-underline-offset:3px;
+  text-decoration-color:var(--rule); text-decoration-thickness:1px}
+a:hover{text-decoration-color:var(--go)}
+:focus-visible{outline:2px solid var(--go); outline-offset:3px; border-radius:2px}
+
+/* ── masthead ───────────────────────────────────────────────── */
+.masthead{border-bottom:1px solid var(--rule)}
+.masthead .wrap{display:flex; align-items:center; justify-content:space-between;
+  gap:1rem; padding-block:1.1rem; flex-wrap:wrap}
+.mark{font-weight:700; letter-spacing:.22em; font-size:.82rem; text-transform:uppercase;
+  text-decoration:none; white-space:nowrap}
+.mark span{color:var(--go)}
+.masthead nav{display:flex; gap:1.4rem; font-size:.82rem}
+.masthead nav a{text-decoration:none; color:var(--ink-soft)}
+.masthead nav a:hover{color:var(--ink)}
+
+/* ── hero ───────────────────────────────────────────────────── */
+.hero{padding-block:clamp(3rem,9vw,6.5rem) clamp(2rem,5vw,3rem)}
+.eyebrow{font-size:.74rem; letter-spacing:.28em; text-transform:uppercase;
+  color:var(--ink-soft); margin:0 0 1.6rem}
+h1{
+  margin:0; font-weight:700;
+  font-size:clamp(2.1rem, 7.2vw, 4.4rem);
+  line-height:1.02; letter-spacing:-.045em;
+  max-width:16ch;
+}
+h1 em{font-style:normal; color:var(--go)}
+.lede{max-width:56ch; margin:1.8rem 0 0; color:var(--ink-soft); font-size:1rem}
+.lede strong{color:var(--ink); font-weight:600}
+
+/* ── install commands ───────────────────────────────────────── */
+/* minmax(0,1fr), because a grid's implicit column is `auto` — which sizes to
+   max-content and would take its width from the longest command. */
+.cmds{margin:2.4rem 0 0; display:grid; gap:.6rem; max-width:52rem;
+  grid-template-columns:minmax(0,1fr)}
+.cmd{
+  display:flex; align-items:center; gap:.85rem; width:100%;
+  background:var(--paper-hi); border:1px solid var(--rule);
+  padding:.85rem 1rem; font:inherit; font-size:.9rem; color:var(--ink);
+  text-align:left; cursor:pointer;
+}
+.cmd:hover{border-color:var(--go)}
+.cmd .sigil{color:var(--go); font-weight:700; flex:none}
+/* min-width:0 or this never shrinks: a flex item defaults to min-width:auto,
+   which is its content width, so the long command would widen the button and
+   with it the page. */
+.cmd code{flex:1; min-width:0; overflow-x:auto; white-space:nowrap; scrollbar-width:none}
+.cmd code::-webkit-scrollbar{display:none}
+.cmd .copy{flex:none; font-size:.7rem; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--ink-soft)}
+.cmd[data-copied="1"] .copy{color:var(--go)}
+
+/* ── the signature: a session that stops ────────────────────── */
+.stage{padding-block:clamp(1rem,4vw,2rem) clamp(3rem,8vw,5rem)}
+.term{
+  background:var(--ink); color:#d5e3e9; border:1px solid var(--ink);
+  padding:1.15rem 1.25rem 1.35rem; font-size:.83rem; line-height:1.75;
+  overflow-x:auto; min-height:23em; position:relative;
+}
+.term.flash{background:#d5e3e9; color:var(--ink)}
+.term .chrome{color:#5b7b8a; letter-spacing:.2em; font-size:.68rem;
+  text-transform:uppercase; display:block; margin-bottom:.9rem}
+.term pre{margin:0; font:inherit; white-space:pre}
+.term .u{color:var(--gopher)}          /* what you typed          */
+.term .t{color:#7e9aa8}                /* tool activity           */
+.term .g{color:var(--gate)}            /* the gate                */
+.term .ok{color:#63c39b}
+.term .cursor{background:var(--gopher); color:var(--ink)}
+.term.flash .u,.term.flash .t,.term.flash .g,.term.flash .ok{color:inherit}
+.caption{
+  margin:1.1rem 0 0; font-size:.86rem; color:var(--ink-soft);
+  display:flex; gap:.7rem; align-items:baseline; flex-wrap:wrap;
+}
+/* flex:none so "It stopped." is never squeezed into a two-line column when the
+   sentence beside it wraps. */
+.caption b{color:var(--ink); font-weight:600; flex:none}
+
+/* ── rules & sections ───────────────────────────────────────── */
+.rule{border:0; border-top:1px solid var(--rule); margin:0}
+/* section.wrap, not section: .wrap sets the `padding` shorthand, and a class
+   beats a type selector — a bare `section` rule would be silently discarded. */
+section.wrap{padding-block:clamp(2.8rem,7vw,4.5rem)}
+h2{
+  margin:0 0 2.4rem; font-size:.74rem; letter-spacing:.28em;
+  text-transform:uppercase; color:var(--ink-soft); font-weight:600;
+}
+/* Two columns, so four claims land as a clean 2×2 instead of a row of three
+   with an orphan — and each gets a readable measure. */
+/* min(26rem,100%) so the track can shrink below its ideal on a narrow screen.
+   A bare minmax(26rem,…) is a hard floor and would push the whole page wider
+   than the viewport. */
+.claims{display:grid; gap:2.8rem 3.2rem;
+  grid-template-columns:repeat(auto-fit,minmax(min(26rem,100%),1fr))}
+.claim h3{margin:0 0 .7rem; font-size:1.05rem; font-weight:700; letter-spacing:-.015em}
+.claim p{margin:0; color:var(--ink-soft); font-size:.88rem}
+.claim .proof{
+  margin:.9rem 0 0; padding-left:.9rem; border-left:2px solid var(--gopher);
+  font-size:.79rem; color:var(--ink-soft);
+}
+.claim code{color:var(--ink); font-size:.95em}
+
+/* ── install grid ───────────────────────────────────────────── */
+.ways{display:grid; gap:2.4rem 3.2rem;
+  grid-template-columns:repeat(auto-fit,minmax(min(24rem,100%),1fr))}
+.way h3{margin:0 0 .8rem; font-size:.72rem; letter-spacing:.22em;
+  text-transform:uppercase; color:var(--ink-soft); font-weight:600}
+.way pre{
+  margin:0 0 .7rem; padding:.8rem .9rem; overflow-x:auto;
+  background:var(--paper-hi); border:1px solid var(--rule);
+  font:inherit; font-size:.8rem;
+}
+.way p{margin:0; font-size:.79rem; color:var(--ink-soft)}
+
+/* ── footer ─────────────────────────────────────────────────── */
+footer{border-top:1px solid var(--rule); padding-block:2.4rem 3.2rem}
+footer .wrap{display:flex; justify-content:space-between; gap:1rem;
+  flex-wrap:wrap; font-size:.78rem; color:var(--ink-soft)}
+
+@media (prefers-reduced-motion: reduce){
+  *{animation:none !important; transition:none !important}
+}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap">
+    <a class="mark" href="/">Gopher<span>Mind</span></a>
+    <nav>
+      <a href="#why">Why</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/jbrahy/gophermind.com">Source</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <p class="eyebrow">Single Go binary · macOS · Linux · Windows</p>
+    <h1>An AI coding agent that <em>asks first</em>.</h1>
+    <p class="lede">
+      GopherMind points at a model <strong>you</strong> run — local llama.cpp,
+      Ollama, LM Studio, vLLM, or any hosted OpenAI-compatible endpoint. It
+      reads, searches, edits and runs commands in your repo, and every action
+      that changes something stops for your approval.
+    </p>
+
+    <div class="cmds">
+      <button class="cmd" data-copy="brew install jbrahy/tap/gophermind">
+        <span class="sigil" aria-hidden="true">$</span>
+        <code>brew install jbrahy/tap/gophermind</code>
+        <span class="copy">copy</span>
+      </button>
+      <button class="cmd" data-copy="npm install -g gophermind">
+        <span class="sigil" aria-hidden="true">$</span>
+        <code>npm install -g gophermind</code>
+        <span class="copy">copy</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="wrap stage">
+    <div class="term" id="term" role="img"
+         aria-label="A GopherMind session: the agent reads a file, searches, prepares an edit, then halts at an approval prompt asking to allow or deny the change.">
+      <span class="chrome">gophermind — approval mode: ask</span>
+      <pre id="tape"></pre>
+    </div>
+    <p class="caption"><b>It stopped.</b> <span>That is the whole design. Nothing mutates without a yes.</span></p>
+  </div>
+
+  <hr class="rule">
+
+  <section class="wrap" id="why">
+    <h2>Why this one</h2>
+    <div class="claims">
+
+      <div class="claim">
+        <h3>Your model, your machine</h3>
+        <p>Anything that speaks the OpenAI <code>/v1</code> API. Models are
+        discovered from the endpoint, and named provider profiles switch
+        backends without editing config.</p>
+        <p class="proof">No account. No telemetry to us. Point it at
+        <code>localhost</code> and unplug the network.</p>
+      </div>
+
+      <div class="claim">
+        <h3>Safe at every layer</h3>
+        <p>File paths are contained to your repo and checked through symlinks.
+        Shell commands pass a deny-list. Mutating tools hit the approval gate
+        unless you opt into auto.</p>
+        <p class="proof">Plus a read-only mode, per-role tool restrictions that
+        fail closed, and <code>--dry-run</code> to preview a whole run.</p>
+      </div>
+
+      <div class="claim">
+        <h3>Small enough to read</h3>
+        <p>Pure Go, no CGO, one static binary. Adding a tool is still one struct
+        and one function — the codebase stays legible as it grows.</p>
+        <p class="proof">Signed and notarized on macOS. Every release ships an
+        SBOM and <code>checksums.txt</code>.</p>
+      </div>
+
+      <div class="claim">
+        <h3>Batteries, all switched off</h3>
+        <p>A local semantic index and RAG, a read-only SQL/Parquet/CSV toolkit,
+        multi-agent strategies, an MCP client and server, WASM plugins,
+        Prometheus metrics.</p>
+        <p class="proof">Every integration is inert until you configure it, so
+        the default install stays small and quiet.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section class="wrap" id="install">
+    <h2>Install</h2>
+    <div class="ways">
+
+      <div class="way">
+        <h3>macOS</h3>
+        <pre>brew install jbrahy/tap/gophermind</pre>
+        <p>A signed and notarized universal binary — no Gatekeeper warning.</p>
+      </div>
+
+      <div class="way">
+        <h3>Any platform</h3>
+        <pre>npm install -g gophermind</pre>
+        <p>Downloads the prebuilt binary for your platform. x64 and arm64.</p>
+      </div>
+
+      <div class="way">
+        <h3>Linux packages</h3>
+        <pre>.deb · .rpm · .apk · .tar.gz</pre>
+        <p><a href="https://github.com/jbrahy/gophermind.com/releases/latest">Grab
+        one from the latest release.</a> Windows users, a <code>.zip</code>.</p>
+      </div>
+
+      <div class="way">
+        <h3>From source</h3>
+        <pre>git clone https://github.com/jbrahy/gophermind.com
+cd gophermind.com
+make build</pre>
+        <p>Go 1.25 or newer.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section class="wrap">
+    <h2>First run</h2>
+    <div class="ways">
+      <div class="way">
+        <h3>Interactive</h3>
+        <pre>gophermind</pre>
+        <p>A wizard asks for your endpoint, an optional key, a model from a live
+        list, and your approval mode — then saves it.</p>
+      </div>
+      <div class="way">
+        <h3>One shot</h3>
+        <pre>gophermind run "add a --json flag"</pre>
+        <p>Non-interactive. Same gate, same tools.</p>
+      </div>
+      <div class="way">
+        <h3>Read only</h3>
+        <pre>gophermind ask "how does retry work?"</pre>
+        <p>Answers questions about the repo. Never edits.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>MIT licensed · built in Go</span>
+    <span><a href="https://github.com/jbrahy/gophermind.com">github.com/jbrahy/gophermind.com</a></span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ── copy buttons ──────────────────────────────────────────── */
+  document.querySelectorAll('.cmd').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var text = btn.getAttribute('data-copy');
+      var done = function () {
+        btn.dataset.copied = '1';
+        btn.querySelector('.copy').textContent = 'copied';
+        setTimeout(function () {
+          btn.dataset.copied = '';
+          btn.querySelector('.copy').textContent = 'copy';
+        }, 1600);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function(){});
+      }
+    });
+  });
+
+  /* ── the session that stops ────────────────────────────────────
+     Typed out line by line, ending on the approval gate and the
+     screen-inverse flash the real TUI performs when it starts
+     waiting on you. Reduced motion gets the finished frame.     */
+  var LINES = [
+    {t: '<span class="u">> add a --json flag to the export command and a test for it</span>', d: 34},
+    {t: '', d: 220},
+    {t: '<span class="t">  read_file    cmd/export.go</span>', d: 300},
+    {t: '<span class="t">  search       "func Export"        3 matches</span>', d: 340},
+    {t: '<span class="t">  read_file    cmd/export_test.go</span>', d: 300},
+    {t: '', d: 260},
+    {t: '<span class="g">  ┌─ approve ─────────────────────────────────────┐</span>', d: 60},
+    {t: '<span class="g">  │ edit_file   cmd/export.go                     │</span>', d: 60},
+    {t: '<span class="g">  │                                               │</span>', d: 60},
+    {t: '<span class="g">  │   + json := flag.Bool("json", false,          │</span>', d: 60},
+    {t: '<span class="g">  │   +     "write the report as JSON")           │</span>', d: 60},
+    {t: '<span class="g">  │                                               │</span>', d: 60},
+    {t: '<span class="g">  └────────────────────── [y] allow   [n] deny ───┘</span>', d: 60},
+    {t: '', d: 0},
+    {t: '  <span class="cursor">&nbsp;</span>', d: 0}
+  ];
+
+  var tape = document.getElementById('tape');
+  var term = document.getElementById('term');
+  if (!tape) return;
+
+  var finished = LINES.map(function (l) { return l.t; }).join('\n');
+  var reduced = window.matchMedia &&
+                window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  if (reduced) { tape.innerHTML = finished; return; }
+
+  var i = 0, out = [];
+  function step() {
+    if (i >= LINES.length) { flash(); return; }
+    out.push(LINES[i].t);
+    tape.innerHTML = out.join('\n');
+    var wait = LINES[i].d;
+    i++;
+    setTimeout(step, wait);
+  }
+
+  /* One inverse flash, then it rests — the same signal the TUI
+     gives when it hands control back to you. */
+  function flash() {
+    var n = 0;
+    (function pulse() {
+      if (n >= 4) return;
+      term.classList.toggle('flash');
+      n++;
+      setTimeout(pulse, 110);
+    })();
+  }
+
+  /* Only start once it is actually on screen. */
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) { io.disconnect(); step(); }
+      });
+    }, {threshold: 0.35});
+    io.observe(term);
+  } else {
+    step();
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+# Publish gophermind.com from site/ to GitHub Pages.
+#
+# Deploying from a directory (rather than Pages' "deploy from branch" mode)
+# is deliberate: that mode can only serve the repo root or /docs, and docs/
+# holds RELEASING.md, the specs, and deployment notes — internal material that
+# should not become a public website by accident.
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it midway, so the live
+# site is never left half-published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The custom domain only survives a deploy if CNAME is in the artifact.
+      - name: Check CNAME is present
+        run: test -f site/CNAME && cat site/CNAME
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
