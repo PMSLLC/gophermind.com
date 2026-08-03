@@ -18,7 +18,7 @@ import (
 func RunShell(root string, timeout time.Duration) Tool {
 	return Tool{
 		Name:        "run_shell",
-		Description: "Run a shell command via bash in the repository root and return its combined stdout/stderr and exit code. Use this for builds, tests, git status/diff, etc. Destructive commands are blocked.",
+		Description: "Run a shell command via bash in the repository root and return its combined stdout/stderr and exit code. Use this for builds, tests, git status/diff, etc. Destructive commands are blocked. For code searches prefer the `search` tool: a regex full of backslashes often fails to serialize into these JSON arguments.",
 		Schema:      object(map[string]any{"command": str("Shell command to run, e.g. 'go test ./...'.")}, "command"),
 		Run: func(ctx context.Context, raw json.RawMessage) (string, error) {
 			var a struct {
