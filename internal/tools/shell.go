@@ -5,12 +5,38 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"gophermind/internal/safety"
 )
+
+var (
+	loginPathOnce sync.Once
+	loginPath     string
+)
+
+// loginShellPath returns PATH as a login shell computes it, resolved once per
+// process. Commands then run under `bash -c`, which skips ~/.bash_profile: a
+// profile that inits conda or similar forks a Python interpreter per call,
+// costing seconds and several processes every time a tool runs. Reading the
+// PATH once keeps the user's toolchain reachable without paying that cost on
+// every invocation.
+func loginShellPath() string {
+	loginPathOnce.Do(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		out, err := exec.CommandContext(ctx, "bash", "-lc", `printf %s "$PATH"`).Output()
+		if err != nil {
+			return
+		}
+		loginPath = strings.TrimSpace(string(out))
+	})
+	return loginPath
+}
 
 // RunShell returns the run_shell tool, which executes a command via bash with
 // a timeout and the safety deny-list applied. Output is truncated to protect
@@ -34,8 +60,11 @@ func RunShell(root string, timeout time.Duration) Tool {
 			runCtx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 
-			cmd := exec.CommandContext(runCtx, "bash", "-lc", a.Command)
+			cmd := exec.CommandContext(runCtx, "bash", "-c", a.Command)
 			cmd.Dir = root
+			if p := loginShellPath(); p != "" {
+				cmd.Env = append(os.Environ(), "PATH="+p)
+			}
 			var out bytes.Buffer
 			cmd.Stdout = &out
 			cmd.Stderr = &out
