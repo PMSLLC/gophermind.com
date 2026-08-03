@@ -258,6 +258,57 @@ Beyond `chat`/`run`/`ask`, the CLI exposes subcommands for sessions, prompts,
 plugins, config bundles, the MCP server, benchmarks, diagnostics, and more —
 run `gophermind --help` for the full list.
 
+### Connecting to MCP servers
+
+GopherMind both *serves* MCP (`gophermind mcp`) and *consumes* it. Third-party
+MCP servers are declared in an `mcpServers` block in `~/.gophermind/config.json`,
+and their tools join the registry alongside the builtins:
+
+```json
+{
+  "mcpServers": {
+    "pelagosnow": {
+      "transport": "http",
+      "url": "https://mcp.pelagosnow.com/mcp",
+      "headers": { "Authorization": "Bearer ${PELAGOSNOW_TOKEN}" }
+    },
+    "filesystem": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/you/code"],
+      "env": { "LOG_LEVEL": "warn" },
+      "disabled": false
+    }
+  }
+}
+```
+
+Project-scoped servers go in `.gophermind/<name>.mcp.json` — one server per
+file, the same fields, and an entry there overrides a global one of the same
+name. This is the form to commit alongside a repo:
+
+```json
+{
+  "transport": "stdio",
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-postgres", "${DATABASE_URL}"]
+}
+```
+
+A few things worth knowing:
+
+- **Tools are namespaced** `server__tool`, so a remote server can never shadow
+  a builtin. The filesystem server above contributes `filesystem__read_file`.
+- **Every string supports `${VAR}`**, expanded from the environment. An unset
+  variable is a startup error rather than a blank value, so tokens stay out of
+  the file and a missing one is reported where it happens. This keeps
+  `.gophermind/*.mcp.json` safe to commit.
+- **MCP tools always require approval.** They come from servers you do not
+  control, so they fail closed. Relax individual ones in `.gophermind/policy`:
+  `"gated_tools": {"pelagosnow__search": "always"}`.
+- **A server that is down is a warning, not a failure** — the session starts
+  without it. A malformed config *is* fatal, so typos surface immediately.
+
 ### Shell completion
 
 `gophermind autocomplete` detects your shell from `$SHELL` and prints a

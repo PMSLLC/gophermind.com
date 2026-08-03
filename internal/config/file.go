@@ -115,6 +115,20 @@ func jsonScalar(v any) (string, error) {
 	}
 }
 
+// MCPServersKey is the config.json key holding MCP server definitions. Its
+// value is a nested object owned by internal/mcpclient, not an environment
+// variable, so the scalar loader steps over it and Save carries it through
+// untouched.
+const MCPServersKey = "mcpServers"
+
+// reservedStructuredKey reports whether a config.json key holds structured data
+// belonging to another subsystem rather than an environment variable. Only
+// named keys are exempt: every other object value stays an error, so a typo
+// like {"base_url": {...}} is still loud.
+func reservedStructuredKey(key string) bool {
+	return strings.TrimSpace(key) == MCPServersKey
+}
+
 // loadConfigFile reads the global config.json and sets any variable it names
 // that is not already present in the process environment. Real (already
 // exported) environment variables always win — the file only fills gaps — so a
@@ -158,6 +172,9 @@ func readConfigFile(path string) ([][2]string, error) {
 
 	pairs := make([][2]string, 0, len(raw))
 	for k, v := range raw {
+		if reservedStructuredKey(k) {
+			continue
+		}
 		key := envKeyFor(k)
 		if key == "" || v == nil {
 			continue
@@ -170,6 +187,28 @@ func readConfigFile(path string) ([][2]string, error) {
 	}
 	sort.Slice(pairs, func(i, j int) bool { return pairs[i][0] < pairs[j][0] })
 	return pairs, nil
+}
+
+// readStructuredKeys returns the reserved structured blocks present in the
+// config file at path, so Save can write them back unchanged. A missing or
+// malformed file yields nothing: Save's own readConfigFile call has already
+// reported any parse error by the time this runs.
+func readStructuredKeys(path string) map[string]any {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil
+	}
+	out := map[string]any{}
+	for k, v := range raw {
+		if reservedStructuredKey(k) && v != nil {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 // Save merges GOPHERMIND_* (and other environment-shaped) pairs into the config
@@ -204,9 +243,15 @@ func Save(path string, pairs [][2]string) error {
 
 	// json.Marshal sorts map keys, so the file has a stable order and diffs
 	// cleanly across saves.
-	doc := make(map[string]string, len(out))
+	doc := make(map[string]any, len(out))
 	for k, v := range out {
 		doc[fileKeyFor(k)] = v
+	}
+	// Carry structured blocks (mcpServers) through verbatim. readConfigFile
+	// skips them, so without this a save would silently delete them — breaking
+	// this function's documented promise to preserve keys it was not given.
+	for k, v := range readStructuredKeys(path) {
+		doc[k] = v
 	}
 	body, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {

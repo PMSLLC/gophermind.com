@@ -110,8 +110,24 @@ type ApprovalFunc func(tool, argsJSON string) bool
 // Auto always approves.
 func Auto(tool, argsJSON string) bool { return true }
 
+// MCPNameSeparator marks a tool supplied by an MCP server, which registers as
+// "<server>__<tool>". It mirrors mcpclient.NameSeparator; the constant is
+// duplicated rather than imported because safety must not depend on a
+// higher-level package.
+const MCPNameSeparator = "__"
+
 // Gated reports whether a tool requires approval before running.
+//
+// The named cases are gophermind's own mutating tools. Anything carrying the
+// MCP namespace separator is gated too: those tools come from servers
+// gophermind does not control, their names are unknown at compile time, and a
+// server can change its tool set between runs — so they fail closed. Policy
+// still runs first (see PolicyApproval), which is how an individual MCP tool is
+// relaxed with an explicit gated_tools entry.
 func Gated(tool string) bool {
+	if strings.Contains(tool, MCPNameSeparator) {
+		return true
+	}
 	switch tool {
 	case "write_file", "edit_file", "run_shell", "move_file", "delete_file", "mkdir", "apply_patch", "fetch_url", "http_request", "create_migration", "set_csv_cell":
 		return true

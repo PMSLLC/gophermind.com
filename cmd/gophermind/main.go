@@ -32,6 +32,7 @@ import (
 	"gophermind/internal/jobs"
 	"gophermind/internal/llm"
 	"gophermind/internal/mcp"
+	"gophermind/internal/mcpclient"
 	"gophermind/internal/persona"
 	"gophermind/internal/project"
 	"gophermind/internal/prompt"
@@ -789,6 +790,24 @@ func run() error {
 		profile:  profileMemoryPath(),
 		episodes: episodesPath(cfg.RootDir),
 	}
+	// Connect to configured MCP servers (config.json "mcpServers" and
+	// .gophermind/*.mcp.json) and add their tools. This runs BEFORE the
+	// --dry-run wrap so remote tools, which are gated, are previewed rather than
+	// executed under --dry-run like any other mutating tool. A bad config is
+	// fatal; an unreachable server is only a warning.
+	mcpGlobalPath, _ := config.ConfigFilePath()
+	mcpManager, err := mcpclient.Load(
+		context.Background(),
+		mcpGlobalPath,
+		filepath.Join(cfg.RootDir, ".gophermind"),
+		func(msg string) { fmt.Fprintln(os.Stderr, "warning:", msg) },
+	)
+	if err != nil {
+		return fmt.Errorf("mcp: %w", err)
+	}
+	defer mcpManager.Close()
+	toolset = append(toolset, mcpManager.Tools()...)
+
 	// --dry-run: wrap gated (mutating) tools so the agent previews the calls it
 	// would make without executing any mutation.
 	if *dryRunFlag {
