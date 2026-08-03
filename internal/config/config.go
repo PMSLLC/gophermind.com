@@ -151,8 +151,8 @@ type Config struct {
 	// the total number of tries (1 disables retries; a single attempt still
 	// works). RetryBaseDelay is the first backoff interval; later attempts grow
 	// it exponentially (with jitter) up to an internal cap.
-	MaxAttempts    int           // GOPHERMIND_MAX_ATTEMPTS (default: 3; min 1)
-	RetryBaseDelay time.Duration // GOPHERMIND_RETRY_BASE_DELAY_MS (default: 250ms)
+	MaxAttempts    int           // GOPHERMIND_MAX_ATTEMPTS (default: 5; min 1)
+	RetryBaseDelay time.Duration // GOPHERMIND_RETRY_BASE_DELAY_MS (default: 2000ms)
 
 	// Per-1,000-token prices (USD) for the running cost meter. Both default to
 	// 0, so the meter reports $0.00 until configured.
@@ -257,8 +257,8 @@ func Load() (Config, error) {
 		BraveAPIKey:       envOr("GOPHERMIND_BRAVE_API_KEY", ""),
 		BraveEndpoint:     envOr("GOPHERMIND_BRAVE_API_URL", ""),
 
-		MaxAttempts:    envIntOr("GOPHERMIND_MAX_ATTEMPTS", 3),
-		RetryBaseDelay: time.Duration(envIntOr("GOPHERMIND_RETRY_BASE_DELAY_MS", 250)) * time.Millisecond,
+		MaxAttempts:    envIntOr("GOPHERMIND_MAX_ATTEMPTS", 5),
+		RetryBaseDelay: time.Duration(envIntOr("GOPHERMIND_RETRY_BASE_DELAY_MS", 2000)) * time.Millisecond,
 
 		InputPricePer1K:  envFloatOr("GOPHERMIND_PRICE_INPUT_PER_1K", 0),
 		OutputPricePer1K: envFloatOr("GOPHERMIND_PRICE_OUTPUT_PER_1K", 0),

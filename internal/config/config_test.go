@@ -691,3 +691,26 @@ func TestLoadDotEnvMissingFileOK(t *testing.T) {
 		t.Errorf("MaxIter = %d, want 25 (default holds with no .env)", cfg.MaxIter)
 	}
 }
+
+// TestLoadDefaultsRetry pins the retry defaults the CLI actually runs with.
+// cmd/gophermind builds llm.RetryPolicy from these fields, not from
+// llm.DefaultRetryPolicy, so these are the values that decide whether a brief
+// LAN blackout (expired ARP entry, Wi-Fi roam, VM suspend) aborts a run.
+func TestLoadDefaultsRetry(t *testing.T) {
+	t.Setenv("GOPHERMIND_BASE_URL", "http://example:8000")
+	t.Setenv("GOPHERMIND_MODEL", "test-model")
+	for _, k := range []string{"GOPHERMIND_MAX_ATTEMPTS", "GOPHERMIND_RETRY_BASE_DELAY_MS"} {
+		t.Setenv(k, "")
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.MaxAttempts != 5 {
+		t.Errorf("MaxAttempts = %d, want 5", cfg.MaxAttempts)
+	}
+	if cfg.RetryBaseDelay != 2*time.Second {
+		t.Errorf("RetryBaseDelay = %v, want 2s", cfg.RetryBaseDelay)
+	}
+}

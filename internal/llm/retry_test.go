@@ -309,3 +309,32 @@ func TestStreamDoesNotReplayAfterTokens(t *testing.T) {
 		t.Errorf("sleeps = %d, want 0 (no retry mid-stream)", len(*slept))
 	}
 }
+
+// TestDefaultRetryPolicyRidesOutTransientBlackout pins the *window* the default
+// policy covers, not just its field values. A host that drops off the LAN
+// (expired ARP entry, Wi-Fi roam, VM suspend) makes dial fail with
+// EHOSTUNREACH, which returns instantly — so the only thing standing between a
+// brief blackout and an aborted run is the accumulated backoff. The window must
+// outlast a typical ARP re-resolution gap.
+func TestDefaultRetryPolicyRidesOutTransientBlackout(t *testing.T) {
+	p := DefaultRetryPolicy
+	const wantWindow = 15 * time.Second
+
+	// Worst case: every backoff draws the low end of its jitter range.
+	var minWindow time.Duration
+	for attempt := 0; attempt < p.attempts()-1; attempt++ {
+		var lowest time.Duration
+		for i := 0; i < 200; i++ { // sample the jitter to find its floor
+			if d := p.backoff(attempt, 0); lowest == 0 || d < lowest {
+				lowest = d
+			}
+		}
+		minWindow += lowest
+	}
+
+	if minWindow < wantWindow {
+		t.Errorf("default retry window = %v (%d attempts, base %v), want >= %v; "+
+			"a dial that fails instantly would exhaust retries before a LAN blip clears",
+			minWindow, p.attempts(), p.BaseDelay, wantWindow)
+	}
+}
