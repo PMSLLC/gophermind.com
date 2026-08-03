@@ -430,11 +430,20 @@ func run() error {
 		}
 	}
 
-	// `gophermind completion <bash|zsh|fish>` prints a shell-completion script.
-	if cmd == "completion" {
+	// `gophermind autocomplete [shell]` (alias: `completion`) prints a
+	// shell-completion script. With no argument it detects the shell from
+	// $SHELL, so the output can be redirected straight into an rc file.
+	if cmd == "completion" || cmd == "autocomplete" {
 		shell := ""
 		if len(args) > 1 {
 			shell = args[1]
+		}
+		if shell == "" {
+			detected, err := detectShell()
+			if err != nil {
+				return err
+			}
+			shell = detected
 		}
 		script, err := generateCompletion(shell)
 		if err != nil {
@@ -2165,7 +2174,7 @@ Usage:
   gophermind status             print a compact prompt line (model + branch)
   gophermind usage report       summarize recorded spend by day/model (GOPHERMIND_USAGE_LOG)
   gophermind prompt-tokens      print per-section token cost of the base system prompt
-  gophermind completion <shell> print a bash/zsh/fish completion script
+  gophermind autocomplete       print a completion script for your shell (detected from $SHELL)
   gophermind persona new <name> scaffold a custom persona in .gophermind/personas/
   gophermind audit verify <file>  verify a tamper-evident audit log's chain
   gophermind policy test <p> <s>  assert a policy's decisions against a scenarios file

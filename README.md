@@ -256,7 +256,24 @@ sampling controls, and JSONL transcript export are all supported — see
 
 Beyond `chat`/`run`/`ask`, the CLI exposes subcommands for sessions, prompts,
 plugins, config bundles, the MCP server, benchmarks, diagnostics, and more —
-run `gophermind --help` (and `gophermind completion <shell>`) for the full list.
+run `gophermind --help` for the full list.
+
+### Shell completion
+
+`gophermind autocomplete` detects your shell from `$SHELL` and prints a
+completion script (pass `bash`, `zsh`, or `fish` to override). Rather than
+appending it to your rc file — which duplicates the block every time you
+re-run it — write it to its own file and source that, so regenerating after an
+upgrade is a single command and your rc file gains exactly one line:
+
+```sh
+mkdir -p ~/.gophermind
+gophermind autocomplete > ~/.gophermind/completion.sh
+echo 'source ~/.gophermind/completion.sh' >> ~/.zshrc   # or ~/.bashrc
+```
+
+Appending straight to an rc file works too — the zsh script guards its
+`compdef` call so it is safe to source before `compinit` has run.
 
 ## Remote control from iOS / mobile
 
