@@ -42,10 +42,20 @@ check: ## Validate the GoReleaser config
 snapshot: ## Dry-run release: build + archive + cask, no sign/notarize/publish
 	goreleaser release --snapshot --clean --skip=sign
 
-# Full signed + notarized release to GitHub + the Homebrew tap. Requires a pushed
-# git tag plus signing env; GITHUB_TOKEN is auto-sourced from `gh` if unset.
-# See docs/RELEASING.md.
-release: ## Cut a full signed+notarized release
+# One-command public release: gate, tag, GitHub + Homebrew, then npm — with a
+# confirmation before each irreversible step. This is the target to use.
+#   make publish VERSION=0.6.0
+#   make publish VERSION=0.6.0 DRY_RUN=1
+publish: ## Release to GitHub + Homebrew + npm (VERSION=x.y.z [DRY_RUN=1])
+	@if [ -z "$(VERSION)" ]; then \
+		echo "usage: make publish VERSION=0.6.0 [DRY_RUN=1]" >&2; exit 2; \
+	fi
+	./scripts/release.sh $(VERSION) $(if $(DRY_RUN),--dry-run,)
+
+# Lower-level: the GoReleaser half only (GitHub + Homebrew, no npm), against a
+# tag you have already pushed. `make publish` is the complete path; keep this
+# for re-running the build when a release is otherwise already done.
+release: ## GoReleaser only — no npm, needs an existing tag
 	@: $${MACOS_SIGN_IDENTITY:?set MACOS_SIGN_IDENTITY, e.g. \"Developer ID Application: Your Name (TEAMID)\" — see docs/RELEASING.md}
 	@: $${MACOS_NOTARY_PROFILE:?set MACOS_NOTARY_PROFILE to your notarytool keychain profile — see docs/RELEASING.md}
 	GITHUB_TOKEN="$${GITHUB_TOKEN:-$$(gh auth token 2>/dev/null)}" goreleaser release --clean
