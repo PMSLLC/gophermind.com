@@ -177,7 +177,7 @@ func ulimitPrefix(l ShellLimits) string {
 func RunShellEnhanced(root string, timeout time.Duration, limits ShellLimits) Tool {
 	return Tool{
 		Name:        "run_shell",
-		Description: "Run a shell command via bash with timeout, safety deny-list, and structured exit-code result. Supports working directory and environment allow-list.",
+		Description: "Run a shell command via bash with timeout, safety deny-list, and structured exit-code result. Supports working directory and environment allow-list. For code searches prefer the `search` tool: a regex full of backslashes often fails to serialize into these JSON arguments.",
 		Schema: object(map[string]any{
 			"command":        str("Shell command to run."),
 			"timeout":        map[string]any{"type": "integer", "description": "Per-command timeout in seconds (overrides global, within hard ceiling)."},

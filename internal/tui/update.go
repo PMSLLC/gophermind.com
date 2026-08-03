@@ -212,6 +212,25 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// "/exit" and "/quit" are honored in EVERY state, ahead of the state gates
+	// below. They used to reach handleSubmit only while idle, so typing one
+	// during a long agent turn — exactly when a user most wants out — did
+	// nothing. Quitting cancels the in-flight request and denies any tool parked
+	// on the approval channel (buffered, so the send never blocks) rather than
+	// leaving either stranded behind a dead UI.
+	if msg.Type == tea.KeyEnter && !msg.Alt {
+		switch strings.TrimSpace(m.input.Value()) {
+		case "/exit", "/quit":
+			if m.st == stateApproval {
+				m.pending.reply <- false
+			}
+			if m.cancel != nil {
+				m.cancel()
+			}
+			return m, tea.Quit
+		}
+	}
+
 	// While awaiting a decision, y/n/a take priority over text entry.
 	if m.st == stateApproval {
 		switch strings.ToLower(msg.String()) {

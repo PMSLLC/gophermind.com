@@ -318,6 +318,17 @@ func (a *Agent) dispatch(ctx context.Context, call llm.ToolCall) string {
 	if !ok {
 		return "error: unknown tool " + name
 	}
+	// Repair recoverable mis-escaping (a shell command's backslashes arriving as
+	// `\[` rather than `\\[`) before anything reads the arguments, so approval,
+	// the audit record, and the tool itself all see the same corrected value.
+	args, argErr := normalizeToolArgs(name, rawArgs)
+	if argErr != nil {
+		out := "error: " + argErr.Error()
+		_ = a.audit.Record(name, rawArgs, "invalid-arguments", out)
+		a.onEvent(Event{Type: "tool_result", Name: name, Text: out})
+		return out
+	}
+	rawArgs = string(args)
 	// Tool-use critic: surface a heuristic warning for risky calls (opt-in).
 	if a.toolCritic {
 		if w := critiqueToolCall(name, rawArgs); w != "" {
@@ -336,7 +347,7 @@ func (a *Agent) dispatch(ctx context.Context, call llm.ToolCall) string {
 		a.maybeAutoCheckpoint(name)
 	}
 
-	out, err := t.Run(ctx, json.RawMessage(rawArgs))
+	out, err := t.Run(ctx, args)
 	if err != nil {
 		out = "error: " + err.Error()
 	}
