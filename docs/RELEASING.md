@@ -67,15 +67,42 @@ and a generated `Casks/gophermind.rb`.
 
 ## Cut a release
 
+One command does everything — gate, tag, GitHub, Homebrew, npm:
+
 ```sh
 export MACOS_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
 export MACOS_NOTARY_PROFILE="gophermind"
 
-git tag v0.2.0
-git push origin v0.2.0
-
-make release     # goreleaser: build → sign → notarize → GitHub Release → push cask
+make publish VERSION=0.6.0 DRY_RUN=1   # rehearse first: nothing is published
+make publish VERSION=0.6.0             # the real thing
 ```
+
+`scripts/release.sh` stops for a `y/N` confirmation before every irreversible
+step (pushing the version bump, pushing the tag, running GoReleaser, publishing
+to npm), so nothing becomes public without you saying so. Pass `--yes` for CI.
+
+It is also **resumable**: it detects a tag already pushed, a GitHub release
+already present, and an npm version already published, and skips those steps.
+If npm publishing fails after the GitHub release succeeded, re-run the same
+command — it will pick up where it left off rather than redo the release.
+
+The single `VERSION` argument is why the script exists. The npm package builds
+its download URL from its own `package.json` version
+(`npm/scripts/download.js`), so if that ever disagrees with the git tag, every
+`npm install gophermind` 404s. The script derives both from one input and
+commits the bump *before* tagging, so the tagged tree always holds the right
+version.
+
+<details>
+<summary>Running the halves by hand</summary>
+
+```sh
+git tag v0.6.0 && git push origin v0.6.0
+make release     # goreleaser only: build → sign → notarize → GitHub Release → cask
+```
+
+`make release` does **not** publish to npm; see the npm section below.
+</details>
 
 GoReleaser will:
 1. cross-compile `amd64` + `arm64` and merge into one **universal** binary,
@@ -100,13 +127,17 @@ GoReleaser will:
 
 ## Publish to npm (after the GitHub release exists)
 
+`make publish` already does this — the steps below are the manual fallback.
+
 The npm package (`npm/`) downloads the platform binary from the GitHub Release on
-install, so publish it **after** `make release` has uploaded the assets, and keep
-its version identical to the tag.
+install, so publish it **after** the release assets exist, and keep its version
+identical to the tag. `scripts/release.sh` verifies every asset
+`npm/scripts/download.js` expects is actually present before it will publish,
+so a package that cannot install never reaches the registry.
 
 ```sh
 cd npm
-npm version 0.2.0 --no-git-tag-version --allow-same-version   # match the release tag
+npm version 0.6.0 --no-git-tag-version --allow-same-version   # match the release tag
 npm login                                                     # or set NPM_TOKEN in ~/.npmrc
 npm publish --access public
 ```
