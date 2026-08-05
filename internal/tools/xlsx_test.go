@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -73,5 +74,71 @@ func TestWriteXLSXRejectsPathEscape(t *testing.T) {
 	args := `{"path":"../escape.xlsx","sheets":[{"name":"S","rows":[["x"]]}]}`
 	if _, err := run(t, WriteXLSX(dir), args); err == nil {
 		t.Error("path escaping repo root should error")
+	}
+}
+
+func TestWriteXLSXCreatesParentDirs(t *testing.T) {
+	dir := t.TempDir()
+	args := `{"path":"reports/q3.xlsx","sheets":[{"name":"S","rows":[["x"]]}]}`
+	if _, err := run(t, WriteXLSX(dir), args); err != nil {
+		t.Fatalf("expected parent directory to be created, got error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "reports", "q3.xlsx")); err != nil {
+		t.Fatalf("expected file to exist: %v", err)
+	}
+}
+
+func TestWriteXLSXFilePermissions(t *testing.T) {
+	dir := t.TempDir()
+	args := `{"path":"report.xlsx","sheets":[{"name":"S","rows":[["x"]]}]}`
+	if _, err := run(t, WriteXLSX(dir), args); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(dir, "report.xlsx"))
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o644 {
+		t.Errorf("file permissions = %o, want %o", perm, 0o644)
+	}
+}
+
+func TestWriteXLSXRejectsDuplicateSheetNames(t *testing.T) {
+	dir := t.TempDir()
+	args := `{
+		"path": "report.xlsx",
+		"sheets": [
+			{"name": "Leads", "rows": [["a"]]},
+			{"name": "Leads", "rows": [["b"]]}
+		]
+	}`
+	if _, err := run(t, WriteXLSX(dir), args); err == nil {
+		t.Error("duplicate sheet names should error")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "report.xlsx")); err == nil {
+		t.Error("no file should be written when validation fails before SaveAs")
+	}
+}
+
+func TestWriteXLSXRejectsNonScalarCellValues(t *testing.T) {
+	dir := t.TempDir()
+	args := `{
+		"path": "report.xlsx",
+		"sheets": [
+			{"name": "Leads", "rows": [[{"a": 1}]]}
+		]
+	}`
+	if _, err := run(t, WriteXLSX(dir), args); err == nil {
+		t.Error("object cell value should error")
+	}
+
+	args2 := `{
+		"path": "report2.xlsx",
+		"sheets": [
+			{"name": "Leads", "rows": [[[1, 2]]]}
+		]
+	}`
+	if _, err := run(t, WriteXLSX(dir), args2); err == nil {
+		t.Error("array cell value should error")
 	}
 }

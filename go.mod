@@ -12,9 +12,11 @@ require (
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/jbrahy/bubblecomplete v0.0.0
 	github.com/lib/pq v1.12.3
+	github.com/muesli/termenv v0.16.0
 	github.com/parquet-go/parquet-go v0.30.1
 	github.com/rivo/uniseg v0.4.7
 	github.com/tetratelabs/wazero v1.12.0
+	github.com/xuri/excelize/v2 v2.11.0
 	golang.org/x/term v0.44.0
 	modernc.org/sqlite v1.53.0
 )
@@ -49,7 +51,6 @@ require (
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/reflow v0.3.0 // indirect
-	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/parquet-go/bitpack v1.0.0 // indirect
 	github.com/parquet-go/jsonlite v1.0.0 // indirect
@@ -61,7 +62,6 @@ require (
 	github.com/twpayne/go-geom v1.6.1 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/xuri/efp v0.0.1 // indirect
-	github.com/xuri/excelize/v2 v2.11.0 // indirect
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	github.com/yuin/goldmark v1.7.13 // indirect
 	github.com/yuin/goldmark-emoji v1.0.6 // indirect

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/xuri/excelize/v2"
 
@@ -62,10 +64,16 @@ func WriteXLSX(root string) Tool {
 			f := excelize.NewFile()
 			defer f.Close()
 
+			seen := map[string]bool{}
 			for i, s := range a.Sheets {
 				if s.Name == "" {
 					return "", fmt.Errorf("sheet %d: name is required", i)
 				}
+				if seen[s.Name] {
+					return "", fmt.Errorf("duplicate sheet name %q", s.Name)
+				}
+				seen[s.Name] = true
+
 				if i == 0 {
 					if err := f.SetSheetName("Sheet1", s.Name); err != nil {
 						return "", fmt.Errorf("sheet %q: %w", s.Name, err)
@@ -86,6 +94,12 @@ func WriteXLSX(root string) Tool {
 					row = 2
 				}
 				for _, r := range s.Rows {
+					for _, v := range r {
+						switch v.(type) {
+						case map[string]any, []any:
+							return "", fmt.Errorf("sheet %q: row %d: cell values must be string, number, or bool, got %T", s.Name, row, v)
+						}
+					}
 					cell, err := excelize.CoordinatesToCellName(1, row)
 					if err != nil {
 						return "", fmt.Errorf("sheet %q: %w", s.Name, err)
@@ -98,8 +112,14 @@ func WriteXLSX(root string) Tool {
 				}
 			}
 
+			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+				return "", fmt.Errorf("mkdir for %s: %w", a.Path, err)
+			}
 			if err := f.SaveAs(full); err != nil {
 				return "", fmt.Errorf("save %s: %w", a.Path, err)
+			}
+			if err := os.Chmod(full, 0o644); err != nil {
+				return "", fmt.Errorf("chmod %s: %w", a.Path, err)
 			}
 			return fmt.Sprintf("wrote %s (%d sheet(s))", a.Path, len(a.Sheets)), nil
 		},
