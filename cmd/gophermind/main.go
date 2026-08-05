@@ -747,6 +747,7 @@ func run() error {
 		tools.CreateMigration(cfg.RootDir),                                    // gated: scaffold a timestamped SQL migration
 		tools.Scratchpad(cfg.RootDir),                                         // durable cross-turn task notes
 		tools.SetCSVCell(cfg.RootDir),                                         // gated: edit a single CSV cell
+		tools.WriteXLSX(cfg.RootDir),                                          // gated: write a multi-sheet .xlsx workbook
 		tools.WebSearch(braveEndpoint(cfg), cfg.BraveAPIKey, embedProvider),   // Brave web search (+ embedding rerank)
 		tools.SQLQuery(cfg.RootDir),                                           // read-only SQLite queries
 		tools.DBSchema(cfg.RootDir),                                           // read-only SQLite schema explorer (tables/cols/FKs)
