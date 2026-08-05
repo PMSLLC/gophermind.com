@@ -43,3 +43,6 @@ vendor/
 coverage/
 .cache/
 tmp/
+
+# subagent-driven-development worktrees
+.worktrees/
