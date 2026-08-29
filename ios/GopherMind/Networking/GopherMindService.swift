@@ -26,7 +26,7 @@ final class GopherMindService: GopherMindServicing {
         var errorDescription: String? {
             switch self {
             case .invalidServerURL:
-                return "No valid Server URL. Open Settings and enter your server (with http:// or https://), e.g. http://10.0.0.5:8090"
+                return "No valid Server URL. Open Settings and enter your server (with http:// or https://), e.g. http://192.168.1.10:8090"
             }
         }
     }

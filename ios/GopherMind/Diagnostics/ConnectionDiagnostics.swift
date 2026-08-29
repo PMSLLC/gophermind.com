@@ -37,14 +37,14 @@ final class ConnectionDiagnostics: ObservableObject {
         let raw = settings.serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else {
             add("Configuration", .fail,
-                "Server URL is empty. Set it in Settings, e.g. http://10.0.0.5:8090")
+                "Server URL is empty. Set it in Settings, e.g. http://192.168.1.10:8090")
             return
         }
         guard let base = URL(string: raw),
               let scheme = base.scheme?.lowercased(), scheme == "http" || scheme == "https",
               let host = base.host, !host.isEmpty else {
             add("Configuration", .fail,
-                "Server URL isn't valid: \"\(raw)\".\nIt needs scheme + host, e.g. http://10.0.0.5:8090")
+                "Server URL isn't valid: \"\(raw)\".\nIt needs scheme + host, e.g. http://192.168.1.10:8090")
             return
         }
         let portStr = base.port.map { ":\($0)" } ?? ""

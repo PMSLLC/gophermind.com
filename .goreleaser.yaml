@@ -60,7 +60,7 @@ nfpms:
     package_name: gophermind
     vendor: jbrahy
     homepage: "https://github.com/jbrahy/gophermind.com"
-    maintainer: "John Brahy <john@example.com>"
+    maintainer: "John Brahy"
     description: "A minimal agentic coding harness for OpenAI-compatible LLMs"
     license: MIT
     formats: [deb, rpm, apk]

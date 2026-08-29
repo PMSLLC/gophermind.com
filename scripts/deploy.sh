@@ -11,7 +11,8 @@
 #
 # Env:
 #   GOPHERMIND_SKIP_IOS=1   skip the iOS stage of the gate (loud warning)
-#   SERVER_HOST=host        override the deploy host (default 10.0.0.5)
+#   SERVER_HOST=host        the deploy host (required for the server/all targets;
+#                           set in .env or export it — see .env.example)
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -21,7 +22,11 @@ case "$TARGET" in
   *) echo "usage: scripts/deploy.sh {local|server|phone|all}" >&2; exit 2 ;;
 esac
 
-SERVER_HOST="${SERVER_HOST:-10.0.0.5}"
+[ -f .env ] && set -a && source .env && set +a
+if [ "$TARGET" = "server" ] || [ "$TARGET" = "all" ]; then
+  SERVER_HOST="${SERVER_HOST:?SERVER_HOST not set — add it to .env or export it (see .env.example)}"
+fi
+SERVER_HOST="${SERVER_HOST:-}"
 SERVER_BIN="/usr/local/bin/gophermind"
 SERVER_UNIT="gophermind.service"
 
