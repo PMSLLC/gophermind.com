@@ -15,6 +15,7 @@ set -uo pipefail
 cd "$(dirname "$0")"
 
 command -v xcodegen >/dev/null || { echo "xcodegen not found — 'brew install xcodegen'"; exit 1; }
+[ -n "${GOPHERMIND_DEVELOPMENT_TEAM:-}" ] || { echo "GOPHERMIND_DEVELOPMENT_TEAM not set (see ios/README.md)"; exit 1; }
 xcodegen generate >/dev/null
 
 # Pick a paired physical iPhone, preferring a currently-connected transport

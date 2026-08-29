@@ -87,7 +87,7 @@ func TestRetrievalBlocksIncludesIndexHits(t *testing.T) {
 
 func TestRetrievalBlocksIncludesMemory(t *testing.T) {
 	p := testPaths(t)
-	writeStore(t, p.memory, "fact-1", "the deploy host is 10.0.0.5")
+	writeStore(t, p.memory, "fact-1", "the deploy host is 192.0.2.10")
 	t.Setenv("GOPHERMIND_RAG", "")
 	t.Setenv("GOPHERMIND_MEMORY", "1")
 

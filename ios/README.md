@@ -9,6 +9,7 @@ Native SwiftUI client scaffold. Project files are generated with
 ```sh
 brew install xcodegen   # if not already installed
 cd ios
+export GOPHERMIND_DEVELOPMENT_TEAM=<your Apple Developer Team ID>
 xcodegen generate
 open GopherMind.xcodeproj
 ```
