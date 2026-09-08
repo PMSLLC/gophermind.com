@@ -21,10 +21,17 @@ type Provider interface {
 }
 
 // Vector is a stored embedding keyed by an id (and optional payload text).
+//
+// ValidFrom and ValidUntil give a vector a validity window, which the memory
+// stores use to retire facts that stopped being true. Both are omitted when
+// empty, so index vectors serialize exactly as before and a store written
+// before windows existed loads unchanged: no window means the fact is live.
 type Vector struct {
-	ID     string    `json:"id"`
-	Text   string    `json:"text,omitempty"`
-	Values []float32 `json:"values"`
+	ID         string    `json:"id"`
+	Text       string    `json:"text,omitempty"`
+	Values     []float32 `json:"values"`
+	ValidFrom  string    `json:"valid_from,omitempty"`  // RFC3339, when it became true
+	ValidUntil string    `json:"valid_until,omitempty"` // RFC3339; empty means still true
 }
 
 // Hit is a search result: a vector plus its similarity to the query.
@@ -52,10 +59,15 @@ func cosine(a, b []float32) float32 {
 	return float32(dot / (math.Sqrt(na) * math.Sqrt(nb)))
 }
 
-// TopK returns the k items most similar to query, ranked best-first.
+// TopK returns the k items most similar to query, ranked best-first. Items
+// whose validity window has closed (ValidUntil set) are skipped, so a fact that
+// has been superseded drops out of every retrieval path at once.
 func TopK(query []float32, items []Vector, k int) []Hit {
 	hits := make([]Hit, 0, len(items))
 	for _, it := range items {
+		if it.ValidUntil != "" {
+			continue
+		}
 		hits = append(hits, Hit{ID: it.ID, Text: it.Text, Score: cosine(query, it.Values)})
 	}
 	sort.SliceStable(hits, func(i, j int) bool { return hits[i].Score > hits[j].Score })
