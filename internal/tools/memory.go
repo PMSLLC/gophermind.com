@@ -26,6 +26,12 @@ func RememberProfile(p embed.Provider, memPath string) Tool {
 		"Save a durable preference or fact about the USER to global profile memory (shared across all repos).")
 }
 
+// supersedeThreshold is the cosine similarity at which a newly remembered fact
+// counts as a restatement of an older one, retiring it. Set high on purpose:
+// retiring a fact that was merely related loses knowledge silently, while
+// leaving a near-duplicate live only costs a retrieval slot.
+const supersedeThreshold = 0.93
+
 // rememberTool builds a fact-remembering tool over the given store path.
 func rememberTool(p embed.Provider, memPath, name, desc string) Tool {
 	return Tool{
@@ -56,12 +62,33 @@ func rememberTool(p embed.Provider, memPath, name, desc string) Tool {
 			if err != nil || len(vecs) == 0 {
 				return "", fmt.Errorf("embed fact: %w", err)
 			}
-			id := "fact-" + strconv.FormatInt(time.Now().UnixNano(), 36)
-			idx.Vectors = append(idx.Vectors, embed.Vector{ID: id, Text: text, Values: vecs[0]})
+			// A new fact retires the older phrasings of the same fact, so
+			// what the store returns is what is true now. Retired facts stay
+			// on disk with a closed window rather than being deleted.
+			now := time.Now().UTC()
+			retired := idx.Supersede(vecs[0], now, supersedeThreshold)
+
+			id := "fact-" + strconv.FormatInt(now.UnixNano(), 36)
+			idx.Vectors = append(idx.Vectors, embed.Vector{
+				ID:        id,
+				Text:      text,
+				Values:    vecs[0],
+				ValidFrom: now.Format(time.RFC3339),
+			})
 			if err := idx.Save(memPath); err != nil {
 				return "", fmt.Errorf("save memory: %w", err)
 			}
-			return fmt.Sprintf("Remembered (%d facts in memory).", len(idx.Vectors)), nil
+			live := 0
+			for _, v := range idx.Vectors {
+				if v.ValidUntil == "" {
+					live++
+				}
+			}
+			msg := fmt.Sprintf("Remembered (%d facts in memory).", live)
+			if len(retired) > 0 {
+				msg += fmt.Sprintf(" This superseded %d earlier fact(s): %s", len(retired), strings.Join(retired, "; "))
+			}
+			return msg, nil
 		},
 	}
 }
