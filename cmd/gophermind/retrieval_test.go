@@ -176,3 +176,27 @@ func TestInjectRetrievalNoopWhenDisabled(t *testing.T) {
 		t.Errorf("disabled injection changed the prompt: %q", got)
 	}
 }
+
+// TestRetrievalBlocksSkipRetiredFacts is the end of the validity-window path:
+// a fact whose window has closed must not reach the prompt, even though it is
+// still the best cosine match in the store.
+func TestRetrievalBlocksSkipRetiredFacts(t *testing.T) {
+	p := testPaths(t)
+	idx := &embed.Index{Vectors: []embed.Vector{
+		{ID: "fact-old", Text: "deploy target is box A", Values: []float32{1, 0, 0}, ValidUntil: "2026-07-01T00:00:00Z"},
+		{ID: "fact-new", Text: "deploy target is box B", Values: []float32{1, 0, 0}, ValidFrom: "2026-07-01T00:00:00Z"},
+	}}
+	if err := idx.Save(p.memory); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GOPHERMIND_MEMORY", "1")
+
+	got := retrievalBlocks(context.Background(), stubEmbed{}, p, "where do we deploy")
+
+	if strings.Contains(got, "box A") {
+		t.Errorf("a retired fact reached the prompt:\n%s", got)
+	}
+	if !strings.Contains(got, "box B") {
+		t.Errorf("the live fact should still be injected:\n%s", got)
+	}
+}
