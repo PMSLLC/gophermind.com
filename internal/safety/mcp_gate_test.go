@@ -20,7 +20,7 @@ func TestGatedCoversMCPTools(t *testing.T) {
 
 // The namespace rule must not accidentally gate or un-gate builtins.
 func TestGatedBuiltinsUnchanged(t *testing.T) {
-	for _, name := range []string{"write_file", "run_shell", "edit_file", "fetch_url", "write_xlsx"} {
+	for _, name := range []string{"write_file", "run_shell", "edit_file", "fetch_url", "write_xlsx", "invalidate_fact"} {
 		if !Gated(name) {
 			t.Errorf("builtin %q should still be gated", name)
 		}

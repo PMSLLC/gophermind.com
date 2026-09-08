@@ -774,6 +774,7 @@ func run() error {
 		tools.SemanticSearch(cfg.RootDir, embedProvider, indexPath, packsDir),       // retrieve relevant chunks by meaning
 		tools.RememberFact(embedProvider, memoryPath),                               // persist a fact to per-repo memory
 		tools.RememberProfile(embedProvider, profileMemoryPath()),                   // persist a fact to global profile memory
+		tools.InvalidateFact(embedProvider, memoryPath),                             // retire a per-repo fact that stopped being true
 		tools.RecordEpisode(embedProvider, episodesPath(cfg.RootDir)),               // record task outcomes to episodic memory
 		tools.ImportPack(cfg.RootDir, embedProvider, packsDir),                      // index a doc folder as a knowledge pack
 		tools.RetrievalEval(cfg.RootDir, embedProvider, indexPath),                  // score index retrieval quality (hit@k)
