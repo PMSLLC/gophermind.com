@@ -114,7 +114,7 @@ As you type in the interactive TUI input box, suggestions appear in two forms:
 - **Inline ghost text** — a single obvious continuation appears as faded text at the cursor: accept it with **Tab** or **→** (right arrow when the cursor is at the end of the line). Sources include history recall (prompts you've submitted before) and a Markov next-word predictor trained on your history.
 - **Popup menu** — when there are multiple candidates, a popup menu appears above the input: navigate with **↑** and **↓**, accept with **Tab** (or **Enter** when the menu is open), dismiss with **Esc**. Sources include slash-command completion (when the line starts with `/`) and file/path completion for path-shaped tokens.
 
-The suggestion engine is built on the reusable [`github.com/jbrahy/bubblecomplete`](https://github.com/jbrahy/bubblecomplete) library (vendored in-repo).
+The suggestion engine is built on `bubblecomplete`, a reusable library carried in this repo at [`bubblecomplete/`](bubblecomplete/) and wired in through a `replace` directive in `go.mod`.
 
 ### Prompt History
 
@@ -154,7 +154,7 @@ answer or hits the iteration budget. That's the whole idea — see
 
 ## PhaseFlow: spec-driven workflow
 
-GopherMind natively speaks [PhaseFlow](https://github.com/jbrahy/metaphaseflow),
+GopherMind natively speaks PhaseFlow,
 a spec-driven development loop: **Roadmap → Phases → Plan → Execute → Verify →
 Milestone**. Workflow state lives under `.planning/` (`ROADMAP.md`, `STATE.md`,
 `PROJECT.md`, `config.json`) — the same on-disk model as upstream, so the two
