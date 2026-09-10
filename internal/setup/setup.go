@@ -27,6 +27,17 @@ type Result struct {
 	ApprovalMode string // "ask" | "auto"
 	MaxIter      int    // agent loop-iteration budget per turn
 
+	// ChatPath is config.Config.ChatPath, carried through from whichever
+	// profile menu entry was chosen (empty for a custom URL or a profile
+	// whose base URL needs no override). Empty means the client's default
+	// "/v1/chat/completions", so a wizard run that never touches this field
+	// behaves exactly as before it existed.
+	ChatPath string
+	// ModelsPath is config.Config.ModelsPath, carried through the same way as
+	// ChatPath and for the same reason: empty means the client's default
+	// "/v1/models".
+	ModelsPath string
+
 	// Optional integration credentials.
 	BraveAPIKey   string
 	GitHubToken   string
@@ -34,10 +45,24 @@ type Result struct {
 }
 
 // Pairs renders the result as ordered GOPHERMIND_* env pairs for persistence.
-// Empty optional values (API key, model) are omitted so a blank answer never
-// writes a spurious line.
+// BaseURL, ChatPath, and ModelsPath are always emitted, even empty:
+// config.Save treats an empty value as "delete this key", and a wizard run
+// always resolves a definite ChatPath/ModelsPath (a chosen profile's value,
+// or empty for one that needs no override), an empty result IS the
+// intended state, not a blank answer to ignore. Omitting them when empty
+// would leave a stale chat_path/models_path from an earlier run in place
+// after switching to a profile that does not need one (e.g. openai ->
+// local-llama), which would silently reintroduce the doubled-path bug this
+// field exists to fix. Every OTHER optional value (API key, model) is
+// omitted when blank so a blank answer never writes a spurious line or
+// clobbers a hand-set value. Those, unlike the paths, are genuinely
+// "leave unset" rather than "explicitly empty".
 func (r Result) Pairs() [][2]string {
-	pairs := [][2]string{{"GOPHERMIND_BASE_URL", r.BaseURL}}
+	pairs := [][2]string{
+		{"GOPHERMIND_BASE_URL", r.BaseURL},
+		{"GOPHERMIND_CHAT_PATH", r.ChatPath},
+		{"GOPHERMIND_MODELS_PATH", r.ModelsPath},
+	}
 	if r.APIKey != "" {
 		pairs = append(pairs, [2]string{"GOPHERMIND_API_KEY", r.APIKey})
 	}
@@ -61,13 +86,14 @@ func (r Result) Pairs() [][2]string {
 }
 
 // Options configures a wizard run. In/Out are the I/O streams; Profiles is the
-// endpoint menu ({name, baseURL}); ListModels fetches selectable models for the
-// chosen endpoint; ReadSecret reads the API key without echo (nil => read a
-// plain line from In); Defaults pre-fills answers when re-running.
+// endpoint menu ({name, baseURL, chatPath, modelsPath}); ListModels fetches
+// selectable models for the chosen endpoint; ReadSecret reads the API key
+// without echo (nil => read a plain line from In); Defaults pre-fills
+// answers when re-running.
 type Options struct {
 	In         io.Reader
 	Out        io.Writer
-	Profiles   [][2]string
+	Profiles   [][4]string
 	ListModels func(baseURL, apiKey string) ([]string, error)
 	ReadSecret func() (string, error)
 	Defaults   Result
@@ -102,9 +128,11 @@ func Run(opts Options) (Result, error) {
 	}
 	choice := parseIntOr(choiceLine, 1)
 
-	var baseURL string
+	var baseURL, chatPath, modelsPath string
 	if choice >= 1 && choice <= len(opts.Profiles) {
 		baseURL = opts.Profiles[choice-1][1]
+		chatPath = opts.Profiles[choice-1][2]
+		modelsPath = opts.Profiles[choice-1][3]
 	} else {
 		// Custom (or out-of-range): prompt for a URL, defaulting to any prior value.
 		def := opts.Defaults.BaseURL
@@ -114,6 +142,12 @@ func Run(opts Options) (Result, error) {
 			return Result{}, err
 		}
 		baseURL = firstNonEmpty(strings.TrimSpace(line), def)
+		// A custom URL carries no known chat/models path; fall back to
+		// whatever the prior run had (e.g. re-running the wizard against the
+		// same custom endpoint), which is empty (the client defaults) the
+		// first time.
+		chatPath = opts.Defaults.ChatPath
+		modelsPath = opts.Defaults.ModelsPath
 	}
 
 	// 2) API key (optional, read without echo when a ReadSecret is provided).
@@ -208,7 +242,8 @@ func Run(opts Options) (Result, error) {
 	}
 
 	return Result{
-		BaseURL: baseURL, APIKey: apiKey, Model: model, ApprovalMode: mode, MaxIter: maxIter,
+		BaseURL: baseURL, ChatPath: chatPath, ModelsPath: modelsPath,
+		APIKey: apiKey, Model: model, ApprovalMode: mode, MaxIter: maxIter,
 		BraveAPIKey: strings.TrimSpace(brave), GitHubToken: strings.TrimSpace(ghToken), NotifyWebhook: strings.TrimSpace(notify),
 	}, nil
 }

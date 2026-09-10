@@ -61,9 +61,11 @@ const defaultBaseURL = ""
 // carries the fields that distinguish one backend from another; everything
 // else (approval mode, iteration cap, prices, root) stays global.
 type builtinProfile struct {
-	BaseURL string
-	Model   string        // "" => auto-discover from the endpoint
-	Timeout time.Duration // 0 => fall back to the global HTTP timeout default
+	BaseURL    string
+	Model      string        // "" => auto-discover from the endpoint
+	Timeout    time.Duration // 0 => fall back to the global HTTP timeout default
+	ChatPath   string        // "" => llm.Client default "/v1/chat/completions"
+	ModelsPath string        // "" => llm.Client default "/v1/models"
 }
 
 // builtinProfiles are the three example backends a user can select with
@@ -75,28 +77,45 @@ var builtinProfiles = map[string]builtinProfile{
 		BaseURL: "http://127.0.0.1:8080",
 		Model:   "", // auto-discover from the local server
 		Timeout: 300 * time.Second,
+		// ChatPath/ModelsPath left empty: this base URL has no /v1 segment, so
+		// the client's defaults ("/v1/chat/completions", "/v1/models") are
+		// already correct.
 	},
 	"openai": {
-		BaseURL: "https://api.openai.com/v1",
-		Model:   "gpt-4o-mini",
-		Timeout: 120 * time.Second,
+		BaseURL:    "https://api.openai.com/v1",
+		Model:      "gpt-4o-mini",
+		Timeout:    120 * time.Second,
+		ChatPath:   "/chat/completions", // BaseURL already ends in /v1
+		ModelsPath: "/models",           // BaseURL already ends in /v1
 	},
 	"anthropic-proxy": {
 		// Placeholder for a local Anthropic-compatible OpenAI shim; override
 		// with GOPHERMIND_PROFILE_ANTHROPIC_PROXY_BASE_URL.
-		BaseURL: "http://127.0.0.1:8082/v1",
-		Model:   "claude-3-5-sonnet",
-		Timeout: 120 * time.Second,
+		BaseURL:    "http://127.0.0.1:8082/v1",
+		Model:      "claude-3-5-sonnet",
+		Timeout:    120 * time.Second,
+		ChatPath:   "/chat/completions", // BaseURL already ends in /v1
+		ModelsPath: "/models",           // BaseURL already ends in /v1
 	},
 }
 
 // Config holds everything the harness needs to run. Every field has a sensible
 // default; an empty Model is auto-discovered from the endpoint at startup.
 type Config struct {
-	Profile        string   // GOPHERMIND_PROFILE: selected provider profile ("" => legacy/default endpoint)
-	BaseURL        string   // GOPHERMIND_BASE_URL (required), e.g. http://10.0.0.5:8000
-	APIKey         string   // GOPHERMIND_API_KEY (optional; empty when reached over VPN)
-	Model          string   // GOPHERMIND_MODEL
+	Profile string // GOPHERMIND_PROFILE: selected provider profile ("" => legacy/default endpoint)
+	BaseURL string // GOPHERMIND_BASE_URL (required), e.g. http://10.0.0.5:8000
+	APIKey  string // GOPHERMIND_API_KEY (optional; empty when reached over VPN)
+	Model   string // GOPHERMIND_MODEL
+	// ChatPath is llm.Client.ChatPath: the path appended to BaseURL for chat
+	// completions. GOPHERMIND_CHAT_PATH; empty (the default) means the
+	// client's historical "/v1/chat/completions", so BaseURL alone still
+	// behaves exactly as before this field existed.
+	ChatPath string
+	// ModelsPath is llm.Client.ModelsPath: the path appended to BaseURL for
+	// model listing and capability probing. GOPHERMIND_MODELS_PATH; empty
+	// (the default) means the client's historical "/v1/models", mirroring
+	// ChatPath's no-op default exactly.
+	ModelsPath     string
 	FallbackModels []string // GOPHERMIND_FALLBACK_MODELS: comma-separated, tried in order after Model on a fallback-eligible failure
 	SpeedModel     string   // GOPHERMIND_SPEED_MODEL: faster model selected by --speed (falls back to the first FallbackModels entry)
 	RootDir        string   // GOPHERMIND_ROOT (default: cwd)
@@ -237,6 +256,8 @@ func Load() (Config, error) {
 		BaseURL:           envOr("GOPHERMIND_BASE_URL", defaultBaseURL),
 		APIKey:            envOr("GOPHERMIND_API_KEY", ""),
 		Model:             envOr("GOPHERMIND_MODEL", ""), // empty => auto-discover from /v1/models
+		ChatPath:          envOr("GOPHERMIND_CHAT_PATH", ""),
+		ModelsPath:        envOr("GOPHERMIND_MODELS_PATH", ""),
 		FallbackModels:    envList("GOPHERMIND_FALLBACK_MODELS"),
 		SpeedModel:        envOr("GOPHERMIND_SPEED_MODEL", ""),
 		RootDir:           root,
@@ -357,35 +378,40 @@ func unquoteEnv(v string) string {
 	return v
 }
 
-// BuiltinProfileNames returns the built-in provider profiles as {name, baseURL}
-// pairs in stable (name-sorted) order, for the setup wizard's endpoint menu.
-func BuiltinProfileNames() [][2]string {
+// BuiltinProfileNames returns the built-in provider profiles as
+// {name, baseURL, chatPath, modelsPath} quads in stable (name-sorted) order,
+// for the setup wizard's endpoint menu. chatPath/modelsPath are the
+// profile's llm.Client.ChatPath/ModelsPath (empty means the client's
+// defaults "/v1/chat/completions"/"/v1/models"), carried through so a
+// wizard selection sets them exactly as --profile does.
+func BuiltinProfileNames() [][4]string {
 	names := make([]string, 0, len(builtinProfiles))
 	for name := range builtinProfiles {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	pairs := make([][2]string, 0, len(names))
+	quads := make([][4]string, 0, len(names))
 	for _, name := range names {
-		pairs = append(pairs, [2]string{name, builtinProfiles[name].BaseURL})
+		p := builtinProfiles[name]
+		quads = append(quads, [4]string{name, p.BaseURL, p.ChatPath, p.ModelsPath})
 	}
-	return pairs
+	return quads
 }
 
 // FreeProfileNames returns the runnable free-provider profiles as
-// {name, baseURL} pairs, in display order (no-key providers first). Kept
-// separate from BuiltinProfileNames so sixteen free entries never bury the
-// three built-in ones in the setup wizard's menu.
-func FreeProfileNames() [][2]string {
+// {name, baseURL, chatPath, modelsPath} quads, in display order (no-key
+// providers first). Kept separate from BuiltinProfileNames so sixteen free
+// entries never bury the three built-in ones in the setup wizard's menu.
+func FreeProfileNames() [][4]string {
 	cs := freellm.Compats()
-	pairs := make([][2]string, 0, len(cs))
+	quads := make([][4]string, 0, len(cs))
 	for _, c := range cs {
 		if !c.Supported {
 			continue
 		}
-		pairs = append(pairs, [2]string{c.Profile, c.BaseURL})
+		quads = append(quads, [4]string{c.Profile, c.BaseURL, c.ChatPath, c.ModelsPath})
 	}
-	return pairs
+	return quads
 }
 
 // defaultCacheDir picks a contained location for cached completions: the OS user
@@ -429,7 +455,7 @@ func profileEnvKey(name string) string {
 }
 
 // ApplyProfile resolves the named profile into the endpoint fields (BaseURL,
-// APIKey, Model, HTTPTimeout). Resolution order per field:
+// APIKey, Model, ChatPath, ModelsPath, HTTPTimeout). Resolution order per field:
 //
 //	per-profile env var  >  built-in profile default  >  free-registry default
 //
@@ -476,13 +502,15 @@ func (c Config) ApplyProfile() (Config, error) {
 	// Free profiles always carry an explicit model: an empty Model triggers
 	// auto-discovery from /v1/models, and several free endpoints list paid
 	// models alongside free ones, so discovery could select a billable model.
-	freeBase, freeModel := "", ""
+	freeBase, freeModel, freeChatPath, freeModelsPath := "", "", "", ""
 	if isFree {
-		freeBase, freeModel = free.BaseURL, free.DefaultModel
+		freeBase, freeModel, freeChatPath, freeModelsPath = free.BaseURL, free.DefaultModel, free.ChatPath, free.ModelsPath
 	}
 
 	c.BaseURL = firstNonEmpty(envBase, builtin.BaseURL, freeBase)
 	c.Model = firstNonEmpty(os.Getenv(prefix+"_MODEL"), builtin.Model, freeModel)
+	c.ChatPath = firstNonEmpty(os.Getenv(prefix+"_CHAT_PATH"), builtin.ChatPath, freeChatPath)
+	c.ModelsPath = firstNonEmpty(os.Getenv(prefix+"_MODELS_PATH"), builtin.ModelsPath, freeModelsPath)
 	c.APIKey = os.Getenv(prefix + "_API_KEY") // never defaulted; secrets only from env
 
 	// A free profile must never reach the client with an empty Model. An empty

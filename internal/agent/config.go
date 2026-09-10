@@ -12,7 +12,13 @@ import (
 // so the TUI's /config wizard can pre-fill the current values and report what
 // changed after the user edits them.
 type AgentConfig struct {
-	BaseURL      string
+	BaseURL string
+	// ChatPath and ModelsPath mirror llm.Client.ChatPath/ModelsPath: empty
+	// means the client's historical defaults ("/v1/chat/completions",
+	// "/v1/models"). Carried here so the TUI's /config wizard can pre-fill
+	// and clear them the same way it does BaseURL/Model.
+	ChatPath     string
+	ModelsPath   string
 	Model        string
 	ApprovalMode string // "ask" or "auto"
 	MaxIter      int
@@ -35,6 +41,8 @@ func (a *Agent) MaxIter() int { return a.maxIter }
 func (a *Agent) Config() AgentConfig {
 	return AgentConfig{
 		BaseURL:      a.llm.BaseURL,
+		ChatPath:     a.llm.ChatPath,
+		ModelsPath:   a.llm.ModelsPath,
 		Model:        a.llm.Model,
 		ApprovalMode: a.approvalMode,
 		MaxIter:      a.maxIter,
@@ -46,6 +54,18 @@ func (a *Agent) Config() AgentConfig {
 func (a *Agent) SetBaseURL(u string) {
 	a.llm.BaseURL = strings.TrimRight(strings.TrimSpace(u), "/")
 }
+
+// SetChatPath sets the path appended to BaseURL for chat completions.
+// An empty string is valid and meaningful (the client's default
+// "/v1/chat/completions"), so unlike SetBaseURL this always applies the
+// given value rather than ignoring a blank one.
+func (a *Agent) SetChatPath(p string) { a.llm.ChatPath = strings.TrimSpace(p) }
+
+// SetModelsPath sets the path appended to BaseURL for model listing and
+// capability probing. An empty string is valid and meaningful (the client's
+// default "/v1/models"), so unlike SetBaseURL this always applies the given
+// value rather than ignoring a blank one.
+func (a *Agent) SetModelsPath(p string) { a.llm.ModelsPath = strings.TrimSpace(p) }
 
 // SetModel changes the model used for subsequent requests.
 func (a *Agent) SetModel(m string) { a.llm.Model = strings.TrimSpace(m) }

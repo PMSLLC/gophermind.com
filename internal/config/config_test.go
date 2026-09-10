@@ -830,3 +830,94 @@ func TestLocalLlamaStillAutoDiscoversWithEmptyModel(t *testing.T) {
 		t.Errorf("Model = %q, want empty (local-llama relies on auto-discovery)", got.Model)
 	}
 }
+
+// ChatPath must resolve with the same per-profile-env > builtin > free-registry
+// precedence as BaseURL and Model.
+func TestApplyProfileChatPathPrecedence(t *testing.T) {
+	for _, k := range []string{"GOPHERMIND_PROFILE_OPENAI_CHAT_PATH"} {
+		t.Setenv(k, "")
+	}
+
+	// Builtin default: openai's base URL already ends in /v1.
+	got, err := Config{Profile: "openai"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ChatPath != "/chat/completions" {
+		t.Errorf("ChatPath = %q, want the builtin default /chat/completions", got.ChatPath)
+	}
+
+	// Free-registry default: free-groq's Compat entry carries ChatPath.
+	got, err = Config{Profile: "free-groq"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ChatPath != "/chat/completions" {
+		t.Errorf("ChatPath = %q, want the free-registry default /chat/completions", got.ChatPath)
+	}
+
+	// Per-profile env wins over the builtin default.
+	t.Setenv("GOPHERMIND_PROFILE_OPENAI_CHAT_PATH", "/custom/path")
+	got, err = Config{Profile: "openai"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ChatPath != "/custom/path" {
+		t.Errorf("ChatPath = %q, want the env override /custom/path", got.ChatPath)
+	}
+
+	// Per-profile env wins over the free-registry default too.
+	t.Setenv("GOPHERMIND_PROFILE_FREE_GROQ_CHAT_PATH", "/env/path")
+	got, err = Config{Profile: "free-groq"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ChatPath != "/env/path" {
+		t.Errorf("ChatPath = %q, want the env override /env/path", got.ChatPath)
+	}
+}
+
+// local-llama's base URL has no /v1 segment, so ChatPath must stay empty
+// (the client's default "/v1/chat/completions" is already correct for it).
+func TestLocalLlamaChatPathStaysEmpty(t *testing.T) {
+	got, err := Config{Profile: "local-llama"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ChatPath != "" {
+		t.Errorf("ChatPath = %q, want empty for local-llama", got.ChatPath)
+	}
+}
+
+// ModelsPath must resolve with the same precedence as ChatPath, and stay
+// empty for local-llama for the same reason.
+func TestApplyProfileModelsPathPrecedence(t *testing.T) {
+	t.Setenv("GOPHERMIND_PROFILE_OPENAI_MODELS_PATH", "")
+
+	got, err := Config{Profile: "openai"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ModelsPath != "/models" {
+		t.Errorf("ModelsPath = %q, want the builtin default /models", got.ModelsPath)
+	}
+
+	t.Setenv("GOPHERMIND_PROFILE_OPENAI_MODELS_PATH", "/custom/models")
+	got, err = Config{Profile: "openai"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ModelsPath != "/custom/models" {
+		t.Errorf("ModelsPath = %q, want the env override /custom/models", got.ModelsPath)
+	}
+}
+
+func TestLocalLlamaModelsPathStaysEmpty(t *testing.T) {
+	got, err := Config{Profile: "local-llama"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ModelsPath != "" {
+		t.Errorf("ModelsPath = %q, want empty for local-llama", got.ModelsPath)
+	}
+}

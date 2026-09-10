@@ -20,6 +20,24 @@ type Client struct {
 	HTTP    *http.Client
 	Retry   RetryPolicy // bounded exponential backoff for transient failures
 
+	// ChatPath is the path appended to BaseURL for chat completions. Empty (the
+	// default) means "/v1/chat/completions", which is what every caller got
+	// before this field existed. Set it to "/chat/completions" when BaseURL
+	// already ends in the API version segment, which is how most hosted
+	// providers publish their OpenAI-compatible root and how upstream's
+	// registry records them. Without it those base URLs produce
+	// /v1/v1/chat/completions and 404.
+	ChatPath string
+
+	// ModelsPath is the path appended to BaseURL for model listing (ListModels
+	// and the capability probe). Empty (the default) means "/v1/models",
+	// mirroring ChatPath's default exactly. Set it to "/models" alongside
+	// ChatPath for the same BaseURL-already-has-/v1 reason; a mismatched pair
+	// (ChatPath set but ModelsPath left empty against a /v1 BaseURL) would
+	// still 404 model listing and capability probing even though chat
+	// completions work.
+	ModelsPath string
+
 	// Fallbacks is an optional ordered list of models tried, in order, after the
 	// primary Model when a request fails with a fallback-eligible error (after
 	// that model's own retries are exhausted) — graceful degradation when the
@@ -300,6 +318,24 @@ func (c *Client) sampling() (float64, *float64, string) {
 	return c.temperature, &v, c.reasoningEffort
 }
 
+// chatPath returns the configured chat-completions path, defaulting to the
+// historical "/v1/chat/completions".
+func (c *Client) chatPath() string {
+	if c.ChatPath == "" {
+		return "/v1/chat/completions"
+	}
+	return c.ChatPath
+}
+
+// modelsPath returns the configured model-listing path, defaulting to the
+// historical "/v1/models".
+func (c *Client) modelsPath() string {
+	if c.ModelsPath == "" {
+		return "/v1/models"
+	}
+	return c.ModelsPath
+}
+
 // Complete performs one non-streaming chat round-trip and returns the
 // assistant message (which may carry tool calls) and the response's token
 // usage. Usage is the zero value when the endpoint omits the block.
@@ -403,7 +439,7 @@ func (c *Client) completeOnce(ctx context.Context, body []byte) (msg Message, us
 		ctx, cancel = context.WithTimeout(ctx, c.totalTimeout)
 		defer cancel()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/v1/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+c.chatPath(), bytes.NewReader(body))
 	if err != nil {
 		return Message{}, Usage{}, 0, false, false, fmt.Errorf("create request: %w", err)
 	}
@@ -475,7 +511,7 @@ func (c *Client) completeOnce(ctx context.Context, body []byte) (msg Message, us
 // auto-discovery and startup validation of a configured model, so a typo can be
 // reported against the actual list of what the endpoint offers.
 func (c *Client) ListModels(ctx context.Context) ([]string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/v1/models", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+c.modelsPath(), nil)
 	if err != nil {
 		return nil, err
 	}
