@@ -16,7 +16,7 @@ func TestAttributionLine(t *testing.T) {
 			t.Errorf("line %q missing %q", line, want)
 		}
 	}
-	if strings.Contains(line, referralMarker) {
+	if strings.Contains(line, ReferralMarker) {
 		t.Errorf("line %q claims a referral link where none is configured", line)
 	}
 }
@@ -45,24 +45,24 @@ func TestReferralAlwaysDisclosed(t *testing.T) {
 			continue
 		}
 		for name, out := range map[string]string{"Line": a.Line(), "Short": a.Short()} {
-			if !strings.Contains(out, referralMarker) {
+			if !strings.Contains(out, ReferralMarker) {
 				t.Errorf("profile %q %s() = %q, which emits a referral link without %q",
-					c.Profile, name, out, referralMarker)
+					c.Profile, name, out, ReferralMarker)
 			}
 		}
 	}
 }
 
 // TestReferralDisclosureInvariant proves the same invariant against
-// attributionFrom directly, so it holds even while every shipped Affiliate is
-// empty, and pins the guarantee that the link and its referral status can
-// only be set together by this package.
+// AttributionFromCompat directly, so it holds even while every shipped
+// Affiliate is empty, and pins the guarantee that the link and its referral
+// status can only be set together by this package.
 func TestReferralDisclosureInvariant(t *testing.T) {
 	// A zero Attribution renders no URL and no marker.
 	var zero Attribution
 	for name, out := range map[string]string{"Line": zero.Line(), "Short": zero.Short()} {
-		if strings.Contains(out, referralMarker) {
-			t.Errorf("zero value %s() = %q, unexpectedly carries %q", name, out, referralMarker)
+		if strings.Contains(out, ReferralMarker) {
+			t.Errorf("zero value %s() = %q, unexpectedly carries %q", name, out, ReferralMarker)
 		}
 		if strings.Contains(out, "http") {
 			t.Errorf("zero value %s() = %q, unexpectedly carries a URL", name, out)
@@ -75,7 +75,7 @@ func TestReferralDisclosureInvariant(t *testing.T) {
 		Profile: "free-x", Upstream: "X", Website: "https://x.test",
 		Affiliate: "https://x.test/ref/1", Supported: true,
 	}
-	a := attributionFrom(c, "m")
+	a := AttributionFromCompat(c, "m")
 	if !a.IsReferral() {
 		t.Error("IsReferral() is false with an affiliate link configured")
 	}
@@ -86,8 +86,8 @@ func TestReferralDisclosureInvariant(t *testing.T) {
 		t.Errorf("Line() = %q, missing the affiliate URL %q", a.Line(), c.Affiliate)
 	}
 	for name, out := range map[string]string{"Line": a.Line(), "Short": a.Short()} {
-		if !strings.Contains(out, referralMarker) {
-			t.Errorf("%s() = %q, missing %q", name, out, referralMarker)
+		if !strings.Contains(out, ReferralMarker) {
+			t.Errorf("%s() = %q, missing %q", name, out, ReferralMarker)
 		}
 	}
 }
@@ -98,7 +98,7 @@ func TestNoAffiliateEnvForcesWebsite(t *testing.T) {
 		Profile: "free-x", Upstream: "X", Website: "https://x.test",
 		Affiliate: "https://x.test/ref/1", Supported: true,
 	}
-	a := attributionFrom(c, "m")
+	a := AttributionFromCompat(c, "m")
 	if a.Link() != "https://x.test" {
 		t.Errorf("Link() = %q, want the plain website with %s set", a.Link(), NoAffiliateEnv)
 	}
@@ -106,8 +106,8 @@ func TestNoAffiliateEnvForcesWebsite(t *testing.T) {
 		t.Error("IsReferral() is true with the opt-out set")
 	}
 	for name, out := range map[string]string{"Line": a.Line(), "Short": a.Short()} {
-		if strings.Contains(out, referralMarker) {
-			t.Errorf("%s() = %q, carries %q despite the opt-out", name, out, referralMarker)
+		if strings.Contains(out, ReferralMarker) {
+			t.Errorf("%s() = %q, carries %q despite the opt-out", name, out, ReferralMarker)
 		}
 		if strings.Contains(out, c.Affiliate) {
 			t.Errorf("%s() = %q, carries the affiliate URL despite the opt-out", name, out)

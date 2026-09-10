@@ -66,12 +66,3 @@ func providerCard(profile, model, odoPath string, now time.Time) string {
 	}
 	return b.String()
 }
-
-// odometerPathTUI resolves the odometer location, honoring GOPHERMIND_ODOMETER
-// so tests and alternate installs can redirect it.
-func odometerPathTUI() string {
-	if p := strings.TrimSpace(os.Getenv("GOPHERMIND_ODOMETER")); p != "" {
-		return p
-	}
-	return freellm.DefaultOdometerPath()
-}

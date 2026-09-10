@@ -509,8 +509,23 @@ func (c Config) ApplyProfile() (Config, error) {
 
 	c.BaseURL = firstNonEmpty(envBase, builtin.BaseURL, freeBase)
 	c.Model = firstNonEmpty(os.Getenv(prefix+"_MODEL"), builtin.Model, freeModel)
-	c.ChatPath = firstNonEmpty(os.Getenv(prefix+"_CHAT_PATH"), builtin.ChatPath, freeChatPath)
-	c.ModelsPath = firstNonEmpty(os.Getenv(prefix+"_MODELS_PATH"), builtin.ModelsPath, freeModelsPath)
+	// A per-profile _BASE_URL override invalidates the table's ChatPath/
+	// ModelsPath assumptions: builtin.ChatPath and freeChatPath are shaped for
+	// that entry's own BaseURL (e.g. "/chat/completions" against a base that
+	// already ends in /v1), and nothing says an overriding URL is shaped the
+	// same way. So an override falls back to the client's own defaults
+	// ("/v1/chat/completions", "/v1/models") unless the override also sets
+	// _CHAT_PATH/_MODELS_PATH explicitly, rather than silently inheriting
+	// paths tuned for a different URL. Accepted tradeoff: a user who
+	// re-supplies the SAME /v1 URL via override must now also set
+	// _CHAT_PATH/_MODELS_PATH to get what used to be automatic; that is the
+	// rarer case than overriding to a genuinely different endpoint.
+	if envBase == "" {
+		c.ChatPath = firstNonEmpty(os.Getenv(prefix+"_CHAT_PATH"), builtin.ChatPath, freeChatPath)
+		c.ModelsPath = firstNonEmpty(os.Getenv(prefix+"_MODELS_PATH"), builtin.ModelsPath, freeModelsPath)
+	} else {
+		c.ChatPath, c.ModelsPath = os.Getenv(prefix+"_CHAT_PATH"), os.Getenv(prefix+"_MODELS_PATH")
+	}
 	c.APIKey = os.Getenv(prefix + "_API_KEY") // never defaulted; secrets only from env
 
 	// A free profile must never reach the client with an empty Model. An empty

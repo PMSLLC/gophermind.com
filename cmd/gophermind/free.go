@@ -13,15 +13,6 @@ import (
 	"gophermind/internal/freellm"
 )
 
-// odometerPath resolves where the free-usage odometer lives, honoring
-// GOPHERMIND_ODOMETER so tests and alternate installs can redirect it.
-func odometerPath() string {
-	if p := strings.TrimSpace(os.Getenv("GOPHERMIND_ODOMETER")); p != "" {
-		return p
-	}
-	return freellm.DefaultOdometerPath()
-}
-
 // runFree implements "gophermind free". It writes to out and returns a process
 // exit code, so it is testable without spawning a subprocess.
 func runFree(args []string, out io.Writer) int {
@@ -130,6 +121,20 @@ func freeListJSON(out io.Writer) int {
 	return 0
 }
 
+// freeShowLinkLine renders the "Link:" line of "free show" for an
+// attribution. It reads only a.Link()/a.IsReferral() (never a Compat field
+// directly), so it can never surface an affiliate URL without
+// freellm.ReferralMarker, and it honors GOPHERMIND_NO_AFFILIATE because that
+// opt-out is already applied inside a by AttributionFor. It returns "" (no
+// line at all) whenever the link is not a referral, matching the prior
+// behavior of only showing this line for an affiliate URL.
+func freeShowLinkLine(a freellm.Attribution) string {
+	if !a.IsReferral() {
+		return ""
+	}
+	return fmt.Sprintf("Link:     %s %s\n", a.Link(), freellm.ReferralMarker)
+}
+
 func freeShow(out io.Writer, profile string) int {
 	c, ok := freellm.CompatFor(profile)
 	if !ok {
@@ -156,8 +161,8 @@ func freeShow(out io.Writer, profile string) int {
 	if c.Note != "" {
 		fmt.Fprintf(out, "Note:     %s\n", c.Note)
 	}
-	if c.Affiliate != "" {
-		fmt.Fprintf(out, "Link:     %s (referral link)\n", c.Affiliate)
+	if a, ok := freellm.AttributionFor(c.Profile, c.DefaultModel); ok {
+		fmt.Fprint(out, freeShowLinkLine(a))
 	}
 
 	if hasUpstream {
@@ -231,7 +236,7 @@ func freeCheck(out io.Writer, profile string) int {
 }
 
 func freeUsage(out io.Writer) int {
-	path := odometerPath()
+	path := freellm.OdometerPath()
 	o, err := freellm.LoadOdometer(path)
 	if err != nil {
 		fmt.Fprintf(out, "could not read the odometer at %s: %v\n", path, err)

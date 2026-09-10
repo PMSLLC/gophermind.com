@@ -87,14 +87,17 @@ func (r Result) Pairs() [][2]string {
 
 // Options configures a wizard run. In/Out are the I/O streams; Profiles is the
 // endpoint menu ({name, baseURL, chatPath, modelsPath}); ListModels fetches
-// selectable models for the chosen endpoint; ReadSecret reads the API key
-// without echo (nil => read a plain line from In); Defaults pre-fills
-// answers when re-running.
+// selectable models for the chosen endpoint, given the resolved modelsPath
+// for that endpoint (from the chosen profile's quad, or Defaults.ModelsPath
+// for a custom URL) so it can probe the same path the endpoint actually
+// serves models from instead of always assuming the client's bare default;
+// ReadSecret reads the API key without echo (nil => read a plain line from
+// In); Defaults pre-fills answers when re-running.
 type Options struct {
 	In         io.Reader
 	Out        io.Writer
 	Profiles   [][4]string
-	ListModels func(baseURL, apiKey string) ([]string, error)
+	ListModels func(baseURL, modelsPath, apiKey string) ([]string, error)
 	ReadSecret func() (string, error)
 	Defaults   Result
 }
@@ -168,7 +171,7 @@ func Run(opts Options) (Result, error) {
 
 	// 3) Model: pick from live discovery, else free-text.
 	var model string
-	models, listErr := listModels(opts, baseURL, apiKey)
+	models, listErr := listModels(opts, baseURL, modelsPath, apiKey)
 	if listErr == nil && len(models) > 0 {
 		fmt.Fprintln(out, "Model:")
 		for i, m := range models {
@@ -248,11 +251,11 @@ func Run(opts Options) (Result, error) {
 	}, nil
 }
 
-func listModels(opts Options, baseURL, apiKey string) ([]string, error) {
+func listModels(opts Options, baseURL, modelsPath, apiKey string) ([]string, error) {
 	if opts.ListModels == nil {
 		return nil, nil
 	}
-	return opts.ListModels(baseURL, apiKey)
+	return opts.ListModels(baseURL, modelsPath, apiKey)
 }
 
 // NeedsSetup reports whether the first-run wizard should trigger: only when the
