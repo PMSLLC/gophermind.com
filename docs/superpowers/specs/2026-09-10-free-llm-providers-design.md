@@ -368,11 +368,21 @@ type Odometer struct {
 }
 ```
 
-**The monotonic invariant is the whole point.** `Add` only ever increases a
-field. `Load` returns `max(persisted, recomputed-from-usagelog)` per field, so
-rotating, pruning, or deleting `usage.jsonl` cannot roll the reading back, and a
-corrupt or missing state file recovers to at least what the log can prove. An
-odometer does not go down when you clean the glovebox.
+**The monotonic invariant is the whole point**, and its limit must be stated
+honestly. `Add` only ever increases a field, and every load merges upward rather
+than overwriting, so a stale in-memory copy meeting a newer file (or the
+reverse) resolves to the higher value and two concurrent sessions cannot lose an
+increment. Rotating or pruning `usage.jsonl` cannot roll the reading back,
+because the odometer no longer derives from it at all.
+
+What it does NOT guarantee: recovery from a destroyed state file. An earlier
+draft claimed `max(persisted, recomputed-from-usagelog)`, but that recompute
+fallback disappeared once trip meters moved to a self-contained event ring, and
+nothing else records this data. `save` fsyncs before renaming, which closes the
+torn-write window, but a file deleted or overwritten wholesale restarts the
+reading at zero. That is an acceptable failure mode for a cosmetic counter and
+does not justify a sidecar or high-water file. An odometer does not go down when
+you clean the glovebox; it does go to zero if you replace the dashboard.
 
 Concurrency: gophermind can run several sessions against one cache dir. `Add`
 takes an advisory file lock (`flock` on the state file) for the
