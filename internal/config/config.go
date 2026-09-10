@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gophermind/internal/freellm"
 )
 
 // Sampling parameter bounds. Temperature is the OpenAI-conventional [0,2];
@@ -370,6 +372,22 @@ func BuiltinProfileNames() [][2]string {
 	return pairs
 }
 
+// FreeProfileNames returns the runnable free-provider profiles as
+// {name, baseURL} pairs, in display order (no-key providers first). Kept
+// separate from BuiltinProfileNames so sixteen free entries never bury the
+// three built-in ones in the setup wizard's menu.
+func FreeProfileNames() [][2]string {
+	cs := freellm.Compats()
+	pairs := make([][2]string, 0, len(cs))
+	for _, c := range cs {
+		if !c.Supported {
+			continue
+		}
+		pairs = append(pairs, [2]string{c.Profile, c.BaseURL})
+	}
+	return pairs
+}
+
 // defaultCacheDir picks a contained location for cached completions: the OS user
 // cache dir under gophermind/cache when available, otherwise .gophermind/cache
 // under the repo root. Both keep cache files out of the working tree's path of
@@ -413,12 +431,25 @@ func profileEnvKey(name string) string {
 // ApplyProfile resolves the named profile into the endpoint fields (BaseURL,
 // APIKey, Model, HTTPTimeout). Resolution order per field:
 //
-//	per-profile env var  >  built-in profile default
+//	per-profile env var  >  built-in profile default  >  free-registry default
+//
+// APIKey is the one exception: it is read only from the per-profile env var
+// (GOPHERMIND_PROFILE_<NAME>_API_KEY) and never defaulted from either the
+// built-in table or the free registry, since the registry carries no key
+// material.
 //
 // When c.Profile is empty the receiver is returned unchanged, preserving the
-// legacy single-endpoint behavior exactly. An unknown profile name (one that
-// is neither built in nor backed by per-profile env vars) returns an error
-// that names the bad profile but never any key material.
+// legacy single-endpoint behavior exactly. Two distinct error cases:
+//
+//   - Unsupported free profile: the name matches an entry in the free
+//     registry that is not runnable as-is (e.g. its base URL cannot be known
+//     statically) and no per-profile _BASE_URL override was given.
+//   - Unknown profile: the name is neither built in, nor a free-registry
+//     entry, nor backed by a per-profile _BASE_URL override.
+//
+// Either error names the bad profile but never any key material. A free
+// profile that would otherwise resolve to an empty Model also errors,
+// naming the _MODEL env var to set (see the Model guard below).
 func (c Config) ApplyProfile() (Config, error) {
 	if c.Profile == "" {
 		return c, nil
@@ -430,16 +461,38 @@ func (c Config) ApplyProfile() (Config, error) {
 	prefix := profileEnvKey(c.Profile)
 	builtin, isBuiltin := builtinProfiles[c.Profile]
 
-	// A custom profile is recognized only if it defines at least a base URL
-	// via env. Otherwise the name is unknown and we fail loudly.
+	// A custom profile is recognized if it defines at least a base URL via env,
+	// or if it names a free provider from the vendored registry. Otherwise the
+	// name is unknown and we fail loudly.
 	envBase := os.Getenv(prefix + "_BASE_URL")
-	if !isBuiltin && envBase == "" {
+	free, isFree := freellm.CompatFor(c.Profile)
+	if isFree && !free.Supported && envBase == "" {
+		return Config{}, fmt.Errorf("profile %q is not runnable as-is: %s (set %s_BASE_URL)", c.Profile, free.Note, prefix)
+	}
+	if !isBuiltin && !isFree && envBase == "" {
 		return Config{}, fmt.Errorf("unknown profile %q: no built-in profile and %s_BASE_URL is not set", c.Profile, prefix)
 	}
 
-	c.BaseURL = firstNonEmpty(envBase, builtin.BaseURL)
-	c.Model = firstNonEmpty(os.Getenv(prefix+"_MODEL"), builtin.Model)
+	// Free profiles always carry an explicit model: an empty Model triggers
+	// auto-discovery from /v1/models, and several free endpoints list paid
+	// models alongside free ones, so discovery could select a billable model.
+	freeBase, freeModel := "", ""
+	if isFree {
+		freeBase, freeModel = free.BaseURL, free.DefaultModel
+	}
+
+	c.BaseURL = firstNonEmpty(envBase, builtin.BaseURL, freeBase)
+	c.Model = firstNonEmpty(os.Getenv(prefix+"_MODEL"), builtin.Model, freeModel)
 	c.APIKey = os.Getenv(prefix + "_API_KEY") // never defaulted; secrets only from env
+
+	// A free profile must never reach the client with an empty Model. An empty
+	// Model triggers auto-discovery from /v1/models, and several free endpoints
+	// list paid models alongside free ones, so discovery could select a model
+	// that bills the user. A registry entry without a DefaultModel (an
+	// unsupported one enabled by hand via _BASE_URL) has to say which model.
+	if isFree && c.Model == "" {
+		return Config{}, fmt.Errorf("profile %q has no model: set %s_MODEL (free profiles never auto-discover, which could select a paid model)", c.Profile, prefix)
+	}
 
 	if v := os.Getenv(prefix + "_TIMEOUT"); v != "" {
 		var n int

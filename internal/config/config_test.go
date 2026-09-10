@@ -714,3 +714,119 @@ func TestLoadDefaultsRetry(t *testing.T) {
 		t.Errorf("RetryBaseDelay = %v, want 2s", cfg.RetryBaseDelay)
 	}
 }
+
+func TestApplyFreeProfile(t *testing.T) {
+	c := Config{Profile: "free-groq"}
+	got, err := c.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.BaseURL != "https://api.groq.com/openai/v1" {
+		t.Errorf("BaseURL = %q", got.BaseURL)
+	}
+	if got.Model != "openai/gpt-oss-120b" {
+		t.Errorf("Model = %q, want the explicit default (never auto-discovery)", got.Model)
+	}
+	if got.APIKey != "" {
+		t.Errorf("APIKey = %q, want empty with no env var set", got.APIKey)
+	}
+}
+
+func TestFreeProfileEnvOverridesWin(t *testing.T) {
+	t.Setenv("GOPHERMIND_PROFILE_FREE_GROQ_BASE_URL", "https://proxy.internal/v1")
+	t.Setenv("GOPHERMIND_PROFILE_FREE_GROQ_MODEL", "my-model")
+	t.Setenv("GOPHERMIND_PROFILE_FREE_GROQ_API_KEY", "k")
+	got, err := Config{Profile: "free-groq"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.BaseURL != "https://proxy.internal/v1" || got.Model != "my-model" || got.APIKey != "k" {
+		t.Errorf("env overrides did not win: %+v", got)
+	}
+}
+
+func TestUnsupportedFreeProfileErrorsWithNote(t *testing.T) {
+	_, err := Config{Profile: "free-cloudflare"}.ApplyProfile()
+	if err == nil {
+		t.Fatal("expected an error for an unsupported free profile")
+	}
+	if !strings.Contains(err.Error(), "free-cloudflare") {
+		t.Errorf("error %q does not name the profile", err)
+	}
+	if !strings.Contains(err.Error(), "GOPHERMIND_PROFILE_FREE_CLOUDFLARE_BASE_URL") {
+		t.Errorf("error %q does not point at the override", err)
+	}
+}
+
+func TestUnknownFreeProfileStillErrors(t *testing.T) {
+	if _, err := (Config{Profile: "free-nope"}).ApplyProfile(); err == nil {
+		t.Error("expected an error for an unknown free profile")
+	}
+}
+
+func TestFreeProfileNamesAreSupportedOnly(t *testing.T) {
+	names := FreeProfileNames()
+	if len(names) == 0 {
+		t.Fatal("no free profiles listed")
+	}
+	for _, p := range names {
+		if p[0] == "free-cloudflare" {
+			t.Error("an unsupported profile appears in FreeProfileNames")
+		}
+		if p[1] == "" {
+			t.Errorf("profile %q has no base URL", p[0])
+		}
+	}
+}
+
+// Built-in profiles must be unaffected.
+func TestBuiltinProfilesUnchangedByFreeSupport(t *testing.T) {
+	got, err := Config{Profile: "openai"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.BaseURL != "https://api.openai.com/v1" || got.Model != "gpt-4o-mini" {
+		t.Errorf("built-in openai profile changed: %+v", got)
+	}
+}
+
+// A hand-enabled unsupported free profile (base URL overridden, no model
+// override) must not fall through to auto-discovery: it has no DefaultModel,
+// so it must error naming the _MODEL env var to set.
+func TestUnsupportedFreeProfileWithBaseURLOnlyStillErrorsOnModel(t *testing.T) {
+	t.Setenv("GOPHERMIND_PROFILE_FREE_CLOUDFLARE_BASE_URL", "https://example.com/v1")
+	_, err := Config{Profile: "free-cloudflare"}.ApplyProfile()
+	if err == nil {
+		t.Fatal("expected an error when only _BASE_URL is set for an unsupported free profile")
+	}
+	if !strings.Contains(err.Error(), "GOPHERMIND_PROFILE_FREE_CLOUDFLARE_MODEL") {
+		t.Errorf("error %q does not name the model override", err)
+	}
+}
+
+// The same profile, with both _BASE_URL and _MODEL set by hand, must resolve
+// successfully to those values.
+func TestUnsupportedFreeProfileWithBaseURLAndModelSucceeds(t *testing.T) {
+	t.Setenv("GOPHERMIND_PROFILE_FREE_CLOUDFLARE_BASE_URL", "https://example.com/v1")
+	t.Setenv("GOPHERMIND_PROFILE_FREE_CLOUDFLARE_MODEL", "my-account-model")
+	got, err := Config{Profile: "free-cloudflare"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.BaseURL != "https://example.com/v1" || got.Model != "my-account-model" {
+		t.Errorf("did not resolve to the hand-set values: %+v", got)
+	}
+}
+
+// local-llama is a built-in profile that deliberately resolves to an empty
+// Model for auto-discovery against a local server. The free-profile Model
+// guard must not fire for it, since isFree is false for built-in profiles.
+func TestLocalLlamaStillAutoDiscoversWithEmptyModel(t *testing.T) {
+	got, err := Config{Profile: "local-llama"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Model != "" {
+		t.Errorf("Model = %q, want empty (local-llama relies on auto-discovery)", got.Model)
+	}
+}
