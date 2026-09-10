@@ -10,6 +10,7 @@ import (
 
 	root "gophermind"
 	"gophermind/internal/fortune"
+	"gophermind/internal/freellm"
 	"gophermind/internal/prompt"
 	"gophermind/internal/tips"
 	"gophermind/internal/version"
@@ -17,8 +18,10 @@ import (
 
 // Options controls optional banner sections.
 type Options struct {
-	Fortune bool // include a random fortune under the banner
-	Tip     bool // include a rotating tip-of-the-day line
+	Fortune bool   // include a random fortune under the banner
+	Tip     bool   // include a rotating tip-of-the-day line
+	Profile string // active config profile; a free-* one adds an attribution line
+	Model   string // model in use, named in that attribution line
 }
 
 // taglineStyle tints the "GO PHER IT" wordmark with the teal from the gopher's
@@ -40,6 +43,14 @@ func RenderWith(o Options) string {
 	b.WriteString("\n")
 	b.WriteString(version.String())
 	b.WriteByte('\n')
+
+	// Name the free provider serving this model, so the user always knows whose
+	// free tier they are spending. Renders nothing for a paid or unset profile,
+	// which keeps Render() and every existing caller byte-identical.
+	if a, ok := freellm.AttributionFor(o.Profile, o.Model); ok {
+		b.WriteString(taglineStyle.Render(a.Line()))
+		b.WriteByte('\n')
+	}
 
 	if changes := LatestChanges(root.Changelog, 3); len(changes) > 0 {
 		b.WriteString("\nRecent changes:\n")

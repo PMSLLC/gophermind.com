@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -392,6 +393,10 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		return m, nil
 	case "/help":
 		m.appendLine(helpLine())
+		m.sync()
+		return m, nil
+	case "/provider":
+		m.appendLine(providerCard(m.profile, m.model, odometerPathTUI(), time.Now()))
 		m.sync()
 		return m, nil
 	case "/index":

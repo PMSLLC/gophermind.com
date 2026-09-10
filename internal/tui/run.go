@@ -19,6 +19,10 @@ type Config struct {
 	Client   *llm.Client
 	Registry *tools.Registry
 	Model    string
+	// Profile is the active config profile (e.g. "free-groq"); a free-* one
+	// drives the status-line and banner attribution. Empty means the default
+	// endpoint, which shows no attribution.
+	Profile string
 	// SpeedModel is the faster/cheaper model tier used for tasks whose plan
 	// assignment resolves to "speed" (see /project-execute); Model doubles as
 	// the "strong" tier. Empty disables tier resolution (falls back to Model).
@@ -113,7 +117,7 @@ func Run(cfg Config) error {
 		_, _ = codeindex.BuildAndWrite(root)
 	}
 
-	m := newModel(build, cfg.Model, cfg.SpeedModel, cfg.Mode, glamourStyle, cfg.NoBanner, cfg.NoFortune, cfg.AttentionFlashes)
+	m := newModel(build, cfg.Model, cfg.SpeedModel, cfg.Mode, glamourStyle, cfg.Profile, cfg.NoBanner, cfg.NoFortune, cfg.AttentionFlashes)
 	final, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
 	// On exit, flush the full message history if a transcript path was set. This
 	// runs once, after the UI has torn down, so it never interferes with the

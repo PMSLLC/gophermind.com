@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/jbrahy/bubblecomplete"
+	"gophermind/internal/freellm"
 )
 
 var _ tea.Model = model{}
@@ -30,14 +31,23 @@ func (m model) frame() string {
 		return m.banner
 	}
 
+	name := m.model
+	free := ""
+	if a, ok := freellm.AttributionFor(m.profile, m.model); ok {
+		if m.hyperlinks && a.Link() != "" {
+			name = osc8(a.Link(), m.model)
+		}
+		free = " - " + a.Short()
+	}
+
 	var status string
 	switch m.st {
 	case stateWorking:
-		status = statusWorkingStyle.Render(fmt.Sprintf("%s %s · %s mode · %s · working", m.spin.View(), m.model, m.mode, m.usage.String()))
+		status = statusWorkingStyle.Render(fmt.Sprintf("%s %s%s · %s mode · %s · working", m.spin.View(), name, free, m.mode, m.usage.String()))
 	case stateApproval:
 		status = statusApprovalStyle.Render(fmt.Sprintf("⏸ approve  %s %s  ? (y)es (n)o (a)lways", m.pending.tool, oneLine(m.pending.args)))
 	default:
-		status = statusReadyStyle.Render(fmt.Sprintf("%s · %s mode · %s · ready · /help", m.model, m.mode, m.usage.String()))
+		status = statusReadyStyle.Render(fmt.Sprintf("%s%s · %s mode · %s · ready · /help", name, free, m.mode, m.usage.String()))
 	}
 
 	width := m.width - 2

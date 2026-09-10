@@ -1009,6 +1009,7 @@ func run() error {
 			Client:           client,
 			Registry:         reg,
 			Model:            cfg.Model,
+			Profile:          cfg.Profile,
 			SpeedModel:       cfg.SpeedModel,
 			Mode:             cfg.ApprovalMode,
 			MaxIter:          cfg.MaxIter,
