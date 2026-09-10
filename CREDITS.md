@@ -20,6 +20,16 @@ definitions, and workflow templates are vendored and embedded under
 `internal/phaseflow/assets/`, used under the **MIT License** (Copyright © 2025
 Lex Christopherson; see `internal/phaseflow/assets/LICENSE.upstream`). Thank you.
 
+## Free LLM provider registry
+
+The free-provider table behind `gophermind free` and
+[docs/free-providers.md](docs/free-providers.md) is vendored from
+**awesome-free-llm-apis** by **mnfst** —
+<https://github.com/mnfst/awesome-free-llm-apis>. The registry is used under
+**CC0 1.0** (<https://creativecommons.org/publicdomain/zero/1.0/>) and vendored
+verbatim at `internal/freellm/data.json`; refresh it with
+`scripts/sync-free-providers.sh`. Thank you.
+
 ## Libraries
 
 GopherMind's terminal experience is built on the excellent
