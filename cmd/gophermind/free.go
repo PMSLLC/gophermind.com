@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -29,6 +30,9 @@ func runFree(args []string, out io.Writer) int {
 	}
 	switch args[0] {
 	case "list":
+		if len(args) > 1 && args[1] == "--json" {
+			return freeListJSON(out)
+		}
 		return freeList(out)
 	case "show":
 		if len(args) < 2 {
@@ -83,6 +87,46 @@ func freeList(out io.Writer) int {
 	tw.Flush()
 	fmt.Fprintln(out, "\nRun one with:  gophermind --profile <profile> ask \"hello\"")
 	fmt.Fprintln(out, "Details with:  gophermind free show <profile>")
+	return 0
+}
+
+// freeListEntry is the machine-readable form of one Compats() row. It backs
+// the hidden "gophermind free list --json" mode, which exists so
+// scripts/gen-free-providers-doc.sh can generate docs/free-providers.md
+// straight from compat.go instead of hand-typing provider facts into the
+// doc, which is exactly what let free-llm7 drift into the doc after it was
+// marked unsupported.
+type freeListEntry struct {
+	Profile      string   `json:"profile"`
+	Upstream     string   `json:"upstream"`
+	Website      string   `json:"website"`
+	NoKey        bool     `json:"no_key"`
+	Supported    bool     `json:"supported"`
+	DefaultModel string   `json:"default_model,omitempty"`
+	Terms        []string `json:"terms,omitempty"`
+	Note         string   `json:"note,omitempty"`
+}
+
+func freeListJSON(out io.Writer) int {
+	entries := make([]freeListEntry, 0, len(freellm.Compats()))
+	for _, c := range freellm.Compats() {
+		entries = append(entries, freeListEntry{
+			Profile:      c.Profile,
+			Upstream:     c.Upstream,
+			Website:      c.Website,
+			NoKey:        c.NoKey,
+			Supported:    c.Supported,
+			DefaultModel: c.DefaultModel,
+			Terms:        freellm.TermsFlags(c.Terms),
+			Note:         c.Note,
+		})
+	}
+	enc := json.NewEncoder(out)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(entries); err != nil {
+		fmt.Fprintf(out, "error encoding JSON: %v\n", err)
+		return 1
+	}
 	return 0
 }
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -29,6 +30,33 @@ func TestFreeListMarksTerms(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "non-commercial") {
 		t.Errorf("list does not flag Cohere's non-commercial terms:\n%s", out)
+	}
+}
+
+// TestFreeListJSONIsDataDriven covers the hidden "free list --json" mode
+// that scripts/gen-free-providers-doc.sh relies on: it must emit valid JSON
+// and reflect compat.go's Supported/NoKey flags exactly, so the generated
+// doc never hand-types a provider fact that could drift.
+func TestFreeListJSONIsDataDriven(t *testing.T) {
+	var buf bytes.Buffer
+	if code := runFree([]string{"list", "--json"}, &buf); code != 0 {
+		t.Fatalf("exit code %d", code)
+	}
+	var entries []freeListEntry
+	if err := json.Unmarshal(buf.Bytes(), &entries); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, buf.String())
+	}
+	byProfile := make(map[string]freeListEntry, len(entries))
+	for _, e := range entries {
+		byProfile[e.Profile] = e
+	}
+	ovh, ok := byProfile["free-ovhcloud"]
+	if !ok || !ovh.NoKey || !ovh.Supported {
+		t.Errorf("free-ovhcloud entry wrong or missing: %+v (ok=%v)", ovh, ok)
+	}
+	llm7, ok := byProfile["free-llm7"]
+	if !ok || llm7.Supported {
+		t.Errorf("free-llm7 must be present and Supported=false: %+v (ok=%v)", llm7, ok)
 	}
 }
 

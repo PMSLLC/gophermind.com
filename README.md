@@ -87,6 +87,32 @@ cd gophermind.com
 make build      # -> ./gophermind
 ```
 
+## Run it for free
+
+gophermind vendors a registry of free LLM API providers, so you can try it with
+no signup and no key at all:
+
+```sh
+gophermind --profile free-ovhcloud ask "hello"
+```
+
+That runs against [OVHcloud AI Endpoints](https://endpoints.ai.cloud.ovh.net),
+served anonymously (2 requests/minute per IP) — no config file, no
+environment variable, nothing to sign up for. `free-kilocode` is the other
+no-key profile. `gophermind free list` shows every provider gophermind knows
+about, no-key ones first; `gophermind free show <profile>` prints a
+provider's models, rate limits, and free-tier terms; `gophermind free usage`
+shows a lifetime odometer of the free tokens and requests you've used.
+
+A provider whose endpoint can't be known statically (for example Cloudflare
+Workers AI, which embeds your account ID) needs a hand-supplied `/v1` base
+URL. Point gophermind at it with `GOPHERMIND_BASE_URL`, and if that URL
+already ends in a version segment like `/v1`, set `GOPHERMIND_CHAT_PATH` and
+`GOPHERMIND_MODELS_PATH` to `/chat/completions` and `/models` so the client
+doesn't double the segment into `/v1/v1/chat/completions`.
+
+See [docs/free-providers.md](docs/free-providers.md) for the full table.
+
 ## Quickstart
 
 ```sh
@@ -209,6 +235,8 @@ Everything is optional and layered: **flags > real env > `./.env` >
 | `GOPHERMIND_APPROVAL` | `ask` (default) or `auto` |
 | `GOPHERMIND_PROFILE` | Named backend: `local-llama`, `openai`, … |
 | `GOPHERMIND_ATTENTION_FLASHES` | Screen flashes when the TUI needs you (default 4; 0 off) |
+| `GOPHERMIND_CHAT_PATH` | Path appended to `GOPHERMIND_BASE_URL` for chat completions (default `/v1/chat/completions`) |
+| `GOPHERMIND_MODELS_PATH` | Path appended to `GOPHERMIND_BASE_URL` for model listing (default `/v1/models`) |
 
 ### The global config file
 
