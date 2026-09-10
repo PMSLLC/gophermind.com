@@ -71,10 +71,17 @@ var compats = []Compat{
 	},
 	{
 		Profile: "free-llm7", Upstream: "LLM7.io",
-		BaseURL:      "https://api.llm7.io/v1",
-		DefaultModel: "gpt-oss:20b",
-		Website:      "https://llm7.io", NoKey: true, Supported: true,
-		Note:       "anonymous access needs no key; a free token from token.llm7.io raises the limits",
+		BaseURL: "https://api.llm7.io/v1",
+		Website: "https://llm7.io", Supported: false,
+		Note: "upstream's DefaultModel (gpt-oss:20b) is not in the 45 models the live endpoint " +
+			"advertises, and no advertised model reaches gophermind's tool-calling agent loop " +
+			"anonymously: of 8 candidates tried against the live endpoint on 2026-09-10, " +
+			"L3-8B-Lunaris-v1-Turbo and mistral-Small-24B-Instruct-2501 both returned HTTP 400 " +
+			"(\"does not support tools\", code unsupported_model_feature), and the other 6 " +
+			"(deepseek-v4-flash:0731, glm-5.3, kimi-k3, llama-4-maverick, gpt-5.5, gemma4:31b) " +
+			"returned HTTP 401 (\"Missing API key\"). Supply your own key and model via env " +
+			"(see the _MODEL and key env vars for this profile) to use it with a free token " +
+			"from token.llm7.io.",
 		ChatPath:   "/chat/completions",
 		ModelsPath: "/models",
 	},
