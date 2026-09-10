@@ -21,7 +21,7 @@ const needle = "'---' '---'"
 // m.ready. The banner must remain visible in the ready view, not vanish.
 func TestBannerSurvivesFirstWindowSize(t *testing.T) {
 	t.Setenv("GOPHERMIND_CONFIG_DIR", t.TempDir())
-	m := newModel(func(sub chan tea.Msg, allowed *allowSet) *agent.Agent { return nil }, "m", "", "auto", "dark", false, false, DefaultAttentionFlashes)
+	m := newModel(func(sub chan tea.Msg, allowed *allowSet) *agent.Agent { return nil }, "m", "", "auto", "dark", "", false, false, DefaultAttentionFlashes)
 
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	rm := updated.(model)
@@ -42,7 +42,7 @@ func TestBannerSurvivesFirstWindowSize(t *testing.T) {
 // with the banner suppressed, so the gopher art never appears in the view.
 func TestNoBannerSuppressesSplash(t *testing.T) {
 	t.Setenv("GOPHERMIND_CONFIG_DIR", t.TempDir())
-	m := newModel(func(sub chan tea.Msg, allowed *allowSet) *agent.Agent { return nil }, "m", "", "auto", "dark", true, false, DefaultAttentionFlashes)
+	m := newModel(func(sub chan tea.Msg, allowed *allowSet) *agent.Agent { return nil }, "m", "", "auto", "dark", "", true, false, DefaultAttentionFlashes)
 
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	rm := updated.(model)

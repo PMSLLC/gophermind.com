@@ -58,6 +58,8 @@ type model struct {
 	model      string // model name, for the status line; also the "strong" tier for /project-execute
 	speedModel string // "speed" tier model for /project-execute (empty falls back to model)
 	mode       string // "auto" | "ask"
+	profile    string // active config profile; "" for the default endpoint
+	hyperlinks bool   // terminal supports OSC 8; false keeps output plain
 
 	temperature float64  // current sampling temperature, mirrored from the client
 	topP        *float64 // current top_p (nil when unset), mirrored from the client
@@ -143,7 +145,7 @@ type model struct {
 
 // newModel builds the model. buildAgent receives the bridge channel and the
 // shared always-allow set so the agent's approval closure can consult them.
-func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent, modelName, speedModel, mode, glamourStyle string, noBanner, noFortune bool, attentionFlashes int) model {
+func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent, modelName, speedModel, mode, glamourStyle, profile string, noBanner, noFortune bool, attentionFlashes int) model {
 	sub := make(chan tea.Msg, 64)
 	allowed := newAllowSet()
 
@@ -207,13 +209,15 @@ func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent,
 		model:        modelName,
 		speedModel:   speedModel,
 		mode:         mode,
+		profile:      profile,
+		hyperlinks:   hyperlinkTerminal(),
 		input:        ta,
 		viewport:     viewport.New(0, 0),
 		spin:         sp,
 		render:       r,
 		st:           stateIdle,
 		glamourStyle: glamourStyle,
-		banner:       renderBanner(noBanner, noFortune),
+		banner:       renderBanner(noBanner, noFortune, profile, modelName),
 		complete:     cm,
 		hist:         hist,
 		ngram:        ng,
@@ -232,12 +236,13 @@ func newModel(buildAgent func(sub chan tea.Msg, allowed *allowSet) *agent.Agent,
 
 // renderBanner returns the startup splash, or an empty string when suppressed
 // (via --no-banner/--quiet). noFortune (--fortune off) keeps the banner but drops
-// the fortune line.
-func renderBanner(noBanner, noFortune bool) string {
+// the fortune line. profile and modelName feed the free-provider attribution
+// line, which renders nothing for a paid or unset profile.
+func renderBanner(noBanner, noFortune bool, profile, modelName string) string {
 	if noBanner {
 		return ""
 	}
-	return banner.RenderWith(banner.Options{Fortune: !noFortune, Tip: true})
+	return banner.RenderWith(banner.Options{Fortune: !noFortune, Tip: true, Profile: profile, Model: modelName})
 }
 
 func (m model) Init() tea.Cmd {

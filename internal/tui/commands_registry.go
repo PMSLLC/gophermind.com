@@ -23,6 +23,7 @@ var slashCommands = []slashCommand{
 	{Name: "/phase", Arg: "<cmd>", Desc: "run a PhaseFlow workflow command"},
 	{Name: "/config", Arg: "", Desc: "open the configuration wizard"},
 	{Name: "/index", Arg: "", Desc: "rebuild INDEX.md, the code symbol index"},
+	{Name: "/provider", Arg: "", Desc: "show who is serving the current model, its terms, and the odometer"},
 	{Name: "/optimize", Arg: "[profile]", Desc: "tune .env for a performance profile (safe|balanced|aggressive|unattended)"},
 	{Name: "/secaudit", Arg: "[path]", Desc: "static security scan → SECURITY-AUDIT.md"},
 	{Name: "/temp", Arg: "<0-2>", Desc: "set sampling temperature"},
