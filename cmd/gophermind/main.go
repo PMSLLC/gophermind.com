@@ -28,6 +28,7 @@ import (
 	"gophermind/internal/doctor"
 	"gophermind/internal/embed"
 	"gophermind/internal/fewshot"
+	"gophermind/internal/freellm"
 	"gophermind/internal/intro"
 	"gophermind/internal/jobs"
 	"gophermind/internal/llm"
@@ -1318,12 +1319,17 @@ func run() error {
 			}
 		}
 		// Persist usage for the cost dashboard when GOPHERMIND_USAGE_LOG is set.
+		u := ag.Usage()
+		freeCompat, isFree := freellm.CompatFor(cfg.Profile)
 		if lp := strings.TrimSpace(os.Getenv("GOPHERMIND_USAGE_LOG")); lp != "" {
-			u := ag.Usage()
-			_ = usagelog.Append(lp, usagelog.Record{
+			rec := usagelog.Record{
 				Time: time.Now(), Model: cfg.Model,
 				PromptTokens: u.PromptTokens, CompletionTokens: u.CompletionTokens, CostUSD: u.CostUSD,
-			})
+			}
+			if isFree {
+				rec.Profile, rec.Provider = freeCompat.Profile, freeCompat.Upstream
+			}
+			_ = usagelog.Append(lp, rec)
 			// Budget alert: warn when cumulative recorded spend exceeds a ceiling.
 			if b, err := strconv.ParseFloat(strings.TrimSpace(os.Getenv("GOPHERMIND_BUDGET_USD")), 64); err == nil && b > 0 {
 				if recs, err := usagelog.Load(lp); err == nil {
@@ -1331,6 +1337,18 @@ func run() error {
 						fmt.Fprintf(os.Stderr, "⚠ budget alert: cumulative spend $%.4f has reached the $%.2f ceiling (GOPHERMIND_BUDGET_USD)\n", total, b)
 					}
 				}
+			}
+		}
+		// The free-usage odometer counts unconditionally: unlike the cost log
+		// it needs no opt-in env var. Failure to record is never fatal to a run.
+		if isFree {
+			if odo, err := freellm.LoadOdometer(odometerPath()); err == nil {
+				_ = odo.Add(odometerPath(), freellm.Event{
+					TS:       time.Now(),
+					Profile:  freeCompat.Profile,
+					Tokens:   int64(u.PromptTokens + u.CompletionTokens),
+					Requests: 1,
+				})
 			}
 		}
 		// --report writes a self-contained HTML record of the run (task, answer,

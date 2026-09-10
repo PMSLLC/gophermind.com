@@ -19,6 +19,11 @@ type Record struct {
 	PromptTokens     int       `json:"prompt_tokens"`
 	CompletionTokens int       `json:"completion_tokens"`
 	CostUSD          float64   `json:"cost_usd"`
+	// Profile and Provider identify a free-provider run, so free usage can be
+	// separated from paid. Both are omitempty: records written before these
+	// fields existed parse unchanged and read as paid.
+	Profile  string `json:"profile,omitempty"`
+	Provider string `json:"provider,omitempty"`
 }
 
 // Append writes one record as a JSONL line (creating the file if needed).

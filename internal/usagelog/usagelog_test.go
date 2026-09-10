@@ -1,6 +1,7 @@
 package usagelog
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -55,5 +56,47 @@ func TestTotalCost(t *testing.T) {
 	recs := []Record{{CostUSD: 0.01}, {CostUSD: 0.03}, {CostUSD: 0.06}}
 	if got := TotalCost(recs); got != 0.10 {
 		t.Errorf("TotalCost = %f, want 0.10", got)
+	}
+}
+
+func TestRecordCarriesProfileAndProvider(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "usage.jsonl")
+	r := Record{
+		Time: time.Now(), Model: "openai/gpt-oss-120b",
+		PromptTokens: 10, CompletionTokens: 5,
+		Profile: "free-groq", Provider: "Groq",
+	}
+	if err := Append(path, r); err != nil {
+		t.Fatal(err)
+	}
+	recs, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != 1 {
+		t.Fatalf("got %d records", len(recs))
+	}
+	if recs[0].Profile != "free-groq" || recs[0].Provider != "Groq" {
+		t.Errorf("profile/provider not round-tripped: %+v", recs[0])
+	}
+}
+
+// A line written before these fields existed must still parse, and must read
+// as paid rather than as a free record with an empty provider.
+func TestOldRecordsStillParse(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "usage.jsonl")
+	old := `{"time":"2026-07-10T09:00:00Z","model":"m1","prompt_tokens":100,"completion_tokens":50,"cost_usd":0.01}`
+	if err := os.WriteFile(path, []byte(old+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recs, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != 1 || recs[0].Model != "m1" {
+		t.Fatalf("old record did not parse: %+v", recs)
+	}
+	if recs[0].Profile != "" {
+		t.Errorf("old record gained a profile: %q", recs[0].Profile)
 	}
 }
