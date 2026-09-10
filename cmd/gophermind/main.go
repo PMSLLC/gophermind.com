@@ -604,7 +604,7 @@ func run() error {
 	// endpoint configured and no network to the configured endpoint, so it
 	// runs before Validate and before the client is built.
 	if cmd == "free" {
-		os.Exit(runFree(os.Args[2:], os.Stdout))
+		os.Exit(runFree(args[1:], os.Stdout))
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -1356,8 +1356,8 @@ func run() error {
 		// The free-usage odometer counts unconditionally: unlike the cost log
 		// it needs no opt-in env var. Failure to record is never fatal to a run.
 		if isFree {
-			if odo, err := freellm.LoadOdometer(odometerPath()); err == nil {
-				_ = odo.Add(odometerPath(), freellm.Event{
+			if odo, err := freellm.LoadOdometer(freellm.OdometerPath()); err == nil {
+				_ = odo.Add(freellm.OdometerPath(), freellm.Event{
 					TS:       time.Now(),
 					Profile:  freeCompat.Profile,
 					Tokens:   int64(u.PromptTokens + u.CompletionTokens),
@@ -1541,7 +1541,7 @@ func runSetupWizard(cfg config.Config) (setup.Result, error) {
 		In:       os.Stdin,
 		Out:      os.Stderr,
 		Profiles: config.BuiltinProfileNames(),
-		ListModels: func(baseURL, apiKey string) ([]string, error) {
+		ListModels: func(baseURL, modelsPath, apiKey string) ([]string, error) {
 			c, err := llm.NewWithTLS(baseURL, apiKey, "", 15*time.Second, llm.TLSOptions{
 				InsecureSkipVerify: cfg.InsecureTLS,
 				ClientCertPath:     cfg.ClientCertPath,
@@ -1551,6 +1551,11 @@ func runSetupWizard(cfg config.Config) (setup.Result, error) {
 			if err != nil {
 				return nil, err
 			}
+			// Without this the client probes its bare default
+			// ("/v1/models"), which 404s against any endpoint whose BaseURL
+			// already ends in /v1 (e.g. https://api.openai.com/v1) by
+			// doubling it into .../v1/v1/models.
+			c.ModelsPath = modelsPath
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 			return c.ListModels(ctx)

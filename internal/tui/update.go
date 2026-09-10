@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/jbrahy/bubblecomplete"
 	"gophermind/internal/agent"
+	"gophermind/internal/freellm"
 	"gophermind/internal/phaseflow"
 )
 
@@ -396,7 +397,7 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		m.sync()
 		return m, nil
 	case "/provider":
-		m.appendLine(providerCard(m.profile, m.model, odometerPathTUI(), time.Now()))
+		m.appendLine(providerCard(m.profile, m.model, freellm.OdometerPath(), time.Now()))
 		m.sync()
 		return m, nil
 	case "/index":

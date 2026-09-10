@@ -8,6 +8,24 @@ import (
 	"time"
 )
 
+// TestOdometerPathHonorsEnvOverride is the shared-seam regression test for
+// cmd/gophermind and internal/tui, both of which used to duplicate this exact
+// resolution locally (odometerPath in free.go, odometerPathTUI in
+// internal/tui/provider.go) before it moved here.
+func TestOdometerPathHonorsEnvOverride(t *testing.T) {
+	t.Setenv(OdometerEnv, filepath.Join(t.TempDir(), "custom-odo.json"))
+	if got, want := OdometerPath(), os.Getenv(OdometerEnv); got != want {
+		t.Errorf("OdometerPath() = %q, want the env override %q", got, want)
+	}
+}
+
+func TestOdometerPathFallsBackToDefaultWhenUnset(t *testing.T) {
+	t.Setenv(OdometerEnv, "")
+	if got, want := OdometerPath(), DefaultOdometerPath(); got != want {
+		t.Errorf("OdometerPath() = %q, want DefaultOdometerPath() %q", got, want)
+	}
+}
+
 func TestOdometerAccumulates(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "odo.json")
 	o, err := LoadOdometer(path)

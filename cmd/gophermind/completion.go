@@ -10,7 +10,7 @@ import (
 // completionSubcommands are the top-level subcommands offered by tab-completion.
 var completionSubcommands = []string{
 	"commands", "mcp", "telemetry", "benchmark", "plugins", "bundle", "upgrade", "chat", "resume", "config", "sessions", "doctor", "status", "prompt-tokens",
-	"audit", "policy", "persona", "prompts", "usage", "version", "run", "ask", "queue", "serve", "ab", "print", "completion", "autocomplete", "phase",
+	"audit", "policy", "persona", "prompts", "usage", "version", "run", "ask", "queue", "serve", "ab", "print", "completion", "autocomplete", "phase", "free",
 }
 
 // completionFlags are the user-facing flags offered by tab-completion.

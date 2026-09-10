@@ -31,8 +31,8 @@ Run one with `gophermind --profile <profile> ask "hello"`, or browse them with
 ## Providers that need no API key
 
 These serve requests anonymously, which makes them the zero-signup way to try
-gophermind. Each has been observed completing a real turn end to end, not just
-returning a model list.
+gophermind. Each was verified against a live endpoint when this shipped;
+re-verify with `gophermind free check <profile>`.
 
 - `free-kilocode` - Kilo Code (200 req/hr)
 - `free-ovhcloud` - OVHcloud AI Endpoints (anonymous tier is 2 requests per minute per IP per model, hosted in the EU)
@@ -43,7 +43,7 @@ returning a model list.
 always resolves, but `gophermind --profile <profile>` refuses to start until
 the noted blocker is addressed.
 
-- `free-cloudflare` - Cloudflare Workers AI: endpoint embeds an account ID and cannot be known statically; set GOPHERMIND_PROFILE_FREE_CLOUDFLARE_BASE_URL to your own /v1 URL, and GOPHERMIND_PROFILE_FREE_CLOUDFLARE_CHAT_PATH/_MODELS_PATH to /chat/completions and /models if that URL already ends in /v1
+- `free-cloudflare` - Cloudflare Workers AI: endpoint embeds an account ID and cannot be known statically; set GOPHERMIND_PROFILE_FREE_CLOUDFLARE_BASE_URL to your own endpoint. A base-URL override here always requires setting GOPHERMIND_PROFILE_FREE_CLOUDFLARE_CHAT_PATH and _MODELS_PATH by hand too: use /chat/completions and /models if your URL already ends in /v1, or /v1/chat/completions and /v1/models if it does not
 - `free-llm7` - LLM7.io: upstream's DefaultModel (gpt-oss:20b) is not in the 45 models the live endpoint advertises, and no advertised model reaches gophermind's tool-calling agent loop anonymously: of 8 candidates tried against the live endpoint on 2026-09-10, L3-8B-Lunaris-v1-Turbo and mistral-Small-24B-Instruct-2501 both returned HTTP 400 ("does not support tools", code unsupported_model_feature), and the other 6 (deepseek-v4-flash:0731, glm-5.3, kimi-k3, llama-4-maverick, gpt-5.5, gemma4:31b) returned HTTP 401 ("Missing API key"). Supply your own key and model via env (see the _MODEL and key env vars for this profile) to use it with a free token from token.llm7.io.
 
 ## Free-tier terms worth reading

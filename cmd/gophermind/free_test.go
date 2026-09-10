@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"gophermind/internal/freellm"
 )
 
 func TestFreeListShowsNoKeyProvidersFirst(t *testing.T) {
@@ -108,5 +110,53 @@ func TestFreeUnknownSubcommandErrors(t *testing.T) {
 	var buf bytes.Buffer
 	if code := runFree([]string{"wat"}, &buf); code == 0 {
 		t.Error("expected a nonzero exit for an unknown subcommand")
+	}
+}
+
+// syntheticAffiliateCompat is a Compat with an affiliate link, used to drive
+// the "free show" disclosure path below. No shipped Compat carries one today
+// (see freellm.TestReferralAlwaysDisclosed), so this is the only way to
+// exercise the referral branch at all; it is never registered with
+// freellm.CompatFor and never reaches "gophermind free list/show" for a real
+// profile.
+var syntheticAffiliateCompat = freellm.Compat{
+	Profile: "free-test-affiliate", Upstream: "TestProvider",
+	Website: "https://provider.test", Affiliate: "https://provider.test/ref/1",
+	DefaultModel: "test-model", Supported: true,
+}
+
+// TestFreeShowLinkLineDisclosesReferral is the CLI-layer half of the
+// disclosure invariant: freellm.attribution_test.go proves Attribution.Line()
+// and .Short() never emit a referral URL without freellm.ReferralMarker, but
+// that test cannot see the CLI's own rendering. freeShowLinkLine is the exact
+// function "free show" calls to build its "Link:" line, so this proves the
+// same invariant for it: given a referral attribution, the marker is always
+// present alongside the URL.
+func TestFreeShowLinkLineDisclosesReferral(t *testing.T) {
+	a := freellm.AttributionFromCompat(syntheticAffiliateCompat, syntheticAffiliateCompat.DefaultModel)
+	line := freeShowLinkLine(a)
+	if !strings.Contains(line, syntheticAffiliateCompat.Affiliate) {
+		t.Errorf("Link line %q missing the affiliate URL %q", line, syntheticAffiliateCompat.Affiliate)
+	}
+	if !strings.Contains(line, freellm.ReferralMarker) {
+		t.Errorf("Link line %q emits a referral URL without %q", line, freellm.ReferralMarker)
+	}
+}
+
+// TestFreeShowLinkLineHonorsNoAffiliateOptOut proves GOPHERMIND_NO_AFFILIATE
+// suppresses the referral link in the CLI's own rendering, not just inside
+// freellm.attributionFrom: freeShowLinkLine sees a plain, non-referral
+// Attribution (the opt-out is applied earlier, by AttributionFromCompat) and
+// must print no Link line at all, carrying neither the affiliate URL nor the
+// marker.
+func TestFreeShowLinkLineHonorsNoAffiliateOptOut(t *testing.T) {
+	t.Setenv(freellm.NoAffiliateEnv, "1")
+	a := freellm.AttributionFromCompat(syntheticAffiliateCompat, syntheticAffiliateCompat.DefaultModel)
+	line := freeShowLinkLine(a)
+	if line != "" {
+		t.Errorf("Link line = %q, want empty with %s set", line, freellm.NoAffiliateEnv)
+	}
+	if strings.Contains(line, syntheticAffiliateCompat.Affiliate) {
+		t.Errorf("Link line %q carries the affiliate URL despite the opt-out", line)
 	}
 }

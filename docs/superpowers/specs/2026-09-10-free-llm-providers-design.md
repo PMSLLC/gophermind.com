@@ -440,11 +440,12 @@ config profile. When `Profile` has the `free-` prefix and resolves in
 
 ## Display
 
-1. **Status line** (`internal/tui/view.go:36`):
-   `openai/gpt-oss-120b · 312/1,000 RPD · 4.18M free`. The odometer renders in
-   compact SI (`4.18M`, `812K`) so it costs about nine columns. Both segments are
-   omitted entirely when the active profile is not free, leaving today's layout
-   untouched.
+1. **Status line** (`internal/tui/view.go`): what shipped is just
+   ` - <Provider>` appended after the model name, e.g. `openai/gpt-oss-120b -
+   Groq` (from `freellm.Attribution.Short()`), omitted entirely when the
+   active profile is not free. No trip meter or odometer figure appears
+   here; those live in `/provider` (full readout, item 3 below) and
+   `gophermind free usage` (item 4 below).
 2. **Startup banner**: the odometer reading once, on the line under the provider
    attribution, like a dash lighting up.
 3. **`/provider`**: full readout - odometer lifetime totals, then every trip

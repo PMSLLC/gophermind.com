@@ -921,3 +921,47 @@ func TestLocalLlamaModelsPathStaysEmpty(t *testing.T) {
 		t.Errorf("ModelsPath = %q, want empty for local-llama", got.ModelsPath)
 	}
 }
+
+// A per-profile _BASE_URL override without a /v1 segment must not inherit
+// anthropic-proxy's builtin ChatPath/ModelsPath ("/chat/completions",
+// "/models"): those assume the table's own BaseURL, which already ends in
+// /v1. Before the fix, the request became <base>/chat/completions and 404d;
+// leaving ChatPath/ModelsPath empty here lets the llm client apply its own
+// default ("/v1/chat/completions", "/v1/models") against the new base.
+func TestBaseURLOverrideWithoutV1FallsBackToClientDefault(t *testing.T) {
+	t.Setenv("GOPHERMIND_PROFILE_ANTHROPIC_PROXY_BASE_URL", "https://my-shim.example.com")
+	got, err := Config{Profile: "anthropic-proxy"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.BaseURL != "https://my-shim.example.com" {
+		t.Errorf("BaseURL = %q, want the override", got.BaseURL)
+	}
+	if got.ChatPath != "" {
+		t.Errorf("ChatPath = %q, want empty so the client's own /v1/chat/completions default applies", got.ChatPath)
+	}
+	if got.ModelsPath != "" {
+		t.Errorf("ModelsPath = %q, want empty so the client's own /v1/models default applies", got.ModelsPath)
+	}
+}
+
+// A per-profile _BASE_URL override paired with explicit _CHAT_PATH/
+// _MODELS_PATH must honor those, even though the override alone no longer
+// inherits the builtin paths. This is the "re-supply the same /v1 URL"
+// tradeoff case named in ApplyProfile's comment: set the paths by hand to
+// get back what used to be automatic.
+func TestBaseURLOverrideWithExplicitPathsIsHonored(t *testing.T) {
+	t.Setenv("GOPHERMIND_PROFILE_ANTHROPIC_PROXY_BASE_URL", "https://my-shim.example.com/v1")
+	t.Setenv("GOPHERMIND_PROFILE_ANTHROPIC_PROXY_CHAT_PATH", "/chat/completions")
+	t.Setenv("GOPHERMIND_PROFILE_ANTHROPIC_PROXY_MODELS_PATH", "/models")
+	got, err := Config{Profile: "anthropic-proxy"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ChatPath != "/chat/completions" {
+		t.Errorf("ChatPath = %q, want the explicit override /chat/completions", got.ChatPath)
+	}
+	if got.ModelsPath != "/models" {
+		t.Errorf("ModelsPath = %q, want the explicit override /models", got.ModelsPath)
+	}
+}

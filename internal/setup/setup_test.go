@@ -21,7 +21,7 @@ func TestRunCustomEndpointPicksDiscoveredModel(t *testing.T) {
 		In:       strings.NewReader(in),
 		Out:      &strings.Builder{},
 		Profiles: builtins,
-		ListModels: func(baseURL, apiKey string) ([]string, error) {
+		ListModels: func(baseURL, modelsPath, apiKey string) ([]string, error) {
 			if baseURL != "http://x:8000" || apiKey != "secret" {
 				t.Errorf("ListModels got baseURL=%q apiKey=%q", baseURL, apiKey)
 			}
@@ -45,7 +45,7 @@ func TestRunMaxIterBlankUsesDefault(t *testing.T) {
 		In:         strings.NewReader(in),
 		Out:        &strings.Builder{},
 		Profiles:   builtins,
-		ListModels: func(baseURL, apiKey string) ([]string, error) { return []string{"m"}, nil },
+		ListModels: func(baseURL, modelsPath, apiKey string) ([]string, error) { return []string{"m"}, nil },
 		Defaults:   Result{MaxIter: 25},
 	}
 	got, err := Run(opts)
@@ -64,7 +64,7 @@ func TestRunBuiltinProfileBlankKeyDefaultApproval(t *testing.T) {
 		In:         strings.NewReader(in),
 		Out:        &strings.Builder{},
 		Profiles:   builtins,
-		ListModels: func(baseURL, apiKey string) ([]string, error) { return []string{"only-model"}, nil },
+		ListModels: func(baseURL, modelsPath, apiKey string) ([]string, error) { return []string{"only-model"}, nil },
 	}
 	got, err := Run(opts)
 	if err != nil {
@@ -84,7 +84,7 @@ func TestRunModelDiscoveryFailureFallsBackToFreeText(t *testing.T) {
 		In:         strings.NewReader(in),
 		Out:        &strings.Builder{},
 		Profiles:   builtins,
-		ListModels: func(baseURL, apiKey string) ([]string, error) { return nil, errors.New("unreachable") },
+		ListModels: func(baseURL, modelsPath, apiKey string) ([]string, error) { return nil, errors.New("unreachable") },
 	}
 	got, err := Run(opts)
 	if err != nil {
@@ -103,7 +103,10 @@ func TestRunModelDiscoveryFailureFallsBackToFreeText(t *testing.T) {
 // openai) still produced an empty ChatPath/ModelsPath and therefore a
 // doubled /v1/v1/chat/completions (and /v1/v1/models) once the saved config
 // was used. Selecting the profile must carry its chatPath/modelsPath into
-// the Result.
+// the Result, AND (the model-picker half of the same bug) into the
+// ListModels probe itself: ListModels used to be called with no modelsPath
+// at all, so it always probed the client's bare default and 404d against any
+// profile whose BaseURL already ends in /v1.
 func TestRunProfileChatPathFlowsToResult(t *testing.T) {
 	profiles := [][4]string{
 		{"local-llama", "http://127.0.0.1:8080", "", ""},
@@ -112,10 +115,15 @@ func TestRunProfileChatPathFlowsToResult(t *testing.T) {
 	// choice 2 = openai (no URL prompt), blank key, model pick #1, blank approval.
 	in := "2\n\n1\n\n"
 	opts := Options{
-		In:         strings.NewReader(in),
-		Out:        &strings.Builder{},
-		Profiles:   profiles,
-		ListModels: func(baseURL, apiKey string) ([]string, error) { return []string{"m"}, nil },
+		In:       strings.NewReader(in),
+		Out:      &strings.Builder{},
+		Profiles: profiles,
+		ListModels: func(baseURL, modelsPath, apiKey string) ([]string, error) {
+			if modelsPath != "/models" {
+				t.Errorf("ListModels got modelsPath=%q, want /models from the chosen profile", modelsPath)
+			}
+			return []string{"m"}, nil
+		},
 	}
 	got, err := Run(opts)
 	if err != nil {
@@ -147,7 +155,7 @@ func TestRunCustomEndpointChatPathStaysEmpty(t *testing.T) {
 		In:         strings.NewReader(in),
 		Out:        &strings.Builder{},
 		Profiles:   builtins,
-		ListModels: func(baseURL, apiKey string) ([]string, error) { return nil, errors.New("unreachable") },
+		ListModels: func(baseURL, modelsPath, apiKey string) ([]string, error) { return nil, errors.New("unreachable") },
 	}
 	got, err := Run(opts)
 	if err != nil {
@@ -178,7 +186,7 @@ func TestRunSwitchingProfileClearsStaleChatPath(t *testing.T) {
 		In:         strings.NewReader("2\n\n1\n\n"),
 		Out:        &strings.Builder{},
 		Profiles:   profiles,
-		ListModels: func(baseURL, apiKey string) ([]string, error) { return []string{"m"}, nil },
+		ListModels: func(baseURL, modelsPath, apiKey string) ([]string, error) { return []string{"m"}, nil },
 	})
 	if err != nil {
 		t.Fatalf("Run (openai): %v", err)
@@ -195,7 +203,7 @@ func TestRunSwitchingProfileClearsStaleChatPath(t *testing.T) {
 		In:         strings.NewReader("1\n\n1\n\n"),
 		Out:        &strings.Builder{},
 		Profiles:   profiles,
-		ListModels: func(baseURL, apiKey string) ([]string, error) { return []string{"m"}, nil },
+		ListModels: func(baseURL, modelsPath, apiKey string) ([]string, error) { return []string{"m"}, nil },
 		Defaults:   Result{ChatPath: first.ChatPath, ModelsPath: first.ModelsPath},
 	})
 	if err != nil {

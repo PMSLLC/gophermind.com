@@ -6,9 +6,9 @@ import (
 	"strings"
 )
 
-// referralMarker is appended to every rendering of a referral link. The
+// ReferralMarker is appended to every rendering of a referral link. The
 // invariant it encodes: no code path emits an affiliate URL without saying so.
-const referralMarker = "(referral link)"
+const ReferralMarker = "(referral link)"
 
 // NoAffiliateEnv, when set to a non-empty value, forces the plain provider
 // website even where a referral link is configured.
@@ -16,9 +16,10 @@ const NoAffiliateEnv = "GOPHERMIND_NO_AFFILIATE"
 
 // Attribution names the provider serving the current model, and where to find
 // them. The link and its referral status are unexported and set only by
-// AttributionFor (via attributionFrom), so a value built outside this package
-// cannot claim a plain website while carrying a referral URL: it can at worst
-// construct a value with an empty link, which renders no URL at all.
+// AttributionFor and AttributionFromCompat, which both apply the affiliate
+// opt-out, so a value built outside this package cannot claim a plain website
+// while carrying a referral URL: it can at worst construct a value with an
+// empty link, which renders no URL at all.
 type Attribution struct {
 	// Model is the model name being served, e.g. "openai/gpt-oss-120b".
 	Model string
@@ -46,13 +47,15 @@ func AttributionFor(profile, model string) (Attribution, bool) {
 	if !ok {
 		return Attribution{}, false
 	}
-	return attributionFrom(c, model), true
+	return AttributionFromCompat(c, model), true
 }
 
-// attributionFrom builds the attribution, applying the affiliate opt-out. Split
-// out so tests can exercise a synthetic entry while every shipped Affiliate is
-// empty.
-func attributionFrom(c Compat, model string) Attribution {
+// AttributionFromCompat builds attribution for an arbitrary Compat value,
+// applying the affiliate opt-out exactly like AttributionFor. Exported so a
+// caller that already has a Compat (including a synthetic one built in a
+// test, since every shipped Affiliate is empty today) can build attribution
+// without a registry lookup.
+func AttributionFromCompat(c Compat, model string) Attribution {
 	if model == "" {
 		model = c.DefaultModel
 	}
@@ -76,7 +79,7 @@ func (a Attribution) Line() string {
 	if a.link != "" {
 		fmt.Fprintf(&b, " %s", a.link)
 		if a.isReferral {
-			fmt.Fprintf(&b, " %s", referralMarker)
+			fmt.Fprintf(&b, " %s", ReferralMarker)
 		}
 	}
 	return b.String()
@@ -86,7 +89,7 @@ func (a Attribution) Line() string {
 // the referral marker when one applies.
 func (a Attribution) Short() string {
 	if a.link != "" && a.isReferral {
-		return fmt.Sprintf("%s %s", a.Provider, referralMarker)
+		return fmt.Sprintf("%s %s", a.Provider, ReferralMarker)
 	}
 	return a.Provider
 }

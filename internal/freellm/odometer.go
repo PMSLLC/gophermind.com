@@ -5,8 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
+
+// OdometerEnv, when set, overrides where the odometer lives, so tests and
+// alternate installs can redirect it.
+const OdometerEnv = "GOPHERMIND_ODOMETER"
 
 const (
 	// ringMaxAge bounds the event ring at the longest window any provider
@@ -66,6 +71,18 @@ func DefaultOdometerPath() string {
 		return filepath.Join(dir, ".gophermind", "free-odometer.json")
 	}
 	return filepath.Join(".gophermind", "free-odometer.json")
+}
+
+// OdometerPath resolves where the free-usage odometer lives, honoring
+// OdometerEnv (GOPHERMIND_ODOMETER) so tests and alternate installs can
+// redirect it, falling back to DefaultOdometerPath otherwise. Both
+// cmd/gophermind and internal/tui need this exact resolution, so it lives
+// here instead of being duplicated in each caller.
+func OdometerPath() string {
+	if p := strings.TrimSpace(os.Getenv(OdometerEnv)); p != "" {
+		return p
+	}
+	return DefaultOdometerPath()
 }
 
 // LoadOdometer reads the odometer at path. A missing file yields a fresh

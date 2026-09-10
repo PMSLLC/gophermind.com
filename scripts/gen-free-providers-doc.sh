@@ -38,8 +38,8 @@ cat <<'EOF'
 ## Providers that need no API key
 
 These serve requests anonymously, which makes them the zero-signup way to try
-gophermind. Each has been observed completing a real turn end to end, not just
-returning a model list.
+gophermind. Each was verified against a live endpoint when this shipped;
+re-verify with `gophermind free check <profile>`.
 EOF
 
 jq -nr --argjson compat "$COMPAT_JSON" --slurpfile providers "$DATA" '

@@ -105,13 +105,14 @@ var compats = []Compat{
 	{
 		Profile: "free-cloudflare", Upstream: "Cloudflare Workers AI",
 		Website: "https://developers.cloudflare.com/workers-ai/", Supported: false,
-		Note: "endpoint embeds an account ID and cannot be known statically; set GOPHERMIND_PROFILE_FREE_CLOUDFLARE_BASE_URL to your own /v1 URL, and GOPHERMIND_PROFILE_FREE_CLOUDFLARE_CHAT_PATH/_MODELS_PATH to /chat/completions and /models if that URL already ends in /v1",
-		// Harmless while BaseURL is empty (this entry is unsupported); set so a
-		// hand-supplied /v1 BaseURL does not silently double into
-		// /v1/v1/chat/completions and /v1/v1/models the way every other entry
-		// would without these.
-		ChatPath:   "/chat/completions",
-		ModelsPath: "/models",
+		// This entry is never runnable without a _BASE_URL override (see
+		// Supported: false above), and config.ApplyProfile no longer lets a
+		// base-URL override inherit this table's ChatPath/ModelsPath (a
+		// hand-supplied endpoint is not guaranteed to share this entry's path
+		// shape). So a ChatPath/ModelsPath set here would never be read; the
+		// Note tells the user to set _CHAT_PATH/_MODELS_PATH themselves
+		// instead of carrying dead defaults.
+		Note: "endpoint embeds an account ID and cannot be known statically; set GOPHERMIND_PROFILE_FREE_CLOUDFLARE_BASE_URL to your own endpoint. A base-URL override here always requires setting GOPHERMIND_PROFILE_FREE_CLOUDFLARE_CHAT_PATH and _MODELS_PATH by hand too: use /chat/completions and /models if your URL already ends in /v1, or /v1/chat/completions and /v1/models if it does not",
 	},
 	{
 		Profile: "free-cohere", Upstream: "Cohere",
