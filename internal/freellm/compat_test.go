@@ -1,6 +1,7 @@
 package freellm
 
 import (
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -134,5 +135,100 @@ func TestTermsFlags(t *testing.T) {
 	one := TermsFlags(Terms{TrainsOnPrompts: true})
 	if len(one) != 1 || one[0] != "trains on prompts" {
 		t.Errorf("one-flag: got %v, want [trains on prompts]", one)
+	}
+}
+
+// versionSegmentRe matches a URL path segment that looks like an API version
+// marker: v1, v4, v1beta, and so on.
+var versionSegmentRe = regexp.MustCompile(`^v[0-9]+[a-z0-9]*$`)
+
+// assertJoinIsWellFormed is the shared body of the ChatPath/ModelsPath join
+// invariants. It checks, on the already-scheme-stripped path:
+//   - no "//" (a double slash, e.g. a BaseURL with a trailing slash joined
+//     with a path that also starts with one)
+//   - ends in exactly one occurrence of wantSuffix (not doubled, as happens
+//     when BaseURL already ends in a version segment and the override path
+//     is left empty)
+//   - at most one path segment that looks like an API version marker
+//
+// That last check is the one a weaker "no // and ends in wantSuffix exactly
+// once" invariant CANNOT catch: https://api.groq.com/openai/v1 joined with
+// an EMPTY ChatPath (the client default /v1/chat/completions) produces
+// .../openai/v1/v1/chat/completions, no double slash, ends in exactly one
+// "/chat/completions", and would pass a suffix-only check despite being
+// exactly the doubled-version-segment bug this task exists to fix. Checking
+// for the literal substring "/v1/v1" alone would also miss it for an entry
+// whose own version differs from "v1" (e.g. free-zai's BaseURL ends in
+// /v4): .../v4/v1/chat/completions has no "/v1/v1" but still carries two
+// distinct version segments back to back. Counting version-LOOKING segments
+// generically catches both shapes.
+//
+// Also note: the pre-fix free-gemini entry (BaseURL with a trailing slash,
+// paired with a special-cased bare "chat/completions" override with no
+// leading slash) would have PASSED every check here, no double slash, no
+// doubled suffix, and only one version segment (/v1beta). Passing this
+// invariant is not proof a join avoids every possible mistake; it is proof
+// against the specific doubled-version-segment and doubled-slash bug
+// classes this task fixes.
+func assertJoinIsWellFormed(t *testing.T, profile, joined, wantSuffix string) {
+	t.Helper()
+	afterScheme := joined
+	if i := strings.Index(joined, "://"); i >= 0 {
+		afterScheme = joined[i+len("://"):]
+	}
+	if strings.Contains(afterScheme, "//") {
+		t.Errorf("profile %q: %q contains a double slash after the scheme", profile, joined)
+	}
+	if !strings.HasSuffix(joined, wantSuffix) {
+		t.Errorf("profile %q: %q does not end in %s", profile, joined, wantSuffix)
+	}
+	if n := strings.Count(joined, wantSuffix); n != 1 {
+		t.Errorf("profile %q: %q contains %s %d times, want exactly 1", profile, joined, wantSuffix, n)
+	}
+	versionSegs := 0
+	for _, seg := range strings.Split(afterScheme, "/") {
+		if versionSegmentRe.MatchString(seg) {
+			versionSegs++
+		}
+	}
+	if versionSegs > 1 {
+		t.Errorf("profile %q: %q contains %d version-like path segments, want at most 1", profile, joined, versionSegs)
+	}
+}
+
+// TestChatPathJoinNeverDoublesSlashOrPath enforces the join convention every
+// supported entry must follow, turning it from a comment someone has to
+// notice into an enforced rule. For each supported entry, BaseURL is joined
+// with the EFFECTIVE ChatPath (empty defaults to "/v1/chat/completions",
+// matching llm.Client.chatPath()'s default exactly) and checked by
+// assertJoinIsWellFormed.
+func TestChatPathJoinNeverDoublesSlashOrPath(t *testing.T) {
+	const defaultChatPath = "/v1/chat/completions"
+	for _, c := range Compats() {
+		if !c.Supported {
+			continue
+		}
+		effective := c.ChatPath
+		if effective == "" {
+			effective = defaultChatPath
+		}
+		assertJoinIsWellFormed(t, c.Profile, c.BaseURL+effective, "/chat/completions")
+	}
+}
+
+// TestModelsPathJoinNeverDoublesSlashOrPath is TestChatPathJoinNeverDoublesSlashOrPath's
+// counterpart for ModelsPath (empty defaults to "/v1/models", matching
+// llm.Client.modelsPath()'s default exactly).
+func TestModelsPathJoinNeverDoublesSlashOrPath(t *testing.T) {
+	const defaultModelsPath = "/v1/models"
+	for _, c := range Compats() {
+		if !c.Supported {
+			continue
+		}
+		effective := c.ModelsPath
+		if effective == "" {
+			effective = defaultModelsPath
+		}
+		assertJoinIsWellFormed(t, c.Profile, c.BaseURL+effective, "/models")
 	}
 }

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gophermind/internal/setup"
 )
 
 func TestDirDefaultsToHomeDotGophermind(t *testing.T) {
@@ -159,6 +161,48 @@ func TestSaveEmptyValueUnsets(t *testing.T) {
 	}
 	if _, ok := readDoc(t, path)["api_key"]; ok {
 		t.Error("api_key survived being set to empty")
+	}
+}
+
+// TestSaveClearsStaleChatPathAcrossWizardRuns is the end-to-end proof for
+// item C: two real setup.Result.Pairs() outputs, saved in sequence exactly as
+// the CLI/TUI wizards do, must leave no stale chat_path/models_path in the
+// config file after switching from a profile that sets them (openai) to one
+// that does not (local-llama). Without Pairs() emitting an EXPLICIT empty
+// pair for the cleared fields, config.Save's "empty value deletes the key"
+// rule never fires and the stale path survives, which is exactly the bug
+// this test catches: it would make local-llama resolve to
+// http://127.0.0.1:8080/chat/completions and 404.
+func TestSaveClearsStaleChatPathAcrossWizardRuns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+
+	openai := setup.Result{
+		BaseURL: "https://api.openai.com/v1", ChatPath: "/chat/completions", ModelsPath: "/models",
+		ApprovalMode: "ask",
+	}
+	if err := Save(path, openai.Pairs()); err != nil {
+		t.Fatal(err)
+	}
+	doc := readDoc(t, path)
+	if doc["chat_path"] != "/chat/completions" || doc["models_path"] != "/models" {
+		t.Fatalf("openai save did not set both paths: %v", doc)
+	}
+
+	localLlama := setup.Result{
+		BaseURL: "http://127.0.0.1:8080", ApprovalMode: "ask", // ChatPath/ModelsPath left zero-value
+	}
+	if err := Save(path, localLlama.Pairs()); err != nil {
+		t.Fatal(err)
+	}
+	doc = readDoc(t, path)
+	if _, ok := doc["chat_path"]; ok {
+		t.Errorf("chat_path survived switching to local-llama, got %v", doc)
+	}
+	if _, ok := doc["models_path"]; ok {
+		t.Errorf("models_path survived switching to local-llama, got %v", doc)
+	}
+	if doc["base_url"] != "http://127.0.0.1:8080" {
+		t.Errorf("base_url = %q, want the local-llama URL", doc["base_url"])
 	}
 }
 

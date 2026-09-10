@@ -6,10 +6,12 @@ import (
 	"testing"
 )
 
-// builtins is a stand-in endpoint menu for the wizard tests.
-var builtins = [][2]string{
-	{"local-llama", "http://127.0.0.1:8080"},
-	{"openai", "https://api.openai.com/v1"},
+// builtins is a stand-in endpoint menu for the wizard tests. The third and
+// fourth elements (chatPath, modelsPath) are empty for both, matching
+// neither entry needing a non-default path in these fixtures.
+var builtins = [][4]string{
+	{"local-llama", "http://127.0.0.1:8080", "", ""},
+	{"openai", "https://api.openai.com/v1", "", ""},
 }
 
 func TestRunCustomEndpointPicksDiscoveredModel(t *testing.T) {
@@ -93,6 +95,133 @@ func TestRunModelDiscoveryFailureFallsBackToFreeText(t *testing.T) {
 	}
 	if got.BaseURL != "http://x" {
 		t.Errorf("BaseURL = %q, want http://x", got.BaseURL)
+	}
+}
+
+// TestRunProfileChatPathFlowsToResult is the regression test for the wizard
+// bug where picking a menu profile whose base URL already ends in /v1 (e.g.
+// openai) still produced an empty ChatPath/ModelsPath and therefore a
+// doubled /v1/v1/chat/completions (and /v1/v1/models) once the saved config
+// was used. Selecting the profile must carry its chatPath/modelsPath into
+// the Result.
+func TestRunProfileChatPathFlowsToResult(t *testing.T) {
+	profiles := [][4]string{
+		{"local-llama", "http://127.0.0.1:8080", "", ""},
+		{"openai", "https://api.openai.com/v1", "/chat/completions", "/models"},
+	}
+	// choice 2 = openai (no URL prompt), blank key, model pick #1, blank approval.
+	in := "2\n\n1\n\n"
+	opts := Options{
+		In:         strings.NewReader(in),
+		Out:        &strings.Builder{},
+		Profiles:   profiles,
+		ListModels: func(baseURL, apiKey string) ([]string, error) { return []string{"m"}, nil },
+	}
+	got, err := Run(opts)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.ChatPath != "/chat/completions" {
+		t.Errorf("ChatPath = %q, want /chat/completions from the chosen profile", got.ChatPath)
+	}
+	if got.ModelsPath != "/models" {
+		t.Errorf("ModelsPath = %q, want /models from the chosen profile", got.ModelsPath)
+	}
+	pairs := map[string]string{}
+	for _, p := range got.Pairs() {
+		pairs[p[0]] = p[1]
+	}
+	if pairs["GOPHERMIND_CHAT_PATH"] != "/chat/completions" {
+		t.Errorf("Pairs() GOPHERMIND_CHAT_PATH = %q, want /chat/completions: %v", pairs["GOPHERMIND_CHAT_PATH"], got.Pairs())
+	}
+	if pairs["GOPHERMIND_MODELS_PATH"] != "/models" {
+		t.Errorf("Pairs() GOPHERMIND_MODELS_PATH = %q, want /models: %v", pairs["GOPHERMIND_MODELS_PATH"], got.Pairs())
+	}
+}
+
+// A custom URL carries no known chat/models path: they stay empty (the
+// client defaults), matching the fields' no-op-by-default design.
+func TestRunCustomEndpointChatPathStaysEmpty(t *testing.T) {
+	in := "3\nhttp://x:8000\n\nm\nask\n"
+	opts := Options{
+		In:         strings.NewReader(in),
+		Out:        &strings.Builder{},
+		Profiles:   builtins,
+		ListModels: func(baseURL, apiKey string) ([]string, error) { return nil, errors.New("unreachable") },
+	}
+	got, err := Run(opts)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.ChatPath != "" {
+		t.Errorf("ChatPath = %q, want empty for a custom URL", got.ChatPath)
+	}
+	if got.ModelsPath != "" {
+		t.Errorf("ModelsPath = %q, want empty for a custom URL", got.ModelsPath)
+	}
+}
+
+// TestRunSwitchingProfileClearsStaleChatPath is the regression test for item
+// C: picking a profile that sets a chat path, then re-running the wizard and
+// picking one that does not, must emit an EXPLICIT empty pair for
+// GOPHERMIND_CHAT_PATH/GOPHERMIND_MODELS_PATH so config.Save deletes the
+// stale key instead of leaving it in place (which would otherwise make
+// local-llama resolve to .../8080/chat/completions and 404).
+func TestRunSwitchingProfileClearsStaleChatPath(t *testing.T) {
+	profiles := [][4]string{
+		{"local-llama", "http://127.0.0.1:8080", "", ""},
+		{"openai", "https://api.openai.com/v1", "/chat/completions", "/models"},
+	}
+
+	// First run: pick openai, which sets both paths.
+	first, err := Run(Options{
+		In:         strings.NewReader("2\n\n1\n\n"),
+		Out:        &strings.Builder{},
+		Profiles:   profiles,
+		ListModels: func(baseURL, apiKey string) ([]string, error) { return []string{"m"}, nil },
+	})
+	if err != nil {
+		t.Fatalf("Run (openai): %v", err)
+	}
+	if first.ChatPath == "" || first.ModelsPath == "" {
+		t.Fatalf("first run did not set paths: %+v", first)
+	}
+
+	// Second run: pick local-llama, which sets neither. Defaults carries the
+	// prior run's values forward the way the TUI/CLI wizards do (pre-filling
+	// from the current config), so this proves the menu selection itself
+	// clears the paths rather than Defaults leaking through.
+	second, err := Run(Options{
+		In:         strings.NewReader("1\n\n1\n\n"),
+		Out:        &strings.Builder{},
+		Profiles:   profiles,
+		ListModels: func(baseURL, apiKey string) ([]string, error) { return []string{"m"}, nil },
+		Defaults:   Result{ChatPath: first.ChatPath, ModelsPath: first.ModelsPath},
+	})
+	if err != nil {
+		t.Fatalf("Run (local-llama): %v", err)
+	}
+	if second.ChatPath != "" {
+		t.Errorf("ChatPath = %q, want empty after switching to local-llama", second.ChatPath)
+	}
+	if second.ModelsPath != "" {
+		t.Errorf("ModelsPath = %q, want empty after switching to local-llama", second.ModelsPath)
+	}
+
+	// The key proof: Pairs() must carry an EXPLICIT empty entry for both,
+	// not omit them, so config.Save's "empty value deletes the key" rule
+	// actually fires and removes the stale chat_path/models_path.
+	pairs := map[string]string{}
+	present := map[string]bool{}
+	for _, p := range second.Pairs() {
+		pairs[p[0]] = p[1]
+		present[p[0]] = true
+	}
+	if !present["GOPHERMIND_CHAT_PATH"] || pairs["GOPHERMIND_CHAT_PATH"] != "" {
+		t.Errorf("Pairs() must carry an explicit empty GOPHERMIND_CHAT_PATH to clear the stale key, got %v", second.Pairs())
+	}
+	if !present["GOPHERMIND_MODELS_PATH"] || pairs["GOPHERMIND_MODELS_PATH"] != "" {
+		t.Errorf("Pairs() must carry an explicit empty GOPHERMIND_MODELS_PATH to clear the stale key, got %v", second.Pairs())
 	}
 }
 

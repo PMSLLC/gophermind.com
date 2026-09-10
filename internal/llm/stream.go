@@ -277,7 +277,7 @@ func (c *Client) connectStreamModel(ctx context.Context, model string, msgs []Me
 // fallback-eligible (advance to the next model). On success it returns the live
 // response with its body intact for streaming.
 func (c *Client) streamConnectOnce(ctx context.Context, body []byte) (*http.Response, time.Duration, bool, bool, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/v1/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+c.chatPath(), bytes.NewReader(body))
 	if err != nil {
 		return nil, 0, false, false, fmt.Errorf("create request: %w", err)
 	}

@@ -212,6 +212,15 @@ func run() error {
 	}
 
 	// Explicit endpoint flags override the profile's resolved values.
+	//
+	// KNOWN GAP (deferred, not fixed here): -base replaces BaseURL alone, so
+	// cfg.ChatPath/cfg.ModelsPath from the profile survive unchanged. If the
+	// profile's base URL needed a non-default ChatPath/ModelsPath (e.g. it
+	// already ends in /v1) and -base points at a differently-shaped URL, the
+	// carried-over path can be wrong for the new URL. There is no env var
+	// pair that lets -base clear or override just the paths short of
+	// GOPHERMIND_CHAT_PATH/GOPHERMIND_MODELS_PATH, which apply regardless of
+	// -base. Fixing this needs its own task.
 	if set["base"] {
 		cfg.BaseURL = *baseFlag
 	}
@@ -553,6 +562,8 @@ func run() error {
 		}
 		// Apply the just-captured values to this session (the file is for next time).
 		cfg.BaseURL = res.BaseURL
+		cfg.ChatPath = res.ChatPath
+		cfg.ModelsPath = res.ModelsPath
 		if res.APIKey != "" {
 			cfg.APIKey = res.APIKey
 		}
@@ -615,6 +626,8 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("TLS setup: %w", err)
 	}
+	client.ChatPath = cfg.ChatPath
+	client.ModelsPath = cfg.ModelsPath
 	client.SetStreamIdleTimeout(cfg.StreamIdleTimeout)
 	client.Fallbacks = cfg.FallbackModels
 	client.SetTemperature(cfg.Temperature)
@@ -1541,7 +1554,7 @@ func runSetupWizard(cfg config.Config) (setup.Result, error) {
 			defer cancel()
 			return c.ListModels(ctx)
 		},
-		Defaults: setup.Result{BaseURL: cfg.BaseURL, Model: cfg.Model, ApprovalMode: cfg.ApprovalMode, MaxIter: cfg.MaxIter},
+		Defaults: setup.Result{BaseURL: cfg.BaseURL, ChatPath: cfg.ChatPath, ModelsPath: cfg.ModelsPath, Model: cfg.Model, ApprovalMode: cfg.ApprovalMode, MaxIter: cfg.MaxIter},
 	}
 	if isatty() {
 		opts.ReadSecret = func() (string, error) {
