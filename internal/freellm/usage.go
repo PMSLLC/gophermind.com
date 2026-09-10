@@ -31,13 +31,13 @@ func (t TripMeter) Fraction() float64 {
 // Warn reports whether this meter has reached the warning threshold.
 func (t TripMeter) Warn() bool { return t.HasQuota && t.Fraction() >= warnFraction }
 
-// String renders "312/1,000 RPD" with a quota, or a bare "42 requests today"
-// without one. It never invents a denominator.
+// String renders "312/1,000 RPD" with a quota, or a bare "42 requests in 24h
+// (no published limit)" without one. It never invents a denominator.
 func (t TripMeter) String() string {
 	if t.HasQuota {
 		return fmt.Sprintf("%s/%s", Commas(t.Used), t.Quota.String())
 	}
-	return fmt.Sprintf("%s requests (no published limit)", Commas(t.Used))
+	return fmt.Sprintf("%s requests in 24h (no published limit)", Commas(t.Used))
 }
 
 // TripMeters returns one meter per published quota for the profile, counting

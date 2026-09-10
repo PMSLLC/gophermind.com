@@ -587,6 +587,14 @@ func run() error {
 		return nil
 	}
 
+	// `gophermind free ...` prints a vendored, embedded registry (or probes a
+	// provider directly with its own short timeout). It must work with no
+	// endpoint configured and no network to the configured endpoint, so it
+	// runs before Validate and before the client is built.
+	if cmd == "free" {
+		os.Exit(runFree(os.Args[2:], os.Stdout))
+	}
+
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
