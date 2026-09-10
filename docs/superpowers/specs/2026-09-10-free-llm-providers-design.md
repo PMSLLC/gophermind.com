@@ -309,3 +309,169 @@ Modified (6): `internal/config/config.go`, `cmd/gophermind/main.go`,
 `docs/free-providers.md` and the package doc comment credit
 `github.com/mnfst/awesome-free-llm-apis` anyway, with the vendored `lastUpdated`
 date, so the provenance and staleness of the data are both visible.
+
+---
+
+# Addendum: free-usage counter (odometer + trip meters)
+
+**Added:** 2026-09-10, after the design above was approved.
+
+## Problem
+
+"How much free capacity have I used?" has no answer today, and the obvious
+answer is wrong. `usagelog.Record` (`internal/usagelog/usagelog.go:16`) records
+model, prompt/completion tokens and cost, but carries **no provider or profile
+field**, so free usage cannot be separated from paid usage at all.
+
+Worse, a token-only counter would mislead. Free tiers are not measured in tokens:
+
+| Quota unit | Providers |
+|---|---|
+| Requests/day | Groq (1,000), Gemini (1,500), OpenRouter (50), NVIDIA (10,000), ModelScope (2,000) |
+| Tokens/day or /min | Aion Labs (20K TPD), Mistral (500K TPM), SiliconFlow (50K TPM) |
+| Requests/month | Cohere (1,000) |
+| Neurons/day | Cloudflare (10,000) |
+| Dollars/month | Hugging Face ($0.10) |
+| Unpublished | Ollama Cloud |
+
+A token counter reads "no limit" for Groq while the user is one request from
+being cut off. The counter must track requests *and* tokens, in each provider's
+own window.
+
+## Two instruments
+
+The dash carries two readings with deliberately different semantics.
+
+### Odometer: lifetime, monotonic, never resets
+
+Counts tokens and requests served by free providers only, for the life of the
+install. A paid run against `--profile openai` does not move it. The number
+answers one question precisely: what did this tool get without paying.
+
+`internal/freellm/odometer.go`, persisted to
+`filepath.Join(os.UserCacheDir(), "gophermind", "free-odometer.json")`, mode
+`0600`, written atomically via temp file plus rename.
+
+```go
+type ProviderTotal struct {
+    Tokens    int64     `json:"tokens"`
+    Requests  int64     `json:"requests"`
+    FirstSeen time.Time `json:"first_seen"`
+    LastSeen  time.Time `json:"last_seen"`
+}
+
+type Odometer struct {
+    Tokens   int64                    `json:"tokens"`   // lifetime, all free providers
+    Requests int64                    `json:"requests"`
+    Per      map[string]ProviderTotal `json:"per"`      // keyed by profile name
+    Since    time.Time                `json:"since"`
+}
+```
+
+**The monotonic invariant is the whole point.** `Add` only ever increases a
+field. `Load` returns `max(persisted, recomputed-from-usagelog)` per field, so
+rotating, pruning, or deleting `usage.jsonl` cannot roll the reading back, and a
+corrupt or missing state file recovers to at least what the log can prove. An
+odometer does not go down when you clean the glovebox.
+
+Concurrency: gophermind can run several sessions against one cache dir. `Add`
+takes an advisory file lock (`flock` on the state file) for the
+read-modify-write, so two sessions cannot lose an increment to a torn update.
+
+### Trip meters: rolling, reset with each provider's window
+
+Derived on read from `usagelog` records, never stored: for the active provider,
+the request and token counts inside each window its quota names. `312/1,000 RPD`
+for Groq, `18K/20K TPD` for Aion Labs. These reset because the quota resets.
+
+Quota parsing lives in `internal/freellm/quota.go`, converting upstream's
+free-text `rateLimit` strings ("30 RPM, 1,000 RPD", "15 RPM, 20K TPD") into:
+
+```go
+type Quota struct {
+    Unit   Unit          // UnitRequests | UnitTokens
+    Amount int64
+    Window time.Duration // minute, hour, day, month
+}
+```
+
+Parsing is best-effort and explicit about failure: a `rateLimit` string that
+does not parse yields no quota, and the trip meter for it renders as a bare
+count with no denominator rather than a guessed one. `Unknown` is displayed as
+unknown. Cloudflare neurons and Hugging Face dollars are not derivable from
+tokens, so those providers get counts with a note naming their real unit.
+
+A test asserts every `rateLimit` string currently in `data.json` either parses
+or is on an explicit unparseable list, so a sync that introduces a new format
+fails loudly instead of silently dropping a quota.
+
+## Wiring
+
+`usagelog.Record` gains two fields, both `omitempty` so existing JSONL lines
+keep parsing unchanged and old records simply read as paid:
+
+```go
+Profile  string `json:"profile,omitempty"`  // e.g. "free-groq"
+Provider string `json:"provider,omitempty"` // e.g. "Groq"
+```
+
+The single call site that appends a record populates them from the active
+config profile. When `Profile` has the `free-` prefix and resolves in
+`freellm`, the same values feed `Odometer.Add`.
+
+## Display
+
+1. **Status line** (`internal/tui/view.go:36`):
+   `openai/gpt-oss-120b · 312/1,000 RPD · 4.18M free`. The odometer renders in
+   compact SI (`4.18M`, `812K`) so it costs about nine columns. Both segments are
+   omitted entirely when the active profile is not free, leaving today's layout
+   untouched.
+2. **Startup banner**: the odometer reading once, on the line under the provider
+   attribution, like a dash lighting up.
+3. **`/provider`**: full readout - odometer lifetime totals, then every trip
+   meter for the active provider with its window and denominator.
+4. **`gophermind free usage`**: the odometer as headline, then a per-provider
+   table of lifetime tokens, requests, first-seen and last-seen.
+
+Warning threshold: at 80% of any parsed quota, the trip meter renders in the
+existing warning style and `/provider` names the wall. gophermind never blocks
+the request; the local count can drift from the provider's when another client
+shares the key, so a hard local block would refuse requests that would have
+succeeded.
+
+## Error handling
+
+| Condition | Behavior |
+|---|---|
+| State file missing | Start from the usagelog recomputation, or zero |
+| State file corrupt | Log once, rebuild from usagelog, never zero a provable total |
+| State file unwritable | Warn once per session, keep counting in memory |
+| `rateLimit` unparseable | Bare count, no denominator, no warning threshold |
+| Provider quota in neurons or dollars | Count requests and tokens, note the real unit |
+| Concurrent sessions | `flock` around read-modify-write |
+
+## Testing
+
+- **monotonic**: `Add` never decreases any field; `Load` after truncating
+  `usage.jsonl` returns the persisted (higher) reading; `Load` with a deleted
+  state file recovers from the log.
+- **corruption**: truncated, empty, and non-JSON state files all rebuild rather
+  than panic or zero.
+- **concurrency**: N goroutines calling `Add` against one temp state file sum to
+  exactly N increments.
+- **quota parsing**: table test over every `rateLimit` string in `data.json`,
+  plus the explicit unparseable list; a new unrecognized format fails the test.
+- **trip windows**: records straddling a window boundary count only inside it;
+  month windows handle variable month length.
+- **record compatibility**: a JSONL line written before this change still parses
+  and reads as paid.
+- **display**: SI formatting boundaries (999, 1000, 1_000_000); free segments
+  absent for a paid profile, proving the existing status-line golden is unchanged.
+
+## Files
+
+New (3, plus `_test.go` siblings): `internal/freellm/odometer.go`,
+`internal/freellm/quota.go`, `internal/freellm/usage.go` (trip-meter derivation).
+
+Modified (3, beyond the design above): `internal/usagelog/usagelog.go`
+(two fields), the usage-append call site, `cmd/gophermind/free.go` (`free usage`).
