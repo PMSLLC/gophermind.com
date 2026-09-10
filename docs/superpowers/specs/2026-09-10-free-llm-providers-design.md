@@ -380,8 +380,17 @@ read-modify-write, so two sessions cannot lose an increment to a torn update.
 
 ### Trip meters: rolling, reset with each provider's window
 
-Derived on read from `usagelog` records, never stored: for the active provider,
-the request and token counts inside each window its quota names. `312/1,000 RPD`
+**Correction to an earlier draft of this addendum:** trip meters cannot derive
+from `usagelog`. That log is written only when `GOPHERMIND_USAGE_LOG` is set
+(`cmd/gophermind/main.go:1313`), so for most users it does not exist and every
+trip meter would silently read zero.
+
+Instead the odometer state file carries its own event ring: `{ts, profile,
+tokens, requests}` per turn, evicted past 31 days (the longest window any
+provider names, Cohere's monthly quota) and hard-capped at 20,000 entries. Trip
+meters derive from that ring, so the counter is self-contained and works with no
+env var set. For the active provider, the request and token counts inside each
+window its quota names. `312/1,000 RPD`
 for Groq, `18K/20K TPD` for Aion Labs. These reset because the quota resets.
 
 Quota parsing lives in `internal/freellm/quota.go`, converting upstream's
