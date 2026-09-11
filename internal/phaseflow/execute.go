@@ -517,10 +517,10 @@ func runWave(ctx context.Context, root string, runner TaskRunner, emit func(Task
 			flagged = true
 			stop.Store(true)
 		}
-		<-sem
 		if err != nil || cancelled {
 			// A fatal error or cancellation was already seen; drain the
 			// remaining in-flight results without acting on them further.
+			<-sem
 			continue
 		}
 
@@ -538,6 +538,19 @@ func runWave(ctx context.Context, root string, runner TaskRunner, emit func(Task
 		if reloaded, ok, loadErr := LoadAssignments(root); loadErr == nil && ok {
 			_ = UpsertContextDoc(root, RenderContextDocBody(projectNameFor(root), &reloaded, res.outcome))
 		}
+
+		// The slot is released HERE, after this task's side effects are on
+		// disk, not as soon as its result arrives. Releasing earlier lets
+		// the dispatch loop start the next task while CONTEXT.md and the
+		// symbol index still describe the state before this one finished,
+		// so that task reads stale context - the invariant the sequential
+		// loop held for free and TestExecuteWritesContextDocPerTask pins.
+		// It cost that test roughly a third of its runs.
+		//
+		// Holding the slot across the refresh only delays the next
+		// dispatch; the loop always reaches this line, so it cannot
+		// deadlock.
+		<-sem
 
 		summary.Outcomes = append(summary.Outcomes, res.outcome)
 		switch res.outcome.Status {
