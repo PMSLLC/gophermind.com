@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -1196,7 +1197,32 @@ func run() error {
 			defer cancel()
 			return client.ListModels(ctx)
 		}
-		return serve.Run(run, metrics, stream, sessionTurn, approvals, devStore, loadMessages, listModels)
+		mux, err := serve.NewMux(serve.Deps{
+			Run: run, Stream: stream, Metrics: metrics,
+			SessionTurn: sessionTurn, Approvals: approvals, Devices: devStore,
+			SessionMessages: loadMessages, ListModels: listModels,
+		}, serve.Options{})
+		if err != nil {
+			return err
+		}
+		addr := serve.Addr()
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "gophermind serving on %s (POST /run, /run/stream; /healthz /readyz)\n", addr)
+		if sessionTurn != nil {
+			remote := "local approval"
+			if serve.ServeApprovalRemote() {
+				remote = "remote approval"
+			}
+			apns := "APNs disabled"
+			if devStore != nil && serve.APNsEnabled() {
+				apns = "APNs configured"
+			}
+			fmt.Fprintf(os.Stderr, "  sessions: POST /session, POST /session/{id}/stream, POST /session/{id}/approve, POST /devices (%s, %s)\n", remote, apns)
+		}
+		return serve.Serve(context.Background(), ln, mux)
 	case "queue":
 		if task == "" {
 			return fmt.Errorf("queue requires a file of tasks (one per line)")
