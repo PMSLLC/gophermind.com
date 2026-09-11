@@ -100,10 +100,32 @@ func ParseRateLimit(s string) []Quota {
 	return out
 }
 
-// QuotasFor returns the quotas that apply to a profile's default model, which
-// is the model gophermind will actually use. Returns nil for an unsupported
-// profile or an unparseable limit.
+// QuotasFor returns the quotas that apply to a profile's default model.
+// Returns nil for an unsupported profile or an unparseable limit.
+//
+// Use QuotasForModel when metering a specific model: models on one provider
+// routinely publish different limits, and this function answers only the
+// question about the default.
 func QuotasFor(c Compat) []Quota {
+	return QuotasForModel(c, "")
+}
+
+// QuotasForModel returns the quotas a provider publishes for one of its
+// models. An empty model means the profile's default model, which is what
+// whole-profile metering asks about.
+//
+// The limit comes from the named model's own registry entry, never from
+// another model's. Providers publish genuinely different allowances per
+// model - Google Gemini alone spans "5 RPM, 50 RPD", "15 RPM, 1,500 RPD",
+// "30 RPM, 1,500 RPD" and nothing at all - so borrowing the default's
+// numbers both overstates the constrained models and invents a ceiling for
+// the models that publish none. A fabricated denominator is worse than no
+// denominator: it reads exactly like a real one, and usage measured against
+// it looks safe right up to the point the provider starts refusing.
+//
+// Returns nil when the model publishes no parseable limit. Callers must
+// render that as "no published quota", not as a quota of zero.
+func QuotasForModel(c Compat, model string) []Quota {
 	if !c.Supported {
 		return nil
 	}
@@ -111,8 +133,11 @@ func QuotasFor(c Compat) []Quota {
 	if !ok {
 		return nil
 	}
+	if model == "" {
+		model = c.DefaultModel
+	}
 	for _, m := range p.Models {
-		if m.ID == c.DefaultModel {
+		if m.ID == model {
 			return ParseRateLimit(m.RateLimit)
 		}
 	}

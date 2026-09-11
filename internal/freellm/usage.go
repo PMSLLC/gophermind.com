@@ -60,7 +60,11 @@ func ModelTripMeters(o *Odometer, c Compat, model string, now time.Time) []TripM
 // tripMeters is the shared body for TripMeters and ModelTripMeters. model
 // empty means "any model", which is what TripMeters wants.
 func tripMeters(o *Odometer, c Compat, model string, now time.Time) []TripMeter {
-	quotas := QuotasFor(c)
+	// The quota is looked up for THIS model, not the profile's default: the
+	// meter's numerator already counts only this model's events, so a
+	// denominator taken from another model would be measuring two different
+	// things against each other.
+	quotas := QuotasForModel(c, model)
 	if len(quotas) == 0 {
 		return []TripMeter{{Used: sumWindow(o, c.Profile, model, UnitRequests, now, 24*time.Hour)}}
 	}
