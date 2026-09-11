@@ -40,9 +40,17 @@ func newToken() (string, error) {
 
 // startEmbeddedServer builds serve.Deps from the environment (see deps.go),
 // binds a loopback listener on an OS-assigned port, and starts serving in a
-// background goroutine. The returned *embeddedServer stays valid until
-// Shutdown is called. parent bounds the server's lifetime: cancelling parent
-// (or calling Shutdown) triggers internal/serve's graceful shutdown.
+// background goroutine. It deliberately does this BEFORE the LLM client is
+// built: the client's liveness probe can be slow or fail outright (an
+// unreachable LAN endpoint, say), and none of that may block the window from
+// getting a working embedded server. serve.Deps is wired through a
+// clientHolder (see backend.go) so its closures look up the current client
+// at call time rather than needing one up front; resolveLLMBackend fills the
+// holder in, and falls back to a free provider, in a background goroutine
+// started after the listener is already serving. The returned
+// *embeddedServer stays valid until Shutdown is called. parent bounds the
+// server's lifetime: cancelling parent (or calling Shutdown) triggers
+// internal/serve's graceful shutdown.
 func startEmbeddedServer(parent context.Context) (*embeddedServer, error) {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -51,11 +59,6 @@ func startEmbeddedServer(parent context.Context) (*embeddedServer, error) {
 
 	ctx, cancel := context.WithCancel(parent)
 
-	client, err := newLLMClient(ctx, cfg)
-	if err != nil {
-		cancel()
-		return nil, err
-	}
 	reg := newToolRegistry(cfg)
 
 	pb, err := prompt.NewBuilder()
@@ -71,11 +74,15 @@ func startEmbeddedServer(parent context.Context) (*embeddedServer, error) {
 		return nil, err
 	}
 
-	mux, err := serve.NewMux(newServeDeps(client, reg, cfg, basePrompt), serve.Options{Token: token})
+	holder := &clientHolder{}
+	status := &backendStatus{}
+
+	mux, err := serve.NewMux(newServeDeps(holder.Get, reg, cfg, basePrompt), serve.Options{Token: token})
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("build mux: %w", err)
 	}
+	mux.HandleFunc("/backend-status", backendStatusHandler(token, status))
 
 	// Loopback only, kernel-assigned port: no other host can reach this
 	// listener, and no fixed port can collide with another instance.
@@ -92,6 +99,7 @@ func startEmbeddedServer(parent context.Context) (*embeddedServer, error) {
 		done:    make(chan error, 1),
 	}
 	go func() { s.done <- serve.Serve(ctx, ln, mux) }()
+	go resolveLLMBackend(ctx, cfg, holder, status)
 	return s, nil
 }
 

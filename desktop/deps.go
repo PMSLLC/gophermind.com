@@ -39,6 +39,14 @@ func loadConfig() (config.Config, error) {
 	return cfg, nil
 }
 
+// livenessProbeTimeout bounds the best-effort startup checks in
+// newLLMClient (model discovery when cfg.Model is unset, and the /v1/models
+// validation when it is set). These are liveness checks of the endpoint, not
+// real completion requests, so they must not share cfg's much longer request
+// timeout: an unreachable endpoint needs to fail fast so startup can fall
+// back to a free provider instead of hanging.
+const livenessProbeTimeout = 5 * time.Second
+
 // newLLMClient builds and resolves an *llm.Client from cfg: it constructs the
 // client with cfg's TLS options, applies the timeout/sampling settings, and
 // resolves cfg.Model (auto-discovering it from the endpoint if unset). This
@@ -66,12 +74,8 @@ func newLLMClient(ctx context.Context, cfg config.Config) (*llm.Client, error) {
 		MaxDelay:    llm.DefaultRetryPolicy.MaxDelay,
 	}
 
-	startupTimeout := cfg.HTTPTimeout
-	if startupTimeout <= 0 {
-		startupTimeout = 300 * time.Second
-	}
 	if cfg.Model == "" {
-		discoverCtx, cancel := context.WithTimeout(ctx, startupTimeout)
+		discoverCtx, cancel := context.WithTimeout(ctx, livenessProbeTimeout)
 		discovered, err := client.DiscoverModel(discoverCtx)
 		cancel()
 		if err != nil {
@@ -79,13 +83,19 @@ func newLLMClient(ctx context.Context, cfg config.Config) (*llm.Client, error) {
 		}
 		client.Model = discovered
 	} else {
-		// Best-effort validation against /v1/models: a slow or unreachable
-		// endpoint must not block startup, so any error here is ignored and
-		// the configured model is used as-is.
-		listCtx, cancel := context.WithTimeout(ctx, startupTimeout)
+		// Liveness probe against /v1/models, bounded tightly by
+		// livenessProbeTimeout rather than cfg's request timeout: this is a
+		// short "is anything there" check, not a real request. Unlike the
+		// stale comment this replaces, an error here is NOT ignored: it is
+		// returned to the caller, which treats it as the endpoint being
+		// unusable and falls back (see resolveLLMBackend in server.go).
+		listCtx, cancel := context.WithTimeout(ctx, livenessProbeTimeout)
 		models, err := client.ListModels(listCtx)
 		cancel()
-		if err == nil && len(models) > 0 && !slices.Contains(models, cfg.Model) {
+		if err != nil {
+			return nil, fmt.Errorf("endpoint %s unreachable: %w", cfg.BaseURL, err)
+		}
+		if len(models) > 0 && !slices.Contains(models, cfg.Model) {
 			return nil, fmt.Errorf("model %q not found at %s", cfg.Model, cfg.BaseURL)
 		}
 	}
@@ -128,15 +138,26 @@ func newToolRegistry(cfg config.Config) *tools.Registry {
 // still starts up correctly, just without the approve/devices/metrics
 // endpoints.
 //
+// getClient looks up the *llm.Client currently in use, rather than a client
+// being passed directly, so serve.Deps can be built (and the embedded server
+// started) before the LLM backend has finished resolving: see
+// resolveLLMBackend in server.go. It returns a clear error when no backend
+// is available yet (or resolution failed outright), which every closure
+// below surfaces to its caller instead of touching a nil client.
+//
 // Every gated (mutating) tool call is auto-approved (safety.Auto). Remote
 // approval, the APNs push path, and the judge/policy gates that
 // cmd/gophermind's `serve` command layers on are out of scope for this task:
 // the Approvals screen (a later task) is what makes gating meaningful in a
 // GUI, and Deps.Approvals is nil until it exists.
-func newServeDeps(client *llm.Client, reg *tools.Registry, cfg config.Config, basePrompt string) serve.Deps {
+func newServeDeps(getClient func() (*llm.Client, error), reg *tools.Registry, cfg config.Config, basePrompt string) serve.Deps {
 	approve := safety.Auto
 
 	run := func(ctx context.Context, t string) (string, error) {
+		client, err := getClient()
+		if err != nil {
+			return "", err
+		}
 		ag := agent.New(client, reg, cfg.MaxIter, approve, nil)
 		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
 		ag.SetSystemPrompt(basePrompt)
@@ -145,6 +166,10 @@ func newServeDeps(client *llm.Client, reg *tools.Registry, cfg config.Config, ba
 	}
 
 	stream := func(ctx context.Context, t string, emit func(string)) error {
+		client, err := getClient()
+		if err != nil {
+			return err
+		}
 		ag := agent.New(client, reg, cfg.MaxIter, approve, func(e agent.Event) {
 			if e.Type == "token" {
 				emit(e.Text)
@@ -152,11 +177,15 @@ func newServeDeps(client *llm.Client, reg *tools.Registry, cfg config.Config, ba
 		})
 		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
 		ag.SetSystemPrompt(basePrompt)
-		_, err := ag.Send(ctx, t)
+		_, err = ag.Send(ctx, t)
 		return err
 	}
 
 	sessionTurn := func(ctx context.Context, id, t string, emit func(event, data string) error) error {
+		client, err := getClient()
+		if err != nil {
+			return err
+		}
 		onEvent := func(e agent.Event) {
 			event, data, ok := serve.SSEFramesForAgentEvent(e)
 			if !ok {
@@ -176,7 +205,7 @@ func newServeDeps(client *llm.Client, reg *tools.Registry, cfg config.Config, ba
 		if m := serve.ReadSessionModel(id); m != "" {
 			ag.SetModel(m)
 		}
-		_, err := ag.Send(ctx, t)
+		_, err = ag.Send(ctx, t)
 		if serr := session.Save(id, ag); serr != nil && err == nil {
 			err = serr
 		}
@@ -186,6 +215,10 @@ func newServeDeps(client *llm.Client, reg *tools.Registry, cfg config.Config, ba
 	loadMessages := func(id string) ([]json.RawMessage, bool, error) {
 		if !session.Exists(id) {
 			return nil, false, nil
+		}
+		client, err := getClient()
+		if err != nil {
+			return nil, true, err
 		}
 		ag := agent.New(client, reg, cfg.MaxIter, approve, nil)
 		if err := session.Load(id, ag); err != nil {
@@ -209,6 +242,10 @@ func newServeDeps(client *llm.Client, reg *tools.Registry, cfg config.Config, ba
 	}
 
 	listModels := func() ([]string, error) {
+		client, err := getClient()
+		if err != nil {
+			return nil, err
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		return client.ListModels(ctx)
