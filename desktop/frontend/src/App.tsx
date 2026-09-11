@@ -99,6 +99,21 @@ async function waitForBackend(client: ApiClient, stopped: () => boolean): Promis
 }
 
 /**
+ * isEditableTarget reports whether a keyboard event landed in something the
+ * user is typing into: an input, a textarea, a select, or any contentEditable
+ * element. The approval shortcut below checks it so a word containing "y" or
+ * "n" typed into a Settings field cannot silently approve or deny a gated
+ * tool call, since preventDefault() would also swallow the keystroke.
+ */
+function isEditableTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null
+  if (!el || typeof el.tagName !== 'string') return false
+  if (el.isContentEditable) return true
+  const tag = el.tagName.toLowerCase()
+  return tag === 'input' || tag === 'textarea' || tag === 'select'
+}
+
+/**
  * App is the single Chat screen this task proves end to end: on launch it
  * resolves the embedded server's address via Endpoint(), creates a session,
  * then lets the user send turns and streams the assistant's tokens back as
@@ -181,12 +196,15 @@ export default function App() {
 
   // Keyboard-first approval, so deciding is never slower than the TUI's
   // y/N prompt: Y approves, N denies, no Enter required. Bound only while a
-  // decision is actually pending, and ignored with a modifier held so it
-  // does not collide with OS/browser shortcuts.
+  // decision is actually pending, ignored with a modifier held so it does not
+  // collide with OS/browser shortcuts, and ignored while the keystroke is
+  // going into an editable element (see isEditableTarget) so typing never
+  // decides an approval on the user's behalf.
   useEffect(() => {
     if (!pendingApproval) return
     function onKey(e: KeyboardEvent) {
       if (e.ctrlKey || e.metaKey || e.altKey) return
+      if (isEditableTarget(e.target)) return
       if (e.key === 'y' || e.key === 'Y') {
         e.preventDefault()
         void decideApproval(true)
