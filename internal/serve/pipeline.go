@@ -1,13 +1,47 @@
 package serve
 
 import (
+	"embed"
 	"encoding/json"
+	"io"
 	"net/http"
 	"sync"
 	"time"
 
 	"gophermind/internal/phaseflow"
 )
+
+// pipelineAssets embeds the dashboard page (pipeline piece 5, task 3). It
+// adapts docs/design/pipeline_view_mockup.html: same layout, typography and
+// status vocabulary, but its data comes from GET /pipeline/state and GET
+// /pipeline/events instead of the mockup's hardcoded `const tasks`.
+//
+//go:embed assets/pipeline.html
+var pipelineAssets embed.FS
+
+// pipelineDashboardHandler handles GET /pipeline: it serves the embedded
+// dashboard page. The page itself carries no data and is not behind the
+// bearer-token auth the data routes require - a plain browser navigation
+// cannot attach an Authorization header, so gating the shell the same way
+// would make it unreachable. The page's own JS prompts for the token and
+// sends it on every /pipeline/state, /pipeline/events and /pipeline/report
+// call, which are the routes that actually carry task data.
+func pipelineDashboardHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "use GET", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		f, err := pipelineAssets.Open("assets/pipeline.html")
+		if err != nil {
+			http.Error(w, "dashboard asset missing", http.StatusInternalServerError)
+			return
+		}
+		defer f.Close()
+		_, _ = io.Copy(w, f)
+	}
+}
 
 // This file implements the server side of the live pipeline view (pipeline
 // piece 5, see docs/superpowers/specs/2026-09-11-harness-pipeline-design.md,

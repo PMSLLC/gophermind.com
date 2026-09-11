@@ -347,13 +347,20 @@ func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 		mux.Handle("POST /devices", limited(sessionAuth(token, devicesHandler(d.Devices))))
 	}
 	if d.Pipeline != nil {
-		// Live pipeline view (pipeline piece 5): same bearer-token auth as
-		// the rest, via sessionAuth, applied through the same wrap style as
-		// sessionWrap above.
+		// Live pipeline view (pipeline piece 5). The data routes share the
+		// same bearer-token auth as the rest, via sessionAuth, applied
+		// through the same wrap style as sessionWrap above. The dashboard
+		// page itself (GET /pipeline) is deliberately not behind that auth:
+		// a plain browser navigation cannot attach an Authorization header,
+		// so gating the HTML shell the same way would make it unreachable.
+		// It carries no task data of its own - its JS fetches the data
+		// routes with the token entered in the page - so serving it
+		// unauthenticated discloses nothing.
 		hub := d.Pipeline.Hub
 		if hub == nil {
 			hub = NewPipelineHub()
 		}
+		mux.HandleFunc("GET /pipeline", pipelineDashboardHandler())
 		pipeWrap := func(h http.Handler) http.Handler { return limited(sessionAuth(token, h)) }
 		mux.Handle("GET /pipeline/state", pipeWrap(pipelineStateHandler(d.Pipeline.Root)))
 		mux.Handle("GET /pipeline/events", pipeWrap(pipelineEventsHandler(hub)))

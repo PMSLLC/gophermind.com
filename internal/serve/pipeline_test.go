@@ -3,6 +3,7 @@ package serve
 import (
 	"bufio"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,83 @@ import (
 
 	"gophermind/internal/phaseflow"
 )
+
+// TestPipelineDashboardServesWithoutToken checks that GET /pipeline serves
+// the dashboard HTML with no Authorization header required - a plain
+// browser navigation cannot attach one, so the page itself cannot be
+// behind the same auth as the data routes. It also checks the served page
+// has no hardcoded demo data (the mockup's `const tasks = [...]`), since
+// the source spec's own test requires the dashboard to show real state,
+// not a replayed mock.
+//
+// It also guards a real finding from review: the bearer token this page
+// asks for can run shell commands and write files on the machine, so
+// leaking it is leaking code execution, not just a session id. The page
+// must never read it from location.search (the query string reaches
+// server access logs, browser history, and - since a subresource fetch
+// with no referrer policy sends the full URL as Referer - third-party
+// servers too) and must carry a no-referrer meta tag so nothing on the
+// page can leak its URL to a subresource origin.
+func TestPipelineDashboardServesWithoutToken(t *testing.T) {
+	t.Setenv("GOPHERMIND_SERVE_TOKEN", "t")
+	mux, err := NewMux(Deps{Pipeline: &PipelineDeps{Root: t.TempDir()}}, Options{})
+	if err != nil {
+		t.Fatalf("NewMux: %v", err)
+	}
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/pipeline")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /pipeline with no token: got %d, want 200", resp.StatusCode)
+	}
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	body := string(raw)
+	if strings.Contains(body, "const tasks = [") {
+		t.Error("dashboard still embeds the mockup's hardcoded demo tasks")
+	}
+	if !strings.Contains(body, "/pipeline/state") || !strings.Contains(body, "/pipeline/events") {
+		t.Error("dashboard does not reference the real state/events routes")
+	}
+	if strings.Contains(body, "location.search") {
+		t.Error("dashboard reads a token (or anything else) from the query string - " +
+			"it reaches server logs, browser history and, with no referrer policy, " +
+			"third-party subresource requests; the token must only ever come from the URL fragment")
+	}
+	if !strings.Contains(body, `<meta name="referrer" content="no-referrer">`) {
+		t.Error("dashboard is missing <meta name=\"referrer\" content=\"no-referrer\">, " +
+			"so a subresource fetch could leak the page URL (and any token in it) to a third party")
+	}
+}
+
+// TestPipelineDashboardSkippedWhenPipelineNil checks that GET /pipeline is
+// simply not registered when Deps.Pipeline is nil, matching every other
+// optional route's nil-disables convention.
+func TestPipelineDashboardSkippedWhenPipelineNil(t *testing.T) {
+	t.Setenv("GOPHERMIND_SERVE_TOKEN", "t")
+	mux, err := NewMux(Deps{}, Options{})
+	if err != nil {
+		t.Fatalf("NewMux: %v", err)
+	}
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/pipeline")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("GET /pipeline with Pipeline unset: got %d, want 404", resp.StatusCode)
+	}
+}
 
 // TestPipelineStateReturnsRealTasksAndRequiresToken checks that GET
 // /pipeline/state returns the tasks (with wave, status and attempts) from a

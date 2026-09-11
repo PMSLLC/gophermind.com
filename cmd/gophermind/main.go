@@ -1201,6 +1201,10 @@ func run() error {
 			Run: run, Stream: stream, Metrics: metrics,
 			SessionTurn: sessionTurn, Approvals: approvals, Devices: devStore,
 			SessionMessages: loadMessages, ListModels: listModels,
+			// Pipeline piece 5: live dashboard + run summary at GET
+			// /pipeline, backed by cfg.RootDir's .planning/assignments.json
+			// - the same project state every other command reads.
+			Pipeline: &serve.PipelineDeps{Root: cfg.RootDir, Hub: serve.NewPipelineHub()},
 		}, serve.Options{})
 		if err != nil {
 			return err
@@ -2287,6 +2291,8 @@ Usage:
                                 session/mobile: POST /session, POST /session/{id}/stream (SSE),
                                 GET /session, DELETE /session/{id}, POST /session/{id}/approve,
                                 POST /devices — see docs/mobile-serve.md
+                                pipeline: GET /pipeline (dashboard), GET /pipeline/state,
+                                GET /pipeline/events (SSE), GET /pipeline/report
 
 On first interactive launch with nothing configured, a short setup wizard runs
 and saves your choices to the global config (see below); later launches skip it.
