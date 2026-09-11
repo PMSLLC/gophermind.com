@@ -99,6 +99,27 @@ func ExecuteWithRounds(ctx context.Context, root string, runner TaskRunner, emit
 // concurrency limit instead of DefaultWaveConcurrency. waveConcurrency below
 // 1 is treated as 1 (fully sequential).
 func ExecuteWithConcurrency(ctx context.Context, root string, runner TaskRunner, emit func(TaskOutcome), maxRounds, waveConcurrency int) (RunSummary, error) {
+	return executeWithRounds(ctx, root, runner, nil, emit, maxRounds, waveConcurrency)
+}
+
+// ExecuteWithReviser is ExecuteWithConcurrency plus the revision circuit
+// breaker (pipeline piece 4): after each round's waves finish, any task left
+// StatusNeedsRevision is either escalated (if it has already used every
+// round NeedsEscalation allows) or handed its full attempt history for a
+// fresh definition via reviser.Revise, then re-enters the loop with a fresh
+// attempt count. reviser may be nil - existing callers that never revise get
+// ExecuteWithConcurrency's exact behaviour, a needs_revision task simply
+// stays that way.
+func ExecuteWithReviser(ctx context.Context, root string, runner TaskRunner, reviser Reviser, emit func(TaskOutcome), maxRounds, waveConcurrency int) (RunSummary, error) {
+	return executeWithRounds(ctx, root, runner, reviser, emit, maxRounds, waveConcurrency)
+}
+
+// executeWithRounds is the shared engine behind ExecuteWithConcurrency and
+// ExecuteWithReviser. Revision happens between rounds - after every wave in
+// the round that just finished has fully stopped, and before the next round
+// starts - never mid-wave, so a revision can never race a sibling task still
+// running against the definition being rewritten. See reviseNeedsRevisionTasks.
+func executeWithRounds(ctx context.Context, root string, runner TaskRunner, reviser Reviser, emit func(TaskOutcome), maxRounds, waveConcurrency int) (RunSummary, error) {
 	if maxRounds < 1 {
 		maxRounds = 1
 	}
@@ -124,14 +145,22 @@ func ExecuteWithConcurrency(ctx context.Context, root string, runner TaskRunner,
 			break
 		}
 
-		progressed := passSummary.Done + passSummary.Corrected
-		if passSummary.Failed == 0 || progressed == 0 || round == maxRounds-1 {
+		revised, err := reviseNeedsRevisionTasks(ctx, root, reviser, emit, touched)
+		if err != nil {
+			return summary, err
+		}
+
+		progressed := passSummary.Done + passSummary.Corrected + revised
+		if (passSummary.Failed == 0 && revised == 0) || progressed == 0 || round == maxRounds-1 {
 			break
 		}
 		// Another round is coming: return the failures to pending so the next
-		// pass picks them up.
-		if err := resetFailedToPending(root); err != nil {
-			return summary, err
+		// pass picks them up. A revised task was already reset to pending by
+		// ApplyRevision, so there is nothing extra to do for it here.
+		if passSummary.Failed > 0 {
+			if err := resetFailedToPending(root); err != nil {
+				return summary, err
+			}
 		}
 	}
 
@@ -161,6 +190,87 @@ func ExecuteWithConcurrency(ctx context.Context, root string, runner TaskRunner,
 		}
 	}
 	return summary, nil
+}
+
+// reviseNeedsRevisionTasks looks at every task currently StatusNeedsRevision
+// and, for each: escalates it (StatusEscalated, no Revise call) if
+// NeedsEscalation already reports true - the source spec's own test, no
+// further model attempt happens automatically - otherwise hands reviser the
+// task's full attempt history and, on success, applies the result via
+// ApplyRevision so the task re-enters the loop pending with a fresh attempt
+// count. It reports how many tasks were successfully revised back to
+// pending, so the caller can treat that as progress even when the round's
+// ordinary Failed count is zero.
+//
+// reviser == nil is a no-op: a needs_revision task is left exactly as it is,
+// which is what every pre-existing caller that never configured a Reviser
+// depends on. A Reviser error, or an ApplyRevision rejection (an empty
+// revision), also leaves the task needs_revision rather than losing it or
+// recording a no-op round.
+//
+// touched is marked for every task this function escalates or revises, so
+// the final summary tally in executeWithRounds counts it even if this round
+// produced no ordinary run outcome for it.
+func reviseNeedsRevisionTasks(ctx context.Context, root string, reviser Reviser, emit func(TaskOutcome), touched map[string]bool) (revisedCount int, err error) {
+	if reviser == nil {
+		return 0, nil
+	}
+
+	a, found, err := LoadAssignments(root)
+	if err != nil {
+		return 0, err
+	}
+	if !found {
+		return 0, nil
+	}
+
+	for _, t := range a.Tasks {
+		if t.Status != StatusNeedsRevision {
+			continue
+		}
+		if ctx.Err() != nil {
+			return revisedCount, nil
+		}
+
+		if NeedsEscalation(t) {
+			if err := updateTaskStatus(root, t.ID, StatusEscalated); err != nil {
+				return revisedCount, err
+			}
+			touched[t.ID] = true
+			if emit != nil {
+				emit(TaskOutcome{ID: t.ID, Status: StatusEscalated, Detail: "revision cap reached, needs a human"})
+			}
+			continue
+		}
+
+		rev, rerr := reviser.Revise(ctx, t, t.Attempts)
+		if rerr != nil {
+			// The task stays needs_revision; a reviser failure must not lose
+			// it or fabricate a revision it never actually produced.
+			continue
+		}
+
+		applyErr := Update(root, func(as *Assignments) error {
+			for i := range as.Tasks {
+				if as.Tasks[i].ID == t.ID {
+					return ApplyRevision(&as.Tasks[i], rev)
+				}
+			}
+			return fmt.Errorf("phaseflow: task %q not found while applying revision", t.ID)
+		})
+		if applyErr != nil {
+			// An empty revision, most likely: leave the task needs_revision
+			// rather than consuming a round on a no-op.
+			continue
+		}
+
+		revisedCount++
+		touched[t.ID] = true
+		if emit != nil {
+			emit(TaskOutcome{ID: t.ID, Status: StatusPending, Detail: "revised: " + rev.Note})
+		}
+	}
+	return revisedCount, nil
 }
 
 // resetFailedToPending requeues failed tasks for the next retry round. It
