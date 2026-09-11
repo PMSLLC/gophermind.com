@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"gophermind/internal/lockfile"
 )
@@ -19,6 +20,12 @@ import (
 // Task is one unit of work in the plan, keyed to a ROADMAP plan id (e.g.
 // "02-01"). Agent names a catalog agent type; Model is a tier ("speed"/"strong")
 // or a concrete model name; Status tracks execution progress (owned by Spec 2).
+//
+// Wave, DependsOn, CandidateModels, Attempts and RevisionRounds are additive
+// fields for the pipeline runner (see docs/superpowers/specs
+// /2026-09-11-harness-pipeline-design.md). Every one is omitempty, so an
+// assignments.json written before these existed loads unchanged and gains no
+// new keys when it round-trips.
 type Task struct {
 	ID                 string   `json:"id"`
 	Phase              string   `json:"phase"`
@@ -29,16 +36,78 @@ type Task struct {
 	AgentAddendum      string   `json:"agent_addendum,omitempty"`
 	Model              string   `json:"model"`
 	Status             string   `json:"status"`
+
+	// Wave is this task's execution wave, computed from DependsOn. 0 means
+	// unassigned.
+	Wave int `json:"wave,omitempty"`
+	// DependsOn lists the ids of tasks that must complete before this one
+	// starts.
+	DependsOn []string `json:"depends_on,omitempty"`
+	// CandidateModels is the ordered list of models to try for this task.
+	// An empty list falls back to Model.
+	CandidateModels []string `json:"candidate_models,omitempty"`
+	// Attempts is the history of every model's try at this task, whether it
+	// passed or failed. See RecordAttempt for the retention rule.
+	Attempts []Attempt `json:"attempts,omitempty"`
+	// RevisionRounds is the history of the planner rewriting this task after
+	// every candidate model failed it.
+	RevisionRounds []Revision `json:"revision_rounds,omitempty"`
 }
 
 // Task status values. Planning writes StatusPending; execution advances them.
+// StatusNeedsRevision marks a task whose candidate models were all
+// exhausted without a pass, awaiting a planner rewrite. StatusEscalated
+// marks a task that failed revision too, and needs a human.
 const (
-	StatusPending   = "pending"
-	StatusRunning   = "running"
-	StatusDone      = "done"
-	StatusFailed    = "failed"
-	StatusCorrected = "corrected"
+	StatusPending       = "pending"
+	StatusRunning       = "running"
+	StatusDone          = "done"
+	StatusFailed        = "failed"
+	StatusCorrected     = "corrected"
+	StatusNeedsRevision = "needs_revision"
+	StatusEscalated     = "escalated"
 )
+
+// Attempt is one model's try at a task, recorded whether it passed or
+// failed.
+type Attempt struct {
+	Model     string    `json:"model"`
+	StartedAt time.Time `json:"started_at"`
+	Duration  string    `json:"duration"`
+	// Verdict is "pass" or "fail".
+	Verdict string `json:"verdict"`
+	// Reason is what specifically failed, never just "failed". The
+	// revision circuit breaker (piece 4) needs a specific reason to notice
+	// when several models fail the same way.
+	Reason string `json:"reason"`
+}
+
+// Revision is one round of the planner rewriting a task after every
+// candidate model failed.
+type Revision struct {
+	Round int       `json:"round"`
+	At    time.Time `json:"at"`
+	// Note describes what changed and why.
+	Note        string   `json:"note"`
+	Deliverable string   `json:"deliverable,omitempty"`
+	Test        []string `json:"test,omitempty"`
+}
+
+// maxAttemptsPerTask caps how many Attempt records a task keeps. An
+// unattended run with repeated revisions could otherwise grow
+// assignments.json without bound; this ring-style cap is the same precedent
+// as the odometer's event ring.
+const maxAttemptsPerTask = 50
+
+// RecordAttempt appends a to the task's attempt history, dropping the oldest
+// entries once the history exceeds maxAttemptsPerTask so the record stays
+// bounded on a long unattended run.
+func (t *Task) RecordAttempt(a Attempt) {
+	t.Attempts = append(t.Attempts, a)
+	if len(t.Attempts) > maxAttemptsPerTask {
+		t.Attempts = t.Attempts[len(t.Attempts)-maxAttemptsPerTask:]
+	}
+}
 
 // Assignments is the full set of task assignments for a project.
 type Assignments struct {
