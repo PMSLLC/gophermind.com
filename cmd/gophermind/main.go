@@ -1197,6 +1197,7 @@ func run() error {
 			defer cancel()
 			return client.ListModels(ctx)
 		}
+		pipelineHub := serve.NewPipelineHub()
 		mux, err := serve.NewMux(serve.Deps{
 			Run: run, Stream: stream, Metrics: metrics,
 			SessionTurn: sessionTurn, Approvals: approvals, Devices: devStore,
@@ -1204,7 +1205,7 @@ func run() error {
 			// Pipeline piece 5: live dashboard + run summary at GET
 			// /pipeline, backed by cfg.RootDir's .planning/assignments.json
 			// - the same project state every other command reads.
-			Pipeline: &serve.PipelineDeps{Root: cfg.RootDir, Hub: serve.NewPipelineHub()},
+			Pipeline: &serve.PipelineDeps{Root: cfg.RootDir, Hub: pipelineHub},
 		}, serve.Options{})
 		if err != nil {
 			return err
@@ -1233,6 +1234,13 @@ func run() error {
 		// saved. Every other long-running command here already does this.
 		serveCtx, stopServe := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stopServe()
+		// Feed the hub. A run executes in a different process (the TUI's
+		// /project-execute, or `gophermind phase execute`), so nothing in it
+		// can call this hub directly; watching the assignments file is the
+		// only channel between them, and it is the same file /pipeline/state
+		// serves. Without this the dashboard's event stream stayed silent
+		// and the page showed whatever state existed when it loaded.
+		serve.StartPipelineWatcher(serveCtx, cfg.RootDir, pipelineHub)
 		return serve.Serve(serveCtx, ln, mux)
 	case "queue":
 		if task == "" {
