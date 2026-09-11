@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -12,6 +13,7 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/jbrahy/bubblecomplete"
 	"gophermind/internal/agent"
+	"gophermind/internal/freellm"
 	"gophermind/internal/phaseflow"
 )
 
@@ -392,6 +394,10 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		return m, nil
 	case "/help":
 		m.appendLine(helpLine())
+		m.sync()
+		return m, nil
+	case "/provider":
+		m.appendLine(providerCard(m.profile, m.model, freellm.OdometerPath(), time.Now()))
 		m.sync()
 		return m, nil
 	case "/index":

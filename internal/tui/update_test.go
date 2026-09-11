@@ -12,7 +12,7 @@ import (
 func testModel(t *testing.T) model {
 	t.Helper()
 	t.Setenv("GOPHERMIND_CONFIG_DIR", t.TempDir())
-	m := newModel(func(sub chan tea.Msg, allowed *allowSet) *agent.Agent { return nil }, "m", "", "auto", "dark", false, false, DefaultAttentionFlashes)
+	m := newModel(func(sub chan tea.Msg, allowed *allowSet) *agent.Agent { return nil }, "m", "", "auto", "dark", "", false, false, DefaultAttentionFlashes)
 	m.width, m.height, m.ready = 80, 24, true
 	return m
 }

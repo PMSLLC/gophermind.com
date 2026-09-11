@@ -204,7 +204,7 @@ func (c *Client) ProbeCapabilities(ctx context.Context) Capabilities {
 // error so the caller degrades gracefully — it never surfaces an error and
 // never logs the API key or full response with credentials.
 func (c *Client) fetchModelEntry(ctx context.Context) *modelCapabilityEntry {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/v1/models", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+c.modelsPath(), nil)
 	if err != nil {
 		return nil
 	}

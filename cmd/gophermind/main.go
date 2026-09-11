@@ -28,6 +28,7 @@ import (
 	"gophermind/internal/doctor"
 	"gophermind/internal/embed"
 	"gophermind/internal/fewshot"
+	"gophermind/internal/freellm"
 	"gophermind/internal/intro"
 	"gophermind/internal/jobs"
 	"gophermind/internal/llm"
@@ -211,6 +212,15 @@ func run() error {
 	}
 
 	// Explicit endpoint flags override the profile's resolved values.
+	//
+	// KNOWN GAP (deferred, not fixed here): -base replaces BaseURL alone, so
+	// cfg.ChatPath/cfg.ModelsPath from the profile survive unchanged. If the
+	// profile's base URL needed a non-default ChatPath/ModelsPath (e.g. it
+	// already ends in /v1) and -base points at a differently-shaped URL, the
+	// carried-over path can be wrong for the new URL. There is no env var
+	// pair that lets -base clear or override just the paths short of
+	// GOPHERMIND_CHAT_PATH/GOPHERMIND_MODELS_PATH, which apply regardless of
+	// -base. Fixing this needs its own task.
 	if set["base"] {
 		cfg.BaseURL = *baseFlag
 	}
@@ -552,6 +562,8 @@ func run() error {
 		}
 		// Apply the just-captured values to this session (the file is for next time).
 		cfg.BaseURL = res.BaseURL
+		cfg.ChatPath = res.ChatPath
+		cfg.ModelsPath = res.ModelsPath
 		if res.APIKey != "" {
 			cfg.APIKey = res.APIKey
 		}
@@ -587,6 +599,14 @@ func run() error {
 		return nil
 	}
 
+	// `gophermind free ...` prints a vendored, embedded registry (or probes a
+	// provider directly with its own short timeout). It must work with no
+	// endpoint configured and no network to the configured endpoint, so it
+	// runs before Validate and before the client is built.
+	if cmd == "free" {
+		os.Exit(runFree(args[1:], os.Stdout))
+	}
+
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
@@ -606,6 +626,8 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("TLS setup: %w", err)
 	}
+	client.ChatPath = cfg.ChatPath
+	client.ModelsPath = cfg.ModelsPath
 	client.SetStreamIdleTimeout(cfg.StreamIdleTimeout)
 	client.Fallbacks = cfg.FallbackModels
 	client.SetTemperature(cfg.Temperature)
@@ -987,6 +1009,7 @@ func run() error {
 			Client:           client,
 			Registry:         reg,
 			Model:            cfg.Model,
+			Profile:          cfg.Profile,
 			SpeedModel:       cfg.SpeedModel,
 			Mode:             cfg.ApprovalMode,
 			MaxIter:          cfg.MaxIter,
@@ -1310,12 +1333,17 @@ func run() error {
 			}
 		}
 		// Persist usage for the cost dashboard when GOPHERMIND_USAGE_LOG is set.
+		u := ag.Usage()
+		freeCompat, isFree := freellm.CompatFor(cfg.Profile)
 		if lp := strings.TrimSpace(os.Getenv("GOPHERMIND_USAGE_LOG")); lp != "" {
-			u := ag.Usage()
-			_ = usagelog.Append(lp, usagelog.Record{
+			rec := usagelog.Record{
 				Time: time.Now(), Model: cfg.Model,
 				PromptTokens: u.PromptTokens, CompletionTokens: u.CompletionTokens, CostUSD: u.CostUSD,
-			})
+			}
+			if isFree {
+				rec.Profile, rec.Provider = freeCompat.Profile, freeCompat.Upstream
+			}
+			_ = usagelog.Append(lp, rec)
 			// Budget alert: warn when cumulative recorded spend exceeds a ceiling.
 			if b, err := strconv.ParseFloat(strings.TrimSpace(os.Getenv("GOPHERMIND_BUDGET_USD")), 64); err == nil && b > 0 {
 				if recs, err := usagelog.Load(lp); err == nil {
@@ -1323,6 +1351,18 @@ func run() error {
 						fmt.Fprintf(os.Stderr, "⚠ budget alert: cumulative spend $%.4f has reached the $%.2f ceiling (GOPHERMIND_BUDGET_USD)\n", total, b)
 					}
 				}
+			}
+		}
+		// The free-usage odometer counts unconditionally: unlike the cost log
+		// it needs no opt-in env var. Failure to record is never fatal to a run.
+		if isFree {
+			if odo, err := freellm.LoadOdometer(freellm.OdometerPath()); err == nil {
+				_ = odo.Add(freellm.OdometerPath(), freellm.Event{
+					TS:       time.Now(),
+					Profile:  freeCompat.Profile,
+					Tokens:   int64(u.PromptTokens + u.CompletionTokens),
+					Requests: 1,
+				})
 			}
 		}
 		// --report writes a self-contained HTML record of the run (task, answer,
@@ -1501,7 +1541,7 @@ func runSetupWizard(cfg config.Config) (setup.Result, error) {
 		In:       os.Stdin,
 		Out:      os.Stderr,
 		Profiles: config.BuiltinProfileNames(),
-		ListModels: func(baseURL, apiKey string) ([]string, error) {
+		ListModels: func(baseURL, modelsPath, apiKey string) ([]string, error) {
 			c, err := llm.NewWithTLS(baseURL, apiKey, "", 15*time.Second, llm.TLSOptions{
 				InsecureSkipVerify: cfg.InsecureTLS,
 				ClientCertPath:     cfg.ClientCertPath,
@@ -1511,11 +1551,16 @@ func runSetupWizard(cfg config.Config) (setup.Result, error) {
 			if err != nil {
 				return nil, err
 			}
+			// Without this the client probes its bare default
+			// ("/v1/models"), which 404s against any endpoint whose BaseURL
+			// already ends in /v1 (e.g. https://api.openai.com/v1) by
+			// doubling it into .../v1/v1/models.
+			c.ModelsPath = modelsPath
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 			return c.ListModels(ctx)
 		},
-		Defaults: setup.Result{BaseURL: cfg.BaseURL, Model: cfg.Model, ApprovalMode: cfg.ApprovalMode, MaxIter: cfg.MaxIter},
+		Defaults: setup.Result{BaseURL: cfg.BaseURL, ChatPath: cfg.ChatPath, ModelsPath: cfg.ModelsPath, Model: cfg.Model, ApprovalMode: cfg.ApprovalMode, MaxIter: cfg.MaxIter},
 	}
 	if isatty() {
 		opts.ReadSecret = func() (string, error) {

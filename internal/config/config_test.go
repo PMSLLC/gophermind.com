@@ -714,3 +714,254 @@ func TestLoadDefaultsRetry(t *testing.T) {
 		t.Errorf("RetryBaseDelay = %v, want 2s", cfg.RetryBaseDelay)
 	}
 }
+
+func TestApplyFreeProfile(t *testing.T) {
+	c := Config{Profile: "free-groq"}
+	got, err := c.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.BaseURL != "https://api.groq.com/openai/v1" {
+		t.Errorf("BaseURL = %q", got.BaseURL)
+	}
+	if got.Model != "openai/gpt-oss-120b" {
+		t.Errorf("Model = %q, want the explicit default (never auto-discovery)", got.Model)
+	}
+	if got.APIKey != "" {
+		t.Errorf("APIKey = %q, want empty with no env var set", got.APIKey)
+	}
+}
+
+func TestFreeProfileEnvOverridesWin(t *testing.T) {
+	t.Setenv("GOPHERMIND_PROFILE_FREE_GROQ_BASE_URL", "https://proxy.internal/v1")
+	t.Setenv("GOPHERMIND_PROFILE_FREE_GROQ_MODEL", "my-model")
+	t.Setenv("GOPHERMIND_PROFILE_FREE_GROQ_API_KEY", "k")
+	got, err := Config{Profile: "free-groq"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.BaseURL != "https://proxy.internal/v1" || got.Model != "my-model" || got.APIKey != "k" {
+		t.Errorf("env overrides did not win: %+v", got)
+	}
+}
+
+func TestUnsupportedFreeProfileErrorsWithNote(t *testing.T) {
+	_, err := Config{Profile: "free-cloudflare"}.ApplyProfile()
+	if err == nil {
+		t.Fatal("expected an error for an unsupported free profile")
+	}
+	if !strings.Contains(err.Error(), "free-cloudflare") {
+		t.Errorf("error %q does not name the profile", err)
+	}
+	if !strings.Contains(err.Error(), "GOPHERMIND_PROFILE_FREE_CLOUDFLARE_BASE_URL") {
+		t.Errorf("error %q does not point at the override", err)
+	}
+}
+
+func TestUnknownFreeProfileStillErrors(t *testing.T) {
+	if _, err := (Config{Profile: "free-nope"}).ApplyProfile(); err == nil {
+		t.Error("expected an error for an unknown free profile")
+	}
+}
+
+func TestFreeProfileNamesAreSupportedOnly(t *testing.T) {
+	names := FreeProfileNames()
+	if len(names) == 0 {
+		t.Fatal("no free profiles listed")
+	}
+	for _, p := range names {
+		if p[0] == "free-cloudflare" {
+			t.Error("an unsupported profile appears in FreeProfileNames")
+		}
+		if p[1] == "" {
+			t.Errorf("profile %q has no base URL", p[0])
+		}
+	}
+}
+
+// Built-in profiles must be unaffected.
+func TestBuiltinProfilesUnchangedByFreeSupport(t *testing.T) {
+	got, err := Config{Profile: "openai"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.BaseURL != "https://api.openai.com/v1" || got.Model != "gpt-4o-mini" {
+		t.Errorf("built-in openai profile changed: %+v", got)
+	}
+}
+
+// A hand-enabled unsupported free profile (base URL overridden, no model
+// override) must not fall through to auto-discovery: it has no DefaultModel,
+// so it must error naming the _MODEL env var to set.
+func TestUnsupportedFreeProfileWithBaseURLOnlyStillErrorsOnModel(t *testing.T) {
+	t.Setenv("GOPHERMIND_PROFILE_FREE_CLOUDFLARE_BASE_URL", "https://example.com/v1")
+	_, err := Config{Profile: "free-cloudflare"}.ApplyProfile()
+	if err == nil {
+		t.Fatal("expected an error when only _BASE_URL is set for an unsupported free profile")
+	}
+	if !strings.Contains(err.Error(), "GOPHERMIND_PROFILE_FREE_CLOUDFLARE_MODEL") {
+		t.Errorf("error %q does not name the model override", err)
+	}
+}
+
+// The same profile, with both _BASE_URL and _MODEL set by hand, must resolve
+// successfully to those values.
+func TestUnsupportedFreeProfileWithBaseURLAndModelSucceeds(t *testing.T) {
+	t.Setenv("GOPHERMIND_PROFILE_FREE_CLOUDFLARE_BASE_URL", "https://example.com/v1")
+	t.Setenv("GOPHERMIND_PROFILE_FREE_CLOUDFLARE_MODEL", "my-account-model")
+	got, err := Config{Profile: "free-cloudflare"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.BaseURL != "https://example.com/v1" || got.Model != "my-account-model" {
+		t.Errorf("did not resolve to the hand-set values: %+v", got)
+	}
+}
+
+// local-llama is a built-in profile that deliberately resolves to an empty
+// Model for auto-discovery against a local server. The free-profile Model
+// guard must not fire for it, since isFree is false for built-in profiles.
+func TestLocalLlamaStillAutoDiscoversWithEmptyModel(t *testing.T) {
+	got, err := Config{Profile: "local-llama"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Model != "" {
+		t.Errorf("Model = %q, want empty (local-llama relies on auto-discovery)", got.Model)
+	}
+}
+
+// ChatPath must resolve with the same per-profile-env > builtin > free-registry
+// precedence as BaseURL and Model.
+func TestApplyProfileChatPathPrecedence(t *testing.T) {
+	for _, k := range []string{"GOPHERMIND_PROFILE_OPENAI_CHAT_PATH"} {
+		t.Setenv(k, "")
+	}
+
+	// Builtin default: openai's base URL already ends in /v1.
+	got, err := Config{Profile: "openai"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ChatPath != "/chat/completions" {
+		t.Errorf("ChatPath = %q, want the builtin default /chat/completions", got.ChatPath)
+	}
+
+	// Free-registry default: free-groq's Compat entry carries ChatPath.
+	got, err = Config{Profile: "free-groq"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ChatPath != "/chat/completions" {
+		t.Errorf("ChatPath = %q, want the free-registry default /chat/completions", got.ChatPath)
+	}
+
+	// Per-profile env wins over the builtin default.
+	t.Setenv("GOPHERMIND_PROFILE_OPENAI_CHAT_PATH", "/custom/path")
+	got, err = Config{Profile: "openai"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ChatPath != "/custom/path" {
+		t.Errorf("ChatPath = %q, want the env override /custom/path", got.ChatPath)
+	}
+
+	// Per-profile env wins over the free-registry default too.
+	t.Setenv("GOPHERMIND_PROFILE_FREE_GROQ_CHAT_PATH", "/env/path")
+	got, err = Config{Profile: "free-groq"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ChatPath != "/env/path" {
+		t.Errorf("ChatPath = %q, want the env override /env/path", got.ChatPath)
+	}
+}
+
+// local-llama's base URL has no /v1 segment, so ChatPath must stay empty
+// (the client's default "/v1/chat/completions" is already correct for it).
+func TestLocalLlamaChatPathStaysEmpty(t *testing.T) {
+	got, err := Config{Profile: "local-llama"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ChatPath != "" {
+		t.Errorf("ChatPath = %q, want empty for local-llama", got.ChatPath)
+	}
+}
+
+// ModelsPath must resolve with the same precedence as ChatPath, and stay
+// empty for local-llama for the same reason.
+func TestApplyProfileModelsPathPrecedence(t *testing.T) {
+	t.Setenv("GOPHERMIND_PROFILE_OPENAI_MODELS_PATH", "")
+
+	got, err := Config{Profile: "openai"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ModelsPath != "/models" {
+		t.Errorf("ModelsPath = %q, want the builtin default /models", got.ModelsPath)
+	}
+
+	t.Setenv("GOPHERMIND_PROFILE_OPENAI_MODELS_PATH", "/custom/models")
+	got, err = Config{Profile: "openai"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ModelsPath != "/custom/models" {
+		t.Errorf("ModelsPath = %q, want the env override /custom/models", got.ModelsPath)
+	}
+}
+
+func TestLocalLlamaModelsPathStaysEmpty(t *testing.T) {
+	got, err := Config{Profile: "local-llama"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ModelsPath != "" {
+		t.Errorf("ModelsPath = %q, want empty for local-llama", got.ModelsPath)
+	}
+}
+
+// A per-profile _BASE_URL override without a /v1 segment must not inherit
+// anthropic-proxy's builtin ChatPath/ModelsPath ("/chat/completions",
+// "/models"): those assume the table's own BaseURL, which already ends in
+// /v1. Before the fix, the request became <base>/chat/completions and 404d;
+// leaving ChatPath/ModelsPath empty here lets the llm client apply its own
+// default ("/v1/chat/completions", "/v1/models") against the new base.
+func TestBaseURLOverrideWithoutV1FallsBackToClientDefault(t *testing.T) {
+	t.Setenv("GOPHERMIND_PROFILE_ANTHROPIC_PROXY_BASE_URL", "https://my-shim.example.com")
+	got, err := Config{Profile: "anthropic-proxy"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.BaseURL != "https://my-shim.example.com" {
+		t.Errorf("BaseURL = %q, want the override", got.BaseURL)
+	}
+	if got.ChatPath != "" {
+		t.Errorf("ChatPath = %q, want empty so the client's own /v1/chat/completions default applies", got.ChatPath)
+	}
+	if got.ModelsPath != "" {
+		t.Errorf("ModelsPath = %q, want empty so the client's own /v1/models default applies", got.ModelsPath)
+	}
+}
+
+// A per-profile _BASE_URL override paired with explicit _CHAT_PATH/
+// _MODELS_PATH must honor those, even though the override alone no longer
+// inherits the builtin paths. This is the "re-supply the same /v1 URL"
+// tradeoff case named in ApplyProfile's comment: set the paths by hand to
+// get back what used to be automatic.
+func TestBaseURLOverrideWithExplicitPathsIsHonored(t *testing.T) {
+	t.Setenv("GOPHERMIND_PROFILE_ANTHROPIC_PROXY_BASE_URL", "https://my-shim.example.com/v1")
+	t.Setenv("GOPHERMIND_PROFILE_ANTHROPIC_PROXY_CHAT_PATH", "/chat/completions")
+	t.Setenv("GOPHERMIND_PROFILE_ANTHROPIC_PROXY_MODELS_PATH", "/models")
+	got, err := Config{Profile: "anthropic-proxy"}.ApplyProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ChatPath != "/chat/completions" {
+		t.Errorf("ChatPath = %q, want the explicit override /chat/completions", got.ChatPath)
+	}
+	if got.ModelsPath != "/models" {
+		t.Errorf("ModelsPath = %q, want the explicit override /models", got.ModelsPath)
+	}
+}

@@ -66,3 +66,29 @@ func TestSetAPIKey(t *testing.T) {
 		t.Errorf("APIKey = %q, want trimmed new-key", a.llm.APIKey)
 	}
 }
+
+// SetChatPath/SetModelsPath must round-trip through Config, and critically
+// must apply an empty value (unlike SetBaseURL/SetModel, which ignore
+// blanks): an empty ChatPath/ModelsPath is the meaningful "use the client
+// default" state, not "leave unset". This is what lets the TUI /config
+// wizard clear a stale path override when switching from a profile that
+// needs one (e.g. openai) to one that does not (e.g. local-llama) on the
+// live client, not just in the saved config file.
+func TestSetChatPathAndModelsPathReflectInConfigIncludingClear(t *testing.T) {
+	a := newConfigAgent()
+	if got := a.Config(); got.ChatPath != "" || got.ModelsPath != "" {
+		t.Fatalf("initial ChatPath/ModelsPath should be empty, got %+v", got)
+	}
+
+	a.SetChatPath("/chat/completions")
+	a.SetModelsPath("/models")
+	if got := a.Config(); got.ChatPath != "/chat/completions" || got.ModelsPath != "/models" {
+		t.Fatalf("after setting, Config = %+v", got)
+	}
+
+	a.SetChatPath("")
+	a.SetModelsPath("")
+	if got := a.Config(); got.ChatPath != "" || got.ModelsPath != "" {
+		t.Errorf("after clearing, Config = %+v, want both empty", got)
+	}
+}

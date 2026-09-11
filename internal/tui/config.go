@@ -17,7 +17,7 @@ import (
 // handleConfigCommand launches the interactive configuration wizard. The wizard
 // is line-based and needs sole control of the terminal, so it runs via tea.Exec:
 // Bubble Tea pauses the program, restores cooked mode, hands the wizard the real
-// stdin/stdout, and resumes once it finishes — which avoids the two readers
+// stdin/stdout, and resumes once it finishes, which avoids the two readers
 // (wizard vs. Bubble Tea's input loop) fighting over stdin.
 func (m model) handleConfigCommand() (model, tea.Cmd) {
 	if m.agent == nil {
@@ -30,6 +30,8 @@ func (m model) handleConfigCommand() (model, tea.Cmd) {
 	cur := m.agent.Config()
 	w := &configWizard{defaults: setup.Result{
 		BaseURL:      cur.BaseURL,
+		ChatPath:     cur.ChatPath,
+		ModelsPath:   cur.ModelsPath,
 		Model:        cur.Model,
 		ApprovalMode: m.mode,
 		MaxIter:      cur.MaxIter,
@@ -105,9 +107,11 @@ func runConfigWizardIO(in io.Reader, out io.Writer, defaults setup.Result) (setu
 	}
 	choice := parseIntOr(choiceLine, 1)
 
-	var baseURL string
+	var baseURL, chatPath, modelsPath string
 	if choice >= 1 && choice <= len(profiles) {
 		baseURL = profiles[choice-1][1]
+		chatPath = profiles[choice-1][2]
+		modelsPath = profiles[choice-1][3]
 	} else {
 		fmt.Fprintf(out, "Base URL%s: ", defaultHint(defaults.BaseURL))
 		line, err := readLine()
@@ -115,6 +119,11 @@ func runConfigWizardIO(in io.Reader, out io.Writer, defaults setup.Result) (setu
 			return setup.Result{}, err
 		}
 		baseURL = firstNonEmpty(strings.TrimSpace(line), defaults.BaseURL)
+		// A custom URL carries no known chat/models path; fall back to
+		// whatever the prior run had, empty (the client defaults) the first
+		// time. Mirrors internal/setup/setup.go's Run().
+		chatPath = defaults.ChatPath
+		modelsPath = defaults.ModelsPath
 	}
 
 	// 2) API key (read without echo; blank keeps none).
@@ -176,7 +185,8 @@ func runConfigWizardIO(in io.Reader, out io.Writer, defaults setup.Result) (setu
 	}
 
 	return setup.Result{
-		BaseURL: baseURL, APIKey: apiKey, Model: model, ApprovalMode: mode, MaxIter: maxIter,
+		BaseURL: baseURL, ChatPath: chatPath, ModelsPath: modelsPath,
+		APIKey: apiKey, Model: model, ApprovalMode: mode, MaxIter: maxIter,
 		BraveAPIKey:   strings.TrimSpace(brave),
 		GitHubToken:   strings.TrimSpace(ghToken),
 		NotifyWebhook: strings.TrimSpace(notify),
@@ -196,7 +206,7 @@ var (
 
 // handleConfigDone persists the wizard result, applies what can change live, and
 // prints a summary of what actually changed (compared against the pre-wizard
-// values — the comparison must happen before the setters run).
+// values, the comparison must happen before the setters run).
 func (m *model) handleConfigDone(msg configDoneMsg) {
 	res := msg.result
 
@@ -223,6 +233,20 @@ func (m *model) handleConfigDone(msg configDoneMsg) {
 	if res.BaseURL != "" && res.BaseURL != before.BaseURL {
 		m.agent.SetBaseURL(res.BaseURL)
 		changes = append(changes, "endpoint")
+	}
+	// ChatPath/ModelsPath: unlike BaseURL, an empty value here is a
+	// meaningful, intentional state (the client's default paths), not "leave
+	// unset", so these apply on any change, not just a non-empty one. This
+	// is what lets switching from a profile that needs a path override (e.g.
+	// openai) to one that does not (e.g. local-llama) actually clear the
+	// stale override on the live client, not just in the saved config.
+	if res.ChatPath != before.ChatPath {
+		m.agent.SetChatPath(res.ChatPath)
+		changes = append(changes, "chat path")
+	}
+	if res.ModelsPath != before.ModelsPath {
+		m.agent.SetModelsPath(res.ModelsPath)
+		changes = append(changes, "models path")
 	}
 	if res.Model != "" && res.Model != before.Model {
 		m.agent.SetModel(res.Model)
