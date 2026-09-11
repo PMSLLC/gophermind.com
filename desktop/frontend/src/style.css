@@ -77,6 +77,45 @@ body {
   padding: 1rem 0;
 }
 
+.backendbar {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+
+.backendbar-fallback {
+  color: #fbbf24;
+}
+
+.errorscreen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+.errorscreen h1 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--error);
+}
+
+.errorscreen pre {
+  max-width: 40rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
 .line {
   display: flex;
   gap: 0.6rem;

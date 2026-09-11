@@ -12,6 +12,23 @@ export interface SessionInfo {
   id: string
 }
 
+/**
+ * BackendStatus is the response body of GET /backend-status: which LLM
+ * endpoint and model the embedded server ended up using, whether that took
+ * a fallback away from the configured endpoint, and the failure text when
+ * even the fallback did not work. ready is false while resolution is still
+ * in flight (error will also be empty in that case).
+ */
+export interface BackendStatus {
+  ready: boolean
+  baseURL: string
+  model: string
+  fellBack: boolean
+  failedBaseURL?: string
+  fallbackProfile?: string
+  error?: string
+}
+
 /** SSEFrame is one parsed "event: ...\ndata: ...\n\n" block. */
 export interface SSEFrame {
   event: string
@@ -101,6 +118,18 @@ export class ApiClient {
         if (frame) dispatch(frame)
       }
     }
+  }
+
+  /** getBackendStatus calls GET /backend-status. */
+  async getBackendStatus(): Promise<BackendStatus> {
+    const res = await fetch(`${this.baseURL}/backend-status`, {
+      method: 'GET',
+      headers: this.authHeaders(),
+    })
+    if (!res.ok) {
+      throw new Error(`backend status failed: ${res.status} ${await safeText(res)}`)
+    }
+    return (await res.json()) as BackendStatus
   }
 
   /** listModels calls GET /models. */
