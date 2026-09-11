@@ -44,19 +44,46 @@ func TestSettingsRoundTrip(t *testing.T) {
 }
 
 // A damaged settings file must never block a turn.
-func TestCorruptSettingsYieldDefaults(t *testing.T) {
+// A settings file that exists but cannot be parsed is a failure and must be
+// reported as one. Returning a nil error told every caller "these are the
+// user's settings" when they were a stand-in, and a stand-in with empty
+// ExcludedTerms re-enables providers the user excluded for legal reasons.
+// This test previously asserted the opposite; it was pinning the fail-open.
+//
+// An EMPTY file is not corruption. A half-finished create or an interrupted
+// write leaves one behind and there is nothing in it to have lost, so that
+// stays the fresh-start case.
+func TestCorruptSettingsAreReportedNotSwallowed(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "s.json")
-	for _, junk := range []string{"", "{", "not json"} {
+	for _, junk := range []string{"{", "not json"} {
 		if err := os.WriteFile(path, []byte(junk), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		s, err := LoadSettings(path)
-		if err != nil {
-			t.Errorf("LoadSettings(%q) errored: %v", junk, err)
+		if err == nil {
+			t.Errorf("LoadSettings(%q) returned no error; a caller cannot tell "+
+				"a stand-in from the user's real configuration", junk)
 		}
-		if s.CapacityPercent != 90 {
-			t.Errorf("corrupt file did not yield defaults: %+v", s)
+		// Whatever a caller that ignores the error does next, it must not be
+		// allowed to select a provider the user excluded.
+		if len(s.ExcludedTerms) == 0 {
+			t.Errorf("LoadSettings(%q) failed open: ExcludedTerms is empty, so "+
+				"an excluded provider becomes selectable again", junk)
 		}
+	}
+}
+
+func TestEmptySettingsFileIsAFreshStart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.json")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := LoadSettings(path)
+	if err != nil {
+		t.Fatalf("empty file should read as a fresh start: %v", err)
+	}
+	if s.CapacityPercent != 90 {
+		t.Errorf("empty file did not yield defaults: %+v", s)
 	}
 }
 
@@ -142,10 +169,10 @@ func TestCorruptSettingsExcludeEverythingRatherThanNothing(t *testing.T) {
 	if err := os.WriteFile(path, []byte("not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	s, err := LoadSettings(path)
-	if err != nil {
-		t.Fatalf("a damaged settings file must not block a turn: %v", err)
-	}
+	// The error is now reported (see TestCorruptSettingsAreReportedNotSwallowed);
+	// what this test pins is the settings returned ALONGSIDE it, because two
+	// call sites cannot fail a turn and use them anyway.
+	s, _ := LoadSettings(path)
 	for _, want := range []string{"non-commercial", "trains on prompts", "identity check"} {
 		found := false
 		for _, got := range s.ExcludedTerms {

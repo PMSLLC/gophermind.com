@@ -5,6 +5,7 @@
 package modelcat
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -133,9 +134,21 @@ func LoadSettings(path string) (Settings, error) {
 		}
 		return restrictiveSettings(), fmt.Errorf("modelcat: read settings %s: %w", path, err)
 	}
+	// An empty file is a fresh start, not corruption: that is what a
+	// half-finished create or an interrupted write leaves behind, and there
+	// is nothing in it to have lost.
+	if len(bytes.TrimSpace(b)) == 0 {
+		return DefaultSettings(), nil
+	}
 	var s Settings
 	if err := json.Unmarshal(b, &s); err != nil {
-		return restrictiveSettings(), nil
+		// Unparseable content IS a failure and is reported as one. Returning
+		// a nil error here would tell the caller these are the user's
+		// settings when they are a stand-in, and the stand-in's empty
+		// ExcludedTerms would re-enable providers the user excluded for
+		// legal reasons. The settings returned alongside the error fail
+		// closed for any caller that cannot propagate it.
+		return restrictiveSettings(), fmt.Errorf("modelcat: parse settings %s: %w", path, err)
 	}
 	return s, nil
 }
