@@ -244,6 +244,11 @@ type Deps struct {
 	// the active configured endpoint serves to GET /models/catalogue. Nil
 	// means the catalogue omits local-endpoint entries.
 	EndpointModels func() []string
+	// Pipeline, when non-nil, registers the live pipeline view routes: GET
+	// /pipeline/state, GET /pipeline/events (SSE) and GET /pipeline/report,
+	// behind the same bearer-token auth as the session routes. Nil skips
+	// registering them.
+	Pipeline *PipelineDeps
 }
 
 // Options carries per-deployment settings that used to be read from the
@@ -340,6 +345,19 @@ func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 	if d.Devices != nil {
 		// S4 APNs device registration, same bearer+HMAC auth as /session.
 		mux.Handle("POST /devices", limited(sessionAuth(token, devicesHandler(d.Devices))))
+	}
+	if d.Pipeline != nil {
+		// Live pipeline view (pipeline piece 5): same bearer-token auth as
+		// the rest, via sessionAuth, applied through the same wrap style as
+		// sessionWrap above.
+		hub := d.Pipeline.Hub
+		if hub == nil {
+			hub = NewPipelineHub()
+		}
+		pipeWrap := func(h http.Handler) http.Handler { return limited(sessionAuth(token, h)) }
+		mux.Handle("GET /pipeline/state", pipeWrap(pipelineStateHandler(d.Pipeline.Root)))
+		mux.Handle("GET /pipeline/events", pipeWrap(pipelineEventsHandler(hub)))
+		mux.Handle("GET /pipeline/report", pipeWrap(pipelineReportHandler(d.Pipeline.Root)))
 	}
 	return mux, nil
 }
