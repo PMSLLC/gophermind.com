@@ -47,18 +47,31 @@ type FallbackRunner struct {
 	// dependency on modelcat.
 	Candidates func(t Task) []string
 
-	// LastAttempts holds every attempt made by the most recent Run call,
-	// in the order tried. It is reset at the start of each Run call, so a
-	// caller wanting to persist it (see execute.go's use of it) must read
-	// it immediately after Run returns, before Run is called again on the
-	// same FallbackRunner. Piece 2's execution is strictly sequential,
-	// which is exactly what makes that safe.
-	LastAttempts []Attempt
+	// OnAttempt, when set, is called with each attempt as it completes, in the
+	// order tried. It replaces a shared LastAttempts field that could only be
+	// read safely by a strictly sequential caller: once waves run tasks
+	// concurrently, two Run calls on one FallbackRunner would race on it, and
+	// the only thing preventing that was a copy performed at a single call
+	// site. A callback has no shared mutable state to race on.
+	//
+	// It also reports each attempt AS IT HAPPENS rather than after Run
+	// returns, which is what a live attempt log needs.
+	//
+	// It is called on the goroutine running the task, so an implementation
+	// that touches shared state must do its own synchronizing.
+	OnAttempt func(Attempt)
 }
 
 // Run implements TaskRunner.
 func (f *FallbackRunner) Run(ctx context.Context, t Task) (status string, detail string, err error) {
-	f.LastAttempts = nil
+	// Attempts are reported through OnAttempt as they happen. Nothing is kept
+	// on the receiver, so concurrent Run calls on one FallbackRunner cannot
+	// race and no caller has to copy the runner to stay safe.
+	recordAttempt := func(a Attempt) {
+		if f.OnAttempt != nil {
+			f.OnAttempt(a)
+		}
+	}
 
 	now := f.Now
 	if now == nil {
@@ -96,7 +109,7 @@ func (f *FallbackRunner) Run(ctx context.Context, t Task) (status string, detail
 
 		if runErr != nil {
 			reason := runErr.Error()
-			f.LastAttempts = append(f.LastAttempts, Attempt{
+			recordAttempt(Attempt{
 				Model:     model,
 				StartedAt: started,
 				Duration:  duration.String(),
@@ -112,7 +125,7 @@ func (f *FallbackRunner) Run(ctx context.Context, t Task) (status string, detail
 		if ok {
 			verdict = "pass"
 		}
-		f.LastAttempts = append(f.LastAttempts, Attempt{
+		recordAttempt(Attempt{
 			Model:     model,
 			StartedAt: started,
 			Duration:  duration.String(),

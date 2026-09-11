@@ -49,10 +49,12 @@ func fallbackTask(id string, models ...string) Task {
 
 func TestFallbackFirstCandidatePasses(t *testing.T) {
 	runner := &callRunner{byModel: map[string]scriptedResult{}}
+	var got []Attempt
 	f := &FallbackRunner{
-		Inner:  runner,
-		Verify: verifyFunc(func(context.Context, Task, string) (bool, string) { return true, "" }),
-		Now:    stepClock(time.Unix(0, 0), time.Second),
+		OnAttempt: func(a Attempt) { got = append(got, a) },
+		Inner:     runner,
+		Verify:    verifyFunc(func(context.Context, Task, string) (bool, string) { return true, "" }),
+		Now:       stepClock(time.Unix(0, 0), time.Second),
 	}
 
 	status, detail, err := f.Run(context.Background(), fallbackTask("01-01", "model-a", "model-b"))
@@ -68,18 +70,20 @@ func TestFallbackFirstCandidatePasses(t *testing.T) {
 	if len(runner.models) != 1 || runner.models[0] != "model-a" {
 		t.Errorf("inner calls = %v, want [model-a] (second candidate must not run)", runner.models)
 	}
-	if len(f.LastAttempts) != 1 {
-		t.Fatalf("LastAttempts = %+v, want exactly 1 attempt", f.LastAttempts)
+	if len(got) != 1 {
+		t.Fatalf("attempts = %+v, want exactly 1 attempt", got)
 	}
-	if f.LastAttempts[0].Model != "model-a" || f.LastAttempts[0].Verdict != "pass" {
-		t.Errorf("attempt = %+v, want model-a/pass", f.LastAttempts[0])
+	if got[0].Model != "model-a" || got[0].Verdict != "pass" {
+		t.Errorf("attempt = %+v, want model-a/pass", got[0])
 	}
 }
 
 func TestFallbackFirstFailsSecondPasses(t *testing.T) {
 	runner := &callRunner{byModel: map[string]scriptedResult{}}
+	var got []Attempt
 	f := &FallbackRunner{
-		Inner: runner,
+		OnAttempt: func(a Attempt) { got = append(got, a) },
+		Inner:     runner,
 		Verify: verifyFunc(func(_ context.Context, _ Task, detail string) (bool, string) {
 			if detail == "output:model-a" {
 				return false, "missed the edge case"
@@ -102,24 +106,26 @@ func TestFallbackFirstFailsSecondPasses(t *testing.T) {
 	if len(runner.models) != 2 || runner.models[0] != "model-a" || runner.models[1] != "model-b" {
 		t.Errorf("inner calls = %v, want [model-a model-b] in order", runner.models)
 	}
-	if len(f.LastAttempts) != 2 {
-		t.Fatalf("LastAttempts = %+v, want 2 attempts", f.LastAttempts)
+	if len(got) != 2 {
+		t.Fatalf("attempts = %+v, want 2 attempts", got)
 	}
-	if f.LastAttempts[0].Model != "model-a" || f.LastAttempts[0].Verdict != "fail" {
-		t.Errorf("attempt[0] = %+v, want model-a/fail", f.LastAttempts[0])
+	if got[0].Model != "model-a" || got[0].Verdict != "fail" {
+		t.Errorf("attempt[0] = %+v, want model-a/fail", got[0])
 	}
-	if f.LastAttempts[0].Reason != "missed the edge case" {
-		t.Errorf("attempt[0].Reason = %q, want the specific reason", f.LastAttempts[0].Reason)
+	if got[0].Reason != "missed the edge case" {
+		t.Errorf("attempt[0].Reason = %q, want the specific reason", got[0].Reason)
 	}
-	if f.LastAttempts[1].Model != "model-b" || f.LastAttempts[1].Verdict != "pass" {
-		t.Errorf("attempt[1] = %+v, want model-b/pass", f.LastAttempts[1])
+	if got[1].Model != "model-b" || got[1].Verdict != "pass" {
+		t.Errorf("attempt[1] = %+v, want model-b/pass", got[1])
 	}
 }
 
 func TestFallbackAllCandidatesFail(t *testing.T) {
 	runner := &callRunner{byModel: map[string]scriptedResult{}}
+	var got []Attempt
 	f := &FallbackRunner{
-		Inner: runner,
+		OnAttempt: func(a Attempt) { got = append(got, a) },
+		Inner:     runner,
 		Verify: verifyFunc(func(_ context.Context, _ Task, detail string) (bool, string) {
 			return false, "wrong output for " + detail
 		}),
@@ -136,17 +142,17 @@ func TestFallbackAllCandidatesFail(t *testing.T) {
 	if len(runner.models) != 3 {
 		t.Fatalf("inner calls = %v, want exactly one per candidate (no infinite loop)", runner.models)
 	}
-	if len(f.LastAttempts) != 3 {
-		t.Fatalf("LastAttempts = %+v, want 3 attempts", f.LastAttempts)
+	if len(got) != 3 {
+		t.Fatalf("attempts = %+v, want 3 attempts", got)
 	}
 	for i, want := range []string{"model-a", "model-b", "model-c"} {
-		if f.LastAttempts[i].Model != want {
-			t.Errorf("attempt[%d].Model = %q, want %q", i, f.LastAttempts[i].Model, want)
+		if got[i].Model != want {
+			t.Errorf("attempt[%d].Model = %q, want %q", i, got[i].Model, want)
 		}
-		if f.LastAttempts[i].Verdict != "fail" {
-			t.Errorf("attempt[%d].Verdict = %q, want fail", i, f.LastAttempts[i].Verdict)
+		if got[i].Verdict != "fail" {
+			t.Errorf("attempt[%d].Verdict = %q, want fail", i, got[i].Verdict)
 		}
-		if f.LastAttempts[i].Reason == "" {
+		if got[i].Reason == "" {
 			t.Errorf("attempt[%d].Reason is empty, want a specific reason", i)
 		}
 	}
@@ -154,9 +160,11 @@ func TestFallbackAllCandidatesFail(t *testing.T) {
 
 func TestFallbackEmptyCandidateListIsError(t *testing.T) {
 	runner := &callRunner{byModel: map[string]scriptedResult{}}
+	var got []Attempt
 	f := &FallbackRunner{
-		Inner:  runner,
-		Verify: verifyFunc(func(context.Context, Task, string) (bool, string) { return true, "" }),
+		OnAttempt: func(a Attempt) { got = append(got, a) },
+		Inner:     runner,
+		Verify:    verifyFunc(func(context.Context, Task, string) (bool, string) { return true, "" }),
 	}
 
 	_, _, err := f.Run(context.Background(), Task{ID: "01-01", Status: StatusPending})
@@ -170,9 +178,11 @@ func TestFallbackEmptyCandidateListIsError(t *testing.T) {
 
 func TestFallbackUsesModelWhenCandidateModelsEmpty(t *testing.T) {
 	runner := &callRunner{byModel: map[string]scriptedResult{}}
+	var got []Attempt
 	f := &FallbackRunner{
-		Inner:  runner,
-		Verify: verifyFunc(func(context.Context, Task, string) (bool, string) { return true, "" }),
+		OnAttempt: func(a Attempt) { got = append(got, a) },
+		Inner:     runner,
+		Verify:    verifyFunc(func(context.Context, Task, string) (bool, string) { return true, "" }),
 	}
 
 	task := Task{ID: "01-01", Model: "strong", Status: StatusPending}
@@ -192,10 +202,12 @@ func TestFallbackContextCancelledMidListStopsPromptly(t *testing.T) {
 	runner := &callRunner{byModel: map[string]scriptedResult{
 		"model-b": {err: context.Canceled},
 	}}
+	var got []Attempt
 	f := &FallbackRunner{
-		Inner:  runner,
-		Verify: verifyFunc(func(context.Context, Task, string) (bool, string) { return false, "no good" }),
-		Now:    stepClock(time.Unix(0, 0), time.Second),
+		OnAttempt: func(a Attempt) { got = append(got, a) },
+		Inner:     runner,
+		Verify:    verifyFunc(func(context.Context, Task, string) (bool, string) { return false, "no good" }),
+		Now:       stepClock(time.Unix(0, 0), time.Second),
 	}
 
 	_, _, err := f.Run(context.Background(), fallbackTask("01-01", "model-a", "model-b", "model-c"))
@@ -205,30 +217,32 @@ func TestFallbackContextCancelledMidListStopsPromptly(t *testing.T) {
 	if len(runner.models) != 2 || runner.models[1] != "model-b" {
 		t.Fatalf("inner calls = %v, want [model-a model-b] (model-c must never run)", runner.models)
 	}
-	if len(f.LastAttempts) != 1 {
-		t.Errorf("LastAttempts = %+v, want only model-a's failed attempt recorded", f.LastAttempts)
+	if len(got) != 1 {
+		t.Errorf("attempts = %+v, want only model-a's failed attempt recorded", got)
 	}
 }
 
 func TestFallbackDurationsComeFromInjectedClock(t *testing.T) {
 	runner := &callRunner{byModel: map[string]scriptedResult{}}
+	var got []Attempt
 	f := &FallbackRunner{
-		Inner:  runner,
-		Verify: verifyFunc(func(context.Context, Task, string) (bool, string) { return true, "" }),
-		Now:    stepClock(time.Unix(1000, 0), 5*time.Second),
+		OnAttempt: func(a Attempt) { got = append(got, a) },
+		Inner:     runner,
+		Verify:    verifyFunc(func(context.Context, Task, string) (bool, string) { return true, "" }),
+		Now:       stepClock(time.Unix(1000, 0), 5*time.Second),
 	}
 
 	if _, _, err := f.Run(context.Background(), fallbackTask("01-01", "model-a")); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if len(f.LastAttempts) != 1 {
-		t.Fatalf("LastAttempts = %+v, want 1 attempt", f.LastAttempts)
+	if len(got) != 1 {
+		t.Fatalf("attempts = %+v, want 1 attempt", got)
 	}
-	got := f.LastAttempts[0]
-	if !got.StartedAt.Equal(time.Unix(1000, 0)) {
-		t.Errorf("StartedAt = %v, want %v", got.StartedAt, time.Unix(1000, 0))
+	a := got[0]
+	if !a.StartedAt.Equal(time.Unix(1000, 0)) {
+		t.Errorf("StartedAt = %v, want %v", a.StartedAt, time.Unix(1000, 0))
 	}
-	if got.Duration != (5 * time.Second).String() {
-		t.Errorf("Duration = %q, want %q", got.Duration, (5 * time.Second).String())
+	if a.Duration != (5 * time.Second).String() {
+		t.Errorf("Duration = %q, want %q", a.Duration, (5 * time.Second).String())
 	}
 }

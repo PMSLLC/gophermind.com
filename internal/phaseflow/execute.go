@@ -463,25 +463,22 @@ func runSingleTask(ctx context.Context, root string, runner TaskRunner, attempt 
 		return waveTaskResult{err: err}
 	}
 
-	// FallbackRunner exposes its per-model attempts through a shared
-	// LastAttempts field on the runner - safe for the strictly sequential
-	// caller it was built for (see fallback.go), but not for two tasks
-	// calling Run concurrently on the same instance. A shallow copy gives
-	// each call its own LastAttempts slot: Inner, Verify, Now and
-	// Candidates are read-only dependencies, safe to share.
+	// FallbackRunner reports each attempt through OnAttempt as it happens.
+	// Collecting them into a local slice keeps this goroutine's attempts its
+	// own, so two tasks in a wave calling Run on the same runner cannot
+	// interfere. The runner holds no per-call state, so it needs no copy.
+	var attempts []Attempt
 	callRunner := runner
-	var fr *FallbackRunner
 	if orig, ok := runner.(*FallbackRunner); ok {
 		cp := *orig
-		cp.LastAttempts = nil
-		fr = &cp
+		cp.OnAttempt = func(a Attempt) { attempts = append(attempts, a) }
 		callRunner = &cp
 	}
 
 	status, detail, runErr := callRunner.Run(ctx, attempt)
 
-	if fr != nil && len(fr.LastAttempts) > 0 {
-		if err := updateTaskAttempts(root, id, fr.LastAttempts); err != nil {
+	if len(attempts) > 0 {
+		if err := updateTaskAttempts(root, id, attempts); err != nil {
 			return waveTaskResult{err: err}
 		}
 	}
