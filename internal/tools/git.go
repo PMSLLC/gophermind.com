@@ -5,8 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strings"
+
+	"gophermind/internal/gitenv"
 )
 
 // GitInfo returns a read-only, structured git tool. It exposes a fixed set of
@@ -130,8 +131,7 @@ func gitDiff(ctx context.Context, root, path string) (string, error) {
 // runGit executes a git subcommand in root and returns its stdout. Errors carry
 // git's stderr so the model can see what went wrong.
 func runGit(ctx context.Context, root string, args []string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = root
+	cmd := gitenv.CommandContext(ctx, root, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gophermind/internal/gitenv"
 )
 
 func initRepo(t *testing.T) string {
@@ -20,9 +22,7 @@ func initRepo(t *testing.T) string {
 		{"config", "user.email", "t@example.com"},
 		{"config", "user.name", "Tester"},
 	} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
+		if out, err := gitenv.Command(dir, args...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
@@ -34,9 +34,7 @@ func initRepo(t *testing.T) string {
 func commit(t *testing.T, dir, msg string) {
 	t.Helper()
 	for _, args := range [][]string{{"add", "-A"}, {"commit", "-q", "-m", msg}} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
+		if out, err := gitenv.Command(dir, args...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}

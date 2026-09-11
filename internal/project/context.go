@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"sort"
 	"strings"
 	"time"
+
+	"gophermind/internal/gitenv"
 )
 
 // maxContextEntries caps how many top-level entries and status lines are shown
@@ -77,12 +78,13 @@ func topLevelEntries(root string) []string {
 }
 
 // gitOutput runs a read-only git command in root and returns its stdout, or ""
-// on any error (e.g. not a repo).
+// on any error (e.g. not a repo). Uses gitenv so an inherited GIT_DIR (which
+// every git hook exports) cannot redirect it at some other repository; see
+// internal/gitenv for the incident that made this necessary.
 func gitOutput(root string, args ...string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = root
+	cmd := gitenv.CommandContext(ctx, root, args...)
 	out, err := cmd.Output()
 	if err != nil {
 		return ""

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"gophermind/internal/gitenv"
 	"gophermind/internal/llm"
 )
 
@@ -41,20 +42,22 @@ func RepoMap(root string) (string, error) {
 }
 
 // GitContext returns git-aware context: branch, status, recent diff.
+//
+// Every git call here goes through gitenv so an inherited GIT_DIR (which
+// every git hook exports) cannot redirect it at some other repository; see
+// internal/gitenv for the incident that made this necessary.
 func GitContext(root string) (string, error) {
 	var b strings.Builder
 
 	// Current branch.
-	branchCmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
-	branchCmd.Dir = root
+	branchCmd := gitenv.Command(root, "rev-parse", "--abbrev-ref", "HEAD")
 	branchOut, err := branchCmd.Output()
 	if err == nil {
 		fmt.Fprintf(&b, "branch: %s\n", strings.TrimSpace(string(branchOut)))
 	}
 
 	// Status summary.
-	statusCmd := exec.Command("git", "status", "--porcelain")
-	statusCmd.Dir = root
+	statusCmd := gitenv.Command(root, "status", "--porcelain")
 	statusOut, err := statusCmd.Output()
 	if err == nil {
 		status := strings.TrimSpace(string(statusOut))
@@ -70,8 +73,7 @@ func GitContext(root string) (string, error) {
 	}
 
 	// Recent commits.
-	logCmd := exec.Command("git", "log", "--oneline", "-5")
-	logCmd.Dir = root
+	logCmd := gitenv.Command(root, "log", "--oneline", "-5")
 	logOut, err := logCmd.Output()
 	if err == nil {
 		fmt.Fprintf(&b, "recent commits:\n")
