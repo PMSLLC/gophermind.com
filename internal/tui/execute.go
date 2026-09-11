@@ -117,13 +117,30 @@ func (m model) handleProjectExecuteCommand() (model, tea.Cmd) {
 // renderExecOutcome formats one finished task's line for the transcript, e.g.
 // "✓ 02-01 done" / "✓ 02-02 corrected" / "✗ 02-03 failed: <detail>".
 func renderExecOutcome(o phaseflow.TaskOutcome) string {
-	if o.Status == phaseflow.StatusFailed {
+	switch o.Status {
+	case phaseflow.StatusFailed:
 		return "✗ " + o.ID + " failed: " + o.Detail
+	case phaseflow.StatusNeedsRevision:
+		// Not a success. Every candidate model failed this task, so it is
+		// waiting on a revised definition. A checkmark here would read as
+		// "fine" on the one outcome that most needs attention.
+		return "⚠ " + o.ID + " needs revision: " + o.Detail
+	case phaseflow.StatusEscalated:
+		return "⚠ " + o.ID + " escalated, needs human input: " + o.Detail
 	}
 	return "✓ " + o.ID + " " + o.Status
 }
 
 // renderExecSummary formats the final run summary line.
 func renderExecSummary(s phaseflow.RunSummary) string {
-	return fmt.Sprintf("run complete: %d done, %d corrected, %d failed", s.Done, s.Corrected, s.Failed)
+	line := fmt.Sprintf("run complete: %d done, %d corrected, %d failed", s.Done, s.Corrected, s.Failed)
+	// Only mentioned when non-zero, so an ordinary run reads exactly as before,
+	// but the counts always add up to the tasks actually attempted.
+	if s.NeedsRevision > 0 {
+		line += fmt.Sprintf(", %d need revision", s.NeedsRevision)
+	}
+	if s.Escalated > 0 {
+		line += fmt.Sprintf(", %d escalated", s.Escalated)
+	}
+	return line
 }

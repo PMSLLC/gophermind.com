@@ -29,7 +29,13 @@ type RunSummary struct {
 	Done      int
 	Corrected int
 	Failed    int
-	Outcomes  []TaskOutcome
+	// NeedsRevision and Escalated are counted separately rather than folded
+	// into Failed. A task that exhausted its candidate models has not failed
+	// in the ordinary sense, it is waiting on a revised definition, and a
+	// summary that omitted them would not add up to the number of tasks run.
+	NeedsRevision int
+	Escalated     int
+	Outcomes      []TaskOutcome
 }
 
 // TaskRunner executes a single task and reports its terminal status. Status
@@ -117,6 +123,10 @@ func ExecuteWithRounds(ctx context.Context, root string, runner TaskRunner, emit
 			summary.Corrected++
 		case StatusFailed:
 			summary.Failed++
+		case StatusNeedsRevision:
+			summary.NeedsRevision++
+		case StatusEscalated:
+			summary.Escalated++
 		}
 	}
 	return summary, nil
@@ -259,6 +269,10 @@ func executeOnce(ctx context.Context, root string, runner TaskRunner, emit func(
 			summary.Corrected++
 		case StatusFailed:
 			summary.Failed++
+		case StatusNeedsRevision:
+			summary.NeedsRevision++
+		case StatusEscalated:
+			summary.Escalated++
 		}
 		if emit != nil {
 			emit(outcome)

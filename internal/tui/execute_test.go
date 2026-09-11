@@ -186,3 +186,32 @@ func TestExecDoneMsgReset(t *testing.T) {
 		t.Errorf("transcript missing failed count: %q", mm.content)
 	}
 }
+
+// A task that exhausted every candidate model must not render as a success.
+// It rendered as "✓ id needs_revision" before, which reads as fine on the one
+// outcome that most needs attention.
+func TestRenderExecOutcomeDoesNotTickNeedsRevision(t *testing.T) {
+	got := renderExecOutcome(phaseflow.TaskOutcome{
+		ID: "subs-endpoint", Status: phaseflow.StatusNeedsRevision, Detail: "3 models failed",
+	})
+	if strings.Contains(got, "✓") {
+		t.Errorf("needs_revision rendered with a success tick: %q", got)
+	}
+	if !strings.Contains(got, "needs revision") {
+		t.Errorf("needs_revision does not say so: %q", got)
+	}
+}
+
+// The summary must account for every task attempted, not silently drop the
+// ones waiting on a revision.
+func TestRenderExecSummaryCountsNeedsRevision(t *testing.T) {
+	got := renderExecSummary(phaseflow.RunSummary{Done: 2, NeedsRevision: 1})
+	if !strings.Contains(got, "1 need revision") {
+		t.Errorf("summary omits needs_revision: %q", got)
+	}
+	// An ordinary run must read exactly as it did before.
+	plain := renderExecSummary(phaseflow.RunSummary{Done: 3, Corrected: 1})
+	if strings.Contains(plain, "need revision") || strings.Contains(plain, "escalated") {
+		t.Errorf("summary added noise to an ordinary run: %q", plain)
+	}
+}
