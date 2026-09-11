@@ -85,17 +85,57 @@ func SettingsPath() string {
 	return filepath.Join(filepath.Dir(freellm.OdometerPath()), settingsFileName)
 }
 
-// LoadSettings reads the settings at path. A missing or corrupt file yields
-// DefaultSettings rather than an error: a damaged preference file must never
-// block a turn.
+// restrictiveSettings returns DefaultSettings with every free-tier terms
+// flag excluded. It is the fail-closed value for the cases where the user's
+// real settings could not be read.
+//
+// ExcludedTerms is a legal constraint, not a preference: a provider whose
+// terms the user excluded must never be auto-selected. So when the list is
+// unknown, the safe direction is to exclude every term it could have named
+// rather than none of them. The wrong guess then costs the user a shorter
+// picker until the file is fixed, instead of silently re-enabling exactly
+// what they excluded.
+//
+// A new flag added to freellm.Terms must be set here too.
+func restrictiveSettings() Settings {
+	s := DefaultSettings()
+	s.ExcludedTerms = freellm.TermsFlags(freellm.Terms{
+		NonCommercial:   true,
+		TrainsOnPrompts: true,
+		IdentityCheck:   true,
+	})
+	return s
+}
+
+// LoadSettings reads the settings at path.
+//
+// A file that does not exist yet is the normal first-run case: it yields
+// DefaultSettings with a nil error, so a fresh install starts with no
+// exclusions because the user has genuinely set none.
+//
+// Any other read failure - permission denied, an IO error, the path being a
+// directory - is a real failure and is returned as one. It must not read
+// like a first run: doing so discards the user's ExcludedTerms, which exist
+// for legal reasons, along with every other preference, on nothing worse
+// than a transient error.
+//
+// A file that is present but unparseable cannot yield the user's real
+// preferences either, but reporting it would break the standing promise
+// that a damaged preference file never blocks a turn. It therefore yields
+// restrictiveSettings with a nil error: defaults, with every terms flag
+// excluded rather than none. The same value accompanies the error on a read
+// failure, so a caller that ignores the error still fails closed.
 func LoadSettings(path string) (Settings, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return DefaultSettings(), nil
+		if os.IsNotExist(err) {
+			return DefaultSettings(), nil
+		}
+		return restrictiveSettings(), fmt.Errorf("modelcat: read settings %s: %w", path, err)
 	}
 	var s Settings
 	if err := json.Unmarshal(b, &s); err != nil {
-		return DefaultSettings(), nil
+		return restrictiveSettings(), nil
 	}
 	return s, nil
 }

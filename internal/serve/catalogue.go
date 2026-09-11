@@ -22,7 +22,15 @@ func catalogueHandler(endpointModels func() []string) http.HandlerFunc {
 			return
 		}
 		o, _ := freellm.LoadOdometer(freellm.OdometerPath())
-		s, _ := modelcat.LoadSettings(modelcat.SettingsPath())
+		// A settings read failure is reported rather than absorbed: the
+		// catalogue is filtered by the user's exclusions, so rendering it
+		// from settings that are not theirs would show, as selectable,
+		// providers they excluded for legal reasons.
+		s, err := modelcat.LoadSettings(modelcat.SettingsPath())
+		if err != nil {
+			http.Error(w, fmt.Sprintf("could not read your model settings: %v", err), http.StatusInternalServerError)
+			return
+		}
 		var models []string
 		if endpointModels != nil {
 			models = endpointModels()
@@ -44,7 +52,11 @@ func settingsGetHandler() http.HandlerFunc {
 			http.Error(w, "use GET", http.StatusMethodNotAllowed)
 			return
 		}
-		s, _ := modelcat.LoadSettings(modelcat.SettingsPath())
+		s, err := modelcat.LoadSettings(modelcat.SettingsPath())
+		if err != nil {
+			http.Error(w, fmt.Sprintf("could not read your model settings: %v", err), http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(s)
 	}
@@ -80,7 +92,14 @@ func settingsPatchHandler() http.HandlerFunc {
 				return
 			}
 		}
-		current, _ := modelcat.LoadSettings(modelcat.SettingsPath())
+		// The stored settings are this patch's merge base, so a failed read
+		// would persist a base that is not the user's, permanently dropping
+		// preferences and exclusions the file still holds. Refuse instead.
+		current, err := modelcat.LoadSettings(modelcat.SettingsPath())
+		if err != nil {
+			http.Error(w, fmt.Sprintf("could not read your model settings, so nothing was changed: %v", err), http.StatusInternalServerError)
+			return
+		}
 		if err := json.Unmarshal(body, &current); err != nil {
 			http.Error(w, "invalid JSON body", http.StatusBadRequest)
 			return

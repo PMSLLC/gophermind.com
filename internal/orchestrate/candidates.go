@@ -30,7 +30,12 @@ import (
 // the same single-model behaviour plans had before candidates existed.
 func DefaultCandidates(baseURL string) func(t phaseflow.Task) []string {
 	o, _ := freellm.LoadOdometer(freellm.OdometerPath())
-	s, _ := modelcat.LoadSettings(modelcat.SettingsPath())
+	// A settings read failure cannot fail here: this builds a function, and
+	// a plan must still run. What it must not do is widen the candidate list
+	// using exclusions that are not the user's, so on a failed read the list
+	// collapses to the task's own model and no automatic expansion happens.
+	s, err := modelcat.LoadSettings(modelcat.SettingsPath())
+	settingsKnown := err == nil
 	entries := modelcat.Build(o, s, nil, time.Now())
 
 	// The profile whose endpoint this runner is actually pointed at. Empty
@@ -60,7 +65,7 @@ func DefaultCandidates(baseURL string) func(t phaseflow.Task) []string {
 		// an unrecognised endpoint it is the only thing that can work.
 		add(t.Model)
 
-		if profile != "" {
+		if profile != "" && settingsKnown {
 			for _, id := range modelcat.OrderedCandidates(entries, s) {
 				if sameProfile(entries, id, profile) {
 					add(id)
