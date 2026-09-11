@@ -143,8 +143,10 @@ the order follow the user between the desktop app, the TUI and iOS.
 
 ### 4. Proactive cycling
 
-A model is **near capacity at 90 percent** of a published quota within that
-quota's window. When the active model crosses that line, the next reachable
+A model is **near capacity at the configured threshold** (default 90 percent)
+of a published quota within that quota's window. The threshold is a setting,
+not a constant: a 2 RPM anonymous tier and a 10,000 RPD tier want very
+different values. When the active model crosses that line, the next reachable
 model in preference order becomes active.
 
 **Why switching happens between turns, never inside one.** A turn's context is
@@ -179,8 +181,37 @@ Four filters, because a 118-entry catalogue is otherwise unusable:
 3. **Terms**, to exclude non-commercial or trains-on-prompts providers.
 4. **Provider and modality.**
 
-**Settings panel**: drag to reorder preference. An unreachable model states what
-would fix it, naming the exact environment variable.
+**Settings panel.** Every judgment call in this design is a setting, not a
+constant. A default that cannot be changed is a decision imposed on the user,
+and the ones below are exactly the choices someone will reasonably disagree
+with.
+
+| Setting | Default | Why it is a setting |
+|---|---|---|
+| Model preference order | Registry order: no-key providers first | The core of the feature. Drag to reorder. |
+| Cycle automatically on capacity | Off | Some users want to know rather than be moved. |
+| Capacity threshold | 90 percent | 90 is a guess. A user on a 2 RPM tier wants to switch far earlier than one on 10,000 RPD. |
+| When every model is near capacity | Stay on the current one | The alternative, stop and ask, is legitimate for someone who must not exceed a free tier. |
+| Default filter: reachability | Usable now | Determines whether the dropdown opens short or complete. |
+| Default filter: has capacity left | Off | Hiding exhausted models is helpful to some, confusing to others who wonder where a model went. |
+| Excluded terms | None excluded | The real safety control. Excluding non-commercial and trains-on-prompts providers makes them unusable everywhere, including by automatic cycling, so client work cannot silently land on Gemini's free tier. |
+| Provider and modality filters | All shown | Ordinary narrowing. |
+| Endpoint: embedded or remote | Embedded | From the desktop app spec; it belongs in the same panel rather than a second one. |
+
+Two properties this panel must have:
+
+- **An exclusion is an exclusion.** A provider excluded by terms is removed
+  from cycling and from `Fallbacks`, not merely hidden from the dropdown. A
+  filter that only affects display would let automatic cycling select the very
+  provider the user excluded, which is the worst possible failure for the one
+  setting that exists for legal reasons.
+- **Unreachable models state their remedy.** Not "unavailable" but the exact
+  variable to set, for example `GOPHERMIND_PROFILE_FREE_GROQ_API_KEY`, so the
+  panel doubles as the instructions for widening what is reachable.
+
+Settings persist server-side beside the preference order, so they follow the
+user between the desktop app, the TUI and iOS, and so an exclusion made in one
+client cannot be bypassed by another.
 
 ### 6. Links
 
@@ -197,7 +228,7 @@ would fix it, naming the exact environment variable.
 | Catalogue assembly cannot reach the active endpoint | Return registry entries and mark the endpoint's own models unavailable with the error text. Never fail the whole catalogue. |
 | Preferences file missing or corrupt | Fall back to registry order, log once, rewrite on next change. Never block a turn. |
 | Preference names a model no longer in the catalogue | Skip it when cycling, keep it in the stored list, show it greyed in settings. Upstream removing a model must not silently reorder the user's list. |
-| Every preferred model is near capacity | Stay on the current model and surface it. Refusing to run is worse than one 429. |
+| Every preferred model is near capacity | Follow the configured choice: stay on the current model (default, since refusing to run is worse than one 429) or stop and ask, for a user who must not exceed a free tier. |
 | A model's quota did not parse | Never auto-switch away from it; there is no line to cross. |
 
 ## Testing
