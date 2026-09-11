@@ -98,7 +98,9 @@ func startEmbeddedServer(parent context.Context) (*embeddedServer, error) {
 		cancel:  cancel,
 		done:    make(chan error, 1),
 	}
-	go func() { s.done <- serve.Serve(ctx, ln, mux) }()
+	// The Wails WebView serves the frontend from its own origin, so every
+	// call it makes here is cross-origin. withCORS allows exactly that origin.
+	go func() { s.done <- serve.Serve(ctx, ln, withCORS(mux)) }()
 	go resolveLLMBackend(ctx, cfg, holder, status)
 	return s, nil
 }

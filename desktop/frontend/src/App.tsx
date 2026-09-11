@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ApiClient, type BackendStatus } from './api/client'
-import { getEndpoint } from './api/wails'
+import { waitForEndpoint } from './api/wails'
 
 interface TranscriptLine {
   role: 'user' | 'assistant' | 'system'
@@ -69,7 +69,10 @@ export default function App() {
     let cancelled = false
     ;(async () => {
       try {
-        const endpoint = await getEndpoint()
+        const endpoint = await waitForEndpoint()
+        // Diagnostic: name the endpoint in the status line so a failure below
+        // says WHICH url could not be reached, not just "Load failed".
+        setStatusDetail(`endpoint ${endpoint.baseURL} (token ${endpoint.token ? 'present' : 'MISSING'})`)
         const client = new ApiClient(endpoint.baseURL, endpoint.token)
         clientRef.current = client
         const session = await client.createSession()
@@ -89,6 +92,8 @@ export default function App() {
         setStatus('ready')
         setStatusDetail(`session ${session.id}`)
       } catch (err) {
+        // Include the resolved endpoint so an opaque WebView error ("Load
+        // failed") still tells us what it was trying to reach.
         if (cancelled) return
         const message = err instanceof Error ? err.message : String(err)
         setStatus('error')

@@ -36,3 +36,33 @@ export async function getEndpoint(): Promise<EndpointInfo> {
   }
   return endpoint()
 }
+
+/**
+ * waitForEndpoint polls getEndpoint until the embedded server has started.
+ *
+ * The frontend mounts before the Go side finishes binding its listener, so the
+ * first call reliably rejects with "embedded server is still starting". That
+ * is expected, not an error worth showing: this retries until the server is up
+ * or the budget runs out, and only then reports a failure.
+ */
+export async function waitForEndpoint(
+  timeoutMs = 30000,
+  intervalMs = 250,
+): Promise<EndpointInfo> {
+  const deadline = Date.now() + timeoutMs
+  let lastErr: unknown
+  for (;;) {
+    try {
+      const ep = await getEndpoint()
+      if (ep.baseURL) return ep
+      lastErr = new Error('embedded server reported no base URL')
+    } catch (err) {
+      lastErr = err
+    }
+    if (Date.now() >= deadline) {
+      const detail = lastErr instanceof Error ? lastErr.message : String(lastErr)
+      throw new Error(`embedded server did not start within ${timeoutMs / 1000}s: ${detail}`)
+    }
+    await new Promise((r) => setTimeout(r, intervalMs))
+  }
+}

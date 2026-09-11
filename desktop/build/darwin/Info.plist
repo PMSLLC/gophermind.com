@@ -59,5 +59,16 @@
           {{end}}
         </array>
         {{end}}
+        <key>NSAppTransportSecurity</key>
+        <dict>
+            <!-- The app talks to its own embedded server over plain HTTP on a
+                 loopback listener. App Transport Security blocks cleartext by
+                 default, which makes every fetch from the WebView fail with
+                 "Load failed". Info.dev.plist already carried this; the
+                 production template did not, so `wails build` shipped an app
+                 that could not reach its own backend. -->
+            <key>NSAllowsLocalNetworking</key>
+            <true/>
+        </dict>
     </dict>
 </plist>
