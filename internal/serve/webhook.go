@@ -9,9 +9,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"gophermind/internal/session"
 )
@@ -210,33 +212,73 @@ func serveToken() (string, error) {
 	return token, nil
 }
 
-// Run starts the webhook HTTP server, dispatching each POST /run to run.
-// metrics (when non-nil) counts requests/errors and is exposed on /metrics.
-// stream (when non-nil) backs a POST /run/stream Server-Sent-Events endpoint.
-// sessionTurn (when non-nil) backs the session-backed multi-turn endpoints
-// (POST /session, POST /session/{id}/stream, GET /session, DELETE
-// /session/{id}); nil skips registering them, mirroring metrics/stream.
-// approvals (when non-nil, alongside sessionTurn) additionally registers POST
-// /session/{id}/approve, resolving a pending remote tool-approval gate.
-// devStore (when non-nil) registers POST /devices (S4 APNs device
-// registration), behind the same sessionAuth as the /session routes.
-// sessionMessages (when non-nil, alongside sessionTurn) additionally
-// registers GET /session/{id}/messages, returning a session's stored
-// conversation for history replay.
-func Run(run func(ctx context.Context, task string) (string, error), metrics *ServeMetrics, stream func(ctx context.Context, task string, emit func(string)) error, sessionTurn SessionTurn, approvals *approvalRegistry, devStore *deviceStore, sessionMessages func(id string) ([]json.RawMessage, bool, error), listModels func() ([]string, error)) error {
-	token, err := serveToken()
-	if err != nil {
-		return err
+// Deps is everything the mux needs. A nil func or pointer disables the
+// routes that depend on it, exactly as the old positional nils did.
+type Deps struct {
+	// Run backs POST /run: it executes one task and returns the answer.
+	Run func(ctx context.Context, task string) (string, error)
+	// Stream backs POST /run/stream. Nil skips registering that route.
+	Stream func(ctx context.Context, task string, emit func(string)) error
+	// Metrics, when non-nil, counts requests/errors and is exposed on
+	// /metrics.
+	Metrics *ServeMetrics
+	// SessionTurn, when non-nil, backs the session-backed multi-turn
+	// endpoints (POST /session, POST /session/{id}/stream, GET /session,
+	// DELETE /session/{id}); nil skips registering them.
+	SessionTurn SessionTurn
+	// Approvals, when non-nil alongside SessionTurn, additionally registers
+	// POST /session/{id}/approve, resolving a pending remote tool-approval
+	// gate.
+	Approvals *approvalRegistry
+	// Devices, when non-nil, registers POST /devices (S4 APNs device
+	// registration), behind the same sessionAuth as the /session routes.
+	Devices *deviceStore
+	// SessionMessages, when non-nil alongside SessionTurn, additionally
+	// registers GET /session/{id}/messages, returning a session's stored
+	// conversation for history replay.
+	SessionMessages func(id string) ([]json.RawMessage, bool, error)
+	// ListModels, when non-nil alongside SessionTurn, additionally
+	// registers GET /models.
+	ListModels func() ([]string, error)
+}
+
+// Options carries per-deployment settings that used to be read from the
+// environment inside Run.
+type Options struct {
+	// Token is the bearer token every task-running route requires. Empty
+	// means "read GOPHERMIND_SERVE_TOKEN". NewMux returns an error if both
+	// are empty: this endpoint runs shell commands and must never be open.
+	Token string
+}
+
+// resolveToken determines the bearer token NewMux enforces: an explicit
+// Options.Token takes precedence over GOPHERMIND_SERVE_TOKEN. It returns
+// serveToken's own error, unchanged, when neither is set.
+func resolveToken(opt Options) (string, error) {
+	if opt.Token != "" {
+		return opt.Token, nil
 	}
-	addr := serveAddr()
+	return serveToken()
+}
+
+// NewMux builds and validates the webhook HTTP handler from d and opt but
+// does not listen. It returns an error when no bearer token is available
+// (see Options.Token), since this endpoint runs shell commands and file
+// writes and must never start unauthenticated.
+func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
+	token, err := resolveToken(opt)
+	if err != nil {
+		return nil, err
+	}
+	run := d.Run
 	// Wrap run to record request/error counters for the metrics endpoint.
-	if metrics != nil {
+	if d.Metrics != nil {
 		inner := run
 		run = func(ctx context.Context, task string) (string, error) {
-			metrics.requests.Add(1)
+			d.Metrics.requests.Add(1)
 			out, err := inner(ctx, task)
 			if err != nil {
-				metrics.errors.Add(1)
+				d.Metrics.errors.Add(1)
 			}
 			return out, err
 		}
@@ -258,51 +300,73 @@ func Run(run func(ctx context.Context, task string) (string, error), metrics *Se
 	// Unauthenticated liveness/readiness probes for load balancers / k8s.
 	mux.HandleFunc("/healthz", healthHandler())
 	mux.HandleFunc("/readyz", readyHandler(func() bool { return true }))
-	if metrics != nil {
-		mux.HandleFunc("/metrics", metricsHandler(metrics))
+	if d.Metrics != nil {
+		mux.HandleFunc("/metrics", metricsHandler(d.Metrics))
 	}
-	if stream != nil {
+	if d.Stream != nil {
 		// Same auth (bearer + HMAC) and rate limit as /run — full sibling parity.
-		mux.Handle("/run/stream", limited(sseHandler(stream, token)))
+		mux.Handle("/run/stream", limited(sseHandler(d.Stream, token)))
 	}
-	if sessionTurn != nil {
+	if d.SessionTurn != nil {
 		// Session endpoints share /run's bearer+HMAC auth (via sessionAuth) and
 		// rate limit (via limited), applied uniformly at registration since the
 		// handlers themselves take no auth params (see session_serve.go).
 		locks := newSessionLocks()
 		sessionWrap := func(h http.Handler) http.Handler { return limited(sessionAuth(token, h)) }
 		mux.Handle("POST /session", sessionWrap(sessionCreateHandler()))
-		mux.Handle("POST /session/{id}/stream", sessionWrap(sessionStreamHandler(sessionTurn, locks)))
+		mux.Handle("POST /session/{id}/stream", sessionWrap(sessionStreamHandler(d.SessionTurn, locks)))
 		mux.Handle("GET /session", sessionWrap(sessionListHandler(session.List)))
 		mux.Handle("DELETE /session/{id}", sessionWrap(sessionDeleteHandler(session.Remove)))
 		mux.Handle("PATCH /session/{id}", sessionWrap(sessionRenameHandler(session.SetName)))
 		mux.Handle("GET /modes", sessionWrap(http.HandlerFunc(modesHandler)))
 		mux.Handle("GET /session/{id}/config", sessionWrap(sessionConfigHandler()))
-		if sessionMessages != nil {
-			mux.Handle("GET /session/{id}/messages", sessionWrap(sessionMessagesHandler(sessionMessages)))
+		if d.SessionMessages != nil {
+			mux.Handle("GET /session/{id}/messages", sessionWrap(sessionMessagesHandler(d.SessionMessages)))
 		}
-		if approvals != nil {
-			mux.Handle("POST /session/{id}/approve", sessionWrap(sessionApproveHandler(approvals)))
+		if d.Approvals != nil {
+			mux.Handle("POST /session/{id}/approve", sessionWrap(sessionApproveHandler(d.Approvals)))
 		}
-		if listModels != nil {
-			mux.Handle("GET /models", sessionWrap(modelsHandler(listModels)))
+		if d.ListModels != nil {
+			mux.Handle("GET /models", sessionWrap(modelsHandler(d.ListModels)))
 		}
 	}
-	if devStore != nil {
+	if d.Devices != nil {
 		// S4 APNs device registration, same bearer+HMAC auth as /session.
-		mux.Handle("POST /devices", limited(sessionAuth(token, devicesHandler(devStore))))
+		mux.Handle("POST /devices", limited(sessionAuth(token, devicesHandler(d.Devices))))
 	}
-	fmt.Fprintf(os.Stderr, "gophermind serving on %s (POST /run, /run/stream; /healthz /readyz)\n", addr)
-	if sessionTurn != nil {
-		remote := "local approval"
-		if ServeApprovalRemote() {
-			remote = "remote approval"
+	return mux, nil
+}
+
+// Serve listens on ln and serves h until ctx is cancelled, at which point it
+// shuts the server down gracefully (10 second timeout) and returns. It also
+// returns promptly, without waiting for ctx, if the listener itself fails
+// (for example a port conflict or the listener being closed out from under
+// it) before ctx is ever cancelled.
+func Serve(ctx context.Context, ln net.Listener, h http.Handler) error {
+	srv := &http.Server{Handler: h}
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- srv.Serve(ln) }()
+
+	select {
+	case err := <-serveErr:
+		// The server stopped on its own, before ctx was cancelled. Report
+		// that instead of blocking on a ctx.Done() that may never fire.
+		if err != nil && err != http.ErrServerClosed {
+			return err
 		}
-		apns := "APNs disabled"
-		if devStore != nil && LoadAPNsConfig().enabled() {
-			apns = "APNs configured"
+		return nil
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			return err
 		}
-		fmt.Fprintf(os.Stderr, "  sessions: POST /session, POST /session/{id}/stream, POST /session/{id}/approve, POST /devices (%s, %s)\n", remote, apns)
+		<-serveErr
+		return nil
 	}
-	return http.ListenAndServe(addr, mux)
+}
+
+// Addr returns the webhook listen address (GOPHERMIND_SERVE_ADDR or :8080).
+func Addr() string {
+	return serveAddr()
 }

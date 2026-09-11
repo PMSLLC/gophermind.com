@@ -63,6 +63,13 @@ func (c apnsConfig) enabled() bool {
 	return c.keyPath != "" && c.keyID != "" && c.teamID != "" && c.bundleID != ""
 }
 
+// APNsEnabled reports whether push notifications are configured, so a
+// caller building a startup banner can say whether APNs is available
+// without needing the unexported apnsConfig type.
+func APNsEnabled() bool {
+	return LoadAPNsConfig().enabled()
+}
+
 // host returns the APNs HTTP/2 host for the configured environment.
 func (c apnsConfig) host() string {
 	if c.env == "prod" {
