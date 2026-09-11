@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -227,5 +229,163 @@ func TestModelSwitchedFrameOnCycling(t *testing.T) {
 				t.Fatalf("cycling off: got an unexpected model-switched frame: %+v", *switchFrame)
 			}
 		})
+	}
+}
+
+// concurrentLLM is a stand-in OpenAI-compatible endpoint that holds every
+// chat request open until `want` of them are in flight, so two session turns
+// are guaranteed to overlap, and records which model each request actually
+// asked for, keyed by the task text carried in its messages.
+type concurrentLLM struct {
+	want int
+
+	mu      sync.Mutex
+	byTask  map[string]string
+	arrived int
+	both    chan struct{}
+}
+
+func newConcurrentLLM(want int) *concurrentLLM {
+	return &concurrentLLM{want: want, byTask: map[string]string{}, both: make(chan struct{})}
+}
+
+func (s *concurrentLLM) handler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/models") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[]}`))
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		var req struct {
+			Model string `json:"model"`
+		}
+		_ = json.Unmarshal(body, &req)
+
+		s.mu.Lock()
+		for _, task := range []string{"task-a", "task-b"} {
+			if strings.Contains(string(body), task) {
+				s.byTask[task] = req.Model
+			}
+		}
+		s.arrived++
+		if s.arrived == s.want {
+			close(s.both)
+		}
+		s.mu.Unlock()
+
+		select {
+		case <-s.both:
+		case <-time.After(10 * time.Second):
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write(finalResp("done"))
+	}
+}
+
+// results returns the model each task's request was issued against.
+func (s *concurrentLLM) results() map[string]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := map[string]string{}
+	for k, v := range s.byTask {
+		out[k] = v
+	}
+	return out
+}
+
+// runTurn creates a session pinned to model and runs one streamed turn with
+// task as its prompt, draining the stream to completion.
+func runTurn(t *testing.T, srv *embeddedServer, model, task string) {
+	t.Helper()
+	createBody, _ := json.Marshal(map[string]string{"model": model})
+	createReq, _ := http.NewRequest(http.MethodPost, srv.BaseURL+"/session", strings.NewReader(string(createBody)))
+	createReq.Header.Set("Authorization", "Bearer "+srv.Token)
+	createReq.Header.Set("Content-Type", "application/json")
+	createResp, err := http.DefaultClient.Do(createReq)
+	if err != nil {
+		t.Errorf("POST /session: %v", err)
+		return
+	}
+	var created struct {
+		ID    string `json:"id"`
+		Model string `json:"model"`
+	}
+	decErr := json.NewDecoder(createResp.Body).Decode(&created)
+	createResp.Body.Close()
+	if decErr != nil {
+		t.Errorf("decode /session response: %v", decErr)
+		return
+	}
+	if created.Model != model {
+		t.Errorf("session pinned model = %q, want %q", created.Model, model)
+		return
+	}
+
+	streamReq, _ := http.NewRequest(http.MethodPost, srv.BaseURL+"/session/"+created.ID+"/stream", strings.NewReader(task))
+	streamReq.Header.Set("Authorization", "Bearer "+srv.Token)
+	streamResp, err := http.DefaultClient.Do(streamReq)
+	if err != nil {
+		t.Errorf("POST /session/{id}/stream: %v", err)
+		return
+	}
+	_, _ = io.Copy(io.Discard, streamResp.Body)
+	streamResp.Body.Close()
+}
+
+// TestConcurrentTurnsKeepTheirOwnModel proves two overlapping session turns
+// each run on the model their own session pinned, and that neither of them
+// reaches into the process-wide *llm.Client to get there. The shared client
+// is what every other turn is using at the same time: its Model field has no
+// mutex, so writing it per turn both races (run this with -race) and lets the
+// last writer decide which model a sibling turn's request is issued against.
+func TestConcurrentTurnsKeepTheirOwnModel(t *testing.T) {
+	script := newConcurrentLLM(2)
+	llmSrv := httptest.NewServer(script.handler())
+	defer llmSrv.Close()
+
+	t.Setenv("GOPHERMIND_BASE_URL", llmSrv.URL)
+	t.Setenv("GOPHERMIND_MODEL", "base-model")
+	t.Setenv("GOPHERMIND_ROOT", t.TempDir())
+	t.Setenv("GOPHERMIND_APPROVAL", "ask")
+
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	client, err := newLLMClient(ctx, cfg)
+	cancel()
+	if err != nil {
+		t.Fatalf("newLLMClient: %v", err)
+	}
+
+	holder := &clientHolder{}
+	holder.Set(client, "")
+	srv := startTestServer(t, holder)
+
+	var wg sync.WaitGroup
+	for _, tc := range []struct{ model, task string }{
+		{"model-a", "task-a"},
+		{"model-b", "task-b"},
+	} {
+		wg.Add(1)
+		go func(model, task string) {
+			defer wg.Done()
+			runTurn(t, srv, model, task)
+		}(tc.model, tc.task)
+	}
+	wg.Wait()
+
+	got := script.results()
+	for task, want := range map[string]string{"task-a": "model-a", "task-b": "model-b"} {
+		if got[task] != want {
+			t.Errorf("%s ran on model %q, want %q", task, got[task], want)
+		}
+	}
+
+	if client.Model != "base-model" {
+		t.Errorf("the shared client's model was mutated to %q; a per-turn model must not touch it", client.Model)
 	}
 }
