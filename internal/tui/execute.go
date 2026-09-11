@@ -130,6 +130,11 @@ func renderExecOutcome(o phaseflow.TaskOutcome) string {
 		return "⚠ " + o.ID + " needs revision: " + o.Detail
 	case phaseflow.StatusEscalated:
 		return "⚠ " + o.ID + " escalated, needs human input: " + o.Detail
+	case phaseflow.StatusContractFlagged:
+		// The run stopped here. Everything downstream would have been built
+		// against a contract this task determined is wrong, so this is the
+		// last thing that should read as a success.
+		return "⚠ " + o.ID + " contract flagged, run stopped: " + o.Detail
 	}
 	return "✓ " + o.ID + " " + o.Status
 }
@@ -144,6 +149,9 @@ func renderExecSummary(s phaseflow.RunSummary) string {
 	}
 	if s.Escalated > 0 {
 		line += fmt.Sprintf(", %d escalated", s.Escalated)
+	}
+	if s.ContractFlagged > 0 {
+		line += fmt.Sprintf(", %d contract flagged", s.ContractFlagged)
 	}
 	return line
 }
