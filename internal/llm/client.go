@@ -588,6 +588,11 @@ func truncate(b []byte) string {
 // sampling setting. It deliberately does NOT copy the capability cache: that is
 // memoized per endpoint-and-model, and the clone has a different model.
 //
+// It also does not copy Fallbacks, for the same reason the clone exists at
+// all: a silent switch to another model would make the caller's record of
+// which model ran untrue. The clone runs the model it was asked for, or it
+// fails and lets the caller decide.
+//
 // A plain struct copy would be wrong here: Client holds a sync.RWMutex, and
 // copying a mutex is both a vet error and unsafe if it is held.
 func (c *Client) CloneForModel(model string) *Client {
@@ -596,14 +601,21 @@ func (c *Client) CloneForModel(model string) *Client {
 	c.sampleMu.RUnlock()
 
 	clone := &Client{
-		BaseURL:                   c.BaseURL,
-		APIKey:                    c.APIKey,
-		Model:                     model,
-		ChatPath:                  c.ChatPath,
-		ModelsPath:                c.ModelsPath,
-		HTTP:                      c.HTTP,
-		Retry:                     c.Retry,
-		Fallbacks:                 append([]string(nil), c.Fallbacks...),
+		BaseURL:    c.BaseURL,
+		APIKey:     c.APIKey,
+		Model:      model,
+		ChatPath:   c.ChatPath,
+		ModelsPath: c.ModelsPath,
+		HTTP:       c.HTTP,
+		Retry:      c.Retry,
+		// Fallbacks is deliberately NOT carried over. chain() tries Model
+		// and then every fallback, so a clone made for one model could have
+		// its request served by another while the caller's attempt history
+		// recorded the model it asked for - the exact misattribution this
+		// clone exists to prevent. A caller that wants to try several models
+		// should try them explicitly, one clone each, and record what each
+		// one did; phaseflow.FallbackRunner is that caller.
+		Fallbacks:                 nil,
 		Cache:                     c.Cache,
 		sleep:                     c.sleep,
 		temperature:               temperature,
