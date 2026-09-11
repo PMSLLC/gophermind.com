@@ -216,6 +216,15 @@ func DeriveModelURL(id string) string {
 	if id == "" || strings.Contains(id, " ") {
 		return ""
 	}
+	// A colon marks a routing variant, not part of any Hugging Face repo name:
+	// OpenRouter and Kilo Code publish ids like
+	// "nvidia/nemotron-3-super-120b-a12b:free". Deriving from those produced a
+	// guaranteed 404, which is exactly the guess this function exists to avoid.
+	// Stripping the suffix instead would be a different guess: the underlying
+	// repo may not be on Hugging Face at all.
+	if strings.Contains(id, ":") {
+		return ""
+	}
 	parts := strings.Split(id, "/")
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return ""

@@ -97,6 +97,18 @@ func TestDeriveModelURL(t *testing.T) {
 	if got := DeriveModelURL("Qwen/Qwen3-8B"); got != "https://huggingface.co/Qwen/Qwen3-8B" {
 		t.Errorf("got %q", got)
 	}
+	// A routing-variant suffix must not derive a link: these are real registry
+	// ids from OpenRouter and Kilo Code, and huggingface.co/<owner>/<name>:free
+	// does not exist.
+	for _, id := range []string{
+		"nvidia/nemotron-3-super-120b-a12b:free",
+		"poolside/laguna-s-2.1:free",
+		"cohere/north-mini-code:free",
+	} {
+		if got := DeriveModelURL(id); got != "" {
+			t.Errorf("DeriveModelURL(%q) = %q, want empty: the :free suffix is a routing marker, not a repo name", id, got)
+		}
+	}
 	for _, id := range []string{"gpt-oss-120b", "glm-4.7-flash", "a/b/c", "", "has space/x"} {
 		if got := DeriveModelURL(id); got != "" {
 			t.Errorf("DeriveModelURL(%q) = %q, want empty rather than a guess", id, got)
