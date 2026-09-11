@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"gophermind/internal/codeindex"
 )
@@ -65,16 +67,39 @@ func Execute(ctx context.Context, root string, runner TaskRunner, emit func(Task
 // tasks that failed, so an unattended run finishes rather than spinning.
 const DefaultMaxRounds = 3
 
+// DefaultWaveConcurrency bounds how many tasks in one wave run at once when
+// a caller does not pick a limit explicitly (Execute, ExecuteWithRounds).
+// Unbounded fan-out would turn a 50-task wave into 50 simultaneous calls
+// against free-tier model providers, tripping every rate limit at once -
+// exactly the failure mode routing across several free providers exists to
+// avoid. 4 is small enough to stay well under a single free-tier provider's
+// per-minute request limit even when every task in flight happens to land
+// on the same provider, while still giving a meaningfully wide wave real
+// concurrency instead of degrading to one-at-a-time.
+const DefaultWaveConcurrency = 4
+
 // ExecuteWithRounds runs passes over the plan until every task is accounted
 // for, retrying failures with their failure detail fed back to the runner. It
 // stops at the first of: no failures left, a round that fixed nothing (further
 // retries would only repeat themselves), or maxRounds.
 //
 // The failure note is handed to the runner on the retry attempt but never
-// persisted, so assignments.json keeps the plan the user approved.
+// persisted, so assignments.json keeps the plan the user approved. Tasks
+// within a wave run concurrently, bounded by DefaultWaveConcurrency; see
+// ExecuteWithConcurrency to choose a different limit.
 func ExecuteWithRounds(ctx context.Context, root string, runner TaskRunner, emit func(TaskOutcome), maxRounds int) (RunSummary, error) {
+	return ExecuteWithConcurrency(ctx, root, runner, emit, maxRounds, DefaultWaveConcurrency)
+}
+
+// ExecuteWithConcurrency is ExecuteWithRounds with an explicit per-wave
+// concurrency limit instead of DefaultWaveConcurrency. waveConcurrency below
+// 1 is treated as 1 (fully sequential).
+func ExecuteWithConcurrency(ctx context.Context, root string, runner TaskRunner, emit func(TaskOutcome), maxRounds, waveConcurrency int) (RunSummary, error) {
 	if maxRounds < 1 {
 		maxRounds = 1
+	}
+	if waveConcurrency < 1 {
+		waveConcurrency = 1
 	}
 	var summary RunSummary
 	lastDetail := map[string]string{}
@@ -83,7 +108,7 @@ func ExecuteWithRounds(ctx context.Context, root string, runner TaskRunner, emit
 	touched := map[string]bool{}
 
 	for round := 0; round < maxRounds; round++ {
-		passSummary, ran, err := executePass(ctx, root, runner, emit, lastDetail)
+		passSummary, ran, err := executePass(ctx, root, runner, emit, lastDetail, waveConcurrency)
 		summary.Outcomes = append(summary.Outcomes, passSummary.Outcomes...)
 		for _, o := range passSummary.Outcomes {
 			touched[o.ID] = true
@@ -152,14 +177,38 @@ func resetFailedToPending(root string) error {
 	return a.Save(root)
 }
 
-// executePass runs every currently-pending task once. It reports whether any
-// task ran, so the caller can stop when the plan is exhausted.
-func executePass(ctx context.Context, root string, runner TaskRunner, emit func(TaskOutcome), lastDetail map[string]string) (RunSummary, bool, error) {
-	summary, err := executeOnce(ctx, root, runner, emit, lastDetail)
+// executePass runs every currently-pending task once, wave by wave. It
+// reports whether any task ran, so the caller can stop when the plan is
+// exhausted.
+func executePass(ctx context.Context, root string, runner TaskRunner, emit func(TaskOutcome), lastDetail map[string]string, waveConcurrency int) (RunSummary, bool, error) {
+	summary, err := executeOnce(ctx, root, runner, emit, lastDetail, waveConcurrency)
 	return summary, len(summary.Outcomes) > 0, err
 }
 
-func executeOnce(ctx context.Context, root string, runner TaskRunner, emit func(TaskOutcome), lastDetail map[string]string) (RunSummary, error) {
+// executeOnce groups pending tasks by wave and runs each wave's tasks
+// concurrently (bounded by waveConcurrency), waiting for the whole wave to
+// finish before starting the next one in ascending wave order.
+//
+// Wave 0 - the zero value of Task.Wave - is never batched: it is both "no
+// wave assigned" (a plan written before AssignWaves existed, or a task a
+// planner never ran through it) and the contract step's own wave, and both
+// meanings want the same behaviour, one task at a time, so a wave-0 group
+// always runs at an effective concurrency of 1 regardless of
+// waveConcurrency. This is what keeps every pre-existing
+// execute_*_test.go fixture (whose tasks never set Wave, so all default to
+// 0) running exactly as it did before this file gained concurrency: they
+// degenerate to a sequence of size-one waves, identical in order and
+// timing to the old plain per-task loop.
+//
+// Every status mutation for a task goes through Update, never a whole-file
+// Save built from a stale in-memory read - once a wave has more than one
+// task in flight, two of them can finish at nearly the same instant, and
+// only Update's locked read-modify-write makes that safe.
+func executeOnce(ctx context.Context, root string, runner TaskRunner, emit func(TaskOutcome), lastDetail map[string]string, waveConcurrency int) (RunSummary, error) {
+	if waveConcurrency < 1 {
+		waveConcurrency = 1
+	}
+
 	a, found, err := LoadAssignments(root)
 	if err != nil {
 		return RunSummary{}, err
@@ -176,7 +225,14 @@ func executeOnce(ctx context.Context, root string, runner TaskRunner, emit func(
 		}
 	}
 	if recovered {
-		if err := a.Save(root); err != nil {
+		if err := Update(root, func(as *Assignments) error {
+			for i := range as.Tasks {
+				if as.Tasks[i].Status == StatusRunning {
+					as.Tasks[i].Status = StatusPending
+				}
+			}
+			return nil
+		}); err != nil {
 			return RunSummary{}, err
 		}
 	}
@@ -191,78 +247,162 @@ func executeOnce(ctx context.Context, root string, runner TaskRunner, emit func(
 		return a.Tasks[pending[i]].ID < a.Tasks[pending[j]].ID
 	})
 
-	var summary RunSummary
+	// Group by wave, preserving each group's ID order from the sort above.
+	waveTasks := map[int][]Task{}
+	var waveNums []int
 	for _, idx := range pending {
+		w := a.Tasks[idx].Wave
+		if _, seen := waveTasks[w]; !seen {
+			waveNums = append(waveNums, w)
+		}
+		waveTasks[w] = append(waveTasks[w], a.Tasks[idx])
+	}
+	sort.Ints(waveNums)
+
+	var summary RunSummary
+	for _, w := range waveNums {
 		if ctx.Err() != nil {
 			return summary, nil
 		}
 
-		a.Tasks[idx].Status = StatusRunning
-		if err := a.Save(root); err != nil {
+		limit := waveConcurrency
+		if w == 0 {
+			limit = 1
+		}
+
+		cancelled, err := runWave(ctx, root, runner, emit, lastDetail, waveTasks[w], limit, &summary)
+		if err != nil {
 			return summary, err
 		}
-
-		// On a retry round, hand the runner the same task plus what went wrong
-		// last time. The copy is deliberate: the note must not reach disk.
-		attempt := a.Tasks[idx]
-		if note := lastDetail[attempt.ID]; note != "" {
-			attempt.AgentAddendum = strings.TrimSpace(attempt.AgentAddendum +
-				"\n\nA previous attempt at this task failed with:\n" + note +
-				"\nFix that before proceeding.")
-		}
-
-		status, detail, runErr := runner.Run(ctx, attempt)
-
-		// A runner that tracks per-model attempts (FallbackRunner) exposes
-		// them here so they can be persisted, even on a round that ends in
-		// cancellation partway through a candidate list. Attempts must
-		// accumulate rather than overwrite, so this goes through Update, not
-		// a.Save - and the in-memory copy is updated to match so a later
-		// a.Save in this loop (for the next task) does not write over it.
-		if fr, ok := runner.(*FallbackRunner); ok {
-			if err := recordAttempts(root, &a, idx, fr.LastAttempts); err != nil {
-				return summary, err
-			}
-		}
-
-		if ctx.Err() != nil || isCancel(runErr) {
-			a.Tasks[idx].Status = StatusPending
-			if err := a.Save(root); err != nil {
-				return summary, err
-			}
+		if cancelled {
 			return summary, nil
 		}
+	}
 
-		if runErr != nil {
-			a.Tasks[idx].Status = StatusFailed
-			detail = runErr.Error()
+	return summary, nil
+}
+
+// waveTaskResult is one task's outcome from runWave's worker goroutines,
+// fanned in and processed by a single goroutine so summary/lastDetail/emit
+// and the best-effort index and context-doc refreshes never see concurrent
+// access.
+type waveTaskResult struct {
+	outcome   TaskOutcome
+	cancelled bool
+	err       error
+}
+
+// runWave runs tasks concurrently, at most limit at a time, and reports
+// whether the run was cancelled (in which case every in-flight task has
+// already been reverted to pending and the caller must not start the next
+// wave). A non-nil error is fatal, matching the old loop's behaviour when a
+// disk write failed: the caller stops immediately rather than continuing
+// with an assignments.json that may no longer reflect reality.
+func runWave(ctx context.Context, root string, runner TaskRunner, emit func(TaskOutcome), lastDetail map[string]string, tasks []Task, limit int, summary *RunSummary) (cancelled bool, err error) {
+	if len(tasks) == 0 {
+		return false, nil
+	}
+
+	sem := make(chan struct{}, limit)
+	results := make(chan waveTaskResult)
+	var stop atomic.Bool
+
+	// lastDetail is also written by the result-processing loop below, on
+	// the calling goroutine, as each task in this wave finishes. Reading it
+	// from the dispatch goroutine below at the same time would race, and a
+	// task's retry note only ever comes from an earlier pass in any case
+	// (never from a sibling dispatched in this same wave) - so the dispatch
+	// goroutine gets its own frozen copy instead of touching the live map.
+	notes := make(map[string]string, len(lastDetail))
+	for k, v := range lastDetail {
+		notes[k] = v
+	}
+
+	go func() {
+		var wg sync.WaitGroup
+		for _, task := range tasks {
+			if stop.Load() || ctx.Err() != nil {
+				break
+			}
+
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				wg.Wait()
+				close(results)
+				return
+			}
+			if stop.Load() {
+				<-sem
+				break
+			}
+
+			// On a retry round, hand the runner the same task plus what went
+			// wrong last time. The copy is deliberate: the note must not
+			// reach disk.
+			attempt := task
+			if note := notes[attempt.ID]; note != "" {
+				attempt.AgentAddendum = strings.TrimSpace(attempt.AgentAddendum +
+					"\n\nA previous attempt at this task failed with:\n" + note +
+					"\nFix that before proceeding.")
+			}
+
+			wg.Add(1)
+			go func(attempt Task) {
+				defer wg.Done()
+				results <- runSingleTask(ctx, root, runner, attempt)
+			}(attempt)
+		}
+		wg.Wait()
+		close(results)
+	}()
+
+	// sem's slot for a finished task is released here, by the result loop,
+	// rather than by the worker goroutine itself right after it sends - and
+	// always after any stop.Store(true) below. Releasing from the worker
+	// would let the dispatch goroutine above win a race: it could acquire
+	// the newly-freed slot and dispatch the next task before this loop had
+	// a chance to record that the wave must stop, so a cancellation or
+	// fatal error on task N could let task N+1 start anyway. The dispatch
+	// loop's own re-check of stop right after acquiring a slot only closes
+	// that gap if the slot was not released until stop was already visible.
+	for res := range results {
+		if res.err != nil {
+			stop.Store(true)
+			err = res.err
+			<-sem
+			continue
+		}
+		if res.cancelled {
+			stop.Store(true)
+			cancelled = true
+			<-sem
+			continue
+		}
+		<-sem
+		if err != nil || cancelled {
+			// A fatal error or cancellation was already seen; drain the
+			// remaining in-flight results without acting on them further.
+			continue
+		}
+
+		if res.outcome.Status == StatusFailed {
+			lastDetail[res.outcome.ID] = res.outcome.Detail
 		} else {
-			a.Tasks[idx].Status = normalizeStatus(status)
-		}
-		if err := a.Save(root); err != nil {
-			return summary, err
+			delete(lastDetail, res.outcome.ID)
 		}
 
-		if a.Tasks[idx].Status == StatusFailed {
-			lastDetail[a.Tasks[idx].ID] = detail
-		} else {
-			delete(lastDetail, a.Tasks[idx].ID)
-		}
-
-		// Refresh the symbol index so the next task searches the tree as this
-		// one left it. Best-effort by design: the index is a convenience, and
-		// failing a completed task because a Markdown file could not be written
-		// would be worse than an index that is one task stale.
+		// Refresh the symbol index and context doc after each task, same as
+		// the old sequential loop did - just fanned in here to a single
+		// goroutine so concurrent siblings never race on the same files.
+		// Best-effort by design: neither is a gate on the task's own result.
 		_, _ = codeindex.BuildAndWrite(root)
+		if reloaded, ok, loadErr := LoadAssignments(root); loadErr == nil && ok {
+			_ = UpsertContextDoc(root, RenderContextDocBody(projectNameFor(root), &reloaded, res.outcome))
+		}
 
-		outcome := TaskOutcome{ID: a.Tasks[idx].ID, Status: a.Tasks[idx].Status, Detail: detail}
-
-		// Record run state before the next task starts. The next task runs in a
-		// cleared context, so this file is how it learns what already happened.
-		// Best-effort for the same reason as the index.
-		_ = UpsertContextDoc(root, RenderContextDocBody(projectNameFor(root), &a, outcome))
-		summary.Outcomes = append(summary.Outcomes, outcome)
-		switch outcome.Status {
+		summary.Outcomes = append(summary.Outcomes, res.outcome)
+		switch res.outcome.Status {
 		case StatusDone:
 			summary.Done++
 		case StatusCorrected:
@@ -275,44 +415,100 @@ func executeOnce(ctx context.Context, root string, runner TaskRunner, emit func(
 			summary.Escalated++
 		}
 		if emit != nil {
-			emit(outcome)
+			emit(res.outcome)
 		}
 	}
 
-	return summary, nil
+	return cancelled, err
 }
 
-// isCancel reports whether err represents a run-stopping cancellation rather
-// than an ordinary task failure.
-func isCancel(err error) bool {
-	return err != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded))
+// runSingleTask runs one task to a terminal state (or reports cancellation),
+// persisting every status transition through Update. It is safe to call
+// from multiple goroutines at once: each call only ever touches the task
+// with attempt.ID under Update's lock, never a shared in-memory Assignments.
+func runSingleTask(ctx context.Context, root string, runner TaskRunner, attempt Task) waveTaskResult {
+	id := attempt.ID
+
+	if err := updateTaskStatus(root, id, StatusRunning); err != nil {
+		return waveTaskResult{err: err}
+	}
+
+	// FallbackRunner exposes its per-model attempts through a shared
+	// LastAttempts field on the runner - safe for the strictly sequential
+	// caller it was built for (see fallback.go), but not for two tasks
+	// calling Run concurrently on the same instance. A shallow copy gives
+	// each call its own LastAttempts slot: Inner, Verify, Now and
+	// Candidates are read-only dependencies, safe to share.
+	callRunner := runner
+	var fr *FallbackRunner
+	if orig, ok := runner.(*FallbackRunner); ok {
+		cp := *orig
+		cp.LastAttempts = nil
+		fr = &cp
+		callRunner = &cp
+	}
+
+	status, detail, runErr := callRunner.Run(ctx, attempt)
+
+	if fr != nil && len(fr.LastAttempts) > 0 {
+		if err := updateTaskAttempts(root, id, fr.LastAttempts); err != nil {
+			return waveTaskResult{err: err}
+		}
+	}
+
+	if ctx.Err() != nil || isCancel(runErr) {
+		if err := updateTaskStatus(root, id, StatusPending); err != nil {
+			return waveTaskResult{err: err}
+		}
+		return waveTaskResult{cancelled: true}
+	}
+
+	final := normalizeStatus(status)
+	if runErr != nil {
+		final = StatusFailed
+		detail = runErr.Error()
+	}
+
+	if err := updateTaskStatus(root, id, final); err != nil {
+		return waveTaskResult{err: err}
+	}
+
+	return waveTaskResult{outcome: TaskOutcome{ID: id, Status: final, Detail: detail}}
 }
 
-// recordAttempts appends newAttempts to a.Tasks[idx] both on disk, through
-// the locked Update primitive so accumulation is safe once more than one
-// task can be running at a time, and in the in-memory copy executeOnce keeps
-// saving, so a later plain Save in this pass (for a different task) does
-// not clobber what Update just wrote. A no-op when there is nothing to
-// record.
-func recordAttempts(root string, a *Assignments, idx int, newAttempts []Attempt) error {
-	if len(newAttempts) == 0 {
-		return nil
-	}
-	id := a.Tasks[idx].ID
-	for _, at := range newAttempts {
-		a.Tasks[idx].RecordAttempt(at)
-	}
-	return Update(root, func(as *Assignments) error {
-		for i := range as.Tasks {
-			if as.Tasks[i].ID == id {
+// updateTaskStatus sets task id's status under Update's lock.
+func updateTaskStatus(root, id, status string) error {
+	return Update(root, func(a *Assignments) error {
+		for i := range a.Tasks {
+			if a.Tasks[i].ID == id {
+				a.Tasks[i].Status = status
+				return nil
+			}
+		}
+		return fmt.Errorf("phaseflow: task %q not found while setting status %q", id, status)
+	})
+}
+
+// updateTaskAttempts appends newAttempts to task id's history under
+// Update's lock.
+func updateTaskAttempts(root, id string, newAttempts []Attempt) error {
+	return Update(root, func(a *Assignments) error {
+		for i := range a.Tasks {
+			if a.Tasks[i].ID == id {
 				for _, at := range newAttempts {
-					as.Tasks[i].RecordAttempt(at)
+					a.Tasks[i].RecordAttempt(at)
 				}
 				return nil
 			}
 		}
 		return fmt.Errorf("phaseflow: task %q not found while recording attempts", id)
 	})
+}
+
+// isCancel reports whether err represents a run-stopping cancellation rather
+// than an ordinary task failure.
+func isCancel(err error) bool {
+	return err != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded))
 }
 
 // normalizeStatus treats any status other than done/corrected/needs_revision/
