@@ -79,8 +79,13 @@ func (r *Runner) newTaskAgent(model, system string, maxIter int) *agent.Agent {
 	if approve == nil {
 		approve = safety.Auto
 	}
-	ag := agent.New(r.client, r.reg, maxIter, approve, nil)
-	ag.SetModel(model)
+	// Each task agent gets its OWN client. agent.New takes the client by
+	// pointer and SetModel mutates it, so sharing one across a wave's
+	// concurrent tasks meant the last SetModel won and a task issued its
+	// request against a model a sibling had chosen. The attempt history still
+	// named the model the task asked for, making it a record of intentions
+	// rather than of what actually ran.
+	ag := agent.New(r.client.CloneForModel(model), r.reg, maxIter, approve, nil)
 	ag.SetSystemPrompt(system)
 	if r.audit != nil {
 		ag.SetAuditLog(r.audit)

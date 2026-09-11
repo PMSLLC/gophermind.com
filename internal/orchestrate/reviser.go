@@ -57,8 +57,8 @@ var reviseTool = llm.Tool{
 // failed, not a coding task, and the task's own (possibly weak) tier has no
 // bearing on which model should judge that.
 //
-// Client.Model is set to Model for the duration of each Revise call and
-// restored afterward, the same technique agent.Agent.SetModel uses. Revise
+// Each Revise call runs on a clone of Client configured for Model, so it
+// never mutates the shared client. Revise
 // must therefore only ever be called strictly sequentially against a given
 // Client, never concurrently with another call that also mutates its Model -
 // which is exactly how phaseflow.ExecuteWithReviser calls a Reviser: only
@@ -93,12 +93,17 @@ func (r *LLMReviser) Revise(ctx context.Context, t phaseflow.Task, attempts []ph
 		{Role: "user", Content: buildRevisePrompt(t, attempts)},
 	}
 
-	prevModel := r.Client.Model
+	// Use a clone rather than setting and restoring Model on the shared
+	// client. The restore made this safe only while revision never overlapped
+	// another user of that client, which is true today because revision runs
+	// between waves, but is an assumption about scheduling rather than a
+	// property of the code. A clone needs no such assumption, and cannot leave
+	// the model changed if this path ever returns early.
+	client := r.Client
 	if r.Model != "" {
-		r.Client.Model = r.Model
+		client = r.Client.CloneForModel(r.Model)
 	}
-	reply, _, err := r.Client.Complete(ctx, msgs, []llm.Tool{reviseTool})
-	r.Client.Model = prevModel
+	reply, _, err := client.Complete(ctx, msgs, []llm.Tool{reviseTool})
 	if err != nil {
 		return phaseflow.Revision{}, fmt.Errorf("orchestrate: revise %q: %w", t.ID, err)
 	}
