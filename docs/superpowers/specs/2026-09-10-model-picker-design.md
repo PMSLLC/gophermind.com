@@ -102,10 +102,16 @@ and such models are never auto-switched away from.
 Three routes, registered in `internal/serve` beside the existing `GET /models`:
 
 ```
-GET   /models/catalogue    the full list, one entry per model
-GET   /models/preferences  the ordered preference list
-PATCH /models/preferences  replace the order
+GET   /models/catalogue  the full list, one entry per model
+GET   /models/settings   preference order, thresholds, exclusions, custom links
+PATCH /models/settings   change any subset of them
 ```
+
+One settings object rather than a route per knob: the preference order, the
+capacity threshold, the term exclusions, the default filter states and the
+custom links are all the same kind of thing, one user's stated preferences, and
+splitting them across endpoints would mean a client had to write three times to
+change its mind once.
 
 A catalogue entry:
 
@@ -137,9 +143,9 @@ response contributes entries with an empty `Profile`.
 provider is reachable only when its `GOPHERMIND_PROFILE_<NAME>_API_KEY` is set;
 an unsupported entry is not reachable and `Reason` carries its `Note`.
 
-Preferences persist next to the odometer, under the OS cache directory, as a
-plain ordered list of `profile/model` keys. Server-side storage is what lets
-the order follow the user between the desktop app, the TUI and iOS.
+Settings persist next to the odometer, under the OS cache directory, as one
+JSON object. Server-side storage is what lets the order, the exclusions and the
+custom links follow the user between the desktop app, the TUI and iOS.
 
 ### 4. Proactive cycling
 
@@ -196,6 +202,7 @@ with.
 | Default filter: has capacity left | Off | Hiding exhausted models is helpful to some, confusing to others who wonder where a model went. |
 | Excluded terms | None excluded | The real safety control. Excluding non-commercial and trains-on-prompts providers makes them unusable everywhere, including by automatic cycling, so client work cannot silently land on Gemini's free tier. |
 | Provider and modality filters | All shown | Ordinary narrowing. |
+| Custom model and provider URLs | None set | Only Hugging Face-style ids yield a derivable page, so most models have no link unless the user supplies one. Accepts http and https only. |
 | Endpoint: embedded or remote | Embedded | From the desktop app spec; it belongs in the same panel rather than a second one. |
 
 Two properties this panel must have:
@@ -215,11 +222,38 @@ client cannot be bypassed by another.
 
 ### 6. Links
 
-- **Provider homepage: always.** `Compat.Website` already exists for all 16.
-- **Model page: only when derivable.** A Hugging Face-style `owner/name` id
-  maps to `huggingface.co/owner/name`. Everything else omits `ModelURL` rather
-  than emitting a guess that 404s. This follows the same rule as quotas: state
-  what is known, omit what is not.
+Resolution order for both link fields, first match wins:
+
+1. **A user-supplied custom URL.** Any model or provider can be given one.
+2. **A derived URL**, where the id makes it unambiguous: a Hugging Face-style
+   `owner/name` maps to `huggingface.co/owner/name`.
+3. **The registry's `Compat.Website`**, which exists for all 16 providers and
+   covers the provider field even when the model field is empty.
+4. **Nothing.** The field is omitted rather than guessed into a 404.
+
+Custom URLs exist because step 2 only works for one id convention. Most model
+ids (`gpt-oss-120b`, `glm-4.7-flash`, a model on the user's own endpoint) have
+no derivable page at all, and a user who knows where the documentation lives
+should be able to say so once rather than look it up every time.
+
+**Custom links are stored keyed by scope**, in the same settings object:
+
+```go
+// CustomLinks maps a scope key to a URL. A key of "free-groq" sets that
+// provider's homepage; a key of "free-groq/openai/gpt-oss-120b" sets one
+// model's page. Model keys are checked before provider keys.
+CustomLinks map[string]string `json:"custom_links,omitempty"`
+```
+
+This also covers models on the user's own endpoint, which have no provider in
+the registry and therefore no link at all today.
+
+**Validation is a security requirement, not tidiness.** These URLs are rendered
+as clickable links inside a WebView. A stored `javascript:` or `data:` URL
+would execute in the app's own origin, and a `file:` URL would reach the local
+disk. So a custom URL is accepted only when it parses and its scheme is exactly
+`http` or `https`; anything else is rejected at the API with the reason, and
+never stored. The renderer does not get to be the last line of defence.
 
 ## Error handling
 
@@ -230,6 +264,7 @@ client cannot be bypassed by another.
 | Preference names a model no longer in the catalogue | Skip it when cycling, keep it in the stored list, show it greyed in settings. Upstream removing a model must not silently reorder the user's list. |
 | Every preferred model is near capacity | Follow the configured choice: stay on the current model (default, since refusing to run is worse than one 429) or stop and ask, for a user who must not exceed a free tier. |
 | A model's quota did not parse | Never auto-switch away from it; there is no line to cross. |
+| A custom URL is not http or https | Reject at the API with the offending scheme named, store nothing. A javascript: or data: URL would run in the WebView's own origin. |
 
 ## Testing
 
@@ -239,7 +274,8 @@ client cannot be bypassed by another.
 - **Reachability**: a keyed provider flips to reachable exactly when its env var is set, via `t.Setenv`.
 - **Cycling policy**: at 89 percent no switch, at 90 percent switch, and with cycling off no switch at either. No switch occurs for a model with no published quota. With every preferred model near capacity, the active model is retained.
 - **Preference durability**: reorder, restart, order survives; a preference naming a vanished model is skipped but retained.
-- **Model URL derivation**: an `owner/name` id yields a Hugging Face URL; `gpt-oss-120b` yields none.
+- **Link resolution order**: a custom URL beats a derived one; a derived one beats the registry website; with none of the three, the field is absent. A model key beats a provider key for the same model.
+- **Link validation**: `javascript:`, `data:`, `file:` and a malformed string are all rejected and never stored; `http` and `https` are accepted. This is a security test, not a formatting one.
 - **API**: golden JSON for one entry of each shape (free with quota, free without, local endpoint, unreachable).
 
 ## Delivery, in three landable pieces
