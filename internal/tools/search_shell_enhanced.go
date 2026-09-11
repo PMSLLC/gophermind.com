@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"gophermind/internal/gitenv"
 	"gophermind/internal/safety"
 )
 
@@ -219,15 +220,26 @@ func RunShellEnhanced(root string, timeout time.Duration, limits ShellLimits) To
 			}
 
 			// Environment allow-list.
+			//
+			// Either branch strips GIT_*. An inherited GIT_DIR redirects a git
+			// command away from cmd.Dir and onto the repository that variable
+			// names, and this tool is the path an agent runs git through; see
+			// internal/gitenv. The allow-list is filtered too, not just the
+			// default: env_allow_list is chosen by the model, so honouring
+			// "GIT_DIR" there would let the caller reinstate exactly the
+			// redirection the other branch removes.
 			var env []string
 			if len(a.EnvAllowList) > 0 {
 				for _, key := range a.EnvAllowList {
+					if strings.HasPrefix(key, "GIT_") {
+						continue
+					}
 					if val := os.Getenv(key); val != "" {
 						env = append(env, key+"="+val)
 					}
 				}
 			} else {
-				env = os.Environ()
+				env = gitenv.SanitizedEnv()
 			}
 
 			loginShell := "bash"

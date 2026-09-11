@@ -229,3 +229,96 @@ func TestOdometerRingCapped(t *testing.T) {
 		t.Errorf("ring holds %d events, cap is %d", len(o.Events), ringMaxEvents)
 	}
 }
+
+// TestUnreadableOdometerNeverOverwritesTheReading is the monotonicity test
+// for the one case that used to break it. A file that cannot be read is not
+// a fresh install: the reading is still on disk, intact. Collapsing that
+// into a zero odometer and then saving over the file replaced a lifetime
+// reading with a single event, permanently, over a transient errno.
+func TestUnreadableOdometerNeverOverwritesTheReading(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: file permissions do not deny reads")
+	}
+	path := filepath.Join(t.TempDir(), "odo.json")
+	seed := &Odometer{Per: map[string]ProviderTotal{}, Since: time.Now()}
+	if err := seed.Add(path, Event{TS: time.Now(), Profile: "free-groq", Tokens: 4_000_000, Requests: 9000}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+
+	o, err := LoadOdometer(path)
+	if err == nil {
+		t.Error("LoadOdometer on an unreadable file reported success, so a caller cannot tell the reading was not loaded")
+	}
+	// Recording is best-effort, so this must not panic or hang, but whatever
+	// it does it must not write a zeroed odometer over the intact file.
+	_ = o.Add(path, Event{TS: time.Now(), Profile: "free-groq", Tokens: 10, Requests: 1})
+
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	back, err := LoadOdometer(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tok, req := back.Reading(); tok < 4_000_000 || req < 9000 {
+		t.Fatalf("a failed read destroyed the lifetime reading: %d/%d, want at least 4000000/9000", tok, req)
+	}
+}
+
+// TestCorruptOdometerBytesArePreservedNotDestroyed covers the other half: a
+// non-empty file that will not parse still holds whatever a human or a
+// recovery tool could salvage, so the next save must not drop those bytes on
+// the floor. It is set aside beside the odometer instead.
+func TestCorruptOdometerBytesArePreservedNotDestroyed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "odo.json")
+	const damaged = `{"tokens":4000000,"requests":9000,"per":{`
+	if err := os.WriteFile(path, []byte(damaged), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	o, err := LoadOdometer(path)
+	if err != nil {
+		t.Fatalf("a damaged odometer must not block a turn: %v", err)
+	}
+	if err := o.Add(path, Event{TS: time.Now(), Profile: "free-groq", Tokens: 10, Requests: 1}); err != nil {
+		t.Fatalf("Add after a corrupt load must still work: %v", err)
+	}
+	kept, err := os.ReadFile(path + ".corrupt")
+	if err != nil {
+		t.Fatalf("the damaged bytes were destroyed rather than set aside: %v", err)
+	}
+	if string(kept) != damaged {
+		t.Errorf("set-aside file holds %q, want the original damaged bytes", kept)
+	}
+	// And the odometer itself is usable again.
+	fresh, err := LoadOdometer(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tok, _ := fresh.Reading(); tok != 10 {
+		t.Errorf("odometer did not restart cleanly after quarantine: %d, want 10", tok)
+	}
+}
+
+// TestEmptyOdometerFileIsAFreshStartNotCorruption pins the boundary: a
+// zero-length file carries no reading to lose, so it is the fresh-start
+// case and must not be set aside.
+func TestEmptyOdometerFileIsAFreshStartNotCorruption(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "odo.json")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	o, err := LoadOdometer(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Add(path, Event{TS: time.Now(), Profile: "free-groq", Tokens: 10, Requests: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path + ".corrupt"); !os.IsNotExist(err) {
+		t.Error("an empty file was set aside as corrupt; it carries no reading to preserve")
+	}
+}

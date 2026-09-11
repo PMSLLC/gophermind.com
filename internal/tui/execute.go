@@ -73,8 +73,36 @@ func (m model) handleProjectExecuteCommand() (model, tea.Cmd) {
 	// prompt, which has no human behind it during an unattended run. Supplying
 	// the composed policy stack with a non-blocking fallback is the harness's
 	// job (see WithApproval).
-	runner := orchestrate.NewRunner(m.agent.LLM(), m.agent.Registry(), root, m.speedModel, m.model, m.agent.MaxIter(),
+	taskRunner := orchestrate.NewRunner(m.agent.LLM(), m.agent.Registry(), root, m.speedModel, m.model, m.agent.MaxIter(),
 		orchestrate.WithAuditLog(m.agent.AuditLog()))
+
+	// Wrap in a FallbackRunner so a task whose first candidate model fails
+	// still gets a shot at the next one instead of the whole task failing
+	// outright. StatusVerifyingRunner adapts taskRunner (which already does
+	// its own verify-and-correct per candidate) to FallbackRunner's
+	// separate Inner/Verify steps.
+	//
+	// DefaultCandidates is given this session's endpoint because every
+	// candidate is sent to it: the runner resolves a candidate by cloning
+	// the configured client, so a model belonging to some other provider
+	// would just 404 and burn one of the task's attempts.
+	sv := orchestrate.NewStatusVerifyingRunner(taskRunner)
+	runner := &phaseflow.FallbackRunner{
+		Inner:      sv,
+		Verify:     sv,
+		Candidates: orchestrate.DefaultCandidates(m.agent.LLM().BaseURL),
+	}
+
+	// The revision circuit breaker. A task that has exhausted every
+	// candidate model is more likely to be badly specified than to be
+	// beyond every model, so its definition is rewritten once (twice at
+	// most) rather than re-run unchanged against the same exhausted list.
+	// Without a reviser wired in, such a task simply stays needs_revision
+	// forever, which is what it did before: ExecuteWithReviser had no
+	// caller at all. Revision uses the strongest configured model, because
+	// working out why several attempts failed is a reasoning problem rather
+	// than a coding one.
+	reviser := orchestrate.NewLLMReviser(m.agent.LLM(), m.model)
 
 	m.appendLine(projectBannerStyle.Render(fmt.Sprintf("executing %d tasks, auto-approve", pending)))
 	m.st = stateWorking
@@ -83,7 +111,8 @@ func (m model) handleProjectExecuteCommand() (model, tea.Cmd) {
 	sub := m.sub
 	go func() {
 		emit := func(o phaseflow.TaskOutcome) { sub <- execProgressMsg(o) }
-		summary, err := phaseflow.Execute(ctx, root, runner, emit)
+		summary, err := phaseflow.ExecuteWithReviser(ctx, root, runner, reviser, emit,
+			phaseflow.DefaultMaxRounds, phaseflow.DefaultWaveConcurrency)
 		if err != nil {
 			sub <- errMsg{err: err}
 			return
@@ -103,13 +132,38 @@ func (m model) handleProjectExecuteCommand() (model, tea.Cmd) {
 // renderExecOutcome formats one finished task's line for the transcript, e.g.
 // "✓ 02-01 done" / "✓ 02-02 corrected" / "✗ 02-03 failed: <detail>".
 func renderExecOutcome(o phaseflow.TaskOutcome) string {
-	if o.Status == phaseflow.StatusFailed {
+	switch o.Status {
+	case phaseflow.StatusFailed:
 		return "✗ " + o.ID + " failed: " + o.Detail
+	case phaseflow.StatusNeedsRevision:
+		// Not a success. Every candidate model failed this task, so it is
+		// waiting on a revised definition. A checkmark here would read as
+		// "fine" on the one outcome that most needs attention.
+		return "⚠ " + o.ID + " needs revision: " + o.Detail
+	case phaseflow.StatusEscalated:
+		return "⚠ " + o.ID + " escalated, needs human input: " + o.Detail
+	case phaseflow.StatusContractFlagged:
+		// The run stopped here. Everything downstream would have been built
+		// against a contract this task determined is wrong, so this is the
+		// last thing that should read as a success.
+		return "⚠ " + o.ID + " contract flagged, run stopped: " + o.Detail
 	}
 	return "✓ " + o.ID + " " + o.Status
 }
 
 // renderExecSummary formats the final run summary line.
 func renderExecSummary(s phaseflow.RunSummary) string {
-	return fmt.Sprintf("run complete: %d done, %d corrected, %d failed", s.Done, s.Corrected, s.Failed)
+	line := fmt.Sprintf("run complete: %d done, %d corrected, %d failed", s.Done, s.Corrected, s.Failed)
+	// Only mentioned when non-zero, so an ordinary run reads exactly as before,
+	// but the counts always add up to the tasks actually attempted.
+	if s.NeedsRevision > 0 {
+		line += fmt.Sprintf(", %d need revision", s.NeedsRevision)
+	}
+	if s.Escalated > 0 {
+		line += fmt.Sprintf(", %d escalated", s.Escalated)
+	}
+	if s.ContractFlagged > 0 {
+		line += fmt.Sprintf(", %d contract flagged", s.ContractFlagged)
+	}
+	return line
 }

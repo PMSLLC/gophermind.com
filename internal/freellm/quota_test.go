@@ -125,3 +125,59 @@ func TestCommas(t *testing.T) {
 		}
 	}
 }
+
+// A model's allowance is the one its own provider publishes for it, not the
+// one published for whichever model happens to be the profile's default.
+//
+// Google Gemini is the case that proves it: gemini-2.5-pro publishes
+// "5 RPM, 50 RPD" while the profile default publishes "15 RPM, 1,500 RPD".
+// Metering the pro model against the default's numbers overstates its
+// allowance threefold on requests per minute and thirtyfold per day, so the
+// picker keeps choosing a model that is already being throttled and only
+// finds out when the provider starts refusing.
+func TestQuotasForModelUsesThatModelsOwnLimit(t *testing.T) {
+	c, ok := CompatFor("free-gemini")
+	if !ok {
+		t.Skip("free-gemini missing from the registry")
+	}
+	got := QuotasForModel(c, "gemini-2.5-pro")
+	if len(got) == 0 {
+		t.Fatal("gemini-2.5-pro publishes a rate limit; got no quotas")
+	}
+	for _, q := range got {
+		if q.Unit == UnitRequests && q.Window == time.Minute && q.Amount != 5 {
+			t.Errorf("gemini-2.5-pro RPM: got %d, want 5 (its own published limit, "+
+				"not the profile default's)", q.Amount)
+		}
+		if q.Unit == UnitRequests && q.Window == WindowDay && q.Amount != 50 {
+			t.Errorf("gemini-2.5-pro RPD: got %d, want 50", q.Amount)
+		}
+	}
+}
+
+// A model that publishes no limit gets no denominator. Borrowing the
+// default model's numbers would invent an allowance the provider never
+// promised, which is the one thing the usage display must never do: a
+// fabricated ceiling reads exactly like a real one.
+func TestQuotasForModelInventsNothingWhenNoLimitIsPublished(t *testing.T) {
+	c, ok := CompatFor("free-gemini")
+	if !ok {
+		t.Skip("free-gemini missing from the registry")
+	}
+	// gemma-4-31b-it's rate_limit in the vendored registry is "-", i.e. none.
+	if got := QuotasForModel(c, "gemma-4-31b-it"); len(got) != 0 {
+		t.Errorf("gemma-4-31b-it publishes no rate limit; got %v, want none", got)
+	}
+}
+
+// An empty model keeps the old profile-level meaning, so TripMeters (which
+// asks about a whole profile rather than one model) is unchanged.
+func TestQuotasForModelEmptyModelFallsBackToDefault(t *testing.T) {
+	c, ok := CompatFor("free-groq")
+	if !ok {
+		t.Fatal("free-groq missing")
+	}
+	if len(QuotasForModel(c, "")) == 0 {
+		t.Error("empty model should fall back to the profile's default model")
+	}
+}

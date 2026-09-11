@@ -6,6 +6,28 @@ All notable changes to GopherMind are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Desktop application** — a Wails shell around the harness, with a chat screen, an approvals screen, a model picker and a settings panel. The frontend speaks only HTTP to an embedded instance of the same server the CLI runs; there is exactly one native binding, and all it does is tell the frontend where that server is.
+- **Model picker** — a dropdown of every available model with its remaining usage, a cycle-on-capacity switch, preference ordering, reachability and capacity filters, terms-based exclusions, and custom provider/model links. Every judgment call is a setting rather than a hardcoded rule.
+- **Per-model metering.** The odometer introduced in 0.6.0 now records usage per model as well as per provider, and every model is measured against the rate limit *it* publishes. A model whose provider publishes no limit shows a bare count, never a borrowed one.
+- **Contract-first task pipeline** — tasks gain `depends_on`, `candidate_models`, an attempt history and revision rounds. Waves are derived from the dependency graph and run concurrently (bounded at four); a task tries its candidate models in order, recording a specific reason for each failure; a task that exhausts every model has its definition revised rather than re-run, twice at most, then escalates to a human. A task that finds the contract wrong flags it and stops the run instead of improvising around it.
+- **Live pipeline dashboard** at `GET /pipeline`, fed by SSE from the project's assignments file, with an end-of-run report attributing wins and losses to every model actually tried.
+
+### Fixed
+
+- **`run_shell` no longer passes `GIT_*` variables to the commands it runs.** 0.6.0 fixed this for git commands gophermind builds itself, but `run_shell` is the path an agent actually runs `git init` and `git commit` through, and it handed the whole parent environment to bash. Both shell tools are fixed, and the model-supplied `env_allow_list` is filtered too, so naming `GIT_DIR` there cannot reinstate it.
+- **Each model is metered against its own published quota.** Every model on a provider was measured against the *default* model's rate limit, so `gemini-2.5-pro` (really 5 RPM, 50 RPD) displayed as 15 RPM / 1,500 RPD, and models publishing no limit at all were given one.
+- **Candidate models stay on the endpoint that can serve them.** A project run against a private endpoint was handed two dozen hosted-provider routing ids and never tried the model the plan asked for.
+- **Every turn is metered, not only the CLI's one-shot path.** Turns served over HTTP, through a session, or in the desktop app spent free-tier allowance that no counter saw, so the model picker's usage figures stayed at full forever and cycle-on-capacity could never fire.
+- **Typing no longer decides a pending approval.** The Y/N approval shortcut was bound to the window with no check on the focused element, so a keystroke typed into a settings field could approve a gated shell command — and `preventDefault` hid it.
+- **`POST /run` and `/run/stream` no longer auto-approve gated tools** in the desktop app, which made the approvals screen bypassable by using a different route with the same token.
+- **Concurrent turns and concurrent tasks no longer share one mutable LLM client**, which let a turn run on a model another turn had selected while the recorded history named the model it asked for.
+- **A contract flag stops the run**, rather than only the current pass, and is rendered as itself rather than as a success.
+- **A corrupt or unreadable settings file is reported** instead of silently yielding defaults, which re-enabled providers excluded for legal reasons; a failed odometer read no longer overwrites the lifetime reading with zeros.
+- **`Ctrl-C` reaches the server's graceful shutdown path**, which was unreachable because the serve command passed a context that never cancels.
+
+
 ## [0.6.0] - 2026-09-10
 
 ### Added

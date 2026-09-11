@@ -46,24 +46,43 @@ func (t TripMeter) String() string {
 // When no quota parses, it returns a single quota-less meter carrying the
 // day's request count, so the user still sees activity.
 func TripMeters(o *Odometer, c Compat, now time.Time) []TripMeter {
-	quotas := QuotasFor(c)
+	return tripMeters(o, c, "", now)
+}
+
+// ModelTripMeters returns one meter per published quota for the profile,
+// counting only that profile's events for the given model inside each
+// window. It mirrors TripMeters exactly, so the quota-less fallback and the
+// warn threshold cannot drift between the two.
+func ModelTripMeters(o *Odometer, c Compat, model string, now time.Time) []TripMeter {
+	return tripMeters(o, c, model, now)
+}
+
+// tripMeters is the shared body for TripMeters and ModelTripMeters. model
+// empty means "any model", which is what TripMeters wants.
+func tripMeters(o *Odometer, c Compat, model string, now time.Time) []TripMeter {
+	// The quota is looked up for THIS model, not the profile's default: the
+	// meter's numerator already counts only this model's events, so a
+	// denominator taken from another model would be measuring two different
+	// things against each other.
+	quotas := QuotasForModel(c, model)
 	if len(quotas) == 0 {
-		return []TripMeter{{Used: sumWindow(o, c.Profile, UnitRequests, now, 24*time.Hour)}}
+		return []TripMeter{{Used: sumWindow(o, c.Profile, model, UnitRequests, now, 24*time.Hour)}}
 	}
 	out := make([]TripMeter, 0, len(quotas))
 	for _, q := range quotas {
 		out = append(out, TripMeter{
 			Quota:    q,
-			Used:     sumWindow(o, c.Profile, q.Unit, now, q.Window),
+			Used:     sumWindow(o, c.Profile, model, q.Unit, now, q.Window),
 			HasQuota: true,
 		})
 	}
 	return out
 }
 
-// sumWindow totals one profile's usage of one unit within the window ending at
-// now.
-func sumWindow(o *Odometer, profile string, unit Unit, now time.Time, window time.Duration) int64 {
+// sumWindow totals one profile's usage of one unit within the window ending
+// at now. model, when non-empty, further restricts the total to events for
+// that model; empty means any model.
+func sumWindow(o *Odometer, profile, model string, unit Unit, now time.Time, window time.Duration) int64 {
 	if o == nil {
 		return 0
 	}
@@ -71,6 +90,9 @@ func sumWindow(o *Odometer, profile string, unit Unit, now time.Time, window tim
 	var total int64
 	for _, e := range o.Events {
 		if e.Profile != profile || !e.TS.After(cutoff) || e.TS.After(now) {
+			continue
+		}
+		if model != "" && e.Model != model {
 			continue
 		}
 		if unit == UnitTokens {

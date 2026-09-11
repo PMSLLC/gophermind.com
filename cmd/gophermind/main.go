@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -40,6 +41,7 @@ import (
 	"gophermind/internal/report"
 	"gophermind/internal/safety"
 	"gophermind/internal/schemas"
+	"gophermind/internal/serve"
 	"gophermind/internal/session"
 	"gophermind/internal/setup"
 	"gophermind/internal/stream"
@@ -1052,7 +1054,13 @@ func run() error {
 	case "serve":
 		// Webhook mode: each POST /run spawns a fresh agent turn, isolated from
 		// other requests. Blocks until the process is stopped.
-		metrics := &serveMetrics{}
+		metrics := &serve.ServeMetrics{}
+		// Which free provider, if any, this server's endpoint belongs to.
+		// Empty means the user's own endpoint and nothing to meter.
+		servedProfile := ""
+		if c, ok := freellm.CompatForBaseURL(client.BaseURL); ok {
+			servedProfile = c.Profile
+		}
 		run := func(ctx context.Context, t string) (string, error) {
 			ag := agent.New(client, reg, cfg.MaxIter, approve, nil)
 			ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
@@ -1065,8 +1073,9 @@ func run() error {
 			injectRetrieval(ctx, ag, embedProvider, ragPaths, t)
 			answer, err := ag.Send(ctx, t)
 			u := ag.Usage()
-			metrics.promptTokens.Add(int64(u.PromptTokens))
-			metrics.completionTokens.Add(int64(u.CompletionTokens))
+			metrics.PromptTokens.Add(int64(u.PromptTokens))
+			metrics.CompletionTokens.Add(int64(u.CompletionTokens))
+			_ = freellm.Record(servedProfile, client.Model, u.PromptTokens, u.CompletionTokens)
 			return answer, err
 		}
 		// Streaming variant for /run/stream: emit assistant tokens as they arrive.
@@ -1091,20 +1100,20 @@ func run() error {
 		// pause on a gated tool call, ask the phone via an "approval-needed" SSE
 		// frame, and resume on its decision (with timeout/disconnect -> deny). The
 		// registry is shared across every turn so the approve route (registered in
-		// runServe) can resolve any turn's pending approval.
-		approvals := newApprovalRegistry()
-		remoteApproval := serveApprovalRemote()
-		approvalWait := serveApprovalTimeout()
+		// Run) can resolve any turn's pending approval.
+		approvals := serve.NewApprovalRegistry()
+		remoteApproval := serve.ServeApprovalRemote()
+		approvalWait := serve.ServeApprovalTimeout()
 		// APNs push (S4): pings a backgrounded phone on approval-needed. Best-
-		// effort — newApprovalNotifier is a no-op whenever APNs is unconfigured
+		// effort - NewApprovalNotifier is a no-op whenever APNs is unconfigured
 		// or the device store fails to load, so a push failure or
 		// misconfiguration can never block or error a turn.
-		devStore, devStoreErr := newDeviceStore()
+		devStore, devStoreErr := serve.NewDeviceStore()
 		if devStoreErr != nil {
 			fmt.Fprintf(os.Stderr, "gophermind: apns device store disabled: %v\n", devStoreErr)
 			devStore = nil
 		}
-		notify := newApprovalNotifier(newAPNsPusher(loadAPNsConfig()), devStore)
+		notify := serve.NewApprovalNotifier(serve.NewAPNsPusher(serve.LoadAPNsConfig()), devStore)
 		// Session-backed variant for /session/{id}/stream: resumes a persisted
 		// conversation when one exists for id (else starts fresh with the usual
 		// system prompt), forwards S1's typed SSE frames per agent.Event, then
@@ -1112,7 +1121,7 @@ func run() error {
 		// applied per HTTP turn instead of once per process.
 		sessionTurn := func(ctx context.Context, id, t string, emit func(event, data string) error) error {
 			onEvent := func(e agent.Event) {
-				event, data, ok := sseFramesForAgentEvent(e)
+				event, data, ok := serve.SSEFramesForAgentEvent(e)
 				if !ok {
 					return
 				}
@@ -1125,11 +1134,11 @@ func run() error {
 				// erroring the gate itself.
 				notifyingEmit := func(event, data string) error {
 					if event == "approval-needed" {
-						go notifyApprovalNeeded(notify, id, data)
+						go serve.NotifyApprovalNeeded(notify, id, data)
 					}
 					return emit(event, data)
 				}
-				turnApprove = remoteApprovalGate(approvals, ctx, approvalWait, notifyingEmit, newApprovalID)
+				turnApprove = serve.RemoteApprovalGate(approvals, ctx, approvalWait, notifyingEmit, serve.NewApprovalID)
 			}
 			ag := agent.New(client, reg, cfg.MaxIter, turnApprove, onEvent)
 			ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
@@ -1139,12 +1148,12 @@ func run() error {
 					return err
 				}
 			} else {
-				ag.SetSystemPrompt(systemPromptForMode(readSessionMode(id), basePrompt, cfg.RootDir))
+				ag.SetSystemPrompt(serve.SystemPromptForMode(serve.ReadSessionMode(id), basePrompt, cfg.RootDir))
 				if systemSuffix != "" {
 					ag.AppendSystemPrompt(systemSuffix)
 				}
 			}
-			if m := readSessionModel(id); m != "" {
+			if m := serve.ReadSessionModel(id); m != "" {
 				ag.SetModel(m)
 			}
 			// Per-turn retrieval, keyed to this turn's text rather than the session's
@@ -1154,6 +1163,12 @@ func run() error {
 			restore := injectRetrieval(ctx, ag, embedProvider, ragPaths, t)
 			_, err := ag.Send(ctx, t)
 			restore()
+			// Meter the turn. Without this a served session spent free-tier
+			// allowance that no counter ever saw, so the model picker's
+			// remaining-usage figures stayed at full and cycle-on-capacity
+			// could never fire.
+			u := ag.Usage()
+			_ = freellm.Record(servedProfile, ag.LLM().Model, u.PromptTokens, u.CompletionTokens)
 			if serr := session.Save(id, ag); serr != nil && err == nil {
 				err = serr
 			}
@@ -1195,7 +1210,51 @@ func run() error {
 			defer cancel()
 			return client.ListModels(ctx)
 		}
-		return runServe(run, metrics, stream, sessionTurn, approvals, devStore, loadMessages, listModels)
+		pipelineHub := serve.NewPipelineHub()
+		mux, err := serve.NewMux(serve.Deps{
+			Run: run, Stream: stream, Metrics: metrics,
+			SessionTurn: sessionTurn, Approvals: approvals, Devices: devStore,
+			SessionMessages: loadMessages, ListModels: listModels,
+			// Pipeline piece 5: live dashboard + run summary at GET
+			// /pipeline, backed by cfg.RootDir's .planning/assignments.json
+			// - the same project state every other command reads.
+			Pipeline: &serve.PipelineDeps{Root: cfg.RootDir, Hub: pipelineHub},
+		}, serve.Options{})
+		if err != nil {
+			return err
+		}
+		addr := serve.Addr()
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "gophermind serving on %s (POST /run, /run/stream; /healthz /readyz)\n", addr)
+		if sessionTurn != nil {
+			remote := "local approval"
+			if serve.ServeApprovalRemote() {
+				remote = "remote approval"
+			}
+			apns := "APNs disabled"
+			if devStore != nil && serve.APNsEnabled() {
+				apns = "APNs configured"
+			}
+			fmt.Fprintf(os.Stderr, "  sessions: POST /session, POST /session/{id}/stream, POST /session/{id}/approve, POST /devices (%s, %s)\n", remote, apns)
+		}
+		// A signal context, not context.Background: serve.Serve's graceful
+		// shutdown path is driven by cancellation, and passing a context
+		// that never cancels made that path unreachable. Ctrl-C then killed
+		// in-flight turns outright, losing whatever a session had not yet
+		// saved. Every other long-running command here already does this.
+		serveCtx, stopServe := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stopServe()
+		// Feed the hub. A run executes in a different process (the TUI's
+		// /project-execute, or `gophermind phase execute`), so nothing in it
+		// can call this hub directly; watching the assignments file is the
+		// only channel between them, and it is the same file /pipeline/state
+		// serves. Without this the dashboard's event stream stayed silent
+		// and the page showed whatever state existed when it loaded.
+		serve.StartPipelineWatcher(serveCtx, cfg.RootDir, pipelineHub)
+		return serve.Serve(serveCtx, ln, mux)
 	case "queue":
 		if task == "" {
 			return fmt.Errorf("queue requires a file of tasks (one per line)")
@@ -1354,16 +1413,12 @@ func run() error {
 			}
 		}
 		// The free-usage odometer counts unconditionally: unlike the cost log
-		// it needs no opt-in env var. Failure to record is never fatal to a run.
+		// it needs no opt-in env var. Failure to record is never fatal to a
+		// run. client.Model, not cfg.Model: the model that actually served
+		// this turn is the one whose allowance was spent, and speed routing,
+		// startup discovery and /model all reassign it.
 		if isFree {
-			if odo, err := freellm.LoadOdometer(freellm.OdometerPath()); err == nil {
-				_ = odo.Add(freellm.OdometerPath(), freellm.Event{
-					TS:       time.Now(),
-					Profile:  freeCompat.Profile,
-					Tokens:   int64(u.PromptTokens + u.CompletionTokens),
-					Requests: 1,
-				})
-			}
+			_ = freellm.Record(freeCompat.Profile, client.Model, u.PromptTokens, u.CompletionTokens)
 		}
 		// --report writes a self-contained HTML record of the run (task, answer,
 		// usage) for sharing.
@@ -2253,6 +2308,8 @@ Usage:
                                 session/mobile: POST /session, POST /session/{id}/stream (SSE),
                                 GET /session, DELETE /session/{id}, POST /session/{id}/approve,
                                 POST /devices — see docs/mobile-serve.md
+                                pipeline: GET /pipeline (dashboard), GET /pipeline/state,
+                                GET /pipeline/events (SSE), GET /pipeline/report
 
 On first interactive launch with nothing configured, a short setup wizard runs
 and saves your choices to the global config (see below); later launches skip it.

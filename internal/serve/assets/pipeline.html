@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="referrer" content="no-referrer">
+<!-- This page holds a bearer token that runs shell commands, so it is
+     worth more than one layer. The page loads nothing external, which lets
+     connect-src stay 'self': should an escaping bug ever appear here, an
+     injected script would have nowhere to send what it steals. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'">
+<title>Task Runner - Live Pipeline</title>
+<style>
+  /* Layout, typography and color palette are carried over from
+     docs/design/pipeline_view_mockup.html - the target this dashboard
+     adapts. Additions below (marked) cover states the mockup never drew:
+     escalated, contract_flagged, failed, unknown, plus the token/connection
+     controls and the run report panel. */
+  :root{
+    --void:#0D1210;
+    --panel:#131A17;
+    --panel-2:#0F1512;
+    --line:#243029;
+    --ink:#E7ECE9;
+    --muted:#7C8C85;
+    --dim:#4B5A54;
+    --phosphor:#6FDE8C;
+    --amber:#E8A33D;
+    --rust:#E2604B;
+    --teal:#4FB8B0;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;background:var(--void);}
+  body{
+    font-family:'IBM Plex Mono', ui-monospace, monospace;
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+  }
+  .app{
+    display:flex;
+    flex-direction:column;
+    min-height:100vh;
+    padding:20px;
+    gap:16px;
+  }
+
+  /* ---- header ---- */
+  header{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    border-bottom:1px solid var(--line);
+    padding-bottom:14px;
+    flex-wrap:wrap;
+    gap:10px;
+  }
+  .masthead{
+    font-family:'Space Grotesk', sans-serif;
+    font-weight:600;
+    font-size:22px;
+    letter-spacing:0.2px;
+  }
+  .masthead span{color:var(--muted); font-weight:500; font-size:14px; margin-left:10px; font-family:'IBM Plex Mono', monospace;}
+  .runmeta{
+    display:flex;
+    align-items:center;
+    gap:22px;
+    font-size:12.5px;
+    color:var(--muted);
+    flex-wrap:wrap;
+  }
+  .runmeta b{color:var(--ink); font-weight:600;}
+
+  /* ---- token / connect (new: the mockup had no auth story) ---- */
+  .connect{display:flex; align-items:center; gap:6px;}
+  .connect input{
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    color:var(--ink);
+    font-family:inherit;
+    font-size:12px;
+    padding:5px 8px;
+    width:170px;
+  }
+  .connect input:focus{outline:1px solid var(--teal);}
+  .connect button{
+    background:none;
+    border:1px solid var(--dim);
+    color:var(--muted);
+    font-family:inherit;
+    font-size:11.5px;
+    padding:6px 10px;
+    cursor:pointer;
+  }
+  .connect button:hover{border-color:var(--teal); color:var(--teal);}
+  .connstate{font-size:10.5px; letter-spacing:0.4px; text-transform:uppercase;}
+  .connstate.live{color:var(--phosphor);}
+  .connstate.off{color:var(--dim);}
+  .connstate.err{color:var(--rust);}
+
+  /* ---- layout ---- */
+  .board{
+    display:grid;
+    grid-template-columns:300px 1fr;
+    gap:16px;
+    flex:1;
+    min-height:0;
+  }
+  @media (max-width:820px){
+    .board{grid-template-columns:1fr;}
+  }
+
+  /* ---- wave column ---- */
+  .waves{
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+    overflow-y:auto;
+    padding-right:4px;
+  }
+  .wave-label{
+    font-size:11px;
+    color:var(--dim);
+    letter-spacing:0.5px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-bottom:6px;
+  }
+  .wave-label .rule{flex:1; height:1px; background:var(--line);}
+  .wave-block{margin-bottom:4px;}
+
+  .task-pill{
+    display:flex;
+    align-items:center;
+    gap:9px;
+    padding:9px 10px;
+    border:1px solid var(--line);
+    background:var(--panel);
+    margin-bottom:6px;
+    cursor:pointer;
+    font-size:12.5px;
+    transition:border-color 120ms ease, background 120ms ease;
+  }
+  .task-pill:hover{border-color:var(--dim);}
+  .task-pill.active{
+    border-color:var(--teal);
+    background:#122320;
+  }
+  /* escalated / contract_flagged get their own left-edge stripe on top of
+     the dot below, so they read as distinct even at a glance across the
+     whole wave board - not just up close. New, not in the mockup. */
+  .task-pill.pill-escalated{border-left:3px solid var(--rust);}
+  .task-pill.pill-contract-flagged{border-left:3px solid var(--amber);}
+
+  .dot{
+    width:8px; height:8px; flex:0 0 8px;
+    border-radius:50%;
+    background:var(--dim);
+  }
+  .dot.queued{background:var(--dim);}
+  .dot.running{background:var(--amber); box-shadow:0 0 0 3px rgba(232,163,61,0.15); animation:pulse 1.4s ease-in-out infinite;}
+  .dot.verified{background:var(--phosphor);}
+  .dot.revisit{background:var(--rust); box-shadow:0 0 0 3px rgba(226,96,75,0.18); animation:pulse 1.4s ease-in-out infinite;}
+  /* New dot treatments: needs_revision (above, "revisit") is a normal part
+     of the loop, but escalated and contract_flagged both mean a human is
+     needed, so each gets a static (non-pulsing, nothing to wait out) dot
+     with a second ring, visually louder than "revisit" rather than folded
+     into it. failed and unknown are new too, for completeness. */
+  .dot.escalated{background:var(--rust); box-shadow:0 0 0 2px var(--void), 0 0 0 4px var(--rust);}
+  .dot.contract-flagged{background:var(--amber); box-shadow:0 0 0 2px var(--void), 0 0 0 4px var(--amber);}
+  .dot.failed{background:var(--rust);}
+  .dot.unknown{background:var(--dim); border:1px dashed var(--muted);}
+  @keyframes pulse{
+    0%,100%{opacity:1;}
+    50%{opacity:0.45;}
+  }
+  .task-pill .tname{flex:1; color:var(--ink);}
+  .task-pill .tstatus{color:var(--muted); font-size:10.5px; text-transform:uppercase; letter-spacing:0.4px;}
+
+  /* ---- hero / detail panel ---- */
+  .detail{
+    border:1px solid var(--line);
+    background:var(--panel);
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+    overflow:hidden;
+  }
+  .detail-head{
+    padding:16px 18px;
+    border-bottom:1px solid var(--line);
+    background:var(--panel-2);
+  }
+  .detail-head .tag{
+    font-size:10.5px;
+    color:var(--dim);
+    letter-spacing:0.5px;
+    margin-bottom:6px;
+  }
+  .detail-head h2{
+    margin:0 0 10px 0;
+    font-size:17px;
+    font-weight:600;
+    font-family:'IBM Plex Mono', monospace;
+  }
+  .spec-row{
+    display:flex;
+    gap:24px;
+    flex-wrap:wrap;
+    font-size:12px;
+  }
+  .spec-row div{max-width:420px;}
+  .spec-row .k{color:var(--dim); font-size:10.5px; letter-spacing:0.4px; margin-bottom:3px;}
+  .spec-row .v{color:var(--muted); line-height:1.5;}
+
+  .log{
+    flex:1;
+    overflow-y:auto;
+    padding:14px 18px;
+    font-size:12.5px;
+    line-height:1.6;
+  }
+  .log-line{
+    display:grid;
+    grid-template-columns:20px 190px 1fr 70px;
+    gap:12px;
+    align-items:baseline;
+    padding:6px 0;
+    border-bottom:1px solid var(--panel-2);
+  }
+  .log-line .idx{color:var(--dim);}
+  .log-line .model{color:var(--ink);}
+  .log-line .reason{color:var(--muted);}
+  .log-line .verdict{text-align:right; font-weight:600; letter-spacing:0.3px;}
+  .verdict.running{color:var(--amber);}
+  .verdict.pass{color:var(--phosphor);}
+  .verdict.fail{color:var(--rust);}
+
+  .revisit-block{
+    margin-top:10px;
+    border:1px dashed var(--rust);
+    background:#1A100E;
+    padding:12px 14px;
+    font-size:12px;
+    color:#F0B7AC;
+  }
+  .revisit-block .k{color:var(--rust); font-size:10.5px; letter-spacing:0.4px; margin-bottom:5px; font-weight:600;}
+  .revisit-block .round{margin-top:8px;}
+
+  .foot{
+    border-top:1px solid var(--line);
+    padding:10px 18px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    background:var(--panel-2);
+  }
+  .replay{
+    background:none;
+    border:1px solid var(--dim);
+    color:var(--muted);
+    font-family:inherit;
+    font-size:11.5px;
+    padding:6px 12px;
+    cursor:pointer;
+    letter-spacing:0.3px;
+  }
+  .replay:hover{border-color:var(--teal); color:var(--teal);}
+  .foot .hint{font-size:11px; color:var(--dim);}
+
+  /* ---- run report panel (new: source spec section 5's "render it as a
+     final Run Report in the dashboard") ---- */
+  .report-overlay{
+    position:fixed; inset:0;
+    background:rgba(6,9,8,0.75);
+    display:flex; align-items:flex-start; justify-content:center;
+    padding:40px 16px;
+    overflow-y:auto;
+  }
+  .report-panel{
+    background:var(--panel);
+    border:1px solid var(--line);
+    max-width:760px;
+    width:100%;
+  }
+  .report-head{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:14px 18px;
+    border-bottom:1px solid var(--line);
+    background:var(--panel-2);
+  }
+  .report-head h2{margin:0; font-size:16px;}
+  .report-body{padding:16px 18px; font-size:12.5px;}
+  table.model-stats{width:100%; border-collapse:collapse; margin-bottom:16px;}
+  table.model-stats th, table.model-stats td{
+    text-align:left; padding:6px 8px; border-bottom:1px solid var(--panel-2);
+  }
+  table.model-stats th{color:var(--dim); font-size:10.5px; letter-spacing:0.4px; text-transform:uppercase;}
+  .close-report{
+    background:none; border:1px solid var(--dim); color:var(--muted);
+    font-family:inherit; font-size:11.5px; padding:5px 10px; cursor:pointer;
+  }
+  .close-report:hover{border-color:var(--teal); color:var(--teal);}
+  [hidden]{display:none!important;}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header>
+    <div class="masthead">TASK RUNNER<span>/ live pipeline</span></div>
+    <div class="runmeta">
+      <div class="connect">
+        <input id="tokenInput" type="password" placeholder="bearer token" autocomplete="off">
+        <button id="connectBtn" type="button">connect</button>
+        <span id="connState" class="connstate off">disconnected</span>
+      </div>
+      <div>TASKS <b id="taskIndicator">-</b></div>
+      <div>UPDATED <b id="updatedAt">-</b></div>
+      <button class="replay" id="reportBtn" type="button">run report</button>
+    </div>
+  </header>
+
+  <div class="board">
+    <div class="waves" id="waves"></div>
+    <div class="detail">
+      <div class="detail-head">
+        <div class="tag" id="detailTag">-</div>
+        <h2 id="detailTitle">Connect to see live tasks</h2>
+        <div class="spec-row">
+          <div>
+            <div class="k">DELIVERABLE</div>
+            <div class="v" id="detailDeliverable">-</div>
+          </div>
+          <div>
+            <div class="k">TEST</div>
+            <div class="v" id="detailTest">-</div>
+          </div>
+        </div>
+      </div>
+      <div class="log" id="log"></div>
+      <div class="foot">
+        <div class="hint" id="hint">enter the server's bearer token above and click connect</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="report-overlay" id="reportOverlay" hidden>
+  <div class="report-panel">
+    <div class="report-head">
+      <h2>Run Report</h2>
+      <button class="close-report" id="closeReportBtn" type="button">close</button>
+    </div>
+    <div class="report-body" id="reportBody">-</div>
+  </div>
+</div>
+
+<script>
+// ---------------------------------------------------------------------
+// Status vocabulary map - the ONE place the engine's status values (see
+// phaseflow.StatusPending etc.) translate to the mockup's dot/pill
+// styling. The label shown next to a task is always the engine's own
+// status string (see renderWaves below) - this map only ever picks how
+// it is drawn. escalated and contract_flagged deliberately get their own
+// dot/pill treatment (see CSS above) rather than folding into
+// needs_revision's "revisit" styling: those two are the states most
+// likely to need a human, and dulling them into a friendlier shared
+// bucket would defeat the reason they exist as distinct statuses.
+// ---------------------------------------------------------------------
+const STATUS_META = {
+  pending:          { dot: 'queued' },
+  running:          { dot: 'running' },
+  done:             { dot: 'verified' },
+  corrected:        { dot: 'verified' },
+  needs_revision:   { dot: 'revisit' },
+  failed:           { dot: 'failed', pill: 'pill-failed' },
+  escalated:        { dot: 'escalated', pill: 'pill-escalated' },
+  contract_flagged: { dot: 'contract-flagged', pill: 'pill-contract-flagged' },
+};
+function statusMetaFor(status){
+  return STATUS_META[status] || { dot: 'unknown' };
+}
+
+function esc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  }[c]));
+}
+
+// tasks holds the real state fetched from /pipeline/state and updated live
+// by /pipeline/events - never demo data. Empty until the first successful
+// fetch.
+let tasks = [];
+let current = null;
+let authToken = '';
+let eventsAbort = null;
+
+const wavesEl = document.getElementById('waves');
+const logEl = document.getElementById('log');
+const titleEl = document.getElementById('detailTitle');
+const tagEl = document.getElementById('detailTag');
+const delivEl = document.getElementById('detailDeliverable');
+const testEl = document.getElementById('detailTest');
+const taskIndicator = document.getElementById('taskIndicator');
+const updatedAtEl = document.getElementById('updatedAt');
+const connStateEl = document.getElementById('connState');
+const tokenInput = document.getElementById('tokenInput');
+const connectBtn = document.getElementById('connectBtn');
+const hintEl = document.getElementById('hint');
+const reportBtn = document.getElementById('reportBtn');
+const reportOverlay = document.getElementById('reportOverlay');
+const reportBody = document.getElementById('reportBody');
+const closeReportBtn = document.getElementById('closeReportBtn');
+
+function findTask(id){
+  return tasks.find(t => t.id === id);
+}
+
+function taskCounts(){
+  const total = tasks.length;
+  const done = tasks.filter(t => t.status === 'done' || t.status === 'corrected').length;
+  return `${done}/${total}`;
+}
+
+function renderWaves(){
+  wavesEl.innerHTML = '';
+  taskIndicator.textContent = taskCounts();
+  const byWave = {};
+  tasks.forEach(t => { (byWave[t.wave || 0] = byWave[t.wave || 0] || []).push(t); });
+  Object.keys(byWave).map(Number).sort((a,b) => a-b).forEach(w => {
+    const block = document.createElement('div');
+    block.className = 'wave-block';
+    const label = document.createElement('div');
+    label.className = 'wave-label';
+    label.innerHTML = `WAVE ${w}<div class="rule"></div>`;
+    block.appendChild(label);
+    byWave[w].forEach(t => {
+      const meta = statusMetaFor(t.status);
+      const pill = document.createElement('div');
+      pill.className = 'task-pill' + (t.id === current ? ' active' : '') + (meta.pill ? ' ' + meta.pill : '');
+      pill.dataset.id = t.id;
+      pill.innerHTML = `<div class="dot ${meta.dot}"></div><div class="tname">${esc(t.title || t.id)}</div><div class="tstatus">${esc(t.status)}</div>`;
+      pill.addEventListener('click', () => loadTask(t.id));
+      block.appendChild(pill);
+    });
+    wavesEl.appendChild(block);
+  });
+}
+
+function renderAttemptLine(a, idx){
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  // Uppercase the raw value, then escape it. Case-transforming esc()'s
+  // output is not a security hole - a character reference never opens a
+  // tag, so &LT; renders as the text "<" exactly as &lt; does - but it does
+  // corrupt what the reader sees: a verdict containing "&" escapes to
+  // "&amp;" and then uppercases to "&AMP;", which displays literally.
+  const verdictLabel = a.verdict === 'pass' ? 'PASSED' : (a.verdict === 'fail' ? 'FAILED' : esc(String(a.verdict == null ? '' : a.verdict).toUpperCase()));
+  line.innerHTML = `<div class="idx">${String(idx+1).padStart(2,'0')}</div><div class="model">${esc(a.model)}</div><div class="reason">${esc(a.reason)}</div><div class="verdict ${esc(a.verdict)}">${verdictLabel}</div>`;
+  return line;
+}
+
+function renderRevisionBlock(t){
+  const rounds = t.revision_rounds || [];
+  if(!rounds.length) return null;
+  const block = document.createElement('div');
+  block.className = 'revisit-block';
+  const head = document.createElement('div');
+  head.className = 'k';
+  head.textContent = '↳ SENT BACK TO PLANNER - TASK DEFINITION UNDER REVISION';
+  block.appendChild(head);
+  rounds.forEach(r => {
+    const p = document.createElement('div');
+    p.className = 'round';
+    p.textContent = `round ${r.round}: ${r.note}`;
+    block.appendChild(p);
+  });
+  return block;
+}
+
+function renderLog(t){
+  logEl.innerHTML = '';
+  const attempts = t.attempts || [];
+  if(!attempts.length){
+    const empty = document.createElement('div');
+    empty.className = 'log-line';
+    empty.style.gridTemplateColumns = '1fr';
+    empty.innerHTML = t.status === 'pending'
+      ? '<div class="reason">Queued - waiting on upstream wave to complete.</div>'
+      : '<div class="reason">No attempts recorded yet.</div>';
+    logEl.appendChild(empty);
+  } else {
+    attempts.forEach((a, i) => logEl.appendChild(renderAttemptLine(a, i)));
+  }
+  if(t.status === 'running'){
+    const running = document.createElement('div');
+    running.className = 'log-line';
+    running.style.gridTemplateColumns = '1fr';
+    running.innerHTML = '<div class="reason">task is running - waiting for the next attempt to complete</div>';
+    logEl.appendChild(running);
+  }
+  const revBlock = renderRevisionBlock(t);
+  if(revBlock) logEl.appendChild(revBlock);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function loadTask(id){
+  current = id;
+  const t = findTask(id);
+  if(!t) return;
+  tagEl.textContent = `WAVE ${t.wave || 0}${t.phase ? ' · ' + String(t.phase).toUpperCase() : ''}`;
+  titleEl.textContent = t.title || t.id;
+  delivEl.textContent = t.description || '(no description)';
+  const criteria = t.acceptance_criteria || [];
+  testEl.textContent = criteria.length ? criteria.join('; ') : '(no acceptance criteria)';
+  renderWaves();
+  renderLog(t);
+}
+
+// ---------------------------------------------------------------------
+// Real data: fetch /pipeline/state, subscribe to /pipeline/events. There
+// is no fake or replayed data path - opening this page during an active
+// run must show that run's actual tasks.
+// ---------------------------------------------------------------------
+
+function authHeaders(){
+  return authToken ? { 'Authorization': 'Bearer ' + authToken } : {};
+}
+
+async function loadState(){
+  const resp = await fetch('/pipeline/state', { headers: authHeaders() });
+  if(!resp.ok){
+    throw new Error('GET /pipeline/state: ' + resp.status);
+  }
+  const body = await resp.json();
+  tasks = body.tasks || [];
+  updatedAtEl.textContent = new Date(body.generated_at).toLocaleTimeString();
+  if(!current && tasks.length){
+    current = tasks[0].id;
+  }
+  renderWaves();
+  if(current) loadTask(current);
+}
+
+function applyTaskStatus(ev){
+  const t = findTask(ev.id);
+  if(t){
+    t.status = ev.status;
+    t.wave = ev.wave;
+  }
+  renderWaves();
+  if(current === ev.id) loadTask(ev.id);
+}
+
+function applyTaskAttempt(ev){
+  const t = findTask(ev.task_id);
+  if(t){
+    t.attempts = t.attempts || [];
+    t.attempts.push({ model: ev.model, duration: ev.duration, verdict: ev.verdict, reason: ev.reason });
+  }
+  if(current === ev.task_id) loadTask(ev.task_id);
+}
+
+function renderReport(report){
+  const models = report.models || report.Models || [];
+  const revised = report.revised_tasks || report.RevisedTasks || [];
+  let html = '';
+  html += '<table class="model-stats"><thead><tr>' +
+    '<th>model</th><th>attempts</th><th>pass</th><th>fail</th><th>rate</th><th>avg duration</th><th>fail reasons</th>' +
+    '</tr></thead><tbody>';
+  models.forEach(m => {
+    const rate = ((m.pass_rate ?? m.PassRate ?? 0) * 100).toFixed(0) + '%';
+    const reasons = (m.fail_reasons || m.FailReasons || []).join('; ') || '-';
+    html += `<tr><td>${esc(m.model || m.Model)}</td><td>${esc(m.attempts ?? m.Attempts)}</td>` +
+      `<td>${esc(m.passes ?? m.Passes)}</td><td>${esc(m.fails ?? m.Fails)}</td><td>${esc(rate)}</td>` +
+      `<td>${esc(m.avg_duration || m.AvgDuration || '-')}</td><td>${esc(reasons)}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  if(revised.length){
+    html += '<div class="k" style="color:var(--dim); letter-spacing:0.4px; margin-bottom:6px;">REVISED TASKS</div>';
+    revised.forEach(r => {
+      html += `<div style="margin-bottom:8px;"><b>${esc(r.id || r.ID)}</b> - ${esc(r.rounds ?? r.Rounds)} round(s)<br>` +
+        `<span style="color:var(--muted);">${esc((r.notes || r.Notes || []).join(' / '))}</span></div>`;
+    });
+  } else {
+    html += '<div style="color:var(--muted);">No tasks needed a revision.</div>';
+  }
+  reportBody.innerHTML = html;
+  reportOverlay.hidden = false;
+}
+
+async function fetchReport(){
+  const resp = await fetch('/pipeline/report', { headers: authHeaders() });
+  if(!resp.ok){
+    reportBody.textContent = 'GET /pipeline/report failed: ' + resp.status;
+    reportOverlay.hidden = false;
+    return;
+  }
+  renderReport(await resp.json());
+}
+
+// parseSSEStream reads a fetch Response body as an SSE stream, calling
+// onEvent(event, data) for each frame. A plain browser EventSource cannot
+// carry an Authorization header, and every pipeline route (deliberately)
+// requires the same bearer token as the rest of the API - so this reads
+// the stream through fetch, which can set that header, and parses frames
+// itself instead of using new EventSource(...).
+async function parseSSEStream(resp, onEvent, signal){
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  while(true){
+    const { value, done } = await reader.read();
+    if(done) break;
+    buf += decoder.decode(value, { stream: true });
+    let sep;
+    while((sep = buf.indexOf('\n\n')) !== -1){
+      const frame = buf.slice(0, sep);
+      buf = buf.slice(sep + 2);
+      let event = '';
+      let dataLines = [];
+      frame.split('\n').forEach(line => {
+        if(line.startsWith('event: ')) event = line.slice(7);
+        else if(line.startsWith('data: ')) dataLines.push(line.slice(6));
+      });
+      onEvent(event, dataLines.join('\n'));
+    }
+  }
+}
+
+async function connectEvents(){
+  if(eventsAbort) eventsAbort.abort();
+  eventsAbort = new AbortController();
+  connStateEl.textContent = 'connecting';
+  connStateEl.className = 'connstate off';
+  try{
+    const resp = await fetch('/pipeline/events', { headers: authHeaders(), signal: eventsAbort.signal });
+    if(!resp.ok){
+      connStateEl.textContent = 'error ' + resp.status;
+      connStateEl.className = 'connstate err';
+      return;
+    }
+    connStateEl.textContent = 'live';
+    connStateEl.className = 'connstate live';
+    await parseSSEStream(resp, (event, data) => {
+      let parsed;
+      try{ parsed = JSON.parse(data); } catch(e){ return; }
+      if(event === 'task-status') applyTaskStatus(parsed);
+      else if(event === 'task-attempt') applyTaskAttempt(parsed);
+      else if(event === 'run-report') renderReport(parsed);
+      else if(event === 'wave-changed') loadState().catch(() => {});
+    }, eventsAbort.signal);
+    connStateEl.textContent = 'disconnected';
+    connStateEl.className = 'connstate off';
+  } catch(err){
+    if(eventsAbort.signal.aborted) return;
+    connStateEl.textContent = 'error';
+    connStateEl.className = 'connstate err';
+  }
+}
+
+async function connect(){
+  authToken = tokenInput.value.trim();
+  hintEl.textContent = 'click a task on the left to inspect its attempt log';
+  try{
+    await loadState();
+  } catch(err){
+    hintEl.textContent = 'failed to load /pipeline/state: ' + err.message;
+    return;
+  }
+  connectEvents();
+}
+
+connectBtn.addEventListener('click', connect);
+tokenInput.addEventListener('keydown', e => { if(e.key === 'Enter') connect(); });
+reportBtn.addEventListener('click', fetchReport);
+closeReportBtn.addEventListener('click', () => { reportOverlay.hidden = true; });
+
+// Convenience: a token passed in the URL fragment (#token=...) auto-
+// connects, for a dashboard opened directly from a link the operator
+// already trusts. The fragment, unlike the query string, is never sent to
+// the server, never appears in a Referer header to a subresource origin,
+// and is not written to server access logs - a bearer token here can run
+// shell commands on the machine, so a leak of it is a leak of code
+// execution, not just of a session id. It is read once and the address
+// bar is cleared immediately, before anything else can observe it (a
+// screen share, browser history, a copied link). There is no query-string
+// fallback: a fallback that works is a fallback people will use.
+if(location.hash){
+  const fragToken = new URLSearchParams(location.hash.slice(1)).get('token');
+  history.replaceState(null, '', location.pathname);
+  if(fragToken){
+    tokenInput.value = fragToken;
+    connect();
+  }
+}
+</script>
+</body>
+</html>
