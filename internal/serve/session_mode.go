@@ -1,4 +1,4 @@
-package main
+package serve
 
 import (
 	"os"
@@ -37,9 +37,9 @@ func writeSessionMode(id, mode string) error {
 	return os.WriteFile(p, []byte(mode), 0o600)
 }
 
-// readSessionMode returns id's stored mode, or "" if none is set or the
+// ReadSessionMode returns id's stored mode, or "" if none is set or the
 // sidecar can't be read.
-func readSessionMode(id string) string {
+func ReadSessionMode(id string) string {
 	p, err := sessionModePath(id)
 	if err != nil {
 		return ""
@@ -69,7 +69,7 @@ reach for them by default — most conversations don't need one.
 If you're unsure what someone wants, ask a short clarifying question rather than
 guessing. If you don't know something, say so plainly.`
 
-// systemPromptForMode returns the system prompt to use for a session in mode,
+// SystemPromptForMode returns the system prompt to use for a session in mode,
 // given the server's default (coding) basePrompt and the repo root (used to
 // resolve custom personas):
 //   - "" or "coding": basePrompt, unchanged.
@@ -78,7 +78,7 @@ guessing. If you don't know something, say so plainly.`
 //   - anything else (reviewer/architect/tester/custom persona name): basePrompt
 //     with the resolved persona text appended, or basePrompt unchanged if the
 //     persona can't be resolved.
-func systemPromptForMode(mode, basePrompt, root string) string {
+func SystemPromptForMode(mode, basePrompt, root string) string {
 	switch mode {
 	case "", "coding":
 		return basePrompt

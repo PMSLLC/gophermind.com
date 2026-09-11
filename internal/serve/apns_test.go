@@ -1,4 +1,4 @@
-package main
+package serve
 
 import (
 	"crypto/ecdsa"
@@ -284,9 +284,9 @@ func TestApnsPusherPush400ReturnsError(t *testing.T) {
 
 func TestDeviceStoreAddDedupeList(t *testing.T) {
 	t.Setenv("GOPHERMIND_CONFIG_DIR", t.TempDir())
-	store, err := newDeviceStore()
+	store, err := NewDeviceStore()
 	if err != nil {
-		t.Fatalf("newDeviceStore: %v", err)
+		t.Fatalf("NewDeviceStore: %v", err)
 	}
 	if err := store.Add("tok-a", "ios"); err != nil {
 		t.Fatalf("Add: %v", err)
@@ -307,17 +307,17 @@ func TestDeviceStorePersistRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("GOPHERMIND_CONFIG_DIR", dir)
 
-	store, err := newDeviceStore()
+	store, err := NewDeviceStore()
 	if err != nil {
-		t.Fatalf("newDeviceStore: %v", err)
+		t.Fatalf("NewDeviceStore: %v", err)
 	}
 	if err := store.Add("tok-x", "ios"); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 
-	store2, err := newDeviceStore()
+	store2, err := NewDeviceStore()
 	if err != nil {
-		t.Fatalf("newDeviceStore (reload): %v", err)
+		t.Fatalf("NewDeviceStore (reload): %v", err)
 	}
 	list := store2.List()
 	if len(list) != 1 || list[0] != "tok-x" {
@@ -333,9 +333,9 @@ func TestDeviceStoreConcurrentAddPersistsBoth(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("GOPHERMIND_CONFIG_DIR", dir)
 
-	store, err := newDeviceStore()
+	store, err := NewDeviceStore()
 	if err != nil {
-		t.Fatalf("newDeviceStore: %v", err)
+		t.Fatalf("NewDeviceStore: %v", err)
 	}
 
 	var wg sync.WaitGroup
@@ -357,9 +357,9 @@ func TestDeviceStoreConcurrentAddPersistsBoth(t *testing.T) {
 		}
 	}
 
-	reloaded, err := newDeviceStore()
+	reloaded, err := NewDeviceStore()
 	if err != nil {
-		t.Fatalf("newDeviceStore (reload): %v", err)
+		t.Fatalf("NewDeviceStore (reload): %v", err)
 	}
 	list := reloaded.List()
 	if len(list) != 2 {
@@ -376,9 +376,9 @@ func TestDeviceStoreConcurrentAddPersistsBoth(t *testing.T) {
 func TestDeviceStorePersistFileExists(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("GOPHERMIND_CONFIG_DIR", dir)
-	store, err := newDeviceStore()
+	store, err := NewDeviceStore()
 	if err != nil {
-		t.Fatalf("newDeviceStore: %v", err)
+		t.Fatalf("NewDeviceStore: %v", err)
 	}
 	if err := store.Add("tok-y", "ios"); err != nil {
 		t.Fatalf("Add: %v", err)
@@ -393,9 +393,9 @@ func TestDeviceStorePersistFileExists(t *testing.T) {
 
 func TestDevicesHandlerValidAdds(t *testing.T) {
 	t.Setenv("GOPHERMIND_CONFIG_DIR", t.TempDir())
-	store, err := newDeviceStore()
+	store, err := NewDeviceStore()
 	if err != nil {
-		t.Fatalf("newDeviceStore: %v", err)
+		t.Fatalf("NewDeviceStore: %v", err)
 	}
 	h := devicesHandler(store)
 
@@ -422,9 +422,9 @@ func TestDevicesHandlerValidAdds(t *testing.T) {
 
 func TestDevicesHandlerEmptyTokenBadRequest(t *testing.T) {
 	t.Setenv("GOPHERMIND_CONFIG_DIR", t.TempDir())
-	store, err := newDeviceStore()
+	store, err := NewDeviceStore()
 	if err != nil {
-		t.Fatalf("newDeviceStore: %v", err)
+		t.Fatalf("NewDeviceStore: %v", err)
 	}
 	h := devicesHandler(store)
 
@@ -456,11 +456,11 @@ func TestLoadAPNsConfigDisabledWhenUnset(t *testing.T) {
 	t.Setenv("GOPHERMIND_APNS_KEY_ID", "")
 	t.Setenv("GOPHERMIND_APNS_TEAM_ID", "")
 	t.Setenv("GOPHERMIND_APNS_BUNDLE_ID", "")
-	cfg := loadAPNsConfig()
+	cfg := LoadAPNsConfig()
 	if cfg.enabled() {
 		t.Error("config should be disabled when key/ids are unset")
 	}
-	p := newAPNsPusher(cfg)
+	p := NewAPNsPusher(cfg)
 	if p.enabled() {
 		t.Error("pusher built from a disabled config should be disabled")
 	}
@@ -471,24 +471,24 @@ func TestLoadAPNsConfigDisabledWhenUnset(t *testing.T) {
 
 func TestApprovalNotifierNoOpWhenDisabled(t *testing.T) {
 	t.Setenv("GOPHERMIND_CONFIG_DIR", t.TempDir())
-	store, err := newDeviceStore()
+	store, err := NewDeviceStore()
 	if err != nil {
-		t.Fatalf("newDeviceStore: %v", err)
+		t.Fatalf("NewDeviceStore: %v", err)
 	}
 	if err := store.Add("tok-1", "ios"); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	var p *apnsPusher // disabled
-	notify := newApprovalNotifier(p, store)
+	notify := NewApprovalNotifier(p, store)
 	// Must not panic and must return without attempting network I/O.
 	notify("sess-1", "appr-1", "run_shell")
 }
 
 func TestApprovalNotifierPushesToAllDevices(t *testing.T) {
 	t.Setenv("GOPHERMIND_CONFIG_DIR", t.TempDir())
-	store, err := newDeviceStore()
+	store, err := NewDeviceStore()
 	if err != nil {
-		t.Fatalf("newDeviceStore: %v", err)
+		t.Fatalf("NewDeviceStore: %v", err)
 	}
 	if err := store.Add("tok-1", "ios"); err != nil {
 		t.Fatalf("Add: %v", err)
@@ -507,7 +507,7 @@ func TestApprovalNotifierPushesToAllDevices(t *testing.T) {
 		return base(req)
 	}
 
-	notify := newApprovalNotifier(p, store)
+	notify := NewApprovalNotifier(p, store)
 	notify("sess-1", "appr-1", "run_shell")
 
 	if calls != 2 {

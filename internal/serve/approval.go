@@ -1,4 +1,4 @@
-package main
+package serve
 
 import (
 	"context"
@@ -25,8 +25,8 @@ type approvalRegistry struct {
 	pending map[string]chan bool
 }
 
-// newApprovalRegistry builds an empty registry.
-func newApprovalRegistry() *approvalRegistry {
+// NewApprovalRegistry builds an empty registry.
+func NewApprovalRegistry() *approvalRegistry {
 	return &approvalRegistry{pending: make(map[string]chan bool)}
 }
 
@@ -67,13 +67,13 @@ func (r *approvalRegistry) cancel(id string) {
 	r.mu.Unlock()
 }
 
-// remoteApprovalGate returns a safety.ApprovalFunc bound to one turn: each
+// RemoteApprovalGate returns a safety.ApprovalFunc bound to one turn: each
 // gated tool call registers a fresh pending approval, emits an
 // "approval-needed" SSE frame carrying the approval id/tool/args, then blocks
 // until the phone resolves it, the timeout elapses, or ctx is cancelled
 // (client disconnect) — defaulting to deny on every path except an explicit
 // true decision.
-func remoteApprovalGate(reg *approvalRegistry, ctx context.Context, timeout time.Duration, emit func(event, data string) error, newID func() string) safety.ApprovalFunc {
+func RemoteApprovalGate(reg *approvalRegistry, ctx context.Context, timeout time.Duration, emit func(event, data string) error, newID func() string) safety.ApprovalFunc {
 	return func(tool, argsJSON string) bool {
 		id := newID()
 		ch := reg.register(id)
@@ -97,25 +97,25 @@ func remoteApprovalGate(reg *approvalRegistry, ctx context.Context, timeout time
 	}
 }
 
-// newApprovalID generates a random hex approval id (crypto/rand is fine here:
+// NewApprovalID generates a random hex approval id (crypto/rand is fine here:
 // this runs in normal server code, not a hot loop).
-func newApprovalID() string {
+func NewApprovalID() string {
 	var b [16]byte
 	_, _ = rand.Read(b[:])
 	return hex.EncodeToString(b[:])
 }
 
-// serveApprovalRemote reports whether GOPHERMIND_SERVE_APPROVAL=remote is set,
+// ServeApprovalRemote reports whether GOPHERMIND_SERVE_APPROVAL=remote is set,
 // switching session turns from the shared auto-approve to the phone
 // tool-approval gate. Read once at serve startup.
-func serveApprovalRemote() bool {
+func ServeApprovalRemote() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("GOPHERMIND_SERVE_APPROVAL")), "remote")
 }
 
-// serveApprovalTimeout returns how long a remote approval waits for the
+// ServeApprovalTimeout returns how long a remote approval waits for the
 // phone's decision before auto-denying: GOPHERMIND_SERVE_APPROVAL_TIMEOUT_S
 // (seconds) when set to a positive integer, else a 5-minute default.
-func serveApprovalTimeout() time.Duration {
+func ServeApprovalTimeout() time.Duration {
 	const def = 5 * time.Minute
 	v := strings.TrimSpace(os.Getenv("GOPHERMIND_SERVE_APPROVAL_TIMEOUT_S"))
 	if v == "" {

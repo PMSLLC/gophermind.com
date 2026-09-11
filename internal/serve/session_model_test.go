@@ -1,4 +1,4 @@
-package main
+package serve
 
 import (
 	"errors"
@@ -12,14 +12,14 @@ import (
 func TestSessionModelRoundTrip(t *testing.T) {
 	t.Setenv("GOPHERMIND_CONFIG_DIR", t.TempDir())
 
-	if got := readSessionModel("s1"); got != "" {
-		t.Fatalf("readSessionModel before write = %q, want empty", got)
+	if got := ReadSessionModel("s1"); got != "" {
+		t.Fatalf("ReadSessionModel before write = %q, want empty", got)
 	}
 	if err := writeSessionModel("s1", "gpt-4o"); err != nil {
 		t.Fatalf("writeSessionModel: %v", err)
 	}
-	if got := readSessionModel("s1"); got != "gpt-4o" {
-		t.Fatalf("readSessionModel = %q, want %q", got, "gpt-4o")
+	if got := ReadSessionModel("s1"); got != "gpt-4o" {
+		t.Fatalf("ReadSessionModel = %q, want %q", got, "gpt-4o")
 	}
 
 	p, err := sessionModelPath("s1")
@@ -51,8 +51,8 @@ func TestWriteSessionModelEmptyRemovesSidecar(t *testing.T) {
 	if _, err := os.Stat(p); !os.IsNotExist(err) {
 		t.Fatalf("sidecar still exists after empty write: err=%v", err)
 	}
-	if got := readSessionModel("s2"); got != "" {
-		t.Fatalf("readSessionModel after removal = %q, want empty", got)
+	if got := ReadSessionModel("s2"); got != "" {
+		t.Fatalf("ReadSessionModel after removal = %q, want empty", got)
 	}
 }
 
@@ -96,7 +96,7 @@ func TestSessionCreateHandlerWritesModelSidecar(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body.String())
 	}
-	if got := readSessionModel("x"); got != "m" {
-		t.Fatalf("readSessionModel(x) = %q, want %q", got, "m")
+	if got := ReadSessionModel("x"); got != "m" {
+		t.Fatalf("ReadSessionModel(x) = %q, want %q", got, "m")
 	}
 }
