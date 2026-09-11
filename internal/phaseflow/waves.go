@@ -18,8 +18,10 @@ var ErrCyclicDependency = errors.New("phaseflow: cyclic task dependency")
 
 // AssignWaves computes each task's wave from its DependsOn edges: a task's
 // wave is one more than the highest wave among its dependencies, and a task
-// with no dependencies is wave 1. Wave 0 is reserved for the contract step
-// and is never assigned here; see Task.IsContract.
+// with no dependencies is wave 1. Wave 0 is reserved for the contract step:
+// a task with IsContract set keeps wave 0 whatever its edges say, and tasks
+// depending on it compute from 0, so the first task after the contract is
+// wave 1. See Task.IsContract.
 //
 // A DependsOn id that does not name another task in tasks is an error, not a
 // silently dropped edge - a typo in a plan must not quietly turn a dependent
@@ -76,7 +78,16 @@ func AssignWaves(tasks []Task) ([]Task, error) {
 		}
 
 		stack = stack[:len(stack)-1]
-		wave[i] = max + 1
+		if tasks[i].IsContract {
+			// Wave 0 is the contract task's own wave, and IsContract is the
+			// authority on that, not the edges. Numbering it max+1 like any
+			// other task would push it into wave 1 alongside the tasks that
+			// depend on it, so the thing every later wave is written against
+			// would no longer run alone and first.
+			wave[i] = 0
+		} else {
+			wave[i] = max + 1
+		}
 		state[i] = visited
 		return nil
 	}

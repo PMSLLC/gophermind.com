@@ -189,3 +189,43 @@ func TestAssignWavesNoTaskReferencesLaterWaveOutput(t *testing.T) {
 		}
 	}
 }
+
+// A contract task owns wave 0 - it is the root every later wave depends on -
+// so AssignWaves must leave it there rather than reassigning it to wave 1
+// along with every other dependency-free task. A caller cannot work around
+// this by excluding the contract task from the input, because an unknown
+// DependsOn id is a hard error.
+func TestAssignWavesKeepsContractTaskAtWaveZero(t *testing.T) {
+	got, err := AssignWaves([]Task{
+		{ID: "contract", IsContract: true},
+		{ID: "a", DependsOn: []string{"contract"}},
+		{ID: "b", DependsOn: []string{"a"}},
+		{ID: "loner"},
+	})
+	if err != nil {
+		t.Fatalf("AssignWaves: %v", err)
+	}
+	want := map[string]int{"contract": 0, "a": 1, "b": 2, "loner": 1}
+	for _, tk := range got {
+		if tk.Wave != want[tk.ID] {
+			t.Errorf("task %s wave = %d, want %d", tk.ID, tk.Wave, want[tk.ID])
+		}
+	}
+}
+
+// A contract task with its own dependencies still keeps wave 0: the marker is
+// the authority on where it runs, not the edges.
+func TestAssignWavesContractWaveIsNotRaisedByItsOwnDeps(t *testing.T) {
+	got, err := AssignWaves([]Task{
+		{ID: "prep"},
+		{ID: "contract", IsContract: true, DependsOn: []string{"prep"}},
+	})
+	if err != nil {
+		t.Fatalf("AssignWaves: %v", err)
+	}
+	for _, tk := range got {
+		if tk.ID == "contract" && tk.Wave != 0 {
+			t.Errorf("contract wave = %d, want 0", tk.Wave)
+		}
+	}
+}
