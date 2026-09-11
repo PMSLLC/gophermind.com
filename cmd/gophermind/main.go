@@ -1098,7 +1098,7 @@ func run() error {
 		remoteApproval := serve.ServeApprovalRemote()
 		approvalWait := serve.ServeApprovalTimeout()
 		// APNs push (S4): pings a backgrounded phone on approval-needed. Best-
-		// effort — NewApprovalNotifier is a no-op whenever APNs is unconfigured
+		// effort - NewApprovalNotifier is a no-op whenever APNs is unconfigured
 		// or the device store fails to load, so a push failure or
 		// misconfiguration can never block or error a turn.
 		devStore, devStoreErr := serve.NewDeviceStore()
@@ -1226,7 +1226,14 @@ func run() error {
 			}
 			fmt.Fprintf(os.Stderr, "  sessions: POST /session, POST /session/{id}/stream, POST /session/{id}/approve, POST /devices (%s, %s)\n", remote, apns)
 		}
-		return serve.Serve(context.Background(), ln, mux)
+		// A signal context, not context.Background: serve.Serve's graceful
+		// shutdown path is driven by cancellation, and passing a context
+		// that never cancels made that path unreachable. Ctrl-C then killed
+		// in-flight turns outright, losing whatever a session had not yet
+		// saved. Every other long-running command here already does this.
+		serveCtx, stopServe := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stopServe()
+		return serve.Serve(serveCtx, ln, mux)
 	case "queue":
 		if task == "" {
 			return fmt.Errorf("queue requires a file of tasks (one per line)")
