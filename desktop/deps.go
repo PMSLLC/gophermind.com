@@ -131,12 +131,20 @@ func newToolRegistry(cfg config.Config) *tools.Registry {
 	return tools.NewRegistry(toolset...)
 }
 
+// desktopApprovalTimeout bounds how long a pending gated tool call waits for
+// a human decision in the desktop app before auto-denying. It is
+// deliberately longer than internal/serve's own default
+// (serve.ServeApprovalTimeout, 5 minutes): that default is tuned for a push
+// notification to a phone the user may not be looking at, whereas the
+// desktop app's whole point is a person looking directly at the window, who
+// may still want time to read a shell command or a diff before deciding.
+const desktopApprovalTimeout = 30 * time.Minute
+
 // newServeDeps assembles the narrow serve.Deps this task wires: Run, Stream,
-// SessionTurn, SessionMessages, and ListModels. Approvals, Devices, and
-// Metrics are intentionally left nil (see the desktop-app task report for
-// why), NewMux skips the routes that depend on a nil field, so /session/*
-// still starts up correctly, just without the approve/devices/metrics
-// endpoints.
+// SessionTurn, SessionMessages, ListModels, and Approvals. Metrics and
+// Devices are still left nil: there is no metrics scrape target and no APNs
+// push destination for a desktop window, so NewMux simply skips those two
+// routes.
 //
 // getClient looks up the *llm.Client currently in use, rather than a client
 // being passed directly, so serve.Deps can be built (and the embedded server
@@ -145,13 +153,23 @@ func newToolRegistry(cfg config.Config) *tools.Registry {
 // is available yet (or resolution failed outright), which every closure
 // below surfaces to its caller instead of touching a nil client.
 //
-// Every gated (mutating) tool call is auto-approved (safety.Auto). Remote
-// approval, the APNs push path, and the judge/policy gates that
-// cmd/gophermind's `serve` command layers on are out of scope for this task:
-// the Approvals screen (a later task) is what makes gating meaningful in a
-// GUI, and Deps.Approvals is nil until it exists.
+// Every gated (mutating) tool call made through a session turn now blocks on
+// a real human decision instead of auto-approving: sessionTurn wraps the
+// shared approvals registry in serve.RemoteApprovalGate, the same machinery
+// cmd/gophermind's remote (phone) approval path uses, and hands it the
+// session turn's own SSE emit function so the "approval-needed" frame
+// reaches the frontend on the same open stream the rest of the turn's
+// output uses. This is the Approvals screen the desktop design doc calls
+// the reason the app is worth building.
+//
+// Run and Stream (the one-shot /run and /run/stream routes) still use
+// safety.Auto: neither carries a session id or an SSE emit function a
+// pending approval could be resolved against, and the desktop frontend does
+// not call them — it drives the chat UI entirely through the session-backed
+// routes above.
 func newServeDeps(getClient func() (*llm.Client, error), reg *tools.Registry, cfg config.Config, basePrompt string) serve.Deps {
 	approve := safety.Auto
+	approvals := serve.NewApprovalRegistry()
 
 	run := func(ctx context.Context, t string) (string, error) {
 		client, err := getClient()
@@ -193,7 +211,13 @@ func newServeDeps(getClient func() (*llm.Client, error), reg *tools.Registry, cf
 			}
 			_ = emit(event, data)
 		}
-		ag := agent.New(client, reg, cfg.MaxIter, approve, onEvent)
+		// The gate is built per turn (not once for the registry's lifetime)
+		// because it closes over this turn's ctx and emit: a pending
+		// approval must deny on this turn's client disconnect, not some
+		// other turn's, and the "approval-needed" frame must land on this
+		// turn's own SSE stream.
+		turnApprove := serve.RemoteApprovalGate(approvals, ctx, desktopApprovalTimeout, emit, serve.NewApprovalID)
+		ag := agent.New(client, reg, cfg.MaxIter, turnApprove, onEvent)
 		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
 		if session.Exists(id) {
 			if err := session.Load(id, ag); err != nil {
@@ -257,6 +281,7 @@ func newServeDeps(getClient func() (*llm.Client, error), reg *tools.Registry, cf
 		SessionTurn:     sessionTurn,
 		SessionMessages: loadMessages,
 		ListModels:      listModels,
-		// Metrics, Approvals, Devices: left nil. See the doc comment above.
+		Approvals:       approvals,
+		// Metrics, Devices: still left nil. See the doc comment above.
 	}
 }

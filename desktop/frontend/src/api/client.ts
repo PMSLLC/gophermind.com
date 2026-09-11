@@ -35,9 +35,30 @@ export interface SSEFrame {
   data: string
 }
 
+/**
+ * PendingApproval is the payload of an "approval-needed" SSE frame: a gated
+ * tool call is blocked on the server, waiting for POST
+ * /session/{id}/approve to resolve approvalID.
+ */
+export interface PendingApproval {
+  approvalID: string
+  tool: string
+  args: string
+}
+
+/**
+ * ApprovalResolution is what resolveApproval reports back: alreadyResolved
+ * true means the server returned 404 for this approval id (it was unknown
+ * or someone else already answered it), which is not a failure.
+ */
+export interface ApprovalResolution {
+  alreadyResolved: boolean
+}
+
 /** StreamHandlers are called as SSE frames arrive from a session turn. */
 export interface StreamHandlers {
   onToken: (text: string) => void
+  onApprovalNeeded: (approval: PendingApproval) => void
   onDone: () => void
   onError: (message: string) => void
 }
@@ -91,6 +112,19 @@ export class ApiClient {
         case 'token':
           handlers.onToken(frame.data)
           break
+        case 'approval-needed': {
+          const payload = JSON.parse(frame.data) as {
+            approval_id: string
+            tool: string
+            args: string
+          }
+          handlers.onApprovalNeeded({
+            approvalID: payload.approval_id,
+            tool: payload.tool,
+            args: payload.args,
+          })
+          break
+        }
         case 'done':
           handlers.onDone()
           break
@@ -118,6 +152,32 @@ export class ApiClient {
         if (frame) dispatch(frame)
       }
     }
+  }
+
+  /**
+   * resolveApproval posts a human decision to POST /session/{id}/approve
+   * for one pending gated tool call. A 404 response means the approval id
+   * is unknown or was already resolved - the contract calls that "someone
+   * already answered this", not a failure, so this reports it via
+   * alreadyResolved instead of throwing.
+   */
+  async resolveApproval(
+    sessionID: string,
+    approvalID: string,
+    approved: boolean,
+  ): Promise<ApprovalResolution> {
+    const res = await fetch(`${this.baseURL}/session/${encodeURIComponent(sessionID)}/approve`, {
+      method: 'POST',
+      headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ approval_id: approvalID, approved }),
+    })
+    if (res.status === 404) {
+      return { alreadyResolved: true }
+    }
+    if (!res.ok) {
+      throw new Error(`resolve approval failed: ${res.status} ${await safeText(res)}`)
+    }
+    return { alreadyResolved: false }
   }
 
   /** getBackendStatus calls GET /backend-status. */
