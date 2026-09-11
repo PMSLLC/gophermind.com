@@ -8,33 +8,75 @@ import (
 	"gophermind/internal/phaseflow"
 )
 
-// DefaultCandidates builds a phaseflow.FallbackRunner.Candidates function
-// from the model picker's catalogue and settings: when a task already
-// carries CandidateModels, those are used unchanged. Otherwise the
-// candidate list is every reachable, non-excluded model from the
-// catalogue, in the user's preference order (see
-// modelcat.OrderedCandidates) - a term the user excluded can never appear
-// in it, for the same reason it can never be auto-selected by
-// modelcat.Next. If the catalogue yields nothing (no reachable providers,
-// or none configured), t.Model is used as a single-candidate list, so a
-// plan written before candidate models existed still runs unchanged.
+// DefaultCandidates builds a phaseflow.FallbackRunner.Candidates function for
+// a runner whose client is pointed at baseURL.
 //
-// The catalogue is built once, when this function is called, not per task.
-func DefaultCandidates() func(t phaseflow.Task) []string {
+// A task carrying its own CandidateModels is authoritative and those are used
+// unchanged. Otherwise the list is the task's own model first, followed by the
+// other models the SAME endpoint can serve, in the user's preference order and
+// with excluded terms removed.
+//
+// The endpoint restriction is not a policy choice, it is a correctness one.
+// FallbackRunner sets Task.Model to each candidate and runs the task, and
+// Runner.newTaskAgent resolves that by cloning the one configured client. Every
+// candidate therefore goes to baseURL with baseURL's key. A model id belonging
+// to another provider is not a fallback; it is a request for a model this
+// endpoint has never heard of, and it spends one of the task's attempts to
+// learn that. Cross-provider fallback would need the runner to swap clients per
+// candidate, which it cannot do today.
+//
+// When baseURL is the user's own endpoint (no free provider matches it), the
+// catalogue knows no models for it and the list is simply the task's own model:
+// the same single-model behaviour plans had before candidates existed.
+func DefaultCandidates(baseURL string) func(t phaseflow.Task) []string {
 	o, _ := freellm.LoadOdometer(freellm.OdometerPath())
 	s, _ := modelcat.LoadSettings(modelcat.SettingsPath())
 	entries := modelcat.Build(o, s, nil, time.Now())
+
+	// The profile whose endpoint this runner is actually pointed at. Empty
+	// means the user's own endpoint, and empty matches no catalogue entry,
+	// which is what leaves such a runner with just the task's own model.
+	profile := ""
+	if c, ok := freellm.CompatForBaseURL(baseURL); ok {
+		profile = c.Profile
+	}
 
 	return func(t phaseflow.Task) []string {
 		if len(t.CandidateModels) > 0 {
 			return t.CandidateModels
 		}
-		if cands := modelcat.OrderedCandidates(entries, s); len(cands) > 0 {
-			return cands
+
+		out := make([]string, 0, 4)
+		seen := make(map[string]bool, 4)
+		add := func(id string) {
+			if id == "" || seen[id] {
+				return
+			}
+			seen[id] = true
+			out = append(out, id)
 		}
-		if t.Model != "" {
-			return []string{t.Model}
+
+		// The task's own model leads: it is what the plan asked for, and on
+		// an unrecognised endpoint it is the only thing that can work.
+		add(t.Model)
+
+		if profile != "" {
+			for _, id := range modelcat.OrderedCandidates(entries, s) {
+				if sameProfile(entries, id, profile) {
+					add(id)
+				}
+			}
 		}
-		return nil
+		return out
 	}
+}
+
+// sameProfile reports whether the catalogue entry for id belongs to profile.
+func sameProfile(entries []modelcat.Entry, id, profile string) bool {
+	for _, e := range entries {
+		if e.ID == id {
+			return e.Profile == profile
+		}
+	}
+	return false
 }

@@ -1,6 +1,9 @@
 package freellm
 
-import "sort"
+import (
+	"sort"
+	"strings"
+)
 
 // ProfilePrefix is the gophermind profile-name prefix reserved for free
 // providers, so they never collide with the built-in profiles.
@@ -243,6 +246,30 @@ func Compats() []Compat {
 func CompatFor(profile string) (Compat, bool) {
 	for _, c := range compats {
 		if c.Profile == profile {
+			return c, true
+		}
+	}
+	return Compat{}, false
+}
+
+// CompatForBaseURL returns the entry whose endpoint matches baseURL, so a
+// caller holding only a configured client can tell which free provider (if
+// any) that client is pointed at.
+//
+// A miss is the normal case, not an error: it means the endpoint is the
+// user's own (a local llama.cpp or LM Studio, a private vLLM), which is
+// exactly the distinction callers need, because a model id from one
+// provider is meaningless at another's endpoint.
+//
+// Matching ignores a trailing slash so a BaseURL that has been normalised
+// one way or the other still resolves.
+func CompatForBaseURL(baseURL string) (Compat, bool) {
+	want := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if want == "" {
+		return Compat{}, false
+	}
+	for _, c := range compats {
+		if strings.TrimRight(c.BaseURL, "/") == want {
 			return c, true
 		}
 	}

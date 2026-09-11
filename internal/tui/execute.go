@@ -80,14 +80,17 @@ func (m model) handleProjectExecuteCommand() (model, tea.Cmd) {
 	// still gets a shot at the next one instead of the whole task failing
 	// outright. StatusVerifyingRunner adapts taskRunner (which already does
 	// its own verify-and-correct per candidate) to FallbackRunner's
-	// separate Inner/Verify steps; DefaultCandidates derives a task's
-	// candidate list from the model picker's catalogue when the task
-	// carries none of its own.
+	// separate Inner/Verify steps.
+	//
+	// DefaultCandidates is given this session's endpoint because every
+	// candidate is sent to it: the runner resolves a candidate by cloning
+	// the configured client, so a model belonging to some other provider
+	// would just 404 and burn one of the task's attempts.
 	sv := orchestrate.NewStatusVerifyingRunner(taskRunner)
 	runner := &phaseflow.FallbackRunner{
 		Inner:      sv,
 		Verify:     sv,
-		Candidates: orchestrate.DefaultCandidates(),
+		Candidates: orchestrate.DefaultCandidates(m.agent.LLM().BaseURL),
 	}
 
 	m.appendLine(projectBannerStyle.Render(fmt.Sprintf("executing %d tasks, auto-approve", pending)))
