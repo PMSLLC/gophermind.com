@@ -5,12 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
 
+	"gophermind/internal/gitenv"
 	"gophermind/internal/safety"
 )
 
@@ -62,9 +62,17 @@ func RunShell(root string, timeout time.Duration) Tool {
 
 			cmd := exec.CommandContext(runCtx, "bash", "-c", a.Command)
 			cmd.Dir = root
+			// Env is set unconditionally, never left nil: a nil Env makes the
+			// child inherit the parent's environment wholesale, GIT_* included,
+			// which is the case this strips. An inherited GIT_DIR redirects a
+			// git command away from cmd.Dir and onto whatever repository that
+			// variable names, and run_shell is the path an agent runs git
+			// through. See internal/gitenv.
+			env := gitenv.SanitizedEnv()
 			if p := loginShellPath(); p != "" {
-				cmd.Env = append(os.Environ(), "PATH="+p)
+				env = append(env, "PATH="+p)
 			}
+			cmd.Env = env
 			var out bytes.Buffer
 			cmd.Stdout = &out
 			cmd.Stderr = &out
