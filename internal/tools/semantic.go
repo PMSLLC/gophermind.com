@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"gophermind/internal/embed"
+	"gophermind/internal/gitenv"
 	"gophermind/internal/safety"
 )
 
@@ -258,8 +258,12 @@ func RetrievalEval(root string, p embed.Provider, indexPath string) Tool {
 // gitChangedFiles returns repo-relative paths that git reports as modified or
 // untracked (via `git status --porcelain`), used for incremental re-indexing.
 // Returns nil when git is unavailable or the dir is not a repo.
+//
+// Uses gitenv rather than "-C root" so root is set via cmd.Dir like every
+// other git invocation in this codebase, and so an inherited GIT_DIR cannot
+// redirect it away from root; see internal/gitenv for why that matters.
 func gitChangedFiles(root string) []string {
-	cmd := exec.Command("git", "-C", root, "status", "--porcelain", "--untracked-files=all")
+	cmd := gitenv.Command(root, "status", "--porcelain", "--untracked-files=all")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil

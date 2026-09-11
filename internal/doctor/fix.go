@@ -2,7 +2,8 @@ package doctor
 
 import (
 	"fmt"
-	"os/exec"
+
+	"gophermind/internal/gitenv"
 )
 
 // FixResult reports the outcome of attempting to remediate one failing check.
@@ -58,10 +59,11 @@ func AutoFix(p Params, results []Result) []FixResult {
 	return out
 }
 
-// defaultGitInit runs `git init` in dir.
+// defaultGitInit runs `git init` in dir. Uses gitenv so an inherited GIT_DIR
+// (as every git hook exports) cannot redirect this at some other repository;
+// see internal/gitenv for the incident that made this necessary.
 func defaultGitInit(dir string) error {
-	cmd := exec.Command("git", "init")
-	cmd.Dir = dir
+	cmd := gitenv.Command(dir, "init")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%v: %s", err, out)
 	}

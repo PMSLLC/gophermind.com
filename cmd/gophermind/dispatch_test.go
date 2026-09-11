@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gophermind/internal/gitenv"
 )
 
 // dispatchBinPath is the compiled gophermind binary the tests in this file
@@ -35,6 +37,11 @@ func TestMain(m *testing.M) {
 	bin := filepath.Join(dir, "gophermind")
 	build := exec.Command("go", "build", "-o", bin, ".")
 	build.Dir = wd
+	// go build embeds VCS info by running git itself, which inherits GIT_*
+	// from this process the same way the eight production sites did (see
+	// internal/gitenv). Strip it so an inherited GIT_DIR cannot make that
+	// internal git call fail or point at the wrong repository.
+	build.Env = gitenv.SanitizedEnv()
 	if out, err := build.CombinedOutput(); err != nil {
 		os.Stderr.Write(out)
 		os.Stderr.WriteString(err.Error() + "\n")

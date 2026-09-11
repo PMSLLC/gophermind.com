@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gophermind/internal/gitenv"
 )
 
 func TestRepoContextListsTopLevel(t *testing.T) {
@@ -28,8 +30,11 @@ func TestRepoContextIncludesGitBranch(t *testing.T) {
 	}
 	dir := t.TempDir()
 	for _, args := range [][]string{{"init", "-q", "-b", "trunk"}, {"config", "user.email", "t@e.com"}, {"config", "user.name", "T"}} {
-		c := exec.Command("git", args...)
-		c.Dir = dir
+		// Uses gitenv so an inherited GIT_DIR (every git hook exports one)
+		// cannot redirect these calls at the caller's real repository.
+		// Without this, "git init" reinitialized this repo as bare and test
+		// commits landed on a real branch. See internal/gitenv.
+		c := gitenv.Command(dir, args...)
 		c.Run()
 	}
 	os.WriteFile(filepath.Join(dir, "f.txt"), []byte("x"), 0o644)

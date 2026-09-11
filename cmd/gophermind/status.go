@@ -2,9 +2,10 @@ package main
 
 import (
 	"context"
-	"os/exec"
 	"strings"
 	"time"
+
+	"gophermind/internal/gitenv"
 )
 
 // promptLine renders a compact one-line status for embedding in a shell prompt
@@ -22,12 +23,14 @@ func promptLine(model, branch string) string {
 	return s
 }
 
-// gitBranchOf returns the current branch of root, or "" outside a repo.
+// gitBranchOf returns the current branch of root, or "" outside a repo. Uses
+// gitenv so an inherited GIT_DIR (which every git hook exports) cannot
+// redirect it at some other repository; see internal/gitenv for the incident
+// that made this necessary.
 func gitBranchOf(root string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "branch", "--show-current")
-	cmd.Dir = root
+	cmd := gitenv.CommandContext(ctx, root, "branch", "--show-current")
 	out, err := cmd.Output()
 	if err != nil {
 		return ""
