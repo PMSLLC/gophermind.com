@@ -1,4 +1,4 @@
-package main
+package serve
 
 import (
 	"bytes"
@@ -186,8 +186,8 @@ func sessionConfigHandler() http.HandlerFunc {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{
-			"model": readSessionModel(id),
-			"mode":  readSessionMode(id),
+			"model": ReadSessionModel(id),
+			"mode":  ReadSessionMode(id),
 		})
 	}
 }

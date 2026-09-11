@@ -1,4 +1,4 @@
-package main
+package serve
 
 import (
 	"encoding/json"
@@ -31,10 +31,10 @@ func writeSSEEvent(w io.Writer, flusher http.Flusher, event, data string) {
 	}
 }
 
-// sseFramesForAgentEvent maps an agent.Event to a typed SSE (event, data)
+// SSEFramesForAgentEvent maps an agent.Event to a typed SSE (event, data)
 // pair. emit is false for unrecognized event types, so callers can silently
 // skip them without special-casing.
-func sseFramesForAgentEvent(ev agent.Event) (event, data string, emit bool) {
+func SSEFramesForAgentEvent(ev agent.Event) (event, data string, emit bool) {
 	switch ev.Type {
 	case "token":
 		return "token", ev.Text, true

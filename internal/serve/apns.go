@@ -1,4 +1,4 @@
-package main
+package serve
 
 import (
 	"bytes"
@@ -37,8 +37,8 @@ type apnsConfig struct {
 	env      string // "sandbox" or "prod"
 }
 
-// loadAPNsConfig reads the GOPHERMIND_APNS_* environment variables.
-func loadAPNsConfig() apnsConfig {
+// LoadAPNsConfig reads the GOPHERMIND_APNS_* environment variables.
+func LoadAPNsConfig() apnsConfig {
 	return apnsConfig{
 		keyPath:  strings.TrimSpace(os.Getenv("GOPHERMIND_APNS_KEY_P8")),
 		keyID:    strings.TrimSpace(os.Getenv("GOPHERMIND_APNS_KEY_ID")),
@@ -98,9 +98,9 @@ func devicesFilePath() (string, error) {
 	return filepath.Join(filepath.Dir(p), "devices.json"), nil
 }
 
-// newDeviceStore builds a deviceStore and loads any previously persisted
+// NewDeviceStore builds a deviceStore and loads any previously persisted
 // tokens. A missing file is not an error (first run).
-func newDeviceStore() (*deviceStore, error) {
+func NewDeviceStore() (*deviceStore, error) {
 	p, err := devicesFilePath()
 	if err != nil {
 		return nil, err
@@ -211,11 +211,11 @@ type apnsPusher struct {
 // APNs allows tokens up to 1h old; refreshing at ~50m stays well inside that.
 const jwtRefresh = 50 * time.Minute
 
-// newAPNsPusher builds a pusher from cfg. When cfg is disabled, or the .p8
+// NewAPNsPusher builds a pusher from cfg. When cfg is disabled, or the .p8
 // key fails to load/parse, the returned pusher is disabled (Push is then a
 // no-op returning nil) rather than erroring the caller — misconfiguration
 // must never block serve startup or a turn.
-func newAPNsPusher(cfg apnsConfig) *apnsPusher {
+func NewAPNsPusher(cfg apnsConfig) *apnsPusher {
 	p := &apnsPusher{
 		cfg:    cfg,
 		httpDo: http.DefaultClient.Do,
@@ -319,7 +319,7 @@ func buildAPNsJWT(key *ecdsa.PrivateKey, teamID, keyID string, now time.Time) (s
 
 // pushTimeout bounds how long a single APNs push request may take. Without
 // it, a hung Apple endpoint would block the detached push goroutine (see
-// newApprovalNotifier) forever.
+// NewApprovalNotifier) forever.
 const pushTimeout = 10 * time.Second
 
 // Push sends an alert push to deviceToken. data is merged at the top level
@@ -386,12 +386,12 @@ func (p *apnsPusher) Push(deviceToken, title, body string, data map[string]strin
 // Built once at serve startup; a no-op when APNs is unconfigured.
 type approvalNotifier func(sessionID, approvalID, tool string)
 
-// notifyApprovalNeeded parses the "approval-needed" SSE frame's JSON payload
-// (approval_id, tool — see remoteApprovalGate) and forwards it to notify.
+// NotifyApprovalNeeded parses the "approval-needed" SSE frame's JSON payload
+// (approval_id, tool — see RemoteApprovalGate) and forwards it to notify.
 // Meant to be called from its own goroutine by the gate's emit wrapper, so a
 // slow or failing push can never delay or error the gate. Malformed data is
 // silently ignored (best-effort).
-func notifyApprovalNeeded(notify approvalNotifier, sessionID, data string) {
+func NotifyApprovalNeeded(notify approvalNotifier, sessionID, data string) {
 	var payload struct {
 		ApprovalID string `json:"approval_id"`
 		Tool       string `json:"tool"`
@@ -402,12 +402,12 @@ func notifyApprovalNeeded(notify approvalNotifier, sessionID, data string) {
 	notify(sessionID, payload.ApprovalID, payload.Tool)
 }
 
-// newApprovalNotifier returns an approvalNotifier that pushes to every
+// NewApprovalNotifier returns an approvalNotifier that pushes to every
 // device in store via pusher. It never returns an error: individual push
 // failures (and a disabled/nil pusher or store) are logged and swallowed, so
 // this can be called freely from the approval gate without risk of blocking
 // or erroring a turn.
-func newApprovalNotifier(pusher *apnsPusher, store *deviceStore) approvalNotifier {
+func NewApprovalNotifier(pusher *apnsPusher, store *deviceStore) approvalNotifier {
 	return func(sessionID, approvalID, tool string) {
 		if !pusher.enabled() || store == nil {
 			return

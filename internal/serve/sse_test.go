@@ -1,4 +1,4 @@
-package main
+package serve
 
 import (
 	"bytes"
@@ -64,7 +64,7 @@ func TestWriteSSEEvent_CRLFNormalized(t *testing.T) {
 
 func TestSSEFramesForAgentEvent_Token(t *testing.T) {
 	ev := agent.Event{Type: "token", Text: "hello"}
-	event, data, emit := sseFramesForAgentEvent(ev)
+	event, data, emit := SSEFramesForAgentEvent(ev)
 	if !emit {
 		t.Fatal("expected emit=true for token")
 	}
@@ -75,7 +75,7 @@ func TestSSEFramesForAgentEvent_Token(t *testing.T) {
 
 func TestSSEFramesForAgentEvent_Assistant(t *testing.T) {
 	ev := agent.Event{Type: "assistant", Text: "final answer"}
-	event, data, emit := sseFramesForAgentEvent(ev)
+	event, data, emit := SSEFramesForAgentEvent(ev)
 	if !emit {
 		t.Fatal("expected emit=true for assistant")
 	}
@@ -86,7 +86,7 @@ func TestSSEFramesForAgentEvent_Assistant(t *testing.T) {
 
 func TestSSEFramesForAgentEvent_ToolCall(t *testing.T) {
 	ev := agent.Event{Type: "tool_call", Name: "read_file", Text: `{"path":"a.go"}`}
-	event, data, emit := sseFramesForAgentEvent(ev)
+	event, data, emit := SSEFramesForAgentEvent(ev)
 	if !emit {
 		t.Fatal("expected emit=true for tool_call")
 	}
@@ -107,7 +107,7 @@ func TestSSEFramesForAgentEvent_ToolCall(t *testing.T) {
 
 func TestSSEFramesForAgentEvent_ToolResult(t *testing.T) {
 	ev := agent.Event{Type: "tool_result", Name: "read_file", Text: "file contents"}
-	event, data, emit := sseFramesForAgentEvent(ev)
+	event, data, emit := SSEFramesForAgentEvent(ev)
 	if !emit {
 		t.Fatal("expected emit=true for tool_result")
 	}
@@ -136,7 +136,7 @@ func TestSSEFramesForAgentEvent_Usage(t *testing.T) {
 			CostUSD:          0.02,
 		},
 	}
-	event, data, emit := sseFramesForAgentEvent(ev)
+	event, data, emit := SSEFramesForAgentEvent(ev)
 	if !emit {
 		t.Fatal("expected emit=true for usage")
 	}
@@ -154,7 +154,7 @@ func TestSSEFramesForAgentEvent_Usage(t *testing.T) {
 
 func TestSSEFramesForAgentEvent_UnknownType(t *testing.T) {
 	ev := agent.Event{Type: "bogus"}
-	event, data, emit := sseFramesForAgentEvent(ev)
+	event, data, emit := SSEFramesForAgentEvent(ev)
 	if emit {
 		t.Errorf("expected emit=false for unknown type, got event=%q data=%q", event, data)
 	}

@@ -1,4 +1,4 @@
-package main
+package serve
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 // --- registry ---
 
 func TestApprovalRegistryRegisterResolveTrue(t *testing.T) {
-	reg := newApprovalRegistry()
+	reg := NewApprovalRegistry()
 	ch := reg.register("a1")
 	if !reg.resolve("a1", true) {
 		t.Fatal("resolve on registered id should report found")
@@ -30,7 +30,7 @@ func TestApprovalRegistryRegisterResolveTrue(t *testing.T) {
 }
 
 func TestApprovalRegistryResolveFalse(t *testing.T) {
-	reg := newApprovalRegistry()
+	reg := NewApprovalRegistry()
 	ch := reg.register("a1")
 	if !reg.resolve("a1", false) {
 		t.Fatal("resolve on registered id should report found")
@@ -46,14 +46,14 @@ func TestApprovalRegistryResolveFalse(t *testing.T) {
 }
 
 func TestApprovalRegistryResolveUnknownID(t *testing.T) {
-	reg := newApprovalRegistry()
+	reg := NewApprovalRegistry()
 	if reg.resolve("nope", true) {
 		t.Error("resolve on unknown id should report not found")
 	}
 }
 
 func TestApprovalRegistryCancelRemoves(t *testing.T) {
-	reg := newApprovalRegistry()
+	reg := NewApprovalRegistry()
 	reg.register("a1")
 	reg.cancel("a1")
 	if reg.resolve("a1", true) {
@@ -62,7 +62,7 @@ func TestApprovalRegistryCancelRemoves(t *testing.T) {
 }
 
 func TestApprovalRegistryDoubleResolveSecondFails(t *testing.T) {
-	reg := newApprovalRegistry()
+	reg := NewApprovalRegistry()
 	reg.register("a1")
 	if !reg.resolve("a1", true) {
 		t.Fatal("first resolve should succeed")
@@ -73,7 +73,7 @@ func TestApprovalRegistryDoubleResolveSecondFails(t *testing.T) {
 }
 
 func TestApprovalRegistryConcurrentRegisterResolve(t *testing.T) {
-	reg := newApprovalRegistry()
+	reg := NewApprovalRegistry()
 	var wg sync.WaitGroup
 	for i := 0; i < 50; i++ {
 		id := string(rune('a' + i%26))
@@ -127,10 +127,10 @@ func idSeq(ids ...string) func() string {
 }
 
 func TestRemoteApprovalGateEmitsOneFrameAndApproves(t *testing.T) {
-	reg := newApprovalRegistry()
+	reg := NewApprovalRegistry()
 	rec := &captureEmit{}
 	var chOut chan bool
-	gate := remoteApprovalGate(reg, context.Background(), time.Minute, rec.emit, func() string { return "id-1" })
+	gate := RemoteApprovalGate(reg, context.Background(), time.Minute, rec.emit, func() string { return "id-1" })
 
 	go func() {
 		// Wait until the id is registered, then resolve it true.
@@ -180,9 +180,9 @@ func TestRemoteApprovalGateEmitsOneFrameAndApproves(t *testing.T) {
 }
 
 func TestRemoteApprovalGateDenies(t *testing.T) {
-	reg := newApprovalRegistry()
+	reg := NewApprovalRegistry()
 	rec := &captureEmit{}
-	gate := remoteApprovalGate(reg, context.Background(), time.Minute, rec.emit, idSeq("id-2"))
+	gate := RemoteApprovalGate(reg, context.Background(), time.Minute, rec.emit, idSeq("id-2"))
 
 	go func() {
 		for {
@@ -199,9 +199,9 @@ func TestRemoteApprovalGateDenies(t *testing.T) {
 }
 
 func TestRemoteApprovalGateTimeoutDenies(t *testing.T) {
-	reg := newApprovalRegistry()
+	reg := NewApprovalRegistry()
 	rec := &captureEmit{}
-	gate := remoteApprovalGate(reg, context.Background(), 20*time.Millisecond, rec.emit, idSeq("id-3"))
+	gate := RemoteApprovalGate(reg, context.Background(), 20*time.Millisecond, rec.emit, idSeq("id-3"))
 
 	start := time.Now()
 	got := gate("write_file", `{}`)
@@ -225,10 +225,10 @@ func TestRemoteApprovalGateTimeoutDenies(t *testing.T) {
 }
 
 func TestRemoteApprovalGateCtxCancelDenies(t *testing.T) {
-	reg := newApprovalRegistry()
+	reg := NewApprovalRegistry()
 	rec := &captureEmit{}
 	ctx, cancel := context.WithCancel(context.Background())
-	gate := remoteApprovalGate(reg, ctx, time.Minute, rec.emit, idSeq("id-4"))
+	gate := RemoteApprovalGate(reg, ctx, time.Minute, rec.emit, idSeq("id-4"))
 
 	go func() {
 		time.Sleep(20 * time.Millisecond)
@@ -261,7 +261,7 @@ func TestRemoteApprovalGateCtxCancelDenies(t *testing.T) {
 // --- approve handler ---
 
 func TestSessionApproveHandlerResolvesPending(t *testing.T) {
-	reg := newApprovalRegistry()
+	reg := NewApprovalRegistry()
 	ch := reg.register("a1")
 	h := sessionApproveHandler(reg)
 
@@ -293,7 +293,7 @@ func TestSessionApproveHandlerResolvesPending(t *testing.T) {
 }
 
 func TestSessionApproveHandlerUnknownID(t *testing.T) {
-	reg := newApprovalRegistry()
+	reg := NewApprovalRegistry()
 	h := sessionApproveHandler(reg)
 
 	rr := httptest.NewRecorder()
@@ -307,7 +307,7 @@ func TestSessionApproveHandlerUnknownID(t *testing.T) {
 }
 
 func TestSessionApproveHandlerBadJSON(t *testing.T) {
-	reg := newApprovalRegistry()
+	reg := NewApprovalRegistry()
 	h := sessionApproveHandler(reg)
 
 	rr := httptest.NewRecorder()
@@ -321,7 +321,7 @@ func TestSessionApproveHandlerBadJSON(t *testing.T) {
 }
 
 func TestSessionApproveHandlerRejectsNonPost(t *testing.T) {
-	reg := newApprovalRegistry()
+	reg := NewApprovalRegistry()
 	h := sessionApproveHandler(reg)
 
 	rr := httptest.NewRecorder()

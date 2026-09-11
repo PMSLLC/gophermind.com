@@ -1,4 +1,4 @@
-package main
+package serve
 
 import (
 	"net/http"
@@ -11,14 +11,14 @@ import (
 func TestSessionModeRoundTrip(t *testing.T) {
 	t.Setenv("GOPHERMIND_CONFIG_DIR", t.TempDir())
 
-	if got := readSessionMode("s1"); got != "" {
-		t.Fatalf("readSessionMode before write = %q, want empty", got)
+	if got := ReadSessionMode("s1"); got != "" {
+		t.Fatalf("ReadSessionMode before write = %q, want empty", got)
 	}
 	if err := writeSessionMode("s1", "conversational"); err != nil {
 		t.Fatalf("writeSessionMode: %v", err)
 	}
-	if got := readSessionMode("s1"); got != "conversational" {
-		t.Fatalf("readSessionMode = %q, want %q", got, "conversational")
+	if got := ReadSessionMode("s1"); got != "conversational" {
+		t.Fatalf("ReadSessionMode = %q, want %q", got, "conversational")
 	}
 
 	p, err := sessionModePath("s1")
@@ -50,8 +50,8 @@ func TestWriteSessionModeEmptyRemovesSidecar(t *testing.T) {
 	if _, err := os.Stat(p); !os.IsNotExist(err) {
 		t.Fatalf("sidecar still exists after empty write: err=%v", err)
 	}
-	if got := readSessionMode("s2"); got != "" {
-		t.Fatalf("readSessionMode after removal = %q, want empty", got)
+	if got := ReadSessionMode("s2"); got != "" {
+		t.Fatalf("ReadSessionMode after removal = %q, want empty", got)
 	}
 }
 
@@ -59,8 +59,8 @@ func TestSystemPromptForModeCoding(t *testing.T) {
 	const base = "You are GopherMind, a precise coding agent operating inside a software repository."
 
 	for _, mode := range []string{"", "coding"} {
-		if got := systemPromptForMode(mode, base, "/repo"); got != base {
-			t.Fatalf("systemPromptForMode(%q) = %q, want basePrompt unchanged", mode, got)
+		if got := SystemPromptForMode(mode, base, "/repo"); got != base {
+			t.Fatalf("SystemPromptForMode(%q) = %q, want basePrompt unchanged", mode, got)
 		}
 	}
 }
@@ -68,7 +68,7 @@ func TestSystemPromptForModeCoding(t *testing.T) {
 func TestSystemPromptForModeConversational(t *testing.T) {
 	const base = "You are GopherMind, a precise coding agent operating inside a software repository."
 
-	got := systemPromptForMode("conversational", base, "/repo")
+	got := SystemPromptForMode("conversational", base, "/repo")
 	if strings.Contains(got, "software repository") {
 		t.Fatalf("conversational prompt must not read as a repo-bound coding agent, got: %s", got)
 	}
@@ -85,17 +85,17 @@ func TestSystemPromptForModePersona(t *testing.T) {
 	const base = "BASE"
 
 	// Built-in preset persona.
-	got := systemPromptForMode("reviewer", base, root)
+	got := SystemPromptForMode("reviewer", base, root)
 	if !strings.HasPrefix(got, base+"\n\n") {
-		t.Fatalf("systemPromptForMode(reviewer) = %q, want basePrompt+persona", got)
+		t.Fatalf("SystemPromptForMode(reviewer) = %q, want basePrompt+persona", got)
 	}
 	if !strings.Contains(got, "code reviewer") {
-		t.Fatalf("systemPromptForMode(reviewer) = %q, want reviewer persona text", got)
+		t.Fatalf("SystemPromptForMode(reviewer) = %q, want reviewer persona text", got)
 	}
 
 	// Unknown persona falls back to basePrompt unchanged.
-	if got := systemPromptForMode("no-such-persona", base, root); got != base {
-		t.Fatalf("systemPromptForMode(unknown) = %q, want basePrompt unchanged", got)
+	if got := SystemPromptForMode("no-such-persona", base, root); got != base {
+		t.Fatalf("SystemPromptForMode(unknown) = %q, want basePrompt unchanged", got)
 	}
 }
 
@@ -169,7 +169,7 @@ func TestSessionCreateHandlerWritesModeSidecar(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body.String())
 	}
-	if got := readSessionMode("y"); got != "conversational" {
-		t.Fatalf("readSessionMode(y) = %q, want %q", got, "conversational")
+	if got := ReadSessionMode("y"); got != "conversational" {
+		t.Fatalf("ReadSessionMode(y) = %q, want %q", got, "conversational")
 	}
 }

@@ -1,4 +1,4 @@
-package main
+package serve
 
 import (
 	"os"
@@ -36,9 +36,9 @@ func writeSessionModel(id, model string) error {
 	return os.WriteFile(p, []byte(model), 0o600)
 }
 
-// readSessionModel returns id's stored model, or "" if none is set or the
+// ReadSessionModel returns id's stored model, or "" if none is set or the
 // sidecar can't be read.
-func readSessionModel(id string) string {
+func ReadSessionModel(id string) string {
 	p, err := sessionModelPath(id)
 	if err != nil {
 		return ""

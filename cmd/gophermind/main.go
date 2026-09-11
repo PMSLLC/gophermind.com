@@ -40,6 +40,7 @@ import (
 	"gophermind/internal/report"
 	"gophermind/internal/safety"
 	"gophermind/internal/schemas"
+	"gophermind/internal/serve"
 	"gophermind/internal/session"
 	"gophermind/internal/setup"
 	"gophermind/internal/stream"
@@ -1052,7 +1053,7 @@ func run() error {
 	case "serve":
 		// Webhook mode: each POST /run spawns a fresh agent turn, isolated from
 		// other requests. Blocks until the process is stopped.
-		metrics := &serveMetrics{}
+		metrics := &serve.ServeMetrics{}
 		run := func(ctx context.Context, t string) (string, error) {
 			ag := agent.New(client, reg, cfg.MaxIter, approve, nil)
 			ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
@@ -1065,8 +1066,8 @@ func run() error {
 			injectRetrieval(ctx, ag, embedProvider, ragPaths, t)
 			answer, err := ag.Send(ctx, t)
 			u := ag.Usage()
-			metrics.promptTokens.Add(int64(u.PromptTokens))
-			metrics.completionTokens.Add(int64(u.CompletionTokens))
+			metrics.PromptTokens.Add(int64(u.PromptTokens))
+			metrics.CompletionTokens.Add(int64(u.CompletionTokens))
 			return answer, err
 		}
 		// Streaming variant for /run/stream: emit assistant tokens as they arrive.
@@ -1091,20 +1092,20 @@ func run() error {
 		// pause on a gated tool call, ask the phone via an "approval-needed" SSE
 		// frame, and resume on its decision (with timeout/disconnect -> deny). The
 		// registry is shared across every turn so the approve route (registered in
-		// runServe) can resolve any turn's pending approval.
-		approvals := newApprovalRegistry()
-		remoteApproval := serveApprovalRemote()
-		approvalWait := serveApprovalTimeout()
+		// Run) can resolve any turn's pending approval.
+		approvals := serve.NewApprovalRegistry()
+		remoteApproval := serve.ServeApprovalRemote()
+		approvalWait := serve.ServeApprovalTimeout()
 		// APNs push (S4): pings a backgrounded phone on approval-needed. Best-
-		// effort — newApprovalNotifier is a no-op whenever APNs is unconfigured
+		// effort — NewApprovalNotifier is a no-op whenever APNs is unconfigured
 		// or the device store fails to load, so a push failure or
 		// misconfiguration can never block or error a turn.
-		devStore, devStoreErr := newDeviceStore()
+		devStore, devStoreErr := serve.NewDeviceStore()
 		if devStoreErr != nil {
 			fmt.Fprintf(os.Stderr, "gophermind: apns device store disabled: %v\n", devStoreErr)
 			devStore = nil
 		}
-		notify := newApprovalNotifier(newAPNsPusher(loadAPNsConfig()), devStore)
+		notify := serve.NewApprovalNotifier(serve.NewAPNsPusher(serve.LoadAPNsConfig()), devStore)
 		// Session-backed variant for /session/{id}/stream: resumes a persisted
 		// conversation when one exists for id (else starts fresh with the usual
 		// system prompt), forwards S1's typed SSE frames per agent.Event, then
@@ -1112,7 +1113,7 @@ func run() error {
 		// applied per HTTP turn instead of once per process.
 		sessionTurn := func(ctx context.Context, id, t string, emit func(event, data string) error) error {
 			onEvent := func(e agent.Event) {
-				event, data, ok := sseFramesForAgentEvent(e)
+				event, data, ok := serve.SSEFramesForAgentEvent(e)
 				if !ok {
 					return
 				}
@@ -1125,11 +1126,11 @@ func run() error {
 				// erroring the gate itself.
 				notifyingEmit := func(event, data string) error {
 					if event == "approval-needed" {
-						go notifyApprovalNeeded(notify, id, data)
+						go serve.NotifyApprovalNeeded(notify, id, data)
 					}
 					return emit(event, data)
 				}
-				turnApprove = remoteApprovalGate(approvals, ctx, approvalWait, notifyingEmit, newApprovalID)
+				turnApprove = serve.RemoteApprovalGate(approvals, ctx, approvalWait, notifyingEmit, serve.NewApprovalID)
 			}
 			ag := agent.New(client, reg, cfg.MaxIter, turnApprove, onEvent)
 			ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
@@ -1139,12 +1140,12 @@ func run() error {
 					return err
 				}
 			} else {
-				ag.SetSystemPrompt(systemPromptForMode(readSessionMode(id), basePrompt, cfg.RootDir))
+				ag.SetSystemPrompt(serve.SystemPromptForMode(serve.ReadSessionMode(id), basePrompt, cfg.RootDir))
 				if systemSuffix != "" {
 					ag.AppendSystemPrompt(systemSuffix)
 				}
 			}
-			if m := readSessionModel(id); m != "" {
+			if m := serve.ReadSessionModel(id); m != "" {
 				ag.SetModel(m)
 			}
 			// Per-turn retrieval, keyed to this turn's text rather than the session's
@@ -1195,7 +1196,7 @@ func run() error {
 			defer cancel()
 			return client.ListModels(ctx)
 		}
-		return runServe(run, metrics, stream, sessionTurn, approvals, devStore, loadMessages, listModels)
+		return serve.Run(run, metrics, stream, sessionTurn, approvals, devStore, loadMessages, listModels)
 	case "queue":
 		if task == "" {
 			return fmt.Errorf("queue requires a file of tasks (one per line)")

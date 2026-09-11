@@ -1,4 +1,4 @@
-package main
+package serve
 
 import (
 	"context"
@@ -28,7 +28,7 @@ func webhookHandler(run func(ctx context.Context, task string) (string, error), 
 		}
 		// Constant-time bearer-token check (avoids leaking the token via response
 		// timing). An empty token means the handler itself is unauthenticated —
-		// runServe refuses to start in that case, so this path is test-only.
+		// Run refuses to start in that case, so this path is test-only.
 		if token != "" {
 			want := "Bearer " + token
 			got := r.Header.Get("Authorization")
@@ -210,7 +210,7 @@ func serveToken() (string, error) {
 	return token, nil
 }
 
-// runServe starts the webhook HTTP server, dispatching each POST /run to run.
+// Run starts the webhook HTTP server, dispatching each POST /run to run.
 // metrics (when non-nil) counts requests/errors and is exposed on /metrics.
 // stream (when non-nil) backs a POST /run/stream Server-Sent-Events endpoint.
 // sessionTurn (when non-nil) backs the session-backed multi-turn endpoints
@@ -223,7 +223,7 @@ func serveToken() (string, error) {
 // sessionMessages (when non-nil, alongside sessionTurn) additionally
 // registers GET /session/{id}/messages, returning a session's stored
 // conversation for history replay.
-func runServe(run func(ctx context.Context, task string) (string, error), metrics *serveMetrics, stream func(ctx context.Context, task string, emit func(string)) error, sessionTurn SessionTurn, approvals *approvalRegistry, devStore *deviceStore, sessionMessages func(id string) ([]json.RawMessage, bool, error), listModels func() ([]string, error)) error {
+func Run(run func(ctx context.Context, task string) (string, error), metrics *ServeMetrics, stream func(ctx context.Context, task string, emit func(string)) error, sessionTurn SessionTurn, approvals *approvalRegistry, devStore *deviceStore, sessionMessages func(id string) ([]json.RawMessage, bool, error), listModels func() ([]string, error)) error {
 	token, err := serveToken()
 	if err != nil {
 		return err
@@ -295,11 +295,11 @@ func runServe(run func(ctx context.Context, task string) (string, error), metric
 	fmt.Fprintf(os.Stderr, "gophermind serving on %s (POST /run, /run/stream; /healthz /readyz)\n", addr)
 	if sessionTurn != nil {
 		remote := "local approval"
-		if serveApprovalRemote() {
+		if ServeApprovalRemote() {
 			remote = "remote approval"
 		}
 		apns := "APNs disabled"
-		if devStore != nil && loadAPNsConfig().enabled() {
+		if devStore != nil && LoadAPNsConfig().enabled() {
 			apns = "APNs configured"
 		}
 		fmt.Fprintf(os.Stderr, "  sessions: POST /session, POST /session/{id}/stream, POST /session/{id}/approve, POST /devices (%s, %s)\n", remote, apns)

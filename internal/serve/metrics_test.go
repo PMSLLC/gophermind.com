@@ -1,4 +1,4 @@
-package main
+package serve
 
 import (
 	"net/http"
@@ -8,11 +8,11 @@ import (
 )
 
 func TestServeMetricsRender(t *testing.T) {
-	m := &serveMetrics{}
+	m := &ServeMetrics{}
 	m.requests.Add(3)
 	m.errors.Add(1)
-	m.promptTokens.Add(1200)
-	m.completionTokens.Add(340)
+	m.PromptTokens.Add(1200)
+	m.CompletionTokens.Add(340)
 
 	out := m.Render()
 	// Prometheus text exposition format: HELP/TYPE lines + metric samples.
@@ -31,7 +31,7 @@ func TestServeMetricsRender(t *testing.T) {
 }
 
 func TestMetricsHandler(t *testing.T) {
-	m := &serveMetrics{}
+	m := &ServeMetrics{}
 	m.requests.Add(5)
 	rr := httptest.NewRecorder()
 	metricsHandler(m)(rr, httptest.NewRequest(http.MethodGet, "/metrics", nil))
