@@ -3,8 +3,11 @@ package phaseflow
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+
+	"gophermind/internal/lockfile"
 )
 
 // This file defines the machine-readable plan produced by `/project` and
@@ -65,7 +68,11 @@ func LoadAssignments(root string) (a Assignments, found bool, err error) {
 }
 
 // Save writes the assignments to .planning/assignments.json, creating the
-// directory if needed. Output is indented for human diffability.
+// directory if needed. Output is indented for human diffability. The write
+// itself is atomic (temp file, fsync, rename) via internal/lockfile, so a
+// crash mid-write cannot leave a torn assignments.json - but Save alone does
+// not serialize against another concurrent Save or Update; callers that read
+// before they write must use Update instead.
 func (a Assignments) Save(root string) error {
 	if err := os.MkdirAll(PlanningDir(root), 0o755); err != nil {
 		return err
@@ -75,7 +82,44 @@ func (a Assignments) Save(root string) error {
 		return err
 	}
 	out = append(out, '\n')
-	return os.WriteFile(AssignmentsPath(root), out, 0o644)
+	return lockfile.WriteAtomic(AssignmentsPath(root), out, 0o644)
+}
+
+// Update applies mutate to the assignments under an exclusive lock and writes
+// the result atomically. It is the only safe way to change a task's state
+// when more than one task may be running: the load, the mutation and the
+// save all happen while holding the same lock, so a concurrent Update cannot
+// interleave a stale read between them the way independent
+// load-mutate-Save calls can. A missing assignments.json is a clear error
+// rather than a silent empty write, since Update always has an existing plan
+// to modify.
+func Update(root string, mutate func(*Assignments) error) error {
+	lockPath := AssignmentsPath(root) + ".lock"
+	if err := os.MkdirAll(PlanningDir(root), 0o755); err != nil {
+		return err
+	}
+	release, err := lockfile.Acquire(lockPath)
+	if err != nil {
+		return fmt.Errorf("phaseflow: acquire assignments lock: %w", err)
+	}
+	defer release()
+
+	a, found, err := LoadAssignments(root)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return errors.New("phaseflow: no assignments to update")
+	}
+	if err := mutate(&a); err != nil {
+		return err
+	}
+	out, err := json.MarshalIndent(a, "", "  ")
+	if err != nil {
+		return err
+	}
+	out = append(out, '\n')
+	return lockfile.WriteAtomic(AssignmentsPath(root), out, 0o644)
 }
 
 // Task returns the task with the given id and whether it was found.
