@@ -5,8 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -323,6 +326,88 @@ func TestSessionApprovalGateBlocksAndResolves(t *testing.T) {
 				if sawToolResult {
 					t.Fatalf("deny: expected run_shell never to execute (no tool_result frame), got text %q", toolResultText)
 				}
+			}
+		})
+	}
+}
+
+// TestOneShotRoutesRefuseGatedTools is the proof that /run and /run/stream
+// cannot be used to walk around the approvals screen. Both routes are mounted
+// on the same mux, behind the same bearer token, as the session routes, and
+// neither carries a session id or an SSE channel a pending approval could be
+// raised on and resolved against. So a gated tool call made through them must
+// be refused outright, and the refusal must reach the caller rather than
+// disappearing into the model's own transcript.
+func TestOneShotRoutesRefuseGatedTools(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		route string
+	}{
+		{"run", "/run"},
+		{"run stream", "/run/stream"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			script := &scriptedLLM{turns: [][]byte{
+				toolCallResp("call_1", "run_shell", `{"command":"touch pwned-one-shot"}`),
+				finalResp("turn complete"),
+			}}
+			llmSrv := httptest.NewServer(script.handler())
+			defer llmSrv.Close()
+
+			root := t.TempDir()
+			t.Setenv("GOPHERMIND_BASE_URL", llmSrv.URL)
+			t.Setenv("GOPHERMIND_MODEL", "test-model")
+			t.Setenv("GOPHERMIND_ROOT", root)
+			t.Setenv("GOPHERMIND_APPROVAL", "ask")
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			srv, err := startEmbeddedServer(ctx)
+			if err != nil {
+				t.Fatalf("startEmbeddedServer: %v", err)
+			}
+			defer func() {
+				if err := srv.Shutdown(); err != nil {
+					t.Errorf("Shutdown: %v", err)
+				}
+			}()
+
+			waitReady(t, srv)
+
+			req, _ := http.NewRequest(http.MethodPost, srv.BaseURL+tc.route, strings.NewReader("run the command"))
+			req.Header.Set("Authorization", "Bearer "+srv.Token)
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("POST %s: %v", tc.route, err)
+			}
+			body, readErr := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if readErr != nil {
+				t.Fatalf("read %s response: %v", tc.route, readErr)
+			}
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("POST %s: want 200, got %d (%s)", tc.route, resp.StatusCode, body)
+			}
+
+			if _, err := os.Stat(filepath.Join(root, "pwned-one-shot")); err == nil {
+				t.Fatalf("POST %s executed the gated run_shell call: the marker file exists", tc.route)
+			} else if !os.IsNotExist(err) {
+				t.Fatalf("stat marker file: %v", err)
+			}
+
+			text := string(body)
+			if tc.route == "/run" {
+				var decoded struct {
+					Result string `json:"result"`
+				}
+				if err := json.Unmarshal(body, &decoded); err != nil {
+					t.Fatalf("decode /run response: %v (body=%s)", err, body)
+				}
+				text = decoded.Result
+			}
+			if !strings.Contains(text, "run_shell") || !strings.Contains(text, "refused") {
+				t.Fatalf("POST %s did not report the refusal to the caller: %q", tc.route, text)
 			}
 		})
 	}

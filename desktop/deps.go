@@ -11,6 +11,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
+	"sync"
 	"time"
 
 	"gophermind/internal/agent"
@@ -142,6 +144,45 @@ func newToolRegistry(cfg config.Config) *tools.Registry {
 // may still want time to read a shell command or a diff before deciding.
 const desktopApprovalTimeout = 30 * time.Minute
 
+// oneShotGate is the approval policy for the one-shot /run and /run/stream
+// routes: it refuses every gated (mutating) tool call and records what it
+// refused. Those routes have no interactive channel a pending approval could
+// be raised on, so "ask a human" is not available and auto-approving would
+// make the approvals gate optional; refusing is the only answer that keeps
+// the guarantee. The recorded tool names let the caller be told a refusal
+// happened, since the agent otherwise reports a denial only into the model's
+// own transcript.
+type oneShotGate struct {
+	mu      sync.Mutex
+	refused []string
+}
+
+// approve implements safety.ApprovalFunc. It denies gated tools and allows
+// everything else, so read-only tools still work on these routes.
+func (g *oneShotGate) approve(tool, argsJSON string) bool {
+	if !safety.Gated(tool) {
+		return true
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if !slices.Contains(g.refused, tool) {
+		g.refused = append(g.refused, tool)
+	}
+	return false
+}
+
+// notice returns the line reporting the refusal to the caller, or "" when
+// nothing was refused.
+func (g *oneShotGate) notice() string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if len(g.refused) == 0 {
+		return ""
+	}
+	return "[gophermind] refused: this route cannot ask anyone for approval, so these gated tool calls were denied: " +
+		strings.Join(g.refused, ", ")
+}
+
 // newServeDeps assembles the narrow serve.Deps this task wires: Run, Stream,
 // SessionTurn, SessionMessages, ListModels, and Approvals. Metrics and
 // Devices are still left nil: there is no metrics scrape target and no APNs
@@ -164,11 +205,14 @@ const desktopApprovalTimeout = 30 * time.Minute
 // output uses. This is the Approvals screen the desktop design doc calls
 // the reason the app is worth building.
 //
-// Run and Stream (the one-shot /run and /run/stream routes) still use
-// safety.Auto: neither carries a session id or an SSE emit function a
-// pending approval could be resolved against, and the desktop frontend does
-// not call them — it drives the chat UI entirely through the session-backed
-// routes above.
+// Run and Stream (the one-shot /run and /run/stream routes) refuse gated
+// tool calls outright, via oneShotGate: neither carries a session id or an
+// SSE emit function a pending approval could be raised on and resolved
+// against, so there is no human to ask. They used to pass safety.Auto, which
+// made the app's "every mutating tool blocks on a human" guarantee
+// bypassable by hitting a different route on the same mux with the same
+// token. That the desktop frontend does not call these routes was never a
+// control, only a coincidence.
 //
 // Before each session turn, unless the session has pinned an explicit model
 // (serve.ReadSessionModel), the model picker's policy (modelcat.Next) is
@@ -178,7 +222,6 @@ const desktopApprovalTimeout = 30 * time.Minute
 // to a different provider; both are satisfied by a *clientHolder's Profile
 // and Set methods in production.
 func newServeDeps(getClient func() (*llm.Client, error), getProfile func() string, setBackend func(*llm.Client, string), reg *tools.Registry, cfg config.Config, basePrompt string) serve.Deps {
-	approve := safety.Auto
 	approvals := serve.NewApprovalRegistry()
 
 	run := func(ctx context.Context, t string) (string, error) {
@@ -186,10 +229,14 @@ func newServeDeps(getClient func() (*llm.Client, error), getProfile func() strin
 		if err != nil {
 			return "", err
 		}
-		ag := agent.New(client, reg, cfg.MaxIter, approve, nil)
+		gate := &oneShotGate{}
+		ag := agent.New(client, reg, cfg.MaxIter, gate.approve, nil)
 		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
 		ag.SetSystemPrompt(basePrompt)
 		answer, err := ag.Send(ctx, t)
+		if notice := gate.notice(); notice != "" {
+			answer += "\n\n" + notice
+		}
 		return answer, err
 	}
 
@@ -198,7 +245,8 @@ func newServeDeps(getClient func() (*llm.Client, error), getProfile func() strin
 		if err != nil {
 			return err
 		}
-		ag := agent.New(client, reg, cfg.MaxIter, approve, func(e agent.Event) {
+		gate := &oneShotGate{}
+		ag := agent.New(client, reg, cfg.MaxIter, gate.approve, func(e agent.Event) {
 			if e.Type == "token" {
 				emit(e.Text)
 			}
@@ -206,6 +254,9 @@ func newServeDeps(getClient func() (*llm.Client, error), getProfile func() strin
 		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
 		ag.SetSystemPrompt(basePrompt)
 		_, err = ag.Send(ctx, t)
+		if notice := gate.notice(); notice != "" {
+			emit("\n\n" + notice)
+		}
 		return err
 	}
 
@@ -274,7 +325,7 @@ func newServeDeps(getClient func() (*llm.Client, error), getProfile func() strin
 		if err != nil {
 			return nil, true, err
 		}
-		ag := agent.New(client, reg, cfg.MaxIter, approve, nil)
+		ag := agent.New(client, reg, cfg.MaxIter, (&oneShotGate{}).approve, nil)
 		if err := session.Load(id, ag); err != nil {
 			return nil, true, err
 		}
@@ -342,7 +393,15 @@ func newServeDeps(getClient func() (*llm.Client, error), getProfile func() strin
 // turn it exists to protect.
 func applyModelPolicy(ctx context.Context, cfg config.Config, currentProfile string, client *llm.Client, setBackend func(*llm.Client, string)) (*llm.Client, modelcat.Choice, bool) {
 	o, _ := freellm.LoadOdometer(freellm.OdometerPath())
-	s, _ := modelcat.LoadSettings(modelcat.SettingsPath())
+	// A settings read failure must not fail a turn, so the current client is
+	// kept and no automatic switch is considered at all. Choosing a model
+	// from settings that are not the user's could auto-select a provider
+	// whose terms they excluded, which is the one outcome this must never
+	// produce; not switching can only ever leave them where they already are.
+	s, err := modelcat.LoadSettings(modelcat.SettingsPath())
+	if err != nil {
+		return client, modelcat.Choice{}, false
+	}
 	entries := modelcat.Build(o, s, nil, time.Now())
 
 	choice := modelcat.Next(entries, s, currentProfile, client.Model)
