@@ -1387,6 +1387,7 @@ func run() error {
 				_ = odo.Add(freellm.OdometerPath(), freellm.Event{
 					TS:       time.Now(),
 					Profile:  freeCompat.Profile,
+					Model:    cfg.Model,
 					Tokens:   int64(u.PromptTokens + u.CompletionTokens),
 					Requests: 1,
 				})
