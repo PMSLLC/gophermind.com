@@ -77,7 +77,7 @@ func startEmbeddedServer(parent context.Context) (*embeddedServer, error) {
 	holder := &clientHolder{}
 	status := &backendStatus{}
 
-	mux, err := serve.NewMux(newServeDeps(holder.Get, reg, cfg, basePrompt), serve.Options{Token: token})
+	mux, err := serve.NewMux(newServeDeps(holder.Get, holder.Profile, holder.Set, reg, cfg, basePrompt), serve.Options{Token: token})
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("build mux: %w", err)

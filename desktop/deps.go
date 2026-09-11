@@ -15,7 +15,9 @@ import (
 
 	"gophermind/internal/agent"
 	"gophermind/internal/config"
+	"gophermind/internal/freellm"
 	"gophermind/internal/llm"
+	"gophermind/internal/modelcat"
 	"gophermind/internal/safety"
 	"gophermind/internal/serve"
 	"gophermind/internal/session"
@@ -167,7 +169,15 @@ const desktopApprovalTimeout = 30 * time.Minute
 // pending approval could be resolved against, and the desktop frontend does
 // not call them — it drives the chat UI entirely through the session-backed
 // routes above.
-func newServeDeps(getClient func() (*llm.Client, error), reg *tools.Registry, cfg config.Config, basePrompt string) serve.Deps {
+//
+// Before each session turn, unless the session has pinned an explicit model
+// (serve.ReadSessionModel), the model picker's policy (modelcat.Next) is
+// evaluated once: see applyModelPolicy. getProfile reports which gophermind
+// profile the client from getClient currently belongs to, and setBackend
+// installs a new active client (and its profile) when the policy switches
+// to a different provider; both are satisfied by a *clientHolder's Profile
+// and Set methods in production.
+func newServeDeps(getClient func() (*llm.Client, error), getProfile func() string, setBackend func(*llm.Client, string), reg *tools.Registry, cfg config.Config, basePrompt string) serve.Deps {
 	approve := safety.Auto
 	approvals := serve.NewApprovalRegistry()
 
@@ -204,6 +214,18 @@ func newServeDeps(getClient func() (*llm.Client, error), reg *tools.Registry, cf
 		if err != nil {
 			return err
 		}
+
+		// Evaluate the model picker's policy once, before the turn starts
+		// (see "Switching happens between turns" on applyModelPolicy). A
+		// session that has pinned an explicit model is left alone: that
+		// choice is the user's, and automatic cycling must never override
+		// it silently.
+		var switchChoice modelcat.Choice
+		switched := false
+		if serve.ReadSessionModel(id) == "" {
+			client, switchChoice, switched = applyModelPolicy(ctx, cfg, getProfile(), client, setBackend)
+		}
+
 		onEvent := func(e agent.Event) {
 			event, data, ok := serve.SSEFramesForAgentEvent(e)
 			if !ok {
@@ -219,6 +241,14 @@ func newServeDeps(getClient func() (*llm.Client, error), reg *tools.Registry, cf
 		turnApprove := serve.RemoteApprovalGate(approvals, ctx, desktopApprovalTimeout, emit, serve.NewApprovalID)
 		ag := agent.New(client, reg, cfg.MaxIter, turnApprove, onEvent)
 		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
+		if switched {
+			b, _ := json.Marshal(struct {
+				Profile string `json:"profile"`
+				Model   string `json:"model"`
+				Reason  string `json:"reason"`
+			}{switchChoice.Profile, switchChoice.Model, switchChoice.Reason})
+			_ = emit("model-switched", string(b))
+		}
 		if session.Exists(id) {
 			if err := session.Load(id, ag); err != nil {
 				return err
@@ -284,4 +314,66 @@ func newServeDeps(getClient func() (*llm.Client, error), reg *tools.Registry, cf
 		Approvals:       approvals,
 		// Metrics, Devices: still left nil. See the doc comment above.
 	}
+}
+
+// applyModelPolicy evaluates modelcat.Next before a turn starts and, when it
+// chooses a different model, switches to it, returning the client the turn
+// should actually use. Switching happens here and nowhere else: a turn's
+// context is built for one model's token budget and tool dialect, so this
+// runs once, before agent.New, never mid-turn.
+//
+// The catalogue it builds carries no live listing of the active endpoint's
+// own models (Build's endpointModels is nil), so this makes no network
+// call of its own: the odometer and settings are local files, and an
+// endpoint-served model never carries a published quota anyway (there is
+// no line for it to cross), so it would never be a switch candidate under
+// rule 4 regardless.
+//
+// When the chosen entry is on the same profile as the current client, the
+// switch is exactly what it sounds like: client.Model is updated in place,
+// no new connection needed. When it names a different profile, a new
+// client is built for that profile, with its own BaseURL, API key and
+// paths, via clientForProfile, mirroring how resolveLLMBackend builds the
+// startup fallback client; on success it is installed as the app's active
+// backend through setBackend, replacing the client every session's turns
+// use from now on. If the chosen profile cannot actually be reached (the
+// catalogue's Reachable flag can go stale between builds), the current
+// client and model are kept: a failed proactive switch must never fail the
+// turn it exists to protect.
+func applyModelPolicy(ctx context.Context, cfg config.Config, currentProfile string, client *llm.Client, setBackend func(*llm.Client, string)) (*llm.Client, modelcat.Choice, bool) {
+	o, _ := freellm.LoadOdometer(freellm.OdometerPath())
+	s, _ := modelcat.LoadSettings(modelcat.SettingsPath())
+	entries := modelcat.Build(o, s, nil, time.Now())
+
+	choice := modelcat.Next(entries, s, currentProfile, client.Model)
+	if !choice.Switched {
+		return client, choice, false
+	}
+	if choice.Profile == currentProfile {
+		client.Model = choice.Model
+		return client, choice, true
+	}
+	newClient, err := clientForProfile(ctx, cfg, choice.Profile, choice.Model)
+	if err != nil {
+		return client, modelcat.Choice{}, false
+	}
+	setBackend(newClient, choice.Profile)
+	return newClient, choice, true
+}
+
+// clientForProfile builds a client for switching the active backend to a
+// different profile mid-run. It resolves BaseURL, API key, ChatPath and
+// ModelsPath for profile via config.ApplyProfile, the same mechanism
+// resolveLLMBackend uses to build the startup fallback client, then forces
+// Model to modelID rather than the profile's own default model, since
+// modelID is the exact model modelcat.Next chose.
+func clientForProfile(ctx context.Context, base config.Config, profile, modelID string) (*llm.Client, error) {
+	pcfg := base
+	pcfg.Profile = profile
+	applied, err := pcfg.ApplyProfile()
+	if err != nil {
+		return nil, fmt.Errorf("apply profile %q: %w", profile, err)
+	}
+	applied.Model = modelID
+	return newLLMClient(ctx, applied)
 }

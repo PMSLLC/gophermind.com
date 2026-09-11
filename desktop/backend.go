@@ -18,13 +18,15 @@ import (
 const fallbackProfile = "free-ovhcloud"
 
 // clientHolder holds the *llm.Client the running embedded server currently
-// uses, if any. It exists so serve.Deps can be built, and the server
-// started, before the LLM backend has finished resolving: Get returns a
-// clear error while resolution is still in flight or has failed outright,
-// instead of the caller blocking or touching a nil client.
+// uses, if any, and the gophermind profile it belongs to. It exists so
+// serve.Deps can be built, and the server started, before the LLM backend
+// has finished resolving: Get returns a clear error while resolution is
+// still in flight or has failed outright, instead of the caller blocking or
+// touching a nil client.
 type clientHolder struct {
-	mu     sync.RWMutex
-	client *llm.Client
+	mu      sync.RWMutex
+	client  *llm.Client
+	profile string
 }
 
 // Get returns the currently active client, or an error naming that no model
@@ -38,10 +40,23 @@ func (h *clientHolder) Get() (*llm.Client, error) {
 	return h.client, nil
 }
 
-// Set installs client as the active client, replacing any previous one.
-func (h *clientHolder) Set(client *llm.Client) {
+// Profile returns the gophermind profile the active client belongs to: ""
+// for the user's own configured endpoint, or the built-in fallback
+// profile's name (see fallbackProfile) when running on the fallback. It is
+// how the model picker's turn-start policy (see applyModelPolicy in
+// deps.go) knows which catalogue entry the current model corresponds to.
+func (h *clientHolder) Profile() string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.profile
+}
+
+// Set installs client as the active client for profile, replacing any
+// previous client and profile.
+func (h *clientHolder) Set(client *llm.Client, profile string) {
 	h.mu.Lock()
 	h.client = client
+	h.profile = profile
 	h.mu.Unlock()
 }
 
@@ -114,7 +129,7 @@ func (s *backendStatus) Snapshot() backendStatusSnapshot {
 func resolveLLMBackend(ctx context.Context, cfg config.Config, holder *clientHolder, status *backendStatus) {
 	client, err := newLLMClient(ctx, cfg)
 	if err == nil {
-		holder.Set(client)
+		holder.Set(client, cfg.Profile)
 		status.setReady(cfg.BaseURL, client.Model, false, "", "")
 		return
 	}
@@ -138,7 +153,7 @@ func resolveLLMBackend(ctx context.Context, cfg config.Config, holder *clientHol
 		return
 	}
 
-	holder.Set(fbClient)
+	holder.Set(fbClient, fallbackProfile)
 	status.setReady(fallbackCfg.BaseURL, fbClient.Model, true, failedBaseURL, fallbackProfile)
 }
 
