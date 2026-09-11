@@ -290,3 +290,267 @@ body {
   opacity: 0.4;
   cursor: default;
 }
+
+.statusbar-models {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  position: relative;
+}
+
+.settings-toggle,
+.model-picker-toggle {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.3rem 0.6rem;
+  font-family: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.model-picker {
+  position: relative;
+}
+
+.model-picker-caret {
+  margin-left: 0.4rem;
+  color: var(--text-dim);
+}
+
+.model-picker-panel {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 0.3rem;
+  width: min(32rem, 90vw);
+  max-height: 24rem;
+  overflow-y: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem;
+  z-index: 20;
+  font-size: 0.78rem;
+}
+
+.model-picker-filters,
+.model-picker-terms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+  color: var(--text-dim);
+}
+
+.model-picker-filters select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 0.75rem;
+}
+
+.model-picker-status {
+  color: var(--text-dim);
+  padding: 0.4rem 0;
+}
+
+.model-picker-error {
+  color: var(--error);
+}
+
+.model-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.model-picker-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.3rem 0.4rem;
+  border-radius: 4px;
+}
+
+.model-picker-row-current {
+  background: var(--bg);
+  outline: 1px solid var(--accent);
+}
+
+.model-picker-row-unreachable {
+  color: var(--text-dim);
+}
+
+.model-picker-id {
+  font-weight: 600;
+  min-width: 10rem;
+}
+
+.model-picker-provider {
+  color: var(--text-dim);
+  min-width: 6rem;
+}
+
+.model-picker-allowance {
+  color: var(--text-dim);
+}
+
+.model-picker-terms-badges {
+  color: #fbbf24;
+  font-size: 0.72rem;
+}
+
+.model-picker-links {
+  margin-left: auto;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.model-picker-links a {
+  color: var(--accent);
+}
+
+.switchbar {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.78rem;
+  color: #0f0f11;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+}
+
+.settings-panel {
+  width: min(36rem, 92vw);
+  max-height: 85vh;
+  overflow-y: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  font-size: 0.85rem;
+}
+
+.settings-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.settings-panel-header h2 {
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.settings-panel section {
+  border-top: 1px solid var(--border);
+  padding: 0.7rem 0;
+}
+
+.settings-panel section:first-of-type {
+  border-top: none;
+}
+
+.settings-panel h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-dim);
+}
+
+.settings-panel label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.25rem 0;
+}
+
+.settings-panel-hint {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  margin: 0.2rem 0 0.5rem;
+}
+
+.settings-panel-status {
+  padding: 0.5rem 0;
+  color: var(--text-dim);
+}
+
+.settings-panel-error {
+  color: var(--error);
+}
+
+.settings-order-list,
+.settings-links-list,
+.settings-unreachable-list {
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.settings-order-list li,
+.settings-links-list li,
+.settings-unreachable-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.settings-order-list button,
+.settings-links-list button {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.15rem 0.4rem;
+  font-family: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.settings-links-key {
+  font-weight: 600;
+  min-width: 8rem;
+}
+
+.settings-links-add {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.settings-links-add input,
+.settings-remote-fields input {
+  flex: 1;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.3rem 0.4rem;
+  font-family: inherit;
+  font-size: 0.78rem;
+}
+
+.settings-remote-fields {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}

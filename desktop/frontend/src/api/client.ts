@@ -36,6 +36,56 @@ export interface SSEFrame {
 }
 
 /**
+ * CatalogueEntry mirrors internal/modelcat.Entry: one model gophermind can
+ * address, with reachability, remaining allowance and links. quota is
+ * absent (rather than 0) when the provider publishes no quota, matching the
+ * Go side's own "a bare count, never a fraction" rule.
+ */
+export interface CatalogueEntry {
+  id: string
+  provider: string
+  profile: string
+  reachable: boolean
+  reason?: string
+  used: number
+  quota: number
+  unit?: string
+  window?: string
+  context?: string
+  modality?: string
+  terms?: string[]
+  provider_url?: string
+  model_url?: string
+  near_capacity: boolean
+}
+
+/**
+ * ModelSettings mirrors internal/modelcat.Settings: the user's preference
+ * order, capacity threshold, term exclusions, filter defaults and custom
+ * links, persisted server-side so they follow the user between clients.
+ */
+export interface ModelSettings {
+  order?: string[]
+  cycle_on_capacity: boolean
+  capacity_percent: number
+  when_all_full?: string
+  filter_reachable: boolean
+  filter_has_capacity: boolean
+  excluded_terms?: string[]
+  custom_links?: Record<string, string>
+}
+
+/**
+ * ModelSwitched is the payload of a "model-switched" SSE frame: the model
+ * picker's policy moved the active model before this turn started.
+ */
+export interface ModelSwitched {
+  profile: string
+  model: string
+  reason: string
+}
+
+/**
  * PendingApproval is the payload of an "approval-needed" SSE frame: a gated
  * tool call is blocked on the server, waiting for POST
  * /session/{id}/approve to resolve approvalID.
@@ -59,6 +109,7 @@ export interface ApprovalResolution {
 export interface StreamHandlers {
   onToken: (text: string) => void
   onApprovalNeeded: (approval: PendingApproval) => void
+  onModelSwitched?: (switched: ModelSwitched) => void
   onDone: () => void
   onError: (message: string) => void
 }
@@ -125,6 +176,11 @@ export class ApiClient {
           })
           break
         }
+        case 'model-switched':
+          if (handlers.onModelSwitched) {
+            handlers.onModelSwitched(JSON.parse(frame.data) as ModelSwitched)
+          }
+          break
         case 'done':
           handlers.onDone()
           break
@@ -203,6 +259,50 @@ export class ApiClient {
     }
     const body = (await res.json()) as { models: string[] }
     return body.models
+  }
+
+  /** getCatalogue calls GET /models/catalogue: every model gophermind knows about. */
+  async getCatalogue(): Promise<CatalogueEntry[]> {
+    const res = await fetch(`${this.baseURL}/models/catalogue`, {
+      method: 'GET',
+      headers: this.authHeaders(),
+    })
+    if (!res.ok) {
+      throw new Error(`get catalogue failed: ${res.status} ${await safeText(res)}`)
+    }
+    const body = (await res.json()) as { entries: CatalogueEntry[] }
+    return body.entries
+  }
+
+  /** getModelSettings calls GET /models/settings. */
+  async getModelSettings(): Promise<ModelSettings> {
+    const res = await fetch(`${this.baseURL}/models/settings`, {
+      method: 'GET',
+      headers: this.authHeaders(),
+    })
+    if (!res.ok) {
+      throw new Error(`get model settings failed: ${res.status} ${await safeText(res)}`)
+    }
+    return (await res.json()) as ModelSettings
+  }
+
+  /**
+   * patchModelSettings calls PATCH /models/settings with a partial settings
+   * object. A 400 response (an invalid custom link scheme, named in the
+   * body) is thrown as an Error carrying that exact server text rather than
+   * a generic message: the caller shows it inline instead of re-deriving
+   * its own validation, which the server is the only real authority on.
+   */
+  async patchModelSettings(patch: Partial<ModelSettings>): Promise<ModelSettings> {
+    const res = await fetch(`${this.baseURL}/models/settings`, {
+      method: 'PATCH',
+      headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(patch),
+    })
+    if (!res.ok) {
+      throw new Error(await safeText(res))
+    }
+    return (await res.json()) as ModelSettings
   }
 }
 

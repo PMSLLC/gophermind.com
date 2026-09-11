@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { ApiClient, type BackendStatus, type PendingApproval } from './api/client'
+import { ApiClient, type BackendStatus, type ModelSwitched, type PendingApproval } from './api/client'
 import { waitForEndpoint } from './api/wails'
+import ModelPicker from './components/ModelPicker'
+import SettingsPanel from './components/SettingsPanel'
 
 /** TextLine is a plain chat line: something the user typed, or prose back. */
 interface TextLine {
@@ -119,6 +121,14 @@ export default function App() {
   // if any. It drives both the Y/N keyboard shortcut and the approval bar
   // below, in addition to the in-transcript prompt.
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
+  // currentProfile/currentModel are the shared state the model picker and
+  // settings panel both need: which model is actually serving this
+  // session right now. They start from backendStatus once it resolves and
+  // move whenever a model-switched frame arrives mid-turn.
+  const [currentProfile, setCurrentProfile] = useState('')
+  const [currentModel, setCurrentModel] = useState('')
+  const [switchNotice, setSwitchNotice] = useState<ModelSwitched | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const clientRef = useRef<ApiClient | null>(null)
   const transcriptEndRef = useRef<HTMLDivElement | null>(null)
 
@@ -146,6 +156,8 @@ export default function App() {
           setFatalError(backend.error)
           return
         }
+        setCurrentModel(backend.model)
+        setCurrentProfile(backend.fellBack ? backend.fallbackProfile || '' : '')
         setStatus('ready')
         setStatusDetail(`session ${session.id}`)
       } catch (err) {
@@ -220,6 +232,11 @@ export default function App() {
         setStatus('awaiting-approval')
         setStatusDetail(`waiting for your decision on ${approval.tool} (Y to approve, N to deny)`)
       },
+      onModelSwitched: (switched) => {
+        setCurrentProfile(switched.profile)
+        setCurrentModel(switched.model)
+        setSwitchNotice(switched)
+      },
       onDone: () => {
         setStatus('ready')
         setStatusDetail(`session ${sessionID}`)
@@ -280,6 +297,14 @@ export default function App() {
       <header className="statusbar">
         <span className={`dot dot-${status}`} />
         <span className="statustext">{statusDetail}</span>
+        {clientRef.current && (
+          <div className="statusbar-models">
+            <ModelPicker client={clientRef.current} currentProfile={currentProfile} currentModel={currentModel} />
+            <button className="settings-toggle" onClick={() => setSettingsOpen(true)}>
+              settings
+            </button>
+          </div>
+        )}
       </header>
 
       {backendStatus && backendStatus.ready && (
@@ -287,6 +312,20 @@ export default function App() {
           {backendStatus.fellBack
             ? `endpoint ${backendStatus.failedBaseURL} was unreachable; fell back to ${backendStatus.fallbackProfile} (${backendStatus.model})`
             : `using ${backendStatus.model} at ${backendStatus.baseURL}`}
+        </div>
+      )}
+
+      {switchNotice && (
+        <div className="switchbar" onClick={() => setSwitchNotice(null)}>
+          switched to {switchNotice.model} ({switchNotice.profile}): {switchNotice.reason}
+        </div>
+      )}
+
+      {settingsOpen && clientRef.current && (
+        <div className="settings-overlay" onClick={() => setSettingsOpen(false)}>
+          <div onClick={(e) => e.stopPropagation()}>
+            <SettingsPanel client={clientRef.current} onClose={() => setSettingsOpen(false)} />
+          </div>
         </div>
       )}
 
