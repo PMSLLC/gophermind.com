@@ -361,3 +361,42 @@ func (o *Odometer) save(path string) error {
 	}
 	return lockfile.WriteAtomic(path, b, 0o600)
 }
+
+// Record adds one turn's usage to the odometer at the default path.
+//
+// It exists so every surface that runs a turn meters it the same way. The
+// CLI had the only call site in the tree, inside the one-shot run/ask
+// command, which meant a turn served over HTTP or through the desktop app
+// counted for nothing: the model picker read the odometer for its remaining
+// allowances, saw zero for every model forever, and never cycled a model
+// away at capacity because nothing ever approached capacity.
+//
+// profile empty means the turn did not run on a free provider and nothing
+// is recorded. model must be the model that actually served the turn, not
+// the configured one: speed routing, startup discovery and the runtime
+// /model command all reassign it, so the configured value can name a
+// different model entirely and attributing usage to it meters the wrong
+// allowance.
+//
+// Recording is best effort and never fails a turn: a user's work does not
+// stop because a usage counter could not be written. The error is returned
+// for callers that want to log it.
+func Record(profile, model string, promptTokens, completionTokens int) error {
+	if profile == "" {
+		return nil
+	}
+	path := OdometerPath()
+	o, err := LoadOdometer(path)
+	if err != nil {
+		// An unreadable odometer is not a reason to write a zeroed one over
+		// it; see LoadOdometer for why that matters.
+		return err
+	}
+	return o.Add(path, Event{
+		TS:       time.Now(),
+		Profile:  profile,
+		Model:    model,
+		Tokens:   int64(promptTokens + completionTokens),
+		Requests: 1,
+	})
+}

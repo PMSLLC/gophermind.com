@@ -1055,6 +1055,12 @@ func run() error {
 		// Webhook mode: each POST /run spawns a fresh agent turn, isolated from
 		// other requests. Blocks until the process is stopped.
 		metrics := &serve.ServeMetrics{}
+		// Which free provider, if any, this server's endpoint belongs to.
+		// Empty means the user's own endpoint and nothing to meter.
+		servedProfile := ""
+		if c, ok := freellm.CompatForBaseURL(client.BaseURL); ok {
+			servedProfile = c.Profile
+		}
 		run := func(ctx context.Context, t string) (string, error) {
 			ag := agent.New(client, reg, cfg.MaxIter, approve, nil)
 			ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
@@ -1069,6 +1075,7 @@ func run() error {
 			u := ag.Usage()
 			metrics.PromptTokens.Add(int64(u.PromptTokens))
 			metrics.CompletionTokens.Add(int64(u.CompletionTokens))
+			_ = freellm.Record(servedProfile, client.Model, u.PromptTokens, u.CompletionTokens)
 			return answer, err
 		}
 		// Streaming variant for /run/stream: emit assistant tokens as they arrive.
@@ -1156,6 +1163,12 @@ func run() error {
 			restore := injectRetrieval(ctx, ag, embedProvider, ragPaths, t)
 			_, err := ag.Send(ctx, t)
 			restore()
+			// Meter the turn. Without this a served session spent free-tier
+			// allowance that no counter ever saw, so the model picker's
+			// remaining-usage figures stayed at full and cycle-on-capacity
+			// could never fire.
+			u := ag.Usage()
+			_ = freellm.Record(servedProfile, ag.LLM().Model, u.PromptTokens, u.CompletionTokens)
 			if serr := session.Save(id, ag); serr != nil && err == nil {
 				err = serr
 			}
@@ -1400,23 +1413,12 @@ func run() error {
 			}
 		}
 		// The free-usage odometer counts unconditionally: unlike the cost log
-		// it needs no opt-in env var. Failure to record is never fatal to a run.
+		// it needs no opt-in env var. Failure to record is never fatal to a
+		// run. client.Model, not cfg.Model: the model that actually served
+		// this turn is the one whose allowance was spent, and speed routing,
+		// startup discovery and /model all reassign it.
 		if isFree {
-			if odo, err := freellm.LoadOdometer(freellm.OdometerPath()); err == nil {
-				_ = odo.Add(freellm.OdometerPath(), freellm.Event{
-					TS:      time.Now(),
-					Profile: freeCompat.Profile,
-					// client.Model, not cfg.Model: the model that actually
-					// served this turn is the one whose allowance was spent.
-					// Speed routing (routeModel), startup discovery and the
-					// runtime /model command all reassign client.Model, so the
-					// configured value can name a different model entirely, and
-					// attributing usage to it would meter the wrong one.
-					Model:    client.Model,
-					Tokens:   int64(u.PromptTokens + u.CompletionTokens),
-					Requests: 1,
-				})
-			}
+			_ = freellm.Record(freeCompat.Profile, client.Model, u.PromptTokens, u.CompletionTokens)
 		}
 		// --report writes a self-contained HTML record of the run (task, answer,
 		// usage) for sharing.

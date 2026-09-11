@@ -71,8 +71,8 @@ func startTestServer(t *testing.T, holder *clientHolder) *embeddedServer {
 // seedNearCapacityModel writes an odometer whose "free-ovhcloud/gpt-oss-120b"
 // usage is well past its published 2 RPM quota, and a settings file with
 // cycling as requested and gpt-oss-20b (same profile, same quota by
-// construction, since modelcat draws every model's quota from the
-// profile's default model) preferred first.
+// construction: both are OVHcloud models publishing the same rate limit)
+// preferred first.
 func seedNearCapacityModel(t *testing.T, odometerPath, settingsPath string, cycleOnCapacity bool) {
 	t.Helper()
 	o := &freellm.Odometer{}

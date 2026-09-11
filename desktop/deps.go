@@ -316,6 +316,16 @@ func newServeDeps(getClient func() (*llm.Client, error), getProfile func() strin
 			ag.SetSystemPrompt(serve.SystemPromptForMode(serve.ReadSessionMode(id), basePrompt, cfg.RootDir))
 		}
 		_, err = ag.Send(ctx, t)
+		// Meter the turn against the profile that served it. Nothing in this
+		// app recorded usage before: the only production writer was the CLI's
+		// one-shot run/ask path, so the model picker read an odometer that
+		// was always zero. Every model showed its full allowance forever and
+		// cycle-on-capacity could never fire, because nothing ever
+		// approached capacity. getProfile reports the profile AFTER any
+		// switch applyModelPolicy just made, and ag.LLM().Model is the model
+		// that actually served the turn.
+		u := ag.Usage()
+		_ = freellm.Record(getProfile(), ag.LLM().Model, u.PromptTokens, u.CompletionTokens)
 		if serr := session.Save(id, ag); serr != nil && err == nil {
 			err = serr
 		}
