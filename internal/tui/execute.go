@@ -93,6 +93,17 @@ func (m model) handleProjectExecuteCommand() (model, tea.Cmd) {
 		Candidates: orchestrate.DefaultCandidates(m.agent.LLM().BaseURL),
 	}
 
+	// The revision circuit breaker. A task that has exhausted every
+	// candidate model is more likely to be badly specified than to be
+	// beyond every model, so its definition is rewritten once (twice at
+	// most) rather than re-run unchanged against the same exhausted list.
+	// Without a reviser wired in, such a task simply stays needs_revision
+	// forever, which is what it did before: ExecuteWithReviser had no
+	// caller at all. Revision uses the strongest configured model, because
+	// working out why several attempts failed is a reasoning problem rather
+	// than a coding one.
+	reviser := orchestrate.NewLLMReviser(m.agent.LLM(), m.model)
+
 	m.appendLine(projectBannerStyle.Render(fmt.Sprintf("executing %d tasks, auto-approve", pending)))
 	m.st = stateWorking
 	ctx, cancel := context.WithCancel(context.Background())
@@ -100,7 +111,8 @@ func (m model) handleProjectExecuteCommand() (model, tea.Cmd) {
 	sub := m.sub
 	go func() {
 		emit := func(o phaseflow.TaskOutcome) { sub <- execProgressMsg(o) }
-		summary, err := phaseflow.Execute(ctx, root, runner, emit)
+		summary, err := phaseflow.ExecuteWithReviser(ctx, root, runner, reviser, emit,
+			phaseflow.DefaultMaxRounds, phaseflow.DefaultWaveConcurrency)
 		if err != nil {
 			sub <- errMsg{err: err}
 			return

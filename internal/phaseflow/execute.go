@@ -364,6 +364,46 @@ func executeOnce(ctx context.Context, root string, runner TaskRunner, emit func(
 		}
 	}
 
+	// Derive waves from the dependency graph, but ONLY for a plan that
+	// actually declares dependencies. AssignWaves puts every
+	// dependency-free task in wave 1, and wave 1 runs concurrently, so
+	// applying it unconditionally would silently turn every existing
+	// sequential plan into a four-way concurrent one. A plan with no
+	// depends_on stays entirely in wave 0, which is the one-at-a-time
+	// behaviour it has always had.
+	//
+	// The result is persisted rather than kept in memory because
+	// GET /pipeline/state reads the same file: a run ordered by waves that
+	// the dashboard renders as a flat wave-0 list would be two different
+	// accounts of one run.
+	if declaresDependencies(a.Tasks) {
+		waved, err := AssignWaves(a.Tasks)
+		if err != nil {
+			// A cycle, or a dependency on an id that does not exist. Running
+			// anyway would start a task before the input it names is built,
+			// which is the failure waves exist to prevent, so this stops the
+			// run instead of falling back to unordered execution.
+			return RunSummary{}, err
+		}
+		if wavesDiffer(a.Tasks, waved) {
+			byID := make(map[string]int, len(waved))
+			for _, t := range waved {
+				byID[t.ID] = t.Wave
+			}
+			if err := Update(root, func(as *Assignments) error {
+				for i := range as.Tasks {
+					if w, ok := byID[as.Tasks[i].ID]; ok {
+						as.Tasks[i].Wave = w
+					}
+				}
+				return nil
+			}); err != nil {
+				return RunSummary{}, err
+			}
+			a.Tasks = waved
+		}
+	}
+
 	pending := make([]int, 0, len(a.Tasks))
 	for i, t := range a.Tasks {
 		if t.Status == StatusPending {
@@ -697,4 +737,30 @@ func projectNameFor(root string) string {
 		return filepath.Base(abs)
 	}
 	return filepath.Base(root)
+}
+
+// declaresDependencies reports whether any task names a prerequisite. A plan
+// with none is left in wave 0 and runs one task at a time, exactly as plans
+// did before waves existed.
+func declaresDependencies(tasks []Task) bool {
+	for _, t := range tasks {
+		if len(t.DependsOn) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// wavesDiffer reports whether assigning waves would change anything, so an
+// already-waved plan is not rewritten on every pass.
+func wavesDiffer(before, after []Task) bool {
+	if len(before) != len(after) {
+		return true
+	}
+	for i := range before {
+		if before[i].Wave != after[i].Wave {
+			return true
+		}
+	}
+	return false
 }
