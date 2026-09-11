@@ -56,3 +56,4 @@ tmp/
 /desktop/build/bin/
 # wails' own install-cache marker, regenerated from frontend/package.json
 /desktop/frontend/package.json.md5
+dist-desktop/

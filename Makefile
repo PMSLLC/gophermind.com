@@ -55,6 +55,10 @@ publish: ## Release to GitHub + Homebrew + npm (VERSION=x.y.z [DRY_RUN=1])
 # Lower-level: the GoReleaser half only (GitHub + Homebrew, no npm), against a
 # tag you have already pushed. `make publish` is the complete path; keep this
 # for re-running the build when a release is otherwise already done.
+desktop-app: ## Build + sign + notarize + staple the desktop app (VERSION=x.y.z)
+	@: $${VERSION:?set VERSION, e.g. make desktop-app VERSION=0.7.0}
+	./scripts/build-desktop.sh "$(VERSION)"
+
 release: ## GoReleaser only — no npm, needs an existing tag
 	@: $${MACOS_SIGN_IDENTITY:?set MACOS_SIGN_IDENTITY, e.g. \"Developer ID Application: Your Name (TEAMID)\" — see docs/RELEASING.md}
 	@: $${MACOS_NOTARY_PROFILE:?set MACOS_NOTARY_PROFILE to your notarytool keychain profile — see docs/RELEASING.md}
@@ -63,7 +67,14 @@ release: ## GoReleaser only — no npm, needs an existing tag
 	# It used to run here, after publishing, which shipped an un-notarized
 	# tarball first and was skipped entirely whenever goreleaser failed at any
 	# later publish step.
+	#
+	# The desktop app is built FIRST, into dist-desktop/. It cannot go in dist/:
+	# `goreleaser release --clean` empties that directory as its first action,
+	# which would delete the artifact between building it and attaching it.
+	# VERSION is derived from the tag goreleaser is about to release, so the two
+	# can never name different versions.
+	./scripts/build-desktop.sh "$$(git describe --tags --abbrev=0 | sed 's/^v//')"
 	GITHUB_TOKEN="$${GITHUB_TOKEN:-$$(gh auth token 2>/dev/null)}" goreleaser release --clean
 
 clean:
-	rm -rf dist $(BINARY)
+	rm -rf dist dist-desktop $(BINARY)

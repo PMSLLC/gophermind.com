@@ -148,3 +148,19 @@ release:
   github:
     owner: jbrahy
     name: gophermind.com
+
+  # The desktop app rides along on the same release. GoReleaser cannot build
+  # it - it produces Go binaries, and a Wails app is a .app bundle with an
+  # Info.plist, an icon and a compiled frontend inside - so scripts/build-desktop.sh
+  # builds, signs, notarizes and STAPLES it, and the result is attached here.
+  #
+  # Staged in dist-desktop/, deliberately not dist/: `goreleaser release
+  # --clean` removes dist/ as its first action, so an artifact built there
+  # beforehand would be deleted before it could be attached.
+  # Note that `goreleaser release --snapshot` skips publishing entirely and so
+  # never evaluates these globs: a green snapshot is not evidence the desktop
+  # artifact was produced. Check dist/ for it, which is what
+  # `make desktop-release` does before handing over.
+  extra_files:
+    - glob: ./dist-desktop/GopherMind-Desktop_*_darwin_universal.zip
+    - glob: ./dist-desktop/GopherMind-Desktop_*_darwin_universal.zip.sha256

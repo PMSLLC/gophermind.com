@@ -123,6 +123,71 @@ make release     # goreleaser only: build → sign → notarize → GitHub Relea
 `make release` does **not** publish to npm; see the npm section below.
 </details>
 
+## The desktop app
+
+The macOS desktop app (`GopherMind Desktop.app`) ships on the same release, but
+GoReleaser cannot build it: GoReleaser produces Go binaries, and a Wails app is
+a `.app` bundle with an `Info.plist`, an icon and a compiled frontend inside.
+`scripts/build-desktop.sh` builds it, and `make release` runs that script before
+invoking GoReleaser, deriving the version from the tag so the two cannot
+disagree.
+
+```sh
+make desktop-app VERSION=0.7.0    # build it on its own
+```
+
+Three things about this differ from the CLI's path, and each caused a real
+problem before it was written down:
+
+1. **The artifact is staged in `dist-desktop/`, not `dist/`.** `goreleaser
+   release --clean` empties `dist/` as its first action, so anything built
+   there beforehand is deleted before it can be attached.
+
+2. **The bundle is stapled; the CLI binary is not.** A bare executable cannot
+   carry a stapled notarization ticket, so the CLI depends on Gatekeeper's
+   online check. A bundle can, and a stapled app opens on a machine that is
+   offline or behind a firewall that blocks Apple's notary service. The script
+   staples the `.app` and then **re-zips it**, because the zip that was
+   submitted for notarization contains the unstapled bundle. Shipping the
+   submitted zip is the easy mistake here and it only shows up on someone
+   else's locked-down machine.
+
+3. **`--force` is required when signing.** `wails build` leaves an ad-hoc
+   signature on the bundle, and `codesign` will not replace an existing
+   signature without it.
+
+Verify a built artifact the way a user's machine will:
+
+```sh
+ditto -x -k dist-desktop/GopherMind-Desktop_*_darwin_universal.zip /tmp/verify
+xcrun stapler validate "/tmp/verify/GopherMind Desktop.app"   # offline check
+spctl --assess --type execute --verbose=4 "/tmp/verify/GopherMind Desktop.app"
+```
+
+`spctl` must say `source=Notarized Developer ID`. Anything else means users get
+the "cannot be opened" dialog.
+
+Note that `goreleaser release --snapshot` skips publishing entirely and never
+evaluates `release.extra_files`, so a green snapshot is **not** evidence the
+desktop artifact was produced. Look in `dist-desktop/`.
+
+### Publishing the cask
+
+`packaging/gophermind-desktop.rb.tmpl` is rendered to
+`dist-desktop/gophermind-desktop.rb` with the version and checksum filled in.
+Copy it into `jbrahy/homebrew-tap` under `Casks/`:
+
+```sh
+brew install --cask jbrahy/tap/gophermind-desktop
+```
+
+It is a separate cask from `gophermind` (the CLI); both can be installed
+independently, since the app embeds its own server rather than shelling out to
+the CLI binary. That push is deliberately a human step rather than something
+the release script does.
+
+---
+
 GoReleaser will:
 1. cross-compile `amd64` + `arm64` and merge into one **universal** binary,
 2. **codesign** it (Developer ID, hardened runtime, timestamp),

@@ -253,8 +253,9 @@ footer .wrap{display:flex; justify-content:space-between; gap:1rem;
         <p>The same harness in a desktop app: chat, a queue of pending
         approvals you can act on, and a model picker showing what allowance
         each model has left.</p>
-        <p class="proof">The window talks to the same local server the CLI
-        runs, over HTTP. Nothing new is trusted.</p>
+        <p class="proof">Signed, notarized and stapled, so it opens without a
+        Gatekeeper prompt even offline. The window talks to the same local
+        server the CLI runs, over HTTP. Nothing new is trusted.</p>
       </div>
 
       <div class="claim">
@@ -288,6 +289,13 @@ footer .wrap{display:flex; justify-content:space-between; gap:1rem;
         <h3>macOS</h3>
         <pre>brew install jbrahy/tap/gophermind</pre>
         <p>A signed and notarized universal binary — no Gatekeeper warning.</p>
+      </div>
+
+      <div class="way">
+        <h3>Desktop app</h3>
+        <pre>brew install --cask jbrahy/tap/gophermind-desktop</pre>
+        <p>The window, if you want one. Signed, notarized and stapled, so it
+        opens cleanly even on a machine that is offline.</p>
       </div>
 
       <div class="way">
