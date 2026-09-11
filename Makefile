@@ -58,9 +58,12 @@ publish: ## Release to GitHub + Homebrew + npm (VERSION=x.y.z [DRY_RUN=1])
 release: ## GoReleaser only — no npm, needs an existing tag
 	@: $${MACOS_SIGN_IDENTITY:?set MACOS_SIGN_IDENTITY, e.g. \"Developer ID Application: Your Name (TEAMID)\" — see docs/RELEASING.md}
 	@: $${MACOS_NOTARY_PROFILE:?set MACOS_NOTARY_PROFILE to your notarytool keychain profile — see docs/RELEASING.md}
+	# Notarization runs INSIDE the goreleaser pipeline now (a universal_binaries
+	# post hook), so the binary is notarized before it is archived or uploaded.
+	# It used to run here, after publishing, which shipped an un-notarized
+	# tarball first and was skipped entirely whenever goreleaser failed at any
+	# later publish step.
 	GITHUB_TOKEN="$${GITHUB_TOKEN:-$$(gh auth token 2>/dev/null)}" goreleaser release --clean
-	@echo "notarizing the published macOS archive..."
-	./scripts/notarize.sh dist/gophermind_*_darwin_all.tar.gz
 
 clean:
 	rm -rf dist $(BINARY)
