@@ -3,6 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="referrer" content="no-referrer">
+<!-- This page holds a bearer token that runs shell commands, so it is
+     worth more than one layer. The page loads nothing external, which lets
+     connect-src stay 'self': should an escaping bug ever appear here, an
+     injected script would have nowhere to send what it steals. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'">
 <title>Task Runner - Live Pipeline</title>
 <style>
   /* Layout, typography and color palette are carried over from
@@ -446,7 +451,12 @@ function renderWaves(){
 function renderAttemptLine(a, idx){
   const line = document.createElement('div');
   line.className = 'log-line';
-  const verdictLabel = a.verdict === 'pass' ? 'PASSED' : (a.verdict === 'fail' ? 'FAILED' : esc(a.verdict).toUpperCase());
+  // Uppercase the raw value, then escape it. Case-transforming esc()'s
+  // output is not a security hole - a character reference never opens a
+  // tag, so &LT; renders as the text "<" exactly as &lt; does - but it does
+  // corrupt what the reader sees: a verdict containing "&" escapes to
+  // "&amp;" and then uppercases to "&AMP;", which displays literally.
+  const verdictLabel = a.verdict === 'pass' ? 'PASSED' : (a.verdict === 'fail' ? 'FAILED' : esc(String(a.verdict == null ? '' : a.verdict).toUpperCase()));
   line.innerHTML = `<div class="idx">${String(idx+1).padStart(2,'0')}</div><div class="model">${esc(a.model)}</div><div class="reason">${esc(a.reason)}</div><div class="verdict ${esc(a.verdict)}">${verdictLabel}</div>`;
   return line;
 }
@@ -499,7 +509,7 @@ function loadTask(id){
   current = id;
   const t = findTask(id);
   if(!t) return;
-  tagEl.textContent = `WAVE ${t.wave || 0}${t.phase ? ' · ' + esc(t.phase).toUpperCase() : ''}`;
+  tagEl.textContent = `WAVE ${t.wave || 0}${t.phase ? ' · ' + String(t.phase).toUpperCase() : ''}`;
   titleEl.textContent = t.title || t.id;
   delivEl.textContent = t.description || '(no description)';
   const criteria = t.acceptance_criteria || [];

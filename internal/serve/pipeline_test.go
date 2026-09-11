@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -65,6 +66,60 @@ func TestPipelineDashboardServesWithoutToken(t *testing.T) {
 	if !strings.Contains(body, `<meta name="referrer" content="no-referrer">`) {
 		t.Error("dashboard is missing <meta name=\"referrer\" content=\"no-referrer\">, " +
 			"so a subresource fetch could leak the page URL (and any token in it) to a third party")
+	}
+}
+
+// Case-transforming the output of esc() corrupts what the reader sees. A
+// verdict containing "&" escapes to "&amp;" and then uppercases to "&AMP;",
+// which the browser renders literally as "&AMP;" rather than "&".
+//
+// This is NOT a security hole, and an earlier review of this file claimed it
+// was. The claim was that &LT; and &GT; are valid HTML5 named references, so
+// uppercasing "&lt;script&gt;" yields "&LT;SCRIPT&GT;" and innerHTML parses
+// a live tag back out of it. Checked in a real browser, it does not: a
+// character reference is tokenized in the data state and emits a character,
+// never a tag-open. Setting innerHTML to esc(payload).toUpperCase() creates
+// zero elements, against one for the unescaped control. Only a literal "<"
+// opens a tag, and esc() removes every one of those.
+//
+// The rule is still worth pinning, on its own honest terms: transform the
+// raw value, then escape the result. Escaping last is the ordering that
+// cannot go wrong, and it keeps the displayed text correct.
+func TestPipelineDashboardNeverCaseTransformsEscapedOutput(t *testing.T) {
+	t.Setenv("GOPHERMIND_SERVE_TOKEN", "t")
+	mux, err := NewMux(Deps{Pipeline: &PipelineDeps{Root: t.TempDir()}}, Options{})
+	if err != nil {
+		t.Fatalf("NewMux: %v", err)
+	}
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/pipeline")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	body := string(raw)
+
+	bad := regexp.MustCompile(`esc\([^()]*\)\s*\.\s*to(Upper|Lower)Case`)
+	if m := bad.FindString(body); m != "" {
+		t.Errorf("dashboard case-transforms escaped output (%q): this displays "+
+			"an escaped ampersand as the literal text \"&AMP;\". Uppercase the raw "+
+			"value first, then escape the result", m)
+	}
+
+	// Defence in depth, which is a separate concern from the check above and
+	// the one that actually carries security weight here. This page holds a
+	// token that runs shell commands. The page loads nothing external, so the
+	// policy can be strict enough that an injected script would have no origin
+	// to load from and no endpoint to reach.
+	if !strings.Contains(body, "Content-Security-Policy") {
+		t.Error("dashboard has no Content-Security-Policy meta tag; it holds a " +
+			"token that runs shell commands and should not depend on escaping alone")
 	}
 }
 
