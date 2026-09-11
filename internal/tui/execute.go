@@ -73,8 +73,22 @@ func (m model) handleProjectExecuteCommand() (model, tea.Cmd) {
 	// prompt, which has no human behind it during an unattended run. Supplying
 	// the composed policy stack with a non-blocking fallback is the harness's
 	// job (see WithApproval).
-	runner := orchestrate.NewRunner(m.agent.LLM(), m.agent.Registry(), root, m.speedModel, m.model, m.agent.MaxIter(),
+	taskRunner := orchestrate.NewRunner(m.agent.LLM(), m.agent.Registry(), root, m.speedModel, m.model, m.agent.MaxIter(),
 		orchestrate.WithAuditLog(m.agent.AuditLog()))
+
+	// Wrap in a FallbackRunner so a task whose first candidate model fails
+	// still gets a shot at the next one instead of the whole task failing
+	// outright. StatusVerifyingRunner adapts taskRunner (which already does
+	// its own verify-and-correct per candidate) to FallbackRunner's
+	// separate Inner/Verify steps; DefaultCandidates derives a task's
+	// candidate list from the model picker's catalogue when the task
+	// carries none of its own.
+	sv := orchestrate.NewStatusVerifyingRunner(taskRunner)
+	runner := &phaseflow.FallbackRunner{
+		Inner:      sv,
+		Verify:     sv,
+		Candidates: orchestrate.DefaultCandidates(),
+	}
 
 	m.appendLine(projectBannerStyle.Render(fmt.Sprintf("executing %d tasks, auto-approve", pending)))
 	m.st = stateWorking

@@ -144,3 +144,64 @@ func TestNextOnEmptyCatalogueReturnsCurrentModel(t *testing.T) {
 		t.Fatalf("empty catalogue: got %+v, want current model kept", got)
 	}
 }
+
+func TestOrderedCandidatesFollowsPreferenceOrder(t *testing.T) {
+	entries := []Entry{
+		{Profile: "free-c", ID: "m3", Reachable: true},
+		{Profile: "free-a", ID: "m1", Reachable: true},
+		{Profile: "free-b", ID: "m2", Reachable: true},
+	}
+	s := Settings{Order: []string{"free-b/m2", "free-a/m1"}}
+	got := OrderedCandidates(entries, s)
+	want := []string{"m2", "m1", "m3"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	}
+}
+
+func TestOrderedCandidatesSkipsUnreachable(t *testing.T) {
+	entries := []Entry{
+		{Profile: "free-a", ID: "m1", Reachable: true},
+		{Profile: "free-b", ID: "m2", Reachable: false},
+	}
+	got := OrderedCandidates(entries, Settings{})
+	if len(got) != 1 || got[0] != "m1" {
+		t.Fatalf("got %v, want [m1] (unreachable m2 excluded)", got)
+	}
+}
+
+// TestOrderedCandidatesNeverIncludesAnExcludedTermEntry is the rule this
+// piece exists to enforce: a term the user excluded must never appear in a
+// candidate list, even when it is the only reachable option and first in
+// Order, for the same legal reason it can never be auto-selected by Next.
+func TestOrderedCandidatesNeverIncludesAnExcludedTermEntry(t *testing.T) {
+	entries := []Entry{
+		{Profile: "free-cohere", ID: "command-a", Reachable: true, Terms: []string{"non-commercial"}},
+		{Profile: "free-a", ID: "m1", Reachable: true},
+	}
+	s := Settings{
+		Order:         []string{"free-cohere/command-a", "free-a/m1"},
+		ExcludedTerms: []string{"non-commercial"},
+	}
+	got := OrderedCandidates(entries, s)
+	for _, id := range got {
+		if id == "command-a" {
+			t.Fatalf("got %v, excluded-term entry command-a must never appear", got)
+		}
+	}
+	if len(got) != 1 || got[0] != "m1" {
+		t.Fatalf("got %v, want [m1]", got)
+	}
+}
+
+func TestOrderedCandidatesOnEmptyCatalogueReturnsNil(t *testing.T) {
+	got := OrderedCandidates(nil, Settings{})
+	if len(got) != 0 {
+		t.Fatalf("got %v, want empty", got)
+	}
+}

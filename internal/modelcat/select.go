@@ -115,6 +115,55 @@ func Next(entries []Entry, s Settings, currentProfile, currentModel string) Choi
 	return current
 }
 
+// OrderedCandidates returns the model id of every reachable, non-excluded
+// entry, in the user's preference order (Settings.Order) followed by the
+// rest of the catalogue in its natural order for anything Order did not
+// mention. It is the ordered counterpart to Next: where Next picks the
+// single next model to switch to, OrderedCandidates lists every model worth
+// trying in sequence, for a task's candidate model fallback list.
+//
+// The same exclusion rule as Next applies, and for the same reason: an
+// entry whose Terms intersect s.ExcludedTerms is never included, however
+// preferred, because that setting exists for legal reasons. Unlike Next,
+// NearCapacity is not filtered here - a candidate near capacity is still
+// worth trying in a fallback list, since the point of trying it is finding
+// out whether it actually fails.
+func OrderedCandidates(entries []Entry, s Settings) []string {
+	excluded := excludedTermSet(s.ExcludedTerms)
+
+	eligible := make([]Entry, 0, len(entries))
+	for _, e := range entries {
+		if hasExcludedTerm(e, excluded) {
+			continue
+		}
+		if !e.Reachable {
+			continue
+		}
+		eligible = append(eligible, e)
+	}
+
+	inOrder := make(map[string]bool, len(s.Order))
+	for _, key := range s.Order {
+		inOrder[key] = true
+	}
+
+	var out []string
+	for _, key := range s.Order {
+		for _, e := range eligible {
+			if entryKey(e) == key {
+				out = append(out, e.ID)
+			}
+		}
+	}
+	for _, e := range eligible {
+		if inOrder[entryKey(e)] {
+			continue
+		}
+		out = append(out, e.ID)
+	}
+	return out
+}
+
 // entryKey is the "profile/model" key an Entry is addressed by in
 // Settings.Order and Settings.CustomLinks.
 func entryKey(e Entry) string {

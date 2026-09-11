@@ -203,6 +203,18 @@ func executeOnce(ctx context.Context, root string, runner TaskRunner, emit func(
 
 		status, detail, runErr := runner.Run(ctx, attempt)
 
+		// A runner that tracks per-model attempts (FallbackRunner) exposes
+		// them here so they can be persisted, even on a round that ends in
+		// cancellation partway through a candidate list. Attempts must
+		// accumulate rather than overwrite, so this goes through Update, not
+		// a.Save - and the in-memory copy is updated to match so a later
+		// a.Save in this loop (for the next task) does not write over it.
+		if fr, ok := runner.(*FallbackRunner); ok {
+			if err := recordAttempts(root, &a, idx, fr.LastAttempts); err != nil {
+				return summary, err
+			}
+		}
+
 		if ctx.Err() != nil || isCancel(runErr) {
 			a.Tasks[idx].Status = StatusPending
 			if err := a.Save(root); err != nil {
@@ -260,6 +272,33 @@ func executeOnce(ctx context.Context, root string, runner TaskRunner, emit func(
 // than an ordinary task failure.
 func isCancel(err error) bool {
 	return err != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded))
+}
+
+// recordAttempts appends newAttempts to a.Tasks[idx] both on disk, through
+// the locked Update primitive so accumulation is safe once more than one
+// task can be running at a time, and in the in-memory copy executeOnce keeps
+// saving, so a later plain Save in this pass (for a different task) does
+// not clobber what Update just wrote. A no-op when there is nothing to
+// record.
+func recordAttempts(root string, a *Assignments, idx int, newAttempts []Attempt) error {
+	if len(newAttempts) == 0 {
+		return nil
+	}
+	id := a.Tasks[idx].ID
+	for _, at := range newAttempts {
+		a.Tasks[idx].RecordAttempt(at)
+	}
+	return Update(root, func(as *Assignments) error {
+		for i := range as.Tasks {
+			if as.Tasks[i].ID == id {
+				for _, at := range newAttempts {
+					as.Tasks[i].RecordAttempt(at)
+				}
+				return nil
+			}
+		}
+		return fmt.Errorf("phaseflow: task %q not found while recording attempts", id)
+	})
 }
 
 // normalizeStatus treats any status other than done/corrected/needs_revision/
