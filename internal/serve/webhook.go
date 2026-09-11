@@ -240,6 +240,10 @@ type Deps struct {
 	// ListModels, when non-nil alongside SessionTurn, additionally
 	// registers GET /models.
 	ListModels func() ([]string, error)
+	// EndpointModels, when non-nil alongside SessionTurn, supplies the ids
+	// the active configured endpoint serves to GET /models/catalogue. Nil
+	// means the catalogue omits local-endpoint entries.
+	EndpointModels func() []string
 }
 
 // Options carries per-deployment settings that used to be read from the
@@ -329,6 +333,9 @@ func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 		if d.ListModels != nil {
 			mux.Handle("GET /models", sessionWrap(modelsHandler(d.ListModels)))
 		}
+		mux.Handle("GET /models/catalogue", sessionWrap(catalogueHandler(d.EndpointModels)))
+		mux.Handle("GET /models/settings", sessionWrap(settingsGetHandler()))
+		mux.Handle("PATCH /models/settings", sessionWrap(settingsPatchHandler()))
 	}
 	if d.Devices != nil {
 		// S4 APNs device registration, same bearer+HMAC auth as /session.

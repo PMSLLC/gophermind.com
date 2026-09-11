@@ -11,48 +11,54 @@ import (
 
 // Entry is one model gophermind can address: its provider, whether it can be
 // reached right now, remaining allowance and links.
+//
+// JSON field names are snake_case, matching Settings and every other type
+// this package's callers serialize (ProviderTotal, Event); the plan's own
+// interface listing for Entry omitted tags, but its curl verification script
+// reads lowercase keys like "reachable", so tags are required for that
+// script to work as written.
 type Entry struct {
 	// ID is the model identifier as the provider names it.
-	ID string
+	ID string `json:"id"`
 	// Provider is the upstream provider's display name.
-	Provider string
+	Provider string `json:"provider"`
 	// Profile is the gophermind profile name, e.g. "free-groq". Empty for a
 	// model served by the user's own configured endpoint.
-	Profile string
+	Profile string `json:"profile"`
 	// Reachable reports whether this entry can be used right now.
-	Reachable bool
+	Reachable bool `json:"reachable"`
 	// Reason explains why Reachable is false. Empty when Reachable is true
 	// or nothing more specific is known.
-	Reason string
+	Reason string `json:"reason,omitempty"`
 	// Used is consumption in the current window for the entry's most
 	// constraining quota, or a bare request count when no quota is
 	// published.
-	Used int64
+	Used int64 `json:"used"`
 	// Quota is the amount of the most constraining published quota. 0 means
 	// no quota is published; such an entry never has NearCapacity set.
-	Quota int64
+	Quota int64 `json:"quota"`
 	// Unit is what Quota counts ("requests" or "tokens"), empty when Quota
 	// is 0.
-	Unit string
+	Unit string `json:"unit,omitempty"`
 	// Window is the human label for Quota's period ("minute", "hour",
 	// "day", "month"), empty when Quota is 0.
-	Window string
+	Window string `json:"window,omitempty"`
 	// Context is the model's context window, as the provider describes it.
-	Context string
+	Context string `json:"context,omitempty"`
 	// Modality is the model's supported modality, as the provider
 	// describes it.
-	Modality string
+	Modality string `json:"modality,omitempty"`
 	// Terms lists the free-tier obligations worth warning about, from
 	// freellm.TermsFlags.
-	Terms []string
+	Terms []string `json:"terms,omitempty"`
 	// ProviderURL is a human-facing link to the provider, or empty.
-	ProviderURL string
+	ProviderURL string `json:"provider_url,omitempty"`
 	// ModelURL is a human-facing link to the model, or empty.
-	ModelURL string
+	ModelURL string `json:"model_url,omitempty"`
 	// NearCapacity reports whether Used has crossed the settings' capacity
 	// threshold of Quota. Always false when Quota is 0: there is no line to
 	// cross.
-	NearCapacity bool
+	NearCapacity bool `json:"near_capacity"`
 }
 
 // Build assembles the catalogue: one entry per model in the vendored
