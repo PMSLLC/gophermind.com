@@ -71,29 +71,38 @@ nfpms:
     formats: [deb, rpm, apk]
     bindir: /usr/bin
 
-# Windows Scoop manifest published to a bucket repo.
-scoops:
-  - name: gophermind
-    ids: [gophermind]
-    repository:
-      owner: jbrahy
-      name: scoop-bucket
-    homepage: "https://github.com/jbrahy/gophermind.com"
-    description: "A minimal agentic coding harness for OpenAI-compatible LLMs"
-    license: MIT
-
-# Windows winget manifest published to a fork of microsoft/winget-pkgs.
-winget:
-  - name: gophermind
-    ids: [gophermind]
-    publisher: jbrahy
-    short_description: "A minimal agentic coding harness for OpenAI-compatible LLMs"
-    license: MIT
-    homepage: "https://github.com/jbrahy/gophermind.com"
-    repository:
-      owner: jbrahy
-      name: winget-pkgs
-      branch: "gophermind-{{ .Version }}"
+# Windows Scoop and winget publishing are DISABLED because their target
+# repositories do not exist: jbrahy/scoop-bucket and jbrahy/winget-pkgs both
+# return 404. GoReleaser treats that as a fatal publish error, so every release
+# failed at the very last step with the GitHub release and Homebrew tap already
+# updated. That is a confusing half-success, and it also meant any later step
+# in `make release` never ran.
+#
+# To re-enable: create a `scoop-bucket` repository, fork microsoft/winget-pkgs
+# as `winget-pkgs`, then uncomment the block below. Nothing else needs to
+# change; the configuration is known-good apart from the missing repos.
+#
+# scoops:
+#   - name: gophermind
+#     ids: [gophermind]
+#     repository:
+#       owner: jbrahy
+#       name: scoop-bucket
+#     homepage: "https://github.com/jbrahy/gophermind.com"
+#     description: "A minimal agentic coding harness for OpenAI-compatible LLMs"
+#     license: MIT
+#
+# winget:
+#   - name: gophermind
+#     ids: [gophermind]
+#     publisher: jbrahy
+#     short_description: "A minimal agentic coding harness for OpenAI-compatible LLMs"
+#     license: MIT
+#     homepage: "https://github.com/jbrahy/gophermind.com"
+#     repository:
+#       owner: jbrahy
+#       name: winget-pkgs
+#       branch: "gophermind-{{ .Version }}"
 
 checksum:
   name_template: checksums.txt
@@ -106,10 +115,13 @@ sboms:
     documents:
       - "{{ .ArtifactName }}.sbom.json"
 
-# Notarization is NOT done here (GoReleaser's `signs` always registers a .sig
-# artifact, which doesn't fit an in-place notarize). The macOS binary is
-# codesigned in the universal_binaries hook above; `make release` notarizes the
-# published darwin archive afterward via scripts/notarize.sh — the archive's
+# Notarization is NOT done through GoReleaser's `signs` (which always registers
+# a .sig artifact, and does not fit an in-place notarize). It happens in the
+# universal_binaries hooks above, right after codesigning and BEFORE the archive
+# is built, so nothing un-notarized is ever uploaded. It used to run after
+# `goreleaser release` had already published, which shipped an un-notarized
+# tarball first; macOS caches that verdict, so fixing it afterward did not help
+# anyone who had already downloaded. The archive's
 # binary is byte-identical, so Apple's hash registration still validates it.
 
 homebrew_casks:

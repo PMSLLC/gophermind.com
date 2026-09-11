@@ -35,6 +35,25 @@ brew install jbrahy/tap/gophermind
    export MACOS_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
    ```
 
+   **If that command lists the same name twice, use the hash instead.** A
+   keychain can hold two valid certificates with an identical subject (a
+   renewal imported alongside the original, most often). `codesign` then
+   refuses to guess and the release fails part-way through with:
+
+   ```
+   Developer ID Application: Your Name (TEAMID): ambiguous (matches ...)
+   ```
+
+   The 40-character hex string in the left-hand column of `find-identity` is
+   unambiguous, so export that rather than the name:
+
+   ```sh
+   export MACOS_SIGN_IDENTITY=4680437160A64398AA7A9CC611D19E7765BFA4EE
+   ```
+
+   Deleting the redundant certificate from Keychain Access is the tidier fix,
+   but check which one your other workflows reference before removing either.
+
 4. **Notary credentials** — create an App Store Connect API key
    (App Store Connect → Users and Access → Integrations → App Store Connect API),
    download the `.p8`, and store a reusable notarytool profile once:
