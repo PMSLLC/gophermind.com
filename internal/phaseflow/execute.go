@@ -37,7 +37,11 @@ type RunSummary struct {
 	// summary that omitted them would not add up to the number of tasks run.
 	NeedsRevision int
 	Escalated     int
-	Outcomes      []TaskOutcome
+	// ContractFlagged counts tasks that raised StatusContractFlagged: the
+	// contract they were building against is wrong or incomplete. See
+	// executeOnce for what a flag does to the wave it occurred in.
+	ContractFlagged int
+	Outcomes        []TaskOutcome
 }
 
 // TaskRunner executes a single task and reports its terminal status. Status
@@ -152,6 +156,8 @@ func ExecuteWithConcurrency(ctx context.Context, root string, runner TaskRunner,
 			summary.NeedsRevision++
 		case StatusEscalated:
 			summary.Escalated++
+		case StatusContractFlagged:
+			summary.ContractFlagged++
 		}
 	}
 	return summary, nil
@@ -270,11 +276,19 @@ func executeOnce(ctx context.Context, root string, runner TaskRunner, emit func(
 			limit = 1
 		}
 
-		cancelled, err := runWave(ctx, root, runner, emit, lastDetail, waveTasks[w], limit, &summary)
+		cancelled, flagged, err := runWave(ctx, root, runner, emit, lastDetail, waveTasks[w], limit, &summary)
 		if err != nil {
 			return summary, err
 		}
 		if cancelled {
+			return summary, nil
+		}
+		if flagged {
+			// A task in this wave determined the contract is wrong or
+			// incomplete. In-flight siblings were allowed to finish (see
+			// runWave); no task not yet started in this wave was
+			// dispatched; and no later wave may start on top of a contract
+			// already known to be broken - so the pass ends here.
 			return summary, nil
 		}
 	}
@@ -295,12 +309,16 @@ type waveTaskResult struct {
 // runWave runs tasks concurrently, at most limit at a time, and reports
 // whether the run was cancelled (in which case every in-flight task has
 // already been reverted to pending and the caller must not start the next
-// wave). A non-nil error is fatal, matching the old loop's behaviour when a
-// disk write failed: the caller stops immediately rather than continuing
-// with an assignments.json that may no longer reflect reality.
-func runWave(ctx context.Context, root string, runner TaskRunner, emit func(TaskOutcome), lastDetail map[string]string, tasks []Task, limit int, summary *RunSummary) (cancelled bool, err error) {
+// wave) or whether some task raised StatusContractFlagged (in which case no
+// task not yet started in this wave was dispatched, every in-flight task was
+// allowed to finish normally, and the caller must not start the next wave
+// either - see executeOnce). A non-nil error is fatal, matching the old
+// loop's behaviour when a disk write failed: the caller stops immediately
+// rather than continuing with an assignments.json that may no longer
+// reflect reality.
+func runWave(ctx context.Context, root string, runner TaskRunner, emit func(TaskOutcome), lastDetail map[string]string, tasks []Task, limit int, summary *RunSummary) (cancelled, flagged bool, err error) {
 	if len(tasks) == 0 {
-		return false, nil
+		return false, false, nil
 	}
 
 	sem := make(chan struct{}, limit)
@@ -379,6 +397,16 @@ func runWave(ctx context.Context, root string, runner TaskRunner, emit func(Task
 			<-sem
 			continue
 		}
+		if res.outcome.Status == StatusContractFlagged {
+			// Set stop before releasing the slot, for the same reason as
+			// the err/cancelled branches above: a task dispatched after
+			// this point would start against a contract already known to
+			// be wrong. Unlike those branches, the flagged outcome itself
+			// still falls through below to be recorded and emitted - the
+			// flag is a distinguishable event, not a failure to swallow.
+			flagged = true
+			stop.Store(true)
+		}
 		<-sem
 		if err != nil || cancelled {
 			// A fatal error or cancellation was already seen; drain the
@@ -413,13 +441,15 @@ func runWave(ctx context.Context, root string, runner TaskRunner, emit func(Task
 			summary.NeedsRevision++
 		case StatusEscalated:
 			summary.Escalated++
+		case StatusContractFlagged:
+			summary.ContractFlagged++
 		}
 		if emit != nil {
 			emit(res.outcome)
 		}
 	}
 
-	return cancelled, err
+	return cancelled, flagged, err
 }
 
 // runSingleTask runs one task to a terminal state (or reports cancellation),
@@ -512,14 +542,17 @@ func isCancel(err error) bool {
 }
 
 // normalizeStatus treats any status other than done/corrected/needs_revision/
-// escalated as failed. StatusNeedsRevision and StatusEscalated must pass
-// through unchanged: a task in either state already ran its candidate models
-// to exhaustion (see FallbackRunner), and folding it into StatusFailed here
-// would make resetFailedToPending requeue it for an identical, quota-burning
-// re-run.
+// escalated/contract_flagged as failed. StatusNeedsRevision and
+// StatusEscalated must pass through unchanged: a task in either state
+// already ran its candidate models to exhaustion (see FallbackRunner), and
+// folding it into StatusFailed here would make resetFailedToPending requeue
+// it for an identical, quota-burning re-run. StatusContractFlagged must
+// pass through unchanged for the same reason: it is a distinguishable
+// event, not an ordinary failure, and requeuing it would silently work
+// around the very flag the task raised instead of pausing on it.
 func normalizeStatus(status string) string {
 	switch status {
-	case StatusDone, StatusCorrected, StatusNeedsRevision, StatusEscalated:
+	case StatusDone, StatusCorrected, StatusNeedsRevision, StatusEscalated, StatusContractFlagged:
 		return status
 	default:
 		return StatusFailed

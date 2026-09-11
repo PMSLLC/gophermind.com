@@ -52,20 +52,33 @@ type Task struct {
 	// RevisionRounds is the history of the planner rewriting this task after
 	// every candidate model failed it.
 	RevisionRounds []Revision `json:"revision_rounds,omitempty"`
+	// IsContract marks the task that produces the contract every other task
+	// must conform to: schemas, interface signatures, file/module layout,
+	// naming conventions. A contract task is written with Wave 0 directly
+	// (it has no dependencies to compute a wave from - it is the root every
+	// later wave depends on), and Wave 0 always runs at concurrency 1 (see
+	// executeOnce), which is what gives it "runs alone, before everything".
+	// IsContract itself carries no further behavior in execute.go; it exists
+	// so a plan's JSON records which task that solo wave-0 task actually was.
+	IsContract bool `json:"is_contract,omitempty"`
 }
 
 // Task status values. Planning writes StatusPending; execution advances them.
 // StatusNeedsRevision marks a task whose candidate models were all
 // exhausted without a pass, awaiting a planner rewrite. StatusEscalated
-// marks a task that failed revision too, and needs a human.
+// marks a task that failed revision too, and needs a human. StatusContractFlagged
+// marks a task that determined mid-execution that the contract is wrong or
+// incomplete: it does not improvise around that, it raises the flag instead.
+// See executeOnce for what a flag does to the wave it occurred in.
 const (
-	StatusPending       = "pending"
-	StatusRunning       = "running"
-	StatusDone          = "done"
-	StatusFailed        = "failed"
-	StatusCorrected     = "corrected"
-	StatusNeedsRevision = "needs_revision"
-	StatusEscalated     = "escalated"
+	StatusPending         = "pending"
+	StatusRunning         = "running"
+	StatusDone            = "done"
+	StatusFailed          = "failed"
+	StatusCorrected       = "corrected"
+	StatusNeedsRevision   = "needs_revision"
+	StatusEscalated       = "escalated"
+	StatusContractFlagged = "contract_flagged"
 )
 
 // Attempt is one model's try at a task, recorded whether it passed or
