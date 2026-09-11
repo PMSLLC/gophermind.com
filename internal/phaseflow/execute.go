@@ -122,7 +122,13 @@ func ExecuteWithRounds(ctx context.Context, root string, runner TaskRunner, emit
 	return summary, nil
 }
 
-// resetFailedToPending requeues failed tasks for the next retry round.
+// resetFailedToPending requeues failed tasks for the next retry round. It
+// matches StatusFailed exactly and so, deliberately, leaves
+// StatusNeedsRevision and StatusEscalated tasks alone: those are not
+// ordinary failures, and requeuing one would re-run it against the same
+// exhausted candidate model list for an identical result. See
+// normalizeStatus, which is what keeps such a task from ever becoming
+// StatusFailed in the first place.
 func resetFailedToPending(root string) error {
 	a, _, err := LoadAssignments(root)
 	if err != nil {
@@ -256,10 +262,15 @@ func isCancel(err error) bool {
 	return err != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded))
 }
 
-// normalizeStatus treats any status other than done/corrected as failed.
+// normalizeStatus treats any status other than done/corrected/needs_revision/
+// escalated as failed. StatusNeedsRevision and StatusEscalated must pass
+// through unchanged: a task in either state already ran its candidate models
+// to exhaustion (see FallbackRunner), and folding it into StatusFailed here
+// would make resetFailedToPending requeue it for an identical, quota-burning
+// re-run.
 func normalizeStatus(status string) string {
 	switch status {
-	case StatusDone, StatusCorrected:
+	case StatusDone, StatusCorrected, StatusNeedsRevision, StatusEscalated:
 		return status
 	default:
 		return StatusFailed
