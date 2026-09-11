@@ -46,3 +46,13 @@ tmp/
 
 # subagent-driven-development worktrees
 .worktrees/
+
+# desktop (Wails) app: the generic build/ rule above would also swallow
+# desktop/build's checked-in templates (Info.plist, appicon.png, ...), so
+# un-ignore that directory and ignore only its generated output (build/bin)
+# and the frontend's node_modules/dist, which the generic rules above already
+# cover for any path.
+!/desktop/build/
+/desktop/build/bin/
+# wails' own install-cache marker, regenerated from frontend/package.json
+/desktop/frontend/package.json.md5
