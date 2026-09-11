@@ -6,11 +6,27 @@ All notable changes to GopherMind are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-10
+
 ### Added
+
+- **Free LLM providers: run gophermind with no API key and no local server.** A vendored, CC0 registry of 16 free providers (from [mnfst/awesome-free-llm-apis](https://github.com/mnfst/awesome-free-llm-apis)) is embedded in the binary, so it works offline and is byte-reproducible. Each entry surfaces as a `free-*` profile resolved through the existing `--profile` machinery, which means per-profile env overrides, the setup wizard and validation all work unchanged. **Two providers need no API key at all and were verified completing real turns: `free-ovhcloud` (2 RPM per IP, EU-hosted) and `free-kilocode` (200 requests/hour).** Start with `gophermind free list`, then `gophermind --profile free-ovhcloud ask "hello"`. API keys are still read only from `GOPHERMIND_PROFILE_<NAME>_API_KEY` and are never baked into the registry.
+
+- **`gophermind free`** — `list` shows every provider with its default model, free-tier terms and link, no-key ones first; `show <profile>` prints the full card plus the exact `export` lines to use it; `check <profile>` probes the endpoint's `/models` so compatibility is proven rather than assumed; `usage` prints the odometer. It runs before endpoint validation, so it works with nothing configured — which is exactly the state of the user who needs it.
+
+- **A free-usage odometer and per-quota trip meters.** A lifetime, monotonic count of tokens and requests served by free providers, kept in its own state file so it does not depend on `GOPHERMIND_USAGE_LOG` (which is off by default). Alongside it, rolling trip meters show consumption inside each provider's own published window. Free tiers are not token-denominated — Groq's limit is 1,000 requests/day, Cohere's is 1,000 calls/month, Cloudflare's is neurons — so both requests and tokens are tracked, and **a denominator is only ever shown when upstream published one**: a provider whose limit could not be parsed shows a bare count rather than an invented fraction.
+
+- **Provider attribution.** The model in use is named with its provider and a link, in the startup banner, in the TUI status line (with an optional OSC 8 hyperlink), and in full via a new `/provider` command. Everything is conditional on the active profile being a free one, so a paid or unset profile renders exactly as before.
+
+- **`GOPHERMIND_CHAT_PATH` and `GOPHERMIND_MODELS_PATH`** — explicit path overrides for an OpenAI-compatible endpoint whose base URL already includes the API version segment. Empty (the default) means the historical `/v1/chat/completions` and `/v1/models`, so existing configurations are byte-identical.
 
 - **RAG + memory injection now applies to `serve`.** `GOPHERMIND_RAG` / `GOPHERMIND_MEMORY` previously only took effect in the one-shot `run`/`ask` commands — the served agent (`POST /run`, `/run/stream`, and session turns) silently ignored them, so a phone-driven or webhook-driven turn was never grounded. All three serve paths now inject the same blocks from the same stores. Injection is **per turn**, keyed to that turn's text rather than the session's first message, so later turns on a new topic are grounded too; for persisted sessions the system prompt is restored before the session is saved, so a session never accumulates a copy of each turn's retrieved context. Still opt-in and inert when embeddings are unconfigured.
 
 ### Fixed
+
+- **No provider whose base URL ended in `/v1` could complete a turn.** `llm.Client` unconditionally appended `/v1/chat/completions` to `BaseURL`, producing `/v1/v1/chat/completions` and a 404. Every hosted provider publishes its OpenAI-compatible root in that form, and the built-in `openai` profile had the same bug. The same fault in capability probing (`/v1/models`) failed silently rather than loudly, so affected endpoints fell back to a default 8K context when the endpoint actually offered 131K. Fixed via the additive `ChatPath`/`ModelsPath` above; `local-llama` and every existing caller are unchanged.
+
+- **An inherited `GIT_DIR` could redirect gophermind's git subprocesses at the wrong repository.** Code that ran `git` set the working directory but not the environment, and git ignores the working directory when `GIT_DIR` is set. Any gophermind command invoked from inside a git hook — or from any process exporting `GIT_DIR` — therefore read or wrote a different repository than the user intended. The worst case was `gophermind doctor fix`, which runs `git init`: with `GIT_DIR` set and no `GIT_WORK_TREE`, that reinitializes the pointed-at repository as **bare**, after which every ordinary git command in it fails. All eight call sites now build their commands through a new `internal/gitenv` that strips `GIT_*`.
 
 - **`embed_index` no longer fails on prose-heavy repos, and can index large ones.** Chunks were split by line count only (50 lines) with no size bound, so a single dense Markdown chunk could exceed the embedding model's context and make the server reject the *entire* request — one oversized file failed the whole index build. Chunks are now also capped by length (splitting on line boundaries, and rune-safely inside a single over-long line, so minified files are handled). Separately, every chunk used to go out in one HTTP request against a 60s client timeout, which put a hard ceiling on repo size; requests are now sent in bounded batches. Both the full (`BuildIndex`) and incremental (`UpdateIndex`) paths are covered.
 
