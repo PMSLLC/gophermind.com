@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"sync"
 )
 
 // App is the Wails-bound application struct. It exposes exactly one method to
@@ -11,7 +13,13 @@ import (
 // frontend always speaks HTTP to the embedded (or, in a later task, remote)
 // server, never Wails bindings for individual operations.
 type App struct {
-	ctx    context.Context
+	ctx context.Context
+
+	// mu guards server, which startup assigns on the Wails startup goroutine
+	// while Endpoint reads it from the frontend's binding call. The frontend
+	// mounts and calls Endpoint before startup finishes, so this is a real
+	// race, not a theoretical one.
+	mu     sync.RWMutex
 	server *embeddedServer
 }
 
@@ -33,7 +41,9 @@ func (a *App) startup(ctx context.Context) {
 		fmt.Fprintln(os.Stderr, "gophermind desktop: embedded server failed to start:", err)
 		os.Exit(1)
 	}
+	a.mu.Lock()
 	a.server = server
+	a.mu.Unlock()
 }
 
 // shutdown is called by Wails when the application is closing. It shuts the
@@ -60,9 +70,16 @@ type EndpointInfo struct {
 // other operation (creating a session, streaming a turn, listing models, ...)
 // goes over HTTP to the address this returns, so embedded and remote modes
 // share the exact same frontend code path.
-func (a *App) Endpoint() EndpointInfo {
+func (a *App) Endpoint() (EndpointInfo, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
 	if a.server == nil {
-		return EndpointInfo{}
+		// Returning a zero EndpointInfo here instead of an error is what made
+		// the window show an opaque "Load failed": the frontend got an empty
+		// base URL, fetched a relative path, and the WebView resolved it
+		// against its own wails:// origin. An explicit error lets the frontend
+		// wait for startup rather than misreport it as a network failure.
+		return EndpointInfo{}, errors.New("embedded server is still starting")
 	}
-	return EndpointInfo{BaseURL: a.server.BaseURL, Token: a.server.Token}
+	return EndpointInfo{BaseURL: a.server.BaseURL, Token: a.server.Token}, nil
 }
