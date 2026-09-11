@@ -58,6 +58,11 @@ func ApplyRevision(t *Task, r Revision) error {
 	if r.At.IsZero() {
 		r.At = time.Now()
 	}
+	// Carry the attempts that prompted this revision into its record before
+	// clearing the live list. The next pass needs a fresh count, but the run
+	// report needs every attempt ever made, and dropping them here would make
+	// it silently under-report any model tried before a revision.
+	r.Attempts = append([]Attempt(nil), t.Attempts...)
 	t.RevisionRounds = append(t.RevisionRounds, r)
 	t.Attempts = nil
 	t.Status = StatusPending

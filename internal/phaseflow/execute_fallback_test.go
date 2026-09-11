@@ -129,4 +129,3 @@ func TestExecuteWithFallbackModelOnlyPlanStillRuns(t *testing.T) {
 		t.Errorf("Attempts = %+v, want a single strong attempt", tk.Attempts)
 	}
 }
-

@@ -215,3 +215,41 @@ func TestBuildRunReportEmptyRun(t *testing.T) {
 		t.Errorf("RevisedTasks = %v, want empty", report.RevisedTasks)
 	}
 }
+
+// A task that was revised must still report the models tried BEFORE the
+// revision. ApplyRevision clears the live attempt list so the next pass starts
+// a fresh count, and without carrying those attempts into the revision record
+// the report would show zero attempts for a model that in fact failed several
+// times, which is the opposite of attributing wins and losses to every model
+// actually tried.
+func TestBuildRunReportCountsAttemptsFromBeforeARevision(t *testing.T) {
+	task := Task{ID: "t1", Status: StatusDone}
+
+	// Round 1: two models failed, which prompted a revision.
+	task.RecordAttempt(Attempt{Model: "model-a", Verdict: "fail", Reason: "missing idempotency key"})
+	task.RecordAttempt(Attempt{Model: "model-b", Verdict: "fail", Reason: "missing idempotency key"})
+	if err := ApplyRevision(&task, Revision{Round: 1, Note: "test was under-specified", Deliverable: "clearer"}); err != nil {
+		t.Fatalf("ApplyRevision: %v", err)
+	}
+	// Round 2: a third model passed.
+	task.RecordAttempt(Attempt{Model: "model-c", Verdict: "pass"})
+
+	rep := BuildRunReport([]Task{task}, time.Now())
+
+	byModel := map[string]ModelStat{}
+	for _, m := range rep.Models {
+		byModel[m.Model] = m
+	}
+	for _, name := range []string{"model-a", "model-b"} {
+		m, ok := byModel[name]
+		if !ok {
+			t.Fatalf("%s is absent from the report: its pre-revision attempts were lost", name)
+		}
+		if m.Attempts != 1 || m.Fails != 1 {
+			t.Errorf("%s = %d attempts / %d fails, want 1/1", name, m.Attempts, m.Fails)
+		}
+	}
+	if m := byModel["model-c"]; m.Passes != 1 {
+		t.Errorf("model-c passes = %d, want 1", m.Passes)
+	}
+}

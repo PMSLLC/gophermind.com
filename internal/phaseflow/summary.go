@@ -19,7 +19,7 @@ type ModelStat struct {
 	Attempts int
 	// Tasks lists the ids of every task this model was tried on, in first-
 	// encountered order.
-	Tasks []string
+	Tasks  []string
 	Passes int
 	Fails  int
 	// PassRate is Passes / Attempts, or 0 when Attempts is 0.
@@ -92,26 +92,41 @@ func BuildRunReport(tasks []Task, now time.Time) RunReport {
 	}
 
 	for _, t := range tasks {
-		for i, at := range t.Attempts {
-			a := get(at.Model)
-			a.attempts++
-			if !a.taskSeen[t.ID] {
-				a.taskSeen[t.ID] = true
-				a.tasks = append(a.tasks, t.ID)
+		// Every attempt the task ever made, not just those since its last
+		// revision: ApplyRevision moves the earlier ones into the revision
+		// record so the report can still see them. Position is counted within
+		// each round, because "won as the 2nd model tried" is a fact about
+		// that round's ordering, not about a total across revisions.
+		rounds := make([][]Attempt, 0, len(t.RevisionRounds)+1)
+		for _, rev := range t.RevisionRounds {
+			if len(rev.Attempts) > 0 {
+				rounds = append(rounds, rev.Attempts)
 			}
-			if d, err := time.ParseDuration(at.Duration); err == nil {
-				a.totalDuration += d
-				a.durationCount++
-			}
-			if at.Verdict == "pass" {
-				a.passes++
-				a.passPositions = append(a.passPositions, i+1)
-				continue
-			}
-			a.fails++
-			if at.Reason != "" && !a.reasonSeen[at.Reason] {
-				a.reasonSeen[at.Reason] = true
-				a.failReasons = append(a.failReasons, at.Reason)
+		}
+		rounds = append(rounds, t.Attempts)
+
+		for _, round := range rounds {
+			for i, at := range round {
+				a := get(at.Model)
+				a.attempts++
+				if !a.taskSeen[t.ID] {
+					a.taskSeen[t.ID] = true
+					a.tasks = append(a.tasks, t.ID)
+				}
+				if d, err := time.ParseDuration(at.Duration); err == nil {
+					a.totalDuration += d
+					a.durationCount++
+				}
+				if at.Verdict == "pass" {
+					a.passes++
+					a.passPositions = append(a.passPositions, i+1)
+					continue
+				}
+				a.fails++
+				if at.Reason != "" && !a.reasonSeen[at.Reason] {
+					a.reasonSeen[at.Reason] = true
+					a.failReasons = append(a.failReasons, at.Reason)
+				}
 			}
 		}
 	}

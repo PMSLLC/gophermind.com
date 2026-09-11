@@ -104,6 +104,13 @@ type Revision struct {
 	Note        string   `json:"note"`
 	Deliverable string   `json:"deliverable,omitempty"`
 	Test        []string `json:"test,omitempty"`
+	// Attempts are the attempts that led to this revision, moved here when
+	// ApplyRevision cleared the task's live list for a fresh count. Without
+	// this they would be lost, and the end-of-run report would under-report
+	// every model tried before a task was revised: a model that failed three
+	// times would show zero attempts, which is exactly the "wins and losses
+	// attributed to every model actually tried" the report exists to provide.
+	Attempts []Attempt `json:"attempts,omitempty"`
 }
 
 // maxAttemptsPerTask caps how many Attempt records a task keeps. An
