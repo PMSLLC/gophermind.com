@@ -271,9 +271,17 @@ func newServeDeps(getClient func() (*llm.Client, error), getProfile func() strin
 		// session that has pinned an explicit model is left alone: that
 		// choice is the user's, and automatic cycling must never override
 		// it silently.
+		//
+		// A pinned model runs on a clone of the active client rather than on
+		// the client itself. llm.Client.Model is a plain field with no mutex
+		// and the client is process-wide, so setting it per turn both raced
+		// with every concurrent turn and let the last writer decide which
+		// model a sibling's request went out on.
 		var switchChoice modelcat.Choice
 		switched := false
-		if serve.ReadSessionModel(id) == "" {
+		if pinned := serve.ReadSessionModel(id); pinned != "" {
+			client = client.CloneForModel(pinned)
+		} else {
 			client, switchChoice, switched = applyModelPolicy(ctx, cfg, getProfile(), client, setBackend)
 		}
 
@@ -306,9 +314,6 @@ func newServeDeps(getClient func() (*llm.Client, error), getProfile func() strin
 			}
 		} else {
 			ag.SetSystemPrompt(serve.SystemPromptForMode(serve.ReadSessionMode(id), basePrompt, cfg.RootDir))
-		}
-		if m := serve.ReadSessionModel(id); m != "" {
-			ag.SetModel(m)
 		}
 		_, err = ag.Send(ctx, t)
 		if serr := session.Save(id, ag); serr != nil && err == nil {
@@ -380,9 +385,12 @@ func newServeDeps(getClient func() (*llm.Client, error), getProfile func() strin
 // no line for it to cross), so it would never be a switch candidate under
 // rule 4 regardless.
 //
-// When the chosen entry is on the same profile as the current client, the
-// switch is exactly what it sounds like: client.Model is updated in place,
-// no new connection needed. When it names a different profile, a new
+// When the chosen entry is on the same profile as the current client, no new
+// connection is needed: the switch is a clone of the current client carrying
+// the chosen model, installed through setBackend as the new active client.
+// It is a clone rather than an assignment to client.Model because that field
+// carries no mutex and the client is shared by every concurrent turn, so
+// writing it raced with them. When the choice names a different profile, a new
 // client is built for that profile, with its own BaseURL, API key and
 // paths, via clientForProfile, mirroring how resolveLLMBackend builds the
 // startup fallback client; on success it is installed as the app's active
@@ -409,8 +417,9 @@ func applyModelPolicy(ctx context.Context, cfg config.Config, currentProfile str
 		return client, choice, false
 	}
 	if choice.Profile == currentProfile {
-		client.Model = choice.Model
-		return client, choice, true
+		next := client.CloneForModel(choice.Model)
+		setBackend(next, currentProfile)
+		return next, choice, true
 	}
 	newClient, err := clientForProfile(ctx, cfg, choice.Profile, choice.Model)
 	if err != nil {
