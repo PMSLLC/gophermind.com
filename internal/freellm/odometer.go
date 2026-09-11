@@ -24,10 +24,14 @@ const (
 
 // Event is one turn's free usage, recorded for the trip meters.
 type Event struct {
-	TS       time.Time `json:"ts"`
-	Profile  string    `json:"profile"`
-	Tokens   int64     `json:"tokens"`
-	Requests int64     `json:"requests"`
+	TS      time.Time `json:"ts"`
+	Profile string    `json:"profile"`
+	// Model is the model that served this turn. Empty when the caller does not
+	// know it, including every event written before per-model metering existed;
+	// such an event still counts toward its provider, just not toward a model.
+	Model    string `json:"model,omitempty"`
+	Tokens   int64  `json:"tokens"`
+	Requests int64  `json:"requests"`
 }
 
 // ProviderTotal is one provider's lifetime contribution to the odometer.
@@ -53,8 +57,28 @@ type Odometer struct {
 	Tokens   int64                    `json:"tokens"`
 	Requests int64                    `json:"requests"`
 	Per      map[string]ProviderTotal `json:"per"`
+	// PerModel is the lifetime total per model, keyed by ModelKey. It is
+	// additive alongside Per rather than replacing it: a state file written
+	// before this field existed loads with PerModel nil and its lifetime
+	// reading untouched.
+	PerModel map[string]ProviderTotal `json:"per_model,omitempty"`
 	Since    time.Time                `json:"since"`
 	Events   []Event                  `json:"events"`
+}
+
+// ModelKey is the PerModel key for one model at one provider. Profile and
+// model are joined rather than nested so mergeUp stays a flat loop over one
+// map shape.
+func ModelKey(profile, model string) string { return profile + "/" + model }
+
+// ModelReading returns the lifetime total for one model. A model that has
+// never been used reads as a zero total rather than a missing entry, so a
+// caller can render it without a lookup dance.
+func (o *Odometer) ModelReading(profile, model string) ProviderTotal {
+	if o == nil || o.PerModel == nil {
+		return ProviderTotal{}
+	}
+	return o.PerModel[ModelKey(profile, model)]
 }
 
 // DefaultOdometerPath is where the odometer lives: alongside the completion
@@ -151,6 +175,32 @@ func (o *Odometer) Add(path string, e Event) error {
 	return o.save(path)
 }
 
+// mergeProviderTotals raises every field of dst to at least the corresponding
+// field of src, keyed the same way for Per and PerModel. It never lowers
+// anything, which is what keeps a merge monotonic. dst is allocated if nil.
+func mergeProviderTotals(dst, src map[string]ProviderTotal) map[string]ProviderTotal {
+	if dst == nil {
+		dst = map[string]ProviderTotal{}
+	}
+	for k, v := range src {
+		cur := dst[k]
+		if v.Tokens > cur.Tokens {
+			cur.Tokens = v.Tokens
+		}
+		if v.Requests > cur.Requests {
+			cur.Requests = v.Requests
+		}
+		if cur.FirstSeen.IsZero() || (!v.FirstSeen.IsZero() && v.FirstSeen.Before(cur.FirstSeen)) {
+			cur.FirstSeen = v.FirstSeen
+		}
+		if v.LastSeen.After(cur.LastSeen) {
+			cur.LastSeen = v.LastSeen
+		}
+		dst[k] = cur
+	}
+	return dst
+}
+
 // mergeUp raises every field of o to at least the corresponding field of other.
 // It never lowers anything, which is what keeps the reading monotonic when a
 // stale in-memory copy meets a newer file, or the reverse.
@@ -164,25 +214,8 @@ func (o *Odometer) mergeUp(other *Odometer) {
 	if other.Requests > o.Requests {
 		o.Requests = other.Requests
 	}
-	if o.Per == nil {
-		o.Per = map[string]ProviderTotal{}
-	}
-	for k, v := range other.Per {
-		cur := o.Per[k]
-		if v.Tokens > cur.Tokens {
-			cur.Tokens = v.Tokens
-		}
-		if v.Requests > cur.Requests {
-			cur.Requests = v.Requests
-		}
-		if cur.FirstSeen.IsZero() || (!v.FirstSeen.IsZero() && v.FirstSeen.Before(cur.FirstSeen)) {
-			cur.FirstSeen = v.FirstSeen
-		}
-		if v.LastSeen.After(cur.LastSeen) {
-			cur.LastSeen = v.LastSeen
-		}
-		o.Per[k] = cur
-	}
+	o.Per = mergeProviderTotals(o.Per, other.Per)
+	o.PerModel = mergeProviderTotals(o.PerModel, other.PerModel)
 	if !other.Since.IsZero() && (o.Since.IsZero() || other.Since.Before(o.Since)) {
 		o.Since = other.Since
 	}
@@ -214,6 +247,23 @@ func (o *Odometer) addLocked(e Event) {
 		t.LastSeen = e.TS
 	}
 	o.Per[e.Profile] = t
+
+	if e.Model != "" {
+		if o.PerModel == nil {
+			o.PerModel = map[string]ProviderTotal{}
+		}
+		key := ModelKey(e.Profile, e.Model)
+		mt := o.PerModel[key]
+		mt.Tokens += e.Tokens
+		mt.Requests += e.Requests
+		if mt.FirstSeen.IsZero() {
+			mt.FirstSeen = e.TS
+		}
+		if e.TS.After(mt.LastSeen) {
+			mt.LastSeen = e.TS
+		}
+		o.PerModel[key] = mt
+	}
 
 	o.Events = append(o.Events, e)
 	o.pruneRing(time.Now())
