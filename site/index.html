@@ -187,7 +187,8 @@ footer .wrap{display:flex; justify-content:space-between; gap:1rem;
     <h1>An AI coding agent that <em>asks first</em>.</h1>
     <p class="lede">
       GopherMind points at a model <strong>you</strong> run — local llama.cpp,
-      Ollama, LM Studio, vLLM, or any hosted OpenAI-compatible endpoint. It
+      Ollama, LM Studio, vLLM, or any hosted OpenAI-compatible endpoint — or
+      at a free provider that needs no API key at all. It
       reads, searches, edits and runs commands in your repo, and every action
       that changes something stops for your approval.
     </p>
@@ -301,10 +302,17 @@ make build</pre>
     <h2>First run</h2>
     <div class="ways">
       <div class="way">
+        <h3>No key needed</h3>
+        <pre>gophermind --profile free-ovhcloud ask "hello"</pre>
+        <p>Runs against a free provider with no API key and no local server.
+        <code>gophermind free list</code> shows all of them, what each free tier
+        allows, and which need a key &mdash; no-key ones first.</p>
+      </div>
+      <div class="way">
         <h3>Interactive</h3>
         <pre>gophermind</pre>
         <p>A wizard asks for your endpoint, an optional key, a model from a live
-        list, and your approval mode — then saves it.</p>
+        list, and your approval mode &mdash; then saves it.</p>
       </div>
       <div class="way">
         <h3>One shot</h3>

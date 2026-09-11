@@ -37,7 +37,12 @@ universal_binaries:
       # codesign.sh reads $MACOS_SIGN_IDENTITY itself and no-ops when it is unset,
       # so a credential-free `--snapshot` build still succeeds (this hook is NOT
       # covered by --skip=sign).
-      post: ./scripts/codesign.sh "{{ .Path }}"
+      post:
+        - ./scripts/codesign.sh "{{ .Path }}"
+        # Notarize HERE, before the archive is built and published. Doing it
+        # after `goreleaser release` (as the Makefile used to) publishes an
+        # un-notarized tarball first, and macOS caches that verdict.
+        - ./scripts/notarize-binary.sh "{{ .Path }}"
 
 archives:
   - id: gophermind
