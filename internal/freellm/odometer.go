@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"gophermind/internal/lockfile"
 )
 
 // OdometerEnv, when set, overrides where the odometer lives, so tests and
@@ -161,7 +163,7 @@ func (o *Odometer) Add(path string, e Event) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("freellm: create odometer dir: %w", err)
 	}
-	unlock, err := lockFile(path + ".lock")
+	unlock, err := lockfile.Acquire(path + ".lock")
 	if err != nil {
 		return err
 	}
@@ -296,26 +298,5 @@ func (o *Odometer) save(path string) error {
 	if err != nil {
 		return fmt.Errorf("freellm: marshal odometer: %w", err)
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".odo-*")
-	if err != nil {
-		return fmt.Errorf("freellm: create temp odometer: %w", err)
-	}
-	name := tmp.Name()
-	defer os.Remove(name)
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(b); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(name, path)
+	return lockfile.WriteAtomic(path, b, 0o600)
 }
