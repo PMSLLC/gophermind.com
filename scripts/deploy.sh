@@ -40,7 +40,14 @@ bold=$(tput bold 2>/dev/null || true); reset=$(tput sgr0 2>/dev/null || true)
 
 COMMIT=$(git rev-parse --short HEAD)
 DATE=$(git log -1 --format=%cI)
-LDFLAGS="-X gophermind/internal/version.Version=0.5.0+dev -X gophermind/internal/version.Commit=${COMMIT} -X gophermind/internal/version.Date=${DATE}"
+
+# Derived from the latest tag, not hardcoded. This line read "0.5.0+dev" from
+# the day 0.5.0 was current until v0.7.0 shipped, so every local and server
+# deploy in between reported a version it was not: the one number you check to
+# find out what is running was the one number guaranteed to be stale. The
+# fallback covers a shallow clone or a repo with no tags yet.
+BASE_VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')
+LDFLAGS="-X gophermind/internal/version.Version=${BASE_VERSION:-0.0.0}+dev -X gophermind/internal/version.Commit=${COMMIT} -X gophermind/internal/version.Date=${DATE}"
 
 deploy_local() {
   echo "${bold}▶ local: rebuilding ./gophermind${reset}"
