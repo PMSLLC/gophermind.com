@@ -205,3 +205,62 @@ func TestOrderedCandidatesOnEmptyCatalogueReturnsNil(t *testing.T) {
 		t.Fatalf("got %v, want empty", got)
 	}
 }
+
+// TestNextMovesOffAnExcludedCurrentModel is the other half of rule 1. A
+// model whose terms the user excluded must not merely be unselectable; one
+// that is already current must be moved off. Cycling is off here on
+// purpose: the exclusion is a legal constraint, so it outranks the
+// preference that says never to switch on capacity.
+func TestNextMovesOffAnExcludedCurrentModel(t *testing.T) {
+	entries := []Entry{
+		{Profile: "free-cohere", ID: "command-a", Reachable: true, Terms: []string{"non-commercial"}},
+		{Profile: "free-a", ID: "m1", Reachable: true},
+	}
+	s := Settings{CycleOnCapacity: false, ExcludedTerms: []string{"non-commercial"}}
+	got := Next(entries, s, "free-cohere", "command-a")
+	if got.Model == "command-a" {
+		t.Fatalf("got %+v, want a move off the excluded current model", got)
+	}
+	if !got.Switched || got.Profile != "free-a" || got.Model != "m1" {
+		t.Fatalf("got %+v, want a switch to free-a/m1", got)
+	}
+	if got.Reason == "" {
+		t.Error("a switch should carry a non-empty reason")
+	}
+}
+
+// TestNextTakesAFullModelOverAnExcludedCurrentOne pins the precedence: a
+// permitted model that is near capacity is still a better answer than a
+// model the user excluded for legal reasons.
+func TestNextTakesAFullModelOverAnExcludedCurrentOne(t *testing.T) {
+	entries := []Entry{
+		{Profile: "free-cohere", ID: "command-a", Reachable: true, Terms: []string{"non-commercial"}},
+		{Profile: "free-a", ID: "m1", Reachable: true, NearCapacity: true},
+	}
+	s := Settings{CycleOnCapacity: true, ExcludedTerms: []string{"non-commercial"}, WhenAllFull: "stay"}
+	got := Next(entries, s, "free-cohere", "command-a")
+	if got.Model != "m1" || !got.Switched {
+		t.Fatalf("got %+v, want the near-capacity but permitted free-a/m1", got)
+	}
+}
+
+// TestNextReportsAnExcludedCurrentModelWithNoReplacement covers the corner
+// where the exclusion cannot be honored: Next still never returns an empty
+// choice, so the current model is kept, but it must say why rather than
+// pretend nothing is wrong.
+func TestNextReportsAnExcludedCurrentModelWithNoReplacement(t *testing.T) {
+	entries := []Entry{
+		{Profile: "free-cohere", ID: "command-a", Reachable: true, Terms: []string{"non-commercial"}},
+	}
+	s := Settings{ExcludedTerms: []string{"non-commercial"}}
+	got := Next(entries, s, "free-cohere", "command-a")
+	if got.Switched {
+		t.Errorf("nothing to switch to, got Switched=true")
+	}
+	if got.Profile != "free-cohere" || got.Model != "command-a" {
+		t.Fatalf("got %+v, want the current model retained", got)
+	}
+	if got.Reason == "" {
+		t.Error("an unhonored exclusion must carry a reason")
+	}
+}

@@ -26,6 +26,12 @@ type Choice struct {
 //  1. Any entry whose Terms intersect s.ExcludedTerms is removed from
 //     consideration entirely, before anything else. It can never be
 //     selected however preferred, and automatic cycling never reaches it.
+//     This applies to the model already in use as well: an excluded
+//     current model is moved off rather than kept, because a rule that
+//     only blocks arrivals never takes effect on the one selection that
+//     is already wrong. That check runs before rule 3, since the
+//     exclusion list is a legal constraint and s.CycleOnCapacity is a
+//     preference about capacity, which is a different question.
 //  2. An unreachable entry is never selected.
 //  3. If s.CycleOnCapacity is false, keep the current model. Never switch.
 //  4. If the current model is not near capacity, keep it.
@@ -44,6 +50,12 @@ func Next(entries []Entry, s Settings, currentProfile, currentModel string) Choi
 
 	excluded := excludedTermSet(s.ExcludedTerms)
 
+	// Rule 1, applied to the current selection: an excluded model that is
+	// already in use has to be replaced, or the exclusion never bites.
+	if currentExcluded(entries, excluded, currentProfile, currentModel) {
+		return replaceExcludedCurrent(entries, s, excluded, current)
+	}
+
 	// Rule 3: cycling off means never switch, regardless of anything else.
 	if !s.CycleOnCapacity {
 		return current
@@ -56,46 +68,9 @@ func Next(entries []Entry, s Settings, currentProfile, currentModel string) Choi
 		return current
 	}
 
-	// Rules 1, 2 and the "not near capacity" half of 5 and 6: build the
-	// set of entries that could ever be switched to.
-	eligible := make([]Entry, 0, len(entries))
-	for _, e := range entries {
-		if hasExcludedTerm(e, excluded) {
-			continue
-		}
-		if !e.Reachable {
-			continue
-		}
-		if e.NearCapacity {
-			continue
-		}
-		eligible = append(eligible, e)
-	}
-
-	// Rule 5: preference order first.
-	inOrder := make(map[string]bool, len(s.Order))
-	for _, key := range s.Order {
-		inOrder[key] = true
-	}
-	for _, key := range s.Order {
-		for _, e := range eligible {
-			if entryKey(e) == key {
-				return Choice{
-					Profile:  e.Profile,
-					Model:    e.ID,
-					Switched: true,
-					Reason:   "switched: the previous model was near its capacity limit",
-				}
-			}
-		}
-	}
-
-	// Rule 6: the rest of the catalogue, in its natural order, for entries
-	// s.Order did not mention.
-	for _, e := range eligible {
-		if inOrder[entryKey(e)] {
-			continue
-		}
+	// Rules 1, 2, 5 and 6: preference order first, then the rest of the
+	// catalogue, skipping anything excluded, unreachable or near capacity.
+	if e, ok := firstAllowed(entries, s, excluded, true); ok {
 		return Choice{
 			Profile:  e.Profile,
 			Model:    e.ID,
@@ -162,6 +137,87 @@ func OrderedCandidates(entries []Entry, s Settings) []string {
 		out = append(out, e.ID)
 	}
 	return out
+}
+
+// currentExcluded reports whether the model currently in use carries a term
+// the user excluded. A current model absent from entries is not excluded:
+// there is no terms data to judge it by, and inventing a verdict would move
+// a user off a model for no evidence.
+func currentExcluded(entries []Entry, excluded map[string]bool, currentProfile, currentModel string) bool {
+	if len(excluded) == 0 {
+		return false
+	}
+	for _, e := range entries {
+		if e.Profile == currentProfile && e.ID == currentModel {
+			return hasExcludedTerm(e, excluded)
+		}
+	}
+	return false
+}
+
+// replaceExcludedCurrent picks what to move to when the current model
+// carries an excluded term.
+//
+// It prefers a permitted model with capacity left, then accepts a permitted
+// model that is near capacity: being near a quota costs at worst one 429,
+// while staying on an excluded model breaks the constraint the list exists
+// to enforce, so a full permitted model is the better of the two.
+//
+// If nothing permitted is reachable at all, the current model is kept, since
+// Next never returns an empty choice and there is nothing to return instead.
+// That case carries a Reason so the UI can say the exclusion could not be
+// honored rather than leaving it looking applied.
+func replaceExcludedCurrent(entries []Entry, s Settings, excluded map[string]bool, current Choice) Choice {
+	for _, skipNearCapacity := range []bool{true, false} {
+		if e, ok := firstAllowed(entries, s, excluded, skipNearCapacity); ok {
+			return Choice{
+				Profile:  e.Profile,
+				Model:    e.ID,
+				Switched: true,
+				Reason:   "switched: the previous model's terms are on your excluded list",
+			}
+		}
+	}
+	current.Reason = "your current model's terms are on your excluded list, but no other model is reachable to move to"
+	return current
+}
+
+// firstAllowed returns the first entry that may be selected, walking s.Order
+// first and then the catalogue's own order for entries s.Order did not
+// mention. An excluded or unreachable entry is never returned; a
+// near-capacity one is skipped only when skipNearCapacity is set.
+func firstAllowed(entries []Entry, s Settings, excluded map[string]bool, skipNearCapacity bool) (Entry, bool) {
+	eligible := make([]Entry, 0, len(entries))
+	for _, e := range entries {
+		if hasExcludedTerm(e, excluded) {
+			continue
+		}
+		if !e.Reachable {
+			continue
+		}
+		if skipNearCapacity && e.NearCapacity {
+			continue
+		}
+		eligible = append(eligible, e)
+	}
+
+	inOrder := make(map[string]bool, len(s.Order))
+	for _, key := range s.Order {
+		inOrder[key] = true
+	}
+	for _, key := range s.Order {
+		for _, e := range eligible {
+			if entryKey(e) == key {
+				return e, true
+			}
+		}
+	}
+	for _, e := range eligible {
+		if !inOrder[entryKey(e)] {
+			return e, true
+		}
+	}
+	return Entry{}, false
 }
 
 // entryKey is the "profile/model" key an Entry is addressed by in
