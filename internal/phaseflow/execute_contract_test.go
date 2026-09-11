@@ -196,3 +196,65 @@ func TestResetFailedToPendingLeavesContractFlaggedAlone(t *testing.T) {
 		t.Errorf("status = %q, want unchanged %q", tk.Status, StatusContractFlagged)
 	}
 }
+
+// TestContractFlagStopsLaterRound: a flag must stop the RUN, not merely the
+// pass it was raised in. The fixture deliberately includes a task that fails
+// its first attempt, so the retry loop has an ordinary reason to start
+// another round - which is exactly the shape
+// TestContractFlagStopsLaterWave cannot catch, because its pass ends with no
+// failures and the loop stops for an unrelated reason.
+func TestContractFlagStopsLaterRound(t *testing.T) {
+	root := t.TempDir()
+	writeAssignments(t, root,
+		wavedTask("w1-a", 1),
+		wavedTask("w2-a", 2), wavedTask("w2-b", 2),
+		wavedTask("w3-a", 3),
+	)
+
+	var mu sync.Mutex
+	attempts := map[string]int{}
+	r := &funcRunner{fn: func(ctx context.Context, t Task) (string, string, error) {
+		mu.Lock()
+		attempts[t.ID]++
+		n := attempts[t.ID]
+		mu.Unlock()
+		switch t.ID {
+		case "w2-a":
+			return StatusContractFlagged, "contract is missing field X", nil
+		case "w2-b":
+			if n == 1 {
+				return StatusFailed, "transient", nil
+			}
+			return StatusDone, "", nil
+		}
+		return StatusDone, "", nil
+	}}
+
+	summary, err := ExecuteWithConcurrency(context.Background(), root, r, nil, 3, DefaultWaveConcurrency)
+	if err != nil {
+		t.Fatalf("ExecuteWithConcurrency: %v", err)
+	}
+	if summary.ContractFlagged != 1 {
+		t.Errorf("summary.ContractFlagged = %d, want 1", summary.ContractFlagged)
+	}
+
+	mu.Lock()
+	w3Attempts := attempts["w3-a"]
+	mu.Unlock()
+	if w3Attempts != 0 {
+		t.Errorf("w3-a ran %d times: no round may start work while a task is contract_flagged", w3Attempts)
+	}
+
+	reloaded, _, err := LoadAssignments(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w3, _ := reloaded.Task("w3-a")
+	if w3.Status != StatusPending {
+		t.Errorf("w3-a status = %q, want pending (the flag must stop the whole run)", w3.Status)
+	}
+	w2a, _ := reloaded.Task("w2-a")
+	if w2a.Status != StatusContractFlagged {
+		t.Errorf("w2-a status = %q, want %q", w2a.Status, StatusContractFlagged)
+	}
+}

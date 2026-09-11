@@ -144,6 +144,17 @@ func executeWithRounds(ctx context.Context, root string, runner TaskRunner, revi
 		if !ran || ctx.Err() != nil {
 			break
 		}
+		if passSummary.ContractFlagged > 0 {
+			// A flag stops the RUN, not just the pass. executeOnce already
+			// kept every later wave in this pass from starting; starting
+			// another round here would undo that, because the round's first
+			// wave is chosen from whatever is still pending and would happily
+			// build on top of a contract already known to be wrong. The
+			// flagged task itself stays contract_flagged on disk (see
+			// resetFailedToPending), so the run leaves an accurate record of
+			// why it stopped.
+			break
+		}
 
 		revised, err := reviseNeedsRevisionTasks(ctx, root, reviser, emit, touched)
 		if err != nil {
