@@ -1385,9 +1385,15 @@ func run() error {
 		if isFree {
 			if odo, err := freellm.LoadOdometer(freellm.OdometerPath()); err == nil {
 				_ = odo.Add(freellm.OdometerPath(), freellm.Event{
-					TS:       time.Now(),
-					Profile:  freeCompat.Profile,
-					Model:    cfg.Model,
+					TS:      time.Now(),
+					Profile: freeCompat.Profile,
+					// client.Model, not cfg.Model: the model that actually
+					// served this turn is the one whose allowance was spent.
+					// Speed routing (routeModel), startup discovery and the
+					// runtime /model command all reassign client.Model, so the
+					// configured value can name a different model entirely, and
+					// attributing usage to it would meter the wrong one.
+					Model:    client.Model,
 					Tokens:   int64(u.PromptTokens + u.CompletionTokens),
 					Requests: 1,
 				})
