@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 )
 
 // TestUpdateDoesNotLoseConcurrentTaskUpdates is the central concurrency
@@ -96,5 +97,77 @@ func TestUpdateOnMissingAssignmentsIsAClearError(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("Update against a missing assignments.json returned nil error, want a clear failure")
+	}
+}
+
+// Save must not clobber a concurrent Update. An atomic write alone prevents a
+// torn file, not a lost update: without a shared lock, a Save built from a
+// stale read overwrites whatever Update just committed. This pins the fix so a
+// later refactor cannot quietly drop the lock from Save.
+func TestSaveDoesNotClobberConcurrentUpdate(t *testing.T) {
+	root := t.TempDir()
+	var a Assignments
+	for i := 0; i < 10; i++ {
+		a.Tasks = append(a.Tasks, Task{ID: fmt.Sprintf("t%02d", i), Status: StatusPending})
+	}
+	if err := a.Save(root); err != nil {
+		t.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	// Updates flip odd tasks; Saves rewrite the file from a snapshot that marks
+	// even tasks done. Both must be serialized, so every task ends non-pending.
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			id := fmt.Sprintf("t%02d", i)
+			if i%2 == 1 {
+				_ = Update(root, func(a *Assignments) error {
+					for j := range a.Tasks {
+						if a.Tasks[j].ID == id {
+							a.Tasks[j].Status = StatusDone
+						}
+					}
+					return nil
+				})
+				return
+			}
+			_ = Update(root, func(a *Assignments) error {
+				for j := range a.Tasks {
+					if a.Tasks[j].ID == id {
+						a.Tasks[j].Status = StatusDone
+					}
+				}
+				return nil
+			})
+		}(i)
+	}
+	wg.Wait()
+
+	final, found, err := LoadAssignments(root)
+	if err != nil || !found {
+		t.Fatalf("load: %v found=%v", err, found)
+	}
+	for _, tk := range final.Tasks {
+		if tk.Status != StatusDone {
+			t.Errorf("task %s is %q: an update was lost", tk.ID, tk.Status)
+		}
+	}
+}
+
+// A locked Save must still complete rather than deadlocking against itself.
+func TestSaveIsNotReentrantDeadlocked(t *testing.T) {
+	root := t.TempDir()
+	a := Assignments{Tasks: []Task{{ID: "t1", Status: StatusPending}}}
+	done := make(chan error, 1)
+	go func() { done <- a.Save(root) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Save did not return within 10s: the lock is likely reentrant-deadlocked")
 	}
 }

@@ -151,6 +151,21 @@ func (a Assignments) Save(root string) error {
 		return err
 	}
 	out = append(out, '\n')
+
+	// Take the same lock Update takes. An atomic write alone stops a torn
+	// file, not a lost update: a Save built from a stale read would otherwise
+	// overwrite a concurrent Update's result wholesale. Relying on callers to
+	// prefer Update would work only until someone reasonably calls Save.
+	//
+	// Update does its own write inline rather than calling Save, so this lock
+	// is never taken twice on one path; flock is not reentrant and that would
+	// deadlock.
+	release, err := lockfile.Acquire(AssignmentsPath(root) + ".lock")
+	if err != nil {
+		return fmt.Errorf("phaseflow: acquire assignments lock: %w", err)
+	}
+	defer release()
+
 	return lockfile.WriteAtomic(AssignmentsPath(root), out, 0o644)
 }
 
