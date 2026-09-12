@@ -33,6 +33,7 @@ func TestSessionTurnRecordsUsage(t *testing.T) {
 	t.Setenv("GOPHERMIND_BASE_URL", llmSrv.URL)
 	t.Setenv("GOPHERMIND_MODEL", "gpt-oss-120b")
 	t.Setenv("GOPHERMIND_ROOT", t.TempDir())
+	isolate(t)
 	t.Setenv("GOPHERMIND_APPROVAL", "auto")
 
 	// A populated holder is how this test names the profile the turn runs

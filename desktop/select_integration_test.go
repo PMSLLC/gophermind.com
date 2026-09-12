@@ -168,6 +168,7 @@ func TestModelSwitchedFrameOnCycling(t *testing.T) {
 			t.Setenv("GOPHERMIND_BASE_URL", llmSrv.URL)
 			t.Setenv("GOPHERMIND_MODEL", "gpt-oss-120b")
 			t.Setenv("GOPHERMIND_ROOT", t.TempDir())
+			isolate(t)
 			t.Setenv("GOPHERMIND_APPROVAL", "auto")
 			odometerPath := dir + "/odometer.json"
 			settingsPath := dir + "/model-settings.json"
@@ -348,6 +349,7 @@ func TestConcurrentTurnsKeepTheirOwnModel(t *testing.T) {
 	t.Setenv("GOPHERMIND_BASE_URL", llmSrv.URL)
 	t.Setenv("GOPHERMIND_MODEL", "base-model")
 	t.Setenv("GOPHERMIND_ROOT", t.TempDir())
+	isolate(t)
 	t.Setenv("GOPHERMIND_APPROVAL", "ask")
 
 	cfg, err := loadConfig()

@@ -22,6 +22,7 @@ func TestEmbeddedServerFallsBackToFreeProvider(t *testing.T) {
 	t.Setenv("GOPHERMIND_BASE_URL", "http://127.0.0.1:1")
 	t.Setenv("GOPHERMIND_MODEL", "some-model-that-does-not-matter")
 	t.Setenv("GOPHERMIND_ROOT", t.TempDir())
+	isolate(t)
 	t.Setenv("GOPHERMIND_APPROVAL", "auto")
 
 	ctx, cancel := context.WithCancel(context.Background())

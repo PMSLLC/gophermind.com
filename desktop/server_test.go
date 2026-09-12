@@ -61,6 +61,7 @@ func TestEmbeddedServerHealthzAndSession(t *testing.T) {
 	t.Setenv("GOPHERMIND_BASE_URL", "http://"+localLLMEndpoint)
 	t.Setenv("GOPHERMIND_MODEL", "") // let it auto-discover from the endpoint
 	t.Setenv("GOPHERMIND_ROOT", t.TempDir())
+	isolate(t)
 	t.Setenv("GOPHERMIND_APPROVAL", "auto")
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -150,6 +151,7 @@ func TestEmbeddedServerLoopbackOnly(t *testing.T) {
 	t.Setenv("GOPHERMIND_BASE_URL", "http://"+localLLMEndpoint)
 	t.Setenv("GOPHERMIND_MODEL", "")
 	t.Setenv("GOPHERMIND_ROOT", t.TempDir())
+	isolate(t)
 	t.Setenv("GOPHERMIND_APPROVAL", "auto")
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -167,6 +167,7 @@ func TestSessionApprovalGateBlocksAndResolves(t *testing.T) {
 			t.Setenv("GOPHERMIND_BASE_URL", llmSrv.URL)
 			t.Setenv("GOPHERMIND_MODEL", "test-model")
 			t.Setenv("GOPHERMIND_ROOT", t.TempDir())
+			isolate(t)
 			t.Setenv("GOPHERMIND_APPROVAL", "ask")
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -358,6 +359,7 @@ func TestOneShotRoutesRefuseGatedTools(t *testing.T) {
 			t.Setenv("GOPHERMIND_BASE_URL", llmSrv.URL)
 			t.Setenv("GOPHERMIND_MODEL", "test-model")
 			t.Setenv("GOPHERMIND_ROOT", root)
+			isolate(t)
 			t.Setenv("GOPHERMIND_APPROVAL", "ask")
 
 			ctx, cancel := context.WithCancel(context.Background())
