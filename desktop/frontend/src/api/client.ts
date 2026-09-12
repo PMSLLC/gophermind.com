@@ -114,20 +114,84 @@ export interface StreamHandlers {
   onError: (message: string) => void
 }
 
-/** ApiClient talks to one embedded or remote GopherMind server instance. */
+/**
+ * BackendInfo is one server this desktop can run sessions against, as
+ * reported by GET /backends. It deliberately carries no credential: the
+ * router holds each backend's token and substitutes it, so a token that
+ * authorizes shell execution on another machine never exists in this
+ * WebView.
+ */
+export interface BackendInfo {
+  name: string
+  kind: 'local' | 'url' | 'tunnel'
+  default: boolean
+  available: boolean
+  /** reason explains an unavailable backend; absent when available. */
+  reason?: string
+}
+
+/**
+ * ApiClient talks to ONE GopherMind server, selected by backend name.
+ *
+ * Every request goes to the local router, which proxies it to the named
+ * backend. That is why a remote machine needs no new credential here and no
+ * change to any call below: the backend is a path prefix, not a different
+ * base URL and not a different token.
+ */
 export class ApiClient {
   constructor(
     private readonly baseURL: string,
     private readonly token: string,
+    /**
+     * backend selects which server requests go to. Empty means the router's
+     * default, which is the local embedded server.
+     */
+    private readonly backend: string = '',
   ) {}
+
+  /** name is the backend this client talks to, for display. */
+  get name(): string {
+    return this.backend || 'local'
+  }
+
+  /**
+   * url builds a path against the selected backend. An empty backend is left
+   * unprefixed so it routes to the router's default.
+   */
+  private url(path: string): string {
+    if (!this.backend) return `${this.baseURL}${path}`
+    return `${this.baseURL}/b/${encodeURIComponent(this.backend)}${path}`
+  }
 
   private authHeaders(extra?: Record<string, string>): Record<string, string> {
     return { Authorization: `Bearer ${this.token}`, ...extra }
   }
 
+  /**
+   * listBackends calls GET /backends on the router itself, NOT on a backend,
+   * so it is not prefixed. It is how the UI learns which machines exist and
+   * which of them are usable.
+   */
+  async listBackends(): Promise<BackendInfo[]> {
+    const res = await fetch(`${this.baseURL}/backends`, { headers: this.authHeaders() })
+    if (!res.ok) {
+      throw new Error(`list backends failed: ${res.status} ${await safeText(res)}`)
+    }
+    return (await res.json()) as BackendInfo[]
+  }
+
+  /** listSessions calls GET /session on the selected backend. */
+  async listSessions(): Promise<SessionInfo[]> {
+    const res = await fetch(this.url('/session'), { headers: this.authHeaders() })
+    if (!res.ok) {
+      throw new Error(`list sessions failed: ${res.status} ${await safeText(res)}`)
+    }
+    return ((await res.json()) ?? []) as SessionInfo[]
+  }
+
   /** createSession calls POST /session and returns the new session's id. */
   async createSession(): Promise<SessionInfo> {
-    const res = await fetch(`${this.baseURL}/session`, {
+    const res = await fetch(this.url('/session'), {
       method: 'POST',
       headers: this.authHeaders(),
     })
@@ -144,7 +208,7 @@ export class ApiClient {
    * once the response body ends.
    */
   async streamTurn(sessionID: string, task: string, handlers: StreamHandlers): Promise<void> {
-    const res = await fetch(`${this.baseURL}/session/${encodeURIComponent(sessionID)}/stream`, {
+    const res = await fetch(this.url(`/session/${encodeURIComponent(sessionID)}/stream`), {
       method: 'POST',
       headers: this.authHeaders({ 'Content-Type': 'text/plain' }),
       body: task,
@@ -222,7 +286,7 @@ export class ApiClient {
     approvalID: string,
     approved: boolean,
   ): Promise<ApprovalResolution> {
-    const res = await fetch(`${this.baseURL}/session/${encodeURIComponent(sessionID)}/approve`, {
+    const res = await fetch(this.url(`/session/${encodeURIComponent(sessionID)}/approve`), {
       method: 'POST',
       headers: this.authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ approval_id: approvalID, approved }),
@@ -238,7 +302,7 @@ export class ApiClient {
 
   /** getBackendStatus calls GET /backend-status. */
   async getBackendStatus(): Promise<BackendStatus> {
-    const res = await fetch(`${this.baseURL}/backend-status`, {
+    const res = await fetch(this.url('/backend-status'), {
       method: 'GET',
       headers: this.authHeaders(),
     })
@@ -250,7 +314,7 @@ export class ApiClient {
 
   /** listModels calls GET /models. */
   async listModels(): Promise<string[]> {
-    const res = await fetch(`${this.baseURL}/models`, {
+    const res = await fetch(this.url('/models'), {
       method: 'GET',
       headers: this.authHeaders(),
     })
@@ -263,7 +327,7 @@ export class ApiClient {
 
   /** getCatalogue calls GET /models/catalogue: every model gophermind knows about. */
   async getCatalogue(): Promise<CatalogueEntry[]> {
-    const res = await fetch(`${this.baseURL}/models/catalogue`, {
+    const res = await fetch(this.url('/models/catalogue'), {
       method: 'GET',
       headers: this.authHeaders(),
     })
@@ -276,7 +340,7 @@ export class ApiClient {
 
   /** getModelSettings calls GET /models/settings. */
   async getModelSettings(): Promise<ModelSettings> {
-    const res = await fetch(`${this.baseURL}/models/settings`, {
+    const res = await fetch(this.url('/models/settings'), {
       method: 'GET',
       headers: this.authHeaders(),
     })
@@ -294,7 +358,7 @@ export class ApiClient {
    * its own validation, which the server is the only real authority on.
    */
   async patchModelSettings(patch: Partial<ModelSettings>): Promise<ModelSettings> {
-    const res = await fetch(`${this.baseURL}/models/settings`, {
+    const res = await fetch(this.url('/models/settings'), {
       method: 'PATCH',
       headers: this.authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(patch),

@@ -554,3 +554,29 @@ body {
   gap: 0.4rem;
   margin-top: 0.4rem;
 }
+
+/* Backend picker: which machine the current session runs on. It sits in the
+   status bar rather than in settings because a tool call executes wherever
+   this points, and that has to be readable at a glance. */
+.backendpicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: 0.75rem;
+  font-size: 0.85em;
+}
+.backendpicker-label {
+  opacity: 0.65;
+}
+.backendpicker select {
+  font: inherit;
+  padding: 0.1rem 0.3rem;
+}
+
+/* The machine an approval would run on, shown next to the tool name. This is
+   the text the user reads before deciding, so it is deliberately not muted
+   into invisibility. */
+.approval-where {
+  opacity: 0.75;
+  font-weight: 400;
+}

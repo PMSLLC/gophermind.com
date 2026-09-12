@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { ApiClient, type BackendStatus, type ModelSwitched, type PendingApproval } from './api/client'
+import {
+  ApiClient,
+  type BackendInfo,
+  type BackendStatus,
+  type ModelSwitched,
+  type PendingApproval,
+} from './api/client'
 import { waitForEndpoint } from './api/wails'
 import ModelPicker from './components/ModelPicker'
 import SettingsPanel from './components/SettingsPanel'
@@ -27,6 +33,14 @@ type ApprovalResolutionState = 'pending' | 'approved' | 'denied' | 'already-reso
 interface ApprovalLine extends PendingApproval {
   kind: 'approval'
   resolution: ApprovalResolutionState
+  /**
+   * backend is the machine this tool call would run on. It is recorded on
+   * the line rather than read from current state at render time, because the
+   * transcript outlives the selection: scrolling back to an approval from an
+   * earlier session must show the machine it actually ran on, not whichever
+   * one happens to be selected now.
+   */
+  backend: string
 }
 
 type TranscriptLine = TextLine | ApprovalLine
@@ -144,7 +158,17 @@ export default function App() {
   const [currentModel, setCurrentModel] = useState('')
   const [switchNotice, setSwitchNotice] = useState<ModelSwitched | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // backends is every server this desktop can reach; activeBackend is the one
+  // the current session runs on. The name is rendered wherever a command can
+  // be approved, because "which machine is this about to run on" is the one
+  // question the user must never have to guess.
+  const [backends, setBackends] = useState<BackendInfo[]>([])
+  const [activeBackend, setActiveBackend] = useState('local')
   const clientRef = useRef<ApiClient | null>(null)
+  // The endpoint is kept so a client can be rebuilt for another backend.
+  // Base URL and token are the router's and do not change with the backend;
+  // only the path prefix does.
+  const endpointRef = useRef<{ baseURL: string; token: string } | null>(null)
   const transcriptEndRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -155,8 +179,19 @@ export default function App() {
         // Diagnostic: name the endpoint in the status line so a failure below
         // says WHICH url could not be reached, not just "Load failed".
         setStatusDetail(`endpoint ${endpoint.baseURL} (token ${endpoint.token ? 'present' : 'MISSING'})`)
+        endpointRef.current = { baseURL: endpoint.baseURL, token: endpoint.token }
         const client = new ApiClient(endpoint.baseURL, endpoint.token)
         clientRef.current = client
+        // Best effort: an older router without /backends still works, it
+        // simply offers only the default backend.
+        try {
+          const list = await client.listBackends()
+          setBackends(list)
+          const def = list.find((b) => b.default)
+          if (def) setActiveBackend(def.name)
+        } catch {
+          setBackends([])
+        }
         const session = await client.createSession()
         if (cancelled) return
         setSessionID(session.id)
@@ -245,7 +280,10 @@ export default function App() {
         })
       },
       onApprovalNeeded: (approval) => {
-        setLines((prev) => [...prev, { kind: 'approval', resolution: 'pending', ...approval }])
+        setLines((prev) => [
+          ...prev,
+          { kind: 'approval', resolution: 'pending', backend: activeBackend, ...approval },
+        ])
         setPendingApproval(approval)
         setStatus('awaiting-approval')
         setStatusDetail(`waiting for your decision on ${approval.tool} (Y to approve, N to deny)`)
@@ -303,6 +341,47 @@ export default function App() {
     }
   }
 
+  /**
+   * switchBackend moves the window to another machine.
+   *
+   * A session belongs to the server that holds it, so this always starts a
+   * new one rather than carrying the id across: sending a turn for session X
+   * to a machine that has never heard of X would 404, and silently creating
+   * it there would split one conversation across two boxes.
+   *
+   * The transcript is kept and a marker appended, so the record of what ran
+   * where survives the switch.
+   */
+  async function switchBackend(name: string) {
+    if (name === activeBackend) return
+    const ep = endpointRef.current
+    if (!ep) return
+    setActiveBackend(name)
+    setSessionID(null)
+    setStatus('connecting')
+    setStatusDetail(`starting a session on ${name}`)
+    const client = new ApiClient(ep.baseURL, ep.token, name === 'local' ? '' : name)
+    clientRef.current = client
+    try {
+      const session = await client.createSession()
+      setSessionID(session.id)
+      setLines((prev) => [
+        ...prev,
+        { kind: 'text', role: 'system', text: `--- switched to ${name}, new session ${session.id} ---` },
+      ])
+      setStatus('ready')
+      setStatusDetail(`session ${session.id} on ${name}`)
+      const st = await client.getBackendStatus()
+      setBackendStatus(st)
+      setCurrentModel(st.model)
+      setCurrentProfile(st.fellBack ? st.fallbackProfile || '' : '')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setStatus('error')
+      setStatusDetail(`could not start a session on ${name}: ${message}`)
+    }
+  }
+
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -315,6 +394,26 @@ export default function App() {
       <header className="statusbar">
         <span className={`dot dot-${status}`} />
         <span className="statustext">{statusDetail}</span>
+        {backends.length > 1 && (
+          // The machine this session runs on, always visible. Tool calls
+          // execute wherever this points, so it belongs in the chrome rather
+          // than behind a settings panel.
+          <label className="backendpicker" title="which machine this session runs on">
+            <span className="backendpicker-label">on</span>
+            <select
+              value={activeBackend}
+              disabled={status === 'sending' || status === 'awaiting-approval'}
+              onChange={(e) => void switchBackend(e.target.value)}
+            >
+              {backends.map((b) => (
+                <option key={b.name} value={b.name} disabled={!b.available}>
+                  {b.name}
+                  {b.available ? '' : ' (unavailable)'}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {clientRef.current && (
           <div className="statusbar-models">
             <ModelPicker client={clientRef.current} currentProfile={currentProfile} currentModel={currentModel} />
@@ -353,7 +452,8 @@ export default function App() {
         // out of view - the turn is blocked and that must never look like
         // the app just froze.
         <div className="approvalbar">
-          approval needed: <strong>{pendingApproval.tool}</strong> - press Y to approve, N to deny
+          approval needed on <strong>{activeBackend}</strong>:{' '}
+          <strong>{pendingApproval.tool}</strong> - press Y to approve, N to deny
         </div>
       )}
 
@@ -377,7 +477,10 @@ export default function App() {
                   <div key={i} className={`line line-approval approval-${line.resolution}`}>
                     <span className="tag">approval</span>
                     <div className="approval">
-                      <div className="approval-tool">{line.tool}</div>
+                      <div className="approval-tool">
+                        {line.tool}
+                        <span className="approval-where"> on {line.backend}</span>
+                      </div>
                       {headline && <div className="approval-headline">{headline}</div>}
                       <pre className="approval-args">{prettyArgs(line.args)}</pre>
                       {line.resolution === 'pending' ? (
