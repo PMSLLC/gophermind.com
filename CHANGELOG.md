@@ -6,6 +6,17 @@ All notable changes to GopherMind are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-09-11
+
+### Fixed
+
+- **The desktop app declared itself version 1.0.0.** Wails renders `Info.plist` from `{{.Info.ProductVersion}}`, `wails.json` never set that key, and Wails substituted its own default — so every build this app has produced, including the one shipped as 0.7.0, reported 1.0.0 in Get Info, in the About box, and to anything else that reads a bundle version. The version is now written into the bundle at build time from the same argument that names the artifact and the cask, so the three cannot disagree, and it is written before codesigning because the signature covers `Info.plist`.
+- **A freshly built app showed an old date in Finder.** `wails build -clean` rewrites the bundle's contents but leaves the `.app` directory's own mtime alone, and `ditto` preserves that through the zip, so the stale date reached every user rather than only the machine that built it.
+- **The cask template still used the deprecated `depends_on macos: ">= :big_sur"`.** The fix had been applied to the published cask but not to the template it is generated from, so the next release would have regenerated the deprecated form and undone it.
+- **`scripts/deploy.sh` hardcoded the development version to `0.5.0+dev`.** It was written when 0.5.0 was current and never updated, so every local and server deploy between then and 0.7.0 reported a version it was not. It now derives from the latest tag.
+
+## [0.7.0] - 2026-09-11
+
 ### Added
 
 - **Desktop application** — a Wails shell around the harness, with a chat screen, an approvals screen, a model picker and a settings panel. The frontend speaks only HTTP to an embedded instance of the same server the CLI runs; there is exactly one native binding, and all it does is tell the frontend where that server is. Ships as a signed, notarized and **stapled** universal app: `brew install --cask jbrahy/tap/gophermind-desktop`.
