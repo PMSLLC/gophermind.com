@@ -375,6 +375,66 @@ export default function App() {
     setSessions(merged)
   }
 
+  /**
+   * pinModel records the chosen model on the current session, so the next
+   * turn uses it instead of the automatic policy.
+   *
+   * The profile goes with it: a model id is only meaningful at its own
+   * provider's endpoint, so pinning one without saying whose it is would
+   * send that id wherever the session already points.
+   */
+  async function pinModel(profile: string, model: string) {
+    const client = clientRef.current
+    if (!client || !sessionID) return
+    try {
+      await client.pinSessionModel(sessionID, profile, model)
+      setCurrentProfile(profile)
+      setCurrentModel(model)
+      setLines((prev) => [
+        ...prev,
+        {
+          kind: 'text',
+          role: 'system',
+          text: `--- model pinned to ${model}${profile ? ` (${profile})` : ''} ---`,
+        },
+      ])
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setLines((prev) => [
+        ...prev,
+        { kind: 'text', role: 'system', text: `could not pin model: ${message}` },
+      ])
+    }
+  }
+
+  /**
+   * removeSession deletes one session from the backend that holds it.
+   *
+   * Deleting is not undoable, so it asks first and names what is going: the
+   * id and the machine, because the same title can exist on two backends and
+   * they are different conversations.
+   */
+  async function removeSession(backend: string, id: string) {
+    const ep = endpointRef.current
+    if (!ep) return
+    if (!window.confirm(`Delete session ${id} on ${backend}? This cannot be undone.`)) return
+    const c = new ApiClient(ep.baseURL, ep.token, backend === 'local' ? '' : backend)
+    try {
+      await c.deleteSession(id)
+      setSessions((prev) => prev.filter((s) => !(s.backend === backend && s.item.ID === id)))
+      if (id === sessionID) {
+        setSessionID(null)
+        setStatusDetail('session deleted; send a message to start a new one')
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setLines((prev) => [
+        ...prev,
+        { kind: 'text', role: 'system', text: `could not delete ${id}: ${message}` },
+      ])
+    }
+  }
+
   /** resume attaches the window to an existing session on its own backend. */
   async function resume(backend: string, id: string) {
     const ep = endpointRef.current
@@ -474,7 +534,8 @@ export default function App() {
         )}
         {clientRef.current && (
           <div className="statusbar-models">
-            <ModelPicker client={clientRef.current} currentProfile={currentProfile} currentModel={currentModel} />
+            <ModelPicker client={clientRef.current} currentProfile={currentProfile} currentModel={currentModel} onSelect={pinModel}
+              />
             <button className="settings-toggle" onClick={() => setSettingsOpen(true)}>
               settings
             </button>
@@ -519,15 +580,23 @@ export default function App() {
         <div className="sessionlist">
           {sessions.length === 0 && <div className="hint">no sessions found</div>}
           {sessions.map(({ backend, item }) => (
-            <button
-              key={`${backend}:${item.ID}`}
-              className="sessionrow"
-              onClick={() => void resume(backend, item.ID)}
-            >
-              <span className="sessionrow-backend">{backend}</span>
-              <span className="sessionrow-title">{item.Name || item.Title || item.ID}</span>
-              <span className="sessionrow-meta">{item.Messages} msgs</span>
-            </button>
+            // A row, not a button, because it holds two actions. Nesting the
+            // delete button inside a clickable row would be invalid HTML and
+            // would resume the session when you meant to remove it.
+            <div key={`${backend}:${item.ID}`} className="sessionrow">
+              <button className="sessionrow-open" onClick={() => void resume(backend, item.ID)}>
+                <span className="sessionrow-backend">{backend}</span>
+                <span className="sessionrow-title">{item.Name || item.Title || item.ID}</span>
+                <span className="sessionrow-meta">{item.Messages} msgs</span>
+              </button>
+              <button
+                className="sessionrow-delete"
+                title={`delete ${item.ID} on ${backend}`}
+                onClick={() => void removeSession(backend, item.ID)}
+              >
+                delete
+              </button>
+            </div>
           ))}
         </div>
       )}

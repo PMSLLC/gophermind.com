@@ -51,6 +51,12 @@ interface ModelPickerProps {
   /** currentProfile/currentModel highlight the row the active session is using. */
   currentProfile: string
   currentModel: string
+  /**
+   * onSelect pins a model to the current session. The profile travels with
+   * it because a model id only means something at its own provider's
+   * endpoint.
+   */
+  onSelect: (profile: string, model: string) => void | Promise<void>
 }
 
 /**
@@ -67,7 +73,12 @@ interface ModelPickerProps {
  * the preference order in SettingsPanel, which both automatic cycling and
  * a future session honor.
  */
-export default function ModelPicker({ client, currentProfile, currentModel }: ModelPickerProps) {
+export default function ModelPicker({
+  client,
+  currentProfile,
+  currentModel,
+  onSelect,
+}: ModelPickerProps) {
   const [open, setOpen] = useState(false)
   const [entries, setEntries] = useState<CatalogueEntry[]>([])
   const [loading, setLoading] = useState(false)
@@ -211,6 +222,22 @@ export default function ModelPicker({ client, currentProfile, currentModel }: Mo
                   key={entryKey(e)}
                   className={`model-picker-row${isCurrent ? ' model-picker-row-current' : ''}${e.reachable ? '' : ' model-picker-row-unreachable'}`}
                 >
+                  {/* The row is a button, not a div with a handler: it has to
+                      be reachable by keyboard and announce itself as
+                      clickable. The provider and model links sit outside it,
+                      because a link inside a button is not valid and would
+                      select the model when you meant to open the page. An
+                      unreachable model cannot be selected. */}
+                  <button
+                    type="button"
+                    className="model-picker-pick"
+                    disabled={!e.reachable}
+                    title={e.reachable ? `use ${e.id}` : e.reason || 'not reachable'}
+                    onClick={() => {
+                      void onSelect(e.profile, e.id)
+                      setOpen(false)
+                    }}
+                  >
                   <span className="model-picker-id">{e.id}</span>
                   <span className="model-picker-provider">{e.provider || 'your endpoint'}</span>
                   <span className="model-picker-allowance">
@@ -219,6 +246,7 @@ export default function ModelPicker({ client, currentProfile, currentModel }: Mo
                   {e.terms && e.terms.length > 0 && (
                     <span className="model-picker-terms-badges">{e.terms.join(', ')}</span>
                   )}
+                  </button>
                   <span className="model-picker-links">
                     {e.provider_url && (
                       <a href={e.provider_url} target="_blank" rel="noreferrer">

@@ -274,6 +274,40 @@ export class ApiClient {
     }
   }
 
+  /**
+   * pinSessionModel records which model a session should use, and which
+   * provider it belongs to.
+   *
+   * The profile travels with the model because a model id is only meaningful
+   * at its own endpoint: pinning another provider's model without saying
+   * whose it is sends that id to whichever endpoint is already active.
+   *
+   * POST /session with an existing id updates that session rather than
+   * creating one.
+   */
+  async pinSessionModel(sessionID: string, profile: string, model: string): Promise<void> {
+    const res = await fetch(this.url('/session'), {
+      method: 'POST',
+      headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ id: sessionID, profile, model }),
+    })
+    if (!res.ok) {
+      throw new Error(`pin model failed: ${res.status} ${await safeText(res)}`)
+    }
+  }
+
+  /** deleteSession removes one session from the selected backend. */
+  async deleteSession(id: string): Promise<void> {
+    const res = await fetch(this.url(`/session/${encodeURIComponent(id)}`), {
+      method: 'DELETE',
+      headers: this.authHeaders(),
+    })
+    // 404 means it is already gone, which is the outcome the caller wanted.
+    if (!res.ok && res.status !== 404) {
+      throw new Error(`delete session failed: ${res.status} ${await safeText(res)}`)
+    }
+  }
+
   /** listSessions calls GET /session on the selected backend. */
   async listSessions(): Promise<SessionListItem[]> {
     const res = await fetch(this.url('/session'), { headers: this.authHeaders() })

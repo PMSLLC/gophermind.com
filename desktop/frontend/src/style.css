@@ -651,19 +651,37 @@ body {
 }
 .sessionrow {
   display: flex;
-  align-items: baseline;
-  gap: 0.6rem;
-  width: 100%;
-  text-align: left;
-  font: inherit;
-  background: none;
-  border: 0;
+  align-items: center;
   border-bottom: 1px solid rgba(128, 128, 128, 0.12);
-  padding: 0.35rem 0.7rem;
-  cursor: pointer;
 }
 .sessionrow:hover {
   background: rgba(128, 128, 128, 0.12);
+}
+.sessionrow-open {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+}
+.sessionrow-delete {
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 0.78em;
+  margin-right: 0.5rem;
+  opacity: 0.55;
+  cursor: pointer;
+}
+.sessionrow-delete:hover {
+  opacity: 1;
+  color: #c0392b;
 }
 .sessionrow-backend {
   flex: 0 0 auto;
@@ -681,4 +699,31 @@ body {
   flex: 0 0 auto;
   font-size: 0.78em;
   opacity: 0.6;
+}
+
+/* The selectable part of a model row. It is a button so it is keyboard
+   reachable and announces itself as clickable; the provider/model links sit
+   outside it, since a link inside a button is invalid and would select the
+   model when you meant to open the page. */
+.model-picker-pick {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0.15rem 0.25rem;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.model-picker-pick:hover:not(:disabled) {
+  background: rgba(128, 128, 128, 0.18);
+}
+.model-picker-pick:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
