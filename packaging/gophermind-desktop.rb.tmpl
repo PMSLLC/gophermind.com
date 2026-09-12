@@ -17,7 +17,9 @@ cask "gophermind-desktop" do
   desc "Desktop application for the GopherMind agentic coding harness"
   homepage "https://github.com/jbrahy/gophermind.com"
 
-  depends_on macos: ">= :big_sur"
+  # `macos: :big_sur` already means "Big Sur or newer". The string form
+  # ">= :big_sur" is deprecated and Homebrew warns on every invocation.
+  depends_on macos: :big_sur
 
   app "GopherMind Desktop.app"
 
