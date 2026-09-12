@@ -131,6 +131,48 @@ export interface BackendInfo {
 }
 
 /**
+ * SessionListItem is one entry from GET /session.
+ *
+ * The field names are capitalised because internal/session.Info carries no
+ * json tags, so Go's encoder uses its field names verbatim. This is
+ * deliberately a separate type from SessionInfo, which is the lowercase
+ * {id} body that POST /session returns.
+ */
+export interface SessionListItem {
+  ID: string
+  Title: string
+  Name: string
+  Messages: number
+  ModTime: string
+}
+
+/** SkillSource is an installed skill repository, pinned to a commit. */
+export interface SkillSource {
+  url: string
+  ref: string
+  sha: string
+  added: string
+}
+
+/**
+ * SkillInfo is one capability pack. source is empty for a pack committed to
+ * this repo, which is always on; anything with a source is opt-in.
+ */
+export interface SkillInfo {
+  name: string
+  description?: string
+  source: string
+  enabled: boolean
+  key: string
+}
+
+/** SkillCatalogue is the body of GET /skills. */
+export interface SkillCatalogue {
+  sources: SkillSource[]
+  skills: SkillInfo[]
+}
+
+/**
  * ApiClient talks to ONE GopherMind server, selected by backend name.
  *
  * Every request goes to the local router, which proxies it to the named
@@ -180,13 +222,65 @@ export class ApiClient {
     return (await res.json()) as BackendInfo[]
   }
 
+  /**
+   * SkillCatalogue is what GET /skills returns: the installed sources and
+   * every skill they and this repo provide, with its enablement state.
+   */
+  async getSkills(): Promise<SkillCatalogue> {
+    const res = await fetch(this.url('/skills'), { headers: this.authHeaders() })
+    if (!res.ok) {
+      throw new Error(`list skills failed: ${res.status} ${await safeText(res)}`)
+    }
+    return (await res.json()) as SkillCatalogue
+  }
+
+  /** setSkillEnabled switches one fetched skill on or off by its scoped key. */
+  async setSkillEnabled(key: string, enabled: boolean): Promise<SkillInfo[]> {
+    const res = await fetch(this.url('/skills'), {
+      method: 'PATCH',
+      headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ key, enabled }),
+    })
+    if (!res.ok) {
+      throw new Error(`${res.status} ${await safeText(res)}`)
+    }
+    return (await res.json()) as SkillInfo[]
+  }
+
+  /**
+   * addSkillSource clones a repository at a pinned commit. It enables
+   * nothing: the content becomes reviewable, and switching any of it on is a
+   * separate decision.
+   */
+  async addSkillSource(url: string, ref?: string): Promise<void> {
+    const res = await fetch(this.url('/skills/sources'), {
+      method: 'POST',
+      headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ url, ref: ref || '' }),
+    })
+    if (!res.ok) {
+      throw new Error(`${res.status} ${await safeText(res)}`)
+    }
+  }
+
+  /** removeSkillSource deletes a source, its cache, and its enablements. */
+  async removeSkillSource(id: string): Promise<void> {
+    const res = await fetch(this.url(`/skills/sources/${id}`), {
+      method: 'DELETE',
+      headers: this.authHeaders(),
+    })
+    if (!res.ok) {
+      throw new Error(`${res.status} ${await safeText(res)}`)
+    }
+  }
+
   /** listSessions calls GET /session on the selected backend. */
-  async listSessions(): Promise<SessionInfo[]> {
+  async listSessions(): Promise<SessionListItem[]> {
     const res = await fetch(this.url('/session'), { headers: this.authHeaders() })
     if (!res.ok) {
       throw new Error(`list sessions failed: ${res.status} ${await safeText(res)}`)
     }
-    return ((await res.json()) ?? []) as SessionInfo[]
+    return ((await res.json()) ?? []) as SessionListItem[]
   }
 
   /** createSession calls POST /session and returns the new session's id. */

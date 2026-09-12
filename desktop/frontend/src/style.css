@@ -580,3 +580,105 @@ body {
   opacity: 0.75;
   font-weight: 400;
 }
+
+/* Skills panel. A skill is instructions for an agent with shell access, so the
+   panel states that plainly and shows each source's pinned commit: upstream
+   can be rewritten, the pin cannot move without an explicit update. */
+.skills-error {
+  color: #c0392b;
+  margin: 0.4rem 0;
+}
+.skills-add {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0.5rem 0 0.9rem;
+}
+.skills-add input {
+  flex: 1;
+  font: inherit;
+  padding: 0.25rem 0.4rem;
+}
+.skills-group {
+  margin-bottom: 0.9rem;
+}
+.skills-group-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  margin-bottom: 0.3rem;
+}
+.skills-note {
+  font-weight: 400;
+  font-size: 0.82em;
+  opacity: 0.65;
+}
+.skills-remove {
+  margin-left: auto;
+  font: inherit;
+  font-size: 0.82em;
+}
+.skill {
+  padding: 0.2rem 0 0.2rem 0.6rem;
+}
+.skill-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  cursor: pointer;
+}
+.skill-name {
+  display: block;
+}
+.skill-desc {
+  display: block;
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+
+/* Session list across backends. The machine is shown first on every row
+   because a session belongs to the server holding it: two rows with the same
+   title on different boxes are different conversations. */
+.sessionsbtn {
+  margin-left: 0.5rem;
+  font: inherit;
+  font-size: 0.85em;
+}
+.sessionlist {
+  max-height: 40vh;
+  overflow-y: auto;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.3);
+}
+.sessionrow {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.12);
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+}
+.sessionrow:hover {
+  background: rgba(128, 128, 128, 0.12);
+}
+.sessionrow-backend {
+  flex: 0 0 auto;
+  font-size: 0.78em;
+  opacity: 0.7;
+  min-width: 4.5rem;
+}
+.sessionrow-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sessionrow-meta {
+  flex: 0 0 auto;
+  font-size: 0.78em;
+  opacity: 0.6;
+}

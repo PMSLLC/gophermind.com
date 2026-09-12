@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   ApiClient,
   type BackendInfo,
+  type SessionListItem,
   type BackendStatus,
   type ModelSwitched,
   type PendingApproval,
@@ -164,6 +165,11 @@ export default function App() {
   // question the user must never have to guess.
   const [backends, setBackends] = useState<BackendInfo[]>([])
   const [activeBackend, setActiveBackend] = useState('local')
+  // Sessions across every reachable backend, each tagged with the machine it
+  // lives on. A session belongs to the server holding it, so the backend is
+  // part of its identity rather than a display detail.
+  const [sessions, setSessions] = useState<{ backend: string; item: SessionListItem }[]>([])
+  const [sessionsOpen, setSessionsOpen] = useState(false)
   const clientRef = useRef<ApiClient | null>(null)
   // The endpoint is kept so a client can be rebuilt for another backend.
   // Base URL and token are the router's and do not change with the backend;
@@ -342,6 +348,48 @@ export default function App() {
   }
 
   /**
+   * loadSessions asks every available backend for its sessions and merges the
+   * answers, tagging each with the machine it came from.
+   *
+   * One backend being unreachable must not empty the list: a remote box that
+   * is down should cost you its own sessions, not the local ones sitting next
+   * to them, so each failure is swallowed per backend rather than failing the
+   * whole fan-out.
+   */
+  async function loadSessions() {
+    const ep = endpointRef.current
+    if (!ep) return
+    const usable = backends.length > 0 ? backends.filter((b) => b.available) : [{ name: 'local' } as BackendInfo]
+    const results = await Promise.all(
+      usable.map(async (b) => {
+        const c = new ApiClient(ep.baseURL, ep.token, b.name === 'local' ? '' : b.name)
+        try {
+          return (await c.listSessions()).map((item) => ({ backend: b.name, item }))
+        } catch {
+          return []
+        }
+      }),
+    )
+    const merged = results.flat()
+    merged.sort((a, b) => (a.item.ModTime < b.item.ModTime ? 1 : -1))
+    setSessions(merged)
+  }
+
+  /** resume attaches the window to an existing session on its own backend. */
+  async function resume(backend: string, id: string) {
+    const ep = endpointRef.current
+    if (!ep) return
+    const client = new ApiClient(ep.baseURL, ep.token, backend === 'local' ? '' : backend)
+    clientRef.current = client
+    setActiveBackend(backend)
+    setSessionID(id)
+    setSessionsOpen(false)
+    setLines([{ kind: 'text', role: 'system', text: `--- resumed ${id} on ${backend} ---` }])
+    setStatus('ready')
+    setStatusDetail(`session ${id} on ${backend}`)
+  }
+
+  /**
    * switchBackend moves the window to another machine.
    *
    * A session belongs to the server that holds it, so this always starts a
@@ -394,6 +442,16 @@ export default function App() {
       <header className="statusbar">
         <span className={`dot dot-${status}`} />
         <span className="statustext">{statusDetail}</span>
+        <button
+          className="sessionsbtn"
+          onClick={() => {
+            const next = !sessionsOpen
+            setSessionsOpen(next)
+            if (next) void loadSessions()
+          }}
+        >
+          sessions
+        </button>
         {backends.length > 1 && (
           // The machine this session runs on, always visible. Tool calls
           // execute wherever this points, so it belongs in the chrome rather
@@ -454,6 +512,23 @@ export default function App() {
         <div className="approvalbar">
           approval needed on <strong>{activeBackend}</strong>:{' '}
           <strong>{pendingApproval.tool}</strong> - press Y to approve, N to deny
+        </div>
+      )}
+
+      {sessionsOpen && (
+        <div className="sessionlist">
+          {sessions.length === 0 && <div className="hint">no sessions found</div>}
+          {sessions.map(({ backend, item }) => (
+            <button
+              key={`${backend}:${item.ID}`}
+              className="sessionrow"
+              onClick={() => void resume(backend, item.ID)}
+            >
+              <span className="sessionrow-backend">{backend}</span>
+              <span className="sessionrow-title">{item.Name || item.Title || item.ID}</span>
+              <span className="sessionrow-meta">{item.Messages} msgs</span>
+            </button>
+          ))}
         </div>
       )}
 

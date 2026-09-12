@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ApiClient, type CatalogueEntry, type ModelSettings } from '../api/client'
+import SkillsPanel from './SkillsPanel'
 
 /** knownTerms is the fixed vocabulary freellm.TermsFlags emits on the Go side. */
 const knownTerms = ['non-commercial', 'trains on prompts', 'identity check']
@@ -392,6 +393,8 @@ export default function SettingsPanel({ client, onClose }: SettingsPanelProps) {
           </div>
         )}
       </section>
+
+      <SkillsPanel client={client} />
     </div>
   )
 }
