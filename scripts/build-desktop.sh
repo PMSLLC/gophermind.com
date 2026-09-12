@@ -57,6 +57,10 @@ else
 fi
 [[ -d "$app" ]] || { echo "error: no app bundle at $app" >&2; exit 1; }
 
+# Clear previous artifacts. This is a staging directory, not a cache: leaving
+# an older version behind means the release glob can pick it up as well as the
+# current one, which is how v0.7.1 first went out carrying the 0.7.0 app too.
+rm -rf "$dist"
 mkdir -p "$dist"
 
 # 1b. Stamp the version into the bundle, BEFORE signing.

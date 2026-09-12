@@ -161,6 +161,11 @@ release:
   # never evaluates these globs: a green snapshot is not evidence the desktop
   # artifact was produced. Check dist/ for it, which is what
   # `make desktop-release` does before handing over.
+  # Pinned to {{ .Version }} rather than a wildcard. A wildcard attached every
+  # desktop zip left in the staging directory, so the v0.7.1 release shipped
+  # with the 0.7.0 app alongside it: two apps, no indication which was current.
+  # The script also clears the directory now, but that only removes the cause;
+  # this removes the possibility.
   extra_files:
-    - glob: ./dist-desktop/GopherMind-Desktop_*_darwin_universal.zip
-    - glob: ./dist-desktop/GopherMind-Desktop_*_darwin_universal.zip.sha256
+    - glob: ./dist-desktop/GopherMind-Desktop_{{ .Version }}_darwin_universal.zip
+    - glob: ./dist-desktop/GopherMind-Desktop_{{ .Version }}_darwin_universal.zip.sha256
