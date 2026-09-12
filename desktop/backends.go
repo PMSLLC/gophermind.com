@@ -37,14 +37,27 @@ type Backend struct {
 	Kind    BackendKind
 	BaseURL string
 	Token   string
+
+	// Available reports whether this backend can actually be used. A
+	// configured backend whose token file is missing or unusable is kept
+	// here rather than dropped, so the UI can say why it is not working.
+	// Dropping it silently is the mistake this project already made once in
+	// LoadSettings; failing startup over it would be worse still, since the
+	// user would lose the local backend too and see an empty window.
+	Available bool
+	// Reason explains an unavailable backend. Empty when Available.
+	// It never contains credential material.
+	Reason string
 }
 
 // PublicBackend is the view of a backend the frontend is allowed to see. It
 // carries no credential.
 type PublicBackend struct {
-	Name    string      `json:"name"`
-	Kind    BackendKind `json:"kind"`
-	Default bool        `json:"default"`
+	Name      string      `json:"name"`
+	Kind      BackendKind `json:"kind"`
+	Default   bool        `json:"default"`
+	Available bool        `json:"available"`
+	Reason    string      `json:"reason,omitempty"`
 }
 
 // backendRegistry holds the backends this desktop knows about. The first one
@@ -105,7 +118,10 @@ func (r *backendRegistry) Public() []PublicBackend {
 	defer r.mu.RUnlock()
 	out := make([]PublicBackend, 0, len(r.list))
 	for i, b := range r.list {
-		out = append(out, PublicBackend{Name: b.Name, Kind: b.Kind, Default: i == 0})
+		out = append(out, PublicBackend{
+			Name: b.Name, Kind: b.Kind, Default: i == 0,
+			Available: b.Available, Reason: b.Reason,
+		})
 	}
 	return out
 }

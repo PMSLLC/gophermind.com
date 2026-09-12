@@ -77,7 +77,7 @@ func routerFor(t *testing.T, stub *backendStub) (*httptest.Server, string) {
 		t.Fatal(err)
 	}
 	reg := &backendRegistry{}
-	if err := reg.Add(Backend{Name: "local", Kind: BackendLocal, BaseURL: up.URL, Token: "upstream-secret"}); err != nil {
+	if err := reg.Add(Backend{Name: "local", Kind: BackendLocal, BaseURL: up.URL, Token: "upstream-secret", Available: true}); err != nil {
 		t.Fatal(err)
 	}
 

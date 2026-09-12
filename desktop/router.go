@@ -77,6 +77,13 @@ func resolve(reg *backendRegistry, path string) (Backend, string, error) {
 		return Backend{}, "", fmt.Errorf("no backend named in path")
 	}
 	b, ok := reg.Get(name)
+	if ok && !b.Available {
+		// Never route to a backend with no usable credential: the request
+		// would go out with an empty Authorization header and be refused
+		// upstream, which reads as a server fault rather than a local
+		// misconfiguration.
+		return Backend{}, "", fmt.Errorf("backend %q is unavailable: %s", name, b.Reason)
+	}
 	if !ok {
 		// Deliberately does not say which names exist: this is reachable by
 		// anything holding the front token, and the backend list is a map of

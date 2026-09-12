@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"net"
 
+	"path/filepath"
+
+	"gophermind/internal/config"
 	"gophermind/internal/prompt"
 	"gophermind/internal/serve"
 )
@@ -106,13 +109,39 @@ func startEmbeddedServer(parent context.Context) (*embeddedServer, error) {
 	// an unprefixed request routes to and what the app falls back to.
 	backends := &backendRegistry{}
 	if err := backends.Add(Backend{
-		Name:    "local",
-		Kind:    BackendLocal,
-		BaseURL: "http://" + ln.Addr().String(),
-		Token:   token,
+		Name:      "local",
+		Kind:      BackendLocal,
+		BaseURL:   "http://" + ln.Addr().String(),
+		Token:     token,
+		Available: true,
 	}); err != nil {
 		cancel()
 		return nil, err
+	}
+
+	// Remote backends from ~/.gophermind/backends.json, registered after
+	// local so local stays the default: the app must still work with no
+	// network, and an unprefixed request has to go somewhere that does.
+	//
+	// A broken config fails startup rather than starting without the
+	// backends it names. Silently dropping them would leave the user
+	// wondering where their remote sessions went, and the failure mode of a
+	// missing backend is worse than the failure mode of a loud error.
+	cfgDir, err := config.Dir()
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("config dir: %w", err)
+	}
+	remotes, err := loadBackendConfig(filepath.Join(cfgDir, backendConfigFile))
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	for _, b := range remotes {
+		if err := backends.Add(b); err != nil {
+			cancel()
+			return nil, err
+		}
 	}
 
 	// The router gets its OWN front-door token, never the embedded server's.
