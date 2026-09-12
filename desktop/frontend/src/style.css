@@ -738,3 +738,16 @@ body {
   cursor: not-allowed;
   opacity: 0.55;
 }
+
+/* The session's working folder. It sits in the status bar next to the
+   backend because the two together answer "where does this run": which
+   machine, and which directory on it. */
+.folderbtn {
+  margin-left: 0.5rem;
+  font: inherit;
+  font-size: 0.85em;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

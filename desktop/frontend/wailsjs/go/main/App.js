@@ -5,3 +5,7 @@
 export function Endpoint() {
   return window['go']['main']['App']['Endpoint']();
 }
+
+export function PickFolder() {
+  return window['go']['main']['App']['PickFolder']();
+}

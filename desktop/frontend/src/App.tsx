@@ -8,6 +8,7 @@ import {
   type PendingApproval,
 } from './api/client'
 import { waitForEndpoint } from './api/wails'
+import { PickFolder } from '../wailsjs/go/main/App'
 import ModelPicker from './components/ModelPicker'
 import SettingsPanel from './components/SettingsPanel'
 
@@ -170,6 +171,10 @@ export default function App() {
   // part of its identity rather than a display detail.
   const [sessions, setSessions] = useState<{ backend: string; item: SessionListItem }[]>([])
   const [sessionsOpen, setSessionsOpen] = useState(false)
+  // The directory this session's tools read, write and run commands in.
+  // Empty means the server's own root. It is shown in the status bar because
+  // it decides where every file edit lands.
+  const [sessionRoot, setSessionRoot] = useState('')
   const clientRef = useRef<ApiClient | null>(null)
   // The endpoint is kept so a client can be rebuilt for another backend.
   // Base URL and token are the router's and do not change with the backend;
@@ -408,6 +413,34 @@ export default function App() {
   }
 
   /**
+   * chooseFolder points this session's tools at a directory.
+   *
+   * The native dialog is the app's only other binding: a WebView cannot open
+   * one by itself. Everything after it is ordinary HTTP, and the server, not
+   * the picker, decides whether the path is usable.
+   */
+  async function chooseFolder() {
+    const client = clientRef.current
+    if (!client || !sessionID) return
+    try {
+      const picked = await PickFolder()
+      if (!picked) return // cancelled
+      await client.setSessionRoot(sessionID, picked)
+      setSessionRoot(picked)
+      setLines((prev) => [
+        ...prev,
+        { kind: 'text', role: 'system', text: `--- this session now works in ${picked} ---` },
+      ])
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setLines((prev) => [
+        ...prev,
+        { kind: 'text', role: 'system', text: `could not set folder: ${message}` },
+      ])
+    }
+  }
+
+  /**
    * renameSession gives a session a display name on the backend that holds
    * it. Clearing the name reverts the list to the derived title.
    */
@@ -473,6 +506,11 @@ export default function App() {
     setSessionID(id)
     setSessionsOpen(false)
     setLines([{ kind: 'text', role: 'system', text: `--- resumed ${id} on ${backend} ---` }])
+    try {
+      setSessionRoot((await client.getSessionConfig(id)).root || '')
+    } catch {
+      setSessionRoot('')
+    }
     setStatus('ready')
     setStatusDetail(`session ${id} on ${backend}`)
   }
@@ -530,6 +568,13 @@ export default function App() {
       <header className="statusbar">
         <span className={`dot dot-${status}`} />
         <span className="statustext">{statusDetail}</span>
+        <button
+          className="folderbtn"
+          title={sessionRoot || 'using the server default folder'}
+          onClick={() => void chooseFolder()}
+        >
+          {sessionRoot ? sessionRoot.split('/').filter(Boolean).slice(-1)[0] : 'folder'}
+        </button>
         <button
           className="sessionsbtn"
           onClick={() => {

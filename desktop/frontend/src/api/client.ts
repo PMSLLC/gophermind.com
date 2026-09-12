@@ -312,6 +312,33 @@ export class ApiClient {
     }
   }
 
+  /**
+   * setSessionRoot points a session's tools at a directory. The server
+   * validates it and rejects a path that is not an existing directory, so a
+   * bad pick is reported now rather than failing a tool call later.
+   */
+  async setSessionRoot(sessionID: string, root: string): Promise<void> {
+    const res = await fetch(this.url('/session'), {
+      method: 'POST',
+      headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ id: sessionID, root }),
+    })
+    if (!res.ok) {
+      throw new Error(`set folder failed: ${res.status} ${await safeText(res)}`)
+    }
+  }
+
+  /** getSessionConfig reports a session's pinned model, mode and root. */
+  async getSessionConfig(sessionID: string): Promise<{ model: string; mode: string; root: string }> {
+    const res = await fetch(this.url(`/session/${encodeURIComponent(sessionID)}/config`), {
+      headers: this.authHeaders(),
+    })
+    if (!res.ok) {
+      throw new Error(`read session config failed: ${res.status}`)
+    }
+    return (await res.json()) as { model: string; mode: string; root: string }
+  }
+
   /** deleteSession removes one session from the selected backend. */
   async deleteSession(id: string): Promise<void> {
     const res = await fetch(this.url(`/session/${encodeURIComponent(id)}`), {

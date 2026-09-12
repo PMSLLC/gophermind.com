@@ -4,22 +4,27 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"os"
 	"sync"
 )
 
-// App is the Wails-bound application struct. It exposes exactly one method to
-// the frontend, Endpoint, per the desktop app's central design decision: the
-// frontend always speaks HTTP to the embedded (or, in a later task, remote)
-// server, never Wails bindings for individual operations.
+// App is the Wails-bound application struct. It exposes exactly two methods to
+// the frontend: Endpoint, and PickFolder.
+//
+// The design decision the first one establishes still holds: the frontend
+// speaks HTTP to the server for everything, never a Wails binding per
+// operation. PickFolder does not weaken that. It reaches an OS capability the
+// WebView cannot reach by itself, which is what a native bridge is for, and
+// carries no business logic: the path it returns goes to the server over HTTP
+// like every other setting, and the server decides whether to accept it.
 type App struct {
-	ctx context.Context
-
-	// mu guards server, which startup assigns on the Wails startup goroutine
-	// while Endpoint reads it from the frontend's binding call. The frontend
-	// mounts and calls Endpoint before startup finishes, so this is a real
-	// race, not a theoretical one.
+	// mu guards ctx and server. startup assigns both on the Wails startup
+	// goroutine while Endpoint and PickFolder read them from the frontend's
+	// binding calls. The frontend mounts and calls Endpoint before startup
+	// finishes, so this is a real race, not a theoretical one.
 	mu     sync.RWMutex
+	ctx    context.Context
 	server *embeddedServer
 }
 
@@ -35,7 +40,12 @@ func NewApp() *App {
 // desktop app spec's error-handling table. Building an in-window error screen
 // for this case is left to a later task.
 func (a *App) startup(ctx context.Context) {
+	// Under the lock, like server: PickFolder reads ctx from a binding call
+	// that can arrive before this returns.
+	a.mu.Lock()
 	a.ctx = ctx
+	a.mu.Unlock()
+
 	server, err := startEmbeddedServer(context.Background())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "gophermind desktop: embedded server failed to start:", err)
@@ -44,6 +54,25 @@ func (a *App) startup(ctx context.Context) {
 	a.mu.Lock()
 	a.server = server
 	a.mu.Unlock()
+}
+
+// PickFolder opens the system's directory chooser and returns the chosen
+// path, or "" if the user cancelled.
+//
+// Cancelling is not an error: Wails returns an empty path and the caller
+// treats that as "leave it as it was". The path is not validated here; the
+// server does that when it is set, so there is one place that decides what a
+// usable root is rather than two that can disagree.
+func (a *App) PickFolder() (string, error) {
+	a.mu.RLock()
+	ctx := a.ctx
+	a.mu.RUnlock()
+	if ctx == nil {
+		return "", errors.New("window is still starting")
+	}
+	return runtime.OpenDirectoryDialog(ctx, runtime.OpenDialogOptions{
+		Title: "Choose a folder for this session",
+	})
 }
 
 // shutdown is called by Wails when the application is closing. It shuts the

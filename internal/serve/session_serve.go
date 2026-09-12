@@ -73,6 +73,8 @@ func sessionCreateHandler() http.HandlerFunc {
 		id := ""
 		model := ""
 		mode := ""
+		profile := ""
+		root := ""
 		if r.Body != nil {
 			body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 			if err != nil {
@@ -84,6 +86,11 @@ func sessionCreateHandler() http.HandlerFunc {
 					ID    string `json:"id"`
 					Model string `json:"model"`
 					Mode  string `json:"mode"`
+					// Profile names the provider the model belongs to. A
+					// model id means nothing at another provider's endpoint.
+					Profile string `json:"profile"`
+					// Root is the directory this session's tools work in.
+					Root string `json:"root"`
 				}
 				if json.Unmarshal(body, &j) == nil {
 					if j.ID != "" {
@@ -94,6 +101,8 @@ func sessionCreateHandler() http.HandlerFunc {
 						id = j.ID
 					}
 					model = strings.TrimSpace(j.Model)
+					profile = strings.TrimSpace(j.Profile)
+					root = strings.TrimSpace(j.Root)
 					mode = strings.TrimSpace(j.Mode)
 				}
 			}
@@ -102,7 +111,9 @@ func sessionCreateHandler() http.HandlerFunc {
 			id = stream.NewSessionID()
 		}
 		if model != "" {
-			if err := writeSessionModel(id, model); err != nil {
+			// Profile as well as model: see writeSessionBackend for why a
+			// model id alone is not enough to reach the right endpoint.
+			if err := writeSessionBackend(id, profile, model); err != nil {
 				http.Error(w, "write model", http.StatusInternalServerError)
 				return
 			}
@@ -110,6 +121,15 @@ func sessionCreateHandler() http.HandlerFunc {
 		if mode != "" {
 			if err := writeSessionMode(id, mode); err != nil {
 				http.Error(w, "write mode", http.StatusInternalServerError)
+				return
+			}
+		}
+		if root != "" {
+			// A bad root is reported to the caller rather than stored: it is
+			// a path the user just picked, and telling them now beats a tool
+			// call failing later with no obvious cause.
+			if err := WriteSessionRoot(id, root); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 		}
@@ -187,6 +207,7 @@ func sessionConfigHandler() http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"model": ReadSessionModel(id),
+			"root":  ReadSessionRoot(id),
 			"mode":  ReadSessionMode(id),
 		})
 	}

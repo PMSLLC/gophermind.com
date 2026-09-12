@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -300,8 +301,29 @@ func newServeDeps(getClient func() (*llm.Client, error), getProfile func() strin
 		// model a sibling's request went out on.
 		var switchChoice modelcat.Choice
 		switched := false
-		if pinned := serve.ReadSessionModel(id); pinned != "" {
-			client = client.CloneForModel(pinned)
+		if pinnedProfile, pinnedModel := serve.ReadSessionBackend(id); pinnedModel != "" {
+			// A pinned model on ANOTHER provider needs that provider's
+			// endpoint and key, not just its name: CloneForModel keeps the
+			// current BaseURL, so pinning a Kilo Code model while the client
+			// is on OVHcloud would POST that id to OVHcloud and 404. When the
+			// pin names no profile it belongs to the active endpoint, which
+			// is what the old bare-model sidecar meant.
+			if pinnedProfile != "" && pinnedProfile != getProfile() {
+				if c, err := clientForProfile(ctx, cfg, pinnedProfile, pinnedModel); err == nil {
+					setBackend(c, pinnedProfile)
+					client = c
+				} else {
+					// Fall back to the active endpoint rather than failing the
+					// turn, and say so: a pinned provider that cannot be
+					// reached is worth reporting, not worth losing the turn
+					// over.
+					_ = emit("model-error", `{"profile":`+strconv.Quote(pinnedProfile)+
+						`,"error":`+strconv.Quote(err.Error())+`}`)
+					client = client.CloneForModel(pinnedModel)
+				}
+			} else {
+				client = client.CloneForModel(pinnedModel)
+			}
 		} else {
 			client, switchChoice, switched = applyModelPolicy(ctx, cfg, getProfile(), client, setBackend)
 		}
@@ -319,7 +341,24 @@ func newServeDeps(getClient func() (*llm.Client, error), getProfile func() strin
 		// other turn's, and the "approval-needed" frame must land on this
 		// turn's own SSE stream.
 		turnApprove := serve.RemoteApprovalGate(approvals, ctx, desktopApprovalTimeout, emit, serve.NewApprovalID)
-		ag := agent.New(client, reg, cfg.MaxIter, turnApprove, onEvent)
+		// The tool registry is per turn when the session has its own working
+		// directory, because every tool captures its root at construction:
+		// ReadFileRange, WriteFile and RunShellEnhanced all close over
+		// cfg.RootDir, and safety.SafeJoin contains paths against whatever
+		// root they were given. A session pointed at another project
+		// therefore needs its own registry, not a flag passed at call time.
+		//
+		// The shared one is reused when there is no override, so the common
+		// case costs nothing and the behaviour is byte-identical to before.
+		turnReg := reg
+		turnRoot := cfg.RootDir
+		if r := serve.ReadSessionRoot(id); r != "" && r != cfg.RootDir {
+			turnCfg := cfg
+			turnCfg.RootDir = r
+			turnReg = newToolRegistry(turnCfg, getClient)
+			turnRoot = r
+		}
+		ag := agent.New(client, turnReg, cfg.MaxIter, turnApprove, onEvent)
 		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
 		if switched {
 			b, _ := json.Marshal(struct {
@@ -334,7 +373,10 @@ func newServeDeps(getClient func() (*llm.Client, error), getProfile func() strin
 				return err
 			}
 		} else {
-			ag.SetSystemPrompt(serve.SystemPromptForMode(serve.ReadSessionMode(id), basePrompt, cfg.RootDir))
+			// turnRoot, not cfg.RootDir: the prompt has to name the directory
+			// this session's tools actually operate in, or the agent is told
+			// it is in one project while reading and writing another.
+			ag.SetSystemPrompt(serve.SystemPromptForMode(serve.ReadSessionMode(id), basePrompt, turnRoot))
 		}
 		_, err = ag.Send(ctx, t)
 		// Meter the turn against the profile that served it. Nothing in this

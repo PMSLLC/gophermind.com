@@ -3,3 +3,5 @@
 import {main} from '../models';
 
 export function Endpoint():Promise<main.EndpointInfo>;
+
+export function PickFolder():Promise<string>;
