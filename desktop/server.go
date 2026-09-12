@@ -18,10 +18,15 @@ type embeddedServer struct {
 	// BaseURL is "http://127.0.0.1:<port>", the address the frontend should
 	// send every fetch/EventSource request to.
 	BaseURL string
-	// Token is the bearer token every request (other than /healthz, /readyz,
-	// /metrics) must present as "Authorization: Bearer <token>". Generated
+	// Token is the bearer token every request must present as
+	// "Authorization: Bearer <token>". This is the ROUTER's token, not any
+	// backend's: see newRouter for why the two are kept apart. Generated
 	// fresh per launch; never persisted, never logged.
 	Token string
+
+	// backends is what the router routes to. The local embedded server is
+	// always present and is the default.
+	backends *backendRegistry
 
 	cancel context.CancelFunc
 	done   chan error
@@ -92,15 +97,55 @@ func startEmbeddedServer(parent context.Context) (*embeddedServer, error) {
 		return nil, fmt.Errorf("listen: %w", err)
 	}
 
-	s := &embeddedServer{
+	// The embedded server keeps its own token and stays on loopback. What the
+	// frontend is given is the router in front of it, not this.
+	go func() { _ = serve.Serve(ctx, ln, mux) }()
+
+	// Register the embedded server as the "local" backend, and therefore the
+	// default: it is the one that works with no network at all, so it is what
+	// an unprefixed request routes to and what the app falls back to.
+	backends := &backendRegistry{}
+	if err := backends.Add(Backend{
+		Name:    "local",
+		Kind:    BackendLocal,
 		BaseURL: "http://" + ln.Addr().String(),
 		Token:   token,
-		cancel:  cancel,
-		done:    make(chan error, 1),
+	}); err != nil {
+		cancel()
+		return nil, err
+	}
+
+	// The router gets its OWN front-door token, never the embedded server's.
+	// The frontend holds only this one, so a backend's credential is not
+	// present in the WebView even for the local backend, and the same code
+	// path covers a remote backend whose token would authorize shell
+	// execution on another machine.
+	frontToken, err := newToken()
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	router, err := newRouter(backends, frontToken)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	rln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("listen (router): %w", err)
+	}
+
+	s := &embeddedServer{
+		BaseURL:  "http://" + rln.Addr().String(),
+		Token:    frontToken,
+		backends: backends,
+		cancel:   cancel,
+		done:     make(chan error, 1),
 	}
 	// The Wails WebView serves the frontend from its own origin, so every
 	// call it makes here is cross-origin. withCORS allows exactly that origin.
-	go func() { s.done <- serve.Serve(ctx, ln, withCORS(mux)) }()
+	go func() { s.done <- serve.Serve(ctx, rln, withCORS(router)) }()
 	go resolveLLMBackend(ctx, cfg, holder, status)
 	return s, nil
 }
