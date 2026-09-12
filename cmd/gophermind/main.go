@@ -44,6 +44,7 @@ import (
 	"gophermind/internal/serve"
 	"gophermind/internal/session"
 	"gophermind/internal/setup"
+	"gophermind/internal/skills"
 	"gophermind/internal/stream"
 	"gophermind/internal/telemetry"
 	"gophermind/internal/tools"
@@ -926,7 +927,20 @@ func run() error {
 	}
 	basePrompt := pb.Build()
 
-	systemSuffix := composeSystem(personaText, project.Instructions(cfg.RootDir), project.Skills(cfg.RootDir), repoContext)
+	// Skills: repo-local packs are always on (committed to this project, the
+	// same consent CLAUDE.md carries); anything fetched from a GitHub source
+	// is injected only once switched on. A settings read failure falls back to
+	// repo-local only, which is the safe direction: it can under-inject, never
+	// over-inject something unreviewed.
+	skillCfgDir, _ := config.Dir()
+	skillSettings, skillErr := skills.LoadSettings(skillCfgDir + "/skills.json")
+	if skillErr != nil && !*quietFlag {
+		fmt.Fprintf(os.Stderr, "skills: %v (using repo-local packs only)\n", skillErr)
+		skillSettings = skills.Settings{}
+	}
+	skillText := skills.Inject(cfg.RootDir, skillSettings, skills.CacheDir(skillCfgDir))
+
+	systemSuffix := composeSystem(personaText, project.Instructions(cfg.RootDir), skillText, repoContext)
 	// Answer-with-citations: when web search is available, require the final
 	// answer to cite the source URLs it relied on (verifiable, traceable).
 	if cfg.BraveAPIKey != "" {
@@ -1233,6 +1247,7 @@ func run() error {
 			// /pipeline, backed by cfg.RootDir's .planning/assignments.json
 			// - the same project state every other command reads.
 			Pipeline: &serve.PipelineDeps{Root: cfg.RootDir, Hub: pipelineHub},
+			Skills:   &serve.SkillsDeps{Root: cfg.RootDir, ConfigDir: skillCfgDir},
 		}, serve.Options{})
 		if err != nil {
 			return err

@@ -249,6 +249,13 @@ type Deps struct {
 	// behind the same bearer-token auth as the session routes. Nil skips
 	// registering them.
 	Pipeline *PipelineDeps
+
+	// Skills, when non-nil, registers the skill catalogue and source routes
+	// behind the same bearer-token auth as everything else. Nil skips them.
+	//
+	// These routes clone repositories and change what goes into an agent's
+	// system prompt, so they are gated exactly like the session routes are.
+	Skills *SkillsDeps
 }
 
 // Options carries per-deployment settings that used to be read from the
@@ -346,6 +353,14 @@ func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 		// S4 APNs device registration, same bearer+HMAC auth as /session.
 		mux.Handle("POST /devices", limited(sessionAuth(token, devicesHandler(d.Devices))))
 	}
+	if d.Skills != nil {
+		skillWrap := func(h http.Handler) http.Handler { return limited(sessionAuth(token, h)) }
+		mux.Handle("GET /skills", skillWrap(skillsListHandler(*d.Skills)))
+		mux.Handle("PATCH /skills", skillWrap(skillsPatchHandler(*d.Skills)))
+		mux.Handle("POST /skills/sources", skillWrap(skillsSourceAddHandler(*d.Skills)))
+		mux.Handle("DELETE /skills/sources/{id...}", skillWrap(skillsSourceDeleteHandler(*d.Skills)))
+	}
+
 	if d.Pipeline != nil {
 		// Live pipeline view (pipeline piece 5). The data routes share the
 		// same bearer-token auth as the rest, via sessionAuth, applied

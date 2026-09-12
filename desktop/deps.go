@@ -396,6 +396,7 @@ func newServeDeps(getClient func() (*llm.Client, error), getProfile func() strin
 		Run:             run,
 		Stream:          stream,
 		SessionTurn:     sessionTurn,
+		Skills:          skillsDeps(cfg),
 		SessionMessages: loadMessages,
 		ListModels:      listModels,
 		Approvals:       approvals,
@@ -475,4 +476,16 @@ func clientForProfile(ctx context.Context, base config.Config, profile, modelID 
 	}
 	applied.Model = modelID
 	return newLLMClient(ctx, applied)
+}
+
+// skillsDeps points the skill routes at this project and the user's config
+// directory. A config directory that cannot be resolved disables the routes
+// rather than guessing a path: writing skill settings somewhere unexpected is
+// worse than not offering the panel.
+func skillsDeps(cfg config.Config) *serve.SkillsDeps {
+	dir, err := config.Dir()
+	if err != nil {
+		return nil
+	}
+	return &serve.SkillsDeps{Root: cfg.RootDir, ConfigDir: dir}
 }
