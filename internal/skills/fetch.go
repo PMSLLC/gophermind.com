@@ -25,6 +25,29 @@ func sourceDir(cacheDir, id, sha string) string {
 	return filepath.Join(cacheDir, filepath.FromSlash(id)+"@"+shortSHA(sha))
 }
 
+// destFor resolves where a source's content is installed and refuses any
+// result that is not inside the cache.
+//
+// ValidateSourceURL already rejects the id that made this reachable, so this
+// is the second lock rather than the first. It is here because the operations
+// guarded are os.RemoveAll and os.Rename: a later change to SourceID, or a new
+// caller that skips validation, should fail loudly rather than delete
+// something outside the cache.
+func destFor(cacheDir, id, sha string) (string, error) {
+	root, err := filepath.Abs(cacheDir)
+	if err != nil {
+		return "", err
+	}
+	dest, err := filepath.Abs(sourceDir(cacheDir, id, sha))
+	if err != nil {
+		return "", err
+	}
+	if dest == root || !strings.HasPrefix(dest, root+string(filepath.Separator)) {
+		return "", fmt.Errorf("source id %q resolves outside the skill cache", id)
+	}
+	return dest, nil
+}
+
 func shortSHA(sha string) string {
 	if len(sha) > 12 {
 		return sha[:12]
@@ -93,7 +116,10 @@ func Fetch(ctx context.Context, cacheDir, rawURL, ref string) (Source, error) {
 	}
 	sha := strings.TrimSpace(string(shaOut))
 
-	dest := sourceDir(cacheDir, id, sha)
+	dest, err := destFor(cacheDir, id, sha)
+	if err != nil {
+		return Source{}, err
+	}
 	if err := os.RemoveAll(dest); err != nil {
 		return Source{}, err
 	}

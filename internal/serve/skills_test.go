@@ -170,3 +170,19 @@ func TestSkillRoutesAbsentWhenUnconfigured(t *testing.T) {
 		t.Errorf("got %d, want 404", resp.StatusCode)
 	}
 }
+
+// Traversal is refused at the route as well as in the package, so the API
+// surface cannot be used to reach os.RemoveAll outside the cache.
+func TestAddSourceRejectsTraversalURL(t *testing.T) {
+	srv, _, _ := skillsServer(t)
+	for _, bad := range []string{
+		`{"url":"https://evil.com/../.."}`,
+		`{"url":"https://evil.com/../../etc/passwd"}`,
+	} {
+		resp := req(t, "POST", srv.URL+"/skills/sources", "t", bad)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s returned %d, want 400", bad, resp.StatusCode)
+		}
+	}
+}

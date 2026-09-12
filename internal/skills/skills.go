@@ -128,8 +128,18 @@ func ValidateSourceURL(raw string) error {
 	if strings.Trim(u.Path, "/") == "" {
 		return errors.New("URL has no repository path")
 	}
-	if len(strings.Split(strings.Trim(u.Path, "/"), "/")) < 2 {
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) < 2 {
 		return errors.New("URL is not an owner/repo path")
+	}
+	// The first two segments become the source id, which becomes a directory
+	// under the cache. A "." or ".." segment there escapes that directory, and
+	// Fetch calls os.RemoveAll and os.Rename on the result. url.Parse does not
+	// normalise a path, so "https://host/../.." arrives here intact.
+	for _, part := range parts[:2] {
+		if part == "" || part == "." || part == ".." {
+			return fmt.Errorf("URL path segment %q is not a valid owner or repo name", part)
+		}
 	}
 	return nil
 }

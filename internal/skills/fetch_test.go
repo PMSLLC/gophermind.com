@@ -76,3 +76,67 @@ func TestFetchLeavesNoGitDirectory(t *testing.T) {
 		t.Error("cache directory is not pinned by sha")
 	}
 }
+
+// A URL path beginning ".." produced a source id of "../..", which
+// filepath.Join resolved to a directory ABOVE the cache. Fetch calls
+// os.RemoveAll and os.Rename on that path, so a source pointed at a host the
+// attacker controls (one that serves a clonable repo at that path, which
+// GitHub would not but evil.com would) could delete and create outside the
+// cache directory.
+//
+// Found by an automated security review and confirmed before fixing:
+// ValidateSourceURL passed the URL, SourceID returned "../..", and the
+// destination resolved to /tmp/..@<sha> rather than /tmp/cache/...
+func TestSourceIDCannotEscapeTheCacheDirectory(t *testing.T) {
+	for _, raw := range []string{
+		"https://evil.com/../..",
+		"https://evil.com/../../etc/passwd",
+		"https://evil.com/./..",
+		"https://evil.com/..%2f..",
+	} {
+		if err := ValidateSourceURL(raw); err == nil {
+			t.Errorf("%q passed validation; it derives a traversing source id", raw)
+		}
+	}
+}
+
+// destFor is the second lock: whatever id it is handed, the result is either
+// an error or a path inside the cache, never a path outside it.
+//
+// Note that only some of these actually escape. ".." and "/etc" are cleaned by
+// filepath.Join into ordinary names inside the cache, because the "@<sha>"
+// suffix makes the final element a literal filename. Asserting that every
+// hostile-looking id must ERROR would be asserting the wrong thing; what
+// matters is that none of them lands outside.
+func TestSourceDirNeverLandsOutsideTheCache(t *testing.T) {
+	cache := t.TempDir()
+	root, err := filepath.Abs(cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"../..", "..", "a/../../..", "/etc", "../../../tmp/x", "acme/pack"} {
+		got, err := destFor(cache, id, "abc123def456")
+		if err != nil {
+			continue // refused outright, which is also fine
+		}
+		if !strings.HasPrefix(got, root+string(filepath.Separator)) {
+			t.Errorf("id %q resolved to %q, outside %q", id, got, root)
+		}
+	}
+
+	// And the ordinary case still works.
+	got, err := destFor(cache, "acme/pack", "abc123def456")
+	if err != nil {
+		t.Fatalf("a normal id was rejected: %v", err)
+	}
+	if !strings.Contains(got, "acme") {
+		t.Errorf("dest %q does not name the source", got)
+	}
+}
+
+// The id that actually escaped is refused, not merely cleaned.
+func TestSourceDirRefusesTheEscapingID(t *testing.T) {
+	if _, err := destFor(t.TempDir(), "../..", "abc123def456"); err == nil {
+		t.Error(`id "../.." was accepted; it resolves above the cache`)
+	}
+}
