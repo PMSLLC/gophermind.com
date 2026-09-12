@@ -46,8 +46,14 @@ func skillsListHandler(d SkillsDeps) http.HandlerFunc {
 			Sources: s.Sources,
 			Skills:  skills.Catalogue(d.Root, s, skills.CacheDir(d.ConfigDir)),
 		}
+		// A nil slice marshals to null, and every client of this route
+		// iterates the result. An empty catalogue is the ordinary state of a
+		// fresh install, and it must not be the state that breaks the caller.
 		if out.Sources == nil {
 			out.Sources = []skills.Source{}
+		}
+		if out.Skills == nil {
+			out.Skills = []skills.Skill{}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(out)
@@ -96,8 +102,17 @@ func skillsPatchHandler(d SkillsDeps) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(skills.Catalogue(d.Root, s, skills.CacheDir(d.ConfigDir)))
+		_ = json.NewEncoder(w).Encode(nonNil(skills.Catalogue(d.Root, s, skills.CacheDir(d.ConfigDir))))
 	}
+}
+
+// nonNil turns a nil catalogue into an empty one, so the JSON is [] rather
+// than null for every caller that iterates it.
+func nonNil(in []skills.Skill) []skills.Skill {
+	if in == nil {
+		return []skills.Skill{}
+	}
+	return in
 }
 
 // setEnabled adds or removes a key, keeping the list free of duplicates.
@@ -168,7 +183,7 @@ func skillsSourceAddHandler(d SkillsDeps) http.HandlerFunc {
 		_ = json.NewEncoder(w).Encode(struct {
 			Source skills.Source  `json:"source"`
 			Skills []skills.Skill `json:"skills"`
-		}{src, skills.Catalogue(d.Root, s, skills.CacheDir(d.ConfigDir))})
+		}{src, nonNil(skills.Catalogue(d.Root, s, skills.CacheDir(d.ConfigDir)))})
 	}
 }
 

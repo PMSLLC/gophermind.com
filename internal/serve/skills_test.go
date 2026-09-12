@@ -2,6 +2,7 @@ package serve
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -183,6 +184,29 @@ func TestAddSourceRejectsTraversalURL(t *testing.T) {
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("%s returned %d, want 400", bad, resp.StatusCode)
+		}
+	}
+}
+
+// A root with no .gophermind/skills and no sources must still return a JSON
+// ARRAY, not null. Go marshals a nil slice as null, and the frontend calls
+// .filter() on it, which throws and takes the settings panel down.
+//
+// This is the state a desktop launch hits: opened from Finder the working
+// directory is not a project, so there are no repo-local packs and no
+// sources, and every field is empty.
+func TestSkillsListNeverReturnsNull(t *testing.T) {
+	srv, _, _ := skillsServer(t)
+	resp := req(t, "GET", srv.URL+"/skills", "t", "")
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	t.Logf("  body: %s", raw)
+	if string(raw) == "" {
+		t.Fatal("empty body")
+	}
+	for _, bad := range []string{`"skills":null`, `"sources":null`} {
+		if strings.Contains(string(raw), bad) {
+			t.Errorf("response contains %s; the frontend calls .filter() on it", bad)
 		}
 	}
 }

@@ -28,7 +28,13 @@ export default function SkillsPanel({ client }: SkillsPanelProps) {
 
   async function refresh() {
     try {
-      setCat(await client.getSkills())
+      // Normalise before storing. Go marshals a nil slice as null, and this
+      // panel iterates both fields; a null here took the whole settings
+      // screen down rather than showing an empty list. The server no longer
+      // sends null, but a panel that cannot survive one is a panel that
+      // breaks again the next time some other endpoint does.
+      const got = await client.getSkills()
+      setCat({ sources: got?.sources ?? [], skills: got?.skills ?? [] })
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
