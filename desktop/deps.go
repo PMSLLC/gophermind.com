@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -114,7 +115,7 @@ func newLLMClient(ctx context.Context, cfg config.Config) (*llm.Client, error) {
 // helpers in package main of cmd/gophermind (secretEnv, docsTemplate,
 // profileMemoryPath, ...) that are not exported for reuse here. Proving the
 // embedded-server loop does not need them; a later task can grow this set.
-func newToolRegistry(cfg config.Config) *tools.Registry {
+func newToolRegistry(cfg config.Config, getClient func() (*llm.Client, error)) *tools.Registry {
 	toolset := []tools.Tool{
 		tools.ReadFileRange(cfg.RootDir),
 		tools.ListFilesGlob(cfg.RootDir),
@@ -127,6 +128,26 @@ func newToolRegistry(cfg config.Config) *tools.Registry {
 			MaxProcs:    cfg.ShellMaxProcs,
 		}),
 		tools.FileStat(cfg.RootDir),
+		// humanize resolves the client at call time: the registry is built
+		// before the LLM backend is known, and a nil getClient simply yields
+		// a tool that reports it is unconfigured.
+		tools.Humanize(func(ctx context.Context, system, user string) (string, error) {
+			if getClient == nil {
+				return "", errors.New("no model configured")
+			}
+			c, err := getClient()
+			if err != nil {
+				return "", err
+			}
+			msg, _, err := c.Complete(ctx, []llm.Message{
+				{Role: "system", Content: system},
+				{Role: "user", Content: user},
+			}, nil)
+			if err != nil {
+				return "", err
+			}
+			return msg.Content, nil
+		}),
 		tools.MoveFile(cfg.RootDir),
 		tools.DeleteFile(cfg.RootDir),
 		tools.Mkdir(cfg.RootDir),

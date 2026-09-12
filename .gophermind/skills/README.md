@@ -12,7 +12,11 @@ Keep this set small and delete what you do not use.
 | `tdd.md` | [mattpocock/skills](https://github.com/mattpocock/skills) | MIT |
 | `code-review.md` | [mattpocock/skills](https://github.com/mattpocock/skills) | MIT |
 | `diagnosing-bugs.md` | [mattpocock/skills](https://github.com/mattpocock/skills) | MIT |
-| `humanizer.md` | [blader/humanizer](https://github.com/blader/humanizer) | MIT |
+
+`humanizer` used to live here and is now the `humanize` **tool**
+(`internal/tools/humanize.go`), because its guidance is ~7k tokens and almost
+no coding turn needs it. A tool pays that only when called. Anything here that
+most turns do not use belongs in a tool for the same reason.
 
 Edit upstream, not here. YAML frontmatter is stripped on import because
 `Skills()` wraps each file in `<skill name="...">` and the frontmatter would

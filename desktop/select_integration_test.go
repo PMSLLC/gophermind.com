@@ -30,7 +30,7 @@ func startTestServer(t *testing.T, holder *clientHolder) *embeddedServer {
 		t.Fatalf("loadConfig: %v", err)
 	}
 
-	reg := newToolRegistry(cfg)
+	reg := newToolRegistry(cfg, holder.Get)
 	pb, err := prompt.NewBuilder()
 	if err != nil {
 		t.Fatalf("prompt.NewBuilder: %v", err)

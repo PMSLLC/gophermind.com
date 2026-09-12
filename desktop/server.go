@@ -67,7 +67,12 @@ func startEmbeddedServer(parent context.Context) (*embeddedServer, error) {
 
 	ctx, cancel := context.WithCancel(parent)
 
-	reg := newToolRegistry(cfg)
+	// The holder is created before the registry so the humanize tool can look
+	// the client up at call time. The registry itself is still built before
+	// the LLM resolves, which is what keeps a slow or unreachable endpoint
+	// from blocking the window.
+	holder := &clientHolder{}
+	reg := newToolRegistry(cfg, holder.Get)
 
 	pb, err := prompt.NewBuilder()
 	if err != nil {
@@ -82,7 +87,6 @@ func startEmbeddedServer(parent context.Context) (*embeddedServer, error) {
 		return nil, err
 	}
 
-	holder := &clientHolder{}
 	status := &backendStatus{}
 
 	mux, err := serve.NewMux(newServeDeps(holder.Get, holder.Profile, holder.Set, reg, cfg, basePrompt), serve.Options{Token: token})

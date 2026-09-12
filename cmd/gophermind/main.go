@@ -758,6 +758,20 @@ func run() error {
 			MaxProcs:    cfg.ShellMaxProcs,
 		}), // run_shell + timeout/workdir/resource-limits
 		tools.FileStat(cfg.RootDir),
+		// humanize runs its own model call with the vendored humanizer skill
+		// as its system prompt. It is a tool rather than an injected skill
+		// so its ~7k tokens of guidance are paid when prose is actually
+		// being rewritten, not on every coding turn.
+		tools.Humanize(func(ctx context.Context, system, user string) (string, error) {
+			msg, _, err := client.Complete(ctx, []llm.Message{
+				{Role: "system", Content: system},
+				{Role: "user", Content: user},
+			}, nil)
+			if err != nil {
+				return "", err
+			}
+			return msg.Content, nil
+		}),
 		tools.MoveFile(cfg.RootDir),
 		tools.DeleteFile(cfg.RootDir),
 		tools.Mkdir(cfg.RootDir),
