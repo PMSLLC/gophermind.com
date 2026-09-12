@@ -59,6 +59,35 @@ fi
 
 mkdir -p "$dist"
 
+# 1b. Stamp the version into the bundle, BEFORE signing.
+#
+# Wails renders Info.plist from build/darwin/Info.plist using
+# {{.Info.ProductVersion}}, which comes from wails.json. That key was absent,
+# so Wails substituted its default of 1.0.0 and every build of this app
+# announced itself as 1.0.0 in Finder's Get Info and anywhere else the bundle
+# version is read - including the release that shipped as 0.7.0.
+#
+# The value is written here rather than into wails.json so it tracks the tag by
+# construction instead of by someone remembering to bump a file. wails.json
+# carries 0.0.0-dev, which is what a plain `wails build` produces and is
+# honestly unmistakable for a release.
+#
+# This must happen before codesign: the signature covers Info.plist, so editing
+# it afterwards invalidates the signature and the app fails to launch.
+blue "stamping version $version into the bundle"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" "$app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $version" "$app/Contents/Info.plist"
+ok "CFBundleShortVersionString=$version CFBundleVersion=$version"
+
+# `wails build -clean` rewrites the bundle's contents but leaves the .app
+# directory node's own mtime alone, so Finder shows the date of some earlier
+# build for a freshly built app - which is how the 0.7.0 release came to look
+# a day old on the machine that had just installed it. ditto then preserves
+# that through the zip, so it misleads every user too, not just the builder.
+# mtime is not covered by the code signature, but this runs before codesign
+# anyway so nothing is touched after signing.
+touch "$app"
+
 # 2. Sign.
 #
 # Wails self-signs the bundle during `wails build` (an ad-hoc signature), so

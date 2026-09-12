@@ -11,6 +11,7 @@
   },
   "info": {
     "companyName": "John Brahy",
-    "productName": "GopherMind Desktop"
+    "productName": "GopherMind Desktop",
+    "productVersion": "0.0.0-dev"
   }
 }
