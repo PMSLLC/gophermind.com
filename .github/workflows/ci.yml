@@ -20,8 +20,31 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25"
           cache: true
+
+      # desktop/main.go embeds frontend/dist, which is a build artifact and is
+      # gitignored, so it does not exist in a fresh checkout. Without this the
+      # very first Go step fails with:
+      #
+      #   desktop/main.go:16:12: pattern all:frontend/dist: no matching files found
+      #
+      # It has to run before vet and build, not just before the tests, because
+      # both compile the package. Building here also means CI type-checks the
+      # frontend at all: "npm run build" is "tsc && vite build", and nothing
+      # else in this pipeline looks at the TypeScript.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: desktop/frontend/package-lock.json
+
+      - name: Build desktop frontend (produces the embedded assets)
+        run: |
+          cd desktop/frontend
+          npm ci
+          npm run build
 
       - name: gofmt (check formatting)
         run: |
