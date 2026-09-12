@@ -296,6 +296,22 @@ export class ApiClient {
     }
   }
 
+  /**
+   * renameSession sets a session's display name. An empty name clears it and
+   * the list falls back to the derived title, which is the first user
+   * message.
+   */
+  async renameSession(id: string, name: string): Promise<void> {
+    const res = await fetch(this.url(`/session/${encodeURIComponent(id)}`), {
+      method: 'PATCH',
+      headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ name }),
+    })
+    if (!res.ok) {
+      throw new Error(`rename failed: ${res.status} ${await safeText(res)}`)
+    }
+  }
+
   /** deleteSession removes one session from the selected backend. */
   async deleteSession(id: string): Promise<void> {
     const res = await fetch(this.url(`/session/${encodeURIComponent(id)}`), {

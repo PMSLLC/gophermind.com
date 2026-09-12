@@ -408,6 +408,34 @@ export default function App() {
   }
 
   /**
+   * renameSession gives a session a display name on the backend that holds
+   * it. Clearing the name reverts the list to the derived title.
+   */
+  async function renameSession(backend: string, id: string, current: string) {
+    const ep = endpointRef.current
+    if (!ep) return
+    const next = window.prompt(`Name for this session on ${backend}:`, current)
+    if (next === null) return
+    const c = new ApiClient(ep.baseURL, ep.token, backend === 'local' ? '' : backend)
+    try {
+      await c.renameSession(id, next.trim())
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.backend === backend && s.item.ID === id
+            ? { ...s, item: { ...s.item, Name: next.trim() } }
+            : s,
+        ),
+      )
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setLines((prev) => [
+        ...prev,
+        { kind: 'text', role: 'system', text: `could not rename ${id}: ${message}` },
+      ])
+    }
+  }
+
+  /**
    * removeSession deletes one session from the backend that holds it.
    *
    * Deleting is not undoable, so it asks first and names what is going: the
@@ -588,6 +616,13 @@ export default function App() {
                 <span className="sessionrow-backend">{backend}</span>
                 <span className="sessionrow-title">{item.Name || item.Title || item.ID}</span>
                 <span className="sessionrow-meta">{item.Messages} msgs</span>
+              </button>
+              <button
+                className="sessionrow-rename"
+                title={`rename ${item.ID} on ${backend}`}
+                onClick={() => void renameSession(backend, item.ID, item.Name || '')}
+              >
+                rename
               </button>
               <button
                 className="sessionrow-delete"

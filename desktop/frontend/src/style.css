@@ -671,6 +671,17 @@ body {
   padding: 0.35rem 0.7rem;
   cursor: pointer;
 }
+.sessionrow-rename {
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 0.78em;
+  margin-right: 0.4rem;
+  opacity: 0.55;
+  cursor: pointer;
+}
+.sessionrow-rename:hover {
+  opacity: 1;
+}
 .sessionrow-delete {
   flex: 0 0 auto;
   font: inherit;
