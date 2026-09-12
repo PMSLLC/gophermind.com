@@ -43,6 +43,11 @@ endpoint), with **safety built in at every layer**.
 No cloud lock-in. No 200-file framework. Just a small, readable codebase you can
 actually understand and extend in an afternoon.
 
+## Running elsewhere, and skills
+
+- [Running sessions on another machine](docs/REMOTE-SESSIONS.md) - point the desktop app at a `gophermind serve` on a server, with approvals that name the machine.
+- [Skills](docs/SKILLS.md) - capability packs, and why fetched ones are off until you enable them.
+
 ## Why GopherMind?
 
 - 🧠 **Bring your own model.** Anything that speaks the OpenAI `/v1` API — your
