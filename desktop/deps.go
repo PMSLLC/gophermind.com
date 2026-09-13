@@ -341,6 +341,15 @@ func newServeDeps(getClient func() (*llm.Client, error), getProfile func() strin
 		// other turn's, and the "approval-needed" frame must land on this
 		// turn's own SSE stream.
 		turnApprove := serve.RemoteApprovalGate(approvals, ctx, desktopApprovalTimeout, emit, serve.NewApprovalID)
+		// Give this turn a fallback list so a 429 moves to another model
+		// instead of failing. OVHcloud's anonymous tier caps at 2 requests
+		// per minute PER MODEL, so a sibling model on the same provider has
+		// its own budget and is a real escape, not a retry in disguise.
+		//
+		// Same provider only: llm.Client swaps the model string and keeps the
+		// endpoint, so another provider's id would 404 here.
+		client = withFallbacks(client, cfg, getProfile())
+
 		// The tool registry is per turn when the session has its own working
 		// directory, because every tool captures its root at construction:
 		// ReadFileRange, WriteFile and RunShellEnhanced all close over
@@ -530,4 +539,35 @@ func skillsDeps(cfg config.Config) *serve.SkillsDeps {
 		return nil
 	}
 	return &serve.SkillsDeps{Root: cfg.RootDir, ConfigDir: dir}
+}
+
+// withFallbacks returns a client that will try sibling models on the same
+// provider when a request fails with something fallback-eligible, chiefly a
+// 429.
+//
+// It clones rather than mutating: the holder's client is shared across
+// concurrent turns, and assigning Fallbacks on it would be the same
+// shared-mutable-state bug that CloneForModel exists to avoid.
+//
+// A catalogue that cannot be read is not an error. The turn simply runs
+// without fallbacks, exactly as it did before this existed.
+func withFallbacks(c *llm.Client, cfg config.Config, profile string) *llm.Client {
+	if c == nil || profile == "" {
+		return c
+	}
+	o, err := freellm.LoadOdometer(freellm.OdometerPath())
+	if err != nil {
+		return c
+	}
+	s, err := modelcat.LoadSettings(modelcat.SettingsPath())
+	if err != nil {
+		return c
+	}
+	fb := modelcat.FallbackModels(modelcat.Build(o, s, nil, time.Now()), s, profile, c.Model)
+	if len(fb) == 0 {
+		return c
+	}
+	out := c.CloneForModel(c.Model)
+	out.Fallbacks = fb
+	return out
 }
