@@ -10,6 +10,7 @@ import (
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/menu"
+	"github.com/wailsapp/wails/v2/pkg/menu/keys"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 )
@@ -29,8 +30,15 @@ func main() {
 	// These are the standard roles rather than hand-built items, so they
 	// behave exactly as every other Mac app's do and pick up the system's
 	// own localisation and shortcuts.
+	// A File menu with New Project, alongside the standard roles. The handler
+	// lives on App because it needs the Wails context to open a dialog and to
+	// emit the result.
+	fileMenu := menu.NewMenu()
+	fileMenu.Append(menu.Text("New Project...", keys.CmdOrCtrl("n"), app.newProject))
+
 	appMenu := menu.NewMenuFromItems(
 		menu.AppMenu(),
+		menu.SubMenu("File", fileMenu),
 		menu.EditMenu(),
 		menu.WindowMenu(),
 	)

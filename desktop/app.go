@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/wailsapp/wails/v2/pkg/menu"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -54,6 +56,40 @@ func (a *App) startup(ctx context.Context) {
 	a.mu.Lock()
 	a.server = server
 	a.mu.Unlock()
+}
+
+// NewProjectEvent is the event name the frontend listens on. The menu item
+// carries the chosen brief's path in it.
+const NewProjectEvent = "new-project"
+
+// newProject is the File > New Project menu handler.
+//
+// The dialog is opened here, in Go, and the result travels to the frontend as
+// an event rather than through a binding. A menu item is already native code,
+// so doing the file pick here costs nothing and keeps the bridge at two
+// methods instead of three. The frontend gets a path and does the rest over
+// HTTP, as everything else does.
+//
+// Cancelling emits nothing: there is no project to start, and a "you
+// cancelled" event would only give the frontend something to ignore.
+func (a *App) newProject(_ *menu.CallbackData) {
+	a.mu.RLock()
+	ctx := a.ctx
+	a.mu.RUnlock()
+	if ctx == nil {
+		return
+	}
+	path, err := runtime.OpenFileDialog(ctx, runtime.OpenDialogOptions{
+		Title: "Choose a project brief",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "Briefs (*.md, *.txt)", Pattern: "*.md;*.txt"},
+			{DisplayName: "All files", Pattern: "*"},
+		},
+	})
+	if err != nil || strings.TrimSpace(path) == "" {
+		return
+	}
+	runtime.EventsEmit(ctx, NewProjectEvent, path)
 }
 
 // PickFolder opens the system's directory chooser and returns the chosen

@@ -9,6 +9,10 @@ import {
 } from './api/client'
 import { waitForEndpoint } from './api/wails'
 import { PickFolder } from '../wailsjs/go/main/App'
+import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime'
+
+// Must match desktop/app.go's NewProjectEvent.
+const NEW_PROJECT_EVENT = 'new-project'
 import ModelPicker from './components/ModelPicker'
 import SettingsPanel from './components/SettingsPanel'
 
@@ -411,6 +415,53 @@ export default function App() {
       ])
     }
   }
+
+  /**
+   * startProject seeds a session with the brief the user picked from the
+   * File menu and asks the agent to run the interview, then plan.
+   *
+   * The agent reads the brief itself rather than the frontend reading it and
+   * pasting the contents: a brief can be long, the agent has read_file, and
+   * a path costs nothing to send. The interview happens as an ordinary
+   * conversation, which is what the TUI's /project flow is underneath.
+   */
+  async function startProject(briefPath: string) {
+    const client = clientRef.current
+    if (!client) return
+    const seed = [
+      `Start a new project from the brief at ${briefPath}.`,
+      '',
+      'Read it first, then interview me. Ask ONE question at a time and wait',
+      'for my answer. Ask only what the brief genuinely leaves open or',
+      'contradicts; do not re-ask anything it already answers. When you have',
+      'enough, say so and stop asking.',
+      '',
+      'Then write the plan into .planning/: SPEC.md, ROADMAP.md and',
+      'assignments.json. In assignments.json every task needs depends_on',
+      'listing the task ids that must finish before it, so independent work',
+      'runs concurrently, and exactly one task marked is_contract true that',
+      'pins the data model and API shape everything else builds against.',
+      'Do not chain every task to the previous one.',
+      '',
+      'Finally run `gophermind phase validate` (or the equivalent) and fix',
+      'anything it reports before telling me the plan is ready.',
+    ].join('\n')
+    setLines((prev) => [
+      ...prev,
+      { kind: 'text', role: 'system', text: `--- new project from ${briefPath} ---` },
+    ])
+    setInput(seed)
+  }
+
+  // The File > New Project menu item opens the dialog in Go and sends the
+  // chosen path here.
+  useEffect(() => {
+    EventsOn(NEW_PROJECT_EVENT, (path: string) => {
+      if (typeof path === 'string' && path) void startProject(path)
+    })
+    return () => EventsOff(NEW_PROJECT_EVENT)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   /**
    * chooseFolder points this session's tools at a directory.
