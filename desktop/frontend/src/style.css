@@ -751,3 +751,13 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* What the current turn is doing, and for how long. The seconds tick once a
+   second so a live turn is visibly distinguishable from a dead one, which a
+   static "streaming" never was. */
+.activity {
+  margin-left: 0.6rem;
+  font-size: 0.85em;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}

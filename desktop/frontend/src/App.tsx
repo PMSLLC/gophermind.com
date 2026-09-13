@@ -179,6 +179,12 @@ export default function App() {
   // Empty means the server's own root. It is shown in the status bar because
   // it decides where every file edit lands.
   const [sessionRoot, setSessionRoot] = useState('')
+  // What the turn is doing right now, and for how long. Without these the
+  // status said "streaming" whether the model was thinking, a tool was
+  // running, or the whole thing had died, and there was no way to tell.
+  const [activity, setActivity] = useState('')
+  const [turnStarted, setTurnStarted] = useState<number | null>(null)
+  const [elapsed, setElapsed] = useState(0)
   const clientRef = useRef<ApiClient | null>(null)
   // The endpoint is kept so a client can be rebuilt for another backend.
   // Base URL and token are the router's and do not change with the backend;
@@ -250,6 +256,19 @@ export default function App() {
   // collide with OS/browser shortcuts, and ignored while the keystroke is
   // going into an editable element (see isEditableTarget) so typing never
   // decides an approval on the user's behalf.
+  // A once-per-second tick while a turn is live. The number moving is the
+  // signal that anything is happening at all; a static status line cannot
+  // distinguish slow from dead.
+  useEffect(() => {
+    if (turnStarted === null) {
+      setElapsed(0)
+      return
+    }
+    setElapsed(Math.floor((Date.now() - turnStarted) / 1000))
+    const t = setInterval(() => setElapsed(Math.floor((Date.now() - turnStarted) / 1000)), 1000)
+    return () => clearInterval(t)
+  }, [turnStarted])
+
   useEffect(() => {
     if (!pendingApproval) return
     function onKey(e: KeyboardEvent) {
@@ -278,9 +297,12 @@ export default function App() {
     setLines((prev) => [...prev, { kind: 'text', role: 'assistant', text: '' }])
     setStatus('sending')
     setStatusDetail('streaming')
+    setTurnStarted(Date.now())
+    setActivity('waiting for the model')
 
     await client.streamTurn(sessionID, task, {
       onToken: (delta) => {
+        setActivity('')
         setLines((prev) => {
           const last = prev[prev.length - 1]
           // A tool call (and its approval prompt) may have landed after the
@@ -294,7 +316,10 @@ export default function App() {
           return [...prev, { kind: 'text', role: 'assistant', text: delta }]
         })
       },
+      onToolCall: (name) => setActivity(name ? `running ${name}` : 'running a tool'),
+      onToolResult: () => setActivity('waiting for the model'),
       onApprovalNeeded: (approval) => {
+        setActivity('')
         setLines((prev) => [
           ...prev,
           { kind: 'approval', resolution: 'pending', backend: activeBackend, ...approval },
@@ -311,10 +336,14 @@ export default function App() {
       onDone: () => {
         setStatus('ready')
         setStatusDetail(`session ${sessionID}`)
+        setTurnStarted(null)
+        setActivity('')
       },
       onError: (message) => {
         setStatus('error')
         setStatusDetail(message)
+        setTurnStarted(null)
+        setActivity('')
         setLines((prev) => [...prev, { kind: 'text', role: 'system', text: `error: ${message}` }])
       },
     })
@@ -626,6 +655,13 @@ export default function App() {
       <header className="statusbar">
         <span className={`dot dot-${status}`} />
         <span className="statustext">{statusDetail}</span>
+        {turnStarted !== null && (
+          // Elapsed seconds and what it is doing. The seconds ticking is the
+          // part that answers "is anything happening"; the activity says what.
+          <span className="activity">
+            {activity || 'streaming'} {elapsed}s
+          </span>
+        )}
         <button
           className="folderbtn"
           title={sessionRoot || 'using the server default folder'}

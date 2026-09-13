@@ -110,6 +110,14 @@ export interface StreamHandlers {
   onToken: (text: string) => void
   onApprovalNeeded: (approval: PendingApproval) => void
   onModelSwitched?: (switched: ModelSwitched) => void
+  /**
+   * onToolCall and onToolResult fire as the agent runs tools. The server has
+   * always emitted these frames and the client dropped them, which is why a
+   * turn spent minutes inside a tool with the status stuck on "streaming" and
+   * no way to tell work from a hang.
+   */
+  onToolCall?: (name: string) => void
+  onToolResult?: (name: string) => void
   onDone: () => void
   onError: (message: string) => void
 }
@@ -409,6 +417,21 @@ export class ApiClient {
             tool: payload.tool,
             args: payload.args,
           })
+          break
+        }
+        case 'tool_call':
+        case 'tool_result': {
+          // The payload shape differs between the two, so read the name
+          // defensively: a status line is not worth throwing a turn away for.
+          let name = ''
+          try {
+            const d = JSON.parse(frame.data) as { name?: string; tool?: string }
+            name = d.name || d.tool || ''
+          } catch {
+            name = ''
+          }
+          if (frame.event === 'tool_call') handlers.onToolCall?.(name)
+          else handlers.onToolResult?.(name)
           break
         }
         case 'model-switched':
