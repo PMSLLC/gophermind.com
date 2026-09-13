@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/wailsapp/wails/v2/pkg/menu"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -62,13 +63,33 @@ func (a *App) startup(ctx context.Context) {
 // carries the chosen brief's path in it.
 const NewProjectEvent = "new-project"
 
+// maxBriefBytes caps how much of a chosen brief is read. A brief is a
+// document a person wrote; anything past this is not one, and pasting it into
+// a prompt would crowd out the conversation it is supposed to start.
+const maxBriefBytes = 256 << 10
+
+// NewProjectBrief is what the menu handler sends the frontend.
+type NewProjectBrief struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
 // newProject is the File > New Project menu handler.
 //
 // The dialog is opened here, in Go, and the result travels to the frontend as
 // an event rather than through a binding. A menu item is already native code,
 // so doing the file pick here costs nothing and keeps the bridge at two
-// methods instead of three. The frontend gets a path and does the rest over
-// HTTP, as everything else does.
+// methods instead of three.
+//
+// The file is READ here too, and the contents are what travel, not just the
+// path. Sending a path does not work: the agent's file tools are contained to
+// the project root by safety.SafeJoin, and a brief almost never lives inside
+// the project it describes. Picking one in ~/Downloads and handing the agent
+// the path gets "path escapes repo root", which is containment doing its job.
+//
+// Reading it here is not a hole in that. The user just chose this exact file
+// in a native dialog, which is what authorisation looks like; containment
+// still covers every file they did not choose.
 //
 // Cancelling emits nothing: there is no project to start, and a "you
 // cancelled" event would only give the frontend something to ignore.
@@ -89,7 +110,30 @@ func (a *App) newProject(_ *menu.CallbackData) {
 	if err != nil || strings.TrimSpace(path) == "" {
 		return
 	}
-	runtime.EventsEmit(ctx, NewProjectEvent, path)
+
+	body, err := readBrief(path)
+	if err != nil {
+		// Still emit, so the window says why nothing happened rather than the
+		// menu item appearing to do nothing at all.
+		body = "(could not read this file: " + err.Error() + ")"
+	}
+	runtime.EventsEmit(ctx, NewProjectEvent, NewProjectBrief{Path: path, Content: body})
+}
+
+// readBrief reads a chosen brief, truncated at maxBriefBytes. Truncating
+// rather than refusing is deliberate: a very long brief is still worth
+// starting from, and losing its tail beats starting nothing.
+func readBrief(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	body, err := io.ReadAll(io.LimitReader(f, maxBriefBytes))
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
 }
 
 // PickFolder opens the system's directory chooser and returns the chosen

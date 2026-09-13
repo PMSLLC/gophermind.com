@@ -425,16 +425,19 @@ export default function App() {
    * a path costs nothing to send. The interview happens as an ordinary
    * conversation, which is what the TUI's /project flow is underneath.
    */
-  async function startProject(briefPath: string) {
+  async function startProject(brief: { path: string; content: string }) {
     const client = clientRef.current
     if (!client) return
     const seed = [
-      `Start a new project from the brief at ${briefPath}.`,
+      `Start a new project from this brief (${brief.path}).`,
       '',
-      'Read it first, then interview me. Ask ONE question at a time and wait',
-      'for my answer. Ask only what the brief genuinely leaves open or',
-      'contradicts; do not re-ask anything it already answers. When you have',
-      'enough, say so and stop asking.',
+      'The brief is included below because your file tools are contained to',
+      'the project root and it lives outside it. Do not try to read the path.',
+      '',
+      'Interview me about it. Ask ONE question at a time and wait for my',
+      'answer. Ask only what the brief genuinely leaves open or contradicts;',
+      'do not re-ask anything it already answers. When you have enough, say',
+      'so and stop asking.',
       '',
       'Then write the plan into .planning/: SPEC.md, ROADMAP.md and',
       'assignments.json. In assignments.json every task needs depends_on',
@@ -445,10 +448,14 @@ export default function App() {
       '',
       'Finally run `gophermind phase validate` (or the equivalent) and fix',
       'anything it reports before telling me the plan is ready.',
+      '',
+      '--- BRIEF: ' + brief.path + ' ---',
+      brief.content,
+      '--- END BRIEF ---',
     ].join('\n')
     setLines((prev) => [
       ...prev,
-      { kind: 'text', role: 'system', text: `--- new project from ${briefPath} ---` },
+      { kind: 'text', role: 'system', text: `--- new project from ${brief.path} ---` },
     ])
     setInput(seed)
   }
@@ -456,8 +463,8 @@ export default function App() {
   // The File > New Project menu item opens the dialog in Go and sends the
   // chosen path here.
   useEffect(() => {
-    EventsOn(NEW_PROJECT_EVENT, (path: string) => {
-      if (typeof path === 'string' && path) void startProject(path)
+    EventsOn(NEW_PROJECT_EVENT, (brief: { path: string; content: string }) => {
+      if (brief && typeof brief.path === 'string') void startProject(brief)
     })
     return () => EventsOff(NEW_PROJECT_EVENT)
     // eslint-disable-next-line react-hooks/exhaustive-deps
