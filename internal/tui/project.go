@@ -73,7 +73,23 @@ func generationPrompt(name string, catalog []phaseflow.CatalogAgent) string {
 	b.WriteString("1. SPEC.md — a comprehensive spec: overview, goals, users, scope, non-goals, constraints, requirements, and measurable success criteria.\n")
 	b.WriteString("2. ROADMAP.md — phases and plans. Every phase needs a **Goal**, **Success Criteria**, and a Plans list; every plan id has the form NN-MM (e.g. 01-01). Use NO placeholder tokens — no [brackets], no TBD.\n")
 	b.WriteString("3. assignments.json — exactly one entry per ROADMAP plan id. JSON shape:\n")
-	b.WriteString("   {\"tasks\":[{\"id\":\"01-01\",\"phase\":\"1\",\"title\":\"...\",\"description\":\"...\",\"acceptance_criteria\":[\"...\"],\"agent\":\"<catalog name>\",\"agent_addendum\":\"task-specific guidance\",\"model\":\"speed|strong\",\"status\":\"pending\"}]}\n\n")
+	b.WriteString("   {\"tasks\":[{\"id\":\"01-01\",\"phase\":\"1\",\"title\":\"...\",\"description\":\"...\",\"acceptance_criteria\":[\"...\"],\"agent\":\"<catalog name>\",\"agent_addendum\":\"task-specific guidance\",\"model\":\"speed|strong\",\"status\":\"pending\",\"depends_on\":[\"01-01\"],\"is_contract\":false}]}\n\n")
+
+	// depends_on is what the executor schedules from. Without it every task
+	// lands in wave 0 and the whole plan runs one task at a time, however
+	// independent the work actually is.
+	b.WriteString("DEPENDENCIES. depends_on lists the ids of tasks that must finish before this one starts. It is how work is scheduled:\n")
+	b.WriteString("- Tasks that do not depend on each other run CONCURRENTLY. Two tasks touching the same file or the same interface DO depend on each other; say so.\n")
+	b.WriteString("- A dependency must name a task id in this same plan. A typo here fails the run, not the plan.\n")
+	b.WriteString("- No cycles, and nothing depends on itself.\n")
+	b.WriteString("- Omit depends_on, or leave it empty, for a task that can start immediately.\n")
+	b.WriteString("- Do NOT make every task depend on the previous one. A chain is the default only when the work really is sequential, and it throws away all the parallelism.\n\n")
+
+	// The contract step is what stops later tasks each inventing their own
+	// version of a shared interface.
+	b.WriteString("CONTRACT TASK. Mark exactly ONE task \"is_contract\": true, or none if the project genuinely has no shared interface.\n")
+	b.WriteString("It runs alone, before everything else, and its job is to pin what later tasks build against: the data model, the API shape, the core types, the schema. Every task that consumes that must list it in depends_on.\n")
+	b.WriteString("Give it no dependencies of its own. If you cannot name one thing the rest of the plan agrees on, leave is_contract off every task rather than guessing.\n\n")
 	b.WriteString("Agent catalog — assign each task the best-fit agent; the model defaults to the agent's but override to speed/strong when a task is unusually simple or hard:\n")
 	for _, a := range catalog {
 		fmt.Fprintf(&b, "- %s (default %s): %s\n", a.Name, a.DefaultModel, a.Description)

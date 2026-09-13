@@ -134,6 +134,54 @@ func (e *Engine) ValidatePlan() (PlanReport, error) {
 		}
 	}
 
+	rep.Issues = append(rep.Issues, dependencyIssues(assign.Tasks)...)
+
 	rep.Complete = len(rep.Issues) == 0
 	return rep, nil
+}
+
+// dependencyIssues checks the parts of a plan the wave scheduler depends on.
+//
+// These are validated here, at approval time, because the alternative is
+// finding out mid-run: AssignWaves refuses a graph it cannot schedule, which
+// fails the whole execution after the user has already approved the plan and
+// walked away. A typo in a task id should cost a correction, not a run.
+//
+// A plan with no dependencies at all is valid. That is every plan written
+// before dependencies existed, and it simply executes one task at a time.
+func dependencyIssues(tasks []Task) []string {
+	var issues []string
+	known := make(map[string]bool, len(tasks))
+	for _, t := range tasks {
+		known[t.ID] = true
+	}
+
+	contracts := 0
+	for _, t := range tasks {
+		if t.IsContract {
+			contracts++
+		}
+		for _, dep := range t.DependsOn {
+			switch {
+			case dep == t.ID:
+				issues = append(issues, fmt.Sprintf("task %s depends on itself", t.ID))
+			case !known[dep]:
+				issues = append(issues, fmt.Sprintf("task %s depends on %q, which is not a task in this plan", t.ID, dep))
+			}
+		}
+	}
+	// Wave 0 runs alone, before everything else, so two tasks cannot both be
+	// it. Zero is fine: a plan without a contract step just starts at wave 1.
+	if contracts > 1 {
+		issues = append(issues, fmt.Sprintf("%d tasks are marked is_contract; wave 0 runs alone so at most one can be", contracts))
+	}
+
+	// Only ask the scheduler once the ids are known to resolve, so a cycle
+	// report is not drowned out by a typo it cannot see past.
+	if len(issues) == 0 {
+		if _, err := AssignWaves(tasks); err != nil {
+			issues = append(issues, "task dependencies cannot be scheduled: "+err.Error())
+		}
+	}
+	return issues
 }
