@@ -1,10 +1,15 @@
 BINARY := gophermind
 
-.PHONY: build test vet check snapshot release clean ios-test ios-deploy \
+.PHONY: build rebuild-all test vet check snapshot release clean ios-test ios-deploy \
 	predeploy deploy-local deploy-server deploy-phone deploy-all deploy-desktop install-hooks
 
 build: ## Build a local (unstamped) binary
 	go build -o $(BINARY) ./cmd/gophermind
+
+rebuild-all: ## Format, build CLI, and deploy desktop app
+	gofmt -w ./...
+	go build -o $(BINARY) ./cmd/gophermind
+	./scripts/deploy-desktop-app.sh
 
 test: ## Run the full test suite
 	go test ./...
