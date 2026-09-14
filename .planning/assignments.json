@@ -28,7 +28,7 @@
     {
       "id": "02-01",
       "title": "Server entry point, config loading, graceful shutdown",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "01-03"
       ],
