@@ -43,6 +43,15 @@ type serverConfig struct {
 	WGInterface string
 	LLMEndpoint string
 	Root        string
+	// WGListenPort overrides the WireGuard server's UDP listen port. Zero
+	// (the only value any real invocation ever sets -- there's no flag for
+	// this) means "use wireguard.DefaultListenPort," which is fine in
+	// production: one gophermind-server instance per machine has no port
+	// to collide with. Tests that start more than one wireguard.Server in
+	// the same process (or concurrently with other packages' WG tests) set
+	// this explicitly to a free port instead -- see wireguard_test.go and
+	// server_integration_test.go.
+	WGListenPort uint16
 }
 
 // parseServerConfig parses flags against args (typically os.Args[1:]), using

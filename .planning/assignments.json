@@ -83,7 +83,7 @@
     {
       "id": "03-03",
       "title": "Connection manager: local/remote mode, WG tunnel lifecycle",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "03-01",
         "01-02"

@@ -226,7 +226,7 @@ func TestHMACVerification(t *testing.T) {
 // TestWgRegisterHandler_BadRequests covers wgRegisterHandler's remaining
 // error branches: malformed JSON and a missing public_key.
 func TestWgRegisterHandler_BadRequests(t *testing.T) {
-	wg, tracker, err := startWireGuard(serverConfig{WGInterface: "wg0"}, discardLogger())
+	wg, tracker, err := startWireGuard(serverConfig{WGInterface: "wg0", WGListenPort: freeUDPPort(t)}, discardLogger())
 	if err != nil {
 		t.Fatalf("startWireGuard: %v", err)
 	}
@@ -266,7 +266,7 @@ func TestRunWithConfig_EndToEnd(t *testing.T) {
 	ln := mustListen(t)
 	addr := ln.Addr().String()
 
-	cfg := serverConfig{Token: "t", LLMEndpoint: llm.URL, Root: root, WGInterface: "wg0"}
+	cfg := serverConfig{Token: "t", LLMEndpoint: llm.URL, Root: root, WGInterface: "wg0", WGListenPort: freeUDPPort(t)}
 	ctx, cancel := context.WithCancel(context.Background())
 
 	done := make(chan error, 1)
@@ -324,7 +324,7 @@ func TestRunWithConfig_EndToEnd(t *testing.T) {
 // background ticker loop actually calls Sweep periodically and stops when
 // its context is cancelled.
 func TestRunSweeper_RemovesTimedOutPeersOnATicker(t *testing.T) {
-	wg, err := wireguard.NewServer(context.Background(), wireguard.ServerConfig{})
+	wg, err := wireguard.NewServer(context.Background(), wireguard.ServerConfig{ListenPort: freeUDPPort(t)})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}

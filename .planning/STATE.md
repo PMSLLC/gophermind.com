@@ -79,10 +79,29 @@ Notable cross-cutting things worth remembering without re-reading commits:
   token validation (pluggable, fails closed, no real IdP wired in) and
   the libui-ng install itself (confirmed before building/installing).
 
-Next task: 03-03 (Connection manager: local/remote mode, WG tunnel
-lifecycle, health checks).
+Most recent (03-03): gophermind-osx/connection/ -- local mode spawns
+gophermind-server with a random token and --wg-interface "" (fixes a
+real bug: omitting this made every spawned instance fight over the
+default WG port); remote mode dials a real WG tunnel via
+wireguard.Client. Reconnection is health-check-driven (no OS
+network-change API hooked -- documented, not faked). Two real bugs found
+by testing: a nil-channel panic (Disconnect vs. health-loop shutdown
+race, fixed by passing the done channel as a param) and gophermind-server's
+own WG tests (02-03/02-04) never setting an explicit UDP port, causing
+collisions/hangs once run concurrently with this package -- fixed with a
+WGListenPort test seam. 6 tests, -race clean, 84.5% coverage.
 
-Progress: [████████░░] 39%
+Completed tasks 01-01 through 03-03 (11 total) -- `git log --oneline` per
+task. One thing to remember without re-reading commits: libui-ng (Phase
+3's GUI toolkit) is built from source, installed to /opt/homebrew, NOT
+tracked by git -- see gophermind-osx/README.md on a fresh checkout.
+
+Next task: 03-04 (gocloak OAuth2 client, Keychain storage, token
+refresh) -- expect the same kind of gap as 02-03's gocloak validator: no
+OIDC library or realm exists here. Ask before inventing a token flow
+against nothing real.
+
+Progress: [█████████░] 43%
 
 ## Accumulated Context
 

@@ -195,7 +195,8 @@ func wgRegisterHandler(tracker *peerTracker, validate TokenValidator, logger *sl
 // discarded, so its value is visible even though it isn't load-bearing yet.
 func wgServerConfig(cfg serverConfig) wireguard.ServerConfig {
 	return wireguard.ServerConfig{
-		Address: netip.MustParseAddr("10.66.0.1"),
+		Address:    netip.MustParseAddr("10.66.0.1"),
+		ListenPort: cfg.WGListenPort,
 	}
 }
 

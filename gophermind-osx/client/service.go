@@ -71,6 +71,13 @@ type Config struct {
 	Token   string // bearer token sent with every request
 	Timeout time.Duration
 	Retry   RetryPolicy // zero value means DefaultRetryPolicy
+	// Transport overrides the underlying http.Client's RoundTripper. Nil
+	// uses Go's default transport (a direct connection) -- the right choice
+	// for local mode. Remote mode (plan 03-03's connection manager) sets
+	// this to a *wireguard.Client's HTTPClient().Transport, so every
+	// request this Client makes routes through the WireGuard tunnel
+	// instead of the host's real network stack.
+	Transport http.RoundTripper
 }
 
 // Client is a gophermind-server HTTP/SSE client.
@@ -95,7 +102,7 @@ func New(cfg Config) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(cfg.BaseURL, "/"),
 		token:   cfg.Token,
-		http:    &http.Client{Timeout: timeout},
+		http:    &http.Client{Timeout: timeout, Transport: cfg.Transport},
 		retry:   retry,
 	}
 }

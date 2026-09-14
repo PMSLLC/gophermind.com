@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -22,6 +23,23 @@ import (
 )
 
 func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
+
+// freeUDPPort returns a currently-unused UDP port on localhost, so each
+// test's wireguard.Server binds its own port instead of all colliding on
+// wireguard.DefaultListenPort -- go test runs different packages'
+// binaries concurrently, and this package's WG-heavy tests run alongside
+// gophermind-osx/connection's, which also starts real wireguard.Server
+// instances; both used to silently share the default port and
+// intermittently fail/hang against each other.
+func freeUDPPort(t *testing.T) uint16 {
+	t.Helper()
+	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatalf("find a free UDP port: %v", err)
+	}
+	defer conn.Close()
+	return uint16(conn.LocalAddr().(*net.UDPAddr).Port)
+}
 
 // fakeValidator accepts exactly one token, standing in for a real
 // gocloak-backed TokenValidator until one exists to wire in (see
@@ -63,7 +81,7 @@ func TestStartWireGuard_DisabledWithoutInterface(t *testing.T) {
 // TestStartWireGuard_CreatesInterface covers "WG interface is created at
 // server startup".
 func TestStartWireGuard_CreatesInterface(t *testing.T) {
-	wg, tracker, err := startWireGuard(serverConfig{WGInterface: "wg0"}, discardLogger())
+	wg, tracker, err := startWireGuard(serverConfig{WGInterface: "wg0", WGListenPort: freeUDPPort(t)}, discardLogger())
 	if err != nil {
 		t.Fatalf("startWireGuard: %v", err)
 	}
@@ -80,7 +98,7 @@ func TestStartWireGuard_CreatesInterface(t *testing.T) {
 // gocloak token and returns peer config (public key, endpoint, allowed
 // IPs)" plus the auth-rejection path.
 func TestWgRegisterHandler_EndToEnd(t *testing.T) {
-	wg, tracker, err := startWireGuard(serverConfig{WGInterface: "wg0"}, discardLogger())
+	wg, tracker, err := startWireGuard(serverConfig{WGInterface: "wg0", WGListenPort: freeUDPPort(t)}, discardLogger())
 	if err != nil {
 		t.Fatalf("startWireGuard: %v", err)
 	}
@@ -125,7 +143,7 @@ func TestWgRegisterHandler_EndToEnd(t *testing.T) {
 // TestPeerTracker_Lifecycle covers "Peer lifecycle: add, remove, timeout
 // all work" directly against peerTracker, without going through HTTP.
 func TestPeerTracker_Lifecycle(t *testing.T) {
-	wg, err := wireguard.NewServer(context.Background(), wireguard.ServerConfig{})
+	wg, err := wireguard.NewServer(context.Background(), wireguard.ServerConfig{ListenPort: freeUDPPort(t)})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -175,7 +193,7 @@ func TestPeerTracker_Lifecycle(t *testing.T) {
 // TestPeerTracker_Timeout covers the "timeout" third of the lifecycle
 // acceptance criterion: a peer not renewed within ttl is swept away.
 func TestPeerTracker_Timeout(t *testing.T) {
-	wg, err := wireguard.NewServer(context.Background(), wireguard.ServerConfig{})
+	wg, err := wireguard.NewServer(context.Background(), wireguard.ServerConfig{ListenPort: freeUDPPort(t)})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -202,7 +220,7 @@ func TestPeerTracker_Timeout(t *testing.T) {
 // tracking is disabled, matching tools.ShellLimits' 0-means-unlimited
 // convention used elsewhere in this codebase.
 func TestPeerTracker_ZeroTTLDisablesSweep(t *testing.T) {
-	wg, err := wireguard.NewServer(context.Background(), wireguard.ServerConfig{})
+	wg, err := wireguard.NewServer(context.Background(), wireguard.ServerConfig{ListenPort: freeUDPPort(t)})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -225,7 +243,7 @@ func TestPeerTracker_ZeroTTLDisablesSweep(t *testing.T) {
 // returned config to build a wireguard.Client and prove an HTTP request
 // actually round-trips through the tunnel end to end.
 func TestWgRegister_TunnelConnectivity(t *testing.T) {
-	wg, tracker, err := startWireGuard(serverConfig{WGInterface: "wg0"}, discardLogger())
+	wg, tracker, err := startWireGuard(serverConfig{WGInterface: "wg0", WGListenPort: freeUDPPort(t)}, discardLogger())
 	if err != nil {
 		t.Fatalf("startWireGuard: %v", err)
 	}
