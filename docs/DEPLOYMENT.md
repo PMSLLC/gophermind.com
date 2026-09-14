@@ -40,6 +40,24 @@ The server deploy checksums the binary after upload, keeps a timestamped backup
 of the previous binary, restarts the systemd unit, and verifies `/healthz`
 before reporting success. Override the host with `SERVER_HOST=…`.
 
+## Desktop app deployment
+
+For the macOS desktop app (GopherMind Desktop), use:
+
+```
+make deploy-desktop
+```
+
+This script handles the complete workflow:
+1. Stages and commits pending changes
+2. Pushes to `origin/main`
+3. Builds the desktop app with `wails build`
+4. Installs the `.app` bundle to `/Applications`
+
+Restart the app in `/Applications` to load the new version.
+
+Direct invocation: `scripts/deploy-desktop-app.sh`.
+
 ## Gating pushes too
 
 A push is the upstream of every deployment. Install a pre-push hook that runs
