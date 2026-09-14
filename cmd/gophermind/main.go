@@ -949,19 +949,27 @@ func run() error {
 	// Prompt token-budget guardrail: keep injected context (persona + repo
 	// instructions + repo map) under ~25% of the model's context window so the
 	// task itself always has room. Skipped when the window is unknown.
+	preCapLen := len(systemSuffix)
+	budgetBytes := 0
 	if caps.ContextWindow > 0 {
+		budgetTokens := caps.ContextWindow / 4
+		budgetBytes = budgetTokens * 4
 		// GOPHERMIND_COMPRESS_CONTEXT keeps the most informative lines instead of
 		// hard-truncating; otherwise cap by byte budget.
 		if envTruthy("GOPHERMIND_COMPRESS_CONTEXT") {
-			systemSuffix = project.CompressContext(systemSuffix, caps.ContextWindow/4)
+			systemSuffix = project.CompressContext(systemSuffix, budgetTokens)
 		} else {
-			systemSuffix = project.CapContext(systemSuffix, caps.ContextWindow/4)
+			systemSuffix = project.CapContext(systemSuffix, budgetTokens)
 		}
 	}
-	// Prompt linting: surface overly long or self-contradicting instructions so
-	// the user can fix them (advisory only; suppressed by --quiet).
+	// Prompt linting: surface real truncation (content that didn't fit the
+	// model's actual budget) or self-contradicting instructions so the user
+	// can fix them (advisory only; suppressed by --quiet). Linting against
+	// preCapLen/budgetBytes instead of a fixed constant means this only fires
+	// when content genuinely got cut, not whenever a large model's headroom
+	// happens to exceed some unrelated fixed threshold.
 	if !*quietFlag {
-		for _, w := range project.LintInstructions(systemSuffix) {
+		for _, w := range project.LintInstructionsBudget(systemSuffix, preCapLen, budgetBytes) {
 			fmt.Fprintln(os.Stderr, "prompt lint:", w)
 		}
 	}
