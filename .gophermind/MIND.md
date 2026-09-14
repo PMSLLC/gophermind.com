@@ -31,6 +31,11 @@
 3. Implement code to make tests pass
 4. Verify tests pass, commit when done
 5. Escalate after 2+ failed attempts
+6. Check git status/log ONCE per task, not repeatedly — it doesn't change
+   between your own shell calls. Re-check only after you've made an edit.
+7. Before grepping for a symbol, check the task's acceptance criteria first:
+   if it says "define X", X may already exist — verify with one search, then
+   move to closing the actual gap (see the task's own acceptance_criteria).
 
 ## Context Budget
 - Keep instructions under 6000 bytes so task has room
