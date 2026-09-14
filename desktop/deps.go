@@ -254,6 +254,7 @@ func newServeDeps(getClient func() (*llm.Client, error), getProfile func() strin
 		gate := &oneShotGate{}
 		ag := agent.New(client, reg, cfg.MaxIter, gate.approve, nil)
 		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
+		ag.SetApprovalMode(cfg.ApprovalMode)
 		ag.SetSystemPrompt(basePrompt)
 		answer, err := ag.Send(ctx, t)
 		if notice := gate.notice(); notice != "" {
@@ -274,6 +275,7 @@ func newServeDeps(getClient func() (*llm.Client, error), getProfile func() strin
 			}
 		})
 		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
+		ag.SetApprovalMode(cfg.ApprovalMode)
 		ag.SetSystemPrompt(basePrompt)
 		_, err = ag.Send(ctx, t)
 		if notice := gate.notice(); notice != "" {
@@ -369,6 +371,7 @@ func newServeDeps(getClient func() (*llm.Client, error), getProfile func() strin
 		}
 		ag := agent.New(client, turnReg, cfg.MaxIter, turnApprove, onEvent)
 		ag.SetPrices(cfg.InputPricePer1K, cfg.OutputPricePer1K)
+		ag.SetApprovalMode(cfg.ApprovalMode)
 		if switched {
 			b, _ := json.Marshal(struct {
 				Profile string `json:"profile"`
@@ -413,6 +416,7 @@ func newServeDeps(getClient func() (*llm.Client, error), getProfile func() strin
 			return nil, true, err
 		}
 		ag := agent.New(client, reg, cfg.MaxIter, (&oneShotGate{}).approve, nil)
+		ag.SetApprovalMode(cfg.ApprovalMode)
 		if err := session.Load(id, ag); err != nil {
 			return nil, true, err
 		}
