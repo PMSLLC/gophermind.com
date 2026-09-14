@@ -1,0 +1,19 @@
+{
+  "phase": "4",
+  "title": "Inline approval cards, Y/N keyboard shortcut, approval bar, timeout",
+  "description": "Implement approval UI: inline approval card in transcript (tool name, pretty-printed args, approve/deny buttons), persistent approval bar at bottom of transcript area, Y/N keyboard shortcut (only when not in editable field), 5-min timeout with warning, resolution states (pending/approved/denied/already-resolved). Approval decision calls client.Approve().",
+  "acceptance_criteria": [
+    "Approval card appears inline in transcript when approval-needed event received",
+    "Card shows: tool name, pretty-printed args, approve/deny buttons",
+    "Approval bar: persistent at bottom, shows pending approval summary",
+    "Y/N keyboard shortcut: works when not in editable field, approves/denies",
+    "5-min timeout: warning at 4:30, auto-deny at 5:00",
+    "Resolution states: pending, approved, denied, already-resolved all displayed correctly",
+    "client.Approve() is called with correct session_id, tool_call_id, decision"
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "depends_on": [
+    "04-01"
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "phase": "2",
+  "title": "WireGuard server init and peer registration",
+  "description": "Implement gophermind-server/wireguard.go: initialize WG interface at startup (per-backend or single), implement POST /wg/register endpoint (accepts gocloak token, validates, issues peer public key + config), manage peer lifecycle (add, remove, timeout). Wire into server startup/shutdown.",
+  "acceptance_criteria": [
+    "WG interface is created at server startup",
+    "POST /wg/register accepts a valid gocloak token and returns peer config (public key, endpoint, allowed IPs)",
+    "Peer lifecycle: add, remove, timeout all work",
+    "Server shutdown closes WG interface cleanly",
+    "Integration test: register peer, verify config, test tunnel connectivity",
+    "go test ./gophermind-server/... passes"
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "depends_on": [
+    "02-02",
+    "01-02"
+  ]
+}

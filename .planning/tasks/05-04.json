@@ -1,0 +1,22 @@
+{
+  "phase": "5",
+  "title": "UI refinement, accessibility, final QA",
+  "description": "Final polish: VoiceOver support (labels, announcements), keyboard navigation for all UI elements, visual consistency (spacing, colors, fonts), animation smoothness, edge cases (empty states, very long messages, unicode), macOS Ventura/Sonoma/Sequoia testing, final lint pass, memory leak check (Instruments), release build verification.",
+  "acceptance_criteria": [
+    "VoiceOver: all UI elements have labels, announcements for streaming/approvals",
+    "Keyboard navigation: all UI elements reachable and operable via keyboard",
+    "Visual consistency: spacing, colors, fonts consistent across all panels",
+    "Animation: smooth, no jank (60fps)",
+    "Edge cases: empty states, very long messages, unicode all handled",
+    "macOS compatibility: works on Ventura, Sonoma, Sequoia",
+    "Lint: go vet ./... clean, no warnings",
+    "Memory: Instruments profile shows no leaks",
+    "Release build: go build -ldflags='-s -w' produces working binary"
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "depends_on": [
+    "05-02",
+    "05-03"
+  ]
+}

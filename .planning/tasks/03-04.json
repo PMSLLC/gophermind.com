@@ -1,0 +1,19 @@
+{
+  "phase": "3",
+  "title": "gocloak OAuth2 client, Keychain storage, token refresh",
+  "description": "Implement gophermind-osx/auth/gocloak.go: OAuth2 Authorization Code flow (in-app login, no browser popup), store access/refresh tokens in macOS Keychain per backend, refresh token 1 min before expiry, logout and credential cleanup. Expose GetToken(backend) for connection manager and service client.",
+  "acceptance_criteria": [
+    "OAuth2 flow: initiates login, receives token, stores in Keychain",
+    "Keychain: tokens stored per backend, retrievable, deletable",
+    "Token refresh: refreshes 1 min before expiry, transparent to caller",
+    "Logout: clears Keychain entry for backend",
+    "GetToken(backend) returns valid access token",
+    "Unit tests: token storage, refresh, logout, GetToken",
+    "go test ./gophermind-osx/auth/... passes"
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "depends_on": [
+    "03-01"
+  ]
+}

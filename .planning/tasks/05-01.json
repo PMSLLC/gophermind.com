@@ -1,0 +1,26 @@
+{
+  "phase": "5",
+  "title": "E2E integration tests: login, chat, approvals, pipeline, logout",
+  "description": "Write E2E tests covering: local mode (launch \u2192 create session \u2192 chat \u2192 stream \u2192 approve \u2192 complete), remote mode (gocloak login \u2192 WG tunnel \u2192 chat \u2192 approve \u2192 disconnect), pipeline flow (pick spec \u2192 breakdown \u2192 execute \u2192 monitor), session management (create \u2192 rename \u2192 resume \u2192 delete), model switching (pin \u2192 cycle \u2192 switch). Both local and remote paths.",
+  "acceptance_criteria": [
+    "Local mode E2E: launch \u2192 create session \u2192 chat \u2192 stream \u2192 approve \u2192 complete passes",
+    "Remote mode E2E: gocloak login \u2192 WG tunnel \u2192 chat \u2192 approve \u2192 disconnect passes",
+    "Pipeline E2E: pick spec \u2192 breakdown \u2192 execute \u2192 monitor passes",
+    "Session management E2E: create \u2192 rename \u2192 resume \u2192 delete passes",
+    "Model switching E2E: pin \u2192 cycle \u2192 switch passes",
+    "All E2E tests pass with go test -race ./gophermind-osx/... -tags e2e"
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "depends_on": [
+    "04-01",
+    "04-02",
+    "04-04",
+    "04-05",
+    "04-06",
+    "04-07",
+    "03-03",
+    "03-04",
+    "02-04"
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "phase": "2",
+  "title": "Server integration tests for all HTTP endpoints and WG registration",
+  "description": "Write integration tests: all HTTP endpoints (session CRUD, stream, approve, models, skills, pipeline, run, devices), SSE event correctness, auth (valid/invalid token, HMAC), rate limiting, WG registration flow (register peer, verify config, test tunnel connectivity). Target >80% coverage.",
+  "acceptance_criteria": [
+    "All HTTP endpoints have integration tests",
+    "SSE stream test verifies correct event sequence (token, assistant, tool_call, tool_result, usage, done)",
+    "Auth tests: valid token, invalid token, missing token, HMAC verification",
+    "Rate limiting test: 429 after limit exceeded",
+    "WG registration test: register, verify config, tunnel connectivity",
+    "Coverage >80% for gophermind-server package",
+    "go test -race ./gophermind-server/... passes"
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "depends_on": [
+    "02-03"
+  ]
+}

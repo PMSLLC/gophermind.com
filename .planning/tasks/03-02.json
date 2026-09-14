@@ -1,0 +1,19 @@
+{
+  "phase": "3",
+  "title": "HTTP/SSE service client for all server endpoints",
+  "description": "Implement gophermind-osx/client/service.go: HTTP client with bearer token auth, SSE stream reader (hand-rolled parser for POST-based SSE), methods for every endpoint in the contract (session CRUD, stream, approve, models, catalogue, settings, skills, pipeline, run, backends, backend-status). Request timeout, retry logic, error types.",
+  "acceptance_criteria": [
+    "Client compiles and all methods are implemented",
+    "SSE parser correctly handles: token, assistant, tool_call, tool_result, usage, approval-needed, model-switched, error, done events",
+    "Bearer token auth is applied to all requests",
+    "Request timeout is configurable and enforced",
+    "Retry logic: transient errors (5xx, network) are retried with backoff",
+    "Unit tests: SSE parser, auth header, timeout, retry",
+    "go test ./gophermind-osx/client/... passes"
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "depends_on": [
+    "03-01"
+  ]
+}

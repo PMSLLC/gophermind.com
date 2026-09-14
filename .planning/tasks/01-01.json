@@ -1,0 +1,15 @@
+{
+  "phase": "1",
+  "title": "Create gophermind-lib module and move existing internal packages",
+  "description": "Create gophermind-lib/ as a standalone Go module. Move existing internal/ packages (agent, llm, session, modelcat, skills, phaseflow, serve, config, safety, stream, etc.) into it. Fix all import paths. Ensure existing tests pass with the new module path.",
+  "acceptance_criteria": [
+    "gophermind-lib/go.mod exists with module path gophermind/gophermind-lib",
+    "All existing internal packages are present under gophermind-lib/",
+    "go build ./... succeeds in gophermind-lib/",
+    "go test ./... passes in gophermind-lib/ with no failures",
+    "No package in gophermind-lib/ imports gophermind/internal/* (all imports use gophermind/gophermind-lib/*)"
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "depends_on": []
+}

@@ -1,0 +1,19 @@
+{
+  "phase": "4",
+  "title": "Main window chat transcript, streaming display, input field",
+  "description": "Implement the chat UI: scrollable message list (user/assistant/system lines), real-time SSE token streaming (append as tokens arrive), tool call/result rendering (name + args), code block display with syntax highlighting, multi-line input field (Cmd+Enter to send), auto-scroll to bottom. Async: goroutines for SSE reading, UI updates via channels.",
+  "acceptance_criteria": [
+    "Chat transcript displays user and assistant messages",
+    "SSE streaming: tokens appear in real-time as they arrive",
+    "Tool calls rendered with name and pretty-printed args",
+    "Code blocks displayed with syntax highlighting",
+    "Multi-line input: Cmd+Enter sends, Enter adds newline",
+    "Auto-scroll: transcript scrolls to bottom on new content",
+    "No UI freezes: SSE reading in goroutine, UI updates via channel"
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "depends_on": [
+    "03-02"
+  ]
+}

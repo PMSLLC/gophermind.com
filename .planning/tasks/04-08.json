@@ -1,0 +1,20 @@
+{
+  "phase": "4",
+  "title": "Native macOS: menu bar, dark mode, shortcuts, dialogs, dock, window state",
+  "description": "Implement native macOS features: menu bar (File: New Project, Open Brief, Settings, Quit; Edit: standard; View: Toggle Panel, Toggle Dark Mode; Window: standard; Help), dark mode following system appearance, keyboard shortcuts (Cmd+Enter send, Y/N approve, Cmd+\\ panel, Cmd+, settings, Cmd+N new project), native dialogs (folder picker, file picker, confirm), dock icon, window state persistence (size, position, panel state) via UserDefaults or plist.",
+  "acceptance_criteria": [
+    "Menu bar: File (New Project, Open Brief, Settings, Quit), Edit (standard), View (Toggle Panel, Toggle Dark Mode), Window (standard), Help",
+    "Dark mode: follows system appearance, toggle in View menu",
+    "Keyboard shortcuts: Cmd+Enter send, Y/N approve, Cmd+\\ panel, Cmd+, settings, Cmd+N new project",
+    "Native dialogs: folder picker, file picker, confirm dialog all use native macOS dialogs",
+    "Dock icon: app has a dock icon, clicking it focuses the window",
+    "Window state: size, position, panel state persisted across app restarts"
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "depends_on": [
+    "04-01",
+    "04-02",
+    "04-03"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "phase": "2",
+  "title": "Wire serve.Deps and start HTTP listener with all routes",
+  "description": "Implement gophermind-server/server.go: build serve.Deps (SessionTurn, Approvals, ListModels, EndpointModels, Pipeline, Skills, Devices, Run, Stream), call serve.NewMux, start HTTP listener. Include rate limiting, HMAC verification, backend status endpoint. All routes from the contract table must be registered and functional.",
+  "acceptance_criteria": [
+    "All HTTP routes from the contract are registered and respond correctly",
+    "POST /session/stream returns SSE events (token, assistant, tool_call, tool_result, usage, done)",
+    "POST /session/approve resolves pending approvals",
+    "GET /models/catalogue returns model catalogue",
+    "GET /pipeline/state and GET /pipeline/events work",
+    "Auth: valid token accepted, invalid token rejected with 401",
+    "Rate limiting: 429 returned when limit exceeded",
+    "go test ./gophermind-server/... passes"
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "depends_on": [
+    "02-01"
+  ]
+}

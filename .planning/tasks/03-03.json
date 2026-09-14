@@ -1,0 +1,20 @@
+{
+  "phase": "3",
+  "title": "Connection manager: local/remote mode, WG tunnel lifecycle",
+  "description": "Implement gophermind-osx/connection/manager.go: local mode (connect to localhost, random token), remote mode (establish userspace WG tunnel per backend, route HTTP through tunnel), health checks, reconnection on network change (<5s), connection status reporting. Manage N tunnels simultaneously.",
+  "acceptance_criteria": [
+    "Local mode: connects to localhost:port with random token, health check passes",
+    "Remote mode: establishes WG tunnel, routes HTTP through tunnel, health check passes",
+    "Multiple tunnels: can manage N backends simultaneously",
+    "Reconnection: network change triggers reconnect within 5s",
+    "Connection status: reports connected/disconnecting/reconnecting/disconnected",
+    "Unit tests: local connect, remote connect, reconnection, multi-tunnel",
+    "go test ./gophermind-osx/connection/... passes"
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "depends_on": [
+    "03-01",
+    "01-02"
+  ]
+}

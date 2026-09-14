@@ -1,0 +1,18 @@
+{
+  "phase": "4",
+  "title": "Collapsible right panel with model picker, sessions, pipeline sections",
+  "description": "Implement the right-side panel: collapsible (Cmd+\\ or toggle button), contains three sections stacked vertically: model picker at top (with gear icon for settings), sessions list below (expandable), pipeline panel below that. Panel resize, collapse/expand animation, state persistence.",
+  "acceptance_criteria": [
+    "Right panel is visible by default, collapsible via Cmd+\\ or toggle button",
+    "Panel contains: model picker (top), sessions list (middle), pipeline panel (bottom)",
+    "Panel resize: drag to resize, minimum/maximum width enforced",
+    "Collapse/expand: smooth animation, state persisted across app restarts",
+    "Gear icon on model picker opens settings panel",
+    "No layout glitches: panel collapse/expand does not shift chat area"
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "depends_on": [
+    "04-01"
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "phase": "4",
+  "title": "Pipeline/phaseflow panel with file browser and live task status",
+  "description": "Implement pipeline panel: file browser to pick a spec/brief file (native file dialog), button to start phaseflow breakdown (seeds session with structured prompt), live task status display (GET /pipeline/state + SSE /pipeline/events): tasks with status badges, wave indicators, attempt history (model, duration, verdict), run report display. New Project flow: pick brief \u2192 seed session \u2192 interview \u2192 plan.",
+  "acceptance_criteria": [
+    "File browser: native file dialog to pick spec/brief file",
+    "Start breakdown: seeds session with structured prompt, pipeline begins",
+    "Live task status: tasks displayed with status badges (pending/running/done/failed)",
+    "Wave indicators: current wave shown, wave transitions displayed",
+    "Attempt history: model, duration, verdict shown for each attempt",
+    "Run report: final report displayed when pipeline completes",
+    "New Project flow: pick brief \u2192 seed session \u2192 interview \u2192 plan works end-to-end"
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "depends_on": [
+    "04-03"
+  ]
+}

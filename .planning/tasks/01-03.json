@@ -1,0 +1,19 @@
+{
+  "phase": "1",
+  "title": "Define serve.Deps interface and SSE event types as API contract",
+  "description": "Pin the data model and API shape: define the complete serve.Deps struct, all HTTP route signatures, SSE event types and their JSON payloads (token, assistant, tool_call, tool_result, usage, approval-needed, model-switched, error, done, task-status, task-attempt, wave-changed, run-report), session.Info, modelcat.Entry, skills.Skill, phaseflow.Task types. This is the contract that gophermind-server and gophermind-osx both build against.",
+  "acceptance_criteria": [
+    "serve.Deps struct is fully defined with all function signatures",
+    "All SSE event types are defined as Go structs with JSON tags",
+    "All HTTP route paths and methods are documented in a contract file or doc comment",
+    "session.Info, modelcat.Entry, skills.Skill, phaseflow.Task types are defined",
+    "The contract compiles and is importable by both server and client",
+    "go build ./... succeeds"
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "is_contract": true,
+  "depends_on": [
+    "01-01"
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "phase": "4",
+  "title": "Model catalogue dropdown with filters and preference order",
+  "description": "Implement model picker UI: dropdown showing all models from GET /models/catalogue, filters (reachability, capacity, terms, provider, modality), current model highlighted, click to pin to session (POST /session with model+profile), preference order management (reorder, add, remove), auto-cycling indicator, model-switched event handling (show notification bar).",
+  "acceptance_criteria": [
+    "Dropdown shows all models from GET /models/catalogue",
+    "Filters: reachability, capacity, terms, provider, modality all work",
+    "Current model is highlighted in dropdown",
+    "Click to pin: POST /session with model+profile, session switches model",
+    "Preference order: reorder (drag), add, remove all work",
+    "Auto-cycling: indicator shows when auto-cycling is active",
+    "model-switched event: notification bar appears with new model name"
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "depends_on": [
+    "04-03"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "phase": "4",
+  "title": "Session list with CRUD, rename, delete, resume, modes, root",
+  "description": "Implement session list UI: list all sessions (GET /session) with title, message count, mod time, backend tag. Actions: resume (attach to session), rename (PATCH), delete (DELETE with confirm), create new. Show session config (model, mode, root) on resume. Folder picker (native dialog) to set session root. Mode selector (coding/conversational/reviewer/architect/tester).",
+  "acceptance_criteria": [
+    "Session list: shows title, message count, mod time, backend tag",
+    "Resume: click session to attach, chat transcript loads",
+    "Rename: PATCH /session/{id} with new title, list updates",
+    "Delete: DELETE /session/{id} with confirm dialog, list updates",
+    "Create new: button creates new session, attaches to it",
+    "Session config: model, mode, root displayed on resume",
+    "Folder picker: native dialog to set session root",
+    "Mode selector: coding/conversational/reviewer/architect/tester"
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "depends_on": [
+    "04-03"
+  ]
+}

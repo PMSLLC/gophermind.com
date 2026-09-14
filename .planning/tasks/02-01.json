@@ -1,0 +1,17 @@
+{
+  "phase": "2",
+  "title": "Server entry point, config loading, graceful shutdown",
+  "description": "Create gophermind-server/main.go: flag/env parsing (port, token, WG config, LLM endpoint), config loading from gophermind-lib/config, signal handling, graceful shutdown. Wire up logging and metrics initialization.",
+  "acceptance_criteria": [
+    "gophermind-server/main.go compiles and runs",
+    "Flags: --port, --token, --wg-interface, --llm-endpoint are parsed",
+    "Env vars: GOPHERMIND_PORT, GOPHERMIND_TOKEN, etc. are respected",
+    "SIGINT/SIGTERM trigger graceful shutdown (HTTP server drains, WG interface closes)",
+    "go build ./gophermind-server/ succeeds"
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "depends_on": [
+    "01-03"
+  ]
+}

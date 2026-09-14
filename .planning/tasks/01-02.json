@@ -1,0 +1,18 @@
+{
+  "phase": "1",
+  "title": "Add userspace WireGuard client and server packages",
+  "description": "Implement userspace WireGuard in gophermind-lib/wireguard/. Server side: interface management, peer registration, config generation. Client side: memory TUN device, local HTTP proxy for routing traffic through the tunnel. No TUN device, no sudo. Each tunnel gets a unique /32 or /16 IP range.",
+  "acceptance_criteria": [
+    "gophermind-lib/wireguard/ package compiles and passes go vet",
+    "Server side: can create a WG interface, register a peer, generate peer config",
+    "Client side: can establish a tunnel to a server, route HTTP traffic through it",
+    "No TUN device or sudo required (pure userspace)",
+    "Unit tests cover: interface creation, peer registration, tunnel establishment, HTTP proxy routing",
+    "go test ./gophermind-lib/wireguard/... passes"
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "depends_on": [
+    "01-01"
+  ]
+}

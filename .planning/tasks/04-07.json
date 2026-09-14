@@ -1,0 +1,20 @@
+{
+  "phase": "4",
+  "title": "Settings panel: backends, gocloak, model prefs, skills, all config",
+  "description": "Implement settings panel (modal overlay, opened by gear icon): Remote backends section (add/remove: server URL, gocloak realm, connect/disconnect, WG status), Model settings (preference order, auto-cycling, capacity threshold, when-all-full, default filters, excluded terms, custom links), Skills section (install sources, toggle skills, pinned commits), Endpoint section (local/remote mode), Cache/history options. All persisted via server endpoints or local Keychain.",
+  "acceptance_criteria": [
+    "Settings panel opens as modal overlay via gear icon",
+    "Remote backends: add/remove (server URL, gocloak realm), connect/disconnect, WG status shown",
+    "Model settings: preference order, auto-cycling, capacity threshold, when-all-full, filters, excluded terms, custom links all configurable",
+    "Skills: install sources, toggle skills, pinned commits all work",
+    "Endpoint: local/remote mode switchable",
+    "Cache/history: options configurable",
+    "All settings persisted: server endpoints or local Keychain",
+    "Settings changes take effect immediately (no restart needed)"
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "depends_on": [
+    "04-03"
+  ]
+}

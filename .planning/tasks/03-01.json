@@ -1,0 +1,18 @@
+{
+  "phase": "3",
+  "title": "Create gophermind-osx module, main.go, app lifecycle, window creation",
+  "description": "Create gophermind-osx/ as a Go module. Implement main.go: libui-ng initialization, main window creation (title, size, position), app lifecycle (activate, deactivate, quit), menu bar skeleton. App launches without panic, shows an empty window with correct title and size.",
+  "acceptance_criteria": [
+    "gophermind-osx/go.mod exists with module path gophermind/gophermind-osx",
+    "go build ./gophermind-osx/ succeeds (macOS target)",
+    "App launches and shows a window titled 'gophermind'",
+    "Window has correct initial size (1200x800 or similar)",
+    "App quits cleanly on window close or Cmd+Q",
+    "No panics or crashes on launch/quit"
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "depends_on": [
+    "01-03"
+  ]
+}
