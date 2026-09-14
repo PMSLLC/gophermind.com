@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -86,6 +87,23 @@ var blockedPatterns = []string{
 	":(){",
 }
 
+// redirectTargetsSafe checks if all output redirects in a command target /dev/.
+// Returns true if no redirects found, or if all redirects are to /dev/something.
+func redirectTargetsSafe(cmd string) bool {
+	re := regexp.MustCompile(`>\s*(\S+)`)
+	matches := re.FindAllStringSubmatch(cmd, -1)
+	if len(matches) == 0 {
+		return false
+	}
+	for _, m := range matches {
+		target := m[1]
+		if !strings.HasPrefix(target, "/dev/") {
+			return false
+		}
+	}
+	return true
+}
+
 // CheckCommand rejects empty or denied commands. The command is whitespace-
 // normalized before matching so trivial spacing tricks ("rm  -rf", a tab after
 // "sudo") cannot slip a blocked pattern past the substring check.
@@ -97,8 +115,8 @@ func CheckCommand(command string) error {
 	normalized := strings.Join(strings.Fields(trimmed), " ")
 	for _, blocked := range blockedPatterns {
 		if strings.Contains(normalized, blocked) {
-			// Allow redirects to /dev/ (null, zero, etc.) as they're safe
-			if (blocked == "> /" || blocked == ">/") && strings.Contains(normalized, "/dev/") {
+			// Allow redirects to /dev/ (null, zero, etc.) by parsing redirect targets
+			if (blocked == "> /" || blocked == ">/") && redirectTargetsSafe(normalized) {
 				continue
 			}
 			return fmt.Errorf("blocked command pattern: %s", blocked)
