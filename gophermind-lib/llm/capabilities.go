@@ -79,6 +79,7 @@ var knownModels = map[string]modelCapability{
 	"llama-3":           {8192, 4096, true},
 	"mistral":           {32768, 4096, true},
 	"mixtral":           {32768, 4096, true},
+	"qwen3":             {32768, 8192, true},
 	"qwen2.5":           {32768, 8192, true},
 	"qwen2":             {32768, 8192, true},
 	"deepseek":          {65536, 8192, true},
