@@ -58,10 +58,14 @@ func SearchEnhanced(root string) Tool {
 				args = append(args, "-C", fmt.Sprintf("%d", *a.Context))
 			}
 
-			// Path filter.
-			if a.Path != "" {
-				args = append(args, "-g", a.Path)
-			}
+			// Path filter: a real glob (contains a wildcard character) narrows
+			// which filenames match via -g; a bare directory or file path (e.g.
+			// "src/", "gophermind-lib/serve") is not a glob at all — rg's -g
+			// requires wildcard syntax to match anything, so a plain path there
+			// silently matches nothing and rg exits with "No files were
+			// searched". A plain path is instead passed as a search root,
+			// appended after the pattern once the "--" terminator is in place.
+			pathIsGlob := strings.ContainsAny(a.Path, "*?[")
 
 			// Type filter.
 			if a.Type != "" {
@@ -83,8 +87,15 @@ func SearchEnhanced(root string) Tool {
 				args = append(args, "-F")
 			}
 
+			if a.Path != "" && pathIsGlob {
+				args = append(args, "-g", a.Path)
+			}
+
 			// The "--" terminator forces the pattern to be positional.
 			args = append(args, "--", a.Pattern)
+			if a.Path != "" && !pathIsGlob {
+				args = append(args, a.Path)
+			}
 
 			var cmd *exec.Cmd
 			if _, err := exec.LookPath("rg"); err == nil {
@@ -98,7 +109,14 @@ func SearchEnhanced(root string) Tool {
 				if a.WholeWord != nil && *a.WholeWord {
 					grepArgs = append(grepArgs, "-w")
 				}
-				grepArgs = append(grepArgs, "-e", a.Pattern, "--", ".")
+				if a.Path != "" && pathIsGlob {
+					grepArgs = append(grepArgs, "--include="+a.Path)
+				}
+				searchRoot := "."
+				if a.Path != "" && !pathIsGlob {
+					searchRoot = a.Path
+				}
+				grepArgs = append(grepArgs, "-e", a.Pattern, "--", searchRoot)
 				cmd = exec.CommandContext(ctx, "grep", grepArgs...)
 			}
 			cmd.Dir = root
