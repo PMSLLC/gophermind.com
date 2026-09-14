@@ -1,37 +1,48 @@
-<!-- Vendored from mattpocock/skills (MIT). Do not edit here; update upstream. -->
-
-> Test-driven development. Use when the user wants to build features or fix bugs test-first, mentions "red-green-refactor", or wants integration tests.
-
+<!-- Local adaptation of mattpocock/skills (MIT). Preserve upstream license notices. -->
 # Test-Driven Development
 
-TDD is the red → green loop. This skill is the reference that makes that loop produce tests worth keeping: what a good test is, where tests go, the anti-patterns, and the rules of the loop. Every section applies on every cycle: consult them before and during the loop, not after.
+Use for test-first features, behavioral changes, and regression fixes. Follow the
+shared rules; for an unexplained bug, diagnose it before implementing a fix.
 
-When exploring the codebase, read `CONTEXT.md` (if it exists) so test names and interface vocabulary match the project's domain language, and respect ADRs in the area you're touching.
+## Define the behavior and seam
 
-## What a good test is
+Use the spec, domain vocabulary, and existing tests to identify one observable
+behavior and an appropriate boundary. Prefer established, previously agreed
+seams. State the boundary and proceed when the contract is clear; ask only when
+an unresolved choice changes externally visible behavior or substantial design.
+Do not require approval before every routine test.
 
-Tests verify behavior through public interfaces, not implementation details. Code can change entirely; tests shouldn't. A good test reads like a specification: "user can checkout with valid cart" tells you exactly what capability exists, and it survives refactors because it doesn't care about internal structure.
+Test a meaningful package/API/CLI boundary, not incidental private structure.
+A Go `internal/` package can still expose the right boundary to its consumers.
+Use a broader integration seam when the real failure crosses callers/components;
+a narrow unit test is not interchangeable with that regression coverage.
 
-See [tests.md](tests.md) for examples and [mocking.md](mocking.md) for mocking guidelines.
+## One vertical slice at a time
 
-## Seams: where tests go
+1. **Red:** Write one focused behavioral test or cohesive table-driven case group.
+   Derive expected results independently from the requirement, known-good fixture,
+   or worked example. Run it and confirm failure for the intended behavior, not
+   unrelated compilation, setup, or authentication errors. Add only necessary
+   scaffolding to reach the meaningful assertion.
+2. **Green:** Implement only enough to satisfy that behavior. Run the test again,
+   then relevant neighboring tests. Do not change the expectation to match an
+   unexplained result or add speculative features.
+3. **Repeat:** Select the next behavior based on what the prior slice established.
+   Defer discretionary refactoring to review, preserving this pack's red/green
+   policy. When red-green-refactor is explicitly requested, refactor only while
+   green and rerun affected tests after each behavior-preserving change.
 
-A **seam** is the public boundary you test at: the interface where you observe behavior without reaching inside. Tests live at seams, never against internals.
+## Test quality
 
-**Test only at pre-agreed seams.** Before writing any test, write down the seams under test and confirm them with the user. No test is written at an unconfirmed seam. You can't test everything, so agreeing the seams up front is how testing effort lands on the critical paths and complex logic instead of every edge case.
+Assert outcomes, errors, invariants, and documented side effects. Use real small
+components where practical; fake external boundaries for determinism. Do not mock
+the behavior under test or assert internal call choreography without a contract.
 
-Ask: "What's the public interface, and which seams should we test?"
+Avoid tautological expectations, snapshots blessed without inspection, hidden
+side-channel assertions, arbitrary sleeps, and bulk tests for imagined interfaces.
+Use isolated fixtures and cleanup; keep tests independent of order and shared
+mutable state. Cover relevant failure paths as separate vertical slices.
 
-When the shape of that interface is itself in question (how deep the module is, where the seam belongs, what the interface should expose), call the Skill tool with "codebase-design" for the vocabulary. It is the shared source of the module, interface, depth, seam, adapter, leverage and locality terms, and it is a reference to consult, not a session to run.
-
-## Anti-patterns
-
-- **Implementation-coupled**: mocks internal collaborators, tests private methods, or verifies through a side channel (querying the database instead of using the interface). The tell: the test breaks when you refactor but behavior hasn't changed.
-- **Tautological**: the assertion recomputes the expected value the way the code does (`expect(add(a, b)).toBe(a + b)`, a snapshot derived by hand the same way, a constant asserted equal to itself), so it passes by construction and can never disagree with the code. Expected values must come from an independent source of truth: a known-good literal, a worked example, the spec.
-- **Horizontal slicing**: writing all tests first, then all implementation. Bulk tests verify _imagined_ behavior: you test the _shape_ of things rather than user-facing behavior, the tests go insensitive to real changes, and you commit to test structure before understanding the implementation. Work in **vertical slices** instead: one test → one implementation → repeat, each test a **tracer bullet** that responds to what the last cycle taught you.
-
-## Rules of the loop
-
-- **Red before green.** Write the failing test first, then only enough code to pass it. Don't anticipate future tests or add speculative features.
-- **One slice at a time.** One seam, one test, one minimal implementation per cycle.
-- **Refactoring is not part of the loop.** It belongs to the review stage (see the `code-review` skill), not the red → green implementation cycle.
+Finish through `gophermind-build-test`. Report behavior covered, the actual red and
+green commands/results, and coverage or environment gaps. When tests cannot run,
+label them unexecuted; do not describe a completed red/green cycle.

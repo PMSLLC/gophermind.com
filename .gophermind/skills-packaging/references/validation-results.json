@@ -1,0 +1,153 @@
+{
+  "passed": true,
+  "check_count": 27,
+  "passed_count": 27,
+  "mode": "static-and-isolated-command-fixtures",
+  "versions": {
+    "go": "go version go1.23.2 linux/amd64",
+    "git": "git version 2.47.3"
+  },
+  "checks": [
+    {
+      "name": "Exactly seven flat Markdown replacements",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "No nested prompt-pack directories",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "ASCII prompt-pack text",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "No YAML frontmatter in injected packs",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "Balanced Markdown code fences",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "Prompt-pack word budget <= 3500",
+      "passed": true,
+      "detail": "3134"
+    },
+    {
+      "name": "No incomplete implementation examples",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "No absent upstream workflow dependencies",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "Separate Standards and Spec report sections",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "No root-level PhaseFlow state path",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "No recursive format-write instruction",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "License and provenance retained",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "Bundled Markdown links resolve",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "Full-validation tools available",
+      "passed": true,
+      "detail": "git=/usr/bin/git, go=/usr/local/go/bin/go, gofmt=/usr/local/go/bin/gofmt"
+    },
+    {
+      "name": "Original gofmt list-only gate returns success despite differences",
+      "passed": true,
+      "detail": "exit=0; listed=True"
+    },
+    {
+      "name": "Replacement formatting gate rejects unformatted input",
+      "passed": true,
+      "detail": "exit=1"
+    },
+    {
+      "name": "Formatting verification does not modify files",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "Replacement formatting gate accepts formatted input and paths with spaces",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "name": "Replacement formatting gate rejects invalid Go syntax",
+      "passed": true,
+      "detail": "exit=2"
+    },
+    {
+      "name": "Replacement formatting gate rejects missing files",
+      "passed": true,
+      "detail": "exit=2"
+    },
+    {
+      "name": "Replacement formatting gate rejects missing formatter",
+      "passed": true,
+      "detail": "exit=127"
+    },
+    {
+      "name": "Branch and exact-baseline diffs have intentionally distinct scopes",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "Local tracked review includes staged and unstaged net changes",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "Staged and unstaged review scopes remain distinct",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "Untracked paths are separately enumerated without word splitting",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "Invalid commit references fail before review",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "Original string-prefix check admits sibling and symlink escapes in fixtures",
+      "passed": true,
+      "detail": "=== RUN   TestOriginalPrefixCheckAcceptsSibling\n--- PASS: TestOriginalPrefixCheckAcceptsSibling (0.00s)\n=== RUN   TestOriginalPrefixCheckAcceptsEscapingSymlink\n--- PASS: TestOriginalPrefixCheckAcceptsEscapingSymlink (0.00s)\nPASS\nok  \texample.invalid/containmentdemo\t0.002s"
+    }
+  ],
+  "limitations": [
+    "No GopherMind repository, loader, or PhaseFlow runtime was available.",
+    "No model-in-the-loop behavioral acceptance tests were run.",
+    "No macOS/iOS/release or production environment was tested.",
+    "Containment demonstrations do not test a replacement runtime implementation."
+  ]
+}

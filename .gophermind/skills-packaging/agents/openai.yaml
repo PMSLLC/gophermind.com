@@ -1,0 +1,4 @@
+interface:
+  display_name: "GopherMind Engineering"
+  short_description: "Review, debug, test, and navigate GopherMind safely."
+  default_prompt: "Apply the relevant GopherMind engineering workflow to the current task and report evidence and limitations."

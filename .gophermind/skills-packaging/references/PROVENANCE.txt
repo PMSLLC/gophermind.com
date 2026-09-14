@@ -1,0 +1,28 @@
+GopherMind prompt-pack optimization, 2026-09-14
+
+Basis: the seven Markdown files uploaded in this conversation. The source files
+were not fetched from a GopherMind repository. No upstream revision or commit
+identifier was supplied; do not represent these adaptations as an upstream release.
+
+The original code-review.md, diagnosing-bugs.md, and tdd.md identify their source
+as mattpocock/skills (MIT). They have been locally adapted in this bundle, not
+silently treated as unchanged vendored copies. The original no-local-edit policy
+is intentionally replaced for these derivative files. To maintain an upstream-only
+policy, port the changes upstream or keep a tracked local patch during re-import.
+
+Upstream license text was read from:
+https://raw.githubusercontent.com/mattpocock/skills/main/LICENSE
+Accessed: 2026-09-14. Copyright (c) 2026 Matt Pocock.
+The retained license is ../mattpocock-skills-MIT.txt relative to this directory.
+Preserve applicable license notices in the destination repository, outside the
+always-injected prompt directory where practical. The uploaded upstream revision
+is unknown, so reconcile any additional notices already present in that checkout.
+
+The original gophermind-phaseflow.md attributes the PhaseFlow native port to
+https://github.com/jbrahy/metaphaseflow (MIT, copyright 2025 Lex Christopherson).
+That attribution is recorded from the supplied document, not independently
+verified against source code. This bundle contains no implementation from that
+repository. Preserve its notices if redistributing its actual code.
+
+README(20260914-194807).md is delivered as README.md. All six workflow filenames
+are unchanged. Only packs/*.md belong in GopherMind's flat injected directory.

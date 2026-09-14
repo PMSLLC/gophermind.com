@@ -1,0 +1,86 @@
+[
+  {
+    "file": "README.md",
+    "original_upload": "README(20260914-194807).md",
+    "original_words": 232,
+    "optimized_words": 237,
+    "original_characters": 1641,
+    "optimized_characters": 1679,
+    "original_bytes": 1641,
+    "optimized_bytes": 1679,
+    "original_sha256": "deb3cdad29897742e98e22e4e68422e92afcda9d2afc6e1f1858716b635b2a9e",
+    "optimized_sha256": "e64e4da45bfd242f43d75a542deaf62418c96d2e2611068e8999131a2212ee4d"
+  },
+  {
+    "file": "code-review.md",
+    "original_upload": "code-review.md",
+    "original_words": 1072,
+    "optimized_words": 589,
+    "original_characters": 6606,
+    "optimized_characters": 4127,
+    "original_bytes": 6636,
+    "optimized_bytes": 4127,
+    "original_sha256": "e41ed78462b281d1c591f9fee6005cd12f337cdd3153a5e2d767cba29e37fd43",
+    "optimized_sha256": "4c57565dd27e67d387a9b33f1ae8e9aa369c735963468aead46c7e15645e3766"
+  },
+  {
+    "file": "diagnosing-bugs.md",
+    "original_upload": "diagnosing-bugs.md",
+    "original_words": 1410,
+    "optimized_words": 520,
+    "original_characters": 8569,
+    "optimized_characters": 3661,
+    "original_bytes": 8572,
+    "optimized_bytes": 3661,
+    "original_sha256": "f6b06bdd3cf1fc84eeded4733dbaf7b5f281e7fcfcc8da11bb5cde3e4783523f",
+    "optimized_sha256": "ff24dc2561885a329c698734f863ad95731e769e02544353c8b01d29a17b6940"
+  },
+  {
+    "file": "gophermind-architecture.md",
+    "original_upload": "gophermind-architecture.md",
+    "original_words": 924,
+    "optimized_words": 446,
+    "original_characters": 6508,
+    "optimized_characters": 3357,
+    "original_bytes": 6566,
+    "optimized_bytes": 3357,
+    "original_sha256": "c4f7e0d994349a98425ff4f716eeadc97605a724cbced5ef2ccb5be8ba80c531",
+    "optimized_sha256": "821f929999f1c0604897f85be23436fa0ad881aedb8c8ba9fd6cc272da7e4e6d"
+  },
+  {
+    "file": "gophermind-build-test.md",
+    "original_upload": "gophermind-build-test.md",
+    "original_words": 547,
+    "optimized_words": 466,
+    "original_characters": 3904,
+    "optimized_characters": 3324,
+    "original_bytes": 3916,
+    "optimized_bytes": 3324,
+    "original_sha256": "d860c8025de686c078f25c666b26400319b5136a45340ecc98a811754f425b07",
+    "optimized_sha256": "8a2e0c4f0b1f6bfe5d9ae50ade1b1f96c6668afda0dd102efd5900037dd1e200"
+  },
+  {
+    "file": "gophermind-phaseflow.md",
+    "original_upload": "gophermind-phaseflow.md",
+    "original_words": 897,
+    "optimized_words": 501,
+    "original_characters": 6378,
+    "optimized_characters": 3485,
+    "original_bytes": 6441,
+    "optimized_bytes": 3485,
+    "original_sha256": "0cbbbf1b5d31a9ee61d33f579d8f6d745666812ebdf4626e3a964824c192ffab",
+    "optimized_sha256": "3891ddcd32abcb221e9111172a7096126cab0fb63d815ad8193cf493afe12cbb"
+  },
+  {
+    "file": "tdd.md",
+    "original_upload": "tdd.md",
+    "original_words": 567,
+    "optimized_words": 375,
+    "original_characters": 3596,
+    "optimized_characters": 2730,
+    "original_bytes": 3604,
+    "optimized_bytes": 2730,
+    "original_sha256": "6b995cce82c4b178b86d388e62c16859b6ac212ba42bf91426fc322ebc95e720",
+    "optimized_sha256": "b1f158736e2c705774dc6a9a6bac9c4bf6c0f422db2cc2da96a6fa6f827a409a"
+  }
+]
