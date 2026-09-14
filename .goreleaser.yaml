@@ -23,9 +23,9 @@ builds:
       - -trimpath
     ldflags:
       - -s -w
-      - -X gophermind/internal/version.Version={{ .Version }}
-      - -X gophermind/internal/version.Commit={{ .ShortCommit }}
-      - -X gophermind/internal/version.Date={{ .CommitDate }}
+      - -X gophermind/gophermind-lib/version.Version={{ .Version }}
+      - -X gophermind/gophermind-lib/version.Commit={{ .ShortCommit }}
+      - -X gophermind/gophermind-lib/version.Date={{ .CommitDate }}
 
 # Merge the two arches into one universal binary, then code-sign it with a
 # Developer ID Application identity (hardened runtime + secure timestamp). The

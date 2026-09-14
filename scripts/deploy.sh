@@ -47,7 +47,7 @@ DATE=$(git log -1 --format=%cI)
 # find out what is running was the one number guaranteed to be stale. The
 # fallback covers a shallow clone or a repo with no tags yet.
 BASE_VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')
-LDFLAGS="-X gophermind/internal/version.Version=${BASE_VERSION:-0.0.0}+dev -X gophermind/internal/version.Commit=${COMMIT} -X gophermind/internal/version.Date=${DATE}"
+LDFLAGS="-X gophermind/gophermind-lib/version.Version=${BASE_VERSION:-0.0.0}+dev -X gophermind/gophermind-lib/version.Commit=${COMMIT} -X gophermind/gophermind-lib/version.Date=${DATE}"
 
 deploy_local() {
   echo "${bold}▶ local: rebuilding ./gophermind${reset}"

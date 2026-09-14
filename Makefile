@@ -6,9 +6,10 @@ BINARY := gophermind
 build: ## Build a local (unstamped) binary
 	go build -o $(BINARY) ./cmd/gophermind
 
-rebuild-all: ## Format, build CLI, and deploy desktop app
+rebuild-all: ## Format, build CLI (version-stamped), and deploy desktop app
 	gofmt -w . ; git add -A && git commit -m "fix: gofmt" || true
-	go build -o $(BINARY) ./cmd/gophermind
+	go build -ldflags "-X gophermind/gophermind-lib/version.Version=dev+$$(git rev-parse --short HEAD) -X gophermind/gophermind-lib/version.Commit=$$(git rev-parse --short HEAD) -X gophermind/gophermind-lib/version.Date=$$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o $(BINARY) ./cmd/gophermind
+	./gophermind version
 	./scripts/deploy-desktop-app.sh
 
 test: ## Run the full test suite
