@@ -7,6 +7,7 @@ package main
 
 import (
 	"embed"
+	"os"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/menu"
@@ -19,6 +20,11 @@ import (
 var assets embed.FS
 
 func main() {
+	// Enable autonomous mode by default: auto-approve all tool calls, no manual gates
+	if os.Getenv("GOPHERMIND_APPROVAL") == "" {
+		os.Setenv("GOPHERMIND_APPROVAL", "auto")
+	}
+
 	app := NewApp()
 
 	// A macOS app with no menu has no Window > Zoom and no View > Enter Full
