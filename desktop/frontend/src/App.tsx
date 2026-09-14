@@ -92,16 +92,17 @@ function prettyArgs(argsJSON: string): string {
 /**
  * unescapeText unescapes JSON string escape sequences (\n, \t, etc.) so
  * tool results and debug output display with actual newlines and tabs
- * instead of literal \n and \t characters.
+ * instead of literal \n and \t characters. The underlying data remains
+ * unchanged; only the displayed text is unescaped.
  */
 function unescapeText(text: string): string {
-  try {
-    // JSON.parse a quoted string to unescape it
-    return JSON.parse(`"${text.replace(/"/g, '\\"')}"`)
-  } catch {
-    // If parsing fails, return as-is
-    return text
-  }
+  return text
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\r/g, '\r')
+    .replace(/\\"/g, '"')
+    .replace(/\\\//g, '/')
+    .replace(/\\\\/g, '\\')
 }
 
 /**
