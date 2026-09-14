@@ -165,6 +165,26 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 /**
+ * statusIcon returns a visual indicator for the current status
+ */
+function statusIcon(status: Status): string {
+  switch (status) {
+    case 'connecting':
+      return '🔄'
+    case 'ready':
+      return '✅'
+    case 'sending':
+      return '⚡'
+    case 'awaiting-approval':
+      return '⏸️'
+    case 'error':
+      return '❌'
+    default:
+      return '○'
+  }
+}
+
+/**
  * App is the single Chat screen this task proves end to end: on launch it
  * resolves the embedded server's address via Endpoint(), creates a session,
  * then lets the user send turns and streams the assistant's tokens back as
@@ -720,6 +740,7 @@ export default function App() {
     <div className="app">
       <header className="statusbar">
         <span className={`dot dot-${status}`} />
+        <span className="statusicon">{statusIcon(status)}</span>
         <span className="statustext">{statusDetail}</span>
         {turnStarted !== null && (
           // Elapsed seconds and what it is doing. The seconds ticking is the

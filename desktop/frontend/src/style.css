@@ -35,19 +35,21 @@ body {
 .statusbar {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--border);
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 2px solid var(--border);
   background: var(--bg-raised);
-  font-size: 0.8rem;
-  color: var(--text-dim);
+  font-size: 1rem;
+  color: var(--text);
+  line-height: 1.4;
 }
 
 .dot {
-  width: 0.5rem;
-  height: 0.5rem;
+  width: 0.75rem;
+  height: 0.75rem;
   border-radius: 50%;
   background: var(--text-dim);
+  flex-shrink: 0;
 }
 .dot-ready {
   background: var(--accent);
@@ -64,6 +66,23 @@ body {
 .dot-awaiting-approval {
   background: #fbbf24;
   animation: pulse 1.2s ease-in-out infinite;
+}
+
+.statusicon {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.statustext {
+  flex: 1;
+  font-weight: 500;
+}
+
+.activity {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 @keyframes pulse {
