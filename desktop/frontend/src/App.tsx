@@ -897,7 +897,7 @@ export default function App() {
               return (
                 <div key={i} className={`line line-${line.role}`}>
                   <span className="tag">{line.role}</span>
-                  <div className="text">{line.text}</div>
+                  <div className="text">{unescapeText(line.text)}</div>
                 </div>
               )
             })}
