@@ -97,6 +97,10 @@ func CheckCommand(command string) error {
 	normalized := strings.Join(strings.Fields(trimmed), " ")
 	for _, blocked := range blockedPatterns {
 		if strings.Contains(normalized, blocked) {
+			// Allow redirects to /dev/ (null, zero, etc.) as they're safe
+			if (blocked == "> /" || blocked == ">/") && strings.Contains(normalized, "/dev/") {
+				continue
+			}
 			return fmt.Errorf("blocked command pattern: %s", blocked)
 		}
 	}
