@@ -1,0 +1,100 @@
+[project]
+name = "gophermind"
+description = "A tiny, hackable AI coding agent for your terminal"
+repo_url = "https://github.com/jbrahy/gophermind.com"
+language = "go"
+go_version = "1.25.0"
+
+[structure]
+module = "gophermind"
+entrypoint = "cmd/gophermind/main.go"
+
+# Key packages and their roles
+core_packages = [
+  "internal/agent",      # Agent loop, task graph, verification
+  "internal/tools",      # Read/search/edit/shell/sql/http
+  "internal/tui",        # Terminal UI
+  "internal/phaseflow",  # Spec-driven workflow
+  "internal/prompt",     # Prompt registry and rendering
+  "internal/models",     # Model endpoints and personas
+]
+
+directories = {
+  "cmd/" = "CLI entrypoint",
+  "internal/" = "Core packages",
+  "docs/" = "Documentation",
+  "scripts/" = "Build/deploy scripts",
+  "design/" = "Design assets and specs",
+  ".gophermind/" = "Skills and project config",
+}
+
+[build]
+commands = {
+  build = "go build ./...",
+  test = "go test ./...",
+  lint = "gofmt -l . && go vet ./...",
+  format = "gofmt -w .",
+  clean_build = "rm -f gophermind && go build ./...",
+}
+
+make_targets = [
+  "build",      # Local unstamped binary
+  "test",       # Full Go test suite
+  "ios-test",   # iOS unit tests
+  "ios-deploy", # Build and install on iPhone
+  "release",    # Build signed/notarized release (requires Team ID)
+]
+
+[testing]
+unit_tests = "go test ./..."
+ios_tests = "make ios-test"
+coverage = "go test -cover ./..."
+golden_tests_env = "GOLDEN_UPDATE=1"
+
+[architecture]
+description = """
+Single-binary Go agent loop (gophermind) that talks to any OpenAI-compatible
+model. Features: TUI, tool set (read/search/edit/shell/sql/http), sessions,
+personas, prompt registry, and native spec-driven workflow (PhaseFlow).
+
+Agent loop (internal/agent):
+  - TaskGraph: deterministic task decomposition
+  - Tool invocation and streaming results
+  - Verification and reflection loops
+  - Multi-agent strategies (debate, samples, reflexion)
+
+TUI (internal/tui):
+  - Charm-based terminal UI with scrollback
+  - Command dispatch and prompt entry
+  - Inline approvals and streaming output
+  - Token/cost meter and live feedback
+
+PhaseFlow (internal/phaseflow):
+  - Ported from github.com/jbrahy/metaphaseflow (MIT)
+  - State under .planning/
+  - User surface: `gophermind phase <cmd>` and `/phase <cmd>`
+  - Deterministic bookkeeping (status/next/done/sync/archive)
+  - Embedded command support
+
+Model Endpoints:
+  - OpenAI-compatible API abstraction
+  - Named provider profiles (local, hosted, cloud)
+  - Auto-discovery and model selection
+  - Per-session model/mode picker
+"""
+
+[conventions]
+comments = "Doc comments explain WHY, not WHAT; every exported symbol documented"
+style = "Match existing code style; surgical changes only"
+tests = "Beside code as *_test.go; table-driven where helpful"
+packages = "New subsystems under internal/<name>/"
+commands = "TUI: internal/tui/update.go + commands.go; CLI: main switch statement"
+
+[secrets]
+credentials_file = "credentials.md"
+note = "Never commit credentials.md; hold dev auth keys and service tokens"
+
+[state_dirs]
+planning = ".planning/"
+remember = ".remember/"
+workdir = "workspace/"
