@@ -369,6 +369,8 @@ export default function App() {
         setStatusDetail(`session ${sessionID}`)
         setTurnStarted(null)
         setActivity('')
+        // Add completion marker so user knows turn finished
+        setLines((prev) => [...prev, { kind: 'text', role: 'system', text: '--- turn complete ---' }])
         // Auto-name session on first turn: use first 60 chars of user's message
         if (!hasAutoNamedSession && sessionID) {
           setHasAutoNamedSession(true)

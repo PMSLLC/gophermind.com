@@ -118,10 +118,10 @@ func (a *Agent) TopP() *float64 { return a.llm.TopP() }
 // model produces a final answer (a reply with no tool calls). The conversation
 // is retained, so subsequent Send calls continue the same session.
 func (a *Agent) Send(ctx context.Context, userInput string) (string, error) {
-	// Trim old messages to keep context fresh: system prompt + last 20 messages max.
-	// This prevents old errors from confusing the model across many turns.
-	// Keeps enough history for context but drops old tasks/errors that pile up.
-	const maxHistoryMessages = 20
+	// Trim old messages to keep context fresh: system prompt + last 50 messages max.
+	// This prevents old errors from confusing the model across many turns while keeping
+	// enough history for coherence. Token-aware trimming below handles context window limits.
+	const maxHistoryMessages = 50
 	if len(a.msgs) > maxHistoryMessages {
 		// Keep system prompt (index 0) + most recent messages
 		keep := []llm.Message{a.msgs[0]}
