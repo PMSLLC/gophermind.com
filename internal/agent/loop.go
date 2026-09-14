@@ -118,6 +118,17 @@ func (a *Agent) TopP() *float64 { return a.llm.TopP() }
 // model produces a final answer (a reply with no tool calls). The conversation
 // is retained, so subsequent Send calls continue the same session.
 func (a *Agent) Send(ctx context.Context, userInput string) (string, error) {
+	// Trim old messages to keep context fresh: system prompt + last 20 messages max.
+	// This prevents old errors from confusing the model across many turns.
+	// Keeps enough history for context but drops old tasks/errors that pile up.
+	const maxHistoryMessages = 20
+	if len(a.msgs) > maxHistoryMessages {
+		// Keep system prompt (index 0) + most recent messages
+		keep := []llm.Message{a.msgs[0]}
+		keep = append(keep, a.msgs[len(a.msgs)-maxHistoryMessages+1:]...)
+		a.msgs = keep
+	}
+
 	// Snapshot the history length so a turn that fails mid-stream (e.g. a Ctrl-C
 	// cancellation) can be rolled back to exactly the prior completed state. This
 	// drops both the user message added here and any committed assistant/tool

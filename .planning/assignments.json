@@ -1,0 +1,165 @@
+{
+  "tasks": [
+    {
+      "id": "lib-scaffold",
+      "title": "Create gophermind-lib module and move existing internal packages",
+      "description": "Create gophermind-lib/ as a standalone Go module. Move existing internal/ packages (agent, llm, session, modelcat, skills, phaseflow, serve, config, safety, stream, etc.) into it. Fix all import paths. Ensure existing tests pass with the new module path.",
+      "depends_on": [],
+      "is_contract": false
+    },
+    {
+      "id": "lib-wireguard",
+      "title": "Add userspace WireGuard client and server packages",
+      "description": "Implement userspace WireGuard in gophermind-lib/wireguard/. Server side: interface management, peer registration, config generation. Client side: memory TUN device, local HTTP proxy for routing traffic through the tunnel. No TUN device, no sudo. Each tunnel gets a unique /32 or /16 IP range.",
+      "depends_on": ["lib-scaffold"],
+      "is_contract": false
+    },
+    {
+      "id": "lib-serve-contract",
+      "title": "Define serve.Deps interface and SSE event types as API contract",
+      "description": "Pin the data model and API shape: define the complete serve.Deps struct, all HTTP route signatures, SSE event types and their JSON payloads (token, assistant, tool_call, tool_result, usage, approval-needed, model-switched, error, done, task-status, task-attempt, wave-changed, run-report), session.Info, modelcat.Entry, skills.Skill, phaseflow.Task types. This is the contract that gophermind-server and gophermind-osx both build against.",
+      "depends_on": ["lib-scaffold"],
+      "is_contract": true
+    },
+    {
+      "id": "server-main",
+      "title": "Server entry point, config loading, graceful shutdown",
+      "description": "Create gophermind-server/main.go: flag/env parsing (port, token, WG config, LLM endpoint), config loading from gophermind-lib/config, signal handling, graceful shutdown. Wire up logging and metrics initialization.",
+      "depends_on": ["lib-serve-contract"],
+      "is_contract": false
+    },
+    {
+      "id": "server-http",
+      "title": "Wire serve.Deps and start HTTP listener with all routes",
+      "description": "Implement gophermind-server/server.go: build serve.Deps (SessionTurn, Approvals, ListModels, EndpointModels, Pipeline, Skills, Devices, Run, Stream), call serve.NewMux, start HTTP listener. Include rate limiting, HMAC verification, backend status endpoint. All routes from the contract table must be registered and functional.",
+      "depends_on": ["server-main"],
+      "is_contract": false
+    },
+    {
+      "id": "server-wg",
+      "title": "WireGuard server init and peer registration",
+      "description": "Implement gophermind-server/wireguard.go: initialize WG interface at startup (per-backend or single), implement POST /wg/register endpoint (accepts gocloak token, validates, issues peer public key + config), manage peer lifecycle (add, remove, timeout). Wire into server startup/shutdown.",
+      "depends_on": ["server-http", "lib-wireguard"],
+      "is_contract": false
+    },
+    {
+      "id": "server-test",
+      "title": "Server integration tests for all HTTP endpoints and WG registration",
+      "description": "Write integration tests: all HTTP endpoints (session CRUD, stream, approve, models, skills, pipeline, run, devices), SSE event correctness, auth (valid/invalid token, HMAC), rate limiting, WG registration flow (register peer, verify config, test tunnel connectivity). Target >80% coverage.",
+      "depends_on": ["server-wg"],
+      "is_contract": false
+    },
+    {
+      "id": "osx-scaffold",
+      "title": "Create gophermind-osx module, main.go, app lifecycle, window creation",
+      "description": "Create gophermind-osx/ as a Go module. Implement main.go: libui-ng initialization, main window creation (title, size, position), app lifecycle (activate, deactivate, quit), menu bar skeleton. App launches without panic, shows an empty window with correct title and size.",
+      "depends_on": ["lib-serve-contract"],
+      "is_contract": false
+    },
+    {
+      "id": "osx-client",
+      "title": "HTTP/SSE service client for all server endpoints",
+      "description": "Implement gophermind-osx/client/service.go: HTTP client with bearer token auth, SSE stream reader (hand-rolled parser for POST-based SSE), methods for every endpoint in the contract (session CRUD, stream, approve, models, catalogue, settings, skills, pipeline, run, backends, backend-status). Request timeout, retry logic, error types.",
+      "depends_on": ["osx-scaffold"],
+      "is_contract": false
+    },
+    {
+      "id": "osx-connection",
+      "title": "Connection manager: local/remote mode, WG tunnel lifecycle",
+      "description": "Implement gophermind-osx/connection/manager.go: local mode (connect to localhost, random token), remote mode (establish userspace WG tunnel per backend, route HTTP through tunnel), health checks, reconnection on network change (<5s), connection status reporting. Manage N tunnels simultaneously.",
+      "depends_on": ["osx-scaffold", "lib-wireguard"],
+      "is_contract": false
+    },
+    {
+      "id": "osx-auth",
+      "title": "gocloak OAuth2 client, Keychain storage, token refresh",
+      "description": "Implement gophermind-osx/auth/gocloak.go: OAuth2 Authorization Code flow (in-app login, no browser popup), store access/refresh tokens in macOS Keychain per backend, refresh token 1 min before expiry, logout and credential cleanup. Expose GetToken(backend) for connection manager and service client.",
+      "depends_on": ["osx-scaffold"],
+      "is_contract": false
+    },
+    {
+      "id": "osx-chat",
+      "title": "Main window chat transcript, streaming display, input field",
+      "description": "Implement the chat UI: scrollable message list (user/assistant/system lines), real-time SSE token streaming (append as tokens arrive), tool call/result rendering (name + args), code block display with syntax highlighting, multi-line input field (Cmd+Enter to send), auto-scroll to bottom. Async: goroutines for SSE reading, UI updates via channels.",
+      "depends_on": ["osx-client"],
+      "is_contract": false
+    },
+    {
+      "id": "osx-approvals",
+      "title": "Inline approval cards, Y/N keyboard shortcut, approval bar, timeout",
+      "description": "Implement approval UI: inline approval card in transcript (tool name, pretty-printed args, approve/deny buttons), persistent approval bar at bottom of transcript area, Y/N keyboard shortcut (only when not in editable field), 5-min timeout with warning, resolution states (pending/approved/denied/already-resolved). Approval decision calls client.Approve().",
+      "depends_on": ["osx-chat"],
+      "is_contract": false
+    },
+    {
+      "id": "osx-right-panel",
+      "title": "Collapsible right panel with model picker, sessions, pipeline sections",
+      "description": "Implement the right-side panel: collapsible (Cmd+\\ or toggle button), contains three sections stacked vertically: model picker at top (with gear icon for settings), sessions list below (expandable), pipeline panel below that. Panel resize, collapse/expand animation, state persistence.",
+      "depends_on": ["osx-chat"],
+      "is_contract": false
+    },
+    {
+      "id": "osx-model-picker",
+      "title": "Model catalogue dropdown with filters and preference order",
+      "description": "Implement model picker UI: dropdown showing all models from GET /models/catalogue, filters (reachability, capacity, terms, provider, modality), current model highlighted, click to pin to session (POST /session with model+profile), preference order management (reorder, add, remove), auto-cycling indicator, model-switched event handling (show notification bar).",
+      "depends_on": ["osx-right-panel"],
+      "is_contract": false
+    },
+    {
+      "id": "osx-sessions",
+      "title": "Session list with CRUD, rename, delete, resume, modes, root",
+      "description": "Implement session list UI: list all sessions (GET /session) with title, message count, mod time, backend tag. Actions: resume (attach to session), rename (PATCH), delete (DELETE with confirm), create new. Show session config (model, mode, root) on resume. Folder picker (native dialog) to set session root. Mode selector (coding/conversational/reviewer/architect/tester).",
+      "depends_on": ["osx-right-panel"],
+      "is_contract": false
+    },
+    {
+      "id": "osx-pipeline",
+      "title": "Pipeline/phaseflow panel with file browser and live task status",
+      "description": "Implement pipeline panel: file browser to pick a spec/brief file (native file dialog), button to start phaseflow breakdown (seeds session with structured prompt), live task status display (GET /pipeline/state + SSE /pipeline/events): tasks with status badges, wave indicators, attempt history (model, duration, verdict), run report display. New Project flow: pick brief → seed session → interview → plan.",
+      "depends_on": ["osx-right-panel"],
+      "is_contract": false
+    },
+    {
+      "id": "osx-settings",
+      "title": "Settings panel: backends, gocloak, model prefs, skills, all config",
+      "description": "Implement settings panel (modal overlay, opened by gear icon): Remote backends section (add/remove: server URL, gocloak realm, connect/disconnect, WG status), Model settings (preference order, auto-cycling, capacity threshold, when-all-full, default filters, excluded terms, custom links), Skills section (install sources, toggle skills, pinned commits), Endpoint section (local/remote mode), Cache/history options. All persisted via server endpoints or local Keychain.",
+      "depends_on": ["osx-right-panel"],
+      "is_contract": false
+    },
+    {
+      "id": "osx-native",
+      "title": "Native macOS: menu bar, dark mode, shortcuts, dialogs, dock, window state",
+      "description": "Implement native macOS features: menu bar (File: New Project, Open Brief, Settings, Quit; Edit: standard; View: Toggle Panel, Toggle Dark Mode; Window: standard; Help), dark mode following system appearance, keyboard shortcuts (Cmd+Enter send, Y/N approve, Cmd+\\ panel, Cmd+, settings, Cmd+N new project), native dialogs (folder picker, file picker, confirm), dock icon, window state persistence (size, position, panel state) via UserDefaults or plist.",
+      "depends_on": ["osx-chat", "osx-approvals", "osx-right-panel"],
+      "is_contract": false
+    },
+    {
+      "id": "int-e2e",
+      "title": "End-to-end integration tests: login, chat, approvals, pipeline, logout",
+      "description": "Write E2E tests covering: local mode (launch → create session → chat → stream → approve → complete), remote mode (gocloak login → WG tunnel → chat → approve → disconnect), pipeline flow (pick spec → breakdown → execute → monitor), session management (create → rename → resume → delete), model switching (pin → cycle → switch). Both local and remote paths.",
+      "depends_on": ["osx-chat", "osx-approvals", "osx-model-picker", "osx-sessions", "osx-pipeline", "osx-settings", "osx-connection", "osx-auth", "server-test"],
+      "is_contract": false
+    },
+    {
+      "id": "int-error",
+      "title": "Error scenario tests: network drops, token expiry, server unavailable, WG reconnect",
+      "description": "Test error handling: network drop mid-stream (reconnect, resume), token expiry (transparent refresh, re-login on failure), server unavailable (status banner, exponential backoff), WG tunnel drop (re-establish <5s), backend switch mid-session, approval timeout (auto-deny), concurrent sessions, large messages (100K+ tokens).",
+      "depends_on": ["int-e2e"],
+      "is_contract": false
+    },
+    {
+      "id": "int-perf",
+      "title": "Performance: message latency, streaming throughput, WG overhead",
+      "description": "Measure and verify: chat latency <100ms (local), streaming throughput ≥ Wails baseline, WG tunnel overhead (latency + throughput comparison local vs remote), memory usage over 8h session, CPU usage during streaming, connection reconnection time <5s. Profile and optimize if needed (SSE batching, WG MTU).",
+      "depends_on": ["int-e2e"],
+      "is_contract": false
+    },
+    {
+      "id": "int-polish",
+      "title": "UI refinement, accessibility, final QA",
+      "description": "Final polish: VoiceOver support (labels, announcements), keyboard navigation for all UI elements, visual consistency (spacing, colors, fonts), animation smoothness, edge cases (empty states, very long messages, unicode), macOS Ventura/Sonoma/Sequoia testing, final lint pass, memory leak check (Instruments), release build verification.",
+      "depends_on": ["int-error", "int-perf"],
+      "is_contract": false
+    }
+  ]
+}
