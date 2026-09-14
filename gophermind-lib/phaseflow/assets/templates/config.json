@@ -1,6 +1,6 @@
 {
   "mode": "interactive",
-  "granularity": "standard",
+  "granularity": "fine",
   "workflow": {
     "research": true,
     "plan_check": true,
