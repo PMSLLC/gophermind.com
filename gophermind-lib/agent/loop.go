@@ -149,6 +149,16 @@ func (a *Agent) Send(ctx context.Context, userInput string) (string, error) {
 	toolFailures := make(map[string]int)
 	const maxToolFailures = 3
 
+	// Stall tracking: a tool that succeeds but returns byte-identical output
+	// several times running means the model isn't making progress, even though
+	// nothing "failed" (e.g. polling git status with escalating self-inserted
+	// sleeps instead of diagnosing why nothing changes). Differing arguments
+	// (different sleep durations, different -short/-porcelain flags) don't
+	// matter here — it's the repeated output that signals no new information.
+	toolLastOutput := make(map[string]string)
+	toolStalls := make(map[string]int)
+	const maxToolStalls = 4
+
 	for i := 0; i < a.maxIter; i++ {
 		if err := ctx.Err(); err != nil {
 			a.msgs = a.msgs[:base]
@@ -229,6 +239,18 @@ func (a *Agent) Send(ctx context.Context, userInput string) (string, error) {
 			} else {
 				// Success: reset failure count for this tool
 				toolFailures[call.Function.Name] = 0
+
+				if sig := stallSignature(out); sig != "" && toolLastOutput[call.Function.Name] == sig {
+					toolStalls[call.Function.Name]++
+					if toolStalls[call.Function.Name] >= maxToolStalls {
+						a.msgs = a.msgs[:base]
+						return "", fmt.Errorf("aborted: %s returned unchanged output %d times in a row (model isn't making progress): %w",
+							call.Function.Name, maxToolStalls, ErrStuckLoop)
+					}
+				} else {
+					toolStalls[call.Function.Name] = 0
+					toolLastOutput[call.Function.Name] = sig
+				}
 			}
 		}
 	}
@@ -251,6 +273,25 @@ var ErrStuckLoop = errors.New("model stopped making progress")
 // in a row is plausible (a model re-reading a file after a failed edit); three
 // identical prose+tool-call payloads is not.
 const stuckRepeats = 3
+
+// stallSignature fingerprints a successful tool result for the stall guard,
+// ignoring the invocation itself so varying arguments (e.g. an escalating
+// sleep duration wrapping the same underlying command) don't mask an
+// unchanging result. run_shell (and any tool following the same convention)
+// echoes its invocation as a "$ <command>" first line; that line is dropped
+// before comparing so only the actual result is fingerprinted. Returns "" for
+// empty output, which the caller treats as "nothing to compare."
+func stallSignature(out string) string {
+	if out == "" {
+		return ""
+	}
+	if rest, ok := strings.CutPrefix(out, "$ "); ok {
+		if _, body, found := strings.Cut(rest, "\n"); found {
+			return body
+		}
+	}
+	return out
+}
 
 // replySignature fingerprints a reply for stuck detection: the prose plus every
 // tool call's name and arguments. Call IDs are deliberately excluded — backends

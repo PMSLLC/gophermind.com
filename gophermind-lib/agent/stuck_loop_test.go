@@ -74,6 +74,46 @@ func TestStuckModelStopsEarly(t *testing.T) {
 	}
 }
 
+// TestStalledToolStopsEarly covers the reported symptom: a model repeatedly
+// calls run_shell with different arguments each time (escalating self-inserted
+// sleep durations, as observed wrapping "git status --short") but the tool's
+// output never changes. Different arguments defeat the identical-reply stuck
+// detector, so this needs its own guard on unchanging tool output. Uses a
+// fast, non-sleeping command whose stdout is identical every call — the point
+// is to test the stall guard's logic, not to actually wait out real sleeps.
+func TestStalledToolStopsEarly(t *testing.T) {
+	markers := []string{"5", "20", "60", "120", "300"}
+	var i int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		d := markers[i%len(markers)]
+		i++
+		cmd := `echo status:clean # marker-` + d
+		body := "data: " + `{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_` + d + `","type":"function","function":{"name":"run_shell","arguments":"{\"command\":\"` + cmd + `\"}"}}]}}]}` + "\n\n" +
+			"data: " + `{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}` + "\n\ndata: [DONE]\n\n"
+		w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	client := llm.New(srv.URL, "", "m", 5*time.Second, false)
+	// Every call's command differs (defeating the identical-reply detector),
+	// but stdout is always "status:clean" — the stall the guard must catch.
+	reg := tools.NewRegistry(tools.RunShell(t.TempDir(), 5*time.Second))
+	a := New(client, reg, 25, nil, func(Event) {})
+
+	_, err := a.Send(context.Background(), "go")
+	if err == nil {
+		t.Fatal("expected an error when tool output never changes, got nil")
+	}
+	t.Logf("terminating error: %v", err)
+	if !errors.Is(err, ErrStuckLoop) {
+		t.Errorf("error = %v, want it to wrap ErrStuckLoop", err)
+	}
+	if errors.Is(err, ErrMaxIterations) {
+		t.Errorf("ran all the way to the iteration ceiling: %v", err)
+	}
+}
+
 // TestLegitimateRepeatedCallsStillWork guards against over-firing: a model that
 // repeats a call but is otherwise making progress (different prose, then a real
 // answer) must not be cut off.
