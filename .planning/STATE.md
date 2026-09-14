@@ -19,16 +19,22 @@ Read the task-id-matching file before starting work on it.
 ## Current Position
 
 Phase: 1 of 5 (gophermind-lib Foundation)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In progress
-Last activity: 2026-09-13 — completed plan 01-01
+Last activity: 2026-09-14 — completed plan 01-03
 
-Next task: 01-03 (Define serve.Deps interface and SSE event types as API
-contract) — recommended before 01-02, since it's the contract both Phase 2
-and Phase 3 depend on and is otherwise unblocked. 01-02 (WireGuard packages)
-has no dependency on 01-03 and can run in either order.
+01-03 findings: serve.Deps, session.Info, modelcat.Entry, skills.Skill, and
+phaseflow.Task all already existed. Added the two genuinely missing pieces:
+named SSE event structs with JSON tags (gophermind-lib/serve/events.go,
+wired into sse.go/approval.go/pipeline.go, replacing inline anonymous
+structs) and a full route contract as a doc comment on serve.NewMux. Note:
+ModelSwitchedEvent's shape is defined but not yet emitted anywhere — no
+model-fallback/cycling code path exists yet to wire it to.
 
-Progress: [░░░░░░░░░░] 4%
+Next task: 01-02 (Add userspace WireGuard client and server packages) — the
+only remaining Phase 1 task, unblocks Phase 2's 02-03.
+
+Progress: [██░░░░░░░░] 9%
 
 ## Accumulated Context
 

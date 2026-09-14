@@ -79,11 +79,7 @@ func RemoteApprovalGate(reg *approvalRegistry, ctx context.Context, timeout time
 		ch := reg.register(id)
 		defer reg.cancel(id)
 
-		b, _ := json.Marshal(struct {
-			ApprovalID string `json:"approval_id"`
-			Tool       string `json:"tool"`
-			Args       string `json:"args"`
-		}{ApprovalID: id, Tool: tool, Args: argsJSON})
+		b, _ := json.Marshal(ApprovalNeededEvent{ApprovalID: id, Tool: tool, Args: argsJSON})
 		_ = emit("approval-needed", string(b))
 
 		select {

@@ -283,6 +283,44 @@ func resolveToken(opt Options) (string, error) {
 // does not listen. It returns an error when no bearer token is available
 // (see Options.Token), since this endpoint runs shell commands and file
 // writes and must never start unauthenticated.
+// NewMux builds the server's route table from d, registering only the routes
+// whose backing Deps field is non-nil (see Deps' own field comments for which
+// field gates which routes). This is the API contract gophermind-server and
+// gophermind-osx both build against (.planning/tasks/01-03.json):
+//
+//	Method  Path                          Auth         Gated by
+//	POST    /run                          bearer+HMAC  always
+//	GET     /healthz                      none         always
+//	GET     /readyz                       none         always
+//	GET     /metrics                      none         d.Metrics
+//	POST    /run/stream                   bearer+HMAC  d.Stream
+//	POST    /session                      bearer+HMAC  d.SessionTurn
+//	POST    /session/{id}/stream          bearer+HMAC  d.SessionTurn
+//	GET     /session                      bearer+HMAC  d.SessionTurn
+//	DELETE  /session/{id}                 bearer+HMAC  d.SessionTurn
+//	PATCH   /session/{id}                 bearer+HMAC  d.SessionTurn
+//	GET     /modes                        bearer+HMAC  d.SessionTurn
+//	GET     /session/{id}/config           bearer+HMAC  d.SessionTurn
+//	GET     /session/{id}/messages         bearer+HMAC  d.SessionTurn && d.SessionMessages
+//	POST    /session/{id}/approve          bearer+HMAC  d.SessionTurn && d.Approvals
+//	GET     /models                        bearer+HMAC  d.SessionTurn && d.ListModels
+//	GET     /models/catalogue              bearer+HMAC  d.SessionTurn
+//	GET     /models/settings               bearer+HMAC  d.SessionTurn
+//	PATCH   /models/settings               bearer+HMAC  d.SessionTurn
+//	POST    /devices                       bearer+HMAC  d.Devices
+//	GET     /skills                        bearer+HMAC  d.Skills
+//	PATCH   /skills                        bearer+HMAC  d.Skills
+//	POST    /skills/sources                bearer+HMAC  d.Skills
+//	DELETE  /skills/sources/{id...}        bearer+HMAC  d.Skills
+//	GET     /pipeline                      none         d.Pipeline (HTML shell only; carries no data)
+//	GET     /pipeline/state                bearer+HMAC  d.Pipeline
+//	GET     /pipeline/events               bearer+HMAC  d.Pipeline (SSE)
+//	GET     /pipeline/report               bearer+HMAC  d.Pipeline
+//
+// All bearer+HMAC routes share one rate limiter (GOPHERMIND_SERVE_RATE
+// req/min) keyed by the Authorization header, so no route can be used to
+// bypass another's budget. SSE routes (/run/stream, /session/{id}/stream,
+// /pipeline/events) emit the typed events defined in events.go.
 func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 	token, err := resolveToken(opt)
 	if err != nil {

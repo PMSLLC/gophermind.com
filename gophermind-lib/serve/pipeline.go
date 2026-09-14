@@ -140,34 +140,21 @@ func (h *PipelineHub) publish(event, data string) {
 // TaskStatus publishes a "task-status" event: task id changed to status,
 // which belongs to wave.
 func (h *PipelineHub) TaskStatus(id, status string, wave int) {
-	b, _ := json.Marshal(struct {
-		ID     string `json:"id"`
-		Status string `json:"status"`
-		Wave   int    `json:"wave"`
-	}{ID: id, Status: status, Wave: wave})
+	b, _ := json.Marshal(TaskStatusEvent{ID: id, Status: status, Wave: wave})
 	h.publish("task-status", string(b))
 }
 
 // TaskAttempt publishes a "task-attempt" event: one model's attempt at
 // taskID completed, whether it passed or failed.
 func (h *PipelineHub) TaskAttempt(taskID string, a phaseflow.Attempt) {
-	b, _ := json.Marshal(struct {
-		TaskID   string `json:"task_id"`
-		Model    string `json:"model"`
-		Duration string `json:"duration"`
-		Verdict  string `json:"verdict"`
-		Reason   string `json:"reason"`
-	}{TaskID: taskID, Model: a.Model, Duration: a.Duration, Verdict: a.Verdict, Reason: a.Reason})
+	b, _ := json.Marshal(TaskAttemptEvent{TaskID: taskID, Model: a.Model, Duration: a.Duration, Verdict: a.Verdict, Reason: a.Reason})
 	h.publish("task-attempt", string(b))
 }
 
 // WaveChanged publishes a "wave-changed" event: wave started or finished,
 // per state ("started" or "finished").
 func (h *PipelineHub) WaveChanged(wave int, state string) {
-	b, _ := json.Marshal(struct {
-		Wave  int    `json:"wave"`
-		State string `json:"state"`
-	}{Wave: wave, State: state})
+	b, _ := json.Marshal(WaveChangedEvent{Wave: wave, State: state})
 	h.publish("wave-changed", string(b))
 }
 

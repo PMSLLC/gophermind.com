@@ -19,7 +19,7 @@
     {
       "id": "01-03",
       "title": "Define serve.Deps interface and SSE event types as API contract",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "01-01"
       ],

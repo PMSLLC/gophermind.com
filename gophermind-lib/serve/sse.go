@@ -41,16 +41,10 @@ func SSEFramesForAgentEvent(ev agent.Event) (event, data string, emit bool) {
 	case "assistant":
 		return "assistant", ev.Text, true
 	case "tool_call":
-		b, _ := json.Marshal(struct {
-			Name string `json:"name"`
-			Args string `json:"args"`
-		}{Name: ev.Name, Args: ev.Text})
+		b, _ := json.Marshal(ToolCallEvent{Name: ev.Name, Args: ev.Text})
 		return "tool_call", string(b), true
 	case "tool_result":
-		b, _ := json.Marshal(struct {
-			Name string `json:"name"`
-			Text string `json:"text"`
-		}{Name: ev.Name, Text: ev.Text})
+		b, _ := json.Marshal(ToolResultEvent{Name: ev.Name, Text: ev.Text})
 		return "tool_result", string(b), true
 	case "usage":
 		b, _ := json.Marshal(ev.Usage)
