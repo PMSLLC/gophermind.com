@@ -120,6 +120,7 @@ export interface StreamHandlers {
   onToolResult?: (name: string) => void
   onDone: () => void
   onError: (message: string) => void
+  onRawEvent?: (event: SSEFrame) => void
 }
 
 /**
@@ -402,6 +403,7 @@ export class ApiClient {
     let buf = ''
 
     const dispatch = (frame: SSEFrame) => {
+      handlers.onRawEvent?.(frame)
       switch (frame.event) {
         case 'token':
           handlers.onToken(frame.data)

@@ -84,6 +84,7 @@ All endpoints are behind bearer-token auth (constant-time compare). Open paths: 
 | POST | `/devices` | APNs device registration |
 | GET | `/backends` | List configured backends (router) |
 | GET | `/backend-status` | LLM backend resolution status |
+| POST | `/wg/register` | Register WG peer, return tunnel config |
 
 ### SSE Event Types (session stream)
 

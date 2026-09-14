@@ -761,3 +761,24 @@ body {
   opacity: 0.75;
   font-variant-numeric: tabular-nums;
 }
+
+/* Debug event lines in verbose mode */
+.line-debug .tag {
+  color: #8b5cf6;
+}
+
+.debug-data {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem;
+  background: var(--bg-raised);
+  border-left: 3px solid #8b5cf6;
+  border-radius: 3px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.8rem;
+  color: var(--text);
+  max-height: 15rem;
+  overflow-y: auto;
+}

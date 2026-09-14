@@ -23,6 +23,13 @@ interface TextLine {
   text: string
 }
 
+/** DebugLine shows raw event data (verbose mode). */
+interface DebugLine {
+  kind: 'debug'
+  eventType: string
+  data: string
+}
+
 /**
  * ApprovalResolutionState is where one approval prompt stands: pending
  * (buttons live, keys live), or one of the ways it stopped being pending.
@@ -49,7 +56,15 @@ interface ApprovalLine extends PendingApproval {
   backend: string
 }
 
-type TranscriptLine = TextLine | ApprovalLine
+type TranscriptLine = TextLine | ApprovalLine | DebugLine
+
+const isVerboseMode = (() => {
+  try {
+    return localStorage.getItem('gophermind.verboseMode') === 'true'
+  } catch {
+    return false
+  }
+})()
 
 type Status = 'connecting' | 'ready' | 'sending' | 'awaiting-approval' | 'error'
 
@@ -301,6 +316,21 @@ export default function App() {
     setActivity('waiting for the model')
 
     await client.streamTurn(sessionID, task, {
+      onRawEvent: (frame) => {
+        if (isVerboseMode) {
+          let displayData = frame.data
+          try {
+            const parsed = JSON.parse(frame.data)
+            displayData = JSON.stringify(parsed, null, 2)
+          } catch {
+            // Keep raw if not JSON
+          }
+          setLines((prev) => [
+            ...prev,
+            { kind: 'debug', eventType: frame.event, data: displayData },
+          ])
+        }
+      },
       onToken: (delta) => {
         setActivity('')
         setLines((prev) => {
@@ -818,6 +848,14 @@ export default function App() {
                         </div>
                       )}
                     </div>
+                  </div>
+                )
+              }
+              if (line.kind === 'debug') {
+                return (
+                  <div key={i} className="line line-debug">
+                    <span className="tag">{line.eventType}</span>
+                    <pre className="debug-data">{line.data}</pre>
                   </div>
                 )
               }

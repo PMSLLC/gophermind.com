@@ -13,6 +13,9 @@ function entryKey(e: CatalogueEntry): string {
 /** remoteEndpointStorageKey is where the (currently UI-only) remote endpoint choice lives. */
 const remoteEndpointStorageKey = 'gophermind.remoteEndpoint'
 
+/** verboseModeStorageKey is where the verbose/debug mode toggle lives. */
+const verboseModeStorageKey = 'gophermind.verboseMode'
+
 interface RemoteEndpointDraft {
   useRemote: boolean
   baseURL: string
@@ -353,6 +356,33 @@ export default function SettingsPanel({ client, onClose }: SettingsPanelProps) {
           </ul>
         </section>
       )}
+
+      <section>
+        <h3>debug mode</h3>
+        <label>
+          <input
+            type="checkbox"
+            checked={
+              (() => {
+                try {
+                  return localStorage.getItem(verboseModeStorageKey) === 'true'
+                } catch {
+                  return false
+                }
+              })()
+            }
+            onChange={(e) => {
+              try {
+                localStorage.setItem(verboseModeStorageKey, e.target.checked ? 'true' : 'false')
+                window.location.reload()
+              } catch {
+                // Ignore storage errors
+              }
+            }}
+          />
+          verbose mode: show all events, prompts, raw responses, tool args, usage, etc.
+        </label>
+      </section>
 
       <section>
         <h3>endpoint</h3>
