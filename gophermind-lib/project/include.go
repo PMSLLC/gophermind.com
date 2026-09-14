@@ -32,12 +32,16 @@ func expandIncludes(root, content string, depth int) string {
 		rel := strings.TrimSpace(sub[1])
 		full, err := safety.SafeJoin(root, rel)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "[include] blocked (out-of-root): %s\n", rel)
 			return fmt.Sprintf("[include blocked: %s]", rel)
 		}
 		data, err := os.ReadFile(full)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "[include] missing: %s\n", rel)
 			return fmt.Sprintf("[include missing: %s]", rel)
 		}
+		// Debug: show included file and size
+		fmt.Fprintf(os.Stderr, "[include] loaded: %s (%d bytes, depth %d)\n", rel, len(data), depth+1)
 		return expandIncludes(root, strings.TrimRight(string(data), "\n"), depth+1)
 	})
 }

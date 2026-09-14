@@ -36,3 +36,21 @@
 - Keep instructions under 6000 bytes so task has room
 - Trim aggressively: cut verbose explanations, keep essence
 - Migrate information to shorter form, never lose it
+
+## Architecture & Tech Stack
+- Backend/CLI: Go (preferred), Python (data/ETL), FastAPI/Flask
+- Frontend: React + TypeScript
+- Infra: CDK (TypeScript/Python), Terraform
+- Database: MySQL (primary), Redis (caching)
+- No speculative code: build what was asked, nothing more
+
+## Git & Deployment
+- Deploy via git: git fetch + git checkout on target, never scp files
+- One commit per completed step with descriptive message
+- Touch only what you must: don't refactor adjacent code
+- Tests pass before and after every change
+
+## MCP & RAG
+- Query RAG BEFORE implementing model/controller/service/schema
+- Store significant work summaries to RAG after completion
+- Do not infer what you can retrieve
