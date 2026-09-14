@@ -19,26 +19,31 @@ Read the task-id-matching file before starting work on it.
 ## Current Position
 
 Phase: 2 of 5 (gophermind-server) — Phase 1 complete, Phase 2 in progress
-Plan: 2 of 4 in current phase
+Plan: 3 of 4 in current phase
 Status: In progress
-Last activity: 2026-09-14 — completed plan 02-02
+Last activity: 2026-09-14 — completed plan 02-03
 
-Most recent (02-02): gophermind-server/server.go's buildDeps wires a real
-serve.Deps -- Run/Stream/SessionTurn build one agent.Agent per turn the
-same way the CLI's own "serve" command does, SessionTurn always through
-serve.RemoteApprovalGate (headless server, no terminal to prompt). Full
-mux now live via serve.NewMux (auth/rate-limiting/HMAC all came for free
-from that). Along the way, found and fixed a real bug in the SHARED
-gophermind-lib/llm package: a Client with no Model set made
-connectStreamChain return (nil, nil), which Stream then panicked on
-(nil pointer) and Complete silently "succeeded" with an empty message --
-neither was gophermind-server-specific, any caller with an unset model
-hit this. Fixed via a new llm.ErrNoModel sentinel; buildDeps also now
-calls DiscoverModel at startup (matching the CLI), so this only matters
-as a defense-in-depth backstop. 17 gophermind-server tests + 2 new
-llm-package regression tests, all pass with -race. Verified against the
-real binary too (not just httptest): auth, session list, graceful
-shutdown all confirmed live.
+Most recent (02-03): gophermind-server/wireguard.go. Real design decision
+surfaced and asked rather than guessed: the task wanted "valid gocloak
+token" validation, but no gocloak/JWT dependency or Keycloak instance
+exists anywhere in this environment. Went with a pluggable TokenValidator
+type; the wired-in default (stubTokenValidator) fails closed -- rejects
+every token with ErrValidatorUnconfigured -- rather than an insecure
+always-allow stub. Swap in a real gocloak-backed validator once a realm
+exists to test against. Added peerTracker (register/renew/remove/TTL
+sweep) on top of the existing wireguard.Server, plus two small additions
+to gophermind-lib/wireguard itself (ErrPeerNotFound sentinel,
+PeerConfig() getter) needed to support renewal without a second IPC
+round trip. WG interface starts at server startup when --wg-interface is
+set (empty = deliberately disabled, not an error) and closes through
+runServer's existing shutdown hook -- given its own context deliberately,
+not the shutdown ctx, since wireguard.Server self-closes on ctx.Done()
+and that would race the ordered HTTP-drains-then-WG-closes guarantee.
+7 new tests including a real end-to-end integration test (register via
+the actual HTTP handler, build a wireguard.Client from the returned
+config, prove an HTTP request round-trips through the tunnel). Full
+gophermind-server suite (24 tests) passes with -race; verified against
+the real binary too.
 
 Completed-task one-liners (full detail in each commit message):
 - 01-01: gophermind-lib module created, internal/ packages moved.
@@ -46,11 +51,15 @@ Completed-task one-liners (full detail in each commit message):
   added Client.HTTPClient() (the missing "local HTTP proxy" piece).
 - 01-03: named SSE event structs + route contract doc on serve.NewMux.
 - 02-01: gophermind-server entry point, flags/env, graceful shutdown.
+- 02-02: full serve.Deps wired in; found/fixed llm.ErrNoModel bug in the
+  shared gophermind-lib/llm package (not gophermind-server-specific).
 
-Next task: 02-03 (WireGuard server init, peer registration endpoint,
-per-backend tunnel management) — depends on 02-02 (done) and 01-02 (done).
+Next task: 02-04 (integration tests for all HTTP endpoints and WG
+registration) — depends on 02-03, which is now done. Given how much of
+02-04's ground 02-02/02-03's own tests already cover, worth checking
+what's genuinely still missing before adding more.
 
-Progress: [█████░░░░░] 22%
+Progress: [██████░░░░] 26%
 
 ## Accumulated Context
 

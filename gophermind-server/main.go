@@ -146,10 +146,24 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("build mux: %w", err)
 	}
-	httpSrv := &http.Server{Handler: mux}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// wgCloser stays nil (WireGuard disabled) when cfg.WGInterface is empty;
+	// startWireGuard logs that and returns a nil Server/tracker too, so the
+	// /wg/register route below is simply never registered.
+	wg, tracker, err := startWireGuard(cfg, logger)
+	if err != nil {
+		return fmt.Errorf("start wireguard: %w", err)
+	}
+	var wgCloser io.Closer
+	if wg != nil {
+		wgCloser = wg
+		mux.Handle("POST /wg/register", wgRegisterHandler(tracker, stubTokenValidator, logger))
+		go tracker.runSweeper(ctx, peerSweepInterval)
+	}
+	httpSrv := &http.Server{Handler: mux}
 
 	// Feeds the pipeline hub by watching cfg.Root/.planning/assignments.json
 	// for changes, so GET /pipeline/events has something to stream -- the
@@ -158,9 +172,6 @@ func run(logger *slog.Logger) error {
 	// channel between them).
 	serve.StartPipelineWatcher(ctx, cfg.Root, pipelineHub)
 
-	// wgCloser is nil until plan 02-03 wires WireGuard server init into this
-	// entry point; runServer's shutdown path already has the hook ready.
-	var wgCloser io.Closer
 	return runServer(ln, httpSrv, wgCloser, logger, ctx)
 }
 

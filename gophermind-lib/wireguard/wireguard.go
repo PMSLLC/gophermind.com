@@ -13,6 +13,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -200,13 +201,19 @@ func (s *Server) RegisterPeer(clientPubKeyHex string) (*PeerConfig, error) {
 	return cfg, nil
 }
 
+// ErrPeerNotFound is returned by RemovePeer and PeerConfig when
+// clientPubKeyHex is not a currently-registered peer. Exported so callers
+// can errors.Is it (e.g. to treat "already removed" as success rather than
+// a real failure).
+var ErrPeerNotFound = errors.New("peer not found")
+
 // RemovePeer removes a peer from the WireGuard interface.
 func (s *Server) RemovePeer(clientPubKeyHex string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if _, ok := s.peers[clientPubKeyHex]; !ok {
-		return fmt.Errorf("peer not found: %s", clientPubKeyHex)
+		return fmt.Errorf("remove peer %s: %w", clientPubKeyHex, ErrPeerNotFound)
 	}
 
 	peerIPC := fmt.Sprintf("public_key=%s\nremove=true\n", clientPubKeyHex)
@@ -216,6 +223,22 @@ func (s *Server) RemovePeer(clientPubKeyHex string) error {
 
 	delete(s.peers, clientPubKeyHex)
 	return nil
+}
+
+// PeerConfig returns the config previously issued to clientPubKeyHex by
+// RegisterPeer, without touching the WG device (no IPC round trip) --
+// useful for a caller renewing a peer's lease who needs to return the same
+// config again without re-registering. Returns ErrPeerNotFound if
+// clientPubKeyHex is not currently registered.
+func (s *Server) PeerConfig(clientPubKeyHex string) (*PeerConfig, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entry, ok := s.peers[clientPubKeyHex]
+	if !ok {
+		return nil, fmt.Errorf("peer config %s: %w", clientPubKeyHex, ErrPeerNotFound)
+	}
+	cfg := entry.config
+	return &cfg, nil
 }
 
 // PeerCount returns the number of registered peers.

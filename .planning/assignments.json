@@ -46,7 +46,7 @@
     {
       "id": "02-03",
       "title": "WireGuard server init and peer registration",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "02-02",
         "01-02"
