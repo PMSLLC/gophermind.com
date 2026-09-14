@@ -14,7 +14,7 @@
       ],
       "agent": "executor",
       "model": "strong",
-      "status": "pending",
+      "status": "completed",
       "depends_on": []
     },
     {
