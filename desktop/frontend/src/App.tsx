@@ -90,6 +90,21 @@ function prettyArgs(argsJSON: string): string {
 }
 
 /**
+ * unescapeText unescapes JSON string escape sequences (\n, \t, etc.) so
+ * tool results and debug output display with actual newlines and tabs
+ * instead of literal \n and \t characters.
+ */
+function unescapeText(text: string): string {
+  try {
+    // JSON.parse a quoted string to unescape it
+    return JSON.parse(`"${text.replace(/"/g, '\\"')}"`)
+  } catch {
+    // If parsing fails, return as-is
+    return text
+  }
+}
+
+/**
  * argsHeadline pulls out the one field (a shell command or a file path)
  * that makes a gated call obvious at a glance, so it does not require
  * reading the full pretty-printed JSON to see what is about to happen.
@@ -875,7 +890,7 @@ export default function App() {
                 return (
                   <div key={i} className="line line-debug">
                     <span className="tag">{line.eventType}</span>
-                    <pre className="debug-data">{line.data}</pre>
+                    <pre className="debug-data">{unescapeText(line.data)}</pre>
                   </div>
                 )
               }
