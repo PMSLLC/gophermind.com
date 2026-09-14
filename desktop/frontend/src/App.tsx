@@ -318,6 +318,8 @@ export default function App() {
 
     await client.streamTurn(sessionID, task, {
       onRawEvent: (frame) => {
+        // Skip token events — they're already displayed as the accumulating assistant message
+        if (frame.event === 'token') return
         if (isVerboseMode) {
           let displayData = frame.data
           try {
