@@ -56,7 +56,7 @@
     {
       "id": "02-04",
       "title": "Server integration tests for all HTTP endpoints and WG registration",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "02-03"
       ],

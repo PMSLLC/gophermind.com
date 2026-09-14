@@ -18,32 +18,28 @@ Read the task-id-matching file before starting work on it.
 
 ## Current Position
 
-Phase: 2 of 5 (gophermind-server) — Phase 1 complete, Phase 2 in progress
-Plan: 3 of 4 in current phase
-Status: In progress
-Last activity: 2026-09-14 — completed plan 02-03
+Phase: 2 of 5 (gophermind-server) — COMPLETE, all 4 plans done
+Plan: 4 of 4 in current phase
+Status: Phase 2 done; ready for Phase 3
+Last activity: 2026-09-14 — completed plan 02-04
 
-Most recent (02-03): gophermind-server/wireguard.go. Real design decision
-surfaced and asked rather than guessed: the task wanted "valid gocloak
-token" validation, but no gocloak/JWT dependency or Keycloak instance
-exists anywhere in this environment. Went with a pluggable TokenValidator
-type; the wired-in default (stubTokenValidator) fails closed -- rejects
-every token with ErrValidatorUnconfigured -- rather than an insecure
-always-allow stub. Swap in a real gocloak-backed validator once a realm
-exists to test against. Added peerTracker (register/renew/remove/TTL
-sweep) on top of the existing wireguard.Server, plus two small additions
-to gophermind-lib/wireguard itself (ErrPeerNotFound sentinel,
-PeerConfig() getter) needed to support renewal without a second IPC
-round trip. WG interface starts at server startup when --wg-interface is
-set (empty = deliberately disabled, not an error) and closes through
-runServer's existing shutdown hook -- given its own context deliberately,
-not the shutdown ctx, since wireguard.Server self-closes on ctx.Done()
-and that would race the ordered HTTP-drains-then-WG-closes guarantee.
-7 new tests including a real end-to-end integration test (register via
-the actual HTTP handler, build a wireguard.Client from the returned
-config, prove an HTTP request round-trips through the tunnel). Full
-gophermind-server suite (24 tests) passes with -race; verified against
-the real binary too.
+Most recent (02-04): 02-02/02-03's own tests already covered most of the
+contract, as expected, but real gaps remained: POST /run, POST
+/run/stream, GET /session/{id}/messages, PATCH+DELETE /session/{id}, GET
+/models, GET /skills, and HMAC verification had zero coverage. Added 11
+more tests closing those, plus refactored run() the same way runServer
+and parseServerConfig already separate untestable OS-facing bits
+(os.Args, a real port bind, a real signal handler) from testable logic:
+new runWithConfig(cfg, ln, logger, ctx) takes the listener and context as
+parameters, and a new end-to-end test drives the real orchestration
+(buildDeps + NewMux + startWireGuard + pipeline watcher + runServer)
+against a real listener and a cancelled-context shutdown. One real
+lesson surfaced while adding session CRUD tests: POST /session alone
+does not create the on-disk session file -- only session.Save after an
+actual turn does -- so DELETE on a session with no turns yet correctly
+404s; that's not a bug, my first test draft just assumed otherwise.
+Coverage: 60.5% -> 77.4% -> 83.1%, clearing the >80% target. Full suite
+(35 tests) passes with -race; go build/vet clean repo-wide.
 
 Completed-task one-liners (full detail in each commit message):
 - 01-01: gophermind-lib module created, internal/ packages moved.
@@ -53,13 +49,17 @@ Completed-task one-liners (full detail in each commit message):
 - 02-01: gophermind-server entry point, flags/env, graceful shutdown.
 - 02-02: full serve.Deps wired in; found/fixed llm.ErrNoModel bug in the
   shared gophermind-lib/llm package (not gophermind-server-specific).
+- 02-03: WireGuard server init, peer registration (pluggable/fail-closed
+  gocloak validator -- no real IdP wired in yet, asked rather than
+  guessed).
 
-Next task: 02-04 (integration tests for all HTTP endpoints and WG
-registration) — depends on 02-03, which is now done. Given how much of
-02-04's ground 02-02/02-03's own tests already cover, worth checking
-what's genuinely still missing before adding more.
+Next task: 03-01 (Create gophermind-osx/ module, main.go, app lifecycle,
+window creation) -- first task of Phase 3. This is native libui-ng
+(cgo-based) macOS GUI work: I can write and unit-test the Go side, but
+cannot visually verify a GUI without a display. Flag this to John before
+starting -- GUI correctness will need his eyes once it exists.
 
-Progress: [██████░░░░] 26%
+Progress: [███████░░░] 30%
 
 ## Accumulated Context
 

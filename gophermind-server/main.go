@@ -131,12 +131,26 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	cfg.LLMEndpoint = resolveLLMEndpoint(cfg, config.Load)
-	logger.Info("starting", "port", cfg.Port, "wg_interface", cfg.WGInterface, "llm_endpoint_configured", cfg.LLMEndpoint != "", "root", cfg.Root)
 
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Port))
 	if err != nil {
 		return fmt.Errorf("listen on port %d: %w", cfg.Port, err)
 	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	return runWithConfig(cfg, ln, logger, ctx)
+}
+
+// runWithConfig is run's testable core: everything after config
+// resolution/listener binding/signal-handler installation, none of which
+// (os.Args, a real port bind, a real signal handler) belongs in a unit
+// test. Takes cfg, ln, and ctx as parameters -- rather than resolving them
+// itself -- for exactly that reason, the same pattern parseServerConfig's
+// injected getenv/getwd and runServer's injected ln/ctx already use.
+func runWithConfig(cfg serverConfig, ln net.Listener, logger *slog.Logger, ctx context.Context) error {
+	logger.Info("starting", "port", cfg.Port, "wg_interface", cfg.WGInterface, "llm_endpoint_configured", cfg.LLMEndpoint != "", "root", cfg.Root)
 
 	svcDeps, pipelineHub, err := buildDeps(cfg, cfg.Root, logger)
 	if err != nil {
@@ -146,9 +160,6 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("build mux: %w", err)
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	// wgCloser stays nil (WireGuard disabled) when cfg.WGInterface is empty;
 	// startWireGuard logs that and returns a nil Server/tracker too, so the
