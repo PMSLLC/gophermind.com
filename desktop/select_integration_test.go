@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"gophermind/internal/freellm"
-	"gophermind/internal/modelcat"
-	"gophermind/internal/prompt"
-	"gophermind/internal/serve"
+	"gophermind/gophermind-lib/freellm"
+	"gophermind/gophermind-lib/modelcat"
+	"gophermind/gophermind-lib/prompt"
+	"gophermind/gophermind-lib/serve"
 )
 
 // startTestServer wires the same pieces startEmbeddedServer does (tool

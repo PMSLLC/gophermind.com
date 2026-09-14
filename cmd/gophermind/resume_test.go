@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"gophermind/internal/session"
+	"gophermind/gophermind-lib/session"
 )
 
 func TestChoosePicked(t *testing.T) {

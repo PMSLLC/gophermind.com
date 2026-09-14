@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"sync"
 
-	"gophermind/internal/config"
-	"gophermind/internal/llm"
+	"gophermind/gophermind-lib/config"
+	"gophermind/gophermind-lib/llm"
 )
 
 // fallbackProfile is the free provider the desktop app falls back to when

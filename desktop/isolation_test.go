@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"gophermind/internal/config"
-	"gophermind/internal/session"
+	"gophermind/gophermind-lib/config"
+	"gophermind/gophermind-lib/session"
 )
 
 // isolate points the config directory, and therefore the session store, at a

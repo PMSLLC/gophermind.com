@@ -16,7 +16,7 @@
 **Depends on**: none
 
 Plans:
-- [ ] 01-01: Create gophermind-lib/ module, move existing internal packages, fix imports
+- [x] 01-01: Create gophermind-lib/ module, move existing internal packages, fix imports
 - [ ] 01-02: Add userspace WireGuard client and server packages to gophermind-lib
 - [ ] 01-03: Define serve.Deps interface and SSE event types as the API contract
 

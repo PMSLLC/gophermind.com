@@ -9,9 +9,9 @@ import (
 
 	"path/filepath"
 
-	"gophermind/internal/config"
-	"gophermind/internal/prompt"
-	"gophermind/internal/serve"
+	"gophermind/gophermind-lib/config"
+	"gophermind/gophermind-lib/prompt"
+	"gophermind/gophermind-lib/serve"
 )
 
 // embeddedServer is a running instance of internal/serve, bound to a

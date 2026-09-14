@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"io"
 
-	"gophermind/internal/agent"
+	"gophermind/gophermind-lib/agent"
 )
 
 // renderJSONResult writes a single machine-readable JSON object describing a

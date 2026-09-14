@@ -1,0 +1,100 @@
+// Package banner composes the startup splash shown under the gopher: the ASCII
+// art, the build version, the most recent changelog entries, and a random
+// fortune. Render is called once per session so the fortune stays put.
+package banner
+
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+
+	root "gophermind"
+	"gophermind/gophermind-lib/fortune"
+	"gophermind/gophermind-lib/freellm"
+	"gophermind/gophermind-lib/prompt"
+	"gophermind/gophermind-lib/tips"
+	"gophermind/gophermind-lib/version"
+)
+
+// Options controls optional banner sections.
+type Options struct {
+	Fortune bool   // include a random fortune under the banner
+	Tip     bool   // include a rotating tip-of-the-day line
+	Profile string // active config profile; a free-* one adds an attribution line
+	Model   string // model in use, named in that attribution line
+}
+
+// taglineStyle tints the "GO PHER IT" wordmark with the teal from the gopher's
+// glasses. lipgloss degrades to plain text when the output is not a color-capable
+// TTY, so piped and captured output stays escape-free.
+var taglineStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#5AA6BC"))
+
+// Render builds the full startup banner string, including a fortune and a tip.
+func Render() string {
+	return RenderWith(Options{Fortune: true, Tip: true})
+}
+
+// RenderWith builds the startup banner, honoring the given options (e.g.
+// --fortune off suppresses the fortune while keeping art/version/changes).
+func RenderWith(o Options) string {
+	var b strings.Builder
+	b.WriteString(prompt.GopherArt)
+	b.WriteString(taglineStyle.Render(prompt.GoPherItBanner))
+	b.WriteString("\n")
+	b.WriteString(version.String())
+	b.WriteByte('\n')
+
+	// Name the free provider serving this model, so the user always knows whose
+	// free tier they are spending. Renders nothing for a paid or unset profile,
+	// which keeps Render() and every existing caller byte-identical.
+	if a, ok := freellm.AttributionFor(o.Profile, o.Model); ok {
+		b.WriteString(taglineStyle.Render(a.Line()))
+		b.WriteByte('\n')
+	}
+
+	if changes := LatestChanges(root.Changelog, 3); len(changes) > 0 {
+		b.WriteString("\nRecent changes:\n")
+		for _, c := range changes {
+			b.WriteString("  • " + c + "\n")
+		}
+	}
+
+	if o.Tip {
+		b.WriteString("\n💡 " + tips.Random() + "\n")
+	}
+
+	if o.Fortune {
+		if f := fortune.Random(); f != "" {
+			b.WriteString("\n" + f + "\n")
+		}
+	}
+	return b.String()
+}
+
+// LatestChanges returns up to n bullet entries from the most recent non-empty
+// version section of a Keep a Changelog document. "###" subsection headers
+// (Added/Changed/Fixed) and an empty "[Unreleased]" section are skipped.
+func LatestChanges(md string, n int) []string {
+	var out []string
+	started := false
+	for _, line := range strings.Split(md, "\n") {
+		t := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(t, "## "):
+			if len(out) > 0 {
+				return out // reached the next version; the first non-empty one is done
+			}
+			started = true
+		case !started:
+			// preamble before the first version heading
+		case strings.HasPrefix(t, "### "):
+			// subsection header (Added/Changed/Fixed) — skip
+		case strings.HasPrefix(t, "- "), strings.HasPrefix(t, "* "):
+			out = append(out, strings.TrimSpace(t[2:]))
+			if len(out) >= n {
+				return out
+			}
+		}
+	}
+	return out
+}

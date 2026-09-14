@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"gophermind/internal/gitenv"
+	"gophermind/gophermind-lib/gitenv"
 )
 
 // dispatchBinPath is the compiled gophermind binary the tests in this file

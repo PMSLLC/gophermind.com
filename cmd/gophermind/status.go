@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"gophermind/internal/gitenv"
+	"gophermind/gophermind-lib/gitenv"
 )
 
 // promptLine renders a compact one-line status for embedding in a shell prompt

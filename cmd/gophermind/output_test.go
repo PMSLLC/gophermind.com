@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"gophermind/internal/agent"
+	"gophermind/gophermind-lib/agent"
 )
 
 func TestRenderJSONResultSuccess(t *testing.T) {

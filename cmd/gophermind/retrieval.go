@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"gophermind/internal/agent"
-	"gophermind/internal/embed"
+	"gophermind/gophermind-lib/agent"
+	"gophermind/gophermind-lib/embed"
 )
 
 // retrievalPaths bundles the stores retrieval reads, so every entry point (the

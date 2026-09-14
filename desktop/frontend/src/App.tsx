@@ -632,6 +632,7 @@ export default function App() {
             : s,
         ),
       )
+      setSessionsOpen(false)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       setLines((prev) => [
@@ -660,6 +661,7 @@ export default function App() {
         setSessionID(null)
         setStatusDetail('session deleted; send a message to start a new one')
       }
+      setSessionsOpen(false)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       setLines((prev) => [
@@ -670,7 +672,7 @@ export default function App() {
   }
 
   /** resume attaches the window to an existing session on its own backend. */
-  async function resume(backend: string, id: string) {
+  async function resume(backend: string, id: string, info?: { title?: string; messages?: number; modTime?: string }) {
     const ep = endpointRef.current
     if (!ep) return
     const client = new ApiClient(ep.baseURL, ep.token, backend === 'local' ? '' : backend)
@@ -678,7 +680,18 @@ export default function App() {
     setActiveBackend(backend)
     setSessionID(id)
     setSessionsOpen(false)
-    setLines([{ kind: 'text', role: 'system', text: `--- resumed ${id} on ${backend} ---` }])
+
+    // Build summary showing previous work
+    let summary = `resumed ${info?.title || id} on ${backend}`
+    if (info?.messages) {
+      summary += ` (${info.messages} messages)`
+    }
+    if (info?.modTime) {
+      const date = new Date(info.modTime)
+      summary += ` - last activity ${date.toLocaleString()}`
+    }
+
+    setLines([{ kind: 'text', role: 'system', text: `--- ${summary} ---` }])
     try {
       setSessionRoot((await client.getSessionConfig(id)).root || '')
     } catch {
@@ -838,7 +851,16 @@ export default function App() {
             // delete button inside a clickable row would be invalid HTML and
             // would resume the session when you meant to remove it.
             <div key={`${backend}:${item.ID}`} className="sessionrow">
-              <button className="sessionrow-open" onClick={() => void resume(backend, item.ID)}>
+              <button
+                className="sessionrow-open"
+                onClick={() =>
+                  void resume(backend, item.ID, {
+                    title: item.Name || item.Title,
+                    messages: item.Messages,
+                    modTime: item.ModTime,
+                  })
+                }
+              >
                 <span className="sessionrow-backend">{backend}</span>
                 <span className="sessionrow-title">{item.Name || item.Title || item.ID}</span>
                 <span className="sessionrow-meta">{item.Messages} msgs</span>

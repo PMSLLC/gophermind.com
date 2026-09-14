@@ -17,15 +17,15 @@ import (
 	"sync"
 	"time"
 
-	"gophermind/internal/agent"
-	"gophermind/internal/config"
-	"gophermind/internal/freellm"
-	"gophermind/internal/llm"
-	"gophermind/internal/modelcat"
-	"gophermind/internal/safety"
-	"gophermind/internal/serve"
-	"gophermind/internal/session"
-	"gophermind/internal/tools"
+	"gophermind/gophermind-lib/agent"
+	"gophermind/gophermind-lib/config"
+	"gophermind/gophermind-lib/freellm"
+	"gophermind/gophermind-lib/llm"
+	"gophermind/gophermind-lib/modelcat"
+	"gophermind/gophermind-lib/safety"
+	"gophermind/gophermind-lib/serve"
+	"gophermind/gophermind-lib/session"
+	"gophermind/gophermind-lib/tools"
 )
 
 // loadConfig reads GopherMind's usual configuration (env vars, working-directory

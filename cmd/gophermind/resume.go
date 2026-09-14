@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"gophermind/internal/session"
+	"gophermind/gophermind-lib/session"
 )
 
 // choosePicked maps a user's picker input to a session id. "", "0", or "n"

@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gophermind/internal/llm"
-	"gophermind/internal/secaudit"
+	"gophermind/gophermind-lib/llm"
+	"gophermind/gophermind-lib/secaudit"
 )
 
 // secAuditOptions is the parsed form of the secaudit subcommand's arguments.

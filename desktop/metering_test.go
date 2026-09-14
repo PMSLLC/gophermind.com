@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"gophermind/internal/freellm"
-	"gophermind/internal/llm"
+	"gophermind/gophermind-lib/freellm"
+	"gophermind/gophermind-lib/llm"
 )
 
 // Every turn this app serves spends a free-tier allowance, and until now

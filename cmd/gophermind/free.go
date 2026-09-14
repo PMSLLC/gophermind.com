@@ -10,7 +10,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"gophermind/internal/freellm"
+	"gophermind/gophermind-lib/freellm"
 )
 
 // runFree implements "gophermind free". It writes to out and returns a process

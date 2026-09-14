@@ -1,0 +1,111 @@
+package agent
+
+import (
+	"strings"
+
+	"gophermind/gophermind-lib/llm"
+	"gophermind/gophermind-lib/safety"
+	"gophermind/gophermind-lib/tools"
+)
+
+// AgentConfig is a snapshot of the agent's user-facing configuration. It exists
+// so the TUI's /config wizard can pre-fill the current values and report what
+// changed after the user edits them.
+type AgentConfig struct {
+	BaseURL string
+	// ChatPath and ModelsPath mirror llm.Client.ChatPath/ModelsPath: empty
+	// means the client's historical defaults ("/v1/chat/completions",
+	// "/v1/models"). Carried here so the TUI's /config wizard can pre-fill
+	// and clear them the same way it does BaseURL/Model.
+	ChatPath     string
+	ModelsPath   string
+	Model        string
+	ApprovalMode string // "ask" or "auto"
+	MaxIter      int
+}
+
+// LLM returns the agent's underlying LLM client, so a caller (e.g. the
+// /project-execute orchestrator) can build fresh per-task agents that share
+// the same connection/credentials.
+func (a *Agent) LLM() *llm.Client { return a.llm }
+
+// Registry returns the agent's tool registry, shared with fresh per-task
+// agents built for /project-execute.
+func (a *Agent) Registry() *tools.Registry { return a.reg }
+
+// MaxIter returns the agent's per-turn tool-iteration budget, reused as the
+// default for fresh per-task agents built for /project-execute.
+func (a *Agent) MaxIter() int { return a.maxIter }
+
+// Config returns the agent's current user-facing configuration.
+func (a *Agent) Config() AgentConfig {
+	return AgentConfig{
+		BaseURL:      a.llm.BaseURL,
+		ChatPath:     a.llm.ChatPath,
+		ModelsPath:   a.llm.ModelsPath,
+		Model:        a.llm.Model,
+		ApprovalMode: a.approvalMode,
+		MaxIter:      a.maxIter,
+	}
+}
+
+// SetBaseURL points the agent at a different OpenAI-compatible endpoint for
+// subsequent requests. The trailing slash is trimmed to match client setup.
+func (a *Agent) SetBaseURL(u string) {
+	a.llm.BaseURL = strings.TrimRight(strings.TrimSpace(u), "/")
+}
+
+// SetChatPath sets the path appended to BaseURL for chat completions.
+// An empty string is valid and meaningful (the client's default
+// "/v1/chat/completions"), so unlike SetBaseURL this always applies the
+// given value rather than ignoring a blank one.
+func (a *Agent) SetChatPath(p string) { a.llm.ChatPath = strings.TrimSpace(p) }
+
+// SetModelsPath sets the path appended to BaseURL for model listing and
+// capability probing. An empty string is valid and meaningful (the client's
+// default "/v1/models"), so unlike SetBaseURL this always applies the given
+// value rather than ignoring a blank one.
+func (a *Agent) SetModelsPath(p string) { a.llm.ModelsPath = strings.TrimSpace(p) }
+
+// SetModel changes the model used for subsequent requests.
+func (a *Agent) SetModel(m string) { a.llm.Model = strings.TrimSpace(m) }
+
+// SetAPIKey updates the bearer token sent on subsequent requests.
+func (a *Agent) SetAPIKey(k string) { a.llm.APIKey = strings.TrimSpace(k) }
+
+// ApprovalAllows reports whether this agent's approval policy permits a tool
+// call. It exposes the decision rather than the function so callers (and tests)
+// can assert on policy without reaching into the agent's internals — the seam
+// that let an unaudited, auto-approving task agent ship unnoticed.
+func (a *Agent) ApprovalAllows(tool, argsJSON string) bool {
+	if a.approve == nil {
+		return true
+	}
+	return a.approve(tool, argsJSON)
+}
+
+// AuditLog returns the attached tamper-evident audit log, or nil when none is
+// set. Exposed so a session can hand its chain to the unattended executor,
+// which previously left no audit trail at all.
+func (a *Agent) AuditLog() *safety.AuditLog { return a.audit }
+
+// SetMaxIter sets the per-turn tool-iteration budget. A value < 1 is ignored so
+// a stray zero from a wizard never disables the loop.
+func (a *Agent) SetMaxIter(n int) {
+	if n > 0 {
+		a.maxIter = n
+	}
+}
+
+// SetApprovalMode records the approval mode ("ask"/"auto"). Switching to "auto"
+// takes effect immediately for subsequent tool calls; switching back to "ask"
+// is recorded for display and the saved config, but the interactive prompt is
+// only re-installed on the next launch (the TUI owns that closure), so callers
+// should surface that when reporting the change.
+func (a *Agent) SetApprovalMode(mode string) {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	a.approvalMode = mode
+	if mode == "auto" {
+		a.approve = safety.Auto
+	}
+}

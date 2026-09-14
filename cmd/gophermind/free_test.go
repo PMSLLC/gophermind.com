@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"gophermind/internal/freellm"
+	"gophermind/gophermind-lib/freellm"
 )
 
 func TestFreeListShowsNoKeyProvidersFirst(t *testing.T) {

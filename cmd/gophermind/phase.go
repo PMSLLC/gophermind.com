@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"gophermind/internal/phaseflow"
+	"gophermind/gophermind-lib/phaseflow"
 )
 
 // phaseUsage is printed for `gophermind phase help` and on unknown subcommands.

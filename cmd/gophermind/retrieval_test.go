@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"gophermind/internal/agent"
-	"gophermind/internal/embed"
-	"gophermind/internal/llm"
+	"gophermind/gophermind-lib/agent"
+	"gophermind/gophermind-lib/embed"
+	"gophermind/gophermind-lib/llm"
 )
 
 // stubEmbed returns a fixed vector, so a query always matches a stored vector

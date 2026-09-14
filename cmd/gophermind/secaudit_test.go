@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"gophermind/internal/secaudit"
+	"gophermind/gophermind-lib/secaudit"
 )
 
 func TestParseSecAuditArgsDefaults(t *testing.T) {
