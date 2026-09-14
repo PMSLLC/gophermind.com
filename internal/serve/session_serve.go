@@ -254,8 +254,9 @@ func sessionStreamHandler(turn SessionTurn, locks *sessionLocks) http.HandlerFun
 		}
 		if err := turn(r.Context(), id, task, emit); err != nil {
 			fmt.Fprintln(os.Stderr, "serve: session turn failed:", err)
-			// Send detailed error to client so they know what went wrong
-			writeSSEEvent(w, flusher, "error", fmt.Sprintf("error: %v", err))
+			// Send detailed error to client but sanitize newlines to prevent SSE injection
+			errMsg := strings.ReplaceAll(strings.ReplaceAll(err.Error(), "\r", " "), "\n", " ")
+			writeSSEEvent(w, flusher, "error", fmt.Sprintf("error: %s", errMsg))
 		}
 		writeSSEEvent(w, flusher, "done", "")
 	}

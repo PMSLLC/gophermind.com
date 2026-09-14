@@ -151,8 +151,9 @@ func sseHandler(run func(ctx context.Context, task string, emit func(string)) er
 		}
 		if err := run(r.Context(), task, emit); err != nil {
 			fmt.Fprintln(os.Stderr, "serve: stream run failed:", err)
-			// Send detailed error including the cause
-			fmt.Fprintf(w, "event: error\ndata: error: %v\n\n", err)
+			// Send detailed error but sanitize newlines to prevent SSE injection
+			errMsg := strings.ReplaceAll(strings.ReplaceAll(err.Error(), "\r", " "), "\n", " ")
+			fmt.Fprintf(w, "event: error\ndata: error: %s\n\n", errMsg)
 			return
 		}
 		fmt.Fprintf(w, "event: done\ndata: \n\n")
