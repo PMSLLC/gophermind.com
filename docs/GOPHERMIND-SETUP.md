@@ -98,19 +98,21 @@ Reference for:
 
 ## Registering with gophermind Server
 
-Once this repo is set up, register it with the gophermind server on `<server-host>`:
+See **docs/SERVER-SETUP.md** for complete server setup including:
+- Repository cloned to `/home/gophermind/workspace/gophermind.com/`
+- SSH config for `gophermind-server` shorthand
+- Service registration via HTTP API or CLI
+- Keeping server copy in sync
 
+**Quick registration** (once repo is cloned):
 ```bash
-# From the server (<server-host>)
-gophermind project register \
-  --name gophermind \
-  --path /path/to/gophermind.com \
-  --config-url https://raw.githubusercontent.com/jbrahy/gophermind.com/main/GOPHERMIND.toml
-
-# Or locally (if server supports HTTP registration):
 curl -X POST http://<server-host>:8090/projects \
   -H "Content-Type: application/json" \
-  -d '{"name":"gophermind","path":"/path/to/gophermind.com"}'
+  -d '{
+    "name": "gophermind",
+    "path": "/home/gophermind/workspace/gophermind.com",
+    "config_url": "https://raw.githubusercontent.com/jbrahy/gophermind.com/main/GOPHERMIND.toml"
+  }'
 ```
 
 ## How Gophermind Uses This Setup
