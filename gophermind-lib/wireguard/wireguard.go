@@ -328,10 +328,10 @@ func NewClient(ctx context.Context, cfg ClientConfig) (*Client, error) {
 	}
 
 	c := &Client{
-		dev:  dev,
-		tnet: tnet,
-		tun:  tun,
-		cfg:  cfg,
+		dev:    dev,
+		tnet:   tnet,
+		tun:    tun,
+		cfg:    cfg,
 		pubKey: derivePublicKey(cfg.PrivateKey),
 	}
 
