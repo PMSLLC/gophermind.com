@@ -335,13 +335,22 @@ export default function App() {
       onToken: (delta) => {
         setActivity('')
         setLines((prev) => {
-          const last = prev[prev.length - 1]
-          // A tool call (and its approval prompt) may have landed after the
-          // in-progress assistant line, so tokens resuming after a decision
-          // start a fresh line instead of appending to a stale one.
-          if (last && last.kind === 'text' && last.role === 'assistant') {
+          // Find the most recent assistant line, skipping over debug lines
+          // (which may have been added by onRawEvent in verbose mode)
+          let assistantIdx = -1
+          for (let i = prev.length - 1; i >= 0; i--) {
+            const line = prev[i]
+            if (line.kind === 'text' && line.role === 'assistant') {
+              assistantIdx = i
+              break
+            }
+            // Stop searching if we hit a non-debug line that's not assistant
+            if (line.kind !== 'debug') break
+          }
+          if (assistantIdx >= 0) {
             const next = [...prev]
-            next[next.length - 1] = { ...last, text: last.text + delta }
+            const last = prev[assistantIdx] as TextLine
+            next[assistantIdx] = { ...last, text: last.text + delta }
             return next
           }
           return [...prev, { kind: 'text', role: 'assistant', text: delta }]
