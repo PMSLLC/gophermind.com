@@ -12,11 +12,14 @@ import (
 	"time"
 
 	"gophermind/gophermind-lib/config"
-	"gophermind/gophermind-lib/serve"
 )
 
 func envMap(m map[string]string) func(string) string {
 	return func(key string) string { return m[key] }
+}
+
+func fixedGetwd(path string) func() (string, error) {
+	return func() (string, error) { return path, nil }
 }
 
 func TestParseServerConfig_FlagsOverrideEnv(t *testing.T) {
@@ -31,11 +34,12 @@ func TestParseServerConfig_FlagsOverrideEnv(t *testing.T) {
 		"--token", "flag-token",
 		"--wg-interface", "wg-flag",
 		"--llm-endpoint", "http://flag-endpoint:8000",
-	}, getenv)
+		"--root", "/flag/root",
+	}, getenv, fixedGetwd("/should/not/be/used"))
 	if err != nil {
 		t.Fatalf("parseServerConfig: %v", err)
 	}
-	want := serverConfig{Port: 9100, Token: "flag-token", WGInterface: "wg-flag", LLMEndpoint: "http://flag-endpoint:8000"}
+	want := serverConfig{Port: 9100, Token: "flag-token", WGInterface: "wg-flag", LLMEndpoint: "http://flag-endpoint:8000", Root: "/flag/root"}
 	if cfg != want {
 		t.Errorf("cfg = %+v, want %+v", cfg, want)
 	}
@@ -47,11 +51,11 @@ func TestParseServerConfig_EnvVarsRespectedWithoutFlags(t *testing.T) {
 		"GOPHERMIND_TOKEN":        "env-token",
 		"GOPHERMIND_WG_INTERFACE": "wg-env",
 	})
-	cfg, err := parseServerConfig(nil, getenv)
+	cfg, err := parseServerConfig(nil, getenv, fixedGetwd("/cwd"))
 	if err != nil {
 		t.Fatalf("parseServerConfig: %v", err)
 	}
-	want := serverConfig{Port: 9000, Token: "env-token", WGInterface: "wg-env", LLMEndpoint: ""}
+	want := serverConfig{Port: 9000, Token: "env-token", WGInterface: "wg-env", LLMEndpoint: "", Root: "/cwd"}
 	if cfg != want {
 		t.Errorf("cfg = %+v, want %+v", cfg, want)
 	}
@@ -59,7 +63,7 @@ func TestParseServerConfig_EnvVarsRespectedWithoutFlags(t *testing.T) {
 
 func TestParseServerConfig_DefaultsWithoutEnvOrFlags(t *testing.T) {
 	getenv := envMap(map[string]string{"GOPHERMIND_TOKEN": "t"})
-	cfg, err := parseServerConfig(nil, getenv)
+	cfg, err := parseServerConfig(nil, getenv, fixedGetwd("/cwd"))
 	if err != nil {
 		t.Fatalf("parseServerConfig: %v", err)
 	}
@@ -69,10 +73,13 @@ func TestParseServerConfig_DefaultsWithoutEnvOrFlags(t *testing.T) {
 	if cfg.WGInterface != "wg0" {
 		t.Errorf("WGInterface = %q, want %q", cfg.WGInterface, "wg0")
 	}
+	if cfg.Root != "/cwd" {
+		t.Errorf("Root = %q, want the getwd fallback %q", cfg.Root, "/cwd")
+	}
 }
 
 func TestParseServerConfig_RefusesEmptyToken(t *testing.T) {
-	_, err := parseServerConfig(nil, envMap(nil))
+	_, err := parseServerConfig(nil, envMap(nil), fixedGetwd("/cwd"))
 	if err == nil {
 		t.Fatal("expected an error when no token is configured")
 	}
@@ -83,12 +90,21 @@ func TestParseServerConfig_RefusesEmptyToken(t *testing.T) {
 
 func TestParseServerConfig_MalformedPortEnvFallsBackToDefault(t *testing.T) {
 	getenv := envMap(map[string]string{"GOPHERMIND_PORT": "not-a-number", "GOPHERMIND_TOKEN": "t"})
-	cfg, err := parseServerConfig(nil, getenv)
+	cfg, err := parseServerConfig(nil, getenv, fixedGetwd("/cwd"))
 	if err != nil {
 		t.Fatalf("parseServerConfig: %v", err)
 	}
 	if cfg.Port != defaultPort {
 		t.Errorf("Port = %d, want fallback default %d for a malformed env value", cfg.Port, defaultPort)
+	}
+}
+
+func TestParseServerConfig_GetwdErrorIsFatal(t *testing.T) {
+	getenv := envMap(map[string]string{"GOPHERMIND_TOKEN": "t"})
+	failingGetwd := func() (string, error) { return "", fmt.Errorf("boom") }
+	_, err := parseServerConfig(nil, getenv, failingGetwd)
+	if err == nil {
+		t.Fatal("expected an error when Root is unset and getwd fails")
 	}
 }
 
@@ -121,38 +137,6 @@ func TestResolveLLMEndpoint_SharedConfigErrorIsNotFatal(t *testing.T) {
 	got := resolveLLMEndpoint(cfg, loadShared)
 	if got != "" {
 		t.Errorf("got %q, want empty string on a shared-config load error", got)
-	}
-}
-
-func TestProbeMux_HealthReadyMetrics(t *testing.T) {
-	metrics := &serve.ServeMetrics{}
-	metrics.PromptTokens.Add(7)
-	mux := probeMux(metrics)
-	ln := mustListen(t)
-	srv := &http.Server{Handler: mux}
-	go srv.Serve(ln)
-	defer srv.Close()
-	base := fmt.Sprintf("http://%s", ln.Addr())
-
-	for _, path := range []string{"/healthz", "/readyz"} {
-		resp, err := http.Get(base + path)
-		if err != nil {
-			t.Fatalf("GET %s: %v", path, err)
-		}
-		if resp.StatusCode != http.StatusOK {
-			t.Errorf("GET %s status = %d, want 200", path, resp.StatusCode)
-		}
-		resp.Body.Close()
-	}
-
-	resp, err := http.Get(base + "/metrics")
-	if err != nil {
-		t.Fatalf("GET /metrics: %v", err)
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), "gophermind_prompt_tokens_total 7") {
-		t.Errorf("metrics body missing prompt token count: %s", body)
 	}
 }
 

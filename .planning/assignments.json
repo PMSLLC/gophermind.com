@@ -37,7 +37,7 @@
     {
       "id": "02-02",
       "title": "Wire serve.Deps and start HTTP listener with all routes",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "02-01"
       ],

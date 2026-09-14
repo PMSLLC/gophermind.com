@@ -20,6 +20,23 @@ func sse(w http.ResponseWriter, lines ...string) {
 	}
 }
 
+// TestStream_NoModelConfiguredReturnsErrorNotPanic reproduces a real crash
+// hit by gophermind-server's session-stream tests: a Client built with an
+// empty Model and no Fallbacks (the state before a caller has run
+// DiscoverModel) made connectStreamChain return (nil, nil) -- Stream then
+// panicked dereferencing a nil resp.Body, since it only checked "if err !=
+// nil" before doing so. It must return ErrNoModel instead.
+func TestStream_NoModelConfiguredReturnsErrorNotPanic(t *testing.T) {
+	c := New("http://unused.invalid", "", "", 0, false)
+	_, _, err := c.Stream(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil, nil)
+	if err == nil {
+		t.Fatal("expected an error with no model configured, got nil")
+	}
+	if !errors.Is(err, ErrNoModel) {
+		t.Errorf("error = %v, want it to wrap ErrNoModel", err)
+	}
+}
+
 func TestStreamProseAndToolCalls(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

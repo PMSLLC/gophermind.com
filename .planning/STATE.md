@@ -19,27 +19,38 @@ Read the task-id-matching file before starting work on it.
 ## Current Position
 
 Phase: 2 of 5 (gophermind-server) — Phase 1 complete, Phase 2 in progress
-Plan: 1 of 4 in current phase
+Plan: 2 of 4 in current phase
 Status: In progress
-Last activity: 2026-09-14 — completed plan 02-01
+Last activity: 2026-09-14 — completed plan 02-02
 
-Most recent (02-01): gophermind-server/main.go — flag/env parsing, refuses
-to start without a token, graceful shutdown verified against the real
-binary with an actual SIGINT. Serves only /healthz/readyz/metrics so far —
-serve.NewMux + full Deps wiring is 02-02's job. WG interface close is a
-wired-but-nil io.Closer hook for 02-03. 11 tests pass with -race. Full
-detail: commit history (`git log --oneline -- gophermind-server/`).
+Most recent (02-02): gophermind-server/server.go's buildDeps wires a real
+serve.Deps -- Run/Stream/SessionTurn build one agent.Agent per turn the
+same way the CLI's own "serve" command does, SessionTurn always through
+serve.RemoteApprovalGate (headless server, no terminal to prompt). Full
+mux now live via serve.NewMux (auth/rate-limiting/HMAC all came for free
+from that). Along the way, found and fixed a real bug in the SHARED
+gophermind-lib/llm package: a Client with no Model set made
+connectStreamChain return (nil, nil), which Stream then panicked on
+(nil pointer) and Complete silently "succeeded" with an empty message --
+neither was gophermind-server-specific, any caller with an unset model
+hit this. Fixed via a new llm.ErrNoModel sentinel; buildDeps also now
+calls DiscoverModel at startup (matching the CLI), so this only matters
+as a defense-in-depth backstop. 17 gophermind-server tests + 2 new
+llm-package regression tests, all pass with -race. Verified against the
+real binary too (not just httptest): auth, session list, graceful
+shutdown all confirmed live.
 
 Completed-task one-liners (full detail in each commit message):
 - 01-01: gophermind-lib module created, internal/ packages moved.
 - 01-02: userspace WireGuard (Server/Client), fixed a double-close panic,
   added Client.HTTPClient() (the missing "local HTTP proxy" piece).
 - 01-03: named SSE event structs + route contract doc on serve.NewMux.
+- 02-01: gophermind-server entry point, flags/env, graceful shutdown.
 
-Next task: 02-02 (Wire serve.Deps, start HTTP listener, register all
-routes) — depends only on 02-01, which is now done.
+Next task: 02-03 (WireGuard server init, peer registration endpoint,
+per-backend tunnel management) — depends on 02-02 (done) and 01-02 (done).
 
-Progress: [████░░░░░░] 17%
+Progress: [█████░░░░░] 22%
 
 ## Accumulated Context
 

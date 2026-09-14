@@ -3,11 +3,29 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 )
+
+// TestComplete_NoModelConfiguredReturnsError is Complete's side of the same
+// bug TestStream_NoModelConfiguredReturnsErrorNotPanic covers for Stream: an
+// empty Model/Fallbacks chain made wrapChainError(nil, nil) return nil, so
+// Complete returned Message{}/Usage{}/nil -- a silent WRONG success (an
+// empty answer reported as if it were real) rather than a panic, which is
+// arguably worse since nothing crashes to reveal the bug.
+func TestComplete_NoModelConfiguredReturnsError(t *testing.T) {
+	c := New("http://unused.invalid", "", "", 0, false)
+	_, _, err := c.Complete(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil)
+	if err == nil {
+		t.Fatal("expected an error with no model configured, got nil")
+	}
+	if !errors.Is(err, ErrNoModel) {
+		t.Errorf("error = %v, want it to wrap ErrNoModel", err)
+	}
+}
 
 func TestCompleteDecodesToolCall(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -121,10 +121,28 @@ func (e *chainError) Error() string {
 
 func (e *chainError) Unwrap() error { return e.last }
 
-// wrapChainError builds the aggregate error for an exhausted chain. With a
-// single model (no real fallback) it returns the last error unwrapped, so
-// existing single-model error behavior and messages are unchanged.
+// ErrNoModel is returned when a Client's Model and Fallbacks are both empty,
+// so chain() has nothing to try. Exported so callers can errors.Is it.
+//
+// Before this existed, an empty chain made wrapChainError(nil, nil) return
+// nil (len(tried) <= 1, last == nil): Complete returned a silent, wrong
+// success -- Message{}/Usage{}/nil error, an empty answer masquerading as a
+// real one -- and Stream panicked on a nil response, since its caller
+// checked "if err != nil" before dereferencing resp, and err was nil too.
+// A caller must always call DiscoverModel (or otherwise set Model) before
+// Complete/Stream; this turns the silent-wrong/panic failure into a clear
+// error instead.
+var ErrNoModel = errors.New("no model configured: Client.Model and Fallbacks are both empty")
+
+// wrapChainError builds the aggregate error for an exhausted chain. An empty
+// tried list (chain() had nothing to try) returns ErrNoModel rather than a
+// nil error masquerading as success. With exactly one model (no real
+// fallback) it returns the last error unwrapped, so existing single-model
+// error behavior and messages are unchanged.
 func wrapChainError(tried []string, last error) error {
+	if len(tried) == 0 {
+		return ErrNoModel
+	}
 	if len(tried) <= 1 {
 		return last
 	}

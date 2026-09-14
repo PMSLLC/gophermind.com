@@ -1,17 +1,9 @@
 // Command gophermind-server is the standalone server binary for the
 // gophermind-osx project (.planning/ROADMAP.md Phase 2): it imports
-// gophermind-lib and will eventually serve every HTTP endpoint gophermind-osx
-// needs (session CRUD, SSE streaming, approvals, models, skills, pipeline,
-// run, WireGuard peer registration) via serve.NewMux's Deps contract.
-//
-// This entry point (.planning/tasks/02-01.json) is deliberately narrow: flag
-// and env parsing, graceful shutdown, logging and metrics initialization.
-// It intentionally does NOT call serve.NewMux or wire any Deps yet -- with
-// Deps.Run left nil, the always-registered POST /run route would panic on
-// first use, and wiring the full contract is explicitly plan 02-02's job.
-// Until then, this binary serves only the unauthenticated health/ready/
-// metrics probes, so it is a real, runnable server rather than a stub that
-// merely compiles.
+// gophermind-lib and serves every HTTP endpoint gophermind-osx needs
+// (session CRUD, SSE streaming, approvals, models, skills, pipeline, run)
+// via serve.NewMux's Deps contract (see server.go's buildDeps). WireGuard
+// peer registration is not yet wired -- that's plan 02-03.
 package main
 
 import (
@@ -50,28 +42,41 @@ type serverConfig struct {
 	Token       string
 	WGInterface string
 	LLMEndpoint string
+	Root        string
 }
 
 // parseServerConfig parses flags against args (typically os.Args[1:]), using
 // getenv to resolve each flag's env-var default (typically os.Getenv) so
 // GOPHERMIND_PORT/GOPHERMIND_TOKEN/GOPHERMIND_WG_INTERFACE/
-// GOPHERMIND_LLM_ENDPOINT are respected without an explicit flag. A flag
-// passed on the command line always overrides its env var. Returns an error
-// if Token is empty either way: an unauthenticated task-running server must
-// never start (mirrors gophermind-lib/serve's own webhook.serveToken check).
-func parseServerConfig(args []string, getenv func(string) string) (serverConfig, error) {
+// GOPHERMIND_LLM_ENDPOINT/GOPHERMIND_ROOT are respected without an explicit
+// flag. A flag passed on the command line always overrides its env var.
+// Returns an error if Token is empty either way: an unauthenticated
+// task-running server must never start (mirrors gophermind-lib/serve's own
+// webhook.serveToken check). Root defaults to getwd (typically the caller's
+// cwd) when neither the flag nor GOPHERMIND_ROOT is set -- getwd is a
+// parameter rather than a direct os.Getwd() call so tests can inject a
+// fixed value instead of depending on the test process's actual cwd.
+func parseServerConfig(args []string, getenv func(string) string, getwd func() (string, error)) (serverConfig, error) {
 	fs := flag.NewFlagSet("gophermind-server", flag.ContinueOnError)
 	port := fs.Int("port", intEnvOr(getenv, "GOPHERMIND_PORT", defaultPort), "HTTP listen port")
 	token := fs.String("token", getenv("GOPHERMIND_TOKEN"), "bearer token required on every task-running route")
 	wgIface := fs.String("wg-interface", strEnvOr(getenv, "GOPHERMIND_WG_INTERFACE", "wg0"), "WireGuard interface name")
 	llmEndpoint := fs.String("llm-endpoint", getenv("GOPHERMIND_LLM_ENDPOINT"), "LLM endpoint base URL (falls back to the shared config's GOPHERMIND_BASE_URL when unset)")
+	root := fs.String("root", getenv("GOPHERMIND_ROOT"), "workspace root for file/shell tools and the pipeline view (default: cwd)")
 	if err := fs.Parse(args); err != nil {
 		return serverConfig{}, err
 	}
 
-	cfg := serverConfig{Port: *port, Token: *token, WGInterface: *wgIface, LLMEndpoint: *llmEndpoint}
+	cfg := serverConfig{Port: *port, Token: *token, WGInterface: *wgIface, LLMEndpoint: *llmEndpoint, Root: *root}
 	if cfg.Token == "" {
 		return serverConfig{}, fmt.Errorf("refusing to start without a bearer token: set --token or GOPHERMIND_TOKEN")
+	}
+	if cfg.Root == "" {
+		wd, err := getwd()
+		if err != nil {
+			return serverConfig{}, fmt.Errorf("determine working directory: %w", err)
+		}
+		cfg.Root = wd
 	}
 	return cfg, nil
 }
@@ -121,48 +126,42 @@ func main() {
 }
 
 func run(logger *slog.Logger) error {
-	cfg, err := parseServerConfig(os.Args[1:], os.Getenv)
+	cfg, err := parseServerConfig(os.Args[1:], os.Getenv, os.Getwd)
 	if err != nil {
 		return err
 	}
 	cfg.LLMEndpoint = resolveLLMEndpoint(cfg, config.Load)
-	logger.Info("starting", "port", cfg.Port, "wg_interface", cfg.WGInterface, "llm_endpoint_configured", cfg.LLMEndpoint != "")
+	logger.Info("starting", "port", cfg.Port, "wg_interface", cfg.WGInterface, "llm_endpoint_configured", cfg.LLMEndpoint != "", "root", cfg.Root)
 
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Port))
 	if err != nil {
 		return fmt.Errorf("listen on port %d: %w", cfg.Port, err)
 	}
 
-	metrics := &serve.ServeMetrics{}
-	httpSrv := &http.Server{Handler: probeMux(metrics)}
+	svcDeps, pipelineHub, err := buildDeps(cfg, cfg.Root, logger)
+	if err != nil {
+		return fmt.Errorf("build deps: %w", err)
+	}
+	mux, err := serve.NewMux(svcDeps, serve.Options{Token: cfg.Token})
+	if err != nil {
+		return fmt.Errorf("build mux: %w", err)
+	}
+	httpSrv := &http.Server{Handler: mux}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Feeds the pipeline hub by watching cfg.Root/.planning/assignments.json
+	// for changes, so GET /pipeline/events has something to stream -- the
+	// same mechanism the CLI's own "serve" command uses (a phase execute run
+	// happens in a different process; the assignments file is the only
+	// channel between them).
+	serve.StartPipelineWatcher(ctx, cfg.Root, pipelineHub)
 
 	// wgCloser is nil until plan 02-03 wires WireGuard server init into this
 	// entry point; runServer's shutdown path already has the hook ready.
 	var wgCloser io.Closer
 	return runServer(ln, httpSrv, wgCloser, logger, ctx)
-}
-
-// probeMux serves only the unauthenticated liveness/readiness/metrics
-// routes. Session/run/pipeline/skills routes are wired in plan 02-02 via
-// serve.NewMux once real Deps exist.
-func probeMux(metrics *serve.ServeMetrics) *http.ServeMux {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
-	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
-		_, _ = w.Write([]byte(metrics.Render()))
-	})
-	return mux
 }
 
 // runServer serves httpSrv on ln and blocks until ctx is done (in
