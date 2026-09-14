@@ -217,6 +217,76 @@ func TestTunnelEstablishment(t *testing.T) {
 	}
 }
 
+// TestClientHTTPClient exercises the client's local HTTP proxy convenience:
+// an ordinary *http.Client, dialing through HTTPClient(), reaches an HTTP
+// server listening only on the tunnel's netstack — the acceptance criterion
+// TestTunnelEstablishment covers by hand-rolling DialTCP + raw HTTP parsing.
+func TestClientHTTPClient(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	srvPort := freePort(t)
+	srv, err := NewServer(ctx, ServerConfig{
+		ListenPort: srvPort,
+		Address:    netip.MustParseAddr("10.66.0.1"),
+	})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	defer srv.Close()
+
+	clientPriv := make([]byte, 32)
+	if _, err := rand.Read(clientPriv); err != nil {
+		t.Fatalf("generate client key: %v", err)
+	}
+	clientPub := derivePublicKey(clientPriv)
+
+	peerCfg, err := srv.RegisterPeer(clientPub)
+	if err != nil {
+		t.Fatalf("RegisterPeer: %v", err)
+	}
+
+	ln, err := srv.ListenTCP(8081)
+	if err != nil {
+		t.Fatalf("ListenTCP: %v", err)
+	}
+	httpSrv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintln(w, "hello via HTTPClient")
+		}),
+	}
+	go httpSrv.Serve(ln)
+	defer httpSrv.Close()
+
+	client, err := NewClient(ctx, ClientConfig{
+		ServerPublicKey: peerCfg.ServerPublicKey,
+		ServerEndpoint:  fmt.Sprintf("127.0.0.1:%d", srvPort),
+		PrivateKey:      clientPriv,
+		Address:         netip.MustParseAddr(peerCfg.ClientAddress),
+		AllowedIPs:      peerCfg.AllowedIPs,
+	})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	defer client.Close()
+
+	time.Sleep(1 * time.Second)
+
+	resp, err := client.HTTPClient().Get("http://10.66.0.1:8081/")
+	if err != nil {
+		t.Fatalf("HTTPClient().Get: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+	if string(body) != "hello via HTTPClient\n" {
+		t.Errorf("body = %q", body)
+	}
+}
+
 func TestMultipleTunnels(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

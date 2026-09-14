@@ -10,7 +10,7 @@
     {
       "id": "01-02",
       "title": "Add userspace WireGuard client and server packages",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "01-01"
       ],

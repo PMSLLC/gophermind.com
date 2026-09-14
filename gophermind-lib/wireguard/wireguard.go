@@ -15,6 +15,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"net/http"
 	"net/netip"
 	"sync"
 	"time"
@@ -70,7 +71,6 @@ type Server struct {
 	mu     sync.Mutex
 	dev    *device.Device
 	tnet   *netstack.Net
-	tun    tunDevice
 	port   uint16
 	peers  map[string]*peerEntry // keyed by public key (hex)
 	nextIP int
@@ -82,10 +82,6 @@ type Server struct {
 type peerEntry struct {
 	config PeerConfig
 	added  time.Time
-}
-
-type tunDevice interface {
-	Close() error
 }
 
 // NewServer creates and starts a userspace WireGuard server.
@@ -117,23 +113,28 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
 	logger := device.NewLogger(device.LogLevelError, "wg-server")
 	dev := device.NewDevice(tun, conn.NewDefaultBind(), logger)
 
+	// device.NewDevice starts RoutineReadFromTUN immediately, before Up() is
+	// even called, so every failure path from here on must tear down via
+	// dev.Close() (which closes the TUN exactly once, internally) rather
+	// than tun.Close() directly — see Server.closeLocked's comment for the
+	// double-close panic that causes.
+	//
 	// Configure the device via IPC. Keys are hex-encoded in the uapi.
 	privateKeyHex := hex.EncodeToString(cfg.PrivateKey)
 	ipc := fmt.Sprintf("private_key=%s\nlisten_port=%d\n", privateKeyHex, cfg.ListenPort)
 	if err := dev.IpcSet(ipc); err != nil {
-		tun.Close()
+		dev.Close()
 		return nil, fmt.Errorf("configure device: %w", err)
 	}
 
 	if err := dev.Up(); err != nil {
-		tun.Close()
+		dev.Close()
 		return nil, fmt.Errorf("bring up device: %w", err)
 	}
 
 	s := &Server{
 		dev:    dev,
 		tnet:   tnet,
-		tun:    tun,
 		port:   cfg.ListenPort,
 		peers:  make(map[string]*peerEntry),
 		nextIP: 2, // clients start at .2
@@ -249,13 +250,16 @@ func (s *Server) closeLocked() error {
 	}
 	s.peers = make(map[string]*peerEntry)
 
-	// Close the TUN first to stop the read routine, then bring the
-	// device down. Closing in the reverse order races: the read
-	// routine sees the closed TUN and calls device.Close() in a
-	// new goroutine, which double-closes the TUN.
-	err := s.tun.Close()
-	s.dev.Down()
-	return err
+	// device.Close() closes the TUN exactly once internally (see
+	// device.tun.device.Close() in device.Close()) and is itself
+	// idempotent. Closing the TUN ourselves first, as an earlier version
+	// of this code did, raced with the device's own RoutineReadFromTUN:
+	// on seeing the TUN closed it calls device.Close() from its own
+	// goroutine, which closes the same TUN a second time and panics
+	// ("close of closed channel"). Only device.Close() should ever touch
+	// the TUN's lifecycle.
+	s.dev.Close()
+	return nil
 }
 
 // ClientConfig holds the configuration for a WireGuard client tunnel.
@@ -277,7 +281,6 @@ type Client struct {
 	mu     sync.Mutex
 	dev    *device.Device
 	tnet   *netstack.Net
-	tun    tunDevice
 	cfg    ClientConfig
 	closed bool
 	pubKey string
@@ -318,19 +321,18 @@ func NewClient(ctx context.Context, cfg ClientConfig) (*Client, error) {
 		cfg.AllowedIPs,
 	)
 	if err := dev.IpcSet(ipc); err != nil {
-		tun.Close()
+		dev.Close()
 		return nil, fmt.Errorf("configure device: %w", err)
 	}
 
 	if err := dev.Up(); err != nil {
-		tun.Close()
+		dev.Close()
 		return nil, fmt.Errorf("bring up device: %w", err)
 	}
 
 	c := &Client{
 		dev:    dev,
 		tnet:   tnet,
-		tun:    tun,
 		cfg:    cfg,
 		pubKey: derivePublicKey(cfg.PrivateKey),
 	}
@@ -355,6 +357,20 @@ func (c *Client) DialTCP(addr *net.TCPAddr) (net.Conn, error) {
 	return c.tnet.DialTCP(addr)
 }
 
+// HTTPClient returns an *http.Client whose every connection is dialed through
+// the tunnel via the userspace netstack, instead of the host's network stack.
+// This is the "local HTTP proxy" side of the client: callers make ordinary
+// http.Client requests (http.Get, a REST client, etc.) against an address on
+// the tunnel's AllowedIPs range, and the request transparently routes over
+// WireGuard with no local proxy process, port, or host network change.
+func (c *Client) HTTPClient() *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			DialContext: c.tnet.DialContext,
+		},
+	}
+}
+
 // Close shuts down the WireGuard client tunnel.
 func (c *Client) Close() error {
 	c.mu.Lock()
@@ -369,11 +385,10 @@ func (c *Client) closeLocked() error {
 	}
 	c.closed = true
 
-	// Close the TUN first to stop the read routine, then bring the
-	// device down. Closing in the reverse order races: the read
-	// routine sees the closed TUN and calls device.Close() in a
-	// new goroutine, which double-closes the TUN.
-	err := c.tun.Close()
-	c.dev.Down()
-	return err
+	// See Server.closeLocked's comment: device.Close() closes the TUN
+	// exactly once internally and is itself idempotent; closing the TUN
+	// separately here races with the device's own read routine and
+	// double-closes it.
+	c.dev.Close()
+	return nil
 }
