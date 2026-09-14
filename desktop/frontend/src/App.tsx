@@ -190,6 +190,7 @@ export default function App() {
   // part of its identity rather than a display detail.
   const [sessions, setSessions] = useState<{ backend: string; item: SessionListItem }[]>([])
   const [sessionsOpen, setSessionsOpen] = useState(false)
+  const [hasAutoNamedSession, setHasAutoNamedSession] = useState(false)
   // The directory this session's tools read, write and run commands in.
   // Empty means the server's own root. It is shown in the status bar because
   // it decides where every file edit lands.
@@ -368,6 +369,12 @@ export default function App() {
         setStatusDetail(`session ${sessionID}`)
         setTurnStarted(null)
         setActivity('')
+        // Auto-name session on first turn: use first 60 chars of user's message
+        if (!hasAutoNamedSession && sessionID) {
+          setHasAutoNamedSession(true)
+          const name = task.length > 60 ? task.substring(0, 60) + '…' : task
+          void renameSession(activeBackend, sessionID, name)
+        }
       },
       onError: (message) => {
         setStatus('error')
