@@ -74,7 +74,7 @@
     {
       "id": "03-02",
       "title": "HTTP/SSE service client for all server endpoints",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "03-01"
       ],

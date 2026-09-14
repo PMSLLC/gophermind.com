@@ -61,12 +61,28 @@ Completed-task one-liners (full detail in each commit message):
 - 02-04: integration test coverage 60.5% -> 83.1%, run()/runWithConfig
   split for testability.
 
-Next task: 03-02 (HTTP/SSE service client for all server endpoints) --
-the gophermind-osx-side client for everything gophermind-server exposes.
-Before continuing further into Phase 3/4 GUI work, worth pausing to have
-John actually launch and click through what exists so far.
+Most recent (03-02): gophermind-osx/client/ -- one method per contract
+route, hand-rolled SSE parser (typed decoders reuse gophermind-lib/serve's
+event structs), backoff retry (5xx/network, not 4xx). Skipped POST
+/devices and "backends"/"backend-status" -- not real routes, documented
+not faked. 19 tests, -race clean, 83.2% coverage.
 
-Progress: [████████░░] 35%
+Completed tasks 01-01 through 03-02 (9 total) -- one-liners in
+`git log --oneline` per task, full detail in each commit message.
+Notable cross-cutting things worth remembering without re-reading commits:
+- libui-ng (Phase 3's GUI toolkit) is built from source and installed to
+  /opt/homebrew, NOT tracked by git -- see gophermind-osx/README.md on a
+  fresh checkout.
+- Fixed a real bug in shared gophermind-lib/llm (ErrNoModel) while
+  building 02-02, unrelated to gophermind-server specifically.
+- Two "asked, didn't guess" design points on record: 02-03's gocloak
+  token validation (pluggable, fails closed, no real IdP wired in) and
+  the libui-ng install itself (confirmed before building/installing).
+
+Next task: 03-03 (Connection manager: local/remote mode, WG tunnel
+lifecycle, health checks).
+
+Progress: [████████░░] 39%
 
 ## Accumulated Context
 
