@@ -7,7 +7,7 @@ build: ## Build a local (unstamped) binary
 	go build -o $(BINARY) ./cmd/gophermind
 
 rebuild-all: ## Format, build CLI, and deploy desktop app
-	gofmt -w ./...
+	gofmt -w . ; git add -A && git commit -m "fix: gofmt" || true
 	go build -o $(BINARY) ./cmd/gophermind
 	./scripts/deploy-desktop-app.sh
 
