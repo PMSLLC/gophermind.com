@@ -15,15 +15,11 @@ allowed-tools:
 requires: [phase, verify-work]
 ---
 <objective>
-Execute plans in a phase with wave-based parallelization, TDD-first workflow.
+Execute plans with wave-based parallelization, TDD-first: tests first, then code, then verify. Escalate after 2+ failures.
 
-Orchestrator: discover plans, group into waves, spawn subagents. Each subagent handles its own plan end-to-end.
+Orchestrator: discover, group into waves, spawn subagents (each handles one plan). Wave verification: completion only when no incomplete plans remain after selected wave finishes.
 
-**Per plan: TDD-first**
-1. Write tests first (acceptance criteria define what to test)
-2. Implement code to pass tests
-3. Verify tests pass, commit when done
-4. Escalate if plan fails 2+ times
+TDD: write tests (< 30 min per subtask), implement to pass, verify, commit. Ask user to decompose large plans into subtasks.
 
 Flags: `--wave N` (execute only wave N), `--gaps-only` (fix plans only), `--interactive` (inline, no subagents).
 </objective>
