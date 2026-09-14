@@ -65,7 +65,7 @@
     {
       "id": "03-01",
       "title": "Create gophermind-osx module, main.go, app lifecycle, window creation",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "01-03"
       ],

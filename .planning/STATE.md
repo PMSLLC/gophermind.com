@@ -18,28 +18,34 @@ Read the task-id-matching file before starting work on it.
 
 ## Current Position
 
-Phase: 2 of 5 (gophermind-server) — COMPLETE, all 4 plans done
-Plan: 4 of 4 in current phase
-Status: Phase 2 done; ready for Phase 3
-Last activity: 2026-09-14 — completed plan 02-04
+Phase: 3 of 5 (gophermind-osx Core) — Phase 2 complete, Phase 3 started
+Plan: 1 of 4 in current phase
+Status: In progress
+Last activity: 2026-09-14 — completed plan 03-01
 
-Most recent (02-04): 02-02/02-03's own tests already covered most of the
-contract, as expected, but real gaps remained: POST /run, POST
-/run/stream, GET /session/{id}/messages, PATCH+DELETE /session/{id}, GET
-/models, GET /skills, and HMAC verification had zero coverage. Added 11
-more tests closing those, plus refactored run() the same way runServer
-and parseServerConfig already separate untestable OS-facing bits
-(os.Args, a real port bind, a real signal handler) from testable logic:
-new runWithConfig(cfg, ln, logger, ctx) takes the listener and context as
-parameters, and a new end-to-end test drives the real orchestration
-(buildDeps + NewMux + startWireGuard + pipeline watcher + runServer)
-against a real listener and a cancelled-context shutdown. One real
-lesson surfaced while adding session CRUD tests: POST /session alone
-does not create the on-disk session file -- only session.Save after an
-actual turn does -- so DELETE on a session with no turns yet correctly
-404s; that's not a bug, my first test draft just assumed otherwise.
-Coverage: 60.5% -> 77.4% -> 83.1%, clearing the >80% target. Full suite
-(35 tests) passes with -race; go build/vet clean repo-wide.
+Most recent (03-01): real environment blocker hit and resolved, not
+guessed around: libui-ng (the GUI toolkit Phase 3+ depends on) was not
+installed anywhere -- no pkg-config entry, no Homebrew formula. Asked
+before acting since installing a new system library is a real action;
+built it from source (meson+ninja, ~65 targets, universal x86_64+arm64
+dylib) and installed to /opt/homebrew/{lib,include}. This is NOT tracked
+by git -- gophermind-osx/README.md documents the install steps, since a
+fresh checkout on another machine needs it done again. Ruled out
+github.com/andlabs/ui (the obvious pre-built Go binding): its bundled
+darwin static lib is amd64-only from 2020, broken on this arm64 Mac.
+app.go binds directly to libui-ng's C API via cgo instead, covering only
+what 03-01 needs (window creation, title/size, OnClosing/ShouldQuit
+lifecycle callbacks, a minimal menu with the platform Quit item).
+gophermind-osx is its own Go module (module gophermind/gophermind-osx,
+per the task spec) -- added to the repo's existing go.work alongside
+gophermind-lib. 5 tests verify window creation/title/size/sequential
+init-uninit/Show() without panicking; App.Run() (the blocking uiMain()
+event loop) is deliberately NOT unit tested -- it needs a real display
+session, which this environment doesn't have. That is the one piece of
+03-01 genuinely unverified here: launching the real binary and seeing an
+actual window, and confirming Cmd+Q/window-close actually quit, needs
+your eyes. Everything else (build succeeds, no panics on the testable
+lifecycle, correct title/size) is verified.
 
 Completed-task one-liners (full detail in each commit message):
 - 01-01: gophermind-lib module created, internal/ packages moved.
@@ -52,14 +58,15 @@ Completed-task one-liners (full detail in each commit message):
 - 02-03: WireGuard server init, peer registration (pluggable/fail-closed
   gocloak validator -- no real IdP wired in yet, asked rather than
   guessed).
+- 02-04: integration test coverage 60.5% -> 83.1%, run()/runWithConfig
+  split for testability.
 
-Next task: 03-01 (Create gophermind-osx/ module, main.go, app lifecycle,
-window creation) -- first task of Phase 3. This is native libui-ng
-(cgo-based) macOS GUI work: I can write and unit-test the Go side, but
-cannot visually verify a GUI without a display. Flag this to John before
-starting -- GUI correctness will need his eyes once it exists.
+Next task: 03-02 (HTTP/SSE service client for all server endpoints) --
+the gophermind-osx-side client for everything gophermind-server exposes.
+Before continuing further into Phase 3/4 GUI work, worth pausing to have
+John actually launch and click through what exists so far.
 
-Progress: [███████░░░] 30%
+Progress: [████████░░] 35%
 
 ## Accumulated Context
 
