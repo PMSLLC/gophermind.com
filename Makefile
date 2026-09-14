@@ -1,7 +1,7 @@
 BINARY := gophermind
 
 .PHONY: build test vet check snapshot release clean ios-test ios-deploy \
-	predeploy deploy-local deploy-server deploy-phone deploy-all install-hooks
+	predeploy deploy-local deploy-server deploy-phone deploy-all deploy-desktop install-hooks
 
 build: ## Build a local (unstamped) binary
 	go build -o $(BINARY) ./cmd/gophermind
@@ -23,6 +23,9 @@ deploy-phone: ## Gate, then build + install on the iPhone
 
 deploy-all: ## Gate once, then deploy local + server + phone
 	./scripts/deploy.sh all
+
+deploy-desktop: ## Commit, push, build + deploy desktop app to /Applications
+	./scripts/deploy-desktop-app.sh
 
 install-hooks: ## Install the git pre-push hook that runs the gate before every push
 	./scripts/install-hooks.sh
