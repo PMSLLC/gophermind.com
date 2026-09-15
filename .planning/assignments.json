@@ -102,7 +102,7 @@
     {
       "id": "04-01",
       "title": "Main window chat transcript, streaming display, input field",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "03-02"
       ],

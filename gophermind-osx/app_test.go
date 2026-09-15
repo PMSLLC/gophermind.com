@@ -14,43 +14,76 @@ import "testing"
 // libui-ng is process-global single-instance state (uiInit/uiUninit), so
 // these tests run sequentially (no t.Parallel()) and each calls Close()
 // before returning, leaving the library uninitialized for the next test.
+// Every libui-ng-touching call runs through runOnUIThread (see
+// uithread_test.go) -- required because go test spawns each test on its
+// own goroutine, and AppKit (which libui-ng's darwin backend sits on)
+// requires every call, across the whole process, to land on one
+// consistent OS thread. t.Fatalf itself must stay on the test's own
+// goroutine (the testing package requires this), so each test captures
+// results/errors inside the UI-thread closure and asserts on them after
+// runOnUIThread returns, not inside it.
 
 func TestNewApp_CreatesWindowWithCorrectTitleAndSize(t *testing.T) {
-	app, err := NewApp(DefaultTitle, DefaultWidth, DefaultHeight)
+	var app *App
+	var err error
+	var title string
+	var w, h int
+	runOnUIThread(t, func() {
+		app, err = NewApp(DefaultTitle, DefaultWidth, DefaultHeight)
+		if err != nil {
+			return
+		}
+		title = app.Title()
+		w, h = app.ContentSize()
+		app.Close()
+	})
 	if err != nil {
 		t.Fatalf("NewApp: %v", err)
 	}
-	defer app.Close()
-
-	if got := app.Title(); got != DefaultTitle {
-		t.Errorf("Title() = %q, want %q", got, DefaultTitle)
+	if title != DefaultTitle {
+		t.Errorf("Title() = %q, want %q", title, DefaultTitle)
 	}
-	w, h := app.ContentSize()
 	if w != DefaultWidth || h != DefaultHeight {
 		t.Errorf("ContentSize() = (%d, %d), want (%d, %d)", w, h, DefaultWidth, DefaultHeight)
 	}
 }
 
 func TestNewApp_ShowDoesNotPanic(t *testing.T) {
-	app, err := NewApp(DefaultTitle, DefaultWidth, DefaultHeight)
+	var err error
+	runOnUIThread(t, func() {
+		var app *App
+		app, err = NewApp(DefaultTitle, DefaultWidth, DefaultHeight)
+		if err != nil {
+			return
+		}
+		app.Show() // must not panic; libui-ng has no visible side effect to assert on without uiMain().
+		app.Close()
+	})
 	if err != nil {
 		t.Fatalf("NewApp: %v", err)
 	}
-	defer app.Close()
-	app.Show() // must not panic; libui-ng has no visible side effect to assert on without uiMain().
 }
 
 func TestNewApp_CustomTitleAndSize(t *testing.T) {
-	app, err := NewApp("custom title", 640, 480)
+	var err error
+	var title string
+	var w, h int
+	runOnUIThread(t, func() {
+		var app *App
+		app, err = NewApp("custom title", 640, 480)
+		if err != nil {
+			return
+		}
+		title = app.Title()
+		w, h = app.ContentSize()
+		app.Close()
+	})
 	if err != nil {
 		t.Fatalf("NewApp: %v", err)
 	}
-	defer app.Close()
-
-	if got := app.Title(); got != "custom title" {
-		t.Errorf("Title() = %q, want %q", got, "custom title")
+	if title != "custom title" {
+		t.Errorf("Title() = %q, want %q", title, "custom title")
 	}
-	w, h := app.ContentSize()
 	if w != 640 || h != 480 {
 		t.Errorf("ContentSize() = (%d, %d), want (640, 480)", w, h)
 	}
@@ -63,20 +96,34 @@ func TestNewApp_CustomTitleAndSize(t *testing.T) {
 // event or Cmd+Q needs a real window/display session to verify -- see this
 // file's top-level doc comment.
 func TestApp_QuitCallbacksAttachWithoutPanic(t *testing.T) {
-	app, err := NewApp(DefaultTitle, DefaultWidth, DefaultHeight)
+	var err error
+	runOnUIThread(t, func() {
+		var app *App
+		app, err = NewApp(DefaultTitle, DefaultWidth, DefaultHeight)
+		if err != nil {
+			return
+		}
+		app.Close()
+	})
 	if err != nil {
 		t.Fatalf("NewApp: %v", err)
 	}
-	app.Close()
 }
 
 func TestNewApp_SequentialLifecyclesDoNotPanic(t *testing.T) {
-	for i := 0; i < 3; i++ {
-		app, err := NewApp(DefaultTitle, DefaultWidth, DefaultHeight)
-		if err != nil {
-			t.Fatalf("NewApp iteration %d: %v", i, err)
+	var err error
+	runOnUIThread(t, func() {
+		for i := 0; i < 3; i++ {
+			var app *App
+			app, err = NewApp(DefaultTitle, DefaultWidth, DefaultHeight)
+			if err != nil {
+				return
+			}
+			app.Show()
+			app.Close()
 		}
-		app.Show()
-		app.Close()
+	})
+	if err != nil {
+		t.Fatalf("NewApp: %v", err)
 	}
 }
