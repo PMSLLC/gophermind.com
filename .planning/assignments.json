@@ -129,7 +129,7 @@
     {
       "id": "04-04",
       "title": "Model catalogue dropdown with filters and preference order",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "04-03"
       ],
