@@ -220,3 +220,78 @@ func TestModelPickerState_FilterHasCapacity_GetSet(t *testing.T) {
 		t.Error("FilterHasCapacity() should be true after SetFilterHasCapacity(true)")
 	}
 }
+
+// TestModelPickerState_AutoCycling_GetSet covers 04-07's "auto-cycling"
+// configurability -- 04-04 only exposed a read-only AutoCyclingEnabled.
+func TestModelPickerState_AutoCycling_GetSet(t *testing.T) {
+	s := NewModelPickerState(nil, modelcat.Settings{})
+	if s.AutoCyclingEnabled() {
+		t.Fatal("AutoCyclingEnabled() should default false")
+	}
+	calls := 0
+	s.OnChange(func() { calls++ })
+	s.SetAutoCycling(true)
+	if !s.AutoCyclingEnabled() {
+		t.Error("AutoCyclingEnabled() should be true after SetAutoCycling(true)")
+	}
+	if calls != 1 {
+		t.Errorf("OnChange called %d times, want 1", calls)
+	}
+}
+
+func TestModelPickerState_CapacityPercent_GetSet(t *testing.T) {
+	s := NewModelPickerState(nil, modelcat.Settings{CapacityPercent: 90})
+	if s.CapacityPercent() != 90 {
+		t.Errorf("CapacityPercent() = %d, want 90", s.CapacityPercent())
+	}
+	s.SetCapacityPercent(75)
+	if s.CapacityPercent() != 75 {
+		t.Errorf("CapacityPercent() = %d, want 75", s.CapacityPercent())
+	}
+}
+
+func TestModelPickerState_WhenAllFull_GetSet(t *testing.T) {
+	s := NewModelPickerState(nil, modelcat.Settings{WhenAllFull: "stay"})
+	if s.WhenAllFull() != "stay" {
+		t.Errorf("WhenAllFull() = %q, want stay", s.WhenAllFull())
+	}
+	s.SetWhenAllFull("ask")
+	if s.WhenAllFull() != "ask" {
+		t.Errorf("WhenAllFull() = %q, want ask", s.WhenAllFull())
+	}
+}
+
+func TestModelPickerState_ExcludedTerms_GetSet(t *testing.T) {
+	s := NewModelPickerState(nil, modelcat.Settings{})
+	s.SetExcludedTerms([]string{"non-commercial"})
+	got := s.ExcludedTerms()
+	if len(got) != 1 || got[0] != "non-commercial" {
+		t.Errorf("ExcludedTerms() = %+v", got)
+	}
+}
+
+func TestModelPickerState_CustomLinks_AddAndRemove(t *testing.T) {
+	s := NewModelPickerState(nil, modelcat.Settings{})
+	s.SetCustomLink("p1/a", "https://example.com")
+	got := s.CustomLinks()
+	if got["p1/a"] != "https://example.com" {
+		t.Errorf("CustomLinks() = %+v", got)
+	}
+	s.RemoveCustomLink("p1/a")
+	if _, ok := s.CustomLinks()["p1/a"]; ok {
+		t.Error("CustomLinks() still has p1/a after RemoveCustomLink")
+	}
+}
+
+// TestModelPickerState_Settings_ReturnsCurrentSnapshot covers what the
+// settings panel needs to call client.PatchModelSettings with the whole
+// current modelcat.Settings after an edit.
+func TestModelPickerState_Settings_ReturnsCurrentSnapshot(t *testing.T) {
+	s := NewModelPickerState(nil, modelcat.Settings{})
+	s.SetCapacityPercent(80)
+	s.SetWhenAllFull("ask")
+	got := s.Settings()
+	if got.CapacityPercent != 80 || got.WhenAllFull != "ask" {
+		t.Errorf("Settings() = %+v", got)
+	}
+}

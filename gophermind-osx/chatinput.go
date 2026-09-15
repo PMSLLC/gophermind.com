@@ -138,12 +138,14 @@ type ChatWindow struct {
 	Model      *appui.ModelPickerState
 	Sessions   *appui.SessionListState
 	Pipeline   *appui.PipelineState
+	Backends   *appui.BackendListState
 	area       *chatArea
 	input      *chatInput
 	panel      *rightPanel
 	modelUI    *modelPicker
 	sessionsUI *sessionList
 	pipelineUI *pipelinePanel
+	settingsUI *settingsPanel
 }
 
 // NewChatWindow builds the chat UI as app's window content. sendTurn is
@@ -185,12 +187,26 @@ func NewChatWindow(app *App, sendTurn func(text string)) *ChatWindow {
 
 	panel := newRightPanel(panelState, modelUI.Control(), sessionsUI.Control(), pipelineUI.Control())
 
-	// left is the chat column: the panel's toggle button (which must stay
-	// visible even when the panel itself is hidden -- otherwise there'd be
-	// no way to bring it back), the transcript, then the input row.
+	// Same nil-injected-funcs precedent as the other sections: no live
+	// connection/server calls exist yet for backends, model-settings
+	// persistence, skills, or endpoint switching.
+	backendState := appui.NewBackendListState()
+	cacheHistory := loadCacheHistorySettings()
+	settingsUI := newSettingsPanel(app.window, backendState, modelState, cacheHistory, saveCacheHistorySettings,
+		nil, nil, nil, nil, nil, nil, nil, nil)
+
+	// left is the chat column: the panel's toggle button and the settings
+	// gear button (both must stay visible even when the panel itself is
+	// hidden -- otherwise there'd be no way to bring either back), the
+	// transcript, then the input row.
+	topRow := C.uiNewHorizontalBox()
+	C.uiBoxSetPadded(topRow, 1)
+	C.uiBoxAppend(topRow, panel.ToggleControl(), 0)
+	C.uiBoxAppend(topRow, settingsUI.GearControl(), 0)
+
 	left := C.uiNewVerticalBox()
 	C.uiBoxSetPadded(left, 1)
-	C.uiBoxAppend(left, panel.ToggleControl(), 0)
+	C.uiBoxAppend(left, (*C.uiControl)(unsafe.Pointer(topRow)), 0)
 	C.uiBoxAppend(left, area.Control(), 1) // stretchy: takes remaining space
 	C.uiBoxAppend(left, (*C.uiControl)(unsafe.Pointer(input.entry)), 0)
 	C.uiBoxAppend(left, (*C.uiControl)(unsafe.Pointer(input.button)), 0)
@@ -202,7 +218,7 @@ func NewChatWindow(app *App, sendTurn func(text string)) *ChatWindow {
 
 	C.uiWindowSetChild(app.window, (*C.uiControl)(unsafe.Pointer(root)))
 
-	return &ChatWindow{App: app, Transcript: transcript, Panel: panelState, Model: modelState, Sessions: sessionState, Pipeline: pipelineState, area: area, input: input, panel: panel, modelUI: modelUI, sessionsUI: sessionsUI, pipelineUI: pipelineUI}
+	return &ChatWindow{App: app, Transcript: transcript, Panel: panelState, Model: modelState, Sessions: sessionState, Pipeline: pipelineState, Backends: backendState, area: area, input: input, panel: panel, modelUI: modelUI, sessionsUI: sessionsUI, pipelineUI: pipelineUI, settingsUI: settingsUI}
 }
 
 // RunTurn sends task as a user message, opens a stream via streamFn, and

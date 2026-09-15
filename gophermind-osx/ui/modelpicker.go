@@ -255,3 +255,106 @@ func (s *ModelPickerState) AutoCyclingEnabled() bool {
 	defer s.mu.Unlock()
 	return s.settings.CycleOnCapacity
 }
+
+// SetAutoCycling sets Settings.CycleOnCapacity, e.g. from the settings
+// panel's auto-cycling checkbox (.planning/tasks/04-07.json).
+func (s *ModelPickerState) SetAutoCycling(v bool) {
+	s.mu.Lock()
+	s.settings.CycleOnCapacity = v
+	s.mu.Unlock()
+	s.notify()
+}
+
+// CapacityPercent reports Settings.CapacityPercent.
+func (s *ModelPickerState) CapacityPercent() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.settings.CapacityPercent
+}
+
+// SetCapacityPercent sets Settings.CapacityPercent.
+func (s *ModelPickerState) SetCapacityPercent(p int) {
+	s.mu.Lock()
+	s.settings.CapacityPercent = p
+	s.mu.Unlock()
+	s.notify()
+}
+
+// WhenAllFull reports Settings.WhenAllFull ("stay" or "ask").
+func (s *ModelPickerState) WhenAllFull() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.settings.WhenAllFull
+}
+
+// SetWhenAllFull sets Settings.WhenAllFull.
+func (s *ModelPickerState) SetWhenAllFull(v string) {
+	s.mu.Lock()
+	s.settings.WhenAllFull = v
+	s.mu.Unlock()
+	s.notify()
+}
+
+// ExcludedTerms returns a snapshot copy of Settings.ExcludedTerms.
+func (s *ModelPickerState) ExcludedTerms() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]string, len(s.settings.ExcludedTerms))
+	copy(out, s.settings.ExcludedTerms)
+	return out
+}
+
+// SetExcludedTerms replaces Settings.ExcludedTerms wholesale, e.g. from the
+// settings panel's excluded-terms editor.
+func (s *ModelPickerState) SetExcludedTerms(terms []string) {
+	s.mu.Lock()
+	s.settings.ExcludedTerms = append([]string(nil), terms...)
+	s.mu.Unlock()
+	s.notify()
+}
+
+// CustomLinks returns a snapshot copy of Settings.CustomLinks.
+func (s *ModelPickerState) CustomLinks() map[string]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[string]string, len(s.settings.CustomLinks))
+	for k, v := range s.settings.CustomLinks {
+		out[k] = v
+	}
+	return out
+}
+
+// SetCustomLink sets (or replaces) the custom link for key.
+func (s *ModelPickerState) SetCustomLink(key, url string) {
+	s.mu.Lock()
+	if s.settings.CustomLinks == nil {
+		s.settings.CustomLinks = make(map[string]string)
+	}
+	s.settings.CustomLinks[key] = url
+	s.mu.Unlock()
+	s.notify()
+}
+
+// RemoveCustomLink removes the custom link for key, if present.
+func (s *ModelPickerState) RemoveCustomLink(key string) {
+	s.mu.Lock()
+	delete(s.settings.CustomLinks, key)
+	s.mu.Unlock()
+	s.notify()
+}
+
+// Settings returns a snapshot copy of the current modelcat.Settings, e.g.
+// for the settings panel to pass whole to client.PatchModelSettings after
+// an edit.
+func (s *ModelPickerState) Settings() modelcat.Settings {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := s.settings
+	out.Order = append([]string(nil), s.settings.Order...)
+	out.ExcludedTerms = append([]string(nil), s.settings.ExcludedTerms...)
+	out.CustomLinks = make(map[string]string, len(s.settings.CustomLinks))
+	for k, v := range s.settings.CustomLinks {
+		out.CustomLinks[k] = v
+	}
+	return out
+}
