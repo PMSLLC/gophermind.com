@@ -156,7 +156,7 @@
     {
       "id": "04-07",
       "title": "Settings panel: backends, gocloak, model prefs, skills, all config",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "04-03"
       ],
