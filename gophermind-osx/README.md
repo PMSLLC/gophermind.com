@@ -32,10 +32,20 @@ API instead, for just the surface this app currently needs.
 
 ## Building and running
 
+Bare binary (for development):
+
 ```bash
 cd gophermind-osx
 go build -o gophermind-osx .
 ./gophermind-osx
+```
+
+Proper `.app` bundle (dock icon, Finder integration):
+
+```bash
+cd gophermind-osx
+./build-app.sh
+open build/GopherMind.app
 ```
 
 `go test ./...` does not require a display session or `libui-ng`'s event
