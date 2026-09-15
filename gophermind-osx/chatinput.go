@@ -214,13 +214,23 @@ func NewChatWindow(app *App, sendTurn func(text string)) *ChatWindow {
 	C.uiBoxAppend(topRow, panel.ToggleControl(), 0)
 	C.uiBoxAppend(topRow, settingsUI.GearControl(), 0)
 
+	// Input row: the multiline entry and Send button side by side, so the
+	// entry gets most of the width and the button is always visible next
+	// to it. A label above makes it clear where to type.
+	inputRow := C.uiNewHorizontalBox()
+	C.uiBoxSetPadded(inputRow, 1)
+	C.uiBoxAppend(inputRow, (*C.uiControl)(unsafe.Pointer(input.entry)), 1) // stretchy
+	C.uiBoxAppend(inputRow, (*C.uiControl)(unsafe.Pointer(input.button)), 0)
+
+	inputLabel := C.uiNewLabel(C.CString("Message (click here to type, then Send):"))
+
 	left := C.uiNewVerticalBox()
 	C.uiBoxSetPadded(left, 1)
 	C.uiBoxAppend(left, (*C.uiControl)(unsafe.Pointer(topRow)), 0)
 	C.uiBoxAppend(left, area.Control(), 1) // stretchy: takes remaining space
 	C.uiBoxAppend(left, approvalBar.Control(), 0)
-	C.uiBoxAppend(left, (*C.uiControl)(unsafe.Pointer(input.entry)), 0)
-	C.uiBoxAppend(left, (*C.uiControl)(unsafe.Pointer(input.button)), 0)
+	C.uiBoxAppend(left, (*C.uiControl)(unsafe.Pointer(inputLabel)), 0)
+	C.uiBoxAppend(left, (*C.uiControl)(unsafe.Pointer(inputRow)), 0)
 
 	root := C.uiNewHorizontalBox()
 	C.uiBoxSetPadded(root, 1)
