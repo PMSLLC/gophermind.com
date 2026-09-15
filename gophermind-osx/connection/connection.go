@@ -219,14 +219,21 @@ func (c *Connection) connectDirect(ctx context.Context) error {
 }
 
 // waitHealthy polls cl.Healthy until it returns true, ctx is done, or
-// timeout elapses.
+// timeout elapses. The last health-check error is included in the timeout
+// error so the caller can see *why* the backend is unreachable.
 func waitHealthy(ctx context.Context, cl *client.Client, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
+	var lastErr error
 	for {
-		if cl.Healthy(ctx) {
+		ok, err := cl.HealthyErr(ctx)
+		if ok {
 			return nil
 		}
+		lastErr = err
 		if time.Now().After(deadline) {
+			if lastErr != nil {
+				return fmt.Errorf("not healthy after %s: %w", timeout, lastErr)
+			}
 			return fmt.Errorf("not healthy after %s", timeout)
 		}
 		select {

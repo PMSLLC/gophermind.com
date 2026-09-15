@@ -446,14 +446,25 @@ func (c *Client) PipelineEvents(ctx context.Context) (*EventStream, error) {
 
 // Healthy reports whether GET /healthz returns 200.
 func (c *Client) Healthy(ctx context.Context) bool {
+	_, err := c.HealthyErr(ctx)
+	return err == nil
+}
+
+// HealthyErr is like Healthy but returns the underlying error (nil if
+// healthy), so callers can surface *why* the backend is unreachable
+// (connection refused, DNS failure, non-200 status, etc.).
+func (c *Client) HealthyErr(ctx context.Context) (bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/healthz", nil)
 	if err != nil {
-		return false
+		return false, err
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return false
+		return false, err
 	}
 	defer resp.Body.Close()
-	return resp.StatusCode == http.StatusOK
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("healthz returned status %d", resp.StatusCode)
+	}
+	return true, nil
 }
