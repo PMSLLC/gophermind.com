@@ -68,19 +68,34 @@ func main() {
 	// Wire the settings panel's connect/disconnect to the manager.
 	chat.Backends.Add(appui.BackendProfile{Name: "local", Mode: "local", ServerURL: "auto"})
 	chat.settingsUI.connectFunc = func(ctx context.Context, p appui.BackendProfile) error {
-		binPath := findServerBinary()
-		if binPath == "" {
-			return fmt.Errorf("gophermind-server binary not found (set GOPHERMIND_SERVER or place it next to the app)")
+		var cfg connection.BackendConfig
+		cfg.Name = p.Name
+		cfg.OnStatusChange = func(s connection.Status) {
+			chat.Backends.SetStatus(p.Name, s.String())
 		}
-		cfg := connection.BackendConfig{
-			Name: p.Name,
-			Mode: connection.ModeLocal,
-			Local: connection.LocalConfig{
+
+		switch p.Mode {
+		case "remote":
+			if p.ServerURL == "" {
+				return fmt.Errorf("remote backend %q: no server URL configured", p.Name)
+			}
+			baseURL := p.ServerURL
+			if baseURL != "auto" && baseURL != "local" {
+				if len(baseURL) < 7 || baseURL[:7] != "http://" {
+					baseURL = "http://" + baseURL
+				}
+			}
+			cfg.Mode = connection.ModeDirect
+			cfg.Direct = connection.DirectConfig{BaseURL: baseURL}
+		default: // "local"
+			binPath := findServerBinary()
+			if binPath == "" {
+				return fmt.Errorf("gophermind-server binary not found (set GOPHERMIND_SERVER or place it next to the app)")
+			}
+			cfg.Mode = connection.ModeLocal
+			cfg.Local = connection.LocalConfig{
 				ServerBinaryPath: binPath,
-			},
-			OnStatusChange: func(s connection.Status) {
-				chat.Backends.SetStatus(p.Name, s.String())
-			},
+			}
 		}
 		return connMgr.Connect(ctx, cfg)
 	}

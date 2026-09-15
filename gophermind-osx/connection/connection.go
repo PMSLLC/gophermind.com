@@ -94,6 +94,8 @@ func (c *Connection) connectOnce(ctx context.Context) error {
 		return c.connectLocal(ctx)
 	case ModeRemote:
 		return c.connectRemote(ctx)
+	case ModeDirect:
+		return c.connectDirect(ctx)
 	default:
 		return fmt.Errorf("unknown connection mode %d", c.cfg.Mode)
 	}
@@ -190,6 +192,28 @@ func (c *Connection) connectRemote(ctx context.Context) error {
 	c.mu.Lock()
 	c.client = cl
 	c.wgClient = wgClient
+	c.mu.Unlock()
+	return nil
+}
+
+func (c *Connection) connectDirect(ctx context.Context) error {
+	dc := c.cfg.Direct
+	if dc.BaseURL == "" {
+		return fmt.Errorf("direct mode: BaseURL is required")
+	}
+
+	cl := client.New(client.Config{
+		BaseURL: dc.BaseURL,
+		Token:   dc.Token,
+	})
+
+	startupTimeout := DefaultStartupTimeout
+	if err := waitHealthy(ctx, cl, startupTimeout); err != nil {
+		return fmt.Errorf("direct backend did not become healthy: %w", err)
+	}
+
+	c.mu.Lock()
+	c.client = cl
 	c.mu.Unlock()
 	return nil
 }

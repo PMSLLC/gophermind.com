@@ -59,6 +59,10 @@ const (
 	// already-running, already-registered remote gophermind-server and
 	// routes every request through it.
 	ModeRemote
+	// ModeDirect connects to a remote gophermind-server over plain HTTP
+	// (no WireGuard tunnel, no subprocess). Used when the user provides
+	// a reachable host:port directly.
+	ModeDirect
 )
 
 // LocalConfig configures a ModeLocal Connection.
@@ -95,6 +99,15 @@ type RemoteConfig struct {
 	RemoteAddr string
 }
 
+// DirectConfig configures a ModeDirect Connection: a plain HTTP endpoint
+// to an already-running gophermind-server.
+type DirectConfig struct {
+	// BaseURL is the server's HTTP address, e.g. "http://<server-host>:8090".
+	BaseURL string
+	// Token is the bearer token the server expects. Empty means no auth.
+	Token string
+}
+
 // BackendConfig configures one Connection. Exactly one of Local/Remote
 // should be set, matching Mode.
 type BackendConfig struct {
@@ -102,6 +115,7 @@ type BackendConfig struct {
 	Mode   Mode
 	Local  LocalConfig
 	Remote RemoteConfig
+	Direct DirectConfig
 	// HealthInterval is how often Connect's background loop health-checks
 	// the connection once established. <= 0 uses DefaultHealthInterval.
 	HealthInterval time.Duration
