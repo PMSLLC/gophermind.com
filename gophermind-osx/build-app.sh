@@ -23,6 +23,10 @@ echo "Building gophermind-server..."
 echo "Building GopherMind app..."
 go build -ldflags="-s -w" -o "${MACOS_DIR}/${APP_NAME}" .
 
+# Bundle the server binary so the app can find it at runtime
+cp build/gophermind-server "${RES_DIR}/gophermind-server"
+chmod 755 "${RES_DIR}/gophermind-server"
+
 # Copy icon
 cp iconfile.icns "${RES_DIR}/iconfile.icns"
 
