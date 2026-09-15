@@ -138,7 +138,7 @@
     {
       "id": "04-05",
       "title": "Session list with CRUD, rename, delete, resume, modes, root",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "04-03"
       ],
