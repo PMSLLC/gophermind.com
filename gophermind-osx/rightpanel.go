@@ -52,11 +52,13 @@ var (
 // newRightPanel builds the panel's widgets and wires them to state: a
 // click on the toggle button calls state.Toggle(), and state.OnChange
 // (fired by Toggle from anywhere, not just this button) shows/hides the
-// panel's box to match.
-func newRightPanel(state *appui.PanelState) *rightPanel {
+// panel's box to match. modelSection is 04-04's real model picker content
+// (the "Model" section); Sessions and Pipeline stay placeholders until
+// 04-05/04-06 build them.
+func newRightPanel(state *appui.PanelState, modelSection *C.uiControl) *rightPanel {
 	box := C.uiNewVerticalBox()
 	C.uiBoxSetPadded(box, 1)
-	C.uiBoxAppend(box, sectionGroup("Model", "Model picker (04-04)"), 0)
+	C.uiBoxAppend(box, sectionGroupWithControl("Model", modelSection), 0)
 	C.uiBoxAppend(box, sectionGroup("Sessions", "Sessions list (04-05)"), 0)
 	C.uiBoxAppend(box, sectionGroup("Pipeline", "Pipeline panel (04-06)"), 1)
 
@@ -113,13 +115,20 @@ func (rp *rightPanel) ToggleControl() *C.uiControl {
 	return (*C.uiControl)(unsafe.Pointer(rp.toggleButton))
 }
 
-// sectionGroup builds one of the panel's three placeholder sections: a
-// titled uiGroup containing a single label.
+// sectionGroup builds one of the panel's placeholder sections: a titled
+// uiGroup containing a single label.
 func sectionGroup(title, placeholder string) *C.uiControl {
+	label := C.uiNewLabel(C.CString(placeholder))
+	return sectionGroupWithControl(title, (*C.uiControl)(unsafe.Pointer(label)))
+}
+
+// sectionGroupWithControl builds a titled uiGroup around an already-built
+// control, for a section with real content (the model picker) rather than
+// a placeholder label.
+func sectionGroupWithControl(title string, child *C.uiControl) *C.uiControl {
 	group := C.uiNewGroup(C.CString(title))
 	C.uiGroupSetMargined(group, 1)
-	label := C.uiNewLabel(C.CString(placeholder))
-	C.uiGroupSetChild(group, (*C.uiControl)(unsafe.Pointer(label)))
+	C.uiGroupSetChild(group, child)
 	return (*C.uiControl)(unsafe.Pointer(group))
 }
 

@@ -24,6 +24,7 @@ import (
 	"sync"
 	"unsafe"
 
+	"gophermind/gophermind-lib/modelcat"
 	"gophermind/gophermind-osx/client"
 	appui "gophermind/gophermind-osx/ui"
 )
@@ -134,9 +135,11 @@ type ChatWindow struct {
 	App        *App
 	Transcript *appui.Transcript
 	Panel      *appui.PanelState
+	Model      *appui.ModelPickerState
 	area       *chatArea
 	input      *chatInput
 	panel      *rightPanel
+	modelUI    *modelPicker
 }
 
 // NewChatWindow builds the chat UI as app's window content. sendTurn is
@@ -152,8 +155,18 @@ func NewChatWindow(app *App, sendTurn func(text string)) *ChatWindow {
 	input := newChatInput(sendTurn)
 
 	panelState := loadPanelState()
-	panel := newRightPanel(panelState)
 	panelState.OnChange(func() { savePanelState(panelState) })
+
+	// No connection is wired at construction time (see the doc comment
+	// above and main.go's identical stub for sendTurn), so the picker
+	// starts with an empty catalogue and a nil PinModelFunc (a no-op click,
+	// per modelpicker.go's pinSelected); a real connection wires
+	// cw.Model.SetEntries/SetCurrentKey and a real PinModelFunc once one
+	// exists (03-03's connection manager), the same way it will eventually
+	// replace sendTurn's stub.
+	modelState := appui.NewModelPickerState(nil, modelcat.Settings{})
+	modelUI := newModelPicker(modelState, nil, transcript.AddSystem)
+	panel := newRightPanel(panelState, modelUI.Control())
 
 	// left is the chat column: the panel's toggle button (which must stay
 	// visible even when the panel itself is hidden -- otherwise there'd be
@@ -172,7 +185,7 @@ func NewChatWindow(app *App, sendTurn func(text string)) *ChatWindow {
 
 	C.uiWindowSetChild(app.window, (*C.uiControl)(unsafe.Pointer(root)))
 
-	return &ChatWindow{App: app, Transcript: transcript, Panel: panelState, area: area, input: input, panel: panel}
+	return &ChatWindow{App: app, Transcript: transcript, Panel: panelState, Model: modelState, area: area, input: input, panel: panel, modelUI: modelUI}
 }
 
 // RunTurn sends task as a user message, opens a stream via streamFn, and
