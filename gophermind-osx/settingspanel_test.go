@@ -14,6 +14,7 @@ package main
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -57,9 +58,12 @@ func TestSettingsPanel_AddConnectDisconnectRemoveBackend(t *testing.T) {
 
 		backends := appui.NewBackendListState()
 		model := appui.NewModelPickerState(nil, modelcat.Settings{})
+		var mu sync.Mutex
 		var connected string
 		connectFn := func(ctx context.Context, p appui.BackendProfile) error {
+			mu.Lock()
 			connected = p.Name
+			mu.Unlock()
 			return nil
 		}
 		var disconnected string
@@ -81,12 +85,21 @@ func TestSettingsPanel_AddConnectDisconnectRemoveBackend(t *testing.T) {
 
 		sp.doConnect()
 		deadline := time.Now().Add(2 * time.Second)
-		for connected != "home" && time.Now().Before(deadline) {
+		for time.Now().Before(deadline) {
+			mu.Lock()
+			c := connected
+			mu.Unlock()
+			if c == "home" {
+				break
+			}
 			time.Sleep(5 * time.Millisecond)
 		}
+		mu.Lock()
 		if connected != "home" {
+			mu.Unlock()
 			t.Fatal("connectFn was never called")
 		}
+		mu.Unlock()
 		if backends.Status("home") == "disconnected" {
 			t.Error("Status() should not still be disconnected after a successful connect")
 		}
