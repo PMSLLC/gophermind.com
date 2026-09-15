@@ -8,8 +8,8 @@
 // splitter widget, no animation API, and -- checked against the installed
 // ui.h -- no way to constrain a uiBox/uiGroup to a minimum or fixed width
 // either, so its width is just whatever its section content naturally
-// sizes to). Model and Sessions carry their real content (04-04, 04-05);
-// Pipeline stays a placeholder until 04-06.
+// sizes to). Model, Sessions, and Pipeline all carry their real content
+// (04-04, 04-05, 04-06).
 package main
 
 /*
@@ -51,15 +51,14 @@ var (
 // newRightPanel builds the panel's widgets and wires them to state: a
 // click on the toggle button calls state.Toggle(), and state.OnChange
 // (fired by Toggle from anywhere, not just this button) shows/hides the
-// panel's box to match. modelSection is 04-04's real model picker content
-// (the "Model" section); Sessions and Pipeline stay placeholders until
-// 04-05/04-06 build them.
-func newRightPanel(state *appui.PanelState, modelSection *C.uiControl, sessionsSection *C.uiControl) *rightPanel {
+// panel's box to match. modelSection, sessionsSection, and
+// pipelineSection are 04-04/04-05/04-06's real section content.
+func newRightPanel(state *appui.PanelState, modelSection *C.uiControl, sessionsSection *C.uiControl, pipelineSection *C.uiControl) *rightPanel {
 	box := C.uiNewVerticalBox()
 	C.uiBoxSetPadded(box, 1)
 	C.uiBoxAppend(box, sectionGroupWithControl("Model", modelSection), 0)
 	C.uiBoxAppend(box, sectionGroupWithControl("Sessions", sessionsSection), 0)
-	C.uiBoxAppend(box, sectionGroup("Pipeline", "Pipeline panel (04-06)"), 1)
+	C.uiBoxAppend(box, sectionGroupWithControl("Pipeline", pipelineSection), 1)
 
 	toggle := C.uiNewButton(C.CString("Toggle Panel"))
 
@@ -112,13 +111,6 @@ func (rp *rightPanel) PanelControl() *C.uiControl {
 // itself is hidden, or there'd be no way to bring it back).
 func (rp *rightPanel) ToggleControl() *C.uiControl {
 	return (*C.uiControl)(unsafe.Pointer(rp.toggleButton))
-}
-
-// sectionGroup builds one of the panel's placeholder sections: a titled
-// uiGroup containing a single label.
-func sectionGroup(title, placeholder string) *C.uiControl {
-	label := C.uiNewLabel(C.CString(placeholder))
-	return sectionGroupWithControl(title, (*C.uiControl)(unsafe.Pointer(label)))
 }
 
 // sectionGroupWithControl builds a titled uiGroup around an already-built
