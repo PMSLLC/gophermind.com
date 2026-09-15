@@ -47,6 +47,22 @@ static chatAreaHandler *newChatAreaHandler(long long handle) {
 static long long chatAreaHandlerHandle(void *ah) {
 	return ((chatAreaHandler *)ah)->handle;
 }
+
+// uiDrawContextValid checks whether the draw context's internal
+// CGContextRef is non-nil (libui-ng's uiDrawContext wraps a CGContextRef;
+// on macOS it's the first field of the struct). This guards against
+// uiDrawNewTextLayout crashing on a null context.
+static int uiDrawContextValid(uiDrawContext *ctx) {
+	if (ctx == NULL) return 0;
+	// uiDrawContext on macOS: { CGContextRef context; ... }
+	// We can't access the field directly without the full struct definition,
+	// so we check the first 8 bytes (pointer) for non-zero.
+	unsigned char *p = (unsigned char *)ctx;
+	for (int i = 0; i < 8; i++) {
+		if (p[i] != 0) return 1;
+	}
+	return 0;
+}
 */
 import "C"
 
@@ -315,6 +331,9 @@ func (c *chatArea) buildAttributedString() *C.uiAttributedString {
 
 //export goChatAreaDraw
 func goChatAreaDraw(ah unsafe.Pointer, a *C.uiArea, p *C.uiAreaDrawParams) {
+	if p == nil || p.Context == nil {
+		return
+	}
 	handle := C.chatAreaHandlerHandle(ah)
 	chatAreaRegistryMu.Lock()
 	ca, ok := chatAreaRegistry[handle]
@@ -323,16 +342,48 @@ func goChatAreaDraw(ah unsafe.Pointer, a *C.uiArea, p *C.uiAreaDrawParams) {
 		return
 	}
 
-	as := ca.buildAttributedString()
+	// Skip drawing if there are no messages yet.
+	if len(ca.transcript.Messages()) == 0 {
+		return
+	}
+
+	// Build a plain attributed string (no color/weight attributes) for
+	// simple rendering. The full attributed string with per-span colors
+	// crashes uiDrawNewTextLayout in some libui-ng builds.
+	var sb strings.Builder
+	for _, m := range ca.transcript.Messages() {
+		sb.WriteString(m.Text)
+		sb.WriteString("\n\n")
+	}
+	text := sb.String()
+	if strings.TrimSpace(text) == "" {
+		return
+	}
+	cText := C.CString(text)
+	defer C.free(unsafe.Pointer(cText))
+	as := C.uiNewAttributedString(cText)
 	defer C.uiFreeAttributedString(as)
 
+	width := C.double(p.AreaWidth)
+	if width <= 0 {
+		width = C.double(800)
+	}
+	fontPtr := (*C.uiFontDescriptor)(C.malloc(C.size_t(unsafe.Sizeof(C.uiFontDescriptor{}))))
+	C.uiLoadControlFont(fontPtr)
+	defer func() {
+		C.uiFreeFontDescriptor(fontPtr)
+		C.free(unsafe.Pointer(fontPtr))
+	}()
 	params := C.uiDrawTextLayoutParams{
 		String:      as,
-		DefaultFont: nil,
-		Width:       C.double(800),
+		DefaultFont: fontPtr,
+		Width:       width,
 		Align:       C.uiDrawTextAlignLeft,
 	}
 	layout := C.uiDrawNewTextLayout(&params)
+	if layout == nil {
+		return
+	}
 	defer C.uiDrawFreeTextLayout(layout)
 	C.uiDrawText(p.Context, layout, 8, 8)
 }
