@@ -128,12 +128,15 @@ func goSendButtonClicked(button unsafe.Pointer, data unsafe.Pointer) {
 
 // ChatWindow assembles the full chat UI (transcript + input) into the
 // App's window, and wires a session stream's events into the transcript
-// via ui.StreamPump. This is 04-01's actual top-level entry point.
+// via ui.StreamPump. This is 04-01's actual top-level entry point; 04-03
+// added the collapsible right panel alongside it.
 type ChatWindow struct {
 	App        *App
 	Transcript *appui.Transcript
+	Panel      *appui.PanelState
 	area       *chatArea
 	input      *chatInput
+	panel      *rightPanel
 }
 
 // NewChatWindow builds the chat UI as app's window content. sendTurn is
@@ -148,15 +151,28 @@ func NewChatWindow(app *App, sendTurn func(text string)) *ChatWindow {
 	area := newChatArea(transcript)
 	input := newChatInput(sendTurn)
 
-	root := C.uiNewVerticalBox()
+	panelState := loadPanelState()
+	panel := newRightPanel(panelState)
+	panelState.OnChange(func() { savePanelState(panelState) })
+
+	// left is the chat column: the panel's toggle button (which must stay
+	// visible even when the panel itself is hidden -- otherwise there'd be
+	// no way to bring it back), the transcript, then the input row.
+	left := C.uiNewVerticalBox()
+	C.uiBoxSetPadded(left, 1)
+	C.uiBoxAppend(left, panel.ToggleControl(), 0)
+	C.uiBoxAppend(left, area.Control(), 1) // stretchy: takes remaining space
+	C.uiBoxAppend(left, (*C.uiControl)(unsafe.Pointer(input.entry)), 0)
+	C.uiBoxAppend(left, (*C.uiControl)(unsafe.Pointer(input.button)), 0)
+
+	root := C.uiNewHorizontalBox()
 	C.uiBoxSetPadded(root, 1)
-	C.uiBoxAppend(root, area.Control(), 1) // stretchy: takes remaining space
-	C.uiBoxAppend(root, (*C.uiControl)(unsafe.Pointer(input.entry)), 0)
-	C.uiBoxAppend(root, (*C.uiControl)(unsafe.Pointer(input.button)), 0)
+	C.uiBoxAppend(root, (*C.uiControl)(unsafe.Pointer(left)), 1) // stretchy
+	C.uiBoxAppend(root, panel.PanelControl(), 0)
 
 	C.uiWindowSetChild(app.window, (*C.uiControl)(unsafe.Pointer(root)))
 
-	return &ChatWindow{App: app, Transcript: transcript, area: area, input: input}
+	return &ChatWindow{App: app, Transcript: transcript, Panel: panelState, area: area, input: input, panel: panel}
 }
 
 // RunTurn sends task as a user message, opens a stream via streamFn, and
