@@ -15,8 +15,12 @@ RES_DIR="${APP_DIR}/Contents/Resources"
 rm -rf "${APP_DIR}"
 mkdir -p "${MACOS_DIR}" "${RES_DIR}"
 
-# Build the binary
-echo "Building binary..."
+# Build the server binary (the app spawns it as a subprocess)
+echo "Building gophermind-server..."
+(cd ../gophermind-server && go build -ldflags="-s -w" -o ../gophermind-osx/build/gophermind-server .)
+
+# Build the app binary
+echo "Building GopherMind app..."
 go build -ldflags="-s -w" -o "${MACOS_DIR}/${APP_NAME}" .
 
 # Copy icon
