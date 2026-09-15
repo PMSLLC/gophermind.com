@@ -165,7 +165,7 @@
     {
       "id": "04-08",
       "title": "Native macOS: menu bar, dark mode, shortcuts, dialogs, dock, window state",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "04-01",
         "04-02",
