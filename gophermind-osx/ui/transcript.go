@@ -25,6 +25,14 @@ const (
 	RoleSystem     Role = "system"
 	RoleToolCall   Role = "tool_call"
 	RoleToolResult Role = "tool_result"
+	// RoleApproval is an inline approval card: a marker in the
+	// transcript's chronological flow pointing at an Approval tracked
+	// separately by ApprovalTracker (approval.go), which is where its
+	// live status/decision actually lives. Kept as a reference (ApprovalID)
+	// rather than a copy so the card always reflects the approval's
+	// current state (pending/approved/denied/timed-out) even though the
+	// transcript itself is otherwise append-only.
+	RoleApproval Role = "approval"
 )
 
 // Message is one entry in the transcript.
@@ -35,6 +43,9 @@ type Message struct {
 	// JSON args) and RoleToolResult (name; Text carries the result).
 	ToolName string
 	ToolArgs string
+	// ApprovalID is set only for RoleApproval, referencing an Approval in
+	// an ApprovalTracker held elsewhere (see RoleApproval's doc comment).
+	ApprovalID string
 }
 
 // Transcript is the chat transcript's state: an ordered list of Messages,
@@ -121,6 +132,18 @@ func (t *Transcript) AppendToken(text string) {
 func (t *Transcript) AddAssistantText(text string) {
 	t.mu.Lock()
 	t.messages = append(t.messages, Message{Role: RoleAssistant, Text: text})
+	t.mu.Unlock()
+	t.notify()
+}
+
+// AddApprovalCard appends an inline marker referencing approvalID --
+// covers "Approval card appears inline in transcript when approval-needed
+// event received" at the model level. The card's actual content (tool,
+// args, live status) is looked up from an ApprovalTracker by the widget
+// layer at render time, not copied here.
+func (t *Transcript) AddApprovalCard(approvalID string) {
+	t.mu.Lock()
+	t.messages = append(t.messages, Message{Role: RoleApproval, ApprovalID: approvalID})
 	t.mu.Unlock()
 	t.notify()
 }
