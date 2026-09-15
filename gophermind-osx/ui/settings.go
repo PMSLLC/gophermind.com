@@ -19,6 +19,7 @@ type BackendProfile struct {
 	Mode         string // "local" or "remote"
 	ServerURL    string
 	GocloakRealm string
+	Token        string // bearer token for the server (empty = no auth)
 }
 
 // BackendListState is the settings panel's plain-Go state for the

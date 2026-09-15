@@ -180,6 +180,7 @@ type settingsPanel struct {
 	backendNameEntry  *C.uiEntry
 	backendURLEntry   *C.uiEntry
 	backendRealmEntry *C.uiEntry
+	backendTokenEntry *C.uiEntry
 	backendModeRadio  *C.uiRadioButtons
 	backendStatusLbl  *C.uiLabel
 	backendNames      []string
@@ -275,12 +276,15 @@ func (sp *settingsPanel) build() {
 	sp.backendNameEntry = C.uiNewEntry()
 	sp.backendURLEntry = C.uiNewEntry()
 	sp.backendRealmEntry = C.uiNewEntry()
+	sp.backendTokenEntry = C.uiNewEntry()
 	C.uiBoxAppend(backendsBox, (*C.uiControl)(unsafe.Pointer(newCLabel("Name"))), 0)
 	C.uiBoxAppend(backendsBox, (*C.uiControl)(unsafe.Pointer(sp.backendNameEntry)), 0)
 	C.uiBoxAppend(backendsBox, (*C.uiControl)(unsafe.Pointer(newCLabel("Server URL"))), 0)
 	C.uiBoxAppend(backendsBox, (*C.uiControl)(unsafe.Pointer(sp.backendURLEntry)), 0)
 	C.uiBoxAppend(backendsBox, (*C.uiControl)(unsafe.Pointer(newCLabel("Gocloak realm"))), 0)
 	C.uiBoxAppend(backendsBox, (*C.uiControl)(unsafe.Pointer(sp.backendRealmEntry)), 0)
+	C.uiBoxAppend(backendsBox, (*C.uiControl)(unsafe.Pointer(newCLabel("Bearer token"))), 0)
+	C.uiBoxAppend(backendsBox, (*C.uiControl)(unsafe.Pointer(sp.backendTokenEntry)), 0)
 
 	sp.backendModeRadio = C.uiNewRadioButtons()
 	C.uiRadioButtonsAppend(sp.backendModeRadio, C.CString("local"))
@@ -583,6 +587,7 @@ func (sp *settingsPanel) doAddBackend() {
 	name := C.GoString(C.uiEntryText(sp.backendNameEntry))
 	url := C.GoString(C.uiEntryText(sp.backendURLEntry))
 	realm := C.GoString(C.uiEntryText(sp.backendRealmEntry))
+	token := C.GoString(C.uiEntryText(sp.backendTokenEntry))
 	mode := "local"
 	if C.uiRadioButtonsSelected(sp.backendModeRadio) == 1 {
 		mode = "remote"
@@ -590,7 +595,7 @@ func (sp *settingsPanel) doAddBackend() {
 	if name == "" {
 		return
 	}
-	sp.backends.Add(appui.BackendProfile{Name: name, Mode: mode, ServerURL: url, GocloakRealm: realm})
+	sp.backends.Add(appui.BackendProfile{Name: name, Mode: mode, ServerURL: url, GocloakRealm: realm, Token: token})
 	sp.refreshBackends()
 	sp.selectBackend(name)
 }

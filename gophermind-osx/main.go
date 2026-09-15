@@ -102,7 +102,7 @@ func main() {
 				baseURL = "http://" + baseURL
 			}
 			cfg.Mode = connection.ModeDirect
-			cfg.Direct = connection.DirectConfig{BaseURL: baseURL}
+			cfg.Direct = connection.DirectConfig{BaseURL: baseURL, Token: p.Token}
 		} else {
 			binPath := findServerBinary()
 			if binPath == "" {
