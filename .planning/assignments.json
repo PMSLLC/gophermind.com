@@ -111,7 +111,7 @@
     {
       "id": "04-02",
       "title": "Inline approval cards, Y/N keyboard shortcut, approval bar, timeout",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "04-01"
       ],
@@ -120,7 +120,7 @@
     {
       "id": "04-03",
       "title": "Collapsible right panel with model picker, sessions, pipeline sections",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "04-01"
       ],
