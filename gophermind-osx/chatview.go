@@ -364,6 +364,14 @@ func goChatAreaDraw(ah unsafe.Pointer, a *C.uiArea, p *C.uiAreaDrawParams) {
 	as := C.uiNewAttributedString(cText)
 	defer C.uiFreeAttributedString(as)
 
+	// Add a color attribute for the entire string so the text is readable
+	// on both light and dark backgrounds. uiDrawText uses the attributed
+	// string's color attributes; without one, it defaults to black, which
+	// is invisible on the dark grey background in macOS dark mode.
+	// Light grey (0xE0) is readable on both white and dark grey.
+	textColor := C.uiNewColorAttribute(0.88, 0.88, 0.88, 1.0)
+	C.uiAttributedStringSetAttribute(as, textColor, 0, C.size_t(len(text)))
+
 	width := C.double(p.AreaWidth)
 	if width <= 0 {
 		width = C.double(800)

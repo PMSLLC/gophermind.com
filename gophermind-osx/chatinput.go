@@ -1,26 +1,43 @@
 package main
 
 /*
-#cgo CFLAGS: -I/opt/homebrew/include
-#cgo LDFLAGS: -L/opt/homebrew/lib -lui
+#cgo CFLAGS: -I/opt/homebrew/include -x objective-c
+#cgo LDFLAGS: -L/opt/homebrew/lib -lui -framework AppKit
 #include <ui.h>
 #include <stdlib.h>
+#import <AppKit/AppKit.h>
 
 extern void goSendButtonClicked(void *button, void *data);
 extern void goQueueMainCallback(void *data);
+extern void goCopyButtonClicked(void *button, void *data);
 
 static inline void attachSendClicked(uiButton *b, long long handle) {
 	uiButtonOnClicked(b, (void (*)(uiButton *, void *))goSendButtonClicked, (void *)handle);
 }
 
+static inline void attachCopyClicked(uiButton *b, long long handle) {
+	uiButtonOnClicked(b, (void (*)(uiButton *, void *))goCopyButtonClicked, (void *)handle);
+}
+
 static inline void queueMainDispatch(long long handle) {
 	uiQueueMain((void (*)(void *))goQueueMainCallback, (void *)handle);
+}
+
+// copyToPasteboard copies a C string to the macOS system pasteboard.
+static void copyToPasteboard(const char *text) {
+	@autoreleasepool {
+		NSPasteboard *pb = [NSPasteboard generalPasteboard];
+		[pb clearContents];
+		[pb setString:[NSString stringWithUTF8String:text]
+			forType:NSPasteboardTypeString];
+	}
 }
 */
 import "C"
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"unsafe"
 
@@ -127,6 +144,37 @@ func goSendButtonClicked(button unsafe.Pointer, data unsafe.Pointer) {
 	}
 }
 
+// --- Copy transcript button ---
+
+var (
+	copyHandlerMu  sync.Mutex
+	copyHandlers   = map[C.longlong]func(){}
+	nextCopyHandle C.longlong
+)
+
+//export goCopyButtonClicked
+func goCopyButtonClicked(button unsafe.Pointer, data unsafe.Pointer) {
+	h := C.longlong(uintptr(data))
+	copyHandlerMu.Lock()
+	f, ok := copyHandlers[h]
+	copyHandlerMu.Unlock()
+	if ok {
+		f()
+	}
+}
+
+// attachCopyButton creates a "Copy" button that calls f when clicked.
+func attachCopyButton(f func()) *C.uiButton {
+	btn := C.uiNewButton(C.CString("Copy"))
+	copyHandlerMu.Lock()
+	h := nextCopyHandle
+	nextCopyHandle++
+	copyHandlers[h] = f
+	copyHandlerMu.Unlock()
+	C.attachCopyClicked(btn, h)
+	return btn
+}
+
 // ChatWindow assembles the full chat UI (transcript + input) into the
 // App's window, and wires a session stream's events into the transcript
 // via ui.StreamPump. This is 04-01's actual top-level entry point; 04-03
@@ -205,13 +253,26 @@ func NewChatWindow(app *App, sendTurn func(text string)) *ChatWindow {
 	settingsUI := newSettingsPanel(app.window, backendState, modelState, cacheHistory, saveCacheHistorySettings,
 		nil, nil, nil, nil, nil, nil, nil, nil)
 
-	// left is the chat column: the panel's toggle button and the settings
-	// gear button (both must stay visible even when the panel itself is
-	// hidden -- otherwise there'd be no way to bring either back), the
+	// left is the chat column: the panel's toggle button, the Copy button
+	// (copies the transcript to the clipboard), and the settings gear
+	// button (all must stay visible even when the panel itself is hidden
+	// -- otherwise there'd be no way to bring either back), the
 	// transcript, then the input row.
 	topRow := C.uiNewHorizontalBox()
 	C.uiBoxSetPadded(topRow, 1)
 	C.uiBoxAppend(topRow, panel.ToggleControl(), 0)
+	copyBtn := attachCopyButton(func() {
+		var sb strings.Builder
+		for _, m := range transcript.Messages() {
+			sb.WriteString(m.Text)
+			sb.WriteString("\n\n")
+		}
+		cText := C.CString(sb.String())
+		C.copyToPasteboard(cText)
+		C.free(unsafe.Pointer(cText))
+		transcript.AddSystem("Transcript copied to clipboard.")
+	})
+	C.uiBoxAppend(topRow, (*C.uiControl)(unsafe.Pointer(copyBtn)), 0)
 	C.uiBoxAppend(topRow, settingsUI.GearControl(), 0)
 
 	// Input row: the multiline entry and Send button side by side, so the

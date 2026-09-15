@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gophermind/gophermind-osx/client"
 	"gophermind/gophermind-osx/connection"
@@ -40,10 +41,18 @@ func main() {
 	// assignment below has long since completed.
 	var chat *ChatWindow
 	chat = NewChatWindow(app, func(text string) {
-		conn, ok := connMgr.Get("local")
-		if !ok || conn.Status() != connection.StatusConnected {
+		// Find the first connected backend (any name, not just "local").
+		var conn *connection.Connection
+		for _, name := range connMgr.Names() {
+			c, ok := connMgr.Get(name)
+			if ok && c.Status() == connection.StatusConnected {
+				conn = c
+				break
+			}
+		}
+		if conn == nil || conn.Status() != connection.StatusConnected {
 			chat.Transcript.AddUserMessage(text)
-			chat.Transcript.AddSystem("Not connected to a backend. Open Settings and click Connect.")
+			chat.Transcript.AddSystem("Not connected to a backend. Open Settings (gear icon) and click Connect.")
 			return
 		}
 		cl := conn.Client()
@@ -110,9 +119,15 @@ func main() {
 		connMgr.Disconnect(name)
 	}
 
-	// Connect on startup.
+	// Connect on startup. If the local binary isn't found, don't show an
+	// error — just a hint. The user can connect a remote backend from
+	// Settings (gear icon) without needing a local binary.
 	if err := chat.settingsUI.connectFunc(context.Background(), appui.BackendProfile{Name: "local", Mode: "local"}); err != nil {
-		chat.Transcript.AddSystem("Connection failed: " + err.Error())
+		if strings.Contains(err.Error(), "binary not found") {
+			chat.Transcript.AddSystem("No local server found. Open Settings (gear icon) to connect a remote backend.")
+		} else {
+			chat.Transcript.AddSystem("Connection failed: " + err.Error())
+		}
 	} else {
 		chat.Transcript.AddSystem("Connected to local gophermind-server.")
 	}
