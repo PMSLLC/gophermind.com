@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"gophermind/gophermind-lib/modelcat"
 	"gophermind/gophermind-osx/client"
 	"gophermind/gophermind-osx/connection"
 	appui "gophermind/gophermind-osx/ui"
-	"gophermind/gophermind-lib/modelcat"
 )
 
 // TestE2E_LocalMode_ModelSwitching covers "Model switching E2E: pin →
