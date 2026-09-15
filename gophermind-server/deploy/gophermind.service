@@ -1,0 +1,17 @@
+[Unit]
+Description=GopherMind Server
+After=network.target
+
+[Service]
+Type=simple
+User=jbrahy
+WorkingDirectory=/opt/gophermind
+EnvironmentFile=/opt/gophermind/.env
+ExecStart=/opt/gophermind/gophermind-server
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
