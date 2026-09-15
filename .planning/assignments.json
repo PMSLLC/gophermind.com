@@ -147,7 +147,7 @@
     {
       "id": "04-06",
       "title": "Pipeline/phaseflow panel with file browser and live task status",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "04-03"
       ],
