@@ -218,6 +218,25 @@ func NewChatWindow(app *App, sendTurn func(text string)) *ChatWindow {
 
 	C.uiWindowSetChild(app.window, (*C.uiControl)(unsafe.Pointer(root)))
 
+	// Menu bar wiring (.planning/tasks/04-08.json): the menu items
+	// themselves are built in NewApp, before ChatWindow exists, so the
+	// actions are attached here instead -- see App.WireMenuActions' doc
+	// comment. Toggle Panel calls both Toggle() and syncVisibility()
+	// because rightpanel.go's own toggle button does the same (see
+	// syncVisibility's doc comment on why PanelState.OnChange's single
+	// callback slot is already spoken for by persistence). Toggle Dark
+	// Mode is a documented no-op: libui-ng exposes no appearance API (see
+	// NewApp's doc comment).
+	app.WireMenuActions(
+		func() { pipelineUI.doPickBrief(); pipelineUI.doStart() },
+		pipelineUI.doPickBrief,
+		settingsUI.doOpen,
+		func() { panelState.Toggle(); panel.syncVisibility() },
+		func() {
+			transcript.AddSystem("Dark mode isn't switchable from here: libui-ng has no appearance API, so the app already just follows the system's light/dark setting on its own.")
+		},
+	)
+
 	return &ChatWindow{App: app, Transcript: transcript, Panel: panelState, Model: modelState, Sessions: sessionState, Pipeline: pipelineState, Backends: backendState, area: area, input: input, panel: panel, modelUI: modelUI, sessionsUI: sessionsUI, pipelineUI: pipelineUI, settingsUI: settingsUI}
 }
 

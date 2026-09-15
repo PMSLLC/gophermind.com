@@ -237,16 +237,13 @@ func formatRunReport(r phaseflow.RunReport) string {
 	return out
 }
 
-//export goPipelinePickBriefClicked
-func goPipelinePickBriefClicked(b unsafe.Pointer, data unsafe.Pointer) {
-	h := C.longlong(uintptr(data))
-	pipelinePanelMu.Lock()
-	pp, ok := pipelinePanels[h]
-	pipelinePanelMu.Unlock()
-	if !ok {
-		return
-	}
-
+// doPickBrief opens the native file picker and stages its content --
+// factored out of goPipelinePickBriefClicked so menubar wiring (the "Open
+// Brief"/"New Project" menu items, .planning/tasks/04-08.json) can trigger
+// the exact same picker the button does, and so a test could call it
+// directly if it didn't need a real dialog (see this file's own test's
+// doc comment on why pick-brief itself is never exercised in a test).
+func (pp *pipelinePanel) doPickBrief() {
 	cPath := C.uiOpenFile(pp.window)
 	if cPath == nil {
 		return // cancelled
@@ -264,6 +261,18 @@ func goPipelinePickBriefClicked(b unsafe.Pointer, data unsafe.Pointer) {
 	pp.briefName = path
 	pp.briefContent = string(content)
 	C.uiLabelSetText(pp.briefLabel, C.CString("Brief: "+path))
+}
+
+//export goPipelinePickBriefClicked
+func goPipelinePickBriefClicked(b unsafe.Pointer, data unsafe.Pointer) {
+	h := C.longlong(uintptr(data))
+	pipelinePanelMu.Lock()
+	pp, ok := pipelinePanels[h]
+	pipelinePanelMu.Unlock()
+	if !ok {
+		return
+	}
+	pp.doPickBrief()
 }
 
 // doStart sends the breakdown-seed prompt for the currently picked brief,
