@@ -477,6 +477,8 @@ func TestModelsAndCatalogueAndPipelineAndSkills(t *testing.T) {
 			io.WriteString(w, `[]`)
 		case r.URL.Path == "/session/s1/approve":
 			w.WriteHeader(200)
+		case r.URL.Path == "/session/s1/config":
+			io.WriteString(w, `{"model":"m1","mode":"coding","root":"/tmp/proj"}`)
 		default:
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(500)
@@ -522,6 +524,9 @@ func TestModelsAndCatalogueAndPipelineAndSkills(t *testing.T) {
 	}
 	if err := c.Approve(ctx, "s1", "a1", true); err != nil {
 		t.Errorf("Approve: %v", err)
+	}
+	if cfg, err := c.SessionConfig(ctx, "s1"); err != nil || cfg.Model != "m1" || cfg.Mode != "coding" || cfg.Root != "/tmp/proj" {
+		t.Errorf("SessionConfig: %+v, %v", cfg, err)
 	}
 }
 

@@ -136,10 +136,12 @@ type ChatWindow struct {
 	Transcript *appui.Transcript
 	Panel      *appui.PanelState
 	Model      *appui.ModelPickerState
+	Sessions   *appui.SessionListState
 	area       *chatArea
 	input      *chatInput
 	panel      *rightPanel
 	modelUI    *modelPicker
+	sessionsUI *sessionList
 }
 
 // NewChatWindow builds the chat UI as app's window content. sendTurn is
@@ -166,7 +168,14 @@ func NewChatWindow(app *App, sendTurn func(text string)) *ChatWindow {
 	// replace sendTurn's stub.
 	modelState := appui.NewModelPickerState(nil, modelcat.Settings{})
 	modelUI := newModelPicker(modelState, nil, transcript.AddSystem)
-	panel := newRightPanel(panelState, modelUI.Control())
+
+	// Same nil-injected-funcs precedent as modelState/modelUI above (see
+	// this constructor's doc comment): no live connection exists yet to
+	// list/create/rename/delete/resume a session through.
+	sessionState := appui.NewSessionListState()
+	sessionsUI := newSessionList(sessionState, app.window, transcript, transcript.AddSystem, nil, nil, nil, nil, nil)
+
+	panel := newRightPanel(panelState, modelUI.Control(), sessionsUI.Control())
 
 	// left is the chat column: the panel's toggle button (which must stay
 	// visible even when the panel itself is hidden -- otherwise there'd be
@@ -185,7 +194,7 @@ func NewChatWindow(app *App, sendTurn func(text string)) *ChatWindow {
 
 	C.uiWindowSetChild(app.window, (*C.uiControl)(unsafe.Pointer(root)))
 
-	return &ChatWindow{App: app, Transcript: transcript, Panel: panelState, Model: modelState, area: area, input: input, panel: panel, modelUI: modelUI}
+	return &ChatWindow{App: app, Transcript: transcript, Panel: panelState, Model: modelState, Sessions: sessionState, area: area, input: input, panel: panel, modelUI: modelUI, sessionsUI: sessionsUI}
 }
 
 // RunTurn sends task as a user message, opens a stream via streamFn, and

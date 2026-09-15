@@ -274,6 +274,24 @@ func (c *Client) SessionMessages(ctx context.Context, id string) ([]json.RawMess
 	return decodeJSON[[]json.RawMessage](body)
 }
 
+// SessionConfigInfo is GET /session/{id}/config's response: the model,
+// mode, and root a session is actually running with (empty strings when
+// unset).
+type SessionConfigInfo struct {
+	Model string `json:"model"`
+	Mode  string `json:"mode"`
+	Root  string `json:"root"`
+}
+
+// SessionConfig backs GET /session/{id}/config.
+func (c *Client) SessionConfig(ctx context.Context, id string) (SessionConfigInfo, error) {
+	body, err := c.do(ctx, http.MethodGet, "/session/"+id+"/config", nil)
+	if err != nil {
+		return SessionConfigInfo{}, err
+	}
+	return decodeJSON[SessionConfigInfo](body)
+}
+
 // Approve backs POST /session/{id}/approve, resolving a pending
 // "approval-needed" gate raised on that session's Stream.
 func (c *Client) Approve(ctx context.Context, sessionID, approvalID string, approved bool) error {

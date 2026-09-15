@@ -8,9 +8,8 @@
 // splitter widget, no animation API, and -- checked against the installed
 // ui.h -- no way to constrain a uiBox/uiGroup to a minimum or fixed width
 // either, so its width is just whatever its section content naturally
-// sizes to). The three sections (model picker, sessions, pipeline) are
-// placeholders here: their real content is 04-04, 04-05, and 04-06's job
-// respectively.
+// sizes to). Model and Sessions carry their real content (04-04, 04-05);
+// Pipeline stays a placeholder until 04-06.
 package main
 
 /*
@@ -55,11 +54,11 @@ var (
 // panel's box to match. modelSection is 04-04's real model picker content
 // (the "Model" section); Sessions and Pipeline stay placeholders until
 // 04-05/04-06 build them.
-func newRightPanel(state *appui.PanelState, modelSection *C.uiControl) *rightPanel {
+func newRightPanel(state *appui.PanelState, modelSection *C.uiControl, sessionsSection *C.uiControl) *rightPanel {
 	box := C.uiNewVerticalBox()
 	C.uiBoxSetPadded(box, 1)
 	C.uiBoxAppend(box, sectionGroupWithControl("Model", modelSection), 0)
-	C.uiBoxAppend(box, sectionGroup("Sessions", "Sessions list (04-05)"), 0)
+	C.uiBoxAppend(box, sectionGroupWithControl("Sessions", sessionsSection), 0)
 	C.uiBoxAppend(box, sectionGroup("Pipeline", "Pipeline panel (04-06)"), 1)
 
 	toggle := C.uiNewButton(C.CString("Toggle Panel"))
