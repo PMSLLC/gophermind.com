@@ -1,0 +1,17 @@
+{
+  "phase": "5",
+  "title": "Performance: message latency, streaming throughput, WG overhead",
+  "description": "Write performance benchmarks: message round-trip latency (local vs remote), SSE streaming throughput (tokens/sec), WG tunnel overhead comparison. Establish baselines and verify no regressions.",
+  "acceptance_criteria": [
+    "Message latency benchmark: local and remote baselines established",
+    "Streaming throughput benchmark: tokens/sec measured",
+    "WG overhead: local vs remote latency delta measured",
+    "Benchmarks run with go test -bench and produce stable results"
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "depends_on": [
+    "05-01",
+    "05-02"
+  ]
+}

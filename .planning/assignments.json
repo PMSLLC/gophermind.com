@@ -175,46 +175,76 @@
     },
     {
       "id": "05-01",
-      "title": "E2E integration tests: login, chat, approvals, pipeline, logout",
-      "status": "pending",
+      "title": "E2E local mode: full flow, approval, session management",
+      "status": "completed",
       "depends_on": [
         "04-01",
         "04-02",
-        "04-04",
         "04-05",
-        "04-06",
-        "04-07",
-        "03-03",
-        "03-04",
-        "02-04"
+        "03-02",
+        "03-03"
       ],
       "phase": "5"
     },
     {
       "id": "05-02",
-      "title": "Error scenario tests: network drops, token expiry, server unavailable, WG reconnect",
+      "title": "E2E remote mode: WG tunnel, chat, approve, disconnect",
       "status": "pending",
       "depends_on": [
-        "05-01"
+        "05-01",
+        "03-03",
+        "01-02"
       ],
       "phase": "5"
     },
     {
       "id": "05-03",
-      "title": "Performance: message latency, streaming throughput, WG overhead",
+      "title": "E2E pipeline: breakdown, execute, monitor",
       "status": "pending",
       "depends_on": [
-        "05-01"
+        "05-01",
+        "04-06",
+        "02-04"
       ],
       "phase": "5"
     },
     {
       "id": "05-04",
+      "title": "E2E model switching: pin, cycle, switch",
+      "status": "pending",
+      "depends_on": [
+        "05-01",
+        "04-04"
+      ],
+      "phase": "5"
+    },
+    {
+      "id": "05-05",
+      "title": "Error scenario tests: network drops, token expiry, server unavailable, WG reconnect",
+      "status": "pending",
+      "depends_on": [
+        "05-01",
+        "05-02"
+      ],
+      "phase": "5"
+    },
+    {
+      "id": "05-06",
+      "title": "Performance: message latency, streaming throughput, WG overhead",
+      "status": "pending",
+      "depends_on": [
+        "05-01",
+        "05-02"
+      ],
+      "phase": "5"
+    },
+    {
+      "id": "05-07",
       "title": "UI refinement, accessibility, final QA",
       "status": "pending",
       "depends_on": [
-        "05-02",
-        "05-03"
+        "05-05",
+        "05-06"
       ],
       "phase": "5"
     }

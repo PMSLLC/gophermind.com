@@ -1,0 +1,18 @@
+{
+  "phase": "5",
+  "title": "Error scenario tests: network drops, token expiry, server unavailable, WG reconnect",
+  "description": "Write tests for error scenarios: network drops mid-stream, token expiry and refresh, server unavailable (connection refused, timeout), WG tunnel reconnect. Verify the client and connection manager handle each gracefully.",
+  "acceptance_criteria": [
+    "Network drop mid-stream: client detects and reports error",
+    "Token expiry: refresh flow works, stale token rejected",
+    "Server unavailable: connection manager reports status, retries",
+    "WG reconnect: tunnel drops and re-establishes, client recovers",
+    "Tests pass with go test -race ./gophermind-osx/..."
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "depends_on": [
+    "05-01",
+    "05-02"
+  ]
+}

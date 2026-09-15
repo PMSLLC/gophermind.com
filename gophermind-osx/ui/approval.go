@@ -92,6 +92,15 @@ func NewApprovalTracker(approveFn ApproveFunc) *ApprovalTracker {
 	}
 }
 
+// SetApproveFunc replaces the tracker's ApproveFunc, so a connection
+// established after construction can wire client.Approve without
+// rebuilding the tracker (and its existing cards).
+func (t *ApprovalTracker) SetApproveFunc(fn ApproveFunc) {
+	t.mu.Lock()
+	t.approveFn = fn
+	t.mu.Unlock()
+}
+
 // OnChange registers f to be called after every state change (Add,
 // Resolve, a timeout). Same non-blocking, non-reentrant contract as
 // Transcript.OnChange.
@@ -232,4 +241,26 @@ func YNDecision(key rune) (approve bool, ok bool) {
 	default:
 		return false, false
 	}
+}
+
+// ApproveLatest resolves the most recently added pending approval as
+// approved (the Y key). No-op if nothing is pending.
+func (t *ApprovalTracker) ApproveLatest() {
+	pending := t.Pending()
+	if len(pending) == 0 {
+		return
+	}
+	latest := pending[len(pending)-1]
+	_ = t.Resolve(context.Background(), latest.ID, true)
+}
+
+// DenyLatest resolves the most recently added pending approval as denied
+// (the N key). No-op if nothing is pending.
+func (t *ApprovalTracker) DenyLatest() {
+	pending := t.Pending()
+	if len(pending) == 0 {
+		return
+	}
+	latest := pending[len(pending)-1]
+	_ = t.Resolve(context.Background(), latest.ID, false)
 }

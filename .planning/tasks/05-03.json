@@ -1,19 +1,16 @@
 {
   "phase": "5",
-  "title": "Performance: message latency, streaming throughput, WG overhead",
-  "description": "Measure and verify: chat latency <100ms (local), streaming throughput \u2265 Wails baseline, WG tunnel overhead (latency + throughput comparison local vs remote), memory usage over 8h session, CPU usage during streaming, connection reconnection time <5s. Profile and optimize if needed (SSE batching, WG MTU).",
+  "title": "E2E pipeline: breakdown, execute, monitor",
+  "description": "Write E2E tests for the pipeline flow: pick spec → breakdown → execute → monitor. Spawns a real gophermind-server with a .planning directory, starts a breakdown via the client API, monitors pipeline state and events via SSE, verifies task status transitions.",
   "acceptance_criteria": [
-    "Chat latency: <100ms local, <200ms remote (WG)",
-    "Streaming throughput: \u2265 Wails baseline (measure and document)",
-    "WG overhead: latency and throughput comparison documented (local vs remote)",
-    "Memory: no leak over 8h session (Instruments profile)",
-    "CPU: <10% during streaming (single core)",
-    "Reconnection: <5s (measured, not just designed for)",
-    "Performance report: all metrics documented in .planning/PERFORMANCE.md"
+    "Pipeline E2E: start breakdown → monitor state → verify task transitions passes",
+    "Tests pass with go test -race -tags e2e ./gophermind-osx/..."
   ],
   "agent": "executor",
   "model": "strong",
   "depends_on": [
-    "05-01"
+    "05-01",
+    "04-06",
+    "02-04"
   ]
 }

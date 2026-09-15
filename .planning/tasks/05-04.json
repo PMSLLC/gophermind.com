@@ -1,22 +1,15 @@
 {
   "phase": "5",
-  "title": "UI refinement, accessibility, final QA",
-  "description": "Final polish: VoiceOver support (labels, announcements), keyboard navigation for all UI elements, visual consistency (spacing, colors, fonts), animation smoothness, edge cases (empty states, very long messages, unicode), macOS Ventura/Sonoma/Sequoia testing, final lint pass, memory leak check (Instruments), release build verification.",
+  "title": "E2E model switching: pin, cycle, switch",
+  "description": "Write E2E tests for model switching: list models → pin a model → cycle through models → verify switch. Exercises the client's model endpoints (ListModels, Catalogue, ModelSettings, PatchModelSettings) against a real gophermind-server.",
   "acceptance_criteria": [
-    "VoiceOver: all UI elements have labels, announcements for streaming/approvals",
-    "Keyboard navigation: all UI elements reachable and operable via keyboard",
-    "Visual consistency: spacing, colors, fonts consistent across all panels",
-    "Animation: smooth, no jank (60fps)",
-    "Edge cases: empty states, very long messages, unicode all handled",
-    "macOS compatibility: works on Ventura, Sonoma, Sequoia",
-    "Lint: go vet ./... clean, no warnings",
-    "Memory: Instruments profile shows no leaks",
-    "Release build: go build -ldflags='-s -w' produces working binary"
+    "Model switching E2E: list → pin → cycle → switch passes",
+    "Tests pass with go test -race -tags e2e ./gophermind-osx/..."
   ],
   "agent": "executor",
   "model": "strong",
   "depends_on": [
-    "05-02",
-    "05-03"
+    "05-01",
+    "04-04"
   ]
 }

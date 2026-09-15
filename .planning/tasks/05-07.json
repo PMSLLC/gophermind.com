@@ -1,0 +1,17 @@
+{
+  "phase": "5",
+  "title": "UI refinement, accessibility, final QA",
+  "description": "Final polish: UI refinement (spacing, alignment, edge cases), accessibility (keyboard navigation, focus order, screen reader labels where libui-ng supports them), final QA pass (all tests green, no warnings, clean build).",
+  "acceptance_criteria": [
+    "All tests pass: go test -race ./... (all packages)",
+    "All E2E tests pass: go test -race -tags e2e ./gophermind-osx/...",
+    "No compiler warnings or vet issues",
+    "UI edge cases handled (empty states, long text, rapid interactions)"
+  ],
+  "agent": "executor",
+  "model": "strong",
+  "depends_on": [
+    "05-05",
+    "05-06"
+  ]
+}

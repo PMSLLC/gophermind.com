@@ -51,9 +51,11 @@ static long long chatAreaHandlerHandle(void *ah) {
 import "C"
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 	"unsafe"
 
 	appui "gophermind/gophermind-osx/ui"
@@ -79,7 +81,8 @@ const lineHeight = 16.0
 type chatArea struct {
 	area       *C.uiArea
 	transcript *appui.Transcript
-	contentH   float64 // last-computed content height, for ScrollTo/SetSize
+	approvals  *appui.ApprovalTracker // consulted when rendering RoleApproval messages
+	contentH   float64                // last-computed content height, for ScrollTo/SetSize
 }
 
 var (
@@ -91,8 +94,10 @@ var (
 // newChatArea creates a scrolling uiArea bound to transcript: transcript's
 // OnChange callback triggers a re-render (dispatched via uiQueueMain, so
 // it's safe even though the pump that mutates transcript runs on its own
-// goroutine -- covers "UI updates via channel").
-func newChatArea(transcript *appui.Transcript) *chatArea {
+// goroutine -- covers "UI updates via channel"). approvals is the
+// ApprovalTracker consulted when rendering RoleApproval messages (nil is
+// fine: approval cards just show "unknown" status).
+func newChatArea(transcript *appui.Transcript, approvals *appui.ApprovalTracker) *chatArea {
 	chatAreaRegistryMu.Lock()
 	handle := nextChatAreaHandle
 	nextChatAreaHandle++
@@ -101,7 +106,7 @@ func newChatArea(transcript *appui.Transcript) *chatArea {
 	ah := C.newChatAreaHandler(handle)
 	area := C.uiNewScrollingArea((*C.uiAreaHandler)(unsafe.Pointer(ah)), 800, 2000)
 
-	ca := &chatArea{area: area, transcript: transcript}
+	ca := &chatArea{area: area, transcript: transcript, approvals: approvals}
 	chatAreaRegistryMu.Lock()
 	chatAreaRegistry[handle] = ca
 	chatAreaRegistryMu.Unlock()
@@ -167,8 +172,10 @@ func wrappedLineCount(s string, cols int) int {
 
 // messageSpans renders m as colored spans: a role-prefix span, then either
 // plain text (prose) or ui.HighlightCode's spans for a tool call's args /
-// a detected code block within assistant text.
-func messageSpans(m appui.Message) []appui.Span {
+// a detected code block within assistant text. RoleApproval messages are
+// rendered as an inline approval card (tool name, pretty-printed args,
+// current status) looked up from the chatArea's ApprovalTracker.
+func (c *chatArea) messageSpans(m appui.Message) []appui.Span {
 	var spans []appui.Span
 	prefix, prefixColor := roleLabel(m.Role, m.ToolName)
 	spans = append(spans, appui.Span{Text: prefix + "\n", Color: prefixColor, Bold: true})
@@ -184,10 +191,66 @@ func messageSpans(m appui.Message) []appui.Span {
 				spans = append(spans, appui.Span{Text: block.Text})
 			}
 		}
+	case appui.RoleApproval:
+		spans = append(spans, c.approvalCardSpans(m)...)
 	default:
 		spans = append(spans, appui.Span{Text: m.Text})
 	}
 	spans = append(spans, appui.Span{Text: "\n\n"})
+	return spans
+}
+
+// approvalCardSpans renders an inline approval card for m (a RoleApproval
+// message): the tool name, pretty-printed args, and the approval's current
+// status (pending/approved/denied/timed-out). The live status is looked up
+// from the chatArea's ApprovalTracker by m.ApprovalID, so the card always
+// reflects the approval's current state even though the transcript itself
+// is append-only.
+func (c *chatArea) approvalCardSpans(m appui.Message) []appui.Span {
+	var spans []appui.Span
+
+	// Look up the live approval for its tool name, args, and status.
+	var tool, args, status string
+	if c.approvals != nil {
+		for _, a := range c.approvals.All() {
+			if a.ID == m.ApprovalID {
+				tool = a.Tool
+				args = a.Args
+				status = a.Status.String()
+				break
+			}
+		}
+	}
+	if tool == "" {
+		tool = "(unknown tool)"
+	}
+	if status == "" {
+		status = "unknown"
+	}
+
+	// Card header: "Approval: <tool>" in a distinct color.
+	spans = append(spans, appui.Span{Text: fmt.Sprintf("Approval: %s\n", tool), Color: appui.Color{R: 0x80, G: 0x40, B: 0xC0}, Bold: true})
+
+	// Pretty-printed args (indented to look like a card body).
+	if args != "" {
+		for _, line := range strings.Split(args, "\n") {
+			spans = append(spans, appui.Span{Text: "  " + line + "\n"})
+		}
+	}
+
+	// Status line, color-coded: green for approved, red for denied/timed-out,
+	// amber for pending.
+	var statusColor appui.Color
+	switch {
+	case status == "approved":
+		statusColor = appui.Color{R: 0x20, G: 0x90, B: 0x60}
+	case status == "denied" || status == "denied (timed out)":
+		statusColor = appui.Color{R: 0xC0, G: 0x40, B: 0x40}
+	default: // pending
+		statusColor = appui.Color{R: 0xC0, G: 0x90, B: 0x20}
+	}
+	spans = append(spans, appui.Span{Text: fmt.Sprintf("  Status: %s\n", status), Color: statusColor, Bold: true})
+
 	return spans
 }
 
@@ -223,11 +286,11 @@ func freeAttributedString(as *C.uiAttributedString) {
 // uiAttributedString + uiDrawText path instead. Caller must free the
 // result via freeAttributedString (or C.uiFreeAttributedString directly,
 // from a non-test file).
-func buildAttributedString(transcript *appui.Transcript) *C.uiAttributedString {
+func (c *chatArea) buildAttributedString() *C.uiAttributedString {
 	as := C.uiNewAttributedString(C.CString(""))
 	var offset C.size_t
-	for _, m := range transcript.Messages() {
-		for _, span := range messageSpans(m) {
+	for _, m := range c.transcript.Messages() {
+		for _, span := range c.messageSpans(m) {
 			cText := C.CString(span.Text)
 			C.uiAttributedStringAppendUnattributed(as, cText)
 			C.free(unsafe.Pointer(cText))
@@ -260,7 +323,7 @@ func goChatAreaDraw(ah unsafe.Pointer, a *C.uiArea, p *C.uiAreaDrawParams) {
 		return
 	}
 
-	as := buildAttributedString(ca.transcript)
+	as := ca.buildAttributedString()
 	defer C.uiFreeAttributedString(as)
 
 	params := C.uiDrawTextLayoutParams{
@@ -285,9 +348,107 @@ func goChatAreaDragBroken(ah unsafe.Pointer, a *C.uiArea) {}
 
 //export goChatAreaKeyEvent
 func goChatAreaKeyEvent(ah unsafe.Pointer, a *C.uiArea, e *C.uiAreaKeyEvent) C.int {
-	// The transcript display is read-only; it doesn't consume key events.
-	// (The input field is a separate uiMultilineEntry -- see
-	// newChatInput -- which handles its own text entry natively; this
-	// area never has focus for typing.)
+	// The transcript display is read-only; it doesn't consume key events
+	// except for the Y/N approval shortcut (04-02: "Y/N keyboard shortcut:
+	// works when not in editable field"). The input field is a separate
+	// uiMultilineEntry which handles its own text entry natively, so this
+	// area only gets key events when it has focus (user clicked on the
+	// transcript), meaning the input field is not focused.
+	if e.Up != 0 {
+		return 0 // key-up: ignore
+	}
+	key := byte(e.Key)
+	switch key {
+	case 'y', 'Y':
+		if ca := chatAreaFromHandler(ah); ca != nil && ca.approvals != nil {
+			ca.approvals.ApproveLatest()
+			return 1 // consumed
+		}
+	case 'n', 'N':
+		if ca := chatAreaFromHandler(ah); ca != nil && ca.approvals != nil {
+			ca.approvals.DenyLatest()
+			return 1 // consumed
+		}
+	}
 	return 0
+}
+
+// chatAreaFromHandler looks up the *chatArea for a C-side handler pointer.
+func chatAreaFromHandler(ah unsafe.Pointer) *chatArea {
+	handle := C.chatAreaHandlerHandle(ah)
+	chatAreaRegistryMu.Lock()
+	defer chatAreaRegistryMu.Unlock()
+	return chatAreaRegistry[handle]
+}
+
+// approvalBar is a persistent label at the bottom of the chat column that
+// summarizes pending approvals (tool name + time remaining). It updates
+// itself via ApprovalTracker.OnChange, so it always reflects the tracker's
+// current state without the caller needing to poll.
+type approvalBar struct {
+	label   *C.uiLabel
+	tracker *appui.ApprovalTracker
+}
+
+// newApprovalBar creates the bar bound to tracker: tracker's OnChange
+// callback updates the label text (dispatched via uiQueueMain, same
+// pattern as newChatArea's transcript.OnChange). A 1-second timer also
+// ticks the countdown display and calls CheckTimeouts for auto-deny at
+// 5:00 (04-02: "5-min timeout: warning at 4:30, auto-deny at 5:00").
+func newApprovalBar(tracker *appui.ApprovalTracker) *approvalBar {
+	label := C.uiNewLabel(C.CString("No pending approvals"))
+	bar := &approvalBar{label: label, tracker: tracker}
+
+	tracker.OnChange(func() {
+		queueMain(func() {
+			bar.update()
+		})
+	})
+
+	// 1-second timer: tick the countdown and sweep expired approvals.
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			tracker.CheckTimeouts(context.Background())
+			queueMain(func() {
+				bar.update()
+			})
+		}
+	}()
+	return bar
+}
+
+// Control returns the widget as a generic uiControl, for adding to a box.
+func (b *approvalBar) Control() *C.uiControl {
+	return (*C.uiControl)(unsafe.Pointer(b.label))
+}
+
+// update refreshes the label text from the tracker's current pending
+// approvals.
+func (b *approvalBar) update() {
+	cText := C.CString(b.pendingSummary())
+	C.uiLabelSetText(b.label, cText)
+	C.free(unsafe.Pointer(cText))
+}
+
+// pendingSummary formats the tracker's pending approvals as a short
+// one-line summary. A "!" warning marker appears when an approval has
+// ≤ 30 seconds remaining (04-02: "warning at 4:30").
+func (b *approvalBar) pendingSummary() string {
+	pending := b.tracker.Pending()
+	if len(pending) == 0 {
+		return "No pending approvals"
+	}
+	parts := make([]string, 0, len(pending))
+	now := time.Now()
+	for _, a := range pending {
+		remaining := a.TimeRemaining(now)
+		s := fmt.Sprintf("%s (%s)", a.Tool, remaining)
+		if remaining <= 30*time.Second {
+			s += " !"
+		}
+		parts = append(parts, s)
+	}
+	return "Pending: " + strings.Join(parts, ", ")
 }

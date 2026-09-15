@@ -120,7 +120,7 @@ func TestChatWindow_TranscriptUpdatesTriggerRedrawWithoutPanic(t *testing.T) {
 		// leak detector fires (and crashes the process) at uiUninit() if
 		// this isn't freed -- caught by this test the first time it ran
 		// without the free below.
-		as := buildAttributedString(cw.Transcript)
+		as := cw.area.buildAttributedString()
 		if as != nil {
 			freeAttributedString(as)
 		}

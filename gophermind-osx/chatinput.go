@@ -139,6 +139,7 @@ type ChatWindow struct {
 	Sessions   *appui.SessionListState
 	Pipeline   *appui.PipelineState
 	Backends   *appui.BackendListState
+	Approvals  *appui.ApprovalTracker
 	area       *chatArea
 	input      *chatInput
 	panel      *rightPanel
@@ -157,7 +158,16 @@ type ChatWindow struct {
 // from plan 03-03).
 func NewChatWindow(app *App, sendTurn func(text string)) *ChatWindow {
 	transcript := appui.NewTranscript()
-	area := newChatArea(transcript)
+
+	// No connection is wired at construction time (same nil-injected-funcs
+	// precedent as modelState/sessionState below), so the tracker's
+	// ApproveFunc is a no-op for now: a real connection replaces it with
+	// client.Approve once one exists (03-03's connection manager).
+	approvals := appui.NewApprovalTracker(func(ctx context.Context, sessionID, approvalID string, approved bool) error {
+		return nil
+	})
+	area := newChatArea(transcript, approvals)
+	approvalBar := newApprovalBar(approvals)
 	input := newChatInput(sendTurn)
 
 	panelState := loadPanelState()
@@ -208,6 +218,7 @@ func NewChatWindow(app *App, sendTurn func(text string)) *ChatWindow {
 	C.uiBoxSetPadded(left, 1)
 	C.uiBoxAppend(left, (*C.uiControl)(unsafe.Pointer(topRow)), 0)
 	C.uiBoxAppend(left, area.Control(), 1) // stretchy: takes remaining space
+	C.uiBoxAppend(left, approvalBar.Control(), 0)
 	C.uiBoxAppend(left, (*C.uiControl)(unsafe.Pointer(input.entry)), 0)
 	C.uiBoxAppend(left, (*C.uiControl)(unsafe.Pointer(input.button)), 0)
 
@@ -237,7 +248,7 @@ func NewChatWindow(app *App, sendTurn func(text string)) *ChatWindow {
 		},
 	)
 
-	return &ChatWindow{App: app, Transcript: transcript, Panel: panelState, Model: modelState, Sessions: sessionState, Pipeline: pipelineState, Backends: backendState, area: area, input: input, panel: panel, modelUI: modelUI, sessionsUI: sessionsUI, pipelineUI: pipelineUI, settingsUI: settingsUI}
+	return &ChatWindow{App: app, Transcript: transcript, Panel: panelState, Model: modelState, Sessions: sessionState, Pipeline: pipelineState, Backends: backendState, Approvals: approvals, area: area, input: input, panel: panel, modelUI: modelUI, sessionsUI: sessionsUI, pipelineUI: pipelineUI, settingsUI: settingsUI}
 }
 
 // RunTurn sends task as a user message, opens a stream via streamFn, and

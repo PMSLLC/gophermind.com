@@ -1,20 +1,16 @@
 {
   "phase": "5",
-  "title": "Error scenario tests: network drops, token expiry, server unavailable, WG reconnect",
-  "description": "Test error handling: network drop mid-stream (reconnect, resume), token expiry (transparent refresh, re-login on failure), server unavailable (status banner, exponential backoff), WG tunnel drop (re-establish <5s), backend switch mid-session, approval timeout (auto-deny), concurrent sessions, large messages (100K+ tokens).",
+  "title": "E2E remote mode: WG tunnel, chat, approve, disconnect",
+  "description": "Write E2E tests for remote mode: establish WG tunnel → chat → approve → disconnect. Spawns a real gophermind-server behind a userspace WireGuard server (same pattern as connection_test.go's TestConnection_RemoteMode_ConnectsAndHealthy), then exercises the full client API through the tunnel.",
   "acceptance_criteria": [
-    "Network drop mid-stream: reconnects, resumes streaming, no data loss",
-    "Token expiry: transparent refresh, re-login on refresh failure",
-    "Server unavailable: status banner shown, exponential backoff, recovers when server returns",
-    "WG tunnel drop: re-establishes within 5s, no user intervention needed",
-    "Backend switch mid-session: session continues on new backend",
-    "Approval timeout: auto-deny at 5 min, UI updates",
-    "Concurrent sessions: multiple sessions active simultaneously, no cross-contamination",
-    "Large messages: 100K+ token messages handled without UI freeze or memory leak"
+    "Remote mode E2E: WG tunnel established → chat → stream → approve → disconnect passes",
+    "Tests pass with go test -race -tags e2e ./gophermind-osx/..."
   ],
   "agent": "executor",
   "model": "strong",
   "depends_on": [
-    "05-01"
+    "05-01",
+    "03-03",
+    "01-02"
   ]
 }
