@@ -93,7 +93,7 @@
     {
       "id": "03-04",
       "title": "gocloak OAuth2 client, Keychain storage, token refresh",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "03-01"
       ],
