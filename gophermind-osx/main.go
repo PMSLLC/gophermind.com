@@ -68,26 +68,33 @@ func main() {
 	// Wire the settings panel's connect/disconnect to the manager.
 	chat.Backends.Add(appui.BackendProfile{Name: "local", Mode: "local", ServerURL: "auto"})
 	chat.settingsUI.connectFunc = func(ctx context.Context, p appui.BackendProfile) error {
+		// Disconnect first if already connected (reconnect semantics).
+		connMgr.Disconnect(p.Name)
+
 		var cfg connection.BackendConfig
 		cfg.Name = p.Name
 		cfg.OnStatusChange = func(s connection.Status) {
 			chat.Backends.SetStatus(p.Name, s.String())
 		}
 
-		switch p.Mode {
-		case "remote":
+		// Determine the connection mode. A backend with a real server URL
+		// (anything other than "auto", "local", or empty) connects directly
+		// over HTTP, regardless of the mode radio — this makes it work even
+		// if the user forgot to select "remote" in the settings panel.
+		isDirect := p.Mode == "remote" ||
+			(p.ServerURL != "" && p.ServerURL != "auto" && p.ServerURL != "local")
+
+		if isDirect {
 			if p.ServerURL == "" {
 				return fmt.Errorf("remote backend %q: no server URL configured", p.Name)
 			}
 			baseURL := p.ServerURL
-			if baseURL != "auto" && baseURL != "local" {
-				if len(baseURL) < 7 || baseURL[:7] != "http://" {
-					baseURL = "http://" + baseURL
-				}
+			if len(baseURL) < 7 || baseURL[:7] != "http://" {
+				baseURL = "http://" + baseURL
 			}
 			cfg.Mode = connection.ModeDirect
 			cfg.Direct = connection.DirectConfig{BaseURL: baseURL}
-		default: // "local"
+		} else {
 			binPath := findServerBinary()
 			if binPath == "" {
 				return fmt.Errorf("gophermind-server binary not found (set GOPHERMIND_SERVER or place it next to the app)")
