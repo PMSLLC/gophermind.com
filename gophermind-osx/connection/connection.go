@@ -136,7 +136,7 @@ func (c *Connection) connectLocal(ctx context.Context) error {
 	}
 
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
-	cl := client.New(client.Config{BaseURL: baseURL, Token: token})
+	cl := client.New(client.Config{BaseURL: baseURL, Token: token, Timeout: lc.ClientTimeout})
 
 	startupTimeout := lc.StartupTimeout
 	if startupTimeout <= 0 {

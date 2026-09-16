@@ -79,6 +79,13 @@ type LocalConfig struct {
 	// StartupTimeout bounds how long Connect waits for the spawned
 	// server's /healthz to succeed. <= 0 uses DefaultStartupTimeout.
 	StartupTimeout time.Duration
+	// ClientTimeout overrides the per-request timeout (including the full
+	// lifetime of a streamed response body -- see net/http.Client.Timeout's
+	// own doc comment) on the client.Client this Connection builds. <= 0
+	// uses client.DefaultTimeout, which is too short for a long-running
+	// session turn (e.g. a phaseflow breakdown) that legitimately takes
+	// longer than an ordinary chat reply.
+	ClientTimeout time.Duration
 }
 
 // RemoteConfig configures a ModeRemote Connection: everything needed to
