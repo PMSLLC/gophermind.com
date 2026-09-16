@@ -231,7 +231,7 @@
     {
       "id": "05-06",
       "title": "Performance: message latency, streaming throughput, WG overhead",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "05-01",
         "05-02"
