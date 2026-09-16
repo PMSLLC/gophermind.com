@@ -281,6 +281,119 @@ func TestConnection_RemoteMode_ConnectsAndHealthy(t *testing.T) {
 	}
 }
 
+// TestConnection_RemoteMode_TunnelDropReconnects covers 05-05's "WG
+// reconnect: tunnel drops and re-establishes, client recovers" -- the
+// remote-mode counterpart to TestConnection_Reconnection (which only
+// exercises local mode's kill-the-subprocess path). Closing wgClient
+// directly (an unexported-field access valid because this test file is in
+// package connection, same as TestConnection_Reconnection's identical
+// access to conn.cmd) simulates the tunnel dying under the connection
+// without tearing down the Connection itself, the same way a real network
+// interruption would: the next health check's Healthy() call fails against
+// the now-dead tunnel, driving reconnect() to tear down and dial a
+// brand-new WireGuard tunnel from the same peer config.
+func TestConnection_RemoteMode_TunnelDropReconnects(t *testing.T) {
+	wgPort, err := freePort()
+	if err != nil {
+		t.Fatalf("freePort: %v", err)
+	}
+	wgSrv, err := wireguard.NewServer(context.Background(), wireguard.ServerConfig{
+		Address:    netip.MustParseAddr("10.68.0.1"),
+		ListenPort: uint16(wgPort),
+	})
+	if err != nil {
+		t.Fatalf("wireguard.NewServer: %v", err)
+	}
+	defer wgSrv.Close()
+
+	clientPriv, clientPub := genKeypair(t)
+	peerCfg, err := wgSrv.RegisterPeer(clientPub)
+	if err != nil {
+		t.Fatalf("RegisterPeer: %v", err)
+	}
+
+	ln, err := wgSrv.ListenTCP(8090)
+	if err != nil {
+		t.Fatalf("ListenTCP: %v", err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	backend := &http.Server{Handler: mux}
+	go backend.Serve(ln)
+	defer backend.Close()
+
+	var mu sync.Mutex
+	var statuses []Status
+	conn := New(BackendConfig{
+		Name: "remote-drop-test",
+		Mode: ModeRemote,
+		Remote: RemoteConfig{
+			ServerPublicKey:  peerCfg.ServerPublicKey,
+			ServerEndpoint:   peerCfg.Endpoint,
+			ClientPrivateKey: clientPriv,
+			ClientAddress:    netip.MustParseAddr(peerCfg.ClientAddress),
+			AllowedIPs:       peerCfg.AllowedIPs,
+			RemoteAddr:       "10.68.0.1:8090",
+		},
+		HealthInterval: 200 * time.Millisecond,
+		OnStatusChange: func(s Status) {
+			mu.Lock()
+			statuses = append(statuses, s)
+			mu.Unlock()
+		},
+	})
+	defer conn.Disconnect()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := conn.Connect(ctx); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+
+	// Simulate the tunnel dropping: close it out from under the Connection
+	// without going through Disconnect/teardown.
+	conn.mu.Lock()
+	wg := conn.wgClient
+	conn.mu.Unlock()
+	droppedAt := time.Now()
+	if err := wg.Close(); err != nil {
+		t.Fatalf("close wgClient: %v", err)
+	}
+
+	// Same history-based wait as TestConnection_Reconnection: Status()
+	// alone can't distinguish "still holding the pre-drop Connected value"
+	// from "genuinely reconnected," since both read as StatusConnected.
+	deadline := droppedAt.Add(10 * time.Second)
+	var gotStatuses []Status
+	for {
+		mu.Lock()
+		gotStatuses = append([]Status(nil), statuses...)
+		mu.Unlock()
+
+		sawReconnecting := false
+		reconnectedAfter := false
+		for _, s := range gotStatuses {
+			if s == StatusReconnecting {
+				sawReconnecting = true
+			} else if sawReconnecting && s == StatusConnected {
+				reconnectedAfter = true
+			}
+		}
+		if sawReconnecting && reconnectedAfter {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("did not observe Reconnecting followed by Connected within 10s of the tunnel drop; status history: %v (current: %v)", gotStatuses, conn.Status())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// The reconnected client must actually work (new tunnel, healthy).
+	if !conn.Client().Healthy(context.Background()) {
+		t.Error("Client().Healthy() after reconnect = false, want true")
+	}
+}
+
 // TestManager_MultipleTunnelsSimultaneously covers "Multiple tunnels: can
 // manage N backends simultaneously".
 func TestManager_MultipleTunnelsSimultaneously(t *testing.T) {

@@ -37,6 +37,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -181,6 +182,78 @@ func TestChatWindow_RunTurnGoroutineDoesNotPanic(t *testing.T) {
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("stream never completed; transcript = %+v", msgs)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// makeDroppedStreamFn returns a streamFn backed by a server that sends one
+// token frame, flushes it, then hijacks and abruptly closes the raw TCP
+// connection mid-response (no chunked terminator, no graceful FIN handling)
+// -- a real network drop mid-stream, not a server-sent "error" event and
+// not a clean end-of-stream. The client's chunked-transfer reader surfaces
+// this as a genuine read error (io.ErrUnexpectedEOF), distinct from the
+// io.EOF a normal stream end produces.
+func makeDroppedStreamFn(t *testing.T) func(context.Context, string) (*client.EventStream, error) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "event: token\ndata: hi\n\n")
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatal("ResponseWriter does not support hijacking")
+		}
+		conn, _, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack: %v", err)
+		}
+		conn.Close() // abrupt: no final chunk, no graceful shutdown
+	}))
+	t.Cleanup(srv.Close)
+	c := client.New(client.Config{BaseURL: srv.URL, Token: "t"})
+	return c.RunStream
+}
+
+// TestChatWindow_RunTurn_StreamErrorIsReportedToTranscript covers 05-05's
+// "Network drop mid-stream: client detects and reports error." Before this
+// test, RunTurn's goroutine discarded StreamPump.Run's return value
+// entirely (`go pump.Run(ctx, stream)`): a genuine network drop mid-stream
+// left the transcript silently incomplete, with no indication to the user
+// that anything went wrong, unlike a server-sent "error" event (which
+// StreamPump.apply already turns into a system message) or the initial
+// streamFn failure path just above it (which RunTurn already reports).
+func TestChatWindow_RunTurn_StreamErrorIsReportedToTranscript(t *testing.T) {
+	var err error
+	var cw *ChatWindow
+	runOnUIThread(t, func() {
+		var app *App
+		app, err = NewApp(DefaultTitle, DefaultWidth, DefaultHeight)
+		if err != nil {
+			return
+		}
+		cw = NewChatWindow(app, func(string) {})
+	})
+	if err != nil {
+		t.Fatalf("NewApp: %v", err)
+	}
+	defer runOnUIThread(t, func() { cw.App.Close() })
+
+	streamFn := makeDroppedStreamFn(t)
+	cw.RunTurn(testContext(t), "do something", streamFn)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		msgs := cw.Transcript.Messages()
+		for _, m := range msgs {
+			if m.Role == appui.RoleSystem && strings.Contains(m.Text, "error") {
+				return // found the reported error -- test passes
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no system error message reported after a mid-stream drop; transcript = %+v", msgs)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

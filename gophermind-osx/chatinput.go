@@ -334,5 +334,20 @@ func (cw *ChatWindow) RunTurn(ctx context.Context, task string, streamFn func(co
 		return
 	}
 	pump := &appui.StreamPump{Transcript: cw.Transcript}
-	go pump.Run(ctx, stream)
+	go func() {
+		// A genuine mid-stream failure (network drop, server crash) must
+		// reach the user the same way a failure to even open the stream
+		// already does above -- otherwise the transcript just goes silent
+		// with no sign anything went wrong. A clean end (nil, or ctx being
+		// cancelled because the window closed) reports nothing.
+		//
+		// AddSystem is called directly, not via queueMain: like
+		// AddUserMessage above, it only mutates the plain-Go, mutex-safe
+		// Transcript (safe from any goroutine); it is Transcript.OnChange's
+		// own callback (wired by newChatArea) that dispatches the actual
+		// redraw through queueMain, not this call.
+		if err := pump.Run(ctx, stream); err != nil && ctx.Err() == nil {
+			cw.Transcript.AddSystem("error: " + err.Error())
+		}
+	}()
 }
