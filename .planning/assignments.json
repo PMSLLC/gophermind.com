@@ -200,7 +200,7 @@
     {
       "id": "05-03",
       "title": "E2E pipeline: breakdown, execute, monitor",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "05-01",
         "04-06",
