@@ -97,6 +97,10 @@ type RemoteConfig struct {
 	// tunnel, e.g. "10.66.0.1:8090" (the WG server's tunnel address, not
 	// ServerEndpoint, which is the WG handshake endpoint).
 	RemoteAddr string
+	// Token is the bearer token the server on the far side of the tunnel
+	// expects. Empty means no auth -- every /session route will 401. See
+	// DirectConfig.Token, which connectDirect already wires the same way.
+	Token string
 }
 
 // DirectConfig configures a ModeDirect Connection: a plain HTTP endpoint

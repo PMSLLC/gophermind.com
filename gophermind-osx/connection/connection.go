@@ -180,6 +180,7 @@ func (c *Connection) connectRemote(ctx context.Context) error {
 	baseURL := "http://" + rc.RemoteAddr
 	cl := client.New(client.Config{
 		BaseURL:   baseURL,
+		Token:     rc.Token,
 		Transport: wgClient.HTTPClient().Transport,
 	})
 

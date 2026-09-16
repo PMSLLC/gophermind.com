@@ -5,17 +5,22 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"net/netip"
 	"testing"
 	"time"
 
 	"golang.org/x/crypto/curve25519"
 
+	"gophermind/gophermind-lib/wireguard"
 	"gophermind/gophermind-osx/client"
 	"gophermind/gophermind-osx/connection"
+	appui "gophermind/gophermind-osx/ui"
 )
 
 // e2eGenKeypair generates a random 32-byte Curve25519 private key and
@@ -43,32 +48,91 @@ func e2eFreePort(t *testing.T) int {
 	return ln.Addr().(*net.TCPAddr).Port
 }
 
-// e2eConnectRemote is not implemented: remote mode cannot authenticate yet,
-// so there is nothing for these tests to connect to.
-//
-// What was here tried to run a real gophermind-server behind the tunnel by
-// spawning it with exec.Command and --port 8090, alongside a listener from
-// wgSrv.ListenTCP(8090). Those are two different ports on two different
-// network stacks. wireguard.Server.ListenTCP returns a listener on the
-// userspace netstack held in THIS process's memory (wireguard.go:252,
-// s.tnet.ListenTCP); a separately spawned OS process binds the host's port
-// 8090 and can never appear inside it. The listener was left unserved, which
-// is why the file did not compile: "declared and not used: ln".
-//
-// Serving the real serve.NewMux in-process on that listener fixes the network
-// side, and is what this should become. It still would not pass: connectRemote
-// (connection.go:181) builds its client with no Token, and RemoteConfig has no
-// field to carry one. /healthz is unauthenticated so Connect reports Connected,
-// but every /session route answers 401. Local mode generates a token and
-// Direct mode gained a Token field in 5cecba8; remote mode is the only one
-// that cannot authenticate at all.
-//
-// So the order is: give RemoteConfig a Token, wire it through connectRemote,
-// then write this helper against serve.NewMux. That is roadmap task 05-02.
+// e2eRandomToken returns a random hex bearer token, for authenticating the
+// in-process serve.NewMux this file stands up behind the tunnel.
+// connection/manager.go's randomToken does the same thing but is
+// unexported, and this package can't import it across the package boundary
+// (both are "package main" -- see e2eBuildRemoteMux's doc comment for the
+// same constraint).
+func e2eRandomToken(t *testing.T) string {
+	t.Helper()
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
+	return hex.EncodeToString(buf)
+}
+
+// e2eConnectRemote spins up a real WireGuard server (wireguard.NewServer)
+// and a real serve.NewMux-backed HTTP server (e2eBuildRemoteMux), serving
+// the mux in-process on the WG server's own ListenTCP listener -- the same
+// architecture gophermind-server's own startWireGuard uses in production
+// (one process holds both the WG netstack and the HTTP server; see
+// e2eBuildRemoteMux's doc comment for why a separately spawned subprocess,
+// e2e_local_test.go's approach for local mode, cannot work here). It then
+// dials a real WG client tunnel (wireguard.NewClient) to that server and
+// returns a Connection in ModeRemote pointed at it, authenticated with the
+// same bearer token the in-process mux enforces (05-02: RemoteConfig.Token,
+// wired through connectRemote).
 func e2eConnectRemote(t *testing.T) *connection.Connection {
 	t.Helper()
-	t.Skip("remote mode has no bearer token: RemoteConfig carries none and connectRemote sends none, so every /session route 401s through the tunnel. See 05-02.")
-	return nil
+
+	wgPort := e2eFreePort(t)
+	wgSrv, err := wireguard.NewServer(context.Background(), wireguard.ServerConfig{
+		Address:    netip.MustParseAddr("10.67.0.1"),
+		ListenPort: uint16(wgPort),
+	})
+	if err != nil {
+		t.Fatalf("wireguard.NewServer: %v", err)
+	}
+	t.Cleanup(func() { wgSrv.Close() })
+
+	clientPriv, clientPub := e2eGenKeypair(t)
+	peerCfg, err := wgSrv.RegisterPeer(clientPub)
+	if err != nil {
+		t.Fatalf("RegisterPeer: %v", err)
+	}
+
+	ln, err := wgSrv.ListenTCP(8090)
+	if err != nil {
+		t.Fatalf("ListenTCP: %v", err)
+	}
+
+	token := e2eRandomToken(t)
+	root := t.TempDir()
+	mux := e2eBuildRemoteMux(t, root, token)
+	backend := &http.Server{Handler: mux}
+	go backend.Serve(ln)
+	t.Cleanup(func() { backend.Close() })
+
+	conn := connection.New(connection.BackendConfig{
+		Name: "e2e-remote",
+		Mode: connection.ModeRemote,
+		Remote: connection.RemoteConfig{
+			ServerPublicKey:  peerCfg.ServerPublicKey,
+			ServerEndpoint:   peerCfg.Endpoint,
+			ClientPrivateKey: clientPriv,
+			ClientAddress:    netip.MustParseAddr(peerCfg.ClientAddress),
+			AllowedIPs:       peerCfg.AllowedIPs,
+			RemoteAddr:       "10.67.0.1:8090",
+			Token:            token,
+		},
+		HealthInterval: 500 * time.Millisecond,
+	})
+	t.Cleanup(conn.Disconnect)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := conn.Connect(ctx); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if conn.Status() != connection.StatusConnected {
+		t.Fatalf("Status() = %v, want Connected", conn.Status())
+	}
+	if !conn.Client().Healthy(ctx) {
+		t.Fatal("Client().Healthy() = false")
+	}
+	return conn
 }
 
 func TestE2E_RemoteMode_FullFlow(t *testing.T) {
@@ -87,15 +151,21 @@ func TestE2E_RemoteMode_FullFlow(t *testing.T) {
 	}
 	t.Logf("Created session through WG tunnel: %s", sessionID)
 
-	// 2. Send a chat message (stream) through the tunnel.
-	stream, err := cl.Stream(ctx, sessionID, "Say hello in one word")
+	// 2. Send a message likely to trigger a gated tool call (a shell
+	// command), and approve it if one arrives -- covers the "approve" leg
+	// of "WG tunnel established -> chat -> stream -> approve -> disconnect"
+	// (05-02's acceptance criteria), the same way
+	// TestE2E_LocalMode_ApprovalFlow covers it for local mode.
+	tracker := appui.NewApprovalTracker(cl.Approve)
+	stream, err := cl.Stream(ctx, sessionID, "Run the command: echo hello")
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
 	defer stream.Close()
 
-	// 3. Read events until done or timeout.
+	// 3. Read events until done or timeout, approving any gated tool call.
 	var eventTypes []string
+	approvalReceived := false
 	deadline := time.After(30 * time.Second)
 	for {
 		select {
@@ -112,6 +182,19 @@ func TestE2E_RemoteMode_FullFlow(t *testing.T) {
 		}
 		eventTypes = append(eventTypes, ev.Type)
 		t.Logf("Event: %s", ev.Type)
+		if ev.Type == "approval-needed" {
+			approvalReceived = true
+			an, err := ev.ApprovalNeeded()
+			if err != nil {
+				t.Fatalf("decode approval-needed: %v", err)
+			}
+			t.Logf("Approval needed through WG tunnel: tool=%s id=%s", an.Tool, an.ApprovalID)
+			tracker.Add(sessionID, an.ApprovalID, an.Tool, an.Args)
+			if err := tracker.Resolve(ctx, an.ApprovalID, true); err != nil {
+				t.Fatalf("tracker.Resolve through WG tunnel: %v", err)
+			}
+			t.Log("Approval resolved through WG tunnel")
+		}
 		if ev.Type == "done" {
 			break
 		}
@@ -121,6 +204,9 @@ func TestE2E_RemoteMode_FullFlow(t *testing.T) {
 		t.Fatal("no events received from stream through WG tunnel")
 	}
 	t.Logf("Received %d events through WG tunnel: %v", len(eventTypes), eventTypes)
+	if !approvalReceived {
+		t.Log("No approval was triggered for this run (model-dependent, same as TestE2E_LocalMode_ApprovalFlow)")
+	}
 
 	// 4. Verify the session is still accessible through the tunnel.
 	sessions, err := cl.ListSessions(ctx)
