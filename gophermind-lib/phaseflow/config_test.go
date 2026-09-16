@@ -16,7 +16,7 @@ func TestConfigDefaultsWhenMissing(t *testing.T) {
 	if found {
 		t.Error("found should be false for a missing config")
 	}
-	if cfg.Mode != "interactive" || cfg.Granularity != "standard" {
+	if cfg.Mode != "interactive" || cfg.Granularity != "fine" {
 		t.Errorf("defaults wrong: %+v", cfg)
 	}
 	if !cfg.Workflow.Verifier || !cfg.Gates.ConfirmRoadmap {

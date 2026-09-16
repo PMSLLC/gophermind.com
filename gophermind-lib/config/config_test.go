@@ -24,8 +24,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.ApprovalMode != "ask" {
 		t.Errorf("ApprovalMode = %q, want ask", cfg.ApprovalMode)
 	}
-	if cfg.MaxIter != 25 {
-		t.Errorf("MaxIter = %d, want 25", cfg.MaxIter)
+	if cfg.MaxIter != 12 {
+		t.Errorf("MaxIter = %d, want 12", cfg.MaxIter)
 	}
 	if cfg.HTTPTimeout != 300*time.Second {
 		t.Errorf("HTTPTimeout = %v, want 5m", cfg.HTTPTimeout)
@@ -687,8 +687,8 @@ func TestLoadDotEnvMissingFileOK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load with no .env should not error: %v", err)
 	}
-	if cfg.MaxIter != 25 {
-		t.Errorf("MaxIter = %d, want 25 (default holds with no .env)", cfg.MaxIter)
+	if cfg.MaxIter != 12 {
+		t.Errorf("MaxIter = %d, want 12 (default holds with no .env)", cfg.MaxIter)
 	}
 }
 
