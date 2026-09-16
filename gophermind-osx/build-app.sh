@@ -4,6 +4,15 @@
 # Usage:
 #   bash build-app.sh          # build only
 #   bash build-app.sh install  # build + install to /Applications
+#
+# Env:
+#   MACOS_SIGN_IDENTITY  Developer ID Application identity, or its SHA-1.
+#                        Unset means an unsigned dev build that runs only on
+#                        this Mac. Pass the SHA-1 if the name is ambiguous:
+#                        duplicate certs with the same common name are common
+#                        after a renewal, and codesign refuses to guess.
+#                          security find-identity -v -p codesigning
+#   VERSION              Override the bundle version (default: nearest git tag).
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -87,6 +96,36 @@ EOF
 
 # --- PkgInfo ---
 printf 'APPL????' > "${APP_DIR}/Contents/PkgInfo"
+
+# --- Sign ---
+#
+# Unsigned, this bundle runs on the machine that built it and nowhere else:
+# Gatekeeper rejects it on any Mac it is copied to. Signing is opt-in through
+# MACOS_SIGN_IDENTITY so a plain dev build stays zero-setup, matching
+# scripts/build-desktop.sh.
+#
+# Inside-out order matters. The app embeds gophermind-server in Resources/, and
+# a bundle's signature covers its nested code, so signing the outer bundle
+# first and the inner binary second invalidates the outer signature. No --deep:
+# Apple deprecated it and it would apply one set of flags to both.
+#
+# Signing is the last step that touches the bundle -- Info.plist, the icon and
+# PkgInfo are all covered by the signature, so anything written after this
+# point would break it.
+if [ -n "${MACOS_SIGN_IDENTITY:-}" ]; then
+    echo ""
+    echo "Signing..."
+    codesign --sign "${MACOS_SIGN_IDENTITY}" --timestamp --options runtime --force \
+        "${RES_DIR}/gophermind-server"
+    codesign --sign "${MACOS_SIGN_IDENTITY}" --timestamp --options runtime --force \
+        "${APP_DIR}"
+    codesign --verify --strict --verbose=2 "${APP_DIR}" 2>&1 | sed 's/^/    /'
+    echo "Signed with Developer ID, hardened runtime."
+else
+    echo ""
+    echo "WARNING: MACOS_SIGN_IDENTITY unset, skipping signing (dev build)." >&2
+    echo "         This bundle will not launch on another Mac." >&2
+fi
 
 # --- Verify bundle ---
 echo ""
