@@ -20,10 +20,13 @@ meson install -C build     # installs to /opt/homebrew/{lib,include}
 rm -rf /tmp/libui-ng
 ```
 
-`app.go`'s cgo directives point at `/opt/homebrew/{include,lib}` directly
-(no `pkg-config` file ships with libui-ng). If your Homebrew prefix differs
-(e.g. Intel Mac, `/usr/local`), adjust those `#cgo CFLAGS`/`#cgo LDFLAGS`
-paths accordingly.
+The cgo directives live in `cgoflags_arm64.go` and `cgoflags_amd64.go`, one
+per architecture, and cover the whole package (cgo applies every `#cgo` line
+in a package to all of its files). Apple Silicon points at
+`/opt/homebrew/{include,lib}`, Intel at `/usr/local/{include,lib}`. No
+`pkg-config` file ships with libui-ng, so the paths are literal. If you
+installed libui-ng under a different prefix, edit the file for your
+architecture -- it is the only place these paths appear.
 
 Why not `github.com/andlabs/ui` (the obvious pre-built Go binding)? Its
 bundled darwin static library is amd64-only, dated 2020, predating Apple

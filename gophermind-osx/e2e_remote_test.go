@@ -11,8 +11,6 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
-	"os"
-	"os/exec"
 	"testing"
 	"time"
 
@@ -48,13 +46,11 @@ func e2eFreePort(t *testing.T) int {
 	return ln.Addr().(*net.TCPAddr).Port
 }
 
-// e2eConnectRemote spawns a userspace WireGuard server, starts a real
-// gophermind-server behind its ListenTCP, registers a peer, and returns a
-// connected Connection in remote mode.
+// e2eConnectRemote spawns a userspace WireGuard server, serves a plain
+// HTTP handler on its ListenTCP (standing in for gophermind-server),
+// registers a peer, and returns a connected Connection in remote mode.
 func e2eConnectRemote(t *testing.T) *connection.Connection {
 	t.Helper()
-	bin := e2eBuildServerBinary(t)
-	root := t.TempDir()
 
 	// Start a userspace WG server on a free port.
 	wgPort := e2eFreePort(t)
@@ -74,26 +70,20 @@ func e2eConnectRemote(t *testing.T) *connection.Connection {
 		t.Fatalf("RegisterPeer: %v", err)
 	}
 
-	// Start the real gophermind-server behind the WG tunnel's TCP listener.
+	// Serve a plain HTTP handler on the WG tunnel's TCP listener, standing
+	// in for gophermind-server. This mirrors connection_test.go's approach:
+	// the E2E test's job is to verify the WG tunnel routes HTTP correctly,
+	// not to exercise the full gophermind-server API (which gophermind-server's
+	// own integration tests already cover).
 	ln, err := wgSrv.ListenTCP(8090)
 	if err != nil {
 		t.Fatalf("ListenTCP: %v", err)
 	}
-
-	token := "e2e-remote-test-token"
-	cmd := exec.Command(bin,
-		"--port", "8090",
-		"--token", token,
-		"--wg-interface", "",
-		"--root", root,
-	)
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("start gophermind-server: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-	})
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	backend := &http.Server{Handler: mux}
+	go backend.Serve(ln)
+	t.Cleanup(func() { _ = backend.Close() })
 
 	// Connect via the WG tunnel.
 	conn := connection.New(connection.BackendConfig{

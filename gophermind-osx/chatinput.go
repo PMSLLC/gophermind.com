@@ -1,8 +1,6 @@
 package main
 
 /*
-#cgo CFLAGS: -I/opt/homebrew/include -x objective-c
-#cgo LDFLAGS: -L/opt/homebrew/lib -lui -framework AppKit
 #include <ui.h>
 #include <stdlib.h>
 #import <AppKit/AppKit.h>
