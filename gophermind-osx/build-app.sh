@@ -9,7 +9,11 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 APP_NAME="GopherMind"
-BUNDLE_ID="com.gophermind.desktop"
+# com.jbrahy.* matches the signing identity every other GopherMind target uses
+# (com.jbrahy.gophermind.desktop for the Wails app, com.jbrahy.gophermind for
+# iOS). The .osx suffix keeps this distinct from the Wails app, which still
+# ships in releases, so the two can be installed side by side until cutover.
+BUNDLE_ID="com.jbrahy.gophermind.osx"
 VERSION="0.7.1"
 BUILD_DIR="build"
 APP_DIR="${BUILD_DIR}/${APP_NAME}.app"
