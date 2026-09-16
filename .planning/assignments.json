@@ -189,7 +189,7 @@
     {
       "id": "05-02",
       "title": "E2E remote mode: WG tunnel, chat, approve, disconnect",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "05-01",
         "03-03",
