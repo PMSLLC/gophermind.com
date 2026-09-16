@@ -221,7 +221,7 @@
     {
       "id": "05-05",
       "title": "Error scenario tests: network drops, token expiry, server unavailable, WG reconnect",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "05-01",
         "05-02"
