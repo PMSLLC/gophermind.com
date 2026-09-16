@@ -28,7 +28,7 @@ var (
 	e2eServerBinaryErr  error
 )
 
-func e2eBuildServerBinary(t *testing.T) string {
+func e2eBuildServerBinary(t testing.TB) string {
 	t.Helper()
 	e2eServerBinaryOnce.Do(func() {
 		dir := filepath.Join(os.TempDir(), "gophermind-e2e-test-bin")
@@ -51,7 +51,7 @@ func e2eBuildServerBinary(t *testing.T) string {
 	return e2eServerBinaryPath
 }
 
-func e2eRepoRoot(t *testing.T) string {
+func e2eRepoRoot(t testing.TB) string {
 	t.Helper()
 	dir, err := os.Getwd()
 	if err != nil {
@@ -71,7 +71,7 @@ func e2eRepoRoot(t *testing.T) string {
 
 // e2eConnectLocal spawns a local gophermind-server and returns a connected
 // Connection, for E2E tests that need a live backend.
-func e2eConnectLocal(t *testing.T) *connection.Connection {
+func e2eConnectLocal(t testing.TB) *connection.Connection {
 	t.Helper()
 	bin := e2eBuildServerBinary(t)
 	root := t.TempDir()

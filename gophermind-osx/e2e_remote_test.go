@@ -25,7 +25,7 @@ import (
 
 // e2eGenKeypair generates a random 32-byte Curve25519 private key and
 // returns it alongside the hex-encoded public key.
-func e2eGenKeypair(t *testing.T) (priv []byte, pubHex string) {
+func e2eGenKeypair(t testing.TB) (priv []byte, pubHex string) {
 	t.Helper()
 	priv = make([]byte, 32)
 	if _, err := rand.Read(priv); err != nil {
@@ -38,7 +38,7 @@ func e2eGenKeypair(t *testing.T) (priv []byte, pubHex string) {
 }
 
 // e2eFreePort asks the OS for an unused TCP port on localhost.
-func e2eFreePort(t *testing.T) int {
+func e2eFreePort(t testing.TB) int {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -54,7 +54,7 @@ func e2eFreePort(t *testing.T) int {
 // unexported, and this package can't import it across the package boundary
 // (both are "package main" -- see e2eBuildRemoteMux's doc comment for the
 // same constraint).
-func e2eRandomToken(t *testing.T) string {
+func e2eRandomToken(t testing.TB) string {
 	t.Helper()
 	buf := make([]byte, 16)
 	if _, err := rand.Read(buf); err != nil {
@@ -74,7 +74,7 @@ func e2eRandomToken(t *testing.T) string {
 // returns a Connection in ModeRemote pointed at it, authenticated with the
 // same bearer token the in-process mux enforces (05-02: RemoteConfig.Token,
 // wired through connectRemote).
-func e2eConnectRemote(t *testing.T) *connection.Connection {
+func e2eConnectRemote(t testing.TB) *connection.Connection {
 	t.Helper()
 
 	wgPort := e2eFreePort(t)

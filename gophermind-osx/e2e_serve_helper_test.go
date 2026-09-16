@@ -47,7 +47,7 @@ import (
 // working in this environment (it passes no --llm-endpoint flag either), so
 // reusing it here keeps remote-mode E2E exercising the same real backend
 // local-mode E2E already does, not a second, divergent one.
-func e2eLLMEndpoint(t *testing.T) string {
+func e2eLLMEndpoint(t testing.TB) string {
 	t.Helper()
 	if v := os.Getenv("GOPHERMIND_LLM_ENDPOINT"); v != "" {
 		return v
@@ -67,7 +67,7 @@ func e2eLLMEndpoint(t *testing.T) string {
 // SessionTurn/Approvals/SessionMessages wiring gophermind-server/server.go's
 // buildDeps uses for those fields, trimmed of Pipeline/Skills/Devices/
 // ListModels (not exercised by the remote-mode tests this backs).
-func e2eBuildRemoteMux(t *testing.T, root, token string) *http.ServeMux {
+func e2eBuildRemoteMux(t testing.TB, root, token string) *http.ServeMux {
 	t.Helper()
 
 	llmClient := llm.New(e2eLLMEndpoint(t), "", "", 0, false)
