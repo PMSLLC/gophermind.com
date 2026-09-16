@@ -211,7 +211,7 @@
     {
       "id": "05-04",
       "title": "E2E model switching: pin, cycle, switch",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "05-01",
         "04-04"
