@@ -241,7 +241,7 @@
     {
       "id": "05-07",
       "title": "UI refinement, accessibility, final QA",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [
         "05-05",
         "05-06"
