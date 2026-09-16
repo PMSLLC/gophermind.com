@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -26,6 +27,15 @@ func TestE2E_LocalMode_ModelSwitching(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping E2E in -short mode")
 	}
+
+	// modelcat.SettingsPath defaults to a real, persistent file beside the
+	// user's odometer (e.g. under their home directory) -- PatchModelSettings
+	// below would otherwise overwrite the real user's actual model
+	// preferences. GOPHERMIND_MODEL_SETTINGS redirects it to an isolated
+	// temp file; exec.Command (used by connectLocal's spawned subprocess)
+	// inherits the test process's environment, so the real server this test
+	// starts honors the same override.
+	t.Setenv(modelcat.SettingsEnv, filepath.Join(t.TempDir(), "model-settings.json"))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
