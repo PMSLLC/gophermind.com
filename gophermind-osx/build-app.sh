@@ -14,7 +14,17 @@ APP_NAME="GopherMind"
 # iOS). The .osx suffix keeps this distinct from the Wails app, which still
 # ships in releases, so the two can be installed side by side until cutover.
 BUNDLE_ID="com.jbrahy.gophermind.osx"
-VERSION="0.7.1"
+# Derived from the nearest git tag so it tracks releases by construction rather
+# than by someone remembering to bump a literal here. That literal is how the
+# Wails app once shipped announcing 1.0.0, and how the v0.7.1 release went out
+# carrying the 0.7.0 bundle (see scripts/build-desktop.sh). Override for a
+# release build: VERSION=0.8.0 bash build-app.sh
+#
+# The leading v is stripped and the bare tag used unchanged, because
+# CFBundleShortVersionString must be period-separated integers -- the full
+# `git describe` (v0.7.1-119-gabc1234) is not a legal value.
+VERSION="${VERSION:-$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')}"
+VERSION="${VERSION:-0.0.0}"
 BUILD_DIR="build"
 APP_DIR="${BUILD_DIR}/${APP_NAME}.app"
 MACOS_DIR="${APP_DIR}/Contents/MacOS"
