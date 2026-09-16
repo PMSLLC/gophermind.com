@@ -54,6 +54,7 @@ DD=$(mktemp -d)
 trap 'rm -rf "$DD"' EXIT
 xcodebuild -project GopherMind.xcodeproj -scheme GopherMind \
   -destination 'generic/platform=iOS' -configuration Debug -derivedDataPath "$DD" \
+  -allowProvisioningUpdates \
   build 2>&1 | grep -iE 'BUILD SUCCEEDED|BUILD FAILED|error:|No profiles|Signing' | tail -4
 APP=$(/bin/ls -d "$DD"/Build/Products/Debug-iphoneos/*.app 2>/dev/null | head -1)
 [ -n "$APP" ] || { echo "✗ build failed (see output above)"; exit 1; }
