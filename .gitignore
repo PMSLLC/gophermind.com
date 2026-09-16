@@ -53,6 +53,11 @@ tmp/
 # subagent-driven-development worktrees
 .worktrees/
 
+# libui-ng: an upstream clone each machine builds and installs for itself
+# (gophermind-osx/README.md). It carries its own .git, prebuilt test binaries
+# and unformatted upstream Go, all of which trip our own tooling.
+/libui-ng/
+
 # desktop (Wails) app: the generic build/ rule above would also swallow
 # desktop/build's checked-in templates (Info.plist, appicon.png, ...), so
 # un-ignore that directory and ignore only its generated output (build/bin)

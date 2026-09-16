@@ -36,8 +36,13 @@ step() { echo "${bold}▶ $1${reset}"; }
 echo "${bold}=== pre-deploy test gate ===${reset}"
 
 # 1. gofmt — exclude generated/vendored output.
+#
+# libui-ng/ is an upstream clone that gophermind-osx's build requires to be
+# present (see gophermind-osx/README.md); it is not ours and not tracked, but
+# gofmt walks the filesystem rather than the index, so it finds upstream's own
+# unformatted Go files and fails a gate that is meant to judge our code.
 step "gofmt"
-unformatted=$(gofmt -l . | grep -v '^dist/' || true)
+unformatted=$(gofmt -l . | grep -Ev '^(dist|libui-ng)/' || true)
 if [ -n "$unformatted" ]; then
   echo "${red}these files are not gofmt-clean:${reset}" >&2
   echo "$unformatted" >&2
