@@ -35,6 +35,32 @@ func TestTaskPromptCarriesRunState(t *testing.T) {
 	}
 }
 
+// TestTaskPromptIncludesPhaseflowContextPreamble is the deferred follow-up
+// from feat/project-execute (#5): a task's prompt never carried the
+// <phaseflow-context> preamble /phase's interactive steps get (config flags,
+// roadmap progress), so an executor task never knew e.g. whether a verifier
+// gate was even on, or where it sat in the plan. It must appear ahead of the
+// task instruction, the same "preamble" position it has everywhere else.
+func TestTaskPromptIncludesPhaseflowContextPreamble(t *testing.T) {
+	root := t.TempDir()
+	e := phaseflow.New(root)
+	if err := e.Init("Demo"); err != nil {
+		t.Fatal(err)
+	}
+
+	_, user := buildTaskPromptsWithContext(task(), "catalog body", root)
+
+	if !strings.Contains(user, "<phaseflow-context>") {
+		t.Errorf("prompt missing phaseflow-context preamble:\n%s", user)
+	}
+	if !strings.Contains(user, `"02-03"`) {
+		t.Errorf("preamble does not name the task:\n%s", user)
+	}
+	if strings.Index(user, "<phaseflow-context>") > strings.Index(user, "Wire the handler") {
+		t.Errorf("preamble must precede the task instruction:\n%s", user)
+	}
+}
+
 // TestTaskPromptWithoutContextFiles keeps a bare project working.
 func TestTaskPromptWithoutContextFiles(t *testing.T) {
 	_, user := buildTaskPromptsWithContext(task(), "catalog body", t.TempDir())

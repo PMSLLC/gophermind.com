@@ -149,7 +149,12 @@ func (e *Engine) buildCommandPrompt(cmd, label, args string, needInit bool) (str
 	if !ok {
 		return "", fmt.Errorf("embedded command %q missing", cmd)
 	}
-	ctx, err := e.contextBlock(label, args)
+	intro := fmt.Sprintf("You are running the PhaseFlow \"%s\" step via gophermind.\n", label)
+	var extra string
+	if args != "" {
+		extra = fmt.Sprintf("Arguments: %s\n", args)
+	}
+	ctx, err := e.contextBlock(intro, extra)
 	if err != nil {
 		return "", err
 	}
@@ -157,19 +162,31 @@ func (e *Engine) buildCommandPrompt(cmd, label, args string, needInit bool) (str
 	return ctx + "\n\n" + body, nil
 }
 
-// contextBlock builds the <phaseflow-context> preamble stitched ahead of a
-// step's command body. Upstream PhaseFlow's commands assume the agent will go
-// read .planning/ itself; injecting the resolved config and current status up
-// front hands the agent that state directly, saving the opening round of
-// file-reading tool calls and anchoring it to the real position before it acts.
-func (e *Engine) contextBlock(step, args string) (string, error) {
+// TaskContextBlock builds the same <phaseflow-context> preamble buildCommandPrompt
+// stitches ahead of a /phase step, but for one /project-execute task: the
+// resolved workflow config and roadmap progress, framed for a task agent rather
+// than an interactive command. Without it, an executor task saw only its own
+// description plus CONTEXT.md/PROJECT.md (see orchestrate.buildTaskPromptsWithContext)
+// and never the config flags (e.g. whether a verifier gate is even on) or where
+// this task sits in the overall roadmap.
+func (e *Engine) TaskContextBlock(taskID string) (string, error) {
+	intro := fmt.Sprintf("You are executing task %q via gophermind's autonomous executor (/project-execute).\n", taskID)
+	return e.contextBlock(intro, "")
+}
+
+// contextBlock wraps intro, the workflow root, extra (arbitrary caller-supplied
+// lines, e.g. /phase's Arguments), and the resolved config and current roadmap
+// status in <phaseflow-context> tags. Upstream PhaseFlow's commands assume the
+// agent will go read .planning/ itself; injecting the resolved config and
+// current status up front hands the agent that state directly, saving the
+// opening round of file-reading tool calls and anchoring it to the real
+// position before it acts.
+func (e *Engine) contextBlock(intro, extra string) (string, error) {
 	var b strings.Builder
 	b.WriteString("<phaseflow-context>\n")
-	fmt.Fprintf(&b, "You are running the PhaseFlow \"%s\" step via gophermind.\n", step)
+	b.WriteString(intro)
 	fmt.Fprintf(&b, "Workflow root: %s/\n", PlanningDirName)
-	if args != "" {
-		fmt.Fprintf(&b, "Arguments: %s\n", args)
-	}
+	b.WriteString(extra)
 
 	cfg, _, err := LoadConfig(e.Root)
 	if err != nil {

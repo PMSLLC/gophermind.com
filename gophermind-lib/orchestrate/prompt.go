@@ -24,6 +24,15 @@ const maxContextRunes = 1500
 func buildTaskPromptsWithContext(t phaseflow.Task, catalogBody, root string) (system, user string) {
 	system, user = buildTaskPrompts(t, catalogBody)
 
+	// The <phaseflow-context> preamble (config flags, roadmap progress) goes
+	// ahead of the task instruction, the same position it has for every
+	// other PhaseFlow-seeded prompt (see Engine.buildCommandPrompt). Best
+	// effort: a config parse error here should not fail the whole task, it
+	// should just run without this extra anchoring.
+	if ctx, err := phaseflow.New(root).TaskContextBlock(t.ID); err == nil {
+		user = ctx + "\n\n" + user
+	}
+
 	var b strings.Builder
 	if s := readCapped(filepath.Join(root, phaseflow.ContextDocName)); s != "" {
 		b.WriteString("\n\nRun state so far (CONTEXT.md):\n\n")

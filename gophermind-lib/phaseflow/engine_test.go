@@ -126,6 +126,48 @@ func TestBuildStepPromptNeedsInit(t *testing.T) {
 	}
 }
 
+// TestTaskContextBlockNamesTaskAndCarriesConfigAndStatus is the deferred
+// follow-up from feat/project-execute (#5): a task's prompt never got the
+// <phaseflow-context> preamble that /phase's interactive steps do, so it
+// never saw the workflow config flags or roadmap progress.
+func TestTaskContextBlockNamesTaskAndCarriesConfigAndStatus(t *testing.T) {
+	root := t.TempDir()
+	e := New(root)
+	if err := e.Init("Demo"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(RoadmapPath(root), []byte(sampleRoadmap), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := e.TaskContextBlock("02-01")
+	if err != nil {
+		t.Fatalf("TaskContextBlock: %v", err)
+	}
+	if !strings.Contains(got, "<phaseflow-context>") || !strings.Contains(got, "</phaseflow-context>") {
+		t.Errorf("missing phaseflow-context tags: %q", got)
+	}
+	if !strings.Contains(got, `"02-01"`) {
+		t.Errorf("does not name the task: %q", got)
+	}
+	if !strings.Contains(got, "Config: mode=") {
+		t.Errorf("missing config flags: %q", got)
+	}
+	if !strings.Contains(got, "Current state:") {
+		t.Errorf("missing roadmap status: %q", got)
+	}
+}
+
+// TestTaskContextBlockUninitializedOmitsStatus: Status() errors on an
+// uninitialized project, and TaskContextBlock must still return the config
+// block rather than failing the whole task prompt over a missing roadmap.
+func TestTaskContextBlockUninitializedOmitsStatus(t *testing.T) {
+	root := t.TempDir()
+	if _, err := New(root).TaskContextBlock("01-01"); err != nil {
+		t.Fatalf("TaskContextBlock on uninitialized project: %v", err)
+	}
+}
+
 func TestBuildCommandPromptArbitrary(t *testing.T) {
 	root := t.TempDir()
 	e := New(root)
