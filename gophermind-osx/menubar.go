@@ -86,9 +86,10 @@ func goMenuItemClicked(item unsafe.Pointer, window unsafe.Pointer, data unsafe.P
 // -- see uiMenuAppendPreferencesItem's doc comment). Any nil func leaves
 // that item a no-op, same nil-injected-action precedent as every other
 // phase-4 widget in this codebase.
-func (a *App) WireMenuActions(onNewProject, onOpenBrief, onSettings, onTogglePanel, onToggleDarkMode func()) {
+func (a *App) WireMenuActions(onNewProject, onOpenBrief, onExamples, onSettings, onTogglePanel, onToggleDarkMode func()) {
 	wireMenuItem(a.NewProjectItem, onNewProject)
 	wireMenuItem(a.OpenBriefItem, onOpenBrief)
+	wireMenuItem(a.ExamplesItem, onExamples)
 	wireMenuItem(a.SettingsItem, onSettings)
 	wireMenuItem(a.TogglePanelItem, onTogglePanel)
 	wireMenuItem(a.ToggleDarkModeItem, onToggleDarkMode)

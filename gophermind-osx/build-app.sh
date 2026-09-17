@@ -55,6 +55,9 @@ go build -ldflags="-s -w" -o "${MACOS_DIR}/${APP_NAME}" .
 cp build/gophermind-server "${RES_DIR}/gophermind-server"
 chmod 755 "${RES_DIR}/gophermind-server"
 
+# --- Bundle example briefs so the File > Examples menu item finds them ---
+cp -R examples "${RES_DIR}/examples"
+
 # --- Copy icon ---
 if [ ! -f iconfile.icns ]; then
     echo "ERROR: iconfile.icns not found in $(pwd)" >&2
@@ -132,6 +135,7 @@ echo ""
 echo "Verifying bundle..."
 [ -f "${MACOS_DIR}/${APP_NAME}" ] || { echo "ERROR: app binary missing" >&2; exit 1; }
 [ -f "${RES_DIR}/gophermind-server" ] || { echo "ERROR: server binary missing" >&2; exit 1; }
+[ -d "${RES_DIR}/examples/briefs" ] || { echo "ERROR: example briefs missing" >&2; exit 1; }
 [ -f "${RES_DIR}/iconfile.icns" ] || { echo "ERROR: icon missing" >&2; exit 1; }
 [ -f "${APP_DIR}/Contents/Info.plist" ] || { echo "ERROR: Info.plist missing" >&2; exit 1; }
 plutil -lint "${APP_DIR}/Contents/Info.plist" > /dev/null || { echo "ERROR: Info.plist is malformed" >&2; exit 1; }

@@ -11,7 +11,7 @@ import "testing"
 
 func TestNewApp_MenuItemsAreNonNil(t *testing.T) {
 	var err error
-	var newProjectNil, openBriefNil, settingsNil, togglePanelNil, toggleDarkModeNil bool
+	var newProjectNil, openBriefNil, examplesNil, settingsNil, togglePanelNil, toggleDarkModeNil bool
 	runOnUIThread(t, func() {
 		var app *App
 		app, err = NewApp(DefaultTitle, DefaultWidth, DefaultHeight)
@@ -21,6 +21,7 @@ func TestNewApp_MenuItemsAreNonNil(t *testing.T) {
 		defer app.Close()
 		newProjectNil = app.NewProjectItem == nil
 		openBriefNil = app.OpenBriefItem == nil
+		examplesNil = app.ExamplesItem == nil
 		settingsNil = app.SettingsItem == nil
 		togglePanelNil = app.TogglePanelItem == nil
 		toggleDarkModeNil = app.ToggleDarkModeItem == nil
@@ -29,7 +30,7 @@ func TestNewApp_MenuItemsAreNonNil(t *testing.T) {
 		t.Fatalf("NewApp: %v", err)
 	}
 	for name, isNil := range map[string]bool{
-		"NewProjectItem": newProjectNil, "OpenBriefItem": openBriefNil, "SettingsItem": settingsNil,
+		"NewProjectItem": newProjectNil, "OpenBriefItem": openBriefNil, "ExamplesItem": examplesNil, "SettingsItem": settingsNil,
 		"TogglePanelItem": togglePanelNil, "ToggleDarkModeItem": toggleDarkModeNil,
 	} {
 		if isNil {
@@ -50,7 +51,7 @@ func TestWireMenuActions_ClickDispatchesToAction(t *testing.T) {
 		defer app.Close()
 
 		action := func() { calls++ }
-		app.WireMenuActions(action, action, action, action, action)
+		app.WireMenuActions(action, action, action, action, action, action)
 
 		// Drives the exact callback goMenuItemClicked receives from
 		// uiMenuItemOnClicked, without needing a real menu bar click (not
@@ -76,7 +77,7 @@ func TestWireMenuActions_NilActionDoesNotPanic(t *testing.T) {
 			return
 		}
 		defer app.Close()
-		app.WireMenuActions(nil, nil, nil, nil, nil) // must not panic
+		app.WireMenuActions(nil, nil, nil, nil, nil, nil) // must not panic
 	})
 	if err != nil {
 		t.Fatalf("NewApp: %v", err)

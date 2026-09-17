@@ -86,6 +86,7 @@ type App struct {
 	// shape as main.go's sendTurn closure trick.
 	NewProjectItem     *C.uiMenuItem
 	OpenBriefItem      *C.uiMenuItem
+	ExamplesItem       *C.uiMenuItem
 	SettingsItem       *C.uiMenuItem
 	TogglePanelItem    *C.uiMenuItem
 	ToggleDarkModeItem *C.uiMenuItem
@@ -137,6 +138,7 @@ func NewApp(title string, width, height int) (*App, error) {
 	fileMenu := C.uiNewMenu(C.CString("File"))
 	newProjectItem := C.uiMenuAppendItem(fileMenu, C.CString("New Project"))
 	openBriefItem := C.uiMenuAppendItem(fileMenu, C.CString("Open Brief"))
+	examplesItem := C.uiMenuAppendItem(fileMenu, C.CString("Examples"))
 
 	C.uiNewMenu(C.CString("Edit")) // standard editing actions: see doc comment above
 
@@ -171,6 +173,7 @@ func NewApp(title string, width, height int) (*App, error) {
 		window:             window,
 		NewProjectItem:     newProjectItem,
 		OpenBriefItem:      openBriefItem,
+		ExamplesItem:       examplesItem,
 		SettingsItem:       settingsItem,
 		TogglePanelItem:    togglePanelItem,
 		ToggleDarkModeItem: toggleDarkModeItem,

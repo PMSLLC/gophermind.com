@@ -317,6 +317,7 @@ func NewChatWindow(app *App, sendTurn func(text string)) *ChatWindow {
 	app.WireMenuActions(
 		func() { pipelineUI.doPickBrief(); pipelineUI.doStart() },
 		pipelineUI.doPickBrief,
+		func() { openExamplesDir(transcript.AddSystem) },
 		settingsUI.doOpen,
 		func() { panelState.Toggle(); panel.syncVisibility() },
 		func() {
