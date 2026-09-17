@@ -62,4 +62,50 @@ final class PushTests: XCTestCase {
         ]
         XCTAssertNil(approvalRoute(from: userInfo))
     }
+
+    // MARK: - applyPushRoute (A6 follow-up: redundant nav-stack layers)
+
+    func testApplyPushRouteAppendsWhenStackIsEmpty() {
+        let route = ApprovalRoute(sessionID: "sess-1", approvalID: "appr-1", tool: nil)
+        let path = applyPushRoute(route, to: [])
+        XCTAssertEqual(path, [.approval(route)])
+    }
+
+    func testApplyPushRouteAppendsForADifferentSession() {
+        let path = applyPushRoute(
+            ApprovalRoute(sessionID: "sess-2", approvalID: "appr-2", tool: nil),
+            to: [.existing(id: "sess-1")]
+        )
+        XCTAssertEqual(path, [.existing(id: "sess-1"), .approval(ApprovalRoute(sessionID: "sess-2", approvalID: "appr-2", tool: nil))])
+    }
+
+    /// The bug: a second approval push for the session already on top of the
+    /// stack used to push another ConversationView instead of updating the
+    /// one already showing, so Back navigated through duplicate screens for
+    /// the same session.
+    func testApplyPushRouteReplacesTopWhenSameSessionAlreadyOnTop() {
+        let first = ApprovalRoute(sessionID: "sess-1", approvalID: "appr-1", tool: nil)
+        let second = ApprovalRoute(sessionID: "sess-1", approvalID: "appr-2", tool: nil)
+
+        let path = applyPushRoute(second, to: [.approval(first)])
+
+        XCTAssertEqual(path, [.approval(second)], "should replace, not stack, a repeat push for the same session")
+    }
+
+    func testApplyPushRouteReplacesTopWhenAlreadyViewingThatExistingSession() {
+        // A push arrives for a session the user is already looking at via
+        // .existing (not .approval) -- still the same session, still must
+        // not stack a redundant layer.
+        let route = ApprovalRoute(sessionID: "sess-1", approvalID: "appr-1", tool: nil)
+        let path = applyPushRoute(route, to: [.existing(id: "sess-1")])
+        XCTAssertEqual(path, [.approval(route)])
+    }
+
+    func testApplyPushRouteOnlyTouchesTopOfStack() {
+        // A deeper, unrelated entry earlier in the stack must survive
+        // untouched -- only the top entry is ever replaced or appended to.
+        let route = ApprovalRoute(sessionID: "sess-2", approvalID: "appr-1", tool: nil)
+        let path = applyPushRoute(route, to: [.existing(id: "sess-1"), .existing(id: "sess-2")])
+        XCTAssertEqual(path, [.existing(id: "sess-1"), .approval(route)])
+    }
 }

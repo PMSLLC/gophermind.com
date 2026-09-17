@@ -17,16 +17,6 @@ struct GopherMindApp: App {
     }
 }
 
-/// One entry in the root nav stack: either an existing session (continues
-/// its server-side memory — see `SessionListView`'s LIMITATION note; a
-/// session just created via the New Session sheet is also routed here,
-/// since by the time we navigate it already has an id), or a
-/// push-notification deep-link into a pending approval.
-private enum SessionRoute: Hashable {
-    case existing(id: String)
-    case approval(ApprovalRoute)
-}
-
 /// Root screen: the session list, with a nav path down into a conversation
 /// (existing session, new session, or a push deep-link) and a link through
 /// to Settings from the list's toolbar. Observes `PushRouter.pendingRoute`
@@ -34,7 +24,7 @@ private enum SessionRoute: Hashable {
 struct ContentView: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var router: PushRouter
-    @State private var path = NavigationPath()
+    @State private var path: [SessionRoute] = []
     @State private var pairedHost: String?
 
     var body: some View {
@@ -60,7 +50,7 @@ struct ContentView: View {
         }
         .onChange(of: router.pendingRoute) { _, route in
             guard let route else { return }
-            path.append(SessionRoute.approval(route))
+            path = applyPushRoute(route, to: path)
             router.pendingRoute = nil
         }
         // One-tap setup: a gophermind://setup?c=<base64> link carries the whole

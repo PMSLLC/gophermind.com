@@ -108,24 +108,38 @@ struct SessionListView: View {
         }
     }
 
+    // `.refreshable` needs a scrollable container to attach its drag gesture
+    // to; a bare VStack has none, so pull-to-refresh silently did nothing
+    // here even though the List path (above) worked fine. Wrapping in a
+    // ScrollView gives it one, and still centers/fills exactly as before
+    // since the VStack keeps its own frame.
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 40))
-                .foregroundStyle(.secondary)
-            Text("No sessions yet")
-                .font(.headline)
-            Text("Start a new conversation to see it here.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            Button("New Session") { showingNewSessionSheet = true }
-                .buttonStyle(.borderedProminent)
-                .padding(.top, 4)
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: 12) {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.secondary)
+                    Text("No sessions yet")
+                        .font(.headline)
+                    Text("Start a new conversation to see it here.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Button("New Session") { showingNewSessionSheet = true }
+                        .buttonStyle(.borderedProminent)
+                        .padding(.top, 4)
+                }
+                .multilineTextAlignment(.center)
+                .padding()
+                // Match the pre-fix VStack's own maxWidth/maxHeight-infinity
+                // frame (centered fill of the available space), just measured
+                // via GeometryReader instead of relying on an ancestor to
+                // hand that frame down, since ScrollView content sizes to
+                // fit rather than filling its container by default.
+                .frame(width: proxy.size.width, height: proxy.size.height)
+            }
+            .refreshable { await viewModel.load() }
         }
-        .multilineTextAlignment(.center)
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .refreshable { await viewModel.load() }
     }
 
     private var renamePresented: Binding<Bool> {
