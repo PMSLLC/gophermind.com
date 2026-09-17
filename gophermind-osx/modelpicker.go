@@ -155,12 +155,18 @@ func newModelPicker(state *appui.ModelPickerState, pin PinModelFunc, notify func
 	C.uiBoxAppend(orderButtons, (*C.uiControl)(unsafe.Pointer(mp.addOrderButton)), 0)
 	C.uiBoxAppend(orderButtons, (*C.uiControl)(unsafe.Pointer(mp.removeOrderButton)), 0)
 
+	// Caption labels: a bare uiCombobox carries no placeholder/title of its
+	// own, so with nothing selected (e.g. before a backend is connected and
+	// the catalogue is empty) it renders as an unlabeled blank control --
+	// confusing on its own. These name what each one is for.
 	box := C.uiNewVerticalBox()
 	C.uiBoxSetPadded(box, 1)
 	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(filters)), 0)
+	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(newCLabel("Available models (connect a backend to populate):"))), 0)
 	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(mp.combo)), 0)
 	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(mp.pinButton)), 0)
 	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(mp.cycleLabel)), 0)
+	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(newCLabel("Preference order (most preferred first):"))), 0)
 	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(mp.orderCombo)), 0)
 	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(orderButtons)), 0)
 	mp.box = box

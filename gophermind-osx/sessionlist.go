@@ -209,14 +209,22 @@ func newSessionList(state *appui.SessionListState, window *C.uiWindow, transcrip
 	C.uiBoxAppend(newRow, (*C.uiControl)(unsafe.Pointer(sl.chooseRootButton)), 0)
 	C.uiBoxAppend(newRow, (*C.uiControl)(unsafe.Pointer(sl.createButton)), 0)
 
+	// Caption labels: a bare uiCombobox/uiEntry names neither itself nor
+	// what a click on it does, which is confusing before any session
+	// exists to select. These name what each control is for and, for
+	// createButton, what happens if you click it with no session selected.
 	box := C.uiNewVerticalBox()
 	C.uiBoxSetPadded(box, 1)
+	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(newCLabel("Session (Resume to attach, Delete to remove):"))), 0)
 	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(sl.listCombo)), 0)
 	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(actions)), 0)
+	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(newCLabel("Rename selected session to:"))), 0)
 	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(renameRow)), 0)
 	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(sl.configLabel)), 0)
+	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(newCLabel("Mode for a new session:"))), 0)
 	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(sl.modeCombo)), 0)
 	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(sl.rootLabel)), 0)
+	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(newCLabel("New session (uses the mode and folder above):"))), 0)
 	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(newRow)), 0)
 	sl.box = box
 

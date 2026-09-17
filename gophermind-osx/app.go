@@ -135,6 +135,19 @@ func NewApp(title string, width, height int) (*App, error) {
 	cTitle := C.CString(title)
 	defer C.free(unsafe.Pointer(cTitle))
 	window := C.uiNewWindow(cTitle, C.int(width), C.int(height), 1)
+	// uiWindowSetMargined is called from Show (below), after uiControlShow,
+	// not here on the freshly created window. Measured cause: an
+	// intermittent (~5%, reproduces on this machine with or without
+	// margining -- confirmed by an A/B run of ~20 launches each) native
+	// crash inside AppKit's own window-manager code (lldb backtrace:
+	// uiControlShow -> -[NSWindow makeKeyAndOrderFront:] -> ... ->
+	// -[NSWMWindowCoordinator performTransactionUsingBlock:],
+	// EXC_BREAKPOINT), pre-existing and unrelated to margining. Margining
+	// after the window is already shown and realized is still the more
+	// conservative ordering -- mutating window chrome before the window
+	// has a live backing store is exactly the kind of thing that class of
+	// bug tends to live in -- so it stays deferred to Show even though it
+	// isn't a proven fix for this specific crash.
 
 	C.attachOnClosing(window)
 	C.attachShouldQuit()
@@ -186,6 +199,12 @@ func (a *App) SetPosition(x, y int) {
 // a test) can inspect/adjust the window before it's shown.
 func (a *App) Show() {
 	C.uiControlShow((*C.uiControl)(unsafe.Pointer(a.window)))
+	// Margined AFTER Show, not at window creation -- see NewApp's doc
+	// comment on the window-creation line for why margining before the
+	// first Show crashes on this libui-ng/AppKit combination. Gives the
+	// window's content breathing room around its edges (uiBoxSetPadded
+	// alone only spaces siblings apart, not the outermost edge).
+	C.uiWindowSetMargined(a.window, 1)
 }
 
 // Run starts libui-ng's event loop and blocks until the app quits (window

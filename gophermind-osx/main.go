@@ -158,11 +158,14 @@ func findServerBinary() string {
 	exe, err := os.Executable()
 	if err == nil {
 		dir := filepath.Dir(exe)
-		// Check the executable's own directory, then two levels up
-		// (the .app bundle layout: build/GopherMind.app/Contents/MacOS/
-		// -> build/ where gophermind-server lives).
+		// Check the executable's own directory, the bundle's Resources
+		// directory (build-app.sh copies gophermind-server to
+		// Contents/Resources, sibling to Contents/MacOS/GopherMind -- see
+		// that script's "Bundle server binary" step), then two levels up
+		// (the bare build/ directory, for a build that hasn't been bundled).
 		for _, candidate := range []string{
 			filepath.Join(dir, "gophermind-server"),
+			filepath.Join(dir, "..", "Resources", "gophermind-server"),
 			filepath.Join(dir, "..", "..", "gophermind-server"),
 		} {
 			if _, err := os.Stat(candidate); err == nil {
