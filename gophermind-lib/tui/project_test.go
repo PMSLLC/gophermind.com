@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -36,6 +38,100 @@ func TestParseApproval(t *testing.T) {
 			t.Errorf("parseApproval(%q) = (%v,%q), want (%v,%q)", c.in, kind, revise, c.kind, c.revise)
 		}
 	}
+}
+
+// TestParseProjectCommandNameOnly pins the existing "/project [name]" grammar:
+// a name with no trailing file path is not mistaken for one.
+func TestParseProjectCommandNameOnly(t *testing.T) {
+	name, brief := parseProjectCommand("/project My Cool App")
+	if name != "My Cool App" || brief != "" {
+		t.Errorf("got (%q,%q), want (%q,%q)", name, brief, "My Cool App", "")
+	}
+}
+
+// TestParseProjectCommandNoName covers the bare "/project" case that asks for
+// a name interactively.
+func TestParseProjectCommandNoName(t *testing.T) {
+	name, brief := parseProjectCommand("/project")
+	if name != "" || brief != "" {
+		t.Errorf("got (%q,%q), want empty name and brief", name, brief)
+	}
+}
+
+// TestParseProjectCommandWithBrief is the new grammar: a trailing token that
+// is a real file is the brief, and everything between the name and it is the
+// project name.
+func TestParseProjectCommandWithBrief(t *testing.T) {
+	dir := t.TempDir()
+	brief := filepath.Join(dir, "brief.md")
+	if err := os.WriteFile(brief, []byte("a CLI tool"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	name, gotBrief := parseProjectCommand("/project My Cool App " + brief)
+	if name != "My Cool App" || gotBrief != brief {
+		t.Errorf("got (%q,%q), want (%q,%q)", name, gotBrief, "My Cool App", brief)
+	}
+}
+
+// TestParseProjectCommandSingleTokenNotMistakenForBrief guards the two-field
+// case: "/project <path>" alone has no name before the path, so per the
+// design it is treated as a (probably odd-looking) name, not a nameless
+// brief -- /project always requires a name.
+func TestParseProjectCommandSingleTokenNotMistakenForBrief(t *testing.T) {
+	dir := t.TempDir()
+	brief := filepath.Join(dir, "brief.md")
+	if err := os.WriteFile(brief, []byte("a CLI tool"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	name, gotBrief := parseProjectCommand("/project " + brief)
+	if name != brief || gotBrief != "" {
+		t.Errorf("got (%q,%q), want the lone token treated as the name", name, gotBrief)
+	}
+}
+
+// TestParseProjectCommandNonexistentTrailingPath makes sure a name that
+// merely ends in something path-shaped, but does not exist as a file, is
+// never misread as a brief.
+func TestParseProjectCommandNonexistentTrailingPath(t *testing.T) {
+	name, brief := parseProjectCommand("/project Widget /no/such/file.md")
+	if name != "Widget /no/such/file.md" || brief != "" {
+		t.Errorf("got (%q,%q), want the whole thing kept as the name", name, brief)
+	}
+}
+
+// TestStartProjectReadsBriefFile: a brief path given to startProject must
+// land in m.projBrief so the interview prompt (see
+// TestInterviewPromptCarriesBrief) actually sees it.
+func TestStartProjectReadsBriefFile(t *testing.T) {
+	dir := t.TempDir()
+	brief := filepath.Join(dir, "brief.md")
+	if err := os.WriteFile(brief, []byte("a CLI todo app"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	withWorkdir(t, dir, func() {
+		m := model{}
+		nm, _ := m.startProject("Demo", brief)
+		if nm.projBrief != "a CLI todo app" {
+			t.Errorf("projBrief = %q, want the brief file's content", nm.projBrief)
+		}
+	})
+}
+
+// TestStartProjectMissingBriefFileErrors: a path the user typed but that
+// cannot be read must surface as an error, not silently fall back to a
+// brief-less interview.
+func TestStartProjectMissingBriefFileErrors(t *testing.T) {
+	dir := t.TempDir()
+	withWorkdir(t, dir, func() {
+		m := model{}
+		nm, _ := m.startProject("Demo", filepath.Join(dir, "missing.md"))
+		if nm.proj != projNone {
+			t.Errorf("proj = %v, want projNone after a brief read error", nm.proj)
+		}
+		if !strings.Contains(nm.content, "project:") {
+			t.Errorf("expected an error line, got:\n%s", nm.content)
+		}
+	})
 }
 
 func TestGenerationPromptMentionsArtifactsAndCatalog(t *testing.T) {

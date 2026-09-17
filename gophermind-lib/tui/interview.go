@@ -106,9 +106,16 @@ func firstJSONObject(s string) (string, bool) {
 
 // interviewStepPrompt asks for the next single question, replaying everything
 // answered so far so the model does not repeat itself.
-func interviewStepPrompt(name string, tr interviewTranscript, ctx string) string {
+func interviewStepPrompt(name string, tr interviewTranscript, ctx, brief string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are scoping a new software project called %q for a spec-driven workflow.\n\n", name)
+
+	if strings.TrimSpace(brief) != "" {
+		b.WriteString("The user provided this brief:\n\n")
+		b.WriteString(brief)
+		b.WriteString("\n\nUse it as the starting point — ask questions that fill its gaps, don't ")
+		b.WriteString("re-ask what it already answers.\n\n")
+	}
 
 	if strings.TrimSpace(ctx) != "" {
 		b.WriteString("What this repository already records about itself:\n\n")

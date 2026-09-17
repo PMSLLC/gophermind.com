@@ -103,6 +103,10 @@ type model struct {
 	// turn belongs to that flow so its completion is post-processed specially.
 	proj     projPhase
 	projName string
+	// projBrief is the content of an optional brief file passed to /project
+	// (e.g. "/project Widget ./brief.md"); empty when none was given. Replayed
+	// into every interview prompt alongside projCtx.
+	projBrief string
 	// Structured interview state: the accumulated Q/A record, the question
 	// currently awaiting an answer, and whether a reparse has already been
 	// spent on a model that did not return JSON.

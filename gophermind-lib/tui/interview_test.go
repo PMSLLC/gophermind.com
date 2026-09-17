@@ -101,7 +101,7 @@ func TestInterviewTranscriptAccumulates(t *testing.T) {
 // prompt must ask for a single question and the JSON shape, and must not carry
 // the old "a FEW at a time" wording.
 func TestInterviewStepPromptDemandsOneQuestion(t *testing.T) {
-	p := interviewStepPrompt("myproj", interviewTranscript{}, "")
+	p := interviewStepPrompt("myproj", interviewTranscript{}, "", "")
 	low := strings.ToLower(p)
 	if strings.Contains(low, "few at a time") {
 		t.Error("prompt still asks for a few questions at a time")
@@ -125,7 +125,7 @@ func TestInterviewStepPromptIncludesPriorAnswers(t *testing.T) {
 	var tr interviewTranscript
 	tr.add("What are we building?", "A CLI todo app.")
 
-	p := interviewStepPrompt("myproj", tr, "")
+	p := interviewStepPrompt("myproj", tr, "", "")
 	if !strings.Contains(p, "A CLI todo app.") {
 		t.Errorf("prompt omits prior answers:\n%s", p)
 	}
@@ -134,7 +134,7 @@ func TestInterviewStepPromptIncludesPriorAnswers(t *testing.T) {
 // TestInterviewAsksForTestCommand: the executor gate needs a test command, so
 // the interview must require it before finishing.
 func TestInterviewAsksForTestCommand(t *testing.T) {
-	p := interviewStepPrompt("myproj", interviewTranscript{}, "")
+	p := interviewStepPrompt("myproj", interviewTranscript{}, "", "")
 	if !strings.Contains(strings.ToLower(p), "test command") {
 		t.Errorf("prompt never requires the test command:\n%s", p)
 	}
@@ -143,7 +143,7 @@ func TestInterviewAsksForTestCommand(t *testing.T) {
 // TestInterviewPromptCarriesContext: the digest must reach the model, or
 // nothing can be prefilled.
 func TestInterviewPromptCarriesContext(t *testing.T) {
-	p := interviewStepPrompt("myproj", interviewTranscript{}, "### Existing spec\nCTX-MARKER")
+	p := interviewStepPrompt("myproj", interviewTranscript{}, "### Existing spec\nCTX-MARKER", "")
 	if !strings.Contains(p, "CTX-MARKER") {
 		t.Error("repository context missing from the prompt")
 	}
@@ -154,9 +154,28 @@ func TestInterviewPromptCarriesContext(t *testing.T) {
 
 // TestInterviewPromptOmitsEmptyContext keeps a fresh repo's prompt clean.
 func TestInterviewPromptOmitsEmptyContext(t *testing.T) {
-	p := interviewStepPrompt("myproj", interviewTranscript{}, "")
+	p := interviewStepPrompt("myproj", interviewTranscript{}, "", "")
 	if strings.Contains(p, "already records about itself") {
 		t.Error("context heading emitted with no context")
+	}
+}
+
+// TestInterviewPromptCarriesBrief: a brief file's content must reach every
+// interview turn, or /project's file-seeded flow degrades to a plain
+// interview with the file silently ignored.
+func TestInterviewPromptCarriesBrief(t *testing.T) {
+	p := interviewStepPrompt("myproj", interviewTranscript{}, "", "BRIEF-MARKER: a CLI todo app")
+	if !strings.Contains(p, "BRIEF-MARKER: a CLI todo app") {
+		t.Error("brief content missing from the prompt")
+	}
+}
+
+// TestInterviewPromptOmitsEmptyBrief keeps a brief-less /project's prompt
+// exactly as it was before the brief parameter existed.
+func TestInterviewPromptOmitsEmptyBrief(t *testing.T) {
+	p := interviewStepPrompt("myproj", interviewTranscript{}, "", "")
+	if strings.Contains(p, "brief") {
+		t.Error("brief heading emitted with no brief")
 	}
 }
 

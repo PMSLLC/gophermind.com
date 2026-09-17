@@ -125,37 +125,70 @@ func (m model) startTurn(sendText string, project bool) model {
 	return m
 }
 
-// handleProjectCommand dispatches "/project [name]". With a name it scaffolds
-// and starts the interview; without one it asks for the name.
+// parseProjectCommand splits "/project [name] [brief-path]" into a name and
+// an optional brief path. A trailing token is only ever read as a brief path
+// when it is itself a real file AND a name still remains before it -- /project
+// always requires a name, so a lone token ("/project ./brief.md") is kept as
+// the (admittedly odd) name rather than read as a nameless brief. This means
+// a name that happens to end in an existing file's path is misread as
+// name+brief, but that collision needs an actual file at that exact relative
+// path to trigger, and is worth it for the ergonomics of not requiring a flag.
+func parseProjectCommand(text string) (name, briefPath string) {
+	fields := strings.Fields(text)
+	if len(fields) <= 1 {
+		return "", ""
+	}
+	rest := fields[1:]
+	if len(rest) >= 2 {
+		last := rest[len(rest)-1]
+		if info, err := os.Stat(last); err == nil && !info.IsDir() {
+			return strings.TrimSpace(strings.Join(rest[:len(rest)-1], " ")), last
+		}
+	}
+	return strings.TrimSpace(strings.Join(rest, " ")), ""
+}
+
+// handleProjectCommand dispatches "/project [name] [brief-path]". With a name
+// it scaffolds and starts the interview (optionally seeded from the brief
+// file); without one it asks for the name.
 func (m model) handleProjectCommand(text string) (model, tea.Cmd) {
 	if m.agent == nil {
 		m.appendLine("project: no active session")
 		m.sync()
 		return m, nil
 	}
-	name := strings.TrimSpace(strings.TrimPrefix(strings.Fields(text)[0], "/project"))
-	if fields := strings.Fields(text); len(fields) > 1 {
-		name = strings.TrimSpace(strings.Join(fields[1:], " "))
-	} else {
-		name = ""
-	}
+	name, briefPath := parseProjectCommand(text)
 	if name == "" {
 		m.proj = projAwaitName
 		m.appendLine(projectBannerStyle.Render("New project — what should it be called?"))
 		m.sync()
 		return m, nil
 	}
-	return m.startProject(name)
+	return m.startProject(name, briefPath)
 }
 
-// startProject scaffolds the project and kicks off the interview.
-func (m model) startProject(name string) (model, tea.Cmd) {
+// startProject scaffolds the project and kicks off the interview. When
+// briefPath is non-empty, its content seeds every interview turn (see
+// interviewStepPrompt) so the model asks about gaps in it instead of
+// starting from nothing.
+func (m model) startProject(name, briefPath string) (model, tea.Cmd) {
 	root, err := os.Getwd()
 	if err != nil {
 		m.appendLine("project: " + err.Error())
 		m.proj = projNone
 		m.sync()
 		return m, nil
+	}
+	var brief string
+	if briefPath != "" {
+		content, err := os.ReadFile(briefPath)
+		if err != nil {
+			m.appendLine("project: reading brief: " + err.Error())
+			m.proj = projNone
+			m.sync()
+			return m, nil
+		}
+		brief = string(content)
 	}
 	e := phaseflow.New(root)
 	if !e.Initialized() {
@@ -170,6 +203,7 @@ func (m model) startProject(name string) (model, tea.Cmd) {
 		m.appendLine("project: seed catalog: " + err.Error())
 	}
 	m.projName = name
+	m.projBrief = brief
 	m.projRetries = 0
 	m.projTranscript = interviewTranscript{}
 	m.projPendingQ = ""
@@ -182,7 +216,7 @@ func (m model) startProject(name string) (model, tea.Cmd) {
 	m.appendLine(projectBannerStyle.Render("Scoping “" + name + "” — one question at a time; type /generate to stop early."))
 	m.proj = projInterview
 	m.sync()
-	return m.startTurn(interviewStepPrompt(name, m.projTranscript, m.projCtx), true), nil
+	return m.startTurn(interviewStepPrompt(name, m.projTranscript, m.projCtx, m.projBrief), true), nil
 }
 
 // handleProjectInput routes an input line while a /project flow is active.
@@ -191,7 +225,7 @@ func (m model) startProject(name string) (model, tea.Cmd) {
 func (m model) handleProjectInput(text string) (model, tea.Cmd, bool) {
 	switch m.proj {
 	case projAwaitName:
-		nm, _ := m.startProject(strings.TrimSpace(text))
+		nm, _ := m.startProject(strings.TrimSpace(text), "")
 		return nm, nil, true
 
 	case projInterview:
@@ -207,7 +241,7 @@ func (m model) handleProjectInput(text string) (model, tea.Cmd, bool) {
 			m.projSuggested = ""
 		}
 		m.projParseRetry = false
-		return m.startTurn(interviewStepPrompt(m.projName, m.projTranscript, m.projCtx), true), nil, true
+		return m.startTurn(interviewStepPrompt(m.projName, m.projTranscript, m.projCtx, m.projBrief), true), nil, true
 
 	case projGenerating:
 		m.appendLine("(still working on the plan…)")
@@ -284,7 +318,7 @@ func (m model) afterProjectTurn(answer string) (tea.Model, tea.Cmd) {
 				m.projParseRetry = true
 				m.appendLine("(reformatting the question…)")
 				m.sync()
-				return m.startTurn(interviewStepPrompt(m.projName, m.projTranscript, m.projCtx), true), waitFor(m.sub)
+				return m.startTurn(interviewStepPrompt(m.projName, m.projTranscript, m.projCtx, m.projBrief), true), waitFor(m.sub)
 			}
 			m.projParseRetry = false
 			m.projPendingQ = strings.TrimSpace(answer)
