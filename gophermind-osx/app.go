@@ -20,6 +20,8 @@ package main
 /*
 #include <ui.h>
 #include <stdlib.h>
+#include <stdint.h>
+#import <AppKit/AppKit.h>
 
 // Trampolines: libui's callback registration functions take a plain C
 // function pointer, which cgo cannot construct directly from a Go func
@@ -35,6 +37,19 @@ static inline void attachOnClosing(uiWindow *w) {
 
 static inline void attachShouldQuit(void) {
 	uiOnShouldQuit((int (*)(void *))goShouldQuit, NULL);
+}
+
+// windowZoom/windowIsZoomed reach through libui-ng's documented, public
+// uiControlHandle (an OS-level handle -- on this Cocoa backend, the real
+// NSWindow*) to call AppKit's own -zoom:, the exact action the window's
+// green button performs. libui-ng has no "fill the screen" API of its own
+// to call instead (see App.Maximize's doc comment).
+static inline void windowZoom(uintptr_t handle) {
+	[(NSWindow *)handle zoom:nil];
+}
+
+static inline int windowIsZoomed(uintptr_t handle) {
+	return [(NSWindow *)handle isZoomed] ? 1 : 0;
 }
 */
 import "C"
@@ -205,6 +220,26 @@ func (a *App) Show() {
 	// window's content breathing room around its edges (uiBoxSetPadded
 	// alone only spaces siblings apart, not the outermost edge).
 	C.uiWindowSetMargined(a.window, 1)
+}
+
+// Maximize toggles the window between its current frame and one that
+// fills the screen -- the same effect as clicking the window's green
+// zoom button, or double-clicking its title bar. libui-ng exposes no
+// "fill the screen" sizing of its own (checked ui.h: there is no uiScreen
+// API at all, nothing to query a display's size from), so this reaches
+// through uiControlHandle to the real NSWindow and calls AppKit's own
+// -zoom: directly. Call after Show: zooming a window that has never been
+// shown is unreliable on Cocoa.
+func (a *App) Maximize() {
+	C.windowZoom(C.uiControlHandle((*C.uiControl)(unsafe.Pointer(a.window))))
+}
+
+// IsMaximized reports whether the window is currently zoomed (filling the
+// screen), so window-state persistence (main.go) can save "maximized" as
+// a state distinct from any particular width/height/position -- the same
+// distinction WindowState.Maximized documents.
+func (a *App) IsMaximized() bool {
+	return C.windowIsZoomed(C.uiControlHandle((*C.uiControl)(unsafe.Pointer(a.window)))) != 0
 }
 
 // Run starts libui-ng's event loop and blocks until the app quits (window

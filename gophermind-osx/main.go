@@ -156,7 +156,23 @@ func main() {
 		}
 	}
 
+	// Menu-bar (status bar) item listing every configured backend and its
+	// live status, plus Show Window / Quit -- a separate surface from the
+	// app's own File/Edit/View menu bar (see statusitem.go's top doc
+	// comment). Created after every backend above is in place so its
+	// first refresh already shows the full list, not just whatever was
+	// added before this line happened to run.
+	newStatusItem(chat.Backends, app.window)
+
 	app.Show()
+	if windowState.Maximized {
+		// Zoom after Show, not before: zooming a window that has never
+		// been shown is unreliable on Cocoa (see App.Maximize's doc
+		// comment). The explicit SetContentSize/SetPosition above still
+		// runs first regardless, giving the window a sane frame to
+		// restore to if the user later un-maximizes it by hand.
+		app.Maximize()
+	}
 	app.Run()
 
 	// Cleanup: disconnect all backends (kills the server subprocess).
@@ -164,7 +180,7 @@ func main() {
 
 	w, h := app.ContentSize()
 	x, y := app.Position()
-	saveWindowState(appui.WindowState{Width: w, Height: h, X: x, Y: y})
+	saveWindowState(appui.WindowState{Width: w, Height: h, X: x, Y: y, Maximized: app.IsMaximized()})
 
 	app.Close()
 }
