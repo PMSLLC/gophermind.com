@@ -268,6 +268,26 @@ func TestResultPairsIncludesKeyModelAndMaxIterWhenSet(t *testing.T) {
 	}
 }
 
+func TestResultPairsIncludesSpeedModelWhenSet(t *testing.T) {
+	r := Result{BaseURL: "http://x", ApprovalMode: "ask", SpeedModel: "fast-tier"}
+	got := map[string]string{}
+	for _, p := range r.Pairs() {
+		got[p[0]] = p[1]
+	}
+	if got["GOPHERMIND_SPEED_MODEL"] != "fast-tier" {
+		t.Errorf("GOPHERMIND_SPEED_MODEL = %q, want fast-tier", got["GOPHERMIND_SPEED_MODEL"])
+	}
+}
+
+func TestResultPairsOmitsEmptySpeedModel(t *testing.T) {
+	r := Result{BaseURL: "http://x", ApprovalMode: "ask"}
+	for _, p := range r.Pairs() {
+		if p[0] == "GOPHERMIND_SPEED_MODEL" {
+			t.Errorf("empty speed model should be omitted, got %v", p)
+		}
+	}
+}
+
 func TestResultPairsOmitsZeroMaxIter(t *testing.T) {
 	r := Result{BaseURL: "http://x", ApprovalMode: "ask"} // MaxIter 0
 	for _, p := range r.Pairs() {

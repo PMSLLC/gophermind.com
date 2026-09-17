@@ -42,6 +42,11 @@ type Result struct {
 	BraveAPIKey   string
 	GitHubToken   string
 	NotifyWebhook string
+
+	// SpeedModel is GOPHERMIND_SPEED_MODEL: the faster/cheaper tier used for
+	// /project-execute's "speed" task assignments (empty falls back to
+	// Model, the same as an unset env var).
+	SpeedModel string
 }
 
 // Pairs renders the result as ordered GOPHERMIND_* env pairs for persistence.
@@ -81,6 +86,9 @@ func (r Result) Pairs() [][2]string {
 	}
 	if r.NotifyWebhook != "" {
 		pairs = append(pairs, [2]string{"GOPHERMIND_NOTIFY_WEBHOOK", r.NotifyWebhook})
+	}
+	if r.SpeedModel != "" {
+		pairs = append(pairs, [2]string{"GOPHERMIND_SPEED_MODEL", r.SpeedModel})
 	}
 	return pairs
 }

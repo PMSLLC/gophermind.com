@@ -25,17 +25,7 @@ func (m model) handleConfigCommand() (model, tea.Cmd) {
 		m.sync()
 		return m, nil
 	}
-	// Pre-fill the current values. Endpoint/model/max-iter come from the agent;
-	// the approval mode is what the TUI is authoritatively displaying.
-	cur := m.agent.Config()
-	w := &configWizard{defaults: setup.Result{
-		BaseURL:      cur.BaseURL,
-		ChatPath:     cur.ChatPath,
-		ModelsPath:   cur.ModelsPath,
-		Model:        cur.Model,
-		ApprovalMode: m.mode,
-		MaxIter:      cur.MaxIter,
-	}}
+	w := &configWizard{defaults: configDefaultsFor(m)}
 
 	cmd := tea.Exec(w, func(err error) tea.Msg {
 		if err != nil {
@@ -44,6 +34,24 @@ func (m model) handleConfigCommand() (model, tea.Cmd) {
 		return configDoneMsg{result: w.result}
 	})
 	return m, cmd
+}
+
+// configDefaultsFor builds the wizard's prefilled defaults. Endpoint/model/
+// max-iter come from the agent; approval mode and speed model are not part
+// of agent.Config() and so are read from the TUI's own live state instead --
+// the same reasoning for both: what the TUI is authoritatively displaying,
+// not whatever the agent was constructed with at startup.
+func configDefaultsFor(m model) setup.Result {
+	cur := m.agent.Config()
+	return setup.Result{
+		BaseURL:      cur.BaseURL,
+		ChatPath:     cur.ChatPath,
+		ModelsPath:   cur.ModelsPath,
+		Model:        cur.Model,
+		ApprovalMode: m.mode,
+		MaxIter:      cur.MaxIter,
+		SpeedModel:   m.speedModel,
+	}
 }
 
 // configWizard adapts the line-based wizard to Bubble Tea's ExecCommand, so it
@@ -141,6 +149,16 @@ func runConfigWizardIO(in io.Reader, out io.Writer, defaults setup.Result) (setu
 	}
 	model := firstNonEmpty(strings.TrimSpace(line), defaults.Model)
 
+	// 3b) Speed model (free-text; blank keeps whatever was already set, same
+	// convention as Model above -- empty just means /project-execute's
+	// "speed" tier falls back to Model, exactly as an unset env var does).
+	fmt.Fprintf(out, "Speed model, for /project-execute's faster tier (blank = same as Model)%s: ", defaultHint(defaults.SpeedModel))
+	line, err = readLine()
+	if err != nil {
+		return setup.Result{}, err
+	}
+	speedModel := firstNonEmpty(strings.TrimSpace(line), defaults.SpeedModel)
+
 	// 4) Approval mode.
 	fmt.Fprintf(out, "Approval mode ask/auto%s: ", defaultHint(defaults.ApprovalMode))
 	line, err = readLine()
@@ -190,6 +208,7 @@ func runConfigWizardIO(in io.Reader, out io.Writer, defaults setup.Result) (setu
 		BraveAPIKey:   strings.TrimSpace(brave),
 		GitHubToken:   strings.TrimSpace(ghToken),
 		NotifyWebhook: strings.TrimSpace(notify),
+		SpeedModel:    speedModel,
 	}, nil
 }
 
@@ -226,6 +245,7 @@ func (m *model) handleConfigDone(msg configDoneMsg) {
 
 	before := m.agent.Config()
 	beforeMode := m.mode
+	beforeSpeedModel := m.speedModel
 
 	// Apply live. Endpoint/model/key/max-iter take effect for the next request;
 	// approval mode only fully applies to "auto" now (see agent.SetApprovalMode).
@@ -265,6 +285,14 @@ func (m *model) handleConfigDone(msg configDoneMsg) {
 	if res.APIKey != "" {
 		m.agent.SetAPIKey(res.APIKey)
 		changes = append(changes, "API key")
+	}
+	// speedModel lives on the TUI model, not the agent: /project-execute
+	// reads it fresh from m at the start of every run (see execute.go), so
+	// setting it here is the whole fix -- no agent call needed for it to
+	// take effect on the next run.
+	if res.SpeedModel != "" && res.SpeedModel != beforeSpeedModel {
+		m.speedModel = res.SpeedModel
+		changes = append(changes, "speed model")
 	}
 
 	m.appendLine(configSavedStyle.Render("✓ Config saved to " + p))
