@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"gophermind/gophermind-osx/client"
@@ -20,6 +21,14 @@ import (
 // Toggle Dark Mode). Both are properties of being a real windowed app on
 // this platform, not something gophermind-osx implements.
 func main() {
+	// Cocoa requires every NSWindow/NSStatusItem to be created on the
+	// same OS thread the process started on. Without this, a blocking
+	// call that parks the main goroutine (e.g. the HTTP health checks in
+	// connMgr.Connect below) can resume it on a different OS thread, and
+	// newStatusItem's NSStatusBar call later in this function crashes
+	// with "NSWindow should only be instantiated on the main thread!".
+	runtime.LockOSThread()
+
 	// One-time move of any local state from before it was consolidated
 	// under gophermind-lib/config.Dir() (~/.gophermind) -- see
 	// localstate.go. Must run before anything below reads window state,
