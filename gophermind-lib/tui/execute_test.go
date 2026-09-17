@@ -247,3 +247,82 @@ func TestRenderExecSummaryCountsContractFlagged(t *testing.T) {
 		t.Errorf("summary added noise to an ordinary run: %q", plain)
 	}
 }
+
+// TestExecProgressMsgAccumulatesOutcomes verifies each execProgressMsg is
+// also recorded on m.execOutcomes, not just appended to the transcript --
+// this is the record a Ctrl-C cancel tallies into a partial summary.
+func TestExecProgressMsgAccumulatesOutcomes(t *testing.T) {
+	m := testModel(t)
+	m2, _ := m.Update(execProgressMsg(phaseflow.TaskOutcome{ID: "01-01", Status: phaseflow.StatusDone}))
+	m3, _ := m2.(model).Update(execProgressMsg(phaseflow.TaskOutcome{ID: "01-02", Status: phaseflow.StatusFailed}))
+	mm := m3.(model)
+
+	if len(mm.execOutcomes) != 2 {
+		t.Fatalf("execOutcomes has %d entries, want 2", len(mm.execOutcomes))
+	}
+	if mm.execOutcomes[0].ID != "01-01" || mm.execOutcomes[1].ID != "01-02" {
+		t.Errorf("execOutcomes = %+v, want them in arrival order", mm.execOutcomes)
+	}
+}
+
+// TestExecDoneMsgClearsOutcomes verifies a completed run's outcome log is
+// cleared once its authoritative summary has been shown, so it cannot leak
+// into a later, unrelated cancel's partial summary.
+func TestExecDoneMsgClearsOutcomes(t *testing.T) {
+	m := testModel(t)
+	m.execOutcomes = []phaseflow.TaskOutcome{{ID: "01-01", Status: phaseflow.StatusDone}}
+	m2, _ := m.Update(execDoneMsg{summary: phaseflow.RunSummary{Done: 1}})
+	mm := m2.(model)
+
+	if mm.execOutcomes != nil {
+		t.Errorf("execOutcomes = %+v, want nil after execDoneMsg", mm.execOutcomes)
+	}
+}
+
+// TestCancelledExecutorRunShowsPartialSummary is the deferred follow-up from
+// feat/project-execute (#7): Ctrl-C mid-run showed only "cancelled", with no
+// tally of what had already finished. It must now report the same counts
+// renderExecSummary would, using whatever outcomes arrived before the cancel.
+func TestCancelledExecutorRunShowsPartialSummary(t *testing.T) {
+	m := testModel(t)
+	m.st = stateWorking
+	m.execOutcomes = []phaseflow.TaskOutcome{
+		{ID: "01-01", Status: phaseflow.StatusDone},
+		{ID: "01-02", Status: phaseflow.StatusFailed, Detail: "boom"},
+	}
+	_, cancel := context.WithCancel(context.Background())
+	m.cancel = cancel
+
+	m2, _ := m.Update(errMsg{err: context.Canceled})
+	mm := m2.(model)
+
+	if !strings.Contains(mm.content, "cancelled") {
+		t.Errorf("transcript missing cancelled indication: %q", mm.content)
+	}
+	if !strings.Contains(mm.content, "1 done") || !strings.Contains(mm.content, "1 failed") {
+		t.Errorf("transcript missing partial tally: %q", mm.content)
+	}
+	if mm.execOutcomes != nil {
+		t.Errorf("execOutcomes = %+v, want cleared after the cancel is reported", mm.execOutcomes)
+	}
+}
+
+// TestCancelledPlainTurnShowsNoTally guards the ordinary (non-executor) cancel
+// path: with no execOutcomes recorded, the cancel line must read exactly as
+// it did before this feature existed, with no stray tally text.
+func TestCancelledPlainTurnShowsNoTally(t *testing.T) {
+	m := testModel(t)
+	m.st = stateWorking
+	_, cancel := context.WithCancel(context.Background())
+	m.cancel = cancel
+
+	m2, _ := m.Update(errMsg{err: context.Canceled})
+	mm := m2.(model)
+
+	if !strings.Contains(mm.content, "cancelled") {
+		t.Errorf("transcript missing cancelled indication: %q", mm.content)
+	}
+	if strings.Contains(mm.content, "done") || strings.Contains(mm.content, "failed") {
+		t.Errorf("plain cancel should not show a task tally: %q", mm.content)
+	}
+}

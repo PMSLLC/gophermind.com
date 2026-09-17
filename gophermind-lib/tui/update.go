@@ -142,11 +142,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case execProgressMsg:
 		m.appendLine(renderExecOutcome(phaseflow.TaskOutcome(msg)))
+		m.execOutcomes = append(m.execOutcomes, phaseflow.TaskOutcome(msg))
 		m.sync()
 		return m, waitFor(m.sub)
 
 	case execDoneMsg:
 		m.appendLine(renderExecSummary(msg.summary))
+		m.execOutcomes = nil
 		m.st = stateIdle
 		m.cancel = nil
 		m.sync()
@@ -157,7 +159,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// fault: show a brief "cancelled" line and drop the partial stream rather
 		// than surfacing a raw "context canceled" error.
 		if errors.Is(msg.err, context.Canceled) {
-			m.appendLine(renderError("⨯ cancelled"))
+			if len(m.execOutcomes) > 0 {
+				// Cancelled mid /project-execute: whatever tasks already
+				// finished are real work done, not noise to discard along
+				// with the run.
+				m.appendLine(renderError("⨯ cancelled — " + renderExecCancelSummary(m.execOutcomes)))
+				m.execOutcomes = nil
+			} else {
+				m.appendLine(renderError("⨯ cancelled"))
+			}
 		} else {
 			m.appendLine(renderError("error: " + msg.err.Error()))
 		}

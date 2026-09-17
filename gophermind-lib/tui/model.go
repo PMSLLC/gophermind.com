@@ -15,6 +15,7 @@ import (
 	"github.com/jbrahy/bubblecomplete/ngram"
 	"gophermind/gophermind-lib/agent"
 	"gophermind/gophermind-lib/banner"
+	"gophermind/gophermind-lib/phaseflow"
 	"gophermind/gophermind-lib/prompthistory"
 )
 
@@ -120,6 +121,14 @@ type model struct {
 	projParseRetry bool
 	projRetries    int
 	projTurn       bool
+
+	// execOutcomes accumulates /project-execute's finished tasks as they
+	// stream in via execProgressMsg, so a Ctrl-C mid-run can tally a partial
+	// summary (see the errMsg case in update.go) instead of just "cancelled".
+	// execDoneMsg clears it once the run's own authoritative summary has been
+	// shown; nil the rest of the time, including during an ordinary agent
+	// turn, which is how the cancel handler tells the two cases apart.
+	execOutcomes []phaseflow.TaskOutcome
 
 	usage  agent.UsageSnapshot // running session token + cost meter
 	width  int

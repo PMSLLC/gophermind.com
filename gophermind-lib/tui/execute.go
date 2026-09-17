@@ -151,9 +151,43 @@ func renderExecOutcome(o phaseflow.TaskOutcome) string {
 	return "✓ " + o.ID + " " + o.Status
 }
 
+// renderExecCancelSummary tallies outcomes gathered before a Ctrl-C mid-run
+// (see execOutcomes) into the same counts renderExecSummary reports for a
+// completed run, so a cancelled run's partial progress reads the same way an
+// interrupted one's real one does, instead of being silently discarded.
+func renderExecCancelSummary(outcomes []phaseflow.TaskOutcome) string {
+	var s phaseflow.RunSummary
+	for _, o := range outcomes {
+		s.Outcomes = append(s.Outcomes, o)
+		switch o.Status {
+		case phaseflow.StatusDone:
+			s.Done++
+		case phaseflow.StatusCorrected:
+			s.Corrected++
+		case phaseflow.StatusFailed:
+			s.Failed++
+		case phaseflow.StatusNeedsRevision:
+			s.NeedsRevision++
+		case phaseflow.StatusEscalated:
+			s.Escalated++
+		case phaseflow.StatusContractFlagged:
+			s.ContractFlagged++
+		}
+	}
+	return summaryCounts(s)
+}
+
 // renderExecSummary formats the final run summary line.
 func renderExecSummary(s phaseflow.RunSummary) string {
-	line := fmt.Sprintf("run complete: %d done, %d corrected, %d failed", s.Done, s.Corrected, s.Failed)
+	return "run complete: " + summaryCounts(s)
+}
+
+// summaryCounts formats a run's tallies -- shared by renderExecSummary (a
+// completed run) and renderExecCancelSummary (whatever finished before a
+// Ctrl-C), so the two only differ in their leading words, not in how the
+// numbers are read.
+func summaryCounts(s phaseflow.RunSummary) string {
+	line := fmt.Sprintf("%d done, %d corrected, %d failed", s.Done, s.Corrected, s.Failed)
 	// Only mentioned when non-zero, so an ordinary run reads exactly as before,
 	// but the counts always add up to the tasks actually attempted.
 	if s.NeedsRevision > 0 {
