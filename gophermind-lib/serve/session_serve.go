@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -297,7 +298,15 @@ func sessionDeleteHandler(remove func(string) error) http.HandlerFunc {
 			return
 		}
 		if err := remove(id); err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			// Only "the session does not exist" is a 404; a real failure to
+			// delete an existing one (disk I/O, permissions) is a server
+			// error and must not be reported as if the client asked for
+			// something that was never there.
+			status := http.StatusInternalServerError
+			if errors.Is(err, session.ErrNotFound) {
+				status = http.StatusNotFound
+			}
+			http.Error(w, err.Error(), status)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -377,7 +386,16 @@ func sessionAuth(token string, h http.Handler) http.Handler {
 				return
 			}
 		}
-		if secret := serveHMACSecret(); secret != "" {
+		// HMAC verification is a payload-integrity check (GitHub/Stripe style:
+		// prove the body was not tampered with). GET/DELETE session requests
+		// carry no body -- the session id is in the path, not the payload --
+		// so requiring a signature here only signs the empty string, a fixed
+		// value for a given secret. That is not "no protection", it is worse:
+		// a signature captured from any one empty-body request is a valid
+		// signature for every other GET/DELETE ever after, on any id. Bearer
+		// auth above already gates these; skip a check that cannot do what it
+		// looks like it does.
+		if secret := serveHMACSecret(); secret != "" && r.Method != http.MethodGet && r.Method != http.MethodDelete {
 			body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 			if err != nil {
 				http.Error(w, "read body", http.StatusBadRequest)

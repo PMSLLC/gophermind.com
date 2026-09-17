@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -300,6 +301,42 @@ func TestSessionDeleteHandlerPropagatesRemoveError(t *testing.T) {
 	}
 }
 
+// TestSessionDeleteHandlerMissingSessionReturns404 is the deferred follow-up
+// from feat/ios-serve (S2 Minor): every error from remove used to map to 404,
+// which is only correct for "the session does not exist".
+func TestSessionDeleteHandlerMissingSessionReturns404(t *testing.T) {
+	remove := func(id string) error {
+		return fmt.Errorf("session %q not found: %w", id, session.ErrNotFound)
+	}
+	h := sessionDeleteHandler(remove)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/session/abc", nil)
+	req.SetPathValue("id", "abc")
+	h(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404 for a missing session", rr.Code)
+	}
+}
+
+// TestSessionDeleteHandlerOtherErrorReturns500 is the other half of the same
+// bug: a real failure to delete an existing session (disk I/O, permissions)
+// is a server error, not "not found", and must not be reported as one.
+func TestSessionDeleteHandlerOtherErrorReturns500(t *testing.T) {
+	remove := func(string) error { return errors.New("disk full") }
+	h := sessionDeleteHandler(remove)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/session/abc", nil)
+	req.SetPathValue("id", "abc")
+	h(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 for a non-not-found error", rr.Code)
+	}
+}
+
 func TestSessionRenameHandlerCallsSetName(t *testing.T) {
 	var gotID, gotName string
 	setName := func(id, name string) error {
@@ -351,6 +388,66 @@ func TestSessionRenameHandlerRejectsBadJSON(t *testing.T) {
 	h(rr, req)
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", rr.Code)
+	}
+}
+
+// TestSessionAuthSkipsHMACForGET is the deferred follow-up from feat/ios-serve
+// (S2 Minor): a GET session request has no body, so requiring a signature
+// only ever signs "", a fixed value for a given secret -- not a real
+// integrity check, just friction (and a replayable one at that). Bearer auth
+// still gates the request; HMAC must not additionally reject it for lacking
+// a signature it has nothing meaningful to sign.
+func TestSessionAuthSkipsHMACForGET(t *testing.T) {
+	t.Setenv("GOPHERMIND_SERVE_HMAC_SECRET", "s3cr3t")
+	h := sessionAuth("", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/session", nil) // no X-Hub-Signature-256
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200 (HMAC should not apply to a bodyless GET)", rr.Code)
+	}
+}
+
+// TestSessionAuthSkipsHMACForDELETE is the DELETE half of the same fix.
+func TestSessionAuthSkipsHMACForDELETE(t *testing.T) {
+	t.Setenv("GOPHERMIND_SERVE_HMAC_SECRET", "s3cr3t")
+	h := sessionAuth("", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/session/abc", nil)
+	req.SetPathValue("id", "abc")
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200 (HMAC should not apply to a bodyless DELETE)", rr.Code)
+	}
+}
+
+// TestSessionAuthStillVerifiesHMACForPOST guards against the fix
+// over-broadening: POST/PATCH bodies (e.g. a session turn's task text) are
+// exactly what HMAC verification exists to protect, and must still be
+// enforced.
+func TestSessionAuthStillVerifiesHMACForPOST(t *testing.T) {
+	t.Setenv("GOPHERMIND_SERVE_HMAC_SECRET", "s3cr3t")
+	h := sessionAuth("", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
+
+	bad := httptest.NewRecorder()
+	badReq := httptest.NewRequest(http.MethodPost, "/session", strings.NewReader(`{"task":"x"}`))
+	badReq.Header.Set("X-Hub-Signature-256", "sha256=bad")
+	h.ServeHTTP(bad, badReq)
+	if bad.Code != http.StatusUnauthorized {
+		t.Errorf("bad signature status = %d, want 401", bad.Code)
+	}
+
+	body := `{"task":"x"}`
+	good := httptest.NewRecorder()
+	goodReq := httptest.NewRequest(http.MethodPost, "/session", strings.NewReader(body))
+	goodReq.Header.Set("X-Hub-Signature-256", "sha256="+hmacSHA256Hex("s3cr3t", []byte(body)))
+	h.ServeHTTP(good, goodReq)
+	if good.Code != http.StatusOK {
+		t.Errorf("good signature status = %d, want 200; body=%s", good.Code, good.Body.String())
 	}
 }
 

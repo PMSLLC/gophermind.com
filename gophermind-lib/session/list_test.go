@@ -1,6 +1,7 @@
 package session
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -74,6 +75,31 @@ func TestRemoveDir(t *testing.T) {
 	// path-escape ids are rejected
 	if err := removeIn(dir, "../etc"); err == nil {
 		t.Error("invalid id should be rejected")
+	}
+}
+
+// TestRemoveInMissingSessionWrapsErrNotFound is the deferred follow-up from
+// feat/ios-serve (S2 Minor): DELETE /session/{id} mapped every error from
+// Remove to 404, including a real disk failure on the os.Remove call itself.
+// The caller (serve.sessionDeleteHandler) needs to tell "does not exist" apart
+// from "exists but couldn't be deleted", which means the not-found case must
+// be identifiable via errors.Is, not by matching error text.
+func TestRemoveInMissingSessionWrapsErrNotFound(t *testing.T) {
+	dir := t.TempDir()
+	err := removeIn(dir, "missing")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("removeIn on a missing session = %v, want it to wrap ErrNotFound", err)
+	}
+}
+
+// TestRemoveInInvalidIDDoesNotWrapErrNotFound: a rejected id is a bad
+// request, not "session not found" -- the two must map to different HTTP
+// statuses (400 vs 404), so they must be distinguishable here.
+func TestRemoveInInvalidIDDoesNotWrapErrNotFound(t *testing.T) {
+	dir := t.TempDir()
+	err := removeIn(dir, "../etc")
+	if errors.Is(err, ErrNotFound) {
+		t.Errorf("an invalid id should not wrap ErrNotFound: %v", err)
 	}
 }
 

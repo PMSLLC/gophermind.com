@@ -3,6 +3,7 @@ package session
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,13 @@ import (
 
 	"gophermind/gophermind-lib/llm"
 )
+
+// ErrNotFound marks "the session does not exist", as opposed to some other
+// failure to act on it (disk I/O, permissions). Callers that need to map a
+// session operation's error to an HTTP status (e.g. serve.sessionDeleteHandler)
+// use errors.Is against this rather than matching error text, since a real
+// failure must not be reported as a 404.
+var ErrNotFound = errors.New("session not found")
 
 // titleMax caps how many runes of the first user message are shown as a title.
 const titleMax = 60
@@ -140,7 +148,7 @@ func removeIn(dir, id string) error {
 	}
 	path := filepath.Join(dir, id+".jsonl")
 	if _, err := os.Stat(path); err != nil {
-		return fmt.Errorf("session %q not found", id)
+		return fmt.Errorf("session %q not found: %w", id, ErrNotFound)
 	}
 	// Best-effort: drop the sidecar name so a reused id does not inherit it.
 	_ = os.Remove(filepath.Join(dir, id+".name"))
