@@ -30,9 +30,28 @@ package main
 // track.
 static NSStatusItem *gStatusItem;
 
-static inline void statusItemCreate(const char *title) {
+// statusItemCreate prefers the gopher glyph at iconPath, loaded as an AppKit
+// "template image" so the system recolors it for light/dark menu bars and
+// the highlighted state -- the same reason every built-in menu-bar icon
+// (Wi-Fi, battery, ...) works correctly in both appearances. Falls back to
+// a plain text title when iconPath is empty or fails to load (e.g. a dev
+// build run before the icon was bundled/copied next to the binary -- see
+// findMenubarIcon), so a missing asset degrades to something usable rather
+// than an invisible status item.
+static inline void statusItemCreate(const char *title, const char *iconPath) {
 	gStatusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
-	gStatusItem.button.title = [NSString stringWithUTF8String:title];
+
+	NSImage *icon = nil;
+	if (iconPath != NULL && iconPath[0] != '\0') {
+		icon = [[NSImage alloc] initWithContentsOfFile:[NSString stringWithUTF8String:iconPath]];
+	}
+	if (icon != nil) {
+		icon.size = NSMakeSize(18, 18);
+		icon.template = YES;
+		gStatusItem.button.image = icon;
+	} else {
+		gStatusItem.button.title = [NSString stringWithUTF8String:title];
+	}
 	gStatusItem.menu = [[NSMenu alloc] init];
 }
 
@@ -73,6 +92,8 @@ static inline uintptr_t statusItemNSApp(void) {
 import "C"
 
 import (
+	"os"
+	"path/filepath"
 	"unsafe"
 
 	appui "gophermind/gophermind-osx/ui"
@@ -99,7 +120,9 @@ type statusItem struct {
 func newStatusItem(backends *appui.BackendListState, window *C.uiWindow) *statusItem {
 	title := C.CString("gophermind")
 	defer C.free(unsafe.Pointer(title))
-	C.statusItemCreate(title)
+	iconPath := C.CString(findMenubarIcon())
+	defer C.free(unsafe.Pointer(iconPath))
+	C.statusItemCreate(title, iconPath)
 
 	si := &statusItem{backends: backends, window: window}
 	backends.OnChange(si.refresh)
@@ -134,4 +157,37 @@ func addAction(target C.uintptr_t, label, selector string) {
 	cSel := C.CString(selector)
 	defer C.free(unsafe.Pointer(cSel))
 	C.statusItemAddActionItem(cLabel, target, cSel)
+}
+
+// findMenubarIcon locates the status-bar glyph (design/gopher-menubar-icon.svg,
+// rasterized to menubar-icon.png), same search order and same bundle-vs-dev-
+// layout reasoning as findExamplesDir/findServerBinary: GOPHERMIND_MENUBAR_ICON
+// override, then the .app bundle's Resources directory (build-app.sh copies
+// menubar-icon.png there, sibling to gophermind-server -- see that script's
+// own copy step), then the bare dev-checkout path relative to the current
+// directory. Returns "" (not an error) when not found: statusItemCreate
+// already degrades to a plain text title, so there's nothing for a caller to
+// react to.
+func findMenubarIcon() string {
+	if p := os.Getenv("GOPHERMIND_MENUBAR_ICON"); p != "" {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	exe, err := os.Executable()
+	if err == nil {
+		dir := filepath.Dir(exe)
+		for _, candidate := range []string{
+			filepath.Join(dir, "menubar-icon.png"),
+			filepath.Join(dir, "..", "Resources", "menubar-icon.png"),
+		} {
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate
+			}
+		}
+	}
+	if _, err := os.Stat("menubar-icon.png"); err == nil {
+		return "menubar-icon.png"
+	}
+	return ""
 }

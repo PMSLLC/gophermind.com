@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="GopherMind">
+  <title>GopherMind</title>
+  <!--
+    Menu bar status item glyph: a minimal gopher-head silhouette (round ears,
+    rounded head, two buck teeth), deliberately not the detailed gopher-it-logo
+    mark, since at an 18pt render size that art's eyes/nose detail would just
+    be noise. Solid black on transparent, single shape family, no strokes or
+    secondary colors: this is loaded as an AppKit "template image" (see
+    statusitem.go), which recolors every opaque pixel for light/dark menu bars
+    and the highlighted state, and ignores any color info beyond alpha.
+  -->
+  <g fill="#000000">
+    <circle cx="27" cy="22" r="13"/>
+    <circle cx="73" cy="22" r="13"/>
+    <rect x="14" y="16" width="72" height="60" rx="30"/>
+    <rect x="39" y="70" width="9" height="16" rx="3"/>
+    <rect x="52" y="70" width="9" height="16" rx="3"/>
+  </g>
+</svg>

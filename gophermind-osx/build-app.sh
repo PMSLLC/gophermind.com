@@ -65,6 +65,14 @@ if [ ! -f iconfile.icns ]; then
 fi
 cp iconfile.icns "${RES_DIR}/iconfile.icns"
 
+# --- Bundle the menu-bar status item glyph (findMenubarIcon in statusitem.go
+# looks for it here, sibling to gophermind-server) ---
+if [ ! -f menubar-icon.png ]; then
+    echo "ERROR: menubar-icon.png not found in $(pwd)" >&2
+    exit 1
+fi
+cp menubar-icon.png "${RES_DIR}/menubar-icon.png"
+
 # --- Info.plist ---
 cat > "${APP_DIR}/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -137,6 +145,7 @@ echo "Verifying bundle..."
 [ -f "${RES_DIR}/gophermind-server" ] || { echo "ERROR: server binary missing" >&2; exit 1; }
 [ -d "${RES_DIR}/examples/briefs" ] || { echo "ERROR: example briefs missing" >&2; exit 1; }
 [ -f "${RES_DIR}/iconfile.icns" ] || { echo "ERROR: icon missing" >&2; exit 1; }
+[ -f "${RES_DIR}/menubar-icon.png" ] || { echo "ERROR: menubar icon missing" >&2; exit 1; }
 [ -f "${APP_DIR}/Contents/Info.plist" ] || { echo "ERROR: Info.plist missing" >&2; exit 1; }
 plutil -lint "${APP_DIR}/Contents/Info.plist" > /dev/null || { echo "ERROR: Info.plist is malformed" >&2; exit 1; }
 echo "Bundle OK."
