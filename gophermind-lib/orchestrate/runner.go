@@ -32,6 +32,15 @@ type Runner struct {
 	maxIter     int
 	approve     safety.ApprovalFunc
 	audit       *safety.AuditLog
+	events      func(TaskEvent)
+}
+
+// TaskEvent is one agent.Event from a task's run, tagged with the task's ID
+// so a caller streaming several tasks concurrently (a wave) can tell whose
+// activity is whose.
+type TaskEvent struct {
+	TaskID string
+	agent.Event
 }
 
 // Option configures a Runner.
@@ -48,6 +57,32 @@ func WithApproval(fn safety.ApprovalFunc) Option {
 // unattended runs leave the same verifiable chain as interactive ones.
 func WithAuditLog(al *safety.AuditLog) Option {
 	return func(r *Runner) { r.audit = al }
+}
+
+// WithEvents streams each task agent's tool_call/tool_result events to fn,
+// tagged with the task's ID -- the live tool activity a wave's concurrent
+// tasks would otherwise only report after the fact, in Run's final
+// status/detail once the whole task has finished.
+func WithEvents(fn func(TaskEvent)) Option {
+	return func(r *Runner) { r.events = fn }
+}
+
+// taskEventForwarder tags each of a task's agent.Events with taskID and hands
+// it to sink, filtered to tool_call/tool_result. Every other type ("token"
+// fires per streamed character, "assistant"/"usage" duplicate what Run's own
+// final status/detail already reports) would flood a shared transcript when
+// several tasks in a wave are running at once. A nil sink is a safe no-op, so
+// callers with no WithEvents configured pay nothing extra.
+func taskEventForwarder(taskID string, sink func(TaskEvent)) func(agent.Event) {
+	return func(e agent.Event) {
+		if sink == nil {
+			return
+		}
+		switch e.Type {
+		case "tool_call", "tool_result":
+			sink(TaskEvent{TaskID: taskID, Event: e})
+		}
+	}
 }
 
 // NewRunner builds a Runner. client and reg are shared across tasks (each
@@ -74,7 +109,7 @@ func NewRunner(client *llm.Client, reg *tools.Registry, root, speedModel, strong
 // a.approve = safety.Auto, which would silently discard the policy stack passed
 // to agent.New. The mode string is only used for display and the config wizard
 // (see agent.Snapshot), neither of which applies to an ephemeral task agent.
-func (r *Runner) newTaskAgent(model, system string, maxIter int) *agent.Agent {
+func (r *Runner) newTaskAgent(taskID, model, system string, maxIter int) *agent.Agent {
 	approve := r.approve
 	if approve == nil {
 		approve = safety.Auto
@@ -85,7 +120,7 @@ func (r *Runner) newTaskAgent(model, system string, maxIter int) *agent.Agent {
 	// request against a model a sibling had chosen. The attempt history still
 	// named the model the task asked for, making it a record of intentions
 	// rather than of what actually ran.
-	ag := agent.New(r.client.CloneForModel(model), r.reg, maxIter, approve, nil)
+	ag := agent.New(r.client.CloneForModel(model), r.reg, maxIter, approve, taskEventForwarder(taskID, r.events))
 	ag.SetSystemPrompt(system)
 	if r.audit != nil {
 		ag.SetAuditLog(r.audit)
@@ -119,7 +154,7 @@ func (r *Runner) Run(ctx context.Context, t phaseflow.Task) (status, detail stri
 	model := resolveModel(t.Model, r.speedModel, r.strongModel)
 	system, user := buildTaskPromptsWithContext(t, body, r.root)
 
-	ag := r.newTaskAgent(model, system, r.maxIter)
+	ag := r.newTaskAgent(t.ID, model, system, r.maxIter)
 
 	verify := func(ctx context.Context, task, answer string) (bool, string, error) {
 		ok, feedback := ag.Verify(ctx, task, answer)

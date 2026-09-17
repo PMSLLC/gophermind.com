@@ -8,6 +8,7 @@ import (
 
 	"gophermind/gophermind-lib/agent"
 	"gophermind/gophermind-lib/llm"
+	"gophermind/gophermind-lib/orchestrate"
 	"gophermind/gophermind-lib/phaseflow"
 	"gophermind/gophermind-lib/safety"
 	"gophermind/gophermind-lib/tools"
@@ -245,6 +246,59 @@ func TestRenderExecSummaryCountsContractFlagged(t *testing.T) {
 	plain := renderExecSummary(phaseflow.RunSummary{Done: 3, Corrected: 1})
 	if strings.Contains(plain, "contract") {
 		t.Errorf("summary added noise to an ordinary run: %q", plain)
+	}
+}
+
+// TestRenderExecEventToolCallShowsTaskAndName is the deferred follow-up from
+// feat/project-execute (#3): a task's tool activity was invisible until it
+// finished. renderExecEvent must prefix the interactive session's own
+// tool-call rendering with the task ID, so a wave's concurrent tasks are
+// distinguishable in the shared transcript.
+func TestRenderExecEventToolCallShowsTaskAndName(t *testing.T) {
+	got := renderExecEvent(orchestrate.TaskEvent{
+		TaskID: "02-01",
+		Event:  agent.Event{Type: "tool_call", Name: "read_file", Text: `{"path":"x.txt"}`},
+	})
+	if !strings.Contains(got, "02-01") {
+		t.Errorf("missing task ID: %q", got)
+	}
+	if !strings.Contains(got, "read_file") {
+		t.Errorf("missing tool name: %q", got)
+	}
+}
+
+// TestRenderExecEventToolResultShowsTask verifies the result side is also
+// tagged with its task.
+func TestRenderExecEventToolResultShowsTask(t *testing.T) {
+	got := renderExecEvent(orchestrate.TaskEvent{
+		TaskID: "02-02",
+		Event:  agent.Event{Type: "tool_result", Text: "file contents"},
+	})
+	if !strings.Contains(got, "02-02") {
+		t.Errorf("missing task ID: %q", got)
+	}
+	if !strings.Contains(got, "file contents") {
+		t.Errorf("missing result text: %q", got)
+	}
+}
+
+// TestExecEventMsgAppendsToTranscript verifies Update wires execEventMsg
+// through to the transcript rather than silently discarding it, which is
+// exactly what happened before this feature existed (Runner.newTaskAgent's
+// onEvent was hardcoded nil).
+func TestExecEventMsgAppendsToTranscript(t *testing.T) {
+	m := testModel(t)
+	m2, _ := m.Update(execEventMsg(orchestrate.TaskEvent{
+		TaskID: "03-01",
+		Event:  agent.Event{Type: "tool_call", Name: "run_shell", Text: `{"cmd":"go test"}`},
+	}))
+	mm := m2.(model)
+
+	if !strings.Contains(mm.content, "03-01") {
+		t.Errorf("transcript missing task ID: %q", mm.content)
+	}
+	if !strings.Contains(mm.content, "run_shell") {
+		t.Errorf("transcript missing tool name: %q", mm.content)
 	}
 }
 

@@ -30,7 +30,7 @@ func TestConcurrentTaskAgentsDoNotShareAModel(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			ag := r.newTaskAgent(models[i], "sys", 1)
+			ag := r.newTaskAgent("01-01", models[i], "sys", 1)
 			// Whatever this agent reports as its model must be the one it was
 			// built with, no matter what its siblings did.
 			got[i] = ag.LLM().Model

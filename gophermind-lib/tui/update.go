@@ -14,6 +14,7 @@ import (
 	"github.com/jbrahy/bubblecomplete"
 	"gophermind/gophermind-lib/agent"
 	"gophermind/gophermind-lib/freellm"
+	"gophermind/gophermind-lib/orchestrate"
 	"gophermind/gophermind-lib/phaseflow"
 )
 
@@ -139,6 +140,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.afterProjectTurn(msg.answer)
 		}
 		return m, tea.Batch(m.beginAttention(), waitFor(m.sub))
+
+	case execEventMsg:
+		m.appendLine(renderExecEvent(orchestrate.TaskEvent(msg)))
+		m.sync()
+		return m, waitFor(m.sub)
 
 	case execProgressMsg:
 		m.appendLine(renderExecOutcome(phaseflow.TaskOutcome(msg)))

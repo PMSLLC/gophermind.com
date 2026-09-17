@@ -20,6 +20,11 @@ import (
 // goroutine to Update, so it can be appended to the transcript as it happens.
 type execProgressMsg phaseflow.TaskOutcome
 
+// execEventMsg carries one in-flight task's tool_call/tool_result event
+// (see orchestrate.WithEvents) so live tool activity streams to the
+// transcript as it happens, not just each task's terminal outcome.
+type execEventMsg orchestrate.TaskEvent
+
 // execDoneMsg carries the final run summary once every pending task has been
 // processed (or the run was cancelled and stopped early).
 type execDoneMsg struct{ summary phaseflow.RunSummary }
@@ -74,7 +79,8 @@ func (m model) handleProjectExecuteCommand() (model, tea.Cmd) {
 	// the composed policy stack with a non-blocking fallback is the harness's
 	// job (see WithApproval).
 	taskRunner := orchestrate.NewRunner(m.agent.LLM(), m.agent.Registry(), root, m.speedModel, m.model, m.agent.MaxIter(),
-		orchestrate.WithAuditLog(m.agent.AuditLog()))
+		orchestrate.WithAuditLog(m.agent.AuditLog()),
+		orchestrate.WithEvents(func(e orchestrate.TaskEvent) { m.sub <- execEventMsg(e) }))
 
 	// Wrap in a FallbackRunner so a task whose first candidate model fails
 	// still gets a shot at the next one instead of the whole task failing
@@ -127,6 +133,21 @@ func (m model) handleProjectExecuteCommand() (model, tea.Cmd) {
 	}()
 	m.sync()
 	return m, nil
+}
+
+// renderExecEvent formats one task's live tool_call/tool_result event,
+// prefixed with its task ID -- reusing the interactive session's own
+// tool-call/result rendering, just tagged with which of a wave's concurrent
+// tasks it came from.
+func renderExecEvent(e orchestrate.TaskEvent) string {
+	prefix := e.TaskID + "  "
+	switch e.Type {
+	case "tool_call":
+		return prefix + renderToolCall(e.Name, e.Text)
+	case "tool_result":
+		return prefix + renderToolResult(e.Text)
+	}
+	return ""
 }
 
 // renderExecOutcome formats one finished task's line for the transcript, e.g.
