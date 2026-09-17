@@ -20,6 +20,12 @@ import (
 // Toggle Dark Mode). Both are properties of being a real windowed app on
 // this platform, not something gophermind-osx implements.
 func main() {
+	// One-time move of any local state from before it was consolidated
+	// under gophermind-lib/config.Dir() (~/.gophermind) -- see
+	// localstate.go. Must run before anything below reads window state,
+	// panel state, cache/history settings, or the backend list.
+	migrateLegacyOSXState()
+
 	app, err := NewApp(DefaultTitle, DefaultWidth, DefaultHeight)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "gophermind-osx:", err)
@@ -130,6 +136,24 @@ func main() {
 		}
 	} else {
 		chat.Transcript.AddSystem("Connected to local gophermind-server.")
+	}
+
+	// Reconnect every other configured backend restored from
+	// backends.json/the Keychain (see chatinput.go's NewChatWindow) --
+	// persisting settings across restarts should also restore the
+	// connections those settings describe, not just an inert profile
+	// list the user would have to manually reconnect by hand every
+	// launch. "local" is excluded: it already connected unconditionally
+	// above and is never itself persisted (see main.go's own Backends.Add
+	// call for it, versus settingspanel.go's doAddBackend/doRemoveBackend,
+	// which are the only paths that write backends.json).
+	for _, p := range chat.Backends.Profiles() {
+		if p.Name == "local" {
+			continue
+		}
+		if err := chat.settingsUI.connectFunc(context.Background(), p); err != nil {
+			chat.Transcript.AddSystem(fmt.Sprintf("Could not reconnect backend %q: %s", p.Name, err))
+		}
 	}
 
 	app.Show()

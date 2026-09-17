@@ -163,6 +163,14 @@ type settingsPanel struct {
 	cacheHistory     appui.CacheHistorySettings
 	saveCacheHistory func(appui.CacheHistorySettings)
 
+	// saveBackends/saveBackendToken persist the backend list across
+	// restarts (backendstore.go) -- injected, like every other *Func field
+	// here, so this file and its tests never hard-code a dependency on
+	// real disk/Keychain access (see settingspanel_test.go's doAddBackend/
+	// doRemoveBackend tests, which pass nil and must not touch either).
+	saveBackends     func([]appui.BackendProfile)
+	saveBackendToken func(name, token string)
+
 	connectFunc      ConnectBackendFunc
 	disconnectFunc   DisconnectBackendFunc
 	patchModelFunc   PatchModelSettingsFunc
@@ -216,13 +224,14 @@ var (
 // newSettingsPanel builds the gear button; the settings window itself is
 // built lazily on first click (doOpen), since it needs the current
 // snapshot of backends/model settings to populate its fields.
-func newSettingsPanel(parent *C.uiWindow, backends *appui.BackendListState, model *appui.ModelPickerState, cacheHistory appui.CacheHistorySettings, saveCacheHistory func(appui.CacheHistorySettings), connectFunc ConnectBackendFunc, disconnectFunc DisconnectBackendFunc, patchModelFunc PatchModelSettingsFunc, skillsListFunc SkillsListFunc, setSkillFunc SetSkillEnabledFunc, addSourceFunc AddSkillSourceFunc, removeSourceFunc RemoveSkillSourceFunc, setModeFunc SetEndpointModeFunc) *settingsPanel {
+func newSettingsPanel(parent *C.uiWindow, backends *appui.BackendListState, model *appui.ModelPickerState, cacheHistory appui.CacheHistorySettings, saveCacheHistory func(appui.CacheHistorySettings), connectFunc ConnectBackendFunc, disconnectFunc DisconnectBackendFunc, patchModelFunc PatchModelSettingsFunc, skillsListFunc SkillsListFunc, setSkillFunc SetSkillEnabledFunc, addSourceFunc AddSkillSourceFunc, removeSourceFunc RemoveSkillSourceFunc, setModeFunc SetEndpointModeFunc, saveBackends func([]appui.BackendProfile), saveBackendToken func(name, token string)) *settingsPanel {
 	sp := &settingsPanel{
 		parent: parent, backends: backends, model: model,
 		cacheHistory: cacheHistory, saveCacheHistory: saveCacheHistory,
 		connectFunc: connectFunc, disconnectFunc: disconnectFunc, patchModelFunc: patchModelFunc,
 		skillsListFunc: skillsListFunc, setSkillFunc: setSkillFunc,
 		addSourceFunc: addSourceFunc, removeSourceFunc: removeSourceFunc, setModeFunc: setModeFunc,
+		saveBackends: saveBackends, saveBackendToken: saveBackendToken,
 	}
 	sp.gearButton = newCButton("Settings")
 
@@ -594,6 +603,20 @@ func (sp *settingsPanel) doAddBackend() {
 		return
 	}
 	sp.backends.Add(appui.BackendProfile{Name: name, Mode: mode, ServerURL: url, GocloakRealm: realm, Token: token})
+	// Persisted immediately, not just held in memory (backendstore.go):
+	// non-secret metadata to backends.json, the bearer token separately to
+	// the Keychain (never the JSON file -- see that file's top doc
+	// comment), so this backend survives an app restart, upgrade, or
+	// reinstall. Both injected (nil in tests), same as saveCacheHistory
+	// above -- never call the package-level saveBackendProfiles/
+	// saveBackendToken directly from here, or every test that exercises
+	// this method starts touching the real disk and Keychain.
+	if sp.saveBackends != nil {
+		sp.saveBackends(sp.backends.Profiles())
+	}
+	if sp.saveBackendToken != nil {
+		sp.saveBackendToken(name, token)
+	}
 	sp.refreshBackends()
 	sp.selectBackend(name)
 }
@@ -667,6 +690,17 @@ func (sp *settingsPanel) doRemoveBackend() {
 		return
 	}
 	sp.backends.Remove(name)
+	// Mirror the removal into persisted state too -- otherwise a removed
+	// backend would silently reappear on the next launch, restored from a
+	// backends.json that never heard about the removal, and its bearer
+	// token would linger in the Keychain indefinitely. Injected, same
+	// nil-in-tests reasoning as doAddBackend above.
+	if sp.saveBackends != nil {
+		sp.saveBackends(sp.backends.Profiles())
+	}
+	if sp.saveBackendToken != nil {
+		sp.saveBackendToken(name, "")
+	}
 	sp.refreshBackends()
 }
 

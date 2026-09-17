@@ -70,7 +70,7 @@ func TestSettingsPanel_AddConnectDisconnectRemoveBackend(t *testing.T) {
 		disconnectFn := func(name string) { disconnected = name }
 
 		sp := newSettingsPanel(app.window, backends, model, appui.DefaultCacheHistorySettings(), nil,
-			connectFn, disconnectFn, nil, nil, nil, nil, nil, nil)
+			connectFn, disconnectFn, nil, nil, nil, nil, nil, nil, nil, nil)
 		attachControlForTest(app.window, sp.GearControl())
 		sp.doOpen()
 		defer sp.destroyForTest()
@@ -129,7 +129,7 @@ func TestSettingsPanel_ApplyModelSettingsWithNilPatchFuncDoesNotPanic(t *testing
 
 		model := appui.NewModelPickerState(nil, modelcat.Settings{})
 		sp := newSettingsPanel(app.window, appui.NewBackendListState(), model, appui.DefaultCacheHistorySettings(), nil,
-			nil, nil, nil, nil, nil, nil, nil, nil)
+			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 		attachControlForTest(app.window, sp.GearControl())
 		sp.doOpen()
 		defer sp.destroyForTest()
@@ -150,7 +150,7 @@ func TestSettingsPanel_SkillsErrorFromListDoesNotPanic(t *testing.T) {
 			return nil, nil, errors.New("boom")
 		}
 		sp := newSettingsPanel(app.window, appui.NewBackendListState(), model, appui.DefaultCacheHistorySettings(), nil,
-			nil, nil, nil, listFn, nil, nil, nil, nil)
+			nil, nil, nil, listFn, nil, nil, nil, nil, nil, nil)
 		attachControlForTest(app.window, sp.GearControl())
 		sp.doOpen() // refreshSkills sees the error: must not panic
 		defer sp.destroyForTest()
@@ -169,7 +169,7 @@ func TestSettingsPanel_SaveCacheHistoryCallsInjectedSave(t *testing.T) {
 		saveFn := func(s appui.CacheHistorySettings) { saved = s }
 		model := appui.NewModelPickerState(nil, modelcat.Settings{})
 		sp := newSettingsPanel(app.window, appui.NewBackendListState(), model, appui.DefaultCacheHistorySettings(), saveFn,
-			nil, nil, nil, nil, nil, nil, nil, nil)
+			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 		attachControlForTest(app.window, sp.GearControl())
 		sp.doOpen()
 		defer sp.destroyForTest()

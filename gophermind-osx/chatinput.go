@@ -245,11 +245,18 @@ func NewChatWindow(app *App, sendTurn func(text string)) *ChatWindow {
 
 	// Same nil-injected-funcs precedent as the other sections: no live
 	// connection/server calls exist yet for backends, model-settings
-	// persistence, skills, or endpoint switching.
+	// persistence, skills, or endpoint switching. Persisted profiles are
+	// restored here (backendstore.go), non-secret metadata from
+	// backends.json plus each one's bearer token from the Keychain --
+	// actually reconnecting them is main.go's job, once connectFunc exists.
 	backendState := appui.NewBackendListState()
+	for _, p := range loadBackendProfiles() {
+		p.Token = loadBackendToken(p.Name)
+		backendState.Add(p)
+	}
 	cacheHistory := loadCacheHistorySettings()
 	settingsUI := newSettingsPanel(app.window, backendState, modelState, cacheHistory, saveCacheHistorySettings,
-		nil, nil, nil, nil, nil, nil, nil, nil)
+		nil, nil, nil, nil, nil, nil, nil, nil, saveBackendProfiles, saveBackendToken)
 
 	// left is the chat column: the panel's toggle button, the Copy button
 	// (copies the transcript to the clipboard), and the settings gear

@@ -103,6 +103,24 @@ const keychainService = "com.gophermind.gophermind-osx"
 // keychainStore is the real, macOS-Keychain-backed TokenStore.
 type keychainStore struct{}
 
+// NewKeychainStore returns the real, macOS-Keychain-backed TokenStore,
+// exported so callers outside this package can use it directly -- both
+// for NewManager's OAuth token storage and, keyed via BackendTokenKey,
+// for a configured backend's plain bearer token. Before this existed,
+// keychainStore{} could only be constructed from within this package
+// (NewManager's own doc comment says to "pass keychainStore{} for real
+// use," which no external caller could actually do).
+func NewKeychainStore() TokenStore { return keychainStore{} }
+
+// BackendTokenKey namespaces a configured backend's plain bearer token
+// distinctly from its OAuth Token blob in the same TokenStore: Manager's
+// own Save/Load key by the bare backend name, so storing a bearer token
+// under that same key would silently collide with (and could overwrite,
+// or be overwritten by) that backend's OAuth tokens.
+func BackendTokenKey(name string) string {
+	return "bearer:" + name
+}
+
 // errSecSuccess/errSecItemNotFound are OSStatus values from
 // <Security/SecBase.h>, duplicated here (rather than referenced via cgo,
 // which is straightforward for the C side but awkward to compare a C.OSStatus

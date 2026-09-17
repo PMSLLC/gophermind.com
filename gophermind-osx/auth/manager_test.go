@@ -53,6 +53,44 @@ func (s *memStore) Delete(backend string) error {
 	return nil
 }
 
+// TestNewKeychainStore_ReturnsRealStore covers NewKeychainStore's whole
+// job: handing back a usable TokenStore to callers outside this package
+// (gophermind-osx's main package, for a configured backend's bearer
+// token) without them needing to name the unexported keychainStore type
+// themselves. Deliberately does not call Save/Load/Delete on it --
+// keychainStore{}'s real behavior is already covered by
+// TestKeychain_RealStoreRoundTrip, and touching the real Keychain here
+// too would just be a second, redundant risk of the interactive-prompt
+// hang that test's own doc comment warns about.
+func TestNewKeychainStore_ReturnsRealStore(t *testing.T) {
+	store := NewKeychainStore()
+	if store == nil {
+		t.Fatal("NewKeychainStore() = nil")
+	}
+	if _, ok := store.(keychainStore); !ok {
+		t.Errorf("NewKeychainStore() returned %T, want keychainStore", store)
+	}
+}
+
+// TestBackendTokenKey_DiffersFromBareName covers why BackendTokenKey
+// exists at all: Manager's own Save/Load key a backend's OAuth Token blob
+// by the bare backend name, so a bearer token stored under that same key
+// would silently collide with (and could be overwritten by) that
+// backend's OAuth tokens in the same TokenStore.
+func TestBackendTokenKey_DiffersFromBareName(t *testing.T) {
+	if got := BackendTokenKey("local"); got == "local" {
+		t.Errorf("BackendTokenKey(%q) = %q, must differ from the bare backend name", "local", got)
+	}
+}
+
+// TestBackendTokenKey_DistinctPerBackend covers the ordinary case: two
+// different backends must not collide with each other either.
+func TestBackendTokenKey_DistinctPerBackend(t *testing.T) {
+	if BackendTokenKey("a") == BackendTokenKey("b") {
+		t.Error("BackendTokenKey(\"a\") == BackendTokenKey(\"b\"), want distinct keys per backend")
+	}
+}
+
 // TestKeychain_RealStoreRoundTrip covers "Keychain: tokens stored per
 // backend, retrievable, deletable" against the REAL macOS Keychain (every
 // other test in this file uses memStore -- see its doc comment for why).
