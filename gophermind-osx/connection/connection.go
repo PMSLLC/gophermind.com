@@ -3,6 +3,7 @@ package connection
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -101,6 +102,30 @@ func (c *Connection) connectOnce(ctx context.Context) error {
 	}
 }
 
+// resolveLocalRoot returns the workspace root to pass to the spawned
+// gophermind-server as --root: configuredRoot unchanged if set, otherwise
+// userHomeDir()'s result. Never leaves the choice to the subprocess's own
+// inherited-cwd default (gophermind-server's --root falls back to
+// os.Getwd() when omitted) -- that cwd is whatever the GUI app's own
+// process happened to start with, which depends on how it was launched
+// (Finder/LaunchServices vs. a terminal) and was observed in practice to
+// end up as "/", letting a tool call reach
+// /Library/Application Support/com.apple.TCC. userHomeDir is injected
+// (normally os.UserHomeDir) so this is testable without depending on the
+// real environment's home directory. Returns "" if even that fails,
+// letting the caller omit --root rather than block starting the server
+// over a cosmetic default.
+func resolveLocalRoot(configuredRoot string, userHomeDir func() (string, error)) string {
+	if configuredRoot != "" {
+		return configuredRoot
+	}
+	home, err := userHomeDir()
+	if err != nil {
+		return ""
+	}
+	return home
+}
+
 func (c *Connection) connectLocal(ctx context.Context) error {
 	lc := c.cfg.Local
 	if lc.ServerBinaryPath == "" {
@@ -127,8 +152,8 @@ func (c *Connection) connectLocal(ctx context.Context) error {
 	// port (51820) and collide, breaking exactly the "manage N backends
 	// simultaneously" and repeated-reconnect cases this package exists for.
 	args := []string{"--port", fmt.Sprintf("%d", port), "--token", token, "--wg-interface", ""}
-	if lc.Root != "" {
-		args = append(args, "--root", lc.Root)
+	if root := resolveLocalRoot(lc.Root, os.UserHomeDir); root != "" {
+		args = append(args, "--root", root)
 	}
 	cmd := exec.Command(lc.ServerBinaryPath, args...)
 	if err := cmd.Start(); err != nil {

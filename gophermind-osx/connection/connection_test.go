@@ -198,6 +198,45 @@ func TestConnection_LocalMode_RandomTokenIsEnforced(t *testing.T) {
 	}
 }
 
+// TestResolveLocalRoot_UsesConfiguredRootWhenSet covers the common case:
+// an explicitly configured LocalConfig.Root always wins, regardless of
+// what the fallback would produce.
+func TestResolveLocalRoot_UsesConfiguredRootWhenSet(t *testing.T) {
+	got := resolveLocalRoot("/some/configured/root", func() (string, error) {
+		t.Fatal("userHomeDir should not be called when configuredRoot is set")
+		return "", nil
+	})
+	if got != "/some/configured/root" {
+		t.Errorf("resolveLocalRoot = %q, want the configured root unchanged", got)
+	}
+}
+
+// TestResolveLocalRoot_FallsBackToHomeDirWhenUnset covers the bug this
+// function exists to fix: an unset Root must never fall through to the
+// spawned gophermind-server subprocess's own inherited cwd default (which
+// depends on how the GUI app itself was launched -- observed in practice
+// to end up as "/", letting a tool call reach
+// /Library/Application Support/com.apple.TCC). It must resolve to a known,
+// safe location instead: the user's home directory.
+func TestResolveLocalRoot_FallsBackToHomeDirWhenUnset(t *testing.T) {
+	got := resolveLocalRoot("", func() (string, error) { return "/Users/test", nil })
+	if got != "/Users/test" {
+		t.Errorf("resolveLocalRoot(\"\") = %q, want the home directory", got)
+	}
+}
+
+// TestResolveLocalRoot_EmptyWhenHomeDirUnavailable covers the fallback's
+// own failure path: if even os.UserHomeDir() fails, resolveLocalRoot must
+// hand back "" (letting the caller omit --root) rather than propagating an
+// error that would block starting the server entirely over a cosmetic
+// default.
+func TestResolveLocalRoot_EmptyWhenHomeDirUnavailable(t *testing.T) {
+	got := resolveLocalRoot("", func() (string, error) { return "", fmt.Errorf("no home dir") })
+	if got != "" {
+		t.Errorf("resolveLocalRoot with a failing userHomeDir = %q, want empty", got)
+	}
+}
+
 // genKeypair generates a real Curve25519 keypair in WireGuard's format,
 // mirroring gophermind-server/wireguard_test.go's identical helper (not
 // importable across module/package boundaries, so duplicated here).
