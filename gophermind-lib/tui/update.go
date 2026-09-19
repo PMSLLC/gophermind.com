@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -81,15 +82,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case tokenMsg:
-		// An interview turn's reply is a JSON control message between gophermind
-		// and the model, not prose for the user: only the question parsed out of
-		// it is shown (see afterProjectTurn). Dropping the tokens here rather
-		// than at commit time keeps the partial JSON from flashing in the live
-		// view while it streams. The full reply still reaches the state machine
-		// via doneMsg.answer, which comes from the agent, not this buffer.
-		if m.suppressStream() {
-			return m, waitFor(m.sub)
-		}
 		m.stream += string(msg)
 		m.sync()
 		return m, waitFor(m.sub)
@@ -128,7 +120,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitFor(m.sub)
 
 	case doneMsg:
-		if s := strings.TrimSpace(m.stream); s != "" && !m.suppressStream() {
+		if s := strings.TrimSpace(m.stream); s != "" {
 			out := s
 			if m.render != nil {
 				if rendered, err := m.render.Render(s); err == nil {
@@ -141,12 +133,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.st = stateIdle
 		m.cancel = nil
 		m.sync()
-		// A /project turn is post-processed by its state machine (advance the
-		// interview, validate the plan, or move to review).
-		if m.projTurn {
-			m.projTurn = false
-			return m.afterProjectTurn(msg.answer)
-		}
 		return m, tea.Batch(m.beginAttention(), waitFor(m.sub))
 
 	case execEventMsg:
@@ -160,8 +146,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sync()
 		return m, waitFor(m.sub)
 
-	case questionsProgressMsg:
-		m.appendLine(string(msg))
+	case questionsProgressMsg, projectProgressMsg:
+		m.appendLine(fmt.Sprint(msg))
 		m.sync()
 		return m, waitFor(m.sub)
 
@@ -173,6 +159,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cancel = nil
 		m.sync()
 		return m, tea.Batch(m.beginAttention(), waitFor(m.sub))
+
+	case projectPassesDoneMsg:
+		return m.afterProjectPasses(msg)
 
 	case execDoneMsg:
 		m.appendLine(renderExecSummary(msg.summary))
@@ -202,10 +191,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stream = ""
 		m.st = stateIdle
 		m.cancel = nil
-		// A cancelled or failed pass ends the round with it, so the session
-		// is not left in a phase whose keys nothing handles.
+		// A cancelled or failed pass ends the round, and the /project flow
+		// with it, so the session is not left in a phase whose keys nothing
+		// handles. Both resume from the tree, so nothing written is lost.
 		if m.qphase == qRunning {
 			m.endRound()
+		}
+		if m.proj == projRunning {
+			m.proj = projNone
+			m.appendLine("project: the planning run stopped; /project " + m.projName + " resumes it from the tree")
 		}
 		m.sync()
 		return m, tea.Batch(m.beginAttention(), waitFor(m.sub))
@@ -404,13 +398,7 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 	// now empty, so a stale ghost/menu must not linger over it.
 	m.queryComplete()
 	if text == "" {
-		// During the interview an empty Enter accepts the prefilled answer.
-		// Everywhere else an empty submit stays a no-op.
-		if m.proj == projInterview && m.projSuggested != "" {
-			text = m.projSuggested
-		} else {
-			return m, nil
-		}
+		return m, nil
 	}
 
 	// While a guided /project flow is active, its state machine consumes input.
@@ -492,8 +480,9 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		return m.handleConfigCommand()
 	}
 
-	// "/project [name]" starts the guided new-project flow (interview → plan →
-	// approve). Subsequent input is consumed by the block above until it ends.
+	// "/project <name> <brief>" plans the brief into .planning/plan, asks its
+	// questions, then approves and exports. Subsequent input is consumed by
+	// the block above until the flow ends.
 	if strings.Fields(text)[0] == "/project" {
 		return m.handleProjectCommand(text)
 	}

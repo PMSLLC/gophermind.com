@@ -76,14 +76,6 @@ func (m model) handleOptimizeCommand(text string) model {
 	return m
 }
 
-// suppressStream reports whether the in-flight turn's streamed output should be
-// kept out of the transcript. True only for a /project interview turn, whose
-// reply is a JSON control message; every other turn -- ordinary chat and the
-// /project generation turn -- streams normally.
-func (m model) suppressStream() bool {
-	return m.projTurn && m.proj == projInterview
-}
-
 // handleSecAuditCommand implements "/secaudit [path]": a static-only security
 // scan over the given path (default the working directory), writing
 // SECURITY-AUDIT.md and printing a summary. It runs static-only so it returns

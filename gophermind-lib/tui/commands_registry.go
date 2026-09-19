@@ -6,9 +6,8 @@ package tui
 // commands. This registry is metadata only — dispatch logic in handleSubmit
 // is unaffected by it.
 //
-// "/generate" is intentionally excluded: it is a /project sub-mode, not a
-// top-level command (see project.go). "/phase" sub-commands have their own
-// help string, phaseSlashHelp (commands.go), which is not folded in here.
+// "/phase" sub-commands have their own help string, phaseSlashHelp
+// (commands.go), which is not folded in here.
 type slashCommand struct {
 	Name string
 	Arg  string
@@ -18,7 +17,7 @@ type slashCommand struct {
 var slashCommands = []slashCommand{
 	{Name: "/help", Arg: "", Desc: "show this help"},
 	{Name: "/clear", Arg: "", Desc: "clear the transcript and reset the session"},
-	{Name: "/project", Arg: "<name>", Desc: "start the guided new-project flow"},
+	{Name: "/project", Arg: "<name> <brief>", Desc: "plan a brief into phases, tasks and steps, then approve and export it"},
 	{Name: "/project-execute", Arg: "", Desc: "run every pending task in the approved plan autonomously"},
 	{Name: "/questions", Arg: "[change]", Desc: "answer the plan's open questions in one round (\"change\" revisits answered ones)"},
 	{Name: "/phase", Arg: "<cmd>", Desc: "run a PhaseFlow workflow command"},

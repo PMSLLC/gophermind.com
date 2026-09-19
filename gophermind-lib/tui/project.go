@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,39 +10,32 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"gophermind/gophermind-lib/llm"
 	"gophermind/gophermind-lib/phaseflow"
-	"gophermind/gophermind-lib/projectctx"
+	"gophermind/gophermind-lib/plantree"
+	"gophermind/gophermind-lib/plantree/plan"
 )
 
-// This file implements the `/project` guided new-project flow: a dialog-driven
-// state machine that scaffolds .planning/, interviews the user with the LLM to
-// build a comprehensive spec, generates a validated plan (ROADMAP + per-task
-// agent/model assignments), and requires approval before the project is marked
-// ready. See docs/superpowers/specs/2026-07-13-project-planning-design.md.
+// This file implements "/project <name> <brief>": read the brief file, build
+// the plan tree in .planning/plan with the two planning passes, ask the
+// questions the passes raised in the round question_round.go hosts, then
+// approve the plan and export it for /project-execute.
+//
+// It replaced the interview: the model no longer writes ROADMAP.md and
+// assignments.json itself, so there is nothing to interview it into writing.
+// See docs/superpowers/specs/2026-09-19-brief-workflow-design.md.
 
 // projPhase is the step of the /project flow the model is in.
 type projPhase int
 
 const (
-	projNone       projPhase = iota
-	projAwaitName            // waiting for the project name
-	projInterview            // interviewing: waiting for the user's answer
-	projGenerating           // an agent turn is drafting/validating the plan
-	projReview               // plan generated; waiting for approve/revise
+	projNone      projPhase = iota
+	projAwaitName           // waiting for "<name> <brief path>"
+	projRunning             // the planning passes are running
+	projApprove             // every step is specified; waiting for approve/revise/cancel
 )
 
-// specReadySentinel is what the interviewing agent emits when it has gathered
-// enough to write a comprehensive spec.
-const specReadySentinel = "[[SPEC-READY]]"
-
-// maxPlanRetries bounds how many times the agent is auto-asked to fix an
-// incomplete plan before the flow hands control back to the user.
-const maxPlanRetries = 3
-
-// isSpecReady reports whether the agent signaled it is ready to generate.
-func isSpecReady(s string) bool { return strings.Contains(s, specReadySentinel) }
-
-// projectApproval classifies a projReview input.
+// projectApproval classifies a projApprove input.
 type projectApproval int
 
 const (
@@ -50,8 +44,8 @@ const (
 	approvalRevise
 )
 
-// parseApproval interprets a projReview input as approve, cancel, or a revision
-// request (revise carries the requested change text).
+// parseApproval interprets an approval input as approve, cancel, or a
+// revision request (revise carries the requested change text).
 func parseApproval(text string) (kind projectApproval, revise string) {
 	switch strings.ToLower(strings.TrimSpace(text)) {
 	case "y", "yes", "approve", "approved", "ok", "lgtm":
@@ -65,318 +59,313 @@ func parseApproval(text string) (kind projectApproval, revise string) {
 	return approvalRevise, strings.TrimSpace(text)
 }
 
-// generationPrompt instructs the agent to write the plan files using the catalog.
-func generationPrompt(name string, catalog []phaseflow.CatalogAgent) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "Now WRITE the complete project plan for %q into the %s/ directory using your file tools:\n\n",
-		name, phaseflow.PlanningDirName)
-	b.WriteString("1. SPEC.md — a comprehensive spec: overview, goals, users, scope, non-goals, constraints, requirements, and measurable success criteria.\n")
-	b.WriteString("2. ROADMAP.md — phases and plans. Every phase needs a **Goal**, **Success Criteria**, and a Plans list; every plan id has the form NN-MM (e.g. 01-01). Use NO placeholder tokens — no [brackets], no TBD.\n")
-	b.WriteString("3. assignments.json — exactly one entry per ROADMAP plan id. JSON shape:\n")
-	b.WriteString("   {\"tasks\":[{\"id\":\"01-01\",\"phase\":\"1\",\"title\":\"...\",\"description\":\"...\",\"acceptance_criteria\":[\"...\"],\"agent\":\"<catalog name>\",\"agent_addendum\":\"task-specific guidance\",\"model\":\"speed|strong\",\"status\":\"pending\",\"depends_on\":[\"01-01\"],\"is_contract\":false}]}\n\n")
+// projectProgressMsg is one line from the planning goroutine.
+type projectProgressMsg string
 
-	// depends_on is what the executor schedules from. Without it every task
-	// lands in wave 0 and the whole plan runs one task at a time, however
-	// independent the work actually is.
-	b.WriteString("DEPENDENCIES. depends_on lists the ids of tasks that must finish before this one starts. It is how work is scheduled:\n")
-	b.WriteString("- Tasks that do not depend on each other run CONCURRENTLY. Two tasks touching the same file or the same interface DO depend on each other; say so.\n")
-	b.WriteString("- A dependency must name a task id in this same plan. A typo here fails the run, not the plan.\n")
-	b.WriteString("- No cycles, and nothing depends on itself.\n")
-	b.WriteString("- Omit depends_on, or leave it empty, for a task that can start immediately.\n")
-	b.WriteString("- Do NOT make every task depend on the previous one. A chain is the default only when the work really is sequential, and it throws away all the parallelism.\n\n")
-
-	// The contract step is what stops later tasks each inventing their own
-	// version of a shared interface.
-	b.WriteString("CONTRACT TASK. Mark exactly ONE task \"is_contract\": true, or none if the project genuinely has no shared interface.\n")
-	b.WriteString("It runs alone, before everything else, and its job is to pin what later tasks build against: the data model, the API shape, the core types, the schema. Every task that consumes that must list it in depends_on.\n")
-	b.WriteString("Give it no dependencies of its own. If you cannot name one thing the rest of the plan agrees on, leave is_contract off every task rather than guessing.\n\n")
-	b.WriteString("Agent catalog — assign each task the best-fit agent; the model defaults to the agent's but override to speed/strong when a task is unusually simple or hard:\n")
-	for _, a := range catalog {
-		fmt.Fprintf(&b, "- %s (default %s): %s\n", a.Name, a.DefaultModel, a.Description)
-	}
-	b.WriteString("\nEvery task MUST be test-driven: its description states the failing test to write FIRST, then the implementation that makes it pass. ")
-	b.WriteString("At least one acceptance criterion per task MUST name the test that proves it (e.g. \"test X fails before, passes after\").\n")
-	b.WriteString("\nEvery task MUST have at least one acceptance criterion, a catalog agent, a model, and status \"pending\". When done, give a one-line summary of the plan.")
-	return b.String()
+// projectPassesDoneMsg carries both finished passes and what the plan needs
+// next, read from the tree after they ran.
+type projectPassesDoneMsg struct {
+	res1    plan.Result
+	res2    plan.Result2
+	actions plantree.Actions
+	open    []plan.Question
 }
 
-// startTurn spawns an agent turn, marking whether it belongs to the /project
-// flow. The goroutine posts the result to m.sub, which the always-pending
-// waitFor delivers back to Update. It returns the updated model (state set to
-// working); callers issue the tea.Cmd.
-func (m model) startTurn(sendText string, project bool) model {
-	if m.agent == nil {
-		return m
+// briefExtensions are the suffixes that make a trailing token look like a
+// brief path even when no such file exists, so a typo is reported instead of
+// silently becoming part of the project name.
+var briefExtensions = []string{".md", ".markdown", ".txt", ".rst"}
+
+// looksLikeBriefPath reports whether a token was meant to be a file path.
+func looksLikeBriefPath(s string) bool {
+	if strings.ContainsRune(s, '/') || strings.ContainsRune(s, filepath.Separator) {
+		return true
 	}
-	m.st = stateWorking
-	m.projTurn = project
-	ctx, cancel := context.WithCancel(context.Background())
-	m.cancel = cancel
-	sub, ag := m.sub, m.agent
-	go func() {
-		ans, err := ag.Send(ctx, sendText)
-		if err != nil {
-			sub <- errMsg{err: err}
-		} else {
-			sub <- doneMsg{answer: ans}
+	lower := strings.ToLower(s)
+	for _, ext := range briefExtensions {
+		if strings.HasSuffix(lower, ext) {
+			return true
 		}
-	}()
-	m.sync()
-	return m
+	}
+	return false
 }
 
-// parseProjectCommand splits "/project [name] [brief-path]" into a name and
-// an optional brief path. A trailing token is only ever read as a brief path
-// when it is itself a real file AND a name still remains before it -- /project
-// always requires a name, so a lone token ("/project ./brief.md") is kept as
-// the (admittedly odd) name rather than read as a nameless brief. This means
-// a name that happens to end in an existing file's path is misread as
-// name+brief, but that collision needs an actual file at that exact relative
-// path to trigger, and is worth it for the ergonomics of not requiring a flag.
-func parseProjectCommand(text string) (name, briefPath string) {
+// parseProjectCommand splits "/project <name> <brief-path>" into a name and
+// the brief path. The last token is the brief when it is a real file; a lone
+// token is always the name, because /project requires one.
+//
+// A last token that was clearly meant to be a path (it has a separator or a
+// document extension) but is not a readable file is an error. It used to
+// become part of the project name, so a mistyped brief produced a project
+// named after the typo and an interview that had never read the brief.
+func parseProjectCommand(text string) (name, briefPath string, err error) {
 	fields := strings.Fields(text)
 	if len(fields) <= 1 {
-		return "", ""
+		return "", "", nil
 	}
 	rest := fields[1:]
-	if len(rest) >= 2 {
-		last := rest[len(rest)-1]
-		if info, err := os.Stat(last); err == nil && !info.IsDir() {
-			return strings.TrimSpace(strings.Join(rest[:len(rest)-1], " ")), last
-		}
+	if len(rest) < 2 {
+		return strings.TrimSpace(strings.Join(rest, " ")), "", nil
 	}
-	return strings.TrimSpace(strings.Join(rest, " ")), ""
+	last := rest[len(rest)-1]
+	switch info, statErr := os.Stat(last); {
+	case statErr == nil && !info.IsDir():
+		return strings.TrimSpace(strings.Join(rest[:len(rest)-1], " ")), last, nil
+	case statErr == nil:
+		return "", "", fmt.Errorf("the brief %q is a directory, not a file", last)
+	case looksLikeBriefPath(last):
+		return "", "", fmt.Errorf("no brief file at %q", last)
+	}
+	return strings.TrimSpace(strings.Join(rest, " ")), "", nil
 }
 
-// handleProjectCommand dispatches "/project [name] [brief-path]". With a name
-// it scaffolds and starts the interview (optionally seeded from the brief
-// file); without one it asks for the name.
+// handleProjectCommand dispatches "/project [name] [brief-path]".
 func (m model) handleProjectCommand(text string) (model, tea.Cmd) {
-	if m.agent == nil {
-		m.appendLine("project: no active session")
-		m.sync()
-		return m, nil
+	name, briefPath, err := parseProjectCommand(text)
+	if err != nil {
+		return m.projectError(err.Error())
 	}
-	name, briefPath := parseProjectCommand(text)
 	if name == "" {
 		m.proj = projAwaitName
-		m.appendLine(projectBannerStyle.Render("New project — what should it be called?"))
+		m.appendLine(projectBannerStyle.Render("New project. Type: <name> <path to the brief file>"))
+		m.appendLine("A name alone resumes a plan this directory already has.")
 		m.sync()
 		return m, nil
 	}
 	return m.startProject(name, briefPath)
 }
 
-// startProject scaffolds the project and kicks off the interview. When
-// briefPath is non-empty, its content seeds every interview turn (see
-// interviewStepPrompt) so the model asks about gaps in it instead of
-// starting from nothing.
+// startProject reads the brief, scaffolds .planning/ if this is a new
+// project, and starts the two planning passes. With no brief path it resumes
+// the plan already in .planning/plan, which is what makes /project safe to
+// re-run after an error or a cancel.
 func (m model) startProject(name, briefPath string) (model, tea.Cmd) {
 	root, err := os.Getwd()
 	if err != nil {
-		m.appendLine("project: " + err.Error())
-		m.proj = projNone
-		m.sync()
-		return m, nil
+		return m.projectError(err.Error())
 	}
-	var brief string
-	if briefPath != "" {
-		content, err := os.ReadFile(briefPath)
-		if err != nil {
-			m.appendLine("project: reading brief: " + err.Error())
-			m.proj = projNone
-			m.sync()
-			return m, nil
-		}
-		brief = string(content)
+	repo := plantree.Open(phaseflow.PlanningDir(root))
+	_, rootErr := repo.Get(plantree.RootID)
+	switch {
+	case rootErr == nil:
+	case errors.Is(rootErr, plantree.ErrNotFound):
+	default:
+		return m.projectError("the plan in " + repo.Dir() + " cannot be read: " + rootErr.Error())
 	}
+	existing := rootErr == nil
+
+	brief, err := briefFor(repo, briefPath, existing)
+	if err != nil {
+		return m.projectError(err.Error())
+	}
+
 	e := phaseflow.New(root)
 	if !e.Initialized() {
 		if err := e.Init(name); err != nil {
-			m.appendLine("project: " + err.Error())
-			m.proj = projNone
-			m.sync()
-			return m, nil
+			return m.projectError(err.Error())
 		}
 	}
-	if _, err := phaseflow.SeedCatalog(root); err != nil {
-		m.appendLine("project: seed catalog: " + err.Error())
-	}
 	m.projName = name
-	m.projBrief = brief
-	m.projRetries = 0
-	m.projTranscript = interviewTranscript{}
-	m.projPendingQ = ""
-	m.projSuggested = ""
-	m.projParseRetry = false
-	m.projCtx = projectctx.Gather(root)
-	if m.projCtx != "" {
-		m.appendLine("Read .planning/, .remember/ and .superpowers/ — answers may come prefilled; press Enter to accept one.")
+	m.projBriefPath = briefPath
+	if existing {
+		m.appendLine(projectBannerStyle.Render("Resuming the plan for “" + name + "” in " + repo.Dir()))
+	} else {
+		m.appendLine(projectBannerStyle.Render("Planning “" + name + "” from " + briefPath))
 	}
-	m.appendLine(projectBannerStyle.Render("Scoping “" + name + "” — one question at a time; type /generate to stop early."))
-	m.proj = projInterview
+	return m.startPlanning(repo, name, brief)
+}
+
+// briefFor returns the brief text to plan from: the file the owner named, or
+// the one the existing run stored. Reading the stored brief is what makes a
+// resume identical to the run it resumes, which is what RunPass1's cursor
+// requires.
+func briefFor(repo *plantree.Repo, briefPath string, existing bool) (string, error) {
+	if briefPath == "" {
+		if !existing {
+			return "", errors.New("give a brief file: /project <name> <path to the brief>")
+		}
+		stored, err := plan.ReadBrief(repo)
+		if err != nil {
+			return "", fmt.Errorf("reading the stored brief: %w", err)
+		}
+		if strings.TrimSpace(stored) == "" {
+			return "", errors.New("this plan has no stored brief; pass the brief file again")
+		}
+		return stored, nil
+	}
+	b, err := os.ReadFile(briefPath)
+	if err != nil {
+		return "", fmt.Errorf("reading the brief: %w", err)
+	}
+	if strings.TrimSpace(string(b)) == "" {
+		return "", fmt.Errorf("the brief %s is empty", briefPath)
+	}
+	if !existing {
+		return string(b), nil
+	}
+	// A resume must re-supply an identical brief: the pass-1 cursor is only
+	// valid against the same chunk boundaries. Saying so here is clearer than
+	// letting RunPass1 refuse after the run has apparently started.
+	stored, err := plan.ReadBrief(repo)
+	if err == nil && strings.TrimSpace(stored) != "" && stored != string(b) {
+		return "", errors.New("a plan already exists here and was built from a different brief; run /project <name> with no brief to resume it, or remove " + repo.Dir() + " to start over")
+	}
+	return string(b), nil
+}
+
+// startPlanning runs both passes on a goroutine, under the plan's run lock so
+// a second session cannot run passes over the same tree, and posts progress
+// and the result back through m.sub. It is cancellable the same way an agent
+// turn is (Esc or Ctrl-C), and both passes resume from the tree, so a
+// cancelled run loses nothing already written.
+func (m model) startPlanning(repo *plantree.Repo, name, brief string) (model, tea.Cmd) {
+	c := m.planCompleter()
+	if c == nil {
+		return m.projectError("no active session, so nothing can be planned")
+	}
+	var client *llm.Client
+	if m.agent != nil {
+		client = m.agent.LLM()
+	}
+	m.proj = projRunning
+	m.st = stateWorking
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancel = cancel
+	sub := m.sub
+	go func() {
+		// The result is sent after runPasses has returned, so the run lock it
+		// holds is already free when the session reacts: a resume typed the
+		// moment the transcript says the run stopped finds nothing held.
+		sub <- runPasses(ctx, repo, c, client, name, brief, sub)
+	}()
 	m.sync()
-	return m.startTurn(interviewStepPrompt(name, m.projTranscript, m.projCtx, m.projBrief), true), nil
+	return m, nil
+}
+
+// runPasses is the planning run itself: take the plan's run lock, size the
+// passes for the model's context window, run pass 1 then pass 2, and report
+// what the tree needs next. Progress goes to sub as it happens; the return
+// value is the run's one terminal message.
+//
+// Both passes take the same run lock, which is re-entrant within a process,
+// so the nesting is not a deadlock. Both also resume from the tree, so a
+// cancelled or failed run loses nothing already written and /project with
+// the same name continues it.
+func runPasses(ctx context.Context, repo *plantree.Repo, c plan.Completer, client *llm.Client, name, brief string, sub chan tea.Msg) tea.Msg {
+	unlock, err := plan.AcquireRun(repo)
+	if err != nil {
+		return errMsg{err: err}
+	}
+	defer unlock()
+
+	window := 0
+	if client != nil {
+		window = client.ProbeCapabilities(ctx).ContextWindow
+	}
+	opt, opt2 := plan.SizesFor(window)
+	opt.ProjectName = name
+	sub <- projectProgressMsg(planningSizesLine(window, opt, opt2))
+
+	res1, err := plan.RunPass1(ctx, repo, brief, c, opt)
+	if err != nil {
+		return errMsg{err: err}
+	}
+	sub <- projectProgressMsg(renderPass1Result(res1))
+
+	waiting, err := plan.NeedsReplan(repo)
+	if err != nil {
+		return errMsg{err: err}
+	}
+	opt2.Reconcile = waiting > 0
+	res2, err := plan.RunPass2(ctx, repo, c, opt2)
+	if err != nil {
+		return errMsg{err: err}
+	}
+	actions, err := plan.NextActions(repo)
+	if err != nil {
+		return errMsg{err: err}
+	}
+	open, err := plan.OpenQuestions(repo)
+	if err != nil {
+		return errMsg{err: err}
+	}
+	return projectPassesDoneMsg{res1: res1, res2: res2, actions: actions, open: open}
+}
+
+// planningSizesLine says what the passes were sized for, so an overflow is
+// diagnosable from the transcript rather than only from the server's error.
+func planningSizesLine(window int, o plan.Options, o2 plan.Options2) string {
+	where := fmt.Sprintf("a %d token context window", window)
+	if window <= 0 {
+		where = "an unknown context window, so the safe defaults"
+	}
+	o, o2 = o.WithDefaults(), o2.WithDefaults()
+	return fmt.Sprintf("reading the brief: %s, %d byte chunks, %d byte excerpts, %d step(s) per pass",
+		where, o.ChunkBytes, o2.BriefBytes, o2.StepsPerPass)
+}
+
+// renderPass1Result is the transcript line for a finished skeleton pass.
+func renderPass1Result(r plan.Result) string {
+	line := fmt.Sprintf("skeleton: %d phase(s), %d task(s), %d step(s) from %d of %d brief part(s)",
+		r.Created.Phases, r.Created.Tasks, r.Created.Steps, r.Processed, r.Chunks)
+	if r.Questions > 0 {
+		line += fmt.Sprintf(", %d question(s) raised", r.Questions)
+	}
+	return line + "; specifying every step now"
 }
 
 // handleProjectInput routes an input line while a /project flow is active.
-// Returns handled=false when the flow is not active so the caller proceeds
-// normally.
+// It reports handled=false when the flow is not active, so the caller
+// proceeds normally.
 func (m model) handleProjectInput(text string) (model, tea.Cmd, bool) {
 	switch m.proj {
 	case projAwaitName:
-		nm, _ := m.startProject(strings.TrimSpace(text), "")
-		return nm, nil, true
-
-	case projInterview:
-		m.appendLine(renderUserPrompt(text))
-		if strings.EqualFold(strings.TrimSpace(text), "/generate") {
-			return m.beginGeneration(""), nil, true
+		m.proj = projNone
+		name, briefPath, err := parseProjectCommand("/project " + strings.TrimSpace(text))
+		if err != nil {
+			nm, cmd := m.projectError(err.Error())
+			return nm, cmd, true
 		}
-		// Pair the answer with the question it answers, then ask for the next
-		// one. The transcript — not the LLM's context — is the record.
-		if q := m.projPendingQ; q != "" {
-			m.projTranscript.add(q, strings.TrimSpace(text))
-			m.projPendingQ = ""
-			m.projSuggested = ""
+		if name == "" {
+			nm, cmd := m.projectError("a project needs a name")
+			return nm, cmd, true
 		}
-		m.projParseRetry = false
-		return m.startTurn(interviewStepPrompt(m.projName, m.projTranscript, m.projCtx, m.projBrief), true), nil, true
+		nm, cmd := m.startProject(name, briefPath)
+		return nm, cmd, true
 
-	case projGenerating:
-		m.appendLine("(still working on the plan…)")
+	case projRunning:
+		m.appendLine("(still planning; Esc stops it, and /project " + m.projName + " resumes)")
 		m.sync()
 		return m, nil, true
-
-	case projReview:
-		return m.handleProjectReview(text)
 	}
 	return m, nil, false
 }
 
-// beginGeneration starts a plan-generation turn. revise, when non-empty, is a
-// requested change appended to the instruction.
-func (m model) beginGeneration(revise string) model {
-	root, _ := os.Getwd()
-	catalog, _, _ := phaseflow.LoadCatalog(root)
-	prompt := generationPrompt(m.projName, catalog)
-	if m.projTranscript.count() > 0 {
-		prompt += "\n\nThe interview that scoped this project:\n\n" + m.projTranscript.String()
+// afterProjectPasses acts on a finished pair of planning passes: it reports
+// what they did, then either enters the question round or says what the plan
+// still needs. Task 6 replaces the second half of that with the approval
+// prompt.
+func (m model) afterProjectPasses(msg projectPassesDoneMsg) (tea.Model, tea.Cmd) {
+	m.appendLine(renderQuestionsResult(msg.res2))
+	m.st = stateIdle
+	m.cancel = nil
+	m.proj = projNone
+	if len(msg.open) > 0 {
+		m.appendLine(fmt.Sprintf("%d question(s) need an answer before this plan can be approved.", len(msg.open)))
+		nm, cmd := m.handleQuestionsCommand("/questions")
+		return nm, tea.Batch(cmd, m.beginAttention(), waitFor(m.sub))
 	}
-	if revise != "" {
-		prompt += "\n\nRevision requested: " + revise
-	}
-	m.proj = projGenerating
-	m.appendLine(projectBannerStyle.Render("Generating the plan…"))
+	m.appendLine(renderNextActions(msg.actions))
 	m.sync()
-	return m.startTurn(prompt, true)
+	return m, tea.Batch(m.beginAttention(), waitFor(m.sub))
 }
 
-// handleProjectReview processes an approve/revise/cancel input in projReview.
-func (m model) handleProjectReview(text string) (model, tea.Cmd, bool) {
-	root, _ := os.Getwd()
-	e := phaseflow.New(root)
-	kind, revise := parseApproval(text)
-	switch kind {
-	case approvalApprove:
-		if err := e.Approve(); err != nil {
-			m.appendLine("project: approve: " + err.Error())
-		} else {
-			if err := writeProjectDoc(root, m.projName); err != nil {
-				m.appendLine("project: PROJECT.md: " + err.Error())
-			} else {
-				m.appendLine("Spec and phases written to " + phaseflow.ProjectDocName)
-			}
-			m.appendLine(projectDoneStyle.Render("✓ Project approved — you can now /phase plan 1 or /phase execute 1"))
-		}
-		m.proj = projNone
-		m.sync()
-		return m, nil, true
-	case approvalCancel:
-		m.appendLine("Project setup cancelled (not approved).")
-		m.proj = projNone
-		m.sync()
-		return m, nil, true
-	default: // revise
-		m.appendLine(renderUserPrompt(text))
-		m.projRetries = 0
-		return m.beginGeneration(revise), nil, true
-	}
-}
-
-// afterProjectTurn post-processes a completed /project agent turn. It advances
-// the interview, validates a generated plan (auto-fixing up to maxPlanRetries),
-// or moves to review. It always re-arms the sub listener.
-func (m model) afterProjectTurn(answer string) (tea.Model, tea.Cmd) {
-	switch m.proj {
-	case projInterview:
-		step, err := parseInterviewStep(answer)
-		if err != nil {
-			// One reparse retry, then fall back to the raw reply rather than
-			// dead-ending the flow on a model that will not emit JSON.
-			if !m.projParseRetry {
-				m.projParseRetry = true
-				m.appendLine("(reformatting the question…)")
-				m.sync()
-				return m.startTurn(interviewStepPrompt(m.projName, m.projTranscript, m.projCtx, m.projBrief), true), waitFor(m.sub)
-			}
-			m.projParseRetry = false
-			m.projPendingQ = strings.TrimSpace(answer)
-			// The streamed reply is suppressed for interview turns, so the raw
-			// text has to be surfaced here or the user is asked to answer
-			// something they cannot see.
-			m.appendLine(strings.TrimSpace(answer))
-			m.appendLine("(could not parse a single question; answer as best you can)")
-			m.sync()
-			return m, waitFor(m.sub)
-		}
-		m.projParseRetry = false
-		if step.Done || isSpecReady(answer) {
-			return m.beginGeneration(""), waitFor(m.sub)
-		}
-		m.projPendingQ = step.Question
-		m.projSuggested = step.Suggested
-		m.appendLine(projectQuestionStyle.Render("Q" + fmt.Sprint(m.projTranscript.count()+1) + ": " + step.Question))
-		if step.Suggested != "" {
-			m.appendLine("   suggested: " + step.Suggested)
-			m.appendLine("   (press Enter to accept, or type your own answer)")
-		}
-		m.sync()
-		return m, waitFor(m.sub)
-
-	case projGenerating:
-		root, _ := os.Getwd()
-		rep, err := phaseflow.New(root).ValidatePlan()
-		if err != nil {
-			m.appendLine("project: validate: " + err.Error())
-			m.proj = projReview // let the user decide
-			m.sync()
-			return m, waitFor(m.sub)
-		}
-		if rep.Complete {
-			m.appendLine(projectBannerStyle.Render(fmt.Sprintf(
-				"Plan ready: %d phases, %d tasks. Approve? (y to approve, or type changes / \"cancel\")",
-				rep.Phases, rep.Tasks)))
-			m.proj = projReview
-			m.sync()
-			return m, waitFor(m.sub)
-		}
-		// Incomplete — auto-ask the agent to fix, bounded.
-		if m.projRetries < maxPlanRetries {
-			m.projRetries++
-			m.appendLine("Plan incomplete — fixing:\n  - " + strings.Join(rep.Issues, "\n  - "))
-			fix := "The plan is incomplete. Fix these issues, then rewrite the affected files:\n- " +
-				strings.Join(rep.Issues, "\n- ")
-			m.sync()
-			return m.startTurn(fix, true), waitFor(m.sub)
-		}
-		m.appendLine("Plan still incomplete after retries:\n  - " + strings.Join(rep.Issues, "\n  - ") +
-			"\nType changes to try again, or \"cancel\".")
-		m.proj = projReview
-		m.sync()
-		return m, waitFor(m.sub)
-	}
-	return m, waitFor(m.sub)
+// projectError reports a refusal and leaves the flow.
+func (m model) projectError(detail string) (model, tea.Cmd) {
+	m.appendLine("project: " + detail)
+	m.proj = projNone
+	m.sync()
+	return m, nil
 }
 
 var (
@@ -384,10 +373,6 @@ var (
 				Foreground(lipgloss.AdaptiveColor{Light: "#7C3AED", Dark: "#A78BFA"})
 	projectDoneStyle = lipgloss.NewStyle().Bold(true).
 				Foreground(lipgloss.AdaptiveColor{Light: "#059669", Dark: "#34D399"})
-	// The single interview question, styled so it stands out from the agent's
-	// other output — it is the one thing the user must respond to.
-	projectQuestionStyle = lipgloss.NewStyle().Bold(true).
-				Foreground(lipgloss.AdaptiveColor{Light: "#0E7490", Dark: "#5AA6BC"})
 	projectDialogStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.AdaptiveColor{Light: "#7C3AED", Dark: "#A78BFA"}).
@@ -398,30 +383,11 @@ var (
 func projectDialogText(p projPhase, name string) string {
 	switch p {
 	case projAwaitName:
-		return "🆕 New project · type a name"
-	case projInterview:
-		return "🆕 " + name + " · interview · answer above, or /generate when ready"
-	case projGenerating:
-		return "🆕 " + name + " · generating the plan…"
-	case projReview:
-		return "🆕 " + name + " · review · y to approve · type changes · cancel"
+		return "new project · type a name and the path to its brief"
+	case projRunning:
+		return name + " · planning · esc or ctrl-c to stop, /project " + name + " resumes"
+	case projApprove:
+		return name + " · review · y to approve · revise · cancel"
 	}
 	return ""
-}
-
-// writeProjectDoc renders the approved plan into PROJECT.md's managed block so
-// the agent has one root file holding the spec and every phase. The overview is
-// taken from the generated SPEC.md when present.
-func writeProjectDoc(root, name string) error {
-	a, _, err := phaseflow.LoadAssignments(root)
-	if err != nil {
-		return err
-	}
-	// The overview is best-effort: a missing SPEC.md still yields a PROJECT.md
-	// with the phase table, which is the part the executor needs.
-	var overview string
-	if b, err := os.ReadFile(filepath.Join(phaseflow.PlanningDir(root), "SPEC.md")); err == nil {
-		overview = string(b)
-	}
-	return phaseflow.UpsertProjectDoc(root, phaseflow.RenderProjectDocBody(name, overview, &a))
 }

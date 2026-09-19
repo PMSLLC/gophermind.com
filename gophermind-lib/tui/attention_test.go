@@ -126,16 +126,15 @@ func TestStreamingDoesNotInvert(t *testing.T) {
 	}
 }
 
-// TestProjectTurnDoesNotInvert: an interview turn completing hands straight
-// back to the state machine, which starts the next turn without the user.
-func TestProjectTurnDoesNotInvert(t *testing.T) {
+// TestPlanningProgressDoesNotInvert: a progress line from the planning run
+// is not the run asking for anything, so it must not call the user back.
+func TestPlanningProgressDoesNotInvert(t *testing.T) {
 	colorful(t)
 	m := sizedModel(t, 80, 24)
 	m.st = stateWorking
-	m.projTurn = true
-	m.proj = projInterview
-	u, _ := m.Update(doneMsg{answer: "{}"})
+	m.proj = projRunning
+	u, _ := m.Update(projectProgressMsg("specifying the steps"))
 	if inverted(u.(model)) {
-		t.Error("a /project turn inverted the screen mid-flow")
+		t.Error("a planning progress line inverted the screen mid-flow")
 	}
 }

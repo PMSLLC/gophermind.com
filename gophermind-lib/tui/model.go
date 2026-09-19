@@ -100,28 +100,14 @@ type model struct {
 	pending approvalMsg // valid when st == stateApproval
 	cancel  context.CancelFunc
 
-	// /project setup state machine (see project.go). proj is projNone unless a
-	// guided new-project flow is active; projTurn marks that the in-flight agent
-	// turn belongs to that flow so its completion is post-processed specially.
-	proj     projPhase
-	projName string
-	// projBrief is the content of an optional brief file passed to /project
-	// (e.g. "/project Widget ./brief.md"); empty when none was given. Replayed
-	// into every interview prompt alongside projCtx.
-	projBrief string
-	// Structured interview state: the accumulated Q/A record, the question
-	// currently awaiting an answer, and whether a reparse has already been
-	// spent on a model that did not return JSON.
-	projTranscript interviewTranscript
-	projPendingQ   string
-	// projSuggested is the model's prefilled answer for projPendingQ, offered
-	// as an editable default; projCtx is the repository digest replayed into
-	// every interview prompt.
-	projSuggested  string
-	projCtx        string
-	projParseRetry bool
-	projRetries    int
-	projTurn       bool
+	// /project state machine (see project.go and approve.go). proj is projNone
+	// unless the flow is active: it names the project being planned and, while
+	// a brief was given on the command line, where that brief came from. The
+	// plan itself lives on disk in .planning/plan, so nothing about it is held
+	// here and a cancelled flow loses nothing.
+	proj          projPhase
+	projName      string
+	projBriefPath string
 
 	// Question round state (see questions.go and question_round.go). qphase is
 	// qNone unless the round is showing or its pass is running; round holds
