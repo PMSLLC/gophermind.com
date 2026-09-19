@@ -30,6 +30,11 @@ type Options2 struct {
 	// layout) shown to every pass, cut to FactsCapBytes. If empty, RunPass2
 	// reads the facts stored with WriteFacts, if any.
 	Facts string
+	// Reconcile also re-specifies the steps a changed answer flagged (stage
+	// needs_reconciliation), showing each its previous specification and the
+	// decision that changed. It is off by default so an ordinary resume never
+	// silently redoes work that has already been paid for.
+	Reconcile bool
 }
 
 // Result2 summarizes one RunPass2 call.
@@ -54,6 +59,11 @@ type Result2 struct {
 	// EmptyTasks counts tasks that have no steps at all; pass 2 cannot specify
 	// them, and NextActions keeps offering decompose for them.
 	EmptyTasks int
+	// Reconciled counts steps that were waiting to be re-planned (stage
+	// needs_reconciliation) and were specified again by this call. It is
+	// always zero unless Options2.Reconcile is set. Such a step is counted in
+	// Steps as well.
+	Reconciled int
 }
 
 // taskWork is one task with the steps still waiting for a specification.
@@ -61,7 +71,8 @@ type taskWork struct {
 	phase   plantree.Node
 	task    plantree.Node
 	steps   []plantree.Node // every step of the task
-	pending []plantree.Node // steps that need a specification
+	pending []plantree.Node // steps that need a first specification
+	redo    []plantree.Node // steps to specify again (needs_reconciliation)
 }
 
 // onHold reports whether a step is parked in a status that stops work on it.
@@ -97,10 +108,20 @@ func needsSpec(s plantree.Node) bool {
 	return s.Planning.Stage == plantree.StageSkeleton || s.Planning.Stage == plantree.StageInspected
 }
 
+// needsRespec reports whether a step carries a specification that a changed
+// answer invalidated, so a reconciling pass must write it again. Holding and
+// releasing ignore such a step: it already has a specification, so it is not
+// waiting for one, and it blocks approval on its own (NextActions offers
+// reconcile for it).
+func needsRespec(s plantree.Node) bool {
+	return !onHold(s) && s.Planning.Stage == plantree.StageNeedsReconciliation
+}
+
 // pendingWork lists, in tree order, every task that has a step needing a
 // specification. It is derived from the tree alone, so a resumed run finds
-// exactly what is left.
-func pendingWork(repo *plantree.Repo) ([]taskWork, error) {
+// exactly what is left. With reconcile set it also collects the steps a
+// changed answer flagged for re-planning.
+func pendingWork(repo *plantree.Repo, reconcile bool) ([]taskWork, error) {
 	var out []taskWork
 	var phase plantree.Node
 	err := repo.Walk(func(n plantree.Node) error {
@@ -112,14 +133,17 @@ func pendingWork(repo *plantree.Repo) ([]taskWork, error) {
 			if err != nil {
 				return err
 			}
-			var pending []plantree.Node
+			var pending, redo []plantree.Node
 			for _, s := range steps {
-				if needsSpec(s) {
+				switch {
+				case needsSpec(s):
 					pending = append(pending, s)
+				case reconcile && needsRespec(s):
+					redo = append(redo, s)
 				}
 			}
-			if len(pending) > 0 {
-				out = append(out, taskWork{phase: phase, task: n, steps: steps, pending: pending})
+			if len(pending)+len(redo) > 0 {
+				out = append(out, taskWork{phase: phase, task: n, steps: steps, pending: pending, redo: redo})
 			}
 		}
 		return nil
@@ -180,7 +204,7 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return Result2{}, err
 	}
-	work, err := pendingWork(repo)
+	work, err := pendingWork(repo, opt.Reconcile)
 	if err != nil {
 		return Result2{}, err
 	}
@@ -198,15 +222,15 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 		ids := append([]string{w.task.ID}, idsOf(w.steps)...)
 		excerpts := Excerpts(chunks, prov.chunksFor(ids), opt.BriefBytes)
 		decisions := decisionsFor(allQuestions, append([]string{w.phase.ID}, ids...))
-		for start := 0; start < len(w.pending); start += opt.StepsPerPass {
+		// Batches are never mixed: a batch of steps being re-planned is
+		// smaller and carries each step's previous specification, so keeping
+		// the two apart is what keeps the prompt inside its budget.
+		redo := setOf(idsOf(w.redo))
+		batches := append(batchesOf(w.pending, opt.StepsPerPass), batchesOf(w.redo, reconcileStepsPerPass)...)
+		for _, batch := range batches {
 			if err := ctx.Err(); err != nil {
 				return res, err
 			}
-			end := start + opt.StepsPerPass
-			if end > len(w.pending) {
-				end = len(w.pending)
-			}
-			batch := w.pending[start:end]
 			batchIDs := idsOf(batch)
 			var live []plantree.Node
 			for _, s := range w.steps {
@@ -231,18 +255,23 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 			if err != nil {
 				return res, taskError(w.task.ID, err)
 			}
-			if err := applySpecs(repo, out); err != nil {
+			if err := applySpecs(repo, out, redo); err != nil {
 				return res, taskError(w.task.ID, err)
 			}
 			markSpecified(w.steps, out)
 			markAsked(w.steps, out)
 			res.Steps += len(out.Steps)
+			for _, s := range out.Steps {
+				if redo[s.ID] {
+					res.Reconciled++
+				}
+			}
 			for _, s := range batch {
 				cur, err := repo.Get(s.ID)
 				if err != nil {
 					return res, taskError(w.task.ID, err)
 				}
-				if needsSpec(cur) {
+				if needsSpec(cur) || (opt.Reconcile && needsRespec(cur)) {
 					res.Unspecified++
 				}
 			}
@@ -250,6 +279,22 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 		res.Tasks++
 	}
 	return res, nil
+}
+
+// batchesOf cuts steps into consecutive batches of at most size, in order.
+func batchesOf(steps []plantree.Node, size int) [][]plantree.Node {
+	if size < 1 {
+		size = 1
+	}
+	var out [][]plantree.Node
+	for start := 0; start < len(steps); start += size {
+		end := start + size
+		if end > len(steps) {
+			end = len(steps)
+		}
+		out = append(out, steps[start:end])
+	}
+	return out
 }
 
 func taskError(taskID string, err error) error {
@@ -262,14 +307,21 @@ func taskError(taskID string, err error) error {
 
 // applySpecs writes each step's specification and moves it to the drafted
 // stage. Update rejects a step whose specification is incomplete, so nothing
-// half-specified reaches the tree.
-func applySpecs(repo *plantree.Repo, out Pass2Output) error {
+// half-specified reaches the tree. A step in redo is being specified again
+// after a decision changed: its resume note is replaced with a summary of the
+// specification this one overwrites, so what it used to say is not simply
+// lost.
+func applySpecs(repo *plantree.Repo, out Pass2Output, redo map[string]bool) error {
 	for _, s := range out.Steps {
 		cur, err := repo.Get(s.ID)
 		if err != nil {
 			return err
 		}
 		spec := s
+		note := ""
+		if redo[s.ID] {
+			note = respecNote(cur.Work)
+		}
 		if _, err := repo.Update(s.ID, cur.NodeRevision, func(n *plantree.Node) error {
 			n.Work = &plantree.Work{
 				Description:        spec.Description,
@@ -279,12 +331,26 @@ func applySpecs(repo *plantree.Repo, out Pass2Output) error {
 			}
 			n.DependsOn = spec.DependsOn
 			n.Planning.Stage = plantree.StageDrafted
+			if note != "" {
+				n.ResumeNote = note
+			}
 			return nil
 		}); err != nil {
 			return fmt.Errorf("writing the specification of %s: %w", s.ID, err)
 		}
 	}
 	return nil
+}
+
+// respecNote summarizes the specification a re-planned step is losing. It
+// replaces the note the changed answer left, which the prompt for this pass
+// has already shown the model, and only the most recent replacement is kept,
+// so the note cannot grow.
+func respecNote(old *plantree.Work) string {
+	if old == nil || strings.TrimSpace(old.Description) == "" {
+		return "re-planned after the owner changed a decision"
+	}
+	return cutBytes("re-planned; the previous specification was: "+oneLine(old.Description), reconcileNoteBytes)
 }
 
 // EmptyTasks returns, in tree order, the ids of every task that has no steps.

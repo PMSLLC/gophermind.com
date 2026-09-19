@@ -15,13 +15,28 @@ import (
 var stepIDRE = regexp.MustCompile(`phase-\d{3}\.task-\d{3}\.step-\d{3}`)
 
 // stepsToSpecify returns the step ids listed under "Steps to specify now".
+// Only the "- <id>: ..." lines count: a re-planned step is followed by
+// indented lines quoting its previous specification, which mention its id
+// again without asking for it.
 func stepsToSpecify(prompt string) []string {
 	start := strings.Index(prompt, "Steps to specify now:")
 	end := strings.Index(prompt, "Brief excerpts")
 	if start < 0 || end < start {
 		return nil
 	}
-	return stepIDRE.FindAllString(prompt[start:end], -1)
+	// An end-to-end test passes the JSON request body, where the prompt's
+	// newlines are escaped, so both forms are split here.
+	region := strings.ReplaceAll(prompt[start:end], `\n`, "\n")
+	var out []string
+	for _, line := range strings.Split(region, "\n") {
+		if !strings.HasPrefix(line, "- ") {
+			continue
+		}
+		if id := stepIDRE.FindString(line); id != "" {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // pass2Reply answers a pass-2 prompt with a valid specification for every step

@@ -11,6 +11,15 @@ import (
 const (
 	defaultStepsPerPass = 6
 	defaultBriefBytes   = 4000
+	// reconcileStepsPerPass is the batch size when steps are being re-planned.
+	// It is smaller than defaultStepsPerPass because each such step also
+	// carries its previous specification and the reason it is being redone,
+	// which keeps the worst-case prompt no larger than an ordinary one.
+	reconcileStepsPerPass = 3
+	// priorWorkBytes bounds the previous description shown for a re-planned
+	// step, and reconcileNoteShownBytes the reason shown with it.
+	priorWorkBytes          = 500
+	reconcileNoteShownBytes = 200
 )
 
 // decisionsCapBytes bounds the decisions block of a prompt: maxDecisions lines
@@ -35,6 +44,8 @@ func stepTag(s plantree.Node) string {
 		return "specified"
 	case s.Planning.Stage == plantree.StageAwaitingAnswers:
 		return "waiting for an answer"
+	case s.Planning.Stage == plantree.StageNeedsReconciliation:
+		return "specified, being re-planned"
 	}
 	return "to specify"
 }
@@ -106,8 +117,21 @@ func Pass2Prompt(in Pass2Input) string {
 	b.WriteString("\nAll steps of this task, in order. A step may depend only on an EARLIER step in this list:\n")
 	b.WriteString(stepList(siblings))
 	b.WriteString("\nSteps to specify now:\n")
+	replanning := false
 	for _, s := range batch {
 		fmt.Fprintf(&b, "- %s: %s. Why: %s\n", s.ID, fit(s.Title, 200), fit(s.ContextDigest, 500))
+		if s.Planning.Stage != plantree.StageNeedsReconciliation {
+			continue
+		}
+		replanning = true
+		if s.Work != nil {
+			if prev := fit(s.Work.Description, priorWorkBytes); prev != "" {
+				fmt.Fprintf(&b, "  previous specification: %s\n", prev)
+			}
+		}
+		if why := fit(s.ResumeNote, reconcileNoteShownBytes); why != "" {
+			fmt.Fprintf(&b, "  being re-planned because: %s\n", why)
+		}
 	}
 	b.WriteString("\nBrief excerpts that produced this task (context only, may be partial):\n")
 	if strings.TrimSpace(in.Excerpts) == "" {
@@ -126,6 +150,9 @@ func Pass2Prompt(in Pass2Input) string {
 	b.WriteString("- target_paths: at most 20 paths of at most 300 characters each. test_command: at most 20 arguments of at most 200 characters each.\n")
 	b.WriteString("- In every array, never put an empty string.\n")
 	b.WriteString("- Do not depend on a step marked on hold or waiting for an answer.\n")
+	if replanning {
+		b.WriteString("- A step shown with a previous specification is being re-planned because the owner changed a decision. Write it afresh so it follows the decisions above; keep only what still holds, and do not repeat the old specification out of habit.\n")
+	}
 	b.WriteString("- If you cannot specify a step because something is unknown that only the project owner can decide, do not guess: leave that step out of \"steps\" and ask a question whose \"affects\" lists its id (affects are ids of steps under \"Steps to specify now\", never empty). At most 5 questions, each with 2 to 8 options (or none for a free-text question) and \"recommended\" (option labels) if you have one. Never ask what the decisions above or the brief already answer.\n")
 	b.WriteString("- Do not invent scope the task does not need. Do not call tools. Reply with ONE JSON object and nothing else, in this shape:\n")
 	b.WriteString(`{"steps":[{"id":"<step id>","description":"<what to build>","target_paths":["<path/to/file>"],"acceptance_criteria":["<a check a reviewer can verify>"],"test_command":["<command>","<arg>"],"depends_on":[]}],"questions":[]}`)
