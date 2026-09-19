@@ -143,3 +143,33 @@ Worst-case prompt is about 24 KB (roughly 6k to 8k tokens with the default caps:
 5. Brief text sits between literal `<<<BRIEF PART` markers; harden against a brief that contains the closing marker before accepting an untrusted argument.
 6. Smaller items: CRLF blank lines are not paragraph breaks in `cutPoint`, section text is built with `+=` (quadratic for a huge heading-free section), `ensureChild` re-reads every sibling per node, `Result.Created` undercounts a chunk that fails after a partial merge.
 7. Still open from M1: `Summarize` derives only `reviewed` or `untouched`, there is no node removal (a skipped step blocks approval forever), and `lockfile.WriteAtomic` does not fsync the directory.
+
+## M3 outcome (landed on `main`, 2026-09-19)
+
+Package `gophermind-lib/plantree/plan`, ten commits: `5ba3cd4`, `4765b9b`, `134c549`, `36529ad`, `e486737`, `53e326c`, `fc69768` (the seven tasks) and `5988ec4`, `fa5275e`, `3b7cca5` (final-review fixes). Tests, race run (short), gofmt, vet and the whole-module build are clean. `RunPass2(ctx, repo, completer, opts)` writes the work specification (description, target paths, acceptance criteria, test command, dependencies) of every step that lacks one: one fresh-context pass per batch of at most 6 steps of one task, in tree order. It keeps no cursor (the work list is the steps still at stage skeleton or inspected and not on hold), so calling it again after any error continues with what is left, and a step reaches stage drafted only when its whole reply is valid. Pass 1 now records which brief chunk produced each node in `_state/provenance.json`, so a task's pass sees only the brief text that gave rise to it. An end-to-end test drives pass 1 then pass 2 through the real `ClientCompleter` over HTTP and ends with `NextActions` offering only approval.
+
+Worst-case pass-2 prompt with the defaults: 25,553 bytes (ASCII) and 25,658 (4-byte runes), pinned below 26,000 by tests; safe on a 32k window and not on an 8k one. Resolved from the M2 carry-forward list: `ReadBrief` and `BriefChunks`, node-to-chunk provenance, the shared `askJSON`, candidate-based JSON extraction (`parseFirst`, longest candidate's error), and the pass-2 validator guaranteeing a work description and an acceptance criterion before `Update`.
+
+### Carry-forward decisions for M4 to M6
+
+**M4 (questions)**
+1. **First item: a bounded "project facts" block in the pass-2 prompt** (language, build and test commands, file layout), from `Options2` or probed once and cached in `_state/`. Nothing tells the model what the repository is, so every `test_command` and `target_paths` is currently a guess. This is the largest product risk after M3.
+2. The shared helpers (`askJSON`, `parseFirst`, `candidates`, `clip`, `oneLine`) are package-private: put the questions pass in `plan`, or move them to a shared internal package, or M4 will re-implement them.
+3. `Pass1Output` and `Pass2Output` reject unknown fields, so adding `questions` to a reply and its prompt must ship in one commit, and the prompt's byte budget must be re-measured (the test threshold has about 450 bytes of headroom).
+4. No code moves a step out of `StageAwaitingAnswers`; whoever applies answers owns that transition (back to inspected, or to needs_reconciliation).
+5. Provenance is unreadable outside the package; export something like `ExcerptsFor(repo, ids, budget)` for "show the brief behind this question".
+6. Smaller items: widen the pass-2 end-to-end fixture to two steps per task and assert excerpt isolation for every pass-2 request; a mid-batch failure test (`Result2.Steps` undercounts a partial batch); `Pass1Prompt` and `Pass2Prompt` take positional arguments, convert to option structs before more are added.
+
+**M5 (question-round UI, re-planning)**
+1. `StageNeedsReconciliation` is a dead end: `NextActions` offers reconcile for it, but `needsSpec` excludes it, so nothing re-specifies it. Add an explicit re-plan path (an option, so an ordinary resume never silently redoes paid work) and an exported way to specify a named set of steps.
+2. Re-planning overwrites `Work` with no history; `Node.ResumeNote` exists and is unused.
+3. A re-planned step is specified with siblings shown as titles and stage tags only, not their specifications.
+4. Provenance replay replaces a chunk's list, which can orphan nodes created by a crashed attempt with different titles; use a union.
+5. `needsSpec` does not exclude in-progress or completed steps (parity with `NextActions`), reachable once a tree is partly executed. There is still no node removal, so a skipped step blocks approval forever.
+
+**M6 (approve, export, wire into `/project`)**
+1. Agent, model and wave have no home: the node schema is closed (unknown fields rejected, version pinned at 4). Use a sidecar in `_state/` or bump to schema 5 with a migration. There are no cross-task dependencies, so state a rule for wave (phase index).
+2. A task has no description to export: make `objective` required on tasks, or synthesize one from its steps.
+3. One run lock over both passes (`RunPass1`, `RunPass2` and `recordProvenance`'s load-modify-write); export progress (`Result` and `Result2` count one call only); validate `Options` and `Options2` (`OverviewCap`, project name); derive `ChunkBytes`, `BriefBytes` and `StepsPerPass` from the model's context window.
+4. `Summarize` still derives only reviewed or untouched. A task with no steps blocks approval until something decomposes it: `Result2.EmptyTasks` and `EmptyTasks(repo)` report them, but nothing performs the decompose.
+5. `ExtractJSON` is unused by production code (kept exported, with its own tests); decide on deletion when the public surface is fixed.

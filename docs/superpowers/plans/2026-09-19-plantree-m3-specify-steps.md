@@ -129,23 +129,24 @@ func candidates(reply string) (list []string, seen bool) {
 
 // parseFirst tries decode on each candidate object in reply and returns the
 // first that succeeds, so prose or a stray "{}" before the real object does not
-// hide it. If none succeeds it returns the error for the first candidate, which
-// is the one the model most likely meant.
+// hide it. If none succeeds it returns the error of the longest candidate (ties
+// go to the earliest), which is the one the model most likely meant.
 func parseFirst[T any](reply string, decode func(raw string) (T, error)) (T, error) {
 	var zero T
 	list, seen := candidates(reply)
-	var firstErr error
+	var bestErr error
+	bestLen := -1
 	for _, raw := range list {
 		v, err := decode(raw)
 		if err == nil {
 			return v, nil
 		}
-		if firstErr == nil {
-			firstErr = err
+		if len(raw) > bestLen {
+			bestLen, bestErr = len(raw), err
 		}
 	}
-	if firstErr != nil {
-		return zero, firstErr
+	if bestErr != nil {
+		return zero, bestErr
 	}
 	if !seen {
 		return zero, errors.New("the reply contains no JSON object")
@@ -164,7 +165,7 @@ func decodePass1(raw string) (Pass1Output, error) {
 	dec.DisallowUnknownFields()
 	var out Pass1Output
 	if err := dec.Decode(&out); err != nil {
-		return Pass1Output{}, fmt.Errorf("the JSON does not match the schema: %w", err)
+		return Pass1Output{}, fmt.Errorf("the JSON does not match the schema: %s", cutBytes(err.Error(), 400))
 	}
 	if err := validatePass1(out); err != nil {
 		return Pass1Output{}, err
@@ -1006,6 +1007,17 @@ func TestParsePass2ErrorsStayBoundedForHugeValues(t *testing.T) {
 		t.Errorf("huge step id: error length = %d", len(err.Error()))
 	}
 }
+
+func TestParsePass2BoundsTheSchemaError(t *testing.T) {
+	reply := `{"steps":[],"` + strings.Repeat("k", 200000) + `":1}`
+	_, err := ParsePass2(reply, []string{"s"}, []string{"s"})
+	if err == nil || !strings.Contains(err.Error(), "does not match the schema") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(err.Error()) >= 700 {
+		t.Errorf("error is %d bytes", len(err.Error()))
+	}
+}
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -1070,7 +1082,7 @@ func decodePass2(raw string, batch, siblings []string) (Pass2Output, error) {
 	dec.DisallowUnknownFields()
 	var out Pass2Output
 	if err := dec.Decode(&out); err != nil {
-		return Pass2Output{}, fmt.Errorf("the JSON does not match the schema: %w", err)
+		return Pass2Output{}, fmt.Errorf("the JSON does not match the schema: %s", cutBytes(err.Error(), 400))
 	}
 	if err := validatePass2(out, batch, siblings); err != nil {
 		return Pass2Output{}, err
@@ -1236,9 +1248,11 @@ Create `plantree/plan/prompt2_test.go`:
 package plan
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"gophermind/gophermind-lib/plantree"
 )
@@ -1318,6 +1332,72 @@ func TestPass2PromptWorstCaseSize(t *testing.T) {
 		t.Errorf("worst-case pass-2 prompt is %d bytes, want at most 26000", len(p))
 	}
 }
+
+func TestPass2PromptWorstCaseSizeWithMultibyteText(t *testing.T) {
+	r := func(n int) string { return strings.Repeat("\U0001D11E", n) }
+	phase := node(t, "phase-001", r(200), r(500), r(1000))
+	task := node(t, "phase-001.task-001", r(200), r(500), r(1000))
+	var steps []plantree.Node
+	for i := 1; i <= 100; i++ {
+		steps = append(steps, node(t, fmt.Sprintf("phase-001.task-001.step-%03d", i), r(200), r(500), ""))
+	}
+	chunks := []Chunk{{Index: 0, Text: strings.Repeat("brief text line\n", 2000)}}
+	excerpts := Excerpts(chunks, []int{0}, defaultBriefBytes)
+	overview := FitOverview(strings.Repeat("o", 20000), OverviewCapBytes)
+	p := Pass2Prompt(r(100), overview, phase, task, steps, steps[:defaultStepsPerPass], excerpts)
+	t.Logf("multibyte worst-case pass-2 prompt: %d bytes", len(p))
+	if len(p) > 26000 {
+		t.Errorf("multibyte worst-case pass-2 prompt is %d bytes, want at most 26000", len(p))
+	}
+	if !utf8.ValidString(p) {
+		t.Error("the prompt is not valid UTF-8")
+	}
+}
+
+func TestPass2PromptTellsTheModelWhatTheParserEnforces(t *testing.T) {
+	phase := node(t, "phase-001", "P", "d", "")
+	task := node(t, "phase-001.task-001", "T", "d", "")
+	st := node(t, s1, "S", "d", "")
+	p := Pass2Prompt("demo", "", phase, task, []plantree.Node{st}, []plantree.Node{st}, "")
+	for _, want := range []string{"2000 characters", "300 characters", "never put an empty string", "Do not depend on a step marked on hold"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt is missing %q", want)
+		}
+	}
+	if strings.Contains(p, `[""]`) {
+		t.Error("the shape example must not contain an empty string")
+	}
+	found := false
+	for _, line := range strings.Split(p, "\n") {
+		if strings.HasPrefix(line, `{"steps"`) {
+			found = true
+			if !json.Valid([]byte(line)) {
+				t.Errorf("the shape line is not valid JSON: %s", line)
+			}
+		}
+	}
+	if !found {
+		t.Error("no shape line found")
+	}
+}
+
+func TestPass2PromptTagsEachSiblingByStageAndHold(t *testing.T) {
+	phase := node(t, "phase-001", "P", "d", "")
+	task := node(t, "phase-001.task-001", "T", "d", "")
+	skipped := node(t, "phase-001.task-001.step-001", "One", "d", "")
+	skipped.Status = plantree.StatusSkipped
+	drafted := node(t, "phase-001.task-001.step-002", "Two", "d", "")
+	drafted.Planning.Stage = plantree.StageDrafted
+	skel := node(t, "phase-001.task-001.step-003", "Three", "d", "")
+	p := Pass2Prompt("demo", "", phase, task, []plantree.Node{skipped, drafted, skel}, []plantree.Node{skel}, "")
+	for _, want := range []string{
+		"step-001: One [on hold: skipped]", "step-002: Two [specified]", "step-003: Three [to specify]",
+	} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt is missing %q", want)
+		}
+	}
+}
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -1348,11 +1428,25 @@ const (
 // siblingListCapBytes bounds the list of every step of the task in a prompt.
 const siblingListCapBytes = 4000
 
+// fit makes a node field safe for a prompt: one line, at most n bytes.
+func fit(s string, n int) string { return cutBytes(oneLine(s), n) }
+
+// stepTag tells the model whether a sibling can be depended on.
+func stepTag(s plantree.Node) string {
+	switch {
+	case onHold(s):
+		return "on hold: " + string(s.Status)
+	case s.Planning.Stage == plantree.StageDrafted || s.Planning.Stage == plantree.StageApproved:
+		return "specified"
+	}
+	return "to specify"
+}
+
 func stepList(steps []plantree.Node) string {
 	var b strings.Builder
 	omitted := 0
 	for _, s := range steps {
-		line := "- " + s.ID + ": " + oneLine(s.Title) + "\n"
+		line := "- " + s.ID + ": " + fit(s.Title, 200) + " [" + stepTag(s) + "]\n"
 		if b.Len()+len(line) > siblingListCapBytes {
 			omitted++
 			continue
@@ -1371,16 +1465,16 @@ func stepList(steps []plantree.Node) string {
 // carries nothing about any other task.
 func Pass2Prompt(project, overview string, phase, task plantree.Node, siblings, batch []plantree.Node, excerpts string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "You are writing the work specification for some steps of ONE task in a project plan for %q. You see only this task.\n\n", project)
+	fmt.Fprintf(&b, "You are writing the work specification for some steps of ONE task in a project plan for %q. You see only this task.\n\n", fit(project, 100))
 	b.WriteString("Running overview of the whole project:\n")
 	b.WriteString(orNone(overview))
-	fmt.Fprintf(&b, "\n\nPhase: %s\nWhy: %s\nObjective: %s\n", oneLine(phase.Title), oneLine(phase.ContextDigest), orNone(oneLine(phase.Objective)))
-	fmt.Fprintf(&b, "\nTask: %s\nWhy: %s\nObjective: %s\n", oneLine(task.Title), oneLine(task.ContextDigest), orNone(oneLine(task.Objective)))
+	fmt.Fprintf(&b, "\n\nPhase: %s\nWhy: %s\nObjective: %s\n", fit(phase.Title, 200), fit(phase.ContextDigest, 500), orNone(fit(phase.Objective, 1000)))
+	fmt.Fprintf(&b, "\nTask: %s\nWhy: %s\nObjective: %s\n", fit(task.Title, 200), fit(task.ContextDigest, 500), orNone(fit(task.Objective, 1000)))
 	b.WriteString("\nAll steps of this task, in order. A step may depend only on an EARLIER step in this list:\n")
 	b.WriteString(stepList(siblings))
 	b.WriteString("\nSteps to specify now:\n")
 	for _, s := range batch {
-		fmt.Fprintf(&b, "- %s: %s. Why: %s\n", s.ID, oneLine(s.Title), oneLine(s.ContextDigest))
+		fmt.Fprintf(&b, "- %s: %s. Why: %s\n", s.ID, fit(s.Title, 200), fit(s.ContextDigest, 500))
 	}
 	b.WriteString("\nBrief excerpts that produced this task (context only, may be partial):\n")
 	if strings.TrimSpace(excerpts) == "" {
@@ -1395,8 +1489,12 @@ func Pass2Prompt(project, overview string, phase, task plantree.Node, siblings, 
 	b.WriteString("- acceptance_criteria: 1 to 10 checks a reviewer can verify.\n")
 	b.WriteString("- test_command: the command as an array of arguments that verifies the step, or an empty array if there is none.\n")
 	b.WriteString("- depends_on: ids of EARLIER steps of this task that must be done first, or an empty array.\n")
+	b.WriteString("- description: at most 2000 characters. Each acceptance criterion: at most 300 characters, and at most 10 criteria.\n")
+	b.WriteString("- target_paths: at most 20 paths of at most 300 characters each. test_command: at most 20 arguments of at most 200 characters each.\n")
+	b.WriteString("- In every array, never put an empty string.\n")
+	b.WriteString("- Do not depend on a step marked on hold.\n")
 	b.WriteString("- Do not invent scope the task does not need. Do not call tools. Reply with ONE JSON object and nothing else, in this shape:\n")
-	b.WriteString(`{"steps":[{"id":"","description":"","target_paths":[""],"acceptance_criteria":[""],"test_command":[""],"depends_on":[""]}]}`)
+	b.WriteString(`{"steps":[{"id":"<step id>","description":"<what to build>","target_paths":["<path/to/file>"],"acceptance_criteria":["<a check a reviewer can verify>"],"test_command":["<command>","<arg>"],"depends_on":[]}]}`)
 	b.WriteString("\n")
 	return b.String()
 }
@@ -1745,6 +1843,79 @@ func TestRunPass2NeedsAPlanAndHonorsCancellation(t *testing.T) {
 		t.Errorf("cancelled: err=%v calls=%d", err, len(f.prompts))
 	}
 }
+
+func TestRunPass2RefusesADependencyOnAHeldStep(t *testing.T) {
+	r := newRepo(t)
+	if _, err := Merge(r, sampleOut()); err != nil {
+		t.Fatal(err)
+	}
+	cur, _ := r.Get(s1)
+	if _, err := r.Update(s1, cur.NodeRevision, func(n *plantree.Node) error {
+		n.Status = plantree.StatusSkipped
+		n.Reason = "out of scope"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	dependsOnHeld := func(_ int, p string) (string, error) {
+		s := StepSpecOut{ID: stepsToSpecify(p)[0], Description: "d", AcceptanceCriteria: []string{"c"}, DependsOn: []string{s1}}
+		b, _ := json.Marshal(Pass2Output{Steps: []StepSpecOut{s}})
+		return string(b), nil
+	}
+	_, err := RunPass2(context.Background(), r, &fake{reply: dependsOnHeld}, Options2{})
+	if err == nil || !strings.Contains(err.Error(), "rejected twice") || !strings.Contains(err.Error(), "not a step of this task") {
+		t.Fatalf("err = %v", err)
+	}
+	b, _ := r.Get(s2)
+	if b.Planning.Stage != plantree.StageSkeleton || b.Work != nil {
+		t.Errorf("step 2 must stay a skeleton: %+v", b)
+	}
+}
+
+func TestRunPass2SecondBatchSeesTheFirstBatchAsSpecified(t *testing.T) {
+	r := newRepo(t)
+	if _, err := Merge(r, sampleOut()); err != nil {
+		t.Fatal(err)
+	}
+	f := specFake()
+	if _, err := RunPass2(context.Background(), r, f, Options2{StepsPerPass: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.prompts) != 2 {
+		t.Fatalf("%d prompts", len(f.prompts))
+	}
+	second := f.prompts[1]
+	if !regexp.MustCompile(`step-001: .* \[specified\]`).MatchString(second) || !regexp.MustCompile(`step-002: .* \[to specify\]`).MatchString(second) {
+		t.Errorf("second prompt step list:\n%s", second)
+	}
+	if strings.Contains(f.prompts[0], "[specified]") {
+		t.Error("the first prompt must not show any step as specified")
+	}
+}
+
+func TestRunPass2ReportsTasksWithoutSteps(t *testing.T) {
+	r := newRepo(t)
+	out := sampleOut()
+	out.Phases[0].Tasks = append(out.Phases[0].Tasks, TaskOut{Title: "Docs", Digest: "explain it"})
+	if _, err := Merge(r, out); err != nil {
+		t.Fatal(err)
+	}
+	res, err := RunPass2(context.Background(), r, specFake(), Options2{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.EmptyTasks != 1 {
+		t.Errorf("EmptyTasks = %d, want 1", res.EmptyTasks)
+	}
+	got, err := EmptyTasks(r)
+	if err != nil || len(got) != 1 || got[0] != "phase-001.task-002" {
+		t.Errorf("EmptyTasks(repo) = %v, %v", got, err)
+	}
+	kinds := actionKinds(t, r)
+	if !strings.Contains(kinds, "decompose:phase-001.task-002") || strings.Contains(kinds, "approve") {
+		t.Errorf("NextActions = %s", kinds)
+	}
+}
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -1788,6 +1959,9 @@ type Result2 struct {
 	Tasks  int // tasks whose pending steps were all specified by this call
 	Steps  int // steps specified by this call
 	Passes int // model passes made by this call
+	// EmptyTasks counts tasks that have no steps at all; pass 2 cannot specify
+	// them, and NextActions keeps offering decompose for them.
+	EmptyTasks int
 }
 
 // taskWork is one task with the steps still waiting for a specification.
@@ -1798,12 +1972,34 @@ type taskWork struct {
 	pending []plantree.Node // steps that need a specification
 }
 
-// needsSpec reports whether a step is waiting for its specification: still a
-// skeleton or only inspected, and not on hold.
-func needsSpec(s plantree.Node) bool {
+// onHold reports whether a step is parked in a status that stops work on it.
+func onHold(s plantree.Node) bool {
 	switch s.Status {
 	case plantree.StatusBlocked, plantree.StatusDelayed, plantree.StatusEscalated,
 		plantree.StatusFailed, plantree.StatusNeedsRevision, plantree.StatusSkipped:
+		return true
+	}
+	return false
+}
+
+// markSpecified records in the in-memory snapshot that the steps in out were
+// written, so a later batch of the same task sees them as specified.
+func markSpecified(steps []plantree.Node, out Pass2Output) {
+	done := map[string]bool{}
+	for _, s := range out.Steps {
+		done[s.ID] = true
+	}
+	for i := range steps {
+		if done[steps[i].ID] {
+			steps[i].Planning.Stage = plantree.StageDrafted
+		}
+	}
+}
+
+// needsSpec reports whether a step is waiting for its specification: still a
+// skeleton or only inspected, and not on hold.
+func needsSpec(s plantree.Node) bool {
+	if onHold(s) {
 		return false
 	}
 	return s.Planning.Stage == plantree.StageSkeleton || s.Planning.Stage == plantree.StageInspected
@@ -1850,7 +2046,8 @@ func idsOf(nodes []plantree.Node) []string {
 // RunPass2 writes the work specification of every step that lacks one: one
 // fresh-context pass per batch of steps of one task, in tree order. It keeps no
 // cursor: what is left is derived from the tree, so calling it again after any
-// error continues with the steps still waiting.
+// error continues with the steps still waiting. It does not rewrite
+// overview.md; only pass 1 does.
 func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options2) (Result2, error) {
 	if opt.StepsPerPass < 1 {
 		opt.StepsPerPass = defaultStepsPerPass
@@ -1883,11 +2080,14 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 		return Result2{}, err
 	}
 
-	var res Result2
+	empty, err := EmptyTasks(repo)
+	if err != nil {
+		return Result2{}, err
+	}
+	res := Result2{EmptyTasks: len(empty)}
 	for _, w := range work {
 		ids := append([]string{w.task.ID}, idsOf(w.steps)...)
 		excerpts := Excerpts(chunks, prov.chunksFor(ids), opt.BriefBytes)
-		siblingIDs := idsOf(w.steps)
 		for start := 0; start < len(w.pending); start += opt.StepsPerPass {
 			if err := ctx.Err(); err != nil {
 				return res, err
@@ -1898,6 +2098,13 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 			}
 			batch := w.pending[start:end]
 			batchIDs := idsOf(batch)
+			var live []plantree.Node
+			for _, s := range w.steps {
+				if !onHold(s) {
+					live = append(live, s)
+				}
+			}
+			siblingIDs := idsOf(live)
 			prompt := Pass2Prompt(opt.ProjectName, overview, w.phase, w.task, w.steps, batch, excerpts)
 			out, err := askJSON(ctx, c, prompt, func(reply string) (Pass2Output, error) {
 				return ParsePass2(reply, batchIDs, siblingIDs)
@@ -1909,6 +2116,7 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 			if err := applySpecs(repo, out); err != nil {
 				return res, taskError(w.task.ID, err)
 			}
+			markSpecified(w.steps, out)
 			res.Steps += len(batch)
 		}
 		res.Tasks++
@@ -1949,6 +2157,25 @@ func applySpecs(repo *plantree.Repo, out Pass2Output) error {
 		}
 	}
 	return nil
+}
+
+// EmptyTasks returns, in tree order, the ids of every task that has no steps.
+func EmptyTasks(repo *plantree.Repo) ([]string, error) {
+	var out []string
+	err := repo.Walk(func(n plantree.Node) error {
+		if n.Kind() != plantree.KindTask {
+			return nil
+		}
+		steps, err := repo.Children(n.ID)
+		if err != nil {
+			return err
+		}
+		if len(steps) == 0 {
+			out = append(out, n.ID)
+		}
+		return nil
+	})
+	return out, err
 }
 ```
 
@@ -2094,4 +2321,22 @@ Claude-Session: https://claude.ai/code/session_01HArwYJXPZfFwmuSRuxLcYr"
 
 ## Definition of done (M3)
 
-`go test ./plantree/... -count=1`, `go test -race ./plantree/... -short -count=1`, `gofmt -l plantree` (empty), `go vet ./plantree/...` and `go build ./...` all clean; seven commits; a test proves pass 1 followed by pass 2 over the real completer leaves every step drafted and `NextActions` offering only approval, and another proves a pass 2 that fails on the second task resumes in a new process with exactly the tasks that were left.
+`go test ./plantree/... -count=1`, `go test -race ./plantree/... -short -count=1`, `gofmt -l plantree` (empty), `go vet ./plantree/...` and `go build ./...` all clean; ten commits (seven tasks and three final-review fix commits); a test proves pass 1 followed by pass 2 over the real completer leaves every step drafted and `NextActions` offering only approval, and another proves a pass 2 that fails on the second task resumes in a new process with exactly the tasks that were left.
+
+---
+
+## Amendments after review
+
+The tasks above were built and reviewed as written, then changed by the final whole-branch review. The code blocks in this plan match the committed files. Changes since the plan was first written (commits `5988ec4`, `fa5275e`, `3b7cca5`):
+
+- **Parser errors are bounded.** `decodePass1` and `decodePass2` cut the decoder's message to 400 bytes (a model-supplied unknown key could otherwise return a 200,000 byte error to the caller).
+- **`parseFirst` reports the longest candidate's error** (ties go to the earliest) instead of the first, so a stray `{}` before a real but invalid object no longer hides the real defect. `ExtractJSON` carries a note that the parsers use `parseFirst`.
+- **The pass-2 prompt is bounded in bytes.** Every variable text field (project name, phase, task, step titles, digests, objectives) is cut in bytes with `fit`, so a CJK or emoji brief cannot make it about twice the size the test pins. Measured worst cases: 25,553 bytes (ASCII) and 25,658 (multibyte), against a 26,000 threshold.
+- **The prompt agrees with the parser.** Its rules state every limit the parser enforces, and its JSON shape uses non-empty placeholders and `[]` for `depends_on` (the first shape example was itself rejected by the validator).
+- **Held steps.** The step list tags each sibling `[specified]`, `[to specify]` or `[on hold: <status>]`; steps on hold are excluded from the dependency set; `onHold` is shared with `needsSpec`; the in-memory snapshot is updated after each batch so a later batch sees its predecessors as specified.
+- **Tasks with no steps are reported.** `Pass1Prompt` says every task needs an objective and at least one step; `EmptyTasks(repo)` lists childless tasks; `Result2.EmptyTasks` counts them (an `int`, so `Result2` stays comparable). `RunPass2` still succeeds when one exists; `NextActions` keeps offering `decompose` for it.
+- Files changed outside this plan's blocks: `prompt.go` (one rule line) and `overview_test.go` (its test).
+
+### Carried forward
+
+See the roadmap sections "M3 outcome" and the carry-forward lists for M4 to M6. The first item for M4 is a bounded "project facts" block in the pass-2 prompt (language, build and test commands, file layout), because `test_command` and `target_paths` are otherwise guesses.
