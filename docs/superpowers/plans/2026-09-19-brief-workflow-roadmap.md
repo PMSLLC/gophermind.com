@@ -173,3 +173,21 @@ Worst-case pass-2 prompt with the defaults: 25,553 bytes (ASCII) and 25,658 (4-b
 3. One run lock over both passes (`RunPass1`, `RunPass2` and `recordProvenance`'s load-modify-write); export progress (`Result` and `Result2` count one call only); validate `Options` and `Options2` (`OverviewCap`, project name); derive `ChunkBytes`, `BriefBytes` and `StepsPerPass` from the model's context window.
 4. `Summarize` still derives only reviewed or untouched. A task with no steps blocks approval until something decomposes it: `Result2.EmptyTasks` and `EmptyTasks(repo)` report them, but nothing performs the decompose.
 5. `ExtractJSON` is unused by production code (kept exported, with its own tests); decide on deletion when the public surface is fixed.
+
+## M4 outcome (landed on `main`, 2026-09-19)
+
+Package `gophermind-lib/plantree/plan`, nine commits: `1189320`, `a1f346f`, `87aef0e`, `e91be8f`, `2d99846`, `42b76ec`, `ad68880` (the seven tasks) and `94e4a20`, `98a0157` (review fixes). Both passes can now ask questions instead of guessing: they are stored in `questions.json` (strict, `schema_version 1`, ids `q-NNN` and `opt-N`, always free text, a recommendation is never an answer, deduped by normalized text with affects unioned, cross-process lock). Pass-1 questions affect phase or task titles; pass-2 questions affect step ids. Affected steps are held at `awaiting_answers`; `ReleaseAnswered` frees them once no open question affects them (directly or through an ancestor) and `HoldOpen` re-holds steps added later. Answered decisions reach the pass-2 prompt in a fenced, quoted block. Project facts (`facts.md`, 1,200 bytes) reach it too. `plan.NextActions` never offers approve while a question is open. Worst-case pass-2 prompt 26,481 bytes (ASCII) and 26,572 (4-byte runes), pinned under 27,000; pass-1 instruction overhead 1,984 bytes.
+
+### Carry-forward decisions for M5 and M6
+
+**M5 (question-round UI, re-planning)**
+1. The question round itself: list open questions (with the brief excerpt behind them via provenance, still unreadable outside the package), collect answers with options plus free text, call `AnswerQuestion`, then `RunPass2`. The API is `OpenQuestions`, `AnswerQuestion`, `ReleaseAnswered`, `plan.NextActions`.
+2. No way to change or reopen an answer; a changed answer should mark dependent drafted steps `needs_reconciliation`. `StageNeedsReconciliation` is still a dead end (see M4 list above under M5 item 1 of the M3 outcome), and there is no node removal.
+3. A pass-1 question whose `affects` titles match nothing holds nothing; it now blocks approval via `plan.NextActions` but the owner cannot tell which nodes it concerns. Consider rejecting or re-asking.
+4. `RunPass2` still returns `Result2{}` on its later early errors (drops `Released`); the `BRIEF EXCERPTS` terminator is not neutralized like the decisions fence; `pass2json.go` message for a waiting step says "not a step of this task".
+5. Empty-`affects` pass-2 questions are not rejected (shared validation).
+
+**M6 (approve, export, wire into `/project`)**
+1. Everything in the M3 outcome's M6 list still stands: agent/model/wave home, task objective, one run lock over both passes, export progress, `Summarize`, `ExtractJSON`, and deriving `ChunkBytes`, `BriefBytes` and `StepsPerPass` from the model window (the prompt margins are now about 500 bytes under 27,000).
+2. `plan` has no importer outside its tests yet; `/project` must call `plan.NextActions`, not `plantree.NextActions`.
+

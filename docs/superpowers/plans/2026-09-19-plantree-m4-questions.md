@@ -6228,3 +6228,20 @@ Claude-Session: https://claude.ai/code/session_01HArwYJXPZfFwmuSRuxLcYr"
 ## Definition of done (M4)
 
 `go test ./plantree/... -count=1`, `go test -race ./plantree/... -short -count=1`, `gofmt -l plantree` (empty), `go vet ./plantree/...` and `go build ./...` all clean; seven commits; a test proves pass 1 asks a question, pass 2 skips the held task, an answer releases it, and the next pass 2 specifies it with the decision in its prompt and ends with `NextActions` offering only approval; and the same loop runs through the real completer over HTTP.
+
+## Amendments after review
+
+The tasks were built and reviewed as written. Task 5's review and the final whole-branch review then changed the code. The committed files are authoritative where they differ from the code blocks above (the blocks show the code as first planned). Changes since:
+
+- **Repeated questions fold their affects** (`94e4a20`). On a dedupe hit `AddQuestions` unions the reply's `affects` into the stored record under the lock, so an open duplicate holds the newly named steps and an answered duplicate makes its decision visible. The pass-2 prompt states that `affects` must be ids of the steps being specified, never empty.
+- **Open questions block approval** (`98a0157`). `plan.NextActions(repo)` wraps `plantree.NextActions`: while any question is open it never offers `approve` and adds a blocked `answer` action, even when a question resolved to no steps or its steps were already drafted. `plantree.NextActions` is unchanged.
+- **Re-hold sweep.** `HoldOpen(repo)` runs in `RunPass2` after `ReleaseAnswered`, so steps a later chunk added under an affected node are held too.
+- **Decisions are fenced and quoted.** The decisions block sits inside an `OWNER DECISIONS` fence, each question is `strconv.Quote`d, and the terminator is neutralized, so model-authored question text cannot read as an instruction.
+- **No-progress signal.** `Result2.Unspecified` counts batch steps a pass neither specified nor held (for example a re-asked answered question). A driver looping `RunPass2` can detect a stuck step.
+- **Bounds.** `Pass2Prompt` cuts Decisions, Overview and Excerpts itself (`Pass2Input.ExcerptsCap`, default 4000), so the 27,000-byte pin holds for raw input (26,481 ASCII, 26,572 multibyte). `unionIDs` is capped at `maxStoredAffects` (200). `ReadFacts` reads at most 8 KiB. `Options.ChunkBytes` budgets 2,000 bytes of instructions (measured 1,984) and a test pins pass 1's worst case.
+- **Smaller.** `siblingIDs` and the `depends_on` rule exclude steps waiting for an answer; `RunPass2` keeps the released count when `ReleaseAnswered` fails; `releaseSteps` split out for a stale-revision test; a cross-process lock test runs the test binary as a child.
+- Files added outside this plan's blocks: `next.go`, `fixwave_test.go`.
+
+### Carried forward
+
+See the roadmap section "M4 outcome".
