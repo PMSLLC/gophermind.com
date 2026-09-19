@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"gophermind/gophermind-lib/lockfile"
@@ -456,7 +457,9 @@ func TestExportLegacyDropsTheMarkerWhenTheGateFails(t *testing.T) {
 }
 
 // TestExportLegacyLeavesNoMarkerAfterACrash: a write that fails between the
-// ROADMAP write and the assignments write must leave no approval behind.
+// ROADMAP write and the assignments write must leave no approval behind, must
+// not have reached the assignments write, and must say the project is
+// currently unapproved.
 func TestExportLegacyLeavesNoMarkerAfterACrash(t *testing.T) {
 	root, repo := approvedProject(t)
 	if _, err := ExportLegacy(repo, root); err != nil {
@@ -469,16 +472,80 @@ func TestExportLegacyLeavesNoMarkerAfterACrash(t *testing.T) {
 	if err := os.Mkdir(spec, 0o755); err != nil { // the SPEC.md write now fails
 		t.Fatal(err)
 	}
-	before, _ := os.ReadFile(phaseflow.AssignmentsPath(root))
-	if _, err := ExportLegacy(repo, root); err == nil {
+	// An old modification time is the sentinel: a re-export writes identical
+	// bytes, so only a changed time shows whether a file was written again.
+	old := time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, p := range []string{phaseflow.RoadmapPath(root), phaseflow.AssignmentsPath(root)} {
+		if err := os.Chtimes(p, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rep, err := ExportLegacy(repo, root)
+	if err == nil {
 		t.Fatal("the export did not fail")
+	}
+	if !strings.Contains(err.Error(), "currently unapproved") || !strings.Contains(err.Error(), "may still be intact") {
+		t.Errorf("error = %q, want it to say the project is currently unapproved and old files may be intact", err)
 	}
 	if phaseflow.New(root).Approved() {
 		t.Error("a crashed export left the approval marker in place")
 	}
-	after, _ := os.ReadFile(phaseflow.AssignmentsPath(root))
-	if string(before) != string(after) {
+	mtime := func(p string) time.Time {
+		fi, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fi.ModTime()
+	}
+	if !mtime(phaseflow.RoadmapPath(root)).After(old) {
+		t.Error("the crash simulation never reached the ROADMAP write")
+	}
+	if !mtime(phaseflow.AssignmentsPath(root)).Equal(old) {
 		t.Error("the crash simulation did not stop before the assignments write")
+	}
+	// Only what was really replaced before the crash is reported.
+	if len(rep.Replaced) != 1 || rep.Replaced[0] != phaseflow.RoadmapPath(root) {
+		t.Errorf("Replaced = %v, want just the ROADMAP written before the crash", rep.Replaced)
+	}
+}
+
+// A failure before the first write replaced nothing, so Report.Replaced is empty.
+func TestExportLegacyReplacedIsEmptyWhenTheFirstWriteFails(t *testing.T) {
+	root, repo := approvedProject(t)
+	if _, err := ExportLegacy(repo, root); err != nil {
+		t.Fatal(err)
+	}
+	rm := phaseflow.RoadmapPath(root)
+	if err := os.Remove(rm); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(rm, 0o755); err != nil { // the very first write fails
+		t.Fatal(err)
+	}
+	rep, err := ExportLegacy(repo, root)
+	if err == nil {
+		t.Fatal("the export did not fail")
+	}
+	if len(rep.Replaced) != 0 || len(rep.Paths) != 0 {
+		t.Errorf("Replaced = %v, Paths = %v after a failure before any write", rep.Replaced, rep.Paths)
+	}
+}
+
+// A gate failure after every write also says the project is unapproved.
+func TestExportLegacyGateFailureSaysTheProjectIsUnapproved(t *testing.T) {
+	root, repo := approvedProject(t)
+	pid := "phase-003"
+	ref, _ := plantree.ParentRef(pid)
+	if err := repo.Create(plantree.Node{
+		SchemaVersion: plantree.SchemaVersion, ID: pid, Title: "Empty", NodeRevision: 1,
+		ContextDigest: "d", ParentRef: &ref, DependsOn: []string{}, Objective: "nothing",
+		Planning: plantree.Planning{Stage: plantree.StageSkeleton},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := ExportLegacy(repo, root)
+	if !errors.Is(err, ErrNotValid) || !strings.Contains(err.Error(), "currently unapproved") {
+		t.Errorf("ExportLegacy = %v, want ErrNotValid naming the unapproved state", err)
 	}
 }
 
@@ -715,5 +782,32 @@ func TestCJKTitlesStayValidUTF8(t *testing.T) {
 	}
 	if got, err := phaseflow.New(root).ValidatePlan(); err != nil || !got.Complete {
 		t.Errorf("CJK plan invalid: %v %v", err, got.Issues)
+	}
+}
+
+// sanitize runs before the cap, so rewriting TBD to the longer "undecided"
+// cannot push a field past its bound.
+func TestSanitizedTextStaysWithinItsCap(t *testing.T) {
+	_, repo := builtTree(t, strings.Repeat("TBD ", 200), 1, 1)
+	p, err := read(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Project) > planDescriptionBytes+len("...") {
+		t.Errorf("project name is %d bytes, cap %d", len(p.Project), planDescriptionBytes)
+	}
+	if strings.Contains(strings.ToUpper(p.Project), "TBD") {
+		t.Errorf("project name still holds TBD: %q", p.Project)
+	}
+}
+
+// A pipe in a phase name would add a column to the Progress table.
+func TestPhaseNameCannotBreakTheProgressTable(t *testing.T) {
+	md := roadmapMarkdown(legacyPlan{Project: "P", Phases: []legacyPhase{{Number: 1, Name: "a | b", Goal: "g",
+		Tasks: []legacyTask{{ID: "01-01", Title: "t"}}}}}, "")
+	for _, l := range strings.Split(md, "\n") {
+		if strings.HasPrefix(l, "| 1.") && strings.Count(l, "|") != 5 {
+			t.Errorf("progress row %q has %d pipes, want 5", l, strings.Count(l, "|"))
+		}
 	}
 }

@@ -35,6 +35,10 @@ type Options2 struct {
 	// decision that changed. It is off by default so an ordinary resume never
 	// silently redoes work that has already been paid for.
 	Reconcile bool
+	// Progress, if set, is called after each batch of steps has been written,
+	// with the batches done and the batches this call will run in all. It runs
+	// on the calling goroutine. A nil Progress changes nothing.
+	Progress func(done, total int)
 }
 
 // Result2 summarizes one RunPass2 call.
@@ -226,6 +230,10 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 		return Result2{}, err
 	}
 	res := Result2{EmptyTasks: len(empty), Released: released}
+	totalBatches, doneBatches := 0, 0
+	for _, w := range work {
+		totalBatches += len(batchesOf(w.pending, opt.StepsPerPass)) + len(batchesOf(w.redo, reconcileBatch(opt.StepsPerPass)))
+	}
 	for _, w := range work {
 		ids := append([]string{w.task.ID}, idsOf(w.steps)...)
 		excerpts := Excerpts(chunks, prov.chunksFor(ids), opt.BriefBytes)
@@ -289,6 +297,10 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 				if needsSpec(cur) || (opt.Reconcile && needsRespec(cur)) {
 					res.Unspecified++
 				}
+			}
+			doneBatches++
+			if opt.Progress != nil {
+				opt.Progress(doneBatches, totalBatches)
 			}
 		}
 		res.Tasks++

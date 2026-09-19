@@ -96,6 +96,16 @@ type Report struct {
 // write, so a failed or crashed export never leaves an approval standing over
 // a replaced, unvalidated pair of files; it leaves the generated files and no
 // marker, and the next export replaces them.
+//
+// Every failure after the marker is removed says, in its error text, that the
+// project is currently unapproved and that the files of an earlier export may
+// still be intact (a failure before the first write leaves them untouched);
+// errors.Is still finds the cause. Report.Replaced lists only files this call
+// has already written over, so it is empty when the first write failed.
+//
+// Closing the race with a changed answer: ChangeAnswer takes the same run
+// lock (re-entrant), so it cannot un-approve the plan between the approval
+// check above and the marker written last.
 func ExportLegacy(repo *plantree.Repo, root string) (Report, error) {
 	release, err := plan.AcquireRun(repo)
 	if err != nil {
@@ -144,16 +154,26 @@ func ExportLegacy(repo *plantree.Repo, root string) (Report, error) {
 
 	rep := Report{Phases: len(p.Phases), Tasks: countTasks(p), Steps: p.Steps}
 	specPath := filepath.Join(phaseflow.PlanningDir(root), SpecFileName)
+	// Which files an export would replace is known now, but a file is only
+	// reported as replaced once it has been written, so a failure before the
+	// first write reports nothing.
+	existed := map[string]bool{}
 	for _, path := range []string{phaseflow.RoadmapPath(root), specPath, phaseflow.AssignmentsPath(root)} {
 		if _, err := os.Stat(path); err == nil {
-			rep.Replaced = append(rep.Replaced, path)
+			existed[path] = true
 		}
 	}
 	if doc, err := os.ReadFile(phaseflow.ProjectDocPath(root)); err == nil {
-		begin := strings.Index(string(doc), "gophermind:spec:begin")
-		end := strings.Index(string(doc), "gophermind:spec:end")
+		begin := strings.Index(string(doc), phaseflow.SpecBeginMarker)
+		end := strings.Index(string(doc), phaseflow.SpecEndMarker)
 		if begin >= 0 && end > begin {
-			rep.Replaced = append(rep.Replaced, phaseflow.ProjectDocPath(root))
+			existed[phaseflow.ProjectDocPath(root)] = true
+		}
+	}
+	wrote := func(path string) {
+		rep.Paths = append(rep.Paths, path)
+		if existed[path] {
+			rep.Replaced = append(rep.Replaced, path)
 		}
 	}
 
@@ -161,47 +181,51 @@ func ExportLegacy(repo *plantree.Repo, root string) (Report, error) {
 	if err := e.Unapprove(); err != nil {
 		return rep, err
 	}
+	// From here the approval marker is gone, so every failure says so.
+	unapproved := func(err error) error {
+		return fmt.Errorf("%w\nexport: the project is currently unapproved, so /project-execute will refuse until an export succeeds; the files of an earlier export may still be intact", err)
+	}
 	if seed {
 		n, err := phaseflow.SeedCatalog(root)
 		if err != nil {
-			return rep, err
+			return rep, unapproved(err)
 		}
 		rep.SeededAgents = n
 	}
 
 	if err := os.MkdirAll(phaseflow.PlanningDir(root), 0o755); err != nil {
-		return rep, err
+		return rep, unapproved(err)
 	}
 	if err := writeFile(phaseflow.RoadmapPath(root), roadmapMarkdown(p, overview)); err != nil {
-		return rep, err
+		return rep, unapproved(err)
 	}
-	rep.Paths = append(rep.Paths, phaseflow.RoadmapPath(root))
+	wrote(phaseflow.RoadmapPath(root))
 
 	if err := writeFile(specPath, specMarkdown(p, overview, facts, decisions)); err != nil {
-		return rep, err
+		return rep, unapproved(err)
 	}
-	rep.Paths = append(rep.Paths, specPath)
+	wrote(specPath)
 
 	assignments := assignmentsOf(p)
 	if err := assignments.Save(root); err != nil {
-		return rep, err
+		return rep, unapproved(err)
 	}
-	rep.Paths = append(rep.Paths, phaseflow.AssignmentsPath(root))
+	wrote(phaseflow.AssignmentsPath(root))
 
 	if err := phaseflow.UpsertProjectDoc(root, phaseflow.RenderProjectDocBody(p.Project, specMarkdownOverview(overview), &assignments)); err != nil {
-		return rep, err
+		return rep, unapproved(err)
 	}
-	rep.Paths = append(rep.Paths, phaseflow.ProjectDocPath(root))
+	wrote(phaseflow.ProjectDocPath(root))
 
 	report, err := e.ValidatePlan()
 	if err != nil {
-		return rep, err
+		return rep, unapproved(err)
 	}
 	if !report.Complete {
-		return rep, fmt.Errorf("%w: %s", ErrNotValid, strings.Join(report.Issues, "; "))
+		return rep, unapproved(fmt.Errorf("%w: %s", ErrNotValid, strings.Join(report.Issues, "; ")))
 	}
 	if err := e.Approve(); err != nil {
-		return rep, err
+		return rep, unapproved(err)
 	}
 	return rep, nil
 }

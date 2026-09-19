@@ -1,8 +1,11 @@
 package plan
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -80,6 +83,96 @@ func TestWorstPromptBytesMatchesTheRealPrompts(t *testing.T) {
 	}
 }
 
+// TestRetryAllowanceIsTheRealRetryDelta pins retryAllowanceBytes against the
+// text RetryPrompt really adds at its bounds, so a change to that prompt fails
+// here rather than as an overflow on a retry.
+func TestRetryAllowanceIsTheRealRetryDelta(t *testing.T) {
+	orig := strings.Repeat("o", 1000)
+	got := len(RetryPrompt(orig, strings.Repeat("r", 50000), strings.Repeat("p", 50000))) - len(orig)
+	if got != retryAllowanceBytes {
+		t.Errorf("a retry adds %d bytes at its bounds, retryAllowanceBytes says %d", got, retryAllowanceBytes)
+	}
+	// Multi-byte text cuts at a rune boundary and never adds more.
+	got = len(RetryPrompt(orig, strings.Repeat("\u00e9", 50000), strings.Repeat("\u4e16", 50000))) - len(orig)
+	if got > retryAllowanceBytes {
+		t.Errorf("a retry over multi-byte text adds %d bytes, above the allowance %d", got, retryAllowanceBytes)
+	}
+}
+
+// TestChosenPromptFitsTheBudgetOnARetry: at every window the chosen sizes'
+// worst prompt PLUS a retry's additions is inside the budget whenever the
+// window fits at all.
+func TestChosenPromptFitsTheBudgetOnARetry(t *testing.T) {
+	for _, w := range []int{9000, 10000, 12000, 16384, 32768, 98304, 128000} {
+		o, o2 := SizesFor(w)
+		if !FitsWindow(w) {
+			continue
+		}
+		raw := PromptBudgetBytes(w) + retryAllowanceBytes
+		if got := WorstPromptBytes(o, o2) + retryAllowanceBytes; got > raw {
+			t.Errorf("window %d: worst %d with a retry exceeds the raw budget %d", w, got, raw)
+		}
+		if WorstPromptBytes(o, o2) > PromptBudgetBytes(w) {
+			t.Errorf("window %d: worst prompt %d exceeds the budget %d that already reserves a retry", w, WorstPromptBytes(o, o2), PromptBudgetBytes(w))
+		}
+	}
+}
+
+func TestRunPass1ReportsProgressAfterEachChunk(t *testing.T) {
+	r := plantree.Open(t.TempDir())
+	var got [][2]int
+	o := opts
+	o.Progress = func(done, total int) {
+		// The chunk is durable when it is reported.
+		if st, found, _ := loadState(r); !found || st.Next != done {
+			t.Errorf("progress %d/%d reported while the cursor is %+v", done, total, st)
+		}
+		got = append(got, [2]int{done, total})
+	}
+	if _, err := RunPass1(context.Background(), r, threePartBrief, &fake{reply: byChunk}, o); err != nil {
+		t.Fatal(err)
+	}
+	if want := [][2]int{{1, 3}, {2, 3}, {3, 3}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("progress = %v, want %v", got, want)
+	}
+}
+
+func TestRunPass1ProgressCountsChunksAnEarlierRunFinished(t *testing.T) {
+	r := plantree.Open(t.TempDir())
+	fail := &fake{reply: func(n int, p string) (string, error) {
+		if n == 2 {
+			return "", errors.New("boom")
+		}
+		return byChunk(n, p)
+	}}
+	if _, err := RunPass1(context.Background(), r, threePartBrief, fail, opts); err == nil {
+		t.Fatal("want the injected failure")
+	}
+	var got [][2]int
+	o := opts
+	o.Progress = func(done, total int) { got = append(got, [2]int{done, total}) }
+	if _, err := RunPass1(context.Background(), r, threePartBrief, &fake{reply: byChunk}, o); err != nil {
+		t.Fatal(err)
+	}
+	if want := [][2]int{{3, 3}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("resumed progress = %v, want %v", got, want)
+	}
+}
+
+func TestRunPass2ReportsProgressAfterEachBatch(t *testing.T) {
+	r := newRepo(t)
+	if _, err := Merge(r, sampleOut()); err != nil {
+		t.Fatal(err)
+	}
+	var got [][2]int
+	if _, err := RunPass2(context.Background(), r, specFake(), Options2{StepsPerPass: 1, Progress: func(d, n int) { got = append(got, [2]int{d, n}) }}); err != nil {
+		t.Fatal(err)
+	}
+	if want := [][2]int{{1, 2}, {2, 2}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("progress = %v, want %v", got, want)
+	}
+}
+
 func TestSizesForNeverExceedsTheDefaults(t *testing.T) {
 	for _, w := range []int{1, 4096, 8192, 16384, 32768, 98304, 128000, 200000, 2000000} {
 		o, o2 := SizesFor(w)
@@ -132,10 +225,13 @@ func TestFitsWindow(t *testing.T) {
 			t.Errorf("FitsWindow(%d) = false; an unknown window must report true", w)
 		}
 	}
-	if !FitsWindow(8192) {
-		t.Error("the floors must fit an 8192 token window")
+	if FitsWindow(8192) {
+		t.Error("with a retry reserved the floors no longer fit an 8192 token window, and FitsWindow must say so")
 	}
-	for _, w := range []int{1, 500, 2000, 4096} {
+	if !FitsWindow(9000) {
+		t.Error("the floors must fit a 9000 token window")
+	}
+	for _, w := range []int{1, 500, 2000, 4096, 8192} {
 		if FitsWindow(w) {
 			t.Errorf("FitsWindow(%d) = true, the floors cannot fit that window", w)
 		}
@@ -152,7 +248,7 @@ func TestFitsWindow(t *testing.T) {
 func TestSizesForUnknownWindowGivesTheDefaults(t *testing.T) {
 	for _, w := range []int{0, -1, -98304} {
 		o, o2 := SizesFor(w)
-		if (o != Options{}) || (o2 != Options2{}) {
+		if !reflect.DeepEqual(o, Options{}) || !reflect.DeepEqual(o2, Options2{}) {
 			t.Errorf("SizesFor(%d) = %+v %+v, want the zero options, which mean the defaults", w, o, o2)
 		}
 		if got := WorstPromptBytes(o, o2); got > 27000 {
@@ -164,11 +260,11 @@ func TestSizesForUnknownWindowGivesTheDefaults(t *testing.T) {
 // TestSizesForFitsTheWindow is the table the milestone promises: at each of
 // these windows the worst-case prompt, in tokens, leaves room for the reply.
 func TestSizesForFitsTheWindow(t *testing.T) {
-	for _, w := range []int{8192, 16384, 32768, 98304, 128000} {
+	for _, w := range []int{8192, 9000, 16384, 32768, 98304, 128000} {
 		o, o2 := SizesFor(w)
 		worst := WorstPromptBytes(o, o2)
 		budget := PromptBudgetBytes(w)
-		if worst > budget {
+		if worst > budget && FitsWindow(w) {
 			t.Errorf("SizesFor(%d) = chunk %d, brief %d, steps %d: worst prompt %d bytes over the %d byte budget",
 				w, o.ChunkBytes, o2.BriefBytes, o2.StepsPerPass, worst, budget)
 		}

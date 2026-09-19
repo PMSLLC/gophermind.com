@@ -47,7 +47,17 @@ const reconcileNotePrefix = "re-plan: the answer to "
 //
 // A question that is still open is refused with ErrNotAnswered; answer it
 // with AnswerQuestion instead.
+//
+// It takes the plan's run lock (re-entrant within a process), so it yields
+// ErrRunBusy while another process is exporting or planning. That closes the
+// window in which an export checks that the plan is approved and a changed
+// answer un-approves it before the export writes its approval marker.
 func ChangeAnswer(repo *plantree.Repo, id string, a Answer) (Question, Reconciled, error) {
+	release, err := AcquireRun(repo)
+	if err != nil {
+		return Question{}, Reconciled{}, err
+	}
+	defer release()
 	unlock, err := lockQuestions(repo)
 	if err != nil {
 		return Question{}, Reconciled{}, err

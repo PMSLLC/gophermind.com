@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"gophermind/gophermind-lib/lockfile"
 	"gophermind/gophermind-lib/plantree"
 )
 
@@ -298,4 +299,37 @@ func TestQuestionsFileFromAFutureSchemaIsRefused(t *testing.T) {
 	if _, err := LoadQuestions(r); err == nil || !strings.Contains(err.Error(), "schema_version 99") {
 		t.Errorf("err = %v, want a refusal naming the version", err)
 	}
+}
+
+// ChangeAnswer takes the run lock, so it cannot land between an export's
+// check that the plan is approved and the approval marker it writes.
+func TestChangeAnswerRefusesWhileAnotherProcessHoldsTheRunLock(t *testing.T) {
+	r, q := answeredRepo(t)
+	other, err := lockfile.TryAcquire(runLockFileFor(t, r))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = ChangeAnswer(r, q.ID, Answer{OptionIDs: []string{"opt-2"}})
+	if !errors.Is(err, ErrRunBusy) {
+		t.Errorf("ChangeAnswer = %v, want ErrRunBusy", err)
+	}
+	if got, _ := LoadQuestions(r); got[0].Answer.OptionIDs[0] != "opt-1" {
+		t.Error("a busy refusal must change nothing")
+	}
+	other()
+	// It is re-entrant, so a caller already holding the lock is not refused,
+	// and it frees its own hold.
+	release, err := AcquireRun(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ChangeAnswer(r, q.ID, Answer{OptionIDs: []string{"opt-2"}}); err != nil {
+		t.Errorf("ChangeAnswer while this process holds the lock: %v", err)
+	}
+	release()
+	again, err := lockfile.TryAcquire(runLockFileFor(t, r))
+	if err != nil {
+		t.Fatalf("ChangeAnswer left the run lock held: %v", err)
+	}
+	again()
 }

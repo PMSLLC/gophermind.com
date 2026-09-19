@@ -14,9 +14,12 @@ import (
 // content lives inside a delimited block and never disturbs the rest.
 const ProjectDocName = "PROJECT.md"
 
+// SpecBeginMarker and SpecEndMarker delimit the managed block of PROJECT.md.
+// They are exported so a caller that has to know whether a block exists (the
+// plan export reports what it replaced) reads the same text this file writes.
 const (
-	specBeginMarker = "<!-- gophermind:spec:begin -->"
-	specEndMarker   = "<!-- gophermind:spec:end -->"
+	SpecBeginMarker = "<!-- gophermind:spec:begin -->"
+	SpecEndMarker   = "<!-- gophermind:spec:end -->"
 )
 
 // ProjectDocPath is the absolute path to the project doc under root.
@@ -31,7 +34,7 @@ func ProjectDocPath(root string) string { return filepath.Join(root, ProjectDocN
 // Regenerating with the same body is idempotent: exactly one block, one copy.
 func UpsertProjectDoc(root, body string) error {
 	path := ProjectDocPath(root)
-	block := specBeginMarker + "\n" + strings.TrimRight(body, "\n") + "\n" + specEndMarker
+	block := SpecBeginMarker + "\n" + strings.TrimRight(body, "\n") + "\n" + SpecEndMarker
 
 	existing, err := os.ReadFile(path)
 	if err != nil {
@@ -42,11 +45,11 @@ func UpsertProjectDoc(root, body string) error {
 	}
 
 	text := string(existing)
-	start := strings.Index(text, specBeginMarker)
-	end := strings.Index(text, specEndMarker)
+	start := strings.Index(text, SpecBeginMarker)
+	end := strings.Index(text, SpecEndMarker)
 	switch {
 	case start >= 0 && end > start:
-		text = text[:start] + block + text[end+len(specEndMarker):]
+		text = text[:start] + block + text[end+len(SpecEndMarker):]
 	default:
 		// No usable markers (absent, or an end without a begin): append rather
 		// than guess, so nothing hand-written is ever lost.

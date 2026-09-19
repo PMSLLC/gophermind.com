@@ -27,7 +27,7 @@ func TestUpsertCreatesFileWhenAbsent(t *testing.T) {
 	if !strings.Contains(got, "BODY-ONE") {
 		t.Errorf("body missing: %q", got)
 	}
-	if !strings.Contains(got, specBeginMarker) || !strings.Contains(got, specEndMarker) {
+	if !strings.Contains(got, SpecBeginMarker) || !strings.Contains(got, SpecEndMarker) {
 		t.Errorf("markers missing: %q", got)
 	}
 }
@@ -59,7 +59,7 @@ func TestUpsertAppendsWhenMarkersAbsent(t *testing.T) {
 func TestUpsertReplacesOnlyBetweenMarkers(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, ProjectDocName), []byte(
-		"TOP MATTER\n"+specBeginMarker+"\nOLD BODY\n"+specEndMarker+"\nBOTTOM MATTER\n"), 0o644); err != nil {
+		"TOP MATTER\n"+SpecBeginMarker+"\nOLD BODY\n"+SpecEndMarker+"\nBOTTOM MATTER\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -93,7 +93,7 @@ func TestUpsertIsIdempotent(t *testing.T) {
 		}
 	}
 	got := readProjectDoc(t, root)
-	if n := strings.Count(got, specBeginMarker); n != 1 {
+	if n := strings.Count(got, SpecBeginMarker); n != 1 {
 		t.Errorf("begin markers = %d, want 1:\n%s", n, got)
 	}
 	if n := strings.Count(got, "SAME"); n != 1 {

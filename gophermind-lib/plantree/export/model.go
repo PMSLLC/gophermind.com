@@ -70,7 +70,7 @@ func read(repo *plantree.Repo) (legacyPlan, error) {
 	if err != nil {
 		return legacyPlan{}, err
 	}
-	out := legacyPlan{Project: sanitize(fit(root.Title, planDescriptionBytes))}
+	out := legacyPlan{Project: fit(sanitize(root.Title), planDescriptionBytes)}
 	phases, err := repo.Children(plantree.RootID)
 	if err != nil {
 		return legacyPlan{}, err
@@ -78,8 +78,8 @@ func read(repo *plantree.Repo) (legacyPlan, error) {
 	for i, p := range phases {
 		lp := legacyPhase{
 			Number: i + 1,
-			Name:   sanitize(fit(p.Title, planDescriptionBytes)),
-			Goal:   sanitize(fit(firstNonEmpty(p.Objective, p.ContextDigest, p.Title), phaseGoalBytes)),
+			Name:   fit(sanitize(p.Title), planDescriptionBytes),
+			Goal:   fit(sanitize(firstNonEmpty(p.Objective, p.ContextDigest, p.Title)), phaseGoalBytes),
 		}
 		if lp.Name == "" {
 			lp.Name = fmt.Sprintf("Phase %d", lp.Number)

@@ -53,7 +53,8 @@ type runHold struct {
 // The limit of that: within one process the count cannot tell a nested call
 // from a second goroutine, so two concurrent runs in the same process are both
 // admitted. The lock protects against other processes; serializing runs inside
-// one process is the caller's job (the TUI does it in startPass).
+// one process is the caller's job (startPass takes no run lock; the TUI
+// serializes its runs through its own state, m.st and the question phase).
 //
 // Callers must defer the returned release. Each release fires at most once;
 // calling it again does nothing. A release that is never called (a caller that

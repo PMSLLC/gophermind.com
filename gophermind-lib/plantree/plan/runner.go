@@ -39,6 +39,11 @@ type Options struct {
 	// The caller that knows the model derives it; RunPass1 does not.
 	ChunkBytes  int // default DefaultChunkBytes
 	OverviewCap int // default OverviewCapBytes
+	// Progress, if set, is called after each chunk has been merged and its
+	// cursor saved, with the number of chunks done and the total, counting
+	// chunks an earlier run finished. It runs on the calling goroutine, so it
+	// must not block for long. A nil Progress changes nothing.
+	Progress func(done, total int)
 }
 
 // Result summarizes one RunPass1 call.
@@ -173,6 +178,9 @@ func RunPass1(ctx context.Context, repo *plantree.Repo, brief string, c Complete
 		state.Next = i + 1
 		if err := saveState(repo, state); err != nil {
 			return res, err
+		}
+		if opt.Progress != nil {
+			opt.Progress(i+1, len(chunks))
 		}
 	}
 	return res, nil

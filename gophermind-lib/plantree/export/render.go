@@ -47,7 +47,7 @@ func roadmapMarkdown(p legacyPlan, overview string) string {
 	b.WriteString("| Phase | Plans Complete | Status | Completed |\n")
 	b.WriteString("|-------|----------------|--------|-----------|\n")
 	for _, ph := range p.Phases {
-		fmt.Fprintf(&b, "| %d. %s | 0/%d | Not started | - |\n", ph.Number, ph.Name, len(ph.Tasks))
+		fmt.Fprintf(&b, "| %d. %s | 0/%d | Not started | - |\n", ph.Number, strings.ReplaceAll(ph.Name, "|", "/"), len(ph.Tasks))
 	}
 	return b.String()
 }

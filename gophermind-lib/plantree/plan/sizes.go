@@ -42,8 +42,8 @@ const (
 //     for mostly-ASCII text, so a prompt of mostly short words still fits. It
 //     is not conservative for CJK or other 4-byte-rune text, which tokenizes
 //     at roughly 1.3 to 2 bytes per token, and a ratio that would cover it
-//     would leave even the floors unable to fit an 8k window. At 8k the margin
-//     is thin (see the table in TestSizesForFitsTheWindow). The chat template
+//     would leave even the floors unable to fit a 9k window. Above 8,390 the
+//     margin is thin (see the table in TestSizesForFitsTheWindow). The chat template
 //     the server wraps around the prompt is not counted either. Callers that
 //     want to warn the owner rather than overflow should ask FitsWindow.
 //   - the reply needs room inside the same window: a window/replyReserveDiv
@@ -53,6 +53,13 @@ const (
 	replyReserveDiv = 8
 	minReplyTokens  = 1024
 
+	// retryAllowanceBytes is what askJSON's retry prompt adds to the prompt it
+	// retries (RetryPrompt at its bounds: retryProblemBytes and
+	// retryReplyExcerptBytes each plus their "..." marker, and the framing). A
+	// prompt at the budget ceiling would overrun on a retry, so the budget
+	// keeps this much back. A test pins it against the real RetryPrompt.
+	retryAllowanceBytes = 2230
+
 	// maxWindowTokens clamps a reported window before it is multiplied, so a
 	// bogus huge value cannot overflow (32-bit ints included). It is far above
 	// any real window and well above the size at which the defaults fit.
@@ -60,7 +67,8 @@ const (
 )
 
 // PromptBudgetBytes is the number of prompt bytes SizesFor will fit inside a
-// context window of contextTokens tokens, after leaving room for the reply. A
+// context window of contextTokens tokens, after leaving room for the reply and
+// for the extra text a retry adds (retryAllowanceBytes). A
 // window of zero or less (unknown) has no budget, and neither has one so
 // small that the reply reserve takes all of it. A window larger than
 // maxWindowTokens is treated as maxWindowTokens.
@@ -78,7 +86,11 @@ func PromptBudgetBytes(contextTokens int) int {
 	if reply >= contextTokens {
 		return 0
 	}
-	return (contextTokens - reply) * bytesPerToken
+	budget := (contextTokens-reply)*bytesPerToken - retryAllowanceBytes
+	if budget < 0 {
+		return 0
+	}
+	return budget
 }
 
 // WorstPromptBytes is the largest prompt these options can produce, for
@@ -118,11 +130,12 @@ func WorstPromptBytes(o Options, o2 Options2) int {
 // without the other would only make the two disagree; the overview is part of
 // the fixed cost measured in pass1FixedBytes and pass2BaseBytes.
 //
-// The budget assumes mostly-ASCII text: at 8k the margin is thin, CJK-heavy
+// The budget assumes mostly-ASCII text: at 8.4k the margin is thin, CJK-heavy
 // briefs can still overflow, and the chat template is not counted (see
 // bytesPerToken).
 //
-// Below about 7,000 tokens no setting fits. For any positive window SizesFor
+// Below 8,390 tokens no setting fits (the floors' worst prompt plus a retry
+// does not fit the budget), so an 8,192 token window is one of them. For any positive window SizesFor
 // then returns its floor sizes, never the defaults, and FitsWindow reports
 // false so the caller can warn; otherwise the run reports the server's own
 // context-limit error, which RunPass1 and RunPass2 already translate into

@@ -147,6 +147,9 @@ func Approvable(repo *plantree.Repo) error {
 		x := actions.Blocked[0]
 		return fmt.Errorf("%w: %s is %s: %s", ErrNotApprovable, x.NodeID, x.Kind, oneLine(x.Reason))
 	}
+	if len(actions.Runnable) == 0 {
+		return fmt.Errorf("%w: the plan has no step to approve", ErrNotApprovable)
+	}
 	switch {
 	case len(actions.Runnable) > 1 || actions.Runnable[0].Kind != plantree.ActionApprove:
 		x := actions.Runnable[0]
