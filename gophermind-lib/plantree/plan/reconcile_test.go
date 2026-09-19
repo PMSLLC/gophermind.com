@@ -29,8 +29,8 @@ func TestPass2PromptShowsWhatARePlannedStepIsReplacing(t *testing.T) {
 
 	p := Pass2Prompt(Pass2Input{Project: "demo", Phase: phase, Task: task, Siblings: []plantree.Node{old, fresh}, Batch: []plantree.Node{old}})
 	for _, want := range []string{
-		"previous specification: the old description",
-		"being re-planned because: re-plan: the answer to q-001 changed",
+		`previous specification: "the old description`,
+		`being re-planned because: "re-plan: the answer to q-001 changed`,
 		"is being re-planned because the owner changed a decision",
 		s1 + ": Create module [specified, being re-planned]",
 	} {
@@ -140,7 +140,7 @@ func TestRunPass2RePlansOnlyTheFlaggedSteps(t *testing.T) {
 	if n, _ := r.Get("phase-001.task-002.step-001"); n.Work.Description != "build phase-001.task-002.step-001" {
 		t.Errorf("an unaffected step was re-specified: %+v", n.Work)
 	}
-	if len(f.prompts) != 1 || !strings.Contains(f.prompts[0], "previous specification: build phase-001.task-001.step-001") {
+	if len(f.prompts) != 1 || !strings.Contains(f.prompts[0], `previous specification: "build phase-001.task-001.step-001`) {
 		t.Errorf("the pass did not see what it was replacing: %d prompts", len(f.prompts))
 	}
 	if !strings.Contains(f.prompts[0], q.Question) {

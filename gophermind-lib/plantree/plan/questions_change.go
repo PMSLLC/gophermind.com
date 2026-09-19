@@ -23,7 +23,16 @@ type Reconciled struct {
 	// finished work is not this function's decision to make; a caller should
 	// show them to the owner.
 	Executed []string
+	// Refreshed lists steps that were already at needs_reconciliation from an
+	// earlier change and whose resume note now names this change instead, so
+	// the note and the decisions block of the next pass agree.
+	Refreshed []string
 }
+
+// reconcileNotePrefix starts every resume note a changed answer leaves. Only
+// a note with this prefix explains a reconcile action: a step's note can also
+// hold the summary of a specification it lost, which explains nothing new.
+const reconcileNotePrefix = "re-plan: the answer to "
 
 // ChangeAnswer replaces the answer of an already answered question. The new
 // answer is validated exactly like a first answer, the old one is kept in the
@@ -34,8 +43,10 @@ type Reconciled struct {
 // Changing an answer to what it already says adds no history entry and does
 // not rewrite questions.json, but it still flags any step affected by the
 // question that is not yet flagged. The answer is saved before the steps are
-// flagged, so a call that died in between is repaired by repeating it. A question that is still open is refused
-// with ErrNotAnswered; answer it with AnswerQuestion instead.
+// flagged, so a call that died in between is repaired by repeating it.
+//
+// A question that is still open is refused with ErrNotAnswered; answer it
+// with AnswerQuestion instead.
 func ChangeAnswer(repo *plantree.Repo, id string, a Answer) (Question, Reconciled, error) {
 	unlock, err := lockQuestions(repo)
 	if err != nil {
@@ -58,7 +69,7 @@ func ChangeAnswer(repo *plantree.Repo, id string, a Answer) (Question, Reconcile
 			return Question{}, Reconciled{}, err
 		}
 		next := Answer{OptionIDs: append([]string{}, a.OptionIDs...), Text: strings.TrimSpace(a.Text)}
-		if sameAnswer(*q.Answer, next) {
+		if SameAnswer(*q.Answer, next) {
 			// Nothing to record, but a previous call may have saved the answer
 			// and died before flagging. Flagging is idempotent, so finish it.
 			rec, err := flagForReconciliation(repo, *q)
@@ -77,9 +88,9 @@ func ChangeAnswer(repo *plantree.Repo, id string, a Answer) (Question, Reconcile
 	return Question{}, Reconciled{}, fmt.Errorf("%w: %s", ErrNoSuchQuestion, id)
 }
 
-// sameAnswer reports whether two answers say the same thing. Option order is
+// SameAnswer reports whether two answers say the same thing. Option order is
 // not part of an answer, so a re-ordered selection is the same answer.
-func sameAnswer(a, b Answer) bool {
+func SameAnswer(a, b Answer) bool {
 	if strings.TrimSpace(a.Text) != strings.TrimSpace(b.Text) || len(a.OptionIDs) != len(b.OptionIDs) {
 		return false
 	}
@@ -120,7 +131,7 @@ func flagForReconciliation(repo *plantree.Repo, q Question) (Reconciled, error) 
 	if err != nil {
 		return Reconciled{}, err
 	}
-	note := cutBytes("re-plan: the answer to "+q.ID+" changed: "+oneLine(decisionLine(q)), reconcileNoteBytes)
+	note := cutBytes(reconcileNotePrefix+q.ID+" changed: "+oneLine(decisionLine(q)), reconcileNoteBytes)
 	var rec Reconciled
 	for _, s := range steps {
 		if onHold(s) {
@@ -128,6 +139,21 @@ func flagForReconciliation(repo *plantree.Repo, q Question) (Reconciled, error) 
 		}
 		if s.Status == plantree.StatusInProgress || s.Status == plantree.StatusCompleted {
 			rec.Executed = append(rec.Executed, s.ID)
+			continue
+		}
+		if s.Planning.Stage == plantree.StageNeedsReconciliation {
+			// Flagged by an earlier change and not yet re-planned: keep it
+			// flagged, but make its note say the newest change.
+			if s.ResumeNote == note {
+				continue
+			}
+			if _, err := repo.Update(s.ID, s.NodeRevision, func(n *plantree.Node) error {
+				n.ResumeNote = note
+				return nil
+			}); err != nil {
+				return rec, fmt.Errorf("refreshing the note of %s: %w", s.ID, err)
+			}
+			rec.Refreshed = append(rec.Refreshed, s.ID)
 			continue
 		}
 		if s.Planning.Stage != plantree.StageDrafted && s.Planning.Stage != plantree.StageApproved {

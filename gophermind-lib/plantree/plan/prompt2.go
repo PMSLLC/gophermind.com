@@ -2,6 +2,7 @@ package plan
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"gophermind/gophermind-lib/plantree"
@@ -34,6 +35,19 @@ const siblingListCapBytes = 3000
 
 // fit makes a node field safe for a prompt: one line, at most n bytes.
 func fit(s string, n int) string { return cutBytes(oneLine(s), n) }
+
+// quoteFit is fit as a Go-quoted string, so text from an old specification or
+// note is data on one line and cannot pose as a prompt line. Quoting can
+// lengthen control characters to escapes, so the text is cut until the quoted
+// form is within what fit allows (n bytes and a marker) plus its two quotes.
+func quoteFit(s string, n int) string {
+	for k := n; ; k = k * 3 / 4 {
+		q := strconv.Quote(fit(s, k))
+		if len(q) <= n+5 || k < 2 {
+			return q
+		}
+	}
+}
 
 // stepTag tells the model whether a sibling can be depended on.
 func stepTag(s plantree.Node) string {
@@ -89,6 +103,10 @@ type Pass2Input struct {
 // overview, the project facts, the phase and task the steps belong to, the
 // list of the task's steps, the steps to specify now, and optionally excerpts
 // of the brief. It carries nothing about any other task.
+//
+// The caller bounds the batch: at most reconcileStepsPerPass steps that are
+// being re-planned (RunPass2 does), because each carries its previous
+// specification and reason. The prompt-size pins assume it.
 func Pass2Prompt(in Pass2Input) string {
 	phase, task, siblings, batch := in.Phase, in.Task, in.Siblings, in.Batch
 	excerptsCap := in.ExcerptsCap
@@ -125,11 +143,11 @@ func Pass2Prompt(in Pass2Input) string {
 		}
 		replanning = true
 		if s.Work != nil {
-			if prev := fit(s.Work.Description, priorWorkBytes); prev != "" {
+			if prev := quoteFit(s.Work.Description, priorWorkBytes); prev != `""` {
 				fmt.Fprintf(&b, "  previous specification: %s\n", prev)
 			}
 		}
-		if why := fit(s.ResumeNote, reconcileNoteShownBytes); why != "" {
+		if why := quoteFit(s.ResumeNote, reconcileNoteShownBytes); why != `""` {
 			fmt.Fprintf(&b, "  being re-planned because: %s\n", why)
 		}
 	}

@@ -225,7 +225,6 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 		// Batches are never mixed: a batch of steps being re-planned is
 		// smaller and carries each step's previous specification, so keeping
 		// the two apart is what keeps the prompt inside its budget.
-		redo := setOf(idsOf(w.redo))
 		batches := append(batchesOf(w.pending, opt.StepsPerPass), batchesOf(w.redo, reconcileStepsPerPass)...)
 		for _, batch := range batches {
 			if err := ctx.Err(); err != nil {
@@ -254,6 +253,14 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 			res.Questions += asked
 			if err != nil {
 				return res, taskError(w.task.ID, err)
+			}
+			// A batch is all pending or all being re-planned, so the redo set
+			// is that of this batch alone.
+			redo := map[string]bool{}
+			for _, s := range batch {
+				if needsRespec(s) {
+					redo[s.ID] = true
+				}
 			}
 			if err := applySpecs(repo, out, redo); err != nil {
 				return res, taskError(w.task.ID, err)

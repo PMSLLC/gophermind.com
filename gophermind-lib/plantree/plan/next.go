@@ -2,6 +2,7 @@ package plan
 
 import (
 	"fmt"
+	"strings"
 
 	"gophermind/gophermind-lib/plantree"
 )
@@ -53,9 +54,26 @@ func NextActions(repo *plantree.Repo) (plantree.Actions, error) {
 	return a, nil
 }
 
+// NeedsReplan counts the steps waiting to be re-planned (stage
+// needs_reconciliation, not on hold). It reads the tree alone, so it is true
+// however the flagging happened and whatever became of an earlier pass: a
+// caller that must decide whether to run RunPass2 with Options2.Reconcile
+// asks this, not what the current call wrote.
+func NeedsReplan(repo *plantree.Repo) (int, error) {
+	n := 0
+	err := repo.Walk(func(node plantree.Node) error {
+		if node.Kind() == plantree.KindStep && needsRespec(node) {
+			n++
+		}
+		return nil
+	})
+	return n, err
+}
+
 // explainReconcile replaces each reconcile action's generic reason with the
 // step's resume note, which names the question whose answer changed. A step
-// with no note keeps the generic reason.
+// whose note is not a reconcile note (see reconcileNotePrefix) keeps the
+// generic reason.
 func explainReconcile(repo *plantree.Repo, actions []plantree.Action) error {
 	for i, x := range actions {
 		if x.Kind != plantree.ActionReconcile {
@@ -65,7 +83,7 @@ func explainReconcile(repo *plantree.Repo, actions []plantree.Action) error {
 		if err != nil {
 			return err
 		}
-		if note := oneLine(n.ResumeNote); note != "" {
+		if note := oneLine(n.ResumeNote); strings.HasPrefix(note, reconcileNotePrefix) {
 			actions[i].Reason = cutBytes(note, reconcileNoteBytes)
 		}
 	}
