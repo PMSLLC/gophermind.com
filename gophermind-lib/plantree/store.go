@@ -41,6 +41,10 @@ func Open(planningDir string) *Repo {
 	return &Repo{dir: filepath.Join(planningDir, "plan")}
 }
 
+// Dir returns the plan directory (<planningDir>/plan), so callers can keep
+// sibling documents such as overview.md and brief.md next to the tree.
+func (r *Repo) Dir() string { return r.dir }
+
 func (r *Repo) metaPath(id string) (string, error) {
 	rel, err := MetaPath(id)
 	if err != nil {

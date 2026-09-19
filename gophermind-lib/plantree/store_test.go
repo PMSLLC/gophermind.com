@@ -226,3 +226,10 @@ func TestChildrenSkipsDirectoriesThatAreNotMembers(t *testing.T) {
 		t.Errorf("Verify: %v", err)
 	}
 }
+
+func TestDirIsThePlanDirectory(t *testing.T) {
+	dir := t.TempDir()
+	if got := Open(dir).Dir(); got != filepath.Join(dir, "plan") {
+		t.Errorf("Dir() = %q, want %q", got, filepath.Join(dir, "plan"))
+	}
+}
