@@ -3,8 +3,10 @@ package tui
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"gophermind/gophermind-lib/plantree/plan"
 )
 
@@ -238,4 +240,82 @@ func TestQuestionRoundChangeModeStartsFromTheStoredAnswer(t *testing.T) {
 	if len(got[0].Answer.OptionIDs) != 1 || got[0].Answer.OptionIDs[0] != "opt-2" || got[0].Answer.Text != "for now" {
 		t.Errorf("the changed answer = %+v, want the new option and the kept note", got[0].Answer)
 	}
+}
+
+func TestOneLineIsRuneSafe(t *testing.T) {
+	for _, unit := range []string{"😀", "漢", "é", "a"} {
+		for extra := 0; extra < 4; extra++ {
+			s := strings.Repeat("x", extra) + strings.Repeat(unit, 200)
+			got := oneLine(s)
+			if !utf8.ValidString(got) {
+				t.Errorf("oneLine cut %q+%d into invalid UTF-8", unit, extra)
+			}
+		}
+	}
+	if got := oneLine(strings.Repeat("a", 200)); got != strings.Repeat("a", 160)+"…" {
+		t.Error("ASCII behaviour changed")
+	}
+	if got := oneLine("a\n b\t c"); got != "a b c" {
+		t.Errorf("oneLine = %q", got)
+	}
+}
+
+// checkWidth fails if any line of v is wider than w.
+func checkWidth(t *testing.T, v string, w int) {
+	t.Helper()
+	for _, line := range strings.Split(v, "\n") {
+		if got := ansi.StringWidth(line); got > w {
+			t.Errorf("width %d: line is %d wide: %q", w, got, line)
+		}
+	}
+}
+
+func TestQuestionRoundEmptyListIsInert(t *testing.T) {
+	r := newQuestionRound(roundAnswer, nil, nil, 40)
+	_ = r.View()
+	for _, k := range []tea.KeyMsg{key(tea.KeyUp), key(tea.KeyDown), key(tea.KeyLeft), key(tea.KeyRight),
+		key(tea.KeySpace), key(tea.KeyEnter), key(tea.KeyCtrlS), key(tea.KeyTab), runes("e"), runes("s"), runes("j"), runes("k")} {
+		var res roundResult
+		r, res = r.Update(k)
+		if res.Cancelled || res.Submitted {
+			t.Errorf("key %v finished an empty round", k)
+		}
+	}
+	if _, res := r.Update(key(tea.KeyEsc)); !res.Cancelled {
+		t.Error("esc must still cancel an empty round")
+	}
+	if r.count() != 0 || len(r.answers()) != 0 {
+		t.Error("an empty round has nothing")
+	}
+}
+
+func TestQuestionRoundViewNeverExceedsItsWidth(t *testing.T) {
+	q := roundQuestion("q-001", "A very long question\nspanning lines and 漢字漢字漢字漢字漢字漢字 😀😀😀 words words words words", true)
+	q.Options = []plan.Option{
+		{ID: "opt-1", Label: "line one\nline two " + strings.Repeat("long ", 40), Description: strings.Repeat("d", 100)},
+		{ID: "opt-2", Label: strings.Repeat("漢", 60), Description: "😀 wide"},
+	}
+	q.Recommended = &plan.Recommendation{OptionIDs: []string{"opt-2"}, Rationale: "because\n" + strings.Repeat("漢字 reasons ", 20)}
+	long := roundQuestion("q-002", strings.Repeat("Q", 300), false)
+	for _, w := range []int{1, 5, 10, 25, 40, 80} {
+		r := newQuestionRound(roundAnswer, []plan.Question{q, long}, []string{"brief\n" + strings.Repeat("漢字 ", 200)}, w)
+		checkWidth(t, r.View(), w)
+		r, _ = pressRound(r, key(tea.KeySpace), runes("e"), runes(strings.Repeat("note 漢字 😀 ", 30)))
+		checkWidth(t, r.View(), w)
+		r, _ = pressRound(r, key(tea.KeyEsc), runes("s"), key(tea.KeyDown), key(tea.KeyRight), key(tea.KeySpace))
+		checkWidth(t, r.View(), w)
+		if w < 26 && r.note.Width() > w {
+			t.Errorf("width %d: note box is %d wide", w, r.note.Width())
+		}
+	}
+}
+
+func TestQuestionRoundWidthZeroBeforeSetWidth(t *testing.T) {
+	r := questionRound{}
+	_ = r.View()
+	r, _ = r.Update(key(tea.KeyDown))
+	r = newQuestionRound(roundAnswer, []plan.Question{roundQuestion("q-001", "Q?", false)}, nil, 0)
+	_ = r.View()
+	r, _ = pressRound(r, runes("e"), runes("hi"), key(tea.KeyEsc))
+	_ = r.View()
 }

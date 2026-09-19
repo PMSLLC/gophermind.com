@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"gophermind/gophermind-lib/plantree/plan"
 )
 
@@ -130,6 +131,9 @@ func (r *questionRound) setWidth(w int) {
 	inner := w - 6
 	if inner < 20 {
 		inner = 20
+	}
+	if w > 0 && inner > w { // a very narrow round never gets a wider note box
+		inner = w
 	}
 	r.note.SetWidth(inner)
 }
@@ -363,7 +367,26 @@ func (r *questionRound) skip() {
 // View renders the round: the progress line, a window of the list around the
 // cursor, then the current question in full with its options, the brief
 // excerpt behind it and its free-text box.
+//
+// Every line is cut, with an ellipsis, to the round's width (display columns,
+// wide-rune aware); a width of 0 or less means unbounded. Height is never
+// cut: the worst case is 23 rows plus one row per option of the current
+// question (title 1, window 7 plus 2 markers, blank 1, question 1, why 1,
+// brief 1, recommendation 1, note label 1, note box up to roundNoteRows,
+// skipped 1, keys 1). A caller budgeting height should reserve that.
 func (r questionRound) View() string {
+	out := r.render()
+	if r.width < 1 {
+		return out
+	}
+	lines := strings.Split(out, "\n")
+	for i, l := range lines {
+		lines[i] = ansi.Truncate(l, r.width, "…")
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (r questionRound) render() string {
 	if len(r.items) == 0 {
 		return roundTitleStyle.Render("No questions.")
 	}
@@ -411,7 +434,7 @@ func (r questionRound) View() string {
 		if it.chosen[o.ID] {
 			box = "x"
 		}
-		line := fmt.Sprintf("  [%s] %s", box, o.Label)
+		line := fmt.Sprintf("  [%s] %s", box, oneLine(o.Label))
 		if o.Description != "" {
 			line += " - " + oneLine(o.Description)
 		}
