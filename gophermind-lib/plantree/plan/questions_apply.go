@@ -177,3 +177,60 @@ func markAsked(steps []plantree.Node, out Pass2Output) {
 		}
 	}
 }
+
+// ReleaseAnswered moves every step that waits for an answer back to the
+// inspected stage once no open question still affects it, directly or through
+// the task or phase above it, so pass 2 will specify it. It returns how many
+// steps it released. A step on hold stays where it is. Calling it again changes
+// nothing.
+func ReleaseAnswered(repo *plantree.Repo) (int, error) {
+	open, err := OpenQuestions(repo)
+	if err != nil {
+		return 0, err
+	}
+	blocked := map[string]bool{}
+	for _, q := range open {
+		for _, id := range q.Affects {
+			blocked[id] = true
+		}
+	}
+	var waiting []plantree.Node
+	err = repo.Walk(func(n plantree.Node) error {
+		if n.Kind() == plantree.KindStep && n.Planning.Stage == plantree.StageAwaitingAnswers && !onHold(n) {
+			waiting = append(waiting, n)
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	released := 0
+	for _, s := range waiting {
+		if affectedBy(blocked, s.ID) {
+			continue
+		}
+		if _, err := repo.Update(s.ID, s.NodeRevision, func(n *plantree.Node) error {
+			n.Planning.Stage = plantree.StageInspected
+			return nil
+		}); err != nil {
+			return released, fmt.Errorf("releasing %s: %w", s.ID, err)
+		}
+		released++
+	}
+	return released, nil
+}
+
+// affectedBy reports whether id, or any node above it, is in blocked.
+func affectedBy(blocked map[string]bool, id string) bool {
+	for id != "" {
+		if blocked[id] {
+			return true
+		}
+		parent, err := plantree.ParentID(id)
+		if err != nil {
+			return false
+		}
+		id = parent
+	}
+	return false
+}

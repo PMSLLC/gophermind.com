@@ -35,6 +35,9 @@ type Result2 struct {
 	Tasks  int // tasks whose pending steps were all specified by this call
 	Steps  int // steps specified by this call
 	Passes int // model passes made by this call
+	// Released counts steps that were waiting for an answer and were released
+	// because their questions are now answered; they are specified by this call.
+	Released int
 	// Questions counts new questions asked by this call. The steps they name
 	// wait for an answer and are not specified.
 	Questions int
@@ -141,6 +144,10 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 	if opt.ProjectName == "" {
 		opt.ProjectName = root.Title
 	}
+	released, err := ReleaseAnswered(repo)
+	if err != nil {
+		return Result2{}, err
+	}
 	facts := opt.Facts
 	if strings.TrimSpace(facts) == "" {
 		if facts, err = ReadFacts(repo); err != nil {
@@ -173,7 +180,7 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 	if err != nil {
 		return Result2{}, err
 	}
-	res := Result2{EmptyTasks: len(empty)}
+	res := Result2{EmptyTasks: len(empty), Released: released}
 	for _, w := range work {
 		ids := append([]string{w.task.ID}, idsOf(w.steps)...)
 		excerpts := Excerpts(chunks, prov.chunksFor(ids), opt.BriefBytes)
