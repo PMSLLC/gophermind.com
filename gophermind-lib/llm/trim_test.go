@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -114,5 +115,74 @@ func TestSummarizeTurnsSummarizesOldest(t *testing.T) {
 	// Should have system + summary + kept turns.
 	if len(summarized) <= 1 {
 		t.Errorf("SummarizeTurns(4): got %d messages, want more", len(summarized))
+	}
+}
+
+// A single in-flight turn: one user prompt, then several tool exchanges whose
+// results are large. This is the shape that overflowed a 98k window when a
+// model read whole documents one after another.
+func inFlightTurn(n, toolBytes int) []Message {
+	msgs := []Message{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "do the task"},
+	}
+	for i := 0; i < n; i++ {
+		id := string(rune('a' + i))
+		msgs = append(msgs,
+			Message{Role: "assistant", ToolCalls: []ToolCall{{ID: id, Function: FunctionCall{Name: "read_file", Arguments: `{"path":"x"}`}}}},
+			Message{Role: "tool", ToolCallID: id, Name: "read_file", Content: strings.Repeat("x", toolBytes)},
+		)
+	}
+	return msgs
+}
+
+func TestTrimToBudgetFitsAnInFlightToolTurn(t *testing.T) {
+	msgs := inFlightTurn(10, 40_000) // ~100k tokens of tool output
+	const budget = 30_000
+	trimmed, dropped := TrimToBudget(msgs, budget)
+	if got := EstimateMessagesTokens(trimmed); got > budget {
+		t.Fatalf("trimmed estimate = %d tokens, want <= %d (dropped=%d)", got, budget, dropped)
+	}
+	if dropped == 0 {
+		t.Error("expected trimming to report work done")
+	}
+}
+
+func TestTrimToBudgetKeepsToolCallsPaired(t *testing.T) {
+	trimmed, _ := TrimToBudget(inFlightTurn(10, 40_000), 30_000)
+	calls := map[string]bool{}
+	for _, m := range trimmed {
+		for _, tc := range m.ToolCalls {
+			calls[tc.ID] = true
+		}
+	}
+	for _, m := range trimmed {
+		if m.Role == "tool" && !calls[m.ToolCallID] {
+			t.Errorf("tool result %q has no matching assistant tool call", m.ToolCallID)
+		}
+	}
+	answered := map[string]bool{}
+	for _, m := range trimmed {
+		if m.Role == "tool" {
+			answered[m.ToolCallID] = true
+		}
+	}
+	for id := range calls {
+		if !answered[id] {
+			t.Errorf("assistant tool call %q has no tool result", id)
+		}
+	}
+}
+
+func TestTrimToBudgetKeepsTheCurrentUserPrompt(t *testing.T) {
+	trimmed, _ := TrimToBudget(inFlightTurn(10, 40_000), 30_000)
+	found := false
+	for _, m := range trimmed {
+		if m.Role == "user" && m.Content == "do the task" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the user prompt that started this turn was dropped")
 	}
 }

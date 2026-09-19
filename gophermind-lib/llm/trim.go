@@ -64,82 +64,85 @@ func estimateRequestTokens(msgs []Message, tools []Tool, model string) int {
 	return n
 }
 
-// TrimToBudget removes the oldest user/tool turns from msgs (keeping the system
-// prompt and the most recent assistant turn) until the estimated token count
-// of the remaining messages is ≤ maxTokens. It returns the trimmed slice and
-// the number of turns dropped.
+// elidedToolOutput replaces a tool result that had to be dropped to fit the
+// context window. The message itself stays so its assistant tool call is
+// still answered, which strict chat templates require.
+const elidedToolOutput = "[output elided to fit the context window; re-run the tool if you still need it]"
+
+// TrimToBudget shrinks msgs until the estimated token count is <= maxTokens
+// and returns the result with the number of messages changed or removed.
 //
-// The system prompt (first message, role=="system") is never dropped. The most
-// recent assistant turn is also preserved so the model always has a coherent
-// ending. Only user and tool-role messages are eligible for trimming.
+// It works oldest first, in two passes, and never touches the system prompt
+// (index 0) or the most recent user message and everything after it, which is
+// the turn in flight:
 //
-// If the budget is already sufficient, msgs is returned unchanged with 0 dropped.
+//  1. Tool results are replaced by a short placeholder. The message stays, so
+//     every assistant tool call keeps its answer.
+//  2. If that is not enough, whole exchanges older than the latest user
+//     message are removed: a plain message alone, or an assistant tool-call
+//     message together with all of its tool results.
+//
+// If the budget is already sufficient, msgs is returned unchanged with 0.
 func TrimToBudget(msgs []Message, maxTokens int) ([]Message, int) {
 	est := estimateMessagesTokens(msgs)
 	if est <= maxTokens {
 		return msgs, 0
 	}
 
-	// We need to drop turns. Keep the system prompt (index 0) and the last
-	// assistant turn. Drop oldest user/tool turns first.
-	dropped := 0
-	result := make([]Message, 0, len(msgs))
-
-	// Collect indices of turns we can drop (user and tool, excluding the last
-	// assistant turn if present).
-	droppable := make([]int, 0, len(msgs))
-	lastAssistant := -1
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role == "assistant" && len(msgs[i].ToolCalls) == 0 && msgs[i].Content != "" {
-			lastAssistant = i
+	lastUser := 0
+	for i := len(msgs) - 1; i >= 1; i-- {
+		if msgs[i].Role == "user" {
+			lastUser = i
 			break
 		}
 	}
 
-	for i := 1; i < len(msgs); i++ { // skip system prompt (index 0)
-		if i == lastAssistant {
-			continue // preserve the last assistant turn
+	out := make([]Message, len(msgs))
+	copy(out, msgs)
+	changed := 0
+
+	// Pass 1: elide tool output, oldest first.
+	placeholder := estimateTokens(elidedToolOutput)
+	for i := 1; i < len(out) && est > maxTokens; i++ {
+		if out[i].Role != "tool" || out[i].Content == elidedToolOutput {
+			continue
 		}
-		if msgs[i].Role == "user" || msgs[i].Role == "tool" {
-			droppable = append(droppable, i)
+		saved := estimateTokens(out[i].Content) - placeholder
+		if saved <= 0 {
+			continue
 		}
+		out[i].Content = elidedToolOutput
+		est -= saved
+		changed++
+	}
+	if est <= maxTokens {
+		return out, changed
 	}
 
-	// Drop from the oldest first.
-	for _, idx := range droppable {
-		if est <= maxTokens {
-			break
+	// Pass 2: remove whole exchanges from before the latest user message.
+	drop := make(map[int]bool)
+	for i := 1; i < lastUser && est > maxTokens; {
+		end := i + 1
+		if out[i].Role == "assistant" && len(out[i].ToolCalls) > 0 {
+			for end < lastUser && out[end].Role == "tool" {
+				end++
+			}
 		}
-		est -= estimateMessageTokens(msgs[idx])
-		dropped++
-	}
-
-	// Build the result: keep system prompt, keep remaining turns up to and
-	// including the last assistant turn.
-	keepUpTo := len(msgs)
-	if lastAssistant >= 0 {
-		keepUpTo = lastAssistant + 1
-	}
-
-	// Rebuild: include system prompt, then all non-dropped turns up to keepUpTo.
-	dropSet := make(map[int]bool)
-	droppedCount := 0
-	for _, idx := range droppable {
-		if est < maxTokens {
-			break
+		for j := i; j < end; j++ {
+			est -= estimateMessageTokens(out[j])
+			drop[j] = true
+			changed++
 		}
-		est -= estimateMessageTokens(msgs[idx])
-		dropSet[idx] = true
-		droppedCount++
+		i = end
 	}
 
-	for i := 0; i < keepUpTo; i++ {
-		if !dropSet[i] {
-			result = append(result, msgs[i])
+	kept := make([]Message, 0, len(out))
+	for i, m := range out {
+		if !drop[i] {
+			kept = append(kept, m)
 		}
 	}
-
-	return result, droppedCount
+	return kept, changed
 }
 
 // SummarizeTurns replaces the oldest user/tool turns with a single summary
