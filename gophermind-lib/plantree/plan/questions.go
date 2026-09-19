@@ -18,12 +18,21 @@ const (
 	// maxStoredAffects caps the nodes one question can name. A model that keeps
 	// re-asking a question with new ids cannot grow its record without bound;
 	// ids beyond the cap are dropped.
-	maxStoredAffects   = 200
-	questionsFile      = "questions.json"
-	questionsSchema    = 1
+	maxStoredAffects = 200
+	questionsFile    = "questions.json"
+	// questionsSchema is what this code writes. Schema 2 added the optional
+	// prior_answers history; a schema-1 file still loads (it simply has none)
+	// and is rewritten as schema 2 by the next save.
+	questionsSchema    = 2
+	questionsSchemaMin = 1
 	maxAnswerTextRunes = 2000
-	QuestionOpen       = "open"
-	QuestionAnswered   = "answered"
+	// maxAnswerHistory caps the previous answers kept on one question and
+	// historyTextBytes caps the text of each, so an owner who changes their
+	// mind repeatedly cannot grow questions.json without bound.
+	maxAnswerHistory = 5
+	historyTextBytes = 500
+	QuestionOpen     = "open"
+	QuestionAnswered = "answered"
 )
 
 var (
@@ -33,6 +42,9 @@ var (
 	ErrAlreadyAnswered = errors.New("plan: the question is already answered")
 	// ErrInvalidAnswer is returned when an answer does not fit its question.
 	ErrInvalidAnswer = errors.New("plan: invalid answer")
+	// ErrNotAnswered is returned when changing the answer of a question that
+	// has none yet. Answer it with AnswerQuestion first.
+	ErrNotAnswered = errors.New("plan: the question is not answered yet")
 )
 
 // Option is one choice offered for a question.
@@ -56,6 +68,16 @@ type Answer struct {
 	Text      string   `json:"text"`
 }
 
+// PriorAnswer is an answer that was replaced, kept so the record shows what
+// the owner decided before they changed their mind. Its text is cut to
+// historyTextBytes.
+type PriorAnswer struct {
+	OptionIDs  []string `json:"option_ids"`
+	Text       string   `json:"text"`
+	AnsweredAt string   `json:"answered_at"`
+	ReplacedAt string   `json:"replaced_at"`
+}
+
 // Question is a decision the plan needs from a person.
 type Question struct {
 	ID            string          `json:"id"`
@@ -70,6 +92,10 @@ type Question struct {
 	Status        string          `json:"status"`
 	Answer        *Answer         `json:"answer"`
 	AnsweredAt    string          `json:"answered_at"`
+	// PriorAnswers holds the answers this question had before, oldest first,
+	// at most maxAnswerHistory of them. Added in schema 2, so it is omitted
+	// when empty and a schema-1 file simply has none.
+	PriorAnswers []PriorAnswer `json:"prior_answers,omitempty"`
 }
 
 // NewOption and NewQuestion describe a question before it has an id.
@@ -121,8 +147,8 @@ func loadQuestionFile(repo *plantree.Repo) (questionFile, error) {
 	if err := dec.Decode(&f); err != nil {
 		return questionFile{}, fmt.Errorf("plan: reading %s: %w", questionsPath(repo), err)
 	}
-	if f.SchemaVersion != questionsSchema {
-		return questionFile{}, fmt.Errorf("plan: %s has unsupported schema_version %d (want %d)", questionsPath(repo), f.SchemaVersion, questionsSchema)
+	if f.SchemaVersion < questionsSchemaMin || f.SchemaVersion > questionsSchema {
+		return questionFile{}, fmt.Errorf("plan: %s has unsupported schema_version %d (want %d to %d)", questionsPath(repo), f.SchemaVersion, questionsSchemaMin, questionsSchema)
 	}
 	return f, nil
 }
