@@ -6,18 +6,39 @@ All notable changes to GopherMind are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-18
+
 ### Added
 
+- **gophermind-osx** — a native macOS desktop app built on libui-ng, a lighter-weight alternative to the Wails-based desktop app for people who just want a window: connection manager (local/remote/multi-tunnel, gocloak OAuth2, Keychain-backed credentials), a chat transcript with streaming, an approval tracker with a Y/N/timeout flow, a collapsible right panel, the model catalogue picker, full session-list CRUD, a pipeline panel with breakdown-seed and live task status, and a settings panel for backends/model preferences/skills/cache. Ships as a signed, dock-icon-bearing `.app` bundle with the server binary embedded in `Resources`; settings persist under `~/.gophermind` and survive upgrades and reinstalls. The menu bar gets a real status item too — a gopher-head glyph (not placeholder text), a File > Examples menu pointing at sample pipeline briefs, and the window launches maximized by default.
 - **Run a session on another machine.** The desktop app can now point a session at a remote `gophermind serve` instead of its own embedded one, so the work happens on a server while the window stays local. Backends are configured in `~/.gophermind/backends.json`; the file does not exist by default and the app behaves exactly as before without one. Which machine a session runs on is shown in the status bar and, crucially, inside every approval prompt: a gated command approved in the window may execute on a server that hosts everything else, so it must never be ambiguous which box a prompt is about.
-- **A session list across every backend**, so an existing conversation on a remote box can be resumed rather than always starting fresh. One unreachable backend costs only its own rows.
+- **A session list across every backend**, so an existing conversation on a remote box can be resumed rather than always starting fresh. One unreachable backend costs only its own rows. Sessions can be renamed or deleted from the list, and now auto-name themselves from the first user message instead of staying "Untitled."
 - **Skill sources.** `internal/skills` installs capability packs from a GitHub repository and injects only the ones switched on, managed from a panel in the desktop settings. Nothing fetched is enabled by arriving on disk: adding a source makes its content reviewable, and switching any of it on is a separate decision. Sources pin a commit rather than track a branch, because a repository can be rewritten after it was reviewed. A pack committed to a repo's own `.gophermind/skills` stays always on, which is the consent `CLAUDE.md` already carries.
 - **`humanize` tool** — rewrites prose to remove AI writing tells, using the vendored [blader/humanizer](https://github.com/blader/humanizer) skill as its system prompt. It is a tool rather than an injected skill so its ~7k tokens of guidance cost nothing until it is called.
 - **Vendored skill packs** for tdd, code review and bug diagnosis, from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT).
+- **Each session gets its own working directory** on the server (`/serve`), rather than sharing one process-wide root.
+- **`/project` can seed its interview from a brief file** — `/project <name> <path-to-brief>` reads the file and asks questions that fill its gaps instead of starting cold. Sample briefs (a CLI tool, a REST API, a menu-bar app) ship for both the desktop app's Pick Brief... button and the CLI/TUI (`examples/phase-flow/briefs/`). `/project`'s own generated plan now asks for `depends_on`/`is_contract` up front, matching what the wave-based executor (0.7.0) already knows how to run.
+- **`/project-execute` shows live per-task tool activity** as it runs — each task's tool calls/results stream to the transcript prefixed with the task id, instead of only appearing after the whole task finishes. It also carries the same `<phaseflow-context>` preamble (resolved config, roadmap progress) every interactive `/phase` step already gets, and a Ctrl-C mid-run now reports a tally of what finished before the cancel instead of a bare "cancelled." `/config` can change the speed-tier model live, without a restart.
+- **A 429 from the model provider now falls through to the next candidate model** instead of failing the whole turn.
+- Verbose debug mode showing every event with readable, unescaped formatting; a status bar that says what a turn is doing and for how long.
 
 ### Fixed
 
-- **`.gophermind/skills/README.md` was being injected as a skill**, spending tokens on every turn to explain the directory to the model.
-- **A skill source URL whose path began `..` escaped the skill cache.** The derived source id resolved to a directory above it, and the installer calls `os.RemoveAll` and `os.Rename` on that path. Rejected at validation now, with a second check that refuses any destination outside the cache.
+- **gophermind-osx would crash on launch outside of `open`** — `main()` never pinned the process to its start-up OS thread, so a blocking HTTP call during backend connect could resume the main goroutine on a different thread than Cocoa's, and the first AppKit call afterward (creating the menu-bar status item) crashed with "NSWindow should only be instantiated on the main thread!"
+- gophermind-osx: local mode no longer lets the spawned server default its root to the current working directory; window edge margin, bundled-server-binary lookup, and panel captions corrected.
+- **DELETE /session mapped every error to 404**, including a real disk failure deleting an existing session, not just "the session doesn't exist." Now distinguished via a `session.ErrNotFound` sentinel; a genuine failure reports 500.
+- **HMAC signature verification ran on bodyless GET/DELETE session requests.** Signing an always-empty body isn't weaker protection, it's a broken one: the resulting signature is a fixed value for a given secret, replayable on any other GET/DELETE afterward. HMAC now only applies to POST/PATCH, where there's an actual payload to protect.
+- iOS: pull-to-refresh silently did nothing when the session list was empty (`.refreshable` needs a scrollable container, and the empty state had none); a second approval push for the session already open pushed a duplicate nav layer instead of updating it.
+- Conversation history no longer grows unbounded (trimmed to prevent stale errors from accumulating); the context window widened to 50 messages with an explicit turn-completion marker; a tool call now aborts after 3+ consecutive failures or once its result stops changing between retries, instead of looping.
+- An empty skill catalogue serialized as `null` instead of `[]`, which broke the settings panel.
+- A contract-flagged task in wave 0 could be dropped by `AssignWaves`; the run report now sees pre-revision attempts it previously lost; a contract flag stops the run rather than just failing the pass.
+- Several model-attribution bugs: two paths misreported which model actually served a turn; the free-usage odometer metered the configured model rather than the one that ran; a corrupt model-settings file was swallowed instead of reported; the exclusion list wasn't applied to the model already in use.
+
+### Security
+
+- SSE error events are sanitized to prevent injection via error message content.
+- The shell safety check now properly parses redirect targets (a redirect to `/dev/null` was previously misclassified as unsafe); `GIT_*` environment variables are stripped from both shell tools' environments so an inherited `GIT_DIR` can't redirect a git subprocess.
+- A skill source URL whose path escaped the skill cache is rejected before install, both at the source-id derivation step and with a second check on the final destination.
 
 ## [0.7.1] - 2026-09-11
 
