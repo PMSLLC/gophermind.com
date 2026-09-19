@@ -106,22 +106,80 @@ func TestChangeAnswerIsIdempotentForTheSameAnswer(t *testing.T) {
 	if _, _, err := ChangeAnswer(r, q.ID, Answer{OptionIDs: []string{"opt-2"}}); err != nil {
 		t.Fatal(err)
 	}
-	// Put the flagged steps back so a second identical change would show up.
-	for _, id := range []string{"phase-001.task-001.step-001", "phase-001.task-001.step-002"} {
-		draft(t, r, id)
+	before, err := os.ReadFile(questionsPath(r))
+	if err != nil {
+		t.Fatal(err)
 	}
+	// Nothing is stale now, so repeating the change is a no-op.
 	got, rec, err := ChangeAnswer(r, q.ID, Answer{OptionIDs: []string{"opt-2"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(rec.Flagged) != 0 || len(rec.Executed) != 0 {
-		t.Errorf("an unchanged answer flagged %+v", rec)
+		t.Errorf("an unchanged answer with nothing stale flagged %+v", rec)
 	}
 	if len(got.PriorAnswers) != 1 {
 		t.Errorf("an unchanged answer grew the history to %d entries", len(got.PriorAnswers))
 	}
+	after, err := os.ReadFile(questionsPath(r))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Errorf("an unchanged answer rewrote questions.json")
+	}
+}
+
+func TestChangeAnswerRepairsAfterACrashBetweenSaveAndFlag(t *testing.T) {
+	r, q := answeredRepo(t)
+	// Simulate the process dying after the new answer was saved and before any
+	// step was flagged: the store has the new answer, the steps are still drafted.
+	unlock, err := lockQuestions(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := loadQuestionFile(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := *f.Questions[0].Answer
+	f.Questions[0].PriorAnswers = appendHistory(nil, old, f.Questions[0].AnsweredAt, "2026-09-19T00:00:00Z")
+	f.Questions[0].Answer = &Answer{OptionIDs: []string{"opt-2"}}
+	if err := saveQuestionFile(r, f); err != nil {
+		t.Fatal(err)
+	}
+	unlock()
 	if n, _ := r.Get("phase-001.task-001.step-001"); n.Planning.Stage != plantree.StageDrafted {
-		t.Errorf("an unchanged answer moved %s to %s", n.ID, n.Planning.Stage)
+		t.Fatalf("setup: step is %s, want drafted", n.Planning.Stage)
+	}
+
+	_, rec, err := ChangeAnswer(r, q.ID, Answer{OptionIDs: []string{"opt-2"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"phase-001.task-001.step-001", "phase-001.task-001.step-002"}
+	if strings.Join(rec.Flagged, ",") != strings.Join(want, ",") {
+		t.Fatalf("Flagged = %v, want %v", rec.Flagged, want)
+	}
+	for _, id := range want {
+		n, _ := r.Get(id)
+		if n.Planning.Stage != plantree.StageNeedsReconciliation || !strings.Contains(n.ResumeNote, q.ID) {
+			t.Errorf("%s is %s with note %q after the repair", id, n.Planning.Stage, n.ResumeNote)
+		}
+	}
+	before, _ := os.ReadFile(questionsPath(r))
+	got, rec, err := ChangeAnswer(r, q.ID, Answer{OptionIDs: []string{"opt-2"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.Flagged) != 0 || len(rec.Executed) != 0 {
+		t.Errorf("a further call flagged %+v", rec)
+	}
+	if len(got.PriorAnswers) != 1 {
+		t.Errorf("history has %d entries, want 1", len(got.PriorAnswers))
+	}
+	if after, _ := os.ReadFile(questionsPath(r)); string(before) != string(after) {
+		t.Errorf("a further call rewrote questions.json")
 	}
 }
 

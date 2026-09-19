@@ -31,8 +31,10 @@ type Reconciled struct {
 // answer is moved to stage needs_reconciliation with a resume note naming the
 // question, so the next reconciling pass 2 re-specifies it and nothing else.
 //
-// Changing an answer to what it already says does nothing at all: no history
-// entry, no flagged step, no write. A question that is still open is refused
+// Changing an answer to what it already says adds no history entry and does
+// not rewrite questions.json, but it still flags any step affected by the
+// question that is not yet flagged. The answer is saved before the steps are
+// flagged, so a call that died in between is repaired by repeating it. A question that is still open is refused
 // with ErrNotAnswered; answer it with AnswerQuestion instead.
 func ChangeAnswer(repo *plantree.Repo, id string, a Answer) (Question, Reconciled, error) {
 	unlock, err := lockQuestions(repo)
@@ -57,7 +59,10 @@ func ChangeAnswer(repo *plantree.Repo, id string, a Answer) (Question, Reconcile
 		}
 		next := Answer{OptionIDs: append([]string{}, a.OptionIDs...), Text: strings.TrimSpace(a.Text)}
 		if sameAnswer(*q.Answer, next) {
-			return *q, Reconciled{}, nil
+			// Nothing to record, but a previous call may have saved the answer
+			// and died before flagging. Flagging is idempotent, so finish it.
+			rec, err := flagForReconciliation(repo, *q)
+			return *q, rec, err
 		}
 		now := time.Now().UTC().Format(time.RFC3339)
 		q.PriorAnswers = appendHistory(q.PriorAnswers, *q.Answer, q.AnsweredAt, now)
@@ -121,11 +126,11 @@ func flagForReconciliation(repo *plantree.Repo, q Question) (Reconciled, error) 
 		if onHold(s) {
 			continue
 		}
-		if s.Planning.Stage != plantree.StageDrafted && s.Planning.Stage != plantree.StageApproved {
-			continue
-		}
 		if s.Status == plantree.StatusInProgress || s.Status == plantree.StatusCompleted {
 			rec.Executed = append(rec.Executed, s.ID)
+			continue
+		}
+		if s.Planning.Stage != plantree.StageDrafted && s.Planning.Stage != plantree.StageApproved {
 			continue
 		}
 		if _, err := repo.Update(s.ID, s.NodeRevision, func(n *plantree.Node) error {
