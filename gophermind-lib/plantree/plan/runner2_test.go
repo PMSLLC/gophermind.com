@@ -306,3 +306,52 @@ func TestRunPass2NeedsAPlanAndHonorsCancellation(t *testing.T) {
 		t.Errorf("cancelled: err=%v calls=%d", err, len(f.prompts))
 	}
 }
+
+func TestRunPass2RefusesADependencyOnAHeldStep(t *testing.T) {
+	r := newRepo(t)
+	if _, err := Merge(r, sampleOut()); err != nil {
+		t.Fatal(err)
+	}
+	cur, _ := r.Get(s1)
+	if _, err := r.Update(s1, cur.NodeRevision, func(n *plantree.Node) error {
+		n.Status = plantree.StatusSkipped
+		n.Reason = "out of scope"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	dependsOnHeld := func(_ int, p string) (string, error) {
+		s := StepSpecOut{ID: stepsToSpecify(p)[0], Description: "d", AcceptanceCriteria: []string{"c"}, DependsOn: []string{s1}}
+		b, _ := json.Marshal(Pass2Output{Steps: []StepSpecOut{s}})
+		return string(b), nil
+	}
+	_, err := RunPass2(context.Background(), r, &fake{reply: dependsOnHeld}, Options2{})
+	if err == nil || !strings.Contains(err.Error(), "rejected twice") || !strings.Contains(err.Error(), "not a step of this task") {
+		t.Fatalf("err = %v", err)
+	}
+	b, _ := r.Get(s2)
+	if b.Planning.Stage != plantree.StageSkeleton || b.Work != nil {
+		t.Errorf("step 2 must stay a skeleton: %+v", b)
+	}
+}
+
+func TestRunPass2SecondBatchSeesTheFirstBatchAsSpecified(t *testing.T) {
+	r := newRepo(t)
+	if _, err := Merge(r, sampleOut()); err != nil {
+		t.Fatal(err)
+	}
+	f := specFake()
+	if _, err := RunPass2(context.Background(), r, f, Options2{StepsPerPass: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.prompts) != 2 {
+		t.Fatalf("%d prompts", len(f.prompts))
+	}
+	second := f.prompts[1]
+	if !regexp.MustCompile(`step-001: .* \[specified\]`).MatchString(second) || !regexp.MustCompile(`step-002: .* \[to specify\]`).MatchString(second) {
+		t.Errorf("second prompt step list:\n%s", second)
+	}
+	if strings.Contains(f.prompts[0], "[specified]") {
+		t.Error("the first prompt must not show any step as specified")
+	}
+}

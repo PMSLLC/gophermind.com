@@ -39,12 +39,34 @@ type taskWork struct {
 	pending []plantree.Node // steps that need a specification
 }
 
-// needsSpec reports whether a step is waiting for its specification: still a
-// skeleton or only inspected, and not on hold.
-func needsSpec(s plantree.Node) bool {
+// onHold reports whether a step is parked in a status that stops work on it.
+func onHold(s plantree.Node) bool {
 	switch s.Status {
 	case plantree.StatusBlocked, plantree.StatusDelayed, plantree.StatusEscalated,
 		plantree.StatusFailed, plantree.StatusNeedsRevision, plantree.StatusSkipped:
+		return true
+	}
+	return false
+}
+
+// markSpecified records in the in-memory snapshot that the steps in out were
+// written, so a later batch of the same task sees them as specified.
+func markSpecified(steps []plantree.Node, out Pass2Output) {
+	done := map[string]bool{}
+	for _, s := range out.Steps {
+		done[s.ID] = true
+	}
+	for i := range steps {
+		if done[steps[i].ID] {
+			steps[i].Planning.Stage = plantree.StageDrafted
+		}
+	}
+}
+
+// needsSpec reports whether a step is waiting for its specification: still a
+// skeleton or only inspected, and not on hold.
+func needsSpec(s plantree.Node) bool {
+	if onHold(s) {
 		return false
 	}
 	return s.Planning.Stage == plantree.StageSkeleton || s.Planning.Stage == plantree.StageInspected
@@ -128,7 +150,6 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 	for _, w := range work {
 		ids := append([]string{w.task.ID}, idsOf(w.steps)...)
 		excerpts := Excerpts(chunks, prov.chunksFor(ids), opt.BriefBytes)
-		siblingIDs := idsOf(w.steps)
 		for start := 0; start < len(w.pending); start += opt.StepsPerPass {
 			if err := ctx.Err(); err != nil {
 				return res, err
@@ -139,6 +160,13 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 			}
 			batch := w.pending[start:end]
 			batchIDs := idsOf(batch)
+			var live []plantree.Node
+			for _, s := range w.steps {
+				if !onHold(s) {
+					live = append(live, s)
+				}
+			}
+			siblingIDs := idsOf(live)
 			prompt := Pass2Prompt(opt.ProjectName, overview, w.phase, w.task, w.steps, batch, excerpts)
 			out, err := askJSON(ctx, c, prompt, func(reply string) (Pass2Output, error) {
 				return ParsePass2(reply, batchIDs, siblingIDs)
@@ -150,6 +178,7 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 			if err := applySpecs(repo, out); err != nil {
 				return res, taskError(w.task.ID, err)
 			}
+			markSpecified(w.steps, out)
 			res.Steps += len(batch)
 		}
 		res.Tasks++

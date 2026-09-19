@@ -16,11 +16,25 @@ const (
 // siblingListCapBytes bounds the list of every step of the task in a prompt.
 const siblingListCapBytes = 4000
 
+// fit makes a node field safe for a prompt: one line, at most n bytes.
+func fit(s string, n int) string { return cutBytes(oneLine(s), n) }
+
+// stepTag tells the model whether a sibling can be depended on.
+func stepTag(s plantree.Node) string {
+	switch {
+	case onHold(s):
+		return "on hold: " + string(s.Status)
+	case s.Planning.Stage == plantree.StageDrafted || s.Planning.Stage == plantree.StageApproved:
+		return "specified"
+	}
+	return "to specify"
+}
+
 func stepList(steps []plantree.Node) string {
 	var b strings.Builder
 	omitted := 0
 	for _, s := range steps {
-		line := "- " + s.ID + ": " + oneLine(s.Title) + "\n"
+		line := "- " + s.ID + ": " + fit(s.Title, 200) + " [" + stepTag(s) + "]\n"
 		if b.Len()+len(line) > siblingListCapBytes {
 			omitted++
 			continue
@@ -39,16 +53,16 @@ func stepList(steps []plantree.Node) string {
 // carries nothing about any other task.
 func Pass2Prompt(project, overview string, phase, task plantree.Node, siblings, batch []plantree.Node, excerpts string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "You are writing the work specification for some steps of ONE task in a project plan for %q. You see only this task.\n\n", project)
+	fmt.Fprintf(&b, "You are writing the work specification for some steps of ONE task in a project plan for %q. You see only this task.\n\n", fit(project, 100))
 	b.WriteString("Running overview of the whole project:\n")
 	b.WriteString(orNone(overview))
-	fmt.Fprintf(&b, "\n\nPhase: %s\nWhy: %s\nObjective: %s\n", oneLine(phase.Title), oneLine(phase.ContextDigest), orNone(oneLine(phase.Objective)))
-	fmt.Fprintf(&b, "\nTask: %s\nWhy: %s\nObjective: %s\n", oneLine(task.Title), oneLine(task.ContextDigest), orNone(oneLine(task.Objective)))
+	fmt.Fprintf(&b, "\n\nPhase: %s\nWhy: %s\nObjective: %s\n", fit(phase.Title, 200), fit(phase.ContextDigest, 500), orNone(fit(phase.Objective, 1000)))
+	fmt.Fprintf(&b, "\nTask: %s\nWhy: %s\nObjective: %s\n", fit(task.Title, 200), fit(task.ContextDigest, 500), orNone(fit(task.Objective, 1000)))
 	b.WriteString("\nAll steps of this task, in order. A step may depend only on an EARLIER step in this list:\n")
 	b.WriteString(stepList(siblings))
 	b.WriteString("\nSteps to specify now:\n")
 	for _, s := range batch {
-		fmt.Fprintf(&b, "- %s: %s. Why: %s\n", s.ID, oneLine(s.Title), oneLine(s.ContextDigest))
+		fmt.Fprintf(&b, "- %s: %s. Why: %s\n", s.ID, fit(s.Title, 200), fit(s.ContextDigest, 500))
 	}
 	b.WriteString("\nBrief excerpts that produced this task (context only, may be partial):\n")
 	if strings.TrimSpace(excerpts) == "" {
@@ -63,8 +77,12 @@ func Pass2Prompt(project, overview string, phase, task plantree.Node, siblings, 
 	b.WriteString("- acceptance_criteria: 1 to 10 checks a reviewer can verify.\n")
 	b.WriteString("- test_command: the command as an array of arguments that verifies the step, or an empty array if there is none.\n")
 	b.WriteString("- depends_on: ids of EARLIER steps of this task that must be done first, or an empty array.\n")
+	b.WriteString("- description: at most 2000 characters. Each acceptance criterion: at most 300 characters, and at most 10 criteria.\n")
+	b.WriteString("- target_paths: at most 20 paths of at most 300 characters each. test_command: at most 20 arguments of at most 200 characters each.\n")
+	b.WriteString("- In every array, never put an empty string.\n")
+	b.WriteString("- Do not depend on a step marked on hold.\n")
 	b.WriteString("- Do not invent scope the task does not need. Do not call tools. Reply with ONE JSON object and nothing else, in this shape:\n")
-	b.WriteString(`{"steps":[{"id":"","description":"","target_paths":[""],"acceptance_criteria":[""],"test_command":[""],"depends_on":[""]}]}`)
+	b.WriteString(`{"steps":[{"id":"<step id>","description":"<what to build>","target_paths":["<path/to/file>"],"acceptance_criteria":["<a check a reviewer can verify>"],"test_command":["<command>","<arg>"],"depends_on":[]}]}`)
 	b.WriteString("\n")
 	return b.String()
 }

@@ -1,9 +1,11 @@
 package plan
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"gophermind/gophermind-lib/plantree"
 )
@@ -81,5 +83,71 @@ func TestPass2PromptWorstCaseSize(t *testing.T) {
 	t.Logf("worst-case pass-2 prompt: %d bytes", len(p))
 	if len(p) > 26000 {
 		t.Errorf("worst-case pass-2 prompt is %d bytes, want at most 26000", len(p))
+	}
+}
+
+func TestPass2PromptWorstCaseSizeWithMultibyteText(t *testing.T) {
+	r := func(n int) string { return strings.Repeat("\U0001D11E", n) }
+	phase := node(t, "phase-001", r(200), r(500), r(1000))
+	task := node(t, "phase-001.task-001", r(200), r(500), r(1000))
+	var steps []plantree.Node
+	for i := 1; i <= 100; i++ {
+		steps = append(steps, node(t, fmt.Sprintf("phase-001.task-001.step-%03d", i), r(200), r(500), ""))
+	}
+	chunks := []Chunk{{Index: 0, Text: strings.Repeat("brief text line\n", 2000)}}
+	excerpts := Excerpts(chunks, []int{0}, defaultBriefBytes)
+	overview := FitOverview(strings.Repeat("o", 20000), OverviewCapBytes)
+	p := Pass2Prompt(r(100), overview, phase, task, steps, steps[:defaultStepsPerPass], excerpts)
+	t.Logf("multibyte worst-case pass-2 prompt: %d bytes", len(p))
+	if len(p) > 26000 {
+		t.Errorf("multibyte worst-case pass-2 prompt is %d bytes, want at most 26000", len(p))
+	}
+	if !utf8.ValidString(p) {
+		t.Error("the prompt is not valid UTF-8")
+	}
+}
+
+func TestPass2PromptTellsTheModelWhatTheParserEnforces(t *testing.T) {
+	phase := node(t, "phase-001", "P", "d", "")
+	task := node(t, "phase-001.task-001", "T", "d", "")
+	st := node(t, s1, "S", "d", "")
+	p := Pass2Prompt("demo", "", phase, task, []plantree.Node{st}, []plantree.Node{st}, "")
+	for _, want := range []string{"2000 characters", "300 characters", "never put an empty string", "Do not depend on a step marked on hold"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt is missing %q", want)
+		}
+	}
+	if strings.Contains(p, `[""]`) {
+		t.Error("the shape example must not contain an empty string")
+	}
+	found := false
+	for _, line := range strings.Split(p, "\n") {
+		if strings.HasPrefix(line, `{"steps"`) {
+			found = true
+			if !json.Valid([]byte(line)) {
+				t.Errorf("the shape line is not valid JSON: %s", line)
+			}
+		}
+	}
+	if !found {
+		t.Error("no shape line found")
+	}
+}
+
+func TestPass2PromptTagsEachSiblingByStageAndHold(t *testing.T) {
+	phase := node(t, "phase-001", "P", "d", "")
+	task := node(t, "phase-001.task-001", "T", "d", "")
+	skipped := node(t, "phase-001.task-001.step-001", "One", "d", "")
+	skipped.Status = plantree.StatusSkipped
+	drafted := node(t, "phase-001.task-001.step-002", "Two", "d", "")
+	drafted.Planning.Stage = plantree.StageDrafted
+	skel := node(t, "phase-001.task-001.step-003", "Three", "d", "")
+	p := Pass2Prompt("demo", "", phase, task, []plantree.Node{skipped, drafted, skel}, []plantree.Node{skel}, "")
+	for _, want := range []string{
+		"step-001: One [on hold: skipped]", "step-002: Two [specified]", "step-003: Three [to specify]",
+	} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt is missing %q", want)
+		}
 	}
 }
