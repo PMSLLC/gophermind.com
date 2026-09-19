@@ -13,9 +13,17 @@ import (
 // least one blocked answer action (on the plan root, unless a held step
 // already carries one). Callers that ask "what is left to do" should use this
 // instead of repo.NextActions.
+//
+// Each reconcile action also says which decision changed, taken from the
+// step's resume note, so the owner reads why the step must be planned again
+// rather than only that it must. A reconcile action is runnable and keeps
+// approval away until RunPass2 with Options2.Reconcile has redone the step.
 func NextActions(repo *plantree.Repo) (plantree.Actions, error) {
 	a, err := repo.NextActions()
 	if err != nil {
+		return plantree.Actions{}, err
+	}
+	if err := explainReconcile(repo, a.Runnable); err != nil {
 		return plantree.Actions{}, err
 	}
 	open, err := OpenQuestions(repo)
@@ -43,4 +51,23 @@ func NextActions(repo *plantree.Repo) (plantree.Actions, error) {
 		Reason: fmt.Sprintf("%d open question(s) wait for an answer, first %s", len(open), open[0].ID),
 	})
 	return a, nil
+}
+
+// explainReconcile replaces each reconcile action's generic reason with the
+// step's resume note, which names the question whose answer changed. A step
+// with no note keeps the generic reason.
+func explainReconcile(repo *plantree.Repo, actions []plantree.Action) error {
+	for i, x := range actions {
+		if x.Kind != plantree.ActionReconcile {
+			continue
+		}
+		n, err := repo.Get(x.NodeID)
+		if err != nil {
+			return err
+		}
+		if note := oneLine(n.ResumeNote); note != "" {
+			actions[i].Reason = cutBytes(note, reconcileNoteBytes)
+		}
+	}
+	return nil
 }
