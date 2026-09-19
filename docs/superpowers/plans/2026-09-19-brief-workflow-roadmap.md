@@ -103,5 +103,14 @@ module build are clean. Deviations from the contracts listed above:
 6. **`Verify` allows a dependency on an ancestor or structural node.**
 7. **Durability.** `lockfile.WriteAtomic` does not fsync the directory. A power
    loss can lose the last committed write but cannot corrupt one.
-8. Minor test gaps are listed in the SDD ledger history in the commit
-   messages; none blocks M2.
+8. Deferred minors, none blocking M2:
+   - No test that a corrupt member file still makes `Children` return an error.
+   - A step with status `reviewed` but stage `drafted` still leads to
+     `approve` (correct: approving moves it to `approved`).
+   - No `Repo.Dir()` accessor; `Init`/`Create` misuse returns plain errors, not
+     sentinels.
+   - A failed `Update` is tested for an unchanged revision, not byte-identical
+     content; the concurrency test cannot prove true parallel contention.
+   - No diamond or self-dependency test for `Verify` (traced correct by hand).
+   - Commit `adfed48` carries a `Claude Haiku 4.5` co-author trailer instead of
+     `Claude Sonnet 5`; it names the true author, so the history is left as is.
