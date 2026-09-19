@@ -160,17 +160,21 @@ func (m model) startProject(name, briefPath string) (model, tea.Cmd) {
 	}
 
 	e := phaseflow.New(root)
+	scaffolded := false
 	if !e.Initialized() {
 		if err := e.Init(name); err != nil {
 			return m.projectError(err.Error())
 		}
+		scaffolded = true
 	}
 	m.projName = name
-	m.projBriefPath = briefPath
 	if existing {
 		m.appendLine(projectBannerStyle.Render("Resuming the plan for “" + name + "” in " + repo.Dir()))
 	} else {
 		m.appendLine(projectBannerStyle.Render("Planning “" + name + "” from " + briefPath))
+	}
+	if scaffolded {
+		m.appendLine("scaffolded " + phaseflow.PlanningDirName + " with a placeholder ROADMAP.md and PROJECT.md; approving exports the real plan over them, so the export report lists them as replaced")
 	}
 	return m.startPlanning(repo, name, brief)
 }
@@ -223,10 +227,7 @@ func (m model) startPlanning(repo *plantree.Repo, name, brief string) (model, te
 	if c == nil {
 		return m.projectError("no active session, so nothing can be planned")
 	}
-	var client *llm.Client
-	if m.agent != nil {
-		client = m.agent.LLM()
-	}
+	client, known := m.planClient(), m.planWindow
 	m.proj = projRunning
 	m.st = stateWorking
 	ctx, cancel := context.WithCancel(context.Background())
@@ -236,10 +237,31 @@ func (m model) startPlanning(repo *plantree.Repo, name, brief string) (model, te
 		// The result is sent after runPasses has returned, so the run lock it
 		// holds is already free when the session reacts: a resume typed the
 		// moment the transcript says the run stopped finds nothing held.
-		sub <- runPasses(ctx, repo, c, client, name, brief, sub)
+		sub <- runPasses(ctx, repo, c, client, known, name, brief, sub)
 	}()
 	m.sync()
 	return m, nil
+}
+
+// planClient is this session's client, or nil when there is no agent (a test).
+func (m model) planClient() *llm.Client {
+	if m.agent == nil {
+		return nil
+	}
+	return m.agent.LLM()
+}
+
+// windowOf is the context window planning is sized for: known when positive
+// (a test hook), otherwise what the client's capability probe reports, which
+// the client caches, so asking again costs nothing. Zero means unknown.
+func windowOf(ctx context.Context, client *llm.Client, known int) int {
+	if known > 0 {
+		return known
+	}
+	if client != nil {
+		return client.ProbeCapabilities(ctx).ContextWindow
+	}
+	return 0
 }
 
 // runPasses is the planning run itself: take the plan's run lock, size the
@@ -251,20 +273,23 @@ func (m model) startPlanning(repo *plantree.Repo, name, brief string) (model, te
 // so the nesting is not a deadlock. Both also resume from the tree, so a
 // cancelled or failed run loses nothing already written and /project with
 // the same name continues it.
-func runPasses(ctx context.Context, repo *plantree.Repo, c plan.Completer, client *llm.Client, name, brief string, sub chan tea.Msg) tea.Msg {
+func runPasses(ctx context.Context, repo *plantree.Repo, c plan.Completer, client *llm.Client, known int, name, brief string, sub chan tea.Msg) tea.Msg {
 	unlock, err := plan.AcquireRun(repo)
 	if err != nil {
-		return errMsg{err: err}
+		return errMsg{err: errors.New(planBusyRefusal(err, name))}
 	}
 	defer unlock()
 
-	window := 0
-	if client != nil {
-		window = client.ProbeCapabilities(ctx).ContextWindow
-	}
+	window := windowOf(ctx, client, known)
 	opt, opt2 := plan.SizesFor(window)
 	opt.ProjectName = name
 	sub <- projectProgressMsg(planningSizesLine(window, opt, opt2))
+	if w := planningWarning(window); w != "" {
+		sub <- projectProgressMsg(w)
+	}
+	opt.Progress = func(done, total int) {
+		sub <- projectProgressMsg(fmt.Sprintf("planning chunk %d of %d", done, total))
+	}
 
 	res1, err := plan.RunPass1(ctx, repo, brief, c, opt)
 	if err != nil {
@@ -277,6 +302,9 @@ func runPasses(ctx context.Context, repo *plantree.Repo, c plan.Completer, clien
 		return errMsg{err: err}
 	}
 	opt2.Reconcile = waiting > 0
+	opt2.Progress = func(done, total int) {
+		sub <- projectProgressMsg(fmt.Sprintf("specifying batch %d of %d", done, total))
+	}
 	res2, err := plan.RunPass2(ctx, repo, c, opt2)
 	if err != nil {
 		return errMsg{err: err}
@@ -290,6 +318,26 @@ func runPasses(ctx context.Context, repo *plantree.Repo, c plan.Completer, clien
 		return errMsg{err: err}
 	}
 	return projectPassesDoneMsg{res1: res1, res2: res2, actions: actions, open: open}
+}
+
+// planBusyRefusal says in plain words why a planning run could not start
+// because another run holds the plan, and what to do about it.
+func planBusyRefusal(err error, name string) string {
+	if errors.Is(err, plan.ErrRunBusy) {
+		return "another planning run is working on this plan right now, so nothing was changed. Wait for it to finish (or stop it), then run /project " + name + " again. (" + err.Error() + ")"
+	}
+	return "the planning run could not start, and nothing was changed: " + err.Error()
+}
+
+// planningWarning is the line to show before a run when even the smallest
+// sizes cannot fit the model's window, or "" when there is nothing to warn
+// about. The run still goes ahead: the estimate is a guess, and the server's
+// own error is the authority.
+func planningWarning(window int) string {
+	if plan.FitsWindow(window) {
+		return ""
+	}
+	return fmt.Sprintf("warning: no setting is safe for a %d token context window, so the run may fail with a context error; it will try the smallest sizes anyway", window)
 }
 
 // planningSizesLine says what the passes were sized for, so an overflow is
@@ -316,12 +364,16 @@ func renderPass1Result(r plan.Result) string {
 
 // handleProjectInput routes an input line while a /project flow is active.
 // It reports handled=false when the flow is not active, so the caller
-// proceeds normally.
+// proceeds normally. There is no projRunning case: while the passes run the
+// session is not idle, and handleSubmit never routes input here then.
 func (m model) handleProjectInput(text string) (model, tea.Cmd, bool) {
 	// A slash command always wins over a prompt that is waiting for a plain
 	// answer: the approval prompt points the owner at "/questions change",
 	// which it would otherwise swallow as a revision request.
 	if (m.proj == projAwaitName || m.proj == projApprove) && strings.HasPrefix(text, "/") {
+		if m.proj == projApprove {
+			m.appendLine("Plan left unapproved. /project " + m.projName + " brings the approval prompt back.")
+		}
 		m.proj = projNone
 		return m, nil, false
 	}
@@ -339,11 +391,6 @@ func (m model) handleProjectInput(text string) (model, tea.Cmd, bool) {
 		}
 		nm, cmd := m.startProject(name, briefPath)
 		return nm, cmd, true
-
-	case projRunning:
-		m.appendLine("(still planning; Esc stops it, and /project " + m.projName + " resumes)")
-		m.sync()
-		return m, nil, true
 
 	case projApprove:
 		return m.handleProjectApproval(text)

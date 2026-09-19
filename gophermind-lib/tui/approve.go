@@ -42,11 +42,19 @@ func (m model) afterProjectPasses(msg projectPassesDoneMsg) (tea.Model, tea.Cmd)
 // both /project and /questions end at, so the plan is only ever approved
 // through one prompt.
 func (m model) offerApproval(actions plantree.Actions) model {
+	already := false
 	if !onlyApprovalIsLeft(actions) {
-		m.appendLine(renderNextActions(actions))
-		m.proj = projNone
-		m.sync()
-		return m
+		// A plan whose steps are all approved offers no approve action, so
+		// "nothing left" is ambiguous: it is also what a plan looks like when
+		// approving succeeded and the export after it failed. That plan must
+		// still reach the prompt, or the owner can never finish the export.
+		if !(len(actions.Blocked) == 0 && len(actions.Runnable) == 0 && planIsApproved()) {
+			m.appendLine(renderNextActions(actions))
+			m.proj = projNone
+			m.sync()
+			return m
+		}
+		already = true
 	}
 	repo, err := planRepo()
 	if err != nil {
@@ -64,11 +72,37 @@ func (m model) offerApproval(actions plantree.Actions) model {
 		}
 	}
 	m.projName = name
+	if already {
+		// Approved and exported: nothing to do, and re-exporting could only
+		// replace files a run may already be using.
+		if root, err := os.Getwd(); err == nil && phaseflow.New(root).Approved() {
+			m.appendLine(projectDoneStyle.Render("This plan is already approved and exported. Run /project-execute to build it."))
+			m.proj = projNone
+			m.sync()
+			return m
+		}
+		m.appendLine(projectBannerStyle.Render(planSummary(repo, name)))
+		m.appendLine("This plan is already approved, but it has not been exported, so /project-execute cannot run yet. Export it now? y to export, or \"cancel\".")
+		m.proj = projApprove
+		m.sync()
+		return m
+	}
 	m.appendLine(projectBannerStyle.Render(planSummary(repo, name)))
 	m.appendLine("Approve this plan? y to approve, \"revise\" to change a decision first, or \"cancel\".")
 	m.proj = projApprove
 	m.sync()
 	return m
+}
+
+// planIsApproved reports whether every step of the plan in the working
+// directory is already approved and reviewed.
+func planIsApproved() bool {
+	repo, err := planRepo()
+	if err != nil {
+		return false
+	}
+	sum, err := repo.Summarize(plantree.RootID)
+	return err == nil && sum.Leaves > 0 && sum.Status == plantree.StatusReviewed
 }
 
 // onlyApprovalIsLeft reports whether the plan's one outstanding action is

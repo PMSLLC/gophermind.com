@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -554,6 +555,16 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 }
 
 func oneLine(s string) string {
+	// Model-authored text reaches the transcript through here, so it must not
+	// carry an escape sequence (CSI, OSC 8 hyperlinks and the like) to the
+	// terminal. Every control rune that is not whitespace is dropped: C0
+	// including ESC, DEL, and C1 (0x80 to 0x9f).
+	s = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) && !unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, s)
 	s = strings.Join(strings.Fields(s), " ")
 	if len(s) > 160 {
 		cut := 160

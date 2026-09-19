@@ -101,13 +101,16 @@ type model struct {
 	cancel  context.CancelFunc
 
 	// /project state machine (see project.go and approve.go). proj is projNone
-	// unless the flow is active: it names the project being planned and, while
-	// a brief was given on the command line, where that brief came from. The
-	// plan itself lives on disk in .planning/plan, so nothing about it is held
-	// here and a cancelled flow loses nothing.
-	proj          projPhase
-	projName      string
-	projBriefPath string
+	// unless the flow is active: it names the project being planned. The plan
+	// itself lives on disk in .planning/plan, so nothing about it is held here
+	// and a cancelled flow loses nothing.
+	proj     projPhase
+	projName string
+	// planWindow, when positive, is the context window the planning passes are
+	// sized for instead of probing the session's client. It is a test hook,
+	// like completer; in a session it stays zero and the probe (cached by the
+	// client) decides.
+	planWindow int
 
 	// Question round state (see questions.go and question_round.go). qphase is
 	// qNone unless the round is showing or its pass is running; round holds

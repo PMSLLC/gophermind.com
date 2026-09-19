@@ -291,25 +291,32 @@ func (m *model) refused(a roundAnswerOut, err error) {
 	}
 }
 
-// startPass runs RunPass2 in the background. It reconciles exactly when the
-// tree has steps waiting to be re-planned.
+// startPass runs RunPass2 in the background, sized for the model's context
+// window. It reconciles exactly when the tree has steps waiting to be
+// re-planned. It takes no run lock of its own (RunPass2 does); the session
+// serializes runs through m.st and qphase.
 func (m model) startPass(repo *plantree.Repo, c plan.Completer) (tea.Model, tea.Cmd) {
 	m.qphase = qRunning
 	m.st = stateWorking
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
 	sub := m.sub
+	client, known := m.planClient(), m.planWindow
 	go func() {
-		// RunPass2 reports nothing until it returns (its progress counters are
-		// per call, not per step), so this is the one line the run can promise
-		// before its result.
 		sub <- questionsProgressMsg("specifying the steps the answers released…")
 		waiting, err := plan.NeedsReplan(repo)
 		if err != nil {
 			sub <- errMsg{err: err}
 			return
 		}
-		res, err := plan.RunPass2(ctx, repo, c, plan.Options2{Reconcile: waiting > 0})
+		// The same sizes /project uses: a pass sized for the defaults would
+		// overflow a small window that /project itself planned for.
+		_, opt2 := plan.SizesFor(windowOf(ctx, client, known))
+		opt2.Reconcile = waiting > 0
+		opt2.Progress = func(done, total int) {
+			sub <- questionsProgressMsg(fmt.Sprintf("specifying batch %d of %d", done, total))
+		}
+		res, err := plan.RunPass2(ctx, repo, c, opt2)
 		if err != nil {
 			sub <- errMsg{err: err}
 			return

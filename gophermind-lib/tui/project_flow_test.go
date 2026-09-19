@@ -376,6 +376,20 @@ func TestSlashProjectEndToEnd(t *testing.T) {
 		t.Fatal("the plan was approved before the owner answered y")
 	}
 
+	// The owner changes their mind at the prompt: the answer is changed, the
+	// two steps it invalidated are re-planned, and the same prompt returns.
+	m = submit(t, m, "/questions")
+	if m.qphase != qAsking || m.round.mode != roundChange {
+		t.Fatalf("/questions at the prompt did not offer the answered question (phase=%v):\n%s", m.qphase, m.content)
+	}
+	m = settle(t, keys(t, m, key(tea.KeyRight), key(tea.KeySpace), key(tea.KeyCtrlS)))
+	if m.proj != projApprove || !strings.Contains(m.content, "2 re-planned") {
+		t.Fatalf("the changed answer did not return to the approval prompt (proj=%v):\n%s", m.proj, m.content)
+	}
+	if phaseflow.New(dir).Approved() {
+		t.Fatal("changing an answer approved the plan")
+	}
+
 	m = submit(t, m, "y")
 	if m.proj != projNone {
 		t.Fatalf("proj = %v after approving", m.proj)
@@ -417,12 +431,12 @@ func TestSlashProjectEndToEnd(t *testing.T) {
 	if pending != 2 {
 		t.Errorf("%d pending tasks, want the 2 /project-execute would run", pending)
 	}
-	// And the decision the owner made reached SPEC.md.
+	// And the decision the owner ended on, the changed one, reached SPEC.md.
 	spec, err := os.ReadFile(filepath.Join(phaseflow.PlanningDir(dir), export.SpecFileName))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(spec), "Which file format?") || !strings.Contains(string(spec), "decided: JSON") {
+	if !strings.Contains(string(spec), "Which file format?") || !strings.Contains(string(spec), "decided: Markdown") {
 		t.Errorf("SPEC.md does not record the decision:\n%s", spec)
 	}
 }
