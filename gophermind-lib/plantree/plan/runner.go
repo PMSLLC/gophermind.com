@@ -190,7 +190,7 @@ func runChunk(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 	}
 	out, perr := ParsePass1(reply)
 	if perr != nil {
-		reply, err = c.Complete(ctx, RetryPrompt(prompt, perr.Error()))
+		reply, err = c.Complete(ctx, RetryPrompt(prompt, reply, perr.Error()))
 		if err != nil {
 			return Created{}, err
 		}

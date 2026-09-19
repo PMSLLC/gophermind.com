@@ -88,8 +88,11 @@ func TestPass1PromptCarriesOneChunkAndNoOthers(t *testing.T) {
 }
 
 func TestRetryAndCompressPrompts(t *testing.T) {
-	if p := RetryPrompt("ORIGINAL", "digest is empty"); !strings.Contains(p, "ORIGINAL") || !strings.Contains(p, "digest is empty") {
+	if p := RetryPrompt("ORIGINAL", "I think the plan is X", "digest is empty"); !strings.Contains(p, "ORIGINAL") || !strings.Contains(p, "digest is empty") || !strings.Contains(p, "I think the plan is X") {
 		t.Errorf("RetryPrompt = %q", p)
+	}
+	if p := RetryPrompt("ORIGINAL", strings.Repeat("r", 100000), strings.Repeat("p", 5000)); len(p)-len("ORIGINAL") >= 2500 {
+		t.Errorf("a 100,000 byte reply added %d bytes to the prompt", len(p)-len("ORIGINAL"))
 	}
 	if p := CompressPrompt("long overview", 500); !strings.Contains(p, "Compress") || !strings.Contains(p, "500") || !strings.Contains(p, "long overview") {
 		t.Errorf("CompressPrompt = %q", p)

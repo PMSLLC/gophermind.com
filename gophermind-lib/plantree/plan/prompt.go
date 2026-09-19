@@ -3,6 +3,7 @@ package plan
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"gophermind/gophermind-lib/plantree"
 )
@@ -75,9 +76,32 @@ func Pass1Prompt(project, overview, outline string, c Chunk, total int) string {
 	return b.String()
 }
 
-// RetryPrompt asks the model to correct a reply that was rejected.
-func RetryPrompt(original, problem string) string {
-	return original + "\n\nYour previous reply was rejected: " + problem + "\nReply again with ONE JSON object only, fixing that problem."
+// Bounds on the text a retry prompt adds to the original prompt.
+const (
+	retryReplyExcerptBytes = 1500
+	retryProblemBytes      = 600
+)
+
+// cutBytes shortens s to at most max bytes at a rune boundary, adding "..." if
+// it cut anything.
+func cutBytes(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	cut := max
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "..."
+}
+
+// RetryPrompt asks the model to correct a reply that was rejected. It quotes
+// the start of the rejected reply so the model can see what it got wrong; the
+// text it adds to original is bounded whatever the reply's size.
+func RetryPrompt(original, reply, problem string) string {
+	return original + "\n\nYour previous reply was rejected: " + cutBytes(problem, retryProblemBytes) +
+		"\nYour previous reply began:\n" + cutBytes(reply, retryReplyExcerptBytes) +
+		"\nReply again with ONE JSON object only, fixing that problem."
 }
 
 // CompressPrompt asks the model to shorten an overview that grew past its cap.

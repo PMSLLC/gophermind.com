@@ -48,17 +48,51 @@ type StepOut struct {
 	Digest string `json:"digest"`
 }
 
-// ExtractJSON returns the first complete top-level JSON object in reply,
+// ExtractJSON returns the first top-level JSON object in reply that parses,
 // ignoring prose and code fences around it. Braces inside strings do not count.
+// A balanced object that is not valid JSON is skipped in favor of a later valid
+// one, but is returned if no valid one exists so the caller can report why it
+// failed to decode.
 func ExtractJSON(reply string) (string, error) {
-	start := strings.IndexByte(reply, '{')
-	if start < 0 {
+	invalid := ""
+	seen := false
+	from := 0
+	for {
+		i := strings.IndexByte(reply[from:], '{')
+		if i < 0 {
+			break
+		}
+		start := from + i
+		seen = true
+		end, ok := balancedEnd(reply, start)
+		if !ok {
+			from = start + 1
+			continue
+		}
+		cand := reply[start : end+1]
+		if json.Valid([]byte(cand)) {
+			return cand, nil
+		}
+		if invalid == "" {
+			invalid = cand
+		}
+		from = end + 1
+	}
+	if invalid != "" {
+		return invalid, nil
+	}
+	if !seen {
 		return "", errors.New("the reply contains no JSON object")
 	}
+	return "", errors.New("the JSON object in the reply is not closed")
+}
+
+// balancedEnd returns the index of the brace that closes the one at start.
+func balancedEnd(s string, start int) (int, bool) {
 	depth := 0
 	inString, escaped := false, false
-	for i := start; i < len(reply); i++ {
-		c := reply[i]
+	for i := start; i < len(s); i++ {
+		c := s[i]
 		switch {
 		case escaped:
 			escaped = false
@@ -72,11 +106,11 @@ func ExtractJSON(reply string) (string, error) {
 		case c == '}':
 			depth--
 			if depth == 0 {
-				return reply[start : i+1], nil
+				return i, true
 			}
 		}
 	}
-	return "", errors.New("the JSON object in the reply is not closed")
+	return 0, false
 }
 
 // ParsePass1 extracts, strictly decodes and validates a skeleton pass reply.
@@ -106,6 +140,26 @@ func NormalizeTitle(s string) string {
 // oneLine collapses all whitespace, including newlines, to single spaces.
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
+// maxClipRunes bounds a title quoted in an error message.
+const maxClipRunes = 80
+
+// clip makes a model-supplied title safe to quote in an error that goes back
+// into a prompt: one line, at most maxClipRunes runes.
+func clip(s string) string {
+	s = oneLine(s)
+	if utf8.RuneCountInString(s) <= maxClipRunes {
+		return s
+	}
+	n := 0
+	for i := range s {
+		if n == maxClipRunes {
+			return s[:i] + "..."
+		}
+		n++
+	}
+	return s
+}
+
 func validatePass1(o Pass1Output) error {
 	if strings.TrimSpace(o.Overview) == "" {
 		return errors.New(`"overview" must be a non-empty string`)
@@ -115,7 +169,7 @@ func validatePass1(o Pass1Output) error {
 	}
 	seenPhase := map[string]bool{}
 	for _, p := range o.Phases {
-		where := fmt.Sprintf("phase %q", p.Title)
+		where := fmt.Sprintf("phase %q", clip(p.Title))
 		if err := checkNode(where, p.Title, p.Digest, p.Objective, seenPhase); err != nil {
 			return err
 		}
@@ -124,7 +178,7 @@ func validatePass1(o Pass1Output) error {
 		}
 		seenTask := map[string]bool{}
 		for _, t := range p.Tasks {
-			twhere := fmt.Sprintf("task %q in %s", t.Title, where)
+			twhere := fmt.Sprintf("task %q in %s", clip(t.Title), where)
 			if err := checkNode(twhere, t.Title, t.Digest, t.Objective, seenTask); err != nil {
 				return err
 			}
@@ -133,7 +187,7 @@ func validatePass1(o Pass1Output) error {
 			}
 			seenStep := map[string]bool{}
 			for _, s := range t.Steps {
-				swhere := fmt.Sprintf("step %q in %s", s.Title, twhere)
+				swhere := fmt.Sprintf("step %q in %s", clip(s.Title), twhere)
 				if err := checkNode(swhere, s.Title, s.Digest, "", seenStep); err != nil {
 					return err
 				}

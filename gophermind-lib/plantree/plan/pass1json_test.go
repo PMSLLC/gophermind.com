@@ -88,3 +88,39 @@ func TestNormalizeTitle(t *testing.T) {
 		t.Error("NormalizeTitle did not fold case and whitespace")
 	}
 }
+
+func TestParsePass1ErrorIsBoundedByAHugeTitle(t *testing.T) {
+	huge := strings.Repeat("x", 5_000_000)
+	_, err := ParsePass1(`{"phases":[{"title":"` + huge + `","digest":"","objective":"","tasks":[]}],"overview":"o"}`)
+	if err == nil || len(err.Error()) > 500 || !strings.Contains(err.Error(), "title is longer") {
+		n := 0
+		if err != nil {
+			n = len(err.Error())
+		}
+		t.Errorf("want a short error naming the title field, got %d bytes: %v", n, err)
+	}
+}
+
+func TestExtractJSONFindsTheRealObject(t *testing.T) {
+	cases := map[string]string{
+		`I used {curly} braces. {"a":1}`:           `{"a":1}`,
+		`note { unbalanced. {"a":1}`:               `{"a":1}`,
+		`{bad} then {"ok":true}`:                   `{"ok":true}`,
+		`{bad}`:                                    `{bad}`,
+		`{"a":"x\\"}`:                              `{"a":"x\\"}`,
+		`{"phases":[{"title":"P"}], "overview": }`: `{"phases":[{"title":"P"}], "overview": }`,
+	}
+	for in, want := range cases {
+		got, err := ExtractJSON(in)
+		if err != nil || got != want {
+			t.Errorf("ExtractJSON(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	_, err := ParsePass1(`{bad}`)
+	if err == nil || !strings.Contains(err.Error(), "does not match the schema") {
+		t.Errorf("ParsePass1({bad}) = %v, want a decode error", err)
+	}
+	if _, err := ExtractJSON(`only { prose`); err == nil || !strings.Contains(err.Error(), "not closed") {
+		t.Errorf("unclosed: %v", err)
+	}
+}
