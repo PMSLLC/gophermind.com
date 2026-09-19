@@ -2,6 +2,7 @@ package plan
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 
@@ -27,13 +28,13 @@ func worstPass2For(t *testing.T, briefBytes, batch int, replan bool) string {
 		s := node(t, fmt.Sprintf("phase-001.task-001.step-%03d", i), strings.Repeat("s", 200), strings.Repeat("d", 500), "")
 		if replan {
 			s.Planning.Stage = plantree.StageNeedsReconciliation
-			s.Work = &plantree.Work{Description: strings.Repeat("w", 4000), AcceptanceCriteria: []string{"x"}}
-			s.ResumeNote = strings.Repeat("r", 2000)
+			s.Work = &plantree.Work{Description: strings.Repeat("w", priorWorkBytes*8), AcceptanceCriteria: []string{"x"}}
+			s.ResumeNote = strings.Repeat("r", reconcileNoteShownBytes*10)
 		}
 		steps = append(steps, s)
 	}
 	return Pass2Prompt(Pass2Input{
-		Project: strings.Repeat("n", 100), Overview: strings.Repeat("o", 40000),
+		Project: strings.Repeat("n", 100), Overview: strings.Repeat("o", OverviewCapBytes*7),
 		Facts: strings.Repeat("f", 40000), Decisions: worstDecisions("q") + strings.Repeat("d", 40000),
 		Excerpts: strings.Repeat("e", 40000), ExcerptsCap: briefBytes,
 		Phase: phase, Task: task, Siblings: steps, Batch: steps[:batch],
@@ -89,13 +90,62 @@ func TestSizesForNeverExceedsTheDefaults(t *testing.T) {
 }
 
 func TestSizesForIsMonotonic(t *testing.T) {
-	prev, prev2 := SizesFor(1)
-	for w := 2; w <= 200000; w += 137 {
+	// Zero options mean the defaults, so compare what each result means, not
+	// its raw fields. Every window from 1 is compared with its neighbour, so a
+	// tiny positive window cannot silently jump to the largest sizes.
+	check := func(w int, prevO Options, prevO2 Options2) (Options, Options2) {
 		o, o2 := SizesFor(w)
-		if o.ChunkBytes < prev.ChunkBytes || o2.BriefBytes < prev2.BriefBytes || o2.StepsPerPass < prev2.StepsPerPass {
-			t.Fatalf("SizesFor(%d) = %+v %+v is smaller than the window below it (%+v %+v)", w, o, o2, prev, prev2)
+		a, a2 := o.WithDefaults(), o2.WithDefaults()
+		if a.ChunkBytes < prevO.ChunkBytes || a2.BriefBytes < prevO2.BriefBytes || a2.StepsPerPass < prevO2.StepsPerPass {
+			t.Fatalf("SizesFor(%d) = %+v %+v is smaller than the window below it (%+v %+v)", w, a, a2, prevO, prevO2)
 		}
-		prev, prev2 = o, o2
+		return a, a2
+	}
+	prev, prev2 := SizesFor(1)
+	prev, prev2 = prev.WithDefaults(), prev2.WithDefaults()
+	if prev.ChunkBytes != floorChunkBytes || prev2.BriefBytes != floorBriefBytes || prev2.StepsPerPass != floorStepsPass {
+		t.Fatalf("SizesFor(1) = %+v %+v, want the floors", prev, prev2)
+	}
+	for w := 2; w <= 4000; w++ {
+		prev, prev2 = check(w, prev, prev2)
+	}
+	for w := 4001; w <= 200000; w += 137 {
+		prev, prev2 = check(w, prev, prev2)
+	}
+}
+
+func TestPromptBudgetBytesDoesNotOverflow(t *testing.T) {
+	for _, w := range []int{math.MaxInt, math.MaxInt32, math.MaxInt32 + 1, maxWindowTokens, maxWindowTokens + 1} {
+		if got := PromptBudgetBytes(w); got <= 0 || got != PromptBudgetBytes(maxWindowTokens) && w > maxWindowTokens {
+			t.Errorf("PromptBudgetBytes(%d) = %d", w, got)
+		}
+		o, o2 := SizesFor(w)
+		if o.ChunkBytes > DefaultChunkBytes || o2.StepsPerPass > defaultStepsPerPass {
+			t.Errorf("SizesFor(%d) = %+v %+v, above the defaults", w, o, o2)
+		}
+	}
+}
+
+func TestFitsWindow(t *testing.T) {
+	for _, w := range []int{0, -1} {
+		if !FitsWindow(w) {
+			t.Errorf("FitsWindow(%d) = false; an unknown window must report true", w)
+		}
+	}
+	if !FitsWindow(8192) {
+		t.Error("the floors must fit an 8192 token window")
+	}
+	for _, w := range []int{1, 500, 2000, 4096} {
+		if FitsWindow(w) {
+			t.Errorf("FitsWindow(%d) = true, the floors cannot fit that window", w)
+		}
+	}
+	// FitsWindow agrees with the sizes SizesFor gives for the same window.
+	for _, w := range []int{1, 5000, 6000, 7000, 8192, 32768} {
+		o, o2 := SizesFor(w)
+		if got, want := FitsWindow(w), WorstPromptBytes(o, o2) <= PromptBudgetBytes(w); got != want {
+			t.Errorf("FitsWindow(%d) = %v but SizesFor's worst prompt fitting is %v", w, got, want)
+		}
 	}
 }
 

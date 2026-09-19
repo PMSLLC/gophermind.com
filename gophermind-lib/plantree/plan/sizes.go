@@ -38,22 +38,38 @@ const (
 
 // How a context window in tokens becomes a prompt budget in bytes.
 //
-//   - bytesPerToken is deliberately the pessimistic end of the usual 3 to 4
-//     bytes per token, so a prompt of mostly short words still fits.
+//   - bytesPerToken is the pessimistic end of the usual 3 to 4 bytes per token
+//     for mostly-ASCII text, so a prompt of mostly short words still fits. It
+//     is not conservative for CJK or other 4-byte-rune text, which tokenizes
+//     at roughly 1.3 to 2 bytes per token, and a ratio that would cover it
+//     would leave even the floors unable to fit an 8k window. At 8k the margin
+//     is thin (see the table in TestSizesForFitsTheWindow). The chat template
+//     the server wraps around the prompt is not counted either. Callers that
+//     want to warn the owner rather than overflow should ask FitsWindow.
 //   - the reply needs room inside the same window: a window/replyReserveDiv
 //     slice is kept for it, never less than minReplyTokens.
 const (
 	bytesPerToken   = 3
 	replyReserveDiv = 8
 	minReplyTokens  = 1024
+
+	// maxWindowTokens clamps a reported window before it is multiplied, so a
+	// bogus huge value cannot overflow (32-bit ints included). It is far above
+	// any real window and well above the size at which the defaults fit.
+	maxWindowTokens = 1 << 24
 )
 
 // PromptBudgetBytes is the number of prompt bytes SizesFor will fit inside a
 // context window of contextTokens tokens, after leaving room for the reply. A
-// window of zero or less (unknown) has no budget.
+// window of zero or less (unknown) has no budget, and neither has one so
+// small that the reply reserve takes all of it. A window larger than
+// maxWindowTokens is treated as maxWindowTokens.
 func PromptBudgetBytes(contextTokens int) int {
 	if contextTokens <= 0 {
 		return 0
+	}
+	if contextTokens > maxWindowTokens {
+		contextTokens = maxWindowTokens
 	}
 	reply := contextTokens / replyReserveDiv
 	if reply < minReplyTokens {
@@ -102,22 +118,44 @@ func WorstPromptBytes(o Options, o2 Options2) int {
 // without the other would only make the two disagree; the overview is part of
 // the fixed cost measured in pass1FixedBytes and pass2BaseBytes.
 //
-// Below about 7,000 tokens no setting fits. SizesFor then returns its floor
-// sizes rather than something unusable, and the run reports the server's own
+// The budget assumes mostly-ASCII text: at 8k the margin is thin, CJK-heavy
+// briefs can still overflow, and the chat template is not counted (see
+// bytesPerToken).
+//
+// Below about 7,000 tokens no setting fits. For any positive window SizesFor
+// then returns its floor sizes, never the defaults, and FitsWindow reports
+// false so the caller can warn; otherwise the run reports the server's own
 // context-limit error, which RunPass1 and RunPass2 already translate into
 // "lower these sizes".
 func SizesFor(contextTokens int) (Options, Options2) {
-	budget := PromptBudgetBytes(contextTokens)
-	if budget <= 0 {
+	if contextTokens <= 0 {
 		return Options{}, Options2{}
 	}
+	budget := PromptBudgetBytes(contextTokens)
 	for scale := 100; scale > 0; scale-- {
 		o, o2 := sizesAt(scale)
 		if WorstPromptBytes(o, o2) <= budget {
 			return o, o2
 		}
 	}
-	return sizesAt(0)
+	return floorSizes()
+}
+
+// FitsWindow reports whether even the smallest sizes (the floors) produce a
+// worst-case prompt inside the budget of a window of contextTokens tokens.
+// False means no setting is safe and the caller should warn the owner. An
+// unknown window (zero or less) reports true: there is nothing to warn about.
+func FitsWindow(contextTokens int) bool {
+	if contextTokens <= 0 {
+		return true
+	}
+	o, o2 := floorSizes()
+	return WorstPromptBytes(o, o2) <= PromptBudgetBytes(contextTokens)
+}
+
+func floorSizes() (Options, Options2) {
+	return Options{ChunkBytes: floorChunkBytes},
+		Options2{BriefBytes: floorBriefBytes, StepsPerPass: floorStepsPass}
 }
 
 // sizesAt scales the three defaults by scale percent, never below the floors
