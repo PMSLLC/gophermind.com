@@ -21,8 +21,10 @@ type Completer interface {
 	Complete(ctx context.Context, prompt string) (string, error)
 }
 
-// ErrBriefChanged is returned when a run is resumed against a brief, or a chunk
-// size, different from the one it started with. Resuming would mix two plans.
+// ErrBriefChanged is returned when a run is resumed against a brief or chunk
+// size different from the one it started with. The cursor is only valid against
+// identical chunk boundaries (same brief and same chunk size). Resuming against
+// a different brief or chunk size would mix two plans.
 var ErrBriefChanged = errors.New("plan: the brief or chunk size changed since this run started")
 
 // Options tunes RunPass1. Zero values pick the defaults.
@@ -46,10 +48,12 @@ const (
 
 // pass1State is the resume cursor for a skeleton run. It is only a cursor:
 // the tree and overview hold the real state, and a chunk that was merged but
-// not yet recorded here is simply merged again, which changes nothing.
+// not yet recorded here is simply merged again, which changes nothing. The cursor
+// is only valid against identical chunk boundaries (same brief and same chunk size).
 type pass1State struct {
 	BriefSHA256 string `json:"brief_sha256"`
 	Chunks      int    `json:"chunks"`
+	ChunkBytes  int    `json:"chunk_bytes"`
 	Next        int    `json:"next"`
 }
 
@@ -110,11 +114,11 @@ func RunPass1(ctx context.Context, repo *plantree.Repo, brief string, c Complete
 	if err != nil {
 		return Result{}, err
 	}
-	if found && (state.BriefSHA256 != digest || state.Chunks != len(chunks)) {
+	if found && (state.BriefSHA256 != digest || state.Chunks != len(chunks) || state.ChunkBytes != opt.ChunkBytes) {
 		return Result{}, ErrBriefChanged
 	}
 	if !found {
-		state = pass1State{BriefSHA256: digest, Chunks: len(chunks)}
+		state = pass1State{BriefSHA256: digest, Chunks: len(chunks), ChunkBytes: opt.ChunkBytes}
 		if err := saveBrief(repo, brief); err != nil {
 			return Result{}, err
 		}

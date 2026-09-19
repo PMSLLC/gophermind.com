@@ -266,3 +266,31 @@ func TestEmptyBriefAndCancelledContext(t *testing.T) {
 		t.Errorf("no model calls expected, made %d", len(f.prompts))
 	}
 }
+
+func TestResumingWithADifferentChunkSizeButTheSameChunkCountIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	r := plantree.Open(dir)
+	broken := &fake{reply: func(n int, p string) (string, error) {
+		if n >= 1 {
+			return "", errors.New("model unavailable")
+		}
+		return byChunk(n, p)
+	}}
+	res, err := RunPass1(context.Background(), r, threePartBrief, broken, opts)
+	if err == nil || !strings.Contains(err.Error(), "chunk 2 of 3") {
+		t.Fatalf("err = %v, want it to name chunk 2 of 3", err)
+	}
+	if res.Processed != 1 {
+		t.Errorf("Processed = %d, want 1", res.Processed)
+	}
+
+	other := opts
+	other.ChunkBytes = 40
+	good := &fake{reply: byChunk}
+	if _, err := RunPass1(context.Background(), r, threePartBrief, good, other); !errors.Is(err, ErrBriefChanged) {
+		t.Errorf("changed chunk size with same count: err = %v, want ErrBriefChanged", err)
+	}
+	if len(good.prompts) != 0 {
+		t.Errorf("refused runs must not call the model, made %d calls", len(good.prompts))
+	}
+}
