@@ -318,6 +318,13 @@ func renderPass1Result(r plan.Result) string {
 // It reports handled=false when the flow is not active, so the caller
 // proceeds normally.
 func (m model) handleProjectInput(text string) (model, tea.Cmd, bool) {
+	// A slash command always wins over a prompt that is waiting for a plain
+	// answer: the approval prompt points the owner at "/questions change",
+	// which it would otherwise swallow as a revision request.
+	if (m.proj == projAwaitName || m.proj == projApprove) && strings.HasPrefix(text, "/") {
+		m.proj = projNone
+		return m, nil, false
+	}
 	switch m.proj {
 	case projAwaitName:
 		m.proj = projNone
@@ -337,27 +344,11 @@ func (m model) handleProjectInput(text string) (model, tea.Cmd, bool) {
 		m.appendLine("(still planning; Esc stops it, and /project " + m.projName + " resumes)")
 		m.sync()
 		return m, nil, true
+
+	case projApprove:
+		return m.handleProjectApproval(text)
 	}
 	return m, nil, false
-}
-
-// afterProjectPasses acts on a finished pair of planning passes: it reports
-// what they did, then either enters the question round or says what the plan
-// still needs. Task 6 replaces the second half of that with the approval
-// prompt.
-func (m model) afterProjectPasses(msg projectPassesDoneMsg) (tea.Model, tea.Cmd) {
-	m.appendLine(renderQuestionsResult(msg.res2))
-	m.st = stateIdle
-	m.cancel = nil
-	m.proj = projNone
-	if len(msg.open) > 0 {
-		m.appendLine(fmt.Sprintf("%d question(s) need an answer before this plan can be approved.", len(msg.open)))
-		nm, cmd := m.handleQuestionsCommand("/questions")
-		return nm, tea.Batch(cmd, m.beginAttention(), waitFor(m.sub))
-	}
-	m.appendLine(renderNextActions(msg.actions))
-	m.sync()
-	return m, tea.Batch(m.beginAttention(), waitFor(m.sub))
 }
 
 // projectError reports a refusal and leaves the flow.

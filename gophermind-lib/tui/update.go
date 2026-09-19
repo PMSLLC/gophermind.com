@@ -153,12 +153,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case questionsDoneMsg:
 		m.appendLine(renderQuestionsResult(msg.res))
-		m.appendLine(renderNextActions(msg.actions))
 		m.endRound()
 		m.st = stateIdle
 		m.cancel = nil
-		m.sync()
-		return m, tea.Batch(m.beginAttention(), waitFor(m.sub))
+		// A round that left nothing but approval hands over to the same
+		// approval prompt /project uses, rather than printing "next: approve"
+		// and making the owner find the command that does it.
+		nm := m.offerApproval(msg.actions)
+		return nm, tea.Batch(nm.beginAttention(), waitFor(m.sub))
 
 	case projectPassesDoneMsg:
 		return m.afterProjectPasses(msg)
@@ -401,11 +403,15 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		return m, nil
 	}
 
-	// While a guided /project flow is active, its state machine consumes input.
+	// While a /project flow is active, its state machine consumes input. It
+	// declines a slash command, and the model it hands back has already left
+	// the flow, so the command below runs in a clean state.
 	if m.proj != projNone {
-		if nm, cmd, handled := m.handleProjectInput(text); handled {
+		nm, cmd, handled := m.handleProjectInput(text)
+		if handled {
 			return nm, cmd
 		}
+		m = nm
 	}
 
 	// Commands taking an argument are matched by their first field so the value

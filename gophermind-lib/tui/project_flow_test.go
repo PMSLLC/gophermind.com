@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"gophermind/gophermind-lib/phaseflow"
 	"gophermind/gophermind-lib/plantree"
+	"gophermind/gophermind-lib/plantree/export"
 	"gophermind/gophermind-lib/plantree/plan"
 )
 
@@ -228,5 +230,123 @@ func TestSlashProjectRefusesADifferentBriefOnAnExistingPlan(t *testing.T) {
 	m = submit(t, m, "/project Gophernote "+other)
 	if m.proj != projNone || !strings.Contains(m.content, "different brief") {
 		t.Errorf("proj = %v, transcript:\n%s", m.proj, m.content)
+	}
+}
+
+// TestProjectApprovalRefusesWhileAQuestionIsOpen: the approval prompt is only
+// reached with nothing open, but the approval itself re-checks, because the
+// store can change between the prompt and the answer.
+func TestProjectApprovalRefusesWhileAQuestionIsOpen(t *testing.T) {
+	f := &planFake{}
+	m, dir, brief := projectModel(t, f)
+	m = settle(t, submit(t, m, "/project Gophernote "+brief))
+	m = settle(t, keys(t, m, key(tea.KeySpace), key(tea.KeyCtrlS)))
+	if m.proj != projApprove {
+		t.Fatalf("no approval prompt:\n%s", m.content)
+	}
+	repo := plantree.Open(phaseflow.PlanningDir(dir))
+	if _, err := plan.AddQuestions(repo, []plan.NewQuestion{{
+		Question: "One more thing?", Why: "it came up",
+		Options: []plan.NewOption{{Label: "yes"}, {Label: "no"}},
+		Affects: []string{"phase-001.task-001"}, Source: "a later pass",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	m = submit(t, m, "y")
+	if !strings.Contains(m.content, "still open") {
+		t.Errorf("approval did not re-check the questions:\n%s", m.content)
+	}
+	if phaseflow.New(dir).Approved() {
+		t.Error("a refused approval still wrote the marker")
+	}
+}
+
+// TestProjectApprovalReviseDoesNotPretendToRePlan: nothing in this milestone
+// turns free text into a changed plan, so the prompt says so and points at
+// the path that does re-plan.
+func TestProjectApprovalReviseDoesNotPretendToRePlan(t *testing.T) {
+	m := testModel(t)
+	t.Chdir(t.TempDir())
+	m.proj = projApprove
+	m.projName = "Gophernote"
+	nm, _, handled := m.handleProjectInput("split phase 2")
+	if !handled || nm.proj != projNone {
+		t.Fatalf("handled=%v proj=%v", handled, nm.proj)
+	}
+	for _, want := range []string{"not wired to a re-planning pass", "/questions change"} {
+		if !strings.Contains(nm.content, want) {
+			t.Errorf("transcript is missing %q:\n%s", want, nm.content)
+		}
+	}
+}
+
+// TestProjectCancelLeavesThePlanUnapproved keeps "cancel" honest.
+func TestProjectCancelLeavesThePlanUnapproved(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	m := testModel(t)
+	m.proj = projApprove
+	m.projName = "Gophernote"
+	nm, _, handled := m.handleProjectInput("cancel")
+	if !handled || nm.proj != projNone {
+		t.Fatalf("handled=%v proj=%v", handled, nm.proj)
+	}
+	if phaseflow.New(dir).Approved() {
+		t.Error("cancel must not approve")
+	}
+}
+
+// TestExportRefusalsAreSpecific: each refusal is reported in its own words.
+func TestExportRefusalsAreSpecific(t *testing.T) {
+	for err, want := range map[error]string{
+		export.ErrNotApproved:      "not approved",
+		export.ErrNoAgent:          "agent catalog",
+		export.ErrExecutionStarted: "already started",
+		export.ErrNotValid:         "failed validation",
+		plan.ErrRunBusy:            "another planning run",
+	} {
+		if got := exportRefusal(fmt.Errorf("wrapped: %w", err)); !strings.Contains(got, want) {
+			t.Errorf("%v: %q is missing %q", err, got, want)
+		}
+	}
+	if got := approveRefusal(plan.ErrRunBusy); !strings.Contains(got, "nothing was approved") {
+		t.Errorf("busy approval: %q", got)
+	}
+}
+
+// TestRenderExportReportAnnouncesReplacedFiles: overwriting is never silent.
+func TestRenderExportReportAnnouncesReplacedFiles(t *testing.T) {
+	got := renderExportReport(export.Report{Phases: 1, Tasks: 1, Steps: 1, Replaced: []string{".planning/ROADMAP.md"}})
+	if !strings.Contains(got, "replaced 1 file(s)") || !strings.Contains(got, "replaced .planning/ROADMAP.md") {
+		t.Errorf("replaced files not announced:\n%s", got)
+	}
+}
+
+// TestProjectExportFailureSaysTheProjectIsUnapproved: with the tree approved
+// but the catalog missing its agent, the export refuses after approval, and
+// the owner is told execution is blocked and how to retry.
+func TestProjectExportFailureSaysTheProjectIsUnapproved(t *testing.T) {
+	f := &planFake{}
+	m, dir, brief := projectModel(t, f)
+	m = settle(t, submit(t, m, "/project Gophernote "+brief))
+	m = settle(t, keys(t, m, key(tea.KeySpace), key(tea.KeyCtrlS)))
+	if m.proj != projApprove {
+		t.Fatalf("no approval prompt:\n%s", m.content)
+	}
+	agents := phaseflow.CatalogDir(dir)
+	if err := os.MkdirAll(agents, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agents, "other.prompt.md"), []byte("---\nname: other\n---\nx\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m = submit(t, m, "y")
+	if phaseflow.New(dir).Approved() {
+		t.Fatalf("the export should have refused:\n%s", m.content)
+	}
+	for _, want := range []string{"approved:", "agent catalog", "currently unapproved for execution", "/project Gophernote"} {
+		if !strings.Contains(m.content, want) {
+			t.Errorf("transcript is missing %q:\n%s", want, m.content)
+		}
 	}
 }

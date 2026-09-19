@@ -18,6 +18,10 @@ import (
 
 var roundStepID = regexp.MustCompile(`phase-\d{3}\.task-\d{3}\.step-\d{3}`)
 
+// approvalPrompt is what a finished round or a finished pair of passes ends
+// at once nothing but approval is left (see tui/approve.go).
+const approvalPrompt = "Approve this plan?"
+
 // specCompleter answers a pass-2 prompt with a specification for every step
 // it asks for, and records what it was asked.
 type specCompleter struct {
@@ -231,7 +235,7 @@ func TestQuestionRoundAnswerReleasesTheStepsAndSpecifiesThem(t *testing.T) {
 	if m.qphase != qNone {
 		t.Errorf("phase = %v after the pass", m.qphase)
 	}
-	for _, want := range []string{"questions: 1 written, 0 refused", "2 step(s) specified", "2 released by an answer", "next: approve the plan, every step is specified"} {
+	for _, want := range []string{"questions: 1 written, 0 refused", "2 step(s) specified", "2 released by an answer", approvalPrompt} {
 		if !strings.Contains(m.content, want) {
 			t.Errorf("transcript is missing %q:\n%s", want, m.content)
 		}
@@ -425,11 +429,14 @@ func TestQuestionRoundEndToEnd(t *testing.T) {
 	m, repo, c := roundModel(t)
 
 	m = settle(t, keys(t, submit(t, m, "/questions"), key(tea.KeySpace), key(tea.KeyCtrlS)))
-	if !strings.Contains(m.content, "next: approve the plan, every step is specified") {
-		t.Fatalf("after answering, the plan is not complete:\n%s", m.content)
+	if !strings.Contains(m.content, approvalPrompt) || m.proj != projApprove {
+		t.Fatalf("after answering, the round did not hand over to the approval prompt (proj=%v):\n%s", m.proj, m.content)
 	}
 
 	m = submit(t, m, "/questions")
+	if m.proj != projNone {
+		t.Fatalf("a slash command at the approval prompt must dispatch, not be read as a revision: proj=%v", m.proj)
+	}
 	if m.qphase != qAsking || m.round.mode != roundChange {
 		t.Fatalf("with nothing open, /questions must offer the answered ones: phase=%v mode=%v", m.qphase, m.round.mode)
 	}
@@ -440,7 +447,7 @@ func TestQuestionRoundEndToEnd(t *testing.T) {
 	}
 	m = settle(t, m)
 
-	for _, want := range []string{"q-001 changed: 2 step(s) to re-plan", "2 re-planned", "next: approve the plan, every step is specified"} {
+	for _, want := range []string{"q-001 changed: 2 step(s) to re-plan", "2 re-planned", approvalPrompt} {
 		if !strings.Contains(m.content, want) {
 			t.Errorf("transcript is missing %q:\n%s", want, m.content)
 		}
