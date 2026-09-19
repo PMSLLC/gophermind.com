@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -63,7 +64,7 @@ func (m model) frame() string {
 	// Predictive-text suggestions are only ever live while stateIdle (see
 	// handleKey), so mode is inert here otherwise.
 	var menuView string
-	if m.st == stateIdle && m.proj == projNone && m.complete.Mode() == bubblecomplete.ModeMenu {
+	if m.st == stateIdle && m.proj == projNone && m.qphase == qNone && m.complete.Mode() == bubblecomplete.ModeMenu {
 		menuView = m.complete.View()
 		if h := lipgloss.Height(menuView); h > 0 {
 			vp.Height -= h
@@ -82,10 +83,42 @@ func (m model) frame() string {
 	// Outside that case (or when the cursor isn't at the true end of the
 	// input, or a menu/no suggestion is active) the input renders unchanged.
 	inputContent := m.input.View()
-	if m.st == stateIdle && m.proj == projNone && m.complete.Mode() == bubblecomplete.ModeGhost {
+	if m.st == stateIdle && m.proj == projNone && m.qphase == qNone && m.complete.Mode() == bubblecomplete.ModeGhost {
 		if ghost := m.complete.Ghost(); ghost != "" && singleVisualLine(m) && cursorAtEnd(m) {
 			inputContent = m.input.Prompt + m.input.Value() + m.complete.GhostStyle().Render(ghost)
 		}
+	}
+
+	// The question round takes the panel above the input while it is showing,
+	// and keeps a one-line panel while its pass runs.
+	if m.qphase != qNone {
+		panel := questionsDialogText(m.qphase)
+		if m.qphase == qAsking {
+			panel = m.round.View()
+		}
+		// The round's height is unbounded (see questionRound.View), so it is
+		// capped here to what the terminal has left after the input and the
+		// status line, keeping the bottom rows (the current question, its
+		// note and the key help) and dropping the list above them. The
+		// viewport gives up the rows the panel takes, as the menu does.
+		box := boxStyle.Width(width).Render(inputContent)
+		const panelBorder, minViewport = 2, 1
+		avail := m.height - lipgloss.Height(box) - statusHeight - panelBorder - minViewport
+		panel = keepBottomRows(panel, avail)
+		panelView := roundDialogStyle.Width(width).Render(panel)
+		if h := m.height - lipgloss.Height(box) - statusHeight - lipgloss.Height(panelView); h < vp.Height {
+			vp.Height = h
+			if vp.Height < 1 {
+				vp.Height = 1
+			}
+		}
+		return lipgloss.JoinVertical(
+			lipgloss.Left,
+			vp.View(),
+			panelView,
+			box,
+			status,
+		)
 	}
 
 	// During a guided /project flow, show a dialog panel above the input.
@@ -115,4 +148,17 @@ func (m model) frame() string {
 		boxStyle.Width(width).Render(inputContent),
 		status,
 	)
+}
+
+// keepBottomRows keeps the last n rows of s, or all of it when it is shorter.
+// A limit below 1 keeps one row.
+func keepBottomRows(s string, n int) string {
+	if n < 1 {
+		n = 1
+	}
+	lines := strings.Split(s, "\n")
+	if len(lines) <= n {
+		return s
+	}
+	return strings.Join(lines[len(lines)-n:], "\n")
 }

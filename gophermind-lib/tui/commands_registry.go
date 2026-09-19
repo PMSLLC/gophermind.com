@@ -20,6 +20,7 @@ var slashCommands = []slashCommand{
 	{Name: "/clear", Arg: "", Desc: "clear the transcript and reset the session"},
 	{Name: "/project", Arg: "<name>", Desc: "start the guided new-project flow"},
 	{Name: "/project-execute", Arg: "", Desc: "run every pending task in the approved plan autonomously"},
+	{Name: "/questions", Arg: "[change]", Desc: "answer the plan's open questions in one round (\"change\" revisits answered ones)"},
 	{Name: "/phase", Arg: "<cmd>", Desc: "run a PhaseFlow workflow command"},
 	{Name: "/config", Arg: "", Desc: "open the configuration wizard"},
 	{Name: "/index", Arg: "", Desc: "rebuild INDEX.md, the code symbol index"},

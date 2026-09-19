@@ -16,6 +16,7 @@ import (
 	"gophermind/gophermind-lib/agent"
 	"gophermind/gophermind-lib/banner"
 	"gophermind/gophermind-lib/phaseflow"
+	"gophermind/gophermind-lib/plantree/plan"
 	"gophermind/gophermind-lib/prompthistory"
 )
 
@@ -121,6 +122,15 @@ type model struct {
 	projParseRetry bool
 	projRetries    int
 	projTurn       bool
+
+	// Question round state (see questions.go and question_round.go). qphase is
+	// qNone unless the round is showing or its pass is running; round holds
+	// the answers being composed. completer overrides the planning completer
+	// so a test can drive the round with no agent; nil means build one from
+	// this session's client.
+	qphase    qPhase
+	round     questionRound
+	completer plan.Completer
 
 	// execOutcomes accumulates /project-execute's finished tasks as they
 	// stream in via execProgressMsg, so a Ctrl-C mid-run can tally a partial

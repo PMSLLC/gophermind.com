@@ -153,6 +153,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sync()
 		return m, waitFor(m.sub)
 
+	case questionsProgressMsg:
+		m.appendLine(string(msg))
+		m.sync()
+		return m, waitFor(m.sub)
+
+	case questionsDoneMsg:
+		m.appendLine(renderQuestionsResult(msg.res))
+		m.appendLine(renderNextActions(msg.actions))
+		m.endRound()
+		m.st = stateIdle
+		m.cancel = nil
+		m.sync()
+		return m, tea.Batch(m.beginAttention(), waitFor(m.sub))
+
 	case execDoneMsg:
 		m.appendLine(renderExecSummary(msg.summary))
 		m.execOutcomes = nil
@@ -181,6 +195,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stream = ""
 		m.st = stateIdle
 		m.cancel = nil
+		// A cancelled or failed pass ends the round with it, so the session
+		// is not left in a phase whose keys nothing handles.
+		m.endRound()
 		m.sync()
 		return m, tea.Batch(m.beginAttention(), waitFor(m.sub))
 	}
@@ -227,6 +244,13 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case tea.KeyEsc:
+		// The question round takes Esc while it is showing: the first one
+		// leaves the note box, the second cancels the round. The cancel and
+		// interrupt behavior below is unchanged everywhere else, including
+		// while the round's pass is running.
+		if m.qphase == qAsking {
+			return m.handleRoundKey(msg)
+		}
 		// An active suggestion (ghost or menu) eats the first Esc — dismiss it
 		// instead of the cancel/interrupt behavior below. A second Esc (or Esc
 		// with nothing active) falls through to that behavior as before.
@@ -281,6 +305,14 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.st = stateWorking
 		}
 		return m, nil
+	}
+
+	// While the question round is showing it owns the keyboard. Ctrl-C, Esc
+	// and "/exit" are handled above, so none of them is taken over here; the
+	// round consumes everything else, which is why "/exit" cannot be typed
+	// until Esc has left the round.
+	if m.qphase == qAsking {
+		return m.handleRoundKey(msg)
 	}
 
 	// Predictive-text gets first refusal on keys while idle (Tab/→ accept a
@@ -461,6 +493,12 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 	// autonomously, streaming per-task progress; see execute.go.
 	if strings.Fields(text)[0] == "/project-execute" {
 		return m.handleProjectExecuteCommand()
+	}
+
+	// "/questions" opens the question round over the plan tree in
+	// .planning/plan; see questions.go.
+	if strings.Fields(text)[0] == "/questions" {
+		return m.handleQuestionsCommand(text)
 	}
 
 	// A session goal (set via "/goal") is injected into every ordinary prompt
