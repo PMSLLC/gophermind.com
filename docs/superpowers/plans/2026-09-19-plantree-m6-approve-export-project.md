@@ -4422,3 +4422,19 @@ Claude-Session: https://claude.ai/code/session_01HArwYJXPZfFwmuSRuxLcYr"
 - `ExtractJSON` having no production caller.
 - Per-step progress from `RunPass1` and `RunPass2`. Their counters are per call, so the transcript gets one line before each pass and one after.
 - The low items still standing on the M5 outcome list that no task here touched: `tui/questions.go` discarding a `LoadQuestions` error when comparing stored answers; a step flagged by question A showing question B's reason after B changes; dead lines in `plan/fixwave2_test.go`; the round view cap only being guaranteed on terminals at least 8 rows tall; failed-write notes being printed rather than kept for retry; and a same-answer `ChangeAnswer` after a re-plan re-flagging the steps. The `BRIEF EXCERPTS` terminator, which was on that list, is neutralized in Task 1.
+
+## Amendments after review
+
+The tasks were built and reviewed as written, then changed by task reviews and the final whole-branch review. The committed files are authoritative where they differ from the code blocks above. Changes since:
+
+- **Run lock** (`d0aace6`, `7fd471f`). Windows never reclaims the run lock by age; the busy text is platform-specific (no delete advice on unix); Windows errors other than "held" are not reported as busy. The per-hold generation machinery was removed as unreachable; the in-process count stays, and each release fires at most once.
+- **`SizesFor`** (`b4fab33`, `5f98949`). Any positive window gets at least the floors; `FitsWindow` reports whether the floors fit; the window is clamped; the byte-per-token ratio of 3 is documented as a mostly-ASCII assumption. The retry prompt allowance (2,230 bytes, pinned against the real `RetryPrompt`) is reserved in `PromptBudgetBytes`, so at 8,192 tokens nothing fits and the absolute minimums (500 / 64 / 1) apply with a warning; the first window where the floors fit is 8,390. Defaults at 16k and above are unchanged; pins 1,984 / 26,481 / 26,572 / 26,740 / 26,812.
+- **`Approve`** (`ea601aa`). Takes the run lock, runs `Verify` before writing, refuses in-progress and completed steps by name.
+- **`ExportLegacy`** (`a2838fa`, `5f98949`). Requires an approved tree (`ErrNotApproved`), removes the approval marker before the first write and writes it last, takes the run lock, reports `Report.Replaced`, refuses an agent catalog without `executor` (`ErrNoAgent`) before writing, wraps every failure after the marker drop so the owner is told the project is unapproved, sanitizes before cutting, and `ChangeAnswer` now takes the run lock so it cannot race an export.
+- **Approval prompt reachable again** (`a3f5481`). After a successful `plan.Approve` and a failed export, a rerun of `/project` shows the export prompt (or says the project is already approved and exported when the marker exists).
+- **`startPass` uses `SizesFor`**, a small window gets a warning line, pass 1 and pass 2 report progress through optional `Progress` callbacks in `Options` and `Options2` (which makes them non-comparable with `==`), `tui.oneLine` strips control characters, a fresh project prints a line saying the scaffolded `ROADMAP.md` and `PROJECT.md` are placeholders the export replaces.
+- Files added outside this plan's blocks: `tui/project_fixwave_test.go`.
+
+### Carried forward
+
+See the roadmap section "M6 outcome".
