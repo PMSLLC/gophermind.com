@@ -416,3 +416,50 @@ func TestQuestionRoundIsCappedToTheTerminalHeight(t *testing.T) {
 		t.Errorf("the input box is missing:\n%s", v)
 	}
 }
+
+// TestQuestionRoundEndToEnd is the whole M5 loop in one session: answer the
+// open question, let pass 2 specify the steps, then change that answer, let
+// the reconciling pass re-specify exactly the steps it invalidated, and end
+// with nothing left but approval.
+func TestQuestionRoundEndToEnd(t *testing.T) {
+	m, repo, c := roundModel(t)
+
+	m = settle(t, keys(t, submit(t, m, "/questions"), key(tea.KeySpace), key(tea.KeyCtrlS)))
+	if !strings.Contains(m.content, "next: approve the plan, every step is specified") {
+		t.Fatalf("after answering, the plan is not complete:\n%s", m.content)
+	}
+
+	m = submit(t, m, "/questions")
+	if m.qphase != qAsking || m.round.mode != roundChange {
+		t.Fatalf("with nothing open, /questions must offer the answered ones: phase=%v mode=%v", m.qphase, m.round.mode)
+	}
+	// Choose the other option and submit: this invalidates both specifications.
+	m = keys(t, m, key(tea.KeyRight), key(tea.KeySpace), key(tea.KeyCtrlS))
+	if m.qphase != qRunning {
+		t.Fatalf("a changed answer did not start a pass: %v, %q", m.qphase, m.content)
+	}
+	m = settle(t, m)
+
+	for _, want := range []string{"q-001 changed: 2 step(s) to re-plan", "2 re-planned", "next: approve the plan, every step is specified"} {
+		if !strings.Contains(m.content, want) {
+			t.Errorf("transcript is missing %q:\n%s", want, m.content)
+		}
+	}
+	qs, err := plan.LoadQuestions(repo)
+	if err != nil || len(qs) != 1 || len(qs[0].PriorAnswers) != 1 || qs[0].Answer.OptionIDs[0] != "opt-2" {
+		t.Fatalf("stored question = %+v, %v", qs, err)
+	}
+	actions, err := plan.NextActions(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(actions.Blocked) != 0 || len(actions.Runnable) != 1 || actions.Runnable[0].Kind != plantree.ActionApprove {
+		t.Errorf("NextActions = %+v, want only approval", actions)
+	}
+	// Two passes: one for the first two steps, then the re-planning pass.
+	if seen := c.seen(); len(seen) != 2 {
+		t.Errorf("%d passes, want 2", len(seen))
+	} else if !strings.Contains(seen[1], "previous specification: build phase-001.task-001.step-001") {
+		t.Error("the re-planning pass was not shown what it was replacing")
+	}
+}
