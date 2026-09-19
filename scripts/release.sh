@@ -229,7 +229,25 @@ else
   die "aborted before tagging"
 fi
 
-# ── 5. GoReleaser: GitHub Release + Homebrew cask ──────────────────────
+# ── 5. Desktop app: build, sign, notarize, staple ──────────────────────
+# GoReleaser's release step (next) attaches this via release.extra_files
+# (see .goreleaser.yaml) — a glob against a fixed filename, not a build step,
+# so the file must already exist in dist-desktop/ before goreleaser runs or
+# the whole release command fails after already creating the GitHub Release
+# object (a real failure this script hit once: a draft release with no
+# assets, because this step was missing entirely). Built into dist-desktop/,
+# never dist/: `goreleaser release --clean` empties dist/ as its first
+# action, which would delete the artifact between building it and attaching
+# it. Mirrors `make release`'s ordering exactly.
+step "Desktop app"
+if [ "$DRY_RUN" = 1 ]; then
+  warn "[dry-run] skipping desktop app build (goreleaser --snapshot below does not need it)"
+else
+  ./scripts/build-desktop.sh "$NPM_VERSION"
+  ok "desktop app built, signed, notarized, stapled"
+fi
+
+# ── 6. GoReleaser: GitHub Release + Homebrew cask ──────────────────────
 step "Build, sign, notarize, publish (GitHub + Homebrew)"
 skip_steps="${GORELEASER_SKIP:-scoop,winget}"
 
@@ -254,7 +272,7 @@ else
   fi
 fi
 
-# ── 6. verify release assets before npm depends on them ────────────────
+# ── 7. verify release assets before npm depends on them ────────────────
 # npm's postinstall downloads these by name. Publishing to npm before they
 # exist would ship a package that cannot install.
 step "Verify release assets"
@@ -279,7 +297,7 @@ else
   [ "$missing" = 0 ] || die "release is missing assets npm/scripts/download.js expects; fix before publishing to npm"
 fi
 
-# ── 7. npm ─────────────────────────────────────────────────────────────
+# ── 8. npm ─────────────────────────────────────────────────────────────
 step "Publish to npm"
 if [ "$NPM_EXISTS" = 1 ]; then
   ok "$NPM_PKG@$NPM_VERSION already published"
