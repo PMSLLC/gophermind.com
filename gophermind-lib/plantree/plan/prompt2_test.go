@@ -67,8 +67,6 @@ func TestPass2PromptBoundsTheStepList(t *testing.T) {
 	}
 }
 
-// TestPass2PromptWorstCaseSize pins the largest prompt one pass can produce
-// with the default caps, so a change that lets it grow shows up here.
 // worstDecisions is the largest decisions block a prompt can carry: more
 // answered questions than fit, each with a long question and long answer.
 func worstDecisions(unit string) string {
@@ -84,6 +82,8 @@ func worstDecisions(unit string) string {
 	return decisionsFor(qs, []string{"phase-001.task-001"})
 }
 
+// TestPass2PromptWorstCaseSize pins the largest prompt one pass can produce
+// with the default caps, so a change that lets it grow shows up here.
 func TestPass2PromptWorstCaseSize(t *testing.T) {
 	phase := node(t, "phase-001", strings.Repeat("p", 200), strings.Repeat("d", 500), strings.Repeat("o", 1000))
 	task := node(t, "phase-001.task-001", strings.Repeat("t", 200), strings.Repeat("d", 500), strings.Repeat("o", 1000))

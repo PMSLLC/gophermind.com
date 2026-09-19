@@ -532,3 +532,66 @@ func TestASecondBatchSeesAnAskedStepAsWaiting(t *testing.T) {
 		t.Errorf("%d prompts; the second must show step 1 as waiting for an answer", len(f.prompts))
 	}
 }
+
+func TestAnsweredDuplicateQuestionShowsItsDecisionForTheNewStep(t *testing.T) {
+	r := newRepo(t)
+	if _, err := Merge(r, sampleOut()); err != nil {
+		t.Fatal(err)
+	}
+	q := twoOptions()
+	q.Affects = []string{"phase-009"} // another part of the plan
+	if _, err := AddQuestions(r, []NewQuestion{q}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AnswerQuestion(r, "q-001", Answer{OptionIDs: []string{"opt-2"}}); err != nil {
+		t.Fatal(err)
+	}
+	// A later pass asks the same, already answered, question about step 2.
+	if n, err := recordPass2Questions(r, "phase-001.task-001", Pass2Output{Questions: []QuestionOut{askAbout(s2)}}); err != nil || n != 0 {
+		t.Fatalf("n=%d err=%v; a duplicate is not a new question", n, err)
+	}
+	f := specFake()
+	if _, err := RunPass2(context.Background(), r, f, Options2{}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(f.prompts[0], "Which database? -> Postgres") {
+		t.Error("the answered decision must be visible to the pass that specifies the newly named step")
+	}
+	if got := stageOf(t, r, s2); got != plantree.StageDrafted {
+		t.Errorf("step 2 is %s, want drafted", got)
+	}
+	again := specFake()
+	if _, err := RunPass2(context.Background(), r, again, Options2{}); err != nil || len(again.prompts) != 0 {
+		t.Errorf("nothing may be selected again: err=%v calls=%d", err, len(again.prompts))
+	}
+}
+
+func TestOpenDuplicateQuestionExtendsAffectsAndHoldsTheNewStep(t *testing.T) {
+	r := newRepo(t)
+	if _, err := Merge(r, sampleOut()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := recordPass2Questions(r, "phase-001.task-001", Pass2Output{Questions: []QuestionOut{askAbout(s1)}}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := recordPass2Questions(r, "phase-001.task-001", Pass2Output{Questions: []QuestionOut{askAbout(s2)}}); err != nil || n != 0 {
+		t.Fatalf("n=%d err=%v", n, err)
+	}
+	qs, _ := LoadQuestions(r)
+	if len(qs) != 1 || len(qs[0].Affects) != 2 || qs[0].Affects[0] != s1 || qs[0].Affects[1] != s2 {
+		t.Fatalf("questions = %+v; want one question affecting step 1 then step 2", qs)
+	}
+	if got := stageOf(t, r, s2); got != plantree.StageAwaitingAnswers {
+		t.Errorf("step 2 is %s, want awaiting_answers", got)
+	}
+	// Replaying either pass must not grow Affects again.
+	for _, id := range []string{s1, s2, s2} {
+		if _, err := recordPass2Questions(r, "phase-001.task-001", Pass2Output{Questions: []QuestionOut{askAbout(id)}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	qs, _ = LoadQuestions(r)
+	if len(qs) != 1 || len(qs[0].Affects) != 2 {
+		t.Errorf("affects after replay = %v, want 2", qs[0].Affects)
+	}
+}

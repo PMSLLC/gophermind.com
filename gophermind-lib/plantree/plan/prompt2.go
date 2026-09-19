@@ -110,7 +110,7 @@ func Pass2Prompt(in Pass2Input) string {
 	b.WriteString("- target_paths: at most 20 paths of at most 300 characters each. test_command: at most 20 arguments of at most 200 characters each.\n")
 	b.WriteString("- In every array, never put an empty string.\n")
 	b.WriteString("- Do not depend on a step marked on hold.\n")
-	b.WriteString("- If you cannot specify a step because something is unknown that only the project owner can decide, do not guess: leave that step out of \"steps\" and ask a question whose \"affects\" lists its id. At most 5 questions, each with 2 to 8 options (or none for a free-text question) and \"recommended\" (option labels) if you have one. Never ask what the decisions above or the brief already answer.\n")
+	b.WriteString("- If you cannot specify a step because something is unknown that only the project owner can decide, do not guess: leave that step out of \"steps\" and ask a question whose \"affects\" lists its id (affects are ids of steps under \"Steps to specify now\", never empty). At most 5 questions, each with 2 to 8 options (or none for a free-text question) and \"recommended\" (option labels) if you have one. Never ask what the decisions above or the brief already answer.\n")
 	b.WriteString("- Do not invent scope the task does not need. Do not call tools. Reply with ONE JSON object and nothing else, in this shape:\n")
 	b.WriteString(`{"steps":[{"id":"<step id>","description":"<what to build>","target_paths":["<path/to/file>"],"acceptance_criteria":["<a check a reviewer can verify>"],"test_command":["<command>","<arg>"],"depends_on":[]}],"questions":[]}`)
 	b.WriteString("\n")

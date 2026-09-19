@@ -183,6 +183,13 @@ func AddQuestions(repo *plantree.Repo, in []NewQuestion) ([]Question, error) {
 			}
 		}
 		if found >= 0 {
+			// The same question asked again: keep the record, but fold in
+			// the nodes this asking names, so they are held (if open) or
+			// shown its decision (if answered).
+			if merged, grew := unionIDs(f.Questions[found].Affects, nq.Affects); grew {
+				f.Questions[found].Affects = merged
+				changed = true
+			}
 			out = append(out, f.Questions[found])
 			continue
 		}
@@ -200,6 +207,22 @@ func AddQuestions(repo *plantree.Repo, in []NewQuestion) ([]Question, error) {
 		}
 	}
 	return out, nil
+}
+
+// unionIDs returns have followed by the ids of add that it lacks, in order,
+// and whether anything was added.
+func unionIDs(have, add []string) ([]string, bool) {
+	seen := setOf(have)
+	out := append([]string{}, have...)
+	grew := false
+	for _, id := range add {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+			grew = true
+		}
+	}
+	return out, grew
 }
 
 func nextQuestionID(qs []Question) string {
