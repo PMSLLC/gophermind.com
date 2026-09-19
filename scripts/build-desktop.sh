@@ -57,6 +57,25 @@ else
 fi
 [[ -d "$app" ]] || { echo "error: no app bundle at $app" >&2; exit 1; }
 
+# `wails build -platform darwin/universal` leaves an unsigned, ad-hoc,
+# single-arch intermediate binary named after wails.json's "name" field
+# ("GopherMind Desktop", with a space) sitting alongside the real lipo-merged
+# universal binary ("GopherMindDesktop", from "outputfilename") in
+# Contents/MacOS/ -- both from the same build, not stale leftovers. codesign
+# only touches what Info.plist's CFBundleExecutable and sealed resources
+# reference, so that stray binary stays unsigned through the whole pipeline
+# and Apple's notary service, which scans every executable in the bundle
+# rather than just the one the app launches, rejects the entire submission
+# over it ("The binary is not signed with a valid Developer ID certificate").
+# Remove anything in Contents/MacOS other than the real executable before
+# signing.
+real_exe="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")"
+for f in "$app/Contents/MacOS/"*; do
+  [[ "$(basename "$f")" == "$real_exe" ]] && continue
+  warn "removing stray build artifact: $(basename "$f")"
+  rm -f "$f"
+done
+
 # Clear previous artifacts. This is a staging directory, not a cache: leaving
 # an older version behind means the release glob can pick it up as well as the
 # current one, which is how v0.7.1 first went out carrying the 0.7.0 app too.
