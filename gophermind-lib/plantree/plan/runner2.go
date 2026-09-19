@@ -165,6 +165,14 @@ func idsOf(nodes []plantree.Node) []string {
 // error continues with the steps still waiting. It does not rewrite
 // overview.md; only pass 1 does.
 func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options2) (Result2, error) {
+	if err := opt.Validate(); err != nil {
+		return Result2{}, err
+	}
+	unlock, err := AcquireRun(repo)
+	if err != nil {
+		return Result2{}, err
+	}
+	defer unlock()
 	if opt.StepsPerPass < 1 {
 		opt.StepsPerPass = defaultStepsPerPass
 	}

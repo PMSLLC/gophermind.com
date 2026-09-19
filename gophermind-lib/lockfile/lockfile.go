@@ -5,10 +5,15 @@
 package lockfile
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 )
+
+// ErrBusy is returned by TryAcquire when the lock is already held. Acquire
+// waits instead and never returns it.
+var ErrBusy = errors.New("lockfile: the lock is already held")
 
 // WriteAtomic writes data to path via a temp file in the same directory,
 // fsynced and renamed, so a crash mid-write cannot leave a half-written

@@ -99,6 +99,14 @@ func saveState(repo *plantree.Repo, s pass1State) error {
 // chunk, and builds the skeleton tree and running overview. It can be called
 // again after any error and continues from the first unprocessed chunk.
 func RunPass1(ctx context.Context, repo *plantree.Repo, brief string, c Completer, opt Options) (Result, error) {
+	if err := opt.Validate(); err != nil {
+		return Result{}, err
+	}
+	unlock, err := AcquireRun(repo)
+	if err != nil {
+		return Result{}, err
+	}
+	defer unlock()
 	if opt.ProjectName == "" {
 		opt.ProjectName = "project"
 	}

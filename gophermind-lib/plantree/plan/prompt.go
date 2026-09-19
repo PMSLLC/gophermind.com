@@ -11,6 +11,23 @@ import (
 // outlineCapBytes bounds the list of existing phases and tasks in a prompt.
 const outlineCapBytes = 4000
 
+// briefPartFenceEnd closes the brief-part block of a pass-1 prompt.
+const briefPartFenceEnd = "BRIEF PART>>>"
+
+// neutralizeFence makes text safe to put inside a fenced block: an occurrence
+// of the block's own terminator is broken up, so a brief (or an excerpt of
+// one) that happens to contain the marker cannot close the fence early and
+// have the rest of itself read as prompt. The text stays readable; only the
+// marker is disturbed. This is the same treatment the owner-decisions fence
+// gets.
+func neutralizeFence(text, fenceEnd string) string {
+	if len(fenceEnd) < 2 || !strings.Contains(text, fenceEnd) {
+		return text
+	}
+	cut := len(fenceEnd) - 1
+	return strings.ReplaceAll(text, fenceEnd, fenceEnd[:cut]+" "+fenceEnd[cut:])
+}
+
 // Outline lists the phases and tasks already in the tree, titles only, so a
 // pass can attach to them instead of repeating them. It stops at
 // outlineCapBytes and says how many entries it left out.
@@ -64,7 +81,7 @@ func Pass1Prompt(project, overview, outline string, c Chunk, total int) string {
 	if strings.TrimSpace(c.Title) != "" {
 		title = fmt.Sprintf(" (section: %s)", oneLine(c.Title))
 	}
-	fmt.Fprintf(&b, "\n\nThis part of the brief%s:\n<<<BRIEF PART\n%s\nBRIEF PART>>>\n\n", title, strings.TrimRight(c.Text, "\n"))
+	fmt.Fprintf(&b, "\n\nThis part of the brief%s:\n<<<BRIEF PART\n%s\n%s\n\n", title, neutralizeFence(strings.TrimRight(c.Text, "\n"), briefPartFenceEnd), briefPartFenceEnd)
 	b.WriteString("Rules:\n")
 	b.WriteString("- A phase groups related work. A task is a unit of work one agent can own. A step is the smallest independently verifiable piece, roughly one file change or one command with a check.\n")
 	b.WriteString("- Every phase, task and step needs a digest: one or two sentences saying why it exists relative to its parent, understandable without reading the parent.\n")

@@ -27,8 +27,12 @@ const (
 // of decisionLineBytes plus the "more decisions" note.
 const decisionsCapBytes = maxDecisions*(decisionLineBytes+5) + 60
 
-// decisionsFenceEnd closes the decisions block of a prompt.
-const decisionsFenceEnd = "OWNER DECISIONS>>>"
+// decisionsFenceEnd closes the decisions block of a prompt, and
+// excerptsFenceEnd the brief-excerpts block.
+const (
+	decisionsFenceEnd = "OWNER DECISIONS>>>"
+	excerptsFenceEnd  = "BRIEF EXCERPTS>>>"
+)
 
 // siblingListCapBytes bounds the list of every step of the task in a prompt.
 const siblingListCapBytes = 3000
@@ -127,7 +131,7 @@ func Pass2Prompt(in Pass2Input) string {
 	if strings.TrimSpace(in.Decisions) == "" {
 		b.WriteString("(none)\n")
 	} else {
-		dec := strings.ReplaceAll(in.Decisions, decisionsFenceEnd, "OWNER DECISIONS>> >")
+		dec := neutralizeFence(in.Decisions, decisionsFenceEnd)
 		fmt.Fprintf(&b, "<<<OWNER DECISIONS\n%s\n%s\n", cutBytes(dec, decisionsCapBytes), decisionsFenceEnd)
 	}
 	fmt.Fprintf(&b, "\nPhase: %s\nWhy: %s\nObjective: %s\n", fit(phase.Title, 200), fit(phase.ContextDigest, 500), orNone(fit(phase.Objective, 1000)))
@@ -155,7 +159,7 @@ func Pass2Prompt(in Pass2Input) string {
 	if strings.TrimSpace(in.Excerpts) == "" {
 		b.WriteString("(not available)\n")
 	} else {
-		fmt.Fprintf(&b, "<<<BRIEF EXCERPTS\n%s\nBRIEF EXCERPTS>>>\n", cutBytes(in.Excerpts, excerptsCap))
+		fmt.Fprintf(&b, "<<<BRIEF EXCERPTS\n%s\n%s\n", neutralizeFence(cutBytes(in.Excerpts, excerptsCap), excerptsFenceEnd), excerptsFenceEnd)
 	}
 	b.WriteString("\nRules:\n")
 	b.WriteString("- Return exactly the steps listed under \"Steps to specify now\", each once, using its id.\n")
