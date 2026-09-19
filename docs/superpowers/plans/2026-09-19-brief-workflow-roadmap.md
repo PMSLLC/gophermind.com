@@ -1,0 +1,71 @@
+# Brief workflow roadmap (M1 to M6)
+
+Design: `docs/superpowers/specs/2026-09-19-brief-workflow-design.md`.
+Each milestone gets its own detailed plan when the previous one has landed,
+because it consumes that milestone's real interfaces. Only M1 is detailed now:
+`2026-09-19-plantree-m1-store.md`.
+
+## Milestones
+
+| # | Deliverable | Package / files | Depends on |
+|---|---|---|---|
+| M1 | Tree store: nodes, ids, statuses, atomic locked saves, verify, summaries, `NextActions` | `gophermind-lib/plantree` | none |
+| M2 | Pass 1 (skeleton): chunk the brief by heading, one fresh-context pass per chunk, merge nodes and overview into the tree | `gophermind-lib/plantree/plan` (chunker, pass runner, overview) | M1 |
+| M3 | Pass 2 (spec): one fresh-context pass per task fills each step's work, acceptance criteria and test command | `plantree/plan` | M1, M2 |
+| M4 | Questions: `questions.json` store; passes add questions with options, multi-select, recommended, free text | `plantree/questions` | M1 |
+| M5 | Question-round UI in the TUI, growing textarea, answers re-plan only affected nodes (`needs_reconciliation`) | `gophermind-lib/tui` | M3, M4 |
+| M6 | Approval, export to legacy `assignments.json` (task-level rows), `/project <name> <brief>` and resume wiring | `plantree/export`, `tui/project.go` | M1 to M5 |
+
+## Contracts M2 to M6 rely on (produced by M1)
+
+```go
+package plantree
+
+const SchemaVersion = 4
+const RootID = "plan"
+
+type Kind string   // KindPlan, KindPhase, KindTask, KindStep
+type Status string // StatusUntouched ... StatusEscalated
+type Stage string  // StageSkeleton, StageInspected, StageDrafted,
+                   // StageAwaitingAnswers, StageNeedsReconciliation, StageApproved
+
+type Work struct {
+	Description        string   `json:"description"`
+	TargetPaths        []string `json:"target_paths"`
+	AcceptanceCriteria []string `json:"acceptance_criteria"`
+	TestCommand        []string `json:"test_command"`
+}
+
+type Node struct { /* see M1 plan, node.go */ }
+
+func ParseID(id string) (Kind, error)
+func ParentID(id string) (string, error)
+func ChildID(parent string, n int) (string, error)
+
+func Open(planningDir string) *Repo
+func (r *Repo) Init(root Node) error
+func (r *Repo) Create(n Node) error
+func (r *Repo) Get(id string) (Node, error)
+func (r *Repo) Children(id string) ([]Node, error)
+func (r *Repo) Update(id string, expectedRevision int, mutate func(*Node) error) (Node, error)
+func (r *Repo) Walk(fn func(Node) error) error
+func (r *Repo) Verify() error
+func (r *Repo) Summarize(id string) (Summary, error)
+func (r *Repo) NextActions() (Actions, error)
+```
+
+`plantree` must not import `phaseflow` (M6's export package imports both, so
+the dependency only points one way). Callers pass
+`phaseflow.PlanningDir(root)` to `Open`.
+
+## Sizing rules every pass obeys (from the overflow incident)
+
+- A pass input is the instruction, the overview (capped), and one bounded
+  slice. If the slice exceeds the budget it is split, never truncated.
+- `read_file` is capped at 32 KB per call; passes are told to read by range.
+- A pass returns strict JSON that is validated before anything is written.
+
+## Later layers (not in M1 to M6)
+
+Independent-reviewer authority and task-batched review (v4 addendum section
+2), rollback slot and manifest, typed leaf specs, promotion, fenced claims.
