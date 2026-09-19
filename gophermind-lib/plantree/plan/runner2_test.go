@@ -379,3 +379,35 @@ func TestRunPass2ReportsTasksWithoutSteps(t *testing.T) {
 		t.Errorf("NextActions = %s", kinds)
 	}
 }
+
+func TestRunPass2ShowsTheStoredFactsAndAnOptionOverridesThem(t *testing.T) {
+	r := newRepo(t)
+	if _, err := Merge(r, sampleOut()); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFacts(r, "STORED FACTS: go test ./..."); err != nil {
+		t.Fatal(err)
+	}
+	f := specFake()
+	if _, err := RunPass2(context.Background(), r, f, Options2{}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(f.prompts[0], "STORED FACTS: go test ./...") {
+		t.Error("RunPass2 must show the stored facts")
+	}
+
+	r2 := newRepo(t)
+	if _, err := Merge(r2, sampleOut()); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFacts(r2, "STORED FACTS"); err != nil {
+		t.Fatal(err)
+	}
+	f2 := specFake()
+	if _, err := RunPass2(context.Background(), r2, f2, Options2{Facts: "OVERRIDE FACTS"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(f2.prompts[0], "OVERRIDE FACTS") || strings.Contains(f2.prompts[0], "STORED FACTS") {
+		t.Error("Options2.Facts must override the stored facts")
+	}
+}

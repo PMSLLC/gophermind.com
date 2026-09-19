@@ -24,7 +24,7 @@ func TestPass2PromptCarriesOneTaskAndItsContext(t *testing.T) {
 	task := node(t, "phase-001.task-001", "Repo layout", "where code lives", "")
 	st1 := node(t, s1, "Create module", "needed to compile", "")
 	st2 := node(t, s2, "Add CI", "catch breakage", "")
-	p := Pass2Prompt("demo", "an overview", phase, task, []plantree.Node{st1, st2}, []plantree.Node{st2}, "[part 1 of 1]\nthe brief text")
+	p := Pass2Prompt(Pass2Input{Project: "demo", Overview: "an overview", Excerpts: "[part 1 of 1]\nthe brief text", Phase: phase, Task: task, Siblings: []plantree.Node{st1, st2}, Batch: []plantree.Node{st2}})
 	for _, want := range []string{
 		`"demo"`, "an overview", "Phase: Foundation", "the base of everything", "Task: Repo layout", "where code lives",
 		"- " + s1 + ": Create module", "Steps to specify now:", "- " + s2 + ": Add CI. Why: catch breakage",
@@ -44,7 +44,7 @@ func TestPass2PromptWithoutExcerptsSaysSo(t *testing.T) {
 	phase := node(t, "phase-001", "P", "d", "")
 	task := node(t, "phase-001.task-001", "T", "d", "")
 	st := node(t, s1, "S", "d", "")
-	p := Pass2Prompt("demo", "", phase, task, []plantree.Node{st}, []plantree.Node{st}, "")
+	p := Pass2Prompt(Pass2Input{Project: "demo", Overview: "", Excerpts: "", Phase: phase, Task: task, Siblings: []plantree.Node{st}, Batch: []plantree.Node{st}})
 	if !strings.Contains(p, "(not available)") || strings.Contains(p, "<<<BRIEF EXCERPTS") {
 		t.Errorf("no excerpts: %q", p[strings.Index(p, "Brief excerpts"):])
 	}
@@ -57,7 +57,7 @@ func TestPass2PromptBoundsTheStepList(t *testing.T) {
 	for i := 1; i <= 100; i++ {
 		steps = append(steps, node(t, fmt.Sprintf("phase-001.task-001.step-%03d", i), strings.Repeat("a long step title ", 10), "d", ""))
 	}
-	p := Pass2Prompt("demo", "", phase, task, steps, steps[:1], "")
+	p := Pass2Prompt(Pass2Input{Project: "demo", Overview: "", Excerpts: "", Phase: phase, Task: task, Siblings: steps, Batch: steps[:1]})
 	if !strings.Contains(p, "more steps not shown") {
 		t.Error("an oversize step list must say how many steps it left out")
 	}
@@ -79,7 +79,7 @@ func TestPass2PromptWorstCaseSize(t *testing.T) {
 	chunks := []Chunk{{Index: 0, Text: strings.Repeat("brief text line\n", 2000)}}
 	excerpts := Excerpts(chunks, []int{0}, defaultBriefBytes)
 	overview := FitOverview(strings.Repeat("o", 20000), OverviewCapBytes)
-	p := Pass2Prompt(strings.Repeat("n", 100), overview, phase, task, steps, steps[:defaultStepsPerPass], excerpts)
+	p := Pass2Prompt(Pass2Input{Project: strings.Repeat("n", 100), Overview: overview, Facts: strings.Repeat("f", FactsCapBytes), Excerpts: excerpts, Phase: phase, Task: task, Siblings: steps, Batch: steps[:defaultStepsPerPass]})
 	t.Logf("worst-case pass-2 prompt: %d bytes", len(p))
 	if len(p) > 26000 {
 		t.Errorf("worst-case pass-2 prompt is %d bytes, want at most 26000", len(p))
@@ -97,7 +97,7 @@ func TestPass2PromptWorstCaseSizeWithMultibyteText(t *testing.T) {
 	chunks := []Chunk{{Index: 0, Text: strings.Repeat("brief text line\n", 2000)}}
 	excerpts := Excerpts(chunks, []int{0}, defaultBriefBytes)
 	overview := FitOverview(strings.Repeat("o", 20000), OverviewCapBytes)
-	p := Pass2Prompt(r(100), overview, phase, task, steps, steps[:defaultStepsPerPass], excerpts)
+	p := Pass2Prompt(Pass2Input{Project: r(100), Overview: overview, Facts: r(FactsCapBytes / 4), Excerpts: excerpts, Phase: phase, Task: task, Siblings: steps, Batch: steps[:defaultStepsPerPass]})
 	t.Logf("multibyte worst-case pass-2 prompt: %d bytes", len(p))
 	if len(p) > 26000 {
 		t.Errorf("multibyte worst-case pass-2 prompt is %d bytes, want at most 26000", len(p))
@@ -111,7 +111,7 @@ func TestPass2PromptTellsTheModelWhatTheParserEnforces(t *testing.T) {
 	phase := node(t, "phase-001", "P", "d", "")
 	task := node(t, "phase-001.task-001", "T", "d", "")
 	st := node(t, s1, "S", "d", "")
-	p := Pass2Prompt("demo", "", phase, task, []plantree.Node{st}, []plantree.Node{st}, "")
+	p := Pass2Prompt(Pass2Input{Project: "demo", Overview: "", Excerpts: "", Phase: phase, Task: task, Siblings: []plantree.Node{st}, Batch: []plantree.Node{st}})
 	for _, want := range []string{"2000 characters", "300 characters", "never put an empty string", "Do not depend on a step marked on hold"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("prompt is missing %q", want)
@@ -142,12 +142,38 @@ func TestPass2PromptTagsEachSiblingByStageAndHold(t *testing.T) {
 	drafted := node(t, "phase-001.task-001.step-002", "Two", "d", "")
 	drafted.Planning.Stage = plantree.StageDrafted
 	skel := node(t, "phase-001.task-001.step-003", "Three", "d", "")
-	p := Pass2Prompt("demo", "", phase, task, []plantree.Node{skipped, drafted, skel}, []plantree.Node{skel}, "")
+	p := Pass2Prompt(Pass2Input{Project: "demo", Overview: "", Excerpts: "", Phase: phase, Task: task, Siblings: []plantree.Node{skipped, drafted, skel}, Batch: []plantree.Node{skel}})
 	for _, want := range []string{
 		"step-001: One [on hold: skipped]", "step-002: Two [specified]", "step-003: Three [to specify]",
 	} {
 		if !strings.Contains(p, want) {
 			t.Errorf("prompt is missing %q", want)
 		}
+	}
+}
+
+func TestPass2PromptShowsFactsOrSaysNone(t *testing.T) {
+	phase := node(t, "phase-001", "P", "d", "")
+	task := node(t, "phase-001.task-001", "T", "d", "")
+	st := node(t, s1, "S", "d", "")
+	base := Pass2Input{Project: "demo", Phase: phase, Task: task, Siblings: []plantree.Node{st}, Batch: []plantree.Node{st}}
+
+	without := Pass2Prompt(base)
+	if !strings.Contains(without, "Repository facts") || !strings.Contains(without, "(not provided)") {
+		t.Error("with no facts the prompt must say so")
+	}
+	if !strings.Contains(without, "rather than guessing") {
+		t.Error("the prompt must tell the model not to guess a test command")
+	}
+
+	base.Facts = "Go 1.25. Test: go test ./..."
+	with := Pass2Prompt(base)
+	if !strings.Contains(with, "Go 1.25. Test: go test ./...") || strings.Contains(with, "(not provided)") {
+		t.Error("the facts must appear and replace the placeholder")
+	}
+
+	base.Facts = strings.Repeat("f", 10*FactsCapBytes)
+	if got := Pass2Prompt(base); len(got) > len(with)+FactsCapBytes+200 {
+		t.Errorf("oversize facts must be cut to FactsCapBytes, prompt grew to %d", len(got))
 	}
 }

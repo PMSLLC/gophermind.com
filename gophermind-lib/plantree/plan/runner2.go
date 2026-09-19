@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"gophermind/gophermind-lib/llm"
 	"gophermind/gophermind-lib/plantree"
@@ -16,12 +17,17 @@ type Options2 struct {
 	// StepsPerPass bounds how many steps one model call specifies (default 6),
 	// so the reply stays small however large a task is.
 	StepsPerPass int
-	// BriefBytes bounds the brief excerpts shown with a task (default 6000).
-	// With the defaults one pass is at most about 25,000 bytes: BriefBytes +
-	// OverviewCapBytes + 4000 (step list) + about 8,000 (phase, task and the
-	// steps being specified) + 2,500 (instructions). At 3 to 4 bytes per token
-	// that must leave room for the reply inside the model's window.
+	// BriefBytes bounds the brief excerpts shown with a task (default 5000).
+	// With the defaults one pass is at most about 26,000 bytes: BriefBytes +
+	// OverviewCapBytes + FactsCapBytes + 4000 (step list) + about 8,000 (phase,
+	// task and the steps being specified) + 3,000 (instructions). At 3 to 4
+	// bytes per token that must leave room for the reply inside the model's
+	// window.
 	BriefBytes int
+	// Facts is text describing the repository (language, how to build and test,
+	// layout) shown to every pass, cut to FactsCapBytes. If empty, RunPass2
+	// reads the facts stored with WriteFacts, if any.
+	Facts string
 }
 
 // Result2 summarizes one RunPass2 call.
@@ -132,6 +138,12 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 	if opt.ProjectName == "" {
 		opt.ProjectName = root.Title
 	}
+	facts := opt.Facts
+	if strings.TrimSpace(facts) == "" {
+		if facts, err = ReadFacts(repo); err != nil {
+			return Result2{}, err
+		}
+	}
 	overview, err := ReadOverview(repo.Dir())
 	if err != nil {
 		return Result2{}, err
@@ -175,7 +187,10 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 				}
 			}
 			siblingIDs := idsOf(live)
-			prompt := Pass2Prompt(opt.ProjectName, overview, w.phase, w.task, w.steps, batch, excerpts)
+			prompt := Pass2Prompt(Pass2Input{
+				Project: opt.ProjectName, Overview: overview, Facts: facts, Excerpts: excerpts,
+				Phase: w.phase, Task: w.task, Siblings: w.steps, Batch: batch,
+			})
 			out, err := askJSON(ctx, c, prompt, func(reply string) (Pass2Output, error) {
 				return ParsePass2(reply, batchIDs, siblingIDs)
 			})
