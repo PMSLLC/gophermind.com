@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -146,5 +147,50 @@ func TestParsePass1ReportsTheFirstCandidatesError(t *testing.T) {
 	_, err := ParsePass1(`{"phases":[],"extra":1} {"overview":""}`)
 	if err == nil || !strings.Contains(err.Error(), "does not match the schema") {
 		t.Errorf("err = %v, want the first candidate's schema error", err)
+	}
+}
+
+func TestParsePass1BoundsTheSchemaError(t *testing.T) {
+	reply := `{"phases":[],"overview":"o","` + strings.Repeat("k", 200000) + `":1}`
+	_, err := ParsePass1(reply)
+	if err == nil || !strings.Contains(err.Error(), "does not match the schema") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(err.Error()) >= 700 {
+		t.Errorf("error is %d bytes", len(err.Error()))
+	}
+}
+
+func TestParsePass1ReportsTheLongestCandidate(t *testing.T) {
+	_, err := ParsePass1("{} " + `{"phases":[{"title":"","digest":"d","objective":"","tasks":[]}],"overview":"o"}`)
+	if err == nil || !strings.Contains(err.Error(), "title is empty") || strings.Contains(err.Error(), "overview") {
+		t.Errorf("err = %v", err)
+	}
+	_, err = ParsePass1(`{"phases":[],"extra":1} {"overview":""}`)
+	if err == nil || !strings.Contains(err.Error(), "does not match the schema") {
+		t.Errorf("first, longer candidate should win: %v", err)
+	}
+}
+
+func TestParseFirst(t *testing.T) {
+	dec := func(raw string) (int, error) {
+		if raw == "{}" {
+			return 0, errors.New("bad " + raw)
+		}
+		return len(raw), nil
+	}
+	if _, err := parseFirst("no braces", dec); err == nil || !strings.Contains(err.Error(), "no JSON object") {
+		t.Errorf("no braces: %v", err)
+	}
+	if _, err := parseFirst("{", dec); err == nil || !strings.Contains(err.Error(), "not closed") {
+		t.Errorf("lone brace: %v", err)
+	}
+	v, err := parseFirst("{} {}", dec)
+	if err == nil || v != 0 {
+		t.Errorf("all fail: %d, %v", v, err)
+	}
+	v, err = parseFirst("{} {abc} {defg}", dec)
+	if err != nil || v != 5 {
+		t.Errorf("first success: %d, %v", v, err)
 	}
 }

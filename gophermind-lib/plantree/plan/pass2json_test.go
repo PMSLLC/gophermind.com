@@ -126,3 +126,14 @@ func TestParsePass2ErrorsStayBoundedForHugeValues(t *testing.T) {
 		t.Errorf("huge step id: error length = %d", len(err.Error()))
 	}
 }
+
+func TestParsePass2BoundsTheSchemaError(t *testing.T) {
+	reply := `{"steps":[],"` + strings.Repeat("k", 200000) + `":1}`
+	_, err := ParsePass2(reply, []string{"s"}, []string{"s"})
+	if err == nil || !strings.Contains(err.Error(), "does not match the schema") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(err.Error()) >= 700 {
+		t.Errorf("error is %d bytes", len(err.Error()))
+	}
+}

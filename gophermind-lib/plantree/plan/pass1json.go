@@ -52,7 +52,8 @@ type StepOut struct {
 // ignoring prose and code fences around it. Braces inside strings do not count.
 // A balanced object that is not valid JSON is skipped in favor of a later valid
 // one, but is returned if no valid one exists so the caller can report why it
-// failed to decode.
+// failed to decode. Kept for callers and its own tests; ParsePass1 and
+// ParsePass2 use parseFirst.
 func ExtractJSON(reply string) (string, error) {
 	invalid := ""
 	seen := false
@@ -137,23 +138,24 @@ func candidates(reply string) (list []string, seen bool) {
 
 // parseFirst tries decode on each candidate object in reply and returns the
 // first that succeeds, so prose or a stray "{}" before the real object does not
-// hide it. If none succeeds it returns the error for the first candidate, which
-// is the one the model most likely meant.
+// hide it. If none succeeds it returns the error of the longest candidate (ties
+// go to the earliest), which is the one the model most likely meant.
 func parseFirst[T any](reply string, decode func(raw string) (T, error)) (T, error) {
 	var zero T
 	list, seen := candidates(reply)
-	var firstErr error
+	var bestErr error
+	bestLen := -1
 	for _, raw := range list {
 		v, err := decode(raw)
 		if err == nil {
 			return v, nil
 		}
-		if firstErr == nil {
-			firstErr = err
+		if len(raw) > bestLen {
+			bestLen, bestErr = len(raw), err
 		}
 	}
-	if firstErr != nil {
-		return zero, firstErr
+	if bestErr != nil {
+		return zero, bestErr
 	}
 	if !seen {
 		return zero, errors.New("the reply contains no JSON object")
@@ -172,7 +174,7 @@ func decodePass1(raw string) (Pass1Output, error) {
 	dec.DisallowUnknownFields()
 	var out Pass1Output
 	if err := dec.Decode(&out); err != nil {
-		return Pass1Output{}, fmt.Errorf("the JSON does not match the schema: %w", err)
+		return Pass1Output{}, fmt.Errorf("the JSON does not match the schema: %s", cutBytes(err.Error(), 400))
 	}
 	if err := validatePass1(out); err != nil {
 		return Pass1Output{}, err

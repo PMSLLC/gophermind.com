@@ -50,7 +50,7 @@ func decodePass2(raw string, batch, siblings []string) (Pass2Output, error) {
 	dec.DisallowUnknownFields()
 	var out Pass2Output
 	if err := dec.Decode(&out); err != nil {
-		return Pass2Output{}, fmt.Errorf("the JSON does not match the schema: %w", err)
+		return Pass2Output{}, fmt.Errorf("the JSON does not match the schema: %s", cutBytes(err.Error(), 400))
 	}
 	if err := validatePass2(out, batch, siblings); err != nil {
 		return Pass2Output{}, err
