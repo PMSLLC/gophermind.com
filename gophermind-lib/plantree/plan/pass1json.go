@@ -113,13 +113,61 @@ func balancedEnd(s string, start int) (int, bool) {
 	return 0, false
 }
 
-// ParsePass1 extracts, strictly decodes and validates a skeleton pass reply.
-// Its errors are specific enough to send back to the model as a correction.
-func ParsePass1(reply string) (Pass1Output, error) {
-	raw, err := ExtractJSON(reply)
-	if err != nil {
-		return Pass1Output{}, err
+// candidates lists every balanced top-level object in reply, in order. Objects
+// nested inside a balanced one are not listed. seen reports whether any "{" was
+// found at all.
+func candidates(reply string) (list []string, seen bool) {
+	from := 0
+	for {
+		i := strings.IndexByte(reply[from:], '{')
+		if i < 0 {
+			return list, seen
+		}
+		start := from + i
+		seen = true
+		end, ok := balancedEnd(reply, start)
+		if !ok {
+			from = start + 1
+			continue
+		}
+		list = append(list, reply[start:end+1])
+		from = end + 1
 	}
+}
+
+// parseFirst tries decode on each candidate object in reply and returns the
+// first that succeeds, so prose or a stray "{}" before the real object does not
+// hide it. If none succeeds it returns the error for the first candidate, which
+// is the one the model most likely meant.
+func parseFirst[T any](reply string, decode func(raw string) (T, error)) (T, error) {
+	var zero T
+	list, seen := candidates(reply)
+	var firstErr error
+	for _, raw := range list {
+		v, err := decode(raw)
+		if err == nil {
+			return v, nil
+		}
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
+	if firstErr != nil {
+		return zero, firstErr
+	}
+	if !seen {
+		return zero, errors.New("the reply contains no JSON object")
+	}
+	return zero, errors.New("the JSON object in the reply is not closed")
+}
+
+// ParsePass1 finds, strictly decodes and validates a skeleton pass reply. Its
+// errors are specific enough to send back to the model as a correction.
+func ParsePass1(reply string) (Pass1Output, error) {
+	return parseFirst(reply, decodePass1)
+}
+
+func decodePass1(raw string) (Pass1Output, error) {
 	dec := json.NewDecoder(bytes.NewReader([]byte(raw)))
 	dec.DisallowUnknownFields()
 	var out Pass1Output

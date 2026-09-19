@@ -124,3 +124,27 @@ func TestExtractJSONFindsTheRealObject(t *testing.T) {
 		t.Errorf("unclosed: %v", err)
 	}
 }
+
+func TestCandidates(t *testing.T) {
+	list, seen := candidates(`a {"x":{"y":1}} b {bad} {open`)
+	if !seen || len(list) != 2 || list[0] != `{"x":{"y":1}}` || list[1] != `{bad}` {
+		t.Errorf("candidates = %q, seen=%v", list, seen)
+	}
+	if list, seen := candidates("no braces at all"); seen || len(list) != 0 {
+		t.Errorf("no braces: %q, %v", list, seen)
+	}
+}
+
+func TestParsePass1SkipsAnEarlierObjectThatIsNotThePlan(t *testing.T) {
+	out, err := ParsePass1("I checked {} and {\"note\":1} first.\n" + goodReply)
+	if err != nil || len(out.Phases) != 1 || out.Overview != "A small project." {
+		t.Fatalf("ParsePass1 = %+v, %v", out, err)
+	}
+}
+
+func TestParsePass1ReportsTheFirstCandidatesError(t *testing.T) {
+	_, err := ParsePass1(`{"phases":[],"extra":1} {"overview":""}`)
+	if err == nil || !strings.Contains(err.Error(), "does not match the schema") {
+		t.Errorf("err = %v, want the first candidate's schema error", err)
+	}
+}
