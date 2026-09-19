@@ -30,7 +30,8 @@ type StepSpecOut struct {
 
 // Pass2Output is what one specification pass returns for a batch of steps.
 type Pass2Output struct {
-	Steps []StepSpecOut `json:"steps"`
+	Steps     []StepSpecOut `json:"steps"`
+	Questions []QuestionOut `json:"questions"` // optional; affects are step ids from the batch
 }
 
 // ParsePass2 finds, strictly decodes and validates a specification pass reply.
@@ -61,6 +62,17 @@ func decodePass2(raw string, batch, siblings []string) (Pass2Output, error) {
 func validatePass2(out Pass2Output, batch, siblings []string) error {
 	want := setOf(batch)
 	sibling := setOf(siblings)
+	asked := map[string]bool{}
+	err := validateQuestionOuts(out.Questions, func(where, affect string) error {
+		if !want[affect] {
+			return fmt.Errorf("%s: affects %q, which is not one of the steps asked for", where, clip(affect))
+		}
+		asked[affect] = true
+		return nil
+	})
+	if err != nil {
+		return err
+	}
 	seen := map[string]bool{}
 	for _, s := range out.Steps {
 		id := clip(s.ID)
@@ -70,6 +82,9 @@ func validatePass2(out Pass2Output, batch, siblings []string) error {
 		if seen[s.ID] {
 			return fmt.Errorf("step %q appears more than once", id)
 		}
+		if asked[s.ID] {
+			return fmt.Errorf("step %q is both specified and named in a question; leave it out of steps until the question is answered, or drop the question", id)
+		}
 		seen[s.ID] = true
 		where := fmt.Sprintf("step %q", id)
 		if err := checkSpec(where, s, sibling); err != nil {
@@ -77,8 +92,8 @@ func validatePass2(out Pass2Output, batch, siblings []string) error {
 		}
 	}
 	for _, id := range batch {
-		if !seen[id] {
-			return fmt.Errorf("step %q was asked for but is missing from the reply", clip(id))
+		if !seen[id] && !asked[id] {
+			return fmt.Errorf("step %q was asked for but is missing from the reply (specify it, or ask a question that names it)", clip(id))
 		}
 	}
 	return nil

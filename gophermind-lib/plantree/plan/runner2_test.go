@@ -411,3 +411,124 @@ func TestRunPass2ShowsTheStoredFactsAndAnOptionOverridesThem(t *testing.T) {
 		t.Error("Options2.Facts must override the stored facts")
 	}
 }
+
+// askingFake specifies every step of a batch except askID, which it asks a
+// question about instead.
+func askingFake(askID string) *fake {
+	return &fake{reply: func(_ int, p string) (string, error) {
+		var steps []StepSpecOut
+		var asks []string
+		for _, id := range stepsToSpecify(p) {
+			if id == askID {
+				asks = append(asks, id)
+				continue
+			}
+			steps = append(steps, StepSpecOut{
+				ID: id, Description: "implement " + id, AcceptanceCriteria: []string{"it works"},
+				TestCommand: []string{"go", "test"}, DependsOn: []string{},
+			})
+		}
+		var qs []QuestionOut
+		if len(asks) > 0 {
+			q := goodQ()
+			q.Affects = asks
+			qs = append(qs, q)
+		}
+		b, _ := json.Marshal(Pass2Output{Steps: steps, Questions: qs})
+		return string(b), nil
+	}}
+}
+
+func TestRunPass2AsksInsteadOfGuessingAndHoldsThatStep(t *testing.T) {
+	r := newRepo(t)
+	if _, err := Merge(r, sampleOut()); err != nil {
+		t.Fatal(err)
+	}
+	res, err := RunPass2(context.Background(), r, askingFake(s1), Options2{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Questions != 1 || res.Steps != 1 || res.Passes != 1 {
+		t.Errorf("Result2 = %+v, want 1 question, 1 step specified, 1 pass", res)
+	}
+	if got := stageOf(t, r, s1); got != plantree.StageAwaitingAnswers {
+		t.Errorf("the step asked about is %s, want awaiting_answers", got)
+	}
+	if got := stageOf(t, r, s2); got != plantree.StageDrafted {
+		t.Errorf("the other step is %s, want drafted", got)
+	}
+	if n, _ := r.Get(s1); n.Work != nil {
+		t.Error("a step asked about must get no specification")
+	}
+	qs, _ := LoadQuestions(r)
+	if len(qs) != 1 || qs[0].Source != "specifying task phase-001.task-001" || len(qs[0].Affects) != 1 || qs[0].Affects[0] != s1 {
+		t.Errorf("questions = %+v", qs)
+	}
+	if got := actionKinds(t, r); !strings.Contains(got, "answer:"+s1) || strings.Contains(got, "approve") {
+		t.Errorf("NextActions = %s; want an answer action for the held step and no approve", got)
+	}
+}
+
+func TestReplayingAPass2QuestionAsksNothingTwice(t *testing.T) {
+	r := newRepo(t)
+	if _, err := Merge(r, sampleOut()); err != nil {
+		t.Fatal(err)
+	}
+	out := Pass2Output{Questions: []QuestionOut{askAbout(s1)}}
+	first, err := recordPass2Questions(r, "phase-001.task-001", out)
+	second, err2 := recordPass2Questions(r, "phase-001.task-001", out)
+	if err != nil || err2 != nil || first != 1 || second != 0 {
+		t.Errorf("first=%d second=%d errs=%v %v; want 1 then 0", first, second, err, err2)
+	}
+	if qs, _ := LoadQuestions(r); len(qs) != 1 {
+		t.Errorf("%d questions, want 1", len(qs))
+	}
+}
+
+func TestRunPass2ShowsTheOwnersDecisionsToTheTasksTheyAffect(t *testing.T) {
+	r := newRepo(t)
+	if _, err := Merge(r, sampleOut()); err != nil {
+		t.Fatal(err)
+	}
+	q := twoOptions()
+	q.Question = "Which database should the module use?"
+	q.Affects = []string{"phase-001.task-001"}
+	if _, err := AddQuestions(r, []NewQuestion{q}); err != nil {
+		t.Fatal(err)
+	}
+	other := twoOptions()
+	other.Question = "Unrelated decision about billing?"
+	other.Affects = []string{"phase-009"}
+	if _, err := AddQuestions(r, []NewQuestion{other}); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"q-001", "q-002"} {
+		if _, err := AnswerQuestion(r, id, Answer{OptionIDs: []string{"opt-2"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f := specFake()
+	if _, err := RunPass2(context.Background(), r, f, Options2{}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(f.prompts[0], "Which database should the module use? -> Postgres") {
+		t.Error("the decision that affects this task must be shown")
+	}
+	if strings.Contains(f.prompts[0], "billing") {
+		t.Error("a decision about another part of the plan must not be shown")
+	}
+}
+
+func TestASecondBatchSeesAnAskedStepAsWaiting(t *testing.T) {
+	r := newRepo(t)
+	if _, err := Merge(r, sampleOut()); err != nil {
+		t.Fatal(err)
+	}
+	f := askingFake(s1)
+	if _, err := RunPass2(context.Background(), r, f, Options2{StepsPerPass: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.prompts) != 2 || !strings.Contains(f.prompts[1], s1+": Create module [waiting for an answer]") {
+		t.Errorf("%d prompts; the second must show step 1 as waiting for an answer", len(f.prompts))
+	}
+}

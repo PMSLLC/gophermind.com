@@ -17,12 +17,12 @@ type Options2 struct {
 	// StepsPerPass bounds how many steps one model call specifies (default 6),
 	// so the reply stays small however large a task is.
 	StepsPerPass int
-	// BriefBytes bounds the brief excerpts shown with a task (default 5000).
-	// With the defaults one pass is at most about 26,000 bytes: BriefBytes +
-	// OverviewCapBytes + FactsCapBytes + 4000 (step list) + about 8,000 (phase,
-	// task and the steps being specified) + 3,000 (instructions). At 3 to 4
-	// bytes per token that must leave room for the reply inside the model's
-	// window.
+	// BriefBytes bounds the brief excerpts shown with a task (default 4000).
+	// With the defaults one pass is at most about 27,000 bytes: BriefBytes +
+	// OverviewCapBytes + FactsCapBytes + 3000 (step list) + about 2,000
+	// (decisions) + about 8,000 (phase, task and the steps being specified) +
+	// 3,500 (instructions). At 3 to 4 bytes per token that must leave room for
+	// the reply inside the model's window.
 	BriefBytes int
 	// Facts is text describing the repository (language, how to build and test,
 	// layout) shown to every pass, cut to FactsCapBytes. If empty, RunPass2
@@ -35,6 +35,9 @@ type Result2 struct {
 	Tasks  int // tasks whose pending steps were all specified by this call
 	Steps  int // steps specified by this call
 	Passes int // model passes made by this call
+	// Questions counts new questions asked by this call. The steps they name
+	// wait for an answer and are not specified.
+	Questions int
 	// EmptyTasks counts tasks that have no steps at all; pass 2 cannot specify
 	// them, and NextActions keeps offering decompose for them.
 	EmptyTasks int
@@ -161,6 +164,10 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 	if err != nil {
 		return Result2{}, err
 	}
+	allQuestions, err := LoadQuestions(repo)
+	if err != nil {
+		return Result2{}, err
+	}
 
 	empty, err := EmptyTasks(repo)
 	if err != nil {
@@ -170,6 +177,7 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 	for _, w := range work {
 		ids := append([]string{w.task.ID}, idsOf(w.steps)...)
 		excerpts := Excerpts(chunks, prov.chunksFor(ids), opt.BriefBytes)
+		decisions := decisionsFor(allQuestions, append([]string{w.phase.ID}, ids...))
 		for start := 0; start < len(w.pending); start += opt.StepsPerPass {
 			if err := ctx.Err(); err != nil {
 				return res, err
@@ -188,7 +196,7 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 			}
 			siblingIDs := idsOf(live)
 			prompt := Pass2Prompt(Pass2Input{
-				Project: opt.ProjectName, Overview: overview, Facts: facts, Excerpts: excerpts,
+				Project: opt.ProjectName, Overview: overview, Facts: facts, Decisions: decisions, Excerpts: excerpts,
 				Phase: w.phase, Task: w.task, Siblings: w.steps, Batch: batch,
 			})
 			out, err := askJSON(ctx, c, prompt, func(reply string) (Pass2Output, error) {
@@ -198,11 +206,17 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 			if err != nil {
 				return res, taskError(w.task.ID, err)
 			}
+			asked, err := recordPass2Questions(repo, w.task.ID, out)
+			res.Questions += asked
+			if err != nil {
+				return res, taskError(w.task.ID, err)
+			}
 			if err := applySpecs(repo, out); err != nil {
 				return res, taskError(w.task.ID, err)
 			}
 			markSpecified(w.steps, out)
-			res.Steps += len(batch)
+			markAsked(w.steps, out)
+			res.Steps += len(out.Steps)
 		}
 		res.Tasks++
 	}

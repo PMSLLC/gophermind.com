@@ -137,3 +137,53 @@ func TestParsePass2BoundsTheSchemaError(t *testing.T) {
 		t.Errorf("error is %d bytes", len(err.Error()))
 	}
 }
+
+func askAbout(ids ...string) QuestionOut {
+	q := goodQ()
+	q.Affects = ids
+	return q
+}
+
+func replyWithQuestions(t *testing.T, steps []StepSpecOut, qs ...QuestionOut) string {
+	t.Helper()
+	b, err := json.Marshal(Pass2Output{Steps: steps, Questions: qs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func TestParsePass2AcceptsAQuestionInPlaceOfAStep(t *testing.T) {
+	reply := replyWithQuestions(t, []StepSpecOut{goodSpec(s2)}, askAbout(s3))
+	out, err := ParsePass2(reply, batch23, siblings)
+	if err != nil || len(out.Steps) != 1 || len(out.Questions) != 1 || out.Questions[0].Affects[0] != s3 {
+		t.Fatalf("ParsePass2 = %+v, %v", out, err)
+	}
+	// Every step of the batch may be asked about instead of specified.
+	all := replyWithQuestions(t, nil, askAbout(s2, s3))
+	if _, err := ParsePass2(all, batch23, siblings); err != nil {
+		t.Errorf("a reply that only asks must be accepted when it names every step: %v", err)
+	}
+}
+
+func TestParsePass2QuestionRules(t *testing.T) {
+	cases := map[string]struct {
+		reply string
+		want  string
+	}{
+		"specified and asked":   {replyWithQuestions(t, []StepSpecOut{goodSpec(s2), goodSpec(s3)}, askAbout(s3)), "both specified and named in a question"},
+		"asks about a stranger": {replyWithQuestions(t, []StepSpecOut{goodSpec(s2), goodSpec(s3)}, askAbout(s1)), "not one of the steps asked for"},
+		"still missing a step":  {replyWithQuestions(t, []StepSpecOut{goodSpec(s2)}, askAbout(s1)), "not one of the steps asked for"},
+		"one step left over":    {replyWithQuestions(t, nil, askAbout(s2)), "missing from the reply"},
+		"a bad question":        {replyWithQuestions(t, []StepSpecOut{goodSpec(s2)}, QuestionOut{Question: "", Affects: []string{s3}}), "a question is empty"},
+	}
+	for name, c := range cases {
+		_, err := ParsePass2(c.reply, batch23, siblings)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: err = %v, want it to contain %q", name, err, c.want)
+		}
+	}
+	if _, err := ParsePass2(replyOf(t, goodSpec(s2)), batch23, siblings); err == nil || !strings.Contains(err.Error(), "ask a question that names it") {
+		t.Errorf("the missing-step error must tell the model it can ask: %v", err)
+	}
+}

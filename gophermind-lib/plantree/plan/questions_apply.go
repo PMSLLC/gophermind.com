@@ -117,3 +117,63 @@ func applyPass1Questions(repo *plantree.Repo, chunk Chunk, out Pass1Output, touc
 	}
 	return added, nil
 }
+
+// recordPass2Questions records the questions a specification pass asked and
+// holds the steps they name: those steps get no specification until the
+// questions are answered. It returns how many questions were new. Replaying the
+// same pass adds nothing new.
+func recordPass2Questions(repo *plantree.Repo, taskID string, out Pass2Output) (int, error) {
+	if len(out.Questions) == 0 {
+		return 0, nil
+	}
+	source := "specifying task " + taskID
+	nqs := make([]NewQuestion, 0, len(out.Questions))
+	for _, q := range out.Questions {
+		nq := newQuestion(q, append([]string{}, q.Affects...))
+		nq.Source = source
+		nqs = append(nqs, nq)
+	}
+	before, err := LoadQuestions(repo)
+	if err != nil {
+		return 0, err
+	}
+	known := map[string]bool{}
+	for _, q := range before {
+		known[q.ID] = true
+	}
+	asked, err := AddQuestions(repo, nqs)
+	if err != nil {
+		return 0, err
+	}
+	added := 0
+	var hold []string
+	for _, q := range asked {
+		if !known[q.ID] {
+			added++
+		}
+		if q.Status == QuestionOpen {
+			hold = append(hold, q.Affects...)
+		}
+	}
+	if _, err := holdSteps(repo, hold); err != nil {
+		return added, err
+	}
+	return added, nil
+}
+
+// markAsked records in the in-memory snapshot that the steps named by out's
+// questions now wait for an answer, so a later batch of the same task sees them
+// so.
+func markAsked(steps []plantree.Node, out Pass2Output) {
+	asked := map[string]bool{}
+	for _, q := range out.Questions {
+		for _, id := range q.Affects {
+			asked[id] = true
+		}
+	}
+	for i := range steps {
+		if asked[steps[i].ID] && needsSpec(steps[i]) {
+			steps[i].Planning.Stage = plantree.StageAwaitingAnswers
+		}
+	}
+}

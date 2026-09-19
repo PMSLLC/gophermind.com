@@ -69,6 +69,21 @@ func TestPass2PromptBoundsTheStepList(t *testing.T) {
 
 // TestPass2PromptWorstCaseSize pins the largest prompt one pass can produce
 // with the default caps, so a change that lets it grow shows up here.
+// worstDecisions is the largest decisions block a prompt can carry: more
+// answered questions than fit, each with a long question and long answer.
+func worstDecisions(unit string) string {
+	var qs []Question
+	for i := 0; i < maxDecisions+2; i++ {
+		qs = append(qs, Question{
+			ID: "q", Question: strings.Repeat(unit, 600), Status: QuestionAnswered,
+			Options: []Option{{ID: "opt-1", Label: strings.Repeat(unit, 100)}},
+			Answer:  &Answer{OptionIDs: []string{"opt-1"}, Text: strings.Repeat(unit, 600)},
+			Affects: []string{"phase-001.task-001"},
+		})
+	}
+	return decisionsFor(qs, []string{"phase-001.task-001"})
+}
+
 func TestPass2PromptWorstCaseSize(t *testing.T) {
 	phase := node(t, "phase-001", strings.Repeat("p", 200), strings.Repeat("d", 500), strings.Repeat("o", 1000))
 	task := node(t, "phase-001.task-001", strings.Repeat("t", 200), strings.Repeat("d", 500), strings.Repeat("o", 1000))
@@ -79,10 +94,10 @@ func TestPass2PromptWorstCaseSize(t *testing.T) {
 	chunks := []Chunk{{Index: 0, Text: strings.Repeat("brief text line\n", 2000)}}
 	excerpts := Excerpts(chunks, []int{0}, defaultBriefBytes)
 	overview := FitOverview(strings.Repeat("o", 20000), OverviewCapBytes)
-	p := Pass2Prompt(Pass2Input{Project: strings.Repeat("n", 100), Overview: overview, Facts: strings.Repeat("f", FactsCapBytes), Excerpts: excerpts, Phase: phase, Task: task, Siblings: steps, Batch: steps[:defaultStepsPerPass]})
+	p := Pass2Prompt(Pass2Input{Project: strings.Repeat("n", 100), Overview: overview, Facts: strings.Repeat("f", FactsCapBytes), Decisions: worstDecisions("q"), Excerpts: excerpts, Phase: phase, Task: task, Siblings: steps, Batch: steps[:defaultStepsPerPass]})
 	t.Logf("worst-case pass-2 prompt: %d bytes", len(p))
-	if len(p) > 26000 {
-		t.Errorf("worst-case pass-2 prompt is %d bytes, want at most 26000", len(p))
+	if len(p) > 27000 {
+		t.Errorf("worst-case pass-2 prompt is %d bytes, want at most 27000", len(p))
 	}
 }
 
@@ -97,10 +112,10 @@ func TestPass2PromptWorstCaseSizeWithMultibyteText(t *testing.T) {
 	chunks := []Chunk{{Index: 0, Text: strings.Repeat("brief text line\n", 2000)}}
 	excerpts := Excerpts(chunks, []int{0}, defaultBriefBytes)
 	overview := FitOverview(strings.Repeat("o", 20000), OverviewCapBytes)
-	p := Pass2Prompt(Pass2Input{Project: r(100), Overview: overview, Facts: r(FactsCapBytes / 4), Excerpts: excerpts, Phase: phase, Task: task, Siblings: steps, Batch: steps[:defaultStepsPerPass]})
+	p := Pass2Prompt(Pass2Input{Project: r(100), Overview: overview, Facts: r(FactsCapBytes / 4), Decisions: worstDecisions("\U0001D11E"), Excerpts: excerpts, Phase: phase, Task: task, Siblings: steps, Batch: steps[:defaultStepsPerPass]})
 	t.Logf("multibyte worst-case pass-2 prompt: %d bytes", len(p))
-	if len(p) > 26000 {
-		t.Errorf("multibyte worst-case pass-2 prompt is %d bytes, want at most 26000", len(p))
+	if len(p) > 27000 {
+		t.Errorf("multibyte worst-case pass-2 prompt is %d bytes, want at most 27000", len(p))
 	}
 	if !utf8.ValidString(p) {
 		t.Error("the prompt is not valid UTF-8")
@@ -175,5 +190,35 @@ func TestPass2PromptShowsFactsOrSaysNone(t *testing.T) {
 	base.Facts = strings.Repeat("f", 10*FactsCapBytes)
 	if got := Pass2Prompt(base); len(got) > len(with)+FactsCapBytes+200 {
 		t.Errorf("oversize facts must be cut to FactsCapBytes, prompt grew to %d", len(got))
+	}
+}
+
+func TestPass2PromptShowsDecisionsAndTeachesQuestions(t *testing.T) {
+	phase := node(t, "phase-001", "P", "d", "")
+	task := node(t, "phase-001.task-001", "T", "d", "")
+	st := node(t, s1, "S", "d", "")
+	base := Pass2Input{Project: "demo", Phase: phase, Task: task, Siblings: []plantree.Node{st}, Batch: []plantree.Node{st}}
+
+	none := Pass2Prompt(base)
+	if !strings.Contains(none, "Decisions already made by the project owner") || !strings.Contains(none, "(none)") {
+		t.Error("with no decisions the prompt must say so")
+	}
+	for _, want := range []string{"leave that step out of \"steps\"", "At most 5 questions", "Never ask what the decisions above", `"questions":[]`} {
+		if !strings.Contains(none, want) {
+			t.Errorf("prompt is missing %q", want)
+		}
+	}
+
+	base.Decisions = "- Which database? -> Postgres"
+	if got := Pass2Prompt(base); !strings.Contains(got, "- Which database? -> Postgres") {
+		t.Error("the decisions must appear in the prompt")
+	}
+}
+
+func TestStepListMarksAStepThatWaitsForAnAnswer(t *testing.T) {
+	waiting := node(t, s1, "Waits", "d", "")
+	waiting.Planning.Stage = plantree.StageAwaitingAnswers
+	if got := stepList([]plantree.Node{waiting}); !strings.Contains(got, "[waiting for an answer]") {
+		t.Errorf("stepList = %q", got)
 	}
 }
