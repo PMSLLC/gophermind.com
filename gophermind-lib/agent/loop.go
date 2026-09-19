@@ -159,6 +159,10 @@ func (a *Agent) Send(ctx context.Context, userInput string) (string, error) {
 	toolStalls := make(map[string]int)
 	const maxToolStalls = 4
 
+	// A server that states its real window when it rejects a request is
+	// believed once per Send: adopt it, trim to it, and retry the iteration.
+	adoptedServerLimit := false
+
 	for i := 0; i < a.maxIter; i++ {
 		if err := ctx.Err(); err != nil {
 			a.msgs = a.msgs[:base]
@@ -180,6 +184,12 @@ func (a *Agent) Send(ctx context.Context, userInput string) (string, error) {
 			a.onEvent(Event{Type: "token", Text: tok})
 		})
 		if err != nil {
+			if n, ok := llm.ContextLimitFromError(err); ok && !adoptedServerLimit && (a.caps.ContextWindow == 0 || n < a.caps.ContextWindow) {
+				adoptedServerLimit = true
+				a.caps.ContextWindow = n
+				i-- // the rejected request did no work; do not spend an iteration on it
+				continue
+			}
 			// Discard the partial assistant turn (never appended) and the rest of
 			// this Send's messages, restoring the last clean conversation state.
 			a.msgs = a.msgs[:base]
