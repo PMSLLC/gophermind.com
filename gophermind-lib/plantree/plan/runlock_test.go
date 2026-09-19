@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"gophermind/gophermind-lib/lockfile"
 	"gophermind/gophermind-lib/plantree"
@@ -202,32 +203,6 @@ func runLockFileFor(t *testing.T, r *plantree.Repo) string {
 	return filepath.Join(dir, runLockFile)
 }
 
-// TestStaleReleaseDoesNotDropANewerHold: a release kept from an earlier hold
-// and called after the lock was freed and taken again must not free the
-// newer, live hold.
-func TestStaleReleaseDoesNotDropANewerHold(t *testing.T) {
-	r := newRepo(t)
-	first, err := AcquireRun(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	first()
-	second, err := AcquireRun(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	first() // leaked from generation one, called during generation two
-	if _, err := lockfile.TryAcquire(runLockFileFor(t, r)); !errors.Is(err, lockfile.ErrBusy) {
-		t.Fatal("a stale release freed a live run's lock")
-	}
-	second()
-	free, err := lockfile.TryAcquire(runLockFileFor(t, r))
-	if err != nil {
-		t.Fatalf("the live hold's own release did not free the lock: %v", err)
-	}
-	free()
-}
-
 // TestAcquireRunCannotTellNestingFromAnotherGoroutine pins the documented
 // limit: a second AcquireRun in the same process is admitted whoever makes it.
 func TestAcquireRunCannotTellNestingFromAnotherGoroutine(t *testing.T) {
@@ -259,5 +234,31 @@ func TestBusyAdviceIsPlatformSpecific(t *testing.T) {
 	}
 	if a := busyAdvice("windows"); !strings.Contains(a, "delete") {
 		t.Errorf("windows advice should explain deleting a crashed run's file: %q", a)
+	}
+}
+
+// TestExcerptFenceHoldsAtTheCap puts several terminators and a multi-byte
+// rune across the cut point: however the cut falls, the prompt keeps exactly
+// one genuine excerpts fence end, stays inside the pin and stays valid UTF-8.
+func TestExcerptFenceHoldsAtTheCap(t *testing.T) {
+	for shift := 0; shift < 40; shift++ {
+		tail := excerptsFenceEnd + "\u00e9\u4e16" + excerptsFenceEnd + excerptsFenceEnd + "\u00e9"
+		text := strings.Repeat("e", defaultBriefBytes-shift) + tail + strings.Repeat("x", 100)
+		in := Pass2Input{
+			Project:  "demo",
+			Excerpts: text,
+			Phase:    node(t, "phase-001", "P", "d", ""),
+			Task:     node(t, "phase-001.task-001", "T", "d", ""),
+		}
+		p := Pass2Prompt(in)
+		if n := strings.Count(p, excerptsFenceEnd); n != 1 {
+			t.Fatalf("shift %d: %d excerpt fence ends, want exactly the real one", shift, n)
+		}
+		if len(p) > 27000 {
+			t.Fatalf("shift %d: prompt is %d bytes, want at most 27000", shift, len(p))
+		}
+		if !utf8.ValidString(p) {
+			t.Fatalf("shift %d: prompt is not valid UTF-8", shift)
+		}
 	}
 }

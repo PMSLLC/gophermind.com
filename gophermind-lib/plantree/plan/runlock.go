@@ -29,17 +29,13 @@ var ErrRunBusy = errors.New("plan: another planning run is already working on th
 // calling RunPass1, which takes it too) would report ErrRunBusy against its
 // own run. The count is per path, so two different trees are independent.
 var held = struct {
-	mu   sync.Mutex
-	n    map[string]*runHold
-	next uint64
+	mu sync.Mutex
+	n  map[string]*runHold
 }{n: map[string]*runHold{}}
 
 // runHold is one acquisition of the file lock, from the first AcquireRun to
-// the release that drops the count to zero. gen tells it apart from the next
-// acquisition of the same path, so a release leaked from an earlier hold
-// cannot decrement a later one.
+// the release that drops the count to zero.
 type runHold struct {
-	gen     uint64
 	count   int
 	release func()
 }
@@ -59,9 +55,10 @@ type runHold struct {
 // admitted. The lock protects against other processes; serializing runs inside
 // one process is the caller's job (the TUI does it in startPass).
 //
-// Callers must defer the returned release. It is safe to call more than once,
-// and a release from an earlier hold that arrives after the lock was freed and
-// taken again does nothing to the newer hold.
+// Callers must defer the returned release. Each release fires at most once;
+// calling it again does nothing. A release that is never called (a caller that
+// panics without a defer, say) keeps the lock held for the life of the
+// process.
 func AcquireRun(repo *plantree.Repo) (func(), error) {
 	dir := filepath.Join(repo.Dir(), "_state")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -76,7 +73,7 @@ func AcquireRun(repo *plantree.Repo) (func(), error) {
 	defer held.mu.Unlock()
 	if h := held.n[path]; h != nil {
 		h.count++
-		return releaseOnce(path, h.gen), nil
+		return releaseOnce(path), nil
 	}
 	free, err := lockfile.TryAcquire(path)
 	if errors.Is(err, lockfile.ErrBusy) {
@@ -85,9 +82,8 @@ func AcquireRun(repo *plantree.Repo) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	held.next++
-	held.n[path] = &runHold{gen: held.next, count: 1, release: free}
-	return releaseOnce(path, held.next), nil
+	held.n[path] = &runHold{count: 1, release: free}
+	return releaseOnce(path), nil
 }
 
 // busyAdvice is what to tell the user when the lock is held. On unix the lock
@@ -101,17 +97,16 @@ func busyAdvice(goos string) string {
 	return "wait for that run to finish or cancel it"
 }
 
-// releaseOnce returns a release that drops one hold of generation gen on
-// path, at most once however often it is called, and not at all if that
-// generation is already gone.
-func releaseOnce(path string, gen uint64) func() {
+// releaseOnce returns a release that drops one hold on path, at most once
+// however often it is called.
+func releaseOnce(path string) func() {
 	var once sync.Once
 	return func() {
 		once.Do(func() {
 			held.mu.Lock()
 			defer held.mu.Unlock()
 			h := held.n[path]
-			if h == nil || h.gen != gen {
+			if h == nil {
 				return
 			}
 			h.count--
