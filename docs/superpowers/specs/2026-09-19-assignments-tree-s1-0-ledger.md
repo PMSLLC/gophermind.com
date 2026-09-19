@@ -67,8 +67,8 @@ contract_flagged`.
 
 1. Executor via `phaseflow.Update` / `Save` (`execute.go:264,304,355,393,682,696`),
    under the `.lock` flock.
-2. **The model itself.** `/project` generation prompts (`gophermind-osx/ui/breakdown.go`,
-   `tui` generation prompt) instruct the agent to write `assignments.json` with
+2. **The model itself.** `/project` generation prompts (`tui/project.go:69-75`,
+   `gophermind-osx/ui/breakdown.go:44`) instruct the agent to write `assignments.json` with
    `write_file`. This bypasses `Update` and its lock. It is an unguarded writer
    and a blocker for any future live mode; irrelevant to Slice 1 shadow mode.
 
