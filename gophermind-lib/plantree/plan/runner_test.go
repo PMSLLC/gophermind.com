@@ -2,8 +2,11 @@ package plan
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -267,6 +270,10 @@ func TestEmptyBriefAndCancelledContext(t *testing.T) {
 	}
 }
 
+// Sizes 30 and 40 give the same boundaries for threePartBrief (its sections are
+// 23, 24 and 24 bytes), so this test cannot tell a boundary comparison from a
+// size comparison. The guard must compare the chunk size itself even when the
+// boundaries happen to coincide, because in general a different size moves them.
 func TestResumingWithADifferentChunkSizeButTheSameChunkCountIsRefused(t *testing.T) {
 	dir := t.TempDir()
 	r := plantree.Open(dir)
@@ -292,5 +299,99 @@ func TestResumingWithADifferentChunkSizeButTheSameChunkCountIsRefused(t *testing
 	}
 	if len(good.prompts) != 0 {
 		t.Errorf("refused runs must not call the model, made %d calls", len(good.prompts))
+	}
+}
+
+func TestCompressPromptIsBounded(t *testing.T) {
+	huge := strings.Repeat("o", 200000)
+	var compress string
+	f := &fake{reply: func(_ int, p string) (string, error) {
+		if strings.Contains(p, "Compress this project overview") {
+			compress = p
+			return "short", nil
+		}
+		return fmt.Sprintf(`{"phases":[],"overview":%q}`, huge), nil
+	}}
+	o := Options{ProjectName: "demo", OverviewCap: 100}
+	if _, err := RunPass1(context.Background(), plantree.Open(t.TempDir()), "# Only\nsome text\n", f, o); err != nil {
+		t.Fatal(err)
+	}
+	if compress == "" || len(compress) >= 4*100+1000 {
+		t.Errorf("compress prompt is %d bytes, want under %d", len(compress), 4*100+1000)
+	}
+}
+
+func TestResumeRedoesWorkWhenTheTreeWasLost(t *testing.T) {
+	r := plantree.Open(t.TempDir())
+	if _, err := RunPass1(context.Background(), r, threePartBrief, &fake{reply: byChunk}, opts); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(r.Dir(), "phases")); err != nil {
+		t.Fatal(err)
+	}
+	f := &fake{reply: byChunk}
+	if _, err := RunPass1(context.Background(), r, threePartBrief, f, opts); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.prompts) != 3 {
+		t.Errorf("made %d calls, want 3", len(f.prompts))
+	}
+	if got := ids(t, r); !reflect.DeepEqual(got, wantTree) {
+		t.Errorf("tree = %v", got)
+	}
+}
+
+// failedAtChunk2 leaves a valid state file behind and returns the repo dir.
+func failedAtChunk2(t *testing.T) (string, *plantree.Repo) {
+	t.Helper()
+	r := plantree.Open(t.TempDir())
+	broken := &fake{reply: func(n int, p string) (string, error) {
+		if strings.Contains(p, "second part text") {
+			return "", errors.New("model unavailable")
+		}
+		return byChunk(n, p)
+	}}
+	if _, err := RunPass1(context.Background(), r, threePartBrief, broken, opts); err == nil {
+		t.Fatal("want a failure at chunk 2")
+	}
+	return statePath(r), r
+}
+
+func TestBadResumeCursorIsAnErrorNotAPanic(t *testing.T) {
+	for _, next := range []int{-1, 4} {
+		path, r := failedAtChunk2(t)
+		b, _ := os.ReadFile(path)
+		var m map[string]any
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatal(err)
+		}
+		m["next"] = next
+		b, _ = json.Marshal(m)
+		if err := os.WriteFile(path, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, err := RunPass1(context.Background(), r, threePartBrief, &fake{reply: byChunk}, opts)
+		if err == nil || !strings.Contains(err.Error(), "delete that file") || errors.Is(err, ErrBriefChanged) {
+			t.Errorf("next=%d: err = %v", next, err)
+		}
+	}
+	path, r := failedAtChunk2(t)
+	if err := os.WriteFile(path, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RunPass1(context.Background(), r, threePartBrief, &fake{reply: byChunk}, opts); err == nil || !strings.Contains(err.Error(), "delete that file") {
+		t.Errorf("corrupt state: err = %v", err)
+	}
+}
+
+var errSentinel = errors.New("server said no")
+
+func TestContextWindowErrorGetsAChunkSizeHint(t *testing.T) {
+	f := &fake{reply: func(int, string) (string, error) {
+		return "", fmt.Errorf("%w: %s", errSentinel, `status 400: {"error":{"type":"exceed_context_size_error","n_ctx":8192}}`)
+	}}
+	_, err := RunPass1(context.Background(), plantree.Open(t.TempDir()), threePartBrief, f, opts)
+	if err == nil || !strings.Contains(err.Error(), "lower Options.ChunkBytes") || !errors.Is(err, errSentinel) {
+		t.Errorf("err = %v", err)
 	}
 }

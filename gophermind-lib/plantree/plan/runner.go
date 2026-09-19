@@ -10,12 +10,13 @@ import (
 	"os"
 	"path/filepath"
 
+	"gophermind/gophermind-lib/llm"
 	"gophermind/gophermind-lib/lockfile"
 	"gophermind/gophermind-lib/plantree"
 )
 
 // Completer runs one prompt and returns the model's reply. Every call must
-// start from a fresh context: no history from any earlier call. AgentCompleter
+// start from a fresh context: no history from any earlier call. ClientCompleter
 // is the production implementation.
 type Completer interface {
 	Complete(ctx context.Context, prompt string) (string, error)
@@ -30,6 +31,11 @@ var ErrBriefChanged = errors.New("plan: the brief or chunk size changed since th
 // Options tunes RunPass1. Zero values pick the defaults.
 type Options struct {
 	ProjectName string
+	// ChunkBytes is the most brief text one pass reads. One pass costs about
+	// ChunkBytes + OverviewCap + 4000 (outline) + 1000 (instructions) bytes; at
+	// 3 to 4 bytes per token that must leave room for the reply inside the
+	// model's window, so choose ChunkBytes at most (window_tokens * 3) - 11000.
+	// The caller that knows the model derives it; RunPass1 does not.
 	ChunkBytes  int // default DefaultChunkBytes
 	OverviewCap int // default OverviewCapBytes
 }
@@ -71,7 +77,7 @@ func loadState(repo *plantree.Repo) (pass1State, bool, error) {
 	}
 	var s pass1State
 	if err := json.Unmarshal(b, &s); err != nil {
-		return pass1State{}, false, fmt.Errorf("plan: reading %s: %w", statePath(repo), err)
+		return pass1State{}, false, fmt.Errorf("plan: reading %s (delete that file to restart the run): %w", statePath(repo), err)
 	}
 	return s, true, nil
 }
@@ -117,6 +123,25 @@ func RunPass1(ctx context.Context, repo *plantree.Repo, brief string, c Complete
 	if found && (state.BriefSHA256 != digest || state.Chunks != len(chunks) || state.ChunkBytes != opt.ChunkBytes) {
 		return Result{}, ErrBriefChanged
 	}
+	if found && (state.Next < 0 || state.Next > len(chunks)) {
+		return Result{}, fmt.Errorf("plan: resume cursor %d is outside 0..%d in %s; delete that file to restart the run", state.Next, len(chunks), statePath(repo))
+	}
+	if found && state.Next > 0 {
+		// A cursor with no tree behind it means the tree was lost. Merge is
+		// idempotent, so redoing the chunks is safe. The only false positive is
+		// a brief whose every chunk returned no phases, which costs model calls
+		// and nothing else.
+		kids, err := repo.Children(plantree.RootID)
+		if err != nil {
+			return Result{}, err
+		}
+		if len(kids) == 0 {
+			state.Next = 0
+			if err := saveState(repo, state); err != nil {
+				return Result{}, err
+			}
+		}
+	}
 	if !found {
 		state = pass1State{BriefSHA256: digest, Chunks: len(chunks), ChunkBytes: opt.ChunkBytes}
 		if err := saveBrief(repo, brief); err != nil {
@@ -134,7 +159,11 @@ func RunPass1(ctx context.Context, repo *plantree.Repo, brief string, c Complete
 		}
 		created, err := runChunk(ctx, repo, c, opt, chunks[i], len(chunks))
 		if err != nil {
-			return res, fmt.Errorf("plan: chunk %d of %d: %w", i+1, len(chunks), err)
+			hint := ""
+			if _, ok := llm.ContextLimitFromError(err); ok {
+				hint = " (the server's context window is smaller than one pass needs: lower Options.ChunkBytes)"
+			}
+			return res, fmt.Errorf("plan: chunk %d of %d: %w%s", i+1, len(chunks), err, hint)
 		}
 		res.Created.add(created)
 		res.Processed++
@@ -205,7 +234,7 @@ func runChunk(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 	}
 	text := out.Overview
 	if len(text) > opt.OverviewCap {
-		if shorter, cerr := c.Complete(ctx, CompressPrompt(text, opt.OverviewCap)); cerr == nil && shorter != "" {
+		if shorter, cerr := c.Complete(ctx, CompressPrompt(FitOverview(text, 4*opt.OverviewCap), opt.OverviewCap)); cerr == nil && shorter != "" {
 			text = shorter
 		}
 		text = FitOverview(text, opt.OverviewCap)
