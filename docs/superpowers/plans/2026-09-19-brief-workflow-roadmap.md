@@ -191,3 +191,15 @@ Package `gophermind-lib/plantree/plan`, nine commits: `1189320`, `a1f346f`, `87a
 1. Everything in the M3 outcome's M6 list still stands: agent/model/wave home, task objective, one run lock over both passes, export progress, `Summarize`, `ExtractJSON`, and deriving `ChunkBytes`, `BriefBytes` and `StepsPerPass` from the model window (the prompt margins are now about 500 bytes under 27,000).
 2. `plan` has no importer outside its tests yet; `/project` must call `plan.NextActions`, not `plantree.NextActions`.
 
+## M5 outcome (landed on `main`, 2026-09-19)
+
+Packages `gophermind-lib/plantree/plan` and `gophermind-lib/tui`, eleven commits: `511b0bd`, `e52d0a8`, `8cf561a`, `ab4e7a4`, `a1db665`, `05849a4`, `fd1631d` (the seven tasks) and `1acb6ba`, `0a0cdd0`, `fc0c17f`, `19e8329` (review fixes). The owner can change an answer after giving it (`ChangeAnswer`, `questions.json` schema 2 with a bounded `prior_answers` history; schema 1 still loads); steps specified from the old answer are flagged `needs_reconciliation` and re-planned by `RunPass2` with `Options2.Reconcile` (batches of 3, previous spec shown quoted, old summary kept in `ResumeNote`). `/questions` in the TUI runs one question round (all questions listed, single or multi select, recommendation marked never chosen, always a growing note, the brief excerpt behind each question, "N of M answered"), writes the answers, then runs the pass, cancellable, and finishes a cancelled re-plan on the next run. `plan.NextActions` and `plan.NeedsReplan` say what is left. Worst-case pass-2 prompt: ordinary 26,481 / 26,572 bytes, re-plan 26,740 / 26,812, all pinned under 27,000.
+
+### Carry-forward decisions for M6
+
+1. **`/project` still uses phaseflow, not the tree.** M6 must make `/project <name> <brief>` run pass 1 and pass 2 on `.planning/plan`, then enter the same question round the `/questions` command hosts (the component and the host functions in `tui/questions.go` are reusable), then approval and export. `/questions` stays as the resume entry.
+2. Everything in the M3 and M4 outcomes' M6 lists still stands (agent/model/wave home, task objective, one run lock over both passes, export progress, `Summarize`, deriving `ChunkBytes`, `BriefBytes`, `StepsPerPass` from the model window; prompt margins are about 190 bytes under 27,000 for re-plan).
+3. Approval and export must refuse while `plan.NeedsReplan` is non-zero or a question is open (use `plan.NextActions`).
+4. Removal of nodes (a skipped step blocks approval forever) is still missing; changing an answer cannot delete steps a new answer makes unnecessary.
+5. Low items left: `tui/questions.go` discards a `LoadQuestions` error when comparing stored answers (transcript line); the `BRIEF EXCERPTS` terminator is not neutralized like the decisions fence; a step flagged by question A shows question B's reason after B changes (document); dead lines in `plan/fixwave2_test.go`; the round view cap is only guaranteed for terminals at least 8 rows tall; failed-write notes are printed, not kept for retry; a same-answer `ChangeAnswer` after a re-plan re-flags the steps (compare a step basis to `AnsweredAt`).
+

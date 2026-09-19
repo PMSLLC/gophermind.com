@@ -3651,3 +3651,21 @@ Claude-Session: https://claude.ai/code/session_01HArwYJXPZfFwmuSRuxLcYr"
 - A home for agent, model and wave (the node schema is closed), and a rule for wave.
 - Deriving `ChunkBytes`, `BriefBytes` and `StepsPerPass` from the model's context window instead of the fixed caps this plan measures against.
 - Everything else still standing on the M3 and M4 outcome lists: `Summarize` deriving only reviewed or untouched, no node removal (a skipped step blocks approval forever), a task having no description to export, `ExtractJSON` having no production caller, and exporting per-call progress.
+
+## Amendments after review
+
+The tasks were built and reviewed as written, then changed by task reviews and the final whole-branch review. The committed files are authoritative where they differ from the code blocks above. Changes since:
+
+- **`ChangeAnswer` repairs a crash** (`1acb6ba`). An unchanged answer skips the history entry and the file write but still flags stale steps, so a crash between the save and the flagging is repaired by a rerun.
+- **Question round is width-safe** (`0a0cdd0`). Every `View` line is cut to the width with `ansi.Truncate`; `oneLine` in `tui/update.go` cuts on a rune boundary.
+- **`/questions` skips unchanged answers and caps the round's height** (`05849a4`), so the round cannot push the input off screen.
+- **Reconcile comes from the tree** (`fc0c17f`, `19e8329`). `plan.NeedsReplan(repo)` counts steps waiting to be re-planned; `/questions` runs the pass with `Reconcile` set whenever any exist, even when nothing was written this submit, and runs it directly when there is nothing to ask. A cancelled pass is recoverable.
+- **Flagged steps refresh their reason.** Changing an answer again before a re-plan rewrites the resume note and is counted in `Reconciled.Refreshed`; `explainReconcile` uses only notes that start with the reconcile prefix.
+- **Re-plan text is quoted.** The previous specification and the reason go into the prompt through `quoteFit` (quoted, bounded); re-plan worst case 26,740 (ASCII) and 26,812 (4-byte runes), ordinary 26,481 and 26,572, all under the 27,000 pin. `applySpecs` gets a per-batch redo set; `Pass2Prompt` documents that the caller caps a re-plan batch at 3.
+- **Excerpt shows up to 400 bytes** wrapped over at most 3 rows; `ExcerptsFor` uses ancestors only as a fallback and never the plan root.
+- **Smaller.** `plan.SameAnswer` is shared by the host; the round follows `WindowSizeMsg`; failed writes print the typed note to the transcript.
+- Files added outside this plan's blocks: `fixwave_test.go` (tui), `fixwave2_test.go` (plan).
+
+### Carried forward
+
+See the roadmap section "M5 outcome".
