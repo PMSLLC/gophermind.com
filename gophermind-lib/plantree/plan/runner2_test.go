@@ -355,3 +355,27 @@ func TestRunPass2SecondBatchSeesTheFirstBatchAsSpecified(t *testing.T) {
 		t.Error("the first prompt must not show any step as specified")
 	}
 }
+
+func TestRunPass2ReportsTasksWithoutSteps(t *testing.T) {
+	r := newRepo(t)
+	out := sampleOut()
+	out.Phases[0].Tasks = append(out.Phases[0].Tasks, TaskOut{Title: "Docs", Digest: "explain it"})
+	if _, err := Merge(r, out); err != nil {
+		t.Fatal(err)
+	}
+	res, err := RunPass2(context.Background(), r, specFake(), Options2{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.EmptyTasks != 1 {
+		t.Errorf("EmptyTasks = %d, want 1", res.EmptyTasks)
+	}
+	got, err := EmptyTasks(r)
+	if err != nil || len(got) != 1 || got[0] != "phase-001.task-002" {
+		t.Errorf("EmptyTasks(repo) = %v, %v", got, err)
+	}
+	kinds := actionKinds(t, r)
+	if !strings.Contains(kinds, "decompose:phase-001.task-002") || strings.Contains(kinds, "approve") {
+		t.Errorf("NextActions = %s", kinds)
+	}
+}

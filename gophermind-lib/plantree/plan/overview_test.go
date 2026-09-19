@@ -98,3 +98,10 @@ func TestRetryAndCompressPrompts(t *testing.T) {
 		t.Errorf("CompressPrompt = %q", p)
 	}
 }
+
+func TestPass1PromptTellsTheModelEveryTaskNeedsAStep(t *testing.T) {
+	p := Pass1Prompt("demo", "", "", Chunk{Index: 0, Text: "x"}, 1)
+	if !strings.Contains(p, "at least one step") {
+		t.Error("the pass-1 prompt must say every task needs at least one step")
+	}
+}

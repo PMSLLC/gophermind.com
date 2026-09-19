@@ -69,6 +69,7 @@ func Pass1Prompt(project, overview, outline string, c Chunk, total int) string {
 	b.WriteString("- A phase groups related work. A task is a unit of work one agent can own. A step is the smallest independently verifiable piece, roughly one file change or one command with a check.\n")
 	b.WriteString("- Every phase, task and step needs a digest: one or two sentences saying why it exists relative to its parent, understandable without reading the parent.\n")
 	b.WriteString("- Add only what this part of the brief supports. Do not invent scope. If this part adds nothing new, return an empty phases list.\n")
+	b.WriteString("- Every task needs an objective and at least one step, even if this part of the brief only outlines it.\n")
 	fmt.Fprintf(&b, "- Rewrite the overview so it covers the whole brief so far, in under %d characters. Keep decisions, constraints and non-goals; drop detail that the plan itself now holds.\n", OverviewCapBytes)
 	b.WriteString("- Do not call tools. Reply with ONE JSON object and nothing else, in this shape:\n")
 	b.WriteString(`{"phases":[{"title":"","digest":"","objective":"","tasks":[{"title":"","digest":"","objective":"","steps":[{"title":"","digest":""}]}]}],"overview":""}`)

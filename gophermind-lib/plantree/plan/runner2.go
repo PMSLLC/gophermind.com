@@ -29,6 +29,9 @@ type Result2 struct {
 	Tasks  int // tasks whose pending steps were all specified by this call
 	Steps  int // steps specified by this call
 	Passes int // model passes made by this call
+	// EmptyTasks counts tasks that have no steps at all; pass 2 cannot specify
+	// them, and NextActions keeps offering decompose for them.
+	EmptyTasks int
 }
 
 // taskWork is one task with the steps still waiting for a specification.
@@ -113,7 +116,8 @@ func idsOf(nodes []plantree.Node) []string {
 // RunPass2 writes the work specification of every step that lacks one: one
 // fresh-context pass per batch of steps of one task, in tree order. It keeps no
 // cursor: what is left is derived from the tree, so calling it again after any
-// error continues with the steps still waiting.
+// error continues with the steps still waiting. It does not rewrite
+// overview.md; only pass 1 does.
 func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options2) (Result2, error) {
 	if opt.StepsPerPass < 1 {
 		opt.StepsPerPass = defaultStepsPerPass
@@ -146,7 +150,11 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 		return Result2{}, err
 	}
 
-	var res Result2
+	empty, err := EmptyTasks(repo)
+	if err != nil {
+		return Result2{}, err
+	}
+	res := Result2{EmptyTasks: len(empty)}
 	for _, w := range work {
 		ids := append([]string{w.task.ID}, idsOf(w.steps)...)
 		excerpts := Excerpts(chunks, prov.chunksFor(ids), opt.BriefBytes)
@@ -219,4 +227,23 @@ func applySpecs(repo *plantree.Repo, out Pass2Output) error {
 		}
 	}
 	return nil
+}
+
+// EmptyTasks returns, in tree order, the ids of every task that has no steps.
+func EmptyTasks(repo *plantree.Repo) ([]string, error) {
+	var out []string
+	err := repo.Walk(func(n plantree.Node) error {
+		if n.Kind() != plantree.KindTask {
+			return nil
+		}
+		steps, err := repo.Children(n.ID)
+		if err != nil {
+			return err
+		}
+		if len(steps) == 0 {
+			out = append(out, n.ID)
+		}
+		return nil
+	})
+	return out, err
 }
