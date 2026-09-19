@@ -91,10 +91,10 @@ func TestPass2PromptWorstCaseSize(t *testing.T) {
 	for i := 1; i <= 100; i++ {
 		steps = append(steps, node(t, fmt.Sprintf("phase-001.task-001.step-%03d", i), strings.Repeat("s", 200), strings.Repeat("d", 500), ""))
 	}
-	chunks := []Chunk{{Index: 0, Text: strings.Repeat("brief text line\n", 2000)}}
-	excerpts := Excerpts(chunks, []int{0}, defaultBriefBytes)
-	overview := FitOverview(strings.Repeat("o", 20000), OverviewCapBytes)
-	p := Pass2Prompt(Pass2Input{Project: strings.Repeat("n", 100), Overview: overview, Facts: strings.Repeat("f", FactsCapBytes), Decisions: worstDecisions("q"), Excerpts: excerpts, Phase: phase, Task: task, Siblings: steps, Batch: steps[:defaultStepsPerPass]})
+
+	excerpts := strings.Repeat("e", 20000)
+	overview := strings.Repeat("o", 20000)
+	p := Pass2Prompt(Pass2Input{Project: strings.Repeat("n", 100), Overview: overview, Facts: strings.Repeat("f", 20000), Decisions: worstDecisions("q") + strings.Repeat("d", 20000), Excerpts: excerpts, Phase: phase, Task: task, Siblings: steps, Batch: steps[:defaultStepsPerPass]})
 	t.Logf("worst-case pass-2 prompt: %d bytes", len(p))
 	if len(p) > 27000 {
 		t.Errorf("worst-case pass-2 prompt is %d bytes, want at most 27000", len(p))
@@ -109,10 +109,10 @@ func TestPass2PromptWorstCaseSizeWithMultibyteText(t *testing.T) {
 	for i := 1; i <= 100; i++ {
 		steps = append(steps, node(t, fmt.Sprintf("phase-001.task-001.step-%03d", i), r(200), r(500), ""))
 	}
-	chunks := []Chunk{{Index: 0, Text: strings.Repeat("brief text line\n", 2000)}}
-	excerpts := Excerpts(chunks, []int{0}, defaultBriefBytes)
-	overview := FitOverview(strings.Repeat("o", 20000), OverviewCapBytes)
-	p := Pass2Prompt(Pass2Input{Project: r(100), Overview: overview, Facts: r(FactsCapBytes / 4), Decisions: worstDecisions("\U0001D11E"), Excerpts: excerpts, Phase: phase, Task: task, Siblings: steps, Batch: steps[:defaultStepsPerPass]})
+
+	excerpts := strings.Repeat("e", 20000)
+	overview := strings.Repeat("o", 20000)
+	p := Pass2Prompt(Pass2Input{Project: r(100), Overview: overview, Facts: r(5000), Decisions: worstDecisions("\U0001D11E") + r(5000), Excerpts: excerpts, Phase: phase, Task: task, Siblings: steps, Batch: steps[:defaultStepsPerPass]})
 	t.Logf("multibyte worst-case pass-2 prompt: %d bytes", len(p))
 	if len(p) > 27000 {
 		t.Errorf("multibyte worst-case pass-2 prompt is %d bytes, want at most 27000", len(p))

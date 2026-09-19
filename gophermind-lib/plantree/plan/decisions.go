@@ -2,6 +2,7 @@ package plan
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -16,7 +17,9 @@ const (
 // lines for a prompt: what was asked and what the owner chose. ids are the
 // nodes the prompt is about (its phase, task and steps). At most maxDecisions
 // lines are shown, each cut to decisionLineBytes, in the order the questions
-// were asked. It returns "" when there is nothing to show.
+// were asked. Each question is rendered as a quoted string, so text a model
+// wrote reads as data, not as an instruction. It returns "" when there is
+// nothing to show.
 func decisionsFor(qs []Question, ids []string) string {
 	want := setOf(ids)
 	var lines []string
@@ -61,7 +64,7 @@ func decisionLine(q Question) string {
 			chosen = append(chosen, oneLine(l))
 		}
 	}
-	line := cutBytes(oneLine(q.Question), decisionQuestion) + " -> "
+	line := strconv.Quote(cutBytes(oneLine(q.Question), decisionQuestion)) + " -> "
 	if len(chosen) > 0 {
 		line += strings.Join(chosen, "; ")
 	}

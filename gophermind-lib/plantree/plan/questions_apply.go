@@ -60,6 +60,12 @@ func holdSteps(repo *plantree.Repo, ids []string) (int, error) {
 // or reused, and a title that matches none is ignored. It returns how many
 // questions were new. Replaying the same pass adds nothing and holds nothing
 // new, and a question that is already answered holds nothing.
+//
+// Known limits. A phase and a task that share a normalized title are both
+// matched, and both are held with their subtrees. When a replay resolves the
+// titles differently from the first attempt (for example a later chunk changed
+// what they match), only the Affects stored with the original record are used,
+// so a resolution the first attempt lacked is not picked up.
 func applyPass1Questions(repo *plantree.Repo, chunk Chunk, out Pass1Output, touched []string) (int, error) {
 	if len(out.Questions) == 0 {
 		return 0, nil
@@ -180,8 +186,8 @@ func markAsked(steps []plantree.Node, out Pass2Output) {
 
 // ReleaseAnswered moves every step that waits for an answer back to the
 // inspected stage once no open question still affects it, directly or through
-// the task or phase above it, so pass 2 will specify it. It returns how many
-// steps it released. A step on hold stays where it is. Calling it again changes
+// the task or phase above it, so it is eligible for specification again (a
+// later pass 2 may still ask about it). It returns how many steps it released. A step on hold stays where it is. Calling it again changes
 // nothing.
 func ReleaseAnswered(repo *plantree.Repo) (int, error) {
 	open, err := OpenQuestions(repo)
@@ -204,6 +210,12 @@ func ReleaseAnswered(repo *plantree.Repo) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	return releaseSteps(repo, waiting, blocked)
+}
+
+// releaseSteps moves each of the waiting steps that no node in blocked covers
+// back to the inspected stage. On an error it returns the count released so far.
+func releaseSteps(repo *plantree.Repo, waiting []plantree.Node, blocked map[string]bool) (int, error) {
 	released := 0
 	for _, s := range waiting {
 		if affectedBy(blocked, s.ID) {
@@ -218,6 +230,22 @@ func ReleaseAnswered(repo *plantree.Repo) (int, error) {
 		released++
 	}
 	return released, nil
+}
+
+// HoldOpen holds every step that still needs a specification and lies under a
+// node an open question names, so a step added after the question was asked
+// (by a later chunk, or a merge) waits for the answer like the ones present
+// then. It returns how many steps it held. Calling it again changes nothing.
+func HoldOpen(repo *plantree.Repo) (int, error) {
+	open, err := OpenQuestions(repo)
+	if err != nil {
+		return 0, err
+	}
+	var ids []string
+	for _, q := range open {
+		ids = append(ids, q.Affects...)
+	}
+	return holdSteps(repo, ids)
 }
 
 // affectedBy reports whether id, or any node above it, is in blocked.

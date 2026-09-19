@@ -32,9 +32,10 @@ var ErrBriefChanged = errors.New("plan: the brief or chunk size changed since th
 type Options struct {
 	ProjectName string
 	// ChunkBytes is the most brief text one pass reads. One pass costs about
-	// ChunkBytes + OverviewCap + 4000 (outline) + 1000 (instructions) bytes; at
-	// 3 to 4 bytes per token that must leave room for the reply inside the
-	// model's window, so choose ChunkBytes at most (window_tokens * 3) - 11000.
+	// ChunkBytes + OverviewCap + 4000 (outline) + 2000 (instructions and framing;
+	// a test pins it) bytes; at 3 to 4 bytes per token that must leave room for
+	// the reply inside the model's window, so choose ChunkBytes at most
+	// (window_tokens * 3) - 12000.
 	// The caller that knows the model derives it; RunPass1 does not.
 	ChunkBytes  int // default DefaultChunkBytes
 	OverviewCap int // default OverviewCapBytes

@@ -2,6 +2,7 @@ package plan
 
 import (
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,15 +16,25 @@ const FactsCapBytes = 1200
 
 const factsFile = "facts.md"
 
+// factsReadBytes bounds how much of the facts file is read: enough to fill
+// FactsCapBytes after trimming, so a huge file is never loaded whole.
+const factsReadBytes = 8 * 1024
+
 // ReadFacts returns the project facts stored beside the tree (the language,
 // how to build and test, where things live), or "" if there are none. The text
 // is cut to FactsCapBytes at a rune boundary, so a large file cannot grow a
-// prompt.
+// prompt; the cut adds a 3 byte "..." marker, so the result can be
+// FactsCapBytes+3 long. Only the first factsReadBytes of the file are read.
 func ReadFacts(repo *plantree.Repo) (string, error) {
-	b, err := os.ReadFile(filepath.Join(repo.Dir(), factsFile))
+	f, err := os.Open(filepath.Join(repo.Dir(), factsFile))
 	if errors.Is(err, os.ErrNotExist) {
 		return "", nil
 	}
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, factsReadBytes))
 	if err != nil {
 		return "", err
 	}

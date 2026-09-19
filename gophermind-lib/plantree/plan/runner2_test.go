@@ -64,7 +64,7 @@ func planned(t *testing.T) (*plantree.Repo, string) {
 
 func actionKinds(t *testing.T, r *plantree.Repo) string {
 	t.Helper()
-	a, err := r.NextActions()
+	a, err := NextActions(r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -511,7 +511,7 @@ func TestRunPass2ShowsTheOwnersDecisionsToTheTasksTheyAffect(t *testing.T) {
 	if _, err := RunPass2(context.Background(), r, f, Options2{}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(f.prompts[0], "Which database should the module use? -> Postgres") {
+	if !strings.Contains(f.prompts[0], `"Which database should the module use?" -> Postgres`) {
 		t.Error("the decision that affects this task must be shown")
 	}
 	if strings.Contains(f.prompts[0], "billing") {
@@ -554,7 +554,7 @@ func TestAnsweredDuplicateQuestionShowsItsDecisionForTheNewStep(t *testing.T) {
 	if _, err := RunPass2(context.Background(), r, f, Options2{}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(f.prompts[0], "Which database? -> Postgres") {
+	if !strings.Contains(f.prompts[0], `"Which database?" -> Postgres`) {
 		t.Error("the answered decision must be visible to the pass that specifies the newly named step")
 	}
 	if got := stageOf(t, r, s2); got != plantree.StageDrafted {

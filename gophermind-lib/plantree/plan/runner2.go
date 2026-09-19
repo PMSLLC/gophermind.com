@@ -18,11 +18,13 @@ type Options2 struct {
 	// so the reply stays small however large a task is.
 	StepsPerPass int
 	// BriefBytes bounds the brief excerpts shown with a task (default 4000).
-	// With the defaults one pass is at most about 27,000 bytes: BriefBytes +
-	// OverviewCapBytes + FactsCapBytes + 3000 (step list) + about 2,000
-	// (decisions) + about 8,000 (phase, task and the steps being specified) +
-	// 3,500 (instructions). At 3 to 4 bytes per token that must leave room for
-	// the reply inside the model's window.
+	// With the defaults one pass is at most 27,000 bytes (a test pins it):
+	// BriefBytes + OverviewCapBytes + FactsCapBytes + 3000 (step list) + about
+	// 2,000 (decisions) + about 8,000 (phase, task and the steps being
+	// specified) + about 3,500 (instructions). Pass2Prompt cuts each of those
+	// inputs itself; a BriefBytes above the default raises the total by the
+	// difference. At 3 to 4 bytes per token that must leave room for the reply
+	// inside the model's window.
 	BriefBytes int
 	// Facts is text describing the repository (language, how to build and test,
 	// layout) shown to every pass, cut to FactsCapBytes. If empty, RunPass2
@@ -32,12 +34,20 @@ type Options2 struct {
 
 // Result2 summarizes one RunPass2 call.
 type Result2 struct {
-	Tasks  int // tasks whose pending steps were all specified by this call
+	Tasks  int // tasks this call ran passes for, whether or not every step got a specification
 	Steps  int // steps specified by this call
 	Passes int // model passes made by this call
 	// Released counts steps that were waiting for an answer and were released
-	// because their questions are now answered; they are specified by this call.
+	// because their questions are now answered. They become eligible for
+	// specification in this call, which may still ask about them again.
 	Released int
+	// Unspecified counts steps this call put in a pass batch that ended the
+	// pass neither specified nor waiting for an answer: the model re-asked an
+	// already answered question (a duplicate that holds nothing) or left a step
+	// out. Such a step is selected again by the next RunPass2, so a caller
+	// that sees Unspecified > 0 with no new Steps or Questions is making no
+	// progress and should stop rather than loop.
+	Unspecified int
 	// Questions counts new questions asked by this call. The steps they name
 	// wait for an answer and are not specified.
 	Questions int
@@ -146,12 +156,15 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 	}
 	released, err := ReleaseAnswered(repo)
 	if err != nil {
-		return Result2{}, err
+		return Result2{Released: released}, err
+	}
+	if _, err := HoldOpen(repo); err != nil {
+		return Result2{Released: released}, err
 	}
 	facts := opt.Facts
 	if strings.TrimSpace(facts) == "" {
 		if facts, err = ReadFacts(repo); err != nil {
-			return Result2{}, err
+			return Result2{Released: released}, err
 		}
 	}
 	overview, err := ReadOverview(repo.Dir())
@@ -197,13 +210,13 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 			batchIDs := idsOf(batch)
 			var live []plantree.Node
 			for _, s := range w.steps {
-				if !onHold(s) {
+				if !onHold(s) && s.Planning.Stage != plantree.StageAwaitingAnswers {
 					live = append(live, s)
 				}
 			}
 			siblingIDs := idsOf(live)
 			prompt := Pass2Prompt(Pass2Input{
-				Project: opt.ProjectName, Overview: overview, Facts: facts, Decisions: decisions, Excerpts: excerpts,
+				Project: opt.ProjectName, Overview: overview, Facts: facts, Decisions: decisions, Excerpts: excerpts, ExcerptsCap: opt.BriefBytes,
 				Phase: w.phase, Task: w.task, Siblings: w.steps, Batch: batch,
 			})
 			out, err := askJSON(ctx, c, prompt, func(reply string) (Pass2Output, error) {
@@ -224,6 +237,15 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 			markSpecified(w.steps, out)
 			markAsked(w.steps, out)
 			res.Steps += len(out.Steps)
+			for _, s := range batch {
+				cur, err := repo.Get(s.ID)
+				if err != nil {
+					return res, taskError(w.task.ID, err)
+				}
+				if needsSpec(cur) {
+					res.Unspecified++
+				}
+			}
 		}
 		res.Tasks++
 	}

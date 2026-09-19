@@ -81,10 +81,12 @@ func TestQuestionLoopEndToEndOverHTTP(t *testing.T) {
 			t.Errorf("pass-2 request %d must carry the project facts", i)
 		}
 	}
-	// The request body is JSON, which writes ">" as >.
+	// The request body is JSON, which writes ">" as the six characters \u003e
+	// and a quote as backslash-quote. A raw string does not interpret escapes,
+	// so the replacements below match those characters literally.
 	decided := func(body string) bool {
-		// Note: Go interprets > even in raw strings, so construct it dynamically
-		return strings.Contains(strings.ReplaceAll(body, "\\"+"u003e", ">"), "Which framework? -> A")
+		plain := strings.NewReplacer(`\u003e`, ">", `\"`, `"`).Replace(body)
+		return strings.Contains(plain, `"Which framework?" -> A`)
 	}
 	if decided(bodies[3]) || decided(bodies[4]) {
 		t.Error("the decision does not exist yet when the first two pass-2 requests are made")
@@ -92,8 +94,15 @@ func TestQuestionLoopEndToEndOverHTTP(t *testing.T) {
 	if !decided(bodies[5]) {
 		t.Error("the last request must carry the owner's decision")
 	}
+	// The held step belongs to task 2 of phase 1, which only the last request is
+	// about. The first two pass-2 requests are about other tasks, so the step id
+	// must not appear in them at all, and it must be listed under "Steps to
+	// specify now" in the last one.
 	if strings.Contains(bodies[3], "phase-001.task-002.step-001:") || strings.Contains(bodies[4], "phase-001.task-002.step-001:") {
-		// the held step is listed as a sibling of nothing else, so it must not be asked for
 		t.Error("the held task must not be specified before the answer")
+	}
+	last := bodies[5]
+	if i := strings.Index(last, "Steps to specify now"); i < 0 || !strings.Contains(last[i:], "phase-001.task-002.step-001:") {
+		t.Error("the released step must be listed under the steps to specify in the last request")
 	}
 }

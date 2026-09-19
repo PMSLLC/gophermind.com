@@ -15,6 +15,10 @@ import (
 )
 
 const (
+	// maxStoredAffects caps the nodes one question can name. A model that keeps
+	// re-asking a question with new ids cannot grow its record without bound;
+	// ids beyond the cap are dropped.
+	maxStoredAffects   = 200
 	questionsFile      = "questions.json"
 	questionsSchema    = 1
 	maxAnswerTextRunes = 2000
@@ -210,12 +214,16 @@ func AddQuestions(repo *plantree.Repo, in []NewQuestion) ([]Question, error) {
 }
 
 // unionIDs returns have followed by the ids of add that it lacks, in order,
-// and whether anything was added.
+// and whether anything was added. The result never exceeds maxAffects ids
+// (a have that is already longer is returned unchanged).
 func unionIDs(have, add []string) ([]string, bool) {
 	seen := setOf(have)
 	out := append([]string{}, have...)
 	grew := false
 	for _, id := range add {
+		if len(out) >= maxStoredAffects {
+			break
+		}
 		if !seen[id] {
 			seen[id] = true
 			out = append(out, id)

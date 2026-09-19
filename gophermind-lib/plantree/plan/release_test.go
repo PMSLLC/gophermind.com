@@ -85,7 +85,7 @@ func TestReleaseAnsweredHonorsAQuestionAboveTheStep(t *testing.T) {
 	}
 }
 
-func TestReleaseAnsweredLeavesOtherStepsAlone(t *testing.T) {
+func TestReleaseAnsweredIgnoresSkeletonsAndHeldSteps(t *testing.T) {
 	r := newRepo(t)
 	if _, err := Merge(r, sampleOut()); err != nil { // both steps are skeletons, not waiting
 		t.Fatal(err)
@@ -145,7 +145,7 @@ func TestPass1QuestionAnswerThenPass2(t *testing.T) {
 	if res.Released != 1 || res.Steps != 1 || len(second.prompts) != 1 {
 		t.Errorf("second pass 2: %+v, %d calls; want 1 released, 1 step, 1 call", res, len(second.prompts))
 	}
-	if !strings.Contains(second.prompts[0], "Which framework? -> B (note: B fits our stack)") {
+	if !strings.Contains(second.prompts[0], `"Which framework?" -> B (note: B fits our stack)`) {
 		t.Error("the owner's decision must reach the prompt of the task it affects")
 	}
 	if got := actionKinds(t, r); got != "[approve:plan]" {

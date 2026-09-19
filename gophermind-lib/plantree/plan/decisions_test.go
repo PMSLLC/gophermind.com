@@ -24,7 +24,7 @@ func TestDecisionsForShowsOnlyAnsweredQuestionsThatAffectTheNodes(t *testing.T) 
 		answered("Both?", []string{"phase-001.task-001.step-001"}, []string{"opt-1", "opt-2"}, "keep both in sync"),
 	}
 	got := decisionsFor(qs, []string{"phase-001", "phase-001.task-001", "phase-001.task-001.step-001"})
-	want := "- Which database? -> Postgres\n- Deadline? -> end of the quarter\n- Both? -> SQLite; Postgres (note: keep both in sync)"
+	want := `- "Which database?" -> Postgres` + "\n" + `- "Deadline?" -> end of the quarter` + "\n" + `- "Both?" -> SQLite; Postgres (note: keep both in sync)`
 	if got != want {
 		t.Errorf("decisionsFor =\n%q\nwant\n%q", got, want)
 	}
