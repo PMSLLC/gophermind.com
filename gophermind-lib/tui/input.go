@@ -37,6 +37,21 @@ func desiredInputRows(m model) int {
 		textWidth = 1
 	}
 
+	rows := wrappedRows(value, textWidth)
+	if rows > maxInputRows {
+		rows = maxInputRows
+	}
+	return rows
+}
+
+// wrappedRows returns the display rows value occupies in a textarea whose
+// stored width is textWidth, counting soft wrapping. The question round uses
+// it to grow its own note box (see question_round.go), so both boxes grow by
+// the same arithmetic.
+func wrappedRows(value string, textWidth int) int {
+	if textWidth < 1 {
+		textWidth = 1
+	}
 	rows := 0
 	for _, line := range strings.Split(value, "\n") {
 		w := uniseg.StringWidth(line)
@@ -53,9 +68,6 @@ func desiredInputRows(m model) int {
 	}
 	if rows < 1 {
 		rows = 1
-	}
-	if rows > maxInputRows {
-		rows = maxInputRows
 	}
 	return rows
 }
