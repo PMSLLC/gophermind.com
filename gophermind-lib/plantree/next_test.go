@@ -2,6 +2,8 @@ package plantree
 
 import (
 	"fmt"
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -111,12 +113,12 @@ func TestNextActionsBlockedQuestionDoesNotStallOtherWork(t *testing.T) {
 	}
 }
 
-func TestNextActionsHeldStepsAreIgnored(t *testing.T) {
+func TestNextActionsHeldStepsAreBlockedNotIgnored(t *testing.T) {
 	r, _ := newRepo(t)
 	setStep(t, r, step1, StageSkeleton, StatusDelayed, "waiting for hardware")
 	got, _ := r.NextActions()
-	if len(got.Runnable) != 0 || len(got.Blocked) != 0 {
-		t.Errorf("held step produced actions: %s %s", kinds(got.Runnable), kinds(got.Blocked))
+	if len(got.Runnable) != 0 || kinds(got.Blocked) != "[held:"+step1+"]" {
+		t.Errorf("held step: runnable=%s blocked=%s", kinds(got.Runnable), kinds(got.Blocked))
 	}
 }
 
@@ -185,7 +187,62 @@ func TestNextActionsNoApproveWhileAStepIsSkipped(t *testing.T) {
 	setStep(t, r, step1, StageDrafted, StatusUntouched, "")
 	setStep(t, r, step2, StageSkeleton, StatusSkipped, "out of scope")
 	got, _ := r.NextActions()
-	if len(got.Runnable) != 0 || len(got.Blocked) != 0 {
-		t.Errorf("skipped step must hold approve: %s %s", kinds(got.Runnable), kinds(got.Blocked))
+	if len(got.Runnable) != 0 || kinds(got.Blocked) != "[held:"+step2+"]" {
+		t.Errorf("skipped step must hold approve: runnable=%s blocked=%s", kinds(got.Runnable), kinds(got.Blocked))
+	}
+}
+
+func TestNextActionsEveryHoldStatusIsBlockedAndStopsApprove(t *testing.T) {
+	for _, st := range []Status{StatusBlocked, StatusDelayed, StatusEscalated, StatusFailed, StatusNeedsRevision, StatusSkipped} {
+		t.Run(string(st), func(t *testing.T) {
+			r, _ := newRepo(t)
+			setStep(t, r, step1, StageDrafted, st, "why")
+			got, err := r.NextActions()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got.Runnable) != 0 || kinds(got.Blocked) != "[held:"+step1+"]" {
+				t.Fatalf("runnable=%s blocked=%s", kinds(got.Runnable), kinds(got.Blocked))
+			}
+			if !strings.Contains(got.Blocked[0].Reason, "why") || !strings.Contains(got.Blocked[0].Reason, string(st)) {
+				t.Errorf("reason = %q", got.Blocked[0].Reason)
+			}
+		})
+	}
+}
+
+func TestNextActionsRestartMatchesWriter(t *testing.T) {
+	r, dir := newRepo(t)
+	addStep(t, r, step2)
+	addStep(t, r, "phase-001.task-001.step-003")
+	setStep(t, r, step2, StageAwaitingAnswers, StatusUntouched, "")
+	setStep(t, r, "phase-001.task-001.step-003", StageSkeleton, StatusDelayed, "later")
+	want, err := r.NextActions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Open(dir).NextActions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("restart differs: %+v vs %+v", got, want)
+	}
+	if kinds(got.Runnable) != "[draft:"+step1+"]" || kinds(got.Blocked) != "[answer:"+step2+" held:phase-001.task-001.step-003]" {
+		t.Errorf("runnable=%s blocked=%s", kinds(got.Runnable), kinds(got.Blocked))
+	}
+}
+
+func TestSummarizeCountsFailedAndNeedsRevision(t *testing.T) {
+	r, _ := newRepo(t)
+	addStep(t, r, step2)
+	setStep(t, r, step1, StageDrafted, StatusFailed, "broke")
+	setStep(t, r, step2, StageDrafted, StatusNeedsRevision, "spec changed")
+	s, err := r.Summarize(RootID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Counts.Failed != 1 || s.Counts.NeedsRevision != 1 || s.Counts.Held != 0 {
+		t.Errorf("counts = %+v", s.Counts)
 	}
 }

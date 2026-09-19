@@ -10,6 +10,8 @@ type Counts struct {
 	Approved            int
 	Held                int // blocked, delayed or escalated
 	Skipped             int
+	Failed              int // status failed
+	NeedsRevision       int // status needs_revision
 }
 
 // Summary is a subtree's derived progress. Structural nodes store no status;
@@ -55,6 +57,10 @@ func (r *Repo) Summarize(id string) (Summary, error) {
 			s.Counts.Held++
 		case StatusSkipped:
 			s.Counts.Skipped++
+		case StatusFailed:
+			s.Counts.Failed++
+		case StatusNeedsRevision:
+			s.Counts.NeedsRevision++
 		}
 		if n.Status == StatusReviewed && n.Planning.Stage == StageApproved {
 			reviewed++

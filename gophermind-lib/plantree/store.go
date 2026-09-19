@@ -29,7 +29,9 @@ func (e *ConflictError) Error() string {
 
 // Repo is the on-disk plan tree. Every mutation takes one exclusive
 // cross-process lock and replaces files atomically, so a reader never sees a
-// half-written node. Reads take no lock.
+// half-written node. Reads take no lock, so a Walk, Summarize or NextActions
+// running while several writes commit can see nodes from different moments,
+// though each node is always consistent.
 type Repo struct {
 	dir string
 }
@@ -95,7 +97,7 @@ func (r *Repo) write(n Node) error {
 // Get returns the node with the given id.
 func (r *Repo) Get(id string) (Node, error) { return r.read(id) }
 
-// Init writes the root node. It fails with ErrExists if one is present.
+// Init writes the root node under the write lock. It fails with ErrExists if one is present.
 func (r *Repo) Init(root Node) error {
 	if root.ID != RootID {
 		return fmt.Errorf("plantree: Init needs the root node, got %q", root.ID)
@@ -116,7 +118,7 @@ func (r *Repo) Init(root Node) error {
 	return r.write(root)
 }
 
-// Create adds a new node. Its parent must exist and it must start at
+// Create adds a new node under the write lock. Its parent must exist and it must start at
 // revision 1.
 func (r *Repo) Create(n Node) error {
 	if n.ID == RootID {
@@ -148,7 +150,9 @@ func (r *Repo) Create(n Node) error {
 	return r.write(n)
 }
 
-// Update applies mutate to the node under the lock. It fails with a
+// Update applies mutate to the node under the write lock. mutate must not
+// call any Repo method: the lock is not reentrant, so the call would block
+// forever. It fails with a
 // *ConflictError if the node's revision is not expectedRevision, so a stale
 // caller can never overwrite newer data. id and parent_ref are immutable.
 func (r *Repo) Update(id string, expectedRevision int, mutate func(*Node) error) (Node, error) {
@@ -206,6 +210,9 @@ func (r *Repo) Children(id string) ([]Node, error) {
 		childID := e.Name()
 		if id != RootID {
 			childID = id + "." + e.Name()
+		}
+		if _, err := ParseID(childID); err != nil {
+			continue // not a valid id at this position, so not a member
 		}
 		n, err := r.read(childID)
 		if errors.Is(err, ErrNotFound) {

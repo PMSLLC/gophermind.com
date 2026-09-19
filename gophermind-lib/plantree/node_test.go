@@ -1,6 +1,7 @@
 package plantree
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -90,6 +91,63 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 	}
 	if got.ID != n.ID || got.Work == nil || got.Work.Description != "do the thing" || got.DependsOn[0] != n.DependsOn[0] {
 		t.Errorf("round trip lost data: %+v", got)
+	}
+}
+
+func TestEncodeDecodeRoundTripIsExact(t *testing.T) {
+	n := mk(t, step1)
+	n.Planning.Stage = StageDrafted
+	n.Work = draftedWork()
+	n.DependsOn = []string{"phase-001.task-001.step-002", "phase-001.task-001.step-003"}
+	n.Status = StatusBlocked
+	n.Reason = "waiting on a decision"
+	n.ResumeNote = "pick up at the parser"
+	n.Objective = "parse the thing"
+	b, err := Encode(n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Decode(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, n) {
+		t.Errorf("round trip differs:\n got %+v\nwant %+v", got, n)
+	}
+}
+
+func TestReasonRuleForEveryStatus(t *testing.T) {
+	needs := map[Status]bool{
+		StatusBlocked: true, StatusDelayed: true, StatusSkipped: true, StatusFailed: true,
+		StatusEscalated: true, StatusNeedsRevision: true,
+		StatusUntouched: false, StatusReviewed: false, StatusInProgress: false, StatusCompleted: false,
+	}
+	if len(needs) != 10 {
+		t.Fatalf("expected all ten statuses, have %d", len(needs))
+	}
+	for st, requires := range needs {
+		n := mk(t, step1)
+		n.Status = st
+		err := Validate(n)
+		if requires && err == nil {
+			t.Errorf("%s without a reason was accepted", st)
+		}
+		if !requires && err != nil {
+			t.Errorf("%s without a reason was rejected: %v", st, err)
+		}
+		n.Reason = "because"
+		if err := Validate(n); err != nil {
+			t.Errorf("%s with a reason was rejected: %v", st, err)
+		}
+	}
+}
+
+func TestApprovedStepWithoutWorkIsRejected(t *testing.T) {
+	n := mk(t, step1)
+	n.Planning.Stage = StageApproved
+	n.Work = nil
+	if err := Validate(n); err == nil {
+		t.Error("an approved step with nil Work was accepted")
 	}
 }
 

@@ -12,6 +12,9 @@ const (
 	ActionDraft ActionKind = "draft"
 	// ActionAnswer: a step waits on a human answer.
 	ActionAnswer ActionKind = "answer"
+	// ActionHeld: a step is on hold, skipped, failed or needs revision;
+	// Reason says why.
+	ActionHeld ActionKind = "held"
 	// ActionApprove: every step is drafted; the plan awaits approval.
 	ActionApprove ActionKind = "approve"
 )
@@ -32,7 +35,8 @@ type Actions struct {
 // NextActions derives what remains to be done from the committed tree alone.
 // Nothing is remembered between calls, so a new process asking the same
 // question gets the same answer. Runnable order is all reconcile, then all
-// decompose, then all draft, each in tree order.
+// decompose, then all draft, each in tree order. An empty result means the
+// plan is complete.
 func (r *Repo) NextActions() (Actions, error) {
 	var reconcile, decompose, draft []Action
 	var out Actions
@@ -48,8 +52,9 @@ func (r *Repo) NextActions() (Actions, error) {
 			return nil
 		}
 		switch n.Status {
-		case StatusBlocked, StatusDelayed, StatusEscalated, StatusSkipped:
-			return nil // an explicit hold
+		case StatusBlocked, StatusDelayed, StatusEscalated, StatusFailed, StatusNeedsRevision, StatusSkipped:
+			out.Blocked = append(out.Blocked, Action{Kind: ActionHeld, NodeID: n.ID, Reason: string(n.Status) + ": " + n.Reason})
+			return nil
 		}
 		switch n.Planning.Stage {
 		case StageNeedsReconciliation:
@@ -70,8 +75,7 @@ func (r *Repo) NextActions() (Actions, error) {
 		if err != nil {
 			return Actions{}, err
 		}
-		// A held or skipped step is not an approved step (v4 spec 7.3).
-		if s.Leaves > 0 && s.Status != StatusReviewed && s.Counts.Held == 0 && s.Counts.Skipped == 0 {
+		if s.Leaves > 0 && s.Status != StatusReviewed {
 			out.Runnable = append(out.Runnable, Action{Kind: ActionApprove, NodeID: RootID, Reason: "every step is drafted"})
 		}
 	}

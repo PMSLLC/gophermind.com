@@ -203,3 +203,26 @@ func TestReadRejectsHandEditedID(t *testing.T) {
 		t.Error("a file holding a different id must be rejected")
 	}
 }
+
+func TestChildrenSkipsDirectoriesThatAreNotMembers(t *testing.T) {
+	r, dir := newRepo(t)
+	if err := os.MkdirAll(filepath.Join(dir, "plan", "phases", "backup-001"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	kids, err := r.Children(RootID)
+	if err != nil {
+		t.Fatalf("Children: %v", err)
+	}
+	if len(kids) != 1 || kids[0].ID != "phase-001" {
+		t.Errorf("Children = %v", kids)
+	}
+	if _, err := r.NextActions(); err != nil {
+		t.Errorf("NextActions: %v", err)
+	}
+	if _, err := r.Summarize(RootID); err != nil {
+		t.Errorf("Summarize: %v", err)
+	}
+	if err := r.Verify(); err != nil {
+		t.Errorf("Verify: %v", err)
+	}
+}
