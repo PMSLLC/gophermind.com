@@ -37,7 +37,14 @@ type Approval struct {
 // interrupted part way leaves a tree whose only outstanding action is still
 // approve, so simply calling it again finishes the job.
 func Approve(repo *plantree.Repo) (Approval, error) {
-	if err := approvable(repo); err != nil {
+	// The same lock RunPass1 and RunPass2 take, so a pass running in another
+	// process yields a clean ErrRunBusy instead of a half-written approval.
+	release, err := AcquireRun(repo)
+	if err != nil {
+		return Approval{}, err
+	}
+	defer release()
+	if err := Approvable(repo); err != nil {
 		return Approval{}, err
 	}
 	var steps []plantree.Node
@@ -76,10 +83,12 @@ func Approve(repo *plantree.Repo) (Approval, error) {
 // Approvable reports why the plan cannot be approved, or nil when it can. It
 // is what Approve checks, exported so a user interface can offer approval
 // only when it would be accepted, and say why when it would not.
-func Approvable(repo *plantree.Repo) error { return approvable(repo) }
-
-func approvable(repo *plantree.Repo) error {
+func Approvable(repo *plantree.Repo) error {
 	if _, err := repo.Get(plantree.RootID); err != nil {
+		return err
+	}
+	// Dangling depends_on and cycles are refused before anything is written.
+	if err := repo.Verify(); err != nil {
 		return err
 	}
 	open, err := OpenQuestions(repo)
@@ -106,6 +115,21 @@ func approvable(repo *plantree.Repo) error {
 		return fmt.Errorf("%w: %d task(s) have no steps and nothing can decompose them yet: %s",
 			ErrNotApprovable, len(empty), strings.Join(clipIDs(empty, 5), ", "))
 	}
+	// Approve writes status reviewed, which would regress a step that has
+	// started or finished.
+	var executing []string
+	if err := repo.Walk(func(n plantree.Node) error {
+		if n.Kind() == plantree.KindStep && (n.Status == plantree.StatusInProgress || n.Status == plantree.StatusCompleted) {
+			executing = append(executing, n.ID)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if len(executing) > 0 {
+		return fmt.Errorf("%w: %d step(s) already started or finished and cannot be approved again: %s",
+			ErrNotApprovable, len(executing), strings.Join(clipIDs(executing, 5), ", "))
+	}
 	// An approved plan has nothing left for NextActions to offer, so it would
 	// fail the check below. Approve is idempotent, so say yes instead.
 	sum, err := repo.Summarize(plantree.RootID)
@@ -124,8 +148,6 @@ func approvable(repo *plantree.Repo) error {
 		return fmt.Errorf("%w: %s is %s: %s", ErrNotApprovable, x.NodeID, x.Kind, oneLine(x.Reason))
 	}
 	switch {
-	case len(actions.Runnable) == 0:
-		return fmt.Errorf("%w: there is nothing to approve (the plan has no steps)", ErrNotApprovable)
 	case len(actions.Runnable) > 1 || actions.Runnable[0].Kind != plantree.ActionApprove:
 		x := actions.Runnable[0]
 		return fmt.Errorf("%w: %d action(s) are still outstanding, first %s on %s: %s",
