@@ -10,6 +10,11 @@ import (
 	"gophermind/gophermind-lib/safety"
 )
 
+// maxReadBytes caps what one read_file call returns, roughly 8k tokens. A
+// model that reads whole documents one after another otherwise fills its
+// context window with tool output; the cap forces it to read in ranges.
+const maxReadBytes = 32_000
+
 // ReadFileRange returns the read_file tool with optional line-range support.
 // When rangeStart and rangeEnd are both 0, the full file is read (default).
 // Otherwise, only lines rangeStart through rangeEnd (1-indexed, inclusive) are
@@ -17,7 +22,7 @@ import (
 func ReadFileRange(root string) Tool {
 	return Tool{
 		Name:        "read_file",
-		Description: "Read a UTF-8 text file and return its full contents. Path is relative to the repository root. Supports optional line ranges via range_start and range_end (1-indexed, inclusive).",
+		Description: "Read a UTF-8 text file. Path is relative to the repository root. A single call returns at most about 32 KB, cut at a line boundary with a notice saying where it stopped, so read large files in pieces with range_start and range_end (1-indexed, inclusive). Grep or list headings first to find the piece you need.",
 		Schema: object(map[string]any{
 			"path":              str("File path relative to the repository root."),
 			"range_start":       map[string]any{"type": "integer", "description": "Starting line number (1-indexed). Omit for full file."},
@@ -55,12 +60,8 @@ func ReadFileRange(root string) Tool {
 				lines = lines[:len(lines)-1]
 			}
 
-			// Check file size for large-file guard.
-			if len(b) > 1_000_000 && (a.RangeStart == nil && a.RangeEnd == nil) {
-				return "", fmt.Errorf("file too large (%d bytes, %d lines). Use range_start/range_end to read a portion, or with_line_numbers=true for numbered output.", len(b), len(lines))
-			}
-
 			var result string
+			firstLine := 1
 			if a.RangeStart != nil && a.RangeEnd != nil {
 				start := *a.RangeStart
 				end := *a.RangeEnd
@@ -76,6 +77,7 @@ func ReadFileRange(root string) Tool {
 				if start > len(lines) {
 					return "", fmt.Errorf("range_start (%d) beyond file length (%d)", start, len(lines))
 				}
+				firstLine = start
 				selected := lines[start-1 : end]
 				if a.WithLineNumbers != nil && *a.WithLineNumbers {
 					for i, line := range selected {
@@ -101,7 +103,7 @@ func ReadFileRange(root string) Tool {
 				}
 			}
 
-			return result, nil
+			return capRead(result, firstLine, len(lines)), nil
 		},
 	}
 }
@@ -113,4 +115,19 @@ func containsNullBytes(b []byte) bool {
 		}
 	}
 	return false
+}
+
+// capRead cuts result to maxReadBytes at a line boundary and appends a notice
+// naming how far it got, so the caller knows to ask for the rest by range.
+func capRead(result string, firstLine, totalLines int) string {
+	if len(result) <= maxReadBytes {
+		return result
+	}
+	cut := strings.LastIndex(result[:maxReadBytes], "\n")
+	if cut <= 0 {
+		cut = maxReadBytes
+	}
+	last := firstLine + strings.Count(result[:cut], "\n")
+	return fmt.Sprintf("%s\n\n[truncated: showed through line %d of %d, a read is capped at %d bytes. Use range_start=%d to continue.]",
+		result[:cut], last, totalLines, maxReadBytes, last+1)
 }

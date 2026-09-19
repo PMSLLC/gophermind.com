@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -141,5 +142,65 @@ func TestWriteFileSecretWarning(t *testing.T) {
 	out, _ = run(t, WriteFile(dir), `{"path":"d.txt","content":"just some ordinary text here"}`)
 	if strings.Contains(out, "secret") {
 		t.Errorf("clean write should not warn: %q", out)
+	}
+}
+
+// A whole-file read of a big document must not put the whole document in the
+// model's context. The tool truncates at a line boundary and says how to get
+// the rest, so one read cannot consume the context window.
+func TestReadFileRangeCapsLargeReads(t *testing.T) {
+	dir := t.TempDir()
+	var b strings.Builder
+	for i := 1; i <= 5000; i++ {
+		b.WriteString("line of ordinary document text, long enough to add up quickly\n")
+	}
+	os.WriteFile(filepath.Join(dir, "big.md"), []byte(b.String()), 0o644)
+	tool := ReadFileRange(dir)
+
+	out, err := run(t, tool, `{"path":"big.md"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) > maxReadBytes+1024 {
+		t.Errorf("whole-file read returned %d bytes, want <= about %d", len(out), maxReadBytes)
+	}
+	if !strings.Contains(out, "truncated") || !strings.Contains(out, "range_start") {
+		t.Errorf("truncation notice should say how to read the rest, got tail %q", out[max(0, len(out)-200):])
+	}
+
+	// A range that is itself too large is capped the same way.
+	out, err = run(t, tool, `{"path":"big.md","range_start":1,"range_end":5000}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) > maxReadBytes+1024 {
+		t.Errorf("oversized range returned %d bytes, want <= about %d", len(out), maxReadBytes)
+	}
+
+	// A small range is untouched.
+	out, _ = run(t, tool, `{"path":"big.md","range_start":1,"range_end":2}`)
+	if strings.Contains(out, "truncated") {
+		t.Errorf("small range should not be truncated: %q", out)
+	}
+}
+
+func TestReadFileRangeTruncationNoticeNamesTheNextLine(t *testing.T) {
+	dir := t.TempDir()
+	var b strings.Builder
+	for i := 1; i <= 5000; i++ {
+		b.WriteString("line of ordinary document text, long enough to add up quickly\n")
+	}
+	os.WriteFile(filepath.Join(dir, "big.md"), []byte(b.String()), 0o644)
+	out, _ := run(t, ReadFileRange(dir), `{"path":"big.md","range_start":101,"range_end":5000}`)
+	i := strings.Index(out, "showed through line ")
+	if i < 0 {
+		t.Fatalf("no notice in %q", out[max(0, len(out)-200):])
+	}
+	var last, total, next int
+	if _, err := fmt.Sscanf(out[i:], "showed through line %d of %d, a read is capped at 32000 bytes. Use range_start=%d", &last, &total, &next); err != nil {
+		t.Fatalf("parse notice: %v in %q", err, out[i:])
+	}
+	if last <= 101 || next != last+1 || total != 5000 {
+		t.Errorf("last=%d next=%d total=%d; a range starting at 101 must report absolute line numbers", last, next, total)
 	}
 }
