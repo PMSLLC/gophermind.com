@@ -199,9 +199,32 @@ func saveBrief(repo *plantree.Repo, brief string) error {
 	return lockfile.WriteAtomic(filepath.Join(repo.Dir(), briefFile), []byte(brief), 0o644)
 }
 
-// runChunk performs one skeleton pass: build the prompt, ask, parse (once more
-// with the rejection reason if the reply is malformed), merge, refresh the
-// overview.
+// askJSON sends prompt and parses the reply. If parsing fails it asks once more,
+// showing the model the reason and an excerpt of the reply it got wrong.
+// Transport errors are returned as they are so a later resume can retry them.
+func askJSON[T any](ctx context.Context, c Completer, prompt string, parse func(reply string) (T, error)) (T, error) {
+	var zero T
+	reply, err := c.Complete(ctx, prompt)
+	if err != nil {
+		return zero, err
+	}
+	v, perr := parse(reply)
+	if perr == nil {
+		return v, nil
+	}
+	reply, err = c.Complete(ctx, RetryPrompt(prompt, reply, perr.Error()))
+	if err != nil {
+		return zero, err
+	}
+	v, err = parse(reply)
+	if err != nil {
+		return zero, fmt.Errorf("the model's reply was rejected twice: %w", err)
+	}
+	return v, nil
+}
+
+// runChunk performs one skeleton pass: build the prompt, ask, merge, refresh
+// the overview.
 func runChunk(ctx context.Context, repo *plantree.Repo, c Completer, opt Options, chunk Chunk, total int) (Created, error) {
 	overview, err := ReadOverview(repo.Dir())
 	if err != nil {
@@ -213,19 +236,9 @@ func runChunk(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 	}
 	prompt := Pass1Prompt(opt.ProjectName, overview, outline, chunk, total)
 
-	reply, err := c.Complete(ctx, prompt)
+	out, err := askJSON(ctx, c, prompt, ParsePass1)
 	if err != nil {
 		return Created{}, err
-	}
-	out, perr := ParsePass1(reply)
-	if perr != nil {
-		reply, err = c.Complete(ctx, RetryPrompt(prompt, reply, perr.Error()))
-		if err != nil {
-			return Created{}, err
-		}
-		if out, err = ParsePass1(reply); err != nil {
-			return Created{}, fmt.Errorf("the model's reply was rejected twice: %w", err)
-		}
 	}
 
 	created, err := Merge(repo, out)
