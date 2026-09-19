@@ -1,6 +1,6 @@
 {
   "name": "gophermind",
-  "version": "0.1.0",
+  "version": "0.8.0",
   "description": "A tiny, hackable AI coding agent for your terminal — pointed at your own OpenAI-compatible LLM.",
   "bin": {
     "gophermind": "bin/gophermind.js"
