@@ -233,7 +233,7 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 		// Batches are never mixed: a batch of steps being re-planned is
 		// smaller and carries each step's previous specification, so keeping
 		// the two apart is what keeps the prompt inside its budget.
-		batches := append(batchesOf(w.pending, opt.StepsPerPass), batchesOf(w.redo, reconcileStepsPerPass)...)
+		batches := append(batchesOf(w.pending, opt.StepsPerPass), batchesOf(w.redo, reconcileBatch(opt.StepsPerPass))...)
 		for _, batch := range batches {
 			if err := ctx.Err(); err != nil {
 				return res, err
@@ -294,6 +294,18 @@ func RunPass2(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 		res.Tasks++
 	}
 	return res, nil
+}
+
+// reconcileBatch is the batch size for steps being re-planned. It is smaller
+// than an ordinary batch because each such step also carries its previous
+// specification and the reason it is being redone, and it is never larger
+// than the ordinary batch the caller chose, so sizes shrunk for a small
+// context window (see SizesFor) shrink the re-planning batch with them.
+func reconcileBatch(stepsPerPass int) int {
+	if stepsPerPass > 0 && stepsPerPass < reconcileStepsPerPass {
+		return stepsPerPass
+	}
+	return reconcileStepsPerPass
 }
 
 // batchesOf cuts steps into consecutive batches of at most size, in order.
