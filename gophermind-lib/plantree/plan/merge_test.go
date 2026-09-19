@@ -152,3 +152,25 @@ func TestMergeReportsTheSiblingLimit(t *testing.T) {
 		t.Errorf("Merge past 999 siblings = %v, want an error naming the title", err)
 	}
 }
+
+func TestMergeTrackedListsCreatedAndReusedNodesOnce(t *testing.T) {
+	r := newRepo(t)
+	_, first, err := mergeTracked(r, sampleOut())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"phase-001", "phase-001.task-001", "phase-001.task-001.step-001", "phase-001.task-001.step-002"}
+	if !reflect.DeepEqual(first, want) {
+		t.Errorf("touched = %v, want %v", first, want)
+	}
+	again := sampleOut()
+	again.Phases[0].Tasks[0].Steps = []StepOut{{Title: "Add lint", Digest: "style"}}
+	c, second, err := mergeTracked(r, again)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = []string{"phase-001", "phase-001.task-001", "phase-001.task-001.step-003"}
+	if c != (Created{Steps: 1}) || !reflect.DeepEqual(second, want) {
+		t.Errorf("Created=%+v touched=%v, want one new step and %v", c, second, want)
+	}
+}

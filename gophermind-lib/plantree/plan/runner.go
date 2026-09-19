@@ -223,8 +223,8 @@ func askJSON[T any](ctx context.Context, c Completer, prompt string, parse func(
 	return v, nil
 }
 
-// runChunk performs one skeleton pass: build the prompt, ask, merge, refresh
-// the overview.
+// runChunk performs one skeleton pass: build the prompt, ask, merge, record
+// which nodes the chunk produced, refresh the overview.
 func runChunk(ctx context.Context, repo *plantree.Repo, c Completer, opt Options, chunk Chunk, total int) (Created, error) {
 	overview, err := ReadOverview(repo.Dir())
 	if err != nil {
@@ -241,8 +241,11 @@ func runChunk(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 		return Created{}, err
 	}
 
-	created, err := Merge(repo, out)
+	created, touched, err := mergeTracked(repo, out)
 	if err != nil {
+		return created, err
+	}
+	if err := recordProvenance(repo, chunk.Index, touched); err != nil {
 		return created, err
 	}
 	text := out.Overview

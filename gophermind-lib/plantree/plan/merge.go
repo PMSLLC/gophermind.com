@@ -23,37 +23,57 @@ func (c *Created) add(o Created) {
 // Merge applies a skeleton pass to the tree. A proposed node whose title
 // (ignoring case and spacing) matches an existing sibling is reused unchanged,
 // so replaying the same pass after a crash adds nothing twice. New nodes start
-// as untouched skeletons.
+// as untouched skeletons. The output must come from ParsePass1: Merge does not
+// re-validate it.
 func Merge(repo *plantree.Repo, out Pass1Output) (Created, error) {
+	created, _, err := mergeTracked(repo, out)
+	return created, err
+}
+
+// mergeTracked is Merge that also returns the ids of every node the pass
+// created or reused, in order and without repeats. RunPass1 records them so
+// pass 2 can show a task the part of the brief that produced it.
+func mergeTracked(repo *plantree.Repo, out Pass1Output) (Created, []string, error) {
 	var created Created
+	var touched []string
+	seen := map[string]bool{}
+	note := func(id string) {
+		if !seen[id] {
+			seen[id] = true
+			touched = append(touched, id)
+		}
+	}
 	for _, p := range out.Phases {
 		id, made, err := ensureChild(repo, plantree.RootID, p.Title, p.Digest, p.Objective)
 		if err != nil {
-			return created, err
+			return created, touched, err
 		}
+		note(id)
 		if made {
 			created.Phases++
 		}
 		for _, t := range p.Tasks {
 			tid, made, err := ensureChild(repo, id, t.Title, t.Digest, t.Objective)
 			if err != nil {
-				return created, err
+				return created, touched, err
 			}
+			note(tid)
 			if made {
 				created.Tasks++
 			}
 			for _, s := range t.Steps {
-				_, made, err := ensureChild(repo, tid, s.Title, s.Digest, "")
+				sid, made, err := ensureChild(repo, tid, s.Title, s.Digest, "")
 				if err != nil {
-					return created, err
+					return created, touched, err
 				}
+				note(sid)
 				if made {
 					created.Steps++
 				}
 			}
 		}
 	}
-	return created, nil
+	return created, touched, nil
 }
 
 // ensureChild returns the id of parent's child with the given title, creating
