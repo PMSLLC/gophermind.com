@@ -69,3 +69,39 @@ the dependency only points one way). Callers pass
 
 Independent-reviewer authority and task-batched review (v4 addendum section
 2), rollback slot and manifest, typed leaf specs, promotion, fenced claims.
+
+## M1 outcome (landed on branch `feat/plantree-m1`, 2026-09-19)
+
+Package `gophermind-lib/plantree`, commits `adfed48`, `0f827f1`, `f0e07e7`,
+`cb3cd41`, `7c77722`, `1b5b0ba`. Tests, race run, gofmt, vet and the whole
+module build are clean. Deviations from the contracts listed above:
+
+- `NextActions` is total: an empty result means the plan is complete. Steps
+  with status blocked, delayed, escalated, failed, needs_revision or skipped
+  appear in `Blocked` as `ActionHeld` with `<status>: <reason>`.
+- `Counts` also carries `Failed` and `NeedsRevision`.
+- `approve` is offered only when nothing is runnable or blocked.
+- `Children` skips directories whose id is not valid at that position.
+
+### Carry-forward decisions for the M2 and later plans
+
+1. **Consistent multi-node access.** Reads take no lock, and the write lock is
+   private. M2 writes many nodes per pass, so its plan must decide whether to
+   export a lock (which needs unlocked internal variants of `Create` and
+   `Update`) or accept that a second process can read a skewed tree. A callback
+   passed to `Update` must never call the repo (the lock is not reentrant).
+2. **Child id allocation.** `ChildID(parent, n)` needs the caller to know `n`;
+   `len(Children)+1` races. `Create` fails safely with `ErrExists`. M2 needs a
+   retry loop or a `NextChildID` computed under the lock.
+3. **`context_digest` is required on every node.** Every pass must supply one.
+4. **No node or subtree removal.** A skipped step blocks approval forever
+   (v4 spec 7.3). M5's re-planning needs either a `Remove` operation or a
+   distinction between "skipped, still counts" and "removed from scope".
+5. **`Summarize` derives only `reviewed` or `untouched`.** M6's export needs
+   task-level rollups over execution statuses, and a `completed` step currently
+   makes the plan look unreviewed again.
+6. **`Verify` allows a dependency on an ancestor or structural node.**
+7. **Durability.** `lockfile.WriteAtomic` does not fsync the directory. A power
+   loss can lose the last committed write but cannot corrupt one.
+8. Minor test gaps are listed in the SDD ledger history in the commit
+   messages; none blocks M2.
