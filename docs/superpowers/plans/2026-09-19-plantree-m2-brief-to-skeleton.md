@@ -474,6 +474,42 @@ func TestNormalizeTitle(t *testing.T) {
 		t.Error("NormalizeTitle did not fold case and whitespace")
 	}
 }
+
+func TestParsePass1ErrorIsBoundedByAHugeTitle(t *testing.T) {
+	huge := strings.Repeat("x", 5_000_000)
+	_, err := ParsePass1(`{"phases":[{"title":"` + huge + `","digest":"","objective":"","tasks":[]}],"overview":"o"}`)
+	if err == nil || len(err.Error()) > 500 || !strings.Contains(err.Error(), "title is longer") {
+		n := 0
+		if err != nil {
+			n = len(err.Error())
+		}
+		t.Errorf("want a short error naming the title field, got %d bytes: %v", n, err)
+	}
+}
+
+func TestExtractJSONFindsTheRealObject(t *testing.T) {
+	cases := map[string]string{
+		`I used {curly} braces. {"a":1}`:           `{"a":1}`,
+		`note { unbalanced. {"a":1}`:               `{"a":1}`,
+		`{bad} then {"ok":true}`:                   `{"ok":true}`,
+		`{bad}`:                                    `{bad}`,
+		`{"a":"x\\"}`:                              `{"a":"x\\"}`,
+		`{"phases":[{"title":"P"}], "overview": }`: `{"phases":[{"title":"P"}], "overview": }`,
+	}
+	for in, want := range cases {
+		got, err := ExtractJSON(in)
+		if err != nil || got != want {
+			t.Errorf("ExtractJSON(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	_, err := ParsePass1(`{bad}`)
+	if err == nil || !strings.Contains(err.Error(), "does not match the schema") {
+		t.Errorf("ParsePass1({bad}) = %v, want a decode error", err)
+	}
+	if _, err := ExtractJSON(`only { prose`); err == nil || !strings.Contains(err.Error(), "not closed") {
+		t.Errorf("unclosed: %v", err)
+	}
+}
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -536,17 +572,51 @@ type StepOut struct {
 	Digest string `json:"digest"`
 }
 
-// ExtractJSON returns the first complete top-level JSON object in reply,
+// ExtractJSON returns the first top-level JSON object in reply that parses,
 // ignoring prose and code fences around it. Braces inside strings do not count.
+// A balanced object that is not valid JSON is skipped in favor of a later valid
+// one, but is returned if no valid one exists so the caller can report why it
+// failed to decode.
 func ExtractJSON(reply string) (string, error) {
-	start := strings.IndexByte(reply, '{')
-	if start < 0 {
+	invalid := ""
+	seen := false
+	from := 0
+	for {
+		i := strings.IndexByte(reply[from:], '{')
+		if i < 0 {
+			break
+		}
+		start := from + i
+		seen = true
+		end, ok := balancedEnd(reply, start)
+		if !ok {
+			from = start + 1
+			continue
+		}
+		cand := reply[start : end+1]
+		if json.Valid([]byte(cand)) {
+			return cand, nil
+		}
+		if invalid == "" {
+			invalid = cand
+		}
+		from = end + 1
+	}
+	if invalid != "" {
+		return invalid, nil
+	}
+	if !seen {
 		return "", errors.New("the reply contains no JSON object")
 	}
+	return "", errors.New("the JSON object in the reply is not closed")
+}
+
+// balancedEnd returns the index of the brace that closes the one at start.
+func balancedEnd(s string, start int) (int, bool) {
 	depth := 0
 	inString, escaped := false, false
-	for i := start; i < len(reply); i++ {
-		c := reply[i]
+	for i := start; i < len(s); i++ {
+		c := s[i]
 		switch {
 		case escaped:
 			escaped = false
@@ -560,11 +630,11 @@ func ExtractJSON(reply string) (string, error) {
 		case c == '}':
 			depth--
 			if depth == 0 {
-				return reply[start : i+1], nil
+				return i, true
 			}
 		}
 	}
-	return "", errors.New("the JSON object in the reply is not closed")
+	return 0, false
 }
 
 // ParsePass1 extracts, strictly decodes and validates a skeleton pass reply.
@@ -594,6 +664,26 @@ func NormalizeTitle(s string) string {
 // oneLine collapses all whitespace, including newlines, to single spaces.
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
+// maxClipRunes bounds a title quoted in an error message.
+const maxClipRunes = 80
+
+// clip makes a model-supplied title safe to quote in an error that goes back
+// into a prompt: one line, at most maxClipRunes runes.
+func clip(s string) string {
+	s = oneLine(s)
+	if utf8.RuneCountInString(s) <= maxClipRunes {
+		return s
+	}
+	n := 0
+	for i := range s {
+		if n == maxClipRunes {
+			return s[:i] + "..."
+		}
+		n++
+	}
+	return s
+}
+
 func validatePass1(o Pass1Output) error {
 	if strings.TrimSpace(o.Overview) == "" {
 		return errors.New(`"overview" must be a non-empty string`)
@@ -603,7 +693,7 @@ func validatePass1(o Pass1Output) error {
 	}
 	seenPhase := map[string]bool{}
 	for _, p := range o.Phases {
-		where := fmt.Sprintf("phase %q", p.Title)
+		where := fmt.Sprintf("phase %q", clip(p.Title))
 		if err := checkNode(where, p.Title, p.Digest, p.Objective, seenPhase); err != nil {
 			return err
 		}
@@ -612,7 +702,7 @@ func validatePass1(o Pass1Output) error {
 		}
 		seenTask := map[string]bool{}
 		for _, t := range p.Tasks {
-			twhere := fmt.Sprintf("task %q in %s", t.Title, where)
+			twhere := fmt.Sprintf("task %q in %s", clip(t.Title), where)
 			if err := checkNode(twhere, t.Title, t.Digest, t.Objective, seenTask); err != nil {
 				return err
 			}
@@ -621,7 +711,7 @@ func validatePass1(o Pass1Output) error {
 			}
 			seenStep := map[string]bool{}
 			for _, s := range t.Steps {
-				swhere := fmt.Sprintf("step %q in %s", s.Title, twhere)
+				swhere := fmt.Sprintf("step %q in %s", clip(s.Title), twhere)
 				if err := checkNode(swhere, s.Title, s.Digest, "", seenStep); err != nil {
 					return err
 				}
@@ -1105,8 +1195,11 @@ func TestPass1PromptCarriesOneChunkAndNoOthers(t *testing.T) {
 }
 
 func TestRetryAndCompressPrompts(t *testing.T) {
-	if p := RetryPrompt("ORIGINAL", "digest is empty"); !strings.Contains(p, "ORIGINAL") || !strings.Contains(p, "digest is empty") {
+	if p := RetryPrompt("ORIGINAL", "I think the plan is X", "digest is empty"); !strings.Contains(p, "ORIGINAL") || !strings.Contains(p, "digest is empty") || !strings.Contains(p, "I think the plan is X") {
 		t.Errorf("RetryPrompt = %q", p)
+	}
+	if p := RetryPrompt("ORIGINAL", strings.Repeat("r", 100000), strings.Repeat("p", 5000)); len(p)-len("ORIGINAL") >= 2500 {
+		t.Errorf("a 100,000 byte reply added %d bytes to the prompt", len(p)-len("ORIGINAL"))
 	}
 	if p := CompressPrompt("long overview", 500); !strings.Contains(p, "Compress") || !strings.Contains(p, "500") || !strings.Contains(p, "long overview") {
 		t.Errorf("CompressPrompt = %q", p)
@@ -1186,6 +1279,7 @@ package plan
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"gophermind/gophermind-lib/plantree"
 )
@@ -1258,9 +1352,32 @@ func Pass1Prompt(project, overview, outline string, c Chunk, total int) string {
 	return b.String()
 }
 
-// RetryPrompt asks the model to correct a reply that was rejected.
-func RetryPrompt(original, problem string) string {
-	return original + "\n\nYour previous reply was rejected: " + problem + "\nReply again with ONE JSON object only, fixing that problem."
+// Bounds on the text a retry prompt adds to the original prompt.
+const (
+	retryReplyExcerptBytes = 1500
+	retryProblemBytes      = 600
+)
+
+// cutBytes shortens s to at most max bytes at a rune boundary, adding "..." if
+// it cut anything.
+func cutBytes(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	cut := max
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "..."
+}
+
+// RetryPrompt asks the model to correct a reply that was rejected. It quotes
+// the start of the rejected reply so the model can see what it got wrong; the
+// text it adds to original is bounded whatever the reply's size.
+func RetryPrompt(original, reply, problem string) string {
+	return original + "\n\nYour previous reply was rejected: " + cutBytes(problem, retryProblemBytes) +
+		"\nYour previous reply began:\n" + cutBytes(reply, retryReplyExcerptBytes) +
+		"\nReply again with ONE JSON object only, fixing that problem."
 }
 
 // CompressPrompt asks the model to shorten an overview that grew past its cap.
@@ -1310,8 +1427,11 @@ package plan
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -1574,6 +1694,132 @@ func TestEmptyBriefAndCancelledContext(t *testing.T) {
 		t.Errorf("no model calls expected, made %d", len(f.prompts))
 	}
 }
+
+// Sizes 30 and 40 give the same boundaries for threePartBrief (its sections are
+// 23, 24 and 24 bytes), so this test cannot tell a boundary comparison from a
+// size comparison. The guard must compare the chunk size itself even when the
+// boundaries happen to coincide, because in general a different size moves them.
+func TestResumingWithADifferentChunkSizeButTheSameChunkCountIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	r := plantree.Open(dir)
+	broken := &fake{reply: func(n int, p string) (string, error) {
+		if n >= 1 {
+			return "", errors.New("model unavailable")
+		}
+		return byChunk(n, p)
+	}}
+	res, err := RunPass1(context.Background(), r, threePartBrief, broken, opts)
+	if err == nil || !strings.Contains(err.Error(), "chunk 2 of 3") {
+		t.Fatalf("err = %v, want it to name chunk 2 of 3", err)
+	}
+	if res.Processed != 1 {
+		t.Errorf("Processed = %d, want 1", res.Processed)
+	}
+
+	other := opts
+	other.ChunkBytes = 40
+	good := &fake{reply: byChunk}
+	if _, err := RunPass1(context.Background(), r, threePartBrief, good, other); !errors.Is(err, ErrBriefChanged) {
+		t.Errorf("changed chunk size with same count: err = %v, want ErrBriefChanged", err)
+	}
+	if len(good.prompts) != 0 {
+		t.Errorf("refused runs must not call the model, made %d calls", len(good.prompts))
+	}
+}
+
+func TestCompressPromptIsBounded(t *testing.T) {
+	huge := strings.Repeat("o", 200000)
+	var compress string
+	f := &fake{reply: func(_ int, p string) (string, error) {
+		if strings.Contains(p, "Compress this project overview") {
+			compress = p
+			return "short", nil
+		}
+		return fmt.Sprintf(`{"phases":[],"overview":%q}`, huge), nil
+	}}
+	o := Options{ProjectName: "demo", OverviewCap: 100}
+	if _, err := RunPass1(context.Background(), plantree.Open(t.TempDir()), "# Only\nsome text\n", f, o); err != nil {
+		t.Fatal(err)
+	}
+	if compress == "" || len(compress) >= 4*100+1000 {
+		t.Errorf("compress prompt is %d bytes, want under %d", len(compress), 4*100+1000)
+	}
+}
+
+func TestResumeRedoesWorkWhenTheTreeWasLost(t *testing.T) {
+	r := plantree.Open(t.TempDir())
+	if _, err := RunPass1(context.Background(), r, threePartBrief, &fake{reply: byChunk}, opts); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(r.Dir(), "phases")); err != nil {
+		t.Fatal(err)
+	}
+	f := &fake{reply: byChunk}
+	if _, err := RunPass1(context.Background(), r, threePartBrief, f, opts); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.prompts) != 3 {
+		t.Errorf("made %d calls, want 3", len(f.prompts))
+	}
+	if got := ids(t, r); !reflect.DeepEqual(got, wantTree) {
+		t.Errorf("tree = %v", got)
+	}
+}
+
+// failedAtChunk2 leaves a valid state file behind and returns the repo dir.
+func failedAtChunk2(t *testing.T) (string, *plantree.Repo) {
+	t.Helper()
+	r := plantree.Open(t.TempDir())
+	broken := &fake{reply: func(n int, p string) (string, error) {
+		if strings.Contains(p, "second part text") {
+			return "", errors.New("model unavailable")
+		}
+		return byChunk(n, p)
+	}}
+	if _, err := RunPass1(context.Background(), r, threePartBrief, broken, opts); err == nil {
+		t.Fatal("want a failure at chunk 2")
+	}
+	return statePath(r), r
+}
+
+func TestBadResumeCursorIsAnErrorNotAPanic(t *testing.T) {
+	for _, next := range []int{-1, 4} {
+		path, r := failedAtChunk2(t)
+		b, _ := os.ReadFile(path)
+		var m map[string]any
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatal(err)
+		}
+		m["next"] = next
+		b, _ = json.Marshal(m)
+		if err := os.WriteFile(path, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, err := RunPass1(context.Background(), r, threePartBrief, &fake{reply: byChunk}, opts)
+		if err == nil || !strings.Contains(err.Error(), "delete that file") || errors.Is(err, ErrBriefChanged) {
+			t.Errorf("next=%d: err = %v", next, err)
+		}
+	}
+	path, r := failedAtChunk2(t)
+	if err := os.WriteFile(path, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RunPass1(context.Background(), r, threePartBrief, &fake{reply: byChunk}, opts); err == nil || !strings.Contains(err.Error(), "delete that file") {
+		t.Errorf("corrupt state: err = %v", err)
+	}
+}
+
+var errSentinel = errors.New("server said no")
+
+func TestContextWindowErrorGetsAChunkSizeHint(t *testing.T) {
+	f := &fake{reply: func(int, string) (string, error) {
+		return "", fmt.Errorf("%w: %s", errSentinel, `status 400: {"error":{"type":"exceed_context_size_error","n_ctx":8192}}`)
+	}}
+	_, err := RunPass1(context.Background(), plantree.Open(t.TempDir()), threePartBrief, f, opts)
+	if err == nil || !strings.Contains(err.Error(), "lower Options.ChunkBytes") || !errors.Is(err, errSentinel) {
+		t.Errorf("err = %v", err)
+	}
+}
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -1598,24 +1844,32 @@ import (
 	"os"
 	"path/filepath"
 
+	"gophermind/gophermind-lib/llm"
 	"gophermind/gophermind-lib/lockfile"
 	"gophermind/gophermind-lib/plantree"
 )
 
 // Completer runs one prompt and returns the model's reply. Every call must
-// start from a fresh context: no history from any earlier call. AgentCompleter
+// start from a fresh context: no history from any earlier call. ClientCompleter
 // is the production implementation.
 type Completer interface {
 	Complete(ctx context.Context, prompt string) (string, error)
 }
 
-// ErrBriefChanged is returned when a run is resumed against a brief, or a chunk
-// size, different from the one it started with. Resuming would mix two plans.
+// ErrBriefChanged is returned when a run is resumed against a brief or chunk
+// size different from the one it started with. The cursor is only valid against
+// identical chunk boundaries (same brief and same chunk size). Resuming against
+// a different brief or chunk size would mix two plans.
 var ErrBriefChanged = errors.New("plan: the brief or chunk size changed since this run started")
 
 // Options tunes RunPass1. Zero values pick the defaults.
 type Options struct {
 	ProjectName string
+	// ChunkBytes is the most brief text one pass reads. One pass costs about
+	// ChunkBytes + OverviewCap + 4000 (outline) + 1000 (instructions) bytes; at
+	// 3 to 4 bytes per token that must leave room for the reply inside the
+	// model's window, so choose ChunkBytes at most (window_tokens * 3) - 11000.
+	// The caller that knows the model derives it; RunPass1 does not.
 	ChunkBytes  int // default DefaultChunkBytes
 	OverviewCap int // default OverviewCapBytes
 }
@@ -1634,10 +1888,12 @@ const (
 
 // pass1State is the resume cursor for a skeleton run. It is only a cursor:
 // the tree and overview hold the real state, and a chunk that was merged but
-// not yet recorded here is simply merged again, which changes nothing.
+// not yet recorded here is simply merged again, which changes nothing. The cursor
+// is only valid against identical chunk boundaries (same brief and same chunk size).
 type pass1State struct {
 	BriefSHA256 string `json:"brief_sha256"`
 	Chunks      int    `json:"chunks"`
+	ChunkBytes  int    `json:"chunk_bytes"`
 	Next        int    `json:"next"`
 }
 
@@ -1655,7 +1911,7 @@ func loadState(repo *plantree.Repo) (pass1State, bool, error) {
 	}
 	var s pass1State
 	if err := json.Unmarshal(b, &s); err != nil {
-		return pass1State{}, false, fmt.Errorf("plan: reading %s: %w", statePath(repo), err)
+		return pass1State{}, false, fmt.Errorf("plan: reading %s (delete that file to restart the run): %w", statePath(repo), err)
 	}
 	return s, true, nil
 }
@@ -1698,11 +1954,30 @@ func RunPass1(ctx context.Context, repo *plantree.Repo, brief string, c Complete
 	if err != nil {
 		return Result{}, err
 	}
-	if found && (state.BriefSHA256 != digest || state.Chunks != len(chunks)) {
+	if found && (state.BriefSHA256 != digest || state.Chunks != len(chunks) || state.ChunkBytes != opt.ChunkBytes) {
 		return Result{}, ErrBriefChanged
 	}
+	if found && (state.Next < 0 || state.Next > len(chunks)) {
+		return Result{}, fmt.Errorf("plan: resume cursor %d is outside 0..%d in %s; delete that file to restart the run", state.Next, len(chunks), statePath(repo))
+	}
+	if found && state.Next > 0 {
+		// A cursor with no tree behind it means the tree was lost. Merge is
+		// idempotent, so redoing the chunks is safe. The only false positive is
+		// a brief whose every chunk returned no phases, which costs model calls
+		// and nothing else.
+		kids, err := repo.Children(plantree.RootID)
+		if err != nil {
+			return Result{}, err
+		}
+		if len(kids) == 0 {
+			state.Next = 0
+			if err := saveState(repo, state); err != nil {
+				return Result{}, err
+			}
+		}
+	}
 	if !found {
-		state = pass1State{BriefSHA256: digest, Chunks: len(chunks)}
+		state = pass1State{BriefSHA256: digest, Chunks: len(chunks), ChunkBytes: opt.ChunkBytes}
 		if err := saveBrief(repo, brief); err != nil {
 			return Result{}, err
 		}
@@ -1718,7 +1993,11 @@ func RunPass1(ctx context.Context, repo *plantree.Repo, brief string, c Complete
 		}
 		created, err := runChunk(ctx, repo, c, opt, chunks[i], len(chunks))
 		if err != nil {
-			return res, fmt.Errorf("plan: chunk %d of %d: %w", i+1, len(chunks), err)
+			hint := ""
+			if _, ok := llm.ContextLimitFromError(err); ok {
+				hint = " (the server's context window is smaller than one pass needs: lower Options.ChunkBytes)"
+			}
+			return res, fmt.Errorf("plan: chunk %d of %d: %w%s", i+1, len(chunks), err, hint)
 		}
 		res.Created.add(created)
 		res.Processed++
@@ -1774,7 +2053,7 @@ func runChunk(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 	}
 	out, perr := ParsePass1(reply)
 	if perr != nil {
-		reply, err = c.Complete(ctx, RetryPrompt(prompt, perr.Error()))
+		reply, err = c.Complete(ctx, RetryPrompt(prompt, reply, perr.Error()))
 		if err != nil {
 			return Created{}, err
 		}
@@ -1789,7 +2068,7 @@ func runChunk(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 	}
 	text := out.Overview
 	if len(text) > opt.OverviewCap {
-		if shorter, cerr := c.Complete(ctx, CompressPrompt(text, opt.OverviewCap)); cerr == nil && shorter != "" {
+		if shorter, cerr := c.Complete(ctx, CompressPrompt(FitOverview(text, 4*opt.OverviewCap), opt.OverviewCap)); cerr == nil && shorter != "" {
 			text = shorter
 		}
 		text = FitOverview(text, opt.OverviewCap)
@@ -1971,4 +2250,120 @@ Claude-Session: https://claude.ai/code/session_01HArwYJXPZfFwmuSRuxLcYr"
 
 ## Definition of done (M2)
 
-`go test ./plantree/... -count=1`, `go test -race ./plantree/... -short -count=1`, `gofmt -l plantree` (empty), `go vet ./plantree/...` and `go build ./...` all clean; six commits; a test proves a run that fails at chunk 2 resumes at chunk 2 in a new process and ends with the same tree as an uninterrupted run.
+`go test ./plantree/... -count=1`, `go test -race ./plantree/... -short -count=1`, `gofmt -l plantree` (empty), `go vet ./plantree/...` and `go build ./...` all clean; ten commits (six tasks, one runner fix round, three final-review fix commits); a test proves a run that fails at chunk 2 resumes at chunk 2 in a new process and ends with the same tree as an uninterrupted run.
+
+---
+
+## Amendments after review
+
+The tasks above were built and reviewed as written, then changed by review. The code blocks in this plan match the committed files. Changes since the plan was first written:
+
+- **Runner fix round (`35ad350`):** the resume state records the resolved chunk size (`chunk_bytes`) and a run whose chunk size changed is refused. The first guard compared only the brief hash and the chunk count.
+- **Final-review fixes (`545fcf9`, `1dd891a`, `715781e`):**
+  - validation errors clip every quoted title, so an error sent back to the model stays small;
+  - `ExtractJSON` tries each candidate object and returns the first that is valid JSON;
+  - `RetryPrompt(original, reply, problem)` shows the model a bounded excerpt of the reply it got wrong;
+  - the overview is bounded before it is sent to the compress call;
+  - a saved cursor with an empty tree is reset to chunk 1, a cursor outside the chunk range returns an error instead of panicking, and a corrupt state file says to delete it;
+  - a server context-window error gets the hint "lower Options.ChunkBytes";
+  - `Options.ChunkBytes` documents the per-pass prompt budget;
+  - the `Completer` comment names `ClientCompleter`.
+- **New file `plantree/plan/integration_test.go`** (below): wires `RunPass1` to `ClientCompleter` over a real HTTP server with streamed replies.
+
+### `plantree/plan/integration_test.go`
+
+```go
+package plan
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"gophermind/gophermind-lib/llm"
+	"gophermind/gophermind-lib/plantree"
+)
+
+// writeSSE streams reply as SSE events of at most 20 bytes of ASCII content.
+func writeSSE(w http.ResponseWriter, reply string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	for len(reply) > 0 {
+		n := min(20, len(reply))
+		piece, _ := json.Marshal(reply[:n])
+		fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":%s}}]}\n\n", piece)
+		reply = reply[n:]
+	}
+	fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+}
+
+func TestRunPass1EndToEndOverHTTP(t *testing.T) {
+	var mu sync.Mutex
+	var bodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		body := string(b)
+		mu.Lock()
+		bodies = append(bodies, body)
+		mu.Unlock()
+		switch {
+		case strings.Contains(body, "Compress this project overview"):
+			writeSSE(w, "short overview")
+		case strings.Contains(body, "first part text"):
+			writeSSE(w, "Sure, {here it is:\n```json\n"+reply1+"\n```\nHope that helps.")
+		case strings.Contains(body, "second part text"):
+			if strings.Contains(body, "rejected") {
+				writeSSE(w, reply2)
+			} else {
+				writeSSE(w, "Sorry, no JSON here.")
+			}
+		case strings.Contains(body, "third part text"):
+			writeSSE(w, strings.Replace(reply3, `"overview 3"`, `"`+strings.Repeat("o", 200)+`"`, 1))
+		default:
+			http.Error(w, "unknown chunk", http.StatusBadRequest)
+		}
+	}))
+	defer srv.Close()
+
+	repo := plantree.Open(t.TempDir())
+	c := ClientCompleter{Client: llm.New(srv.URL, "", "m", 5*time.Second, false)}
+	o := Options{ProjectName: "demo", ChunkBytes: 30, OverviewCap: 100}
+	if _, err := RunPass1(context.Background(), repo, threePartBrief, c, o); err != nil {
+		t.Fatal(err)
+	}
+	if got := ids(t, repo); !reflect.DeepEqual(got, wantTree) {
+		t.Errorf("tree = %v", got)
+	}
+	if ov, _ := ReadOverview(repo.Dir()); ov != "short overview\n" {
+		t.Errorf("overview = %q", ov)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(bodies) != 5 {
+		t.Fatalf("%d requests, want 5", len(bodies))
+	}
+	for i, b := range bodies {
+		if strings.Contains(b, `"tools"`) {
+			t.Errorf("request %d carries tools", i)
+		}
+	}
+	// Order: chunk 1, chunk 2, chunk 2 retry, chunk 3, compress.
+	if strings.Contains(bodies[1], "first part text") || strings.Contains(bodies[2], "first part text") {
+		t.Error("a chunk-2 request carries chunk-1 text")
+	}
+	if !strings.Contains(bodies[2], "Sorry, no JSON here.") {
+		t.Error("the retry request must quote the rejected reply")
+	}
+}
+```
+
+### Carried forward to M3 to M6
+
+Provenance from each node back to its brief chunk, a `ReadBrief` export, an exported progress reading, a run lock around `RunPass1`, `Options` validation, brief-marker hardening, and the other deferred minors are recorded in the roadmap section "M2 outcome".

@@ -114,3 +114,32 @@ module build are clean. Deviations from the contracts listed above:
    - No diamond or self-dependency test for `Verify` (traced correct by hand).
    - Commit `adfed48` carries a `Claude Haiku 4.5` co-author trailer instead of
      `Claude Sonnet 5`; it names the true author, so the history is left as is.
+
+## M2 outcome (landed on `main`, 2026-09-19)
+
+Package `gophermind-lib/plantree/plan`, ten commits: `d9fe347`, `18f0128`, `33387b9`, `b87c238`, `3d39701`, `35ad350`, `e43ebb7`, `545fcf9`, `1dd891a`, `715781e`. Tests, race run (short), gofmt, vet and the whole-module build are clean. `RunPass1(ctx, repo, brief, completer, opts)` reads a brief in bounded chunks, one fresh-context pass per chunk, and builds the skeleton tree and `overview.md`. It resumes after any error from the first unprocessed chunk, refuses a changed brief or chunk size, and an end-to-end test drives it through the real `ClientCompleter` over HTTP with streamed replies.
+
+Worst-case prompt is about 24 KB (roughly 6k to 8k tokens with the default caps: chunk 12,000 bytes, overview 6,000, outline 4,000). That fits a 32k window easily and is not safe on an 8k window. `Options.ChunkBytes` documents the budget, and a server context-limit error now says to lower it. Nothing derives the size from the model yet.
+
+### Carry-forward decisions for M3 to M6
+
+**M3 (pass 2, fill each step's work spec)**
+1. **Provenance from node to brief chunk is not recorded.** This is the largest gap. Pass 2 sees only a node's title, digest, objective and the overview. Store a `plan`-owned sidecar in `_state/` mapping chunk index to created node ids (written by the caller of `Merge`), rather than extending `plantree.Node` (its decoder rejects unknown fields and pins schema version 4).
+2. **Export `ReadBrief`.** `brief.md` is the resume input (a resume must re-supply an identical brief) but its filename is private.
+3. Parameterize `loadState`, `saveState` and `statePath` by filename (pass 2 needs a second cursor), and extract the ask, parse, one correction retry loop into a shared helper.
+4. The pass-2 validator must guarantee a non-empty `Work.Description` and at least one acceptance criterion before it calls `Repo.Update`, because `Validate` enforces them for drafted steps and a failure would come after the model call is paid for.
+5. `ExtractJSON` returns the first valid JSON object even if it is not the plan (for example a stray `{}` in prose); try the next valid candidate when `ParsePass1` fails.
+6. Group `ActionDraft` actions by task (M3 runs one pass per task).
+7. `Pass1Prompt` takes five positional arguments; convert to an options struct before M3 and M4 add more.
+8. Smaller items: wrap `Children` and `Create` errors with context, pin `Merge`'s discard-on-title-match behavior with a test and document that its input must come from `ParsePass1`, `Outline` truncation is gappy at scale, the prompt says "characters" while the cap is bytes, propagate context-cancel from the compress call.
+
+**M4 (questions):** `Pass1Output` rejects unknown fields, so adding `questions` to the prompt and the parser must ship together.
+
+**M6 (wire into `/project`, approve, export)**
+1. Take the run lock: `lockfile.Acquire` on `_state/pass1.lock` around `RunPass1` (about six lines). A pass-2 runner must share the same lock.
+2. Validate `Options` (reject an `OverviewCap` under about 200; `FitOverview` returns more than `cap` bytes below 22) and read the project name from the tree, not from `Options`.
+3. Export progress: `Result` reports chunks processed by one call only; the cursor is private.
+4. Derive `ChunkBytes` from the model's context window (`llm.Capabilities`), leaving room for the reply.
+5. Brief text sits between literal `<<<BRIEF PART` markers; harden against a brief that contains the closing marker before accepting an untrusted argument.
+6. Smaller items: CRLF blank lines are not paragraph breaks in `cutPoint`, section text is built with `+=` (quadratic for a huge heading-free section), `ensureChild` re-reads every sibling per node, `Result.Created` undercounts a chunk that fails after a partial merge.
+7. Still open from M1: `Summarize` derives only `reviewed` or `untouched`, there is no node removal (a skipped step blocks approval forever), and `lockfile.WriteAtomic` does not fsync the directory.
