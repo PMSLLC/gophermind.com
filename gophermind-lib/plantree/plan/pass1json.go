@@ -22,8 +22,9 @@ const (
 
 // Pass1Output is what one skeleton pass returns for one chunk of the brief.
 type Pass1Output struct {
-	Phases   []PhaseOut `json:"phases"`
-	Overview string     `json:"overview"`
+	Phases    []PhaseOut    `json:"phases"`
+	Overview  string        `json:"overview"`
+	Questions []QuestionOut `json:"questions"` // optional; affects are phase or task titles
 }
 
 // PhaseOut is a phase proposed by a pass.
@@ -213,6 +214,9 @@ func clip(s string) string {
 func validatePass1(o Pass1Output) error {
 	if strings.TrimSpace(o.Overview) == "" {
 		return errors.New(`"overview" must be a non-empty string`)
+	}
+	if err := validateQuestionOuts(o.Questions, nil); err != nil {
+		return err
 	}
 	if len(o.Phases) > maxPhasesPerPass {
 		return fmt.Errorf("too many phases (%d, at most %d)", len(o.Phases), maxPhasesPerPass)

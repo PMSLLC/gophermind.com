@@ -71,8 +71,9 @@ func Pass1Prompt(project, overview, outline string, c Chunk, total int) string {
 	b.WriteString("- Add only what this part of the brief supports. Do not invent scope. If this part adds nothing new, return an empty phases list.\n")
 	b.WriteString("- Every task needs an objective and at least one step, even if this part of the brief only outlines it.\n")
 	fmt.Fprintf(&b, "- Rewrite the overview so it covers the whole brief so far, in under %d characters. Keep decisions, constraints and non-goals; drop detail that the plan itself now holds.\n", OverviewCapBytes)
+	b.WriteString("- Ask a question only when something in this part of the brief is genuinely ambiguous and the answer changes the plan. Never ask what the brief already answers. At most 5 questions, each with 2 to 8 options (or none for a free-text question), \"recommended\" (option labels) if you have a recommendation, and \"affects\" naming the phase or task titles the answer changes. If nothing is ambiguous, return an empty questions array.\n")
 	b.WriteString("- Do not call tools. Reply with ONE JSON object and nothing else, in this shape:\n")
-	b.WriteString(`{"phases":[{"title":"","digest":"","objective":"","tasks":[{"title":"","digest":"","objective":"","steps":[{"title":"","digest":""}]}]}],"overview":""}`)
+	b.WriteString(`{"phases":[{"title":"","digest":"","objective":"","tasks":[{"title":"","digest":"","objective":"","steps":[{"title":"","digest":""}]}]}],"overview":"","questions":[{"question":"","why":"","options":[{"label":"","description":""}],"multi_select":false,"recommended":[],"rationale":"","affects":[]}]}`)
 	b.WriteString("\n")
 	return b.String()
 }

@@ -45,6 +45,7 @@ type Result struct {
 	Chunks    int     // chunks in the whole brief
 	Processed int     // chunks processed by this call
 	Created   Created // nodes added by this call
+	Questions int     // new questions asked by this call
 }
 
 const (
@@ -157,7 +158,7 @@ func RunPass1(ctx context.Context, repo *plantree.Repo, brief string, c Complete
 		if err := ctx.Err(); err != nil {
 			return res, err
 		}
-		created, err := runChunk(ctx, repo, c, opt, chunks[i], len(chunks))
+		cr, err := runChunk(ctx, repo, c, opt, chunks[i], len(chunks))
 		if err != nil {
 			hint := ""
 			if _, ok := llm.ContextLimitFromError(err); ok {
@@ -165,7 +166,8 @@ func RunPass1(ctx context.Context, repo *plantree.Repo, brief string, c Complete
 			}
 			return res, fmt.Errorf("plan: chunk %d of %d: %w%s", i+1, len(chunks), err, hint)
 		}
-		res.Created.add(created)
+		res.Created.add(cr.created)
+		res.Questions += cr.questions
 		res.Processed++
 		state.Next = i + 1
 		if err := saveState(repo, state); err != nil {
@@ -223,30 +225,41 @@ func askJSON[T any](ctx context.Context, c Completer, prompt string, parse func(
 	return v, nil
 }
 
+// chunkResult is what one skeleton pass added.
+type chunkResult struct {
+	created   Created
+	questions int
+}
+
 // runChunk performs one skeleton pass: build the prompt, ask, merge, record
-// which nodes the chunk produced, refresh the overview.
-func runChunk(ctx context.Context, repo *plantree.Repo, c Completer, opt Options, chunk Chunk, total int) (Created, error) {
+// which nodes the chunk produced, record the questions it asked, refresh the
+// overview.
+func runChunk(ctx context.Context, repo *plantree.Repo, c Completer, opt Options, chunk Chunk, total int) (chunkResult, error) {
 	overview, err := ReadOverview(repo.Dir())
 	if err != nil {
-		return Created{}, err
+		return chunkResult{}, err
 	}
 	outline, err := Outline(repo)
 	if err != nil {
-		return Created{}, err
+		return chunkResult{}, err
 	}
 	prompt := Pass1Prompt(opt.ProjectName, overview, outline, chunk, total)
 
 	out, err := askJSON(ctx, c, prompt, ParsePass1)
 	if err != nil {
-		return Created{}, err
+		return chunkResult{}, err
 	}
 
 	created, touched, err := mergeTracked(repo, out)
 	if err != nil {
-		return created, err
+		return chunkResult{created: created}, err
 	}
 	if err := recordProvenance(repo, chunk.Index, touched); err != nil {
-		return created, err
+		return chunkResult{created: created}, err
+	}
+	asked, err := applyPass1Questions(repo, chunk, out, touched)
+	if err != nil {
+		return chunkResult{created: created, questions: asked}, err
 	}
 	text := out.Overview
 	if len(text) > opt.OverviewCap {
@@ -256,7 +269,7 @@ func runChunk(ctx context.Context, repo *plantree.Repo, c Completer, opt Options
 		text = FitOverview(text, opt.OverviewCap)
 	}
 	if err := WriteOverview(repo.Dir(), text); err != nil {
-		return created, err
+		return chunkResult{created: created, questions: asked}, err
 	}
-	return created, nil
+	return chunkResult{created: created, questions: asked}, nil
 }

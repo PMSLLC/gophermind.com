@@ -194,3 +194,18 @@ func TestParseFirst(t *testing.T) {
 		t.Errorf("first success: %d, %v", v, err)
 	}
 }
+
+func TestParsePass1AcceptsQuestionsAndRejectsBadOnes(t *testing.T) {
+	ok := `{"phases":[],"overview":"o","questions":[{"question":"Which database?","why":"schema","options":[{"label":"SQLite","description":""},{"label":"Postgres","description":""}],"multi_select":false,"recommended":["SQLite"],"rationale":"simple","affects":["Repo layout"]}]}`
+	out, err := ParsePass1(ok)
+	if err != nil || len(out.Questions) != 1 || out.Questions[0].Options[1].Label != "Postgres" {
+		t.Fatalf("ParsePass1 = %+v, %v", out, err)
+	}
+	if _, err := ParsePass1(`{"phases":[],"overview":"o"}`); err != nil {
+		t.Errorf("questions are optional: %v", err)
+	}
+	bad := `{"phases":[],"overview":"o","questions":[{"question":"Q?","options":[{"label":"only one","description":""}],"multi_select":false,"recommended":[],"rationale":"","affects":[],"why":""}]}`
+	if _, err := ParsePass1(bad); err == nil || !strings.Contains(err.Error(), "at least two options") {
+		t.Errorf("a one-option question must be rejected: %v", err)
+	}
+}

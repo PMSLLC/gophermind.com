@@ -105,3 +105,12 @@ func TestPass1PromptTellsTheModelEveryTaskNeedsAStep(t *testing.T) {
 		t.Error("the pass-1 prompt must say every task needs at least one step")
 	}
 }
+
+func TestPass1PromptTellsTheModelHowToAskQuestions(t *testing.T) {
+	p := Pass1Prompt("demo", "", "", Chunk{Index: 0, Text: "x"}, 1)
+	for _, want := range []string{"At most 5 questions", "genuinely ambiguous", "Never ask what the brief already answers", `"questions":[`, `"affects":[]`} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt is missing %q", want)
+		}
+	}
+}
