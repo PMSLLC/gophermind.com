@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
+	"gophermind/gophermind-lib/lockfile"
 	"gophermind/gophermind-lib/phaseflow"
 	"gophermind/gophermind-lib/plantree"
 	"gophermind/gophermind-lib/plantree/plan"
@@ -254,8 +257,16 @@ func TestExportLegacyRefusesAnUnspecifiedStep(t *testing.T) {
 	}), plan.Options{ProjectName: "Half", ChunkBytes: 4000}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ExportLegacy(repo, root); err == nil || !strings.Contains(err.Error(), "acceptance criteria") {
-		t.Fatalf("ExportLegacy = %v, want a refusal naming the missing criteria", err)
+	// The tree validates an approved step, so an unspecified one is never
+	// approved: the export refuses the whole tree first.
+	if _, err := ExportLegacy(repo, root); !errors.Is(err, ErrNotApproved) {
+		t.Fatalf("ExportLegacy = %v, want ErrNotApproved", err)
+	}
+	// And the row-level guard, reached directly, still names the task.
+	steps := []plantree.Node{{ID: "phase-001.task-001.step-001", Title: "S", ContextDigest: "d",
+		Work: &plantree.Work{Description: "d"}}}
+	if _, err := renderTask("01-01", plantree.Node{ID: "phase-001.task-001", Title: "T"}, steps); err == nil || !strings.Contains(err.Error(), "acceptance criteria") || !strings.Contains(err.Error(), "phase-001.task-001") {
+		t.Fatalf("renderTask = %v, want a refusal naming the task and the missing criteria", err)
 	}
 	if phaseflow.New(root).Approved() {
 		t.Error("a refused export must not approve anything")
@@ -295,5 +306,414 @@ func TestRoadmapOverviewCannotForgeAPhase(t *testing.T) {
 	}
 	if len(rm.Phases[0].Plans) != 1 || rm.Phases[0].Plans[0].ID != "01-01" {
 		t.Errorf("plans = %+v, want only the real one", rm.Phases[0].Plans)
+	}
+}
+
+// builtTree writes an approved tree directly: phases phases, each with tasks
+// tasks of one specified, reviewed step. It is how a test reaches sizes the
+// two passes would take too long to produce.
+func builtTree(t *testing.T, title string, phases, tasks int) (string, *plantree.Repo) {
+	t.Helper()
+	root := t.TempDir()
+	repo := plantree.Open(phaseflow.PlanningDir(root))
+	mk := func(id, title string) plantree.Node {
+		ref, _ := plantree.ParentRef(id)
+		n := plantree.Node{
+			SchemaVersion: plantree.SchemaVersion, ID: id, Title: title, NodeRevision: 1,
+			ContextDigest: "digest " + id, DependsOn: []string{}, Objective: "objective of " + id,
+			Planning: plantree.Planning{Stage: plantree.StageSkeleton},
+		}
+		if ref != "" {
+			n.ParentRef = &ref
+		}
+		return n
+	}
+	if err := repo.Init(mk(plantree.RootID, title)); err != nil {
+		t.Fatal(err)
+	}
+	for p := 1; p <= phases; p++ {
+		pid := fmt.Sprintf("phase-%03d", p)
+		if err := repo.Create(mk(pid, "Phase title "+pid)); err != nil {
+			t.Fatal(err)
+		}
+		for k := 1; k <= tasks; k++ {
+			tid := fmt.Sprintf("%s.task-%03d", pid, k)
+			if err := repo.Create(mk(tid, "Task "+tid)); err != nil {
+				t.Fatal(err)
+			}
+			st := mk(tid+".step-001", "Step")
+			st.Status = plantree.StatusReviewed
+			st.Planning.Stage = plantree.StageApproved
+			st.Work = &plantree.Work{Description: "d", TargetPaths: []string{"a.go"},
+				AcceptanceCriteria: []string{"criterion of " + tid}, TestCommand: []string{"go", "test"}}
+			if err := repo.Create(st); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	return root, repo
+}
+
+// draftedProject runs both passes but does not approve.
+func draftedProject(t *testing.T) (string, *plantree.Repo) {
+	t.Helper()
+	root, repo := approvedProject(t)
+	if err := repo.Walk(func(n plantree.Node) error {
+		if n.Kind() != plantree.KindStep {
+			return nil
+		}
+		_, err := repo.Update(n.ID, n.NodeRevision, func(m *plantree.Node) error {
+			m.Planning.Stage = plantree.StageDrafted
+			m.Status = plantree.StatusUntouched
+			return nil
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return root, repo
+}
+
+func TestExportLegacyRefusesAnUnapprovedTree(t *testing.T) {
+	root, repo := draftedProject(t)
+	_, err := ExportLegacy(repo, root)
+	if !errors.Is(err, ErrNotApproved) {
+		t.Fatalf("ExportLegacy = %v, want ErrNotApproved", err)
+	}
+	if !strings.Contains(err.Error(), "approve the plan first") {
+		t.Errorf("the refusal does not say what to do: %v", err)
+	}
+	for _, p := range []string{phaseflow.RoadmapPath(root), phaseflow.AssignmentsPath(root), filepath.Join(phaseflow.PlanningDir(root), SpecFileName), phaseflow.ProjectDocPath(root)} {
+		if _, err := os.Stat(p); err == nil {
+			t.Errorf("a refused export wrote %s", p)
+		}
+	}
+	if phaseflow.New(root).Approved() {
+		t.Error("a refused export approved something")
+	}
+	if _, found, _ := phaseflow.LoadCatalog(root); found {
+		t.Error("a refused export seeded a catalog")
+	}
+}
+
+func TestExportLegacyRefusesAnInvalidTree(t *testing.T) {
+	root, repo := approvedProject(t)
+	dep := "phase-001.task-001.step-999"
+	if err := repo.Walk(func(n plantree.Node) error {
+		if n.Kind() != plantree.KindStep {
+			return nil
+		}
+		_, err := repo.Update(n.ID, n.NodeRevision, func(m *plantree.Node) error {
+			m.DependsOn = []string{dep}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		return errStop
+	}); err != nil && !errors.Is(err, errStop) {
+		t.Fatal(err)
+	}
+	if _, err := ExportLegacy(repo, root); err == nil {
+		t.Fatal("a tree with a dangling dependency was exported")
+	}
+	if _, err := os.Stat(phaseflow.RoadmapPath(root)); err == nil {
+		t.Error("a refused export wrote ROADMAP.md")
+	}
+}
+
+var errStop = errors.New("stop")
+
+// TestExportLegacyDropsTheMarkerBeforeReplacingFiles: an approved project
+// re-exported with a tree that fails phaseflow's gate must end with no marker,
+// or /project-execute would run the replaced, unvalidated pair.
+func TestExportLegacyDropsTheMarkerWhenTheGateFails(t *testing.T) {
+	root, repo := approvedProject(t)
+	if _, err := ExportLegacy(repo, root); err != nil {
+		t.Fatal(err)
+	}
+	if !phaseflow.New(root).Approved() {
+		t.Fatal("setup: the first export must approve")
+	}
+	// A phase with no tasks passes the tree's own checks (every step is
+	// reviewed) but leaves a roadmap phase with no plans.
+	pid := "phase-003"
+	ref, _ := plantree.ParentRef(pid)
+	if err := repo.Create(plantree.Node{
+		SchemaVersion: plantree.SchemaVersion, ID: pid, Title: "Empty", NodeRevision: 1,
+		ContextDigest: "d", ParentRef: &ref, DependsOn: []string{}, Objective: "nothing",
+		Planning: plantree.Planning{Stage: plantree.StageSkeleton},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := ExportLegacy(repo, root)
+	if !errors.Is(err, ErrNotValid) {
+		t.Fatalf("ExportLegacy = %v, want ErrNotValid", err)
+	}
+	if phaseflow.New(root).Approved() {
+		t.Error("a stale approval marker survived a failed re-export")
+	}
+}
+
+// TestExportLegacyLeavesNoMarkerAfterACrash: a write that fails between the
+// ROADMAP write and the assignments write must leave no approval behind.
+func TestExportLegacyLeavesNoMarkerAfterACrash(t *testing.T) {
+	root, repo := approvedProject(t)
+	if _, err := ExportLegacy(repo, root); err != nil {
+		t.Fatal(err)
+	}
+	spec := filepath.Join(phaseflow.PlanningDir(root), SpecFileName)
+	if err := os.Remove(spec); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(spec, 0o755); err != nil { // the SPEC.md write now fails
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(phaseflow.AssignmentsPath(root))
+	if _, err := ExportLegacy(repo, root); err == nil {
+		t.Fatal("the export did not fail")
+	}
+	if phaseflow.New(root).Approved() {
+		t.Error("a crashed export left the approval marker in place")
+	}
+	after, _ := os.ReadFile(phaseflow.AssignmentsPath(root))
+	if string(before) != string(after) {
+		t.Error("the crash simulation did not stop before the assignments write")
+	}
+}
+
+func TestExportLegacyRefusesWhileAnotherRunHoldsTheLock(t *testing.T) {
+	root, repo := approvedProject(t)
+	lock := filepath.Join(repo.Dir(), "_state", "run.lock")
+	other, err := lockfile.TryAcquire(lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ExportLegacy(repo, root)
+	if !errors.Is(err, plan.ErrRunBusy) {
+		t.Errorf("ExportLegacy = %v, want plan.ErrRunBusy", err)
+	}
+	if _, statErr := os.Stat(phaseflow.RoadmapPath(root)); statErr == nil {
+		t.Error("a busy refusal wrote files")
+	}
+	other()
+	if _, err := ExportLegacy(repo, root); err != nil {
+		t.Fatalf("export after the lock was released: %v", err)
+	}
+	again, err := lockfile.TryAcquire(lock)
+	if err != nil {
+		t.Fatalf("the export did not release its hold: %v", err)
+	}
+	again()
+}
+
+func TestExportLegacyReportsWhatItReplaced(t *testing.T) {
+	root, repo := approvedProject(t)
+	// A hand-written PROJECT.md without a block: nothing to replace there.
+	if err := os.WriteFile(phaseflow.ProjectDocPath(root), []byte("# Mine\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	first, err := ExportLegacy(repo, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Replaced) != 0 {
+		t.Errorf("first export Replaced = %v, want none", first.Replaced)
+	}
+	if len(first.Paths) != 4 {
+		t.Errorf("Paths = %v, want ROADMAP, SPEC, assignments, PROJECT.md", first.Paths)
+	}
+	for _, p := range first.Paths {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("Paths lists %s which is not on disk", p)
+		}
+	}
+	second, err := ExportLegacy(repo, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{
+		phaseflow.RoadmapPath(root): true, phaseflow.AssignmentsPath(root): true,
+		filepath.Join(phaseflow.PlanningDir(root), SpecFileName): true, phaseflow.ProjectDocPath(root): true,
+	}
+	if len(second.Replaced) != len(want) {
+		t.Fatalf("second export Replaced = %v, want %d files", second.Replaced, len(want))
+	}
+	for _, p := range second.Replaced {
+		if !want[p] {
+			t.Errorf("Replaced lists unexpected %s", p)
+		}
+	}
+	doc, _ := os.ReadFile(phaseflow.ProjectDocPath(root))
+	if !strings.Contains(string(doc), "# Mine") {
+		t.Error("the hand-written PROJECT.md text was lost")
+	}
+}
+
+func TestExportLegacyRefusesACatalogWithoutTheDefaultAgent(t *testing.T) {
+	root, repo := approvedProject(t)
+	dir := phaseflow.CatalogDir(root)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mine := filepath.Join(dir, "reviewer.prompt.md")
+	if err := os.WriteFile(mine, []byte("---\nname: reviewer\n---\nreview\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := ExportLegacy(repo, root)
+	if !errors.Is(err, ErrNoAgent) {
+		t.Fatalf("ExportLegacy = %v, want ErrNoAgent", err)
+	}
+	if !strings.Contains(err.Error(), DefaultAgent) || !strings.Contains(err.Error(), dir) {
+		t.Errorf("the refusal must name the agent and the catalog dir: %v", err)
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 {
+		t.Errorf("the owner's catalog was modified: %d files", len(entries))
+	}
+	if _, statErr := os.Stat(phaseflow.RoadmapPath(root)); statErr == nil {
+		t.Error("a refused export wrote ROADMAP.md")
+	}
+	// With the agent present it goes through and the catalog stays theirs.
+	if err := os.WriteFile(filepath.Join(dir, DefaultAgent+".prompt.md"), []byte("---\nname: executor\n---\nmine\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := ExportLegacy(repo, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.SeededAgents != 0 {
+		t.Error("an existing catalog was seeded over")
+	}
+}
+
+func TestSanitizeNeutralizesInserted(t *testing.T) {
+	for _, in := range []string{"Fix (INSERTED)", "Fix [Inserted]", "Fix (inserted) now"} {
+		got := sanitize(in)
+		if strings.Contains(strings.ToUpper(got), "(INSERTED)") || got == "" {
+			t.Errorf("sanitize(%q) = %q", in, got)
+		}
+		rm, err := phaseflow.ParseRoadmap("# Roadmap: X\n\n### Phase 1: " + got + "\n**Goal**: g\n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rm.Phases) != 1 || rm.Phases[0].Inserted {
+			t.Errorf("%q still parses as an inserted phase: %+v", got, rm.Phases)
+		}
+	}
+}
+
+func TestRootTitleCannotInjectRoadmapLines(t *testing.T) {
+	root, repo := builtTree(t, "Demo\n### Phase 9: Injected\n- [ ] 09-09: forged", 1, 1)
+	if _, err := ExportLegacy(repo, root); err != nil {
+		t.Fatal(err)
+	}
+	rm, err := phaseflow.LoadRoadmap(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rm.Phases) != 1 || len(rm.Phases[0].Plans) != 1 {
+		t.Fatalf("the title forged structure: %+v", rm.Phases)
+	}
+	if strings.Contains(rm.Title, "\n") {
+		t.Errorf("title = %q", rm.Title)
+	}
+}
+
+func TestACriterionLiterallyCmdDoesNotSuppressTheCommand(t *testing.T) {
+	steps := []plantree.Node{{ID: "phase-001.task-001.step-001", Title: "S", ContextDigest: "d",
+		Work: &plantree.Work{Description: "d", AcceptanceCriteria: []string{"cmd:make x"}, TestCommand: []string{"make", "x"}}}}
+	got, err := renderTask("01-01", plantree.Node{ID: "phase-001.task-001", Title: "T"}, steps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got.Description, "Verify with: make x") {
+		t.Errorf("the command was suppressed:\n%s", got.Description)
+	}
+}
+
+// TestHostileTitlesSurviveEndToEnd puts every parser trap into a phase title
+// and a goal and checks phaseflow's real parser and validator still accept it.
+func TestHostileTitlesSurviveEndToEnd(t *testing.T) {
+	root, repo := approvedProject(t)
+	phases, _ := repo.Children(plantree.RootID)
+	hostile := "Storage [x] **b** TBD (INSERTED)\n### Phase 9: forged\n- [ ] 09-09: forged"
+	if _, err := repo.Update(phases[0].ID, phases[0].NodeRevision, func(n *plantree.Node) error {
+		n.Title = hostile
+		n.Objective = hostile
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ExportLegacy(repo, root); err != nil {
+		t.Fatal(err)
+	}
+	rm, err := phaseflow.LoadRoadmap(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rm.Phases) != 2 {
+		t.Fatalf("%d phases parsed, want 2: %+v", len(rm.Phases), rm.Phases)
+	}
+	if rm.Phases[0].Inserted {
+		t.Error("the title made the phase inserted")
+	}
+	if got, err := phaseflow.New(root).ValidatePlan(); err != nil || !got.Complete {
+		t.Errorf("hostile title made the plan invalid: %v %v", err, got.Issues)
+	}
+}
+
+func TestIdsBeyondNinetyNineParseAndMatch(t *testing.T) {
+	root, repo := builtTree(t, "Big", 101, 1)
+	if _, err := ExportLegacy(repo, root); err != nil {
+		t.Fatal(err)
+	}
+	rm, err := phaseflow.LoadRoadmap(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rm.Phases) != 101 || rm.Phases[100].Plans[0].ID != "101-01" {
+		t.Fatalf("phases = %d, last plan = %+v", len(rm.Phases), rm.Phases[len(rm.Phases)-1].Plans)
+	}
+	a, _, err := phaseflow.LoadAssignments(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := a.Task("101-01"); !ok || len(a.Tasks) != 101 {
+		t.Errorf("assignments hold %d tasks, 101-01 present=%v", len(a.Tasks), ok)
+	}
+
+	root2, repo2 := builtTree(t, "Wide", 1, 101)
+	if _, err := ExportLegacy(repo2, root2); err != nil {
+		t.Fatal(err)
+	}
+	rm2, _ := phaseflow.LoadRoadmap(root2)
+	if n := len(rm2.Phases[0].Plans); n != 101 || rm2.Phases[0].Plans[100].ID != "01-101" {
+		t.Errorf("plans = %d, last %q", n, rm2.Phases[0].Plans[n-1].ID)
+	}
+}
+
+func TestCJKTitlesStayValidUTF8(t *testing.T) {
+	long := strings.Repeat("数据存储层", 80) // 1200 bytes, over every bound
+	root, repo := builtTree(t, "笔记应用", 1, 1)
+	phases, _ := repo.Children(plantree.RootID)
+	if _, err := repo.Update(phases[0].ID, phases[0].NodeRevision, func(n *plantree.Node) error {
+		n.Title = long
+		n.Objective = long
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ExportLegacy(repo, root); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{phaseflow.RoadmapPath(root), phaseflow.AssignmentsPath(root)} {
+		b, _ := os.ReadFile(p)
+		if !utf8.Valid(b) {
+			t.Errorf("%s is not valid UTF-8", p)
+		}
+	}
+	if got, err := phaseflow.New(root).ValidatePlan(); err != nil || !got.Complete {
+		t.Errorf("CJK plan invalid: %v %v", err, got.Issues)
 	}
 }

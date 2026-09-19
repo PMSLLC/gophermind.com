@@ -70,7 +70,7 @@ func read(repo *plantree.Repo) (legacyPlan, error) {
 	if err != nil {
 		return legacyPlan{}, err
 	}
-	out := legacyPlan{Project: sanitize(root.Title)}
+	out := legacyPlan{Project: sanitize(fit(root.Title, planDescriptionBytes))}
 	phases, err := repo.Children(plantree.RootID)
 	if err != nil {
 		return legacyPlan{}, err
@@ -124,7 +124,8 @@ func renderTask(id string, task plantree.Node, steps []plantree.Node) (legacyTas
 		b.WriteString("\n\n")
 	}
 	b.WriteString("Steps, in order:\n")
-	seen := map[string]bool{}
+	seenCriteria := map[string]bool{}
+	seenCommands := map[string]bool{}
 	var commands []string
 	for _, s := range steps {
 		out.StepIDs = append(out.StepIDs, s.ID)
@@ -138,14 +139,14 @@ func renderTask(id string, task plantree.Node, steps []plantree.Node) (legacyTas
 		}
 		for _, c := range s.Work.AcceptanceCriteria {
 			c = fit(c, criterionBytes)
-			if c == "" || seen[c] || len(out.Criteria) >= maxCriteria {
+			if c == "" || seenCriteria[c] || len(out.Criteria) >= maxCriteria {
 				continue
 			}
-			seen[c] = true
+			seenCriteria[c] = true
 			out.Criteria = append(out.Criteria, c)
 		}
-		if cmd := strings.TrimSpace(strings.Join(s.Work.TestCommand, " ")); cmd != "" && !seen["cmd:"+cmd] {
-			seen["cmd:"+cmd] = true
+		if cmd := strings.TrimSpace(strings.Join(s.Work.TestCommand, " ")); cmd != "" && !seenCommands[cmd] {
+			seenCommands[cmd] = true
 			commands = append(commands, fit(cmd, criterionBytes))
 		}
 	}
@@ -168,20 +169,29 @@ func renderTask(id string, task plantree.Node, steps []plantree.Node) (legacyTas
 // stripped, and only the phase name and goal go through this.
 func sanitize(s string) string {
 	s = strings.NewReplacer("[", "(", "]", ")", "*", "").Replace(s)
-	if !strings.Contains(strings.ToUpper(s), "TBD") {
-		return strings.TrimSpace(s)
+	// "(INSERTED)" makes phaseflow's roadmap parser mark the phase inserted and
+	// strip the text, and a "[Inserted]" title has just become one above.
+	s = replaceFold(s, "(INSERTED)", "inserted")
+	s = replaceFold(s, "TBD", "undecided")
+	return strings.TrimSpace(s)
+}
+
+// replaceFold replaces every case-insensitive ASCII occurrence of old.
+func replaceFold(s, old, repl string) string {
+	if !strings.Contains(strings.ToUpper(s), old) {
+		return s
 	}
 	var b strings.Builder
 	for i := 0; i < len(s); {
-		if i+3 <= len(s) && strings.EqualFold(s[i:i+3], "TBD") {
-			b.WriteString("undecided")
-			i += 3
+		if i+len(old) <= len(s) && strings.EqualFold(s[i:i+len(old)], old) {
+			b.WriteString(repl)
+			i += len(old)
 			continue
 		}
 		b.WriteByte(s[i])
 		i++
 	}
-	return strings.TrimSpace(b.String())
+	return b.String()
 }
 
 // quote renders text as a markdown blockquote, so nothing inside it can be
