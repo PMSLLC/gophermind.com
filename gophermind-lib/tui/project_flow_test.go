@@ -350,3 +350,79 @@ func TestProjectExportFailureSaysTheProjectIsUnapproved(t *testing.T) {
 		}
 	}
 }
+
+// TestSlashProjectEndToEnd is Task 7: brief in, answered question, approval,
+// exported files that phaseflow validates, and pending tasks for
+// /project-execute. The dir is clean, so no agent catalog exists and the
+// export seeds one.
+func TestSlashProjectEndToEnd(t *testing.T) {
+	f := &planFake{}
+	m, dir, brief := projectModel(t, f)
+
+	m = settle(t, submit(t, m, "/project Gophernote "+brief))
+	if m.qphase != qAsking {
+		t.Fatalf("no round:\n%s", m.content)
+	}
+	// Answer the open question (space selects, ctrl-s submits) and let the
+	// pass that follows specify the steps it released.
+	m = settle(t, keys(t, m, key(tea.KeySpace), key(tea.KeyCtrlS)))
+	if m.proj != projApprove || !strings.Contains(m.content, approvalPrompt) {
+		t.Fatalf("the round did not hand over to approval (proj=%v):\n%s", m.proj, m.content)
+	}
+	if !strings.Contains(m.content, "2 phase(s)") {
+		t.Errorf("the summary does not size the plan:\n%s", m.content)
+	}
+	if phaseflow.New(dir).Approved() {
+		t.Fatal("the plan was approved before the owner answered y")
+	}
+
+	m = submit(t, m, "y")
+	if m.proj != projNone {
+		t.Fatalf("proj = %v after approving", m.proj)
+	}
+	for _, want := range []string{"approved: 3 step(s) marked reviewed", "exported 2 phase(s) and 2 task(s)", "seeded", "/project-execute"} {
+		if !strings.Contains(m.content, want) {
+			t.Errorf("transcript is missing %q:\n%s", want, m.content)
+		}
+	}
+
+	e := phaseflow.New(dir)
+	if !e.Approved() {
+		t.Fatal("the approval marker /project-execute gates on was not written")
+	}
+	rep, err := e.ValidatePlan()
+	if err != nil || !rep.Complete {
+		t.Fatalf("phaseflow rejects the exported plan: %v %v", err, rep.Issues)
+	}
+	a, found, err := phaseflow.LoadAssignments(dir)
+	if err != nil || !found {
+		t.Fatalf("assignments: %v found=%v", err, found)
+	}
+	roadmap, err := os.ReadFile(filepath.Join(phaseflow.PlanningDir(dir), "ROADMAP.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := 0
+	for _, tk := range a.Tasks {
+		if tk.Status == phaseflow.StatusPending {
+			pending++
+		}
+		if tk.Agent != export.DefaultAgent || tk.Model != export.DefaultModel {
+			t.Errorf("task %s = agent %q model %q", tk.ID, tk.Agent, tk.Model)
+		}
+		if !strings.Contains(string(roadmap), tk.ID) {
+			t.Errorf("task %s is in assignments.json but not in ROADMAP.md:\n%s", tk.ID, roadmap)
+		}
+	}
+	if pending != 2 {
+		t.Errorf("%d pending tasks, want the 2 /project-execute would run", pending)
+	}
+	// And the decision the owner made reached SPEC.md.
+	spec, err := os.ReadFile(filepath.Join(phaseflow.PlanningDir(dir), export.SpecFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(spec), "Which file format?") || !strings.Contains(string(spec), "decided: JSON") {
+		t.Errorf("SPEC.md does not record the decision:\n%s", spec)
+	}
+}
