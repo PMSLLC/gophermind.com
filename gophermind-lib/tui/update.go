@@ -31,6 +31,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// so anything larger overflows the box and lipgloss wraps the remainder
 		// onto a spurious extra row.
 		m.input.SetWidth(msg.Width - 4)
+		if m.qphase == qAsking {
+			w := msg.Width - 4
+			if w < 1 {
+				w = 0
+			}
+			m.round.setWidth(w)
+		}
 		justReady := !m.ready
 		if !m.ready {
 			// Height is provisional here; applyInputHeight (below) recomputes
@@ -197,7 +204,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cancel = nil
 		// A cancelled or failed pass ends the round with it, so the session
 		// is not left in a phase whose keys nothing handles.
-		m.endRound()
+		if m.qphase == qRunning {
+			m.endRound()
+		}
 		m.sync()
 		return m, tea.Batch(m.beginAttention(), waitFor(m.sub))
 	}

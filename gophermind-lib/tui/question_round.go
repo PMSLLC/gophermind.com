@@ -29,6 +29,8 @@ const (
 	roundNoteLimit = 2000
 	// roundWhyBytes bounds the brief excerpt shown behind a question.
 	roundWhyBytes = 400
+	// roundWhyRows is the most rows the excerpt takes, wrapped to the width.
+	roundWhyRows = 3
 )
 
 // roundMode says what the round is for.
@@ -136,6 +138,7 @@ func (r *questionRound) setWidth(w int) {
 		inner = w
 	}
 	r.note.SetWidth(inner)
+	r.growNote()
 }
 
 // loadNote points the text box at the current item's note.
@@ -224,31 +227,12 @@ func (r questionRound) answers() []roundAnswerOut {
 		}
 		a := it.answer()
 		change := r.mode == roundChange || it.q.Status == plan.QuestionAnswered
-		if change && it.q.Answer != nil && sameRoundAnswer(*it.q.Answer, a) {
+		if change && it.q.Answer != nil && plan.SameAnswer(*it.q.Answer, a) {
 			continue
 		}
 		out = append(out, roundAnswerOut{ID: it.q.ID, Answer: a, Change: change})
 	}
 	return out
-}
-
-// sameRoundAnswer reports whether an answer is the one already stored. Option
-// ids are produced in option order on both sides, so a plain comparison is
-// enough.
-func sameRoundAnswer(stored, now plan.Answer) bool {
-	if strings.TrimSpace(stored.Text) != strings.TrimSpace(now.Text) || len(stored.OptionIDs) != len(now.OptionIDs) {
-		return false
-	}
-	seen := map[string]bool{}
-	for _, id := range stored.OptionIDs {
-		seen[id] = true
-	}
-	for _, id := range now.OptionIDs {
-		if !seen[id] {
-			return false
-		}
-	}
-	return true
 }
 
 // Update handles one key. Every key belongs to the round while it is showing,
@@ -370,10 +354,11 @@ func (r *questionRound) skip() {
 //
 // Every line is cut, with an ellipsis, to the round's width (display columns,
 // wide-rune aware); a width of 0 or less means unbounded. Height is never
-// cut: the worst case is 23 rows plus one row per option of the current
+// cut: the worst case is 25 rows plus one row per option of the current
 // question (title 1, window 7 plus 2 markers, blank 1, question 1, why 1,
-// brief 1, recommendation 1, note label 1, note box up to roundNoteRows,
-// skipped 1, keys 1). A caller budgeting height should reserve that.
+// brief up to roundWhyRows, recommendation 1, note label 1, note box up to
+// roundNoteRows, skipped 1, keys 1). A caller budgeting height should
+// reserve that.
 func (r questionRound) View() string {
 	out := r.render()
 	if r.width < 1 {
@@ -426,8 +411,8 @@ func (r questionRound) render() string {
 	if why := oneLine(it.q.Why); why != "" {
 		b.WriteString("  why: " + why + "\n")
 	}
-	if it.why != "" {
-		b.WriteString("  from the brief: " + oneLine(cutRoundBytes(it.why, roundWhyBytes)) + "\n")
+	for _, row := range excerptRows(it.why, r.width, roundWhyRows) {
+		b.WriteString(row + "\n")
 	}
 	for i, o := range it.q.Options {
 		box := " "
@@ -506,6 +491,41 @@ func listWindow(cur, n, rows int) (int, int) {
 		first = n - rows
 	}
 	return first, first + rows
+}
+
+// excerptRows renders the brief excerpt behind a question: whitespace
+// collapsed, at most roundWhyBytes of it, wrapped over at most maxRows rows
+// that fit width, the last one ending in an ellipsis when text was dropped.
+// The first row carries the label and the others are indented under it. A
+// width of 0 or less means one unbounded row.
+func excerptRows(why string, width, maxRows int) []string {
+	text := strings.Join(strings.Fields(why), " ")
+	if text == "" {
+		return nil
+	}
+	const label = "  from the brief: "
+	text = cutRoundBytes(text, roundWhyBytes)
+	if width < 1 {
+		return []string{label + text}
+	}
+	w := width - len(label)
+	if w < 8 {
+		w = 8
+	}
+	rows := strings.Split(ansi.Wrap(text, w, ""), "\n")
+	if len(rows) > maxRows {
+		rows = rows[:maxRows]
+		rows[maxRows-1] = ansi.Truncate(rows[maxRows-1], w-1, "") + "…"
+	}
+	out := make([]string, len(rows))
+	for i, row := range rows {
+		if i == 0 {
+			out[i] = label + row
+		} else {
+			out[i] = strings.Repeat(" ", len(label)) + row
+		}
+	}
+	return out
 }
 
 // cutRoundBytes shortens s to at most max bytes without splitting a rune.

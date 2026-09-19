@@ -459,7 +459,7 @@ func TestQuestionRoundEndToEnd(t *testing.T) {
 	// Two passes: one for the first two steps, then the re-planning pass.
 	if seen := c.seen(); len(seen) != 2 {
 		t.Errorf("%d passes, want 2", len(seen))
-	} else if !strings.Contains(seen[1], "previous specification: build phase-001.task-001.step-001") {
+	} else if !strings.Contains(seen[1], `previous specification: "build phase-001.task-001.step-001`) {
 		t.Error("the re-planning pass was not shown what it was replacing")
 	}
 }

@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/jbrahy/bubblecomplete"
 	"gophermind/gophermind-lib/freellm"
 )
@@ -101,10 +102,15 @@ func (m model) frame() string {
 		// status line, keeping the bottom rows (the current question, its
 		// note and the key help) and dropping the list above them. The
 		// viewport gives up the rows the panel takes, as the menu does.
+		//
+		// The cap has a floor: the panel keeps at least one row, so on a
+		// terminal shorter than about 8 rows (viewport 1, panel border 2 and
+		// row 1, input box 3, status 1) the frame is taller than the screen.
+		// Nothing useful fits there; the frame is still well formed.
 		box := boxStyle.Width(width).Render(inputContent)
 		const panelBorder, minViewport = 2, 1
 		avail := m.height - lipgloss.Height(box) - statusHeight - panelBorder - minViewport
-		panel = keepBottomRows(panel, avail)
+		panel = keepBottomRows(panel, avail, width-2)
 		panelView := roundDialogStyle.Width(width).Render(panel)
 		if h := m.height - lipgloss.Height(box) - statusHeight - lipgloss.Height(panelView); h < vp.Height {
 			vp.Height = h
@@ -150,11 +156,16 @@ func (m model) frame() string {
 	)
 }
 
-// keepBottomRows keeps the last n rows of s, or all of it when it is shorter.
-// A limit below 1 keeps one row.
-func keepBottomRows(s string, n int) string {
+// keepBottomRows keeps the last n rows of s as they will show at the given
+// content width, or all of it when it is shorter: a line wider than width
+// takes several rows, so the rows are counted after wrapping. A limit below 1
+// keeps one row; a width below 1 counts each line as one row.
+func keepBottomRows(s string, n, width int) string {
 	if n < 1 {
 		n = 1
+	}
+	if width >= 1 {
+		s = ansi.Wrap(s, width, "")
 	}
 	lines := strings.Split(s, "\n")
 	if len(lines) <= n {
