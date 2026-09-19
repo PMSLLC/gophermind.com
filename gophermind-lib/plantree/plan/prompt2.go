@@ -159,7 +159,7 @@ func Pass2Prompt(in Pass2Input) string {
 	if strings.TrimSpace(in.Excerpts) == "" {
 		b.WriteString("(not available)\n")
 	} else {
-		fmt.Fprintf(&b, "<<<BRIEF EXCERPTS\n%s\n%s\n", neutralizeFence(cutBytes(in.Excerpts, excerptsCap), excerptsFenceEnd), excerptsFenceEnd)
+		fmt.Fprintf(&b, "<<<BRIEF EXCERPTS\n%s\n%s\n", cutBytes(neutralizeFence(in.Excerpts, excerptsFenceEnd), excerptsCap), excerptsFenceEnd)
 	}
 	b.WriteString("\nRules:\n")
 	b.WriteString("- Return exactly the steps listed under \"Steps to specify now\", each once, using its id.\n")

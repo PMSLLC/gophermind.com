@@ -78,11 +78,11 @@ func TestRunPass1RefusesWhileAnotherProcessHoldsTheLock(t *testing.T) {
 	r := plantree.Open(t.TempDir())
 	// Hold the file lock the way another process would, bypassing the
 	// in-process count that makes AcquireRun re-entrant.
-	held, err := lockfile.TryAcquire(runLockFileFor(t, r))
+	other, err := lockfile.TryAcquire(runLockFileFor(t, r))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer held()
+	defer other()
 	_, err = RunPass1(context.Background(), r, threePartBrief, &fake{reply: byChunk}, opts)
 	if !errors.Is(err, ErrRunBusy) {
 		t.Fatalf("RunPass1 = %v, want ErrRunBusy", err)
@@ -200,4 +200,64 @@ func runLockFileFor(t *testing.T, r *plantree.Repo) string {
 		t.Fatal(err)
 	}
 	return filepath.Join(dir, runLockFile)
+}
+
+// TestStaleReleaseDoesNotDropANewerHold: a release kept from an earlier hold
+// and called after the lock was freed and taken again must not free the
+// newer, live hold.
+func TestStaleReleaseDoesNotDropANewerHold(t *testing.T) {
+	r := newRepo(t)
+	first, err := AcquireRun(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first()
+	second, err := AcquireRun(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first() // leaked from generation one, called during generation two
+	if _, err := lockfile.TryAcquire(runLockFileFor(t, r)); !errors.Is(err, lockfile.ErrBusy) {
+		t.Fatal("a stale release freed a live run's lock")
+	}
+	second()
+	free, err := lockfile.TryAcquire(runLockFileFor(t, r))
+	if err != nil {
+		t.Fatalf("the live hold's own release did not free the lock: %v", err)
+	}
+	free()
+}
+
+// TestAcquireRunCannotTellNestingFromAnotherGoroutine pins the documented
+// limit: a second AcquireRun in the same process is admitted whoever makes it.
+func TestAcquireRunCannotTellNestingFromAnotherGoroutine(t *testing.T) {
+	r := newRepo(t)
+	outer, err := AcquireRun(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer outer()
+	errc := make(chan error, 1)
+	go func() {
+		free, err := AcquireRun(r)
+		if err == nil {
+			free()
+		}
+		errc <- err
+	}()
+	if err := <-errc; err != nil {
+		t.Fatalf("documented behaviour: a same-process second holder is admitted, got %v", err)
+	}
+}
+
+func TestBusyAdviceIsPlatformSpecific(t *testing.T) {
+	if a := busyAdvice("linux"); strings.Contains(a, "delete") {
+		t.Errorf("unix advice must not suggest deleting the lock: %q", a)
+	}
+	if a := busyAdvice("darwin"); strings.Contains(a, "delete") {
+		t.Errorf("unix advice must not suggest deleting the lock: %q", a)
+	}
+	if a := busyAdvice("windows"); !strings.Contains(a, "delete") {
+		t.Errorf("windows advice should explain deleting a crashed run's file: %q", a)
+	}
 }

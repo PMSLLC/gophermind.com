@@ -107,15 +107,7 @@ func RunPass1(ctx context.Context, repo *plantree.Repo, brief string, c Complete
 		return Result{}, err
 	}
 	defer unlock()
-	if opt.ProjectName == "" {
-		opt.ProjectName = "project"
-	}
-	if opt.ChunkBytes < 1 {
-		opt.ChunkBytes = DefaultChunkBytes
-	}
-	if opt.OverviewCap < 1 {
-		opt.OverviewCap = OverviewCapBytes
-	}
+	opt = opt.WithDefaults()
 	chunks := SplitBrief(brief, opt.ChunkBytes)
 	if len(chunks) == 0 {
 		return Result{}, errors.New("plan: the brief is empty")
