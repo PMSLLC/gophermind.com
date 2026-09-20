@@ -177,7 +177,9 @@ func (c *Client) openSSE(ctx context.Context, method, path string, body io.Reade
 	}
 	c.authorize(req)
 
-	resp, err := c.http.Do(req)
+	// c.sse, not c.http: a stream must outlive the request timeout. See
+	// Client.sse's field comment.
+	resp, err := c.sse.Do(req)
 	if err != nil {
 		return nil, err
 	}

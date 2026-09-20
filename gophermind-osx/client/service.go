@@ -85,7 +85,13 @@ type Client struct {
 	baseURL string
 	token   string
 	http    *http.Client
-	retry   RetryPolicy
+	// sse is http without a Timeout, used for event streams only.
+	// http.Client.Timeout bounds the whole exchange including reading the
+	// body, which is right for a request/response call and wrong for a
+	// stream: it kills the connection mid-turn once the deadline passes.
+	// Streams are bounded by their context and by Close instead.
+	sse   *http.Client
+	retry RetryPolicy
 }
 
 // New returns a Client for cfg. Config.Timeout <= 0 uses DefaultTimeout;
@@ -103,6 +109,7 @@ func New(cfg Config) *Client {
 		baseURL: strings.TrimRight(cfg.BaseURL, "/"),
 		token:   cfg.Token,
 		http:    &http.Client{Timeout: timeout, Transport: cfg.Transport},
+		sse:     &http.Client{Transport: cfg.Transport},
 		retry:   retry,
 	}
 }
