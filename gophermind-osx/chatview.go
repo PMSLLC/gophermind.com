@@ -12,6 +12,24 @@ package main
 /*
 #include <ui.h>
 #include <stdlib.h>
+#import <AppKit/AppKit.h>
+
+// appIsDarkMode reports whether the app is currently rendering in dark mode.
+// The transcript is drawn into a uiArea, which means libui gives us no
+// system label colour to inherit -- we pick the ink ourselves, so we have to
+// ask what it is being drawn on. Read at draw time rather than cached: the
+// user can flip appearance while the app is running, and every redraw then
+// picks up the new answer on its own.
+static int appIsDarkMode(void) {
+	if (@available(macOS 10.14, *)) {
+		NSAppearance *a = NSApp.effectiveAppearance;
+		if (a == nil) return 0;
+		NSAppearanceName n = [a bestMatchFromAppearancesWithNames:@[
+			NSAppearanceNameAqua, NSAppearanceNameDarkAqua]];
+		return [n isEqualToString:NSAppearanceNameDarkAqua] ? 1 : 0;
+	}
+	return 0;
+}
 
 extern void goChatAreaDraw(void *ah, uiArea *a, uiAreaDrawParams *p);
 extern void goChatAreaMouseEvent(void *ah, uiArea *a, uiAreaMouseEvent *e);
@@ -362,12 +380,21 @@ func goChatAreaDraw(ah unsafe.Pointer, a *C.uiArea, p *C.uiAreaDrawParams) {
 	as := C.uiNewAttributedString(cText)
 	defer C.uiFreeAttributedString(as)
 
-	// Add a color attribute for the entire string so the text is readable
-	// on both light and dark backgrounds. uiDrawText uses the attributed
-	// string's color attributes; without one, it defaults to black, which
-	// is invisible on the dark grey background in macOS dark mode.
-	// Light grey (0xE0) is readable on both white and dark grey.
-	textColor := C.uiNewColorAttribute(0.88, 0.88, 0.88, 1.0)
+	// Add a color attribute for the entire string. uiDrawText uses the
+	// attributed string's color attributes; without one it defaults to
+	// black, which is invisible on dark mode's grey background.
+	//
+	// This used to be a fixed 0.88 grey, chosen to survive both appearances.
+	// It does not: 0.88 on white is the pale, barely-legible transcript this
+	// replaces. There is no single grey with decent contrast against both a
+	// white and a near-black background -- the midpoint that clears 4.5:1 on
+	// one fails it on the other -- so pick per appearance instead of
+	// compromising.
+	ink := C.double(0.11) // near-black on light, ~15:1 against white
+	if C.appIsDarkMode() != 0 {
+		ink = C.double(0.92) // near-white on dark, ~14:1 against 0x1E grey
+	}
+	textColor := C.uiNewColorAttribute(ink, ink, ink, 1.0)
 	C.uiAttributedStringSetAttribute(as, textColor, 0, C.size_t(len(text)))
 
 	width := C.double(p.AreaWidth)
@@ -376,6 +403,14 @@ func goChatAreaDraw(ah unsafe.Pointer, a *C.uiArea, p *C.uiAreaDrawParams) {
 	}
 	fontPtr := (*C.uiFontDescriptor)(C.malloc(C.size_t(unsafe.Sizeof(C.uiFontDescriptor{}))))
 	C.uiLoadControlFont(fontPtr)
+	// uiLoadControlFont returns the system control font, sized for button
+	// labels (13pt). The transcript is a page of prose, not a label, so give
+	// it the size AppKit uses for document text. Everything else in the
+	// window keeps the control font, which is what makes the chrome recede
+	// and the conversation read as the content.
+	if fontPtr.Size < 15 {
+		fontPtr.Size = 15
+	}
 	defer func() {
 		C.uiFreeFontDescriptor(fontPtr)
 		C.free(unsafe.Pointer(fontPtr))
