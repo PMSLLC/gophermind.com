@@ -159,6 +159,33 @@ func newPipelinePanel(state *appui.PipelineState, window *C.uiWindow, notify fun
 	return pp
 }
 
+// setLiveFuncs supplies the two connection-dependent callbacks after
+// construction, and seeds the task snapshot the same way the constructor
+// does when it is handed them up front.
+//
+// The panel is built in chatinput.go before any connection exists, so both
+// arrive nil there and the Start Breakdown button is inert until this runs
+// (main.go, once the connection manager is up). Without the seed here, a
+// panel wired late would stay empty until the next breakdown, because the
+// constructor's one-shot fetch has already been skipped.
+func (pp *pipelinePanel) setLiveFuncs(start StartBreakdownFunc, fetch FetchPipelineFunc) {
+	pp.startBreakdown = start
+	pp.fetchPipeline = fetch
+	if fetch == nil {
+		return
+	}
+	go func() {
+		tasks, err := fetch(context.Background())
+		if err != nil {
+			if pp.notify != nil {
+				queueMain(func() { pp.notify("error fetching pipeline state: " + err.Error()) })
+			}
+			return
+		}
+		pp.state.SetTasks(tasks, pp.state.GeneratedAt())
+	}()
+}
+
 // Control returns the panel's content as a generic uiControl, for
 // rightpanel.go's "Pipeline" section.
 func (pp *pipelinePanel) Control() *C.uiControl {
@@ -279,7 +306,19 @@ func goPipelinePickBriefClicked(b unsafe.Pointer, data unsafe.Pointer) {
 // doResume/doCreate/doRename are), without needing to name the cgo
 // handle-registry's C.longlong key type, which a _test.go file cannot do.
 func (pp *pipelinePanel) doStart() {
-	if pp.startBreakdown == nil || pp.briefContent == "" {
+	// Say why nothing happened. Both of these used to return silently, so a
+	// click on Start Breakdown produced no session, no error and no hint --
+	// indistinguishable from a wedged backend.
+	if pp.startBreakdown == nil {
+		if pp.notify != nil {
+			pp.notify("Not connected to a backend, so a breakdown cannot start. Open Settings (gear icon) and click Connect.")
+		}
+		return
+	}
+	if pp.briefContent == "" {
+		if pp.notify != nil {
+			pp.notify("No brief loaded. Click Pick Brief... and choose a Markdown file first.")
+		}
 		return
 	}
 

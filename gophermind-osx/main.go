@@ -8,10 +8,29 @@ import (
 	"runtime"
 	"strings"
 
+	"gophermind/gophermind-lib/phaseflow"
 	"gophermind/gophermind-osx/client"
 	"gophermind/gophermind-osx/connection"
 	appui "gophermind/gophermind-osx/ui"
 )
+
+// liveClient returns the client of the first connected backend, or an error
+// naming what the user has to do about it. The send path in main inlines
+// this same search against chat.Transcript; callers that are not the
+// transcript (the pipeline panel) need it as a value they can return.
+func liveClient(connMgr *connection.Manager) (*client.Client, error) {
+	for _, name := range connMgr.Names() {
+		c, ok := connMgr.Get(name)
+		if !ok || c.Status() != connection.StatusConnected {
+			continue
+		}
+		if cl := c.Client(); cl != nil {
+			return cl, nil
+		}
+		return nil, fmt.Errorf("backend %q is connected but its client is unavailable (reconnecting?)", name)
+	}
+	return nil, fmt.Errorf("not connected to a backend: open Settings (gear icon) and click Connect")
+}
 
 // The dock icon and "clicking it focuses the window" (.planning/tasks/
 // 04-08.json) need no code here: a normal windowed macOS app already gets
@@ -133,6 +152,37 @@ func main() {
 	chat.settingsUI.disconnectFunc = func(name string) {
 		connMgr.Disconnect(name)
 	}
+
+	// Wire the pipeline panel to the live connection. It is built in
+	// chatinput.go with both callbacks nil, because no connection exists
+	// that early; until this runs, Start Breakdown has nothing to call.
+	chat.pipelineUI.setLiveFuncs(
+		func(ctx context.Context, prompt string) (string, error) {
+			cl, err := liveClient(connMgr)
+			if err != nil {
+				return "", err
+			}
+			sessionID, err := cl.CreateSession(ctx, client.CreateSessionOptions{})
+			if err != nil {
+				return "", fmt.Errorf("create session: %w", err)
+			}
+			// Stream the seed prompt through the transcript, the same way
+			// a typed message runs, so the breakdown is visible while it
+			// works rather than only landing in the pipeline view.
+			chat.RunTurn(ctx, prompt, func(ctx context.Context, task string) (*client.EventStream, error) {
+				return cl.Stream(ctx, sessionID, task)
+			})
+			return sessionID, nil
+		},
+		func(ctx context.Context) ([]phaseflow.Task, error) {
+			cl, err := liveClient(connMgr)
+			if err != nil {
+				return nil, err
+			}
+			tasks, _, err := cl.PipelineState(ctx)
+			return tasks, err
+		},
+	)
 
 	// Connect on startup. If the local binary isn't found, don't show an
 	// error — just a hint. The user can connect a remote backend from
