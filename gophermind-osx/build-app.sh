@@ -38,10 +38,11 @@ BUILD_DIR="build"
 APP_DIR="${BUILD_DIR}/${APP_NAME}.app"
 MACOS_DIR="${APP_DIR}/Contents/MacOS"
 RES_DIR="${APP_DIR}/Contents/Resources"
+FW_DIR="${APP_DIR}/Contents/Frameworks"
 
 # --- Clean ---
 rm -rf "${APP_DIR}"
-mkdir -p "${MACOS_DIR}" "${RES_DIR}"
+mkdir -p "${MACOS_DIR}" "${RES_DIR}" "${FW_DIR}"
 
 # --- Build server binary (the app spawns it as a subprocess) ---
 echo "Building gophermind-server..."
@@ -105,6 +106,39 @@ cat > "${APP_DIR}/Contents/Info.plist" <<EOF
 </plist>
 EOF
 
+# --- Bundle libui.dylib ---
+#
+# The app links libui dynamically, and `go build` bakes in the absolute install
+# name the library was built with (/opt/homebrew/lib/libui.dylib). That is a
+# path no other Mac has, and on this one it is fatal once the bundle is signed:
+# --options runtime turns on library validation, which refuses to load a dylib
+# whose Team ID differs from the app's. libui is built locally by meson and is
+# ad-hoc signed with no Team ID, so a Developer ID app aborts in dyld before
+# main runs:
+#
+#   Library not loaded: /opt/homebrew/lib/libui.dylib
+#   Reason: ... mapping process and mapped file (non-platform) have different
+#           Team IDs
+#
+# Copying it in and signing it with the same identity satisfies validation
+# honestly, and drops the dependency on a Homebrew prefix at runtime. The
+# alternative, a com.apple.security.cs.disable-library-validation entitlement,
+# turns the check off for every dylib the process ever loads.
+LIBUI_SRC="$(otool -L "${MACOS_DIR}/${APP_NAME}" | awk '/libui\.dylib/ {print $1; exit}')"
+if [ -z "${LIBUI_SRC}" ]; then
+    echo "ERROR: the app binary does not link libui.dylib; has the build changed?" >&2
+    exit 1
+fi
+[ -f "${LIBUI_SRC}" ] || { echo "ERROR: libui not found at ${LIBUI_SRC} (see README.md)" >&2; exit 1; }
+echo "Bundling $(basename "${LIBUI_SRC}") from ${LIBUI_SRC}..."
+cp "${LIBUI_SRC}" "${FW_DIR}/libui.dylib"
+chmod 644 "${FW_DIR}/libui.dylib"
+# The copy advertises its own install name, so anything linking it later
+# resolves through the bundle rather than back to /opt/homebrew.
+install_name_tool -id "@rpath/libui.dylib" "${FW_DIR}/libui.dylib"
+install_name_tool -change "${LIBUI_SRC}" "@rpath/libui.dylib" "${MACOS_DIR}/${APP_NAME}"
+install_name_tool -add_rpath "@executable_path/../Frameworks" "${MACOS_DIR}/${APP_NAME}"
+
 # --- PkgInfo ---
 printf 'APPL????' > "${APP_DIR}/Contents/PkgInfo"
 
@@ -115,10 +149,15 @@ printf 'APPL????' > "${APP_DIR}/Contents/PkgInfo"
 # MACOS_SIGN_IDENTITY so a plain dev build stays zero-setup, matching
 # scripts/build-desktop.sh.
 #
-# Inside-out order matters. The app embeds gophermind-server in Resources/, and
-# a bundle's signature covers its nested code, so signing the outer bundle
-# first and the inner binary second invalidates the outer signature. No --deep:
-# Apple deprecated it and it would apply one set of flags to both.
+# Inside-out order matters. The app embeds gophermind-server in Resources/ and
+# libui.dylib in Frameworks/, and a bundle's signature covers its nested code,
+# so signing the outer bundle before the inner ones invalidates the outer
+# signature. No --deep: Apple deprecated it and it would apply one set of flags
+# to both.
+#
+# libui.dylib must be signed with this same identity, not left as meson's ad-hoc
+# signature: matching Team IDs is exactly what library validation checks, and
+# the bundling step above exists to make that possible.
 #
 # Signing is the last step that touches the bundle -- Info.plist, the icon and
 # PkgInfo are all covered by the signature, so anything written after this
@@ -126,6 +165,8 @@ printf 'APPL????' > "${APP_DIR}/Contents/PkgInfo"
 if [ -n "${MACOS_SIGN_IDENTITY:-}" ]; then
     echo ""
     echo "Signing..."
+    codesign --sign "${MACOS_SIGN_IDENTITY}" --timestamp --options runtime --force \
+        "${FW_DIR}/libui.dylib"
     codesign --sign "${MACOS_SIGN_IDENTITY}" --timestamp --options runtime --force \
         "${RES_DIR}/gophermind-server"
     codesign --sign "${MACOS_SIGN_IDENTITY}" --timestamp --options runtime --force \
@@ -143,6 +184,14 @@ echo ""
 echo "Verifying bundle..."
 [ -f "${MACOS_DIR}/${APP_NAME}" ] || { echo "ERROR: app binary missing" >&2; exit 1; }
 [ -f "${RES_DIR}/gophermind-server" ] || { echo "ERROR: server binary missing" >&2; exit 1; }
+[ -f "${FW_DIR}/libui.dylib" ] || { echo "ERROR: libui.dylib missing from Frameworks" >&2; exit 1; }
+# A bundle that still names an absolute /opt path launches here and nowhere
+# else, which is the bug this whole step exists to prevent. Catch it at build
+# time rather than in a crash report.
+if otool -L "${MACOS_DIR}/${APP_NAME}" | grep -q '/opt/homebrew.*libui'; then
+    echo "ERROR: app still links libui by absolute path; install_name_tool did not take" >&2
+    exit 1
+fi
 [ -d "${RES_DIR}/examples/briefs" ] || { echo "ERROR: example briefs missing" >&2; exit 1; }
 [ -f "${RES_DIR}/iconfile.icns" ] || { echo "ERROR: icon missing" >&2; exit 1; }
 [ -f "${RES_DIR}/menubar-icon.png" ] || { echo "ERROR: menubar icon missing" >&2; exit 1; }
