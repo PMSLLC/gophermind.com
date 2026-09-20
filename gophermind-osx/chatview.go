@@ -85,6 +85,7 @@ import "C"
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -114,7 +115,12 @@ type chatArea struct {
 	area       *C.uiArea
 	transcript *appui.Transcript
 	approvals  *appui.ApprovalTracker // consulted when rendering RoleApproval messages
-	contentH   float64                // last-computed content height, for ScrollTo/SetSize
+	contentH   float64                // last-measured content height, for ScrollTo/SetSize
+	// pendingScroll marks that new content arrived and the view should
+	// follow it down once the next draw has measured how tall it is.
+	// Main-thread only: set from the queueMain'd OnChange body, cleared in
+	// the draw handler.
+	pendingScroll bool
 }
 
 var (
@@ -146,8 +152,12 @@ func newChatArea(transcript *appui.Transcript, approvals *appui.ApprovalTracker)
 	transcript.OnChange(func() {
 		queueMain(func() {
 			ca.recomputeSize()
+			// Scroll after the draw, not here. At this point contentH is
+			// still recomputeSize's estimate; only the draw knows how tall
+			// the text really is, and scrolling to the estimate lands short
+			// of the newest message -- which is the bug this flag fixes.
+			ca.pendingScroll = true
 			C.uiAreaQueueRedrawAll(ca.area)
-			ca.scrollToBottom()
 		})
 	})
 	return ca
@@ -170,6 +180,31 @@ func (c *chatArea) recomputeSize() {
 	}
 	c.contentH = float64(lines) * lineHeight
 	C.uiAreaSetSize(c.area, 800, C.int(c.contentH))
+}
+
+// setMeasuredHeight records the height the last draw actually produced and
+// resizes the area to match, so the scrollable region covers every drawn
+// line rather than recomputeSize's estimate of them.
+//
+// Called from the draw handler, so it must not queue a redraw: uiAreaSetSize
+// triggers one on its own, and that redraw measures the same layout and
+// finds nothing to change, which is what stops this converging into a loop.
+// The 1pt threshold absorbs sub-pixel jitter that would otherwise keep the
+// two redraws trading places forever.
+func (c *chatArea) setMeasuredHeight(h float64) {
+	if h > 0 && math.Abs(h-c.contentH) >= 1 {
+		c.contentH = h
+		C.uiAreaSetSize(c.area, 800, C.int(h))
+	}
+	if !c.pendingScroll {
+		return
+	}
+	c.pendingScroll = false
+	// Deferred rather than called here: this runs inside the draw handler,
+	// and scrolling a view while it is drawing invites re-entrancy. By the
+	// time the queued func runs the draw has returned and contentH is the
+	// measured height, so the scroll lands on the real last line.
+	queueMain(c.scrollToBottom)
 }
 
 func (c *chatArea) scrollToBottom() {
@@ -427,6 +462,23 @@ func goChatAreaDraw(ah unsafe.Pointer, a *C.uiArea, p *C.uiAreaDrawParams) {
 	}
 	defer C.uiDrawFreeTextLayout(layout)
 	C.uiDrawText(p.Context, layout, 8, 8)
+
+	// Tell the area how tall the text it just drew actually is.
+	//
+	// recomputeSize estimates this as wrapped-line-count * lineHeight, and
+	// the estimate is what uiAreaSetSize and scrollToBottom both work from.
+	// When it comes in short -- which it does, because the estimate wraps at
+	// wrapCols while this layout wraps at `width` points -- the scrollable
+	// region is shorter than the drawn text, so the newest messages sit
+	// below the scrollable area and cannot be reached at all. That is the
+	// "new text goes off the page and never scrolls" symptom.
+	//
+	// The measured extents are exact by construction: they come from the
+	// same layout object that was just drawn. Comment at chatArea's
+	// declaration already named uiDrawTextLayoutExtents as the fix.
+	var lw, lh C.double
+	C.uiDrawTextLayoutExtents(layout, &lw, &lh)
+	ca.setMeasuredHeight(float64(lh) + 16) // the 8pt inset, top and bottom
 }
 
 //export goChatAreaMouseEvent
