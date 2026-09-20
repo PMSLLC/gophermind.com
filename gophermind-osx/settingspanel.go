@@ -264,10 +264,35 @@ func (sp *settingsPanel) doOpen() {
 }
 
 func (sp *settingsPanel) build() {
-	win := C.uiNewWindow(C.CString("Settings"), 420, 560, 0)
+	win := C.uiNewWindow(C.CString("Settings"), 480, 560, 0)
 
-	root := C.uiNewVerticalBox()
-	C.uiBoxSetPadded(root, 1)
+	// Tabs, not one tall column.
+	//
+	// These five groups stacked vertically came to roughly twice the
+	// window's height, and libui has no scrolling container for ordinary
+	// controls -- uiNewScrollingArea only takes custom drawing. So whatever
+	// did not fit was simply unreachable: the window grew past the bottom of
+	// the display and the last group could not be seen or clicked at any
+	// window size.
+	//
+	// Each page is now shorter than the window on its own, which is also the
+	// conventional shape for a macOS settings window.
+	root := C.uiNewTab()
+
+	tabPage := func(groups ...*C.uiGroup) *C.uiControl {
+		box := C.uiNewVerticalBox()
+		C.uiBoxSetPadded(box, 1)
+		for _, g := range groups {
+			C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(g)), 0)
+		}
+		return (*C.uiControl)(unsafe.Pointer(box))
+	}
+	addPage := func(name string, c *C.uiControl) {
+		cname := C.CString(name)
+		defer C.free(unsafe.Pointer(cname))
+		C.uiTabAppend(root, cname, c)
+		C.uiTabSetMargined(root, C.uiTabNumPages(root)-1, 1)
+	}
 
 	// --- Backends ---
 	backendsGroup := C.uiNewGroup(C.CString("Backends"))
@@ -311,7 +336,6 @@ func (sp *settingsPanel) build() {
 	C.uiBoxAppend(backendsBox, (*C.uiControl)(unsafe.Pointer(backendBtnRow)), 0)
 
 	C.uiGroupSetChild(backendsGroup, (*C.uiControl)(unsafe.Pointer(backendsBox)))
-	C.uiBoxAppend(root, (*C.uiControl)(unsafe.Pointer(backendsGroup)), 0)
 
 	// --- Endpoint mode ---
 	endpointGroup := C.uiNewGroup(C.CString("Endpoint"))
@@ -320,7 +344,7 @@ func (sp *settingsPanel) build() {
 	C.uiRadioButtonsAppend(sp.endpointRadio, C.CString("local"))
 	C.uiRadioButtonsAppend(sp.endpointRadio, C.CString("remote"))
 	C.uiGroupSetChild(endpointGroup, (*C.uiControl)(unsafe.Pointer(sp.endpointRadio)))
-	C.uiBoxAppend(root, (*C.uiControl)(unsafe.Pointer(endpointGroup)), 0)
+	addPage("Backends", tabPage(backendsGroup, endpointGroup))
 
 	// --- Model settings ---
 	modelGroup := C.uiNewGroup(C.CString("Model settings"))
@@ -364,7 +388,7 @@ func (sp *settingsPanel) build() {
 	C.uiBoxAppend(modelBox, (*C.uiControl)(unsafe.Pointer(applyModel)), 0)
 
 	C.uiGroupSetChild(modelGroup, (*C.uiControl)(unsafe.Pointer(modelBox)))
-	C.uiBoxAppend(root, (*C.uiControl)(unsafe.Pointer(modelGroup)), 0)
+	addPage("Model", tabPage(modelGroup))
 
 	// --- Skills ---
 	skillsGroup := C.uiNewGroup(C.CString("Skills"))
@@ -391,7 +415,7 @@ func (sp *settingsPanel) build() {
 	C.uiBoxAppend(skillsOuter, (*C.uiControl)(unsafe.Pointer(sourceBtnRow)), 0)
 
 	C.uiGroupSetChild(skillsGroup, (*C.uiControl)(unsafe.Pointer(skillsOuter)))
-	C.uiBoxAppend(root, (*C.uiControl)(unsafe.Pointer(skillsGroup)), 0)
+	addPage("Skills", tabPage(skillsGroup))
 
 	// --- Cache / history ---
 	cacheGroup := C.uiNewGroup(C.CString("Cache / history"))
@@ -406,7 +430,7 @@ func (sp *settingsPanel) build() {
 	saveCacheBtn := newCButton("Save")
 	C.uiBoxAppend(cacheBox, (*C.uiControl)(unsafe.Pointer(saveCacheBtn)), 0)
 	C.uiGroupSetChild(cacheGroup, (*C.uiControl)(unsafe.Pointer(cacheBox)))
-	C.uiBoxAppend(root, (*C.uiControl)(unsafe.Pointer(cacheGroup)), 0)
+	addPage("Cache", tabPage(cacheGroup))
 
 	C.uiWindowSetChild(win, (*C.uiControl)(unsafe.Pointer(root)))
 	sp.window = win
