@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"gophermind/gophermind-lib/llm"
 	"gophermind/gophermind-lib/phaseflow"
 	"gophermind/gophermind-osx/client"
 	"gophermind/gophermind-osx/connection"
@@ -241,6 +243,85 @@ func main() {
 		}
 		return cl.Approve(ctx, sessionID, approvalID, approved)
 	})
+
+	// Wire the Sessions panel to the live connection. Built in chatinput.go
+	// with all five callbacks nil, so until this runs the dropdown is empty
+	// and Resume, Rename, Delete and New Session do nothing at all.
+	chat.sessionsUI.setLiveFuncs(
+		func(ctx context.Context) ([]appui.SessionEntry, error) {
+			cl, err := liveClient(connMgr)
+			if err != nil {
+				return nil, err
+			}
+			infos, err := cl.ListSessions(ctx)
+			if err != nil {
+				return nil, err
+			}
+			out := make([]appui.SessionEntry, 0, len(infos))
+			for _, info := range infos {
+				out = append(out, appui.SessionEntry{Info: info, Backend: "local"})
+			}
+			return out, nil
+		},
+		func(ctx context.Context, mode, root string) (string, error) {
+			cl, err := liveClient(connMgr)
+			if err != nil {
+				return "", err
+			}
+			id, err := cl.CreateSession(ctx, client.CreateSessionOptions{Mode: mode, Root: root})
+			if err != nil {
+				return "", err
+			}
+			// A session the user just made is the one they mean to talk to.
+			chat.CurrentSession = id
+			return id, nil
+		},
+		func(ctx context.Context, id, name string) error {
+			cl, err := liveClient(connMgr)
+			if err != nil {
+				return err
+			}
+			return cl.RenameSession(ctx, id, name)
+		},
+		func(ctx context.Context, id string) error {
+			cl, err := liveClient(connMgr)
+			if err != nil {
+				return err
+			}
+			if err := cl.DeleteSession(ctx, id); err != nil {
+				return err
+			}
+			if chat.CurrentSession == id {
+				chat.CurrentSession = "" // do not keep talking to a deleted session
+			}
+			return nil
+		},
+		func(ctx context.Context, id string) (appui.SessionConfig, []llm.Message, error) {
+			cl, err := liveClient(connMgr)
+			if err != nil {
+				return appui.SessionConfig{}, nil, err
+			}
+			cfg, err := cl.SessionConfig(ctx, id)
+			if err != nil {
+				return appui.SessionConfig{}, nil, err
+			}
+			raw, err := cl.SessionMessages(ctx, id)
+			if err != nil {
+				return appui.SessionConfig{}, nil, err
+			}
+			msgs := make([]llm.Message, 0, len(raw))
+			for _, r := range raw {
+				var m llm.Message
+				if err := json.Unmarshal(r, &m); err != nil {
+					continue // skip a frame we cannot read rather than losing the rest
+				}
+				msgs = append(msgs, m)
+			}
+			// Resuming means typed messages continue this session.
+			chat.CurrentSession = id
+			return appui.SessionConfig{Model: cfg.Model, Mode: cfg.Mode, Root: cfg.Root}, msgs, nil
+		},
+	)
 
 	// Wire the pipeline panel to the live connection. It is built in
 	// chatinput.go with both callbacks nil, because no connection exists

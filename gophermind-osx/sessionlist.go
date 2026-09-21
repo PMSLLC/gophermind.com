@@ -388,6 +388,28 @@ func (sl *sessionList) doCreate() {
 	sl.doResume(id)
 }
 
+// setLiveFuncs supplies the five connection-dependent callbacks after
+// construction and loads the list straight away.
+//
+// The panel is built in chatinput.go with all five nil, because no
+// connection exists that early, and nothing replaced them afterwards: the
+// session dropdown stayed empty because refreshList returns immediately
+// while list is nil, and Resume, Rename, Delete and New Session were all
+// inert for the same reason. Same gap the pipeline panel had.
+func (sl *sessionList) setLiveFuncs(list ListSessionsFunc, create CreateSessionFunc, rename RenameSessionFunc, deleteFn DeleteSessionFunc, resume ResumeSessionFunc) {
+	sl.list = list
+	sl.create = create
+	sl.rename = rename
+	sl.deleteFn = deleteFn
+	sl.resume = resume
+	if list == nil {
+		return
+	}
+	// Off the UI thread: this is an HTTP call, and state.OnChange already
+	// dispatches the redraw through queueMain.
+	go sl.refreshList()
+}
+
 // refreshList re-fetches the session list via list, if set, and applies it
 // to state. A no-op when list is nil (see this file's top doc comment).
 func (sl *sessionList) refreshList() {
