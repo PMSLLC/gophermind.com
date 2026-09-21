@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 
 	"gophermind/gophermind-osx/client"
 )
@@ -22,6 +23,11 @@ type StreamPump struct {
 	// no reference to the client.Client needed to resolve it, since a
 	// resolution normally comes from user interaction, not automatically.
 	OnApprovalNeeded func(client.Event)
+
+	// streamed accumulates the tokens of the message currently being
+	// streamed, so an "assistant" event echoing that same text can be
+	// recognised and dropped. Reset at every message boundary.
+	streamed strings.Builder
 }
 
 // Run reads events from stream until it ends (io.EOF, a "done" event) or
@@ -80,14 +86,31 @@ func (p *StreamPump) Run(ctx context.Context, stream *client.EventStream) error 
 func (p *StreamPump) apply(ev client.Event) {
 	switch ev.Type {
 	case "token":
+		p.streamed.WriteString(ev.Data)
 		p.Transcript.AppendToken(ev.Data)
 	case "assistant":
+		// Drop the echo. agent/budget.go streams a reply token by token and
+		// then, when that same reply also carries tool calls, emits the whole
+		// of reply.Content as an "assistant" event. Rendering both showed the
+		// answer twice.
+		//
+		// Compared by value rather than assuming any "assistant" after tokens
+		// is an echo: the agent narrates through this event too (budget
+		// warnings, debate and self-consistency notices), and those are real
+		// messages that must still appear.
+		if ev.Data == p.streamed.String() {
+			p.streamed.Reset()
+			return
+		}
+		p.streamed.Reset()
 		p.Transcript.AddAssistantText(ev.Data)
 	case "tool_call":
+		p.streamed.Reset()
 		if tc, err := ev.ToolCall(); err == nil {
 			p.Transcript.AddToolCall(tc.Name, tc.Args)
 		}
 	case "tool_result":
+		p.streamed.Reset()
 		if tr, err := ev.ToolResult(); err == nil {
 			p.Transcript.AddToolResult(tr.Name, tr.Text)
 		}
@@ -98,6 +121,9 @@ func (p *StreamPump) apply(ev client.Event) {
 	case "error":
 		p.Transcript.AddSystem("error: " + ev.Data)
 	case "done", "usage", "model-switched":
+		if ev.Type == "done" {
+			p.streamed.Reset()
+		}
 		// done: nothing to render (the turn's content already arrived via
 		// token/assistant events). usage/model-switched: not shown in the
 		// transcript; a future settings/status panel is the natural home
