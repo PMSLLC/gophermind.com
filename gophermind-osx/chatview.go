@@ -31,6 +31,20 @@ static int appIsDarkMode(void) {
 	return 0;
 }
 
+extern void goApprovalApproveClicked(void *b, void *data);
+extern void goApprovalDenyClicked(void *b, void *data);
+extern void goApprovalAutoToggled(void *c, void *data);
+
+static inline void attachApprovalApprove(uiButton *b, long long h) {
+	uiButtonOnClicked(b, (void (*)(uiButton *, void *))goApprovalApproveClicked, (void *)h);
+}
+static inline void attachApprovalDeny(uiButton *b, long long h) {
+	uiButtonOnClicked(b, (void (*)(uiButton *, void *))goApprovalDenyClicked, (void *)h);
+}
+static inline void attachApprovalAuto(uiCheckbox *c, long long h) {
+	uiCheckboxOnToggled(c, (void (*)(uiCheckbox *, void *))goApprovalAutoToggled, (void *)h);
+}
+
 extern void goChatAreaDraw(void *ah, uiArea *a, uiAreaDrawParams *p);
 extern void goChatAreaMouseEvent(void *ah, uiArea *a, uiAreaMouseEvent *e);
 extern void goChatAreaMouseCrossed(void *ah, uiArea *a, int left);
@@ -530,8 +544,57 @@ func chatAreaFromHandler(ah unsafe.Pointer) *chatArea {
 // itself via ApprovalTracker.OnChange, so it always reflects the tracker's
 // current state without the caller needing to poll.
 type approvalBar struct {
+	box     *C.uiBox
 	label   *C.uiLabel
+	approve *C.uiButton
+	deny    *C.uiButton
+	auto    *C.uiCheckbox
 	tracker *appui.ApprovalTracker
+
+	// autoApprove mirrors the checkbox. Main-thread only: written by the
+	// toggle callback, read by update.
+	autoApprove bool
+}
+
+var (
+	approvalBarMu     sync.Mutex
+	approvalBars      = map[C.longlong]*approvalBar{}
+	nextApprovalBarID C.longlong
+)
+
+//export goApprovalApproveClicked
+func goApprovalApproveClicked(b unsafe.Pointer, data unsafe.Pointer) {
+	if bar := approvalBarFrom(data); bar != nil {
+		// Off the UI thread: Resolve does a network POST, and blocking the
+		// main thread on it freezes the whole window.
+		go bar.tracker.ApproveLatest()
+	}
+}
+
+//export goApprovalDenyClicked
+func goApprovalDenyClicked(b unsafe.Pointer, data unsafe.Pointer) {
+	if bar := approvalBarFrom(data); bar != nil {
+		go bar.tracker.DenyLatest()
+	}
+}
+
+//export goApprovalAutoToggled
+func goApprovalAutoToggled(c unsafe.Pointer, data unsafe.Pointer) {
+	bar := approvalBarFrom(data)
+	if bar == nil {
+		return
+	}
+	bar.autoApprove = C.uiCheckboxChecked(bar.auto) != 0
+	// Catch whatever is already waiting, so ticking the box answers the
+	// approval that prompted the user to tick it.
+	bar.update()
+}
+
+func approvalBarFrom(data unsafe.Pointer) *approvalBar {
+	h := C.longlong(uintptr(data))
+	approvalBarMu.Lock()
+	defer approvalBarMu.Unlock()
+	return approvalBars[h]
 }
 
 // newApprovalBar creates the bar bound to tracker: tracker's OnChange
@@ -541,7 +604,35 @@ type approvalBar struct {
 // 5:00 (04-02: "5-min timeout: warning at 4:30, auto-deny at 5:00").
 func newApprovalBar(tracker *appui.ApprovalTracker) *approvalBar {
 	label := C.uiNewLabel(C.CString("No pending approvals"))
-	bar := &approvalBar{label: label, tracker: tracker}
+
+	// Buttons, because y/n on a focused transcript is not discoverable: the
+	// bar announced a pending approval and gave no way to answer it, and the
+	// keys only work once the transcript itself has focus, which nothing
+	// says. The keys still work; these are the visible route.
+	box := C.uiNewHorizontalBox()
+	C.uiBoxSetPadded(box, 1)
+	approve := C.uiNewButton(C.CString("Approve (y)"))
+	deny := C.uiNewButton(C.CString("Deny (n)"))
+	auto := C.uiNewCheckbox(C.CString("Auto-approve"))
+
+	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(label)), 1)
+	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(approve)), 0)
+	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(deny)), 0)
+	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(auto)), 0)
+
+	bar := &approvalBar{
+		box: box, label: label, approve: approve, deny: deny,
+		auto: auto, tracker: tracker,
+	}
+
+	approvalBarMu.Lock()
+	h := nextApprovalBarID
+	nextApprovalBarID++
+	approvalBars[h] = bar
+	approvalBarMu.Unlock()
+	C.attachApprovalApprove(approve, h)
+	C.attachApprovalDeny(deny, h)
+	C.attachApprovalAuto(auto, h)
 
 	tracker.OnChange(func() {
 		queueMain(func() {
@@ -565,15 +656,42 @@ func newApprovalBar(tracker *appui.ApprovalTracker) *approvalBar {
 
 // Control returns the widget as a generic uiControl, for adding to a box.
 func (b *approvalBar) Control() *C.uiControl {
-	return (*C.uiControl)(unsafe.Pointer(b.label))
+	return (*C.uiControl)(unsafe.Pointer(b.box))
 }
 
-// update refreshes the label text from the tracker's current pending
-// approvals.
+// update refreshes the label from the tracker's pending approvals, enables
+// the buttons only when there is something to answer, and honours
+// auto-approve.
 func (b *approvalBar) update() {
 	cText := C.CString(b.pendingSummary())
 	C.uiLabelSetText(b.label, cText)
 	C.free(unsafe.Pointer(cText))
+
+	pending := b.tracker.Pending()
+	if len(pending) > 0 {
+		C.uiControlEnable((*C.uiControl)(unsafe.Pointer(b.approve)))
+		C.uiControlEnable((*C.uiControl)(unsafe.Pointer(b.deny)))
+	} else {
+		C.uiControlDisable((*C.uiControl)(unsafe.Pointer(b.approve)))
+		C.uiControlDisable((*C.uiControl)(unsafe.Pointer(b.deny)))
+		return
+	}
+
+	if !b.autoApprove {
+		return
+	}
+	// Resolve every pending approval, not just the latest: a turn can raise
+	// several, and auto-approve that answered one of them would still stall
+	// on the rest. Off the UI thread, since each one is a network POST.
+	ids := make([]string, 0, len(pending))
+	for _, a := range pending {
+		ids = append(ids, a.ID)
+	}
+	go func() {
+		for _, id := range ids {
+			_ = b.tracker.Resolve(context.Background(), id, true)
+		}
+	}()
 }
 
 // pendingSummary formats the tracker's pending approvals as a short
