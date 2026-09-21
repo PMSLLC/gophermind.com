@@ -28,6 +28,11 @@ type StreamPump struct {
 	// streamed, so an "assistant" event echoing that same text can be
 	// recognised and dropped. Reset at every message boundary.
 	streamed strings.Builder
+
+	// Status, when set, is fed the run's progress: each tool call as it
+	// starts and returns, and the running token totals. Nil is fine; the
+	// pump works exactly as before without it.
+	Status *RunStatus
 }
 
 // Run reads events from stream until it ends (io.EOF, a "done" event) or
@@ -107,11 +112,17 @@ func (p *StreamPump) apply(ev client.Event) {
 	case "tool_call":
 		p.streamed.Reset()
 		if tc, err := ev.ToolCall(); err == nil {
+			if p.Status != nil {
+				p.Status.StepStarted(tc.Name)
+			}
 			p.Transcript.AddToolCall(tc.Name, tc.Args)
 		}
 	case "tool_result":
 		p.streamed.Reset()
 		if tr, err := ev.ToolResult(); err == nil {
+			if p.Status != nil {
+				p.Status.StepFinished()
+			}
 			p.Transcript.AddToolResult(tr.Name, tr.Text)
 		}
 	case "approval-needed":
@@ -121,8 +132,18 @@ func (p *StreamPump) apply(ev client.Event) {
 	case "error":
 		p.Transcript.AddSystem("error: " + ev.Data)
 	case "done", "usage", "model-switched":
-		if ev.Type == "done" {
+		switch ev.Type {
+		case "done":
 			p.streamed.Reset()
+			if p.Status != nil {
+				p.Status.End()
+			}
+		case "usage":
+			if p.Status != nil {
+				if u, err := ev.Usage(); err == nil {
+					p.Status.Usage(u.PromptTokens, u.CompletionTokens)
+				}
+			}
 		}
 		// done: nothing to render (the turn's content already arrived via
 		// token/assistant events). usage/model-switched: not shown in the

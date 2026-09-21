@@ -376,6 +376,17 @@ func main() {
 			// Typed replies continue the breakdown, which is the whole point
 			// of an interview that asks one question at a time.
 			chat.CurrentSession = sessionID
+
+			// Say what this run is before it starts. A breakdown reads a lot
+			// of files before it says anything, and without this the window
+			// sat silent long enough to look broken -- which is exactly how
+			// the last few runs were misread.
+			chat.Status.Begin("breakdown")
+			chat.Transcript.AddSystem(fmt.Sprintf(
+				"Starting breakdown\n  brief:   %s\n  root:    %s\n  mode:    %s\n  session: %s\n"+
+					"Each turn may make up to %d tool calls; the status line below names the one running now.\n"+
+					"The interview asks one question at a time, so there is no fixed number of steps until it writes the plan.",
+				briefPath, opts.Root, opts.Mode, sessionID, appui.StepCap))
 			// Stream the seed prompt through the transcript, the same way
 			// a typed message runs, so the breakdown is visible while it
 			// works rather than only landing in the pipeline view.

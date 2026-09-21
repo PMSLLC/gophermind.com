@@ -225,6 +225,10 @@ type ChatWindow struct {
 	pipelineUI *pipelinePanel
 	settingsUI *settingsPanel
 
+	// Status is the live progress of the turn in flight, rendered under the
+	// transcript and fed by the stream pump.
+	Status *appui.RunStatus
+
 	// CurrentSession is the session typed messages continue. Empty means the
 	// next message opens one. Set when a session is created or a breakdown
 	// starts. Main-thread only, like the rest of this struct.
@@ -250,6 +254,8 @@ func NewChatWindow(app *App, sendTurn func(text string)) *ChatWindow {
 	})
 	area := newChatArea(transcript, approvals)
 	approvalBar := newApprovalBar(approvals)
+	status := appui.NewRunStatus()
+	statusLabel := newRunStatusLabel(status)
 	input := newChatInput(sendTurn)
 
 	panelState := loadPanelState()
@@ -330,6 +336,8 @@ func NewChatWindow(app *App, sendTurn func(text string)) *ChatWindow {
 	C.uiBoxSetPadded(left, 1)
 	C.uiBoxAppend(left, (*C.uiControl)(unsafe.Pointer(topRow)), 0)
 	C.uiBoxAppend(left, area.Control(), 1) // stretchy: takes remaining space
+	// Above the approval row: what the turn is doing right now.
+	C.uiBoxAppend(left, statusLabel.Control(), 0)
 	C.uiBoxAppend(left, approvalBar.Control(), 0)
 	C.uiBoxAppend(left, (*C.uiControl)(unsafe.Pointer(inputLabel)), 0)
 	C.uiBoxAppend(left, (*C.uiControl)(unsafe.Pointer(inputRow)), 0)
@@ -361,7 +369,7 @@ func NewChatWindow(app *App, sendTurn func(text string)) *ChatWindow {
 		},
 	)
 
-	return &ChatWindow{App: app, Transcript: transcript, Panel: panelState, Model: modelState, Sessions: sessionState, Pipeline: pipelineState, Backends: backendState, Approvals: approvals, area: area, input: input, panel: panel, modelUI: modelUI, sessionsUI: sessionsUI, pipelineUI: pipelineUI, settingsUI: settingsUI}
+	return &ChatWindow{App: app, Transcript: transcript, Panel: panelState, Model: modelState, Sessions: sessionState, Pipeline: pipelineState, Backends: backendState, Approvals: approvals, Status: status, area: area, input: input, panel: panel, modelUI: modelUI, sessionsUI: sessionsUI, pipelineUI: pipelineUI, settingsUI: settingsUI}
 }
 
 // RunTurn sends task as a user message, opens a stream via streamFn, and
@@ -372,12 +380,15 @@ func NewChatWindow(app *App, sendTurn func(text string)) *ChatWindow {
 // gophermind-osx/connection.Connection.
 func (cw *ChatWindow) RunTurn(ctx context.Context, sessionID, task string, streamFn func(context.Context, string) (*client.EventStream, error)) {
 	cw.Transcript.AddUserMessage(task)
+	if cw.Status != nil && !cw.Status.Running() {
+		cw.Status.Begin("turn")
+	}
 	stream, err := streamFn(ctx, task)
 	if err != nil {
 		cw.Transcript.AddSystem("error: " + err.Error())
 		return
 	}
-	pump := &appui.StreamPump{Transcript: cw.Transcript}
+	pump := &appui.StreamPump{Transcript: cw.Transcript, Status: cw.Status}
 
 	// Route approval requests to the tracker, which renders the card and
 	// owns the approve/deny decision.

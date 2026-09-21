@@ -654,6 +654,46 @@ func newApprovalBar(tracker *appui.ApprovalTracker) *approvalBar {
 	return bar
 }
 
+// runStatusLabel renders a RunStatus as a live one-line readout: what the
+// turn is doing now, which step it is on against the per-turn cap, elapsed
+// time, tokens and throughput.
+//
+// It ticks on a timer as well as on change, because most of what it shows --
+// elapsed time and tokens per second -- moves while nothing is happening. An
+// event-driven label would sit frozen through the longest part of a turn,
+// which is exactly when a reader is wondering whether anything is alive.
+type runStatusLabel struct {
+	label  *C.uiLabel
+	status *appui.RunStatus
+}
+
+func newRunStatusLabel(status *appui.RunStatus) *runStatusLabel {
+	l := &runStatusLabel{label: C.uiNewLabel(C.CString("Idle")), status: status}
+
+	status.OnChange(func() { queueMain(l.update) })
+
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			if status.Running() {
+				queueMain(l.update)
+			}
+		}
+	}()
+	return l
+}
+
+func (l *runStatusLabel) Control() *C.uiControl {
+	return (*C.uiControl)(unsafe.Pointer(l.label))
+}
+
+func (l *runStatusLabel) update() {
+	cText := C.CString(l.status.Line())
+	C.uiLabelSetText(l.label, cText)
+	C.free(unsafe.Pointer(cText))
+}
+
 // Control returns the widget as a generic uiControl, for adding to a box.
 func (b *approvalBar) Control() *C.uiControl {
 	return (*C.uiControl)(unsafe.Pointer(b.box))
