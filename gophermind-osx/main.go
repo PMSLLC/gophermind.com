@@ -14,6 +14,52 @@ import (
 	appui "gophermind/gophermind-osx/ui"
 )
 
+// newSessionOptions builds the options a session should be created with,
+// from what the Sessions panel currently holds.
+//
+// Root is the part that matters and the part that was missing: a session
+// created with an empty Root runs at the server's own --root, which is the
+// user's home directory. Every relative path the agent is given then
+// resolves against $HOME, so reading a brief at docs/briefs/x.md fails with
+// "/Users/<user>/docs/briefs/x.md: no such file or directory" while the file
+// sits perfectly well inside the project the user chose.
+//
+// fallbackRoot is used when the panel has no folder chosen. Callers that know
+// which file the work is about pass a root derived from it -- the breakdown
+// passes projectRootFor(brief) -- so the common case needs no extra click.
+func newSessionOptions(sessions *appui.SessionListState, fallbackRoot string) client.CreateSessionOptions {
+	opts := client.CreateSessionOptions{
+		Mode: sessions.NewMode(),
+		Root: sessions.NewRoot(),
+	}
+	if opts.Root == "" {
+		opts.Root = fallbackRoot
+	}
+	return opts
+}
+
+// projectRootFor guesses which project a brief belongs to, for use when the
+// Sessions panel has no folder chosen.
+//
+// The nearest ancestor holding a .git, because that is what "the project"
+// means in practice and it is what the brief's own relative paths are
+// written against. The brief's directory is the last resort: it is wrong for
+// a repo checkout (the seed prompt writes .planning/ into the root, which
+// would land inside docs/briefs/) but it is still closer than $HOME.
+func projectRootFor(briefPath string) string {
+	dir := filepath.Dir(briefPath)
+	for d := dir; ; {
+		if _, err := os.Stat(filepath.Join(d, ".git")); err == nil {
+			return d
+		}
+		parent := filepath.Dir(d)
+		if parent == d {
+			return dir
+		}
+		d = parent
+	}
+}
+
 // liveClient returns the client of the first connected backend, or an error
 // naming what the user has to do about it. The send path in main inlines
 // this same search against chat.Transcript; callers that are not the
@@ -95,9 +141,11 @@ func main() {
 			chat.Transcript.AddSystem("Connection is up but client is unavailable (reconnecting?).")
 			return
 		}
-		// Create a session for this turn, then stream.
+		// Create a session for this turn, then stream. The options carry
+		// the folder and mode chosen in the Sessions panel; without them
+		// the turn runs at the server's root, which is $HOME.
 		ctx := context.Background()
-		sessionID, err := cl.CreateSession(ctx, client.CreateSessionOptions{})
+		sessionID, err := cl.CreateSession(ctx, newSessionOptions(chat.Sessions, ""))
 		if err != nil {
 			chat.Transcript.AddUserMessage(text)
 			chat.Transcript.AddSystem("error creating session: " + err.Error())
@@ -157,12 +205,17 @@ func main() {
 	// chatinput.go with both callbacks nil, because no connection exists
 	// that early; until this runs, Start Breakdown has nothing to call.
 	chat.pipelineUI.setLiveFuncs(
-		func(ctx context.Context, prompt string) (string, error) {
+		func(ctx context.Context, briefPath, prompt string) (string, error) {
 			cl, err := liveClient(connMgr)
 			if err != nil {
 				return "", err
 			}
-			sessionID, err := cl.CreateSession(ctx, client.CreateSessionOptions{})
+			// The brief's own directory is the fallback root, so a
+			// breakdown works without first picking a folder: the seed
+			// prompt talks about the brief and its siblings, and those
+			// paths only resolve inside the project holding it.
+			opts := newSessionOptions(chat.Sessions, projectRootFor(briefPath))
+			sessionID, err := cl.CreateSession(ctx, opts)
 			if err != nil {
 				return "", fmt.Errorf("create session: %w", err)
 			}

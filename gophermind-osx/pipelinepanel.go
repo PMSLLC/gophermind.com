@@ -46,6 +46,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"unsafe"
 
@@ -59,7 +61,11 @@ import (
 // followed by client.Stream(ctx, id, prompt) pumped through a
 // appui.StreamPump, injected so this file's construction can be exercised
 // without a real server.
-type StartBreakdownFunc func(ctx context.Context, prompt string) (sessionID string, err error)
+// briefPath is the file the prompt was built from. The session needs it to
+// pick a working root: the seed prompt refers to the brief and to sibling
+// paths relative to the project it belongs to, so a session rooted anywhere
+// else cannot open them.
+type StartBreakdownFunc func(ctx context.Context, briefPath, prompt string) (sessionID string, err error)
 
 // FetchPipelineFunc fetches the current task snapshot, normally
 // client.PipelineState.
@@ -322,9 +328,15 @@ func (pp *pipelinePanel) doStart() {
 		return
 	}
 
-	prompt := appui.BreakdownSeedPrompt(pp.briefName, pp.briefContent)
+	// The brief's base name, not its full path. BreakdownSeedPrompt puts this
+	// in "a new software project called %q", and handing it an absolute path
+	// told the model the project was named after a file -- which is why it
+	// went off trying to read that file instead of using the brief content
+	// already embedded in the prompt.
+	name := strings.TrimSuffix(filepath.Base(pp.briefName), filepath.Ext(pp.briefName))
+	prompt := appui.BreakdownSeedPrompt(name, pp.briefContent)
 	go func() {
-		_, err := pp.startBreakdown(context.Background(), prompt)
+		_, err := pp.startBreakdown(context.Background(), pp.briefName, prompt)
 		if err != nil && pp.notify != nil {
 			queueMain(func() { pp.notify("error starting breakdown: " + err.Error()) })
 		}
