@@ -21,6 +21,11 @@ static inline void queueMainDispatch(long long handle) {
 	uiQueueMain((void (*)(void *))goQueueMainCallback, (void *)handle);
 }
 
+// installInputEnterHandler is defined in inputdelegate.m: it makes Return
+// send and Shift+Return insert a newline. See that file for why it cannot
+// live in this preamble.
+void installInputEnterHandler(uintptr_t control_handle, long long handle);
+
 // copyToPasteboard copies a C string to the macOS system pasteboard.
 static void copyToPasteboard(const char *text) {
 	@autoreleasepool {
@@ -109,7 +114,32 @@ func newChatInput(onSend func(text string)) *chatInput {
 	sendHandlerMu.Unlock()
 
 	C.attachSendClicked(button, h)
+
+	// Return sends, Shift+Return inserts a newline. Same handle as the Send
+	// button, so both routes end in the same place.
+	C.installInputEnterHandler(
+		C.uiControlHandle((*C.uiControl)(unsafe.Pointer(entry))),
+		C.longlong(h),
+	)
 	return ci
+}
+
+//export goInputEnterPressed
+func goInputEnterPressed(handle C.longlong) {
+	sendHandlerMu.Lock()
+	ci, ok := sendHandlers[handle]
+	sendHandlerMu.Unlock()
+	if !ok {
+		return
+	}
+	text := ci.text()
+	if strings.TrimSpace(text) == "" {
+		return // Return on an empty field does nothing, rather than sending nothing
+	}
+	ci.clear()
+	if ci.onSend != nil {
+		ci.onSend(text)
+	}
 }
 
 func (c *chatInput) clear() {
@@ -194,6 +224,11 @@ type ChatWindow struct {
 	sessionsUI *sessionList
 	pipelineUI *pipelinePanel
 	settingsUI *settingsPanel
+
+	// CurrentSession is the session typed messages continue. Empty means the
+	// next message opens one. Set when a session is created or a breakdown
+	// starts. Main-thread only, like the rest of this struct.
+	CurrentSession string
 }
 
 // NewChatWindow builds the chat UI as app's window content. sendTurn is

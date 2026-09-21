@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	"gophermind/gophermind-lib/phaseflow"
@@ -65,7 +66,27 @@ func projectRootFor(briefPath string) string {
 // this same search against chat.Transcript; callers that are not the
 // transcript (the pipeline panel) need it as a value they can return.
 func liveClient(connMgr *connection.Manager) (*client.Client, error) {
-	for _, name := range connMgr.Names() {
+	// Sorted, with "local" first, because Manager.Names ranges over a map
+	// and Go randomises that order. With more than one backend connected --
+	// the app registers "local" plus every saved profile -- each call landed
+	// on a different one at random, so the same click could reach the local
+	// server once and a remote one the next time, which is where
+	// "status 401: unauthorized" came from: a token minted for one server
+	// presented to another.
+	//
+	// "local" wins because the app spawns it and holds its token by
+	// construction, so it is the one backend that cannot be misauthenticated.
+	// Choosing a different one is a decision the user should make explicitly;
+	// there is no active-backend selector yet, and guessing is what this
+	// replaces.
+	names := connMgr.Names()
+	sort.Slice(names, func(i, j int) bool {
+		if (names[i] == "local") != (names[j] == "local") {
+			return names[i] == "local"
+		}
+		return names[i] < names[j]
+	})
+	for _, name := range names {
 		c, ok := connMgr.Get(name)
 		if !ok || c.Status() != connection.StatusConnected {
 			continue
@@ -121,35 +142,30 @@ func main() {
 	// assignment below has long since completed.
 	var chat *ChatWindow
 	chat = NewChatWindow(app, func(text string) {
-		// Find the first connected backend (any name, not just "local").
-		var conn *connection.Connection
-		for _, name := range connMgr.Names() {
-			c, ok := connMgr.Get(name)
-			if ok && c.Status() == connection.StatusConnected {
-				conn = c
-				break
-			}
-		}
-		if conn == nil || conn.Status() != connection.StatusConnected {
-			chat.Transcript.AddUserMessage(text)
-			chat.Transcript.AddSystem("Not connected to a backend. Open Settings (gear icon) and click Connect.")
-			return
-		}
-		cl := conn.Client()
-		if cl == nil {
-			chat.Transcript.AddUserMessage(text)
-			chat.Transcript.AddSystem("Connection is up but client is unavailable (reconnecting?).")
-			return
-		}
-		// Create a session for this turn, then stream. The options carry
-		// the folder and mode chosen in the Sessions panel; without them
-		// the turn runs at the server's root, which is $HOME.
-		ctx := context.Background()
-		sessionID, err := cl.CreateSession(ctx, newSessionOptions(chat.Sessions, ""))
+		cl, err := liveClient(connMgr)
 		if err != nil {
 			chat.Transcript.AddUserMessage(text)
-			chat.Transcript.AddSystem("error creating session: " + err.Error())
+			chat.Transcript.AddSystem(err.Error())
 			return
+		}
+		// Continue the session already in play rather than starting a new
+		// one per message. Every send used to call CreateSession, so each
+		// message landed in a fresh session with no history: answering a
+		// question the agent had just asked -- "yes" to a breakdown's first
+		// question -- reached a model that had never seen the question.
+		ctx := context.Background()
+		sessionID := chat.CurrentSession
+		if sessionID == "" {
+			// The options carry the folder and mode chosen in the Sessions
+			// panel; without them the turn runs at the server's root.
+			id, cerr := cl.CreateSession(ctx, newSessionOptions(chat.Sessions, ""))
+			if cerr != nil {
+				chat.Transcript.AddUserMessage(text)
+				chat.Transcript.AddSystem("error creating session: " + cerr.Error())
+				return
+			}
+			sessionID = id
+			chat.CurrentSession = id
 		}
 		chat.RunTurn(ctx, sessionID, text, func(ctx context.Context, task string) (*client.EventStream, error) {
 			return cl.Stream(ctx, sessionID, task)
@@ -244,6 +260,9 @@ func main() {
 			if err != nil {
 				return "", fmt.Errorf("create session: %w", err)
 			}
+			// Typed replies continue the breakdown, which is the whole point
+			// of an interview that asks one question at a time.
+			chat.CurrentSession = sessionID
 			// Stream the seed prompt through the transcript, the same way
 			// a typed message runs, so the breakdown is visible while it
 			// works rather than only landing in the pipeline view.
