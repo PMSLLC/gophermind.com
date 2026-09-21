@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"gophermind/gophermind-lib/llm"
+	"gophermind/gophermind-lib/modelcat"
 	"gophermind/gophermind-lib/phaseflow"
 	"gophermind/gophermind-osx/client"
 	"gophermind/gophermind-osx/connection"
@@ -243,6 +244,37 @@ func main() {
 		}
 		return cl.Approve(ctx, sessionID, approvalID, approved)
 	})
+
+	// Wire the Model panel to the live connection. Built in chatinput.go with
+	// a nil pin func and an empty catalogue, so until this runs the model
+	// list is empty and there is no way to move off whatever model the
+	// endpoint defaults to -- which matters when that model is small enough
+	// to loop on a hard planning task.
+	chat.modelUI.setLiveFuncs(
+		func(ctx context.Context, model, profile string) (string, error) {
+			cl, err := liveClient(connMgr)
+			if err != nil {
+				return "", err
+			}
+			opts := newSessionOptions(chat.Sessions, "")
+			opts.Model = model
+			opts.Profile = profile
+			id, err := cl.CreateSession(ctx, opts)
+			if err != nil {
+				return "", err
+			}
+			// Pinning a model means the next thing you type should use it.
+			chat.CurrentSession = id
+			return id, nil
+		},
+		func(ctx context.Context) ([]modelcat.Entry, error) {
+			cl, err := liveClient(connMgr)
+			if err != nil {
+				return nil, err
+			}
+			return cl.Catalogue(ctx)
+		},
+	)
 
 	// Wire the Sessions panel to the live connection. Built in chatinput.go
 	// with all five callbacks nil, so until this runs the dropdown is empty

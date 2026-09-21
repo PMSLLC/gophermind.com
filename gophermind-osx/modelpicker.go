@@ -62,7 +62,9 @@ import "C"
 
 import (
 	"context"
+
 	"fmt"
+	"gophermind/gophermind-lib/modelcat"
 	"sync"
 	"unsafe"
 
@@ -275,6 +277,33 @@ func (mp *modelPicker) selectedOrderKey() string {
 		return ""
 	}
 	return order[i]
+}
+
+// setLiveFuncs supplies the connection-dependent pin callback after
+// construction and loads the catalogue.
+//
+// The picker is built in chatinput.go with pin nil and an empty catalogue,
+// because no connection exists that early, and nothing replaced them: the
+// model list stayed empty and Pin did nothing, so there was no way to move
+// off whatever model the endpoint happens to default to. Same gap the
+// sessions and pipeline panels had.
+func (mp *modelPicker) setLiveFuncs(pin PinModelFunc, catalogue func(context.Context) ([]modelcat.Entry, error)) {
+	mp.pin = pin
+	if catalogue == nil {
+		return
+	}
+	// Off the UI thread: an HTTP call, and state.OnChange already dispatches
+	// the redraw through queueMain.
+	go func() {
+		entries, err := catalogue(context.Background())
+		if err != nil {
+			if mp.notify != nil {
+				queueMain(func() { mp.notify("Failed to load the model catalogue: " + err.Error()) })
+			}
+			return
+		}
+		mp.state.SetEntries(entries)
+	}()
 }
 
 // pinSelected performs the "click to pin" flow for the combo's current
