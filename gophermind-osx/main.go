@@ -151,7 +151,7 @@ func main() {
 			chat.Transcript.AddSystem("error creating session: " + err.Error())
 			return
 		}
-		chat.RunTurn(ctx, text, func(ctx context.Context, task string) (*client.EventStream, error) {
+		chat.RunTurn(ctx, sessionID, text, func(ctx context.Context, task string) (*client.EventStream, error) {
 			return cl.Stream(ctx, sessionID, task)
 		})
 	})
@@ -214,6 +214,18 @@ func main() {
 		chat.Transcript.AddSystem("Connected to local gophermind-server.")
 	}
 
+	// Let approvals actually resolve. The tracker is built in chatinput.go
+	// with a no-op ApproveFunc, so until this runs an approve or deny click
+	// updates the card and tells the server nothing, leaving the turn
+	// blocked until the gate's five-minute timeout auto-denies it.
+	chat.Approvals.SetApproveFunc(func(ctx context.Context, sessionID, approvalID string, approved bool) error {
+		cl, err := liveClient(connMgr)
+		if err != nil {
+			return err
+		}
+		return cl.Approve(ctx, sessionID, approvalID, approved)
+	})
+
 	// Wire the pipeline panel to the live connection. It is built in
 	// chatinput.go with both callbacks nil, because no connection exists
 	// that early; until this runs, Start Breakdown has nothing to call.
@@ -235,7 +247,7 @@ func main() {
 			// Stream the seed prompt through the transcript, the same way
 			// a typed message runs, so the breakdown is visible while it
 			// works rather than only landing in the pipeline view.
-			chat.RunTurn(ctx, prompt, func(ctx context.Context, task string) (*client.EventStream, error) {
+			chat.RunTurn(ctx, sessionID, prompt, func(ctx context.Context, task string) (*client.EventStream, error) {
 				return cl.Stream(ctx, sessionID, task)
 			})
 			return sessionID, nil

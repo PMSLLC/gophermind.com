@@ -166,7 +166,7 @@ func TestChatWindow_RunTurnGoroutineDoesNotPanic(t *testing.T) {
 	defer runOnUIThread(t, func() { cw.App.Close() })
 
 	streamFn := makeFakeStreamFn(t)
-	cw.RunTurn(testContext(t), "do something", streamFn)
+	cw.RunTurn(testContext(t), "sess-test", "do something", streamFn)
 
 	deadline := time.Now().Add(5 * time.Second)
 	for {
@@ -242,7 +242,7 @@ func TestChatWindow_RunTurn_StreamErrorIsReportedToTranscript(t *testing.T) {
 	defer runOnUIThread(t, func() { cw.App.Close() })
 
 	streamFn := makeDroppedStreamFn(t)
-	cw.RunTurn(testContext(t), "do something", streamFn)
+	cw.RunTurn(testContext(t), "sess-test", "do something", streamFn)
 
 	deadline := time.Now().Add(5 * time.Second)
 	for {

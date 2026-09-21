@@ -35,6 +35,7 @@ import "C"
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"unsafe"
@@ -334,7 +335,7 @@ func NewChatWindow(app *App, sendTurn func(text string)) *ChatWindow {
 // this whole file exists to wire up. streamFn is typically
 // conn.Client().Stream(ctx, sessionID, task) from a connected
 // gophermind-osx/connection.Connection.
-func (cw *ChatWindow) RunTurn(ctx context.Context, task string, streamFn func(context.Context, string) (*client.EventStream, error)) {
+func (cw *ChatWindow) RunTurn(ctx context.Context, sessionID, task string, streamFn func(context.Context, string) (*client.EventStream, error)) {
 	cw.Transcript.AddUserMessage(task)
 	stream, err := streamFn(ctx, task)
 	if err != nil {
@@ -342,6 +343,29 @@ func (cw *ChatWindow) RunTurn(ctx context.Context, task string, streamFn func(co
 		return
 	}
 	pump := &appui.StreamPump{Transcript: cw.Transcript}
+
+	// Route approval requests to the tracker, which renders the card and
+	// owns the approve/deny decision.
+	//
+	// Nothing set this before, so every "approval-needed" event was dropped
+	// on the floor. The server's gate does not give up when it is ignored:
+	// it blocks the turn for five minutes, auto-denies, and the agent moves
+	// on to its next tool call, which blocks for another five. From the
+	// outside the app simply stops after the last tool output, with "No
+	// pending approvals" still showing, because the card it would have shown
+	// was never created.
+	pump.OnApprovalNeeded = func(ev client.Event) {
+		var a struct {
+			ApprovalID string `json:"approval_id"`
+			Tool       string `json:"tool"`
+			Args       string `json:"args"`
+		}
+		if err := json.Unmarshal([]byte(ev.Data), &a); err != nil || a.ApprovalID == "" {
+			cw.Transcript.AddSystem("received an approval request that could not be read; the turn will stall until it times out")
+			return
+		}
+		cw.Approvals.Add(sessionID, a.ApprovalID, a.Tool, a.Args)
+	}
 	go func() {
 		// A genuine mid-stream failure (network drop, server crash) must
 		// reach the user the same way a failure to even open the stream
