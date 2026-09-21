@@ -201,6 +201,19 @@ func main() {
 		connMgr.Disconnect(name)
 	}
 
+	// Connect on startup. If the local binary isn't found, don't show an
+	// error — just a hint. The user can connect a remote backend from
+	// Settings (gear icon) without needing a local binary.
+	if err := chat.settingsUI.connectFunc(context.Background(), appui.BackendProfile{Name: "local", Mode: "local"}); err != nil {
+		if strings.Contains(err.Error(), "binary not found") {
+			chat.Transcript.AddSystem("No local server found. Open Settings (gear icon) to connect a remote backend.")
+		} else {
+			chat.Transcript.AddSystem("Connection failed: " + err.Error())
+		}
+	} else {
+		chat.Transcript.AddSystem("Connected to local gophermind-server.")
+	}
+
 	// Wire the pipeline panel to the live connection. It is built in
 	// chatinput.go with both callbacks nil, because no connection exists
 	// that early; until this runs, Start Breakdown has nothing to call.
@@ -230,25 +243,15 @@ func main() {
 		func(ctx context.Context) ([]phaseflow.Task, error) {
 			cl, err := liveClient(connMgr)
 			if err != nil {
-				return nil, err
+				// Not an error worth showing: with no backend the panel
+				// just starts empty, which is its documented state, and
+				// the user already gets a connect hint above.
+				return nil, nil
 			}
 			tasks, _, err := cl.PipelineState(ctx)
 			return tasks, err
 		},
 	)
-
-	// Connect on startup. If the local binary isn't found, don't show an
-	// error — just a hint. The user can connect a remote backend from
-	// Settings (gear icon) without needing a local binary.
-	if err := chat.settingsUI.connectFunc(context.Background(), appui.BackendProfile{Name: "local", Mode: "local"}); err != nil {
-		if strings.Contains(err.Error(), "binary not found") {
-			chat.Transcript.AddSystem("No local server found. Open Settings (gear icon) to connect a remote backend.")
-		} else {
-			chat.Transcript.AddSystem("Connection failed: " + err.Error())
-		}
-	} else {
-		chat.Transcript.AddSystem("Connected to local gophermind-server.")
-	}
 
 	// Reconnect every other configured backend restored from
 	// backends.json/the Keychain (see chatinput.go's NewChatWindow) --

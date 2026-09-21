@@ -68,20 +68,28 @@ func buildDeps(cfg serverConfig, root string, logger *slog.Logger) (serve.Deps, 
 		}
 	}
 
-	reg := tools.NewRegistry(
-		tools.ReadFileRange(root),
-		tools.ListFilesGlob(root),
-		tools.SearchEnhanced(root),
-		tools.WriteFile(root),
-		tools.EditFileMulti(root),
-		tools.RunShellEnhanced(root, 120*time.Second, tools.ShellLimits{}),
-		tools.FileStat(root),
-		tools.MoveFile(root),
-		tools.DeleteFile(root),
-		tools.Mkdir(root),
-		tools.PatchApply(root),
-		tools.GitInfo(root),
-	)
+	// newRegistryAt builds a tool set rooted at dir. Every tool captures its
+	// root at construction -- ReadFileRange, WriteFile and RunShellEnhanced
+	// all close over it, and safety.SafeJoin contains paths against whatever
+	// root they were given -- so a session working in another project needs
+	// its own registry rather than a root passed per call.
+	newRegistryAt := func(dir string) *tools.Registry {
+		return tools.NewRegistry(
+			tools.ReadFileRange(dir),
+			tools.ListFilesGlob(dir),
+			tools.SearchEnhanced(dir),
+			tools.WriteFile(dir),
+			tools.EditFileMulti(dir),
+			tools.RunShellEnhanced(dir, 120*time.Second, tools.ShellLimits{}),
+			tools.FileStat(dir),
+			tools.MoveFile(dir),
+			tools.DeleteFile(dir),
+			tools.Mkdir(dir),
+			tools.PatchApply(dir),
+			tools.GitInfo(dir),
+		)
+	}
+	reg := newRegistryAt(root)
 
 	pb, err := prompt.NewBuilder()
 	if err != nil {
@@ -140,13 +148,32 @@ func buildDeps(cfg serverConfig, root string, logger *slog.Logger) (serve.Deps, 
 			_ = emit(event, data)
 		}
 		turnApprove := serve.RemoteApprovalGate(approvals, ctx, approvalWait, emit, serve.NewApprovalID)
-		ag := agent.New(client, reg, llmMaxIter, turnApprove, onEvent)
+
+		// Honour the session's own working directory. POST /session accepts
+		// a root and WriteSessionRoot stores it, but nothing here read it
+		// back, so every turn ran at the server's --root no matter what the
+		// client asked for: a session pointed at a project still resolved
+		// relative paths against $HOME, and the agent's writes landed there
+		// too. desktop/deps.go already did this; the server did not.
+		//
+		// The shared registry is reused when there is no override, so the
+		// common case costs nothing.
+		turnReg := reg
+		turnRoot := root
+		if r := serve.ReadSessionRoot(id); r != "" && r != root {
+			turnReg = newRegistryAt(r)
+			turnRoot = r
+		}
+		ag := agent.New(client, turnReg, llmMaxIter, turnApprove, onEvent)
 		if session.Exists(id) {
 			if err := session.Load(id, ag); err != nil {
 				return err
 			}
 		} else {
-			ag.SetSystemPrompt(serve.SystemPromptForMode(serve.ReadSessionMode(id), basePrompt, root))
+			// turnRoot, not root: the system prompt tells the agent which
+			// directory it is working in, and it has to name the same one
+			// the tools above are rooted at.
+			ag.SetSystemPrompt(serve.SystemPromptForMode(serve.ReadSessionMode(id), basePrompt, turnRoot))
 			if systemSuffix != "" {
 				ag.AppendSystemPrompt(systemSuffix)
 			}
