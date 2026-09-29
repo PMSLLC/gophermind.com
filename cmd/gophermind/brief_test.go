@@ -183,3 +183,28 @@ func TestBriefUnknownSubcommandPrintsUsage(t *testing.T) {
 		t.Errorf("code=%d err=%q", code, errs)
 	}
 }
+
+func TestBriefValidateDuplicateAndReservedExitTwo(t *testing.T) {
+	src, _ := os.ReadFile(filepath.Join(exampleDir, "brief.md"))
+	for name, tc := range map[string]struct{ old, add, want string }{
+		"reserved":  {"env:\n", "  - name: HTTP_PROXY\n    purpose: p\n", "HTTP_PROXY is reserved for the harness"},
+		"duplicate": {"secrets:\n", "  - name: CRM_API_KEY\n    purpose: p\n", "secret CRM_API_KEY is declared twice"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := filepath.Join(t.TempDir(), "b.md")
+			body := strings.Replace(string(src), tc.old, tc.old+tc.add, 1)
+			_ = os.WriteFile(p, []byte(body), 0o600)
+			code, _, errs := runBriefCmd(t, "", "validate", p)
+			if code != 2 || !strings.Contains(errs, tc.want) {
+				t.Errorf("code=%d err=%q", code, errs)
+			}
+		})
+	}
+}
+
+func TestBriefValidateWarningWording(t *testing.T) {
+	_, _, errs := runBriefCmd(t, "", "validate", "../../gophermind-lib/briefv2/testdata/ai-venture-studio-server-brief.md")
+	if !strings.Contains(errs, "looks like a secret name but is not declared under secrets or env") {
+		t.Errorf("err=%q", errs)
+	}
+}

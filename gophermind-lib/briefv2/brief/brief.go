@@ -85,6 +85,17 @@ type Brief struct {
 	bodyLine int // 1-based file line of the first body line
 }
 
+var reservedNames = map[string]bool{
+	// proxy and node variables the harness emits
+	"HTTP_PROXY": true, "HTTPS_PROXY": true, "NO_PROXY": true, "GOPHERMIND_NODE": true,
+	// toolchain variables the harness supplies (execenv.Inputs.Toolchain)
+	"PATH": true, "HOME": true, "GOCACHE": true, "GOMODCACHE": true, "GOPATH": true, "TMPDIR": true,
+}
+
+// IsReservedName reports whether a brief may not declare name as a secret or
+// env variable because the harness owns it. execenv uses this same set.
+func IsReservedName(name string) bool { return reservedNames[name] }
+
 var requiredSections = []string{"Overview", "Features", "Architecture", "Data", "Constraints", "Out of scope", "Acceptance"}
 
 // Parse splits, validates, and sections a brief. Failures caused by the
@@ -134,6 +145,30 @@ func Parse(src []byte) (*Brief, error) {
 	for _, e := range b.Front.Env {
 		if secretNames[e.Name] {
 			return nil, invalid("ENV_SECRET_OVERLAP: %s", e.Name)
+		}
+	}
+	seenSecret := map[string]bool{}
+	for _, s := range b.Front.Secrets {
+		if seenSecret[s.Name] {
+			return nil, invalid("secret %s is declared twice", s.Name)
+		}
+		seenSecret[s.Name] = true
+	}
+	seenEnv := map[string]bool{}
+	for _, e := range b.Front.Env {
+		if seenEnv[e.Name] {
+			return nil, invalid("env %s is declared twice", e.Name)
+		}
+		seenEnv[e.Name] = true
+	}
+	for _, s := range b.Front.Secrets {
+		if IsReservedName(s.Name) {
+			return nil, invalid("%s is reserved for the harness", s.Name)
+		}
+	}
+	for _, e := range b.Front.Env {
+		if IsReservedName(e.Name) {
+			return nil, invalid("%s is reserved for the harness", e.Name)
 		}
 	}
 

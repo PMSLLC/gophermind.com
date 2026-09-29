@@ -2,6 +2,7 @@ package execenv_test
 
 import (
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -259,7 +260,7 @@ func TestDuplicateSecretEntryMaskingMissing(t *testing.T) {
 }
 
 func TestReservedEnvName(t *testing.T) {
-	reserved := []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "GOPHERMIND_NODE"}
+	reserved := []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "GOPHERMIND_NODE", "PATH", "HOME", "GOCACHE", "GOMODCACHE", "GOPATH", "TMPDIR"}
 	for _, name := range reserved {
 		t.Run("env name "+name, func(t *testing.T) {
 			in := base()
@@ -273,7 +274,7 @@ func TestReservedEnvName(t *testing.T) {
 }
 
 func TestReservedSecretName(t *testing.T) {
-	reserved := []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "GOPHERMIND_NODE"}
+	reserved := []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "GOPHERMIND_NODE", "PATH", "HOME", "GOCACHE", "GOMODCACHE", "GOPATH", "TMPDIR"}
 	for _, name := range reserved {
 		t.Run("secret name "+name, func(t *testing.T) {
 			in := base()
@@ -303,3 +304,117 @@ type fakeErr string
 func (e fakeErr) Error() string { return string(e) }
 
 var errFake error = fakeErr("vault: secret X is not set in scope run/gm")
+
+var allToolchain = map[string]string{
+	"PATH": "/usr/bin:/bin", "HOME": "/work/home", "GOCACHE": "/work/gocache",
+	"GOMODCACHE": "/work/gomod", "GOPATH": "/work/gopath", "TMPDIR": "/work/tmp",
+}
+
+func TestToolchainEmitted(t *testing.T) {
+	plain, err := execenv.Build(base())
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := base()
+	in.Toolchain = allToolchain
+	got, err := execenv.Build(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := append([]string{}, plain...)
+	for k, v := range allToolchain {
+		want = append(want, k+"="+v)
+	}
+	sort.Strings(want)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %q\nwant %q", got, want)
+	}
+}
+
+func TestNilAndEmptyToolchainIsStrict(t *testing.T) {
+	a, err := execenv.Build(base())
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := base()
+	in.Toolchain = map[string]string{}
+	b, err := execenv.Build(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(a, b) {
+		t.Fatalf("empty toolchain changed output: %q vs %q", a, b)
+	}
+}
+
+func TestToolchainRejections(t *testing.T) {
+	for name, tc := range map[string]struct {
+		tool map[string]string
+		want string
+	}{
+		"disallowed key": {map[string]string{"LD_PRELOAD": "x"}, "toolchain variable LD_PRELOAD is not allowed"},
+		"empty value":    {map[string]string{"PATH": ""}, "toolchain variable PATH is empty"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			in := base()
+			in.Toolchain = tc.tool
+			_, err := execenv.Build(in)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want %q, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
+func TestToolchainNameCannotBeDeclaredEnv(t *testing.T) {
+	in := base()
+	in.Toolchain = allToolchain
+	in.Env = []brief.EnvVar{{Name: "PATH", Purpose: "p", Default: strp("/evil")}}
+	if _, err := execenv.Build(in); err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("want reserved error, got %v", err)
+	}
+}
+
+func TestProcessEnvironmentDoesNotReachToolchain(t *testing.T) {
+	t.Setenv("HARNESS_ONLY", "leak-harness")
+	t.Setenv("PATH", "/process/path-leak")
+	in := base()
+	got, err := execenv.Build(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Toolchain = map[string]string{"PATH": "/supplied"}
+	got2, err := execenv.Build(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, out := range [][]string{got, got2} {
+		joined := strings.Join(out, "\n")
+		if strings.Contains(joined, "leak-harness") || strings.Contains(joined, "path-leak") {
+			t.Fatalf("process environment leaked: %q", out)
+		}
+	}
+	if !strings.Contains(strings.Join(got2, "\n"), "PATH=/supplied") {
+		t.Fatalf("supplied PATH missing: %q", got2)
+	}
+}
+
+func TestInvalidVariableNames(t *testing.T) {
+	for _, name := range []string{"HTTP_PROXY=x", "lower", ""} {
+		t.Run("env "+name, func(t *testing.T) {
+			in := base()
+			in.Env = []brief.EnvVar{{Name: name, Purpose: "p"}}
+			if _, err := execenv.Build(in); err == nil || !strings.Contains(err.Error(), "invalid variable name") {
+				t.Fatalf("want invalid variable name, got %v", err)
+			}
+		})
+		t.Run("secret "+name, func(t *testing.T) {
+			in := base()
+			in.Secrets = []string{name}
+			in.SecretValues = func([]string) ([]string, error) { return []string{name + "=v"}, nil }
+			if _, err := execenv.Build(in); err == nil || !strings.Contains(err.Error(), "invalid variable name") {
+				t.Fatalf("want invalid variable name, got %v", err)
+			}
+		})
+	}
+}

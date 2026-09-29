@@ -247,3 +247,56 @@ func TestVentureStudioBrief(t *testing.T) {
 		t.Errorf("%d warnings (ceiling 3): %+v", len(w), w)
 	}
 }
+
+func TestDuplicateAndReservedNamesRejected(t *testing.T) {
+	ex := string(loadExample(t))
+	dupSecret := strings.Replace(ex, "secrets:\n", "secrets:\n  - name: CRM_API_KEY\n    purpose: again\n", 1)
+	dupEnv := strings.Replace(ex, "env:\n", "env:\n  - name: LISTEN_ADDR\n    purpose: again\n", 1)
+	for name, tc := range map[string]struct{ src, want string }{
+		"duplicate secret": {dupSecret, "secret CRM_API_KEY is declared twice"},
+		"duplicate env":    {dupEnv, "env LISTEN_ADDR is declared twice"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := brief.Parse([]byte(tc.src))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want %q, got %v", tc.want, err)
+			}
+			if _, ok := err.(*brief.InvalidError); !ok {
+				t.Errorf("want *InvalidError, got %T", err)
+			}
+		})
+	}
+}
+
+var reservedForTest = []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "GOPHERMIND_NODE", "PATH", "HOME", "GOCACHE", "GOMODCACHE", "GOPATH", "TMPDIR"}
+
+func TestReservedNamesRejectedAsEnvAndSecret(t *testing.T) {
+	ex := string(loadExample(t))
+	for _, n := range reservedForTest {
+		if !brief.IsReservedName(n) {
+			t.Errorf("IsReservedName(%s) = false", n)
+		}
+		asEnv := strings.Replace(ex, "env:\n", "env:\n  - name: "+n+"\n    purpose: p\n", 1)
+		asSecret := strings.Replace(ex, "secrets:\n", "secrets:\n  - name: "+n+"\n    purpose: p\n", 1)
+		for kind, src := range map[string]string{"env": asEnv, "secret": asSecret} {
+			_, err := brief.Parse([]byte(src))
+			want := n + " is reserved for the harness"
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Errorf("%s %s: want %q, got %v", kind, n, want, err)
+			} else if _, ok := err.(*brief.InvalidError); !ok {
+				t.Errorf("%s %s: want *InvalidError, got %T", kind, n, err)
+			}
+		}
+	}
+	if brief.IsReservedName("DATA_DIR") {
+		t.Error("DATA_DIR must not be reserved")
+	}
+}
+
+func TestLegitimateNamesStillParse(t *testing.T) {
+	ex := string(loadExample(t))
+	src := strings.Replace(ex, "env:\n", "env:\n  - name: DATA_DIR\n    purpose: p\n", 1)
+	if _, err := brief.Parse([]byte(src)); err != nil {
+		t.Fatal(err)
+	}
+}

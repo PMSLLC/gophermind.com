@@ -28,6 +28,7 @@
 | E2 | Harness config `[v2.env]` overrides env defaults | Config format is still undecided (see the foundations plan, D6), so `execenv.Build` takes the overrides as a `map[string]string` argument; wiring it to config is a later plan |
 | E3 | The brief copy in `~/Downloads/ai-venture-studio-server-brief.md` | That copy is the OLD version (no `env`, 8 warnings under the new rule). The fixture is the new one from `~/Downloads/files (6).zip` (47,943 bytes) |
 | E4 | `HTTP_PROXY`/`HTTPS_PROXY`/`GOPHERMIND_NODE` always present | The proxy does not exist yet (item 12), so `ProxyURL` is optional: empty means the two proxy variables are omitted. `GOPHERMIND_NODE` is always set |
+| E5 | Nothing else from the harness process may reach commands | The exact environment cannot run `go test` (no GOCACHE or HOME). `execenv.Inputs` gains an optional harness-owned `Toolchain` map of six variables (PATH, HOME, GOCACHE, GOMODCACHE, GOPATH, TMPDIR); nil means strict. Those six names are reserved so a brief cannot set them |
 
 ## Review Focus
 

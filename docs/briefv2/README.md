@@ -59,14 +59,24 @@ that cannot be resolved is an error and nothing is created; a directory with no
 ## Environment block
 
 The frontmatter `env` section declares non-secret variables that a command may
-read. Each declares a name, purpose, and optional default value (a pointer to
-string). An env name must not equal a secret name; overlap is rejected with exit
-2 and the message `ENV_SECRET_OVERLAP: <name>`.
+read. Each declares a name, purpose, and optional default value. An env
+name must not equal a secret name; overlap is rejected with exit 2 and the
+message `ENV_SECRET_OVERLAP: <name>`.
+
+`brief validate` also rejects, with exit 2, a secret name declared twice
+(`secret <NAME> is declared twice`), an env name declared twice (`env <NAME> is
+declared twice`), and any secret or env name reserved for the harness
+(`<NAME> is reserved for the harness`). The ten reserved names are
+HTTP_PROXY, HTTPS_PROXY, NO_PROXY, GOPHERMIND_NODE (proxy and node variables
+the harness emits) and PATH, HOME, GOCACHE, GOMODCACHE, GOPATH, TMPDIR
+(toolchain variables, see E5). The set lives in `brief.IsReservedName`, which
+`execenv.Build` also uses.
 
 ## Secret-name scan rule
 
 The `brief validate` command scans the brief body for undeclared tokens that
-look like secret names. A token is flagged when it (a) ends in `_KEY`,
+look like secret names. Only UPPER_SNAKE_CASE tokens (three or more characters)
+are considered. A token is flagged when it (a) ends in `_KEY`,
 `_SECRET`, `_TOKEN`, `_URL`, `_DSN`, `_PASSWORD`, or `_PASSPHRASE`, or (b)
 sits on a line containing "secret", "credential" or "environment variable"
 (case-insensitive). Undeclared tokens matching the secret suffix list or
@@ -81,13 +91,21 @@ exec.Cmd for running a node's commands. It includes the declared env variables
 secrets (fetched from the vault), HTTP_PROXY and HTTPS_PROXY (when a proxy URL
 is given), and GOPHERMIND_NODE (the node id). Nothing from the harness process
 environment is included. A secret name never has a default or an override. The
-names HTTP_PROXY, HTTPS_PROXY, NO_PROXY and GOPHERMIND_NODE are reserved for
-the harness and rejected if a brief declares them as env or secret names. The
-result is sorted NAME=value strings suitable for exec.Cmd.Env.
+ten reserved names listed above are rejected if a brief declares them as env or
+secret names, and `Build` itself also checks that every name matches
+`^[A-Z][A-Z0-9_]*$`.
+
+The optional `Inputs.Toolchain` map holds PATH, HOME, GOCACHE, GOMODCACHE,
+GOPATH and TMPDIR. It is harness-owned, filled from harness config, and `Build`
+never reads the process environment for it. Any other key or an empty value is
+an error. When it is nil or empty the environment is exactly the strict list
+above. It exists because that strict list cannot run `go test` (no build cache
+without GOCACHE and HOME), so it deliberately widens the handoff's literal
+list (E5). The result is sorted NAME=value strings suitable for exec.Cmd.Env.
 
 ## Decisions
 
-This plan implements decisions E1-E4 from the spec update:
+E1 comes from the handoff; E2 to E5 are this project's decisions:
 
 E1: The secret-name scan rule has no stoplist. A token is flagged based on
 suffix or line wording, not a whitelist.
@@ -99,7 +117,12 @@ E3: The test fixture uses the updated brief version that includes the env
 block, yielding 2 scan warnings (ceiling 3) on the venture-studio brief.
 
 E4: The proxy URL is optional; empty means HTTP_PROXY and HTTPS_PROXY are
-omitted. GOPHERMIND_NODE is always set.
+omitted. GOPHERMIND_NODE is always set. Once the network proxy exists the
+executor must always set it.
+
+E5: The handoff says nothing else may reach commands, but the exact environment
+cannot run `go test`. `Inputs.Toolchain` is an optional harness-owned map of
+six variables; nil means strict.
 
 ## Package map
 

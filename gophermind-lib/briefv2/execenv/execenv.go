@@ -16,8 +16,10 @@ import (
 )
 
 var (
-	idRE          = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
-	reservedNames = map[string]bool{"HTTP_PROXY": true, "HTTPS_PROXY": true, "NO_PROXY": true, "GOPHERMIND_NODE": true}
+	idRE   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+	nameRE = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
+
+	toolchainNames = map[string]bool{"PATH": true, "HOME": true, "GOCACHE": true, "GOMODCACHE": true, "GOPATH": true, "TMPDIR": true}
 )
 
 type Inputs struct {
@@ -30,13 +32,40 @@ type Inputs struct {
 	// entries for exactly those names (normally vault.Env bound to a scope).
 	Secrets      []string
 	SecretValues func(names []string) ([]string, error)
-	// ProxyURL is optional until the proxy exists; empty omits the proxy vars.
+	// ProxyURL: empty omits the proxy variables and exists only for tests and
+	// offline runs. Once the network proxy exists (build item 12) the executor
+	// must always set it, otherwise a wiring bug runs commands unproxied.
 	ProxyURL string
 	NodeID   string
+	// Toolchain is harness-owned: PATH, HOME, GOCACHE, GOMODCACHE, GOPATH and
+	// TMPDIR, filled from harness config so the executor's own test command
+	// can run (decision E5). It deliberately widens the handoff's literal list
+	// of what may reach a command. Build never reads os.Environ; nil or empty
+	// gives the strict handoff environment. A brief cannot declare these names
+	// because they are reserved.
+	Toolchain map[string]string
 }
 
 // Build returns the sorted NAME=value environment for exec.Cmd.Env.
 func Build(in Inputs) ([]string, error) {
+	for _, s := range in.Secrets {
+		if !nameRE.MatchString(s) {
+			return nil, fmt.Errorf("execenv: invalid variable name %q", s)
+		}
+	}
+	for _, e := range in.Env {
+		if !nameRE.MatchString(e.Name) {
+			return nil, fmt.Errorf("execenv: invalid variable name %q", e.Name)
+		}
+	}
+	for k, v := range in.Toolchain {
+		if !toolchainNames[k] {
+			return nil, fmt.Errorf("execenv: toolchain variable %s is not allowed", k)
+		}
+		if v == "" {
+			return nil, fmt.Errorf("execenv: toolchain variable %s is empty", k)
+		}
+	}
 	secrets := map[string]bool{}
 	for _, s := range in.Secrets {
 		secrets[s] = true
@@ -53,7 +82,7 @@ func Build(in Inputs) ([]string, error) {
 
 	// Check for reserved names in secrets
 	for _, s := range in.Secrets {
-		if reservedNames[s] {
+		if brief.IsReservedName(s) {
 			return nil, fmt.Errorf("execenv: %s is reserved for the harness", s)
 		}
 	}
@@ -61,7 +90,7 @@ func Build(in Inputs) ([]string, error) {
 	declared := map[string]bool{}
 	for _, e := range in.Env {
 		// Check for reserved names in env
-		if reservedNames[e.Name] {
+		if brief.IsReservedName(e.Name) {
 			return nil, fmt.Errorf("execenv: %s is reserved for the harness", e.Name)
 		}
 		if secrets[e.Name] {
@@ -130,6 +159,9 @@ func Build(in Inputs) ([]string, error) {
 	}
 	if in.ProxyURL != "" {
 		out = append(out, "HTTP_PROXY="+in.ProxyURL, "HTTPS_PROXY="+in.ProxyURL)
+	}
+	for k, v := range in.Toolchain {
+		out = append(out, k+"="+v)
 	}
 	out = append(out, "GOPHERMIND_NODE="+in.NodeID)
 	sort.Strings(out)

@@ -64,7 +64,7 @@ func briefValidate(path string, out, errw io.Writer) int {
 		return 1
 	}
 	for _, w := range b.UndeclaredSecrets() {
-		fmt.Fprintf(errw, "warning: line %d: %s looks like a secret name but is not declared under secrets\n", w.Line, w.Token)
+		fmt.Fprintf(errw, "warning: line %d: %s looks like a secret name but is not declared under secrets or env\n", w.Line, w.Token)
 	}
 	fmt.Fprintf(out, "ok: %s (%s), %d features\n", b.Front.ID, b.Front.Title, len(b.Features))
 	return 0
