@@ -93,3 +93,91 @@ func TestPathLikeIDCannotEscapeTheStore(t *testing.T) {
 		t.Fatal("an ID with path separators must be rejected by the schema")
 	}
 }
+
+func TestParseRejectsPathyReferences(t *testing.T) {
+	base := func(parent, children, deps string) string {
+		return `{"spec_version":"2.0","id":"fn-a","kind":"function","parent":"` + parent + `","title":"t","description":"d","brief_ref":"#x","status":"pending","wave":0,"depends_on":` + deps + `,
+"contract":{"package":"p","file":"p/a.go","signature":"func F()","inputs":[],"outputs":[]},
+"tests":[{"name":"n","level":"unit","given":"g","expect":"e","command":"go test ./p"}]}`
+	}
+	for _, c := range []struct{ name, raw string }{
+		{"parent traversal", base("../../x", "", "[]")},
+		{"parent slash", base("a/b", "", "[]")},
+		{"depends_on slash", base("comp", "", `["a/b"]`)},
+		{"depends_on dotdot", base("comp", "", `[".."]`)},
+	} {
+		if _, err := tree.ParseNode([]byte(c.raw)); err == nil {
+			t.Errorf("%s: must be rejected", c.name)
+		}
+	}
+	comp := `{"spec_version":"2.0","id":"comp","kind":"component","title":"t","description":"d","brief_ref":"#x","status":"pending","children":["a/b"]}`
+	if _, err := tree.ParseNode([]byte(comp)); err == nil {
+		t.Error("children entry with slash must be rejected")
+	}
+	comp = `{"spec_version":"2.0","id":"comp","kind":"component","title":"t","description":"d","brief_ref":"#x","status":"pending","children":[".."]}`
+	if _, err := tree.ParseNode([]byte(comp)); err == nil {
+		t.Error("children entry dotdot must be rejected")
+	}
+}
+
+func TestWriteCannotEscapeStore(t *testing.T) {
+	outer := t.TempDir()
+	dir := filepath.Join(outer, "store")
+	n := fn(t, "fn-a", "comp", 0)
+	n.Parent = "../evil" // bypasses ParseNode; Write must still refuse
+	if err := tree.NewStore(dir).Write(n); err == nil {
+		t.Fatal("Write must refuse a path outside the store")
+	}
+	if _, err := os.Stat(filepath.Join(outer, "evil")); err == nil {
+		t.Fatal("a directory was created outside the store")
+	}
+	if _, err := os.Stat(dir); err == nil {
+		t.Fatal("nothing should have been written")
+	}
+}
+
+func TestNodesNamedLikeRunArtifactsSurviveLoad(t *testing.T) {
+	dir := t.TempDir()
+	s := tree.NewStore(dir)
+	tr := mustTree(t, fn(t, "report", "comp", 0), fn(t, "contracts", "comp", 0))
+	if err := s.WriteAll(tr); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"contracts.json", "report.json"} {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte(`{"not":"a node"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	back, err := s.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(back.Nodes) != 2 || back.Nodes["report"].ID == "" || back.Nodes["contracts"].ID == "" {
+		t.Errorf("nodes lost on load: %d", len(back.Nodes))
+	}
+}
+
+func TestLogsComponentRejectedAndRootLogsDirSkipped(t *testing.T) {
+	raw := `{"spec_version":"2.0","id":"logs","kind":"component","parent":"root-x","children":[],"title":"t","description":"d","brief_ref":"#x","status":"pending"}`
+	if _, err := tree.ParseNode([]byte(raw)); err == nil {
+		t.Fatal("component id logs must be rejected")
+	}
+	dir := t.TempDir()
+	s := tree.NewStore(dir)
+	if err := s.Write(fn(t, "fn-a", "comp", 0)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "logs"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "logs", "x.json"), []byte(`{"not":"a node"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	back, err := s.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(back.Nodes) != 1 {
+		t.Errorf("loaded %d nodes, want 1", len(back.Nodes))
+	}
+}

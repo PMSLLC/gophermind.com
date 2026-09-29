@@ -26,7 +26,13 @@ func (s *Store) Write(n Node) error {
 	if err := schema.Validate(schema.KindNode, raw); err != nil {
 		return fmt.Errorf("tree: node %s: %w", n.ID, err)
 	}
+	if err := n.checkRefs(); err != nil {
+		return err
+	}
 	full := filepath.Join(s.dir, filepath.FromSlash(n.Path()))
+	if rel, err := filepath.Rel(s.dir, full); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("tree: node %s: path %q escapes the store", n.ID, n.Path())
+	}
 	if err := os.MkdirAll(filepath.Dir(full), 0o700); err != nil {
 		return err
 	}
@@ -58,22 +64,23 @@ func (s *Store) Load() (*Tree, error) {
 		if err != nil {
 			return err
 		}
+		rel, _ := filepath.Rel(s.dir, p)
+		rel = filepath.ToSlash(rel)
 		if d.IsDir() {
-			if d.Name() == "logs" {
+			if rel == "logs" {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 		name := d.Name()
-		if !strings.HasSuffix(name, ".json") || notNodes[name] || strings.HasSuffix(name, ".runtime.json") {
+		rootLevel := !strings.Contains(rel, "/")
+		if !strings.HasSuffix(name, ".json") || (rootLevel && notNodes[name]) || strings.HasSuffix(name, ".runtime.json") {
 			return nil
 		}
 		raw, err := os.ReadFile(p)
 		if err != nil {
 			return err
 		}
-		rel, _ := filepath.Rel(s.dir, p)
-		rel = filepath.ToSlash(rel)
 		n, err := ParseNode(raw)
 		if err != nil {
 			return fmt.Errorf("tree: %s: %w", rel, err)

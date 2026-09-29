@@ -4,6 +4,8 @@ package tree
 
 import (
 	"encoding/json"
+	"fmt"
+	"regexp"
 
 	"gophermind/gophermind-lib/briefv2/schema"
 )
@@ -15,6 +17,13 @@ const (
 	KindComponent Kind = "component"
 	KindFunction  Kind = "function"
 )
+
+// idPattern is the schema's id pattern; parent, children and depends_on
+// entries must match it too so a reference can never carry a path.
+var idPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+
+// reservedComponentID collides with the run's logs/ directory.
+const reservedComponentID = "logs"
 
 // Node exposes the fields the tree logic needs and keeps the full decoded
 // document so nothing else is lost on a round trip.
@@ -49,7 +58,30 @@ func ParseNode(raw []byte) (Node, error) {
 		w := int(f)
 		n.Wave = &w
 	}
+	if err := n.checkRefs(); err != nil {
+		return Node{}, err
+	}
 	return n, nil
+}
+
+func (n Node) checkRefs() error {
+	if n.Parent != "" && !idPattern.MatchString(n.Parent) {
+		return fmt.Errorf("tree: node %q: invalid parent %q", n.ID, n.Parent)
+	}
+	for _, c := range n.Children {
+		if !idPattern.MatchString(c) {
+			return fmt.Errorf("tree: node %q: invalid children entry %q", n.ID, c)
+		}
+	}
+	for _, d := range n.DependsOn {
+		if !idPattern.MatchString(d) {
+			return fmt.Errorf("tree: node %q: invalid depends_on entry %q", n.ID, d)
+		}
+	}
+	if n.Kind == KindComponent && n.ID == reservedComponentID {
+		return fmt.Errorf("tree: node %q: component id %q is reserved", n.ID, n.ID)
+	}
+	return nil
 }
 
 func strList(v any) []string {
