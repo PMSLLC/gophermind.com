@@ -1,0 +1,68 @@
+# GopherMind v2: brief to build (offline foundations)
+
+v2 turns a written brief (a markdown file with YAML front matter) into a tree of
+task nodes that agents build, wave by wave, against a shared contract. This
+directory documents the offline foundations only: brief loading, the secret
+vault, the node tree with waves, contract slicing, and the run directory. No
+model calls happen in any of it.
+
+## Commands
+
+```text
+gophermind brief validate <brief.md>
+gophermind brief vault set <NAME>      (value from a terminal prompt or stdin)
+gophermind brief vault list
+gophermind brief tree check <run-dir>
+```
+
+Anything else under `gophermind brief` prints this usage and exits 1. The run,
+resume, status and report subcommands arrive in later plans (deviation D1).
+
+Exit codes: 0 ok, 1 error (usage, unreadable file, failed check), 2 invalid
+brief (the message names the offending field). Codes 3 and 4 are reserved for
+human gates in a later plan.
+
+`validate` prints one `warning:` line to stderr for each undeclared token that
+looks like a secret name. Warnings never change the exit code.
+
+## Vault
+
+Secrets are stored age-encrypted, in scopes: `harness` (used by
+`brief vault set` and `list`) and `run/<brief-id>` (a brief's declared secrets).
+
+- `GOPHERMIND_VAULT_PATH` overrides the vault file. The default is
+  `<config dir>/vault.age`.
+- `GOPHERMIND_VAULT_PASSPHRASE` supplies the passphrase without a prompt. It is
+  required when stdin is a pipe, because the value for `vault set` is then read
+  from that pipe and the passphrase must not compete for it.
+
+## Package map
+
+```text
+gophermind-lib/briefv2/
+  schema/     embedded JSON schemas, Validate(kind, json)
+  testdata/   example brief, contracts.json and a partial node tree
+  brief/      front matter, sections, secret-name scan
+  vault/      age-encrypted secret store, prompts
+  tree/       nodes, cycle check, waves, readiness, file store
+  contract/   load, Slice, Diff, Affected
+  rundir/     .gophermind/<id>/ layout, kept out of git via .git/info/exclude
+cmd/gophermind/brief.go   the `gophermind brief ...` command group
+docs/briefv2/handoff/     the original handoff, for reference
+```
+
+## Deviations from the handoff
+
+The handoff's stated tests cannot all pass against its own example data. These
+resolutions reproduce every value in the examples that can be checked.
+
+| # | Handoff says | Problem | Resolution in this plan |
+|---|---|---|---|
+| D1 | CLI is `gophermind run`, `resume`, `status`, `report`, `validate`, `vault`, `tree` | `run`, `resume`, `status`, `report` already exist as commands | Namespace everything as `gophermind brief <sub>` (`brief validate`, `brief vault set`, `brief tree check`, later `brief run`, ...) |
+| D2 | Wave rule: components take the max wave of their children; function with empty `depends_on` has no defined wave | The example has `registration` at wave 1 with a child at wave 2, and `fn-validation-error-error` (no deps) at wave 0 | `wave = 0` if `depends_on` is empty, else `1 + max(wave of depends_on)`, for every kind. Children do not affect a node's wave. Readiness (children verified) is separate |
+| D3 | Slicing `fn-register-handler` yields "the seven entries shown in its node file" | The stated algorithm over the shipped `contracts.json` yields 10 entries (4 types, 6 functions). The node file's 7 entries are hand-written, include a `CRM` interface and a `Server` struct that `contracts.json` does not define, and omit 5 signatures | The golden test asserts the algorithm's 10 entries. The shipped `contracts.json` is used unchanged. Open item for John: the contract is missing `Server` and `CRM` types that `fn-server-new` relies on |
+| D4 | "Every file under examples/tree validates", waves reproduced | The example tree is a partial excerpt: only 7 node files, while `depends_on` and `children` reference ~10 more | Per-file schema validation runs on all 7. Tree-level tests use the 6-node subset whose dependencies exist, plus synthetic trees. `Load` does not require `children` to resolve |
+| D5 | Secret scan regex `\b[A-Z][A-Z0-9_]{2,}\b` minus a stoplist | It flags 5 error codes in the example brief (`EMAIL_INVALID` etc.) | Keep the regex; warnings only, never blocking. Test pins the 5 expected warnings |
+| D6 | Config in `gophermind.yaml`, then TOML | `GOPHERMIND.toml` is not parsed by any Go code and there is no TOML library | Items 1 to 4 need no harness config. Vault path defaults to `<config.Dir()>/vault.age`. Config format is decided in the provider/router plan |
+| D7 | Blackboard: reuse the recursive agent system's | Not in this repo; John did not say where it lives | Assumption: build the SQLite backend in the blackboard plan (item 6). Not needed here |
+| D8 | Live view (item 15) is a wave board plus attempt log | John wants a Gantt chart | Item 15 becomes a Gantt view: one row per leaf grouped by component, bars from each attempt's `started_at` and `duration_ms`, one bar per model in the fallback chain, dependency arrows from `depends_on`, rate-limit waits as gaps, revision rounds as a new block. It reads the blackboard only and works live and after the fact (no forecast before a run, since durations are unknown). No change to items 1 to 4 or to the item 6 blackboard interface. |
