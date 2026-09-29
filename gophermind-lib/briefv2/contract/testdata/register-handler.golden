@@ -1,0 +1,52 @@
+// ValidationError describes a single invalid input field.
+type ValidationError struct {
+	Code    string
+	Field   string
+	Message string
+}
+
+// Error implements error.
+func (e *ValidationError) Error() string
+-----
+const (
+	CodeEmailRequired  = "EMAIL_REQUIRED"
+	CodeEmailInvalid   = "EMAIL_INVALID"
+	CodeEmailTooLong   = "EMAIL_TOO_LONG"
+	CodeUsernameLength = "USERNAME_LENGTH"
+	CodeUsernameChars  = "USERNAME_CHARS"
+)
+-----
+// User is a registered account.
+type User struct {
+	ID        string
+	Email     string
+	Username  string
+	CreatedAt time.Time
+}
+-----
+// ErrEmailTaken is returned by Create when the email already exists.
+var ErrEmailTaken = errors.New("email already registered")
+
+// Store persists users.
+type Store interface {
+	// Create stores a new user and returns it with ID and CreatedAt set.
+	Create(ctx context.Context, email, username string) (User, error)
+}
+-----
+// ValidateEmail trims the input and returns nil when it is a syntactically valid address of at most 254 characters with a dotted domain.
+func ValidateEmail(email string) *ValidationError
+-----
+// ValidateUsername returns nil when the input is 3 to 32 characters of a-z, 0-9, and underscore.
+func ValidateUsername(username string) *ValidationError
+-----
+// Create lowercases and trims email, rejects duplicates with ErrEmailTaken, assigns a UUID v4 ID and UTC CreatedAt.
+func (m *Memory) Create(ctx context.Context, email, username string) (User, error)
+-----
+// New returns a Client. A nil httpClient uses http.DefaultClient with a 2 second timeout.
+func New(baseURL, apiKey string, httpClient *http.Client) *Client
+-----
+// Push POSTs the user to the CRM contacts endpoint with a bearer token. Returns an error on non-2xx or transport failure.
+func (c *Client) Push(ctx context.Context, u store.User) error
+-----
+// NewServer wires dependencies. CRM is a one-method interface satisfied by *crm.Client.
+func NewServer(st store.Store, crm CRM) *Server
