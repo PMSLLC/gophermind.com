@@ -188,9 +188,9 @@ func sizesAt(scale int) (Options, Options2) {
 		return v
 	}
 	return Options{
-			ChunkBytes: atLeast(DefaultChunkBytes*scale/100, floorChunkBytes),
-		}, Options2{
-			BriefBytes:   atLeast(defaultBriefBytes*scale/100, floorBriefBytes),
-			StepsPerPass: atLeast(defaultStepsPerPass*scale/100, floorStepsPass),
-		}
+		ChunkBytes: atLeast(DefaultChunkBytes*scale/100, floorChunkBytes),
+	}, Options2{
+		BriefBytes:   atLeast(defaultBriefBytes*scale/100, floorBriefBytes),
+		StepsPerPass: atLeast(defaultStepsPerPass*scale/100, floorStepsPass),
+	}
 }
