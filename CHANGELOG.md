@@ -6,6 +6,27 @@ All notable changes to GopherMind are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-29
+
+### Added
+
+- **`/project` plans a brief into a tree on disk.** `/project <name> <brief-file>` now reads the brief in bounded chunks, one fresh-context model call per chunk, so a long brief no longer has to fit one context window. Pass sizes are derived from the model's context window. The tree on disk is the state, so an interrupted run resumes where it stopped and refuses to resume against a changed brief.
+- **A question round.** While planning, the model asks instead of guessing. `/questions` walks you through them, you can change an answer later, and only the steps that answer invalidated are re-planned. Open questions block approval.
+- **Approve and export.** Approving the plan verifies it first and takes a run lock, then writes the legacy `ROADMAP.md`, `assignments.json`, `SPEC.md` and `PROJECT.md` that `/project-execute` reads.
+- **`gophermind brief`**, the foundations of the v2 brief-to-build feature: `brief validate <brief.md>` checks a brief's frontmatter against an embedded schema and its required sections (exit 2 for an invalid brief), `brief vault set|list` keeps secrets in an age-encrypted vault, and `brief tree check <run-dir>` validates a task tree (cycles, waves, structure). A brief can declare non-secret `env` variables with defaults; a name in both `secrets` and `env`, a name declared twice, or a name the harness reserves (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `GOPHERMIND_NODE`, `PATH`, `HOME`, `GOCACHE`, `GOMODCACHE`, `GOPATH`, `TMPDIR`) is rejected. Undeclared secret-looking names produce warnings only. The planner and executor for v2 are not part of this release.
+- **gophermind-osx:** approve and deny buttons with an auto-approve checkbox, Return sends and replies continue the session, live progress for a running turn, Start Breakdown wired to the live connection, and working Sessions and Model panels.
+
+### Changed
+
+- `/project` no longer runs the old interview; it plans from the brief you give it.
+
+### Fixed
+
+- **A session's working directory was ignored by the server**, so work ran in the server's own root. Sessions now run in the folder they were created with. gophermind-osx passes the chosen folder.
+- **The model's context could be overrun.** A single `read_file` is capped at 32 KB, `TrimToBudget` now actually trims a tool-heavy turn, and the agent adopts the context window a server states when it rejects a request, then retries.
+- gophermind-osx: answers rendered twice, the 30 second request timeout killed event streams, tool approvals were never delivered, the transcript was unreadable in one appearance, scrolling landed on text that was not drawn, the Settings panel could not be scrolled to its bottom, and the signed app could not launch because it linked a library from a path other Macs do not have. `libui.dylib` is now bundled and signed with the app.
+- `gophermind brief` and the plan tree hardening found in review: node references are confined to ids so a model-written tree cannot write outside its directory, piped multi-line secrets are stored whole, the vault file is synced to disk before it replaces the old one, and the run-directory git exclude works inside git worktrees.
+
 ## [0.8.0] - 2026-09-18
 
 ### Added
