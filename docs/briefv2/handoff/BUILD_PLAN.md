@@ -78,9 +78,18 @@ exits 2 and prints the field name; `gophermind run` on a brief whose `language` 
   `schema/brief-frontmatter.schema.json`.
 - Parse the body into sections keyed by H2 text; `## Features` is further split by H3. All seven
   required sections must exist and be non-empty.
-- Secret-name scan: regex `\b[A-Z][A-Z0-9_]{2,}\b` over the body, minus known Go/HTTP words
-  (a small stoplist: `HTTP`, `JSON`, `UUID`, `URL`, `API`, `CRM`, `ID`, `GET`, `POST`, `UTC`, `TODO`).
-  Any hit not in `secrets` produces a warning listing the token and line number. Never auto-adds.
+- `env` block: parse into `Frontmatter.Env []EnvVar{Name, Purpose, Default}`. Reject the brief with
+  exit 2 and message `ENV_SECRET_OVERLAP: <name>` if any name appears in both `secrets` and `env`.
+- Secret-name scan over the body. A token is `\b[A-Z][A-Z0-9_]{2,}\b`. It is flagged only when it is
+  not declared in `secrets` or `env` and either (a) ends in `_KEY`, `_SECRET`, `_TOKEN`, `_URL`,
+  `_DSN`, `_PASSWORD`, or `_PASSPHRASE`, or (b) sits on a line that contains "secret", "credential",
+  or "environment variable" (case-insensitive). Each hit is one warning with token and line number.
+  Warnings never change the exit code. Never auto-adds. Test fixture: the AI Venture Studio server
+  brief must produce at most 3 warnings.
+- Environment passed to `exec.Cmd`: exactly the declared `env` names with their defaults (overridable
+  by `[v2.env]` in harness config), plus the declared `secrets` names with values from the vault, plus
+  `HTTP_PROXY`/`HTTPS_PROXY`/`GOPHERMIND_NODE`. Nothing else from the harness process environment
+  leaks through. A `secrets` name never has a default and is never read from harness config.
 - Vault: `filippo.io/age` with a scrypt passphrase recipient, file at `vault.path`. Two scopes in one
   file: `harness/*` (provider keys, set via `vault set`) and `run/<run-id>/*` (brief secrets, prompted
   at load). Prompt with terminal echo off. `GOPHERMIND_VAULT_PASSPHRASE` env var bypasses the prompt
@@ -89,7 +98,8 @@ exits 2 and prints the field name; `gophermind run` on a brief whose `language` 
   environment of the harness itself.
 
 Test: example brief loads with all sections; a body containing `SENDGRID_KEY` not declared triggers
-a warning; after `vault set CANARY` with value `canary-9f8e7d`, an end-to-end run followed by
+a warning while `JSONB`, `TOKEN_REUSED`, and `PUT` do not; a brief with `FOO` in both `secrets` and
+`env` exits 2; after `vault set CANARY` with value `canary-9f8e7d`, an end-to-end run followed by
 `grep -r canary-9f8e7d .gophermind/ logs/` finds nothing.
 
 ## 3. Schema, tree store, wave assignment
@@ -240,7 +250,8 @@ for revision := current; ; {
     if resp is CONTRACT_PROBLEM { log attempt VerdictFail reason "contract_problem: ..."; break to revise }
     write resp to node.contract.file (only that file; refuse any other path)
     gofmt the file; if gofmt fails: VerdictFail reason "gofmt: ..."
-    run each distinct test command with -json, timeout test_timeout_seconds, env from vault
+    run each distinct test command with -json, timeout test_timeout_seconds,
+        env = declared env (defaults, config overrides) + secrets from vault + proxy vars, nothing else
     parse pass/fail per subtest; append Attempt
     if all pass { gitland.CommitLeaf(node); SetResult; in_progress -> verified; return }
     previousFailure = failed test names + trimmed output

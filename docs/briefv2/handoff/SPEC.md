@@ -38,6 +38,10 @@ on_ambiguity: assume_and_document   # halt | assume_and_document
 secrets:                   # names only, never values
   - name: CRM_API_KEY
     purpose: Push new users to the CRM
+env:                       # non-secret config the product or its tests read
+  - name: CRM_BASE_URL
+    purpose: CRM API base URL
+    default: https://api.crm.example.com
 network:
   - host: proxy.golang.org
     purpose: Module downloads
@@ -56,7 +60,8 @@ network:
 | `language` | Yes | Target language of the product being built. |
 | `repo`, `base_branch`, `landing` | Yes | Where work happens and how it lands. |
 | `on_ambiguity` | Yes | `halt` stops and asks. `assume_and_document` picks the conservative option and logs it on the node. |
-| `secrets` | No | Secret names and purposes. The harness prompts for each value on load. |
+| `secrets` | No | Secret names and purposes. The harness prompts for each value on load. Values reach commands as env vars from the vault only. |
+| `env` | No | Non-secret environment variables with `name`, `purpose`, and optional `default`. Passed through to command execution with their defaults unless overridden in harness config. A name may not appear in both `secrets` and `env`; the loader rejects the brief. Declared `secrets` and `env` names are excluded from the secret-name scan. |
 | `network` | No | Hosts the product or build needs. `critical: true` means a failed request fails the task; `false` means warn and continue. All traffic goes through the harness proxy. |
 
 ### Required sections
@@ -332,7 +337,7 @@ Every capability the brief relies on is Go, compiled into the harness. Library p
 4. Every leaf has at least one test with a runnable `command`. Tests are written before implementation.
 5. `depends_on` is acyclic and references only node IDs in the same tree. `wave` is derived from it, never set by hand.
 6. Contract and shared-interface nodes get `model_tier: strong`. Independent leaves get `standard` or `any`.
-7. No node file ever contains a secret value.
+7. No node file ever contains a secret value. Secret values reach commands only from the vault; a name in `secrets` never gets a default and is never sourced from `env` or harness config.
 8. Brief `## Constraints` are copied into every node's `context.constraints`, trimmed to what applies.
 9. An unknown fact follows `on_ambiguity`. Assumptions go in the node's `assumptions` array, never silently into code.
 10. A revision receives the node's full `attempts` history, not just a failure flag. Failures converging on one test suggest the test is stricter than the contract; scattered failures suggest the definition is underspecified.
@@ -363,7 +368,7 @@ These resolve the remaining open questions. Build against them unless JB overrid
 | Target language | Go only in v2. Keep the `language` field; the loader rejects anything but `go`. | One signature format, one test runner, one linter. Other languages are a v3 concern. |
 | Who writes tests | A separate test-writer pass during Decompose, on a `strong` model, from the contract alone. The implementer never edits `*_test.go`; those paths are forbidden for it. If it believes a test is wrong, it flags the planner. | Implementer-written tests tend to match the implementer's bugs. Separation makes the test an independent check. |
 | Smallest model | Design for 8k-context free models. Leaf prompt target under 4k tokens, hard cap 8k. A leaf over budget goes back to the planner to be split, never truncated. | Truncated context is the main way small models fail silently. |
-| Secret names | Declare in frontmatter. The loader also scans the brief body for `UPPER_SNAKE_CASE` tokens and env-var patterns and warns on any undeclared match. It never auto-adds. | Deterministic, with a safety net for the one you forgot. |
+| Secret names | Declare in frontmatter. The loader also scans the brief body and warns on undeclared tokens that look like secrets: `UPPER_SNAKE_CASE` ending in `_KEY`, `_SECRET`, `_TOKEN`, `_URL`, `_DSN`, `_PASSWORD`, or `_PASSPHRASE`, or any `UPPER_SNAKE_CASE` token on a line containing "secret", "credential", or "environment variable". Declared `secrets` and `env` names are exempt. It never auto-adds. Non-secret config goes in `env`. | Deterministic, with a safety net for the one you forgot, and quiet enough on a real brief that the net is visible. |
 | Runtime state | Definitions in the file tree, runtime state on the blackboard keyed by node `id`. On run end the harness writes a merged `runtime.json` next to each node for archival. If the existing blackboard is not Go or not durable, implement it behind a `Blackboard` interface with a SQLite backend (`modernc.org/sqlite`, pure Go, no cgo). | Atomic claims without file locks; the tree stays a clean record of intent. |
 | Fallback chain | Static ordered list per tier in `gophermind.yaml` for v2. Every attempt is logged. Adaptive reordering from run reports is v2.1, once there is data. | No data yet to learn from. |
 | Contract change mid-run | Pause only dependents. Increment the contract node's `revision`, mark every transitive dependent `needs_revision`, refresh their `dependency_signatures`, and let unaffected leaves in the wave finish. | Pausing the whole wave wastes work that was never wrong. |

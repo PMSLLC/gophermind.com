@@ -11,6 +11,13 @@ milestone_approvals: false
 secrets:
   - name: CRM_API_KEY
     purpose: Push new users to the CRM after registration
+env:
+  - name: CRM_BASE_URL
+    purpose: CRM API base URL, overridden in tests to point at a fake
+    default: https://api.crm.example.com
+  - name: LISTEN_ADDR
+    purpose: HTTP listen address
+    default: ":8080"
 network:
   - host: proxy.golang.org
     purpose: Module downloads
@@ -51,7 +58,7 @@ Acceptance criteria:
 
 ### CRM sync
 
-After a successful registration the service POSTs the user to the CRM at `https://api.crm.example.com/v1/contacts`
+After a successful registration the service POSTs the user to the CRM at `$CRM_BASE_URL/v1/contacts`
 with header `Authorization: Bearer $CRM_API_KEY`.
 
 Acceptance criteria:

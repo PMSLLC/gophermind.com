@@ -7,7 +7,7 @@
 | BUILD_PLAN.md | Ordered deliverables 1 to 15, each with mechanics and a test. Supersedes SPEC.md where they differ. |
 | MANIFEST.md | This file. |
 | schema/task-node.schema.json | JSON Schema for every node in the tree. Embed in the binary. |
-| schema/brief-frontmatter.schema.json | JSON Schema for the brief's YAML frontmatter. Embed. |
+| schema/brief-frontmatter.schema.json | JSON Schema for the brief's YAML frontmatter, including the `env` block. Embed. |
 | schema/contract.schema.json | JSON Schema for the Wave 0 contracts.json artifact. Embed. |
 | examples/brief.md | Complete example brief (Acme Registration API). Used by build-plan tests. |
 | examples/gophermind.yaml | Complete harness config with providers, chains, rate limits, proxy, vault, human mode. |

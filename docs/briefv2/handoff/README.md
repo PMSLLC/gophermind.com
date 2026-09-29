@@ -39,7 +39,9 @@ These come straight from JB. Do not trade them away for convenience.
 1. Every tool is Go and compiled into the harness binary.
 2. Git goes through go-git, not the git CLI.
 3. Every outbound request, including LLM provider calls, goes through the harness proxy.
-4. Secret values never appear in the brief, the tree, the blackboard, logs, or any model prompt.
+4. Secret values never appear in the brief, the tree, the blackboard, logs, or any model prompt. Secrets
+   come from the vault only; non-secret config is declared under `env` in the brief and a name can never
+   be in both.
 5. One function per leaf. A leaf never reads another node's implementation.
 6. Tests are written before implementation, by a separate pass, and the implementer cannot edit them.
 7. Nothing executes before the human approves the plan.

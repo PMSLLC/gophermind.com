@@ -29,6 +29,12 @@ type Secret struct {
 	Purpose string `json:"purpose"`
 }
 
+type EnvVar struct {
+	Name    string  `json:"name"`
+	Purpose string  `json:"purpose"`
+	Default *string `json:"default"`
+}
+
 type Network struct {
 	Host     string `json:"host"`
 	Purpose  string `json:"purpose"`
@@ -53,6 +59,7 @@ type Frontmatter struct {
 	MilestoneApprovals bool      `json:"milestone_approvals"`
 	Secrets            []Secret  `json:"secrets"`
 	Network            []Network `json:"network"`
+	Env                []EnvVar  `json:"env"`
 	Budget             *Budget   `json:"budget"`
 }
 
@@ -119,6 +126,15 @@ func Parse(src []byte) (*Brief, error) {
 	b := &Brief{body: body, bodyLine: end + 2}
 	if err := json.Unmarshal(js, &b.Front); err != nil {
 		return nil, invalid("frontmatter: %v", err)
+	}
+	secretNames := map[string]bool{}
+	for _, s := range b.Front.Secrets {
+		secretNames[s.Name] = true
+	}
+	for _, e := range b.Front.Env {
+		if secretNames[e.Name] {
+			return nil, invalid("ENV_SECRET_OVERLAP: %s", e.Name)
+		}
 	}
 
 	sections, features, err := parseSections(body)
@@ -196,22 +212,46 @@ type Warning struct {
 }
 
 var (
-	tokenRE  = regexp.MustCompile(`\b[A-Z][A-Z0-9_]{2,}\b`)
-	stoplist = map[string]bool{"HTTP": true, "JSON": true, "UUID": true, "URL": true, "API": true, "CRM": true, "ID": true, "GET": true, "POST": true, "UTC": true, "TODO": true}
+	tokenRE        = regexp.MustCompile(`\b[A-Z][A-Z0-9_]{2,}\b`)
+	secretSuffixes = []string{"_KEY", "_SECRET", "_TOKEN", "_URL", "_DSN", "_PASSWORD", "_PASSPHRASE"}
+	secretWords    = []string{"secret", "credential", "environment variable"}
 )
 
-// UndeclaredSecrets scans the body for UPPER_SNAKE tokens that are neither
-// stoplisted nor declared under secrets. Warn-only: it never edits the brief.
+func hasSecretSuffix(tok string) bool {
+	for _, s := range secretSuffixes {
+		if strings.HasSuffix(tok, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// UndeclaredSecrets scans the body for tokens that look like secret names but
+// are declared under neither secrets nor env. A token is flagged when it ends
+// in a secret-ish suffix, or when it sits on a line that mentions "secret",
+// "credential" or "environment variable" (case-insensitive). Warn-only: it
+// never edits the brief and never changes an exit code.
 func (b *Brief) UndeclaredSecrets() []Warning {
 	declared := map[string]bool{}
 	for _, s := range b.Front.Secrets {
 		declared[s.Name] = true
 	}
+	for _, e := range b.Front.Env {
+		declared[e.Name] = true
+	}
 	var out []Warning
 	for i, line := range strings.Split(b.body, "\n") {
+		lower := strings.ToLower(line)
+		wording := false
+		for _, w := range secretWords {
+			if strings.Contains(lower, w) {
+				wording = true
+				break
+			}
+		}
 		seen := map[string]bool{}
 		for _, tok := range tokenRE.FindAllString(line, -1) {
-			if stoplist[tok] || declared[tok] || seen[tok] {
+			if declared[tok] || seen[tok] || !(wording || hasSecretSuffix(tok)) {
 				continue
 			}
 			seen[tok] = true

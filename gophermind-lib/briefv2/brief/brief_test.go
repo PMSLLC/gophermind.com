@@ -121,36 +121,129 @@ func TestDuplicateSectionRejected(t *testing.T) {
 	}
 }
 
-func TestUndeclaredSecretWarnings(t *testing.T) {
-	src := loadExample(t)
+const venturePath = "../testdata/ai-venture-studio-server-brief.md"
+
+func TestParseExampleEnvBlock(t *testing.T) {
+	b, err := brief.Parse(loadExample(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Front.Env) != 2 {
+		t.Fatalf("env = %+v", b.Front.Env)
+	}
+	crm, listen := b.Front.Env[0], b.Front.Env[1]
+	if crm.Name != "CRM_BASE_URL" || crm.Default == nil || *crm.Default != "https://api.crm.example.com" {
+		t.Errorf("CRM_BASE_URL = %+v", crm)
+	}
+	if listen.Name != "LISTEN_ADDR" || listen.Default == nil || *listen.Default != ":8080" {
+		t.Errorf("LISTEN_ADDR = %+v", listen)
+	}
+}
+
+func TestEnvSecretOverlapRejected(t *testing.T) {
+	ex := string(loadExample(t))
+	both := strings.Replace(ex, "env:\n", "env:\n  - name: CRM_API_KEY\n    purpose: same name as a secret\n", 1)
+	_, err := brief.Parse([]byte(both))
+	if err == nil || !strings.Contains(err.Error(), "ENV_SECRET_OVERLAP: CRM_API_KEY") {
+		t.Fatalf("want ENV_SECRET_OVERLAP: CRM_API_KEY, got %v", err)
+	}
+	if _, ok := err.(*brief.InvalidError); !ok {
+		t.Errorf("want *InvalidError (exit 2), got %T", err)
+	}
+}
+
+func TestExampleBriefHasNoScanWarnings(t *testing.T) {
+	b, err := brief.Parse(loadExample(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := b.UndeclaredSecrets(); len(w) != 0 {
+		t.Errorf("example brief should be quiet, got %+v", w)
+	}
+}
+
+func TestScanRule(t *testing.T) {
+	ex := string(loadExample(t))
+	with := func(line string) *brief.Brief {
+		t.Helper()
+		b, err := brief.Parse([]byte(strings.Replace(ex, "## Overview\n", "## Overview\n\n"+line+"\n", 1)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	tokens := func(b *brief.Brief) string {
+		var out []string
+		for _, w := range b.UndeclaredSecrets() {
+			out = append(out, w.Token)
+		}
+		sort.Strings(out)
+		return strings.Join(out, " ")
+	}
+	cases := []struct{ name, line, want string }{
+		{"secret suffix flagged", "Mail goes through SENDGRID_KEY.", "SENDGRID_KEY"},
+		{"every suffix", "A_KEY B_SECRET C_TOKEN D_URL E_DSN F_PASSWORD G_PASSPHRASE", "A_KEY B_SECRET C_TOKEN D_URL E_DSN F_PASSWORD G_PASSPHRASE"},
+		{"ordinary words are quiet", "Stored as JSONB, updated with PUT, returns TOKEN_REUSED.", ""},
+		{"wording trigger flags any token on the line", "Read the credential from FOO_BAR.", "FOO_BAR"},
+		{"wording is case insensitive", "The Environment Variable BAZ_QUX holds it.", "BAZ_QUX"},
+		{"secret word trigger", "This is a Secret named ZED_ONE.", "ZED_ONE"},
+		{"declared env name is exempt even with a secret suffix", "Calls $CRM_BASE_URL/v1/contacts.", ""},
+		{"declared secret name is exempt", "Uses CRM_API_KEY for auth; the credential is CRM_API_KEY.", ""},
+		{"duplicate token on one line warns once", "SENDGRID_KEY and SENDGRID_KEY again.", "SENDGRID_KEY"},
+		{"bare suffix is not a token", "The _KEY suffix and KEY alone are fine.", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := tokens(with(c.line)); got != c.want {
+				t.Errorf("got %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestWarningLineNumbersUnderCRLF(t *testing.T) {
+	ex := string(loadExample(t))
+	src := strings.Replace(ex, "## Overview\n", "## Overview\n\nUses SENDGRID_KEY here.\n", 1)
+	crlf := "\ufeff" + strings.ReplaceAll(src, "\n", "\r\n")
+	b, err := brief.Parse([]byte(crlf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(src, "\n")
+	ws := b.UndeclaredSecrets()
+	if len(ws) != 1 || !strings.Contains(lines[ws[0].Line-1], "SENDGRID_KEY") {
+		t.Fatalf("warnings = %+v", ws)
+	}
+}
+
+func TestVentureStudioBrief(t *testing.T) {
+	src, err := os.ReadFile(venturePath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	b, err := brief.Parse(src)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var tokens []string
-	lines := strings.Split(strings.ReplaceAll(string(src), "\r\n", "\n"), "\n")
-	for _, w := range b.UndeclaredSecrets() {
-		tokens = append(tokens, w.Token)
-		if !strings.Contains(lines[w.Line-1], w.Token) {
-			t.Errorf("warning line %d does not contain %s", w.Line, w.Token)
+	if b.Front.ID != "gm-2026-09-29-002" || len(b.Features) != 19 {
+		t.Errorf("id=%s features=%d", b.Front.ID, len(b.Features))
+	}
+	names := func(n int, get func(i int) string) string {
+		var out []string
+		for i := 0; i < n; i++ {
+			out = append(out, get(i))
 		}
+		sort.Strings(out)
+		return strings.Join(out, " ")
 	}
-	sort.Strings(tokens)
-	want := "EMAIL_INVALID EMAIL_REQUIRED EMAIL_TAKEN USERNAME_CHARS USERNAME_LENGTH"
-	if got := strings.Join(tokens, " "); got != want {
-		t.Errorf("warnings = %q, want %q (CRM_API_KEY is declared and must not warn)", got, want)
+	if got := names(len(b.Front.Secrets), func(i int) string { return b.Front.Secrets[i].Name }); got != "DATABASE_URL JWT_SIGNING_KEY STUDIO_LLM_API_KEY TEST_DATABASE_URL" {
+		t.Errorf("secrets = %s", got)
 	}
-
-	extra := strings.Replace(string(src), "## Overview\n", "## Overview\n\nUses SENDGRID_KEY for mail.\n", 1)
-	b2, err := brief.Parse([]byte(extra))
-	if err != nil {
-		t.Fatal(err)
+	if got := names(len(b.Front.Env), func(i int) string { return b.Front.Env[i].Name }); got != "DATA_DIR LISTEN_ADDR LOG_LEVEL STUDIO_FAKE_NOW STUDIO_LLM_BASE_URL STUDIO_LLM_MODEL" {
+		t.Errorf("env = %s", got)
 	}
-	found := false
-	for _, w := range b2.UndeclaredSecrets() {
-		found = found || w.Token == "SENDGRID_KEY"
-	}
-	if !found {
-		t.Error("undeclared SENDGRID_KEY should warn")
+	// The handoff sets a ceiling of 3 warnings on this brief.
+	if w := b.UndeclaredSecrets(); len(w) > 3 {
+		t.Errorf("%d warnings (ceiling 3): %+v", len(w), w)
 	}
 }

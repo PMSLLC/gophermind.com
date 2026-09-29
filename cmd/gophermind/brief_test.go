@@ -31,11 +31,29 @@ func TestBriefValidate(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "gm-2026-09-29-001") {
 		t.Fatalf("code=%d out=%q err=%q", code, out, errs)
 	}
-	if !strings.Contains(errs, "warning") || !strings.Contains(errs, "EMAIL_INVALID") {
-		t.Errorf("expected undeclared-secret warnings on stderr, got %q", errs)
+	if strings.Contains(errs, "warning") {
+		t.Errorf("example brief should produce no warnings, got %q", errs)
 	}
-	if strings.Contains(errs, "CRM_API_KEY") {
-		t.Error("declared secret must not warn")
+}
+
+func TestBriefValidateVentureStudioBriefWithinWarningCeiling(t *testing.T) {
+	code, out, errs := runBriefCmd(t, "", "validate", "../../gophermind-lib/briefv2/testdata/ai-venture-studio-server-brief.md")
+	if code != 0 || !strings.Contains(out, "gm-2026-09-29-002") {
+		t.Fatalf("code=%d out=%q err=%q", code, out, errs)
+	}
+	if n := strings.Count(errs, "warning:"); n > 3 {
+		t.Errorf("%d warnings (ceiling 3): %q", n, errs)
+	}
+}
+
+func TestBriefValidateEnvSecretOverlapExitsTwo(t *testing.T) {
+	src, _ := os.ReadFile(filepath.Join(exampleDir, "brief.md"))
+	p := filepath.Join(t.TempDir(), "overlap.md")
+	body := strings.Replace(string(src), "env:\n", "env:\n  - name: CRM_API_KEY\n    purpose: dup\n", 1)
+	_ = os.WriteFile(p, []byte(body), 0o600)
+	code, _, errs := runBriefCmd(t, "", "validate", p)
+	if code != 2 || !strings.Contains(errs, "ENV_SECRET_OVERLAP: CRM_API_KEY") {
+		t.Errorf("code=%d err=%q", code, errs)
 	}
 }
 
