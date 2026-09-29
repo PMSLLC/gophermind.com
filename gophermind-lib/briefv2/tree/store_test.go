@@ -1,6 +1,7 @@
 package tree_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,10 +10,32 @@ import (
 	"gophermind/gophermind-lib/briefv2/tree"
 )
 
+// rootN builds a root node with no children listed.
+func rootN(t *testing.T, id string) tree.Node {
+	t.Helper()
+	raw := fmt.Sprintf(`{"spec_version":"2.0","id":%q,"kind":"root","title":"t","description":"d","brief_ref":"#x","status":"pending","children":[]}`, id)
+	n, err := tree.ParseNode([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// comp builds a component node under parent.
+func comp(t *testing.T, id, parent string) tree.Node {
+	t.Helper()
+	raw := fmt.Sprintf(`{"spec_version":"2.0","id":%q,"kind":"component","parent":%q,"title":"t","description":"d","brief_ref":"#x","status":"pending","children":[]}`, id, parent)
+	n, err := tree.ParseNode([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
 func TestStoreWriteLoadRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	s := tree.NewStore(dir)
-	tr := mustTree(t, fn(t, "fn-a", "comp", 9), fn(t, "fn-b", "comp", 9, "fn-a"))
+	tr := mustTree(t, rootN(t, "rt"), comp(t, "comp", "rt"), fn(t, "fn-a", "comp", 9), fn(t, "fn-b", "comp", 9, "fn-a"))
 	if err := s.WriteAll(tr); err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +46,7 @@ func TestStoreWriteLoadRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(back.Nodes) != 2 {
+	if len(back.Nodes) != 4 {
 		t.Fatalf("loaded %d nodes", len(back.Nodes))
 	}
 	if err := back.CheckWaves(); err != nil {
@@ -36,9 +59,10 @@ func TestStoreWriteLoadRoundTrip(t *testing.T) {
 
 func TestWriteAllRejectsCycles(t *testing.T) {
 	s := tree.NewStore(t.TempDir())
-	tr := mustTree(t, fn(t, "fn-a", "c", 1, "fn-b"), fn(t, "fn-b", "c", 1, "fn-a"))
-	if err := s.WriteAll(tr); err == nil {
-		t.Fatal("cyclic tree must not be written")
+	tr := mustTree(t, rootN(t, "rt"), comp(t, "c", "rt"), fn(t, "fn-a", "c", 1, "fn-b"), fn(t, "fn-b", "c", 1, "fn-a"))
+	err := s.WriteAll(tr)
+	if err == nil || !strings.Contains(err.Error(), "cycle") {
+		t.Fatalf("cyclic tree must not be written, got %v", err)
 	}
 }
 
@@ -139,7 +163,7 @@ func TestWriteCannotEscapeStore(t *testing.T) {
 func TestNodesNamedLikeRunArtifactsSurviveLoad(t *testing.T) {
 	dir := t.TempDir()
 	s := tree.NewStore(dir)
-	tr := mustTree(t, fn(t, "report", "comp", 0), fn(t, "contracts", "comp", 0))
+	tr := mustTree(t, rootN(t, "rt"), comp(t, "comp", "rt"), fn(t, "report", "comp", 0), fn(t, "contracts", "comp", 0))
 	if err := s.WriteAll(tr); err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +176,7 @@ func TestNodesNamedLikeRunArtifactsSurviveLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(back.Nodes) != 2 || back.Nodes["report"].ID == "" || back.Nodes["contracts"].ID == "" {
+	if len(back.Nodes) != 4 || back.Nodes["report"].ID == "" || back.Nodes["contracts"].ID == "" {
 		t.Errorf("nodes lost on load: %d", len(back.Nodes))
 	}
 }
@@ -179,5 +203,17 @@ func TestLogsComponentRejectedAndRootLogsDirSkipped(t *testing.T) {
 	}
 	if len(back.Nodes) != 1 {
 		t.Errorf("loaded %d nodes, want 1", len(back.Nodes))
+	}
+}
+
+func TestWriteAllWritesNothingForABadStructure(t *testing.T) {
+	dir := t.TempDir()
+	// function parented under "logs": no such component can exist.
+	tr := mustTree(t, rootN(t, "rt"), comp(t, "comp", "rt"), fn(t, "fn-a", "logs", 0))
+	if err := tree.NewStore(dir).WriteAll(tr); err == nil {
+		t.Fatal("bad structure must not be written")
+	}
+	if ents, _ := os.ReadDir(dir); len(ents) != 0 {
+		t.Fatalf("WriteAll wrote %d entries for a bad tree", len(ents))
 	}
 }

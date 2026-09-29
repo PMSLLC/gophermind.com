@@ -78,12 +78,59 @@ func TestBriefVaultSetAndList(t *testing.T) {
 	if code != 0 || strings.TrimSpace(out) != "CANARY" {
 		t.Fatalf("list: code=%d out=%q", code, out)
 	}
+	v, err := vault.Open(p, "pw", vaultOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := v.Get(vault.HarnessScope, "CANARY"); !ok || got != "canary-9f8e7d" {
+		t.Errorf("stored value = %q, %v", got, ok)
+	}
 	raw, _ := os.ReadFile(p)
 	if bytes.Contains(raw, []byte("canary-9f8e7d")) {
 		t.Error("vault file contains the plaintext value")
 	}
 	if strings.Contains(out+errs, "canary-9f8e7d") {
 		t.Error("value leaked to output")
+	}
+}
+
+func TestBriefVaultSetStoresPipedMultiLineValueWhole(t *testing.T) {
+	old := vaultOptions
+	vaultOptions = vault.Options{WorkFactor: 10}
+	t.Cleanup(func() { vaultOptions = old })
+	for _, c := range []struct{ name, stdin, want string }{
+		{"multi-line", "line1\nline2\nline3\n", "line1\nline2\nline3"},
+		{"crlf stripped once", "line1\r\nline2\r\n", "line1\r\nline2"},
+		{"no trailing newline", "line1\nline2", "line1\nline2"},
+	} {
+		p := filepath.Join(t.TempDir(), "v.age")
+		t.Setenv("GOPHERMIND_VAULT_PATH", p)
+		t.Setenv(vault.PassphraseEnv, "pw")
+		if code, _, errs := runBriefCmd(t, c.stdin, "vault", "set", "PEM"); code != 0 {
+			t.Fatalf("%s: code=%d err=%q", c.name, code, errs)
+		}
+		v, err := vault.Open(p, "pw", vaultOptions)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := v.Get(vault.HarnessScope, "PEM"); got != c.want {
+			t.Errorf("%s: stored %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestBriefVaultSetEmptyStdinFails(t *testing.T) {
+	t.Setenv("GOPHERMIND_VAULT_PATH", filepath.Join(t.TempDir(), "v.age"))
+	t.Setenv(vault.PassphraseEnv, "pw")
+	if code, _, _ := runBriefCmd(t, "", "vault", "set", "PEM"); code != 1 {
+		t.Errorf("code = %d, want 1", code)
+	}
+}
+
+func TestBriefTreeCheckEmptyDirFails(t *testing.T) {
+	code, out, errs := runBriefCmd(t, "", "tree", "check", t.TempDir())
+	if code != 1 {
+		t.Errorf("code=%d out=%q err=%q, want 1", code, out, errs)
 	}
 }
 

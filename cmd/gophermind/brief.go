@@ -92,9 +92,8 @@ func briefVault(args []string, in *os.File, out, errw io.Writer) int {
 		return 1
 	}
 	// When stdin is a pipe the passphrase must come from
-	// GOPHERMIND_VAULT_PASSPHRASE: vault.ReadSecret builds a fresh buffered
-	// reader per call, so reading both the passphrase and the value from one
-	// piped stdin can lose data.
+	// GOPHERMIND_VAULT_PASSPHRASE: the value is all of stdin, so it would
+	// swallow a passphrase sent on the same pipe.
 	pass, err := vault.Passphrase("Vault passphrase: ", in, errw)
 	if err != nil {
 		fmt.Fprintf(errw, "error: %v\n", err)
@@ -127,6 +126,14 @@ func briefVault(args []string, in *os.File, out, errw io.Writer) int {
 func briefTreeCheck(dir string, out, errw io.Writer) int {
 	tr, err := tree.NewStore(dir).Load()
 	if err != nil {
+		fmt.Fprintf(errw, "error: %v\n", err)
+		return 1
+	}
+	if len(tr.Nodes) == 0 {
+		fmt.Fprintf(errw, "error: no nodes found in %s\n", dir)
+		return 1
+	}
+	if err := tr.CheckStructure(); err != nil {
 		fmt.Fprintf(errw, "error: %v\n", err)
 		return 1
 	}

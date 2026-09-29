@@ -71,6 +71,9 @@ func Open(path, passphrase string, opts Options) (*Vault, error) {
 	if err := json.Unmarshal(plain, &v.data); err != nil {
 		return nil, fmt.Errorf("vault: %s is corrupt: %w", path, err)
 	}
+	if v.data == nil { // a JSON null payload
+		v.data = map[string]map[string]string{}
+	}
 	return v, nil
 }
 
@@ -172,27 +175,39 @@ func (v *Vault) save() error {
 		tmp.Close()
 		return err
 	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
 	if err := os.Chmod(tmp.Name(), 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), v.path)
+	if err := os.Rename(tmp.Name(), v.path); err != nil {
+		return err
+	}
+	// Best effort: make the rename itself durable.
+	if d, err := os.Open(dir); err == nil {
+		_ = d.Sync()
+		d.Close()
+	}
+	return nil
 }
 
-// Passphrase returns GOPHERMIND_VAULT_PASSPHRASE when set, otherwise prompts
-// on in with echo off.
+// Passphrase returns GOPHERMIND_VAULT_PASSPHRASE when set, otherwise reads one
+// line from in (hidden on a terminal).
 func Passphrase(prompt string, in *os.File, out io.Writer) (string, error) {
 	if v := os.Getenv(PassphraseEnv); v != "" {
 		return v, nil
 	}
-	return ReadSecret(prompt, in, out)
+	return ReadLine(prompt, in, out)
 }
 
-// ReadSecret reads one secret with echo off when in is a terminal, or one line
-// when in is a pipe (so `echo value | gophermind brief vault set NAME` works).
-func ReadSecret(prompt string, in *os.File, out io.Writer) (string, error) {
+// ReadLine reads one line with echo off when in is a terminal, or the first
+// line when in is a pipe.
+func ReadLine(prompt string, in *os.File, out io.Writer) (string, error) {
 	fd := int(in.Fd())
 	if term.IsTerminal(fd) {
 		fmt.Fprint(out, prompt)
@@ -205,7 +220,31 @@ func ReadSecret(prompt string, in *os.File, out io.Writer) (string, error) {
 	}
 	line, err := bufio.NewReader(in).ReadString('\n')
 	if err != nil && !(errors.Is(err, io.EOF) && line != "") {
-		return "", fmt.Errorf("vault: no value on stdin and no terminal to prompt (set %s for the passphrase)", PassphraseEnv)
+		return "", fmt.Errorf("vault: no input on stdin and no terminal to prompt (set %s for the passphrase)", PassphraseEnv)
 	}
 	return strings.TrimRight(line, "\r\n"), nil
+}
+
+// ReadSecret reads one secret value. On a terminal it is a hidden single-line
+// prompt. On a pipe it is all of stdin, minus exactly one trailing newline, so
+// multi-line values such as PEM keys are stored whole.
+func ReadSecret(prompt string, in *os.File, out io.Writer) (string, error) {
+	fd := int(in.Fd())
+	if term.IsTerminal(fd) {
+		return ReadLine(prompt, in, out)
+	}
+	b, err := io.ReadAll(in)
+	if err != nil {
+		return "", fmt.Errorf("vault: reading value from stdin: %w", err)
+	}
+	s := string(b)
+	if strings.HasSuffix(s, "\r\n") {
+		s = strings.TrimSuffix(s, "\r\n")
+	} else {
+		s = strings.TrimSuffix(s, "\n")
+	}
+	if s == "" {
+		return "", errors.New("vault: no value on stdin and no terminal to prompt")
+	}
+	return s, nil
 }

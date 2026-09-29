@@ -25,6 +25,13 @@ human gates in a later plan.
 `validate` prints one `warning:` line to stderr for each undeclared token that
 looks like a secret name. Warnings never change the exit code.
 
+`tree check` loads the run directory, then requires a well-formed tree: exactly
+one root, every component's parent is that root, and every function's parent is
+a component in the tree. An empty or wrong directory fails with exit 1. Two
+nodes that would be written to the same file are rejected when the tree is
+built. Readiness of a component or the root looks at its children only and
+ignores its own `depends_on` (D2).
+
 ## Vault
 
 Secrets are stored age-encrypted, in scopes: `harness` (used by
@@ -35,6 +42,19 @@ Secrets are stored age-encrypted, in scopes: `harness` (used by
 - `GOPHERMIND_VAULT_PASSPHRASE` supplies the passphrase without a prompt. It is
   required when stdin is a pipe, because the value for `vault set` is then read
   from that pipe and the passphrase must not compete for it.
+- A piped value is stored whole: all of stdin is the value, including embedded
+  newlines (so `cat key.pem | gophermind brief vault set KEY` keeps the full
+  PEM), minus exactly one trailing newline. Empty input is an error.
+- The vault file is fsynced before the rename and its directory is synced after.
+
+## Run directory
+
+`.gophermind/<brief-id>/` is created with mode 0700 (`brief.md` is 0600) and the
+entry `.gophermind/` is added to the repository's `info/exclude`. In a git
+worktree, where `.git` is a file, the exclude entry goes into the main
+repository's `info/exclude` (found through `gitdir:` and `commondir`). A `.git`
+that cannot be resolved is an error and nothing is created; a directory with no
+`.git` is left alone.
 
 ## Package map
 

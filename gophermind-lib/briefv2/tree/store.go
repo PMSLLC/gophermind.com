@@ -43,8 +43,12 @@ func (s *Store) Write(n Node) error {
 	return os.Rename(tmp, full)
 }
 
-// WriteAll rejects cycles, recomputes waves, then writes every node.
+// WriteAll rejects cycles and malformed structure, recomputes waves, then
+// writes every node. Nothing is written when a check fails.
 func (s *Store) WriteAll(t *Tree) error {
+	if err := t.CheckStructure(); err != nil {
+		return err
+	}
 	if err := t.AssignWaves(); err != nil {
 		return err
 	}

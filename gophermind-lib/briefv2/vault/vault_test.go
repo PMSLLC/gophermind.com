@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"filippo.io/age"
 	"gophermind/gophermind-lib/briefv2/vault"
 )
 
@@ -125,17 +126,93 @@ func TestConcurrentSetsLoseNothing(t *testing.T) {
 	}
 }
 
+func pipeOf(t *testing.T, content string) *os.File {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = w.WriteString(content)
+	_ = w.Close()
+	t.Cleanup(func() { r.Close() })
+	return r
+}
+
 func TestPassphraseFromEnvAndPipe(t *testing.T) {
 	t.Setenv(vault.PassphraseEnv, "from-env")
 	got, err := vault.Passphrase("pw: ", os.Stdin, &bytes.Buffer{})
 	if err != nil || got != "from-env" {
 		t.Fatalf("Passphrase = %q, %v", got, err)
 	}
-	r, w, _ := os.Pipe()
-	_, _ = w.WriteString("piped-value\n")
-	_ = w.Close()
-	val, err := vault.ReadSecret("v: ", r, &bytes.Buffer{})
+	val, err := vault.ReadSecret("v: ", pipeOf(t, "piped-value\n"), &bytes.Buffer{})
 	if err != nil || val != "piped-value" {
 		t.Fatalf("ReadSecret = %q, %v", val, err)
+	}
+}
+
+func TestReadSecretKeepsAllLinesAndStripsOneNewline(t *testing.T) {
+	for _, c := range []struct{ name, in, want string }{
+		{"multi-line", "line1\nline2\nline3\n", "line1\nline2\nline3"},
+		{"crlf once", "a\r\nb\r\n", "a\r\nb"},
+		{"no trailing newline", "abc", "abc"},
+		{"only one newline stripped", "abc\n\n", "abc\n"},
+	} {
+		got, err := vault.ReadSecret("v: ", pipeOf(t, c.in), &bytes.Buffer{})
+		if err != nil || got != c.want {
+			t.Errorf("%s: got %q, %v; want %q", c.name, got, err, c.want)
+		}
+	}
+}
+
+func TestReadSecretEmptyStdinErrorsWithoutPassphraseHint(t *testing.T) {
+	for _, in := range []string{"", "\n"} {
+		_, err := vault.ReadSecret("v: ", pipeOf(t, in), &bytes.Buffer{})
+		if err == nil {
+			t.Fatalf("stdin %q must error", in)
+		}
+		if strings.Contains(err.Error(), vault.PassphraseEnv) {
+			t.Errorf("value error must not mention the passphrase: %v", err)
+		}
+	}
+}
+
+func TestReadLineTakesOnlyTheFirstLine(t *testing.T) {
+	got, err := vault.ReadLine("p: ", pipeOf(t, "first\nsecond\n"), &bytes.Buffer{})
+	if err != nil || got != "first" {
+		t.Fatalf("ReadLine = %q, %v", got, err)
+	}
+	if _, err := vault.ReadLine("p: ", pipeOf(t, ""), &bytes.Buffer{}); err == nil {
+		t.Fatal("empty stdin must error")
+	}
+}
+
+func TestOpenNullPayloadThenSet(t *testing.T) {
+	rec, err := age.NewScryptRecipient("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec.SetWorkFactor(10)
+	var buf bytes.Buffer
+	w, err := age.Encrypt(&buf, rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = w.Write([]byte("null"))
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(t.TempDir(), "v.age")
+	if err := os.WriteFile(p, buf.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	v, err := vault.Open(p, "pw", fast)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := v.Set(vault.HarnessScope, "K", "v"); err != nil {
+		t.Fatalf("Set on a null payload: %v", err)
+	}
+	if got, ok := v.Get(vault.HarnessScope, "K"); !ok || got != "v" {
+		t.Errorf("Get = %q, %v", got, ok)
 	}
 }

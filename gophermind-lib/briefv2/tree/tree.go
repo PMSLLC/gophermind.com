@@ -10,13 +10,59 @@ type Tree struct{ Nodes map[string]Node }
 
 func NewTree(nodes []Node) (*Tree, error) {
 	t := &Tree{Nodes: make(map[string]Node, len(nodes))}
+	paths := map[string]string{}
+	root := ""
 	for _, n := range nodes {
 		if _, dup := t.Nodes[n.ID]; dup {
 			return nil, fmt.Errorf("tree: duplicate node id %q", n.ID)
 		}
+		if other, clash := paths[n.Path()]; clash {
+			return nil, fmt.Errorf("tree: nodes %q and %q share the path %s", other, n.ID, n.Path())
+		}
+		if n.Kind == KindRoot {
+			if root != "" {
+				return nil, fmt.Errorf("tree: more than one root node (%q and %q)", root, n.ID)
+			}
+			root = n.ID
+		}
+		paths[n.Path()] = n.ID
 		t.Nodes[n.ID] = n
 	}
 	return t, nil
+}
+
+// CheckStructure verifies the shape a complete tree must have: exactly one
+// root (with no parent), every component's parent is that root, and every
+// function's parent is a component in the tree. An empty tree is fine.
+func (t *Tree) CheckStructure() error {
+	if len(t.Nodes) == 0 {
+		return nil
+	}
+	roots := 0
+	for _, id := range t.ids() {
+		n := t.Nodes[id]
+		switch n.Kind {
+		case KindRoot:
+			roots++
+			if n.Parent != "" {
+				return fmt.Errorf("tree: root %q must not have a parent (has %q)", id, n.Parent)
+			}
+		case KindComponent:
+			p, ok := t.Nodes[n.Parent]
+			if !ok || p.Kind != KindRoot {
+				return fmt.Errorf("tree: component %q: parent %q is not a root node in the tree", id, n.Parent)
+			}
+		default:
+			p, ok := t.Nodes[n.Parent]
+			if !ok || p.Kind != KindComponent {
+				return fmt.Errorf("tree: function %q: parent %q is not a component in the tree", id, n.Parent)
+			}
+		}
+	}
+	if roots != 1 {
+		return fmt.Errorf("tree: want exactly one root node, found %d", roots)
+	}
+	return nil
 }
 
 func (t *Tree) ids() []string {
@@ -144,7 +190,9 @@ func (t *Tree) CheckWaves() error {
 
 // Ready reports whether a node may start. A function needs every depends_on
 // verified; a component needs every child verified; the root needs every
-// component (its children) verified. Unknown nodes are never ready.
+// component (its children) verified. Component and root readiness looks at
+// children only and ignores the node's own depends_on (deviation D2). Unknown
+// nodes are never ready.
 func (t *Tree) Ready(id string, verified func(string) bool) bool {
 	n, ok := t.Nodes[id]
 	if !ok {

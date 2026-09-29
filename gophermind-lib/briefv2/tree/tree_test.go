@@ -122,3 +122,45 @@ func TestReadiness(t *testing.T) {
 		t.Error("unknown node is never ready")
 	}
 }
+
+func TestNewTreeRejectsPathCollision(t *testing.T) {
+	// function "component" under "types" is written to types/component.json,
+	// the same file as the component "types".
+	_, err := tree.NewTree([]tree.Node{rootN(t, "rt"), comp(t, "types", "rt"), fn(t, "component", "types", 0)})
+	if err == nil || !strings.Contains(err.Error(), "component") || !strings.Contains(err.Error(), "types") || !strings.Contains(err.Error(), "types/component.json") {
+		t.Fatalf("want a path collision naming both ids and the path, got %v", err)
+	}
+}
+
+func TestNewTreeRejectsTwoRoots(t *testing.T) {
+	if _, err := tree.NewTree([]tree.Node{rootN(t, "rt-a"), rootN(t, "rt-b")}); err == nil {
+		t.Fatal("two roots must be rejected")
+	}
+}
+
+func TestCheckStructure(t *testing.T) {
+	good := mustTree(t, rootN(t, "rt"), comp(t, "c", "rt"), fn(t, "fn-a", "c", 0))
+	if err := good.CheckStructure(); err != nil {
+		t.Fatalf("valid tree rejected: %v", err)
+	}
+	for _, c := range []struct {
+		name  string
+		nodes []tree.Node
+		want  string
+	}{
+		{"function under logs", []tree.Node{rootN(t, "rt"), fn(t, "fn-a", "logs", 0)}, "fn-a"},
+		{"function parent absent", []tree.Node{rootN(t, "rt"), fn(t, "fn-a", "nope", 0)}, "fn-a"},
+		{"component parent not the root", []tree.Node{rootN(t, "rt"), comp(t, "c1", "rt"), comp(t, "c2", "c1")}, "c2"},
+		{"component parent absent", []tree.Node{rootN(t, "rt"), comp(t, "c", "gone")}, "c"},
+		{"no root", []tree.Node{comp(t, "c", "rt")}, "c"},
+		{"function parent is a function", []tree.Node{rootN(t, "rt"), comp(t, "c", "rt"), fn(t, "fn-a", "c", 0), fn(t, "fn-b", "fn-a", 0)}, "fn-b"},
+	} {
+		tr := mustTree(t, c.nodes...)
+		if err := tr.CheckStructure(); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: want an error naming %q, got %v", c.name, c.want, err)
+		}
+	}
+	if err := mustTree(t).CheckStructure(); err != nil {
+		t.Errorf("empty tree in-memory should be accepted: %v", err)
+	}
+}
