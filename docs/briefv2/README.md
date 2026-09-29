@@ -136,7 +136,10 @@ gophermind-lib/briefv2/
   contract/   load, Slice, Diff, Affected
   rundir/     .gophermind/<id>/ layout, kept out of git via .git/info/exclude
 cmd/gophermind/brief.go   the `gophermind brief ...` command group
-docs/briefv2/handoff/     the original handoff, for reference
+docs/briefv2/handoff/     the original handoff, for reference (copied from the zip; the only edits are that
+                           interfaces/blackboard.go was gofmt'd and interfaces/ has a go.mod so the repo's
+                           Go tooling skips it: it holds two packages, blackboard and provider, meant to be
+                           copied into real packages later)
 ```
 
 ## Deviations from the handoff

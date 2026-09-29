@@ -99,9 +99,9 @@ const (
 )
 
 type Event struct {
-	Kind   EventKind
-	Row    Row
-	At     time.Time
+	Kind EventKind
+	Row  Row
+	At   time.Time
 }
 
 // Blackboard is the coordination store. All methods are safe for concurrent use
