@@ -1,0 +1,23 @@
+{
+  "spec_version": "2.0",
+  "id": "registration",
+  "kind": "component",
+  "parent": "gm-2026-09-29-001",
+  "children": ["fn-validate-email", "fn-validate-username", "fn-memory-store-new", "fn-memory-store-create", "fn-server-new", "fn-register-handler", "fn-routes", "fn-main"],
+  "title": "Registration",
+  "description": "POST /register: validate email and username, create the user, push to CRM best effort, respond with JSON.",
+  "brief_ref": "#features/registration",
+  "status": "pending",
+  "wave": 1,
+  "model_tier": "strong",
+  "revision": 0,
+  "depends_on": ["types"],
+  "context": {
+    "constraints": ["Standard library only.", "Handlers are methods on Server. No package-level globals.", "No logging of request bodies."]
+  },
+  "tests": [
+    {"name": "register valid user", "level": "integration", "given": "POST /register with a@b.co and abc against NewServer with memory store and fake CRM", "expect": "201 and JSON with id, email, username", "command": "go test ./internal/httpapi -run TestRegisterIntegration"},
+    {"name": "duplicate email", "level": "integration", "given": "same POST twice", "expect": "second returns 409 EMAIL_TAKEN", "command": "go test ./internal/httpapi -run TestRegisterIntegration"}
+  ],
+  "budget": {"max_context_tokens": 8000, "max_revisions": 2}
+}

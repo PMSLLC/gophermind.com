@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gophermind.local/schema/brief-frontmatter/2.0",
+  "title": "GopherMind brief frontmatter",
+  "description": "The YAML frontmatter block at the top of a brief .md file, parsed to JSON and validated on load.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["spec_version", "id", "title", "language", "repo", "base_branch", "landing", "on_ambiguity"],
+  "properties": {
+    "spec_version": {"const": "2.0"},
+    "id": {"type": "string", "pattern": "^gm-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3}$", "description": "gm-YYYY-MM-DD-NNN. Becomes the run ID, tree root ID, and work branch suffix."},
+    "title": {"type": "string", "minLength": 1, "maxLength": 120},
+    "language": {"const": "go", "description": "v2 supports Go only. The loader rejects any other value."},
+    "repo": {"type": "string", "minLength": 1, "description": "Local path (~ expanded) or git URL. A URL is cloned into the run directory."},
+    "base_branch": {"type": "string", "minLength": 1},
+    "work_branch": {"type": "string", "description": "Defaults to gm/<id>."},
+    "landing": {"enum": ["diff_only", "commit", "pull_request"]},
+    "on_ambiguity": {"enum": ["halt", "assume_and_document"]},
+    "milestone_approvals": {"type": "boolean", "default": false, "description": "When true the harness pauses for human approval after every wave."},
+    "secrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "purpose"],
+        "properties": {
+          "name": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
+          "purpose": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "network": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["host", "purpose", "critical"],
+        "properties": {
+          "host": {"type": "string", "minLength": 1, "description": "Exact hostname or *.suffix glob. No scheme, no path."},
+          "purpose": {"type": "string", "minLength": 1},
+          "critical": {"type": "boolean"}
+        }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_context_tokens": {"type": "integer", "minimum": 1024},
+        "max_revisions": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}

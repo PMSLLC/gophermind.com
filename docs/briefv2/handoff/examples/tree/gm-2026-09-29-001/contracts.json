@@ -1,0 +1,184 @@
+{
+  "spec_version": "2.0",
+  "brief_id": "gm-2026-09-29-001",
+  "revision": 0,
+  "module": "github.com/acme/acme-api",
+  "conventions": {
+    "layout": [
+      "cmd/acme-api: main package, wires Server and starts http.ListenAndServe on :8080",
+      "internal/validation: pure validation functions, no I/O",
+      "internal/store: in-memory user store behind Store interface",
+      "internal/crm: CRM client, injectable *http.Client",
+      "internal/httpapi: Server struct, handlers, routing"
+    ],
+    "naming": [
+      "Exported identifiers use CamelCase; unexported use camelCase",
+      "Validation error codes are UPPER_SNAKE_CASE string constants in package validation",
+      "Test functions are named Test<FunctionName>; table cases have a name field"
+    ],
+    "errors": "Validation returns *validation.ValidationError. All other failures return error wrapped with fmt.Errorf(\"context: %w\", err). Handlers map *ValidationError to 400, store.ErrEmailTaken to 409, anything else to 500.",
+    "logging": "log/slog with the default text handler. Never log request bodies.",
+    "testing": "Table-driven tests in the same package. Use net/http/httptest for handlers. Use a fake http.RoundTripper for the CRM client."
+  },
+  "types": [
+    {
+      "id": "validation-error",
+      "package": "validation",
+      "file": "internal/validation/errors.go",
+      "decl": "// ValidationError describes a single invalid input field.\ntype ValidationError struct {\n\tCode    string\n\tField   string\n\tMessage string\n}\n\n// Error implements error.\nfunc (e *ValidationError) Error() string",
+      "uses": []
+    },
+    {
+      "id": "validation-codes",
+      "package": "validation",
+      "file": "internal/validation/errors.go",
+      "decl": "const (\n\tCodeEmailRequired  = \"EMAIL_REQUIRED\"\n\tCodeEmailInvalid   = \"EMAIL_INVALID\"\n\tCodeEmailTooLong   = \"EMAIL_TOO_LONG\"\n\tCodeUsernameLength = \"USERNAME_LENGTH\"\n\tCodeUsernameChars  = \"USERNAME_CHARS\"\n)",
+      "uses": []
+    },
+    {
+      "id": "user",
+      "package": "store",
+      "file": "internal/store/user.go",
+      "decl": "// User is a registered account.\ntype User struct {\n\tID        string\n\tEmail     string\n\tUsername  string\n\tCreatedAt time.Time\n}",
+      "uses": []
+    },
+    {
+      "id": "store-interface",
+      "package": "store",
+      "file": "internal/store/store.go",
+      "decl": "// ErrEmailTaken is returned by Create when the email already exists.\nvar ErrEmailTaken = errors.New(\"email already registered\")\n\n// Store persists users.\ntype Store interface {\n\t// Create stores a new user and returns it with ID and CreatedAt set.\n\tCreate(ctx context.Context, email, username string) (User, error)\n}",
+      "uses": ["user"]
+    }
+  ],
+  "functions": [
+    {
+      "id": "fn-validation-error-error",
+      "package": "validation",
+      "file": "internal/validation/errors.go",
+      "signature": "func (e *ValidationError) Error() string",
+      "doc": "Error returns Field and Message joined with a colon.",
+      "uses": ["validation-error"],
+      "component": "types"
+    },
+    {
+      "id": "fn-validate-email",
+      "package": "validation",
+      "file": "internal/validation/email.go",
+      "signature": "func ValidateEmail(email string) *ValidationError",
+      "doc": "ValidateEmail trims the input and returns nil when it is a syntactically valid address of at most 254 characters with a dotted domain.",
+      "uses": ["validation-error", "validation-codes"],
+      "component": "registration"
+    },
+    {
+      "id": "fn-validate-username",
+      "package": "validation",
+      "file": "internal/validation/username.go",
+      "signature": "func ValidateUsername(username string) *ValidationError",
+      "doc": "ValidateUsername returns nil when the input is 3 to 32 characters of a-z, 0-9, and underscore.",
+      "uses": ["validation-error", "validation-codes"],
+      "component": "registration"
+    },
+    {
+      "id": "fn-memory-store-new",
+      "package": "store",
+      "file": "internal/store/memory.go",
+      "signature": "func NewMemory() *Memory",
+      "doc": "NewMemory returns an empty in-memory Store safe for concurrent use.",
+      "uses": ["store-interface"],
+      "component": "registration"
+    },
+    {
+      "id": "fn-memory-store-create",
+      "package": "store",
+      "file": "internal/store/memory.go",
+      "signature": "func (m *Memory) Create(ctx context.Context, email, username string) (User, error)",
+      "doc": "Create lowercases and trims email, rejects duplicates with ErrEmailTaken, assigns a UUID v4 ID and UTC CreatedAt.",
+      "uses": ["store-interface", "user"],
+      "component": "registration"
+    },
+    {
+      "id": "fn-crm-push",
+      "package": "crm",
+      "file": "internal/crm/client.go",
+      "signature": "func (c *Client) Push(ctx context.Context, u store.User) error",
+      "doc": "Push POSTs the user to the CRM contacts endpoint with a bearer token. Returns an error on non-2xx or transport failure.",
+      "uses": ["user", "fn-crm-new"],
+      "component": "crm-sync"
+    },
+    {
+      "id": "fn-crm-new",
+      "package": "crm",
+      "file": "internal/crm/client.go",
+      "signature": "func New(baseURL, apiKey string, httpClient *http.Client) *Client",
+      "doc": "New returns a Client. A nil httpClient uses http.DefaultClient with a 2 second timeout.",
+      "uses": [],
+      "component": "crm-sync"
+    },
+    {
+      "id": "fn-server-new",
+      "package": "httpapi",
+      "file": "internal/httpapi/server.go",
+      "signature": "func NewServer(st store.Store, crm CRM) *Server",
+      "doc": "NewServer wires dependencies. CRM is a one-method interface satisfied by *crm.Client.",
+      "uses": ["store-interface"],
+      "component": "registration"
+    },
+    {
+      "id": "fn-register-handler",
+      "package": "httpapi",
+      "file": "internal/httpapi/register.go",
+      "signature": "func (s *Server) HandleRegister(w http.ResponseWriter, r *http.Request)",
+      "doc": "HandleRegister decodes the body, validates, creates the user, pushes to CRM best effort, and writes the JSON response.",
+      "uses": ["fn-validate-email", "fn-validate-username", "fn-memory-store-create", "fn-crm-push", "fn-server-new"],
+      "component": "registration"
+    },
+    {
+      "id": "fn-healthz-handler",
+      "package": "httpapi",
+      "file": "internal/httpapi/health.go",
+      "signature": "func (s *Server) HandleHealthz(w http.ResponseWriter, r *http.Request)",
+      "doc": "HandleHealthz writes 200 and the body ok.",
+      "uses": ["fn-server-new"],
+      "component": "health"
+    },
+    {
+      "id": "fn-routes",
+      "package": "httpapi",
+      "file": "internal/httpapi/routes.go",
+      "signature": "func (s *Server) Routes() http.Handler",
+      "doc": "Routes returns a ServeMux with POST /register and GET /healthz registered.",
+      "uses": ["fn-register-handler", "fn-healthz-handler"],
+      "component": "registration"
+    },
+    {
+      "id": "fn-main",
+      "package": "main",
+      "file": "cmd/acme-api/main.go",
+      "signature": "func main()",
+      "doc": "main builds the store, CRM client from CRM_API_KEY, the server, and listens on :8080.",
+      "uses": ["fn-memory-store-new", "fn-crm-new", "fn-server-new", "fn-routes"],
+      "component": "registration"
+    }
+  ],
+  "components": [
+    {"id": "types", "package": "validation", "exports": ["fn-validation-error-error"]},
+    {
+      "id": "registration",
+      "package": "httpapi",
+      "exports": ["fn-register-handler", "fn-routes"],
+      "integration_tests": [
+        {"name": "register valid user", "given": "POST /register with a@b.co and abc against NewServer with memory store and fake CRM", "expect": "201 and JSON with id, email, username", "command": "go test ./internal/httpapi -run TestRegisterIntegration"},
+        {"name": "duplicate email", "given": "same POST twice", "expect": "second returns 409 EMAIL_TAKEN", "command": "go test ./internal/httpapi -run TestRegisterIntegration"}
+      ]
+    },
+    {
+      "id": "crm-sync",
+      "package": "crm",
+      "exports": ["fn-crm-push", "fn-crm-new"],
+      "integration_tests": [
+        {"name": "crm failure does not fail registration", "given": "fake CRM transport returns 500", "expect": "register still returns 201 and a warn log line", "command": "go test ./internal/httpapi -run TestRegisterCRMFailure"}
+      ]
+    },
+    {"id": "health", "package": "httpapi", "exports": ["fn-healthz-handler"]}
+  ]
+}

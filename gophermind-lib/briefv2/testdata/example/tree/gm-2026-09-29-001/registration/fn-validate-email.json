@@ -1,0 +1,48 @@
+{
+  "spec_version": "2.0",
+  "id": "fn-validate-email",
+  "kind": "function",
+  "parent": "registration",
+  "title": "Validate an email address",
+  "description": "Reject malformed emails before they reach the store or the CRM sync.",
+  "brief_ref": "#features/registration",
+  "status": "pending",
+  "wave": 1,
+  "model_tier": "any",
+  "revision": 0,
+  "depends_on": ["fn-validation-error-error"],
+  "context": {
+    "dependency_signatures": [
+      "// ValidationError describes a single invalid input field.\ntype ValidationError struct {\n\tCode    string\n\tField   string\n\tMessage string\n}\n\n// Error implements error.\nfunc (e *ValidationError) Error() string",
+      "const (\n\tCodeEmailRequired  = \"EMAIL_REQUIRED\"\n\tCodeEmailInvalid   = \"EMAIL_INVALID\"\n\tCodeEmailTooLong   = \"EMAIL_TOO_LONG\"\n\tCodeUsernameLength = \"USERNAME_LENGTH\"\n\tCodeUsernameChars  = \"USERNAME_CHARS\"\n)"
+    ],
+    "constraints": ["Standard library only.", "Return *ValidationError, never panic.", "Field is always \"email\"."]
+  },
+  "contract": {
+    "package": "validation",
+    "file": "internal/validation/email.go",
+    "signature": "func ValidateEmail(email string) *ValidationError",
+    "inputs": [
+      {"name": "email", "type": "string", "constraints": ["May be empty", "May contain surrounding whitespace, which is trimmed before checks"]}
+    ],
+    "outputs": [
+      {"name": "err", "type": "*ValidationError", "description": "nil when valid"}
+    ],
+    "errors": [
+      {"when": "email is empty after trimming", "returns": "Code CodeEmailRequired"},
+      {"when": "trimmed email is longer than 254 characters", "returns": "Code CodeEmailTooLong"},
+      {"when": "net/mail.ParseAddress fails, or the parsed address differs from the input, or the domain has no dot", "returns": "Code CodeEmailInvalid"}
+    ],
+    "side_effects": []
+  },
+  "tests": [
+    {"name": "accepts plain address", "level": "unit", "given": "\"a@b.co\"", "expect": "nil", "command": "go test ./internal/validation -run TestValidateEmail"},
+    {"name": "trims whitespace", "level": "unit", "given": "\"  a@b.co  \"", "expect": "nil", "command": "go test ./internal/validation -run TestValidateEmail"},
+    {"name": "rejects empty", "level": "unit", "given": "\"   \"", "expect": "Code EMAIL_REQUIRED, Field email", "command": "go test ./internal/validation -run TestValidateEmail"},
+    {"name": "rejects missing domain dot", "level": "unit", "given": "\"a@localhost\"", "expect": "Code EMAIL_INVALID", "command": "go test ./internal/validation -run TestValidateEmail"},
+    {"name": "rejects display name form", "level": "unit", "given": "\"Bob <a@b.co>\"", "expect": "Code EMAIL_INVALID", "command": "go test ./internal/validation -run TestValidateEmail"},
+    {"name": "rejects 255 chars", "level": "unit", "given": "strings.Repeat(\"a\", 243) + \"@example.com\"", "expect": "Code EMAIL_TOO_LONG", "command": "go test ./internal/validation -run TestValidateEmail"},
+    {"name": "accepts 254 chars", "level": "unit", "given": "strings.Repeat(\"a\", 242) + \"@example.com\"", "expect": "nil", "command": "go test ./internal/validation -run TestValidateEmail"}
+  ],
+  "budget": {"max_context_tokens": 4000, "max_revisions": 2}
+}

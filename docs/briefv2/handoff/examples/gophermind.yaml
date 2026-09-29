@@ -1,0 +1,61 @@
+# gophermind.yaml: harness-level configuration. Lives in the harness config dir, not in a brief.
+# Secret VALUES are never here. api_key_secret names a key in the harness vault.
+
+providers:
+  - name: groq
+    base_url: https://api.groq.com/openai/v1
+    api_key_secret: GROQ_API_KEY
+    max_concurrent: 2
+    models:
+      - id: llama-3.3-70b-versatile
+        context_tokens: 128000
+  - name: together
+    base_url: https://api.together.xyz/v1
+    api_key_secret: TOGETHER_API_KEY
+    max_concurrent: 2
+    models:
+      - id: mistralai/Mixtral-8x7B-Instruct-v0.1
+        context_tokens: 32000
+  - name: gemini
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai
+    api_key_secret: GEMINI_API_KEY
+    max_concurrent: 1
+    models:
+      - id: gemini-1.5-flash
+        context_tokens: 1000000
+
+# Fallback chains per tier. Entries are provider/model. Tried in order, one at a time.
+models:
+  strong:   ["groq/llama-3.3-70b-versatile", "gemini/gemini-1.5-flash"]
+  standard: ["together/mistralai/Mixtral-8x7B-Instruct-v0.1", "groq/llama-3.3-70b-versatile"]
+  any:      ["together/mistralai/Mixtral-8x7B-Instruct-v0.1", "gemini/gemini-1.5-flash", "groq/llama-3.3-70b-versatile"]
+
+defaults:
+  max_context_tokens: 8000      # hard cap per leaf prompt; target is half of this
+  max_revisions: 2
+  max_parallel_leaves: 4        # per wave
+  stale_claim_seconds: 900      # a claim older than this with no heartbeat is released on resume
+  test_timeout_seconds: 120
+
+rate_limits:
+  honor_retry_after: true
+  backoff_initial_seconds: 5
+  backoff_max_seconds: 300
+  backoff_multiplier: 2
+  cooldown_after_429_seconds: 60   # provider is skipped in the chain for this long after a 429
+
+proxy:
+  listen: 127.0.0.1:8480
+  log_bodies: false             # never true in production; request bodies may contain secrets
+
+vault:
+  path: ~/.gophermind/vault.age
+  # passphrase is prompted on startup, or read from GOPHERMIND_VAULT_PASSPHRASE if set
+
+git:
+  author_name: GopherMind
+  author_email: gophermind@localhost
+
+human:
+  mode: interactive             # interactive | file
+  # file mode writes QUESTIONS.md / APPROVAL.md into the run dir and exits 3; rerun with --resume

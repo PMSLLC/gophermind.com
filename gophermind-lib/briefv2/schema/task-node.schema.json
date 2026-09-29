@@ -1,0 +1,405 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gophermind.local/schema/task-node/2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "spec_version",
+    "id",
+    "kind",
+    "title",
+    "description",
+    "brief_ref",
+    "status"
+  ],
+  "properties": {
+    "spec_version": {
+      "const": "2.0"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "kind": {
+      "enum": [
+        "root",
+        "component",
+        "function"
+      ]
+    },
+    "parent": {
+      "type": "string"
+    },
+    "children": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 120
+    },
+    "description": {
+      "type": "string"
+    },
+    "brief_ref": {
+      "type": "string",
+      "description": "Heading anchor in the brief this node came from"
+    },
+    "wave": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "0 = contracts; assigned from depends_on"
+    },
+    "model_tier": {
+      "enum": [
+        "strong",
+        "standard",
+        "any"
+      ],
+      "description": "Contracts and shared interfaces use strong"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Definition revision round, 0 = original"
+    },
+    "depends_on": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dependency_signatures": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "files_read": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "file",
+        "signature",
+        "inputs",
+        "outputs"
+      ],
+      "properties": {
+        "package": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "signature": {
+          "type": "string"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/param"
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/param"
+          }
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "when",
+              "returns"
+            ],
+            "properties": {
+              "when": {
+                "type": "string"
+              },
+              "returns": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "side_effects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "tests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "level",
+          "given",
+          "expect"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "level": {
+            "enum": [
+              "unit",
+              "integration",
+              "acceptance"
+            ]
+          },
+          "given": {
+            "type": "string"
+          },
+          "expect": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "network": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "host",
+          "critical"
+        ],
+        "properties": {
+          "host": {
+            "type": "string"
+          },
+          "critical": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "secrets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Secret names only"
+    },
+    "budget": {
+      "type": "object",
+      "properties": {
+        "max_context_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_revisions": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 2
+        }
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "status": {
+      "enum": [
+        "pending",
+        "ready",
+        "claimed",
+        "in_progress",
+        "verified",
+        "failed",
+        "needs_revision",
+        "escalated"
+      ]
+    },
+    "claim": {
+      "type": "object",
+      "properties": {
+        "worker": {
+          "type": "string"
+        },
+        "claimed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "attempts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "model",
+          "provider",
+          "revision",
+          "verdict"
+        ],
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "order": {
+            "type": "integer",
+            "description": "Position in the fallback chain, 1 = first try"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "duration_ms": {
+            "type": "integer"
+          },
+          "verdict": {
+            "enum": [
+              "pass",
+              "fail",
+              "error"
+            ]
+          },
+          "tests_passed": {
+            "type": "integer"
+          },
+          "tests_total": {
+            "type": "integer"
+          },
+          "failed_tests": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "failure_reason": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "files_changed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "commit": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "function"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "parent",
+          "contract",
+          "tests",
+          "wave"
+        ],
+        "properties": {
+          "tests": {
+            "minItems": 1,
+            "contains": {
+              "required": [
+                "command"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "root"
+          }
+        }
+      },
+      "else": {
+        "required": [
+          "parent"
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "param": {
+      "type": "object",
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

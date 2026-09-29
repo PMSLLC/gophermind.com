@@ -1,0 +1,39 @@
+{
+  "spec_version": "2.0",
+  "id": "gm-2026-09-29-001",
+  "kind": "root",
+  "children": ["types", "registration", "crm-sync", "health"],
+  "title": "Acme Registration API",
+  "description": "HTTP service that validates and registers users in memory and pushes them to a CRM best effort.",
+  "brief_ref": "#overview",
+  "status": "pending",
+  "wave": 0,
+  "model_tier": "strong",
+  "revision": 0,
+  "context": {
+    "constraints": [
+      "Standard library only. No third-party modules.",
+      "Go 1.22 or later.",
+      "gofmt clean and go vet clean.",
+      "Tests are table-driven and live next to the code they test.",
+      "No panics on user input.",
+      "No logging of request bodies."
+    ],
+    "notes": [
+      "Out of scope: persistence beyond memory, auth, rate limiting, CRM retries, passwords."
+    ]
+  },
+  "tests": [
+    {"name": "builds", "level": "acceptance", "given": "the full tree is verified", "expect": "exit 0", "command": "go build ./..."},
+    {"name": "vet clean", "level": "acceptance", "given": "the full tree is verified", "expect": "exit 0", "command": "go vet ./..."},
+    {"name": "all tests pass", "level": "acceptance", "given": "the full tree is verified", "expect": "exit 0", "command": "go test ./..."},
+    {"name": "healthz responds", "level": "acceptance", "given": "server running on :8080", "expect": "prints ok", "command": "sh -c 'go run ./cmd/acme-api & sleep 2; curl -sf localhost:8080/healthz | grep -qx ok; s=$?; kill %1; exit $s'"}
+  ],
+  "secrets": ["CRM_API_KEY"],
+  "network": [
+    {"host": "proxy.golang.org", "critical": true},
+    {"host": "sum.golang.org", "critical": true},
+    {"host": "api.crm.example.com", "critical": false}
+  ],
+  "budget": {"max_context_tokens": 8000, "max_revisions": 2}
+}

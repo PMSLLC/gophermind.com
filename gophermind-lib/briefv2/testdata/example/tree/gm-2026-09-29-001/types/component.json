@@ -1,0 +1,22 @@
+{
+  "spec_version": "2.0",
+  "id": "types",
+  "kind": "component",
+  "parent": "gm-2026-09-29-001",
+  "children": ["fn-validation-error-error"],
+  "title": "Shared types",
+  "description": "ValidationError, validation codes, User, and the Store interface. Declarations come from contracts.json; this component only implements methods on them.",
+  "brief_ref": "#data",
+  "status": "pending",
+  "wave": 0,
+  "model_tier": "strong",
+  "revision": 0,
+  "context": {
+    "files_read": ["internal/validation/errors.go", "internal/store/user.go", "internal/store/store.go"],
+    "constraints": ["Standard library only.", "Every exported identifier has a doc comment."]
+  },
+  "tests": [
+    {"name": "types compile", "level": "integration", "given": "declarations written from contracts.json", "expect": "exit 0", "command": "go build ./internal/validation ./internal/store"}
+  ],
+  "budget": {"max_context_tokens": 6000, "max_revisions": 2}
+}

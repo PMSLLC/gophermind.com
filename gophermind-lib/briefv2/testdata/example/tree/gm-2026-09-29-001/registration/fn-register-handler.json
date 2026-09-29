@@ -1,0 +1,55 @@
+{
+  "spec_version": "2.0",
+  "id": "fn-register-handler",
+  "kind": "function",
+  "parent": "registration",
+  "title": "POST /register handler",
+  "description": "Decode, validate, create, push to CRM best effort, respond.",
+  "brief_ref": "#features/registration",
+  "status": "pending",
+  "wave": 2,
+  "model_tier": "standard",
+  "revision": 0,
+  "depends_on": ["fn-validate-email", "fn-validate-username", "fn-memory-store-create", "fn-crm-push", "fn-server-new"],
+  "context": {
+    "dependency_signatures": [
+      "// ValidationError describes a single invalid input field.\ntype ValidationError struct {\n\tCode    string\n\tField   string\n\tMessage string\n}\n\n// Error implements error.\nfunc (e *ValidationError) Error() string",
+      "func ValidateEmail(email string) *ValidationError",
+      "func ValidateUsername(username string) *ValidationError",
+      "// User is a registered account.\ntype User struct {\n\tID        string\n\tEmail     string\n\tUsername  string\n\tCreatedAt time.Time\n}",
+      "var ErrEmailTaken = errors.New(\"email already registered\")\n\ntype Store interface {\n\tCreate(ctx context.Context, email, username string) (User, error)\n}",
+      "// CRM pushes a user to the external CRM.\ntype CRM interface {\n\tPush(ctx context.Context, u store.User) error\n}",
+      "// Server holds handler dependencies.\ntype Server struct {\n\tstore store.Store\n\tcrm   CRM\n\tlog   *slog.Logger\n}"
+    ],
+    "constraints": ["Standard library only.", "Never log the request body.", "CRM push uses a 2 second context timeout and failures are logged at warn.", "Response bodies are JSON with Content-Type application/json."]
+  },
+  "contract": {
+    "package": "httpapi",
+    "file": "internal/httpapi/register.go",
+    "signature": "func (s *Server) HandleRegister(w http.ResponseWriter, r *http.Request)",
+    "inputs": [
+      {"name": "r.Body", "type": "JSON {\"email\": string, \"username\": string}", "constraints": ["May be malformed JSON", "May be missing fields"]}
+    ],
+    "outputs": [
+      {"name": "201", "type": "JSON {\"id\", \"email\", \"username\"}", "description": "On success"},
+      {"name": "400", "type": "JSON {\"error\": {\"code\", \"field\", \"message\"}}", "description": "On validation failure; email is checked before username"},
+      {"name": "409", "type": "JSON {\"error\": {\"code\": \"EMAIL_TAKEN\", \"field\": \"email\", \"message\"}}", "description": "On duplicate"},
+      {"name": "500", "type": "JSON {\"error\": {\"code\": \"INTERNAL\"}}", "description": "On any other store error"}
+    ],
+    "errors": [
+      {"when": "body is not valid JSON", "returns": "400 with code BAD_JSON, field body"},
+      {"when": "store.Create returns ErrEmailTaken", "returns": "409 EMAIL_TAKEN"},
+      {"when": "crm.Push fails", "returns": "still 201; warn log line with the error, no email in the log"}
+    ],
+    "side_effects": ["Calls store.Create", "Calls crm.Push with a 2s timeout derived from r.Context()"]
+  },
+  "tests": [
+    {"name": "valid returns 201", "level": "unit", "given": "fake store and fake CRM, body a@b.co/abc", "expect": "201, JSON with id non-empty", "command": "go test ./internal/httpapi -run TestHandleRegister"},
+    {"name": "invalid email returns 400", "level": "unit", "given": "body a@localhost/abc", "expect": "400 EMAIL_INVALID field email", "command": "go test ./internal/httpapi -run TestHandleRegister"},
+    {"name": "email checked before username", "level": "unit", "given": "body \"\"/\"a\"", "expect": "400 EMAIL_REQUIRED", "command": "go test ./internal/httpapi -run TestHandleRegister"},
+    {"name": "duplicate returns 409", "level": "unit", "given": "fake store returns ErrEmailTaken", "expect": "409 EMAIL_TAKEN", "command": "go test ./internal/httpapi -run TestHandleRegister"},
+    {"name": "crm failure still 201", "level": "unit", "given": "fake CRM returns error", "expect": "201", "command": "go test ./internal/httpapi -run TestHandleRegister"},
+    {"name": "bad json returns 400", "level": "unit", "given": "body {", "expect": "400 BAD_JSON", "command": "go test ./internal/httpapi -run TestHandleRegister"}
+  ],
+  "budget": {"max_context_tokens": 6000, "max_revisions": 2}
+}

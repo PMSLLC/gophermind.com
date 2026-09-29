@@ -1,0 +1,42 @@
+{
+  "spec_version": "2.0",
+  "id": "fn-validate-username",
+  "kind": "function",
+  "parent": "registration",
+  "title": "Validate a username",
+  "description": "Enforce length and character rules on usernames.",
+  "brief_ref": "#features/registration",
+  "status": "pending",
+  "wave": 1,
+  "model_tier": "any",
+  "revision": 0,
+  "depends_on": ["fn-validation-error-error"],
+  "context": {
+    "dependency_signatures": [
+      "// ValidationError describes a single invalid input field.\ntype ValidationError struct {\n\tCode    string\n\tField   string\n\tMessage string\n}\n\n// Error implements error.\nfunc (e *ValidationError) Error() string",
+      "const (\n\tCodeEmailRequired  = \"EMAIL_REQUIRED\"\n\tCodeEmailInvalid   = \"EMAIL_INVALID\"\n\tCodeEmailTooLong   = \"EMAIL_TOO_LONG\"\n\tCodeUsernameLength = \"USERNAME_LENGTH\"\n\tCodeUsernameChars  = \"USERNAME_CHARS\"\n)"
+    ],
+    "constraints": ["Standard library only.", "Return *ValidationError, never panic.", "Field is always \"username\".", "Do not trim; whitespace is a character violation."]
+  },
+  "contract": {
+    "package": "validation",
+    "file": "internal/validation/username.go",
+    "signature": "func ValidateUsername(username string) *ValidationError",
+    "inputs": [{"name": "username", "type": "string", "constraints": ["May be empty", "Length is measured in runes"]}],
+    "outputs": [{"name": "err", "type": "*ValidationError", "description": "nil when valid"}],
+    "errors": [
+      {"when": "rune count is below 3 or above 32", "returns": "Code CodeUsernameLength"},
+      {"when": "any rune is outside a-z, 0-9, underscore", "returns": "Code CodeUsernameChars"}
+    ],
+    "side_effects": []
+  },
+  "tests": [
+    {"name": "accepts simple", "level": "unit", "given": "\"abc_1\"", "expect": "nil", "command": "go test ./internal/validation -run TestValidateUsername"},
+    {"name": "rejects 2 chars", "level": "unit", "given": "\"ab\"", "expect": "Code USERNAME_LENGTH", "command": "go test ./internal/validation -run TestValidateUsername"},
+    {"name": "rejects 33 chars", "level": "unit", "given": "strings.Repeat(\"a\", 33)", "expect": "Code USERNAME_LENGTH", "command": "go test ./internal/validation -run TestValidateUsername"},
+    {"name": "rejects uppercase", "level": "unit", "given": "\"Abc\"", "expect": "Code USERNAME_CHARS", "command": "go test ./internal/validation -run TestValidateUsername"},
+    {"name": "rejects space", "level": "unit", "given": "\"a bc\"", "expect": "Code USERNAME_CHARS", "command": "go test ./internal/validation -run TestValidateUsername"},
+    {"name": "length checked before chars", "level": "unit", "given": "\"A\"", "expect": "Code USERNAME_LENGTH", "command": "go test ./internal/validation -run TestValidateUsername"}
+  ],
+  "budget": {"max_context_tokens": 4000, "max_revisions": 2}
+}

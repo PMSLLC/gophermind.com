@@ -1,0 +1,34 @@
+{
+  "spec_version": "2.0",
+  "id": "fn-validation-error-error",
+  "kind": "function",
+  "parent": "types",
+  "title": "ValidationError.Error",
+  "description": "Implement the error interface on ValidationError.",
+  "brief_ref": "#data",
+  "status": "pending",
+  "wave": 0,
+  "model_tier": "any",
+  "revision": 0,
+  "depends_on": [],
+  "context": {
+    "dependency_signatures": [
+      "// ValidationError describes a single invalid input field.\ntype ValidationError struct {\n\tCode    string\n\tField   string\n\tMessage string\n}"
+    ],
+    "constraints": ["Standard library only.", "Never panic."]
+  },
+  "contract": {
+    "package": "validation",
+    "file": "internal/validation/errors.go",
+    "signature": "func (e *ValidationError) Error() string",
+    "inputs": [{"name": "e", "type": "*ValidationError", "constraints": ["May be nil"]}],
+    "outputs": [{"name": "s", "type": "string", "description": "Field, a colon, a space, then Message. Empty string when e is nil."}],
+    "errors": [],
+    "side_effects": []
+  },
+  "tests": [
+    {"name": "formats field and message", "level": "unit", "given": "&ValidationError{Field:\"email\", Message:\"invalid\"}", "expect": "\"email: invalid\"", "command": "go test ./internal/validation -run TestValidationError_Error"},
+    {"name": "nil receiver", "level": "unit", "given": "(*ValidationError)(nil)", "expect": "\"\"", "command": "go test ./internal/validation -run TestValidationError_Error"}
+  ],
+  "budget": {"max_context_tokens": 3000, "max_revisions": 2}
+}

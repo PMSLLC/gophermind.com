@@ -1,0 +1,54 @@
+{
+  "node_id": "fn-validate-email",
+  "run_id": "gm-2026-09-29-001",
+  "status": "verified",
+  "revision": 0,
+  "claim": {"worker": "worker-2", "claimed_at": "2026-09-29T18:04:11Z"},
+  "heartbeat_at": "2026-09-29T18:05:40Z",
+  "attempts": [
+    {
+      "model": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+      "provider": "together",
+      "revision": 0,
+      "order": 1,
+      "started_at": "2026-09-29T18:04:12Z",
+      "duration_ms": 6100,
+      "verdict": "fail",
+      "tests_passed": 5,
+      "tests_total": 7,
+      "failed_tests": ["TestValidateEmail/rejects_display_name_form", "TestValidateEmail/accepts_254_chars"],
+      "failure_reason": "Did not compare parsed address to input; off-by-one on length check (used > 255)."
+    },
+    {
+      "model": "gemini-1.5-flash",
+      "provider": "gemini",
+      "revision": 0,
+      "order": 2,
+      "started_at": "2026-09-29T18:04:31Z",
+      "duration_ms": 1200,
+      "verdict": "error",
+      "tests_passed": 0,
+      "tests_total": 7,
+      "failed_tests": [],
+      "failure_reason": "rate_limited: 429, retry-after 60s. Provider placed in cooldown; does not count against the chain."
+    },
+    {
+      "model": "llama-3.3-70b-versatile",
+      "provider": "groq",
+      "revision": 0,
+      "order": 3,
+      "started_at": "2026-09-29T18:04:33Z",
+      "duration_ms": 5300,
+      "verdict": "pass",
+      "tests_passed": 7,
+      "tests_total": 7,
+      "failed_tests": [],
+      "failure_reason": ""
+    }
+  ],
+  "result": {
+    "files_changed": ["internal/validation/email.go"],
+    "commit": "3f9c2a1d"
+  },
+  "updated_at": "2026-09-29T18:04:40Z"
+}

@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gophermind.local/schema/contract/2.0",
+  "title": "Wave 0 contract artifact",
+  "description": "Produced once per run by the strongest model, stored at .gophermind/<id>/contracts.json. Every node's dependency_signatures are sliced from this file by the harness, never written by a model.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["spec_version", "brief_id", "revision", "module", "conventions", "types", "functions", "components"],
+  "properties": {
+    "spec_version": {"const": "2.0"},
+    "brief_id": {"type": "string"},
+    "revision": {"type": "integer", "minimum": 0, "description": "Incremented every time the planner changes any decl. Dependents of a changed decl are marked needs_revision."},
+    "module": {"type": "string", "description": "Go module path, e.g. github.com/acme/acme-api"},
+    "conventions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layout", "naming", "errors"],
+      "properties": {
+        "layout": {"type": "array", "items": {"type": "string"}, "description": "One line per package: path and responsibility."},
+        "naming": {"type": "array", "items": {"type": "string"}},
+        "errors": {"type": "string", "description": "How errors are represented and returned across the codebase."},
+        "logging": {"type": "string"},
+        "testing": {"type": "string", "description": "Table-driven, package layout for tests, helper conventions."}
+      }
+    },
+    "types": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "package", "file", "decl"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+          "package": {"type": "string"},
+          "file": {"type": "string"},
+          "decl": {"type": "string", "description": "Complete Go declaration as it will appear in source, including doc comment. This exact string is what leaves receive."},
+          "uses": {"type": "array", "items": {"type": "string"}, "description": "IDs of other types this decl references."}
+        }
+      }
+    },
+    "functions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "package", "file", "signature", "doc"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^fn-[a-z0-9-]+$"},
+          "package": {"type": "string"},
+          "file": {"type": "string"},
+          "signature": {"type": "string", "description": "Exact Go signature line, e.g. func ValidateEmail(email string) *ValidationError"},
+          "doc": {"type": "string", "description": "Doc comment text, one to three sentences."},
+          "uses": {"type": "array", "items": {"type": "string"}, "description": "IDs of types and functions this function's signature or body is expected to depend on."},
+          "component": {"type": "string", "description": "ID of the component node that owns this function."}
+        }
+      }
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "package", "exports"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+          "package": {"type": "string"},
+          "exports": {"type": "array", "items": {"type": "string"}, "description": "Function IDs other components may call."},
+          "integration_tests": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "given", "expect"],
+              "properties": {
+                "name": {"type": "string"},
+                "given": {"type": "string"},
+                "expect": {"type": "string"},
+                "command": {"type": "string"}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

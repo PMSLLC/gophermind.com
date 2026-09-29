@@ -4,8 +4,8 @@ go 1.25.0
 
 require (
 	github.com/wailsapp/wails/v2 v2.13.0
-	golang.org/x/crypto v0.53.0
-	golang.org/x/term v0.44.0
+	golang.org/x/crypto v0.55.0
+	golang.org/x/term v0.45.0
 	gophermind/gophermind-lib v0.0.0
 )
 
@@ -86,9 +86,9 @@ require (
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	github.com/yuin/goldmark v1.7.13 // indirect
 	github.com/yuin/goldmark-emoji v1.0.6 // indirect
-	golang.org/x/net v0.56.0 // indirect
-	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
+	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.8.0 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 	golang.zx2c4.com/wireguard v0.0.0-20260522210424-ecfc5a8d5446 // indirect
