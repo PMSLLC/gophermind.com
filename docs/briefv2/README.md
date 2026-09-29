@@ -81,6 +81,8 @@ exec.Cmd for running a node's commands. It includes the declared env variables
 secrets (fetched from the vault), HTTP_PROXY and HTTPS_PROXY (when a proxy URL
 is given), and GOPHERMIND_NODE (the node id). Nothing from the harness process
 environment is included. A secret name never has a default or an override. The
+names HTTP_PROXY, HTTPS_PROXY, NO_PROXY and GOPHERMIND_NODE are reserved for
+the harness and rejected if a brief declares them as env or secret names. The
 result is sorted NAME=value strings suitable for exec.Cmd.Env.
 
 ## Decisions

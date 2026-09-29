@@ -72,7 +72,10 @@ func TestOverrideBeatsDefaultAndFillsMissingDefault(t *testing.T) {
 }
 
 func TestEnvWithoutDefaultOrOverrideIsOmitted(t *testing.T) {
-	got, _ := execenv.Build(base())
+	got, err := execenv.Build(base())
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, kv := range got {
 		if strings.HasPrefix(kv, "LOG_LEVEL=") {
 			t.Errorf("LOG_LEVEL has no default and must be omitted, got %q", kv)
@@ -104,7 +107,10 @@ func contains(xs []string, x string) bool {
 func TestNoProxyVarsWhenProxyURLEmpty(t *testing.T) {
 	in := base()
 	in.ProxyURL = ""
-	got, _ := execenv.Build(in)
+	got, err := execenv.Build(in)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, kv := range got {
 		if strings.Contains(kv, "PROXY") {
 			t.Errorf("proxy var present without a ProxyURL: %q", kv)
@@ -160,6 +166,135 @@ func TestSourceErrorPassesThrough(t *testing.T) {
 	in.SecretValues = func([]string) ([]string, error) { return nil, errFake }
 	if _, err := execenv.Build(in); err != errFake {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestSecretSourceLeakingValues(t *testing.T) {
+	cases := []struct {
+		name   string
+		source func([]string) ([]string, error)
+		want   string
+	}{
+		{
+			"source returns entry with secret value but undeclared name",
+			func([]string) ([]string, error) { return []string{"OTHER=s3cret-value"}, nil },
+			"secret source",
+		},
+		{
+			"source returns duplicate entry containing secret value",
+			func([]string) ([]string, error) {
+				return []string{"JWT_SIGNING_KEY=s3cret-value", "JWT_SIGNING_KEY=s3cret-value"}, nil
+			},
+			"returned",
+		},
+		{
+			"source returns malformed entry containing secret value",
+			func([]string) ([]string, error) { return []string{"s3cret-value"}, nil },
+			"secret source",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			in := base()
+			in.SecretValues = c.source
+			_, err := execenv.Build(in)
+			if err == nil {
+				t.Fatal("want error")
+			}
+			if !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("want error containing %q, got %v", c.want, err)
+			}
+			if strings.Contains(err.Error(), "s3cret-value") {
+				t.Error("error leaked a secret value")
+			}
+		})
+	}
+}
+
+func TestSourceUndeclaredNameWithCorrectCount(t *testing.T) {
+	in := base()
+	in.SecretValues = func([]string) ([]string, error) {
+		return []string{"OTHER=b"}, nil
+	}
+	_, err := execenv.Build(in)
+	if err == nil || !strings.Contains(err.Error(), "secret source") {
+		t.Fatalf("want error about secret source, got %v", err)
+	}
+}
+
+func TestDuplicateSecretNames(t *testing.T) {
+	in := base()
+	in.Secrets = []string{"KEY1", "KEY2", "KEY1"}
+	sourceCalled := false
+	in.SecretValues = func([]string) ([]string, error) {
+		sourceCalled = true
+		return []string{"KEY1=a", "KEY2=b", "KEY1=c"}, nil
+	}
+	_, err := execenv.Build(in)
+	if err == nil || !strings.Contains(err.Error(), "declared twice") {
+		t.Fatalf("want error about duplicate, got %v", err)
+	}
+	if sourceCalled {
+		t.Error("SecretValues should not be called when secrets have duplicates")
+	}
+}
+
+func TestDuplicateSecretEntryMaskingMissing(t *testing.T) {
+	in := base()
+	in.Secrets = []string{"A", "B"}
+	in.SecretValues = func([]string) ([]string, error) {
+		return []string{"A=1", "A=2"}, nil
+	}
+	_, err := execenv.Build(in)
+	if err == nil {
+		t.Fatal("want error")
+	}
+	errStr := err.Error()
+	if !strings.Contains(errStr, "twice") && !strings.Contains(errStr, "did not return B") {
+		t.Fatalf("want error about duplicate or missing, got %v", err)
+	}
+	if strings.Contains(errStr, "1") || strings.Contains(errStr, "2") {
+		t.Error("error should not contain secret values")
+	}
+}
+
+func TestReservedEnvName(t *testing.T) {
+	reserved := []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "GOPHERMIND_NODE"}
+	for _, name := range reserved {
+		t.Run("env name "+name, func(t *testing.T) {
+			in := base()
+			in.Env = []brief.EnvVar{{Name: name, Purpose: "p", Default: strp("x")}}
+			_, err := execenv.Build(in)
+			if err == nil || !strings.Contains(err.Error(), "reserved") {
+				t.Fatalf("want error about reserved, got %v", err)
+			}
+		})
+	}
+}
+
+func TestReservedSecretName(t *testing.T) {
+	reserved := []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "GOPHERMIND_NODE"}
+	for _, name := range reserved {
+		t.Run("secret name "+name, func(t *testing.T) {
+			in := base()
+			in.Secrets = []string{name}
+			in.SecretValues = func([]string) ([]string, error) {
+				return []string{name + "=val"}, nil
+			}
+			_, err := execenv.Build(in)
+			if err == nil || !strings.Contains(err.Error(), "reserved") {
+				t.Fatalf("want error about reserved, got %v", err)
+			}
+		})
+	}
+}
+
+func TestReservedNameInOverrides(t *testing.T) {
+	in := base()
+	in.Overrides = map[string]string{"HTTP_PROXY": "http://..."}
+	_, err := execenv.Build(in)
+	if err == nil || !strings.Contains(err.Error(), "undeclared") {
+		t.Fatalf("want error about undeclared, got %v", err)
 	}
 }
 

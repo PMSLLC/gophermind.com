@@ -15,7 +15,10 @@ import (
 	"gophermind/gophermind-lib/briefv2/brief"
 )
 
-var idRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+var (
+	idRE          = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+	reservedNames = map[string]bool{"HTTP_PROXY": true, "HTTPS_PROXY": true, "NO_PROXY": true, "GOPHERMIND_NODE": true}
+)
 
 type Inputs struct {
 	// Env is the brief's declared non-secret environment.
@@ -38,8 +41,29 @@ func Build(in Inputs) ([]string, error) {
 	for _, s := range in.Secrets {
 		secrets[s] = true
 	}
+
+	// Check for duplicate secret names before calling SecretValues
+	seen := map[string]bool{}
+	for _, s := range in.Secrets {
+		if seen[s] {
+			return nil, fmt.Errorf("execenv: secret %s is declared twice", s)
+		}
+		seen[s] = true
+	}
+
+	// Check for reserved names in secrets
+	for _, s := range in.Secrets {
+		if reservedNames[s] {
+			return nil, fmt.Errorf("execenv: %s is reserved for the harness", s)
+		}
+	}
+
 	declared := map[string]bool{}
 	for _, e := range in.Env {
+		// Check for reserved names in env
+		if reservedNames[e.Name] {
+			return nil, fmt.Errorf("execenv: %s is reserved for the harness", e.Name)
+		}
 		if secrets[e.Name] {
 			return nil, fmt.Errorf("ENV_SECRET_OVERLAP: %s", e.Name)
 		}
@@ -79,12 +103,29 @@ func Build(in Inputs) ([]string, error) {
 		if len(vals) != len(in.Secrets) {
 			return nil, fmt.Errorf("execenv: secret source returned %d entries for %d declared secrets", len(vals), len(in.Secrets))
 		}
+
+		// Track which secret names have been seen in the source result
+		seenInSource := map[string]int{}
 		for _, kv := range vals {
 			name, _, ok := strings.Cut(kv, "=")
-			if !ok || !secrets[name] {
-				return nil, errors.New("execenv: secret source returned a malformed or undeclared entry")
+			if !ok {
+				return nil, errors.New("execenv: secret source returned a malformed entry")
+			}
+			if !secrets[name] {
+				return nil, errors.New("execenv: secret source returned an undeclared entry")
+			}
+			seenInSource[name]++
+			if seenInSource[name] > 1 {
+				return nil, fmt.Errorf("execenv: secret source returned %s twice", name)
 			}
 			out = append(out, kv)
+		}
+
+		// Check that all declared secrets were returned
+		for _, s := range in.Secrets {
+			if seenInSource[s] == 0 {
+				return nil, fmt.Errorf("execenv: secret source did not return %s", s)
+			}
 		}
 	}
 	if in.ProxyURL != "" {
