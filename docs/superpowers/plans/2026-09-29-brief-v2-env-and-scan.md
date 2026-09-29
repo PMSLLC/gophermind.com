@@ -167,7 +167,7 @@ func TestScanRule(t *testing.T) {
 func TestWarningLineNumbersUnderCRLF(t *testing.T) {
 	ex := string(loadExample(t))
 	src := strings.Replace(ex, "## Overview\n", "## Overview\n\nUses SENDGRID_KEY here.\n", 1)
-	crlf := "﻿" + strings.ReplaceAll(src, "\n", "\r\n")
+	crlf := "\ufeff" + strings.ReplaceAll(src, "\n", "\r\n")
 	b, err := brief.Parse([]byte(crlf))
 	if err != nil {
 		t.Fatal(err)
