@@ -56,6 +56,49 @@ repository's `info/exclude` (found through `gitdir:` and `commondir`). A `.git`
 that cannot be resolved is an error and nothing is created; a directory with no
 `.git` is left alone.
 
+## Environment block
+
+The frontmatter `env` section declares non-secret variables that a command may
+read. Each declares a name, purpose, and optional default value (a pointer to
+string). An env name must not equal a secret name; overlap is rejected with exit
+2 and the message `ENV_SECRET_OVERLAP: <name>`.
+
+## Secret-name scan rule
+
+The `brief validate` command scans the brief body for undeclared tokens that
+look like secret names. A token is flagged when it (a) ends in `_KEY`,
+`_SECRET`, `_TOKEN`, `_URL`, `_DSN`, `_PASSWORD`, or `_PASSPHRASE`, or (b)
+sits on a line containing "secret", "credential" or "environment variable"
+(case-insensitive). Undeclared tokens matching the secret suffix list or
+appearing on a line with secret wording are printed as warnings to stderr; they
+never change the exit code. Declared secret and env names are always exempt.
+
+## Command environment
+
+The `execenv.Build` function constructs the exact environment handed to an
+exec.Cmd for running a node's commands. It includes the declared env variables
+(applying defaults, then config overrides from the harness), the declared
+secrets (fetched from the vault), HTTP_PROXY and HTTPS_PROXY (when a proxy URL
+is given), and GOPHERMIND_NODE (the node id). Nothing from the harness process
+environment is included. A secret name never has a default or an override. The
+result is sorted NAME=value strings suitable for exec.Cmd.Env.
+
+## Decisions
+
+This plan implements decisions E1-E4 from the spec update:
+
+E1: The secret-name scan rule has no stoplist. A token is flagged based on
+suffix or line wording, not a whitelist.
+
+E2: The harness config format is still undecided, so overrides are passed to
+the builder as a map; wiring them to config is a later task.
+
+E3: The test fixture uses the updated brief version that includes the env
+block, yielding 2 scan warnings (ceiling 3) on the venture-studio brief.
+
+E4: The proxy URL is optional; empty means HTTP_PROXY and HTTPS_PROXY are
+omitted. GOPHERMIND_NODE is always set.
+
 ## Package map
 
 ```text
@@ -82,7 +125,7 @@ resolutions reproduce every value in the examples that can be checked.
 | D2 | Wave rule: components take the max wave of their children; function with empty `depends_on` has no defined wave | The example has `registration` at wave 1 with a child at wave 2, and `fn-validation-error-error` (no deps) at wave 0 | `wave = 0` if `depends_on` is empty, else `1 + max(wave of depends_on)`, for every kind. Children do not affect a node's wave. Readiness (children verified) is separate |
 | D3 | Slicing `fn-register-handler` yields "the seven entries shown in its node file" | The stated algorithm over the shipped `contracts.json` yields 10 entries (4 types, 6 functions). The node file's 7 entries are hand-written, include a `CRM` interface and a `Server` struct that `contracts.json` does not define, and omit 5 signatures | The golden test asserts the algorithm's 10 entries. The shipped `contracts.json` is used unchanged. Open item for John: the contract is missing `Server` and `CRM` types that `fn-server-new` relies on |
 | D4 | "Every file under examples/tree validates", waves reproduced | The example tree is a partial excerpt: only 7 node files, while `depends_on` and `children` reference ~10 more | Per-file schema validation runs on all 7. Tree-level tests use the 6-node subset whose dependencies exist, plus synthetic trees. `Load` does not require `children` to resolve |
-| D5 | Secret scan regex `\b[A-Z][A-Z0-9_]{2,}\b` minus a stoplist | It flags 5 error codes in the example brief (`EMAIL_INVALID` etc.) | Keep the regex; warnings only, never blocking. Test pins the 5 expected warnings |
+| D5 | Secret scan regex `\b[A-Z][A-Z0-9_]{2,}\b` minus a stoplist | It flags 5 error codes in the example brief (`EMAIL_INVALID` etc.) | The handoff update resolved the scan noise. Venture-studio fixture: 2 warnings, ceiling 3. Warnings only, never blocking |
 | D6 | Config in `gophermind.yaml`, then TOML | `GOPHERMIND.toml` is not parsed by any Go code and there is no TOML library | Items 1 to 4 need no harness config. Vault path defaults to `<config.Dir()>/vault.age`. Config format is decided in the provider/router plan |
 | D7 | Blackboard: reuse the recursive agent system's | Not in this repo; John did not say where it lives | Assumption: build the SQLite backend in the blackboard plan (item 6). Not needed here |
 | D8 | Live view (item 15) is a wave board plus attempt log | John wants a Gantt chart | Item 15 becomes a Gantt view: one row per leaf grouped by component, bars from each attempt's `started_at` and `duration_ms`, one bar per model in the fallback chain, dependency arrows from `depends_on`, rate-limit waits as gaps, revision rounds as a new block. It reads the blackboard only and works live and after the fact (no forecast before a run, since durations are unknown). No change to items 1 to 4 or to the item 6 blackboard interface. |
