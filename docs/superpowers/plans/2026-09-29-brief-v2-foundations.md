@@ -22,7 +22,7 @@
 
 ## Decisions and deviations from the handoff (read before Task 1)
 
-The handoff's stated tests cannot all pass against its own example data. These resolutions are chosen because they reproduce every value in the examples that can be checked. Each is called out again in the task that owns it. **Report all of them at the checkpoint.**
+The handoff's stated tests cannot all pass against its own example data. These resolutions are chosen because they reproduce every value in the examples that can be checked. Each is called out again in the task that owns it. **Report all of them at the checkpoint.** D8 is a later-item decision recorded here so it is not lost.
 
 | # | Handoff says | Problem | Resolution in this plan |
 |---|---|---|---|
@@ -33,6 +33,7 @@ The handoff's stated tests cannot all pass against its own example data. These r
 | D5 | Secret scan regex `\b[A-Z][A-Z0-9_]{2,}\b` minus a stoplist | It flags 5 error codes in the example brief (`EMAIL_INVALID` etc.) | Keep the regex; warnings only, never blocking. Test pins the 5 expected warnings |
 | D6 | Config in `gophermind.yaml`, then TOML | `GOPHERMIND.toml` is not parsed by any Go code and there is no TOML library | Items 1 to 4 need no harness config. Vault path defaults to `<config.Dir()>/vault.age`. Config format is decided in the provider/router plan |
 | D7 | Blackboard: reuse the recursive agent system's | Not in this repo; John did not say where it lives | Assumption: build the SQLite backend in the blackboard plan (item 6). Not needed here |
+| D8 | Live view (item 15) is a wave board plus attempt log | John wants a Gantt chart | Item 15 becomes a Gantt view: one row per leaf grouped by component, bars from each attempt's `started_at` and `duration_ms`, one bar per model in the fallback chain, dependency arrows from `depends_on`, rate-limit waits as gaps, revision rounds as a new block. It reads the blackboard only and works live and after the fact (no forecast before a run, since durations are unknown). No change to items 1 to 4 or to the item 6 blackboard interface. |
 
 ## Review Focus
 
