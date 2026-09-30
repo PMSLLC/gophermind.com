@@ -2,10 +2,10 @@ package planner
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	"gophermind/gophermind-lib/briefv2/pathsafe"
 )
 
 func TestDerivedTestNames(t *testing.T) {
@@ -24,46 +24,6 @@ func TestDerivedTestNames(t *testing.T) {
 		}
 		if got := testCommand(c.file, c.wantFunc); got != c.wantCmd {
 			t.Errorf("testCommand(%s) = %q, want %q", c.id, got, c.wantCmd)
-		}
-	}
-}
-
-func TestSafeTestPath(t *testing.T) {
-	repo, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	outside := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(repo, "internal", "real"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(outside, filepath.Join(repo, "internal", "escape")); err != nil {
-		t.Skipf("cannot make a symlink here: %v", err)
-	}
-
-	good := []string{"a_test.go", "internal/real/x_test.go", "internal/not/yet/made/x_test.go"}
-	for _, rel := range good {
-		abs, err := safeTestPath(repo, rel)
-		if err != nil || abs != filepath.Join(repo, filepath.FromSlash(rel)) {
-			t.Errorf("safeTestPath(%q) = %q, %v", rel, abs, err)
-		}
-	}
-	if exists(filepath.Join(repo, "internal", "not")) {
-		t.Error("safeTestPath created a directory; it must only answer")
-	}
-	bad := map[string]string{
-		"../x_test.go":                     "not a clean path",
-		"internal/../../x_test.go":         "not a clean path",
-		"/etc/x_test.go":                   "not a clean path",
-		`internal\x_test.go`:               "not a clean path",
-		"":                                 "not a clean path",
-		"internal/real/x.go":               "does not end in _test.go",
-		"internal/escape/x_test.go":        "resolves outside the repository",
-		"internal/escape/deeper/x_test.go": "resolves outside the repository",
-	}
-	for rel, want := range bad {
-		if _, err := safeTestPath(repo, rel); err == nil || !strings.Contains(err.Error(), want) {
-			t.Errorf("safeTestPath(%q) = %v, want an error containing %q", rel, err, want)
 		}
 	}
 }
@@ -209,8 +169,8 @@ func TestTestwriterErrorsNeverQuoteTheReply(t *testing.T) {
 	// A path taken from a contract is reply text too.
 	repo := t.TempDir()
 	for _, rel := range []string{"../" + canary + "_test.go", "/" + canary + "_test.go", canary + "/x.go", canary + `\x_test.go`} {
-		if _, err := safeTestPath(repo, rel); err == nil || strings.Contains(err.Error(), canary) {
-			t.Errorf("safeTestPath(%q) = %v", rel, err)
+		if _, err := pathsafe.ResolveTest(repo, rel); err == nil || strings.Contains(err.Error(), canary) {
+			t.Errorf("pathsafe.ResolveTest(%q) = %v", rel, err)
 		}
 	}
 }
@@ -229,18 +189,5 @@ func TestCheckTestSourceImportsAreStdOrOwnModule(t *testing.T) {
 		if err := checkTestSource(src(bad), "greet", "TestGreet", mod); err == nil {
 			t.Errorf("%s was accepted", bad)
 		}
-	}
-}
-
-func TestSafeTestPathRefusesASymlinkedParentInsideTheRepo(t *testing.T) {
-	repo, _ := filepath.EvalSymlinks(t.TempDir())
-	if err := os.MkdirAll(filepath.Join(repo, "real"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(filepath.Join(repo, "real"), filepath.Join(repo, "link")); err != nil {
-		t.Skip(err)
-	}
-	if _, err := safeTestPath(repo, "link/x_test.go"); err == nil || !strings.Contains(err.Error(), "symbolic link") {
-		t.Errorf("err = %v", err)
 	}
 }
