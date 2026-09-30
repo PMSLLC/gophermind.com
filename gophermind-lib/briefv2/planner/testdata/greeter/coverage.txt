@@ -1,0 +1,17 @@
+{
+  "map": [
+    {"requirement": "F1", "nodes": ["greeting"]},
+    {"requirement": "F2", "nodes": ["farewell"]},
+    {"requirement": "C1", "nodes": ["fn-greet", "fn-farewell", "fn-name-error-error"]},
+    {"requirement": "C2", "nodes": []},
+    {"requirement": "A1", "nodes": []},
+    {"requirement": "A2", "nodes": []},
+    {"requirement": "A3", "nodes": ["fn-greet", "fn-farewell"]}
+  ],
+  "root_tests": [
+    {"requirement": "C2", "name": "formatted and vetted", "given": "the full tree is verified", "expect": "gofmt lists nothing and vet exits 0", "command": "test -z \"$(gofmt -l .)\" && go vet ./..."},
+    {"requirement": "A1", "name": "builds", "given": "the full tree is verified", "expect": "exit 0", "command": "go build ./..."},
+    {"requirement": "A2", "name": "vet clean", "given": "the full tree is verified", "expect": "exit 0", "command": "go vet ./..."},
+    {"requirement": "A3", "name": "all tests pass", "given": "the full tree is verified", "expect": "exit 0", "command": "go test ./..."}
+  ]
+}

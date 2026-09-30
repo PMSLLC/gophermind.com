@@ -61,7 +61,7 @@ type Covered struct {
 func ParseCoverageReply(text string, reqs []Requirement) (CoverageReply, error) {
 	var r CoverageReply
 	if err := json.Unmarshal([]byte(text), &r); err != nil {
-		return CoverageReply{}, fmt.Errorf("coverage reply is not valid JSON: %w", err)
+		return CoverageReply{}, fmt.Errorf("coverage reply is not valid JSON (%s)", jsonErr(err))
 	}
 	known := map[string]bool{}
 	for _, q := range reqs {
@@ -69,18 +69,18 @@ func ParseCoverageReply(text string, reqs []Requirement) (CoverageReply, error) 
 	}
 	for _, m := range r.Map {
 		if !known[m.Requirement] {
-			return CoverageReply{}, fmt.Errorf("coverage reply: map names unknown requirement %q", m.Requirement)
+			return CoverageReply{}, fmt.Errorf("coverage reply: map names unknown requirement (%d bytes)", len(m.Requirement))
 		}
 	}
 	for _, t := range r.RootTests {
 		if !known[t.Requirement] {
-			return CoverageReply{}, fmt.Errorf("coverage reply: root test names unknown requirement %q", t.Requirement)
+			return CoverageReply{}, fmt.Errorf("coverage reply: root test names unknown requirement (%d bytes)", len(t.Requirement))
 		}
 		if strings.TrimSpace(t.Name) == "" {
 			return CoverageReply{}, fmt.Errorf("coverage reply: a root test for %s has no name", t.Requirement)
 		}
 		if strings.TrimSpace(t.Command) == "" {
-			return CoverageReply{}, fmt.Errorf("coverage reply: root test %q for %s has no command", t.Name, t.Requirement)
+			return CoverageReply{}, fmt.Errorf("coverage reply: root test for %s has no command", t.Requirement)
 		}
 	}
 	return r, nil
@@ -266,6 +266,32 @@ func CommandWarnings(reqs []Requirement, reply CoverageReply) []string {
 		}
 		if has && !runs {
 			out = append(out, fmt.Sprintf("%s: no root test runs the command the bullet begins with (`%s`)", q.ID, span))
+		}
+	}
+	return out
+}
+
+// StrayCommandWarnings lists each cmd/<name> directory that holds plan files
+// although the brief never names it. A plan that spreads its entry point over
+// cmd/server and cmd/fake-llm when the brief names one binary shows up here.
+func StrayCommandWarnings(briefSrc []byte, nodes []PlanNode) []string {
+	named := map[string]bool{}
+	for _, m := range backtickRE.FindAllSubmatch(briefSrc, -1) {
+		parts := strings.Split(string(m[1]), "/")
+		if len(parts) >= 2 && parts[0] == "cmd" && parts[1] != "" {
+			named[parts[1]] = true
+		}
+	}
+	out := []string{}
+	seen := map[string]bool{}
+	for _, n := range nodes {
+		parts := strings.Split(n.File, "/")
+		if n.Kind != tree.KindFunction || len(parts) < 3 || parts[0] != "cmd" {
+			continue
+		}
+		if name := parts[1]; !named[name] && !seen[name] {
+			seen[name] = true
+			out = append(out, "`cmd/"+name+"` holds plan files but the brief never names it")
 		}
 	}
 	return out

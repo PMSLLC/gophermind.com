@@ -1,0 +1,19 @@
+[
+  {
+    "id": "fn-imports-are-standard",
+    "title": "Check that imports are standard library only",
+    "description": "Report whether every import path given belongs to the standard library.",
+    "model_tier": "any",
+    "node_class": "pure",
+    "depends_on": [],
+    "contract": {
+      "package": "greet",
+      "file": "internal/greet/imports.go",
+      "signature": "func ImportsAreStandard(paths []string) bool",
+      "inputs": [{"name": "paths", "type": "[]string", "constraints": ["May be empty"]}],
+      "outputs": [{"name": "ok", "type": "bool", "description": "true when no path has a dot in its first element"}],
+      "errors": [],
+      "side_effects": []
+    }
+  }
+]

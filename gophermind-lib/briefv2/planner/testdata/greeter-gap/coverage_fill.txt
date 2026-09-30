@@ -1,0 +1,13 @@
+{
+  "map": [{"requirement": "C1", "nodes": ["fn-imports-are-standard"]}],
+  "root_tests": [
+    {"requirement": "A3", "name": "all tests pass", "given": "the full tree is verified", "expect": "exit 0", "command": "go test ./..."}
+  ],
+  "types": [],
+  "functions": [
+    {"id": "fn-imports-are-standard", "package": "greet", "file": "internal/greet/imports.go",
+     "signature": "func ImportsAreStandard(paths []string) bool",
+     "doc": "ImportsAreStandard reports whether every import path belongs to the standard library.",
+     "uses": [], "component": "greeting"}
+  ]
+}
