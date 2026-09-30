@@ -24,10 +24,13 @@ type Message struct {
 }
 
 type Request struct {
-	Model       string
-	Messages    []Message
-	MaxTokens   int
-	Temperature float64 // executor uses 0 for implementation, 0.2 for planning
+	Model     string
+	Messages  []Message
+	MaxTokens int
+	// MaxGrownTokens, when positive, caps the doubled budget the router retries
+	// with after a truncated reply; zero means the router's default cap.
+	MaxGrownTokens int
+	Temperature    float64 // executor uses 0 for implementation, 0.2 for planning
 	// StopSequences are optional; the executor uses them to cut off trailing prose after a code fence.
 	StopSequences []string
 }

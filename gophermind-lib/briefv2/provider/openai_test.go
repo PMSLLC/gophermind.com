@@ -314,3 +314,30 @@ func TestEmptyContentForAnotherReasonIsAnEmptyReplyError(t *testing.T) {
 		t.Errorf("error text %q leaks reply text", err)
 	}
 }
+
+func TestPartialContentWithLengthIsATruncationError(t *testing.T) {
+	p := newProvider(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"model":"qwen","choices":[{"message":{"role":"assistant","content":"{\"module\": \"` + canary + `"},"finish_reason":"length"}],"usage":{"prompt_tokens":5,"completion_tokens":8000}}`))
+	}), "")
+	got, err := p.Complete(context.Background(), request())
+	var tr provider.ErrTruncated
+	if !errors.As(err, &tr) {
+		t.Fatalf("err = %v, want ErrTruncated for a partial reply cut at the limit", err)
+	}
+	if got.Text != "" {
+		t.Errorf("a truncated reply must not be returned as text: %q", got.Text)
+	}
+	if strings.Contains(err.Error(), canary) || !strings.Contains(err.Error(), "mini") {
+		t.Errorf("error text %q quotes the reply or lacks the provider", err)
+	}
+}
+
+func TestPartialContentWithStopIsStillASuccess(t *testing.T) {
+	p := newProvider(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"model":"qwen","choices":[{"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}]}`))
+	}), "")
+	got, err := p.Complete(context.Background(), request())
+	if err != nil || got.Text != "done" {
+		t.Fatalf("got %+v err %v", got, err)
+	}
+}
