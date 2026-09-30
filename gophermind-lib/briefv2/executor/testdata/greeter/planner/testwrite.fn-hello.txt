@@ -1,0 +1,15 @@
+{
+  "tests": [
+    {
+      "name": "greets the named caller",
+      "given": "GET /hello?name=Ada",
+      "expect": "Hello, Ada!"
+    },
+    {
+      "name": "defaults the name to world",
+      "given": "GET /hello",
+      "expect": "Hello, world!"
+    }
+  ],
+  "test_file": "package main\n\nimport (\n\t\"net/http/httptest\"\n\t\"testing\"\n)\n\nfunc TestHello(t *testing.T) {\n\tcases := []struct{ name, url, want string }{\n\t\t{\"greets the named caller\", \"/hello?name=Ada\", \"Hello, Ada!\"},\n\t\t{\"defaults the name to world\", \"/hello\", \"Hello, world!\"},\n\t}\n\tfor _, c := range cases {\n\t\tt.Run(c.name, func(t *testing.T) {\n\t\t\trec := httptest.NewRecorder()\n\t\t\thelloHandler(rec, httptest.NewRequest(\"GET\", c.url, nil))\n\t\t\tif got := rec.Body.String(); got != c.want {\n\t\t\t\tt.Errorf(\"GET %s wrote %q, want %q\", c.url, got, c.want)\n\t\t\t}\n\t\t})\n\t}\n}\n"
+}

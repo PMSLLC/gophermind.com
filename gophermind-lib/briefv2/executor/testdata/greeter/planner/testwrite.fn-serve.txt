@@ -1,0 +1,15 @@
+{
+  "tests": [
+    {
+      "name": "serves both routes",
+      "given": "a free loopback address",
+      "expect": "/hello and /bye are registered"
+    },
+    {
+      "name": "returns the listen error",
+      "given": "256.256.256.256:1",
+      "expect": "a non-nil error"
+    }
+  ],
+  "test_file": "package main\n\nimport \"testing\"\n\nfunc TestServe(t *testing.T) {\n\tif err := serve(\"256.256.256.256:1\"); err == nil {\n\t\tt.Fatal(\"serve on an unusable address returned nil, want an error\")\n\t}\n}\n"
+}

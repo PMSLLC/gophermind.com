@@ -1,0 +1,12 @@
+package greet
+
+import "strings"
+
+// Greet trims the name but says Hi and refuses an empty name.
+func Greet(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", &NameError{Reason: "name is empty"}
+	}
+	return "Hi, " + name + "!", nil
+}

@@ -1,0 +1,20 @@
+{
+  "tests": [
+    {
+      "name": "says goodbye to a name",
+      "given": "\"Ada\"",
+      "expect": "Goodbye, Ada! and a nil error"
+    },
+    {
+      "name": "trims the name",
+      "given": "\"  Ada  \"",
+      "expect": "Goodbye, Ada! and a nil error"
+    },
+    {
+      "name": "refuses an empty name",
+      "given": "\"   \"",
+      "expect": "an empty string and a *NameError"
+    }
+  ],
+  "test_file": "package greet\n\nimport \"testing\"\n\nfunc TestFarewell(t *testing.T) {\n\tcases := []struct {\n\t\tname    string\n\t\tin      string\n\t\twant    string\n\t\twantErr bool\n\t}{\n\t\t{\"says goodbye to a name\", \"Ada\", \"Goodbye, Ada!\", false},\n\t\t{\"trims the name\", \"  Ada  \", \"Goodbye, Ada!\", false},\n\t\t{\"refuses an empty name\", \"   \", \"\", true},\n\t}\n\tfor _, c := range cases {\n\t\tt.Run(c.name, func(t *testing.T) {\n\t\t\tgot, err := Farewell(c.in)\n\t\t\tif (err != nil) != c.wantErr {\n\t\t\t\tt.Fatalf(\"Farewell(%q) error = %v, wantErr %v\", c.in, err, c.wantErr)\n\t\t\t}\n\t\t\tif got != c.want {\n\t\t\t\tt.Errorf(\"Farewell(%q) = %q, want %q\", c.in, got, c.want)\n\t\t\t}\n\t\t\tif c.wantErr {\n\t\t\t\tif _, ok := err.(*NameError); !ok {\n\t\t\t\t\tt.Errorf(\"Farewell(%q) error is %T, want *NameError\", c.in, err)\n\t\t\t\t}\n\t\t\t}\n\t\t})\n\t}\n}\n"
+}

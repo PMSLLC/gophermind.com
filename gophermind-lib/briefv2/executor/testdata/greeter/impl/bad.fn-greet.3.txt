@@ -1,0 +1,16 @@
+package greet
+
+import "strings"
+
+// Greet trims the name but returns a plain error for an empty one.
+func Greet(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", emptyGreet{}
+	}
+	return "Hello, " + name + "!", nil
+}
+
+type emptyGreet struct{}
+
+func (emptyGreet) Error() string { return "name is empty" }

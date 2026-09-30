@@ -1,0 +1,12 @@
+package greet
+
+import "strings"
+
+// Greet trims the name and returns Hello, <name>!. An empty name is an error.
+func Greet(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", &NameError{Reason: "name is empty"}
+	}
+	return "Hello, " + name + "!", nil
+}
