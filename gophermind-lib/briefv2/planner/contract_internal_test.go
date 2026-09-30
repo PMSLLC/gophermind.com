@@ -76,7 +76,6 @@ func TestMergePass(t *testing.T) {
 	}
 
 	bad := []struct{ name, reply, want string }{
-		{"more with nothing new", `{"types": [], "functions": [], "more": true}`, "holds no function"},
 		{"signature is not Go", `{"functions": [` + fn("fn-a", "A(name) string", "internal/x/a.go", ``) + `]}`, "not valid Go"},
 		{"signature is two declarations", `{"functions": [` + fn("fn-a", "func A() {}\\nfunc B()", "internal/x/a.go", ``) + `]}`, "exactly one function"},
 		{"file leaves the repo", `{"functions": [` + fn("fn-a", "func A()", "../a.go", ``) + `]}`, "inside the repository"},
@@ -276,5 +275,17 @@ func TestSchemaErrorBoundsThePointers(t *testing.T) {
 	}
 	if n := strings.Count(err.Error(), "/types/"); n != 5 || !strings.Contains(err.Error(), "and 15 more") {
 		t.Errorf("err = %v, want 5 pointers and 15 more", err)
+	}
+}
+
+// "more" with nothing new ends the component instead of failing the reply.
+func TestMergePassMoreWithNothingNewEndsTheComponent(t *testing.T) {
+	doc, _, err := parseOutline(okOutline, testRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, more, _, err := mergePass(doc, "greeting", `{"types": [], "functions": [], "more": true}`, testRunID)
+	if err != nil || more {
+		t.Errorf("more %v err %v, want done and no error", more, err)
 	}
 }

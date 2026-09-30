@@ -10,10 +10,7 @@ Here is the outline.
     "testing": "Table-driven tests next to the code."
   },
   "components": [
-    {"id": "types", "package": "greet", "exports": []},
-    {"id": "greeting", "package": "greet", "exports": [],
-     "integration_tests": [{"name": "greets a trimmed name", "given": "Greet(\"  Ada  \")", "expect": "Hello, Ada!", "command": "go test ./internal/greet -run TestGreetIntegration"}]},
-    {"id": "farewell", "package": "greet", "exports": []}
+    {"id": "types", "package": "greet", "exports": []}
   ],
   "types": [
     {"id": "name-error", "package": "greet", "file": "internal/greet/errors.go",

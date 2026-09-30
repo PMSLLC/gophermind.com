@@ -12,15 +12,19 @@ Requirements:
 - `dependencies`: third-party Go modules the module needs, each `{module, version, purpose}`, version pinned like `v1.9.3`; `[]` when only the standard library is needed.
 - No secrets. Refer to secrets by environment variable name only.
 - There is no limit on the number of components or types. Do not merge features to keep the list short.
-- The outline is written in passes. Write at most about 12 components and 12 types in this reply, and stop at a natural boundary (after a whole component, never in the middle of one). If the list is not complete, set `"more": true` and you will be asked again for the rest; when it is complete, set `"more": false` or leave `more` out. A type comes before any type or component that uses it. Never repeat an id already emitted, and never leave `more` true without adding at least one new component or type.
-- The first pass writes `module`, `conventions` and `dependencies`. A later pass leaves `module` and `conventions` out and lists only the components, types and dependencies that are new.
+- The outline is written in passes chosen by the harness; you never decide whether more remains, and a `more` field is ignored. A type comes before any type or component that uses it. Never repeat an id that is already declared: it keeps its first version, so a repeat changes nothing and only wastes the reply.
+{{if .Unresolved}}- This is a repair pass: see the end of this prompt.
+{{else if .Batch}}- This is a batch pass. Write the components and types for THESE features only: {{.Batch}}
+  Each feature's full text is under its `### <name>` heading in the brief. Write one component per feature, plus any type only these features need. Do not write components or types for other features. You may name the ids already declared below in `uses`.
+{{else}}- This is the shared pass. Write `module`, `conventions`, `dependencies`, the `types` component (id `types`, for shared declarations) and the shared domain types: the entities more than one feature uses. Write NO feature component here; each feature gets its own pass afterwards.
+{{end}}- The first pass writes `module`, `conventions` and `dependencies`. A later pass leaves `module` and `conventions` out and lists only the components, types and dependencies that are new.
 
 Module and conventions already fixed by earlier passes:
 <fixed>
 {{.Fixed}}
 </fixed>
 
-Ids already emitted by earlier passes:
+Ids already declared by earlier passes (components, types): do not repeat them; you may reference them in `uses`:
 <emitted>
 {{.Emitted}}
 </emitted>
@@ -29,7 +33,7 @@ Repair: the outline above is complete, but {{.UnresolvedCount}} ids are listed i
 <unresolved>
 {{.Unresolved}}
 </unresolved>
-Reply in the same JSON shape with the missing types written in full (and a component only if one is really missing). An id that an earlier pass already wrote keeps its first version, so resending it changes nothing. Set `more` to false.
+Reply in the same JSON shape with the missing types written in full (and a component only if one is really missing). An id that an earlier pass already wrote keeps its first version, so resending it changes nothing.
 {{end}}
 Brief:
 <brief>
@@ -42,7 +46,7 @@ Answers to clarifying questions:
 </answers>
 
 Respond with one JSON object and nothing else:
-{"module": "...", "conventions": {"layout": ["..."], "naming": ["..."], "errors": "...", "logging": "...", "testing": "..."}, "components": [{"id": "...", "package": "...", "exports": [], "integration_tests": []}], "types": [<type>], "dependencies": [], "more": false}
+{"module": "...", "conventions": {"layout": ["..."], "naming": ["..."], "errors": "...", "logging": "...", "testing": "..."}, "components": [{"id": "...", "package": "...", "exports": [], "integration_tests": []}], "types": [<type>], "dependencies": []}
 
 Each <type> matches this schema:
 <schema>

@@ -26,12 +26,16 @@ import (
 type contractState struct {
 	Doc  map[string]any `json:"doc"`
 	Done []string       `json:"done"`
-	// The outline is built in passes too. OutlineMore is true while the last
-	// stored pass said more remains; OutlinePasses counts the passes stored.
-	// A state file without these fields is a finished outline.
-	Deps          []Dependency `json:"deps,omitempty"`
-	OutlineMore   bool         `json:"outline_more,omitempty"`
-	OutlinePasses int          `json:"outline_passes,omitempty"`
+	// The outline is built in harness-driven passes: a shared pass, then one
+	// pass per batch of the brief's features. OutlinePasses counts the passes
+	// stored; OutlineBatches is the feature names of each batch (fixed when
+	// the shared pass is stored) and OutlineBatchNext the index of the first
+	// batch not yet stored. A state file without these fields is a finished
+	// outline.
+	Deps             []Dependency `json:"deps,omitempty"`
+	OutlinePasses    int          `json:"outline_passes,omitempty"`
+	OutlineBatches   [][]string   `json:"outline_batches,omitempty"`
+	OutlineBatchNext int          `json:"outline_batch_next,omitempty"`
 	// OutlineRepairs counts the repair passes stored; OutlineDone is set once
 	// the outline has no unresolved reference and dependencies.json is written.
 	OutlineRepairs int  `json:"outline_repairs,omitempty"`
@@ -90,10 +94,30 @@ func failedAttempt(ctx context.Context, err error) bool {
 	return errors.As(err, &ce) && ce.ParseErr != nil
 }
 
-// maxOutlinePasses bounds the outline loop so a model that never finishes
-// cannot spend calls forever. It bounds calls, not the plan: each pass adds
-// about a dozen components and types.
-const maxOutlinePasses = 20
+// outlineBatchSize is how many of the brief's features one outline pass
+// covers. The harness, not the model, decides which passes remain.
+const outlineBatchSize = 3
+
+// outlineBatches splits the feature names, in brief order, into batches.
+func outlineBatches(features []string) [][]string {
+	var out [][]string
+	for i := 0; i < len(features); i += outlineBatchSize {
+		end := i + outlineBatchSize
+		if end > len(features) {
+			end = len(features)
+		}
+		out = append(out, append([]string(nil), features[i:end]...))
+	}
+	return out
+}
+
+// outlinePassStage is the stage of outline pass n: 1 is the shared pass, 2 the
+// first batch.
+func outlinePassStage(n int) string { return fmt.Sprintf("contract:outline:%d", n) }
+
+// outlineRepairStage is the stage of the passes that ask for types the outline
+// uses but never declared.
+const outlineRepairStage = "contract:outline:repair"
 
 // maxOutlineRepairs bounds the passes that ask the model to write the ids a
 // finished outline uses but never declared.
@@ -112,8 +136,10 @@ const (
 func contractDone(r *run) bool { return exists(r.path(fileContracts)) }
 
 // contract is the Contract stage (Wave 0), built in passes so that a large
-// brief makes more calls rather than a coarser contract: one outline call,
-// then one call per component, repeated while the model says more remains.
+// brief makes more calls rather than a coarser contract: a shared outline
+// pass, one outline pass per batch of features (the harness knows which
+// remain, the model never says more), then one call per component, repeated
+// while the model says more remains for that component.
 func (p *Planner) contract(ctx context.Context, r *run) error {
 	as, err := loadAnswers(r)
 	if err != nil {
@@ -129,29 +155,34 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 		if err != nil {
 			return err
 		}
-		ask := func(unresolved []string) error {
+		// ask makes one outline call: the shared pass (batch nil, no unresolved),
+		// a batch pass, or a repair pass (unresolved ids).
+		ask := func(stage string, batch, unresolved []string) error {
 			prompt, err := render("contract_outline", map[string]string{
 				"Brief": string(r.src), "Answers": answersText(as), "TypeSchema": typeSchema,
 				"Fixed": outlineFixedText(st.Doc), "Emitted": outlineEmittedText(st.Doc),
+				"Batch":      strings.Join(batch, ", "),
 				"Unresolved": unresolvedPromptText(unresolved), "UnresolvedCount": fmt.Sprint(len(unresolved))})
 			if err != nil {
 				return err
 			}
-			more := false
 			var ignored []string
 			var notes idNotes
-			cs := callSpec{stage: "contract:outline", taskType: "contract", scope: router.ScopeBrief,
+			added := 0
+			first := st.Doc == nil
+			cs := callSpec{stage: stage, taskType: "contract", scope: router.ScopeBrief,
 				maxTokens: maxTokensOutline, maxGrown: maxGrownOutline}
 			if err := p.call(ctx, r, cs, prompt, func(text string) error {
 				text, nt, err := normalizeReply(st.Doc, StripReply(text), replyOutline)
 				if err != nil {
 					return err
 				}
-				doc, ds, m, ign, err := mergeOutline(st.Doc, st.Deps, text, r.id, len(unresolved) > 0)
+				final := len(unresolved) > 0 || (!first && st.OutlineBatchNext == len(st.OutlineBatches)-1)
+				doc, ds, n, ign, err := mergeOutline(st.Doc, st.Deps, text, r.id, final)
 				if err != nil {
 					return err
 				}
-				st.Doc, st.Deps, more, ignored, notes = doc, ds, m, append(nt.Ignored, ign...), nt
+				st.Doc, st.Deps, added, ignored, notes = doc, ds, n, append(nt.Ignored, ign...), nt
 				return nil
 			}); err != nil {
 				if failedAttempt(ctx, err) && len(unresolved) > 0 {
@@ -162,23 +193,40 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 				}
 				return err
 			}
-			if len(unresolved) == 0 {
-				st.OutlinePasses++
-				st.OutlineMore = more
-			} else {
+			switch {
+			case len(unresolved) > 0:
 				st.OutlineRepairs++
+			case first:
+				st.OutlinePasses++
+				var names []string
+				for _, f := range r.brief.Features {
+					names = append(names, f.Name)
+				}
+				st.OutlineBatches = outlineBatches(names)
+			default:
+				st.OutlinePasses++
+				st.OutlineBatchNext++
+				if added == 0 {
+					p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
+						"outline_pass_empty: outline batch %d added no component, type or dependency", st.OutlineBatchNext))
+				}
 			}
 			p.noteNormalized(&st, "contract", notes)
 			p.noteIgnored(&st, "contract", ignored)
 			return writeJSON(r.path(stateContract), st)
 		}
-		for st.Doc == nil || st.OutlineMore {
-			if st.OutlinePasses >= maxOutlinePasses {
-				return fmt.Errorf("stage contract:outline did not finish after %d passes; the model keeps saying more remains", maxOutlinePasses)
-			}
-			if err := ask(nil); err != nil {
+		if st.Doc == nil {
+			if err := ask(outlinePassStage(1), nil, nil); err != nil {
 				return err
 			}
+		}
+		for st.OutlineBatchNext < len(st.OutlineBatches) {
+			if err := ask(outlinePassStage(st.OutlineBatchNext+2), st.OutlineBatches[st.OutlineBatchNext], nil); err != nil {
+				return err
+			}
+		}
+		if len(objects(st.Doc["components"])) == 0 {
+			return errors.New("contract outline lists no component")
 		}
 		// The outline is complete as written; ids it uses but never declared are
 		// asked for, not treated as an unusable reply.
@@ -190,7 +238,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			if st.OutlineRepairs >= maxOutlineRepairs {
 				return unresolvedErr("contract:outline", un)
 			}
-			if err := ask(un); err != nil {
+			if err := ask(outlineRepairStage, nil, un); err != nil {
 				return err
 			}
 		}
@@ -338,34 +386,30 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 // mergeOutline adds one outline pass to a copy of doc (nil for the first
 // pass) and checks the merged outline; a rejected reply leaves doc as it was.
 // Components and types are merged by id: a repeat of an id is dropped and the
-// first emission kept. The first pass
-// fixes the module and the conventions. more is the reply's "more" flag.
+// first emission kept. The first pass fixes the module and the conventions. A
+// "more" flag in the reply is ignored: the harness decides which passes remain.
+// added counts the components, types and dependencies the pass made new.
 //
 // Between passes only what is local and monotone is checked (schema shape,
 // id syntax, duplicates, file paths), because a type may use one a later pass
-// writes. Reference checks run once the outline is complete and nothing is
-// unresolved; an unresolved reference is not an error here, the planner asks
-// for it. replace, when set, is a repair pass: its ids may replace the
-// declaration of an id it names, and "more" is ignored.
-func mergeOutline(doc map[string]any, have []Dependency, text, briefID string, repair bool) (map[string]any, []Dependency, bool, []string, error) {
+// writes. final marks the last pass of the outline (or a repair pass): only
+// then are the reference checks run, and an unresolved reference is not an
+// error here, the planner asks for it.
+func mergeOutline(doc map[string]any, have []Dependency, text, briefID string, final bool) (map[string]any, []Dependency, int, []string, error) {
 	var o struct {
 		Module      string           `json:"module"`
 		Conventions map[string]any   `json:"conventions"`
 		Components  []map[string]any `json:"components"`
 		Types       []map[string]any `json:"types"`
 		Deps        []map[string]any `json:"dependencies"`
-		More        bool             `json:"more"`
 	}
 	if err := json.Unmarshal([]byte(text), &o); err != nil {
-		return nil, nil, false, nil, fmt.Errorf("contract outline is not a JSON object (%s)", jsonErr(err))
+		return nil, nil, 0, nil, fmt.Errorf("contract outline is not a JSON object (%s)", jsonErr(err))
 	}
 	first := doc == nil
-	if first && len(o.Components) == 0 {
-		return nil, nil, false, nil, errors.New("contract outline lists no component")
-	}
 	deps, err := ParseDependencies(o.Deps)
 	if err != nil {
-		return nil, nil, false, nil, err
+		return nil, nil, 0, nil, err
 	}
 	var next map[string]any
 	if first {
@@ -375,7 +419,7 @@ func mergeOutline(doc map[string]any, have []Dependency, text, briefID string, r
 			"types": []any{}, "functions": []any{}, "components": []any{},
 		}
 	} else if next, err = copyDoc(doc); err != nil {
-		return nil, nil, false, nil, err
+		return nil, nil, 0, nil, err
 	}
 	// The harness fills a component's exports once its functions exist; a
 	// model's exports in the outline would name functions that are not there.
@@ -391,7 +435,7 @@ func mergeOutline(doc map[string]any, have []Dependency, text, briefID string, r
 		for _, h := range merged {
 			if h.Module == d.Module {
 				if h != d {
-					return nil, nil, false, nil, fmt.Errorf("contract outline lists dependency %s twice with different content", boundedModule(d.Module))
+					return nil, nil, 0, nil, fmt.Errorf("contract outline lists dependency %s twice with different content", boundedModule(d.Module))
 				}
 				dup = true
 			}
@@ -402,20 +446,16 @@ func mergeOutline(doc map[string]any, have []Dependency, text, briefID string, r
 		}
 	}
 	sort.Slice(merged, func(a, b int) bool { return merged[a].Module < merged[b].Module })
-	more := o.More && !repair
-	if !first && more && added == 0 {
-		return nil, nil, false, nil, errors.New("contract outline says more remains but adds nothing new")
-	}
 	var verr error
-	if more || len(unresolvedFinal(next)) > 0 {
+	if !final || len(unresolvedFinal(next)) > 0 {
 		verr = validateOutlineShape(next, briefID)
 	} else {
 		_, verr = validateContractDoc(resolveRefs(next), briefID)
 	}
 	if verr != nil {
-		return nil, nil, false, nil, verr
+		return nil, nil, 0, nil, verr
 	}
-	return next, merged, more, ignored, nil
+	return next, merged, added, ignored, nil
 }
 
 var (
@@ -622,9 +662,6 @@ func mergePass(doc map[string]any, component, text, briefID string) (map[string]
 	if err := json.Unmarshal([]byte(text), &pass); err != nil {
 		return nil, false, nil, fmt.Errorf("contract reply for %s is not a JSON object (%s)", component, jsonErr(err))
 	}
-	if pass.More && len(pass.Functions) == 0 {
-		return nil, false, nil, fmt.Errorf("contract reply for %s says more remains but holds no function", component)
-	}
 	next, err := copyDoc(doc)
 	if err != nil {
 		return nil, false, nil, err
@@ -635,13 +672,12 @@ func mergePass(doc map[string]any, component, text, briefID string) (map[string]
 	added, ignored := mergeList(next, "types", pass.Types, 0, "type", nil)
 	added, ign2 := mergeList(next, "functions", pass.Functions, added, "function", nil)
 	ignored = append(ignored, ign2...)
-	if pass.More && added == 0 {
-		return nil, false, nil, fmt.Errorf("contract reply for %s says more remains but adds nothing new", component)
-	}
 	if err := validateOutlineShape(next, briefID); err != nil {
 		return nil, false, nil, err
 	}
-	return next, pass.More, ignored, nil
+	// A reply that says more but adds nothing new is the model repeating
+	// itself: the component is finished (a continuation needs progress).
+	return next, pass.More && added > 0, ignored, nil
 }
 
 var componentIDRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)

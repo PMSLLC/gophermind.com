@@ -196,6 +196,20 @@ func (g *rig) has(name string) bool {
 func variant(t *testing.T, files map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
+	// "contract.outline.txt" is a whole outline in the shared pass; the greeter
+	// brief then has one batch, which has nothing left to add.
+	if body, ok := files["contract.outline.txt"]; ok {
+		moved := map[string]string{"contract.outline.1.txt": body}
+		for k, v := range files {
+			if k != "contract.outline.txt" {
+				moved[k] = v
+			}
+		}
+		if _, ok := moved["contract.outline.2.txt"]; !ok {
+			moved["contract.outline.2.txt"] = `{"components": [], "types": []}`
+		}
+		files = moved
+	}
 	for name, body := range files {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
 			t.Fatal(err)
