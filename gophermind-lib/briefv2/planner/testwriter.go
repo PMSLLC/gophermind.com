@@ -190,14 +190,39 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	if err := writeJSON(r.path(stateTestwriter), *st); err != nil {
 		return writtenTests{}, err
 	}
+	// The path was checked before the model call, which can take minutes.
+	// Check it again before each step that touches the disk.
+	beforeTestWrite()
+	recheck := func() error {
+		if _, err := safeTestPath(r.repo, rel); err != nil {
+			return err
+		}
+		if _, err := os.Lstat(abs); err == nil {
+			return fmt.Errorf("test file %s already exists and this run did not write it; move it away, then resume", path.Base(rel))
+		}
+		return nil
+	}
+	if err := recheck(); err != nil {
+		return writtenTests{}, err
+	}
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 		return writtenTests{}, fmt.Errorf("creating the folder for %s: %s", path.Base(rel), osReason(err))
 	}
 	// O_EXCL fails on any existing entry, a symbolic link included, and never
 	// follows one at the final component.
-	f, err := os.OpenFile(abs, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err := recheck(); err != nil {
+		return writtenTests{}, err
+	}
+	f, err := os.OpenFile(abs, os.O_WRONLY|os.O_CREATE|os.O_EXCL|openNoFollow, 0o644)
 	if err != nil {
 		return writtenTests{}, fmt.Errorf("writing %s: %s", path.Base(rel), osReason(err))
+	}
+	// A directory swapped for a link after the last check would have been
+	// followed by the open: undo that write.
+	if err := insideRepo(r.repo, filepath.Dir(abs)); err != nil {
+		f.Close()
+		os.Remove(abs)
+		return writtenTests{}, err
 	}
 	_, werr := f.WriteString(source)
 	if cerr := f.Close(); werr == nil {
@@ -438,6 +463,23 @@ func (p *Planner) finishTree(ctx context.Context, r *run, c *contract.Contracts,
 	r.status.PlannedAt = p.d.Now().UTC().Format("2006-01-02T15:04:05Z")
 	return r.saveStatus()
 }
+
+// insideRepo refuses a directory whose real location is outside the repository.
+func insideRepo(repo, dir string) error {
+	root, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		return errors.New("the repository root cannot be resolved")
+	}
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil || (real != root && !strings.HasPrefix(real, root+string(filepath.Separator))) {
+		return errors.New("test file directory resolves outside the repository")
+	}
+	return nil
+}
+
+// beforeTestWrite is a seam for tests: it runs between the model call and the
+// last checks before the write.
+var beforeTestWrite = func() {}
 
 // osReason is the reason of a file system error without the path it names,
 // which may have come from a model.
