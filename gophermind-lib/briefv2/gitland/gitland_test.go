@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 var prefixTokens = []string{
@@ -64,16 +65,33 @@ func hostileGit(t *testing.T) {
 	}
 }
 
+// initRepo runs git init in dir with a scratch environment.
+func initRepo(t *testing.T, dir string) {
+	t.Helper()
+	cmd := exec.Command(testGitBin(t), "init", "-q", "-b", "main")
+	cmd.Dir = dir
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null"}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("init: %v %s", err, out)
+	}
+}
+
+func useTestGit(t *testing.T) {
+	t.Helper()
+	testGit = testGitBin(t)
+	t.Cleanup(func() { testGit = "" })
+}
+
 func newRepo(t *testing.T) *CLI {
 	t.Helper()
-	t.Setenv("GITLAND_TEST_GIT", testGitBin(t))
+	useTestGit(t)
 	dir := t.TempDir()
+	initRepo(t, dir)
 	c, err := NewCLI(dir, "run-1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = c.Close() })
-	gx(t, c, "init", "-b", "main")
 	put(t, c, "README.md", "readme\n")
 	put(t, c, "go.mod", "module x\n")
 	gx(t, c, "add", "--", "README.md", "go.mod")
@@ -325,8 +343,6 @@ func TestFinishFastForward(t *testing.T) {
 	if b, _ := c.Branch(); b != "main" {
 		t.Fatalf("branch %q", b)
 	}
-	authors := strings.Fields(gx(t, c, "log", "main", "--format=%an", "--not", "main~4"))
-	_ = authors
 	for _, a := range strings.Split(gx(t, c, "log", "main~4..main", "--format=%an"), "\n") {
 		if a != "GopherMind" {
 			t.Fatalf("author %q", a)
@@ -751,7 +767,11 @@ func TestBranchNamesValidated(t *testing.T) {
 }
 
 func TestCloseGuardedDelete(t *testing.T) {
-	c, err := NewCLI(t.TempDir(), "r1")
+	useTestGit(t)
+	d1, d2 := t.TempDir(), t.TempDir()
+	initRepo(t, d1)
+	initRepo(t, d2)
+	c, err := NewCLI(d1, "r1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -766,7 +786,10 @@ func TestCloseGuardedDelete(t *testing.T) {
 		t.Fatal("home kept")
 	}
 
-	c2, _ := NewCLI(t.TempDir(), "r2")
+	c2, err := NewCLI(d2, "r2")
+	if err != nil {
+		t.Fatal(err)
+	}
 	real := c2.home
 	nested := filepath.Join(t.TempDir(), "gm-gitland-home-nested")
 	_ = os.MkdirAll(nested, 0o755)
@@ -792,5 +815,117 @@ func TestCloseGuardedDelete(t *testing.T) {
 	c2.home = real
 	if err := c2.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestNewCLIRequiresRepoRoot(t *testing.T) {
+	useTestGit(t)
+	outer := t.TempDir()
+	initRepo(t, outer)
+	sub := filepath.Join(outer, "sub")
+	plain := filepath.Join(outer, "plain")
+	for _, d := range []string{sub, plain} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	initRepo(t, sub)
+	if err := os.RemoveAll(filepath.Join(sub, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []string{sub, plain} {
+		c, err := NewCLI(d, "r1")
+		if !errors.Is(err, ErrNotRepoRoot) || c != nil {
+			t.Fatalf("%s: %v", d, err)
+		}
+		if strings.Contains(err.Error(), outer) {
+			t.Fatal("path in error")
+		}
+	}
+	ok, err := NewCLI(outer, "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ok.Close()
+	if gx(t, ok, "branch", "--list", "gm/*") != "" {
+		t.Fatal("branch in outer repo")
+	}
+}
+
+func TestGuardMerge(t *testing.T) {
+	for _, a := range [][]string{
+		{"merge", "gm/x"}, {"merge", "--no-ff", "--ff-only", "gm/x"}, {"merge", "--ff-only", "--squash", "gm/x"},
+		{"merge", "--ff-only", "-X", "ours", "gm/x"}, {"merge", "--ff-only", "-Xours", "gm/x"},
+		{"merge", "--ff-only", "--strategy=ours", "gm/x"}, {"merge", "--ff-only", "-s", "ours", "gm/x"},
+		{"merge", "--ff-only", "--strategy", "ours", "gm/x"},
+	} {
+		if _, err := guard(a); !errors.Is(err, ErrForbiddenGitArgs) {
+			t.Fatalf("%v: %v", a, err)
+		}
+	}
+	if sub, err := guard([]string{"merge", "--ff-only", "gm/x"}); err != nil || sub != "merge" {
+		t.Fatal(err)
+	}
+}
+
+func TestProductionIgnoresGitEnv(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	t.Setenv("GITLAND_TEST_GIT", "/nonexistent/git")
+	testGit = ""
+	c, err := NewCLI(dir, "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if c.git == "/nonexistent/git" {
+		t.Fatal("env redirected git")
+	}
+}
+
+func TestCleanTextRuneBoundary(t *testing.T) {
+	in := strings.Repeat("a", 71) + "\u00e9\u00e9"
+	out := cleanText(in, 72)
+	if !utf8.ValidString(out) || len(out) > 72 {
+		t.Fatalf("%q", out)
+	}
+}
+
+func TestRestoreRefusesTrackedDirectory(t *testing.T) {
+	c := newRepo(t)
+	put(t, c, "d/f.txt", "f\n")
+	gx(t, c, "add", "--", "d/f.txt")
+	gx(t, c, "commit", "-m", "d")
+	put(t, c, "d/f.txt", "changed\n")
+	if err := c.Restore([]string{"d"}); err == nil {
+		t.Fatal("directory accepted")
+	}
+	if b, _ := os.ReadFile(filepath.Join(c.dir, "d/f.txt")); string(b) != "changed\n" {
+		t.Fatal("file touched")
+	}
+}
+
+func TestLeafCommitReturnsGitError(t *testing.T) {
+	c := newRepo(t)
+	c.git = "/bin/false"
+	if _, ok, err := c.LeafCommit("fn-a"); err == nil || ok {
+		t.Fatalf("%v %v", ok, err)
+	}
+}
+
+func TestEnvHasNoInheritedGit(t *testing.T) {
+	t.Setenv("GIT_DIR", "/elsewhere")
+	c := newRepo(t)
+	have := map[string]bool{}
+	for _, e := range c.env() {
+		have[strings.SplitN(e, "=", 2)[0]] = true
+	}
+	for _, k := range []string{"GIT_EDITOR", "GIT_PAGER", "GIT_TERMINAL_PROMPT", "GIT_CEILING_DIRECTORIES"} {
+		if !have[k] {
+			t.Fatalf("missing %s", k)
+		}
+	}
+	if strings.Contains(strings.Join(c.env(), "\n"), "/elsewhere") {
+		t.Fatal("GIT_DIR inherited")
 	}
 }

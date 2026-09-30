@@ -35,6 +35,7 @@ var (
 	ErrDirtyTree        = errors.New("gitland: working tree is not clean")
 	ErrNothingToCommit  = errors.New("gitland: nothing to commit for the named paths")
 	ErrIndexNotClean    = errors.New("gitland: the index holds changes the commit did not name")
+	ErrNotRepoRoot      = errors.New("gitland: the directory is not the root of a git repository")
 	ErrForbiddenGitArgs = errors.New("gitland: refused git arguments")
 )
 
