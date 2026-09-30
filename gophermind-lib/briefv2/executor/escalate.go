@@ -48,6 +48,22 @@ func (rc *runCtx) scrubHistory(lines []string) []string {
 	return out
 }
 
+// rowRevision is the revision of the leaf's row, 0 when it cannot be read.
+func (rc *runCtx) rowRevision(ctx context.Context, id string) int {
+	row, err := rc.o.Board.Get(ctx, rc.plan.RunID, id)
+	if err != nil {
+		return 0
+	}
+	return row.Revision
+}
+
+// round is how many retries a person has granted the leaf so far.
+func (rc *runCtx) round(id string) int {
+	stateMu.Lock()
+	defer stateMu.Unlock()
+	return rc.state.ExtraRevisions[id]
+}
+
 // lastModel is the provider/model of the last attempt of the leaf, "" when it
 // has none.
 func (rc *runCtx) lastModel(ctx context.Context, id string) string {
@@ -84,9 +100,13 @@ func (rc *runCtx) escalate(ctx context.Context, l *Leaf, from blackboard.Status,
 		if err := rc.o.Board.SetStatus(wc, runID, l.ID, blackboard.StatusNeedsRevision, blackboard.StatusEscalated); err != nil {
 			return human.Resolution{}, fmt.Errorf("executor: escalating %s did not work", l.ID)
 		}
-		if err := AppendEscalation(rc.o.RunDir, report.Escalation{Kind: "human", TaskType: "implement", Model: rc.lastModel(wc, l.ID), NodeID: l.ID}); err != nil {
-			return human.Resolution{}, err
-		}
+	}
+	rec := report.Escalation{Kind: "human", TaskType: "implement", Model: rc.lastModel(wc, l.ID), NodeID: l.ID, Revision: rc.rowRevision(wc, l.ID), Round: rc.round(l.ID)}
+	if rc.o.Gate == nil {
+		rec.AnsweredBy = human.AnsweredByGateAbsent
+	}
+	if err := AppendEscalation(rc.o.RunDir, rec); err != nil {
+		return human.Resolution{}, err
 	}
 	if err := rc.setResult(l.ID, blackboard.StatusEscalated, reason); err != nil {
 		return human.Resolution{}, err
@@ -97,10 +117,21 @@ func (rc *runCtx) escalate(ctx context.Context, l *Leaf, from blackboard.Status,
 		return human.Resolution{}, humanStop(l.ID)
 	}
 	res, err := rc.o.Gate.Escalate(ctx, human.Escalation{NodeID: l.ID, Reason: reason, History: rc.scrubHistory(history)})
+	if err == nil {
+		by := res.AnsweredBy
+		if !human.ValidAnsweredBy(by) {
+			by = human.AnsweredByProgrammatic // a gate that does not say is not a person
+		}
+		res.AnsweredBy = by
+		rec.AnsweredBy = by
+		if aerr := AppendEscalation(rc.o.RunDir, rec); aerr != nil {
+			return human.Resolution{}, aerr
+		}
+	}
 	switch {
 	case errors.Is(err, human.ErrWaiting):
 		return human.Resolution{}, waitingOnHuman(l.ID)
-	case ctx.Err() != nil:
+	case err != nil && ctx.Err() != nil:
 		return human.Resolution{}, ctx.Err()
 	case err != nil:
 		return human.Resolution{}, humanStop(l.ID)

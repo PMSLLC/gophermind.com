@@ -228,6 +228,38 @@ func TestEveryAdapterHandlesApproval(t *testing.T) {
 	}
 }
 
+// answeredBy is the source each gate kind records on a resolution.
+var answeredBy = map[string]string{"terminal": human.AnsweredByHuman, "file": human.AnsweredByHuman, "programmatic": human.AnsweredByProgrammatic}
+
+func TestEveryAdapterRecordsWhoAnswered(t *testing.T) {
+	for _, a := range adapters() {
+		t.Run(a.name, func(t *testing.T) {
+			got, err := a.escalate(t, human.Escalation{NodeID: "fn-a"}, "skip")
+			if err != nil || got.AnsweredBy != answeredBy[a.name] || got.AnsweredBy == "" {
+				t.Fatalf("resolution = %+v, %v; want AnsweredBy %q", got, err, answeredBy[a.name])
+			}
+		})
+	}
+}
+
+// An auto-answering gate built on the programmatic one names itself; a value
+// outside the fixed vocabulary is not believed.
+func TestProgrammaticKeepsAKnownSourceAndRefusesAnUnknownOne(t *testing.T) {
+	for _, tc := range []struct{ set, want string }{
+		{human.AnsweredByUnattended, human.AnsweredByUnattended},
+		{"", human.AnsweredByProgrammatic},
+		{"a person, honest", human.AnsweredByProgrammatic},
+	} {
+		g := human.NewProgrammatic()
+		done := make(chan human.Resolution, 1)
+		go func() { r, _ := g.Escalate(context.Background(), human.Escalation{NodeID: "n"}); done <- r }()
+		(<-g.Requests()).Resolve(human.Resolution{Action: human.ActionStop, AnsweredBy: tc.set})
+		if r := <-done; r.AnsweredBy != tc.want {
+			t.Errorf("set %q: AnsweredBy = %q, want %q", tc.set, r.AnsweredBy, tc.want)
+		}
+	}
+}
+
 func TestEveryAdapterHandlesEscalation(t *testing.T) {
 	e := human.Escalation{NodeID: "fn-a", Reason: "all models failed", History: []string{"mini: tests failed", "kilo: timeout"}}
 	cases := []struct {
@@ -242,8 +274,10 @@ func TestEveryAdapterHandlesEscalation(t *testing.T) {
 		for _, c := range cases {
 			t.Run(a.name+"/"+c.name, func(t *testing.T) {
 				got, err := a.escalate(t, e, c.reply)
-				if err != nil || got != c.want {
-					t.Errorf("resolution = %+v, %v; want %+v", got, err, c.want)
+				want := c.want
+				want.AnsweredBy = answeredBy[a.name]
+				if err != nil || got != want {
+					t.Errorf("resolution = %+v, %v; want %+v", got, err, want)
 				}
 			})
 		}

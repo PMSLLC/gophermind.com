@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -12,7 +13,6 @@ import (
 	"gophermind/gophermind-lib/briefv2/human"
 	"gophermind/gophermind-lib/briefv2/provider"
 	"gophermind/gophermind-lib/briefv2/runner"
-	"gophermind/gophermind-lib/briefv2/settings"
 )
 
 // schedRC is a started run like leafRC, but every leaf stays pending: the
@@ -152,27 +152,107 @@ func TestSchedulerStopsOnStopError(t *testing.T) {
 	}
 }
 
+// Cancel after the first leaf verified: the second leaf is never claimed. A
+// context cancelled before the call claims nothing at all.
 func TestSchedulerNoClaimAfterCancel(t *testing.T) {
 	t.Parallel()
 	g := newRig(t)
-	rc, _ := g.schedRC(t, Script{})
+	rc, fc := g.schedRC(t, Script{"implement:fn-farewell": {reply(good("fn-farewell"))}})
+	fc.LeafScript["fn-farewell"] = []runner.Verdict{passVerdict()}
 	tb := traced(rc)
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	defer cancel()
+	tb.onStatus = func(node string, to blackboard.Status) {
+		if node == "fn-farewell" && to == blackboard.StatusVerified {
+			cancel()
+		}
+	}
 	wr, err := rc.scheduleLeaves(ctx, g.leaves("fn-farewell", "fn-greet"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wr.Stop == nil || wr.Stop.Status != "interrupted" || wr.Stop.Reason != "cancelled" {
-		t.Fatalf("stop = %+v", wr.Stop)
+	if wr.Stop == nil || wr.Stop.Status != "interrupted" || wr.Stop.Reason != "cancelled" || !reflect.DeepEqual(wr.Verified, []string{"fn-farewell"}) {
+		t.Fatalf("wave = %+v", wr)
 	}
 	for _, e := range tb.Trace() {
-		if strings.HasPrefix(e, "claim ") {
-			t.Fatalf("a claim was made on a cancelled context: %v", tb.Trace())
+		if strings.Contains(e, "fn-greet") {
+			t.Fatalf("the second leaf was touched after the cancel: %v", tb.Trace())
 		}
 	}
-	if len(g.fake.Requests()) != 0 {
-		t.Fatal("a model was called on a cancelled context")
+	if r := g.row(t, "fn-greet"); (r.Status != blackboard.StatusPending && r.Status != blackboard.StatusReady) || r.Claim != nil {
+		t.Fatalf("second leaf = %+v, want pending or ready and unclaimed", r)
+	}
+
+	// Already cancelled: no claim at all.
+	g2 := newRig(t)
+	rc2, _ := g2.schedRC(t, Script{})
+	tb2 := traced(rc2)
+	c2, cancel2 := context.WithCancel(context.Background())
+	cancel2()
+	wr, err = rc2.scheduleLeaves(c2, g2.leaves("fn-farewell", "fn-greet"))
+	if err != nil || wr.Stop == nil || wr.Stop.Reason != "cancelled" || len(tb2.Trace()) != 0 || len(g2.fake.Requests()) != 0 {
+		t.Fatalf("pre-cancelled: %+v, %v, trace %v", wr, err, tb2.Trace())
+	}
+}
+
+// The context ends while a leaf is being checked: the leaf is released and is
+// not a failure, and the next leaf is not claimed.
+func TestCancelMidLeafReleasesAndStops(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	rc, fc := g.schedRC(t, Script{"implement:fn-farewell": {reply(good("fn-farewell"))}})
+	fc.LeafScript["fn-farewell"] = []runner.Verdict{{Class: runner.ClassCancelled}}
+	tb := traced(rc)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	fc.Hook = func(string) { cancel() }
+	wr, err := rc.scheduleLeaves(ctx, g.leaves("fn-farewell", "fn-greet"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wr.Stop == nil || wr.Stop.Status != "interrupted" || len(wr.Failed)+len(wr.Verified)+len(wr.Escalated) != 0 {
+		t.Fatalf("wave = %+v", wr)
+	}
+	if r := g.row(t, "fn-farewell"); r.Status != blackboard.StatusReady || r.Claim != nil {
+		t.Fatalf("interrupted leaf = %+v, want ready and released", r)
+	}
+	for _, e := range tb.Trace() {
+		if strings.Contains(e, "fn-greet") {
+			t.Fatalf("the next leaf was claimed: %v", tb.Trace())
+		}
+	}
+	if res, _ := LoadLeafResults(g.runDir); len(res) != 0 {
+		t.Fatalf("results = %+v", res)
+	}
+	if !fileExists(g.stubPath(g.plan.Leaf("fn-farewell"))) {
+		t.Fatal("the stub was not restored")
+	}
+}
+
+// A row that was in_progress when its worker died is released by the sweep too.
+func TestStaleInProgressRowReleasedBySweep(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	rc, fc := g.schedRC(t, Script{"implement:fn-farewell": {reply(good("fn-farewell"))}})
+	fc.LeafScript["fn-farewell"] = []runner.Verdict{passVerdict()}
+	rc.heartbeat = 10 * time.Millisecond
+	ctx := context.Background()
+	b := g.board
+	for _, st := range [][2]blackboard.Status{{blackboard.StatusPending, blackboard.StatusReady}} {
+		if err := b.SetStatus(ctx, g.id, "fn-farewell", st[0], st[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if ok, err := b.Claim(ctx, g.id, "fn-farewell", "crashed"); err != nil || !ok {
+		t.Fatalf("claim %v %v", ok, err)
+	}
+	if err := b.SetStatus(ctx, g.id, "fn-farewell", blackboard.StatusClaimed, blackboard.StatusInProgress); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	wr, err := rc.scheduleLeaves(ctx, g.leaves("fn-farewell"))
+	if err != nil || wr.Stop != nil || !reflect.DeepEqual(wr.Verified, []string{"fn-farewell"}) {
+		t.Fatalf("after the sweep: %+v, %v", wr, err)
 	}
 }
 
@@ -328,21 +408,48 @@ func TestEscalatedLeafAskedAgainOnRestart(t *testing.T) {
 	}
 }
 
-func TestWorkerCountCappedByProviders(t *testing.T) {
+// Leaf model loops are serialised: however the setting got there, workerCount is 1.
+func TestWorkerCountIsAlwaysOne(t *testing.T) {
 	t.Parallel()
-	g := newRig(t, func(o *rigOpts) { o.Settings = func(c *settings.Config) { c.Executor.Workers = 8 } })
+	g := newRig(t)
 	rc, _ := g.schedRC(t, Script{})
-	if got := rc.workerCount(g.leaves("fn-greet")); got != 2 {
-		t.Fatalf("workers = %d, want 2 (the sum of max_concurrent of a and b)", got)
+	for _, n := range []int{0, 1, 2, 8} {
+		rc.cfg.Executor.Workers = n
+		if got := rc.workerCount(g.leaves("fn-greet", "fn-farewell")); got != 1 {
+			t.Fatalf("workers setting %d gave %d, want 1", n, got)
+		}
 	}
-	rc.cfg.Executor.Workers = 1
-	if got := rc.workerCount(g.leaves("fn-greet")); got != 1 {
-		t.Fatalf("workers = %d, want 1", got)
-	}
-	rc.cfg.Executor.Workers = 8
-	rc.cfg.Models = map[string][]string{"strong": {"a/m1"}, "standard": {"a/m1"}, "any": {"a/m1"}}
-	if got := rc.workerCount(g.leaves("fn-greet")); got != 1 {
-		t.Fatalf("workers = %d, want 1 (the mini is one)", got)
-	}
+}
 
+// Two runLeaf bodies never overlap, even when the setting (bypassing Validate)
+// asks for more workers.
+func TestNeverTwoLeafBodiesAtOnce(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	rc, fc := g.schedRC(t, Script{
+		"implement:fn-farewell": {reply(good("fn-farewell"))},
+		"implement:fn-greet":    {reply(good("fn-greet"))},
+	})
+	fc.LeafScript["fn-farewell"] = []runner.Verdict{passVerdict()}
+	fc.LeafScript["fn-greet"] = []runner.Verdict{passVerdict()}
+	rc.cfg.Executor.Workers = 4
+	var cur, max int32
+	fc.Hook = func(string) {
+		n := atomic.AddInt32(&cur, 1)
+		for {
+			m := atomic.LoadInt32(&max)
+			if n <= m || atomic.CompareAndSwapInt32(&max, m, n) {
+				break
+			}
+		}
+		time.Sleep(150 * time.Millisecond)
+		atomic.AddInt32(&cur, -1)
+	}
+	wr, err := rc.scheduleLeaves(context.Background(), g.leaves("fn-farewell", "fn-greet"))
+	if err != nil || wr.Stop != nil || len(wr.Verified) != 2 {
+		t.Fatalf("scheduleLeaves = %+v, %v", wr, err)
+	}
+	if m := atomic.LoadInt32(&max); m != 1 {
+		t.Fatalf("%d leaf checks overlapped, want strictly one at a time", m)
+	}
 }

@@ -344,7 +344,9 @@ type scriptGate struct {
 	mu      sync.Mutex
 	queue   []human.Resolution
 	seen    []human.Escalation
-	waiting bool // answer every escalation with human.ErrWaiting (a file gate with no answer yet)
+	waiting bool   // answer every escalation with human.ErrWaiting (a file gate with no answer yet)
+	by      string // AnsweredBy of every resolution (an auto-answering gate says "unattended-default")
+	after   func() // runs once the answer is chosen, before it is returned
 }
 
 func (s *scriptGate) Ask(context.Context, []human.Question) ([]human.Answer, error) {
@@ -367,6 +369,10 @@ func (s *scriptGate) Escalate(_ context.Context, e human.Escalation) (human.Reso
 	}
 	r := s.queue[0]
 	s.queue = s.queue[1:]
+	r.AnsweredBy = s.by
+	if s.after != nil {
+		s.after()
+	}
 	return r, nil
 }
 
@@ -803,6 +809,8 @@ type traceBoard struct {
 	blackboard.Blackboard
 	mu  sync.Mutex
 	log []string
+	// onStatus, when set, runs after each accepted status change.
+	onStatus func(node string, to blackboard.Status)
 }
 
 func (b *traceBoard) note(s string) {
@@ -820,6 +828,9 @@ func (b *traceBoard) SetStatus(ctx context.Context, runID, nodeID string, from, 
 	err := b.Blackboard.SetStatus(ctx, runID, nodeID, from, to)
 	if err == nil {
 		b.note(fmt.Sprintf("%s %s->%s", nodeID, from, to))
+		if b.onStatus != nil {
+			b.onStatus(nodeID, to)
+		}
 	}
 	return err
 }

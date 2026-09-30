@@ -65,6 +65,26 @@ const (
 type Resolution struct {
 	Action Action
 	Note   string
+	// AnsweredBy says who gave the answer, from a fixed vocabulary (the
+	// AnsweredBy constants). Each gate sets it; the executor records it.
+	AnsweredBy string
+}
+
+// Who answered an escalation.
+const (
+	AnsweredByHuman        = "human"              // a person at the terminal or in the answer file
+	AnsweredByProgrammatic = "programmatic"       // the run service or the app, through Programmatic
+	AnsweredByUnattended   = "unattended-default" // an auto-answering gate built from an unattended policy
+	AnsweredByGateAbsent   = "gate-absent"        // there was no gate: the answer is stop
+)
+
+// ValidAnsweredBy reports whether s is one of the AnsweredBy constants.
+func ValidAnsweredBy(s string) bool {
+	switch s {
+	case AnsweredByHuman, AnsweredByProgrammatic, AnsweredByUnattended, AnsweredByGateAbsent:
+		return true
+	}
+	return false
 }
 
 // Gate is the whole conversation with a person.

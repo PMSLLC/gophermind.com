@@ -2,6 +2,8 @@ package executor
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -9,6 +11,8 @@ import (
 	"gophermind/gophermind-lib/briefv2/blackboard"
 	"gophermind/gophermind-lib/briefv2/human"
 	"gophermind/gophermind-lib/briefv2/ledger"
+	"gophermind/gophermind-lib/briefv2/report"
+	"gophermind/gophermind-lib/briefv2/router"
 	"gophermind/gophermind-lib/briefv2/runner"
 )
 
@@ -294,6 +298,21 @@ func TestEscalationCarriesNoReplyTextOrSecret(t *testing.T) {
 			t.Error("a prompt holds the secret value")
 		}
 	}
+	// The secret is absent from every store, the report input included.
+	if hasCanary(t, g, canarySecret) {
+		t.Error("the secret value reached a persisted store")
+	}
+	list, lerr := LoadEscalations(g.runDir)
+	if lerr != nil {
+		t.Fatal(lerr)
+	}
+	rep, rerr := report.Build(report.Input{RunID: g.id, Status: "escalated", Escalations: list})
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if raw, _ := json.Marshal(rep); strings.Contains(string(raw), canarySecret) {
+		t.Error("the report holds the secret value")
+	}
 	for _, c := range []string{"CANARY-reply-text", "CANARY-output"} {
 		if hasCanary(t, g, c) {
 			t.Errorf("%s reached a persisted store", c)
@@ -320,5 +339,154 @@ func TestReviseCallShape(t *testing.T) {
 	r := rows[0]
 	if r.TaskType != "revise" || r.Scope != "node" || r.Tier != "strong" || r.NodeID != id {
 		t.Fatalf("revise row = %+v", r)
+	}
+}
+
+func humanRecords(t *testing.T, g *rig) []report.Escalation {
+	t.Helper()
+	list, err := LoadEscalations(g.runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []report.Escalation
+	for _, e := range list {
+		if e.Kind == "human" {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// Who answered an escalation is recorded in _state/escalations.json.
+func TestEscalationRecordsWhoAnswered(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		setup func(g *rig, rc *runCtx)
+		want  string
+		stop  string // stop reason, "" when the leaf ends without a stop
+	}{
+		{"auto-answer gate", func(g *rig, rc *runCtx) {
+			g.gate.by = human.AnsweredByUnattended
+			g.gate.queue = []human.Resolution{{Action: human.ActionSkip}}
+		}, human.AnsweredByUnattended, ""},
+		{"gate without a source", func(g *rig, rc *runCtx) {
+			g.gate.queue = []human.Resolution{{Action: human.ActionSkip}}
+		}, human.AnsweredByProgrammatic, ""},
+		{"a person", func(g *rig, rc *runCtx) {
+			g.gate.by = human.AnsweredByHuman
+			g.gate.queue = []human.Resolution{{Action: human.ActionStop}}
+		}, human.AnsweredByHuman, "human_stop"},
+		{"no gate", func(g *rig, rc *runCtx) { rc.o.Gate = nil }, human.AnsweredByGateAbsent, "human_stop"},
+		{"no answer yet", func(g *rig, rc *runCtx) { g.gate.waiting = true }, "", "waiting_on_human"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := newRig(t, oneShot(0))
+			id := leafID
+			rc, fc := g.leafRC(t, Script{"implement:" + id: distinct(id, 2)}, true)
+			failing(fc, id, 2)
+			tc.setup(g, rc)
+			out, err := rc.runLeaf(context.Background(), g.plan.Leaf(id), leafIn{})
+			if tc.stop == "" {
+				if err != nil || out.Status != blackboard.StatusFailed {
+					t.Fatalf("runLeaf = %+v, %v", out, err)
+				}
+			} else {
+				asStop(t, err, "escalated", tc.stop)
+			}
+			recs := humanRecords(t, g)
+			if len(recs) != 1 || recs[0].AnsweredBy != tc.want || recs[0].NodeID != id {
+				t.Fatalf("human records = %+v, want one answered by %q", recs, tc.want)
+			}
+		})
+	}
+}
+
+// A crash between the status change and the answer leaves the leaf
+// needs_revision or escalated; the resumed run asks again without counting a
+// second escalation and with the original class.
+func TestResumedEscalationIsCountedOnceWithItsOriginalReason(t *testing.T) {
+	t.Parallel()
+	g := newRig(t, oneShot(0))
+	id := "fn-farewell"
+	rc, fc := g.schedRC(t, Script{"implement:" + id: distinct(id, 2)})
+	failing(fc, id, 2)
+	g.gate.waiting = true
+	if wr, err := rc.scheduleLeaves(context.Background(), g.leaves(id)); err != nil || wr.Stop == nil || wr.Stop.Reason != "waiting_on_human" {
+		t.Fatalf("first run: %+v, %v", wr, err)
+	}
+	// The crash window: the row is back in needs_revision, the memory is gone.
+	ctx := context.Background()
+	if err := g.board.SetStatus(ctx, g.id, id, blackboard.StatusEscalated, blackboard.StatusReady); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.board.SetStatus(ctx, g.id, id, blackboard.StatusReady, blackboard.StatusNeedsRevision); err != nil {
+		t.Fatal(err)
+	}
+	delete(rc.rep.reasons, id)
+	g.gate.waiting = false
+	g.gate.queue = []human.Resolution{{Action: human.ActionSkip}}
+	g.gate.by = human.AnsweredByHuman
+	wr, err := rc.scheduleLeaves(ctx, g.leaves(id))
+	if err != nil || !reflect.DeepEqual(wr.Failed, []string{id}) {
+		t.Fatalf("resumed: %+v, %v", wr, err)
+	}
+	asked := g.gate.Escalations()
+	if len(asked) != 2 || asked[1].Reason != "test_fail" {
+		t.Fatalf("asked = %+v, want the original class test_fail the second time", asked)
+	}
+	recs := humanRecords(t, g)
+	if len(recs) != 1 || recs[0].AnsweredBy != human.AnsweredByHuman {
+		t.Fatalf("human records = %+v, want one, answered", recs)
+	}
+}
+
+// The context ends between the retry answer and the claim: the leaf is
+// interrupted (open for the next run), not a hard error.
+func TestCancelBetweenRetryAndReclaimIsInterrupted(t *testing.T) {
+	t.Parallel()
+	g := newRig(t, oneShot(0))
+	id := leafID
+	rc, fc := g.leafRC(t, Script{"implement:" + id: distinct(id, 2)}, true)
+	failing(fc, id, 2)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	g.gate.queue = []human.Resolution{{Action: human.ActionRetry, Note: "again"}}
+	g.gate.after = cancel
+	out, err := rc.runLeaf(ctx, g.plan.Leaf(id), leafIn{})
+	if err != nil || !out.Interrupted {
+		t.Fatalf("runLeaf = %+v, %v; want Interrupted and no error", out, err)
+	}
+	if r := g.row(t, id); r.Status != blackboard.StatusReady || r.Claim != nil {
+		t.Fatalf("row = %+v, want ready and unclaimed", r)
+	}
+}
+
+func TestReviseFailureMapping(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	rc, _ := g.leafRC(t, Script{}, true)
+	lr, err := rc.newLeafRun(context.Background(), g.plan.Leaf(leafID), leafIn{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		kind        string
+		reason      string
+		interrupted bool
+	}{
+		{router.ReasonTooLong, ClassContextTooLong, false},
+		{router.ReasonCooldown, "provider_unavailable", true},
+		{router.ReasonFailed, "provider_unavailable", true},
+		{router.ReasonAuth, "auth", true},
+		{router.ReasonPrivacy, "privacy", true},
+		{"something-the-router-never-said", "provider_unavailable", true},
+	} {
+		err := lr.reviseFailure(context.Background(), &router.ChainExhausted{Reasons: []router.EntryReason{{Kind: tc.kind}}})
+		var rs *reviseStop
+		if !errors.As(err, &rs) || rs.Reason != tc.reason || rs.Interrupted != tc.interrupted {
+			t.Errorf("kind %q: %v, want reason %q interrupted %v", tc.kind, err, tc.reason, tc.interrupted)
+		}
 	}
 }

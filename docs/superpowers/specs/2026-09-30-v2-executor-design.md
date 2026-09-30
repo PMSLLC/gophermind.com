@@ -189,7 +189,7 @@ The bound on model calls for one leaf is `entries * (1 + fix_attempts) * (max_re
 
 ### 7.4 What a human can do
 
-`Gate.Escalate` returns `retry <note>`, `skip` or `stop`. `retry` writes the note into the notes overlay, moves `escalated -> ready`, raises the revision allowance by one, and re-runs the ladder from rung 2. `skip` sets `failed`; the run continues with the other leaves, dependents are `blocked`, and the final status is `failed` with the leaf named. `stop` ends the run as `escalated`. A nil gate, or a programmatic gate with no answer, is `stop`. `/project` in the GOAL run uses the programmatic gate configured to `stop`, so an escalation there ends the attempt honestly (GOAL.md counts it as a failed attempt, and the report says why).
+`Gate.Escalate` returns `retry <note>`, `skip` or `stop`. `retry` writes the note into the notes overlay, moves `escalated -> ready`, raises the revision allowance by one, and re-runs the ladder from rung 2. `skip` sets `failed`; the run continues with the other leaves, dependents are `blocked`, and the final status is `failed` with the leaf named. `stop` ends the run as `escalated`. A nil gate, or a programmatic gate with no answer, is `stop`. Every human escalation is recorded with who answered it (`answered_by`: `human` for the terminal and file gates, `programmatic`, `unattended-default` for an auto-answering gate, `gate-absent` for a nil gate) in `_state/escalations.json` and in the report's `human_escalation_log` (report schema version 2); a resumed run never records the same escalation twice. `/project` in the GOAL run uses the programmatic gate configured to `stop`, so an escalation there ends the attempt honestly (GOAL.md counts it as a failed attempt, and the report says why).
 
 ### 7.5 Nothing to call
 
@@ -219,7 +219,7 @@ On resume, a leaf with both files or neither is normalized to "stub only" before
 
 ### 8.2 Scheduler
 
-For wave `w` ascending: mark eligible `pending` leaves `ready` (all `depends_on` `verified`), run leaves in id order with `executor.workers` workers (default 1, capped by the sum of provider `max_concurrent` for the tier; the mini is 1), wait until every leaf of the wave is `verified` or terminal. Order is deterministic so a scripted fake model can be written against it. Wave 0 (contracts) has no leaf work; the executor starts at the lowest wave holding a leaf.
+For wave `w` ascending: mark eligible `pending` leaves `ready` (all `depends_on` `verified`), run leaves in id order, one at a time (`executor.workers` must be 1, see the ruling below), wait until every leaf of the wave is `verified` or terminal. Order is deterministic so a scripted fake model can be written against it. **Ruling (workers):** leaf model loops are serialised. Every leaf works in the one repository tree, and the stray-file check (a `git status` snapshot around each attempt) and the stub swap both look at that whole tree, so two leaves at once would blame each other's files and swap each other's stubs; the spec also allows one model call at a time. `executor.workers` and `--workers` therefore accept only 1 (`executor.workers must be 1 until leaf-isolated trees exist`), and the scheduler holds a lock around each leaf body. Cost: no overlap of the non-model steps (build, vet, test, commit) of one leaf with the model call of another, so a wave takes the sum of its leaves, not the longest one. Lifting it needs one worktree per leaf. Wave 0 (contracts) has no leaf work; the executor starts at the lowest wave holding a leaf.
 
 ### 8.3 After each wave
 

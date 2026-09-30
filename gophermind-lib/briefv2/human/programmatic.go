@@ -99,7 +99,13 @@ func (p *Programmatic) Escalate(ctx context.Context, e Escalation) (Resolution, 
 	}
 	switch x.resolution.Action {
 	case ActionRetry, ActionSkip, ActionStop:
-		return x.resolution, nil
+		r := x.resolution
+		// An auto-answering gate built on this one may name itself; nothing else
+		// is believed.
+		if r.AnsweredBy != AnsweredByUnattended {
+			r.AnsweredBy = AnsweredByProgrammatic
+		}
+		return r, nil
 	}
 	return Resolution{}, errors.New("human: resolution needs an action of retry, skip, or stop")
 }
