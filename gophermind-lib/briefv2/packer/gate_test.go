@@ -44,6 +44,7 @@ func TestGenericSignatures(t *testing.T) {
 
 func TestSameMethodNameOtherReceiverAllowed(t *testing.T) {
 	e := genericExpect(t, "func (a *A) Run() int")
+	e.Declared = []string{}
 	src := "package greet\n\ntype b struct{}\n\nfunc (a *A) Run() int { return 1 }\n\nfunc (x *b) Run() int { return 2 }\n"
 	if _, err := ParseReply(src, e); err != nil {
 		t.Errorf("distinct receivers rejected: %v", err)
@@ -139,5 +140,20 @@ func TestNoExportedFunctionEchoesReplyPath(t *testing.T) {
 	}
 	if p.Describe([]string{"fmt"}) != "" {
 		t.Error("describe of allowed set must be empty")
+	}
+}
+
+func TestNilDeclaredFailsClosed(t *testing.T) {
+	e := fixture(t) // Declared is nil
+	src := "package greet\n\nfunc helper() {}\n\nfunc Greet(name string) (string, error) { return \"\", nil }\n"
+	if _, err := ParseReply(src, e); err == nil {
+		t.Error("nil Declared must refuse helpers")
+	}
+	e.Declared = []string{}
+	if _, err := ParseReply(src, e); err != nil {
+		t.Errorf("empty non-nil Declared allows helpers: %v", err)
+	}
+	if _, err := ParseReply(goodFile, fixture(t)); err != nil {
+		t.Errorf("no helpers needs no Declared: %v", err)
 	}
 }
