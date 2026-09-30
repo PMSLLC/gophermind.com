@@ -247,7 +247,7 @@ func (p *Planner) callAsking(ctx context.Context, r *run, cs callSpec, prompt st
 			}
 		}
 		if asked >= maxQuestionsPerCall {
-			return fmt.Errorf("the model asked more than %d questions in stage %s; the last was: %s", maxQuestionsPerCall, cs.stage, question)
+			return fmt.Errorf("the model asked more than %d questions in stage %s (the last was %d bytes)", maxQuestionsPerCall, cs.stage, len(question))
 		}
 		if r.brief.Front.OnAmbiguity == "assume_and_document" {
 			prompt += "\n\nNo human is available. Choose the most conservative option and record it in the node's \"assumptions\" array."
@@ -260,6 +260,9 @@ func (p *Planner) callAsking(ctx context.Context, r *run, cs callSpec, prompt st
 		got, err := p.ask(ctx, []human.Question{{ID: id, Text: question}})
 		if err != nil {
 			return err
+		}
+		if len(got) != 1 {
+			return fmt.Errorf("the human gate returned %d answers for 1 question", len(got))
 		}
 		as.Answers = append(as.Answers, answer{ID: id, Stage: cs.stage, Question: question, Answer: got[0].Text, Assumed: got[0].Assumed})
 		if err := writeJSON(r.path(fileAnswers), as); err != nil {

@@ -196,3 +196,16 @@ func TestABriefWithoutSecretsNeverOpensTheVault(t *testing.T) {
 	}
 	g.mustPlan(planner.Options{StopAfter: "load"})
 }
+
+func TestARunIDAndADifferentBriefPathDisagree(t *testing.T) {
+	g := newRig(t, approving())
+	g.mustPlan(planner.Options{StopAfter: "load"})
+	other := writeBrief(t, g.repo, nil)
+	_, err := g.plan(planner.Options{RunID: greeterID, BriefPath: other, StopAfter: "load"})
+	if err == nil || !strings.Contains(err.Error(), "not both") {
+		t.Fatalf("err = %v, want a disagreement error", err)
+	}
+	if _, err := g.plan(planner.Options{RunID: greeterID, BriefPath: g.briefPath, StopAfter: "load"}); err != nil {
+		t.Fatalf("matching run id and brief path: %v", err)
+	}
+}
