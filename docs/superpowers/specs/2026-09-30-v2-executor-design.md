@@ -45,6 +45,7 @@ New packages under `gophermind-lib/briefv2/`. Dependencies point downward only.
 ```text
 executor    Run(ctx, Options): wave scheduler, leaf loop, wave checks, repair, acceptance, resume, landing calls
 packer      builds one leaf prompt from one node; token estimate; overlay of revision notes
+sandbox     darwin sandbox-exec profile generator and wrapper; refuses to run unsandboxed unless settings say so
 runner      runs commands: go build/vet/test -json, gofmt, sh -c for acceptance; env, timeouts, process groups, output caps, failure classes
 gitland     git work branch, wave 0 and per-leaf commits, final commit, fast-forward to base
 proxy       forward proxy with allowlist and per-node request log; deps step helper
@@ -85,7 +86,7 @@ The prompt is the handoff's `05-implement.md` with these sections, in this order
 Rules:
 
 - **Need-to-know.** No other node's description, tests, notes, or body appears. No repo file contents appear, with one deliberate exception (ruling R3): the leaf's own test file, which the harness itself wrote, so the model sees what it must satisfy.
-- **Budget.** `budget = node.budget.max_context_tokens`, else the brief's, else `settings.Defaults.MaxContextTokens` (8000). The estimate is `ceil(len(bytes)/4) * 1.1`. Over budget, the previous failure is cut first, down to a floor of 10 lines; if the packed prompt is still over, no model is called: the node goes `needs_revision` with `failure_reason: "context_too_long"`, and because nothing the executor can change will shrink a contract, the node is escalated at once with that reason (section 7 rung 7).
+- **Budget.** `budget = node.budget.max_context_tokens`, else the brief's, else `settings.Defaults.MaxContextTokens` (8000). The estimate is `ceil(len(bytes)/4) * 1.1`. Over budget, sections are dropped in a fixed order until the prompt fits: (1) the previous failure, down to a floor of 10 lines and then to its test names only, (2) revision notes, (3) the test file's comments and blank lines, (4) dependency signatures beyond those the contract slice's `uses` names. The signature, contract slice, constraints and the test's assertions are never dropped and a leaf is never split by the executor. The floor of required sections must fit in `max_context_tokens`, and the planner already keeps contracts small (one function per leaf, batches of 8 per decompose call); if the floor alone is over budget, that is a plan defect. In that case, and when a model returns `ErrContextTooLong`, the entry is recorded `too_long` (router) and the next chain entry, which may have a larger context, is tried. `context_too_long` therefore never kills a run by itself: only when every entry of the tier's chain (and then of the `strong` chain) has failed for size does the node go `needs_revision` and escalate through the gate with that reason; the run stops only if the human answers `stop` or nobody answers.
 - **Previous failure** is the failed test names plus the first 30 lines of runner output, cut to 2 KB, with every line that contains a secret value removed (the vault's values for the run are checked by exact substring). It lives in memory only.
 - **Max output.** `MaxTokens = min(4096, model.context_tokens - promptTokens)`; below 512 the model entry is skipped as `too_long`, which the router already records.
 - **The prompt is never stored.** `Packed` carries `Text`, `Bytes`, `Tokens`, `SHA256`; only the last three ever leave the function, into the ledger row the router writes. Sibling canaries, repo canaries and secret canaries are grepped for in tests.
@@ -100,9 +101,22 @@ The model never names a path. The only file the executor writes for a leaf is `n
 3. A reply containing a `// FILE:` header, a diff header, or more than one top-level fence is `forbidden_write`, recorded as a failed attempt and never written.
 4. Import policy (ruling R8): the reply may import only the standard library minus `os/exec`, `syscall`, `unsafe`, `plugin`, `debug/*`, `runtime/cgo`; the module's own packages; and modules listed in `dependencies.json`. Anything else is `import_not_allowed`, the failure text lists the allowed modules, and the reply is not written.
 5. `go/format` formats the file in place; a formatting failure is `malformed` (the file did not parse).
-6. Stubs (section 8.1) are the only other files the harness writes, by its own code, never from model output.
+6. Stubs and type declarations (section 8.1) are the only other files the harness writes, by its own code, never from model output, each through `pathsafe`.
+7. After every attempt the executor compares `git status --porcelain` of the repo (plus untracked files) with the snapshot taken before it. A path that is neither the node's file, its stub, nor an ignored run path fails the attempt as `forbidden_write` and is reverted by the harness (`git checkout -- <path>` or removal of the new file), and a stray path found after a wave check fails the wave.
 
-Honest limit: model-written code runs in the test process. There is no kernel sandbox in this plan (ruling R6). The containment is the stripped environment from `execenv` (no harness env, `HOME` and `TMPDIR` in a per-run scratch directory), the import denylist above, proxy variables on every command, a process group that is killed on timeout, and an output cap of 64 KB per command. Code that writes files by absolute path through `os` is not caught. That residual risk is recorded in section 16.
+Model-written code runs in the test process, on the machine that runs GopherMind, so containment is not optional: every child process runs in the sandbox of section 6.1.
+
+### 6.1 The sandbox (ruling R6)
+
+Package `sandbox` generates a `sandbox-exec` profile per run and wraps every `go build`, `go vet`, `go test`, `go mod` (except as below), acceptance command and built-binary process (`sandbox.Wrap(cmd, Profile)`).
+
+- **Writes** are denied everywhere except: the repo directory, the run scratch directory (`HOME`, `TMPDIR`), `GOCACHE`, `GOMODCACHE`, and `/dev/null`, `/dev/tty` style devices. The run folder `.gophermind/<id>` is inside the repo and is denied to model-written processes by a more specific deny rule for that subpath (state, ledger inputs and `approval.json` cannot be edited by tests).
+- **Reads** of `$HOME` are denied except the paths above and the Go toolchain root; system paths needed by Go and macOS (`/usr`, `/System`, `/Library`, `/private/var/db`, `/dev`) stay readable. Reads of `~/.gophermind`, `~/.ssh`, `~/.aws` and the rest of `$HOME` are therefore denied.
+- **Network** is denied except loopback (`localhost` and `127.0.0.1`, `::1`) and, only for the single deps step (section 14), outbound to the module proxy host through the harness proxy. No rule blocks `ssh` or `curl` by name; the network deny covers them.
+- **Other OSes.** The executor refuses to start unless `executor.sandbox: off` is set explicitly in settings; that value is copied into the report (`sandbox: "off"`) and printed at start and end. On darwin `sandbox: on` is the default and `off` is equally recorded.
+- **`sandbox-exec` missing or a profile that fails to load** is a preflight failure before any model call.
+- **After every `go get`** and before every wave, the harness scans `go.mod` and all repo `.go` files and rejects: a `replace` directive, a `toolchain` directive, `//go:generate`, `import "C"` (cgo), and `-toolexec` or `-overlay` anywhere in `GOFLAGS`. A hit fails the run `failed` if it is in `go.mod` and fails the node's attempt as `forbidden_write` if it is in a leaf's source.
+- **Honest limits.** `sandbox-exec` is deprecated but present on current macOS and is the only unprivileged option; a kernel escape is out of scope. The proxy still governs HTTP only (section 14).
 
 ## 7. The leaf loop and the escalation ladder (item 10)
 
@@ -120,9 +134,9 @@ Blackboard statuses are the handoff's. The executor uses them as follows and add
 
 A leaf is **done** only when, in one attempt: the reply parsed and passed section 6; the file is gofmt clean; `go build ./<pkg>` and `go vet ./<pkg>` pass; `go test ./<pkg> -run ^TestX$ -count=1 -json` shows the top-level `TestX` pass, no failing or panicking event, and at least one test event (zero events is `no_tests_ran`, a failure, not a pass); and the attempt used no `network_critical` host. Only then is the file's commit made (section 12) and the row set `verified` with `SetResult`.
 
-A leaf is **blocked** when a `depends_on` node is not `verified` when its wave is reached. It is never claimed. The executor emits one `blocked` event per such node naming the dependency that blocks it, and lists it in the report. Blocked is not done and not skipped: the run's status cannot be `verified` while any leaf is blocked.
+A leaf is **blocked** when a `depends_on` node is not `verified` when its wave is reached. It is never claimed. The executor emits one `blocked` event per such node naming the dependency that blocks it, and lists it in the report. `blocked` is a report label, not a blackboard status (the row stays `pending`). Blocked is not done and not skipped: the run's status cannot be `verified` while any leaf is blocked.
 
-The **run stops** in exactly these cases, each with a status, an exit code and a report: all leaves and acceptance verified (`verified`, 0); an acceptance bullet still failing after its repair rounds (`failed`, 1); a leaf `failed` or escalated and not resolved (`escalated` for an unresolved escalation, exit 4; `failed` otherwise, exit 1); an unattributable integration failure after a wave (`failed`, 1); landing blocked (`failed`, 1); a human `stop` (`escalated`, 4); the context cancelled (`interrupted`, 5, resumable). Nothing else ends a run and there is no code path that returns success with a leaf unaccounted for; a test walks the tree and asserts every leaf is `verified` when status is `verified`.
+The **run stops** in exactly these cases, each with a status, an exit code and a report: all leaves and acceptance verified (`verified`, 0); an acceptance bullet still failing after its repair rounds (`failed`, 1); a leaf `failed` or escalated and not resolved (`escalated` for an unresolved escalation, exit 4; `failed` otherwise, exit 1); an unattributable integration failure after a wave (`failed`, 1); landing blocked (`failed`, 1); a human `stop` (`escalated`, 4); the context cancelled or `executor.max_run_minutes` (default 720) elapsed (`interrupted`, 5, resumable). At the limit no new claim is made, in-flight calls finish or are cancelled with `error_kind: cancelled`, claims are released, the report is written with `status: "interrupted"` and `stop_reason: "max_run_minutes"`, and the exit is 5; `brief run` picks up where it stopped and the limit restarts from zero for that invocation. Nothing else ends a run and there is no code path that returns success with a leaf unaccounted for; a test walks the tree and asserts every leaf is `verified` when status is `verified`.
 
 ### 7.2 One attempt
 
@@ -164,12 +178,12 @@ Failure classes, which become the `failure_reason` prefix (the text before the f
 For a leaf of tier `T` (node's `model_tier`, default `standard`), with chain `C(T)` from settings, per revision:
 
 1. **Repair (router).** A reply that fails `parseReply` is retried on the same model once with the parse error appended (`CallParsed`, already built and cheap).
-2. **Fix.** Same model, same packed prompt plus the previous failure. Up to `executor.fix_attempts` (default 2) per chain entry. If the reply is byte-identical (same SHA-256) to the previous one, the entry is abandoned at once, and a fix retry after a first fix failure runs at temperature 0.3 instead of 0, so a loop cannot repeat.
+2. **Fix.** Same model, same packed prompt plus the previous failure. Up to `executor.fix_attempts` (default 2) per chain entry. If the reply is byte-identical (same SHA-256) to the previous one, the entry is abandoned at once, and a fix retry after a first fix failure runs at temperature 0.3 instead of 0, so a loop cannot repeat (`provider.Request.Temperature` carries it). The reply SHA-256 is stored on each blackboard attempt as a new `ReplySHA256` field (hash only, ruling R17), so the identical-reply check survives a resume.
 3. **Next model.** The next entry of `C(T)` (router `Exclude`), with the same previous failure.
 4. **Tier bump.** `standard` to `strong` entries not yet tried. With the GOAL configuration both tiers resolve to the mini alone, so rungs 3 and 4 are empty and the ladder falls to rung 5 without a wasted call; entries already tried are never tried twice in one revision.
 5. **Revise.** One call, `revise:<node>`, task type `revise`, tier `strong`, scope `node`. It receives the node's contract slice, test file, and the attempt history as classes and test names (never reply text or raw output), and returns JSON `{"notes": [up to 5 short hints]}` or `CONTRACT_PROBLEM`. Hints go to `_state/notes.json` (overlay keyed by node id; node files and `contracts.json` are never modified during a run, checked by hashing them at start and end). The revision counter increments (`SetRevision`) and the ladder restarts at rung 2 with the notes in the prompt.
 6. **Contract problem.** A `CONTRACT_PROBLEM` from implement or revise goes to rung 5 once per revision; a second one in the same revision escalates at once. The executor never edits a contract or a signature (rule 3 of the decomposer rules). Splitting a leaf (`SPLIT_REQUIRED`) and contract change (`CONTRACT_CHANGE_REQUIRED`) belong to the planner's revise stage, which does not exist yet; see section 17.
-7. **Escalate.** After `max_revisions` (default 2, node `budget.max_revisions` overrides) revisions, or at once for `context_too_long` or a repeated contract problem: `in_progress -> needs_revision -> escalated`, `Gate.Escalate` with the node id, reason and one line per attempt (class and test names).
+7. **Escalate.** After `max_revisions` (default 2, node `budget.max_revisions` overrides) revisions, or at once for a repeated contract problem or when every chain entry failed for size: `in_progress -> needs_revision -> escalated`, `Gate.Escalate` with the node id, reason and one line per attempt (class and test names).
 
 The bound on model calls for one leaf is `entries * (1 + fix_attempts) * (max_revisions + 1) + max_revisions` plus at most one router repair per call. With the GOAL configuration (one entry, 2 fixes, 2 revisions) that is 11 implement calls plus 2 revise calls, the worst case, each one recorded.
 
@@ -183,9 +197,25 @@ If the router returns `*ChainExhausted` because every entry is cooling down, it 
 
 ## 8. Waves, integration and repair (item 10 continued)
 
-### 8.1 Stubs
+### 8.1 Types, stubs and the file swap
 
-Go compiles every `_test.go` file of a package together, so the tests of a later leaf break the tests of an earlier leaf in the same package while its function does not exist. The harness therefore writes, at run start, one stub per leaf: `<dir>/zz_gm_stub_<node-id>.go` holding the contract signature with a body that panics (`panic("gm: not implemented")`), zero-value returns after it for the compiler. Stubs and the test files form the Wave 0 commit (section 12). When a leaf lands, the same commit deletes its stub and adds its real file. Consequences: every commit builds; a leaf's tests must fail against its stub (the **red check**, run once per leaf before its first model call, no model needed); a test that passes against a panicking stub tests nothing, so it is recorded as a `weak_test` warning event and counted in the report, not blocked, because the executor cannot rewrite tests (ruling R9).
+Go compiles every `_test.go` file of a package together, so the tests of a later leaf break the tests of an earlier leaf in the same package while its function does not exist. Leaves also use shared types. At run start, after the approval check, the harness writes by its own code, each through `pathsafe`:
+
+- **Type declarations.** For each `contracts.json` Type `{File, Decl, Uses}`, the file `File` gets a package clause (the Type's `Package`), imports derived from `Uses` (the standard library or module packages that the declaration and its used types reference, found by `go/parser` and resolved against the contract's types and the standard library), then `Decl`. Types sharing a `File` go into one file in contract order. A declaration that does not parse, or an import it needs that is not allowed (section 6 rule 4), stops the run `failed` before any model call.
+- **Stubs.** One per leaf: `<dir>/zz_gm_stub_<node-id>.go` holding the contract signature with a body that panics (`panic("gm: not implemented")`), and zero-value returns after it for the compiler.
+
+Types, stubs, the test files, `go.mod` and `go.sum` form the Wave 0 commit (section 12), made after the deps step (section 14). Every commit therefore builds.
+
+**The swap, exactly.** A leaf's real file (`contract.file`) and its stub (`zz_gm_stub_<id>.go`) declare the same function, so they can never coexist. For each attempt:
+
+1. Snapshot the repo's `git status` (section 6 rule 7).
+2. Delete the stub (`os.Remove` through `pathsafe`) and write the real file atomically. Nothing else changes.
+3. Run the checks (7.2).
+4. On failure, whatever the class: delete the real file and rewrite the stub from the contract, so the tree is exactly the Wave 0 state for this leaf and other leaves' checks never see a half-written file. The next attempt starts again at step 2.
+5. On pass: keep the real file, leave the stub deleted, and commit both changes together: `CommitLeaf(add: [contract.file], remove: [stub])`. A leaf is committed only on pass.
+6. After a repair reopen (8.3) the stub is not restored; the real file stays, and a failed repair attempt restores the leaf's last verified content from git (`git checkout -- <file>`).
+
+On resume, a leaf with both files or neither is normalized to "stub only" before step 1, unless the real file alone exists, in which case section 10 step 5 checks it first. The **red check** (once per leaf, before its first model call, no model needed) runs the leaf's tests against its stub; a test that passes against a panicking stub tests nothing. It is recorded as a `weak_test` warning event and counted in the report, accepted as a warning and never blocking, because the executor cannot rewrite tests (ruling R9).
 
 ### 8.2 Scheduler
 
@@ -196,7 +226,7 @@ For wave `w` ascending: mark eligible `pending` leaves `ready` (all `depends_on`
 Run by the harness, no model, in this order, each in the runner with the stripped env:
 
 1. `go build ./...` and `go vet ./...`. Failure output is parsed into `file:line` records.
-2. `go test -race -count=1 -json <packages of verified leaves> -run '^(TestA|TestB|...)$'` where the regex is the union of the test functions of every leaf verified so far (later leaves still hold stubs, so an unrestricted run would fail on stubs). Wave 0 and each wave add to the set.
+2. For each package holding at least one verified leaf, one run `go test -race -count=1 -json ./<pkg> -run '^(TestA|TestB)$'` where the regex lists only that package's verified leaves' test functions (later leaves in the package still hold stubs, so an unrestricted run would fail on them). Runs are per package, so a failure names its package and one package's regex never hides another's.
 3. After the last wave, the same with no `-run` restriction: `go test -race ./...` on the whole repo.
 
 **Attribution** (code, never a model): a build or vet record maps by file path to the node whose `contract.file` or generated test or stub path it is; a test failure maps by package plus test function name (`testFuncName` is the planner's) to the node; a record in a file no node owns (`go.mod`, `cmd/...` main packages from a wiring node, generated files) maps to the node that owns that path if any, else it is **unattributable**. An unattributable failure stops the run `failed` with the failing lines' locations in the report (ruling R10: guessing which leaf to blame could burn the repair budget on the wrong leaf).
@@ -213,7 +243,7 @@ Run by the harness, no model, in this order, each in the runner with the strippe
 
 **Running.** After the last wave and its checks, the executor builds every main package under `cmd/` to `<run>/bin/<name>` with `go build -o`, then runs each root test command with `sh -c`, from the repo root, with: the `execenv` environment (declared env, declared secrets from the vault, proxy variables, `NO_PROXY=127.0.0.1,localhost,::1` so a server on loopback is reached directly), `PATH` prefixed by `<run>/bin` so a command such as `venture-server serve` finds the binary the executor just built (never one installed on the machine), its own process group, `acceptance_timeout_seconds` (default 300) and the output cap. When the command ends, timeout or not, the whole process group is killed, so a server started by the command cannot outlive it. Commands run one at a time, in requirement order, so ports are not contended.
 
-**Proof of N of N.** Written to `acceptance.json`: for each requirement id, each command's exit code, duration, output size and SHA-256, and a verdict. `Acceptance passed: N of N` is printed only when every `A_i` has at least one root test and every one of its tests exited 0. The count is over `requirements.json`, so an acceptance bullet that lost its test cannot make N smaller. The same file records the coverage line copied from the planner: `Requirements covered: N of N`.
+**Proof of N of N.** Written to `acceptance.json`. The **proof** of a bullet is the recorded triple of its command, its exit code and the SHA-256 (and size) of its captured output, plus the counts N of N; no output text is stored. Contents: for each requirement id, each command's exit code, duration, output size and SHA-256, and a verdict. `Acceptance passed: N of N` is printed only when every `A_i` has at least one root test and every one of its tests exited 0. The count is over `requirements.json`, so an acceptance bullet that lost its test cannot make N smaller. The same file records the coverage line copied from the planner: `Requirements covered: N of N`.
 
 **Failure.** A failing acceptance bullet is attributed with the planner's own mapping: the nodes listed for that requirement in `coverage.json` (`covered[].nodes`) are reopened as in 8.3 with the first 30 lines of that command's output (secret lines removed) as their previous failure, bounded by `executor.acceptance_repair_rounds` (default 2), followed by the wave checks and the full acceptance run again. A bullet with no mapped nodes, or still failing after the rounds, ends the run `failed` (exit 1) with the bullet's id, text, command and exit code in the message. Per GOAL.md that kills the attempt; the executor's job is to have tried and to say exactly what failed.
 
@@ -224,7 +254,7 @@ Run by the harness, no model, in this order, each in the runner with the strippe
 1. Load run record, `brief.md`, `contracts.json`, tree, `coverage.json`, `approval.json`; recompute the plan hash and refuse to run on a mismatch, exactly as Test-writer does. Refuse when the node files' and contracts' hashes differ from the ones recorded at first start (`_state/executor.json`).
 2. `Board.InitRun` (idempotent), then `ReleaseStale(run, stale_claim_seconds)` (default 120, four heartbeats). Emit one `resume` event listing the released ids.
 3. Recompute readiness from `verified` rows.
-4. Git: check out the work branch. A dirty tree is never stashed or discarded. Files that belong to a released leaf (its contract file or its stub) are left as they are; any other dirty path stops the run `failed` naming the path.
+4. Git: check out the work branch. A dirty tree is never stashed or discarded (this differs from BUILD_PLAN 11 step 5, deviation X11). Files that belong to a released leaf (its contract file or its stub) are left as they are; any other dirty path stops the run `failed` naming the path.
 5. For each released leaf the executor **runs its checks on the file already on disk before any model call**. If they pass, the leaf is committed and `verified` with zero model calls. Otherwise the ladder starts at rung 2 with an empty previous failure (runner output is never stored, so it is recomputed by that first check and used as the previous failure at no model cost).
 6. Continue at the lowest wave with an unfinished leaf.
 
@@ -246,12 +276,14 @@ executor:
   output_cap_bytes: 65536
   heartbeat_seconds: 30
   go_mod_cache: ~/.gophermind/gomodcache
+  max_run_minutes: 720
+  sandbox: on            # on | off; off is required explicitly on any OS but darwin, and is recorded in the report
   proxy: {listen: "127.0.0.1:0", log: proxy.log}
 toolchain:            # decision E5: what a Go command needs, nothing from the harness environment
   PATH: /usr/local/go/bin:/usr/bin:/bin
 ```
 
-`execenv.Inputs.Toolchain` is filled from this section (`PATH`, and per run `HOME`, `TMPDIR`, `GOCACHE`, `GOMODCACHE`, `GOPATH`, `GOTOOLCHAIN=local`). The `go` binary and `git` are located at start; a missing one is a preflight failure with a message, before any model call. `max_revisions` and `max_context_tokens` are the planner's existing `defaults`.
+`execenv.Inputs.Toolchain` is filled from this section (`PATH`, and per run `HOME`, `TMPDIR`, `GOCACHE`, `GOMODCACHE`, `GOPATH`), and the new `GoEnv` (section 15) carries the Go policy variables. The `go` binary and `git` are located at start; a missing one is a preflight failure with a message, before any model call. `max_revisions` and `max_context_tokens` are the planner's existing `defaults`.
 
 ## 12. Git landing (item 13)
 
@@ -272,7 +304,7 @@ type Repo interface {
 There is no `Push`, no `Force`, no `Rebase`, no `Reset --hard` method: the interface cannot express them, and a test asserts the git CLI implementation never spawns `push`, `--force`, `reset` or `rebase`.
 
 - **Start.** `base_branch` (from the brief, `main`) must exist. On a fresh run the tree must be clean; a dirty tree stops the run before any model call. `work_branch` is `gm/<brief-id>` created from the base tip. On resume it is checked out (section 10).
-- **Wave 0 commit.** Every `*_test.go` the Test-writer placed, every stub, and `go.mod` and `go.sum`. `contracts.json` and `.gophermind/` are not committed (`rundir` already adds `.gophermind` to `.git/info/exclude`).
+- **Wave 0 commit.** Every `*_test.go` the Test-writer placed, the type declaration files, every stub, and `go.mod` and `go.sum`, made after the deps step so `go.sum` is complete. `contracts.json` and `.gophermind/` are not committed (`rundir` already adds `.gophermind` to `.git/info/exclude`).
 - **Per leaf.** Stage exactly the leaf's file and the removal of its stub, commit `gm(<node-id>): <title>` with trailers `GopherMind-Node: <id>` and `GopherMind-Run: <brief-id>`. Commits are serialized by a mutex; leaves never share a file, so no merge is ever needed. The short hash is stored in `SetResult`. A repair commits as `gm(<node-id>): repair round <n>` with the same trailers.
 - **Finish** (ruling R13). When every leaf is `verified` and `Acceptance passed: N of N`, an empty commit `gm(run): <title> built, Acceptance passed N of N` on the work branch carries the summary and is the commit `main` will end at; then `git checkout <base>` and `git merge --ff-only <work>`. If `main` moved so that a fast-forward is impossible, the run stops `failed` with `landing_blocked` and leaves the work branch intact; the executor never rebases, resets or forces. Result: `main` in the target repo holds GopherMind's commits, and the orchestrator's tag lands on the final commit.
 - **`landing: diff_only`**: no work branch is created and nothing is committed; the files are written to the working tree and at the end `changes.patch` is written to the run folder from `Diff`. **`landing: pull_request`**: unsupported here; the executor stops at Start with an error naming the field, it does not downgrade silently (section 17).
@@ -285,7 +317,7 @@ There is no `Push`, no `Force`, no `Rebase`, no `Reset --hard` method: the inter
 ```json
 {
   "run_id": "...", "started_at": "...", "finished_at": "...", "status": "verified|failed|escalated|interrupted",
-  "resumed": false, "exit_code": 0,
+  "resumed": false, "sandbox": "on", "stop_reason": "", "exit_code": 0,
   "requirements_covered": {"covered": 34, "total": 34},
   "acceptance": {"passed": 12, "total": 12},
   "constraints_checked": {"passed": 3, "total": 3},
@@ -293,13 +325,13 @@ There is no `Push`, no `Force`, no `Rebase`, no `Reset --hard` method: the inter
   "nodes": {"total": 61, "verified": 61, "failed": 0, "escalated": 0, "blocked": 0},
   "by_task_type": [
     {"task_type": "implement", "model": "mini/qwen3.6:35b-a3b", "calls": 88, "ok": 79, "malformed": 4,
-     "retries": 9, "escalations": 1, "prompt_tokens": 412000, "completion_tokens": 51000, "avg_duration_ms": 41000}
+     "retries": 9, "model_escalations": 1, "revision_escalations": 0, "human_escalations": 0, "prompt_tokens": 412000, "completion_tokens": 51000, "avg_duration_ms": 41000}
   ],
   "weak_tests": 2, "repairs": 1, "landing": {"branch": "gm/gm-2026-09-29-002", "commit": "abc1234", "merged_into": "main"}
 }
 ```
 
-Definitions, so a hand count can match: `calls` is ledger rows for that task type and model; `malformed` is rows with outcome `malformed`; `retries` counts rows beyond the first for the same node, stage and revision on the same model (ledger) plus attempts beyond the first for the same node, revision and model (blackboard); `escalations` counts moves to another model entry, revision increments, and `Gate.Escalate` calls; tokens are summed from the rows. Task types are the planner's (`clarify`, `contract`, `decompose`, `coverage`, `testwrite`) plus `implement` and `revise`, so one table shows who did what across the whole run. The printed summary ends with the two proof lines, in this order: `Requirements covered: N of N` (copied from the planner's `coverage.json` and `requirements.json`) and `Acceptance passed: N of N`. `pass_rate` and `first_try_wins` of BUILD_PLAN item 14 are derivable from the blackboard attempts and are included per model in the leaf section of the same file.
+Definitions, so a hand count can match: `calls` is ledger rows for that task type and model; `malformed` is rows with outcome `malformed`; `retries` counts rows beyond the first for the same node, stage and revision on the same model (ledger) plus attempts beyond the first for the same node, revision and model (blackboard); the single `escalations` number is replaced by three named fields: `model_escalations` (moves to another chain entry, including tier bumps), `revision_escalations` (revision increments, i.e. revise rungs) and `human_escalations` (`Gate.Escalate` calls); tokens are summed from the rows. Task types are the planner's (`clarify`, `contract`, `decompose`, `coverage`, `testwrite`) plus `implement` and `revise`, so one table shows who did what across the whole run. The printed summary ends with the two proof lines, in this order: `Requirements covered: N of N` (copied from the planner's `coverage.json` and `requirements.json`) and `Acceptance passed: N of N`. `pass_rate` and `first_try_wins` of BUILD_PLAN item 14 are derivable from the blackboard attempts and are included per model in the leaf section of the same file.
 
 ## 14. The network proxy (item 12)
 
@@ -310,25 +342,28 @@ Minimal design for a run whose only outside need is Go module fetching (ruling R
 - **Node attribution.** The proxy URL handed to a node's commands is `http://node-<id>@127.0.0.1:<port>`; the userinfo arrives as `Proxy-Authorization` and names the node. Harness clients (providers) send `X-GopherMind-Node`, which the proxy strips.
 - **Denied** requests get 403 and one `proxy.log` line with `verdict: denied`. Log fields: time, node, method, host, port, verdict, status, bytes, duration. No path, no query, no body, no header values, and no code path that logs them.
 - **Critical failure.** A request to a host marked `critical: true` that is denied, times out, or (plain HTTP only, since TLS through `CONNECT` is opaque) returns 5xx during an attempt makes that attempt fail with `network_critical: <host>`. Three in a row on one node set the node `failed`, terminal, and stop the run. Non-critical failures log a warning event and change nothing. The executor learns of failures by `Proxy.Failures(node, since)` after each command.
-- **Go modules** (ruling R7). Leaf commands and wave checks run with `GOPROXY=off`, `GOFLAGS=-mod=readonly`, `GOTOOLCHAIN=local`, `GOMODCACHE=<executor.go_mod_cache>`: they cannot fetch anything, so no leaf ever depends on the network. Modules are fetched exactly once, in a **deps step** at run start, after Wave 0's files exist: `go mod init <module>` when the repo has no `go.mod`; for each entry of `dependencies.json`, `go get <module>@<version>` and then `go mod download`, with `GOPROXY=https://proxy.golang.org`, `GOFLAGS=-mod=mod`, `GOSUMDB` at its default (checksums verified through `sum.golang.org`) and the proxy variables set, so both hosts must be on the allowlist. A run with an empty `dependencies.json` never touches the network. Vendoring was rejected: it puts third-party source in the target repo and in the diff, and the brief's constraint is a short allowed list, not a vendored tree.
-- **Not a sandbox.** The proxy governs HTTP and HTTPS through the standard library. Raw TCP (Postgres on `localhost`) does not go through it. It is policy and audit, not containment; see section 16.
+- **Go modules** (ruling R7). Leaf commands and wave checks run with `GOPROXY=off`, `GOFLAGS=-mod=readonly`, `GOTOOLCHAIN=local`, `GOSUMDB=off` (safe offline because the deps step already verified checksums), `GOPRIVATE=off`, `GOMODCACHE=<executor.go_mod_cache>`: they cannot fetch anything, so no leaf ever depends on the network. Modules are fetched exactly once, in a **deps step**, in this order at a fresh run start: (1) Wave 0 files are written (types, stubs; the Test-writer's tests already exist); (2) the harness writes `go.mod` (`go mod init <module>` when absent); (3) the deps step: for each entry of `dependencies.json`, `go get <module>@<version>` then `go mod download`, with `GOPROXY=https://proxy.golang.org`, `GOFLAGS=-mod=mod`, `GOSUMDB` at its default (checksums verified through `sum.golang.org`), the proxy variables set, network allowed to the proxy host only, so both hosts must be on the allowlist; (4) the scan of section 6.1 over `go.mod` and sources; (5) the Wave 0 commit including `go.sum`. `go mod verify` runs at the end of the run, before Finish, and a failure stops the run `failed`. A run with an empty `dependencies.json` never touches the network. Vendoring was rejected: it puts third-party source in the target repo and in the diff.
+- **Proxy is not the sandbox.** The proxy governs HTTP and HTTPS through the standard library; raw TCP does not go through it. Containment is the sandbox of section 6.1, which denies non-loopback network to every child. The proxy is policy and audit.
 
-## 15. Changes required in the planner
+## 15. Changes required in the planner and execenv
 
 Small, listed so the plan can order them first:
 
-1. **`dependencies.json`.** The contract outline pass may return `dependencies: [{module, version, purpose}]`; the planner writes `<run>/dependencies.json` (empty list when none), validates that each module path is a plausible module path and each version is pinned semver (no `latest`, no range), and includes the file's bytes in the approval hash. The Approve display lists them. The vetting is the human at Approve plus code: a version the model invented is caught at the deps step (`go get` fails) and stops the run before any leaf is built.
-2. **`pathsafe`.** `safeTestPath`, `insideRepo` and the no-follow open move to `pathsafe` with their tests; the planner imports it. Behavior unchanged.
-3. **Test-writer records** the test file path and the test function name on each leaf (it already writes `_state/test_files.json`); the executor reads that file instead of recomputing `testFuncName`, so a rename in the planner cannot desynchronize them.
-4. **Stubs are generated by the executor** from `contracts.json` signatures using `go/parser`; nothing in the planner changes for them.
+1. **`dependencies.json`.** The contract outline pass may return `dependencies: [{module, version, purpose}]`; the planner writes `<run>/dependencies.json` (empty list when none) and validates that each module path is plausible and each version is pinned semver (no `latest`, no range). `planner/approve.go` `hashedFiles` (around line 63) gains `dependencies.json`, and `RenderPlan` lists the dependencies. Consequence, stated plainly: every approval made before this change hashes a different file set and is invalidated; a plan approved earlier must be approved again.
+2. **`execenv` `GoEnv`.** `execenv.Inputs` gains `GoEnv map[string]string`, allow-listed to `GOTOOLCHAIN`, `GOPROXY`, `GOFLAGS`, `GOSUMDB`, `GOPRIVATE`. Any other key is an error; `GOFLAGS` may never contain `-toolexec` or `-overlay`; a brief cannot declare these names. `Build` also always emits `NO_PROXY=127.0.0.1,localhost,::1` (and the lowercase forms) whenever `ProxyURL` is set, so loopback servers are reached directly. Tests: `TestGoEnvAllowList`, `TestGoFlagsRejectToolexec`, `TestNoProxyAlwaysEmitted`.
+3. **`pathsafe`.** `safeTestPath`, `insideRepo` and the no-follow open move to `pathsafe` with their tests; the planner imports it. Behavior unchanged.
+4. **Test-writer records** the test file path and the test function name on each leaf (it already writes `_state/test_files.json`); the executor reads that file instead of recomputing `testFuncName`.
+5. **Types and stubs are generated by the executor** from `contracts.json` using `go/parser`; nothing in the planner changes for them.
+6. **`blackboard.Attempt` gains `ReplySHA256 string`** (hash only), stored by the SQLite backend (migration adds a column); see R17 and deviation X12.
 
 ## 16. Error handling, privacy, risks
 
 - **Interrupt (SIGINT/SIGTERM).** The current call and command are cancelled, the ledger row records `error_kind: cancelled`, in-flight claims are released, and the run ends `interrupted` (exit 5), resumable.
 - **Ledger failure** never fails a call; `router.LedgerErrors()` is copied into the report and the run is marked incomplete, as in the planner.
 - **Privacy.** No reply text, command output, prompt, or secret value reaches an error, event, log, blackboard row or ledger row. Secret values appear only in a command's environment. Persisted per attempt: class, test names, counts, sizes, hashes. The notes overlay holds model-written hints, is in the run folder (mode 0700, excluded from git), and is never logged. A canary secret, a canary in a reply and a canary in test output are grepped for after the end-to-end test (BUILD_PLAN ground rule).
+- **Time.** Worst case per leaf is 11 implement plus 2 revise calls; with 60 or more leaves a run is long. `executor.max_run_minutes` (default 720) ends it cleanly and resumably (7.1).
 - **Memory.** The mini has about 9 percent free memory: one request at a time (`workers: 1`, `max_concurrent: 1`), and the executor never loads a second model. A `memory_pressure` check is the operator's before a run, not the executor's.
-- **Risks.** (a) `qwen3.6:35b-a3b` may not reach a green build on every leaf; the ladder is bounded and the failure is loud, but a perfect run may need prompt work driven by the ledger. (b) No kernel sandbox: model code that writes outside the repo by absolute path is not caught (macOS has no supported unprivileged sandbox; a `sandbox-exec` profile is a follow-up). (c) The proxy cannot see inside TLS. (d) Acceptance commands that need Postgres depend on `TEST_DATABASE_URL` and a running database being provided by the operator through the brief's declared secrets; the executor starts no database. (e) Weak tests pass a wrong implementation, and only acceptance catches it. (f) The brief's `repo:` field names another path; `Options.Repo` overrides it and the report records both.
+- **Risks.** (a) `qwen3.6:35b-a3b` may not reach a green build on every leaf; the ladder is bounded and the failure is loud, but a perfect run may need prompt work driven by the ledger. (b) `sandbox-exec` is deprecated by Apple and could disappear in a future macOS; the preflight fails loudly if it does. (c) The proxy cannot see inside TLS; the sandbox's network deny covers that. (d) Acceptance commands that need Postgres depend on `TEST_DATABASE_URL` and a running database being provided by the operator through the brief's declared secrets; the executor starts no database. (e) Weak tests pass a wrong implementation, and only acceptance catches it. (f) The brief's `repo:` field names another path; `Options.Repo` overrides it and the report records both.
 
 ## 17. Not in scope
 
@@ -337,7 +372,7 @@ Small, listed so the plan can order them first:
 - Component roll-up as its own stage (BUILD_PLAN 14's per-component integration run); the per-wave checks cover it.
 - The live view and Gantt (item 15), the run service in `gophermind-server`, the app screens.
 - `/project` integration and the fate of the v1 planner (GOAL task 4). Only `executor.Run` is left as a clean entry point.
-- A kernel sandbox, vendoring, a database provisioner, non-Go targets.
+- Sandboxing on non-darwin systems (refused unless `sandbox: off`), vendoring, a database provisioner, non-Go targets.
 - Parallel workers beyond the config knob; adaptive chain reordering from the attempt log.
 - Adding a dependency after approval (a new approval is needed).
 
@@ -351,8 +386,8 @@ Requirement to test map (names to be written in the plan):
 |---|---|
 | Packer includes only the leaf's own slice and its test file | `TestPackNeedToKnow` (sibling and repo canaries absent) |
 | Assembly order and previous-failure cap (30 lines, 2 KB, secrets stripped) | `TestPackOrderAndFailureCap`, `TestPackStripsSecretLines` |
-| Estimate `ceil(len/4)*1.1`; over budget after trimming makes no call | `TestPackBudget`, `TestContextTooLongEscalatesWithoutCall` |
-| BUILD_PLAN item 9: 40 KB of dependency signatures goes to escalation with zero provider calls | `TestPackPaddedSignaturesNoCall` |
+| Estimate `ceil(len/4)*1.1`; over budget after trimming makes no call | `TestPackBudget`, `TestPackDropOrder`, `TestContextTooLongTriesNextEntryThenEscalates` |
+| BUILD_PLAN item 9: 40 KB of dependency signatures is trimmed by the drop order; with a required floor over budget and a one-entry chain it escalates with zero provider calls | `TestPackPaddedSignatures`, `TestPackFloorOverBudgetNoCall` |
 | Prompt never stored; only hash and size | `TestNoPromptTextPersisted` (canary in DB, logs, events) |
 | Model can only write the node's file | `TestForbiddenWriteRejected`, `TestReplyCannotNamePath`, `TestPathsafeTable` (symlink, `..`, `.git`, `_test.go`) |
 | Signature and package checked | `TestReplySignatureMismatchMalformed` |
@@ -366,7 +401,7 @@ Requirement to test map (names to be written in the plan):
 | CONTRACT_PROBLEM handled once then escalates | `TestContractProblemOnce` |
 | Failure text never carries reply or output | `TestNoReplyOrOutputInPersistedFailure` |
 | Blocked leaves are reported, never skipped | `TestBlockedLeavesReported`, `TestVerifiedImpliesEveryLeafVerified` |
-| Stubs make every commit build; red check | `TestStubsBuildAtEveryCommit`, `TestRedCheckWeakTestWarned` |
+| Stubs make every commit build; red check | `TestStubsBuildAtEveryCommit`, `TestRedCheckWeakTestWarned` (warning, reported, non-blocking) |
 | Waves run in order, ids sorted, deterministic | `TestWaveOrder` |
 | Wave checks and attribution | `TestWaveChecksAttribution` (build, vet, test failure map to nodes), `TestUnattributableStopsRun` |
 | Repair loop is bounded | `TestRepairLoopBound`, `TestRepairEscalatesAfterBound` |
@@ -388,6 +423,16 @@ Requirement to test map (names to be written in the plan):
 | Events for every stage | `TestEveryStageEmitsEvents` |
 | Report matches a hand count; proof lines end the summary | `TestReportHandCount`, `TestSummaryEndsWithProofLines` |
 | Exit codes | `TestExitCodes` (0, 1, 4, 5) |
+| Types are written from contracts and committed in Wave 0 | `TestTypeDeclsWritten`, `TestTypeDeclBadImportStopsRun` |
+| Stub/real swap: stub removed before write, restored after failure, leaf committed only on pass, commit removes the stub | `TestStubSwapOnFailureRestoresStub`, `TestLeafCommitRemovesStub`, `TestResumeNormalizesStubAndReal` |
+| Deps ordering: go.mod, deps, scan, then Wave 0 commit with go.sum; `go mod verify` at the end | `TestDepsStepOrder`, `TestGoModVerifyAtEnd` |
+| Rejects replace, toolchain, go:generate, cgo | `TestScanRejectsReplaceToolchainGenerateCgo` |
+| Git status snapshot catches stray files | `TestStrayFileFailsAttempt`, `TestStrayFileFailsWave` |
+| Sandbox: cannot write outside allowed dirs, cannot read $HOME, cannot connect off loopback (skips with a clear message if `sandbox-exec` is missing) | `TestSandboxDeniesWriteOutside`, `TestSandboxDeniesHomeRead`, `TestSandboxDeniesNonLoopback`, `TestSandboxAllowsLoopback`, `TestSandboxRequiredOffDarwin` |
+| Run limit stops cleanly and resumably | `TestMaxRunMinutesStopsCleanly` |
+| Reply hash survives resume | `TestReplyHashPersistedAcrossResume` |
+| Per-package race runs | `TestWaveRacePerPackage` |
+| GoEnv and NO_PROXY | `TestGoEnvAllowList`, `TestNoProxyAlwaysEmitted` |
 | Everything end to end on the greeter repo | `TestExecutorE2E` (wave order, a malformed reply, a failing then passing leaf, an escalation to a second chain entry, a repair, acceptance, git landing, canary secret grep) |
 | Settings section defaults and validation | `TestExecutorSettingsDefaults`, `TestExecutorSettingsValidate` |
 | Manual, not CI | `gophermind brief run` on `04-csvstat.md` against the mini, then the GOAL run |
@@ -412,17 +457,19 @@ Under `gophermind brief`: `run <id> [--gate terminal|file] [--repo <path>] [--wo
 | X8 | Component tests then root tests as a roll-up stage | Per-wave repo checks and one acceptance run; a separate component stage is item 14 |
 | X9 | Provider errors count as attempts in the log | An `error` verdict never consumes a fix attempt or a revision |
 | X10 | Failed tests recorded with output | Names and counts only; output in memory for the next prompt |
+| X11 | BUILD_PLAN 11 step 5: a dirty tree is stashed under `gm/resume-<ts>` | Never stashed; files of released leaves are checked in place, any other dirty path stops the run (nothing is hidden or lost) |
+| X12 | `Attempt` has no reply hash | `ReplySHA256` added (hash only) so the identical-reply check survives resume |
 
 ## 21. Rulings and their cost if wrong
 
 | # | Ruling | Cost if wrong |
 |---|---|---|
-| R1 | Package split: `packer`, `runner`, `executor`, `gitland`, `proxy`, `report`, `pathsafe` (BUILD_PLAN has `prompt`, `executor`, `proxy`, `gitland`, `report`) | Low: packages merge or split by moving files; import direction is fixed |
+| R1 | Package split: `packer`, `runner`, `executor`, `gitland`, `proxy`, `report`, `pathsafe`, `sandbox` (BUILD_PLAN has `prompt`, `executor`, `proxy`, `gitland`, `report`) | Low: packages merge or split by moving files; import direction is fixed |
 | R2 | Library entry `executor.Run(ctx, Options)` returns a `Report` and reserves the error for harness faults | A caller treating `err == nil` as success would still see `Status`; fixed by one wrapper |
 | R3 | The leaf's own test file goes in the prompt | If a model games tests it sees, weak tests pass wrong code; acceptance still catches behavior, and the alternative (givens and expects prose only) makes a passing implementation depend on the model guessing the assertions |
 | R4 | Leaf done means one attempt with parse, gofmt, build, vet, named test pass, at least one test event | Too loose lets weak code through to wave checks; too strict costs extra retries on the free mini |
 | R5 | Escalation ladder: repair, fix (2 per entry), next model, tier bump, revise (notes only), escalate; per-leaf call bound is a formula | Too many rungs waste mini time (11 implement calls worst case); too few end a run that another try would fix |
-| R6 | No OS sandbox in this plan: stripped env, import denylist, process groups, timeouts, output caps | A model-written test that writes elsewhere on disk is not stopped; recorded risk, sandbox-exec follow-up |
+| R6 | Sandbox (overrides the first draft): on darwin every child runs under a generated `sandbox-exec` profile (writes only to repo, scratch, caches; no `$HOME` reads; loopback only, plus the proxy host during the deps step); other OSes refuse unless `sandbox: off` is set and recorded; scans reject replace, toolchain, generate, cgo; git status snapshots catch stray files | If Apple removes `sandbox-exec` the executor stops at preflight until an alternative exists; a profile too strict fails builds early and visibly, one too loose is caught by the sandbox test |
 | R7 | Modules: fetch once in a deps step through the proxy, then `GOPROXY=off -mod=readonly` for everything else | If the module cache is shared and poisoned, builds pass wrongly; checksum verification and `go mod verify` at the end limit that. Vendoring would bloat the diff |
 | R8 | New third-party dependency: declared in `dependencies.json` by the planner, approved with the plan, pinned, imported only if listed; a leaf that needs another fails with `import_not_allowed` and escalates | A brief needing a late dependency needs a new approval; a hallucinated version fails the deps step early and cheaply |
 | R9 | A test that passes against the panicking stub is a warning, not a block | A vacuous test lets a wrong leaf through; only acceptance catches it |
@@ -432,6 +479,10 @@ Under `gophermind brief`: `run <id> [--gate terminal|file] [--repo <path>] [--wo
 | R13 | Landing: work branch `gm/<id>`, per-leaf commits, an empty final commit, ff-only merge into base; no rebase, no force, no push | A moved `main` blocks landing and needs a person; the alternative (rebasing) rewrites GopherMind's history |
 | R14 | Escalation with no gate answer means `stop`; skip yields run status `failed` | A batch run halts on the first stuck leaf instead of finishing the rest; chosen because GOAL.md counts an abandoned task as a failed attempt anyway |
 | R15 | Runner output lives in memory only; persisted failures are class, names, counts, hashes | A resumed leaf loses its last failure text and spends one check (no model call) to rebuild it |
+| R17 | Add `ReplySHA256` to the attempt record (hash only) | A schema migration on the blackboard; without it the identical-reply guard is lost on resume and one extra call may repeat |
+| R18 | Types and stubs written by the harness at run start, committed in Wave 0; stub swapped out and restored around every attempt | A wrong type declaration is a plan defect that stops the run before any model call rather than being patched by a leaf |
+| R19 | `max_run_minutes` (default 720) ends the run cleanly, resumable, exit 5 | Too low interrupts a legitimate long run (resume continues it); too high lets a stuck run occupy the mini |
+| R20 | Context overflow: fixed drop order, then next chain entry, escalate only after all entries fail | A leaf whose floor never fits escalates instead of being split; splitting needs the planner's revise stage |
 | R16 | Node files and `contracts.json` are immutable during a run; revision hints live in `_state/notes.json` | Notes cannot fix a wrong contract; that needs the planner's revise stage |
 
 ## 22. Open questions resolved
@@ -449,7 +500,7 @@ Under `gophermind brief`: `run <id> [--gate terminal|file] [--repo <path>] [--wo
 | What ends a run? | Section 7.1's list; no other path returns success |
 | What about a leaf whose tests pass on a stub? | Warning event and report count (R9) |
 | `go-git` or the `git` binary? | The binary behind an interface (X3) |
-| Is the proxy a sandbox? | No; policy and audit only (section 14, R6) |
+| Is the proxy a sandbox? | No; the sandbox (6.1, R6) contains, the proxy is policy and audit (section 14) |
 | What does resume do with an in-flight leaf's file? | Runs its checks first; passing means verified with no model call (section 10) |
 | What happens to `/project`? | Later task; only `executor.Run` is provided |
 
