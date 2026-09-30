@@ -83,12 +83,14 @@ type Config struct {
 	RateLimits RateLimits          `yaml:"rate_limits"`
 	Human      Human               `yaml:"human"`
 	Vault      Vault               `yaml:"vault"`
+	Executor   ExecutorConfig      `yaml:"executor"`
+	Toolchain  map[string]string   `yaml:"toolchain"`
 }
 
 // Default is what a first run writes: the Mac mini plus two providers that
 // need no key.
 func Default() *Config {
-	return &Config{
+	c := &Config{
 		Providers: []ProviderConfig{
 			{Name: "mini", BaseURL: "http://192.168.1.35:11434/v1", Visibility: Private, MaxConcurrent: 1,
 				Models: []ModelEntry{{ID: "qwen3.6:35b-a3b", ContextTokens: 32768}}, ReasoningEffort: "none"},
@@ -109,6 +111,8 @@ func Default() *Config {
 		Human:      Human{Mode: "terminal"},
 		Vault:      Vault{Path: "~/.gophermind/vault.age"},
 	}
+	c.applyExecutorDefaults()
+	return c
 }
 
 // Path is ~/.gophermind/gophermind.yaml, or under GOPHERMIND_CONFIG_DIR.
@@ -140,6 +144,7 @@ func Load(path string) (*Config, error) {
 	if err := dec.Decode(&c); err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("settings: %s: %w", path, err)
 	}
+	c.applyExecutorDefaults()
 	if err := c.Validate(); err != nil {
 		return nil, fmt.Errorf("settings: %s: %w", path, err)
 	}
@@ -281,7 +286,10 @@ func (c *Config) Validate() error {
 	if c.Vault.Path == "" {
 		return errors.New("vault.path is required")
 	}
-	return nil
+	if err := c.Executor.validate(); err != nil {
+		return err
+	}
+	return validateToolchain(c.Toolchain)
 }
 
 // Visibility reports a provider's visibility; ok is false for an unknown name.
