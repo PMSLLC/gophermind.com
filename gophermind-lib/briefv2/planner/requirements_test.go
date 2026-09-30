@@ -90,6 +90,7 @@ func TestParseRequirementsEdgeCases(t *testing.T) {
 		{"heading inside a fence is not a section", "## Constraints\n- one\n```\n## Acceptance\n- hidden\n```\n- two\n", "C1 C2"},
 		{"text before the first bullet is ignored", "## Acceptance\nIntro line.\n\n- one\n", "A1"},
 		{"a paragraph ends a bullet and is ignored", "## Constraints\n- one\nloose text\n  indented after loose text\n- two\n", "C1 C2"},
+		{"plus and numbered bullets count", "## Constraints\n+ one\n1. two\n2) three\n", "C1 C2 C3"},
 		{"h3 outside features is nothing", "## Architecture\n### Packages\n- `cmd/x`\n", ""},
 	}
 	for _, c := range cases {

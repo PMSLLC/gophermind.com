@@ -6,6 +6,8 @@ package planner
 import (
 	"fmt"
 	"strings"
+
+	"gophermind/gophermind-lib/briefv2/brief"
 )
 
 // ReqKind says which part of the brief a requirement came from.
@@ -93,9 +95,10 @@ func ParseRequirements(src []byte) []Requirement {
 				kind = ReqAcceptance
 			}
 			switch {
-			case !inFence && (strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ")):
+			case !inFence && isBullet(line):
 				open(kind, i+1)
-				body = append(body, strings.TrimSpace(line[2:]))
+				txt, _ := brief.BulletText(line)
+				body = append(body, txt)
 			case t == "":
 				// blank lines are dropped from a bullet's text
 			case line[0] == ' ' || line[0] == '\t':
@@ -111,4 +114,9 @@ func ParseRequirements(src []byte) []Requirement {
 	}
 	flush()
 	return out
+}
+
+func isBullet(line string) bool {
+	_, ok := brief.BulletText(line)
+	return ok
 }
