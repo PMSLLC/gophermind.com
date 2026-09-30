@@ -189,6 +189,9 @@ type callSpec struct {
 	nodeClass string
 	scope     router.Scope
 	maxTokens int
+	// maxGrown, when positive, is the cap on the doubled budget the router
+	// retries with after a truncated reply; zero keeps the router's default.
+	maxGrown int
 }
 
 // call makes one model call through the router. parse receives the raw reply
@@ -196,7 +199,9 @@ type callSpec struct {
 func (p *Planner) call(ctx context.Context, r *run, cs callSpec, prompt string, parse func(text string) error) error {
 	info := router.CallInfo{RunID: r.id, Stage: cs.stage, NodeID: cs.nodeID, Tier: router.TierStrong, Scope: cs.scope,
 		TaskType: cs.taskType, NodeClass: cs.nodeClass}
-	_, err := p.d.Caller.CallParsed(ctx, info, request(cs.stage, prompt, cs.maxTokens), parse)
+	req := request(cs.stage, prompt, cs.maxTokens)
+	req.MaxGrownTokens = cs.maxGrown
+	_, err := p.d.Caller.CallParsed(ctx, info, req, parse)
 	var ce *router.ChainExhausted
 	if errors.As(err, &ce) && ce.OnlyPrivacy() {
 		return fmt.Errorf("%w; this call carries %s scope and every model in the %s tier is a public provider: "+
