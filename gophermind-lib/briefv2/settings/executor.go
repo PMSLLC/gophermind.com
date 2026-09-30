@@ -3,8 +3,10 @@ package settings
 import (
 	"fmt"
 	"net"
-	"path/filepath"
 	"strconv"
+	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // ExecutorConfig is the executor: section of gophermind.yaml. Every integer
@@ -113,7 +115,7 @@ func (e ExecutorConfig) validate() error {
 	if !loopbackHostPort(e.Proxy.Listen) {
 		return fmt.Errorf("executor.proxy.listen must be a loopback host:port")
 	}
-	if e.Proxy.Log == "" || e.Proxy.Log == "." || e.Proxy.Log == ".." || filepath.Base(e.Proxy.Log) != e.Proxy.Log {
+	if e.Proxy.Log == "" || e.Proxy.Log == "." || strings.Contains(e.Proxy.Log, "..") || strings.ContainsAny(e.Proxy.Log, `/\`) {
 		return fmt.Errorf("executor.proxy.log must be a plain file name")
 	}
 	return nil
@@ -137,6 +139,26 @@ func loopbackHostPort(s string) bool {
 func validateToolchain(t map[string]string) error {
 	if t["PATH"] == "" {
 		return fmt.Errorf("toolchain.PATH is required")
+	}
+	return nil
+}
+
+// checkExplicitZeroCounts refuses an explicit 0 for a retry, attempt or round
+// count, so a leaf can never be abandoned by a typo. An omitted key is fine
+// (it takes the default); negatives are refused by validate.
+func checkExplicitZeroCounts(raw []byte) error {
+	var doc struct {
+		Executor map[string]any `yaml:"executor"`
+	}
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		return nil // the strict decode already reported any syntax problem
+	}
+	for _, key := range []string{"fix_attempts", "repair_rounds", "acceptance_repair_rounds"} {
+		if v, ok := doc.Executor[key]; ok {
+			if n, isInt := v.(int); isInt && n == 0 {
+				return fmt.Errorf("executor.%s must be at least 1", key)
+			}
+		}
 	}
 	return nil
 }

@@ -92,7 +92,9 @@ func TestExecutorSettingsDefaults(t *testing.T) {
 	_ = yaml.Unmarshal(oldBody, &pm)
 	pm["executor"] = map[string]any{"workers": 3}
 	pb, _ := yaml.Marshal(pm)
-	os.WriteFile(part, pb, 0o600)
+	if err := os.WriteFile(part, pb, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	pc, err := settings.Load(part)
 	if err != nil || pc.Executor.Workers != 3 || pc.Executor.FixAttempts != 2 || pc.Executor.Sandbox != "on" {
 		t.Errorf("partial section: %+v %v", pc, err)
@@ -206,9 +208,64 @@ func TestExecutorLoadRejectsUnknownKeyAndNegative(t *testing.T) {
 			t.Fatalf("%s: edit did not apply:\n%s", name, b)
 		}
 		p := filepath.Join(dir, strings.ReplaceAll(name, " ", "_")+".yaml")
-		os.WriteFile(p, []byte(body), 0o600)
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
 		if _, err := settings.Load(p); err == nil {
 			t.Errorf("%s: Load accepted it", name)
+		}
+	}
+}
+
+func TestExecutorExplicitZeroCountsRejected(t *testing.T) {
+	dir := t.TempDir()
+	fresh := filepath.Join(dir, "fresh.yaml")
+	if _, err := settings.Load(fresh); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(fresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"fix_attempts", "repair_rounds", "acceptance_repair_rounds"} {
+		var m map[string]any
+		if err := yaml.Unmarshal(b, &m); err != nil {
+			t.Fatal(err)
+		}
+		m["executor"].(map[string]any)[key] = 0
+		body, _ := yaml.Marshal(m)
+		p := filepath.Join(dir, key+"-zero.yaml")
+		if err := os.WriteFile(p, body, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := settings.Load(p)
+		if err == nil || !strings.Contains(err.Error(), "executor."+key+" must be at least 1") {
+			t.Errorf("%s: explicit 0 gave %v", key, err)
+		}
+
+		// Omitted key takes the default, and the file is not rewritten.
+		delete(m["executor"].(map[string]any), key)
+		body, _ = yaml.Marshal(m)
+		q := filepath.Join(dir, key+"-omitted.yaml")
+		if err := os.WriteFile(q, body, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		c, err := settings.Load(q)
+		if err != nil || c.Executor.FixAttempts != 2 || c.Executor.RepairRounds != 2 || c.Executor.AcceptanceRepairRounds != 2 {
+			t.Errorf("%s omitted: %+v %v", key, c, err)
+		}
+		if after, _ := os.ReadFile(q); string(after) != string(body) {
+			t.Errorf("%s omitted: file rewritten", key)
+		}
+	}
+}
+
+func TestExecutorProxyLogSeparators(t *testing.T) {
+	for _, bad := range []string{"a/b.log", `a\b.log`, "..", ".", `..\x`, "/abs.log"} {
+		c := settings.Default()
+		c.Executor.Proxy.Log = bad
+		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "executor.proxy.log") {
+			t.Errorf("%q: %v", bad, err)
 		}
 	}
 }
