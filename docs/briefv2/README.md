@@ -113,7 +113,9 @@ most 20 passes are made before the stage stops with an error. Between passes
 only local checks run (a type may use one a later pass writes); when the
 outline is complete, ids still used but never declared are asked for in up to 2
 repair passes (stored like any pass), and only then does the stage fail, naming
-at most 10 of the ids.
+at most 10 of the ids. Component passes work the same way: a function may use
+one a later component writes, and ids still undeclared after every component is
+written go through up to 2 `contract:repair` passes.
 
 Requirements and coverage. Every top-level bullet under `## Constraints` (C1,
 C2, ...) and `## Acceptance` (A1, A2, ...) and every `###` heading under

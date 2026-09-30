@@ -1,0 +1,57 @@
+{
+  "brief_id": "gm-2026-09-29-900",
+  "components": [
+    {
+      "exports": [
+        "fn-mean",
+        "fn-summarize"
+      ],
+      "id": "csvstat",
+      "package": "stat"
+    }
+  ],
+  "conventions": {
+    "errors": "Return errors.",
+    "layout": [
+      "internal/stat"
+    ],
+    "naming": [
+      "Verbs."
+    ],
+    "testing": "Table-driven."
+  },
+  "functions": [
+    {
+      "component": "csvstat",
+      "doc": "Mean averages xs. An empty slice is an error.",
+      "file": "internal/stat/mean.go",
+      "id": "fn-mean",
+      "package": "stat",
+      "signature": "func Mean(xs []float64) (float64, error)",
+      "uses": []
+    },
+    {
+      "component": "csvstat",
+      "doc": "Summarize builds a Summary using Mean.",
+      "file": "internal/stat/summary.go",
+      "id": "fn-summarize",
+      "package": "stat",
+      "signature": "func Summarize(xs []float64) (Summary, error)",
+      "uses": [
+        "summary",
+        "fn-mean"
+      ]
+    }
+  ],
+  "module": "example.com/csvstat",
+  "revision": 0,
+  "spec_version": "2.0",
+  "types": [
+    {
+      "decl": "// Summary holds column statistics.\ntype Summary struct {\n\tMean float64\n}",
+      "file": "internal/stat/summary.go",
+      "id": "summary",
+      "package": "stat"
+    }
+  ]
+}
