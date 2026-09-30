@@ -114,7 +114,7 @@ func (t *Terminal) Escalate(ctx context.Context, e Escalation) (Resolution, erro
 			return Resolution{}, err
 		}
 		if action, note, ok := parseAction(line); ok {
-			return Resolution{Action: action, Note: note}, nil
+			return Resolution{Action: action, Note: note, AnsweredBy: AnsweredByHuman}, nil
 		}
 		fmt.Fprintln(t.out, "Type retry, skip, or stop.")
 	}

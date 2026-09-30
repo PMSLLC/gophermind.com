@@ -175,5 +175,5 @@ func (f *File) Escalate(ctx context.Context, e Escalation) (Resolution, error) {
 		return Resolution{}, fmt.Errorf("human: %s: write retry, skip, or stop", name)
 	}
 	f.archive(name)
-	return Resolution{Action: action, Note: note}, nil
+	return Resolution{Action: action, Note: note, AnsweredBy: AnsweredByHuman}, nil
 }

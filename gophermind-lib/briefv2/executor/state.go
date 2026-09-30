@@ -120,13 +120,31 @@ func LoadEscalations(runDir string) ([]report.Escalation, error) {
 	return list, nil
 }
 
-// AppendEscalation records one escalation, in order.
+// AppendEscalation records one escalation, in order. It is idempotent: an
+// escalation with the same kind, task type, model, node, revision and round as
+// one already recorded is not recorded again (a resumed run repeats the step
+// that recorded it), and when the repeat carries an AnsweredBy the record gets
+// it. A record that already has an answer keeps it.
 func AppendEscalation(runDir string, e report.Escalation) error {
 	notesMu.Lock()
 	defer notesMu.Unlock()
 	list, err := LoadEscalations(runDir)
 	if err != nil {
 		return err
+	}
+	same := func(x report.Escalation) bool {
+		return x.Kind == e.Kind && x.TaskType == e.TaskType && x.Model == e.Model && x.NodeID == e.NodeID &&
+			x.Revision == e.Revision && x.Round == e.Round
+	}
+	for i := len(list) - 1; i >= 0; i-- {
+		if !same(list[i]) {
+			continue
+		}
+		if e.AnsweredBy == "" || list[i].AnsweredBy != "" {
+			return nil
+		}
+		list[i].AnsweredBy = e.AnsweredBy
+		return writeStateJSON(runDir, stateEscalations, list)
 	}
 	return writeStateJSON(runDir, stateEscalations, append(list, e))
 }

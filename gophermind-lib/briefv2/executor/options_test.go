@@ -110,6 +110,14 @@ func TestOptionsValidate(t *testing.T) {
 		}
 	})
 
+	t.Run("more than one worker is refused", func(t *testing.T) {
+		o := validOptions(t)
+		o.Settings.Executor.Workers = 2
+		if err := o.validate(); err == nil || !strings.Contains(err.Error(), "executor.workers must be 1 until leaf-isolated trees exist") {
+			t.Errorf("workers 2: %v", err)
+		}
+	})
+
 	t.Run("defaults are filled and Git is left alone", func(t *testing.T) {
 		o := validOptions(t)
 		if o.Sink != nil || o.Now != nil || o.Git != nil {

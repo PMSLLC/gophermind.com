@@ -125,7 +125,7 @@ func TestReportHandCount(t *testing.T) {
 	if r.Requirements != (report.Coverage{Covered: 3, Total: 3}) || r.Acceptance != (report.Passed{Passed: 2, Total: 2}) || r.Constraints != (report.Passed{Passed: 1, Total: 1}) {
 		t.Fatalf("proof %+v %+v %+v", r.Requirements, r.Acceptance, r.Constraints)
 	}
-	if r.ExitCode != 4 || r.Status != "escalated" || r.SchemaVersion != 1 {
+	if r.ExitCode != 4 || r.Status != "escalated" || r.SchemaVersion != 2 {
 		t.Fatalf("status %+v", r)
 	}
 	if r.StartedAt != "2026-09-30T01:00:00Z" {
@@ -687,5 +687,42 @@ func TestNoPlannerWarningsWhenNothingWasIgnored(t *testing.T) {
 	}
 	if strings.Contains(r.Summary(), "Planner warnings") {
 		t.Error("summary mentions planner warnings on a clean run")
+	}
+}
+
+// The report names every human escalation and who answered it: ids and a
+// fixed vocabulary, nothing else.
+func TestReportListsHumanEscalationsWithWhoAnswered(t *testing.T) {
+	in := fixture()
+	in.Escalations = append(in.Escalations,
+		report.Escalation{Kind: "human", TaskType: "implement", Model: "mini/qwen", NodeID: "e", AnsweredBy: "unattended-default"},
+		report.Escalation{Kind: "human", TaskType: "implement", Model: "mini/qwen", NodeID: "f", AnsweredBy: "gate-absent"})
+	r := build(t, in)
+	if len(r.HumanLog) != 3 || r.HumanLog[1].AnsweredBy != "unattended-default" || r.HumanLog[2].NodeID != "f" || r.HumanLog[0].AnsweredBy != "" {
+		t.Fatalf("human log = %+v", r.HumanLog)
+	}
+	raw, _ := json.Marshal(r)
+	if !strings.Contains(string(raw), `"answered_by":"gate-absent"`) || !strings.Contains(string(raw), `"human_escalation_log"`) {
+		t.Fatalf("json lacks the log: %s", raw)
+	}
+	for _, e := range r.HumanLog {
+		if e.Kind != "human" {
+			t.Fatalf("a non-human entry is in the human log: %+v", e)
+		}
+	}
+	bad := fixture()
+	bad.Escalations = append(bad.Escalations, report.Escalation{Kind: "human", TaskType: "implement", NodeID: "x", AnsweredBy: "somebody"})
+	if _, err := report.Build(bad); err == nil {
+		t.Fatal("an answered_by outside the vocabulary was accepted")
+	}
+}
+
+func TestReadAcceptsTheOlderSchemaVersion(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, report.FileName), []byte(`{"schema_version":1,"run_id":"x","status":"verified"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := report.Read(dir); err != nil {
+		t.Fatalf("a version 1 report must still read: %v", err)
 	}
 }

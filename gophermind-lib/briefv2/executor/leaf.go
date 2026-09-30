@@ -517,10 +517,19 @@ func (lr *leafRun) toHuman(ctx context.Context, reason string) (leafOutcome, boo
 	case human.ActionRetry:
 		lr.cp[lr.rev] = 0
 		ok, cerr := rc.o.Board.Claim(ctx, rc.plan.RunID, l.ID, lr.worker)
+		if ctx.Err() != nil {
+			// The row was put back to ready by the retry: nothing to release, and the
+			// next run takes the leaf from there.
+			lr.final = true
+			return leafOutcome{Interrupted: true}, true, nil
+		}
 		if cerr != nil || !ok {
 			return leafOutcome{}, true, fmt.Errorf("executor: leaf %s could not be claimed again after the retry", l.ID)
 		}
 		if serr := rc.o.Board.SetStatus(ctx, rc.plan.RunID, l.ID, blackboard.StatusClaimed, blackboard.StatusInProgress); serr != nil {
+			if ctx.Err() != nil {
+				return leafOutcome{Interrupted: true}, true, nil // claimed: the deferred release frees it
+			}
 			return leafOutcome{}, true, fmt.Errorf("executor: restarting %s failed", l.ID)
 		}
 		return leafOutcome{}, false, nil
@@ -844,6 +853,7 @@ func (lr *leafRun) runEntry(ctx context.Context, e ladderEntry) (entryEnd, error
 func (lr *leafRun) record(ctx context.Context, e ladderEntry, started time.Time, verdict blackboard.Verdict, class, reason string, v *runner.Verdict, sha string) error {
 	rc := lr.rc
 	prov, model, _ := settings.SplitEntry(e.Name)
+	reason = rc.scrubReason(reason)
 	a := blackboard.Attempt{
 		Model: model, Provider: prov, Revision: lr.rev, Order: e.Pos, StartedAt: started,
 		DurationMS: rc.o.Now().Sub(started).Milliseconds(), Verdict: verdict, FailureReason: reason, ReplySHA256: sha,
@@ -853,7 +863,7 @@ func (lr *leafRun) record(ctx context.Context, e ladderEntry, started time.Time,
 		if v.Pass() {
 			a.TestsPassed = 1
 		}
-		a.FailedTests = v.Names
+		a.FailedTests = rc.scrubNames(v.Names)
 	}
 	if err := rc.o.Board.AppendAttempt(context.WithoutCancel(ctx), rc.plan.RunID, lr.l.ID, a); err != nil {
 		return fmt.Errorf("executor: recording an attempt of %s failed", lr.l.ID)
@@ -1184,4 +1194,35 @@ func (rc *runCtx) observeCritical(id string, failed bool) (bool, error) {
 		return terminal, err
 	}
 	return terminal, nil
+}
+
+// scrubReason keeps a failure reason out of the stores when it holds a secret
+// value (a test name can be built from data): only its class is kept.
+func (rc *runCtx) scrubReason(reason string) string {
+	for _, sec := range rc.secretValues() {
+		if sec != "" && strings.Contains(reason, sec) {
+			class, _, _ := strings.Cut(reason, ":")
+			return class
+		}
+	}
+	return reason
+}
+
+// scrubNames drops the test names that hold a secret value.
+func (rc *runCtx) scrubNames(names []string) []string {
+	secrets := rc.secretValues()
+	var out []string
+	for _, n := range names {
+		clean := true
+		for _, sec := range secrets {
+			if sec != "" && strings.Contains(n, sec) {
+				clean = false
+				break
+			}
+		}
+		if clean {
+			out = append(out, n)
+		}
+	}
+	return out
 }

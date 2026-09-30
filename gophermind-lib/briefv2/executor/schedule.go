@@ -10,7 +10,6 @@ import (
 
 	"gophermind/gophermind-lib/briefv2/blackboard"
 	"gophermind/gophermind-lib/briefv2/human"
-	"gophermind/gophermind-lib/briefv2/settings"
 )
 
 // maxLeafInterrupts is how many times one run may find a leaf interrupted
@@ -37,6 +36,7 @@ type waveResult struct {
 type schedState struct {
 	mu         sync.Mutex
 	interrupts map[string]int
+	body       sync.Mutex // held for the whole of one leaf body: two never run at once
 }
 
 func (s *schedState) interrupted(id string) int {
@@ -74,38 +74,12 @@ type job struct {
 	err     error
 }
 
-// workerCount is executor.workers, capped at the sum of max_concurrent of the
-// providers on the leaf's ladder (the smallest sum over the leaves), and at
-// least 1.
-func (rc *runCtx) workerCount(leaves []*Leaf) int {
-	n := rc.cfg.Executor.Workers
-	if n < 1 {
-		n = 1
-	}
-	limit := 0
-	for i, l := range leaves {
-		sum, seen := 0, map[string]bool{}
-		for _, e := range rc.ladderEntries(l) {
-			prov, _, _ := settings.SplitEntry(e.Name)
-			if seen[prov] {
-				continue
-			}
-			seen[prov] = true
-			for _, p := range rc.cfg.Providers {
-				if p.Name == prov {
-					sum += p.MaxConcurrent
-				}
-			}
-		}
-		if i == 0 || sum < limit {
-			limit = sum
-		}
-	}
-	if limit >= 1 && n > limit {
-		n = limit
-	}
-	return n
-}
+// workerCount is the number of leaves run at once: always 1. The leaf loops
+// share one working tree (the stray-file check and the stub swap look at it
+// whole) and the spec allows one model call at a time, so executor.workers is
+// refused above 1 by settings validation and ignored here. The job structure
+// stays for the day leaves get isolated trees.
+func (rc *runCtx) workerCount(leaves []*Leaf) int { return 1 }
 
 // levels orders the leaves: by dependency among themselves first, then by id.
 // Leaves of one wave have no dependency on each other, so a wave is one level.
@@ -298,6 +272,8 @@ func (rc *runCtx) runJobs(ctx context.Context, jobs []*job, workers int, wr *wav
 		j.ran = true
 		run := func() {
 			defer func() { <-sem }()
+			rc.sched.body.Lock()
+			defer rc.sched.body.Unlock()
 			if j.status == blackboard.StatusEscalated || j.status == blackboard.StatusNeedsRevision {
 				j.out, j.err = rc.resumeEscalated(ctx, j.l, j.status)
 			} else {
@@ -393,11 +369,15 @@ func (rc *runCtx) resumeEscalated(ctx context.Context, l *Leaf, from blackboard.
 	for i, a := range row.Attempts {
 		history = append(history, historyLine(i+1, a))
 	}
-	repMu.Lock()
-	reason := rc.rep.reasons[l.ID]
-	repMu.Unlock()
+	// The class the leaf escalated with comes from the state file, which
+	// survives a restart; the report's memory does not.
+	results, err := LoadLeafResults(rc.o.RunDir)
+	if err != nil {
+		return leafOutcome{}, err
+	}
+	reason := results[l.ID].Reason
 	if reason == "" {
-		reason = "escalated"
+		reason = "escalated" // the result was never written: the crash came before it
 	}
 	res, err := rc.escalate(ctx, l, from, reason, history)
 	if err != nil {

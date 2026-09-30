@@ -90,13 +90,13 @@ func TestExecutorSettingsDefaults(t *testing.T) {
 	part := filepath.Join(t.TempDir(), "p.yaml")
 	pm := map[string]any{}
 	_ = yaml.Unmarshal(oldBody, &pm)
-	pm["executor"] = map[string]any{"workers": 3}
+	pm["executor"] = map[string]any{"fix_attempts": 5}
 	pb, _ := yaml.Marshal(pm)
 	if err := os.WriteFile(part, pb, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	pc, err := settings.Load(part)
-	if err != nil || pc.Executor.Workers != 3 || pc.Executor.FixAttempts != 2 || pc.Executor.Sandbox != "on" {
+	if err != nil || pc.Executor.FixAttempts != 5 || pc.Executor.Workers != 1 || pc.Executor.Sandbox != "on" {
 		t.Errorf("partial section: %+v %v", pc, err)
 	}
 }
@@ -267,5 +267,22 @@ func TestExecutorProxyLogSeparators(t *testing.T) {
 		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "executor.proxy.log") {
 			t.Errorf("%q: %v", bad, err)
 		}
+	}
+}
+
+// Leaf model loops are serialised (ruling): any worker count but 1 is refused
+// with one fixed message naming the key.
+func TestExecutorWorkersMustBeOne(t *testing.T) {
+	const want = "executor.workers must be 1 until leaf-isolated trees exist"
+	for _, n := range []int{2, 3, 64} {
+		c := settings.Default()
+		c.Executor.Workers = n
+		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("workers %d: %v, want %q", n, err, want)
+		}
+	}
+	c := settings.Default()
+	if c.Executor.Workers != 1 || c.Validate() != nil {
+		t.Errorf("the default must be 1 and valid, got %d", c.Executor.Workers)
 	}
 }

@@ -22,6 +22,7 @@ import (
 	"unicode"
 
 	"gophermind/gophermind-lib/briefv2/blackboard"
+	"gophermind/gophermind-lib/briefv2/human"
 	"gophermind/gophermind-lib/briefv2/ledger"
 	"gophermind/gophermind-lib/briefv2/pathsafe"
 	"gophermind/gophermind-lib/briefv2/planner"
@@ -30,8 +31,11 @@ import (
 const (
 	FileName = "report.json"
 	// SchemaVersion is bumped on any change to the JSON shape.
-	SchemaVersion = 1
-	maxReadBytes  = 8 << 20
+	SchemaVersion = 2
+	// minSchemaVersion is the oldest report Read still accepts. Version 2 added
+	// human_escalation_log (a new optional key); version 1 files read unchanged.
+	minSchemaVersion = 1
+	maxReadBytes     = 8 << 20
 )
 
 type Coverage struct {
@@ -88,6 +92,14 @@ type Escalation struct {
 	TaskType string `json:"task_type"`
 	Model    string `json:"model"`
 	NodeID   string `json:"node_id"`
+	// Revision and Round say when a human escalation happened: the leaf's
+	// revision and how many retries a person had granted before it. Together with
+	// the other fields they make an append idempotent across a resume.
+	Revision int `json:"revision,omitempty"`
+	Round    int `json:"round,omitempty"`
+	// AnsweredBy is who answered a human escalation: one of the human package's
+	// AnsweredBy values, empty while it is unanswered.
+	AnsweredBy string `json:"answered_by,omitempty"`
 }
 
 type Report struct {
@@ -117,6 +129,9 @@ type Report struct {
 	// PlannerWarnings lists the duplicate ids the planner dropped (first
 	// emission kept), one line per id and a total line; ids and counts only.
 	PlannerWarnings []string `json:"planner_warnings,omitempty"`
+	// HumanLog is every escalation to a person, in order, with who answered it.
+	// Ids and a fixed vocabulary only.
+	HumanLog []Escalation `json:"human_escalation_log,omitempty"`
 }
 
 // Input is everything Build aggregates. The caller builds Failures as
@@ -219,7 +234,12 @@ func Build(in Input) (Report, error) {
 	}
 	for _, es := range in.Escalations {
 		switch es.Kind {
-		case "model", "revision", "human":
+		case "model", "revision":
+		case "human":
+			if es.AnsweredBy != "" && !human.ValidAnsweredBy(es.AnsweredBy) {
+				return Report{}, fmt.Errorf("report: unknown escalation answer source (%d bytes)", len(es.AnsweredBy))
+			}
+			r.HumanLog = append(r.HumanLog, es)
 		default:
 			return Report{}, fmt.Errorf("report: unknown escalation kind (%d bytes)", len(es.Kind))
 		}
@@ -641,7 +661,7 @@ func Read(runDir string) (Report, error) {
 	if err := json.Unmarshal(raw, &v); err != nil {
 		return r, fmt.Errorf("report: report.json is not valid JSON (%d bytes)", len(raw))
 	}
-	if v.SchemaVersion != SchemaVersion {
+	if v.SchemaVersion < minSchemaVersion || v.SchemaVersion > SchemaVersion {
 		return r, fmt.Errorf("report: unsupported schema version %d (want %d)", v.SchemaVersion, SchemaVersion)
 	}
 	if !jsonDepthOK(raw, 16) {

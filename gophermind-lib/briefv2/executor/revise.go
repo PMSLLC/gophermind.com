@@ -89,7 +89,7 @@ func (lr *leafRun) revise(ctx context.Context) (contractProblem bool, err error)
 		return false, fmt.Errorf("executor: raising the revision of %s failed", l.ID)
 	}
 	lr.rev++
-	if err := AppendEscalation(rc.o.RunDir, report.Escalation{Kind: "revision", TaskType: "revise", Model: res.Entry, NodeID: l.ID}); err != nil {
+	if err := AppendEscalation(rc.o.RunDir, report.Escalation{Kind: "revision", TaskType: "revise", Model: res.Entry, NodeID: l.ID, Revision: lr.rev - 1, Round: rc.round(l.ID)}); err != nil {
 		return false, err
 	}
 	return false, nil
@@ -113,8 +113,10 @@ func (lr *leafRun) reviseFailure(ctx context.Context, cerr error) error {
 			return &reviseStop{Reason: ClassContextTooLong}
 		case router.ReasonCooldown, router.ReasonFailed:
 			return &reviseStop{Reason: "provider_unavailable", Interrupted: true}
+		case router.ReasonAuth, router.ReasonModelMissing, router.ReasonNoProvider, router.ReasonPrivacy:
+			return &reviseStop{Reason: kind, Interrupted: true} // a configuration fault
 		default:
-			return &reviseStop{Reason: kind, Interrupted: true}
+			return &reviseStop{Reason: "provider_unavailable", Interrupted: true}
 		}
 	}
 	return &reviseStop{Reason: "no_model", Interrupted: true}
