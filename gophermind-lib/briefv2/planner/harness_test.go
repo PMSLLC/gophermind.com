@@ -196,8 +196,8 @@ func (g *rig) has(name string) bool {
 func variant(t *testing.T, files map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
-	// "contract.outline.txt" is a whole outline in the shared pass; the greeter
-	// brief then has one batch, which has nothing left to add.
+	// "contract.outline.txt" is a whole outline: the shared pass keeps its types
+	// component and the one batch of the greeter brief brings the rest.
 	if body, ok := files["contract.outline.txt"]; ok {
 		moved := map[string]string{"contract.outline.1.txt": body}
 		for k, v := range files {
@@ -206,7 +206,7 @@ func variant(t *testing.T, files map[string]string) string {
 			}
 		}
 		if _, ok := moved["contract.outline.2.txt"]; !ok {
-			moved["contract.outline.2.txt"] = `{"components": [], "types": []}`
+			moved["contract.outline.2.txt"] = body
 		}
 		files = moved
 	}

@@ -36,6 +36,13 @@ type contractState struct {
 	OutlinePasses    int          `json:"outline_passes,omitempty"`
 	OutlineBatches   [][]string   `json:"outline_batches,omitempty"`
 	OutlineBatchNext int          `json:"outline_batch_next,omitempty"`
+	// OutlineBatchesSet is true once OutlineBatches is authoritative (a state
+	// from before the batches existed lacks it); OutlineSharedIDs are the ids
+	// the shared pass wrote, always listed to the batch passes.
+	OutlineBatchesSet bool     `json:"outline_batches_set,omitempty"`
+	OutlineSharedIDs  []string `json:"outline_shared_ids,omitempty"`
+	// ComponentPasses counts the stored passes of each component, for the cap.
+	ComponentPasses map[string]int `json:"component_passes,omitempty"`
 	// OutlineRepairs counts the repair passes stored; OutlineDone is set once
 	// the outline has no unresolved reference and dependencies.json is written.
 	OutlineRepairs int  `json:"outline_repairs,omitempty"`
@@ -111,6 +118,23 @@ func outlineBatches(features []string) [][]string {
 	return out
 }
 
+// outlinePassIsFinal says whether a pass ends the outline, so the whole
+// outline is validated: a repair pass, the last batch, or the shared pass when
+// there is no batch at all.
+func outlinePassIsFinal(first bool, batches [][]string, next int, repair bool) bool {
+	switch {
+	case repair:
+		return true
+	case first:
+		return len(batches) == 0
+	}
+	return next >= len(batches)-1
+}
+
+// maxComponentPasses caps the passes one component may take: a model that adds
+// a function every time and never says it is done is stopped.
+const maxComponentPasses = 40
+
 // outlinePassStage is the stage of outline pass n: 1 is the shared pass, 2 the
 // first batch.
 func outlinePassStage(n int) string { return fmt.Sprintf("contract:outline:%d", n) }
@@ -157,10 +181,15 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 		}
 		// ask makes one outline call: the shared pass (batch nil, no unresolved),
 		// a batch pass, or a repair pass (unresolved ids).
+		var featureNames []string
+		for _, f := range r.brief.Features {
+			featureNames = append(featureNames, f.Name)
+		}
+		allBatches := outlineBatches(featureNames)
 		ask := func(stage string, batch, unresolved []string) error {
 			prompt, err := render("contract_outline", map[string]string{
 				"Brief": string(r.src), "Answers": answersText(as), "TypeSchema": typeSchema,
-				"Fixed": outlineFixedText(st.Doc), "Emitted": outlineEmittedText(st.Doc),
+				"Fixed": outlineFixedText(st.Doc), "Emitted": outlineEmittedText(st.Doc, st.OutlineSharedIDs),
 				"Batch":      strings.Join(batch, ", "),
 				"Unresolved": unresolvedPromptText(unresolved), "UnresolvedCount": fmt.Sprint(len(unresolved))})
 			if err != nil {
@@ -168,6 +197,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			}
 			var ignored []string
 			var notes idNotes
+			var extras []string
 			added := 0
 			first := st.Doc == nil
 			cs := callSpec{stage: stage, taskType: "contract", scope: router.ScopeBrief,
@@ -177,7 +207,14 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 				if err != nil {
 					return err
 				}
-				final := len(unresolved) > 0 || (!first && st.OutlineBatchNext == len(st.OutlineBatches)-1)
+				if first {
+					var dropped []string
+					if text, dropped, err = dropSharedExtras(text); err != nil {
+						return err
+					}
+					extras = dropped
+				}
+				final := outlinePassIsFinal(first, pick(first, allBatches, st.OutlineBatches), st.OutlineBatchNext, len(unresolved) > 0)
 				doc, ds, n, ign, err := mergeOutline(st.Doc, st.Deps, text, r.id, final)
 				if err != nil {
 					return err
@@ -198,11 +235,8 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 				st.OutlineRepairs++
 			case first:
 				st.OutlinePasses++
-				var names []string
-				for _, f := range r.brief.Features {
-					names = append(names, f.Name)
-				}
-				st.OutlineBatches = outlineBatches(names)
+				st.OutlineBatches, st.OutlineBatchesSet = allBatches, true
+				st.OutlineSharedIDs = outlineIDs(st.Doc, maxSharedIDs)
 			default:
 				st.OutlinePasses++
 				st.OutlineBatchNext++
@@ -211,9 +245,26 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 						"outline_pass_empty: outline batch %d added no component, type or dependency", st.OutlineBatchNext))
 				}
 			}
+			if len(extras) > 0 {
+				shown := extras
+				if len(shown) > maxUnresolvedInError {
+					shown = shown[:maxUnresolvedInError]
+				}
+				p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
+					"outline_shared_extra: %d components other than types were dropped from the shared pass, the batches write them (%s)",
+					len(extras), strings.Join(shown, ", ")))
+			}
 			p.noteNormalized(&st, "contract", notes)
 			p.noteIgnored(&st, "contract", ignored)
 			return writeJSON(r.path(stateContract), st)
+		}
+		if st.Doc != nil && !st.OutlineBatchesSet {
+			// A state from before the batches were stored: its shared pass is
+			// done, the batches are worked out again from the brief.
+			if len(st.OutlineBatches) == 0 {
+				st.OutlineBatches = allBatches
+			}
+			st.OutlineBatchesSet = true
 		}
 		if st.Doc == nil {
 			if err := ask(outlinePassStage(1), nil, nil); err != nil {
@@ -296,11 +347,19 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			if !more {
 				st.Done = append(st.Done, id)
 			}
+			if st.ComponentPasses == nil {
+				st.ComponentPasses = map[string]int{}
+			}
+			st.ComponentPasses[id]++
 			if err := writeJSON(r.path(stateContract), st); err != nil {
 				return err
 			}
 			if !more {
 				break
+			}
+			if st.ComponentPasses[id] >= maxComponentPasses {
+				return fmt.Errorf("stage contract:%s did not finish after %d passes; the model keeps adding functions",
+					strings.Trim(boundedID(id), `"`), maxComponentPasses)
 			}
 		}
 	}
@@ -626,26 +685,166 @@ func outlineFixedText(doc map[string]any) string {
 	return mustJSON(map[string]any{"module": doc["module"], "conventions": doc["conventions"]})
 }
 
+const (
+	maxSharedIDs        = 100
+	maxEmittedRecent    = 150 // ids listed in full besides the shared ones
+	maxEmittedSummaries = 100 // withheld components named in the summary line
+	emittedSummaryBytes = 24  // bytes of one summary entry
+	maxEmittedTextBytes = 16000
+)
+
+func pick(first bool, a, b [][]string) [][]string {
+	if first {
+		return a
+	}
+	return b
+}
+
+// outlineIDs lists the component then the type ids of doc, at most max.
+func outlineIDs(doc map[string]any, max int) []string {
+	var out []string
+	for _, key := range []string{"components", "types"} {
+		for _, o := range objects(doc[key]) {
+			if len(out) < max {
+				out = append(out, fmt.Sprint(o["id"]))
+			}
+		}
+	}
+	return out
+}
+
+// idShown is an id as it appears in a prompt: as is, or its length when it is long.
+func idShown(id string) string {
+	if len(id) > maxBoundedID {
+		return fmt.Sprintf("<%d bytes>", len(id))
+	}
+	return id
+}
+
+func cutBytes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
+}
+
 // outlineEmittedText lists the component and type ids earlier passes wrote.
-func outlineEmittedText(doc map[string]any) string {
+// While they are few the list is complete. Beyond that it names the shared
+// ids, the most recent ones (maxEmittedRecent), and a count of the rest with
+// one short entry per withheld component, so a batch prompt does not grow with
+// the brief. Duplicate handling never depends on the model seeing this list.
+func outlineEmittedText(doc map[string]any, shared []string) string {
 	if doc == nil {
 		return "(nothing yet)"
 	}
+	var comps, types []map[string]any
+	comps, types = objects(doc["components"]), objects(doc["types"])
+	idOf := func(o map[string]any) string { return idShown(fmt.Sprint(o["id"])) }
+	join := func(list []map[string]any) string {
+		var ids []string
+		for _, o := range list {
+			ids = append(ids, idOf(o))
+		}
+		if len(ids) == 0 {
+			return "(none)"
+		}
+		return strings.Join(ids, ", ")
+	}
+	if len(comps)+len(types) <= maxEmittedRecent {
+		return fmt.Sprintf("components: %s\ntypes: %s", join(comps), join(types))
+	}
+	isShared := map[string]bool{}
+	var sharedShown []string
+	for _, id := range shared {
+		isShared[id] = true
+		sharedShown = append(sharedShown, idShown(id))
+	}
+	var restC, restT []map[string]any
+	for _, o := range comps {
+		if !isShared[fmt.Sprint(o["id"])] {
+			restC = append(restC, o)
+		}
+	}
+	for _, o := range types {
+		if !isShared[fmt.Sprint(o["id"])] {
+			restT = append(restT, o)
+		}
+	}
+	takeC := len(restC)
+	if takeC > maxEmittedRecent*2/3 {
+		takeC = maxEmittedRecent * 2 / 3
+	}
+	takeT := len(restT)
+	if takeT > maxEmittedRecent-takeC {
+		takeT = maxEmittedRecent - takeC
+	}
+	if takeC < len(restC) && takeC+takeT < maxEmittedRecent {
+		takeC = len(restC)
+		if takeC > maxEmittedRecent-takeT {
+			takeC = maxEmittedRecent - takeT
+		}
+	}
+	withheld := len(restC) - takeC + len(restT) - takeT
 	var b strings.Builder
-	var ids []string
-	for _, c := range objects(doc["components"]) {
-		ids = append(ids, fmt.Sprint(c["id"]))
+	if len(sharedShown) > 0 {
+		fmt.Fprintf(&b, "shared: %s\n", strings.Join(sharedShown, ", "))
 	}
-	fmt.Fprintf(&b, "components: %s\n", strings.Join(ids, ", "))
-	ids = nil
-	for _, t := range objects(doc["types"]) {
-		ids = append(ids, fmt.Sprint(t["id"]))
+	fmt.Fprintf(&b, "components (most recent): %s\n", join(restC[len(restC)-takeC:]))
+	fmt.Fprintf(&b, "types (most recent): %s\n", join(restT[len(restT)-takeT:]))
+	fmt.Fprintf(&b, "(and %d more ids, names withheld)", withheld)
+	var sums []string
+	for _, o := range restC[:len(restC)-takeC] {
+		if len(sums) == maxEmittedSummaries {
+			break
+		}
+		sum := idOf(o)
+		if ex := strList(o["exports"]); len(ex) > 0 {
+			sum += ":" + ex[0]
+		}
+		sums = append(sums, cutBytes(sum, emittedSummaryBytes))
 	}
-	if len(ids) == 0 {
-		ids = []string{"(none)"}
+	if len(sums) > 0 {
+		fmt.Fprintf(&b, "\nearlier components (id, first export; at most %d shown): %s", maxEmittedSummaries, strings.Join(sums, ", "))
 	}
-	fmt.Fprintf(&b, "types: %s", strings.Join(ids, ", "))
-	return b.String()
+	return cutBytes(b.String(), maxEmittedTextBytes)
+}
+
+// dropSharedExtras removes from the shared pass's reply every component other
+// than "types": the feature components are written by the batches. dropped
+// names them (bounded ids). A reply that is not a JSON object is returned as it is.
+func dropSharedExtras(text string) (string, []string, error) {
+	dec := json.NewDecoder(strings.NewReader(text))
+	dec.UseNumber()
+	var reply map[string]any
+	if err := dec.Decode(&reply); err != nil || reply == nil {
+		return text, nil, nil
+	}
+	arr, ok := reply["components"].([]any)
+	if !ok {
+		return text, nil, nil
+	}
+	var kept []any
+	var dropped []string
+	for _, x := range arr {
+		if o, ok := x.(map[string]any); ok {
+			if id, _ := o["id"].(string); id != "types" {
+				dropped = append(dropped, "component "+boundedID(id))
+				continue
+			}
+		}
+		kept = append(kept, x)
+	}
+	if len(dropped) == 0 {
+		return text, nil, nil
+	}
+	reply["components"] = kept
+	var out bytes.Buffer
+	enc := json.NewEncoder(&out)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(reply); err != nil {
+		return "", nil, err
+	}
+	return strings.TrimSpace(out.String()), dropped, nil
 }
 
 // mergePass adds one component pass to a copy of doc and checks the merged

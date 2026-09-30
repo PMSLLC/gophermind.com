@@ -50,13 +50,26 @@ func TestOutlineDuplicateInOneReplyKeepsTheFirst(t *testing.T) {
 }
 
 func TestOutlineDuplicateAcrossPassesKeepsTheFirstAndResumeKeepsTheResult(t *testing.T) {
-	first := `{` + outlineHeadJSON + `, "components": [` + comp("types") + `, ` + comp("greeting") + `], "types": [` + nameErrorType + `], "more": true}`
-	g := newRig(t, approving(), variant(t, map[string]string{
-		"contract.outline.txt":   first,
-		"contract.outline.2.txt": `{"components": [` + greetingOther() + `, ` + comp("farewell") + `], "more": false}`,
-	}))
+	// Four features: two batches. Batch 1 repeats greeting with other content.
+	names := []string{"Greeting", "Farewell", "Alpha", "Beta"}
+	files := func(extra map[string]string) map[string]string {
+		f := map[string]string{
+			"contract.outline.1.txt": `{` + outlineHeadJSON + `, "components": [` + comp("types") + `], "types": [` + nameErrorType + `]}`,
+			"contract.outline.2.txt": `{"components": [` + comp("greeting") + `, ` + greetingOther() + `, ` + comp("farewell") + `, ` + comp("alpha") + `]}`,
+			"contract.outline.3.txt": batchReply("Beta"),
+		}
+		for _, n := range names {
+			f["contract."+lower(n)+".txt"] = compReply(lower(n))
+		}
+		for k, v := range extra {
+			f[k] = v
+		}
+		return f
+	}
+	g := newRig(t, approving(), variant(t, files(nil)))
+	setFeatures(t, g, names)
 	g.mustPlan(planner.Options{StopAfter: "contract"})
-	if got := componentIDs(g); got != "types greeting farewell" {
+	if got := componentIDs(g); got != "types greeting farewell alpha beta" {
 		t.Errorf("components = %q", got)
 	}
 	for _, c := range g.contracts().Components {
@@ -68,15 +81,14 @@ func TestOutlineDuplicateAcrossPassesKeepsTheFirstAndResumeKeepsTheResult(t *tes
 		t.Errorf("warnings = %v", dupWarnings(g))
 	}
 
-	// Resume: pass 1 had a dropped duplicate of its own, pass 2 dies, then works.
-	r := newRig(t, approving(), variant(t, map[string]string{
-		"contract.outline.txt":   `{` + outlineHeadJSON + `, "components": [` + comp("types") + `, ` + comp("greeting") + `, ` + greetingOther() + `], "types": [` + nameErrorType + `], "more": true}`,
-		"contract.outline.2.txt": "the model fell over", "contract.outline.3.txt": "and again",
-	}))
+	// Resume: batch 1 had a dropped duplicate of its own, batch 2 dies, then works.
+	r := newRig(t, approving(), variant(t, files(map[string]string{
+		"contract.outline.3.txt": "the model fell over", "contract.outline.3.2.txt": "and again"})))
+	setFeatures(t, r, names)
 	if _, err := r.plan(planner.Options{StopAfter: "contract"}); err == nil {
-		t.Fatal("want pass 2 to fail")
+		t.Fatal("want batch 2 to fail")
 	}
-	r.wire(variant(t, map[string]string{"contract.outline.txt": `{"components": [` + comp("farewell") + `]}`}))
+	r.wire(variant(t, files(nil)))
 	r.mustPlan(planner.Options{RunID: greeterID, StopAfter: "contract"})
 	for _, c := range r.contracts().Components {
 		if c.ID == "greeting" && c.Package != "greet" {
@@ -93,7 +105,8 @@ func TestOutlineDuplicateAcrossPassesKeepsTheFirstAndResumeKeepsTheResult(t *tes
 func TestOutlineDuplicateWarningQuotesNoReplyText(t *testing.T) {
 	dupType := `{"id": "name-error", "package": "greet", "file": "internal/greet/errors.go", "decl": "// CANARY-reply-text\ntype NameError int"}`
 	g := newRig(t, approving(), variant(t, map[string]string{
-		"contract.outline.txt": `{` + outlineHeadJSON + `, "components": [` + comp("types") + `, ` + comp("greeting") + `, ` + comp("farewell") + `], "types": [` + nameErrorType + `, ` + dupType + `]}`,
+		"contract.outline.1.txt": `{` + outlineHeadJSON + `, "components": [` + comp("types") + `], "types": [` + nameErrorType + `, ` + dupType + `]}`,
+		"contract.outline.2.txt": batchReply("Greeting", "Farewell"),
 	}))
 	g.mustPlan(planner.Options{StopAfter: "contract"})
 	w := dupWarnings(g)

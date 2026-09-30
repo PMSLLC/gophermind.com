@@ -62,6 +62,9 @@ func TestOutlineIsASharedPassAndBatches(t *testing.T) {
 		if n == 1 && !strings.Contains(p, "<emitted>\n(nothing yet)\n</emitted>") {
 			t.Errorf("shared pass must list nothing as emitted")
 		}
+		if n == 2 && !strings.Contains(p, "THESE features only: Greeting, Farewell\n") {
+			t.Errorf("the batch prompt does not name the features:\n%s", p)
+		}
 		if n == 2 && !strings.Contains(p, "<emitted>\ncomponents: types\ntypes: name-error\n</emitted>") {
 			t.Errorf("batch must list the ids of the shared pass:\n%s", p)
 		}
@@ -70,8 +73,8 @@ func TestOutlineIsASharedPassAndBatches(t *testing.T) {
 
 func TestOutlineDropsAnIdenticalDuplicateSilently(t *testing.T) {
 	g := newRig(t, approving(), variant(t, map[string]string{
-		"contract.outline.1.txt": `{` + outlineHeadJSON + `, "components": [` + comp("types") + `, ` + comp("greeting") + `], "types": [` + nameErrorType + `]}`,
-		"contract.outline.2.txt": `{"components": [` + comp("greeting") + `, ` + comp("farewell") + `], "types": [` + nameErrorType + `]}`,
+		"contract.outline.1.txt": `{` + outlineHeadJSON + `, "components": [` + comp("types") + `], "types": [` + nameErrorType + `]}`,
+		"contract.outline.2.txt": `{"components": [` + comp("types") + `, ` + comp("greeting") + `, ` + comp("farewell") + `], "types": [` + nameErrorType + `]}`,
 	}))
 	g.mustPlan(planner.Options{StopAfter: "contract"})
 	if got := componentIDs(g); got != "types greeting farewell" || len(g.contracts().Types) != 1 {

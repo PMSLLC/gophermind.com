@@ -18,21 +18,23 @@ func normWarnings(g *rig) []events.Event {
 	return out
 }
 
-const pascalOutline = `{` + outlineHeadJSON + `, "components": [{"id": "Types", "package": "greet", "exports": []}, {"id": "Greeting", "package": "greet", "exports": []}, {"id": "Farewell", "package": "greet", "exports": []}],
+const pascalBatch = `{"components": [{"id": "Greeting", "package": "greet", "exports": []}, {"id": "Farewell", "package": "greet", "exports": []}]}`
+
+const pascalOutline = `{` + outlineHeadJSON + `, "components": [{"id": "Types", "package": "greet", "exports": []}],
  "types": [{"id": "NameError", "package": "greet", "file": "internal/greet/errors.go",
   "decl": "// NameError says why a name was refused.\ntype NameError struct {\n\tReason string\n}"}]}`
 
 // The model's ids are rewritten to the id syntax, the run goes on, and a
 // resume reads the same plan.
 func TestPascalCaseIDsAreNormalisedEndToEnd(t *testing.T) {
-	g := newRig(t, approving(), variant(t, map[string]string{"contract.outline.txt": pascalOutline}))
+	g := newRig(t, approving(), variant(t, map[string]string{"contract.outline.1.txt": pascalOutline, "contract.outline.2.txt": pascalBatch}))
 	g.mustPlan(planner.Options{StopAfter: "contract"})
 	if got := componentIDs(g); got != "types greeting farewell" {
 		t.Errorf("components = %q", got)
 	}
 	w := normWarnings(g)
-	if len(w) != 1 || !strings.Contains(w[0].Message, "4 ") || !strings.Contains(w[0].Message, "NameError") {
-		t.Fatalf("warnings = %v, want one with the count and the old id", w)
+	if len(w) != 2 || !strings.Contains(w[0].Message, "2 ") || !strings.Contains(w[0].Message, "NameError") || !strings.Contains(w[1].Message, "Greeting") {
+		t.Fatalf("warnings = %v, want one per pass with the count and the old ids", w)
 	}
 	if n := len(outlineStages(g)); n != 1 {
 		t.Errorf("outline calls = %d, want 1 (no retry)", n)
@@ -46,7 +48,7 @@ func TestPascalCaseIDsAreNormalisedEndToEnd(t *testing.T) {
 	before := string(g.read("contracts.json"))
 
 	// A second run of the same replies plans the same contract.
-	h := newRig(t, approving(), variant(t, map[string]string{"contract.outline.txt": pascalOutline}))
+	h := newRig(t, approving(), variant(t, map[string]string{"contract.outline.1.txt": pascalOutline, "contract.outline.2.txt": pascalBatch}))
 	h.mustPlan(planner.Options{StopAfter: "contract"})
 	if string(h.read("contracts.json")) != before {
 		t.Error("normalisation is not deterministic")
@@ -99,7 +101,7 @@ func TestNormalisedIDsSurviveAResume(t *testing.T) {
 	if _, err := g.plan(planner.Options{StopAfter: "contract"}); err == nil {
 		t.Fatal("want pass 2 to fail")
 	}
-	g.wire(variant(t, map[string]string{"contract.outline.2.txt": `{"components": [{"id": "Audit_Log", "package": "greet", "exports": []}],
+	g.wire(variant(t, map[string]string{"contract.outline.2.txt": `{"components": [{"id": "Greeting", "package": "greet", "exports": []}, {"id": "Farewell", "package": "greet", "exports": []}, {"id": "Audit_Log", "package": "greet", "exports": []}],
  "types": [{"id": "AuditEntry", "package": "greet", "file": "internal/greet/audit.go", "decl": "// AuditEntry is one record.\ntype AuditEntry struct{}", "uses": ["NameError"]}]}`,
 		"contract.farewell.txt": `{"types": [], "functions": [{"id": "fn-farewell", "package": "greet", "file": "internal/greet/farewell.go", "signature": "func Farewell() error", "doc": "Farewell.", "uses": ["name-error", "Send_Receipt"]}], "more": false}`,
 		"contract.audit-log.txt": `{"types": [], "functions": [{"id": "fn-audit", "package": "greet", "file": "internal/greet/audit.go", "signature": "func Audit() error", "doc": "Audit records.", "uses": ["AuditEntry"]},
