@@ -135,3 +135,79 @@ func TestStateRefusesUnreadableFile(t *testing.T) {
 		t.Errorf("the error quotes the file: %v", err)
 	}
 }
+
+func TestStateRefusesSymlinks(t *testing.T) {
+	outside := t.TempDir()
+	secretFile := filepath.Join(outside, "target.json")
+	if err := os.WriteFile(secretFile, []byte(`{"started_at":"from elsewhere"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Run("symlinked _state", func(t *testing.T) {
+		runDir := t.TempDir()
+		if err := os.Symlink(outside, filepath.Join(runDir, "_state")); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadState(runDir); err == nil {
+			t.Error("LoadState followed a symlinked _state")
+		}
+		if err := (State{}).Save(runDir); err == nil {
+			t.Error("Save followed a symlinked _state")
+		}
+		if fileExists(filepath.Join(outside, "executor.json")) {
+			t.Error("Save wrote through the symlink")
+		}
+	})
+	t.Run("symlinked executor.json", func(t *testing.T) {
+		runDir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(runDir, "_state"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		link := filepath.Join(runDir, "_state", "executor.json")
+		if err := os.Symlink(secretFile, link); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadState(runDir); err == nil {
+			t.Error("LoadState read through a symlinked file")
+		}
+		if err := (State{}).Save(runDir); err == nil {
+			t.Error("Save replaced a symlinked file")
+		}
+		if got, _ := os.ReadFile(secretFile); string(got) != `{"started_at":"from elsewhere"}` {
+			t.Error("the symlink target was changed")
+		}
+	})
+	t.Run("dangling symlink is an error, not a fresh start", func(t *testing.T) {
+		runDir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(runDir, "_state"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(outside, "nothing.json"), filepath.Join(runDir, "_state", "notes.json")); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadNotes(runDir); err == nil {
+			t.Error("LoadNotes treated a dangling symlink as a missing file")
+		}
+		if err := AddNote(runDir, "fn-greet", "x"); err == nil {
+			t.Error("AddNote wrote through a dangling symlink")
+		}
+		if fileExists(filepath.Join(outside, "nothing.json")) {
+			t.Error("a file was created through the dangling symlink")
+		}
+	})
+	t.Run("loose _state is tightened", func(t *testing.T) {
+		runDir := t.TempDir()
+		dir := filepath.Join(runDir, "_state")
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := (State{}).Save(runDir); err != nil {
+			t.Fatal(err)
+		}
+		if got := mode(t, dir); got != 0o700 {
+			t.Errorf("_state mode = %o, want 700", got)
+		}
+	})
+}

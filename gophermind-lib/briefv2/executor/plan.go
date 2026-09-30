@@ -161,11 +161,15 @@ func LoadPlan(runDir, repo string) (*Plan, error) {
 		fns[f.ID] = f
 	}
 
+	rootNet, err := rootNetwork(tr, c.BriefID)
+	if err != nil {
+		return nil, err
+	}
 	for _, n := range tr.Nodes {
 		if n.Kind != tree.KindFunction {
 			continue
 		}
-		l, err := p.leaf(n, fns, tests, repo)
+		l, err := p.leaf(n, rootNet, fns, tests, repo)
 		if err != nil {
 			return nil, err
 		}
@@ -184,12 +188,20 @@ func LoadPlan(runDir, repo string) (*Plan, error) {
 			return nil, fmt.Errorf("executor: function %s of contracts.json has no node", f.ID)
 		}
 	}
+	// brief.md and contracts.json were read after the first check. Checking
+	// the approval again now refuses a plan that changed in between.
+	if err := planner.VerifyApproval(runDir); err != nil {
+		return nil, err
+	}
 	return p, nil
 }
 
 // leaf builds one Leaf from a function node, its recorded test and the
 // contract, refusing any disagreement between them.
-func (p *Plan) leaf(n tree.Node, fns map[string]contract.Function, tests map[string]planner.LeafTest, repo string) (*Leaf, error) {
+// A leaf's Network is its own list when it has one, otherwise the root node's
+// list: the planner writes the brief's network block on the root only, and
+// that block (hosts and critical flags) applies to every leaf (spec 14).
+func (p *Plan) leaf(n tree.Node, rootNet []NetHost, fns map[string]contract.Function, tests map[string]planner.LeafTest, repo string) (*Leaf, error) {
 	raw, err := n.Marshal()
 	if err != nil {
 		return nil, fmt.Errorf("executor: node %s is not readable", n.ID)
@@ -245,6 +257,9 @@ func (p *Plan) leaf(n tree.Node, fns map[string]contract.Function, tests map[str
 	l.StubFile = path.Join(l.Dir, "zz_gm_stub_"+l.ID+".go")
 	for _, h := range d.Network {
 		l.Network = append(l.Network, NetHost{Host: h.Host, Critical: h.Critical})
+	}
+	if len(l.Network) == 0 && len(rootNet) > 0 {
+		l.Network = append([]NetHost{}, rootNet...)
 	}
 	return l, nil
 }
@@ -305,4 +320,30 @@ func hashNodes(runDir string, tr *tree.Tree, hashes map[string]string) error {
 		hashes["tree/"+rel] = hashHex(raw)
 	}
 	return nil
+}
+
+// rootNetwork is the network block of the root node (the brief's block).
+func rootNetwork(tr *tree.Tree, rootID string) ([]NetHost, error) {
+	n, ok := tr.Nodes[rootID]
+	if !ok {
+		return nil, errors.New("executor: the task tree has no root node")
+	}
+	raw, err := n.Marshal()
+	if err != nil {
+		return nil, errors.New("executor: the root node is not readable")
+	}
+	var d struct {
+		Network []struct {
+			Host     string `json:"host"`
+			Critical bool   `json:"critical"`
+		} `json:"network"`
+	}
+	if err := json.Unmarshal(raw, &d); err != nil {
+		return nil, errors.New("executor: the root node is not readable")
+	}
+	var out []NetHost
+	for _, h := range d.Network {
+		out = append(out, NetHost{Host: h.Host, Critical: h.Critical})
+	}
+	return out, nil
 }
