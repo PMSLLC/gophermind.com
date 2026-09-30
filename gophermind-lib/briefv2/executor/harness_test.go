@@ -1,11 +1,14 @@
 package executor
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -468,4 +471,71 @@ func TestScriptedDelayEndsWithoutDeadline(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("a delay with no deadline on the context never ended")
 	}
+}
+
+// makeModuleProxy writes one module version into a new GOPROXY directory
+// (<dir>/<module>/@v/{list,<version>.info,.mod,.zip}) and returns its file://
+// URL. The files map holds the module's source files by relative name; a
+// go.mod is added when it has none.
+func makeModuleProxy(t *testing.T, module, version string, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	addModule(t, dir, module, version, files)
+	return "file://" + dir
+}
+
+// addModule adds one more module version to a proxy directory made by
+// makeModuleProxy (taken from its URL).
+func addModule(t *testing.T, dir, module, version string, files map[string]string) {
+	t.Helper()
+	dir = strings.TrimPrefix(dir, "file://")
+	vdir := filepath.Join(dir, filepath.FromSlash(module), "@v")
+	if err := os.MkdirAll(vdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	all := map[string]string{}
+	for k, v := range files {
+		all[k] = v
+	}
+	if _, ok := all["go.mod"]; !ok {
+		all["go.mod"] = "module " + module + "\n\ngo 1.20\n"
+	}
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	names := make([]string, 0, len(all))
+	for k := range all {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		w, err := zw.Create(module + "@" + version + "/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(all[name])); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string][]byte{
+		"list":            []byte(version + "\n"),
+		version + ".info": []byte(`{"Version":"` + version + `","Time":"2024-01-01T00:00:00Z"}`),
+		version + ".mod":  []byte(all["go.mod"]),
+		version + ".zip":  buf.Bytes(),
+	} {
+		if err := os.WriteFile(filepath.Join(vdir, name), body, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// useModuleProxy points the deps step at a file:// proxy with the checksum
+// database off, restored when the test ends.
+func useModuleProxy(t *testing.T, url string) {
+	t.Helper()
+	old := testHooks
+	testHooks = depsHooks{GoProxy: url, GoSumDB: "off"}
+	t.Cleanup(func() { testHooks = old })
 }
