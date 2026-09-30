@@ -1,0 +1,24 @@
+```json
+[
+  {
+    "id": "fn-greet",
+    "title": "Greet a name",
+    "description": "Build the greeting for a name, refusing an empty one.",
+    "model_tier": "any",
+    "node_class": "validation",
+    "depends_on": ["name-error", "fn-name-error-error"],
+    "contract": {
+      "package": "greet",
+      "file": "internal/greet/greet.go",
+      "signature": "func Greet(name string) (string, error)",
+      "inputs": [{"name": "name", "type": "string", "constraints": ["May be empty", "May have surrounding spaces"]}],
+      "outputs": [
+        {"name": "message", "type": "string", "description": "Hello, <name>! with the name trimmed"},
+        {"name": "err", "type": "error", "description": "nil when the name is usable"}
+      ],
+      "errors": [{"when": "name is empty after trimming", "returns": "*NameError with Reason \"name is empty\""}],
+      "side_effects": []
+    }
+  }
+]
+```

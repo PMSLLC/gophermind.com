@@ -42,6 +42,8 @@ func schemaErr(ve *jsonschema.ValidationError) string {
 			loc := "/" + strings.Join(e.InstanceLocation, "/")
 			if req, ok := e.ErrorKind.(*kind.Required); ok {
 				loc += " is missing " + strings.Join(req.Missing, ", ")
+			} else if _, ok := e.ErrorKind.(*kind.AdditionalProperties); ok {
+				loc += " has additional properties"
 			} else {
 				loc += " is not valid"
 			}
