@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -415,15 +416,17 @@ func TestSandboxDeniesNonLoopback(t *testing.T) {
 	if out, err := run(true, "127.0.0.1", portOf(l)); err != nil {
 		t.Fatalf("sandboxed loopback connect failed (positive control): %v %s", err, out)
 	}
+	// Discriminating control: if the environment itself denies this connect
+	// (VPN or firewall EPERM), the sandbox cannot be told apart, so skip.
+	if cout, _ := run(false, target, port); strings.Contains(cout, "Operation not permitted") {
+		t.Skip("the environment blocks 192.0.2.1 with EPERM even unsandboxed; the sandbox denial cannot be proved here")
+	}
 	out, err := run(true, target, port)
 	if err == nil {
 		t.Fatal("sandboxed non-loopback connect succeeded")
 	}
 	if !strings.Contains(out, "Operation not permitted") {
 		t.Fatalf("non-loopback connect failed but not with a sandbox denial (timeout?): %v", err)
-	}
-	if cout, _ := run(false, target, port); strings.Contains(cout, "Operation not permitted") {
-		t.Log("note: the unsandboxed control also saw EPERM (VPN or firewall); the assertions above do not depend on it")
 	}
 }
 
@@ -464,6 +467,7 @@ func TestSandboxGoBuildAndTest(t *testing.T) {
 import (
 	"errors"
 	"net"
+	"os"
 	"syscall"
 	"testing"
 	"time"
@@ -483,6 +487,9 @@ func TestNoExternal(t *testing.T) {
 		c.Close()
 		t.Fatal("dial to a non-loopback address succeeded")
 	}
+	if os.Getenv("GM_SB_EXPECT_EPERM") != "1" {
+		t.Skip("the unsandboxed control saw EPERM; a permission error would prove nothing")
+	}
 	if !errors.Is(err, syscall.EPERM) {
 		t.Fatalf("dial error is not a permission error: %v", err)
 	}
@@ -494,12 +501,22 @@ func TestNoExternal(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Unsandboxed control for the in-module TestNoExternal: it may assert EPERM
+	// only when the same dial without a sandbox is not itself an EPERM.
+	expect := "1"
+	if c, err := net.DialTimeout("tcp", "192.0.2.1:80", time.Second); err == nil {
+		c.Close()
+		expect = "0"
+	} else if errors.Is(err, syscall.EPERM) {
+		expect = "0"
+		t.Log("environment returns EPERM for 192.0.2.1 unsandboxed; in-module TestNoExternal skips")
+	}
 	cmd := exec.Command(goBin, "test", "-count=1", "./...")
 	cmd.Dir = mod
 	cmd.Env = []string{
 		"PATH=" + filepath.Dir(goBin) + ":/usr/bin:/bin",
 		"GOFLAGS=-mod=readonly -buildvcs=false", "GOPROXY=off", "GOTOOLCHAIN=local", "CGO_ENABLED=0",
-		"HOME=" + p.Scratch, "TMPDIR=" + p.Scratch, "GOCACHE=" + p.GoCache,
+		"GM_SB_EXPECT_EPERM=" + expect, "HOME=" + p.Scratch, "TMPDIR=" + p.Scratch, "GOCACHE=" + p.GoCache,
 	}
 	w, err := Wrap(cmd, p)
 	if err != nil {
