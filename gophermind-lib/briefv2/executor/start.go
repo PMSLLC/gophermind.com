@@ -56,6 +56,7 @@ type runCtx struct {
 	streak    *proxy.Streak // critical-host streak, mirrored into state.CriticalStreak
 	policy    packer.ImportPolicy
 	diffOnly  bool
+	accept    acceptPlan // what the acceptance stage must prove (spec 9), computed before anything starts
 	sandboxOn bool
 	goBin     string
 	gitBin    string
@@ -135,6 +136,11 @@ func newRunCtx(ctx context.Context, o Options) (*runCtx, error) {
 	}
 	if err := rc.loadReasons(); err != nil {
 		return nil, err
+	}
+	// Spec 9 tripwire, before a file is touched or a model is called: an
+	// acceptance bullet with no root test can never make N smaller.
+	if rc.accept, err = mapAcceptance(plan.Requirements, plan.Coverage); err != nil {
+		return rc, &stopError{Status: "failed", Reason: "acceptance_unmapped", Message: err.Error()}
 	}
 	// The git layer first: it confirms the repository root before preflight
 	// creates any directory under it.
@@ -261,7 +267,9 @@ func (rc *runCtx) preflight(ctx context.Context) error {
 	if goCacheOverride != "" {
 		rc.goCache = goCacheOverride
 	}
-	rc.binDir = filepath.Join(rc.o.RunDir, "bin")
+	// The built binaries live in the scratch directory: the sandbox denies
+	// writes to the run folder, and go build -o runs inside it.
+	rc.binDir = filepath.Join(rc.scratch, "bin")
 	if rc.scratch == rc.o.RunDir || within(rc.o.RunDir, rc.scratch) {
 		return errors.New("executor: preflight: the run folder must not contain the scratch directory")
 	}
