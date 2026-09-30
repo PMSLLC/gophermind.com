@@ -102,13 +102,13 @@ func TestBriefPlanWithTheFileGate(t *testing.T) {
 	if code != 0 || strings.Contains(out, "not done") || strings.Contains(out, "waiting on a human") {
 		t.Errorf("status of a finished run: code=%d out=%q", code, out)
 	}
-	for _, want := range []string{"testwriter  done", "Requirements covered: 7 of 7", "TASK", "CLASS", "testwrite  validation  fake/fixture  2", "contract   -           fake/fixture  4"} {
+	for _, want := range []string{"testwriter  done", "Requirements covered: 7 of 7", "TASK", "CLASS", "testwrite  validation  fake/fixture  2", "contract   -           fake/fixture  5"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("status lacks %q:\n%s", want, out)
 		}
 	}
 	code, out, _ = runBriefCmd(t, "", "calls", greeterRunID)
-	if code != 0 || !strings.Contains(out, "12 call(s)") || !strings.Contains(out, "testwrite:fn-greet") || !strings.Contains(out, "contract:outline") {
+	if code != 0 || !strings.Contains(out, "13 call(s)") || !strings.Contains(out, "testwrite:fn-greet") || !strings.Contains(out, "contract:outline") {
 		t.Errorf("calls: code=%d out=%q", code, out)
 	}
 	for _, want := range []string{"TASK", "CLASS", "validation", "OUTCOME"} {
