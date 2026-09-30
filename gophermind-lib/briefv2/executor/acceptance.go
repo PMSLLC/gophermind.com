@@ -9,8 +9,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"gophermind/gophermind-lib/briefv2/blackboard"
 	"gophermind/gophermind-lib/briefv2/gitland"
@@ -122,7 +120,7 @@ func (rc *runCtx) land(ctx context.Context, acc accResult) (*report.Landing, *st
 		if err != nil {
 			return blocked("the patch could not be made")
 		}
-		if err := writePrivateFile(rc.o.RunDir, "changes.patch", patch); err != nil {
+		if err := report.WriteFile(rc.o.RunDir, "changes.patch", patch, report.WriteOptions{RepoRoot: rc.o.Repo}); err != nil {
 			return blocked("changes.patch could not be written")
 		}
 		rc.emit("landing", "", "diff_only: changes.patch")
@@ -138,43 +136,4 @@ func (rc *runCtx) land(ctx context.Context, acc accResult) (*report.Landing, *st
 	}
 	rc.emit("landing", "", hash)
 	return &report.Landing{Branch: rc.state.Branch, Commit: hash, MergedInto: rc.baseBranch()}, nil, nil
-}
-
-// writePrivateFile writes name in dir (mode 0600) by temp file and rename,
-// never through a symbolic link. The temp file is removed only through
-// removeOwnTemp, which checks its name and folder.
-func writePrivateFile(dir, name string, data []byte) error {
-	tmp, err := os.CreateTemp(dir, tempPrefix+name+"-")
-	if err != nil {
-		return errors.New("executor: writing " + name + " failed")
-	}
-	tmpName := tmp.Name()
-	fail := func() error {
-		tmp.Close()
-		removeOwnTemp(dir, tmpName)
-		return errors.New("executor: writing " + name + " failed")
-	}
-	if err := tmp.Chmod(0o600); err != nil {
-		return fail()
-	}
-	if _, err := tmp.Write(data); err != nil {
-		return fail()
-	}
-	if err := tmp.Sync(); err != nil {
-		return fail()
-	}
-	if err := tmp.Close(); err != nil {
-		removeOwnTemp(dir, tmpName)
-		return errors.New("executor: writing " + name + " failed")
-	}
-	dst := filepath.Join(dir, name)
-	if fi, err := os.Lstat(dst); err == nil && !fi.Mode().IsRegular() {
-		removeOwnTemp(dir, tmpName)
-		return errors.New("executor: " + name + " is not a regular file")
-	}
-	if err := os.Rename(tmpName, dst); err != nil {
-		removeOwnTemp(dir, tmpName)
-		return errors.New("executor: writing " + name + " failed")
-	}
-	return nil
 }

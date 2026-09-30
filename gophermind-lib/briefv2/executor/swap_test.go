@@ -382,3 +382,132 @@ func TestFailWithoutEnterKeepsCommittedFile(t *testing.T) {
 		t.Fatal("Fail before any Enter did not error")
 	}
 }
+
+// diff_only keeps no commit of the verified file, so the swap persists it
+// under _state/ before the first Enter of a repair. A crash mid-repair leaves
+// the candidate on disk; restorePriors (resume) puts the verified file back.
+func diffOnlyRepairSwap(t *testing.T) (*rig, *Leaf, *Swap, []byte) {
+	t.Helper()
+	g, l, _, stub := swapRig(t)
+	// the leaf was verified earlier in the run: real file on disk, stub gone
+	if err := pathsafe.Remove(g.repo, l.StubFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := pathsafe.Replace(g.repo, l.File, []byte(good("fn-greet"))); err != nil {
+		t.Fatal(err)
+	}
+	s := NewSwap(g.repo, l, g.git, stub)
+	s.NoCommit(g.runDir)
+	s.Reopen()
+	return g, l, s, stub
+}
+
+func priorPath(g *rig, l *Leaf) string { return filepath.Join(g.runDir, "_state", "prior-"+l.ID) }
+
+func TestDiffOnlyPriorSurvivesCrash(t *testing.T) {
+	g, l, s, _ := diffOnlyRepairSwap(t)
+	if err := s.Enter([]byte(bad("fn-greet", 1))); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(priorPath(g, l))
+	if err != nil {
+		t.Fatalf("the verified file was not persisted before the repair wrote: %v", err)
+	}
+	if fi.Mode().Perm() != 0o600 {
+		t.Errorf("prior mode = %o, want 600", fi.Mode().Perm())
+	}
+	if raw, _ := os.ReadFile(priorPath(g, l)); string(raw) != good("fn-greet") {
+		t.Fatal("the persisted prior is not the verified file")
+	}
+	// crash: the Swap is dropped with no Fail; the candidate is on disk
+	if g.read(l.File) != bad("fn-greet", 1) {
+		t.Fatal("the candidate is not on disk")
+	}
+	if err := restorePriors(g.repo, g.runDir, g.plan.Leaves); err != nil {
+		t.Fatal(err)
+	}
+	if g.read(l.File) != good("fn-greet") {
+		t.Fatal("resume did not restore the verified file")
+	}
+	if fileExists(priorPath(g, l)) {
+		t.Error("the prior file outlived its restore")
+	}
+	if err := restorePriors(g.repo, g.runDir, g.plan.Leaves); err != nil {
+		t.Fatalf("second restore: %v", err)
+	}
+}
+
+// A candidate left by a crash is never taken for the verified file: a new
+// swap that finds a persisted prior keeps it.
+func TestDiffOnlyPriorNotReplacedByCandidate(t *testing.T) {
+	g, l, s, stub := diffOnlyRepairSwap(t)
+	if err := s.Enter([]byte(bad("fn-greet", 1))); err != nil {
+		t.Fatal(err)
+	}
+	s2 := NewSwap(g.repo, l, g.git, stub)
+	s2.NoCommit(g.runDir)
+	s2.Reopen()
+	if err := s2.Enter([]byte(bad("fn-greet", 2))); err != nil {
+		t.Fatal(err)
+	}
+	if err := s2.Fail(); err != nil {
+		t.Fatal(err)
+	}
+	if g.read(l.File) != good("fn-greet") {
+		t.Fatal("a failed repair after a crash did not put the verified file back")
+	}
+	if fileExists(priorPath(g, l)) {
+		t.Error("the prior file outlived a restored failure")
+	}
+}
+
+func TestDiffOnlyPriorRemovedAfterPass(t *testing.T) {
+	g, l, s, _ := diffOnlyRepairSwap(t)
+	if err := s.Enter([]byte(good("fn-greet") + "\n")); err != nil {
+		t.Fatal(err)
+	}
+	if !fileExists(priorPath(g, l)) {
+		t.Fatal("no prior while the repair is in flight")
+	}
+	if err := s.PassNoCommit(); err != nil {
+		t.Fatal(err)
+	}
+	if fileExists(priorPath(g, l)) {
+		t.Error("the prior file outlived a committed repair")
+	}
+}
+
+// resume restores a cut-off diff_only repair before anything else looks at the file.
+func TestResumeRestoresDiffOnlyPrior(t *testing.T) {
+	g := newRig(t, func(o *rigOpts) {
+		o.BriefEdit = func(s string) string { return strings.Replace(s, "landing: commit", "landing: diff_only", 1) }
+	})
+	rc, err := g.start(t) // fresh run: Wave 0 done, state saved
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := g.plan.Leaf("fn-greet")
+	if err := pathsafe.Remove(g.repo, l.StubFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := pathsafe.Replace(g.repo, l.File, []byte(good("fn-greet"))); err != nil {
+		t.Fatal(err)
+	}
+	stub, _ := stubFor(g.plan.Contracts, g.plan.Policy(), l)
+	s := NewSwap(g.repo, l, g.git, stub)
+	s.NoCommit(g.runDir)
+	s.Reopen()
+	if err := s.Enter([]byte(bad("fn-greet", 1))); err != nil {
+		t.Fatal(err)
+	}
+	rc.close() // the crash
+	if _, err := g.start(t); err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if g.read(l.File) != good("fn-greet") {
+		t.Fatal("resume left the candidate on disk")
+	}
+	if fileExists(priorPath(g, l)) {
+		t.Error("the saved prior was not removed")
+	}
+}

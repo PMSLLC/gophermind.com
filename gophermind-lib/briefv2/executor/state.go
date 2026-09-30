@@ -236,6 +236,11 @@ func writeStateJSON(runDir, name string, v any) error {
 	if err != nil {
 		return fmt.Errorf("executor: encoding %s failed", name)
 	}
+	return writeStateBytes(runDir, name, append(raw, '\n'))
+}
+
+// writeStateBytes is the atomic, no-follow, mode 0600 writer under _state/.
+func writeStateBytes(runDir, name string, data []byte) error {
 	dir, _, err := stateDir(runDir, true)
 	if err != nil {
 		return err
@@ -259,7 +264,7 @@ func writeStateJSON(runDir, name string, v any) error {
 		removeOwnTemp(dir, tmpName)
 		return fmt.Errorf("executor: writing %s failed", name)
 	}
-	if _, err := tmp.Write(append(raw, '\n')); err != nil {
+	if _, err := tmp.Write(data); err != nil {
 		return fail()
 	}
 	if err := tmp.Sync(); err != nil {
@@ -292,4 +297,83 @@ func removeOwnTemp(dir, path string) {
 		return
 	}
 	_ = os.Remove(path)
+}
+
+// readStateBytes reads a raw file of _state (never through a link). A missing
+// file is found == false.
+func readStateBytes(runDir, name string) (data []byte, found bool, err error) {
+	dir, ok, err := stateDir(runDir, false)
+	if err != nil || !ok {
+		return nil, false, err
+	}
+	path := filepath.Join(dir, filepath.Base(name))
+	fi, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil || !fi.Mode().IsRegular() {
+		return nil, false, fmt.Errorf("executor: %s is not a regular file", name)
+	}
+	f, err := os.OpenFile(path, os.O_RDONLY|pathsafe.NoFollow, 0)
+	if err != nil {
+		return nil, false, fmt.Errorf("executor: reading %s failed", name)
+	}
+	defer f.Close()
+	raw, err := io.ReadAll(f)
+	if err != nil {
+		return nil, false, fmt.Errorf("executor: reading %s failed", name)
+	}
+	return raw, true, nil
+}
+
+// priorPrefix names the files that hold a leaf's verified source while a
+// diff_only repair is in flight.
+const priorPrefix = "prior-"
+
+// removeStatePrior deletes _state/prior-<id>. The guard: the name must start
+// with priorPrefix, and the target must be a regular file directly in _state.
+func removeStatePrior(runDir, name string) error {
+	if !strings.HasPrefix(name, priorPrefix) || name != filepath.Base(name) {
+		return errors.New("executor: refusing to remove a file that is not a saved prior")
+	}
+	dir, ok, err := stateDir(runDir, false)
+	if err != nil || !ok {
+		return err
+	}
+	path := filepath.Join(dir, name)
+	fi, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil || !fi.Mode().IsRegular() {
+		return errors.New("executor: a saved prior is not a regular file")
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return errors.New("executor: removing a saved prior failed")
+	}
+	return nil
+}
+
+// restorePriors is the resume step of a diff_only repair: a leaf whose saved
+// verified source is still in _state was cut off mid-repair, so its file is
+// put back (atomically) and the saved copy removed. A run with no saved prior
+// does nothing.
+func restorePriors(repo, runDir string, leaves []*Leaf) error {
+	for _, l := range leaves {
+		name := priorPrefix + l.ID
+		raw, found, err := readStateBytes(runDir, name)
+		if err != nil {
+			return err
+		}
+		if !found {
+			continue
+		}
+		if err := pathsafe.Replace(repo, l.File, raw); err != nil {
+			return fmt.Errorf("executor: restoring the verified file of %s failed", l.ID)
+		}
+		if err := removeStatePrior(runDir, name); err != nil {
+			return err
+		}
+	}
+	return nil
 }

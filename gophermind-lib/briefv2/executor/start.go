@@ -566,6 +566,11 @@ func (rc *runCtx) resume(ctx context.Context) error {
 		return &stopError{Status: "failed", Reason: "plan_changed",
 			Message: "executor: the plan changed since this run started"}
 	}
+	// A diff_only repair that was cut off leaves its candidate on disk and the
+	// verified file under _state: put the verified file back first.
+	if err := restorePriors(rc.o.Repo, rc.o.RunDir, rc.plan.Leaves); err != nil {
+		return err
+	}
 	if !rc.diffOnly && rc.state.Branch != "" {
 		cur, err := rc.git.Branch()
 		if err != nil {

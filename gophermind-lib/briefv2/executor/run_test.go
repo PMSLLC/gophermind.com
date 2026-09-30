@@ -48,7 +48,7 @@ func (g *rig) doRun(t *testing.T, script Script, fc *fakeChecker, mod func(*Opti
 	if mod != nil {
 		mod(&o)
 	}
-	return run(context.Background(), o, runFlags{skipAcceptance: true, chk: fc})
+	return run(context.Background(), o, runFlags{skipAcceptance: true, afterStart: useChecker(fc)})
 }
 
 func readReportFile(t *testing.T, g *rig) report.Report {
@@ -152,7 +152,7 @@ func TestVerifiedImpliesEveryLeafVerified(t *testing.T) {
 	failing(fc, "fn-greet", 2)
 	g2.wire(script)
 	g2.gate.queue = []human.Resolution{{Action: human.ActionSkip}}
-	rep2, err := run(context.Background(), g2.options(), runFlags{skipAcceptance: true, chk: fc})
+	rep2, err := run(context.Background(), g2.options(), runFlags{skipAcceptance: true, afterStart: useChecker(fc)})
 	if err != nil || rep2.Status == "verified" || rep2.Status != "failed" {
 		t.Fatalf("a run with a skipped leaf = %s, %v", rep2.Status, err)
 	}
@@ -168,7 +168,7 @@ func TestRunReturnsReportForFailedBuild(t *testing.T) {
 	failing(fc, "fn-greet", 2)
 	g.wire(script)
 	g.gate.queue = []human.Resolution{{Action: human.ActionSkip}}
-	rep, err := run(context.Background(), g.options(), runFlags{skipAcceptance: true, chk: fc})
+	rep, err := run(context.Background(), g.options(), runFlags{skipAcceptance: true, afterStart: useChecker(fc)})
 	if err != nil {
 		t.Fatalf("a failed build is a report, got error %v", err)
 	}
@@ -270,7 +270,7 @@ func TestExitCodes(t *testing.T) {
 				t.Cleanup(cancel)
 				o.Sink = &cancelOn{Collector: g.sink, kind: "leaf_started", cancel: cancel}
 			}
-			rep, err := run(ctx, o, runFlags{skipAcceptance: true, chk: fc})
+			rep, err := run(ctx, o, runFlags{skipAcceptance: true, afterStart: useChecker(fc)})
 			if err != nil {
 				t.Fatalf("run returned an error: %v", err)
 			}
@@ -484,7 +484,7 @@ func TestBlockedLeavesReportedInRun(t *testing.T) {
 	failing(fc, "fn-bye", 2)
 	g.wire(script)
 	g.gate.queue = []human.Resolution{{Action: human.ActionSkip}}
-	rep, err := run(context.Background(), g.options(), runFlags{skipAcceptance: true, chk: fc})
+	rep, err := run(context.Background(), g.options(), runFlags{skipAcceptance: true, afterStart: useChecker(fc)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -582,7 +582,7 @@ func TestRunContextReportsCancelled(t *testing.T) {
 	g2.wire(goodScript(g2))
 	done, cancel2 := context.WithCancel(context.Background())
 	cancel2()
-	rep, err := run(done, g2.options(), runFlags{skipAcceptance: true, chk: g2.fastChecker()})
+	rep, err := run(done, g2.options(), runFlags{skipAcceptance: true, afterStart: useChecker(g2.fastChecker())})
 	if err != nil || rep.Status != "interrupted" || rep.ExitCode != 5 {
 		t.Fatalf("a cancelled run = %s exit %d, %v", rep.Status, rep.ExitCode, err)
 	}
@@ -673,7 +673,7 @@ func TestResumeContinuesWithoutRepeatingCalls(t *testing.T) {
 	for _, id := range []string{"fn-greet", "fn-bye", "fn-hello", "fn-serve"} {
 		fc2.LeafScript[id] = []runner.Verdict{passVerdict()}
 	}
-	rep, err = run(context.Background(), g.options(), runFlags{skipAcceptance: true, chk: fc2})
+	rep, err = run(context.Background(), g.options(), runFlags{skipAcceptance: true, afterStart: useChecker(fc2)})
 	if err != nil || rep.Status != "verified" || !rep.Resumed {
 		t.Fatalf("second run = %s (%s) resumed %v, %v, failures %v", rep.Status, rep.StopReason, rep.Resumed, err, rep.Failures)
 	}
@@ -725,7 +725,7 @@ func TestRunWithoutAcceptanceNeverVerified(t *testing.T) {
 	t.Parallel()
 	g := newRig(t)
 	g.wire(goodScript(g))
-	rep, err := run(context.Background(), g.options(), runFlags{chk: g.fastChecker()})
+	rep, err := run(context.Background(), g.options(), runFlags{afterStart: useChecker(g.fastChecker())})
 	if err != nil || rep.Status != "failed" || rep.StopReason != "acceptance_pending" || rep.ExitCode != 1 {
 		t.Fatalf("run = %s (%s) exit %d, %v", rep.Status, rep.StopReason, rep.ExitCode, err)
 	}
@@ -768,7 +768,7 @@ func TestDiffOnlyFailedRepairKeepsVerifiedFile(t *testing.T) {
 	fc.RepoScript.Test["./"+a.Dir] = []runner.Verdict{{Class: runner.ClassTestFail, Names: []string{a.TestFunc}}}
 	g.wire(script)
 	g.gate.queue = []human.Resolution{{Action: human.ActionSkip}}
-	rep, err := run(context.Background(), g.options(), runFlags{skipAcceptance: true, chk: fc})
+	rep, err := run(context.Background(), g.options(), runFlags{skipAcceptance: true, afterStart: useChecker(fc)})
 	if err != nil || rep.Status != "failed" {
 		t.Fatalf("run = %s (%s), %v", rep.Status, rep.StopReason, err)
 	}
@@ -778,5 +778,45 @@ func TestDiffOnlyFailedRepairKeepsVerifiedFile(t *testing.T) {
 	}
 	if fileExists(g.stubPath(a)) {
 		t.Error("the stub came back over the verified file")
+	}
+}
+
+// A leaf that was reopened or interrupted (a row past pending) whose
+// dependencies are all verified is unfinished work, never "not_run".
+func TestUnfinishedInterruptedLeafNotLabelledNotRun(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	rc := g.newRC(t)
+	rows := []blackboard.Row{
+		{NodeID: "fn-greet", Status: blackboard.StatusVerified},
+		{NodeID: "fn-farewell", Status: blackboard.StatusVerified},
+		{NodeID: "fn-hello", Status: blackboard.StatusInProgress, Revision: 1},
+		{NodeID: "fn-bye", Status: blackboard.StatusReady},
+		{NodeID: "fn-serve", Status: blackboard.StatusPending},
+	}
+	_, failures := rc.unfinished(rows, "cancelled")
+	got := map[string]string{}
+	for _, f := range failures {
+		id, reason, _ := strings.Cut(f, ": ")
+		got[id] = reason
+	}
+	if strings.HasPrefix(got["fn-hello"], "not_run") || !strings.HasPrefix(got["fn-hello"], "interrupted") {
+		t.Errorf("an in-progress leaf is labelled %q", got["fn-hello"])
+	}
+	if got["fn-bye"] != "not_run: cancelled" {
+		t.Errorf("an untouched ready leaf is labelled %q", got["fn-bye"])
+	}
+}
+
+func TestRunRefusesRepairRoundsBelowOneBeforeAnyCall(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	g.wire(goodScript(g))
+	g.cfg.Executor.RepairRounds = 0
+	if _, err := run(context.Background(), g.options(), runFlags{}); err == nil {
+		t.Fatal("repair_rounds 0 was accepted")
+	}
+	if n := len(g.leafCalls("fn-greet")); n != 0 {
+		t.Errorf("%d model calls before the refusal", n)
 	}
 }

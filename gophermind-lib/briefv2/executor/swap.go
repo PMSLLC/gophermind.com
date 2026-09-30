@@ -48,7 +48,11 @@ type Swap struct {
 
 	// diff_only commits nothing, so a failed repair cannot restore the file from
 	// git: the swap keeps the last verified content in memory instead.
+	// The prior is also saved under <run>/_state/prior-<id> before the first
+	// write of a repair, so a crash that leaves the candidate on disk cannot
+	// lose the verified file; restorePriors (resume) reads it back.
 	noCommit bool
+	runDir   string
 	prior    []byte
 	hasPrior bool
 }
@@ -67,9 +71,20 @@ func (s *Swap) Enter(source []byte) error {
 		if err != nil {
 			return err
 		}
-		prior, err := os.ReadFile(abs)
+		name := priorPrefix + s.leaf.ID
+		// A saved prior that is already there is the verified file of an
+		// earlier, cut-off repair; the file on disk may be its candidate.
+		prior, found, err := readStateBytes(s.runDir, name)
 		if err != nil {
-			return fmt.Errorf("executor: leaf %s: the verified file cannot be read before a repair", s.leaf.ID)
+			return err
+		}
+		if !found {
+			if prior, err = os.ReadFile(abs); err != nil {
+				return fmt.Errorf("executor: leaf %s: the verified file cannot be read before a repair", s.leaf.ID)
+			}
+			if err := writeStateBytes(s.runDir, name, prior); err != nil {
+				return err
+			}
 		}
 		s.prior, s.hasPrior = prior, true
 	}
@@ -105,7 +120,10 @@ func (s *Swap) Fail() error {
 			if !s.hasPrior {
 				return nil
 			}
-			return pathsafe.Replace(s.repo, s.leaf.File, s.prior)
+			if err := pathsafe.Replace(s.repo, s.leaf.File, s.prior); err != nil {
+				return err
+			}
+			return removeStatePrior(s.runDir, priorPrefix+s.leaf.ID)
 		}
 		return s.git.Restore([]string{s.leaf.File})
 	}
@@ -115,8 +133,9 @@ func (s *Swap) Fail() error {
 }
 
 // NoCommit is diff_only mode: nothing is committed, and a failed repair puts
-// back the content the file had when the repair began.
-func (s *Swap) NoCommit() { s.noCommit = true }
+// back the content the file had when the repair began. runDir is where that
+// content is saved (<runDir>/_state) before the repair writes.
+func (s *Swap) NoCommit(runDir string) { s.noCommit, s.runDir = true, runDir }
 
 // PassNoCommit is Pass for diff_only: the real file stays on disk, the stub is
 // gone, and no commit is made.
@@ -125,6 +144,9 @@ func (s *Swap) PassNoCommit() error {
 		return err
 	}
 	s.passed = true
+	if s.hasPrior {
+		return removeStatePrior(s.runDir, priorPrefix+s.leaf.ID)
+	}
 	return nil
 }
 

@@ -903,3 +903,6 @@ func traced(rc *runCtx) *traceBoard {
 	rc.o.Board = tb
 	return tb
 }
+
+// useChecker is the runFlags.afterStart that replaces the run's checker.
+func useChecker(c Checker) func(*runCtx) { return func(rc *runCtx) { rc.chk = c } }

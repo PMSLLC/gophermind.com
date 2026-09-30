@@ -94,9 +94,6 @@ func (rc *runCtx) repairWave(ctx context.Context, w int, res checkResult, final 
 		stateMu.Lock()
 		bound := rc.cfg.Executor.RepairRounds + rc.state.ExtraRepair[wkey]
 		stateMu.Unlock()
-		if rc.cfg.Executor.RepairRounds < 1 {
-			return nil, fmt.Errorf("executor: executor.repair_rounds must be at least 1")
-		}
 		for ; round <= bound; round++ {
 			att := rc.plan.Attribute(res)
 			if len(att.Unattributed) > 0 {
