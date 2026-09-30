@@ -191,6 +191,11 @@ func TestScanRule(t *testing.T) {
 		{"declared secret name is exempt", "Uses CRM_API_KEY for auth; the credential is CRM_API_KEY.", ""},
 		{"duplicate token on one line warns once", "SENDGRID_KEY and SENDGRID_KEY again.", "SENDGRID_KEY"},
 		{"bare suffix is not a token", "The _KEY suffix and KEY alone are fine.", ""},
+		{"http methods are quiet in wording mode", "POST /v1/auth/login checks the credential, GET and DELETE too.", ""},
+		{"error name after status code is quiet", "Returns 401 `BAD_CREDENTIALS` on a wrong credential.", ""},
+		{"error name after bare status code is quiet", "A wrong credential gives 401 BAD_CREDENTIALS.", ""},
+		{"suffix still flagged after status code", "A wrong credential gives 401 `STRIPE_KEY`.", "STRIPE_KEY"},
+		{"other wording tokens still flagged", "The credential is FOO_BAR, not 401 `BAD_CREDENTIALS`.", "FOO_BAR"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -203,7 +203,16 @@ func TestBriefValidateDuplicateAndReservedExitTwo(t *testing.T) {
 }
 
 func TestBriefValidateWarningWording(t *testing.T) {
-	_, _, errs := runBriefCmd(t, "", "validate", "../../gophermind-lib/briefv2/testdata/ai-venture-studio-server-brief.md")
+	src, err := os.ReadFile("../../gophermind-lib/briefv2/testdata/ai-venture-studio-server-brief.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(t.TempDir(), "b.md")
+	body := strings.Replace(string(src), "\n## ", "\n\nMail goes through SENDGRID_KEY.\n\n## ", 1)
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, errs := runBriefCmd(t, "", "validate", p)
 	if !strings.Contains(errs, "looks like a secret name but is not declared under secrets or env") {
 		t.Errorf("err=%q", errs)
 	}

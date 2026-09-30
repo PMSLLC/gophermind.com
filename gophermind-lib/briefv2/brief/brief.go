@@ -250,6 +250,8 @@ var (
 	tokenRE        = regexp.MustCompile(`\b[A-Z][A-Z0-9_]{2,}\b`)
 	secretSuffixes = []string{"_KEY", "_SECRET", "_TOKEN", "_URL", "_DSN", "_PASSWORD", "_PASSPHRASE"}
 	secretWords    = []string{"secret", "credential", "environment variable"}
+	httpMethods    = map[string]bool{"GET": true, "POST": true, "PUT": true, "PATCH": true, "DELETE": true, "HEAD": true, "OPTIONS": true}
+	statusTokenRE  = regexp.MustCompile(`[1-5]\d\d\s+` + "`?" + `[A-Z][A-Z0-9_]{2,}\b`)
 )
 
 func hasSecretSuffix(tok string) bool {
@@ -285,8 +287,17 @@ func (b *Brief) UndeclaredSecrets() []Warning {
 			}
 		}
 		seen := map[string]bool{}
-		for _, tok := range tokenRE.FindAllString(line, -1) {
-			if declared[tok] || seen[tok] || !(wording || hasSecretSuffix(tok)) {
+		// Start offsets of tokens that directly follow an HTTP status code.
+		afterStatus := map[int]bool{}
+		for _, m := range statusTokenRE.FindAllStringIndex(line, -1) {
+			afterStatus[m[0]+tokenRE.FindStringIndex(line[m[0]:m[1]])[0]] = true
+		}
+		for _, loc := range tokenRE.FindAllStringIndex(line, -1) {
+			tok := line[loc[0]:loc[1]]
+			if declared[tok] || seen[tok] {
+				continue
+			}
+			if !hasSecretSuffix(tok) && !(wording && !httpMethods[tok] && !afterStatus[loc[0]]) {
 				continue
 			}
 			seen[tok] = true
