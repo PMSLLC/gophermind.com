@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -10,6 +11,7 @@ import (
 	"path"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"gophermind/gophermind-lib/briefv2/contract"
@@ -88,6 +90,11 @@ func parseErrAt(err error, prefix int) (line, col int) {
 // packages first, then the modules of dependencies.json, then the standard
 // library table. ok is false when it cannot be told, which includes the
 // ambiguous qualifiers.
+//
+// A qualifier is taken to be the package it names even when the declaration
+// shadows it with its own identifier, and rand is math/rand unless the text
+// says otherwise. A wrong guess only produces a file that does not compile,
+// which the build step reports; it can never widen what is imported.
 func resolveQualifier(q, src string, siblings map[string]string, pol packer.ImportPolicy) (string, bool) {
 	if p, ok := siblings[q]; ok {
 		return p, true
@@ -163,6 +170,138 @@ func deriveImports(id, src string, siblings map[string]string, pol packer.Import
 	return imports, nil
 }
 
+// validPackageName is a plain identifier that is not a keyword and not "_".
+// Nothing else may reach a package clause.
+func validPackageName(s string) bool { return s != "_" && token.IsIdentifier(s) }
+
+var directivePrefixes = []string{"//go:", "//export", "// +build", "//+build", "//line "}
+
+// processControl lists the calls that end or fake the end of a program. The
+// reply gate of packer refuses the same set; the list is not import policy.
+var processControl = map[string]map[string]bool{
+	"os":      {"Exit": true},
+	"syscall": {"Exit": true},
+	"log":     {"Fatal": true, "Fatalf": true, "Fatalln": true, "Panic": true, "Panicf": true, "Panicln": true},
+	"runtime": {"Goexit": true},
+}
+
+func hasDirective(f *ast.File) bool {
+	for _, cg := range f.Comments {
+		for _, c := range cg.List {
+			for _, p := range directivePrefixes {
+				if strings.HasPrefix(c.Text, p) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// checkAssembled re-parses a file the harness put together (a stub or a type
+// file) and refuses it, with a fixed kind, unless it is only a package clause,
+// allowed imports, type declarations and functions with bodies: no directive,
+// no init, no var or const, no process-control call, no recover. The import
+// decision is pol.Check's.
+func checkAssembled(src []byte, pkg string, pol packer.ImportPolicy) error {
+	f, err := parser.ParseFile(token.NewFileSet(), "gen.go", src, parser.ParseComments)
+	if err != nil {
+		return errors.New("does not parse")
+	}
+	if f.Name.Name != pkg {
+		return errors.New("package clause")
+	}
+	if hasDirective(f) {
+		return errors.New("directive")
+	}
+	alias := map[string]string{}
+	var paths []string
+	for _, imp := range f.Imports {
+		p, err := strconv.Unquote(imp.Path.Value)
+		if err != nil {
+			return errors.New("import")
+		}
+		paths = append(paths, p)
+		name := path.Base(p)
+		if imp.Name != nil {
+			name = imp.Name.Name
+		}
+		if p == "testing" || (name == "." && (processControl[p] != nil)) {
+			return errors.New("import")
+		}
+		alias[name] = p
+	}
+	if len(pol.Check(paths)) > 0 {
+		return errors.New("import not allowed")
+	}
+	for _, d := range f.Decls {
+		switch d := d.(type) {
+		case *ast.GenDecl:
+			if d.Tok != token.IMPORT && d.Tok != token.TYPE {
+				return errors.New("declaration")
+			}
+		case *ast.FuncDecl:
+			if d.Body == nil || (d.Recv == nil && d.Name.Name == "init") {
+				return errors.New("declaration")
+			}
+		default:
+			return errors.New("declaration")
+		}
+	}
+	kind := ""
+	ast.Inspect(f, func(n ast.Node) bool {
+		switch v := n.(type) {
+		case *ast.SelectorExpr:
+			if x, ok := v.X.(*ast.Ident); ok && processControl[alias[x.Name]][v.Sel.Name] {
+				kind = "process control"
+			}
+		case *ast.Ident:
+			if v.Name == "recover" {
+				kind = "process control"
+			}
+		}
+		return kind == ""
+	})
+	if kind != "" {
+		return errors.New(kind)
+	}
+	return nil
+}
+
+// validateDecl accepts a contract type Decl only when it is one or more type
+// declarations plus methods, with no directive and no import.
+func validateDecl(id, decl string) error {
+	bad := fmt.Errorf("type %s: a declaration may only hold type declarations and their methods", id)
+	f, err := parser.ParseFile(token.NewFileSet(), "decl.go", "package p\n"+decl, parser.ParseComments)
+	if err != nil {
+		line, col := parseErrAt(err, 1)
+		return fmt.Errorf("type %s: declaration does not parse (%d:%d)", id, line, col)
+	}
+	if len(f.Imports) > 0 || hasDirective(f) {
+		return bad
+	}
+	types := 0
+	for _, d := range f.Decls {
+		switch d := d.(type) {
+		case *ast.GenDecl:
+			if d.Tok != token.TYPE {
+				return bad
+			}
+			types++
+		case *ast.FuncDecl:
+			if d.Recv == nil || d.Body == nil {
+				return bad
+			}
+		default:
+			return bad
+		}
+	}
+	if types == 0 {
+		return bad
+	}
+	return nil
+}
+
 type typeFile struct {
 	pkg     string
 	first   string // id of the first type, for messages
@@ -182,8 +321,14 @@ func WriteTypes(repo string, c *contract.Contracts, pol packer.ImportPolicy) ([]
 		if _, err := pathsafe.ResolveSource(repo, t.File); err != nil {
 			return nil, fmt.Errorf("type %s: %w", t.ID, err)
 		}
+		if !validPackageName(t.Package) {
+			return nil, fmt.Errorf("type %s: the package name is not a valid identifier", t.ID)
+		}
 		imps, err := deriveImports(t.ID, t.Decl, siblings, pol)
 		if err != nil {
+			return nil, err
+		}
+		if err := validateDecl(t.ID, t.Decl); err != nil {
 			return nil, err
 		}
 		tf := files[t.File]
@@ -223,6 +368,9 @@ func WriteTypes(repo string, c *contract.Contracts, pol packer.ImportPolicy) ([]
 		if err != nil {
 			line, col := parseErrAt(err, 0)
 			return nil, fmt.Errorf("type %s: declaration does not parse (%d:%d)", tf.first, line, col)
+		}
+		if err := checkAssembled(src, tf.pkg, pol); err != nil {
+			return nil, fmt.Errorf("type %s: the assembled file is not allowed (%w)", tf.first, err)
 		}
 		out[file] = src
 	}

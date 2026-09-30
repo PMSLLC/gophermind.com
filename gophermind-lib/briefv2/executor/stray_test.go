@@ -126,3 +126,57 @@ func TestSnapshotHashesSymlinkWithoutFollowing(t *testing.T) {
 		t.Fatalf("a retargeted symlink is not stray: %v", got)
 	}
 }
+
+func TestStrayCatchesIgnoredFiles(t *testing.T) {
+	g := newRig(t)
+	g.startWave0()
+	write(t, filepath.Join(g.repo, ".git", "info", "exclude"), "*.log\nbuild/\n")
+	write(t, g.abs("pre.log"), "v1\n")
+	snap, err := TakeSnapshot(g.repo, g.git)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := snap["pre.log"]; !ok {
+		t.Fatalf("the snapshot missed an ignored file: %v", snap)
+	}
+	write(t, g.abs("out.log"), "x\n")
+	write(t, g.abs("build/x.bin"), "x\n")
+	write(t, g.abs(".gophermind/run/z"), "x\n")
+	got, err := snap.Stray(g.repo, g.git)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, []string{"build/x.bin", "out.log"}) {
+		t.Fatalf("Stray = %v, want the two ignored files and not the run folder", got)
+	}
+	got, _ = snap.Stray(g.repo, g.git, "out.log", "build/x.bin")
+	if len(got) != 0 {
+		t.Fatalf("declared ignored files are stray: %v", got)
+	}
+}
+
+func TestUnreadableFileIsNotADeletedFile(t *testing.T) {
+	g := newRig(t)
+	g.startWave0()
+	write(t, g.abs("a.txt"), "secret\n")
+	if err := os.Chmod(g.abs("a.txt"), 0); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(g.abs("a.txt"), 0o644)
+	unreadable := hashPath(g.repo, "a.txt")
+	os.Chmod(g.abs("a.txt"), 0o644)
+	readable := hashPath(g.repo, "a.txt")
+	os.Remove(g.abs("a.txt"))
+	deleted := hashPath(g.repo, "a.txt")
+	if unreadable == deleted || unreadable == readable || deleted == readable {
+		t.Fatalf("hashes collide: unreadable=%q deleted=%q readable=%q", unreadable, deleted, readable)
+	}
+	// A dirty file that turns unreadable is stray.
+	write(t, g.abs("b.txt"), "v\n")
+	snap, _ := TakeSnapshot(g.repo, g.git)
+	os.Chmod(g.abs("b.txt"), 0)
+	defer os.Chmod(g.abs("b.txt"), 0o644)
+	if got, _ := snap.Stray(g.repo, g.git); !reflect.DeepEqual(got, []string{"b.txt"}) {
+		t.Fatalf("a file that became unreadable is not stray: %v", got)
+	}
+}

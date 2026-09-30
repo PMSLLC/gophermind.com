@@ -160,3 +160,83 @@ func TestWriteTypesRefusesUnsafePath(t *testing.T) {
 		}
 	}
 }
+
+func TestTypeDeclRestrictedToTypes(t *testing.T) {
+	cases := []struct{ name, decl string }{
+		{"init function", "type T int\nfunc init() { println(1) }"},
+		{"plain function", "type T int\nfunc F() {}"},
+		{"var initializer", "type T int\nvar x = f()"},
+		{"const", "type T int\nconst c = 1"},
+		{"import", "import \"os\"\ntype T int"},
+		{"import C", "import \"C\"\ntype T int"},
+		{"go linkname", "type T int\n//go:linkname x y\n"},
+		{"go embed in a comment", "//go:embed x.txt\ntype T int"},
+		{"go generate", "//go:generate echo hi\ntype T int"},
+		{"export", "//export Foo\ntype T int"},
+		{"method calls os.Exit", "type T int\nfunc (T) M() { os.Exit(0) }"},
+		{"method recovers", "type T int\nfunc (T) M() { recover() }"},
+		{"no type at all", "// nothing"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := t.TempDir()
+			c := &contract.Contracts{Module: "example.com/m", Types: []contract.Type{{ID: "t-x", Package: "p", File: "p/x.go", Decl: tc.decl}}}
+			paths, err := WriteTypes(repo, c, packer.ImportPolicy{Module: "example.com/m"})
+			if err == nil {
+				t.Fatalf("declaration accepted: %q", tc.decl)
+			}
+			if len(paths) != 0 || fileExists(filepath.Join(repo, "p/x.go")) {
+				t.Fatal("a file was written")
+			}
+			if strings.Contains(err.Error(), "linkname") || strings.Contains(err.Error(), "init") {
+				t.Fatalf("error quotes the declaration: %v", err)
+			}
+		})
+	}
+	// Methods of declared types stay legal.
+	repo := t.TempDir()
+	c := &contract.Contracts{Module: "example.com/m", Types: []contract.Type{{ID: "t-x", Package: "p", File: "p/x.go", Decl: "type T struct{ R string }\n\nfunc (t *T) Error() string { return t.R }"}}}
+	if _, err := WriteTypes(repo, c, packer.ImportPolicy{Module: "example.com/m"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTypePackageNameValidated(t *testing.T) {
+	for _, pkg := range []string{"p\nimport \"os/exec\"", "func", "_", "", "a-b", "p;import \"os\""} {
+		repo := t.TempDir()
+		c := &contract.Contracts{Module: "example.com/m", Types: []contract.Type{{ID: "t-x", Package: pkg, File: "p/x.go", Decl: "type T int"}}}
+		if _, err := WriteTypes(repo, c, packer.ImportPolicy{Module: "example.com/m"}); err == nil {
+			t.Errorf("package %q accepted", pkg)
+		}
+		if fileExists(filepath.Join(repo, "p/x.go")) {
+			t.Errorf("package %q wrote a file", pkg)
+		}
+	}
+}
+
+func TestCheckAssembledRefusals(t *testing.T) {
+	pol := packer.ImportPolicy{Module: "example.com/m"}
+	for name, src := range map[string]string{
+		"exec import":   "package p\nimport \"os/exec\"\ntype T int\n",
+		"cgo":           "package p\nimport \"C\"\ntype T int\n",
+		"directive":     "package p\n//go:linkname a b\ntype T int\n",
+		"wrong package": "package q\ntype T int\n",
+		"init":          "package p\nfunc init() {}\n",
+		"var":           "package p\nvar x = 1\n",
+		"exit":          "package p\nimport \"os\"\ntype T int\nfunc (T) M() { os.Exit(0) }\n",
+		"aliased exit":  "package p\nimport o \"os\"\ntype T int\nfunc (T) M() { o.Exit(0) }\n",
+		"log fatal":     "package p\nimport \"log\"\ntype T int\nfunc (T) M() { log.Fatal(1) }\n",
+		"garbage":       "package p\nfunc (",
+	} {
+		if err := checkAssembled([]byte(src), "p", pol); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	if err := checkAssembled([]byte("package p\n\nimport \"time\"\n\ntype T struct{ At time.Time }\n\nfunc (t T) M() time.Time { return t.At }\n"), "p", pol); err != nil {
+		t.Fatalf("a legal file was refused: %v", err)
+	}
+}
+
+// The resolver treats a package qualifier as the standard package it names even
+// when the declaration shadows it with a local of the same name; such a file
+// fails to compile in the build step, which is the only consequence.
