@@ -1,0 +1,6 @@
+{"types": [], "functions": [
+  {"id": "fn-greet", "package": "greet", "file": "internal/greet/greet.go",
+   "signature": "func Greet(name string) (string, error)",
+   "doc": "Greet trims the name and returns Hello, <name>!. An empty name is an error.",
+   "uses": ["name-error", "fn-name-error-error"]}
+], "more": false}

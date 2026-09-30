@@ -1,0 +1,54 @@
+package planner
+
+import (
+	"embed"
+	"strings"
+	"text/template"
+
+	"gophermind/gophermind-lib/briefv2/provider"
+)
+
+//go:embed prompts/*.md
+var promptFS embed.FS
+
+// render fills prompts/<name>.md. A field the template names and data lacks
+// is an error, never an empty string in a prompt.
+func render(name string, data map[string]string) (string, error) {
+	raw, err := promptFS.ReadFile("prompts/" + name + ".md")
+	if err != nil {
+		return "", err
+	}
+	t, err := template.New(name).Option("missingkey=error").Parse(string(raw))
+	if err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	if err := t.Execute(&b, data); err != nil {
+		return "", err
+	}
+	return b.String(), nil
+}
+
+// request is the shape of every planner call: a system line naming the stage
+// (the offline fixture provider keys its canned replies on it) and the prompt.
+func request(stage, prompt string, maxTokens int) provider.Request {
+	return provider.Request{
+		Messages: []provider.Message{
+			{Role: provider.RoleSystem, Content: stagePrefixSystem + stage},
+			{Role: provider.RoleUser, Content: prompt},
+		},
+		MaxTokens:   maxTokens,
+		Temperature: 0.2,
+	}
+}
+
+// Output budgets per stage, in tokens. They bound one reply, not the plan:
+// a large brief makes more calls, never longer ones.
+const (
+	maxTokensClarify   = 2048
+	maxTokensContract  = 8000
+	maxTokensDecompose = 8000
+	maxTokensCoverage  = 6000
+	maxTokensFill      = 8000
+	maxTokensTestwrite = 6000
+)

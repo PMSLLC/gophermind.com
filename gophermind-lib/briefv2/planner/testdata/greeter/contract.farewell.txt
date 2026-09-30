@@ -1,0 +1,6 @@
+The farewell component needs one function. {"types": [], "functions": [
+  {"id": "fn-farewell", "package": "greet", "file": "internal/greet/farewell.go",
+   "signature": "func Farewell(name string) (string, error)",
+   "doc": "Farewell trims the name and returns Goodbye, <name>!. An empty name is an error.",
+   "uses": ["name-error"]}
+], "more": false}
