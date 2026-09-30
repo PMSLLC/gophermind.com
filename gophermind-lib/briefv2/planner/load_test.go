@@ -79,7 +79,7 @@ func TestPlanRefusesARepoItCannotUse(t *testing.T) {
 
 func TestPlanOnAnExistingRunPointsAtResume(t *testing.T) {
 	g := newRig(t, approving())
-	g.mustPlan(planner.Options{StopAfter: "load"})
+	g.mustPlan(planner.Options{StopAfter: "clarify"})
 	_, err := g.plan(planner.Options{StopAfter: "load"})
 	if err == nil || !strings.Contains(err.Error(), "gophermind brief resume "+greeterID) {
 		t.Fatalf("second plan = %v, want an error pointing at resume", err)

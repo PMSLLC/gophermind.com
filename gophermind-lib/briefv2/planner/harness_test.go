@@ -149,7 +149,8 @@ func (g *rig) wire(dirs ...string) {
 	g.sink = events.NewCollector()
 	g.router = router.New(g.cfg, map[string]provider.Provider{"fake": fake}, g.led, g.sink)
 	g.deps = planner.Deps{Caller: g.router, Gate: g.gate, Sink: g.sink, Board: g.board, Settings: g.cfg,
-		LedgerErrors: g.router.LedgerErrors}
+		LedgerErrors: g.router.LedgerErrors,
+		ResetRun:     func(ctx context.Context, id string) error { return db.ClearRun(ctx, g.db, id) }}
 }
 
 func (g *rig) plan(o planner.Options) (planner.Outcome, error) {

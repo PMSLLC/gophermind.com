@@ -119,8 +119,30 @@ file and the command of every function test (`go test ./<dir> -run ^<Test>$`)
 are derived by code. The only model-written commands in a plan are the root
 acceptance tests, and the approval summary prints each one in full.
 
-Nothing is written into the target repository before `approval.json` exists and
-matches the plan as it stands. Test files are left uncommitted.
+No source or test files are written to the target repository before
+`approval.json` exists and matches the plan as it stands (the run folder
+`.gophermind/<brief-id>/` inside it is written from the first stage). Test
+files are left uncommitted.
+
+Clearing a run. A brief id names one run, and the run's state lives in two
+places: the run folder inside the repository, and, under the config dir
+(`~/.gophermind`, or `GOPHERMIND_CONFIG_DIR`), the run record
+`runs/<run-id>.json`, the rows of the run id in `blackboard.db` (blackboard,
+events, ledger) and the run's vault scope. To start a brief again from nothing:
+
+1. In the target repository: `git reset --hard <baseline>` and
+   `git clean -fdx -e .remember`. This removes the run folder and any test
+   files the test-writer wrote. If the clean is skipped, an untracked test file
+   left by the earlier run makes the test-writer stop with an error rather
+   than overwrite a file it did not write; delete it.
+2. Nothing else is required: `gophermind brief plan` on the same brief clears
+   the run id's rows in `blackboard.db` when it creates the new run folder and
+   replaces the old run record, so no stale ledger row, wave or claim carries
+   over. (`rm ~/.gophermind/runs/<run-id>.json` is harmless.)
+
+A run folder that holds only what Load writes (the brief, `requirements.json`,
+an empty `logs/`, `_state/status.json`) is replaced by `plan` without complaint.
+A run folder with stage output is not: `plan` refuses and points at `resume`.
 
 Run folder files added by the planner: `requirements.json`, `answers.json`,
 `contracts.json`, `coverage.json`, `approval.json`, and working files under

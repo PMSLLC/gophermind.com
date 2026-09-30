@@ -1,0 +1,108 @@
+package planner_test
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"gophermind/gophermind-lib/briefv2/ledger"
+	"gophermind/gophermind-lib/briefv2/planner"
+)
+
+type boardRow struct {
+	Status string
+	Wave   int
+}
+
+func (g *rig) boardSnapshot() map[string]boardRow {
+	g.t.Helper()
+	rs, err := g.db.Query(`SELECT node_id, status, wave FROM rows WHERE run_id = ?`, greeterID)
+	if err != nil {
+		g.t.Fatal(err)
+	}
+	defer rs.Close()
+	out := map[string]boardRow{}
+	for rs.Next() {
+		var id string
+		var r boardRow
+		if err := rs.Scan(&id, &r.Status, &r.Wave); err != nil {
+			g.t.Fatal(err)
+		}
+		out[id] = r
+	}
+	return out
+}
+
+func (g *rig) ledgerCount() int {
+	g.t.Helper()
+	rows, err := g.led.List(context.Background(), greeterID, ledger.Filter{})
+	if err != nil {
+		g.t.Fatal(err)
+	}
+	return len(rows)
+}
+
+// The goal's clear procedure is git reset --hard, git clean -fdx and removing
+// the project's state. It cannot reach ~/.gophermind, so the run record, the
+// ledger and the blackboard rows of the reused run id survive it. A rerun
+// must plan from nothing anyway.
+func TestARerunAfterCleaningTheRepoPlansFromScratch(t *testing.T) {
+	g := newRig(t, approving())
+	g.mustPlan(planner.Options{})
+	calls1, board1 := g.ledgerCount(), g.boardSnapshot()
+	if calls1 == 0 || len(board1) == 0 {
+		t.Fatalf("first run left %d ledger rows and %d board rows", calls1, len(board1))
+	}
+
+	// Stale state a dead run could have left behind, then the clean.
+	if _, err := g.db.Exec(`UPDATE rows SET status = 'done', wave = 99`); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(g.runDir); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range g.repoFiles() {
+		os.Remove(filepath.Join(g.repo, f))
+	}
+	g.wire()
+
+	g.mustPlan(planner.Options{BriefPath: g.briefPath})
+
+	if got := g.ledgerCount(); got != calls1 {
+		t.Errorf("ledger has %d rows after the rerun, want %d (no stale rows)", got, calls1)
+	}
+	board2 := g.boardSnapshot()
+	if len(board2) != len(board1) {
+		t.Fatalf("%d board rows, want %d", len(board2), len(board1))
+	}
+	for id, want := range board1 {
+		if got := board2[id]; got.Status != want.Status || got.Wave != want.Wave {
+			t.Errorf("row %s = %s wave %d, want %s wave %d", id, got.Status, got.Wave, want.Status, want.Wave)
+		}
+	}
+	for _, f := range greeterTestFiles {
+		if _, err := os.Stat(filepath.Join(g.repo, f)); err != nil {
+			t.Errorf("rerun did not write %s: %v", f, err)
+		}
+	}
+}
+
+// A run folder left over from a plan that died before any stage finished is
+// not an error: it holds nothing to resume.
+func TestALeftoverUntouchedRunFolderIsReplaced(t *testing.T) {
+	g := newRig(t, approving())
+	g.mustPlan(planner.Options{StopAfter: "load"})
+	g.wire()
+	g.mustPlan(planner.Options{BriefPath: g.briefPath})
+}
+
+// A run folder that already holds stage output is not silently replaced.
+func TestARunFolderWithProgressStillRefusesAFreshPlan(t *testing.T) {
+	g := newRig(t, approving())
+	g.mustPlan(planner.Options{StopAfter: "clarify"})
+	g.wire()
+	if _, err := g.plan(planner.Options{BriefPath: g.briefPath}); err == nil {
+		t.Fatal("a fresh plan over a run with progress was accepted")
+	}
+}

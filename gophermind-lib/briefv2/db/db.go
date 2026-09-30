@@ -4,6 +4,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -55,6 +56,23 @@ func Open(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("db: %w", err)
 	}
 	return d, nil
+}
+
+// ClearRun deletes every blackboard row, event and ledger row of runID. A new
+// plan calls it so a reused run id starts from nothing: the repository can be
+// cleaned with git, this database cannot.
+func ClearRun(ctx context.Context, d *sql.DB, runID string) error {
+	tx, err := d.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("db: %w", err)
+	}
+	defer tx.Rollback()
+	for _, t := range []string{"rows", "events", "calls"} {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM "+t+" WHERE run_id = ?", runID); err != nil {
+			return fmt.Errorf("db: clearing %s: %w", t, err)
+		}
+	}
+	return tx.Commit()
 }
 
 var schemaV1 = []string{
