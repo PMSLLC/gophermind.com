@@ -5,6 +5,7 @@
 package report
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -17,6 +18,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"gophermind/gophermind-lib/briefv2/blackboard"
 	"gophermind/gophermind-lib/briefv2/ledger"
@@ -138,6 +140,12 @@ type Input struct {
 	LedgerErrors          int
 	Failures              []string
 	Landing               *Landing
+	// PlanLeaves is every leaf id of the plan. When non-nil, Build guarantees
+	// each is either verified or named in Failures. nil means rows only.
+	PlanLeaves []string
+	// LeafDeps maps a leaf id to its direct dependencies, used to word the
+	// reason for a leaf that never ran.
+	LeafDeps map[string][]string
 }
 
 var taskOrder = map[string]int{"clarify": 0, "contract": 1, "decompose": 2, "coverage": 3, "testwrite": 4, "implement": 5, "revise": 6}
@@ -184,7 +192,7 @@ type rowKey struct {
 
 // Build aggregates in into a Report. It is deterministic: the same data in any
 // order yields the same bytes.
-func Build(in Input) Report {
+func Build(in Input) (Report, error) {
 	r := Report{
 		SchemaVersion: SchemaVersion, RunID: in.RunID, Status: in.Status, Resumed: in.Resumed,
 		Sandbox: in.Sandbox, StopReason: in.StopReason, ExitCode: ExitCode(in.Status, in.StopReason),
@@ -199,10 +207,14 @@ func Build(in Input) Report {
 	if !in.FinishedAt.IsZero() {
 		r.FinishedAt = in.FinishedAt.UTC().Format(time.RFC3339)
 	}
-	if len(in.Failures) > 0 {
-		r.Failures = append([]string(nil), in.Failures...)
-		sort.Strings(r.Failures)
+	for _, es := range in.Escalations {
+		switch es.Kind {
+		case "model", "revision", "human":
+		default:
+			return Report{}, fmt.Errorf("report: unknown escalation kind (%d bytes)", len(es.Kind))
+		}
 	}
+	r.Failures = completeFailures(in)
 
 	// Pass 1: ledger rows.
 	entries := map[tmKey]*TaskModel{}
@@ -256,7 +268,14 @@ func Build(in Input) Report {
 		}
 		seenAtt := map[ak]bool{}
 		first := true
-		for _, a := range row.Attempts {
+		attempts := append([]blackboard.Attempt(nil), row.Attempts...)
+		sort.SliceStable(attempts, func(i, j int) bool {
+			if attempts[i].Revision != attempts[j].Revision {
+				return attempts[i].Revision < attempts[j].Revision
+			}
+			return attempts[i].Order < attempts[j].Order
+		})
+		for _, a := range attempts {
 			if a.Verdict == blackboard.VerdictError {
 				continue
 			}
@@ -344,24 +363,96 @@ func Build(in Input) Report {
 			}
 		}
 	}
-	return r
+	return r, nil
 }
 
-// stripCredentials removes user info from a URL-shaped value.
+// completeFailures returns the caller's failure lines plus one line for every
+// plan leaf that is neither verified nor named, sorted. A run never silently
+// drops a leaf.
+func completeFailures(in Input) []string {
+	out := append([]string(nil), in.Failures...)
+	if in.PlanLeaves != nil {
+		status := map[string]blackboard.Status{}
+		for _, row := range in.Rows {
+			status[row.NodeID] = row.Status
+		}
+		named := func(id string) bool {
+			for _, f := range in.Failures {
+				if strings.HasPrefix(f, id+":") {
+					return true
+				}
+			}
+			return false
+		}
+		for _, id := range in.PlanLeaves {
+			st, hasRow := status[id]
+			if st == blackboard.StatusVerified || named(id) {
+				continue
+			}
+			if hasRow {
+				out = append(out, fmt.Sprintf("%s: %s: no failure recorded", id, st))
+				continue
+			}
+			reason := "not_run: no record"
+			deps := append([]string(nil), in.LeafDeps[id]...)
+			sort.Strings(deps)
+			for _, d := range deps {
+				if status[d] != blackboard.StatusVerified {
+					reason = "blocked by " + d
+					break
+				}
+			}
+			out = append(out, id+": "+reason)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	sort.Strings(out)
+	return out
+}
+
+// stripCredentials reduces a repository reference to scheme, host and path.
+// User info is dropped for any scheme and for scheme-less and scp-style forms
+// (everything up to the last "@" before a query or fragment), percent-encoded
+// "@" is decoded first, query strings and fragments are removed, and
+// whitespace and control characters are deleted. An absolute path is kept as
+// is apart from the query and fragment.
 func stripCredentials(s string) string {
-	i := strings.Index(s, "://")
-	if i < 0 {
-		return s
+	s = strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+	s = strings.NewReplacer("%40", "@", "%2540", "@").Replace(s)
+	head := s
+	if i := strings.IndexAny(s, "?#"); i >= 0 {
+		head = s[:i]
 	}
-	rest := s[i+3:]
-	end := strings.IndexAny(rest, "/?#")
-	if end < 0 {
-		end = len(rest)
+	prefix := ""
+	rest := head
+	if i := strings.Index(head, "://"); i >= 0 && validScheme(head[:i]) {
+		prefix, rest = head[:i+3], head[i+3:]
 	}
-	if at := strings.LastIndex(rest[:end], "@"); at >= 0 {
-		rest = rest[at+1:]
+	if prefix != "" || !strings.HasPrefix(rest, "/") {
+		if at := strings.LastIndex(rest, "@"); at >= 0 {
+			rest = rest[at+1:]
+		}
 	}
-	return s[:i+3] + rest
+	return prefix + rest
+}
+
+func validScheme(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '+' || r == '-' || r == '.') {
+			return false
+		}
+	}
+	return true
 }
 
 // Write stores r as indented JSON in runDir/report.json, mode 0600, by temp
@@ -371,9 +462,8 @@ func Write(runDir string, r Report) error {
 	if runDir == "" {
 		return errors.New("report: no run folder")
 	}
-	fi, err := os.Lstat(runDir)
-	if err != nil || !fi.IsDir() {
-		return errors.New("report: the run folder does not exist or is not a directory")
+	if err := checkRunDir(runDir); err != nil {
+		return err
 	}
 	raw, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
@@ -411,7 +501,70 @@ func Write(runDir string, r Report) error {
 		os.Remove(tmp)
 		return errors.New("report: cannot move the report into place")
 	}
+	d, err := os.Open(runDir)
+	if err != nil {
+		return errors.New("report: cannot open the run folder to sync it")
+	}
+	defer d.Close()
+	if err := d.Sync(); err != nil {
+		return errors.New("report: cannot sync the run folder")
+	}
 	return nil
+}
+
+// checkRunDir requires runDir to be a real directory and, from the last
+// ".gophermind" component down (the repo root's side of the run folder), that
+// no component is a symbolic link. Components above it belong to the caller's
+// environment (for example /var on macOS) and are not judged.
+func checkRunDir(runDir string) error {
+	clean := filepath.Clean(runDir)
+	parts := strings.Split(clean, string(filepath.Separator))
+	start := len(parts) - 1
+	for i := len(parts) - 1; i >= 0; i-- {
+		if parts[i] == ".gophermind" {
+			start = i
+			break
+		}
+	}
+	for i := start; i < len(parts); i++ {
+		p := strings.Join(parts[:i+1], string(filepath.Separator))
+		if p == "" {
+			p = string(filepath.Separator)
+		}
+		fi, err := os.Lstat(p)
+		if err != nil || fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
+			return errors.New("report: the run folder does not exist, is not a directory, or passes through a symbolic link")
+		}
+	}
+	return nil
+}
+
+// jsonDepthOK reports whether raw nests no deeper than max, ignoring brackets
+// inside strings.
+func jsonDepthOK(raw []byte, max int) bool {
+	depth, inStr, esc := 0, false, false
+	for _, b := range raw {
+		switch {
+		case inStr:
+			if esc {
+				esc = false
+			} else if b == '\\' {
+				esc = true
+			} else if b == '"' {
+				inStr = false
+			}
+		case b == '"':
+			inStr = true
+		case b == '{' || b == '[':
+			depth++
+			if depth > max {
+				return false
+			}
+		case b == '}' || b == ']':
+			depth--
+		}
+	}
+	return true
 }
 
 // Read loads runDir/report.json. Errors describe the kind of problem, never the
@@ -444,8 +597,16 @@ func Read(runDir string) (Report, error) {
 	if v.SchemaVersion != SchemaVersion {
 		return r, fmt.Errorf("report: unsupported schema version %d (want %d)", v.SchemaVersion, SchemaVersion)
 	}
-	if err := json.Unmarshal(raw, &r); err != nil {
+	if !jsonDepthOK(raw, 16) {
+		return Report{}, errors.New("report: report.json nests too deeply")
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&r); err != nil {
 		return Report{}, fmt.Errorf("report: report.json has the wrong shape (%d bytes)", len(raw))
+	}
+	if r.ExitCode != ExitCode(r.Status, r.StopReason) {
+		return Report{}, errors.New("report: exit_code does not match status")
 	}
 	return r, nil
 }

@@ -65,6 +65,15 @@ func fixture() report.Input {
 	}
 }
 
+func build(t *testing.T, in report.Input) report.Report {
+	t.Helper()
+	r, err := report.Build(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
 func find(t *testing.T, r report.Report, task, model string) report.TaskModel {
 	t.Helper()
 	for _, e := range r.ByTaskType {
@@ -77,7 +86,7 @@ func find(t *testing.T, r report.Report, task, model string) report.TaskModel {
 }
 
 func TestReportHandCount(t *testing.T) {
-	r := report.Build(fixture())
+	r := build(t, fixture())
 	// implement/mini/qwen: calls 5 (a, b, b, c, d); ok 4; malformed 1.
 	// retries: (a) row beyond first for (b, implement:b, rev 0, mini) = 1;
 	// (b) attempts beyond first: b has 2 mini attempts = 1, d has 2 mini attempts = 1, a and c have 1 = 0;
@@ -126,14 +135,14 @@ func TestNodesPartialCounts(t *testing.T) {
 	in := fixture()
 	in.Rows = append(in.Rows, blackboard.Row{NodeID: "e", Status: blackboard.StatusPending}, blackboard.Row{NodeID: "f", Status: blackboard.StatusFailed})
 	in.Blocked = []string{"e"}
-	r := report.Build(in)
+	r := build(t, in)
 	// total 6; verified 3; failed 1 (f); escalated 1; blocked 1 (reported); pending counts only in total: 3+1+1+1 = 6 here,
 	// and with another in-progress row the sum is below total.
 	if r.Nodes != (report.NodeCounts{Total: 6, Verified: 3, Failed: 1, Escalated: 1, Blocked: 1}) {
 		t.Fatalf("%+v", r.Nodes)
 	}
 	in.Rows = append(in.Rows, blackboard.Row{NodeID: "g", Status: blackboard.StatusInProgress})
-	r = report.Build(in)
+	r = build(t, in)
 	n := r.Nodes
 	if n.Total-(n.Verified+n.Failed+n.Escalated+n.Blocked) != 1 {
 		t.Fatalf("difference %+v", n)
@@ -145,7 +154,7 @@ func TestAcceptanceTotalFallbackAndConstraintOverride(t *testing.T) {
 	in.AcceptanceTotal = 0
 	in.AcceptancePassed = 0
 	in.ConstraintsTotal = 7
-	r := report.Build(in)
+	r := build(t, in)
 	if r.Acceptance != (report.Passed{Passed: 0, Total: 1}) || r.Constraints.Total != 7 {
 		t.Fatalf("%+v %+v", r.Acceptance, r.Constraints)
 	}
@@ -167,7 +176,7 @@ func TestModelPerTaskTypeTable(t *testing.T) {
 		call("implement", "implement:z", "z", "mini", "", ledger.OutcomeOK, 1, 1, 1), // served empty: keys on requested
 	}
 	in.Escalations = []report.Escalation{{Kind: "model", TaskType: "implement", Model: "ghost/none", NodeID: "x"}}
-	r := report.Build(in)
+	r := build(t, in)
 	var got []string
 	for _, e := range r.ByTaskType {
 		got = append(got, e.TaskType+"|"+e.Model)
@@ -184,7 +193,7 @@ func TestModelPerTaskTypeTable(t *testing.T) {
 }
 
 func TestLeafModelPassRate(t *testing.T) {
-	r := report.Build(fixture())
+	r := build(t, fixture())
 	// mini/qwen attempts: a 1, b 2, c 1, d 2 = 6; passes a, b = 2; rate 2/6 = 0.3333; first try wins: a only (b failed first) = 1.
 	// kilo/free attempts 1, passes 1, rate 1, first try wins 0 (c's first attempt was mini).
 	want := []report.LeafModel{
@@ -200,11 +209,11 @@ func TestLeafModelSkipsErrorAttempts(t *testing.T) {
 	in := report.Input{RunID: "r", Status: "verified", Sandbox: "on", Rows: []blackboard.Row{
 		{NodeID: "a", Status: blackboard.StatusVerified, Attempts: []blackboard.Attempt{att("qwen", blackboard.VerdictError), att("qwen", blackboard.VerdictPass)}},
 	}}
-	r := report.Build(in)
+	r := build(t, in)
 	if len(r.Leaves) != 1 || r.Leaves[0].Attempts != 1 || r.Leaves[0].FirstTryWins != 1 {
 		t.Fatalf("%+v", r.Leaves)
 	}
-	if got := report.Build(report.Input{}).Leaves; len(got) != 0 {
+	if got := build(t, report.Input{}).Leaves; len(got) != 0 {
 		t.Fatal("expected none")
 	}
 }
@@ -222,7 +231,7 @@ func lastLines(s string, n int) []string {
 func TestSummaryEndsWithProofLines(t *testing.T) {
 	in := fixture()
 	in.Status, in.StopReason = "verified", ""
-	r := report.Build(in)
+	r := build(t, in)
 	l := lastLines(r.Summary(), 2)
 	if l[0] != "Requirements covered: 3 of 3" || l[1] != "Acceptance passed: 2 of 2" {
 		t.Fatalf("%q", l)
@@ -232,7 +241,7 @@ func TestSummaryEndsWithProofLines(t *testing.T) {
 	}
 	in.AcceptancePassed = 1
 	in.Status = "failed"
-	f := report.Build(in)
+	f := build(t, in)
 	l = lastLines(f.Summary(), 2)
 	if l[1] != "Acceptance passed: 1 of 2" || strings.Contains(l[1], "2 of 2") {
 		t.Fatalf("%q", l)
@@ -252,7 +261,7 @@ func TestSummaryListsFailuresLandingIncomplete(t *testing.T) {
 	in.Failures = []string{"d: escalated", "e: blocked by d", "f: not_run: leaf_escalated"}
 	in.LedgerErrors = 2
 	in.Landing = &report.Landing{Branch: "gm/run", Commit: "abc123", MergedInto: "main"}
-	s := report.Build(in).Summary()
+	s := build(t, in).Summary()
 	for _, w := range []string{"d: escalated", "e: blocked by d", "f: not_run: leaf_escalated", "abc123", "Incomplete: ledger writes failed"} {
 		if !strings.Contains(s, w) {
 			t.Fatalf("missing %q", w)
@@ -269,7 +278,7 @@ func TestSummaryEscapesControlCharacters(t *testing.T) {
 	in.RunID = "gm\x1b[31m-1"
 	in.Failures = []string{"x\r\ny\x07: escalated "}
 	in.Calls[2].Provider = "mi\x1bni"
-	s := report.Build(in).Summary()
+	s := build(t, in).Summary()
 	for _, r := range s {
 		if r != '\n' && (r < 0x20 || r == 0x7f || r == 0x2028 || (r >= 0x80 && r < 0xa0)) {
 			t.Fatalf("control rune %U survived in\n%q", r, s)
@@ -294,7 +303,7 @@ func TestExitCodeMapping(t *testing.T) {
 
 func TestReportWriteReadRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	r := report.Build(fixture())
+	r := build(t, fixture())
 	if err := report.Write(dir, r); err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +335,7 @@ func TestReportWriteReadRoundTrip(t *testing.T) {
 }
 
 func TestReportWriteRefusals(t *testing.T) {
-	r := report.Build(fixture())
+	r := build(t, fixture())
 	if err := report.Write("", r); err == nil {
 		t.Fatal("empty dir accepted")
 	}
@@ -376,7 +385,7 @@ func TestReportCarriesNoText(t *testing.T) {
 	in.Rows[3].Attempts[0].FailureReason = "CANARY-report-text"
 	in.Rows[3].Attempts[0].FailedTests = []string{"CANARY-report-text"}
 	in.Failures = []string{"d: test_fail: TestPassedThrough"}
-	r := report.Build(in)
+	r := build(t, in)
 	raw, _ := json.Marshal(r)
 	if strings.Contains(string(raw), "CANARY-report-text") || strings.Contains(r.Summary(), "CANARY-report-text") {
 		t.Fatal("canary copied")
@@ -390,7 +399,7 @@ func TestRepoFieldsDropCredentials(t *testing.T) {
 	in := fixture()
 	in.RepoBrief = "https://user:CANARY-secret@example.com/org/repo.git"
 	in.RepoUsed = "/home/x/repo"
-	r := report.Build(in)
+	r := build(t, in)
 	raw, _ := json.Marshal(r)
 	if strings.Contains(string(raw), "CANARY-secret") || strings.Contains(string(raw), "user:") {
 		t.Fatalf("credentials kept: %s", raw)
@@ -401,20 +410,20 @@ func TestRepoFieldsDropCredentials(t *testing.T) {
 }
 
 func TestBuildDeterministic(t *testing.T) {
-	a, _ := json.Marshal(report.Build(fixture()))
+	a, _ := json.Marshal(build(t, fixture()))
 	for i := 0; i < 20; i++ {
 		in := fixture()
 		rand.Shuffle(len(in.Calls), func(x, y int) { in.Calls[x], in.Calls[y] = in.Calls[y], in.Calls[x] })
 		rand.Shuffle(len(in.Rows), func(x, y int) { in.Rows[x], in.Rows[y] = in.Rows[y], in.Rows[x] })
 		rand.Shuffle(len(in.Escalations), func(x, y int) { in.Escalations[x], in.Escalations[y] = in.Escalations[y], in.Escalations[x] })
-		b, _ := json.Marshal(report.Build(in))
+		b, _ := json.Marshal(build(t, in))
 		if string(a) != string(b) {
 			t.Fatalf("not deterministic\n%s\n%s", a, b)
 		}
 	}
 	d1, d2 := t.TempDir(), t.TempDir()
-	report.Write(d1, report.Build(fixture()))
-	report.Write(d2, report.Build(fixture()))
+	report.Write(d1, build(t, fixture()))
+	report.Write(d2, build(t, fixture()))
 	x, _ := os.ReadFile(filepath.Join(d1, report.FileName))
 	y, _ := os.ReadFile(filepath.Join(d2, report.FileName))
 	if string(x) != string(y) {
@@ -423,7 +432,7 @@ func TestBuildDeterministic(t *testing.T) {
 }
 
 func TestJSONKeysStable(t *testing.T) {
-	raw, _ := json.Marshal(report.Build(fixture()))
+	raw, _ := json.Marshal(build(t, fixture()))
 	var m map[string]json.RawMessage
 	json.Unmarshal(raw, &m)
 	for _, k := range []string{"schema_version", "run_id", "status", "exit_code", "requirements_covered", "acceptance", "constraints_checked", "nodes", "by_task_type", "leaves", "failures"} {
@@ -436,5 +445,158 @@ func TestJSONKeysStable(t *testing.T) {
 	}
 	if !strings.Contains(string(m["nodes"]), `"total":4`) {
 		t.Fatal(string(m["nodes"]))
+	}
+}
+
+func TestStripCredentialsTable(t *testing.T) {
+	const tok = "TOKSECRET"
+	for _, c := range []struct{ in, want string }{
+		{"https://user:" + tok + "@example.com/org/repo.git", "https://example.com/org/repo.git"},
+		{"https://" + tok + "@example.com/repo", "https://example.com/repo"},
+		{"ssh://git:" + tok + "@host.example:22/org/repo", "ssh://host.example:22/org/repo"},
+		{"git+ssh://" + tok + "@host/repo", "git+ssh://host/repo"},
+		{"user:" + tok + "@host.example/org/repo", "host.example/org/repo"},
+		{tok + "@host.example:org/repo.git", "host.example:org/repo.git"},
+		{"https://example.com/repo?token=" + tok, "https://example.com/repo"},
+		{"https://example.com/repo#" + tok, "https://example.com/repo"},
+		{"https://example.com/repo?e=a@" + tok + "#f", "https://example.com/repo"},
+		{"https://user%40x:" + tok + "@example.com/r", "https://example.com/r"},
+		{"https://user:" + tok + "%40example.com/r", "https://example.com/r"},
+		{"https://user:pa/" + tok + "@example.com/r", "https://example.com/r"},
+		{"https://ex\tample.com/r\n", "https://example.com/r"},
+		{"https://user:" + tok + "@exa\x00mple.com/r", "https://example.com/r"},
+		{"/home/a@b/repo", "/home/a@b/repo"},
+		{"/home/x/repo", "/home/x/repo"},
+		{"https://example.com/org/repo.git", "https://example.com/org/repo.git"},
+		{"", ""},
+	} {
+		in := strings.NewReplacer("\\t", "\t", "\\n", "\n", "\\x00", "\x00").Replace(c.in)
+		got := report.StripCredentials(in)
+		if got != c.want {
+			t.Errorf("%q: got %q want %q", in, got, c.want)
+		}
+		if strings.Contains(got, tok) {
+			t.Errorf("%q: token survived", in)
+		}
+	}
+}
+
+func TestRepoFieldsNeverCarryPlantedToken(t *testing.T) {
+	const tok = "TOKSECRET"
+	forms := []string{"https://u:" + tok + "@h/r", "u:" + tok + "@h/r", tok + "@h:r", "https://h/r?t=" + tok, "https://h/r#" + tok, "ssh://" + tok + "@h/r", "https://u%40:" + tok + "@h/r"}
+	for _, f := range forms {
+		in := fixture()
+		in.RepoBrief, in.RepoUsed = f, f
+		raw, _ := json.Marshal(build(t, in))
+		if strings.Contains(string(raw), tok) || strings.Contains(build(t, in).Summary(), tok) {
+			t.Errorf("token in report for %q", f)
+		}
+	}
+}
+
+func completeInput() report.Input {
+	in := fixture()
+	in.Failures = nil
+	in.PlanLeaves = []string{"a", "b", "c", "d", "e", "f"}
+	in.LeafDeps = map[string][]string{"e": nil, "f": {"d"}}
+	return in
+}
+
+func TestEveryPlanLeafVerifiedOrNamed(t *testing.T) {
+	r := build(t, completeInput())
+	want := []string{"d: escalated: no failure recorded", "e: not_run: no record", "f: blocked by d"}
+	if strings.Join(r.Failures, "|") != strings.Join(want, "|") {
+		t.Fatalf("got %v want %v", r.Failures, want)
+	}
+	// A leaf already named by the caller is not duplicated.
+	in := completeInput()
+	in.Failures = []string{"d: test_fail: TestX"}
+	r = build(t, in)
+	want = []string{"d: test_fail: TestX", "e: not_run: no record", "f: blocked by d"}
+	if strings.Join(r.Failures, "|") != strings.Join(want, "|") {
+		t.Fatalf("got %v", r.Failures)
+	}
+}
+
+func TestVerifiedRunHasNoSpuriousFailures(t *testing.T) {
+	in := report.Input{RunID: "r", Status: "verified", Sandbox: "on", PlanLeaves: []string{"a", "b"},
+		Rows: []blackboard.Row{{NodeID: "a", Status: blackboard.StatusVerified}, {NodeID: "b", Status: blackboard.StatusVerified}}}
+	r := build(t, in)
+	if len(r.Failures) != 0 {
+		t.Fatalf("%v", r.Failures)
+	}
+	in.PlanLeaves = nil
+	in.Rows = in.Rows[:1]
+	if r := build(t, in); len(r.Failures) != 0 {
+		t.Fatal("nil leaf list must mean rows only")
+	}
+}
+
+func TestUnknownEscalationKindIsError(t *testing.T) {
+	in := fixture()
+	in.Escalations = append(in.Escalations, report.Escalation{Kind: "CANARY-kind", TaskType: "implement", Model: "m/x"})
+	_, err := report.Build(in)
+	if err == nil || strings.Contains(err.Error(), "CANARY") {
+		t.Fatalf("err %v", err)
+	}
+}
+
+func TestFirstTryWinsOrdersByAttemptOrder(t *testing.T) {
+	in := report.Input{RunID: "r", Status: "verified", Sandbox: "on", Rows: []blackboard.Row{{NodeID: "c", Status: blackboard.StatusVerified,
+		Attempts: []blackboard.Attempt{
+			{Model: "free", Provider: "kilo", Verdict: blackboard.VerdictPass, Order: 2},
+			{Model: "qwen", Provider: "mini", Verdict: blackboard.VerdictFail, Order: 1},
+		}}}}
+	r := build(t, in)
+	for _, l := range r.Leaves {
+		if l.FirstTryWins != 0 {
+			t.Fatalf("%+v", r.Leaves)
+		}
+	}
+}
+
+func TestWriteRefusesLinkedComponentUnderGophermind(t *testing.T) {
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	os.MkdirAll(filepath.Join(real, "gm-1"), 0o700)
+	if err := os.Symlink(real, filepath.Join(base, ".gophermind")); err != nil {
+		t.Skip("no symlinks")
+	}
+	if err := report.Write(filepath.Join(base, ".gophermind", "gm-1"), build(t, fixture())); err == nil {
+		t.Fatal("linked .gophermind accepted")
+	}
+	if _, err := os.Stat(filepath.Join(real, "gm-1", report.FileName)); err == nil {
+		t.Fatal("wrote through the link")
+	}
+	// A plain .gophermind/<id> works.
+	ok := filepath.Join(t.TempDir(), ".gophermind", "gm-1")
+	os.MkdirAll(ok, 0o700)
+	if err := report.Write(ok, build(t, fixture())); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReadValidatesShape(t *testing.T) {
+	dir := t.TempDir()
+	put := func(s string) { os.WriteFile(filepath.Join(dir, report.FileName), []byte(s), 0o600) }
+	bad := map[string]string{
+		"unknown field": `{"schema_version":1,"status":"verified","exit_code":0,"surprise":1}`,
+		"bad exit":      `{"schema_version":1,"status":"verified","exit_code":4}`,
+		"deep":          `{"schema_version":1,"status":"verified","exit_code":0,"failures":` + strings.Repeat("[", 500) + strings.Repeat("]", 500) + `}`,
+	}
+	for name, s := range bad {
+		put(s)
+		if _, err := report.Read(dir); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+	put(`{"schema_version":1,"status":"verified","exit_code":0}`)
+	if _, err := report.Read(dir); err != nil {
+		t.Fatal(err)
+	}
+	big := `{"schema_version":1,"status":"verified","exit_code":0,"run_id":"` + strings.Repeat("x", 9<<20) + `"}`
+	put(big)
+	if _, err := report.Read(dir); err == nil {
+		t.Fatal("oversize accepted")
 	}
 }
