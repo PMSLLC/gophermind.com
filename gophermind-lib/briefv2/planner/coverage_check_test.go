@@ -112,8 +112,8 @@ func TestParseCoverageReply(t *testing.T) {
 	}
 	bad := []struct{ name, text, wantErr string }{
 		{"not json", `here is the mapping`, "not valid JSON"},
-		{"unknown requirement in map", `{"map":[{"requirement":"C9","nodes":[]}]}`, `unknown requirement "C9"`},
-		{"unknown requirement in root test", `{"root_tests":[{"requirement":"A9","name":"x","command":"true"}]}`, `unknown requirement "A9"`},
+		{"unknown requirement in map", `{"map":[{"requirement":"C9","nodes":[]}]}`, `unknown requirement (2 bytes)`},
+		{"unknown requirement in root test", `{"root_tests":[{"requirement":"A9","name":"x","command":"true"}]}`, `unknown requirement (2 bytes)`},
 		{"root test without a name", `{"root_tests":[{"requirement":"A1","name":" ","command":"true"}]}`, "has no name"},
 		{"root test without a command", `{"root_tests":[{"requirement":"A1","name":"builds","command":""}]}`, "has no command"},
 	}
@@ -269,5 +269,40 @@ func TestGoldenFailingPlan(t *testing.T) {
 	}
 	if len(warnings) != 18 {
 		t.Errorf("%d path warnings, want 18:\n%s", len(warnings), joined)
+	}
+}
+
+func TestStrayCommandWarnings(t *testing.T) {
+	src := []byte("The binary is `cmd/greeter`. Run `cmd/tool/main.go` by hand. Not a path: `cmd`.")
+	nodes := []planner.PlanNode{
+		{ID: "fn-main", Kind: tree.KindFunction, File: "cmd/greeter/main.go"},
+		{ID: "fn-tool", Kind: tree.KindFunction, File: "cmd/tool/main.go"},
+		{ID: "fn-a", Kind: tree.KindFunction, File: "cmd/server/main.go"},
+		{ID: "fn-b", Kind: tree.KindFunction, File: "cmd/server/router.go"},
+		{ID: "fn-c", Kind: tree.KindFunction, File: "internal/cmd/x.go"},
+		{ID: "comp", Kind: tree.KindComponent, File: "cmd/ghost/x.go"},
+	}
+	got := planner.StrayCommandWarnings(src, nodes)
+	want := []string{"`cmd/server` holds plan files but the brief never names it"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("warnings = %q, want %q", got, want)
+	}
+}
+
+// The plan that motivated the coverage stage put a tool in cmd/fake-llm
+// although the brief names one binary, cmd/venture-server. (That plan also
+// touched cmd/server, but never as a step's first file, which is the only one
+// nodes.json keeps.)
+func TestGoldenPlanHasAStrayCommand(t *testing.T) {
+	src, err := os.ReadFile(aivsBrief)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var nodes []planner.PlanNode
+	readJSON(t, "testdata/aivs/nodes.json", &nodes)
+	got := planner.StrayCommandWarnings(src, nodes)
+	want := []string{"`cmd/fake-llm` holds plan files but the brief never names it"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("warnings = %q, want %q", got, want)
 	}
 }
