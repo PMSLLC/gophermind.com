@@ -29,7 +29,8 @@ Everything here is therefore built so that the terminal, files, and later the ap
 
 Goals:
 
-- `gophermind brief plan <brief.md>` takes a validated brief through Load, Clarify, Approve, Contract (Wave 0), Decompose, and Test-writer, producing a schema-valid task tree, a `contracts.json`, and test files, with nothing executed.
+- `gophermind brief plan <brief.md>` takes a validated brief through Load, Clarify, Contract (Wave 0), Decompose, Coverage, Approve, and Test-writer, producing a schema-valid task tree, a `contracts.json`, and test files, with nothing executed.
+- No plan reaches Approve while a requirement stated in the brief (a feature, a constraint, an acceptance bullet) has no node and no runnable test behind it. A plan that silently drops part of the brief is the failure this goal exists to prevent (section 9, Coverage).
 - Every model call is routed by tier through a fallback chain that survives rate limits, bad keys, timeouts, and oversized prompts.
 - Every attempt, success or failure, leaves exactly one ledger row saying who answered and how it went.
 - A public (outside) provider never receives a call that carries the brief.
@@ -64,7 +65,7 @@ type Scope string // "brief" | "component" | "node"
 
 type CallInfo struct {
     RunID    string
-    Stage    string // clarify, contract, decompose:<component>, testwrite:<node>, revise:<node>, implement:<node>
+    Stage    string // clarify, contract, decompose:<component>, coverage, coverage_fill, testwrite:<node>, revise:<node>, implement:<node>
     NodeID   string // empty for run-level stages
     Tier     Tier
     Scope    Scope
@@ -101,7 +102,7 @@ Each provider in the config has `visibility: private` (the mini, anything on Joh
 
 | Scope | Carries | Stages |
 |---|---|---|
-| `brief` | the whole brief | Clarify, Contract |
+| `brief` | the whole brief | Clarify, Contract, Coverage |
 | `component` | one component's slice of the brief | Decompose |
 | `node` | one function's contract, its dependency signatures, its tests | Test-writer, Revise, and (executor plan) Implement |
 
@@ -156,16 +157,47 @@ Each stage is idempotent and skipped on resume when its output already exists in
 
 | Stage | Output | Tier | Scope |
 |---|---|---|---|
-| Load | run folder, `brief.md` copy, secrets in the vault under `run/<id>` | none | none |
+| Load | run folder, `brief.md` copy, secrets in the vault under `run/<id>`, `requirements.json` (parsed by code, see Coverage) | none | none |
 | Clarify | `answers.json` (questions asked, answers given or assumed) | strong | brief |
 | Contract (Wave 0) | `contracts.json`, validated against the contract schema | strong | brief |
 | Decompose | function node drafts in `_state/decomposed.json`, then the root and component nodes in the tree; waves and harness-derived `dependency_signatures` computed | strong | component |
+| Coverage | `coverage.json` mapping every requirement to the nodes and tests that satisfy it, plus warnings; gaps are filled or the run stops | strong | brief |
 | Approve | `approval.json` with `approved_at`, `approved_by`, and a hash of the rendered plan | none | none |
 | Test-writer | test files written to the target repo, tests recorded on each leaf node, the complete tree written and checked, blackboard rows created | strong | node |
 
-Approve comes after Decompose, not straight after Clarify as SPEC.md's lifecycle lists it, because the plan being approved (components, function counts per component, wave count, as BUILD_PLAN item 5 says to render) only exists once Contract and Decompose have run. Contract and Decompose only make model calls and write inside the run folder; Test-writer is the first stage that touches the target repo, and it refuses to run without a matching `approval.json`.
+Approve comes after Decompose and Coverage, not straight after Clarify as SPEC.md's lifecycle lists it, because the plan being approved (components, function counts per component, wave count, coverage, as BUILD_PLAN item 5 says to render) only exists once Contract, Decompose, and Coverage have run. Contract, Decompose, and Coverage only make model calls and write inside the run folder; Test-writer is the first stage that touches the target repo, and it refuses to run without a matching `approval.json`.
 
-Prompts are the six templates in `docs/briefv2/handoff/prompts/`, adopted as written with two changes: the `QUESTION:` protocol below, and output-format reminders trimmed to what the parsers check. Each reply is stripped of code fences and leading prose before parsing. A reply that still does not parse counts as `malformed`.
+### Coverage
+
+Why: on 2026-09-29 the v1 planner turned the 730-line AI Venture Studio brief into a plan of 21 phases, 47 tasks, and 99 steps, all approved. Read against the brief afterwards, 96 of the 99 steps had no test command, none of the brief's end-to-end acceptance round trips (SSE event order, ownership `as_of`, financial totals to the cent, cross-company 404) appeared anywhere, the constraints (a scan that every SQL statement carries `company_id`, `gofmt` and `go vet` clean, the 60-line handler cap) had no step, password hashing said "bcrypt/argon2" where the brief requires argon2id only, and the plan targeted `cmd/server` where the brief names `cmd/venture-server`. Nothing in that planner compared the plan with the brief, and nothing here would have either. This stage does.
+
+**Requirements are parsed by code, not by a model.** At Load, `brief.Sections` and `brief.Features` are turned into `requirements.json`:
+
+- Each top-level bullet under `## Constraints` is one requirement, id `C1`, `C2`, and so on. Indented continuation lines and sub-bullets belong to their parent bullet.
+- Each top-level bullet under `## Acceptance` is one requirement, id `A1`, `A2`, and so on.
+- Each `### Feature` block under `## Features` is one requirement, id `F1`, `F2`, and so on, keyed by its heading.
+- Fenced code blocks are skipped, as the section parser already does. A brief with no `## Constraints` or `## Acceptance` section simply has none of those; a brief with no features is already rejected at Load.
+
+Every requirement keeps its verbatim text and its 1-based file line. `## Out of scope` is not a requirement source.
+
+**The model proposes the mapping; code checks it.** The Coverage call (tier strong, scope `brief`, so it stays on private providers under `need_to_know`) receives the requirements and the tree's node ids, titles, descriptions, and test names, and replies with, for each requirement, the ids of the nodes that satisfy it. The harness then checks, without a model:
+
+1. Every requirement id is present in the reply and every node id it names exists in the tree.
+2. Every requirement has at least one covering node.
+3. Every covering node has at least one test with a runnable `command`. The schema already demands this of function nodes; for root and component nodes this check is what enforces it.
+4. Every `A` requirement is covered by at least one test at level `acceptance` on the root node, whose `command` is the bullet's own command where the bullet contains one (for example a backticked ``curl -s localhost:8080/v1/openapi.json | jq '.paths | length'``), or the acceptance test the model wrote for a bullet that describes a flow rather than a command.
+5. Every `F` requirement is covered by the component node whose `brief_ref` names that feature.
+
+**Gaps are filled, then the run stops.** Requirements that fail any check are sent back in one `coverage_fill` call (same tier and scope) listing each gap and why, asking for the missing nodes or tests. Its reply goes through the same parsers and the schema validator as Decompose. Coverage is then re-checked. This repeats up to 2 times (`defaults.max_coverage_rounds`). If gaps remain, the run stops in this stage with the requirement ids and text, and `resume` restarts only this stage. It never proceeds to Approve with an uncovered requirement.
+
+**Warnings, which do not block.** Two mechanical checks add to `coverage.json` and to the Approve summary:
+
+- Every backticked token in the brief that begins `cmd/` or `internal/` and contains no space should be a path prefix of at least one function node's `contract.file`; each that is not is listed. This is the check that would have caught `cmd/server` against `cmd/venture-server`.
+- A covering node whose test names or descriptions contradict a requirement cannot be detected by code. A mapping that names a real node with a real command but the wrong one passes every check above. That gap is real (see section 16); the Approve summary lists each requirement beside its covering node ids so a human can see it.
+
+**Approve shows the result.** The rendered plan gains a coverage table (requirement id, first 80 characters of its text, covering node ids) and a line such as "Requirements covered: 38 of 38". `approval.json`'s hash includes `coverage.json`, so editing the mapping after approval invalidates the approval.
+
+Prompts are the six templates in `docs/briefv2/handoff/prompts/`, adopted as written with two changes: the `QUESTION:` protocol below, and output-format reminders trimmed to what the parsers check. Coverage adds two templates of its own, `coverage.md` and `coverage_fill.md`, which the handoff does not have. Each reply is stripped of code fences and leading prose before parsing. A reply that still does not parse counts as `malformed`.
 
 **Target repo.** The brief's `repo` must be an existing local path (`~` is expanded). Test-writer writes test files into its working tree and leaves them uncommitted; the git-landing plan commits them in the Wave 0 commit. A `repo` that is a URL is rejected in this plan with a message saying cloning belongs to git landing.
 
@@ -226,7 +258,7 @@ models:
   standard: ["mini/qwen3.6:35b-a3b", "kilo/kilo-auto/free"]
   any:      ["kilo/kilo-auto/free", "ovh/Qwen3.6-27B", "mini/qwen3.6:35b-a3b"]
 privacy: {mode: need_to_know}
-defaults: {max_context_tokens: 8000, max_revisions: 2, call_timeout: 10m, max_wait_minutes: 30}
+defaults: {max_context_tokens: 8000, max_revisions: 2, max_coverage_rounds: 2, call_timeout: 10m, max_wait_minutes: 30}
 rate_limits: {cooldown_after_429_seconds: 60, backoff_initial_seconds: 5, backoff_max_seconds: 300, backoff_multiplier: 2}
 human: {mode: terminal}
 vault: {path: ~/.gophermind/vault.age}
@@ -240,7 +272,8 @@ Under `gophermind brief` (the namespace already in use):
 
 - `plan <brief.md> [--yes] [--gate terminal|file] [--fake <fixture-dir>] [--allow-public]`
 - `resume <run-id>`
-- `status <run-id>`: stages done, waiting on a human, ledger totals
+- `status <run-id>`: stages done, waiting on a human, ledger totals, requirements covered
+- `coverage <run-id>`: the requirement-to-node table and any warnings
 - `calls <run-id>`: the ledger as a table
 - Existing: `validate`, `vault set|list`, `tree check`.
 
@@ -250,6 +283,7 @@ Exit codes: 0 done, 1 error, 2 invalid brief, 3 waiting on a human (file gate). 
 
 - Invalid brief: exit 2 with the field named, before any model call.
 - No eligible provider for a call (everything filtered by privacy or disabled): `*ChainExhausted` with reasons; the stage fails the run with a message naming the setting to change (`--allow-public`, a cloud key, or a config edit), not a generic error.
+- Coverage gaps remain after `max_coverage_rounds`: the run stops in the Coverage stage listing each uncovered requirement (id, line in the brief, text) and the reason, and exits 1. Nothing is approved and nothing is written to the target repo.
 - A stage's output fails validation after the retry and fallback described in section 5: the run stops in that stage with the last parse error; earlier stages' outputs stay, so `resume` restarts only that stage.
 - Interrupt (SIGINT): the current call is cancelled, its ledger row records `error_kind: cancelled`, and the run stops resumable.
 
@@ -263,6 +297,11 @@ All in process, no network, table-driven, using temp directories.
 - `ledger`: every attempt writes exactly one row, including failures; text never appears in the database (search the file for a canary string sent in a prompt); `Summary` matches a hand count.
 - `blackboard`: 20 goroutines race `Claim` and exactly one wins; `SetStatus` rejects illegal transitions; `ReleaseStale` returns only stale rows.
 - `human`: each adapter against the same table of scenarios; the file gate round trip (exit 3, fill the block, resume).
+- Requirements parser (`planner`, table-driven): a brief with three constraint bullets (one with an indented sub-bullet), two acceptance bullets, and two features yields exactly `C1 to C3`, `A1 A2`, `F1 F2` with verbatim text and correct line numbers; bullets inside a fenced block are ignored; a brief with no `## Acceptance` yields no `A` ids. The real `.planning/plan/brief.md` for AI Venture Studio (kept as a fixture) yields a pinned count, so a parser change that drops a bullet fails the test.
+- Coverage checks (`planner`, table-driven): a reply that omits a requirement id, names a node that does not exist, leaves a requirement with no covering node, covers an `A` requirement with a root test that has no `command`, or covers an `F` requirement with a component whose `brief_ref` names a different feature each fails with a message naming the requirement.
+- Coverage fill: the offline fixture's canned Decompose reply omits one acceptance bullet; the planner must send `coverage_fill` with that gap listed, accept the canned second reply that covers it, and reach Approve with no more than the rounds allowed. A fixture whose fill reply is also incomplete stops in Coverage with the requirement named, and `resume` repeats only that stage with no call to an earlier stage.
+- Golden failing plan: the 99-step plan produced by the v1 planner for AI Venture Studio on 2026-09-29 is converted to a tree fixture, and the checker must report as uncovered the ownership `as_of` acceptance bullet, the SSE event order bullet, the financial round trip bullet, the cross-company 404 bullet, the `company_id` SQL scan constraint, the 60-line handler constraint, and the `gofmt` and `go vet` constraint, and must warn on `cmd/venture-server`. This test exists so the failure that motivated the stage cannot return unnoticed.
+- Approve gate: the rendered plan includes the coverage table and the "covered" line; changing `coverage.json` after approval makes the stored hash stale and Test-writer refuses to run.
 - `planner`: an end-to-end run on the offline fixture with the Acme example brief produces a tree where every function node has a contract, a command test, a wave, and derived signatures; nothing is produced past Approve without `approval.json`; a `QUESTION:` reply pauses and resumes one call; killing the run between stages and resuming redoes only the unfinished stage.
 - Manual, not in CI: `gophermind brief plan` on `04-csvstat.md` against the mini, to see whether a 35B mixture-of-experts model can write usable contracts.
 
@@ -279,6 +318,7 @@ All in process, no network, table-driven, using temp directories.
 | P7 | Lifecycle: Clarify, Approve, Contract, Decompose | Approve after Decompose, because the plan it shows does not exist earlier (see section 9) |
 | P8 | Provider errors: rate limited, context too long, auth, transient | Also `ErrModelNotFound`, after a real 404 on 2026-09-29 when the mini's model was removed mid-run |
 | P9 | `Blackboard` and provider interfaces only | `Router.Call` returns a `Result` carrying the ledger row id; `Ledger.Record` takes a pointer and there is an `Amend`; the package that reads `gophermind.yaml` is named `settings` to avoid clashing with `gophermind-lib/config` |
+| P10 | Lifecycle has no check that the plan covers the brief | A Coverage stage between Decompose and Approve: requirements parsed by code, mapping proposed by a model, checked by code, gaps refilled up to 2 rounds, never approved with a gap (section 9) |
 
 ## 16. Risks and open items
 
@@ -287,6 +327,8 @@ All in process, no network, table-driven, using temp directories.
 - **Kilo Code's auto-router** may serve a different model on every call and may log prompts. That is why it is public and node-scope only by default.
 - **OVHcloud** returned 429 to two anonymous requests from John's network on 2026-09-29 even after waiting out the documented window. It stays in the default list because the router skips a provider that keeps refusing; it should not be counted on.
 - **Decision E5** (the optional `Toolchain` variables so commands can run `go test`) needs the handoff author's confirmation before the executor plan.
+- **Coverage can be fooled by a plausible mapping.** Code checks that ids exist, that each requirement has a covering node, and that the covering test has a runnable command. It cannot check that the command tests the right thing. The Approve table puts each requirement beside its nodes so a person can look, and the manual csvstat smoke test should include reading that table.
+- **Requirement granularity follows the brief's bullets.** A bullet that bundles three obligations counts as one requirement, so one weak covering test can satisfy all three. Briefs written with one obligation per bullet get the most from this stage; the brief-format documentation should say so.
 - **Ledger hashes** of prompts allow confirming a guessed prompt. If that matters later, drop the hashes and keep sizes.
 - The example `contracts.json` in the handoff lacks the `Server` and `CRM` types; the offline fixtures written for this plan are self-consistent instead.
 
