@@ -107,13 +107,15 @@ func newRig(t *testing.T, mods ...func(*rigOpts)) *rig {
 	// A go command may still be writing its telemetry counters into the scratch
 	// HOME when the test ends; retry the removal instead of failing the cleanup.
 	t.Cleanup(func() {
+		var err error
 		for i := 0; i < 30; i++ {
 			makeTreeWritable(repo)
-			if os.RemoveAll(repo) == nil {
+			if err = os.RemoveAll(repo); err == nil {
 				return
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
+		t.Logf("the temporary repository %s could not be removed after 30 tries: %v", repo, err)
 	})
 	g := &rig{t: t, repo: repo, id: greeterID, sink: events.NewCollector()}
 	g.runDir = filepath.Join(repo, ".gophermind", greeterID)
@@ -244,7 +246,7 @@ func testToolchainPATH(t *testing.T) string {
 // files and directories read-only.
 func makeTreeWritable(root string) {
 	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-		if err == nil {
+		if err == nil && d.Type()&os.ModeSymlink == 0 { // Chmod follows links: never chmod through one
 			_ = os.Chmod(p, 0o755)
 		}
 		return nil

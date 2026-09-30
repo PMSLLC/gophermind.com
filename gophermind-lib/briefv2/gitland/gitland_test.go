@@ -953,3 +953,69 @@ func TestIgnoredLists(t *testing.T) {
 		}
 	}
 }
+
+func TestReenterWorkBranch(t *testing.T) {
+	t.Run("missing branch starts it like Start", func(t *testing.T) {
+		c := newRepo(t)
+		put(t, c, "a_test.go", "package x\n")
+		if err := c.Reenter("main", "gm/r", []string{"a_test.go"}); err != nil {
+			t.Fatal(err)
+		}
+		if b, _ := c.Branch(); b != "gm/r" {
+			t.Fatalf("branch %q", b)
+		}
+	})
+	t.Run("existing branch at base with listed dirt is reused", func(t *testing.T) {
+		c := newRepo(t)
+		if err := c.Start("main", "gm/r", nil); err != nil {
+			t.Fatal(err)
+		}
+		gx(t, c, "switch", "main")
+		put(t, c, "a_test.go", "package x\n")
+		put(t, c, "go.mod", "module x\n\ngo 1.22\n")
+		if err := c.Reenter("main", "gm/r", []string{"a_test.go", "go.mod"}); err != nil {
+			t.Fatal(err)
+		}
+		if b, _ := c.Branch(); b != "gm/r" {
+			t.Fatalf("branch %q", b)
+		}
+		if _, err := c.CommitWave0([]string{"a_test.go", "go.mod"}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("extra commits are refused with a fixed message", func(t *testing.T) {
+		c := newRepo(t)
+		if err := c.Start("main", "gm/r", nil); err != nil {
+			t.Fatal(err)
+		}
+		gx(t, c, "commit", "--allow-empty", "-m", "CANARY-commit-subject")
+		err := c.Reenter("main", "gm/r", nil)
+		if !errors.Is(err, ErrWorkBranchMoved) {
+			t.Fatalf("err %v, want ErrWorkBranchMoved", err)
+		}
+		if strings.Contains(err.Error(), "CANARY") {
+			t.Fatal("commit text in the error")
+		}
+	})
+	t.Run("base moved is refused", func(t *testing.T) {
+		c := newRepo(t)
+		if err := c.Start("main", "gm/r", nil); err != nil {
+			t.Fatal(err)
+		}
+		gx(t, c, "switch", "main")
+		gx(t, c, "commit", "--allow-empty", "-m", "moved")
+		if err := c.Reenter("main", "gm/r", nil); !errors.Is(err, ErrWorkBranchMoved) {
+			t.Fatalf("err %v", err)
+		}
+	})
+	t.Run("dirt outside the list is refused", func(t *testing.T) {
+		c := newRepo(t)
+		if err := c.Start("main", "gm/r", nil); err != nil {
+			t.Fatal(err)
+		}
+		put(t, c, "other.txt", "x\n")
+		if err := c.Reenter("main", "gm/r", []string{"a_test.go"}); !errors.Is(err, ErrDirtyTree) {
+			t.Fatalf("err %v", err)
+		}
+	})
+}

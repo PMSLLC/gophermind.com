@@ -243,3 +243,40 @@ func TestRaceDetectorNeedsNoCgo(t *testing.T) {
 		t.Fatalf("class = %q\n%s", v.Class, v.Out.Text())
 	}
 }
+
+func dirNames(t *testing.T, dir string) []string {
+	t.Helper()
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, e := range ents {
+		out = append(out, e.Name())
+	}
+	return out
+}
+
+// go build of one main package writes its binary into the working directory
+// unless told otherwise; a check must leave no file behind.
+func TestBuildLeavesNoOutputFile(t *testing.T) {
+	g := newRig(t, map[string]string{
+		"cmd/app/main.go":      "package main\n\nfunc main() {}\n",
+		"cmd/app/main_test.go": "package main\n\nimport \"testing\"\n\nfunc TestX(t *testing.T) {}\n",
+	})
+	before := dirNames(t, g.repo)
+	lc := g.leaf("TestX", 60*time.Second, "cmd/app/main.go")
+	lc.Dir = "cmd/app"
+	if v := g.r.CheckLeaf(context.Background(), lc); !v.Pass() {
+		t.Fatalf("CheckLeaf: %s", v.Reason())
+	}
+	if v := g.r.BuildVet(context.Background(), g.repo, g.env); !v.Pass() {
+		t.Fatalf("BuildVet: %s", v.Reason())
+	}
+	if after := dirNames(t, g.repo); !reflect.DeepEqual(before, after) {
+		t.Fatalf("repo root changed by the checks: before %v, after %v", before, after)
+	}
+	if _, err := os.Stat(filepath.Join(g.repo, "cmd", "app", "app")); err == nil {
+		t.Fatal("a binary was written into the package directory")
+	}
+}

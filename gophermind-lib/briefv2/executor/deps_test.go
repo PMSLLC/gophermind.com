@@ -311,3 +311,77 @@ func TestDepsModeUsesWritableModCache(t *testing.T) {
 		t.Fatal("the deps step did not fill the module cache")
 	}
 }
+
+func envValue(env []string, name string) (string, bool) {
+	for _, e := range env {
+		if v, ok := strings.CutPrefix(e, name+"="); ok {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+func TestDepsEnvIsNetworkedLeafEnvIsNot(t *testing.T) {
+	g := newRig(t, func(o *rigOpts) {
+		o.BriefEdit = func(s string) string {
+			return strings.Replace(s, "\n---\n\n## Overview", "\nenv:\n  - name: GREETER_MODE\n    purpose: \"x\"\n    default: \"CANARY-env-value\"\n---\n\n## Overview", 1)
+		}
+	})
+	rc := g.newRC(t)
+	url := makeModuleProxy(t, "example.org/dep1", "v1.0.0", map[string]string{"d.go": "package dep1\n"})
+	useModuleProxy(t, url)
+
+	deps, err := rc.env("deps", envDeps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{
+		"GOPROXY": url, "GOFLAGS": "-mod=mod -buildvcs=false", "GOSUMDB": "off", "GOTOOLCHAIN": "local",
+		"GOPRIVATE": "off", "CGO_ENABLED": "0", "NO_PROXY": "127.0.0.1,localhost,::1", "GOPHERMIND_NODE": "deps",
+	} {
+		if got, ok := envValue(deps, name); !ok || got != want {
+			t.Errorf("deps env %s = %q (set %v), want %q", name, got, ok, want)
+		}
+	}
+	for _, name := range []string{"HTTP_PROXY", "HTTPS_PROXY"} {
+		if got, _ := envValue(deps, name); !strings.HasPrefix(got, "http://node-deps@127.0.0.1:") {
+			t.Errorf("deps env %s = %q, want the harness proxy URL for node deps", name, got)
+		}
+	}
+	for _, e := range deps {
+		if strings.Contains(e, "CANARY") || strings.HasPrefix(e, "GREETER_") {
+			t.Fatalf("the deps env carries a brief env value or a secret: %s", strings.SplitN(e, "=", 2)[0])
+		}
+	}
+	if !hasEnv(deps, "GOSUMDB=off") {
+		t.Error("the injected checksum database setting is missing")
+	}
+
+	leaf, err := rc.env("fn-greet", envLeaf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{
+		"GOPROXY": "off", "GOFLAGS": "-mod=readonly -buildvcs=false", "GOSUMDB": "off",
+		"GREETER_TOKEN": canarySecret, "GREETER_MODE": "CANARY-env-value",
+	} {
+		if got, ok := envValue(leaf, name); !ok || got != want {
+			t.Errorf("leaf env %s = %q (set %v), want %q", name, got, ok, want)
+		}
+	}
+
+	// With the checksum database hook unset the variable is absent, so the go default applies.
+	testHooks.GoSumDB = ""
+	if d2, err := rc.env("deps", envDeps); err != nil {
+		t.Fatal(err)
+	} else if _, ok := envValue(d2, "GOSUMDB"); ok {
+		t.Error("GOSUMDB is set although the hook is empty")
+	}
+	acc, err := rc.env("fn-greet", envAcceptance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := envValue(acc, "PATH"); !strings.HasPrefix(p, rc.binDir+":") {
+		t.Errorf("acceptance PATH = %q, want %s first", p, rc.binDir)
+	}
+}

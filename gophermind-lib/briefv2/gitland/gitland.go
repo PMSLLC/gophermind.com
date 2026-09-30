@@ -13,6 +13,9 @@ type Repo interface {
 	// (exact repo-relative paths; nil means the tree must be clean) and creates work from base's tip; when it exists
 	// it only switches to it (resume: the executor applies the dirt policy).
 	Start(baseBranch, workBranch string, allowDirty []string) error
+	// Reenter is Start for a run that stopped before its Wave 0 commit: an existing work branch is reused only
+	// while it points exactly at base's tip, otherwise ErrWorkBranchMoved.
+	Reenter(baseBranch, workBranch string, allowDirty []string) error
 	CommitWave0(paths []string) (string, error)
 	CommitLeaf(nodeID, title string, add, remove []string) (string, error)
 	CommitRepair(nodeID string, round int, add []string) (string, error)
@@ -36,6 +39,7 @@ type Repo interface {
 var (
 	ErrLandingBlocked   = errors.New("gitland: landing_blocked: base branch moved, fast-forward is not possible")
 	ErrDirtyTree        = errors.New("gitland: working tree is not clean")
+	ErrWorkBranchMoved  = errors.New("gitland: the work branch no longer points at the base branch tip")
 	ErrNothingToCommit  = errors.New("gitland: nothing to commit for the named paths")
 	ErrIndexNotClean    = errors.New("gitland: the index holds changes the commit did not name")
 	ErrNotRepoRoot      = errors.New("gitland: the directory is not the root of a git repository")

@@ -116,9 +116,13 @@ func TestScanExitAndForgeryConstructs(t *testing.T) {
 		{"func main of another package is not exempt", "a.go", pre + "import \"os\"\n\nfunc main() { os.Exit(1) }\n", []string{"exit@5"}},
 		{"method named main is not exempt", "m.go", "package main\n\nimport \"os\"\n\ntype T struct{}\n\nfunc (T) main() { os.Exit(1) }\n\nfunc main() {}\n", []string{"exit@7"}},
 		{"main package flag.ExitOnError is fine", "m.go", "package main\n\nimport \"flag\"\n\nvar _ = flag.ExitOnError\n\nfunc main() {}\n", nil},
-		{"TestMain may exit in a test file", "a_test.go", pre + "import (\n\t\"os\"\n\t\"testing\"\n)\n\nfunc TestMain(m *testing.M) { os.Exit(m.Run()) }\n", nil},
-		{"test file init may not exit", "a_test.go", pre + "import \"os\"\n\nfunc init() { os.Exit(0) }\n", []string{"exit@5"}},
-		{"recover in a test file is fine", "a_test.go", pre + "func TestX() { defer func() { recover() }() }\n", nil},
+		{"test files are not scanned for exits", "a_test.go", pre + "import (\n\t\"os\"\n\t\"testing\"\n)\n\nfunc init() { os.Exit(0) }\n\nfunc TestMain(m *testing.M) { os.Exit(m.Run()) }\n\nfunc TestX(t *testing.T) { t.Fatal(1) }\n", nil},
+		{"logger method without importing log", "a.go", pre + "type L interface{ Fatalf(string, ...any) }\n\nfunc F(l L) { l.Fatalf(\"x\") }\n", []string{"exit@5"}},
+		{"logger made by log.New and passed on", "a.go", pre + "import (\n\t\"log\"\n\t\"os\"\n)\n\nfunc use(l *log.Logger) { l.Panicln(1) }\n\nfunc F() { use(log.New(os.Stderr, \"\", 0)) }\n", []string{"exit@8"}},
+		{"Fatal on a user type is flagged (documented false positive)", "a.go", pre + "type T struct{}\n\nfunc (T) Fatal(string) {}\n\nfunc F(t T) { t.Fatal(\"x\") }\n", []string{"exit@7"}},
+		{"Fatal of another package is flagged", "a.go", pre + "import z \"example.org/zlog\"\n\nfunc F() { z.Fatal(1) }\n", []string{"exit@5"}},
+		{"t.Fatal in a non-test file is flagged", "a.go", pre + "import \"testing\"\n\nfunc F(t *testing.T) { t.Fatal(1) }\n", []string{"testing@3", "exit@5"}},
+		{"t.Fatal in a file importing log is fine in a test file", "a_test.go", pre + "import (\n\t\"log\"\n\t\"testing\"\n)\n\nfunc TestX(t *testing.T) { log.Print(1); t.Fatal(1) }\n", nil},
 		{"shadowed recover is fine", "a.go", pre + "func F() { recover := func() {}; recover() }\n", nil},
 	}
 	for _, c := range cases {

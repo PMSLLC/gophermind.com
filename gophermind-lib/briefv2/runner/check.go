@@ -181,6 +181,10 @@ func stageFail(class, repo string, res Result) Verdict {
 // goStage runs one go build or vet stage. A vet run that could not type-check prints
 // "vet: " diagnostics; that is a build problem, not a vet finding.
 func (r *Runner) goStage(ctx context.Context, repo string, env []string, class string, args ...string) (Verdict, bool) {
+	if len(args) > 0 && args[0] == "build" {
+		// Discard the output: go build of one main package would otherwise write its binary into the repository.
+		args = append([]string{"build", "-o", os.DevNull}, args[1:]...)
+	}
 	argv, err := tool("go", env, args...)
 	if err != nil {
 		return harness(err), false
