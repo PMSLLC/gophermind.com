@@ -720,17 +720,23 @@ func TestRunLeavesNoCanaryInAnyStore(t *testing.T) {
 	}
 }
 
-// Until acceptance exists a finished build is never verified.
+// failRun is a checker whose every command exits 1 (the leaf and wave checks
+// still pass): no acceptance stage can pass on it.
+type failRun struct{ *fakeChecker }
+
+func (failRun) Run(context.Context, runner.Spec) runner.Result { return runner.Result{ExitCode: 1} }
+
+// A finished build whose acceptance cannot run is never verified and never lands.
 func TestRunWithoutAcceptanceNeverVerified(t *testing.T) {
 	t.Parallel()
 	g := newRig(t)
 	g.wire(goodScript(g))
-	rep, err := run(context.Background(), g.options(), runFlags{afterStart: useChecker(g.fastChecker())})
-	if err != nil || rep.Status != "failed" || rep.StopReason != "acceptance_pending" || rep.ExitCode != 1 {
+	rep, err := run(context.Background(), g.options(), runFlags{afterStart: useChecker(failRun{g.fastChecker()})})
+	if err != nil || rep.Status != "failed" || rep.StopReason != "acceptance_build" || rep.ExitCode != 1 {
 		t.Fatalf("run = %s (%s) exit %d, %v", rep.Status, rep.StopReason, rep.ExitCode, err)
 	}
 	if out := g.gitCmd("log", "--format=%s", "main"); strings.Contains(out, "gm(run):") {
-		t.Error("an unaccepted run landed")
+		t.Error("a run without acceptance landed a final commit on main")
 	}
 }
 
