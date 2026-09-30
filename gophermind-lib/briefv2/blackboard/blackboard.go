@@ -65,6 +65,7 @@ type Attempt struct {
 	TestsTotal    int
 	FailedTests   []string
 	FailureReason string // human-readable; for VerdictError use a prefix: rate_limited:, timeout:, malformed:, context_too_long:
+	ReplySHA256   string // hex SHA-256 of the reply, hash only; empty for an attempt with no reply
 }
 
 type Result struct {

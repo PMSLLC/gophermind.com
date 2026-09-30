@@ -19,7 +19,9 @@ var (
 	idRE   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 	nameRE = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 
-	toolchainNames = map[string]bool{"PATH": true, "HOME": true, "GOCACHE": true, "GOMODCACHE": true, "GOPATH": true, "TMPDIR": true}
+	toolchainNames = map[string]bool{"PATH": true, "HOME": true, "GOCACHE": true, "GOMODCACHE": true, "GOPATH": true, "TMPDIR": true, "CGO_ENABLED": true}
+
+	goEnvNames = map[string]bool{"GOTOOLCHAIN": true, "GOPROXY": true, "GOFLAGS": true, "GOSUMDB": true, "GOPRIVATE": true}
 )
 
 type Inputs struct {
@@ -44,6 +46,21 @@ type Inputs struct {
 	// gives the strict handoff environment. A brief cannot declare these names
 	// because they are reserved.
 	Toolchain map[string]string
+	// GoEnv carries the Go policy variables. Allow-listed keys only:
+	// GOTOOLCHAIN, GOPROXY, GOFLAGS, GOSUMDB, GOPRIVATE. Any other key is an error.
+	GoEnv map[string]string
+}
+
+// goFlagsUnsafe reports whether a GOFLAGS value carries -toolexec or -overlay
+// as a token, with one or two leading dashes and an optional =value.
+func goFlagsUnsafe(v string) bool {
+	for _, tok := range strings.Fields(v) {
+		name, _, _ := strings.Cut(strings.TrimLeft(tok, "-"), "=")
+		if name == "toolexec" || name == "overlay" {
+			return true
+		}
+	}
+	return false
 }
 
 // Build returns the sorted NAME=value environment for exec.Cmd.Env.
@@ -66,6 +83,14 @@ func Build(in Inputs) ([]string, error) {
 			return nil, fmt.Errorf("execenv: toolchain variable %s is empty", k)
 		}
 	}
+	for k, v := range in.GoEnv {
+		if !goEnvNames[k] {
+			return nil, fmt.Errorf("execenv: go variable %s is not allowed", k)
+		}
+		if k == "GOFLAGS" && goFlagsUnsafe(v) {
+			return nil, errors.New("execenv: GOFLAGS may not contain -toolexec or -overlay")
+		}
+	}
 	secrets := map[string]bool{}
 	for _, s := range in.Secrets {
 		secrets[s] = true
@@ -82,7 +107,7 @@ func Build(in Inputs) ([]string, error) {
 
 	// Check for reserved names in secrets
 	for _, s := range in.Secrets {
-		if brief.IsReservedName(s) {
+		if brief.IsReservedName(s) || goEnvNames[s] {
 			return nil, fmt.Errorf("execenv: %s is reserved for the harness", s)
 		}
 	}
@@ -90,7 +115,7 @@ func Build(in Inputs) ([]string, error) {
 	declared := map[string]bool{}
 	for _, e := range in.Env {
 		// Check for reserved names in env
-		if brief.IsReservedName(e.Name) {
+		if brief.IsReservedName(e.Name) || goEnvNames[e.Name] {
 			return nil, fmt.Errorf("execenv: %s is reserved for the harness", e.Name)
 		}
 		if secrets[e.Name] {
@@ -158,7 +183,11 @@ func Build(in Inputs) ([]string, error) {
 		}
 	}
 	if in.ProxyURL != "" {
-		out = append(out, "HTTP_PROXY="+in.ProxyURL, "HTTPS_PROXY="+in.ProxyURL)
+		out = append(out, "HTTP_PROXY="+in.ProxyURL, "HTTPS_PROXY="+in.ProxyURL,
+			"NO_PROXY=127.0.0.1,localhost,::1", "no_proxy=127.0.0.1,localhost,::1")
+	}
+	for k, v := range in.GoEnv {
+		out = append(out, k+"="+v)
 	}
 	for k, v := range in.Toolchain {
 		out = append(out, k+"="+v)
