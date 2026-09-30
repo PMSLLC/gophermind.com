@@ -92,8 +92,7 @@ func TestSchemaInvalidReplyIsAskedAgainWithThePointers(t *testing.T) {
 // already normalised contract; a later pass still names the earlier ids in the
 // model's own spelling.
 func TestNormalisedIDsSurviveAResume(t *testing.T) {
-	first := strings.Replace(pascalOutline, `"Farewell", "package": "greet", "exports": []}]`, `"Farewell", "package": "greet", "exports": []}]`, 1)
-	first = strings.Replace(first, `}]}`, `}], "more": true}`, 1)
+	first := strings.Replace(pascalOutline, `}]}`, `}], "more": true}`, 1)
 	g := newRig(t, approving(), variant(t, map[string]string{
 		"contract.outline.txt": first, "contract.outline.2.txt": "the model fell over", "contract.outline.3.txt": "and again",
 	}))
@@ -102,7 +101,9 @@ func TestNormalisedIDsSurviveAResume(t *testing.T) {
 	}
 	g.wire(variant(t, map[string]string{"contract.outline.txt": `{"components": [{"id": "Audit_Log", "package": "greet", "exports": []}],
  "types": [{"id": "AuditEntry", "package": "greet", "file": "internal/greet/audit.go", "decl": "// AuditEntry is one record.\ntype AuditEntry struct{}", "uses": ["NameError"]}]}`,
-		"contract.audit-log.txt": `{"types": [], "functions": [{"id": "fn-audit", "package": "greet", "file": "internal/greet/audit.go", "signature": "func Audit() error", "doc": "Audit records.", "uses": ["AuditEntry"]}], "more": false}`}))
+		"contract.farewell.txt": `{"types": [], "functions": [{"id": "fn-farewell", "package": "greet", "file": "internal/greet/farewell.go", "signature": "func Farewell() error", "doc": "Farewell.", "uses": ["name-error", "Send_Receipt"]}], "more": false}`,
+		"contract.audit-log.txt": `{"types": [], "functions": [{"id": "fn-audit", "package": "greet", "file": "internal/greet/audit.go", "signature": "func Audit() error", "doc": "Audit records.", "uses": ["AuditEntry"]},
+ {"id": "fn-send-receipt", "package": "greet", "file": "internal/greet/receipt.go", "signature": "func SendReceipt() error", "doc": "SendReceipt sends.", "uses": ["audit-entry"]}], "more": false}`}))
 	g.mustPlan(planner.Options{RunID: greeterID, StopAfter: "contract"})
 	if got := componentIDs(g); got != "types greeting farewell audit-log" {
 		t.Errorf("components = %q", got)
@@ -118,5 +119,59 @@ func TestNormalisedIDsSurviveAResume(t *testing.T) {
 	}
 	if !found {
 		t.Error("audit-entry missing")
+	}
+	for _, f := range g.contracts().Functions {
+		if f.ID == "fn-farewell" && (len(f.Uses) != 2 || f.Uses[1] != "fn-send-receipt") {
+			t.Errorf("fn-farewell uses = %v, want the forward reference resolved to the function", f.Uses)
+		}
+	}
+	if n := repairStages(g); n != 0 {
+		t.Errorf("repair calls = %d, want 0", n)
+	}
+	if strings.Contains(string(g.read("contracts.json")), "|") {
+		t.Error("a pending reference reached contracts.json")
+	}
+}
+
+// A function that names a function a later component declares needs no repair
+// pass: the reference is kept in both forms and resolved once the contract is whole.
+func TestForwardReferenceToAFunctionNeedsNoRepair(t *testing.T) {
+	g := newRig(t, approving(), variant(t, map[string]string{
+		"contract.greeting.txt": greetReply("name-error", "Farewell_Helper"),
+		"contract.farewell.txt": `{"types": [], "functions": [
+ {"id": "fn-farewell", "package": "greet", "file": "internal/greet/farewell.go", "signature": "func Farewell(name string) (string, error)", "doc": "Farewell says goodbye.", "uses": ["name-error"]},
+ {"id": "fn-farewell-helper", "package": "greet", "file": "internal/greet/helper.go", "signature": "func Helper() error", "doc": "Helper helps.", "uses": ["name-error"]}], "more": false}`,
+	}))
+	g.mustPlan(planner.Options{StopAfter: "contract"})
+	if n := repairStages(g); n != 0 {
+		t.Errorf("repair calls = %d, want 0", n)
+	}
+	for _, f := range g.contracts().Functions {
+		if f.ID == "fn-greet" && (len(f.Uses) != 2 || f.Uses[1] != "fn-farewell-helper") {
+			t.Errorf("fn-greet uses = %v", f.Uses)
+		}
+	}
+	if strings.Contains(string(g.read("contracts.json")), "|") {
+		t.Error("a pending reference reached contracts.json")
+	}
+}
+
+// A reference nobody declares is asked for once, as one canonical id with a hint.
+func TestNeverDeclaredForwardReferenceIsRepairedAsOneID(t *testing.T) {
+	g := newRig(t, approving(), variant(t, map[string]string{
+		"contract.greeting.txt": greetReply("name-error", "Ghost_Fn"),
+		"contract._repair.txt":  `{"types": [], "functions": [{"id": "fn-ghost-fn", "component": "greeting", "package": "greet", "file": "internal/greet/ghost.go", "signature": "func Ghost() error", "doc": "Ghost.", "uses": []}]}`,
+	}))
+	g.mustPlan(planner.Options{StopAfter: "contract"})
+	if n := repairStages(g); n != 1 {
+		t.Fatalf("repair calls = %d, want 1", n)
+	}
+	for _, r := range g.fake.Requests() {
+		if planner.StageOf(r) == "contract:_repair" {
+			p := r.Messages[1].Content
+			if !strings.Contains(p, "<unresolved>\nghost-fn [") || strings.Count(p, "ghost-fn [") != 1 {
+				t.Errorf("repair prompt does not list one canonical id with a hint:\n%s", p)
+			}
+		}
 	}
 }

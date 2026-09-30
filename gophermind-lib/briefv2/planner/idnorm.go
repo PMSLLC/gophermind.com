@@ -223,6 +223,11 @@ func normalizeReply(doc map[string]any, text string, kind replyKind) (string, id
 			return raw
 		case strings.HasPrefix(t, "fn-") && f != "":
 			return f
+		case t != "" && f != "":
+			// Not declared yet and not marked as a function: the later pass may
+			// declare it as either, so both forms are kept until the whole
+			// contract is checked (resolveRefs).
+			return t + pendingSep + f
 		case t != "":
 			return t
 		}
@@ -235,7 +240,9 @@ func normalizeReply(doc map[string]any, text string, kind replyKind) (string, id
 					if s, ok := u.(string); ok {
 						if n := resolve(s); n != s {
 							uses[j] = n
-							rewrite(s, n)
+							if !strings.Contains(n, pendingSep) || normalizeID(s, false) != s {
+								rewrite(s, n)
+							}
 							changed = true
 						}
 					}
@@ -274,4 +281,72 @@ func (p *Planner) noteNormalized(st *contractState, stage string, n idNotes) {
 	p.emit(events.KindWarning, stage, "", fmt.Sprintf(
 		"outline_id_normalized: %d ids and references were rewritten to the id syntax (%s); %d in all so far",
 		n.Count, strings.Join(n.Examples, ", "), st.IDsNormalized))
+}
+
+// pendingSep joins the two candidate forms of a reference that named nothing
+// declared: "validate-email|fn-validate-email". No id contains it.
+const pendingSep = "|"
+
+var pendingRE = regexp.MustCompile(`^([a-z0-9][a-z0-9-]*)\|(fn-[a-z0-9-]+)$`)
+
+// pendingRef splits a pending reference into its type form and function form.
+func pendingRef(u string) (typ, fn string, ok bool) {
+	m := pendingRE.FindStringSubmatch(u)
+	if m == nil {
+		return "", "", false
+	}
+	return m[1], m[2], true
+}
+
+func declaredIDs(doc map[string]any) map[string]bool {
+	declared := map[string]bool{}
+	for _, key := range []string{"types", "functions"} {
+		for _, o := range objects(doc[key]) {
+			if id, ok := o["id"].(string); ok {
+				declared[id] = true
+			}
+		}
+	}
+	return declared
+}
+
+// resolveRefs returns a copy of doc in which every pending reference is the
+// form that is declared. When both are, the context decides: a function's uses
+// prefers the function, a type's the type. A pending reference with neither
+// declared is left for the repair pass. References that were declared when
+// written are never pending, so they are never rewritten.
+func resolveRefs(doc map[string]any) map[string]any {
+	next, err := copyDoc(doc)
+	if err != nil {
+		return doc
+	}
+	declared := declaredIDs(next)
+	for _, key := range []string{"types", "functions"} {
+		for _, o := range objects(next[key]) {
+			uses, ok := o["uses"].([]any)
+			if !ok {
+				continue
+			}
+			for i, u := range uses {
+				s, _ := u.(string)
+				t, f, ok := pendingRef(s)
+				if !ok {
+					continue
+				}
+				switch {
+				case declared[t] && declared[f]:
+					if key == "functions" {
+						uses[i] = f
+					} else {
+						uses[i] = t
+					}
+				case declared[t]:
+					uses[i] = t
+				case declared[f]:
+					uses[i] = f
+				}
+			}
+		}
+	}
+	return next
 }

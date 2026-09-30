@@ -182,3 +182,11 @@ func TestMergeRepairDropsAnIDTakenByAnotherListBeforeItNeedsAComponent(t *testin
 		t.Errorf("ignored %v err %v, want the repeat dropped with no component error", ignored, err)
 	}
 }
+
+func writeState(t *testing.T, dir string, st contractState) error {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(dir, "_state"), 0o755); err != nil {
+		return err
+	}
+	return writeJSON((&run{dir: dir}).path(stateContract), st)
+}

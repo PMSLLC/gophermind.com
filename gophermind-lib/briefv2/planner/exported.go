@@ -86,9 +86,13 @@ func IgnoredDuplicates(runDir string) ([]string, int, bool, error) {
 	if _, err := readJSON((&run{dir: runDir}).path(stateContract), &st); err != nil {
 		return nil, 0, false, err
 	}
-	total := st.IgnoredTotal
+	total, truncated := st.IgnoredTotal, st.IgnoredTruncated
 	if total < len(st.IgnoredDuplicates) {
 		total = len(st.IgnoredDuplicates)
 	}
-	return append([]string{}, st.IgnoredDuplicates...), total, st.IgnoredTruncated, nil
+	// A state written before the total existed: a full list was cut.
+	if st.IgnoredTotal == 0 && len(st.IgnoredDuplicates) >= maxIgnoredRecorded {
+		truncated = true
+	}
+	return append([]string{}, st.IgnoredDuplicates...), total, truncated, nil
 }

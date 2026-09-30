@@ -76,7 +76,7 @@ func TestNormalizeOutlineRewritesIDsAndReferences(t *testing.T) {
 		t.Errorf("types = %q", got)
 	}
 	uses := objects(m["types"])[1]["uses"].([]any)
-	if fmt.Sprint(uses) != "[intake-session unknown-thing]" {
+	if fmt.Sprint(uses) != "[intake-session unknown-thing|fn-unknown-thing]" {
 		t.Errorf("uses = %v", uses)
 	}
 	if notes.Count != 6 {
