@@ -5,6 +5,7 @@
 package proxy
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
@@ -22,6 +23,10 @@ type Rule struct {
 	Critical bool
 }
 
+// errInvalidRuleHost is the one error for a rule host that fails validation; it
+// names nothing from the input.
+var errInvalidRuleHost = errors.New("proxy: rule has an invalid host")
+
 var goHosts = []string{"proxy.golang.org", "sum.golang.org"}
 
 // BuildRules is the allowlist: the brief's network entries, the host of every
@@ -32,10 +37,10 @@ func BuildRules(network []brief.Network, providerBaseURLs []string, noGoHosts bo
 	add := func(h string, crit bool) {
 		m[h] = m[h] || crit
 	}
-	for i, n := range network {
+	for _, n := range network {
 		h, ok := normalizeRuleHost(n.Host)
 		if !ok {
-			return nil, fmt.Errorf("proxy: network entry %d has an invalid host", i)
+			return nil, errInvalidRuleHost
 		}
 		add(h, n.Critical)
 	}

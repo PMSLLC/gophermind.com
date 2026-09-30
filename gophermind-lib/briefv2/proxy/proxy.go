@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -44,6 +43,7 @@ type Config struct {
 	maxRespBytes int64
 	maxTunnel    int64
 	idleTimeout  time.Duration
+	maxDuration  time.Duration
 	resolve      func(ctx context.Context, host string) ([]net.IP, error)
 	dial         func(ctx context.Context, network, addr string) (net.Conn, error)
 }
@@ -123,6 +123,9 @@ func New(c Config) (*Proxy, error) {
 	if c.maxTunnel <= 0 {
 		c.maxTunnel = defaultMaxTunnel
 	}
+	if c.maxDuration <= 0 {
+		c.maxDuration = maxTunnelDuration
+	}
 	if c.idleTimeout <= 0 {
 		c.idleTimeout = defaultIdle
 	}
@@ -130,7 +133,7 @@ func New(c Config) (*Proxy, error) {
 	for i, r := range c.Rules {
 		h, ok := normalizeRuleHost(r.Host)
 		if !ok {
-			return nil, fmt.Errorf("proxy: rule %d has an invalid host", i)
+			return nil, errInvalidRuleHost
 		}
 		rules[i] = Rule{Host: h, Critical: r.Critical}
 	}
@@ -679,10 +682,10 @@ func (p *Proxy) connect(w http.ResponseWriter, r *http.Request, ri *reqInfo) {
 		p.logReq(ri, "error", 0, 0)
 		return
 	}
-	dl := p.cfg.Now().Add(maxTunnelDuration)
+	dl := p.cfg.Now().Add(p.cfg.maxDuration)
 	_ = client.SetDeadline(dl)
 	_ = upstream.SetDeadline(dl)
-	t := &tunnelState{max: p.cfg.maxTunnel, idle: p.cfg.idleTimeout, now: p.cfg.Now}
+	t := &tunnelState{max: p.cfg.maxTunnel, idle: p.cfg.idleTimeout, hard: dl, now: p.cfg.Now}
 	t.last.Store(p.cfg.Now().UnixNano())
 	var clientIn io.Reader = client
 	if bufrw != nil {
@@ -695,7 +698,12 @@ func (p *Proxy) connect(w http.ResponseWriter, r *http.Request, ri *reqInfo) {
 	client.Close()
 	upstream.Close()
 	<-done
+	if t.reason.Load() == 0 && !p.cfg.Now().Before(dl) {
+		t.reason.CompareAndSwap(0, reasonDuration)
+	}
 	switch t.reason.Load() {
+	case reasonDuration:
+		p.record(ri.node, host, "tunnel_duration", false)
 	case reasonCap:
 		p.record(ri.node, host, "tunnel_cap", false)
 	case reasonIdle:
@@ -705,8 +713,9 @@ func (p *Proxy) connect(w http.ResponseWriter, r *http.Request, ri *reqInfo) {
 }
 
 const (
-	reasonCap  = 1
-	reasonIdle = 2
+	reasonCap      = 1
+	reasonIdle     = 2
+	reasonDuration = 3
 )
 
 // tunnelState is shared by both directions of one CONNECT tunnel: a total
@@ -714,6 +723,7 @@ const (
 type tunnelState struct {
 	max    int64
 	idle   time.Duration
+	hard   time.Time
 	now    func() time.Time
 	total  atomic.Int64
 	last   atomic.Int64
@@ -723,7 +733,11 @@ type tunnelState struct {
 func (t *tunnelState) pipe(dst io.Writer, src io.Reader, srcConn net.Conn) {
 	buf := make([]byte, 32<<10)
 	for {
-		_ = srcConn.SetReadDeadline(t.now().Add(t.idle))
+		rd := t.now().Add(t.idle)
+		if rd.After(t.hard) {
+			rd = t.hard
+		}
+		_ = srcConn.SetReadDeadline(rd)
 		n, err := src.Read(buf)
 		if n > 0 {
 			t.last.Store(t.now().UnixNano())
@@ -738,6 +752,10 @@ func (t *tunnelState) pipe(dst io.Writer, src io.Reader, srcConn net.Conn) {
 		if err != nil {
 			var ne net.Error
 			if errors.As(err, &ne) && ne.Timeout() {
+				if !t.now().Before(t.hard) {
+					t.reason.CompareAndSwap(0, reasonDuration)
+					return
+				}
 				if t.now().UnixNano()-t.last.Load() < int64(t.idle) {
 					continue // the other direction is active
 				}
