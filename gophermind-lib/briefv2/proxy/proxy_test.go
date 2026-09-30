@@ -722,6 +722,37 @@ func TestTunnelIdleTimeout(t *testing.T) {
 	}
 }
 
+func TestTunnelHardDeadlineBeatsTrickle(t *testing.T) {
+	p := newProxyCfg(t, Config{Rules: []Rule{{Host: "127.0.0.1"}}, idleTimeout: 300 * time.Millisecond, maxDuration: 800 * time.Millisecond})
+	conn, done := openTunnel(t, p)
+	defer done()
+	go func() {
+		for i := 0; i < 100; i++ {
+			if _, err := conn.Write([]byte("x")); err != nil {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
+	start := time.Now()
+	_, _ = io.Copy(io.Discard, conn)
+	if el := time.Since(start); el > 3*time.Second {
+		t.Fatalf("trickle kept the tunnel open for %v", el)
+	}
+	w := failuresEventually(t, func() []Failure { return p.Warnings("fn-a", time.Time{}) }, 1)
+	if len(w) != 1 || w[0].Kind != "tunnel_duration" || w[0].Host != "127.0.0.1" {
+		t.Fatalf("warnings %v", w)
+	}
+}
+
+func TestRuleErrorIdenticalToBuildRules(t *testing.T) {
+	_, e1 := BuildRules([]brief.Network{{Host: "*.com"}}, nil, true)
+	_, e2 := New(Config{Listen: "127.0.0.1:0", LogPath: filepath.Join(t.TempDir(), "l"), Rules: []Rule{{Host: "*.com"}}})
+	if e1 == nil || e2 == nil || e1 != e2 {
+		t.Fatalf("errors differ: %v vs %v", e1, e2)
+	}
+}
+
 func TestConnectDialTimeoutBounded(t *testing.T) {
 	p := newProxyCfg(t, Config{
 		Rules: []Rule{{Host: "127.0.0.1", Critical: true}},
