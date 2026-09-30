@@ -20,6 +20,9 @@ import (
 // A panic terminates, so no returns follow and go vet stays quiet (spec S3).
 // Method signatures are supported. An error never quotes the signature.
 func StubSource(pkg, signature string, imports []string) ([]byte, error) {
+	if !validPackageName(pkg) {
+		return nil, errors.New("stub: the package name is not a valid identifier")
+	}
 	var b strings.Builder
 	b.WriteString("package " + pkg + "\n\n")
 	if len(imports) > 0 {
@@ -36,19 +39,27 @@ func StubSource(pkg, signature string, imports []string) ([]byte, error) {
 	if err != nil {
 		return nil, errors.New("stub: the signature does not parse")
 	}
-	var fns int
+	const notOne = "stub: the signature is not a single function signature"
+	var fns, importSpecs int
 	for _, d := range f.Decls {
-		if fd, ok := d.(*ast.FuncDecl); ok {
-			fns++
-			if len(fd.Body.List) != 1 {
-				return nil, errors.New("stub: the signature is not a single function signature")
+		switch d := d.(type) {
+		case *ast.FuncDecl:
+			// A signature that ends without a body (func A()\nfunc B()) leaves the earlier function bodiless.
+			if d.Body == nil || len(d.Body.List) != 1 {
+				return nil, errors.New(notOne)
 			}
-		} else if gd, ok := d.(*ast.GenDecl); !ok || gd.Tok != token.IMPORT {
-			return nil, errors.New("stub: the signature is not a single function signature")
+			fns++
+		case *ast.GenDecl:
+			if d.Tok != token.IMPORT {
+				return nil, errors.New(notOne)
+			}
+			importSpecs += len(d.Specs)
+		default:
+			return nil, errors.New(notOne)
 		}
 	}
-	if fns != 1 {
-		return nil, errors.New("stub: the signature is not a single function signature")
+	if fns != 1 || importSpecs != len(imports) {
+		return nil, errors.New(notOne)
 	}
 	src, err := format.Source([]byte(b.String()))
 	if err != nil {
@@ -66,5 +77,12 @@ func stubFor(c *contract.Contracts, pol packer.ImportPolicy, l *Leaf) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	return StubSource(l.Package, l.Signature, imports)
+	src, err := StubSource(l.Package, l.Signature, imports)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkAssembled(src, l.Package, pol); err != nil {
+		return nil, fmt.Errorf("stub %s: the assembled file is not allowed (%w)", l.ID, err)
+	}
+	return src, nil
 }

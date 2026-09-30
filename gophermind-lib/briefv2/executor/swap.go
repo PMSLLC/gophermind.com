@@ -44,6 +44,7 @@ type Swap struct {
 	stubSrc []byte
 	reopen  bool
 	passed  bool
+	entered bool // Enter has been called at least once: only then may Fail remove anything
 }
 
 func NewSwap(repo string, l *Leaf, git gitland.Repo, stubSrc []byte) *Swap {
@@ -54,6 +55,7 @@ func NewSwap(repo string, l *Leaf, git gitland.Repo, stubSrc []byte) *Swap {
 // stub is written back before the error is returned.
 func (s *Swap) Enter(source []byte) error {
 	s.passed = false
+	s.entered = true
 	if !s.reopen {
 		if err := pathsafe.Remove(s.repo, s.leaf.StubFile); err != nil {
 			return err
@@ -76,6 +78,10 @@ func (s *Swap) Enter(source []byte) error {
 func (s *Swap) Fail() error {
 	if s.passed {
 		return nil
+	}
+	if !s.entered {
+		// Nothing of this swap is on disk to undo; the real file may be a committed one.
+		return fmt.Errorf("executor: leaf %s: Fail before Enter", s.leaf.ID)
 	}
 	if s.reopen {
 		return s.git.Restore([]string{s.leaf.File})

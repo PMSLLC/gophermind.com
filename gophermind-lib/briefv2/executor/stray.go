@@ -13,8 +13,8 @@ import (
 	"gophermind/gophermind-lib/briefv2/pathsafe"
 )
 
-// Snapshot maps a dirty path to the SHA-256 of its bytes: "" for a file that
-// is deleted or unreadable, "dir" for a directory and "link:" plus the hash of
+// Snapshot maps a dirty or ignored path to the SHA-256 of its bytes: "" for a
+// file that is deleted, "unreadable" for one that cannot be read, "dir" for a directory and "link:" plus the hash of
 // the target text for a symbolic link (the link is never followed).
 type Snapshot map[string]string
 
@@ -27,8 +27,12 @@ func TakeSnapshot(repo string, g gitland.Repo) (Snapshot, error) {
 	if err != nil {
 		return nil, errors.New("executor: cannot read the working tree status")
 	}
+	ignored, err := g.Ignored()
+	if err != nil {
+		return nil, errors.New("executor: cannot read the ignored files")
+	}
 	s := Snapshot{}
-	for _, p := range dirty {
+	for _, p := range append(dirty, ignored...) {
 		s[p] = hashPath(repo, p)
 	}
 	return s, nil
@@ -42,33 +46,36 @@ func sumHex(b []byte) string {
 // hashPath hashes one repo-relative path without following a link.
 func hashPath(repo, rel string) string {
 	if !filepath.IsLocal(filepath.FromSlash(rel)) {
-		return ""
+		return "unreadable"
 	}
 	abs := filepath.Join(repo, filepath.FromSlash(rel))
 	fi, err := os.Lstat(abs)
-	if err != nil {
+	if errors.Is(err, os.ErrNotExist) {
 		return ""
+	}
+	if err != nil {
+		return "unreadable"
 	}
 	switch {
 	case fi.Mode()&os.ModeSymlink != 0:
 		target, err := os.Readlink(abs)
 		if err != nil {
-			return ""
+			return "unreadable"
 		}
 		return "link:" + sumHex([]byte(target))
 	case fi.IsDir():
 		return "dir"
 	case !fi.Mode().IsRegular():
-		return ""
+		return "special"
 	}
 	f, err := os.OpenFile(abs, os.O_RDONLY|pathsafe.NoFollow, 0)
 	if err != nil {
-		return ""
+		return "unreadable"
 	}
 	defer f.Close()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
-		return ""
+		return "unreadable"
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }

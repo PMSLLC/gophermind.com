@@ -929,3 +929,27 @@ func TestEnvHasNoInheritedGit(t *testing.T) {
 		t.Fatal("GIT_DIR inherited")
 	}
 }
+
+func TestIgnoredLists(t *testing.T) {
+	c := newRepo(t)
+	put(t, c, ".gitignore", "*.log\nbuild/\n.gophermind/\n")
+	put(t, c, "a.log", "x\n")
+	put(t, c, "build/x/y.bin", "x\n")
+	put(t, c, "sub/keep.txt", "x\n")
+	put(t, c, ".gophermind/run/z", "x\n")
+	put(t, c, "sp ace\nnl.log", "x\n")
+	got, err := c.Ignored()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"a.log", "build/x/y.bin", "sp ace\nnl.log"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("Ignored = %q, want %q (the run folder is never listed)", got, want)
+	}
+	dirty, _ := c.Dirty()
+	for _, d := range dirty {
+		if strings.HasSuffix(d, ".log") || strings.HasPrefix(d, "build/") {
+			t.Fatalf("Dirty lists an ignored file: %q", d)
+		}
+	}
+}

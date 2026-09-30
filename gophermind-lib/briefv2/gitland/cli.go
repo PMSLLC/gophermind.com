@@ -392,6 +392,28 @@ func (c *CLI) Dirty() ([]string, error) {
 	return res, nil
 }
 
+// Ignored lists the ignored files (NUL-separated status, so quoted and odd names are exact), except the
+// .gophermind/ run folder.
+func (c *CLI) Ignored() ([]string, error) {
+	out, err := c.run("status", "--porcelain=v1", "-z", "--ignored=traditional", "-uall")
+	if err != nil {
+		return nil, err
+	}
+	var res []string
+	for _, f := range bytes.Split(out, []byte{0}) {
+		if len(f) < 4 || f[0] != '!' || f[1] != '!' {
+			continue
+		}
+		p := string(f[3:])
+		if p == ".gophermind" || strings.HasPrefix(p, ".gophermind/") {
+			continue
+		}
+		res = append(res, p)
+	}
+	sort.Strings(res)
+	return res, nil
+}
+
 func cleanText(s string, max int) string {
 	var b strings.Builder
 	for _, r := range s {

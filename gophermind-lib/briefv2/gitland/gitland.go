@@ -20,6 +20,9 @@ type Repo interface {
 	Finish(msg string) (string, error)
 	// Dirty lists sorted repo-relative paths: tracked changes and untracked files.
 	Dirty() ([]string, error)
+	// Ignored lists sorted repo-relative paths of files git ignores, one per file. The harness's own
+	// .gophermind/ run folder is never listed. The executor counts an ignored file it did not declare as stray.
+	Ignored() ([]string, error)
 	// Diff is the working tree against base, including new files, for diff_only.
 	Diff(base string) ([]byte, error)
 	// Restore puts tracked paths back to HEAD (index and tree) and removes untracked files.

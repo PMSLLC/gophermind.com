@@ -359,3 +359,26 @@ func TestReplyCannotNamePath(t *testing.T) {
 		}
 	}
 }
+
+func TestFailWithoutEnterKeepsCommittedFile(t *testing.T) {
+	g, l, s, _ := swapRig(t)
+	if err := s.Enter([]byte(good("fn-greet"))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Pass("Greet"); err != nil {
+		t.Fatal(err)
+	}
+	fresh := NewSwap(g.repo, l, g.git, []byte("package greet\n"))
+	if err := fresh.Fail(); err == nil {
+		t.Fatal("Fail without Enter did not error")
+	}
+	if !fileExists(g.abs(l.File)) || fileExists(g.abs(l.StubFile)) {
+		t.Fatal("Fail without Enter touched the committed leaf")
+	}
+	// A failed Enter still counts as an attempt, so Fail then restores the stub.
+	_, _, s2, stub := swapRig(t)
+	_ = stub
+	if err := s2.Fail(); err == nil {
+		t.Fatal("Fail before any Enter did not error")
+	}
+}

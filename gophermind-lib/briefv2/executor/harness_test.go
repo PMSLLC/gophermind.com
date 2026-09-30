@@ -199,6 +199,9 @@ func TestWave0HelperCommitsTestsAndStubs(t *testing.T) {
 
 var ledgerFilterNone = ledger.Filter{}
 
+// maxScriptDelay is the longest a scripted Delay waits; a longer one ends as a timeout.
+const maxScriptDelay = 500 * time.Millisecond
+
 // step is one scripted reply: text, a provider error, or a delay (which ends
 // early with the context's error, so a timeout can be scripted).
 type step struct {
@@ -296,8 +299,18 @@ func (sp *scriptedProvider) provider(name string, models []provider.ModelInfo) *
 
 func (st step) answer(ctx context.Context, req provider.Request) (provider.Response, error) {
 	if st.Delay > 0 {
+		// A delay is capped so a script with no deadline on the context cannot hang a test.
+		d := st.Delay
+		if d > maxScriptDelay {
+			select {
+			case <-time.After(maxScriptDelay):
+				return provider.Response{}, context.DeadlineExceeded
+			case <-ctx.Done():
+				return provider.Response{}, ctx.Err()
+			}
+		}
 		select {
-		case <-time.After(st.Delay):
+		case <-time.After(d):
 		case <-ctx.Done():
 			return provider.Response{}, ctx.Err()
 		}
@@ -438,5 +451,21 @@ func (g *rig) startWave0() {
 	}
 	if _, err := g.git.CommitWave0(paths); err != nil {
 		g.t.Fatal(err)
+	}
+}
+
+func TestScriptedDelayEndsWithoutDeadline(t *testing.T) {
+	sp := newScriptedProvider(Script{"s": {{Delay: time.Hour}}}, func(f string, a ...any) { t.Errorf(f, a...) })
+	p := sp.provider("a", []provider.ModelInfo{{ID: "m1", ContextTokens: 1000}})
+	req := provider.Request{Model: "m1", Messages: []provider.Message{{Role: provider.RoleSystem, Content: packer.SystemPrefix + "s"}}}
+	done := make(chan error, 1)
+	go func() { _, err := p.Complete(context.Background(), req); done <- err }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("an hour-long delay answered")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("a delay with no deadline on the context never ended")
 	}
 }

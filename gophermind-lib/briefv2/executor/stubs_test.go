@@ -136,3 +136,58 @@ func TestStubForResolvesSiblingPackage(t *testing.T) {
 		t.Fatalf("stub lacks the sibling import:\n%s", src)
 	}
 }
+
+func TestStubSourceBodilessFunctionsDoNotPanic(t *testing.T) {
+	for _, sig := range []string{"func A()\nfunc B()", "func A() {}\nfunc B()", "func A()\nfunc B() {}", "func A()\n\nfunc B() int", "func A()"} {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("StubSource panicked on %q: %v", sig, r)
+				}
+			}()
+			src, err := StubSource("p", sig, nil)
+			if sig == "func A()" {
+				if err != nil || !strings.Contains(string(src), panicLine) {
+					t.Fatalf("a single signature failed: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("signature %q accepted", sig)
+			}
+			if strings.Contains(err.Error(), "func A") || strings.Contains(err.Error(), "func B") {
+				t.Fatalf("error quotes the signature: %v", err)
+			}
+		}()
+	}
+}
+
+func TestStubSourceRefusesBadPackageName(t *testing.T) {
+	for _, pkg := range []string{"p\nimport \"os/exec\"", "func", "_", "", "a b", "p;import \"os\"", "1p"} {
+		if _, err := StubSource(pkg, "func F()", nil); err == nil {
+			t.Errorf("package %q accepted", pkg)
+		}
+	}
+}
+
+func TestStubForRefusesSmuggledImportAndDirective(t *testing.T) {
+	pol := packer.ImportPolicy{Module: "example.com/m"}
+	c := &contract.Contracts{Module: "example.com/m"}
+	for _, l := range []*Leaf{
+		{ID: "fn-a", Package: "p\nimport \"os/exec\"", Signature: "func F()"},
+		{ID: "fn-a", Package: "p", Signature: "func F() //go:linkname x y\n"},
+		{ID: "fn-a", Package: "p", Signature: "func F()\nimport \"os/exec\""},
+	} {
+		if _, err := stubFor(c, pol, l); err == nil {
+			t.Errorf("stubFor accepted %q / %q", l.Package, l.Signature)
+		}
+	}
+}
+
+func TestStubSourceRefusesImportPolicyViolationInFinalFile(t *testing.T) {
+	// StubSource takes imports from the caller; stubFor checks the assembled file against the policy.
+	pol := packer.ImportPolicy{Module: "example.com/m"}
+	if err := checkAssembled([]byte("package p\n\nimport (\n\t\"os/exec\"\n)\n\nfunc F() {\n\tpanic(\"gm: not implemented\")\n}\n"), "p", pol); err == nil {
+		t.Fatal("an os/exec import passed checkAssembled")
+	}
+}
