@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"gophermind/gophermind-lib/briefv2/blackboard"
 	"gophermind/gophermind-lib/briefv2/brief"
 	"gophermind/gophermind-lib/briefv2/events"
 	"gophermind/gophermind-lib/briefv2/gitland"
@@ -554,10 +555,42 @@ func (rc *runCtx) retryWave0(ctx context.Context) error {
 	return rc.wave0(ctx)
 }
 
-// resume is replaced in Task 14. It handles only the states where Wave 0 is
-// done; a run that stopped before its Wave 0 commit goes through retryWave0.
+// resume is the basic resume of a run whose Wave 0 is done; Task 14 replaces
+// it with the full one (files on disk, foreign dirt, limits). It refuses a plan
+// that changed since the run started, makes sure the work branch is checked
+// out, and records that the run resumed once a row is past pending. Nothing
+// here calls a model, so a verified leaf is never built again: the scheduler
+// skips every verified row.
 func (rc *runCtx) resume(ctx context.Context) error {
-	return errors.New("executor: resume is added in Task 14")
+	if !reflect.DeepEqual(rc.state.PlanHashes, rc.plan.Hashes) {
+		return &stopError{Status: "failed", Reason: "plan_changed",
+			Message: "executor: the plan changed since this run started"}
+	}
+	if !rc.diffOnly && rc.state.Branch != "" {
+		cur, err := rc.git.Branch()
+		if err != nil {
+			return errors.New("executor: the current branch could not be read")
+		}
+		if cur != rc.state.Branch {
+			if err := rc.git.Start(rc.baseBranch(), rc.state.Branch, nil); err != nil {
+				return errors.New("executor: the work branch of this run could not be checked out")
+			}
+		}
+	}
+	rows, err := rc.o.Board.List(ctx, rc.plan.RunID, blackboard.Filter{})
+	if err != nil {
+		return errors.New("executor: the blackboard could not be read")
+	}
+	for _, r := range rows {
+		if r.Status != blackboard.StatusPending {
+			rc.state.Resumed = true
+			break
+		}
+	}
+	if !rc.state.Resumed {
+		return nil
+	}
+	return rc.state.Save(rc.o.RunDir)
 }
 
 // wave0 is spec 14 in order: types and stubs, go.mod, the deps step, the scan,
@@ -643,6 +676,9 @@ func (rc *runCtx) wave0(ctx context.Context) error {
 	if !rc.diffOnly {
 		if err := rc.onlyDeclaredDirt(paths); err != nil {
 			return err
+		}
+		if se := rc.planIntact(); se != nil {
+			return se
 		}
 		hash, err := rc.git.CommitWave0(paths)
 		if err != nil {

@@ -45,6 +45,12 @@ type Swap struct {
 	reopen  bool
 	passed  bool
 	entered bool // Enter has been called at least once: only then may Fail remove anything
+
+	// diff_only commits nothing, so a failed repair cannot restore the file from
+	// git: the swap keeps the last verified content in memory instead.
+	noCommit bool
+	prior    []byte
+	hasPrior bool
 }
 
 func NewSwap(repo string, l *Leaf, git gitland.Repo, stubSrc []byte) *Swap {
@@ -56,6 +62,17 @@ func NewSwap(repo string, l *Leaf, git gitland.Repo, stubSrc []byte) *Swap {
 func (s *Swap) Enter(source []byte) error {
 	s.passed = false
 	s.entered = true
+	if s.reopen && s.noCommit && !s.hasPrior {
+		abs, err := pathsafe.ResolveSource(s.repo, s.leaf.File)
+		if err != nil {
+			return err
+		}
+		prior, err := os.ReadFile(abs)
+		if err != nil {
+			return fmt.Errorf("executor: leaf %s: the verified file cannot be read before a repair", s.leaf.ID)
+		}
+		s.prior, s.hasPrior = prior, true
+	}
 	if !s.reopen {
 		if err := pathsafe.Remove(s.repo, s.leaf.StubFile); err != nil {
 			return err
@@ -84,11 +101,31 @@ func (s *Swap) Fail() error {
 		return fmt.Errorf("executor: leaf %s: Fail before Enter", s.leaf.ID)
 	}
 	if s.reopen {
+		if s.noCommit {
+			if !s.hasPrior {
+				return nil
+			}
+			return pathsafe.Replace(s.repo, s.leaf.File, s.prior)
+		}
 		return s.git.Restore([]string{s.leaf.File})
 	}
 	err1 := pathsafe.Remove(s.repo, s.leaf.File)
 	err2 := pathsafe.Replace(s.repo, s.leaf.StubFile, s.stubSrc)
 	return errors.Join(err1, err2)
+}
+
+// NoCommit is diff_only mode: nothing is committed, and a failed repair puts
+// back the content the file had when the repair began.
+func (s *Swap) NoCommit() { s.noCommit = true }
+
+// PassNoCommit is Pass for diff_only: the real file stays on disk, the stub is
+// gone, and no commit is made.
+func (s *Swap) PassNoCommit() error {
+	if err := s.ready(); err != nil {
+		return err
+	}
+	s.passed = true
+	return nil
 }
 
 // Reopen is repair mode: the stub is never restored and Fail restores File

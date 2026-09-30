@@ -363,3 +363,73 @@ func TestVerifiedTestsOnlyVerified(t *testing.T) {
 		t.Fatalf("verifiedTests = %v, want %v", got, want)
 	}
 }
+
+// An interrupted check is reported as interrupted even when it left a stray
+// file behind: the stray file is removed, the stop stays the interruption.
+func TestInterruptedNotMaskedByStray(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	rc, fc := g.waveRC(t)
+	fc.RepoScript.BuildVet = []runner.Verdict{{Class: runner.ClassCancelled, Err: context.Canceled}}
+	fc.RepoHook = func(repo string) {
+		_ = os.WriteFile(filepath.Join(repo, "stray.txt"), []byte("x"), 0o644)
+	}
+	stop, err := rc.runWave(context.Background(), 0)
+	if err != nil || stop == nil || stop.Status != "interrupted" {
+		t.Fatalf("runWave = %+v, %v, want interrupted", stop, err)
+	}
+	if _, err := os.Lstat(filepath.Join(g.repo, "stray.txt")); !os.IsNotExist(err) {
+		t.Error("the stray file was not removed")
+	}
+}
+
+// The package of a qualified test name ends at the last ".Test" boundary that
+// names a known package: a module path or a subtest name holding ".Test" does
+// not move it.
+func TestModuleFailuresSplitAtLastTestBoundary(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	rc, _ := g.waveRC(t)
+	rc.plan.Contracts.Module = "example.com/My.Testing"
+	a := g.plan.Leaf("fn-greet")
+	v := runner.Verdict{Class: runner.ClassTestFail, QNames: []string{
+		"example.com/My.Testing/" + a.Dir + "." + a.TestFunc + "/sub.TestB",
+		"example.com/My.Testing/" + a.Dir + ".TestOther",
+	}}
+	fs, err := rc.moduleFailures(context.Background(), v)
+	if err != nil || len(fs) != 1 {
+		t.Fatalf("moduleFailures = %+v, %v", fs, err)
+	}
+	if fs[0].Dir != a.Dir || !reflect.DeepEqual(fs[0].Names, []string{a.TestFunc + "/sub.TestB", "TestOther"}) {
+		t.Errorf("failure = %+v, want dir %s and both names", fs[0], a.Dir)
+	}
+}
+
+// A secret split with whitespace in a package name, a test name, a file name or
+// the output is caught as well.
+func TestWaveCheckScrubsSplitSecrets(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	rc, fc := g.waveRC(t)
+	if wr, err := rc.scheduleLeaves(context.Background(), g.leaves("fn-farewell", "fn-greet")); err != nil || wr.Stop != nil {
+		t.Fatalf("wave 0 = %+v, %v", wr, err)
+	}
+	split := "CANARY-SEC RET-VALUE"
+	fc.RepoScript.Test["./..."] = []runner.Verdict{{
+		Class: runner.ClassTestFail,
+		QNames: []string{
+			"example.com/greeter/internal/pkg_" + split + ".TestX",
+			"example.com/greeter/internal/greet.TestName_" + split,
+		},
+		Locations: []runner.Location{loc("internal/"+split+"/x.go", 9)},
+		Out:       outputOf("compiler says CANARY-SEC\nRET-VALUE"),
+	}}
+	res, err := rc.waveChecks(context.Background(), 0, true)
+	if err != nil || res.Pass() {
+		t.Fatalf("waveChecks = %+v, %v", res, err)
+	}
+	blob := fmt.Sprintf("%+v %+v", res, g.plan.Attribute(res))
+	if strings.Contains(blob, "CANARY-SEC RET") || strings.Contains(blob, "SEC\nRET") {
+		t.Fatalf("the split secret is in the result: %s", blob)
+	}
+}

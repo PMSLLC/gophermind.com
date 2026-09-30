@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"testing"
 
+	"gophermind/gophermind-lib/briefv2/human"
 	"gophermind/gophermind-lib/briefv2/report"
 )
 
@@ -210,4 +211,26 @@ func TestStateRefusesSymlinks(t *testing.T) {
 			t.Errorf("_state mode = %o, want 700", got)
 		}
 	})
+}
+
+// A later human answer on resume replaces the gate-absent or unattended-default
+// record of the same escalation, keeps a count, and never replaces a real one.
+func TestEscalationLaterAnswerReplacesDefault(t *testing.T) {
+	for _, first := range []string{human.AnsweredByGateAbsent, human.AnsweredByUnattended} {
+		runDir := t.TempDir()
+		e := report.Escalation{Kind: "human", TaskType: "implement", Model: "a/m1", NodeID: "fn-greet", Revision: 1, Round: 0}
+		for _, by := range []string{"", first, human.AnsweredByHuman, human.AnsweredByProgrammatic} {
+			e.AnsweredBy = by
+			if err := AppendEscalation(runDir, e); err != nil {
+				t.Fatal(err)
+			}
+		}
+		got, err := LoadEscalations(runDir)
+		if err != nil || len(got) != 1 {
+			t.Fatalf("%s: escalations = %+v, %v; want one record", first, got, err)
+		}
+		if got[0].AnsweredBy != human.AnsweredByHuman || got[0].Answers != 2 {
+			t.Errorf("%s: record = %+v, want answered_by human after 2 answers", first, got[0])
+		}
+	}
 }

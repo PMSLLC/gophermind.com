@@ -100,32 +100,39 @@ type Escalation struct {
 	// AnsweredBy is who answered a human escalation: one of the human package's
 	// AnsweredBy values, empty while it is unanswered.
 	AnsweredBy string `json:"answered_by,omitempty"`
+	// Answers counts the answers recorded for this escalation: a later answer
+	// (a person on resume) replaces a gate-absent or unattended-default one.
+	Answers int `json:"answers,omitempty"`
 }
 
 type Report struct {
-	SchemaVersion int         `json:"schema_version"`
-	RunID         string      `json:"run_id"`
-	StartedAt     string      `json:"started_at"`
-	FinishedAt    string      `json:"finished_at"`
-	Status        string      `json:"status"`
-	Resumed       bool        `json:"resumed"`
-	Sandbox       string      `json:"sandbox"`
-	StopReason    string      `json:"stop_reason"`
-	ExitCode      int         `json:"exit_code"`
-	RepoBrief     string      `json:"repo_brief,omitempty"`
-	RepoUsed      string      `json:"repo_used,omitempty"`
-	Requirements  Coverage    `json:"requirements_covered"`
-	Acceptance    Passed      `json:"acceptance"`
-	Constraints   Passed      `json:"constraints_checked"`
-	Waves         int         `json:"waves"`
-	Nodes         NodeCounts  `json:"nodes"`
-	ByTaskType    []TaskModel `json:"by_task_type"`
-	Leaves        []LeafModel `json:"leaves"`
-	WeakTests     int         `json:"weak_tests"`
-	Repairs       int         `json:"repairs"`
-	Incomplete    bool        `json:"incomplete,omitempty"`
-	Failures      []string    `json:"failures,omitempty"`
-	Landing       *Landing    `json:"landing,omitempty"`
+	SchemaVersion int    `json:"schema_version"`
+	RunID         string `json:"run_id"`
+	StartedAt     string `json:"started_at"`
+	FinishedAt    string `json:"finished_at"`
+	Status        string `json:"status"`
+	Resumed       bool   `json:"resumed"`
+	Sandbox       string `json:"sandbox"`
+	StopReason    string `json:"stop_reason"`
+	// Environment is what the run ran on: the sandbox setting and whether
+	// sandbox-exec was found, the binary's version and commit, the Go runtime.
+	// Fixed words and version strings only.
+	Environment  []string    `json:"environment,omitempty"`
+	ExitCode     int         `json:"exit_code"`
+	RepoBrief    string      `json:"repo_brief,omitempty"`
+	RepoUsed     string      `json:"repo_used,omitempty"`
+	Requirements Coverage    `json:"requirements_covered"`
+	Acceptance   Passed      `json:"acceptance"`
+	Constraints  Passed      `json:"constraints_checked"`
+	Waves        int         `json:"waves"`
+	Nodes        NodeCounts  `json:"nodes"`
+	ByTaskType   []TaskModel `json:"by_task_type"`
+	Leaves       []LeafModel `json:"leaves"`
+	WeakTests    int         `json:"weak_tests"`
+	Repairs      int         `json:"repairs"`
+	Incomplete   bool        `json:"incomplete,omitempty"`
+	Failures     []string    `json:"failures,omitempty"`
+	Landing      *Landing    `json:"landing,omitempty"`
 	// PlannerWarnings lists the duplicate ids the planner dropped (first
 	// emission kept), one line per id and a total line; ids and counts only.
 	PlannerWarnings []string `json:"planner_warnings,omitempty"`
@@ -143,6 +150,7 @@ type Input struct {
 	Status, StopReason    string
 	Resumed               bool
 	Sandbox               string
+	Environment           []string
 	RepoBrief, RepoUsed   string
 	Calls                 []ledger.Call
 	Rows                  []blackboard.Row
@@ -225,6 +233,9 @@ func Build(in Input) (Report, error) {
 		Waves: in.Waves, WeakTests: in.WeakTests, Repairs: in.Repairs,
 		Incomplete: in.LedgerErrors > 0, Landing: in.Landing,
 		ByTaskType: []TaskModel{}, Leaves: []LeafModel{},
+	}
+	for _, e := range in.Environment {
+		r.Environment = append(r.Environment, cleanLine(e, 160))
 	}
 	if !in.StartedAt.IsZero() {
 		r.StartedAt = in.StartedAt.UTC().Format(time.RFC3339)
@@ -395,6 +406,20 @@ func Build(in Input) (Report, error) {
 		}
 	}
 	return r, nil
+}
+
+// cleanLine drops control characters and cuts the line to max bytes.
+func cleanLine(s string, max int) string {
+	s = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+	if len(s) > max {
+		s = strings.ToValidUTF8(s[:max], "")
+	}
+	return s
 }
 
 var ignoredEntryRE = regexp.MustCompile(`^(component|type|function) ("[A-Za-z0-9][A-Za-z0-9_.-]{0,63}"|<[0-9]+ bytes>)$`)

@@ -726,3 +726,19 @@ func TestReadAcceptsTheOlderSchemaVersion(t *testing.T) {
 		t.Fatalf("a version 1 report must still read: %v", err)
 	}
 }
+
+func TestEnvironmentLinesAreReportedAndPrinted(t *testing.T) {
+	in := fixture()
+	in.Environment = []string{"sandbox: on (sandbox-exec available)", "binary: v1.2.3 commit abc123\x00"}
+	r := build(t, in)
+	if len(r.Environment) != 2 || r.Environment[1] != "binary: v1.2.3 commit abc123" {
+		t.Fatalf("environment = %q", r.Environment)
+	}
+	s := r.Summary()
+	if !strings.Contains(s, "Environment: sandbox: on (sandbox-exec available)\n") {
+		t.Fatalf("summary lacks the environment line:\n%s", s)
+	}
+	if l := lastLines(s, 2); !strings.HasPrefix(l[0], "Requirements covered:") {
+		t.Fatalf("the proof lines are not last: %q", l)
+	}
+}
