@@ -16,7 +16,7 @@ type Store struct{ dir string }
 func NewStore(dir string) *Store { return &Store{dir: dir} }
 
 var notNodes = map[string]bool{"contracts.json": true, "answers.json": true, "approval.json": true, "report.json": true,
-	"requirements.json": true, "coverage.json": true}
+	"requirements.json": true, "coverage.json": true, "dependencies.json": true}
 
 // Write validates n against the node schema and writes it atomically.
 func (s *Store) Write(n Node) error {

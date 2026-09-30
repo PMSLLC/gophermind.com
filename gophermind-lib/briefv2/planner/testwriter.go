@@ -75,17 +75,8 @@ func testCommand(contractFile, funcName string) string {
 // then the finished tree and the blackboard rows. It is the first stage that
 // touches the repository, and it refuses to run without a matching approval.
 func (p *Planner) testwriter(ctx context.Context, r *run) error {
-	var ap approval
-	found, err := readJSON(r.path(fileApproval), &ap)
-	if err != nil {
+	if err := VerifyApproval(r.dir); err != nil {
 		return err
-	}
-	_, hash, err := RenderPlan(r.dir)
-	if err != nil {
-		return err
-	}
-	if !found || ap.PlanHash != hash {
-		return errors.New("approval.json does not match the plan as it stands; remove it and resume to approve the plan again")
 	}
 
 	c, err := loadContracts(r)
@@ -389,6 +380,7 @@ func (p *Planner) finishTree(ctx context.Context, r *run, c *contract.Contracts,
 	}
 	docs := append([]map[string]any{root}, comps...)
 	files := []string{}
+	leafTests := map[string]LeafTest{}
 	for _, comp := range c.Components {
 		for _, d := range dec.Components[comp.ID] {
 			id, _ := d["id"].(string)
@@ -403,6 +395,7 @@ func (p *Planner) finishTree(ctx context.Context, r *run, c *contract.Contracts,
 			doc["tests"], doc["wave"] = wt.Tests, w[id]
 			docs = append(docs, doc)
 			files = append(files, wt.TestFile)
+			leafTests[id] = LeafTest{TestFile: wt.TestFile, TestFunc: testFuncName(id), SHA256: wt.SHA256}
 		}
 	}
 	nodes := make([]tree.Node, 0, len(docs))
@@ -453,6 +446,9 @@ func (p *Planner) finishTree(ctx context.Context, r *run, c *contract.Contracts,
 	sort.Strings(ids)
 	sort.Strings(files)
 	if err := writeJSON(r.path(stateTestFiles), files); err != nil {
+		return err
+	}
+	if err := writeJSON(r.path(stateLeafTests), leafTests); err != nil {
 		return err
 	}
 	if p.d.Board != nil {

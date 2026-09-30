@@ -7,3 +7,8 @@ func SetBeforeTestWrite(f func()) func() {
 	beforeTestWrite = f
 	return old
 }
+
+// ParseOutline exposes the outline parser to the external tests.
+func ParseOutline(text, briefID string) (map[string]any, []Dependency, error) {
+	return parseOutline(text, briefID)
+}

@@ -50,15 +50,19 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 		if err != nil {
 			return err
 		}
+		var deps []Dependency
 		cs := callSpec{stage: "contract:outline", taskType: "contract", scope: router.ScopeBrief, maxTokens: maxTokensContract}
 		if err := p.call(ctx, r, cs, prompt, func(text string) error {
-			doc, err := parseOutline(StripReply(text), r.id)
+			doc, ds, err := parseOutline(StripReply(text), r.id)
 			if err != nil {
 				return err
 			}
-			st.Doc = doc
+			st.Doc, deps = doc, ds
 			return nil
 		}); err != nil {
+			return err
+		}
+		if err := writeJSON(r.path(fileDependencies), deps); err != nil {
 			return err
 		}
 		if err := writeJSON(r.path(stateContract), st); err != nil {
@@ -137,18 +141,23 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 
 // parseOutline turns the outline reply into the start of contracts.json: the
 // harness supplies the version, the brief id and an empty function list.
-func parseOutline(text, briefID string) (map[string]any, error) {
+func parseOutline(text, briefID string) (map[string]any, []Dependency, error) {
 	var o struct {
 		Module      string           `json:"module"`
 		Conventions map[string]any   `json:"conventions"`
 		Components  []map[string]any `json:"components"`
 		Types       []map[string]any `json:"types"`
+		Deps        []map[string]any `json:"dependencies"`
 	}
 	if err := json.Unmarshal([]byte(text), &o); err != nil {
-		return nil, fmt.Errorf("contract outline is not a JSON object (%s)", jsonErr(err))
+		return nil, nil, fmt.Errorf("contract outline is not a JSON object (%s)", jsonErr(err))
 	}
 	if len(o.Components) == 0 {
-		return nil, errors.New("contract outline lists no component")
+		return nil, nil, errors.New("contract outline lists no component")
+	}
+	deps, err := ParseDependencies(o.Deps)
+	if err != nil {
+		return nil, nil, err
 	}
 	comps := make([]any, 0, len(o.Components))
 	for _, c := range o.Components {
@@ -167,9 +176,9 @@ func parseOutline(text, briefID string) (map[string]any, error) {
 		"types": types, "functions": []any{}, "components": comps,
 	}
 	if _, err := validateContractDoc(doc, briefID); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return doc, nil
+	return doc, deps, nil
 }
 
 // mergePass adds one component pass to a copy of doc and validates the whole
