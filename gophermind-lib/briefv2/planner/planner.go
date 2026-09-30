@@ -109,6 +109,7 @@ type stage struct {
 var stages = []stage{
 	{"clarify", (*Planner).clarify, clarifyDone},
 	{"contract", (*Planner).contract, contractDone},
+	{"decompose", (*Planner).decompose, decomposeDone},
 }
 
 // Run plans a brief, or continues a run, until every stage is done, a person
