@@ -144,6 +144,9 @@ func Load(path string) (*Config, error) {
 	if err := dec.Decode(&c); err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("settings: %s: %w", path, err)
 	}
+	if err := checkExplicitZeroCounts(data); err != nil {
+		return nil, fmt.Errorf("settings: %s: %w", path, err)
+	}
 	c.applyExecutorDefaults()
 	if err := c.Validate(); err != nil {
 		return nil, fmt.Errorf("settings: %s: %w", path, err)
