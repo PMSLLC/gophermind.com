@@ -224,6 +224,7 @@ func briefPlan(verb string, args []string, in *os.File, out, errw io.Writer) int
 	sink := &printSink{w: errw}
 	rt := router.New(cfg, providers, ledger.NewSQLite(d), sink, router.WithAllowPublic(*allowPublic))
 	deps.Caller, deps.Sink, deps.Board, deps.LedgerErrors = rt, sink, blackboard.NewSQLite(d), rt.LedgerErrors
+	deps.ResetRun = func(ctx context.Context, id string) error { return db.ClearRun(ctx, d, id) }
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()

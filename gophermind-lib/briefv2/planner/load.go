@@ -60,11 +60,23 @@ func (p *Planner) load(ctx context.Context, o Options) (*run, error) {
 		return nil, fmt.Errorf("planner: load: %w", err)
 	}
 	dir, err := rundir.Create(repo, b.Front.ID, src)
+	if errors.Is(err, rundir.ErrExists) && untouchedRunDir(filepath.Join(repo, ".gophermind", b.Front.ID)) {
+		// A plan that died before any stage finished: nothing to resume.
+		if rerr := os.RemoveAll(filepath.Join(repo, ".gophermind", b.Front.ID)); rerr != nil {
+			return nil, fmt.Errorf("planner: load: %w", rerr)
+		}
+		dir, err = rundir.Create(repo, b.Front.ID, src)
+	}
 	if errors.Is(err, rundir.ErrExists) {
 		return nil, fmt.Errorf("planner: run %s already exists in %s; continue it with `gophermind brief resume %s`", b.Front.ID, repo, b.Front.ID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("planner: load: %w", err)
+	}
+	if p.d.ResetRun != nil {
+		if err := p.d.ResetRun(ctx, b.Front.ID); err != nil {
+			return nil, fmt.Errorf("planner: load: %w", err)
+		}
 	}
 	briefPath, err := filepath.Abs(o.BriefPath)
 	if err != nil {
@@ -193,4 +205,37 @@ func (p *Planner) storeSecrets(b *brief.Brief) error {
 		}
 	}
 	return nil
+}
+
+// untouchedRunDir reports whether a run folder holds only what Load writes:
+// the brief, the requirements, an empty logs folder and a status file. Such a
+// folder is left over from a plan that stopped before its first stage
+// finished, and replacing it loses nothing.
+func untouchedRunDir(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		switch e.Name() {
+		case fileBrief, fileRequirements:
+		case "logs":
+			if sub, err := os.ReadDir(filepath.Join(dir, "logs")); err != nil || len(sub) > 0 {
+				return false
+			}
+		case stateDir:
+			sub, err := os.ReadDir(filepath.Join(dir, stateDir))
+			if err != nil {
+				return false
+			}
+			for _, s := range sub {
+				if s.Name() != "status.json" {
+					return false
+				}
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
