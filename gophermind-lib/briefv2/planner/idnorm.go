@@ -207,6 +207,9 @@ func normalizeReply(doc map[string]any, text string, kind replyKind) (string, id
 	// whichever normalised form is declared, else by its own shape (an id-like
 	// forward reference is rewritten too: a later pass declares it in that form).
 	resolve := func(raw string) string {
+		// The separator of a pending reference is reserved: a model's own
+		// "|" is folded into a dash like any other character.
+		raw = strings.ReplaceAll(raw, pendingSep, "-")
 		if declared[raw] {
 			return raw
 		}

@@ -111,7 +111,12 @@ the brief's features, in brief order, are split into batches of 3
 (`outlineBatchSize`) and each batch is one pass (`contract:outline:2`, `:3`,
 ...): the prompt carries the whole brief, names the batch's features, and lists
 the component and type ids already declared, which it may reference in `uses`
-but must not repeat. The model never says `more`; the field is accepted and
+but must not repeat. The shared pass keeps only the `types` component: any other component in it is
+dropped with the warning `outline_shared_extra` (the batches write them). The
+list of declared ids in a batch prompt is bounded (the shared ids, the 150 most
+recent ids, a count of the rest and up to 100 short entries of withheld
+components), so a prompt does not grow with the brief; duplicates are handled
+by the harness whether or not the model saw an id. The model never says `more`; the field is accepted and
 ignored, and there is no cap on the number of passes because the batch list, not
 the model, ends them. A pass that adds nothing new is not an error: it raises the
 warning `outline_pass_empty` (the batch number only) and the run goes on; the
@@ -161,7 +166,7 @@ because ids cannot start with an underscore, so a component called Repair is
 fine. Failed repair attempts count toward the bound across restarts.
 Component passes work the same way: a component reply may say `more` and is
 continued only while each reply adds a new function (a repeat with nothing new ends
-the component, it is not an error); a function may use
+the component, it is not an error; at most 40 passes per component, then a fixed error); a function may use
 one a later component writes, and ids still undeclared after every component is
 written go through up to 2 `contract:_repair` passes.
 

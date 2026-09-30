@@ -24,3 +24,6 @@ func parseOutline(text, briefID string) (map[string]any, []Dependency, error) {
 	}
 	return doc, deps, err
 }
+
+// MaxEmittedTextBytes exposes the cap on the declared-ids list to the external tests.
+const MaxEmittedTextBytes = maxEmittedTextBytes
