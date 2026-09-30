@@ -111,6 +111,8 @@ var stages = []stage{
 	{"contract", (*Planner).contract, contractDone},
 	{"decompose", (*Planner).decompose, decomposeDone},
 	{"coverage", (*Planner).coverage, coverageDone},
+	{"approve", (*Planner).approve, approveDone},
+	{"testwriter", (*Planner).testwriter, testwriterDone},
 }
 
 // Run plans a brief, or continues a run, until every stage is done, a person

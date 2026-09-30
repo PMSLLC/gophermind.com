@@ -1,0 +1,15 @@
+{
+  "tests": [
+    {
+      "name": "returns the reason",
+      "given": "Reason \"name is empty\"",
+      "expect": "name is empty"
+    },
+    {
+      "name": "returns an empty reason unchanged",
+      "given": "Reason \"\"",
+      "expect": "an empty string"
+    }
+  ],
+  "test_file": "package greet\n\nimport \"testing\"\n\nfunc TestNameErrorError(t *testing.T) {\n\tcases := []struct {\n\t\tname   string\n\t\treason string\n\t}{\n\t\t{\"returns the reason\", \"name is empty\"},\n\t\t{\"returns an empty reason unchanged\", \"\"},\n\t}\n\tfor _, c := range cases {\n\t\tt.Run(c.name, func(t *testing.T) {\n\t\t\te := &NameError{Reason: c.reason}\n\t\t\tif got := e.Error(); got != c.reason {\n\t\t\t\tt.Errorf(\"Error() = %q, want %q\", got, c.reason)\n\t\t\t}\n\t\t})\n\t}\n}\n"
+}

