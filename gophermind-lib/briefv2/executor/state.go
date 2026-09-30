@@ -1,13 +1,18 @@
 package executor
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
+	"gophermind/gophermind-lib/briefv2/pathsafe"
 	"gophermind/gophermind-lib/briefv2/planner"
 	"gophermind/gophermind-lib/briefv2/report"
 )
@@ -126,13 +131,64 @@ func AppendEscalation(runDir string, e report.Escalation) error {
 	return writeStateJSON(runDir, stateEscalations, append(list, e))
 }
 
-// readStateJSON decodes one of the executor's files. An error names the file
-// and the kind of failure, never its content.
+// stateDir returns <runDir>/_state after checking it is a real directory, not
+// a symbolic link. With create it makes a missing one (0700); a directory that
+// exists with looser permissions is tightened to 0700.
+func stateDir(runDir string, create bool) (dir string, exists bool, err error) {
+	dir = filepath.Join(runDir, "_state")
+	fi, err := os.Lstat(dir)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		if !create {
+			return dir, false, nil
+		}
+		if err := os.Mkdir(dir, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+			return "", false, errors.New("executor: creating _state failed")
+		}
+		// Chmod, not the Mkdir mode: the process umask can only narrow it,
+		// but another process may have made the folder first.
+		if fi, err = os.Lstat(dir); err != nil {
+			return "", false, errors.New("executor: _state is not readable")
+		}
+	case err != nil:
+		return "", false, errors.New("executor: _state is not readable")
+	}
+	if fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
+		return "", false, errors.New("executor: _state is not a plain directory")
+	}
+	if create && fi.Mode().Perm()&0o077 != 0 {
+		if err := os.Chmod(dir, 0o700); err != nil {
+			return "", false, errors.New("executor: tightening _state failed")
+		}
+	}
+	return dir, true, nil
+}
+
+// readStateJSON decodes one of the executor's files. A symbolic link, at the
+// folder or at the file (dangling ones included), is refused. An error names
+// the file and the kind of failure, never its content.
 func readStateJSON(runDir, name string, v any) (found bool, err error) {
-	raw, err := os.ReadFile(filepath.Join(runDir, filepath.FromSlash(name)))
+	dir, ok, err := stateDir(runDir, false)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, nil
+	}
+	path := filepath.Join(dir, filepath.Base(name))
+	fi, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
+	if err != nil || !fi.Mode().IsRegular() {
+		return false, fmt.Errorf("executor: %s is not a regular file", name)
+	}
+	f, err := os.OpenFile(path, os.O_RDONLY|pathsafe.NoFollow, 0)
+	if err != nil {
+		return false, fmt.Errorf("executor: reading %s failed", name)
+	}
+	defer f.Close()
+	raw, err := io.ReadAll(f)
 	if err != nil {
 		return false, fmt.Errorf("executor: reading %s failed", name)
 	}
@@ -142,31 +198,37 @@ func readStateJSON(runDir, name string, v any) (found bool, err error) {
 	return true, nil
 }
 
-// writeStateJSON stores v as indented JSON: a temp file in the same folder,
-// flushed, then renamed over the target, so a reader never sees half a file.
-// Files are 0600 and a folder the call creates is 0700.
+// writeStateJSON stores v as indented JSON: a new temp file in the same
+// folder (O_EXCL, O_NOFOLLOW, 0600), flushed, renamed over the target, and the
+// folder flushed, so a reader never sees half a file. A symbolic link at the
+// folder or at the target is refused.
 func writeStateJSON(runDir, name string, v any) error {
 	raw, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return fmt.Errorf("executor: encoding %s failed", name)
 	}
-	path := filepath.Join(runDir, filepath.FromSlash(name))
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	dir, _, err := stateDir(runDir, true)
+	if err != nil {
+		return err
+	}
+	base := filepath.Base(name)
+	path := filepath.Join(dir, base)
+	if fi, err := os.Lstat(path); err == nil && !fi.Mode().IsRegular() {
+		return fmt.Errorf("executor: %s is not a regular file", name)
+	}
+	var suffix [8]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
 		return fmt.Errorf("executor: writing %s failed", name)
 	}
-	tmp, err := os.CreateTemp(dir, ".tmp-"+filepath.Base(path)+"-*")
+	tmpName := filepath.Join(dir, tempPrefix+base+"-"+hex.EncodeToString(suffix[:]))
+	tmp, err := os.OpenFile(tmpName, os.O_WRONLY|os.O_CREATE|os.O_EXCL|pathsafe.NoFollow, 0o600)
 	if err != nil {
 		return fmt.Errorf("executor: writing %s failed", name)
 	}
-	tmpName := tmp.Name()
 	fail := func() error {
 		tmp.Close()
 		removeOwnTemp(dir, tmpName)
 		return fmt.Errorf("executor: writing %s failed", name)
-	}
-	if err := tmp.Chmod(0o600); err != nil {
-		return fail()
 	}
 	if _, err := tmp.Write(append(raw, '\n')); err != nil {
 		return fail()
@@ -182,13 +244,22 @@ func writeStateJSON(runDir, name string, v any) error {
 		removeOwnTemp(dir, tmpName)
 		return fmt.Errorf("executor: writing %s failed", name)
 	}
+	if d, err := os.Open(dir); err == nil {
+		_ = d.Sync()
+		d.Close()
+	}
 	return nil
 }
 
+const tempPrefix = ".tmp-"
+
 // removeOwnTemp deletes a temp file this package just made. The guard is the
-// whole rule: the path must be directly inside dir and carry the temp prefix.
+// whole rule: the path must sit directly inside dir and its name must start
+// with tempPrefix followed by at least one more character. A path that fails
+// either test is left alone, so a bug upstream can never turn this into a
+// delete of some other file.
 func removeOwnTemp(dir, path string) {
-	if filepath.Dir(path) != dir || len(filepath.Base(path)) <= len(".tmp-") || filepath.Base(path)[:5] != ".tmp-" {
+	if filepath.Dir(path) != dir || !strings.HasPrefix(filepath.Base(path), tempPrefix) || len(filepath.Base(path)) <= len(tempPrefix) {
 		return
 	}
 	_ = os.Remove(path)

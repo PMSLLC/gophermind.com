@@ -275,3 +275,74 @@ func refusedByTree(t *testing.T, g *rig, what string) {
 		t.Errorf("LoadPlan error for %s = %q, want the loader's tree refusal", what, err)
 	}
 }
+
+// editNode rewrites one node file of the run folder (node files are not part
+// of the approval hash, so the approval still matches).
+func editNode(t *testing.T, path string, f func(doc map[string]any)) {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	f(doc)
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, out, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestLeafNetworkComesFromRoot: the brief's network block sits on the root
+// node only; it applies to every leaf unless the leaf has its own list.
+func TestLeafNetworkComesFromRoot(t *testing.T) {
+	hosts := []any{
+		map[string]any{"host": "api.example.com", "critical": true},
+		map[string]any{"host": "cdn.example.com", "critical": false},
+	}
+	want := []NetHost{{Host: "api.example.com", Critical: true}, {Host: "cdn.example.com"}}
+
+	t.Run("root list reaches every leaf", func(t *testing.T) {
+		g := newRig(t)
+		editNode(t, filepath.Join(g.runDir, "root.json"), func(d map[string]any) { d["network"] = hosts })
+		p, err := LoadPlan(g.runDir, g.repo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, l := range p.Leaves {
+			if !reflect.DeepEqual(l.Network, want) {
+				t.Errorf("%s Network = %v, want %v", l.ID, l.Network, want)
+			}
+		}
+	})
+	t.Run("a leaf's own list wins", func(t *testing.T) {
+		g := newRig(t)
+		editNode(t, filepath.Join(g.runDir, "root.json"), func(d map[string]any) { d["network"] = hosts })
+		editNode(t, filepath.Join(g.runDir, "server", "fn-serve.json"), func(d map[string]any) {
+			d["network"] = []any{map[string]any{"host": "own.example.com", "critical": false}}
+		})
+		p, err := LoadPlan(g.runDir, g.repo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := p.Leaf("fn-serve").Network; !reflect.DeepEqual(got, []NetHost{{Host: "own.example.com"}}) {
+			t.Errorf("fn-serve Network = %v", got)
+		}
+		if got := p.Leaf("fn-bye").Network; !reflect.DeepEqual(got, want) {
+			t.Errorf("fn-bye Network = %v, want the root list", got)
+		}
+	})
+	t.Run("an empty root gives none", func(t *testing.T) {
+		g := newRig(t)
+		for _, l := range g.plan.Leaves {
+			if len(l.Network) != 0 {
+				t.Errorf("%s Network = %v, want none", l.ID, l.Network)
+			}
+		}
+	})
+}
