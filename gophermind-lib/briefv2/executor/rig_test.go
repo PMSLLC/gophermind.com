@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"gophermind/gophermind-lib/briefv2/blackboard"
 	"gophermind/gophermind-lib/briefv2/db"
@@ -103,6 +104,17 @@ func newRig(t *testing.T, mods ...func(*rigOpts)) *rig {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A go command may still be writing its telemetry counters into the scratch
+	// HOME when the test ends; retry the removal instead of failing the cleanup.
+	t.Cleanup(func() {
+		for i := 0; i < 30; i++ {
+			makeTreeWritable(repo)
+			if os.RemoveAll(repo) == nil {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	})
 	g := &rig{t: t, repo: repo, id: greeterID, sink: events.NewCollector()}
 	g.runDir = filepath.Join(repo, ".gophermind", greeterID)
 
@@ -149,6 +161,12 @@ func newRig(t *testing.T, mods ...func(*rigOpts)) *rig {
 	g.cfg.Privacy.Mode = "need_to_know"
 	g.cfg.Executor.Sandbox = "off"
 	g.cfg.Executor.Workers = 1
+	// The module cache is a temp directory (never the real ~/.gophermind), and the
+	// toolchain PATH holds the go this test run uses.
+	modDir := t.TempDir()
+	t.Cleanup(func() { makeTreeWritable(modDir) }) // the go tool makes cached modules read-only
+	g.cfg.Executor.GoModCache = filepath.Join(modDir, "gomodcache")
+	g.cfg.Toolchain = map[string]string{"PATH": testToolchainPATH(t)}
 	if ro.Settings != nil {
 		ro.Settings(g.cfg)
 	}
@@ -210,6 +228,27 @@ func (g *rig) gitCmd(args ...string) string {
 		g.t.Fatalf("git %s: %v\n%s", args[0], err, out)
 	}
 	return string(out)
+}
+
+// testToolchainPATH is the directory of the go on PATH plus the system bins.
+func testToolchainPATH(t *testing.T) string {
+	t.Helper()
+	goBin, err := exec.LookPath("go")
+	if err != nil {
+		t.Skip("go is not on PATH")
+	}
+	return filepath.Dir(goBin) + ":/usr/bin:/bin"
+}
+
+// makeTreeWritable lets a test delete a module cache: the go tool writes its
+// files and directories read-only.
+func makeTreeWritable(root string) {
+	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err == nil {
+			_ = os.Chmod(p, 0o755)
+		}
+		return nil
+	})
 }
 
 func write(t *testing.T, path, text string) {
