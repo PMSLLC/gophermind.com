@@ -142,6 +142,15 @@ docs/briefv2/handoff/     the original handoff, for reference (copied from the z
                            copied into real packages later)
 ```
 
+## Example briefs
+
+Five complete v2 briefs ship with the desktop app in `gophermind-osx/examples/briefs/`
+(`04-csvstat` to `08-taskboard`), from a one-file CLI up to a seven-feature system.
+Together they use every option the frontmatter has. That README has the table; a test
+(`gophermind-lib/briefv2/brief/examples_test.go`) keeps every one valid with no scan
+warnings and fails if the set stops covering an option. The AI Venture Studio brief is a
+test fixture only and is not shipped.
+
 ## Deviations from the handoff
 
 The handoff's stated tests cannot all pass against its own example data. These
