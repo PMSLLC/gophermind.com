@@ -17,8 +17,16 @@ const (
 
 // PackRevise builds the revise prompt: the contract entry and slice, the test
 // file, and one line per attempt (class and names only, never reply text or
-// command output).
-func PackRevise(n NodeView, c *contract.Contracts, history []string) (Packed, error) {
+// command output). It applies the same secret scan and token budget as Pack
+// (in.Budget, in.Secrets; in.Failure and in.Notes are not used): history lines
+// with a secret are dropped, a secret in any other input is an error that does
+// not quote it, and over budget the history is cut to its last 3 lines
+// ("history:last3"), then the test comments are stripped ("test_comments"),
+// then ErrFloorOverBudget.
+func PackRevise(n NodeView, c *contract.Contracts, history []string, in Inputs) (Packed, error) {
+	if in.Budget <= 0 {
+		return Packed{}, errors.New("packer: budget must be positive")
+	}
 	if c == nil {
 		return Packed{}, errors.New("packer: contracts are required")
 	}
@@ -26,19 +34,53 @@ func PackRevise(n NodeView, c *contract.Contracts, history []string) (Packed, er
 	if err != nil {
 		return Packed{}, errors.New("packer: the function is not in the contracts")
 	}
-	hist := "(none)"
-	if len(history) > 0 {
-		hist = "- " + strings.Join(history, "\n- ")
+	sc := newScan(in.Secrets)
+	hist := sc.scrub(history)
+	src := n.TestSource
+	render := func() (string, error) {
+		h := "(none)"
+		if len(hist) > 0 {
+			h = "- " + strings.Join(hist, "\n- ")
+		}
+		t, err := renderTemplate("revise", escAll(map[string]string{
+			"File": n.File, "Package": n.Package, "Signature": n.Signature,
+			"Contract": strings.Join(slice, "\n\n"), "TestFile": n.TestFile,
+			"TestSource": strings.TrimRight(src, "\n"), "History": h,
+		}))
+		if err != nil {
+			return "", errors.New("packer: the prompt template failed")
+		}
+		return t, nil
 	}
-	text, err := renderTemplate("revise", map[string]string{
-		"File": n.File, "Package": n.Package, "Signature": n.Signature,
-		"Contract": strings.Join(slice, "\n\n"), "TestFile": n.TestFile,
-		"TestSource": strings.TrimRight(n.TestSource, "\n"), "History": hist,
-	})
+	text, err := render()
 	if err != nil {
-		return Packed{}, errors.New("packer: the prompt template failed")
+		return Packed{}, err
 	}
-	return newPacked(text, nil), nil
+	if sc.has(text) {
+		return Packed{}, errors.New("packer: a secret value is present in the prompt inputs")
+	}
+	var dropped []string
+	fits := func() bool { return EstimateTokens(len(text)) <= in.Budget }
+	if !fits() && len(hist) > 3 {
+		hist = hist[len(hist)-3:]
+		dropped = append(dropped, "history:last3")
+		if text, err = render(); err != nil {
+			return Packed{}, err
+		}
+	}
+	if !fits() {
+		if out, _ := stripTestComments(src); len(out) < len(src) {
+			src = out
+			dropped = append(dropped, "test_comments")
+			if text, err = render(); err != nil {
+				return Packed{}, err
+			}
+		}
+	}
+	if !fits() {
+		return Packed{}, &ErrFloorOverBudget{Tokens: EstimateTokens(len(text)), Budget: in.Budget}
+	}
+	return newPacked(text, dropped), nil
 }
 
 func reviseErr(kind string) error { return errors.New("packer: malformed revise reply: " + kind) }
