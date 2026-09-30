@@ -11,6 +11,7 @@ import (
 )
 
 func TestLadderEntries(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	rc, _ := g.leafRC(t, Script{}, true)
 	planned := g.plan.Leaf("fn-greet")
@@ -77,6 +78,7 @@ func TestLadderEntries(t *testing.T) {
 }
 
 func TestEscalationAlongChain(t *testing.T) {
+	t.Parallel()
 	g := newRig(t, func(o *rigOpts) { o.Settings = func(c *settings.Config) { c.Executor.FixAttempts = 1 } })
 	id := "fn-greet"
 	script := Script{"implement:" + id: {{Text: bad(id, 1)}, {Text: variant(bad(id, 1), 2)}, {Text: good(id)}}}
@@ -108,6 +110,7 @@ func TestEscalationAlongChain(t *testing.T) {
 }
 
 func TestIdenticalReplyAbandonsEntry(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	id := "fn-greet"
 	same := bad(id, 1)
@@ -153,10 +156,10 @@ func TestIdenticalReplyAbandonsEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 	entries := rc.ladderEntries(g.plan.Leaf(id))
-	if got := lr.previousSHA(context.Background(), entries[0]); got != sumHex([]byte(same)) {
+	if got, err := lr.previousSHA(context.Background(), entries[0]); err != nil || got != sumHex([]byte(same)) {
 		t.Fatalf("previousSHA(a) = %q, want the hash of the last reply on a", got)
 	}
-	if got := lr.previousSHA(context.Background(), entries[1]); got != as[2].ReplySHA256 {
+	if got, err := lr.previousSHA(context.Background(), entries[1]); err != nil || got != as[2].ReplySHA256 {
 		t.Fatalf("previousSHA(b) = %q, want the hash of the reply on b", got)
 	}
 }

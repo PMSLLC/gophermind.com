@@ -99,6 +99,7 @@ func TestStubPath(t *testing.T) {
 }
 
 func TestStubForGreeterLeaves(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	pol := g.plan.Policy()
 	want := map[string]string{"fn-greet": "", "fn-bye": "net/http", "fn-hello": "net/http", "fn-serve": "", "fn-farewell": ""}

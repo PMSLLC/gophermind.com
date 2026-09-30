@@ -11,6 +11,7 @@ import (
 )
 
 func TestTypeDeclsWritten(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	pol := g.plan.Policy()
 	paths, err := WriteTypes(g.repo, g.plan.Contracts, pol)
@@ -106,6 +107,7 @@ func TestTypeDeclBadImportStopsRun(t *testing.T) {
 }
 
 func TestTypeDeclDependencyAllowed(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	c := &contract.Contracts{Module: "example.com/m", Types: []contract.Type{
 		{ID: "t-id", Package: "p", File: "p/id.go", Decl: "type ID struct{ V uuid.UUID }"},

@@ -26,6 +26,11 @@ import (
 	"gophermind/gophermind-lib/briefv2/settings"
 )
 
+// goCacheOverride is set only by the test binary's TestMain: one shared
+// GOCACHE for every test of the process, so a package compiled once is not
+// compiled again by each test. Empty in production (the cache is per run).
+var goCacheOverride string
+
 // hostOS is runtime.GOOS; tests replace it to reach the off-darwin rule.
 var hostOS = runtime.GOOS
 
@@ -125,6 +130,9 @@ func newRunCtx(ctx context.Context, o Options) (*runCtx, error) {
 		policy: plan.Policy(), diffOnly: plan.Brief.Front.Landing == "diff_only",
 		streak: &proxy.Streak{},
 		rep:    &runReport{blocked: map[string]string{}, reasons: map[string]string{}},
+	}
+	if err := rc.loadReasons(); err != nil {
+		return nil, err
 	}
 	// The git layer first: it confirms the repository root before preflight
 	// creates any directory under it.
@@ -248,6 +256,9 @@ func (rc *runCtx) preflight(ctx context.Context) error {
 	id := rc.plan.RunID
 	rc.scratch = filepath.Join(rc.o.Repo, ".gophermind", id+"-scratch")
 	rc.goCache = filepath.Join(rc.scratch, "gocache")
+	if goCacheOverride != "" {
+		rc.goCache = goCacheOverride
+	}
 	rc.binDir = filepath.Join(rc.o.RunDir, "bin")
 	if rc.scratch == rc.o.RunDir || within(rc.o.RunDir, rc.scratch) {
 		return errors.New("executor: preflight: the run folder must not contain the scratch directory")

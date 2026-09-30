@@ -80,6 +80,7 @@ func wantStop(t *testing.T, err error, status, reason string) *stopError {
 }
 
 func TestPreflightPrivacyOnly(t *testing.T) {
+	t.Parallel()
 	g := newRig(t, func(o *rigOpts) {
 		o.Settings = func(c *settings.Config) {
 			c.Privacy.Mode = "private_only"
@@ -101,6 +102,7 @@ func TestPreflightPrivacyOnly(t *testing.T) {
 }
 
 func TestPullRequestUnsupported(t *testing.T) {
+	t.Parallel()
 	g := newRig(t, func(o *rigOpts) {
 		o.BriefEdit = func(s string) string { return strings.Replace(s, "landing: commit", "landing: pull_request", 1) }
 	})
@@ -114,6 +116,7 @@ func TestPullRequestUnsupported(t *testing.T) {
 }
 
 func TestFreshRunAllowsTestWriterFiles(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	rc, err := g.start(t)
 	if err != nil {
@@ -156,6 +159,7 @@ func dedupe(in []string) []string {
 }
 
 func TestFreshRunDirtyTreeRefused(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	write(t, filepath.Join(g.repo, "notes.txt"), "CANARY-notes\n")
 	_, err := g.start(t)
@@ -177,6 +181,7 @@ func TestFreshRunDirtyTreeRefused(t *testing.T) {
 }
 
 func TestNoRemoteRequired(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	if _, err := g.start(t); err != nil {
 		t.Fatalf("startRun on a repository with no remote: %v", err)
@@ -187,6 +192,7 @@ func TestNoRemoteRequired(t *testing.T) {
 }
 
 func TestProxyAllowlistFromBriefAndProviders(t *testing.T) {
+	t.Parallel()
 	g := newRig(t, func(o *rigOpts) {
 		o.BriefEdit = func(s string) string {
 			return strings.Replace(s, "\n---\n\n## Overview", "\nnetwork:\n  - host: api.example.com\n    purpose: \"x\"\n    critical: true\n  - host: docs.example.com\n    purpose: \"y\"\n    critical: false\n---\n\n## Overview", 1)
@@ -210,6 +216,7 @@ func TestProxyAllowlistFromBriefAndProviders(t *testing.T) {
 }
 
 func TestWave0BuildFailureStopsRun(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	tf := g.plan.Leaf("fn-greet").TestFile
 	write(t, g.abs(tf), g.read(tf)+"\nvar _ = undefinedByWave0Test\n")
@@ -233,6 +240,7 @@ func TestWave0BuildFailureStopsRun(t *testing.T) {
 }
 
 func TestRedCheckWeakTestWarned(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	tf := g.plan.Leaf("fn-greet").TestFile
 	write(t, g.abs(tf), "package greet\n\nimport \"testing\"\n\nfunc TestGreet(t *testing.T) {}\n")
@@ -261,6 +269,7 @@ func TestRedCheckWeakTestWarned(t *testing.T) {
 }
 
 func TestStubsBuildAtEveryCommit(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	if _, err := g.start(t); err != nil {
 		t.Fatal(err)
@@ -300,6 +309,7 @@ func TestStubsBuildAtEveryCommit(t *testing.T) {
 }
 
 func TestStartRecordsState(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	rc, err := g.start(t)
 	if err != nil {
@@ -331,6 +341,7 @@ func TestStartRecordsState(t *testing.T) {
 }
 
 func TestStartResumeSeam(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	if _, err := g.start(t); err != nil {
 		t.Fatal(err)
@@ -342,6 +353,7 @@ func TestStartResumeSeam(t *testing.T) {
 }
 
 func TestStartDiffOnlyMakesNoBranchOrCommit(t *testing.T) {
+	t.Parallel()
 	g := newRig(t, func(o *rigOpts) {
 		o.BriefEdit = func(s string) string { return strings.Replace(s, "landing: commit", "landing: diff_only", 1) }
 	})
@@ -425,6 +437,7 @@ func TestSandboxOffDarwinRules(t *testing.T) {
 }
 
 func TestPreflightCreatesNothingBeforeTheRepoRootIsConfirmed(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	g.wire(Script{})
 	if err := os.Rename(filepath.Join(g.repo, ".git"), filepath.Join(t.TempDir(), "moved-git")); err != nil {
@@ -450,6 +463,7 @@ func TestPreflightCreatesNothingBeforeTheRepoRootIsConfirmed(t *testing.T) {
 }
 
 func TestMissingGoIsPreflightFailure(t *testing.T) {
+	t.Parallel()
 	g := newRig(t, func(o *rigOpts) {
 		o.Settings = func(c *settings.Config) { c.Toolchain = map[string]string{"PATH": t.TempDir()} }
 	})
@@ -464,6 +478,7 @@ func TestMissingGoIsPreflightFailure(t *testing.T) {
 }
 
 func TestScanHitInGoModFailsRunBeforeCommit(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	write(t, g.abs("go.mod"), g.read("go.mod")+"\nreplace example.org/x => ../x\n")
 	g.gitCmd("add", "go.mod")
@@ -493,6 +508,7 @@ func TestScanHitInGoFlagsFailsRun(t *testing.T) {
 }
 
 func TestScanHitInSourceIsPlanDefect(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	tf := g.plan.Leaf("fn-greet").TestFile
 	write(t, g.abs(tf), g.read(tf)+"\n//go:generate echo CANARY-generate\n")
@@ -504,6 +520,7 @@ func TestScanHitInSourceIsPlanDefect(t *testing.T) {
 }
 
 func TestDepsStepOrder(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	rc := g.newRC(t)
 	twoDepProxy(t)
@@ -567,6 +584,7 @@ func contains(list []string, s string) bool {
 }
 
 func TestNoPromptOrOutputInStartEvents(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	tf := g.plan.Leaf("fn-greet").TestFile
 	write(t, g.abs(tf), g.read(tf)+"\nvar _ = undefinedCANARYoutput\n")
@@ -593,6 +611,7 @@ func TestMakeModuleProxyIsOffline(t *testing.T) {
 func sandboxUsable() bool { return sandbox.Preflight(context.Background()) == nil }
 
 func TestWave0RetryAfterScanFindingSucceeds(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	orig := g.read("go.mod")
 	write(t, g.abs("go.mod"), orig+"\nreplace example.org/x => ../x\n")
@@ -637,6 +656,7 @@ func TestWave0RetryAfterScanFindingSucceeds(t *testing.T) {
 }
 
 func TestWave0RetryRefusedWhenBranchHasCommits(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	tf := g.plan.Leaf("fn-greet").TestFile
 	write(t, g.abs(tf), g.read(tf)+"\nvar _ = undefinedByWave0Test\n")
@@ -656,6 +676,7 @@ func TestWave0RetryRefusedWhenBranchHasCommits(t *testing.T) {
 }
 
 func TestWave0RetryRefusesForeignDirt(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	tf := g.plan.Leaf("fn-greet").TestFile
 	good := g.read(tf)

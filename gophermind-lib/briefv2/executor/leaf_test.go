@@ -32,6 +32,7 @@ func runOne(t *testing.T, rc *runCtx, id string) leafOutcome {
 }
 
 func TestLeafFailTwiceThenPass(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	rc, _ := g.leafRC(t, Script{"implement:" + leafID: {reply(bad(leafID, 1)), reply(bad(leafID, 2)), reply(good(leafID))}}, false)
 	l := g.plan.Leaf(leafID)
@@ -93,6 +94,7 @@ func TestLeafFailTwiceThenPass(t *testing.T) {
 }
 
 func TestNoTestsRanIsFailure(t *testing.T) {
+	t.Parallel()
 	g := newRig(t, func(o *rigOpts) { o.Settings = func(c *settings.Config) { c.Executor.FixAttempts = 1 } })
 	var steps []step
 	for i := 1; i <= 4; i++ {
@@ -120,6 +122,7 @@ func TestNoTestsRanIsFailure(t *testing.T) {
 }
 
 func TestMalformedIsCheapRepair(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	rc, fc := g.leafRC(t, Script{"implement:" + leafID: {reply("Sure, here you go! I would do it like this."), reply(good(leafID))}}, true)
 	fc.LeafScript[leafID] = []runner.Verdict{passVerdict()}
@@ -137,6 +140,7 @@ func TestMalformedIsCheapRepair(t *testing.T) {
 }
 
 func TestForbiddenWriteRejected(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	fileHeader := "// FILE: internal/greet/other.go\npackage greet\n\nfunc NEVERWRITTEN() {}\n"
 	diffHeader := "diff --git a/internal/greet/greet.go b/internal/greet/greet.go\n--- a/internal/greet/greet.go\n+++ b/internal/greet/greet.go\n@@ -1 +1 @@\n-NEVERWRITTEN\n"
@@ -169,6 +173,7 @@ func TestForbiddenWriteRejected(t *testing.T) {
 }
 
 func TestImportNotAllowedFailsAttempt(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	execImport := strings.Replace(good(leafID), `import "strings"`, "import (\n\t\"os/exec\"\n\t\"strings\"\n)", 1)
 	execImport = strings.Replace(execImport, "name = strings.TrimSpace(name)", "_ = exec.Command\n\tname = strings.TrimSpace(name)", 1)
@@ -197,6 +202,7 @@ func TestImportNotAllowedFailsAttempt(t *testing.T) {
 }
 
 func TestStrayWriteFailsAttempt(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, file string }{
 		{"untracked", "notes.txt"},
 		{"ignored", "artifact.out"},
@@ -235,6 +241,7 @@ func TestStrayWriteFailsAttempt(t *testing.T) {
 }
 
 func TestExecutorSignatureMismatchIsRepair(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	wrong := strings.Replace(good(leafID), "func Greet(name string) (string, error)", "func Greet(name string) string", 1)
 	wrong = strings.Replace(wrong, `return "", &NameError{Reason: "name is empty"}`, `return ""`, 1)
@@ -259,12 +266,16 @@ func TestExecutorSignatureMismatchIsRepair(t *testing.T) {
 }
 
 func TestForgedPassReplyNeverCommitted(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	forged := "package greet\n\nimport (\n\t\"fmt\"\n\t\"os\"\n)\n\nfunc init() {\n\tfmt.Println(\"--- PASS: TestGreet (0.00s)\")\n\tfmt.Println(\"PASS\")\n\tos.Exit(0)\n}\n\nfunc Greet(name string) (string, error) { return \"\", nil }\n"
 	rc, fc := g.leafRC(t, Script{"implement:" + leafID: {reply(forged), reply(forged), reply(forged), reply(forged)}}, true)
 	out := runOne(t, rc, leafID)
-	if out.Status == blackboard.StatusVerified {
-		t.Fatal("a forged-pass reply verified the leaf")
+	if out.Status != blackboard.StatusFailed || out.Reason == "" {
+		t.Fatalf("outcome = %+v, want failed with a reason: a forged-pass reply never verifies", out)
+	}
+	if len(attemptsOf(t, g.board, leafID)) == 0 {
+		t.Fatal("no attempt was recorded for the forged replies")
 	}
 	if fc.checks(leafID) != 0 {
 		t.Fatalf("checks = %d, want 0: the reply gate refuses the forgery before anything is written", fc.checks(leafID))
@@ -283,6 +294,7 @@ func TestForgedPassReplyNeverCommitted(t *testing.T) {
 }
 
 func TestProviderErrorDoesNotConsumeFix(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	rc, fc := g.leafRC(t, Script{"implement:" + leafID: {{Err: context.DeadlineExceeded}, reply(good(leafID))}}, true)
 	fc.LeafScript[leafID] = []runner.Verdict{passVerdict()}
@@ -302,6 +314,7 @@ func TestProviderErrorDoesNotConsumeFix(t *testing.T) {
 }
 
 func TestChainExhaustedCooldownInterrupts(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	rc, _ := g.leafRC(t, Script{"implement:" + leafID: {{Err: provider.ErrRateLimited{}}, {Err: provider.ErrRateLimited{}}}}, true)
 	out, err := rc.runLeaf(context.Background(), g.plan.Leaf(leafID), leafIn{})
@@ -326,6 +339,7 @@ func TestChainExhaustedCooldownInterrupts(t *testing.T) {
 }
 
 func TestHeartbeatWhileHeld(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	rc, fc := g.leafRC(t, Script{"implement:" + leafID: {reply(good(leafID))}}, true)
 	rc.heartbeat = 20 * time.Millisecond
@@ -352,6 +366,7 @@ func TestHeartbeatWhileHeld(t *testing.T) {
 }
 
 func TestStubRestoredOnCancel(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	rc, fc := g.leafRC(t, Script{"implement:" + leafID: {reply(good(leafID))}}, true)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -373,6 +388,7 @@ func TestStubRestoredOnCancel(t *testing.T) {
 }
 
 func TestHarnessFaultConsumesNoFix(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	rc, fc := g.leafRC(t, Script{"implement:" + leafID: {reply(good(leafID))}}, true)
 	fc.LeafScript[leafID] = []runner.Verdict{{Class: runner.ClassHarness, Err: errors.New("runner: go not found")}}
@@ -394,6 +410,7 @@ func TestHarnessFaultConsumesNoFix(t *testing.T) {
 }
 
 func TestLeafAdoptsFileOnDisk(t *testing.T) {
+	t.Parallel()
 	put := func(g *rig, l *Leaf, src string) {
 		t.Helper()
 		if err := os.Remove(g.stubPath(l)); err != nil {
@@ -490,6 +507,7 @@ func TestLeafAdoptsFileOnDisk(t *testing.T) {
 }
 
 func TestNoReplyOrOutputInPersistedFailure(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	runCanary := "package greet\n\nimport \"fmt\"\n\n// CANARY-reply\nfunc Greet(name string) (string, error) {\n\tfmt.Println(\"CANARY-output\")\n\treturn \"Hello, \" + name + \"!\", nil\n}\n"
 	buildCanary := "package greet\n\nfunc Greet(name string) (string, error) {\n\tvar n int = \"CANARY-compile\"\n\treturn \"\", nil\n}\n"
@@ -516,6 +534,7 @@ func TestNoReplyOrOutputInPersistedFailure(t *testing.T) {
 }
 
 func TestNoSecretInPrompt(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	rc, fc := g.leafRC(t, Script{"implement:" + leafID: {reply(bad(leafID, 1)), reply(good(leafID))}}, true)
 	fc.LeafScript[leafID] = []runner.Verdict{
@@ -560,6 +579,7 @@ func viaProxy(t *testing.T, rc *runCtx, id, host string) {
 }
 
 func TestCriticalHostFailure(t *testing.T) {
+	t.Parallel()
 	g := newRig(t, withNetwork)
 	rc, fc := g.leafRC(t, Script{"implement:" + leafID: {reply(good(leafID)), reply(variant(good(leafID), 2))}}, true)
 	fc.LeafScript[leafID] = []runner.Verdict{passVerdict(), passVerdict()}
@@ -592,6 +612,7 @@ func TestCriticalHostFailure(t *testing.T) {
 }
 
 func TestThreeCriticalFailuresTerminal(t *testing.T) {
+	t.Parallel()
 	g := newRig(t, withNetwork)
 	rc, fc := g.leafRC(t, Script{"implement:" + leafID: {reply(good(leafID)), reply(variant(good(leafID), 2)), reply(variant(good(leafID), 3))}}, true)
 	for i := 0; i < 3; i++ {
@@ -620,6 +641,7 @@ func TestThreeCriticalFailuresTerminal(t *testing.T) {
 }
 
 func TestNonCriticalWarns(t *testing.T) {
+	t.Parallel()
 	g := newRig(t, withNetwork)
 	rc, fc := g.leafRC(t, Script{"implement:" + leafID: {reply(good(leafID))}}, true)
 	fc.LeafScript[leafID] = []runner.Verdict{passVerdict()}
@@ -643,6 +665,7 @@ func TestNonCriticalWarns(t *testing.T) {
 }
 
 func TestEveryEntryTooLongIsNotSilent(t *testing.T) {
+	t.Parallel()
 	g := newRig(t, func(o *rigOpts) {
 		o.Settings = func(c *settings.Config) {
 			c.Providers[0].Models[0].ContextTokens = 600
@@ -671,6 +694,7 @@ func TestEveryEntryTooLongIsNotSilent(t *testing.T) {
 }
 
 func TestLeafNeverLeftWithoutTerminalStatus(t *testing.T) {
+	t.Parallel()
 	// The Task 11a afterRevision stub ends an exhausted ladder as failed with a
 	// named reason: the row is terminal, the reason is recorded, and an event says so.
 	g := newRig(t, func(o *rigOpts) { o.Settings = func(c *settings.Config) { c.Executor.FixAttempts = 1 } })
@@ -701,6 +725,7 @@ func TestLeafNeverLeftWithoutTerminalStatus(t *testing.T) {
 }
 
 func TestContractProblemEndsRevision(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	rc, fc := g.leafRC(t, Script{"implement:" + leafID: {reply("CONTRACT_PROBLEM: the signature cannot return an error for this case")}}, true)
 	lr, err := rc.newLeafRun(context.Background(), g.plan.Leaf(leafID), leafIn{})
@@ -726,6 +751,7 @@ func TestContractProblemEndsRevision(t *testing.T) {
 }
 
 func TestMaxRevisions(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	rc, _ := g.leafRC(t, Script{}, true)
 	l := *g.plan.Leaf(leafID)

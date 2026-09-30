@@ -212,6 +212,7 @@ func TestScanFilesOnlyNamedFiles(t *testing.T) {
 }
 
 func TestDescribeFindingsNamesNodesAndLinesOnly(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	l := g.plan.Leaves[0]
 	msg := describeFindings(g.plan, []Finding{

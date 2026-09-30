@@ -70,6 +70,9 @@ var (
 	_ planner.Secrets = (*memSecrets)(nil)
 )
 
+// planMu serialises the planning step of newRig (see planOffline).
+var planMu sync.Mutex
+
 // rig is one greeter repository, one config dir and one database, with the
 // approved plan the real planner produced offline from testdata/greeter.
 // Tasks 9c to 16 add the scripted provider, the router and the gate.
@@ -100,7 +103,7 @@ func newRig(t *testing.T, mods ...func(*rigOpts)) *rig {
 	for _, m := range mods {
 		m(&ro)
 	}
-	t.Setenv("GOPHERMIND_CONFIG_DIR", t.TempDir())
+	// GOPHERMIND_CONFIG_DIR is set once for the process by TestMain.
 	repo, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -197,6 +200,12 @@ func newRig(t *testing.T, mods ...func(*rigOpts)) *rig {
 // and _state/leaf_tests.json are produced by the code under test.
 func (g *rig) planOffline(briefPath string, mem *memSecrets) {
 	g.t.Helper()
+	// The planner finds its run file through the process environment, so each
+	// planning step takes the lock and its own config directory. Nothing else
+	// in a rig reads the variable.
+	planMu.Lock()
+	defer planMu.Unlock()
+	os.Setenv("GOPHERMIND_CONFIG_DIR", g.t.TempDir())
 	fake, err := planner.FixtureProvider(filepath.Join(greeterDir, "planner"))
 	if err != nil {
 		g.t.Fatal(err)

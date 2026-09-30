@@ -28,6 +28,7 @@ import (
 // ever put into one.
 const (
 	noteForbidden = "The previous reply was refused before anything was written: it used a file header, a diff, several code fences or another form that is not allowed. Reply with exactly one Go source file in one code fence."
+	noteMalformed = "The previous file did not parse or does not satisfy the contract: the package, the exact signature and the allowed declarations. Reply with exactly one Go source file in one code fence."
 	noteStray     = "The previous reply was refused: something other than the target file was written while its tests ran. Write only the target file."
 	noteCritical  = "The previous reply was refused: a request to a critical network host failed while its tests ran."
 )
@@ -100,6 +101,8 @@ type leafRun struct {
 	prev        packer.Failure    // the previous failure text, memory only
 	problem     string            // the last CONTRACT_PROBLEM sentence, memory only, never persisted
 	charged     int               // VerdictFail attempts of the current revision
+	unavailable string            // why a revision ended Interrupted with nothing charged: provider_unavailable or a configuration class
+	permClass   string            // the first permanent provider-level class seen
 	streakSince time.Time         // proxy failures before this time belong to an earlier attempt
 
 	reopened bool // the leaf was already committed and failed its check: the fix commits as a repair
@@ -108,16 +111,9 @@ type leafRun struct {
 }
 
 var (
-	repMu   sync.Mutex // guards rc.rep.reasons
+	repMu   sync.Mutex // guards rc.rep.reasons and _state/leaf-results.json
 	stateMu sync.Mutex // guards the read-modify-write of rc.state by leaf loops
 )
-
-// setReason records the final reason of a leaf that did not verify.
-func (rc *runCtx) setReason(id, reason string) {
-	repMu.Lock()
-	defer repMu.Unlock()
-	rc.rep.reasons[id] = reason
-}
 
 // maxRevisions is the node's budget, else the settings default, plus the
 // revisions a human granted.
@@ -327,7 +323,7 @@ func (rc *runCtx) runLeaf(ctx context.Context, l *Leaf, in leafIn) (out leafOutc
 		case revVerified:
 			return leafOutcome{Status: blackboard.StatusVerified}, nil
 		case revInterrupted:
-			return leafOutcome{Interrupted: true}, nil
+			return leafOutcome{Interrupted: true, Reason: lr.unavailable}, nil
 		}
 		o, done, aerr := lr.afterRevision(ctx, res)
 		if aerr != nil || done {
@@ -403,7 +399,9 @@ func (lr *leafRun) fail(ctx context.Context, reason string, cause error) (leafOu
 		}
 	}
 	lr.final = true
-	rc.setReason(l.ID, reason)
+	if rerr := rc.setResult(l.ID, blackboard.StatusFailed, reason); rerr != nil {
+		return leafOutcome{}, rerr
+	}
 	rc.emit("leaf_failed", l.ID, reason)
 	return leafOutcome{Status: blackboard.StatusFailed, Reason: reason}, cause
 }
@@ -424,7 +422,9 @@ func (lr *leafRun) escalate(ctx context.Context, out leafOutcome) (leafOutcome, 
 		}
 	}
 	lr.final = true
-	rc.setReason(l.ID, out.Reason)
+	if rerr := rc.setResult(l.ID, blackboard.StatusEscalated, out.Reason); rerr != nil {
+		return leafOutcome{}, rerr
+	}
 	rc.emit("leaf_escalated", l.ID, out.Reason)
 	return out, nil
 }
@@ -479,6 +479,15 @@ func (lr *leafRun) adoptOnDisk(ctx context.Context) (done bool, out leafOutcome,
 	if err := lr.swap.Enter(src); err != nil {
 		return false, out, fmt.Errorf("executor: leaf %s: its file on disk could not be taken over", l.ID)
 	}
+	// The file is held to the gate a model reply passes before anything runs it.
+	if class, note := lr.gate(src); class != "" {
+		rc.emit("adopt_refused", l.ID, class)
+		lr.prev = failureText(note)
+		if err := lr.swap.Fail(); err != nil {
+			return false, out, fmt.Errorf("executor: the stub of leaf %s could not be restored", l.ID)
+		}
+		return false, out, nil
+	}
 	snap, err := TakeSnapshot(rc.o.Repo, rc.git)
 	if err != nil {
 		return false, out, err
@@ -515,6 +524,26 @@ func (lr *leafRun) adoptOnDisk(ctx context.Context) (done bool, out leafOutcome,
 	return false, out, nil
 }
 
+// gate runs on a file's bytes what a reply passes before it is written: the
+// reply gate (parse, package, signature, declarations, process control), the
+// import policy and the source scan. It returns the failure class and the
+// fixed sentence for the next prompt, or "" when the file passes.
+func (lr *leafRun) gate(src []byte) (class, note string) {
+	r, err := packer.ParseReply(string(src), lr.expect)
+	switch {
+	case err != nil:
+		return runner.ClassMalformed, noteMalformed
+	case r.ContractProblem != "" || r.Forbidden != "":
+		return ClassForbiddenWrite, noteForbidden
+	case len(lr.rc.plan.Policy().Check(r.Imports)) > 0:
+		return ClassImportNotAllowed, noteImports(lr.rc.plan.Policy())
+	}
+	if findings, serr := ScanGoSource(lr.l.File, src); serr != nil || len(findings) > 0 {
+		return ClassForbiddenWrite, noteForbidden
+	}
+	return "", ""
+}
+
 func inList(list []string, s string) bool {
 	for _, x := range list {
 		if x == s {
@@ -545,6 +574,9 @@ func (lr *leafRun) cleanStray(snap Snapshot) ([]string, error) {
 }
 
 // criticalSince is the hosts of critical-host failures of the leaf since t.
+// With no proxy (an offline run, or a test that built none) there is no
+// evidence to read: it returns nothing, and the attempt is judged by the check
+// alone.
 func (rc *runCtx) criticalSince(id string, t time.Time) []string {
 	if rc.prox == nil {
 		return nil
@@ -590,30 +622,55 @@ func (lr *leafRun) finishPass(ctx context.Context, committed bool, hash string) 
 		return fmt.Errorf("executor: marking %s verified failed", l.ID)
 	}
 	lr.final = true
+	if err := rc.setResult(l.ID, blackboard.StatusVerified, ""); err != nil {
+		return err
+	}
 	rc.emit("leaf_verified", l.ID, "")
 	return nil
 }
 
 // previousSHA is the hash of the last reply of this leaf on the entry: from
 // memory, else from the blackboard's last attempt of the same provider and
-// model that has one. Empty when there is none.
-func (lr *leafRun) previousSHA(ctx context.Context, e ladderEntry) string {
+// model that has one. Empty when there is none. A blackboard that cannot be
+// read is an error: guessing "no previous reply" would lose the detection.
+func (lr *leafRun) previousSHA(ctx context.Context, e ladderEntry) (string, error) {
 	if s, ok := lr.lastSHA[e.Name]; ok {
-		return s
+		return s, nil
 	}
 	prov, model, _ := settings.SplitEntry(e.Name)
+	row, err := lr.rc.o.Board.Get(ctx, lr.rc.plan.RunID, lr.l.ID)
+	if err != nil {
+		return "", fmt.Errorf("executor: reading the attempts of %s failed", lr.l.ID)
+	}
 	sha := ""
-	if row, err := lr.rc.o.Board.Get(ctx, lr.rc.plan.RunID, lr.l.ID); err == nil {
-		for i := len(row.Attempts) - 1; i >= 0; i-- {
-			a := row.Attempts[i]
-			if a.Provider == prov && a.Model == model && a.ReplySHA256 != "" {
-				sha = a.ReplySHA256
-				break
-			}
+	for i := len(row.Attempts) - 1; i >= 0; i-- {
+		a := row.Attempts[i]
+		if a.Provider == prov && a.Model == model && a.ReplySHA256 != "" {
+			sha = a.ReplySHA256
+			break
 		}
 	}
 	lr.lastSHA[e.Name] = sha
-	return sha
+	return sha, nil
+}
+
+// noteEscalation records the move to a later model of the ladder, when the
+// model is about to be called: once per model per leaf, however many
+// revisions follow, and never for a model that was skipped.
+func (lr *leafRun) noteEscalation(e ladderEntry) error {
+	if e.Pos <= 1 {
+		return nil
+	}
+	list, err := LoadEscalations(lr.rc.o.RunDir)
+	if err != nil {
+		return err
+	}
+	for _, x := range list {
+		if x.Kind == "model" && x.NodeID == lr.l.ID && x.Model == e.Name {
+			return nil
+		}
+	}
+	return AppendEscalation(lr.rc.o.RunDir, report.Escalation{Kind: "model", TaskType: "implement", Model: e.Name, NodeID: lr.l.ID})
 }
 
 // oneRevision is rungs 1 to 4 for revision lr.rev: for each entry in order
@@ -624,14 +681,9 @@ func (lr *leafRun) oneRevision(ctx context.Context) (revResult, error) {
 	rc := lr.rc
 	entries := rc.ladderEntries(lr.l)
 	lr.charged = 0
-	var tooLong, providerN, other int
-	for i, e := range entries {
-		if i > 0 {
-			esc := report.Escalation{Kind: "model", TaskType: "implement", Model: e.Name, NodeID: lr.l.ID}
-			if err := AppendEscalation(rc.o.RunDir, esc); err != nil {
-				return revExhausted, err
-			}
-		}
+	lr.unavailable = ""
+	var tooLong, providerN, permanentN int
+	for _, e := range entries {
 		if lr.tooLong[e.Name] {
 			tooLong++
 			continue
@@ -649,11 +701,12 @@ func (lr *leafRun) oneRevision(ctx context.Context) (revResult, error) {
 			tooLong++
 		case endProvider:
 			providerN++
+		case endPermanent:
+			permanentN++
 		default:
 			if lr.passed {
 				return revVerified, nil
 			}
-			other++
 		}
 	}
 	switch {
@@ -663,7 +716,15 @@ func (lr *leafRun) oneRevision(ctx context.Context) (revResult, error) {
 		return revExhausted, nil
 	case len(entries) > 0 && tooLong == len(entries):
 		return revTooLong, nil
-	case providerN > 0 && other == 0 && providerN+tooLong == len(entries):
+	case providerN > 0:
+		// Nothing was charged and a provider was cooling or failing: no model
+		// was at fault, and the leaf can be tried again on a later run.
+		lr.unavailable = "provider_unavailable"
+		return revInterrupted, nil
+	case permanentN > 0:
+		// A configuration fault (credentials, a missing model, privacy): the
+		// true class is reported, and it is not the leaf's failure.
+		lr.unavailable = lr.permClass
 		return revInterrupted, nil
 	}
 	return revExhausted, nil
@@ -763,15 +824,26 @@ func (lr *leafRun) attempt(ctx context.Context, e ladderEntry, k int) (end entry
 		Revision: lr.rev, TaskType: "implement", NodeClass: l.Class, Only: e.Name,
 	}
 	var reply packer.Reply
+	lastSHA := "" // hash of the last reply the parse saw, good or not
 	parse := func(text string) error {
 		r, perr := packer.ParseReply(text, lr.expect)
-		reply = r
+		reply, lastSHA = r, r.SHA256
 		return perr
 	}
+	if err := lr.noteEscalation(e); err != nil {
+		return endFailed, true, err
+	}
 	if _, cerr := rc.o.Caller.CallParsed(ctx, info, req, parse); cerr != nil {
-		return lr.providerError(ctx, e, started, cerr)
+		return lr.providerError(ctx, e, started, cerr, lastSHA)
 	}
 
+	// A repeat of the previous reply on this entry, whatever the gate would say
+	// of it, is identical: hashed first so a refused reply cannot burn every fix.
+	if reply.ContractProblem == "" {
+		if same, err := lr.identical(ctx, e, started, reply.SHA256); err != nil || same {
+			return endIdentical, true, err
+		}
+	}
 	switch {
 	case reply.ContractProblem != "":
 		lr.problem = reply.ContractProblem
@@ -786,16 +858,24 @@ func (lr *leafRun) attempt(ctx context.Context, e ladderEntry, k int) (end entry
 	if bad := rc.plan.Policy().Check(reply.Imports); len(bad) > 0 {
 		return lr.refused(ctx, e, started, reply, ClassImportNotAllowed, failureText(noteImports(rc.plan.Policy())))
 	}
-	if prev := lr.previousSHA(ctx, e); prev != "" && prev == reply.SHA256 {
-		if err := lr.record(ctx, e, started, blackboard.VerdictFail, ClassIdentical, failureReason(ClassIdentical, nil), nil, reply.SHA256); err != nil {
-			return endIdentical, true, err
-		}
-		return endIdentical, true, nil
-	}
 	if findings, serr := ScanGoSource(l.File, reply.Source); serr != nil || len(findings) > 0 {
 		return lr.refused(ctx, e, started, reply, ClassForbiddenWrite, failureText(noteForbidden))
 	}
 	return lr.check(ctx, e, started, reply)
+}
+
+// identical reports whether sha repeats the last reply of this leaf on the
+// entry. When it does, the attempt is recorded as a failed identical_reply.
+func (lr *leafRun) identical(ctx context.Context, e ladderEntry, started time.Time, sha string) (bool, error) {
+	prev, err := lr.previousSHA(ctx, e)
+	if err != nil {
+		return false, err
+	}
+	if prev == "" || prev != sha {
+		return false, nil
+	}
+	err = lr.record(ctx, e, started, blackboard.VerdictFail, ClassIdentical, failureReason(ClassIdentical, nil), nil, sha)
+	return true, err
 }
 
 // refused records an attempt whose reply was refused before being written.
@@ -849,13 +929,14 @@ func (lr *leafRun) testSource() (string, error) {
 		return "", fmt.Errorf("executor: the test file of leaf %s is not readable", l.ID)
 	}
 	if hashHex(raw) != l.TestSHA256 {
-		return "", fmt.Errorf("executor: the test file of leaf %s changed since it was planned", l.ID)
+		return "", &stopError{Status: "failed", Reason: "test_file_changed",
+			Message: fmt.Sprintf("executor: the test file of leaf %s changed since it was planned", l.ID)}
 	}
 	return string(raw), nil
 }
 
 // providerError is what a failed router call means for the entry.
-func (lr *leafRun) providerError(ctx context.Context, e ladderEntry, started time.Time, cerr error) (entryEnd, bool, error) {
+func (lr *leafRun) providerError(ctx context.Context, e ladderEntry, started time.Time, cerr error, lastSHA string) (entryEnd, bool, error) {
 	var ce *router.ChainExhausted
 	if ctx.Err() != nil || errors.Is(cerr, context.Canceled) {
 		return endInterrupted, true, nil
@@ -866,6 +947,11 @@ func (lr *leafRun) providerError(ctx context.Context, e ladderEntry, started tim
 	class, end := ClassTimeout, endProvider
 	switch {
 	case ce.ParseErr != nil:
+		// Every reply of the entry was unusable. The last one is hashed; one
+		// that repeats the entry's previous reply is an identical reply.
+		if same, err := lr.identical(ctx, e, started, lastSHA); err != nil || same {
+			return endIdentical, true, err
+		}
 		class, end = runner.ClassMalformed, endMalformed
 	case len(ce.Reasons) > 0:
 		switch kind := ce.Reasons[0].Kind; kind {
@@ -874,17 +960,38 @@ func (lr *leafRun) providerError(ctx context.Context, e ladderEntry, started tim
 		case router.ReasonCooldown:
 			class = ClassRateLimited
 		case router.ReasonFailed:
-			class = ClassTimeout
+			class = failedClass(ce.Reasons[0].Detail)
 		default:
 			class, end = kind, endPermanent
+			if lr.permClass == "" {
+				lr.permClass = kind
+			}
 		}
 	default:
 		class, end = "no_model", endPermanent
 	}
-	if err := lr.record(ctx, e, started, blackboard.VerdictError, class, failureReason(class, nil), nil, ""); err != nil {
+	sha := ""
+	if end == endMalformed {
+		sha = lastSHA
+	}
+	if err := lr.record(ctx, e, started, blackboard.VerdictError, class, failureReason(class, nil), nil, sha); err != nil {
 		return end, true, err
 	}
 	return end, true, nil
+}
+
+// failedClass names why the router's "failed" entry failed, from the fixed
+// detail text the router gives it.
+func failedClass(detail string) string {
+	switch {
+	case strings.HasPrefix(detail, "timed out"):
+		return ClassTimeout
+	case strings.HasPrefix(detail, "reply truncated"):
+		return "truncated"
+	case strings.HasPrefix(detail, "empty reply"):
+		return "empty_reply"
+	}
+	return "provider_failed"
 }
 
 // check writes the reply, runs the leaf check, looks for strays and critical
