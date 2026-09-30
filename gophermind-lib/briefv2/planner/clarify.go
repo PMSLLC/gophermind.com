@@ -22,7 +22,10 @@ type clarifyQuestion struct {
 func parseClarify(text string) ([]clarifyQuestion, error) {
 	qs := []clarifyQuestion{}
 	if err := json.Unmarshal([]byte(text), &qs); err != nil {
-		return nil, fmt.Errorf("clarify reply is not a JSON array of questions: %w", err)
+		return nil, fmt.Errorf("clarify reply is not a JSON array of questions (%s)", jsonErr(err))
+	}
+	if qs == nil {
+		return nil, fmt.Errorf("clarify reply is null, want a JSON array of questions")
 	}
 	for i := range qs {
 		if strings.TrimSpace(qs[i].Question) == "" {
@@ -89,6 +92,9 @@ func (p *Planner) clarify(ctx context.Context, r *run) error {
 		got, err := p.ask(ctx, ask)
 		if err != nil {
 			return err
+		}
+		if len(got) != len(qs) {
+			return fmt.Errorf("the human gate returned %d answers for %d questions", len(got), len(qs))
 		}
 		for i, q := range qs {
 			as.Answers = append(as.Answers, answer{ID: q.ID, Stage: "clarify", Question: q.Question, Answer: got[i].Text, Assumed: got[i].Assumed})

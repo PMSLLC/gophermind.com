@@ -22,6 +22,20 @@ var runIDRE = regexp.MustCompile(`^gm-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3}$`)
 // requirements. For `resume` it finds the run and reads the same things back.
 func (p *Planner) load(ctx context.Context, o Options) (*run, error) {
 	if o.RunID != "" {
+		// A run id and a brief path together must name the same brief.
+		if o.BriefPath != "" {
+			rec, err := LookupRun(o.RunID)
+			if err != nil {
+				return nil, err
+			}
+			abs, aerr := filepath.Abs(o.BriefPath)
+			if aerr != nil {
+				abs = o.BriefPath
+			}
+			if abs != rec.BriefPath {
+				return nil, fmt.Errorf("planner: run %s was planned from %s, not %s; give a run id or a brief file, not both", o.RunID, rec.BriefPath, abs)
+			}
+		}
 		return p.loadExisting(o)
 	}
 	if o.BriefPath == "" {

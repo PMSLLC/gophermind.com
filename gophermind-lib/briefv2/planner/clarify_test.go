@@ -137,3 +137,27 @@ func TestAPrivacyDeadEndNamesTheSettingToChange(t *testing.T) {
 		t.Error("a public provider was sent the brief")
 	}
 }
+
+// A gate that returns the wrong number of answers is an error, not a panic.
+func TestAShortGateAnswerIsAnError(t *testing.T) {
+	gate := &shortGate{scriptGate: *approving()}
+	g := newRig(t, gate)
+	_, err := g.plan(planner.Options{StopAfter: "clarify"})
+	if err == nil || !strings.Contains(err.Error(), "answers for") {
+		t.Fatalf("err = %v, want a count error", err)
+	}
+}
+
+type shortGate struct{ scriptGate }
+
+func (g *shortGate) Ask(ctx context.Context, qs []human.Question) ([]human.Answer, error) {
+	return nil, nil
+}
+
+func TestAClarifyReplyOfNullIsRetried(t *testing.T) {
+	g := newRig(t, approving(), variant(t, map[string]string{"clarify.txt": "null", "clarify.2.txt": "[]"}))
+	g.mustPlan(planner.Options{StopAfter: "clarify"})
+	if got := string(g.read("_state/clarify.json")); strings.Contains(got, "null") {
+		t.Errorf("clarify.json = %s", got)
+	}
+}

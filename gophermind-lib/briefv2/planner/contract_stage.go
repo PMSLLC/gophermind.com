@@ -145,7 +145,7 @@ func parseOutline(text, briefID string) (map[string]any, error) {
 		Types       []map[string]any `json:"types"`
 	}
 	if err := json.Unmarshal([]byte(text), &o); err != nil {
-		return nil, fmt.Errorf("contract outline is not a JSON object: %w", err)
+		return nil, fmt.Errorf("contract outline is not a JSON object (%s)", jsonErr(err))
 	}
 	if len(o.Components) == 0 {
 		return nil, errors.New("contract outline lists no component")
@@ -181,7 +181,7 @@ func mergePass(doc map[string]any, component, text, briefID string) (map[string]
 		More      bool             `json:"more"`
 	}
 	if err := json.Unmarshal([]byte(text), &pass); err != nil {
-		return nil, false, fmt.Errorf("contract reply for %s is not a JSON object: %w", component, err)
+		return nil, false, fmt.Errorf("contract reply for %s is not a JSON object (%s)", component, jsonErr(err))
 	}
 	if pass.More && len(pass.Functions) == 0 {
 		return nil, false, fmt.Errorf("contract reply for %s says more remains but holds no function", component)
@@ -219,10 +219,10 @@ func validateContractDoc(doc map[string]any, briefID string) (*contract.Contract
 	}
 	c, err := contract.Load(raw)
 	if err != nil {
-		return nil, err
+		return nil, loadErr(err, doc)
 	}
 	if c.BriefID != briefID {
-		return nil, fmt.Errorf("contract: brief_id is %q, want %q", c.BriefID, briefID)
+		return nil, fmt.Errorf("contract: brief_id does not match the run id (%d bytes)", len(c.BriefID))
 	}
 	comps := map[string]bool{}
 	for _, comp := range c.Components {
@@ -248,7 +248,7 @@ func validateContractDoc(doc map[string]any, briefID string) (*contract.Contract
 			return nil, fmt.Errorf("contract: function id %q is also a component or the run id", f.ID)
 		}
 		if !comps[f.Component] {
-			return nil, fmt.Errorf("contract: function %s belongs to unknown component %q", f.ID, f.Component)
+			return nil, fmt.Errorf("contract: function %s belongs to unknown component (%d bytes)", f.ID, len(f.Component))
 		}
 		if err := cleanGoFile(f.File); err != nil {
 			return nil, fmt.Errorf("contract: function %s: %w", f.ID, err)
@@ -267,11 +267,11 @@ func cleanGoFile(file string) error {
 	case file == "":
 		return errors.New("file is empty")
 	case strings.Contains(file, `\`) || path.IsAbs(file):
-		return fmt.Errorf("file %q must be a relative path with forward slashes", file)
+		return fmt.Errorf("file (%d bytes) must be a relative path with forward slashes", len(file))
 	case path.Clean(file) != file || file == ".." || strings.HasPrefix(file, "../"):
-		return fmt.Errorf("file %q must be a clean path inside the repository", file)
+		return fmt.Errorf("file (%d bytes) must be a clean path inside the repository", len(file))
 	case !strings.HasSuffix(file, ".go"):
-		return fmt.Errorf("file %q is not a Go file", file)
+		return fmt.Errorf("file (%d bytes) is not a Go file", len(file))
 	}
 	return nil
 }
@@ -280,14 +280,14 @@ func cleanGoFile(file string) error {
 func parseSignature(sig string) (*ast.FuncDecl, error) {
 	f, err := parser.ParseFile(token.NewFileSet(), "", "package p\n"+sig+" {}\n", parser.SkipObjectResolution)
 	if err != nil {
-		return nil, fmt.Errorf("signature %q is not valid Go: %v", sig, err)
+		return nil, fmt.Errorf("signature (%d bytes) is not valid Go: %s", len(sig), syntaxErr(err))
 	}
 	if len(f.Decls) != 1 {
-		return nil, fmt.Errorf("signature %q must declare exactly one function", sig)
+		return nil, fmt.Errorf("signature (%d bytes) must declare exactly one function", len(sig))
 	}
 	fd, ok := f.Decls[0].(*ast.FuncDecl)
 	if !ok {
-		return nil, fmt.Errorf("signature %q is not a function", sig)
+		return nil, fmt.Errorf("signature (%d bytes) is not a function", len(sig))
 	}
 	return fd, nil
 }
