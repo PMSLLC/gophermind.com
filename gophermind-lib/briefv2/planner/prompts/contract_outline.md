@@ -2,7 +2,7 @@ You are the architect for GopherMind. Produce the outline of the contract for th
 
 Requirements:
 - Go only. Standard library unless the brief's Constraints allow modules.
-- Components map to the brief's ### Feature headings plus a `types` component for shared declarations. A component id is lower case letters, digits and dashes. Never use `logs` or `outline` as an id (they name a folder and a stage of the run).
+- Components map to the brief's ### Feature headings plus a `types` component for shared declarations. A component id is lower case letters, digits and dashes. A type id follows the same syntax: `intake-session`, never `IntakeSession` or `intake_session`; a function id is `fn-validate-email`. Never use `logs` or `outline` as an id (they name a folder and a stage of the run).
 - List the components in dependency order: a component comes after every component whose functions it calls.
 - Every type decl is complete Go source with a doc comment, exactly as it will appear in the file. `uses` lists the ids of other types the decl references.
 - Every `file` is a path relative to the repository root.

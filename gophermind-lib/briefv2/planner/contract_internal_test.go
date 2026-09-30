@@ -131,7 +131,7 @@ func TestMergeKeepsTheFirstEmission(t *testing.T) {
 		{"id": "has spaces " + canary, "v": "1"},
 		{"id": "has spaces " + canary, "v": "2"},
 	}
-	out, added, ignored := mergeByID(list, in, 0, "type", nil)
+	out, added, ignored := mergeByID(list, in, 0, "type", nil, nil)
 	if len(out) != 3 || added != 2 {
 		t.Fatalf("out %d added %d, want 3 and 2", len(out), added)
 	}
@@ -158,8 +158,19 @@ func TestBoundedID(t *testing.T) {
 	if got := boundedID(canary); got != fmt.Sprintf("<%d bytes>", len(canary)) {
 		t.Errorf("boundedID(bad syntax) = %s", got)
 	}
-	if got := boundedID(long); len(got) != 66 || !strings.HasPrefix(got, `"aaa`) {
-		t.Errorf("boundedID(10KB) has length %d, want 64 bytes of the id in quotes", len(got))
+	// An id over 64 bytes is reported by length only: a cut prefix would read
+	// like a real id.
+	if got := boundedID(long); got != "<10000 bytes>" {
+		t.Errorf("boundedID(10KB) = %s, want its length only", got)
+	}
+	if got := boundedID(strings.Repeat("a", 64)); len(got) != 66 {
+		t.Errorf("boundedID(64 bytes) = %s, want the id in quotes", got)
+	}
+	if got := boundedID(strings.Repeat("a", 65)); got != "<65 bytes>" {
+		t.Errorf("boundedID(65 bytes) = %s", got)
+	}
+	if got := boundedModule("example.com/" + strings.Repeat("a", 70)); !strings.HasPrefix(got, "<") {
+		t.Errorf("boundedModule(long) = %s, want its length only", got)
 	}
 }
 
@@ -243,5 +254,27 @@ func TestOutlineIgnoresModelExports(t *testing.T) {
 		if len(strList(c["exports"])) != 0 {
 			t.Errorf("component %v keeps the model's exports %v", c["id"], c["exports"])
 		}
+	}
+}
+
+// A schema failure names at most the first 5 pointers and counts the rest.
+func TestSchemaErrorBoundsThePointers(t *testing.T) {
+	var types []string
+	for i := 0; i < 20; i++ {
+		types = append(types, `{"id": "x`+fmt.Sprint(i)+`", "package": "x", "file": "internal/x/a.go"}`)
+	}
+	d := map[string]any{}
+	raw := `{"spec_version": "2.0", "brief_id": "` + testRunID + `", "revision": 0, "module": "example.com/x",
+	 "conventions": {"layout": ["a"], "naming": ["a"], "errors": "e", "testing": "t"},
+	 "components": [], "types": [` + strings.Join(types, ",") + `], "functions": []}`
+	if err := json.Unmarshal([]byte(raw), &d); err != nil {
+		t.Fatal(err)
+	}
+	err := validateOutlineShape(d, testRunID)
+	if err == nil {
+		t.Fatal("want a schema error")
+	}
+	if n := strings.Count(err.Error(), "/types/"); n != 5 || !strings.Contains(err.Error(), "and 15 more") {
+		t.Errorf("err = %v, want 5 pointers and 15 more", err)
 	}
 }

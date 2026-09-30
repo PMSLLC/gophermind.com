@@ -42,6 +42,13 @@ type contractState struct {
 	// IgnoredDuplicates lists, for the run report, the ids a later emission
 	// repeated with different content; the first emission was kept.
 	IgnoredDuplicates []string `json:"ignored_duplicates,omitempty"`
+	// IgnoredTotal is the exact count of dropped emissions; the stored list is
+	// capped, and IgnoredTruncated says when it is.
+	IgnoredTotal     int  `json:"ignored_total,omitempty"`
+	IgnoredTruncated bool `json:"ignored_truncated,omitempty"`
+	// IDsNormalized counts the ids and references rewritten to the id syntax
+	// (outline_id_normalized); the rewrite is deterministic, so this is only a count.
+	IDsNormalized int `json:"ids_normalized,omitempty"`
 }
 
 const maxIgnoredRecorded = 200
@@ -53,9 +60,12 @@ func (p *Planner) noteIgnored(st *contractState, stage string, ignored []string)
 	if len(ignored) == 0 {
 		return
 	}
+	st.IgnoredTotal += len(ignored)
 	for _, n := range ignored {
 		if len(st.IgnoredDuplicates) < maxIgnoredRecorded {
 			st.IgnoredDuplicates = append(st.IgnoredDuplicates, n)
+		} else {
+			st.IgnoredTruncated = true
 		}
 	}
 	shown := ignored
@@ -63,14 +73,21 @@ func (p *Planner) noteIgnored(st *contractState, stage string, ignored []string)
 		shown = shown[:maxUnresolvedInError]
 	}
 	p.emit(events.KindWarning, stage, "", fmt.Sprintf(
-		"outline_duplicate_ignored: %d later emissions of an id already written were dropped and the first kept (%s)",
-		len(ignored), strings.Join(shown, ", ")))
+		"outline_duplicate_ignored: %d later emissions of an id already written were dropped and the first kept (%s); %d in all so far",
+		len(ignored), strings.Join(shown, ", "), st.IgnoredTotal))
 }
 
-// failedAttempt is true for a model call that ended in an error other than
-// the caller giving up: it counts as a repair attempt.
+// failedAttempt is true for a model call that failed because of the model: the
+// router ran out of models after replies the parser rejected. Only that counts
+// as a repair attempt. A ledger, budget, privacy or transport error is not the
+// model's doing and aborts the stage without using up an attempt, and neither
+// does the caller giving up.
 func failedAttempt(ctx context.Context, err error) bool {
-	return err != nil && ctx.Err() == nil
+	if err == nil || ctx.Err() != nil {
+		return false
+	}
+	var ce *router.ChainExhausted
+	return errors.As(err, &ce) && ce.ParseErr != nil
 }
 
 // maxOutlinePasses bounds the outline loop so a model that never finishes
@@ -122,14 +139,19 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			}
 			more := false
 			var ignored []string
+			var notes idNotes
 			cs := callSpec{stage: "contract:outline", taskType: "contract", scope: router.ScopeBrief,
 				maxTokens: maxTokensOutline, maxGrown: maxGrownOutline}
 			if err := p.call(ctx, r, cs, prompt, func(text string) error {
-				doc, ds, m, ign, err := mergeOutline(st.Doc, st.Deps, StripReply(text), r.id, len(unresolved) > 0)
+				text, nt, err := normalizeReply(st.Doc, StripReply(text), replyOutline)
 				if err != nil {
 					return err
 				}
-				st.Doc, st.Deps, more, ignored = doc, ds, m, ign
+				doc, ds, m, ign, err := mergeOutline(st.Doc, st.Deps, text, r.id, len(unresolved) > 0)
+				if err != nil {
+					return err
+				}
+				st.Doc, st.Deps, more, ignored, notes = doc, ds, m, append(nt.Ignored, ign...), nt
 				return nil
 			}); err != nil {
 				if failedAttempt(ctx, err) && len(unresolved) > 0 {
@@ -146,6 +168,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			} else {
 				st.OutlineRepairs++
 			}
+			p.noteNormalized(&st, "contract", notes)
 			p.noteIgnored(&st, "contract", ignored)
 			return writeJSON(r.path(stateContract), st)
 		}
@@ -204,17 +227,23 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			}
 			more := false
 			var ignored []string
+			var notes idNotes
 			cs := callSpec{stage: "contract:" + id, taskType: "contract", scope: router.ScopeComponent, maxTokens: maxTokensContract}
 			if err := p.call(ctx, r, cs, prompt, func(text string) error {
-				doc, m, ign, err := mergePass(st.Doc, id, StripReply(text), r.id)
+				text, nt, err := normalizeReply(st.Doc, StripReply(text), replyComponent)
 				if err != nil {
 					return err
 				}
-				st.Doc, more, ignored = doc, m, ign
+				doc, m, ign, err := mergePass(st.Doc, id, text, r.id)
+				if err != nil {
+					return err
+				}
+				st.Doc, more, ignored, notes = doc, m, append(nt.Ignored, ign...), nt
 				return nil
 			}); err != nil {
 				return err
 			}
+			p.noteNormalized(&st, "contract:"+id, notes)
 			p.noteIgnored(&st, "contract:"+id, ignored)
 			if !more {
 				st.Done = append(st.Done, id)
@@ -246,13 +275,18 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			return err
 		}
 		var ignored []string
+		var notes idNotes
 		cs := callSpec{stage: repairStage, taskType: "contract", scope: router.ScopeBrief, maxTokens: maxTokensContract}
 		if err := p.call(ctx, r, cs, prompt, func(text string) error {
-			doc, ign, err := mergeRepair(st.Doc, StripReply(text), r.id)
+			text, nt, err := normalizeReply(st.Doc, StripReply(text), replyRepair)
 			if err != nil {
 				return err
 			}
-			st.Doc, ignored = doc, ign
+			doc, ign, err := mergeRepair(st.Doc, text, r.id)
+			if err != nil {
+				return err
+			}
+			st.Doc, ignored, notes = doc, append(nt.Ignored, ign...), nt
 			return nil
 		}); err != nil {
 			if failedAttempt(ctx, err) {
@@ -263,6 +297,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			}
 			return err
 		}
+		p.noteNormalized(&st, repairStage, notes)
 		p.noteIgnored(&st, repairStage, ignored)
 		st.Repairs++
 		if err := writeJSON(r.path(stateContract), st); err != nil {
@@ -337,12 +372,11 @@ func mergeOutline(doc map[string]any, have []Dependency, text, briefID string, r
 	}
 	// The harness fills a component's exports once its functions exist; a
 	// model's exports in the outline would name functions that are not there.
-	comps, added, ignored := mergeByID(next["components"], o.Components, 0, "component", func(c map[string]any) {
+	added, ignored := mergeList(next, "components", o.Components, 0, "component", func(c map[string]any) {
 		c["exports"] = []any{}
 	})
-	types, added, ign2 := mergeByID(next["types"], o.Types, added, "type", nil)
+	added, ign2 := mergeList(next, "types", o.Types, added, "type", nil)
 	ignored = append(ignored, ign2...)
-	next["components"], next["types"] = comps, types
 
 	merged := append([]Dependency{}, have...)
 	for _, d := range deps {
@@ -384,25 +418,20 @@ var (
 	maxBoundedID = 64
 )
 
-// boundedID is how a model-supplied id may appear in an error: quoted and cut
-// to 64 bytes when it has the syntax of an id, otherwise only its length.
+// boundedID is how a model-supplied id may appear in an error: quoted when it
+// has the syntax of an id and at most 64 bytes, otherwise only its length (a
+// cut prefix would read like a real id).
 func boundedID(id string) string {
-	if !idSyntaxRE.MatchString(id) {
+	if !idSyntaxRE.MatchString(id) || len(id) > maxBoundedID {
 		return fmt.Sprintf("<%d bytes>", len(id))
-	}
-	if len(id) > maxBoundedID {
-		id = id[:maxBoundedID]
 	}
 	return fmt.Sprintf("%q", id)
 }
 
 // boundedModule is boundedID for a module path.
 func boundedModule(m string) string {
-	if !depModuleRE.MatchString(m) {
+	if !depModuleRE.MatchString(m) || len(m) > maxBoundedID {
 		return fmt.Sprintf("<%d bytes>", len(m))
-	}
-	if len(m) > maxBoundedID {
-		m = m[:maxBoundedID]
 	}
 	return fmt.Sprintf("%q", m)
 }
@@ -470,8 +499,10 @@ func unresolvedErr(stage string, ids []string) error {
 // with boundedID (an id that fails the id syntax is reported by length). That
 // is model noise, not a plan defect, and nothing the brief needs is lost
 // because the first emission stays. added counts the objects that were new.
-// prep, when set, normalises an object before it is compared.
-func mergeByID(list any, in []map[string]any, added int, what string, prep func(map[string]any)) ([]any, int, []string) {
+// prep, when set, normalises an object before it is compared. others holds the
+// ids of the other lists (components, types, functions share one id namespace):
+// an id in it is dropped and reported like any repeat, whatever its content.
+func mergeByID(list any, in []map[string]any, added int, what string, prep func(map[string]any), others map[string]bool) ([]any, int, []string) {
 	out, _ := list.([]any)
 	at := map[string]int{}
 	for i, x := range out {
@@ -487,6 +518,12 @@ func mergeByID(list any, in []map[string]any, added int, what string, prep func(
 			prep(m)
 		}
 		id, _ := m["id"].(string)
+		if others[id] && id != "" {
+			// The id belongs to a component, type or function of another list:
+			// one namespace, first emission wins.
+			ignored = append(ignored, what+" "+boundedID(id))
+			continue
+		}
 		if i, ok := at[id]; ok && id != "" {
 			old, _ := json.Marshal(out[i])
 			cur, _ := json.Marshal(m)
@@ -502,6 +539,26 @@ func mergeByID(list any, in []map[string]any, added int, what string, prep func(
 		added++
 	}
 	return out, added, ignored
+}
+
+// mergeList is mergeByID for the list doc[key] ("components", "types" or
+// "functions"): the ids of the other two lists are the others, and the merged
+// list is stored back in doc.
+func mergeList(doc map[string]any, key string, in []map[string]any, added int, what string, prep func(map[string]any)) (int, []string) {
+	others := map[string]bool{}
+	for _, k := range []string{"components", "types", "functions"} {
+		if k == key {
+			continue
+		}
+		for _, o := range objects(doc[k]) {
+			if id, _ := o["id"].(string); id != "" {
+				others[id] = true
+			}
+		}
+	}
+	out, added, ignored := mergeByID(doc[key], in, added, what, prep, others)
+	doc[key] = out
+	return added, ignored
 }
 
 // outlineFixedText is the module and conventions the first pass fixed, for the
@@ -559,13 +616,12 @@ func mergePass(doc map[string]any, component, text, briefID string) (map[string]
 	for _, f := range pass.Functions {
 		f["component"] = component
 	}
-	types, added, ignored := mergeByID(next["types"], pass.Types, 0, "type", nil)
-	fns, added, ign2 := mergeByID(next["functions"], pass.Functions, added, "function", nil)
+	added, ignored := mergeList(next, "types", pass.Types, 0, "type", nil)
+	added, ign2 := mergeList(next, "functions", pass.Functions, added, "function", nil)
 	ignored = append(ignored, ign2...)
 	if pass.More && added == 0 {
 		return nil, false, nil, fmt.Errorf("contract reply for %s says more remains but adds nothing new", component)
 	}
-	next["types"], next["functions"] = types, fns
 	if err := validateOutlineShape(next, briefID); err != nil {
 		return nil, false, nil, err
 	}
@@ -835,9 +891,11 @@ func mergeRepair(doc map[string]any, text, briefID string) (map[string]any, []st
 		return nil, nil, err
 	}
 	have := map[string]bool{}
-	for _, f := range objects(next["functions"]) {
-		id, _ := f["id"].(string)
-		have[id] = true
+	for _, key := range []string{"components", "types", "functions"} {
+		for _, o := range objects(next[key]) {
+			id, _ := o["id"].(string)
+			have[id] = true
+		}
 	}
 	for _, f := range pass.Functions {
 		id, _ := f["id"].(string)
@@ -845,10 +903,9 @@ func mergeRepair(doc map[string]any, text, briefID string) (map[string]any, []st
 			return nil, nil, fmt.Errorf("contract repair: function %s names no component", boundedID(id))
 		}
 	}
-	types, _, ignored := mergeByID(next["types"], pass.Types, 0, "type", nil)
-	fns, _, ign2 := mergeByID(next["functions"], pass.Functions, 0, "function", nil)
+	_, ignored := mergeList(next, "types", pass.Types, 0, "type", nil)
+	_, ign2 := mergeList(next, "functions", pass.Functions, 0, "function", nil)
 	ignored = append(ignored, ign2...)
-	next["types"], next["functions"] = types, fns
 	if err := validateOutlineShape(next, briefID); err != nil {
 		return nil, nil, err
 	}

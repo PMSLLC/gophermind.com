@@ -651,3 +651,41 @@ func TestWriteChecksEveryComponentBelowRepoRoot(t *testing.T) {
 		t.Fatalf("root given as alias: %v", err)
 	}
 }
+
+func TestPlannerWarningsShowTheIgnoredDuplicates(t *testing.T) {
+	in := fixture()
+	in.IgnoredDuplicates = []string{`type "name-error"`, `function <70 bytes>`, "type \"x\"\nCANARY reply text"}
+	in.IgnoredDuplicatesTotal = 450
+	in.IgnoredDuplicatesTruncated = true
+	r := build(t, in)
+	if len(r.PlannerWarnings) != 3 {
+		t.Fatalf("warnings = %q", r.PlannerWarnings)
+	}
+	if r.PlannerWarnings[0] != `duplicate id ignored: type "name-error"` || r.PlannerWarnings[1] != `duplicate id ignored: function <70 bytes>` {
+		t.Errorf("warnings = %q", r.PlannerWarnings)
+	}
+	if !strings.Contains(r.PlannerWarnings[2], "450") || !strings.Contains(r.PlannerWarnings[2], "2 listed") {
+		t.Errorf("total line = %q", r.PlannerWarnings[2])
+	}
+	raw, _ := json.Marshal(r)
+	if strings.Contains(string(raw), "CANARY") {
+		t.Error("an entry that is not an id line reached the report")
+	}
+	if s := r.Summary(); !strings.Contains(s, `type "name-error"`) || !strings.Contains(s, "Planner warnings:") {
+		t.Errorf("summary lacks the planner warnings:\n%s", s)
+	}
+}
+
+func TestNoPlannerWarningsWhenNothingWasIgnored(t *testing.T) {
+	r := build(t, fixture())
+	if len(r.PlannerWarnings) != 0 {
+		t.Errorf("warnings = %q", r.PlannerWarnings)
+	}
+	raw, _ := json.Marshal(r)
+	if strings.Contains(string(raw), "planner_warnings") {
+		t.Error("planner_warnings present in the JSON of a clean run")
+	}
+	if strings.Contains(r.Summary(), "Planner warnings") {
+		t.Error("summary mentions planner warnings on a clean run")
+	}
+}

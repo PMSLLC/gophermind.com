@@ -15,6 +15,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -113,6 +114,9 @@ type Report struct {
 	Incomplete    bool        `json:"incomplete,omitempty"`
 	Failures      []string    `json:"failures,omitempty"`
 	Landing       *Landing    `json:"landing,omitempty"`
+	// PlannerWarnings lists the duplicate ids the planner dropped (first
+	// emission kept), one line per id and a total line; ids and counts only.
+	PlannerWarnings []string `json:"planner_warnings,omitempty"`
 }
 
 // Input is everything Build aggregates. The caller builds Failures as
@@ -140,6 +144,12 @@ type Input struct {
 	LedgerErrors          int
 	Failures              []string
 	Landing               *Landing
+	// IgnoredDuplicates, Total and Truncated are what
+	// planner.IgnoredDuplicates(runDir) returns. An entry that is not
+	// "<component|type|function> <id or <n bytes>>" is dropped.
+	IgnoredDuplicates          []string
+	IgnoredDuplicatesTotal     int
+	IgnoredDuplicatesTruncated bool
 	// PlanLeaves is every leaf id of the plan. When non-nil, Build guarantees
 	// each is either verified or named in Failures. nil means rows only.
 	PlanLeaves []string
@@ -215,6 +225,7 @@ func Build(in Input) (Report, error) {
 		}
 	}
 	r.Failures = completeFailures(in)
+	r.PlannerWarnings = plannerWarnings(in)
 
 	// Pass 1: ledger rows.
 	entries := map[tmKey]*TaskModel{}
@@ -364,6 +375,31 @@ func Build(in Input) (Report, error) {
 		}
 	}
 	return r, nil
+}
+
+var ignoredEntryRE = regexp.MustCompile(`^(component|type|function) ("[A-Za-z0-9][A-Za-z0-9_.-]{0,63}"|<[0-9]+ bytes>)$`)
+
+// plannerWarnings turns the planner's ignored duplicates into report lines. An
+// entry that is not an id line is dropped, so no reply text can get in.
+func plannerWarnings(in Input) []string {
+	if in.IgnoredDuplicatesTotal == 0 && len(in.IgnoredDuplicates) == 0 {
+		return nil
+	}
+	var out []string
+	for _, e := range in.IgnoredDuplicates {
+		if ignoredEntryRE.MatchString(e) {
+			out = append(out, "duplicate id ignored: "+e)
+		}
+	}
+	total := in.IgnoredDuplicatesTotal
+	if total < len(in.IgnoredDuplicates) {
+		total = len(in.IgnoredDuplicates)
+	}
+	line := fmt.Sprintf("%d duplicate emissions ignored in all, %d listed", total, len(out))
+	if in.IgnoredDuplicatesTruncated {
+		line += " (the list is cut)"
+	}
+	return append(out, line)
 }
 
 // completeFailures returns the caller's failure lines plus one line for every

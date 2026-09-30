@@ -116,10 +116,26 @@ repair passes (stored like any pass), and only then does the stage fail, naming
 at most 10 of the ids. An id that a later emission repeats with different content (in the same reply
 or a later pass, for components, types and functions) is model noise, not a
 plan defect: the first emission is kept, the repeat is dropped, a warning
-`outline_duplicate_ignored` names the ids (only ids that pass the id syntax,
-with a count) and they are listed in `_state/contract.json` under
-`ignored_duplicates`; coverage later checks the plan against the brief, so
-nothing the brief needs is lost. Identical repeats are dropped silently. A
+`outline_duplicate_ignored` names the ids (only ids of at most 64 bytes that
+pass the id syntax, anything else by length, with this pass's count and the
+running total) and they are listed in `_state/contract.json` under
+`ignored_duplicates` (at most 200, with the exact count in `ignored_total` and
+`ignored_truncated` when the list was cut; the run report shows them as
+`planner_warnings`). Components, types and functions share one id namespace, so
+a function whose id equals a type id is dropped the same way; coverage later checks the plan against the brief, so
+nothing the brief needs is lost. Identical repeats are dropped silently. Ids are
+normalised before validation: a model's `IntakeSession`, `intake_session` or
+`Intake Session` becomes `intake-session` (case boundaries split, lower case,
+other runs of characters one dash; a function id also gets its `fn-` prefix),
+and every reference to it in the same reply (`uses`, a function's `component`)
+or to an earlier pass is rewritten the same way, so a resumed run, whose stored
+contract is already normalised, rewrites identically. Ids that already match
+the syntax are never touched. Two different spellings that become one id keep
+the first. A warning `outline_id_normalized` gives the count and at most 10
+examples (the old id only when it is at most 64 printable ASCII bytes, else its
+length); the total is kept in `_state/contract.json` as `ids_normalized`. A
+reply that still fails the schema is asked for again once with the bounded
+list of offending pointers (the first 5 and a count, never reply text). A
 model's `exports` in the outline are ignored (the harness fills them). The
 component ids `logs` and `outline` are reserved (a run folder and a stage
 name); the repair stage is `contract:_repair`, which no component can be named
@@ -196,7 +212,8 @@ A provider's key is never in this file: `api_key_secret` names an entry set with
 
 Every model call, including every failed attempt, is one row in the `calls`
 table of `<config dir>/blackboard.db`: stage, task type (`clarify`, `contract`,
-`decompose`, `coverage`, `testwrite`), node class for a call about one function,
+`decompose`, `coverage`, `testwrite`), node class for a call about one function
+(a leaf call only: the clarify, contract, decompose and coverage stage calls leave it empty),
 provider, model requested and served, token counts, duration, and outcome. The
 prompt and the reply are never stored, only their sizes and SHA-256 hashes.
 `gophermind brief calls <run-id>` prints the rows; `status` prints them summed by

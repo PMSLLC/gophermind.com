@@ -77,3 +77,18 @@ func JSONErr(err error) string { return jsonErr(err) }
 
 // SyntaxErr describes a Go parse failure by position only.
 func SyntaxErr(err error) string { return syntaxErr(err) }
+
+// IgnoredDuplicates reads the duplicate emissions the Contract stage dropped
+// (_state/contract.json): the stored entries (ids only, at most 200), the exact
+// total, and whether the stored list was cut. An absent file is an empty list.
+func IgnoredDuplicates(runDir string) ([]string, int, bool, error) {
+	var st contractState
+	if _, err := readJSON((&run{dir: runDir}).path(stateContract), &st); err != nil {
+		return nil, 0, false, err
+	}
+	total := st.IgnoredTotal
+	if total < len(st.IgnoredDuplicates) {
+		total = len(st.IgnoredDuplicates)
+	}
+	return append([]string{}, st.IgnoredDuplicates...), total, st.IgnoredTruncated, nil
+}

@@ -5,6 +5,8 @@ You are the architect for GopherMind. The contract below has every component wri
 
 Reply with what is missing: write each missing function or type in full. A function you write must say which component it belongs to in its `component` field (an id from the outline). An id that is already declared keeps its first version, so resending it changes nothing.
 
+Ids are lower case letters, digits and dashes only: a type id is `intake-session`, never `IntakeSession` or `intake_session`, and a function id is `fn-validate-email`. Write the missing ids exactly as they are listed above, and every id in `uses` and `component` the same way.
+
 Outline (module, conventions, all components):
 <outline>
 {{.Outline}}
