@@ -65,6 +65,8 @@ func fixture() report.Input {
 	}
 }
 
+func opt(root string) report.WriteOptions { return report.WriteOptions{RepoRoot: root} }
+
 func build(t *testing.T, in report.Input) report.Report {
 	t.Helper()
 	r, err := report.Build(in)
@@ -304,7 +306,7 @@ func TestExitCodeMapping(t *testing.T) {
 func TestReportWriteReadRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	r := build(t, fixture())
-	if err := report.Write(dir, r); err != nil {
+	if err := report.Write(dir, r, opt(dir)); err != nil {
 		t.Fatal(err)
 	}
 	got, err := report.Read(dir)
@@ -321,7 +323,7 @@ func TestReportWriteReadRoundTrip(t *testing.T) {
 		t.Fatalf("mode %v %v", fi, err)
 	}
 	r.Repairs = 9
-	if err := report.Write(dir, r); err != nil {
+	if err := report.Write(dir, r, opt(dir)); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = report.Read(dir)
@@ -336,10 +338,10 @@ func TestReportWriteReadRoundTrip(t *testing.T) {
 
 func TestReportWriteRefusals(t *testing.T) {
 	r := build(t, fixture())
-	if err := report.Write("", r); err == nil {
+	if err := report.Write("", r, opt(t.TempDir())); err == nil {
 		t.Fatal("empty dir accepted")
 	}
-	if err := report.Write(filepath.Join(t.TempDir(), "missing"), r); err == nil {
+	if err := report.Write(filepath.Join(t.TempDir(), "missing"), r, opt(t.TempDir())); err == nil {
 		t.Fatal("missing dir accepted")
 	}
 	base := t.TempDir()
@@ -349,14 +351,14 @@ func TestReportWriteRefusals(t *testing.T) {
 	if err := os.Symlink(real, link); err != nil {
 		t.Skip("no symlinks")
 	}
-	if err := report.Write(link, r); err == nil {
+	if err := report.Write(link, r, opt(base)); err == nil {
 		t.Fatal("symlinked run dir accepted")
 	}
 	// A report.json that is a symlink is replaced by a file, never followed.
 	victim := filepath.Join(base, "victim")
 	os.WriteFile(victim, []byte("keep"), 0o600)
 	os.Symlink(victim, filepath.Join(real, report.FileName))
-	if err := report.Write(real, r); err != nil {
+	if err := report.Write(real, r, opt(base)); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(victim); string(b) != "keep" {
@@ -422,8 +424,8 @@ func TestBuildDeterministic(t *testing.T) {
 		}
 	}
 	d1, d2 := t.TempDir(), t.TempDir()
-	report.Write(d1, build(t, fixture()))
-	report.Write(d2, build(t, fixture()))
+	report.Write(d1, build(t, fixture()), opt(d1))
+	report.Write(d2, build(t, fixture()), opt(d2))
 	x, _ := os.ReadFile(filepath.Join(d1, report.FileName))
 	y, _ := os.ReadFile(filepath.Join(d2, report.FileName))
 	if string(x) != string(y) {
@@ -459,16 +461,25 @@ func TestStripCredentialsTable(t *testing.T) {
 		{tok + "@host.example:org/repo.git", "host.example:org/repo.git"},
 		{"https://example.com/repo?token=" + tok, "https://example.com/repo"},
 		{"https://example.com/repo#" + tok, "https://example.com/repo"},
-		{"https://example.com/repo?e=a@" + tok + "#f", "https://example.com/repo"},
+		{"https://example.com/repo?e=a@" + tok + "#f", "https://[redacted]"},
 		{"https://user%40x:" + tok + "@example.com/r", "https://example.com/r"},
 		{"https://user:" + tok + "%40example.com/r", "https://example.com/r"},
 		{"https://user:pa/" + tok + "@example.com/r", "https://example.com/r"},
 		{"https://ex\tample.com/r\n", "https://example.com/r"},
 		{"https://user:" + tok + "@exa\x00mple.com/r", "https://example.com/r"},
-		{"/home/a@b/repo", "/home/a@b/repo"},
+		{"/home/a@b/repo", "b/repo"},
 		{"/home/x/repo", "/home/x/repo"},
 		{"https://example.com/org/repo.git", "https://example.com/org/repo.git"},
 		{"", ""},
+		{"https://user:pa?ss#x@host/repo", "https://host/repo"},
+		{"https://user:pa#ss?x@host/repo", "https://host/repo"},
+		{"https://user:p@ss@host/repo", "https://host/repo"},
+		{"https://user:p%40ss@host/repo", "https://host/repo"},
+		{"https://user:p%3Fss%23x@host/repo", "https://host/repo"},
+		{"https://user:p/a/ss@host/repo?x=1", "https://host/repo"},
+		{"https://user:p@a@b@host/r#f", "https://host/r"},
+		{"user:pa?ss#x@host/repo", "host/repo"},
+		{"https://u:p?x@host", "https://[redacted]"},
 	} {
 		in := strings.NewReplacer("\\t", "\t", "\\n", "\n", "\\x00", "\x00").Replace(c.in)
 		got := report.StripCredentials(in)
@@ -562,7 +573,7 @@ func TestWriteRefusesLinkedComponentUnderGophermind(t *testing.T) {
 	if err := os.Symlink(real, filepath.Join(base, ".gophermind")); err != nil {
 		t.Skip("no symlinks")
 	}
-	if err := report.Write(filepath.Join(base, ".gophermind", "gm-1"), build(t, fixture())); err == nil {
+	if err := report.Write(filepath.Join(base, ".gophermind", "gm-1"), build(t, fixture()), opt(base)); err == nil {
 		t.Fatal("linked .gophermind accepted")
 	}
 	if _, err := os.Stat(filepath.Join(real, "gm-1", report.FileName)); err == nil {
@@ -571,7 +582,7 @@ func TestWriteRefusesLinkedComponentUnderGophermind(t *testing.T) {
 	// A plain .gophermind/<id> works.
 	ok := filepath.Join(t.TempDir(), ".gophermind", "gm-1")
 	os.MkdirAll(ok, 0o700)
-	if err := report.Write(ok, build(t, fixture())); err != nil {
+	if err := report.Write(ok, build(t, fixture()), opt(filepath.Dir(filepath.Dir(ok)))); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -598,5 +609,45 @@ func TestReadValidatesShape(t *testing.T) {
 	put(big)
 	if _, err := report.Read(dir); err == nil {
 		t.Fatal("oversize accepted")
+	}
+}
+
+func TestWriteChecksEveryComponentBelowRepoRoot(t *testing.T) {
+	root := t.TempDir()
+	r := build(t, fixture())
+	// Outside the repo root is refused.
+	if err := report.Write(t.TempDir(), r, opt(root)); err == nil {
+		t.Fatal("run dir outside RepoRoot accepted")
+	}
+	if err := report.Write(root, r, report.WriteOptions{}); err == nil {
+		t.Fatal("missing RepoRoot accepted")
+	}
+	if err := report.Write(root+"x", r, opt(root)); err == nil {
+		t.Fatal("sibling prefix accepted")
+	}
+	// A link in the middle of the path below the root is refused, even when
+	// the path does not contain .gophermind.
+	real := filepath.Join(t.TempDir(), "elsewhere")
+	os.MkdirAll(filepath.Join(real, "deep"), 0o700)
+	if err := os.Symlink(real, filepath.Join(root, "mid")); err != nil {
+		t.Skip("no symlinks")
+	}
+	if err := report.Write(filepath.Join(root, "mid", "deep"), r, opt(root)); err == nil {
+		t.Fatal("linked middle component accepted")
+	}
+	if _, err := os.Stat(filepath.Join(real, "deep", report.FileName)); err == nil {
+		t.Fatal("wrote through link")
+	}
+	// A real nested dir works.
+	ok := filepath.Join(root, "a", "b")
+	os.MkdirAll(ok, 0o700)
+	if err := report.Write(ok, r, opt(root)); err != nil {
+		t.Fatal(err)
+	}
+	// A root that is reached through an OS alias symlink is tolerated.
+	alias := filepath.Join(t.TempDir(), "alias")
+	os.Symlink(root, alias)
+	if err := report.Write(filepath.Join(alias, "a", "b"), r, opt(alias)); err != nil {
+		t.Fatalf("root given as alias: %v", err)
 	}
 }

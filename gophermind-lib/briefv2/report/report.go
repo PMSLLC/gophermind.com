@@ -413,11 +413,12 @@ func completeFailures(in Input) []string {
 }
 
 // stripCredentials reduces a repository reference to scheme, host and path.
-// User info is dropped for any scheme and for scheme-less and scp-style forms
-// (everything up to the last "@" before a query or fragment), percent-encoded
-// "@" is decoded first, query strings and fragments are removed, and
-// whitespace and control characters are deleted. An absolute path is kept as
-// is apart from the query and fragment.
+// It fails safe: after deleting whitespace and control characters and decoding
+// percent-encoded "@", everything up to and including the LAST "@" in the whole
+// string is discarded (the scheme is kept), whatever the user info contained.
+// Only then are the query and fragment removed. When a "?" or "#" precedes that
+// "@" and no path follows it, the string could be a password or a query, so
+// only the scheme is kept and the host is shown as "[redacted]".
 func stripCredentials(s string) string {
 	s = strings.Map(func(r rune) rune {
 		if unicode.IsSpace(r) || unicode.IsControl(r) {
@@ -426,21 +427,21 @@ func stripCredentials(s string) string {
 		return r
 	}, s)
 	s = strings.NewReplacer("%40", "@", "%2540", "@").Replace(s)
-	head := s
-	if i := strings.IndexAny(s, "?#"); i >= 0 {
-		head = s[:i]
-	}
-	prefix := ""
-	rest := head
-	if i := strings.Index(head, "://"); i >= 0 && validScheme(head[:i]) {
-		prefix, rest = head[:i+3], head[i+3:]
-	}
-	if prefix != "" || !strings.HasPrefix(rest, "/") {
-		if at := strings.LastIndex(rest, "@"); at >= 0 {
-			rest = rest[at+1:]
+	if at := strings.LastIndex(s, "@"); at >= 0 {
+		prefix := ""
+		if i := strings.Index(s, "://"); i >= 0 && i < at && validScheme(s[:i]) {
+			prefix = s[:i+3]
 		}
+		rest := s[at+1:]
+		if strings.ContainsAny(s[:at], "?#") && !strings.Contains(rest, "/") {
+			return prefix + "[redacted]"
+		}
+		s = prefix + rest
 	}
-	return prefix + rest
+	if i := strings.IndexAny(s, "?#"); i >= 0 {
+		s = s[:i]
+	}
+	return s
 }
 
 func validScheme(s string) bool {
@@ -458,11 +459,18 @@ func validScheme(s string) bool {
 // Write stores r as indented JSON in runDir/report.json, mode 0600, by temp
 // file and rename. runDir must be an existing directory that is not a symbolic
 // link; an existing report.json that is a link is replaced, never followed.
-func Write(runDir string, r Report) error {
+// WriteOptions carries what Write cannot infer.
+type WriteOptions struct {
+	// RepoRoot is the repository root; every component of the run folder below
+	// it must be a real directory.
+	RepoRoot string
+}
+
+func Write(runDir string, r Report, o WriteOptions) error {
 	if runDir == "" {
 		return errors.New("report: no run folder")
 	}
-	if err := checkRunDir(runDir); err != nil {
+	if err := checkRunDir(runDir, o.RepoRoot); err != nil {
 		return err
 	}
 	raw, err := json.MarshalIndent(r, "", "  ")
@@ -512,28 +520,31 @@ func Write(runDir string, r Report) error {
 	return nil
 }
 
-// checkRunDir requires runDir to be a real directory and, from the last
-// ".gophermind" component down (the repo root's side of the run folder), that
-// no component is a symbolic link. Components above it belong to the caller's
-// environment (for example /var on macOS) and are not judged.
-func checkRunDir(runDir string) error {
-	clean := filepath.Clean(runDir)
-	parts := strings.Split(clean, string(filepath.Separator))
-	start := len(parts) - 1
-	for i := len(parts) - 1; i >= 0; i-- {
-		if parts[i] == ".gophermind" {
-			start = i
-			break
-		}
+// checkRunDir requires runDir to be RepoRoot or a path below it in which every
+// component below RepoRoot is a real directory, not a symbolic link. RepoRoot
+// itself may be reached through an OS alias (for example /var on macOS); only
+// what lies under it is judged.
+func checkRunDir(runDir, root string) error {
+	bad := errors.New("report: the run folder is not a real directory under the repository root")
+	if root == "" {
+		return errors.New("report: no repository root")
 	}
-	for i := start; i < len(parts); i++ {
-		p := strings.Join(parts[:i+1], string(filepath.Separator))
-		if p == "" {
-			p = string(filepath.Separator)
-		}
-		fi, err := os.Lstat(p)
-		if err != nil || fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
-			return errors.New("report: the run folder does not exist, is not a directory, or passes through a symbolic link")
+	root, runDir = filepath.Clean(root), filepath.Clean(runDir)
+	if fi, err := os.Stat(root); err != nil || !fi.IsDir() {
+		return bad
+	}
+	rel, err := filepath.Rel(root, runDir)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return bad
+	}
+	p := root
+	if rel != "." {
+		for _, part := range strings.Split(rel, string(filepath.Separator)) {
+			p = filepath.Join(p, part)
+			fi, err := os.Lstat(p)
+			if err != nil || fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
+				return bad
+			}
 		}
 	}
 	return nil
