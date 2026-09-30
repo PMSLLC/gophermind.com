@@ -341,9 +341,10 @@ func (sp *scriptedProvider) Requests() []provider.Request {
 // scriptGate is the human gate of the tests: it records every escalation and
 // answers from a queue, stop when the queue is empty.
 type scriptGate struct {
-	mu    sync.Mutex
-	queue []human.Resolution
-	seen  []human.Escalation
+	mu      sync.Mutex
+	queue   []human.Resolution
+	seen    []human.Escalation
+	waiting bool // answer every escalation with human.ErrWaiting (a file gate with no answer yet)
 }
 
 func (s *scriptGate) Ask(context.Context, []human.Question) ([]human.Answer, error) {
@@ -358,6 +359,9 @@ func (s *scriptGate) Escalate(_ context.Context, e human.Escalation) (human.Reso
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.seen = append(s.seen, e)
+	if s.waiting {
+		return human.Resolution{}, human.ErrWaiting
+	}
 	if len(s.queue) == 0 {
 		return human.Resolution{Action: human.ActionStop}, nil
 	}
@@ -792,3 +796,44 @@ func hasCanary(t *testing.T, g *rig, canary string) bool {
 // stubPath is the absolute path of the leaf's stub file; realPath of its file.
 func (g *rig) stubPath(l *Leaf) string { return filepath.Join(g.repo, filepath.FromSlash(l.StubFile)) }
 func (g *rig) realPath(l *Leaf) string { return filepath.Join(g.repo, filepath.FromSlash(l.File)) }
+
+// traceBoard records every claim and status change the executor asks the real
+// blackboard for, so a test can assert the sequence of transitions.
+type traceBoard struct {
+	blackboard.Blackboard
+	mu  sync.Mutex
+	log []string
+}
+
+func (b *traceBoard) note(s string) {
+	b.mu.Lock()
+	b.log = append(b.log, s)
+	b.mu.Unlock()
+}
+
+func (b *traceBoard) Claim(ctx context.Context, runID, nodeID, worker string) (bool, error) {
+	b.note("claim " + nodeID)
+	return b.Blackboard.Claim(ctx, runID, nodeID, worker)
+}
+
+func (b *traceBoard) SetStatus(ctx context.Context, runID, nodeID string, from, to blackboard.Status) error {
+	err := b.Blackboard.SetStatus(ctx, runID, nodeID, from, to)
+	if err == nil {
+		b.note(fmt.Sprintf("%s %s->%s", nodeID, from, to))
+	}
+	return err
+}
+
+// Trace is the log so far, one entry per claim or accepted status change.
+func (b *traceBoard) Trace() []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]string(nil), b.log...)
+}
+
+// traced puts a traceBoard between the run and the real blackboard.
+func traced(rc *runCtx) *traceBoard {
+	tb := &traceBoard{Blackboard: rc.o.Board}
+	rc.o.Board = tb
+	return tb
+}

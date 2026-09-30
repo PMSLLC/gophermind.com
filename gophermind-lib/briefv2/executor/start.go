@@ -62,6 +62,7 @@ type runCtx struct {
 	scratch, home, goCache, modCache, binDir string
 
 	rep       *runReport
+	sched     schedState    // the scheduler's memory of interrupted leaves (Task 11b)
 	limit     time.Duration // test override of max_run_minutes (Task 14); zero means the setting
 	heartbeat time.Duration // test override of heartbeat_seconds; zero means the setting
 }

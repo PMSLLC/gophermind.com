@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"gophermind/gophermind-lib/briefv2/blackboard"
+	"gophermind/gophermind-lib/briefv2/human"
 	"gophermind/gophermind-lib/briefv2/packer"
 	"gophermind/gophermind-lib/briefv2/provider"
 	"gophermind/gophermind-lib/briefv2/report"
@@ -429,12 +430,103 @@ func (lr *leafRun) escalate(ctx context.Context, out leafOutcome) (leafOutcome, 
 	return out, nil
 }
 
-// afterRevision decides what follows a revision that did not verify.
-// Task 11a: a stub that ends the leaf failed with a named reason. Task 11b
-// replaces the body with rungs 5 to 7 (revise, contract problem, escalate) and
-// returns done == false when another revision follows.
+// afterRevision decides what follows a revision that did not verify (rungs 5
+// to 7). Too long for every entry escalates at once; a contract problem goes
+// to the revise rung once per revision and escalates the second time; an
+// ordinary exhaustion goes to the revise rung while the revision allowance is
+// not used up, else escalates with the class of the last attempt. It returns
+// done == false when the ladder is to run again (after a revise, or after a
+// person chose retry).
 func (lr *leafRun) afterRevision(ctx context.Context, res revResult) (out leafOutcome, done bool, err error) {
-	return leafOutcome{Status: blackboard.StatusFailed, Reason: "ladder_exhausted"}, true, nil
+	rc, l := lr.rc, lr.l
+	if res == revInterrupted {
+		return leafOutcome{Interrupted: true, Reason: lr.unavailable}, true, nil
+	}
+	reason, doRevise := "", false
+	switch res {
+	case revTooLong:
+		reason = ClassContextTooLong
+	case revContractProblem:
+		if lr.cp[lr.rev] >= 2 || lr.rev >= rc.maxRevisions(l) {
+			reason = ClassContractProblem
+		} else {
+			doRevise = true
+		}
+	default:
+		if lr.rev < rc.maxRevisions(l) {
+			doRevise = true
+		} else {
+			reason = lr.lastClass(ctx)
+		}
+	}
+	if doRevise {
+		cp, rerr := lr.revise(ctx)
+		var rs *reviseStop
+		switch {
+		case errors.As(rerr, &rs) && rs.Interrupted:
+			return leafOutcome{Interrupted: true, Reason: rs.Reason}, true, nil
+		case errors.As(rerr, &rs):
+			reason = rs.Reason
+		case rerr != nil:
+			return leafOutcome{}, true, rerr
+		case cp:
+			reason = ClassContractProblem
+		default:
+			return leafOutcome{}, false, nil
+		}
+	}
+	return lr.toHuman(ctx, reason)
+}
+
+// lastClass is the class of the last attempt of the leaf: the text of its
+// failure reason before the first colon.
+func (lr *leafRun) lastClass(ctx context.Context) string {
+	row, err := lr.rc.o.Board.Get(ctx, lr.rc.plan.RunID, lr.l.ID)
+	if err != nil || len(row.Attempts) == 0 {
+		return "ladder_exhausted"
+	}
+	class, _, _ := strings.Cut(row.Attempts[len(row.Attempts)-1].FailureReason, ":")
+	if class == "" {
+		return "ladder_exhausted"
+	}
+	return class
+}
+
+// toHuman is rung 7 for a leaf in progress: escalate, then act on the answer.
+// retry claims the leaf again and the ladder restarts; skip ends it failed;
+// stop and a missing or waiting gate end the run with the leaf escalated.
+func (lr *leafRun) toHuman(ctx context.Context, reason string) (leafOutcome, bool, error) {
+	rc, l := lr.rc, lr.l
+	res, err := rc.escalate(ctx, l, blackboard.StatusInProgress, reason, lr.history)
+	if err != nil {
+		var se *stopError
+		switch {
+		case errors.As(err, &se):
+			lr.final = true // escalated is the row's final status for this run: nothing to release
+			return leafOutcome{}, true, err
+		case ctx.Err() != nil:
+			lr.final = true
+			return leafOutcome{Interrupted: true}, true, nil
+		}
+		return leafOutcome{}, true, err
+	}
+	switch res.Action {
+	case human.ActionSkip:
+		lr.final = true
+		return leafOutcome{Status: blackboard.StatusFailed, Reason: reasonSkipped}, true, nil
+	case human.ActionRetry:
+		lr.cp[lr.rev] = 0
+		ok, cerr := rc.o.Board.Claim(ctx, rc.plan.RunID, l.ID, lr.worker)
+		if cerr != nil || !ok {
+			return leafOutcome{}, true, fmt.Errorf("executor: leaf %s could not be claimed again after the retry", l.ID)
+		}
+		if serr := rc.o.Board.SetStatus(ctx, rc.plan.RunID, l.ID, blackboard.StatusClaimed, blackboard.StatusInProgress); serr != nil {
+			return leafOutcome{}, true, fmt.Errorf("executor: restarting %s failed", l.ID)
+		}
+		return leafOutcome{}, false, nil
+	}
+	lr.final = true
+	return leafOutcome{}, true, humanStop(l.ID)
 }
 
 // adoptOnDisk is spec 7.2 and 10 step 5: a real file already on disk is

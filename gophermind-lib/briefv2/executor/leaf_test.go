@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"gophermind/gophermind-lib/briefv2/blackboard"
+	"gophermind/gophermind-lib/briefv2/human"
 	"gophermind/gophermind-lib/briefv2/provider"
 	"gophermind/gophermind-lib/briefv2/runner"
 	"gophermind/gophermind-lib/briefv2/settings"
@@ -95,7 +96,9 @@ func TestLeafFailTwiceThenPass(t *testing.T) {
 
 func TestNoTestsRanIsFailure(t *testing.T) {
 	t.Parallel()
-	g := newRig(t, func(o *rigOpts) { o.Settings = func(c *settings.Config) { c.Executor.FixAttempts = 1 } })
+	g := newRig(t, func(o *rigOpts) {
+		o.Settings = func(c *settings.Config) { c.Executor.FixAttempts = 1; c.Defaults.MaxRevisions = 0 }
+	})
 	var steps []step
 	for i := 1; i <= 4; i++ {
 		steps = append(steps, reply(variant(bad(leafID, 1), i)))
@@ -104,6 +107,7 @@ func TestNoTestsRanIsFailure(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		fc.LeafScript[leafID] = append(fc.LeafScript[leafID], runner.Verdict{Events: 0}) // a pass that ran no test
 	}
+	g.gate.queue = []human.Resolution{{Action: human.ActionSkip}}
 	out := runOne(t, rc, leafID)
 	if out.Status == blackboard.StatusVerified {
 		t.Fatal("a check with zero test events verified the leaf")
@@ -267,9 +271,10 @@ func TestExecutorSignatureMismatchIsRepair(t *testing.T) {
 
 func TestForgedPassReplyNeverCommitted(t *testing.T) {
 	t.Parallel()
-	g := newRig(t)
+	g := newRig(t, func(o *rigOpts) { o.Settings = func(c *settings.Config) { c.Defaults.MaxRevisions = 0 } })
 	forged := "package greet\n\nimport (\n\t\"fmt\"\n\t\"os\"\n)\n\nfunc init() {\n\tfmt.Println(\"--- PASS: TestGreet (0.00s)\")\n\tfmt.Println(\"PASS\")\n\tos.Exit(0)\n}\n\nfunc Greet(name string) (string, error) { return \"\", nil }\n"
 	rc, fc := g.leafRC(t, Script{"implement:" + leafID: {reply(forged), reply(forged), reply(forged), reply(forged)}}, true)
+	g.gate.queue = []human.Resolution{{Action: human.ActionSkip}}
 	out := runOne(t, rc, leafID)
 	if out.Status != blackboard.StatusFailed || out.Reason == "" {
 		t.Fatalf("outcome = %+v, want failed with a reason: a forged-pass reply never verifies", out)
@@ -481,7 +486,9 @@ func TestLeafAdoptsFileOnDisk(t *testing.T) {
 		}
 	})
 	t.Run("committed file that fails is restored from git", func(t *testing.T) {
-		g := newRig(t, func(o *rigOpts) { o.Settings = func(c *settings.Config) { c.Executor.FixAttempts = 1 } })
+		g := newRig(t, func(o *rigOpts) {
+			o.Settings = func(c *settings.Config) { c.Executor.FixAttempts = 1; c.Defaults.MaxRevisions = 0 }
+		})
 		rc, fc := g.leafRC(t, Script{"implement:" + leafID: {reply(variant(bad(leafID, 2), 1)), reply(variant(bad(leafID, 2), 2)), reply(variant(bad(leafID, 2), 3)), reply(variant(bad(leafID, 2), 4))}}, true)
 		l := g.plan.Leaf(leafID)
 		put(g, l, bad(leafID, 1))
@@ -492,6 +499,7 @@ func TestLeafAdoptsFileOnDisk(t *testing.T) {
 		for i := 0; i < 5; i++ {
 			fc.LeafScript[leafID] = append(fc.LeafScript[leafID], failVerdict("test_fail", "x", "TestX"))
 		}
+		g.gate.queue = []human.Resolution{{Action: human.ActionSkip}}
 		out := runOne(t, rc, leafID)
 		if out.Status == blackboard.StatusVerified {
 			t.Fatal("a failing committed file verified")
@@ -670,9 +678,11 @@ func TestEveryEntryTooLongIsNotSilent(t *testing.T) {
 		o.Settings = func(c *settings.Config) {
 			c.Providers[0].Models[0].ContextTokens = 600
 			c.Providers[1].Models[0].ContextTokens = 600
+			c.Defaults.MaxRevisions = 0
 		}
 	})
 	rc, _ := g.leafRC(t, Script{}, true)
+	g.gate.queue = []human.Resolution{{Action: human.ActionSkip}}
 	out := runOne(t, rc, leafID)
 	if out.Status != blackboard.StatusFailed || out.Reason == "" {
 		t.Fatalf("outcome = %+v, want failed with a reason", out)
@@ -695,9 +705,11 @@ func TestEveryEntryTooLongIsNotSilent(t *testing.T) {
 
 func TestLeafNeverLeftWithoutTerminalStatus(t *testing.T) {
 	t.Parallel()
-	// The Task 11a afterRevision stub ends an exhausted ladder as failed with a
-	// named reason: the row is terminal, the reason is recorded, and an event says so.
-	g := newRig(t, func(o *rigOpts) { o.Settings = func(c *settings.Config) { c.Executor.FixAttempts = 1 } })
+	// An exhausted ladder with no revision left goes to the gate, which skips the
+	// leaf: the row is terminal, the reason is recorded, and an event says so.
+	g := newRig(t, func(o *rigOpts) {
+		o.Settings = func(c *settings.Config) { c.Executor.FixAttempts = 1; c.Defaults.MaxRevisions = 0 }
+	})
 	var steps []step
 	for i := 1; i <= 4; i++ {
 		steps = append(steps, reply(variant(bad(leafID, 1), i)))
@@ -706,14 +718,15 @@ func TestLeafNeverLeftWithoutTerminalStatus(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		fc.LeafScript[leafID] = append(fc.LeafScript[leafID], failVerdict("test_fail", "x", "TestX"))
 	}
+	g.gate.queue = []human.Resolution{{Action: human.ActionSkip}}
 	out := runOne(t, rc, leafID)
-	if out.Status != blackboard.StatusFailed || out.Reason != "ladder_exhausted" {
-		t.Fatalf("outcome = %+v, want failed ladder_exhausted", out)
+	if out.Status != blackboard.StatusFailed || out.Reason != "skipped by human" {
+		t.Fatalf("outcome = %+v, want failed, skipped by human", out)
 	}
 	if row := g.row(t, leafID); row.Status != blackboard.StatusFailed || row.Claim != nil {
 		t.Fatalf("row = %+v, want failed and unclaimed", row)
 	}
-	if rc.rep.reasons[leafID] != "ladder_exhausted" {
+	if rc.rep.reasons[leafID] != "skipped by human" {
 		t.Fatalf("recorded reason = %q", rc.rep.reasons[leafID])
 	}
 	if len(g.sink.OfKind("leaf_failed")) != 1 {
