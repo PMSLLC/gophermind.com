@@ -1,5 +1,7 @@
 package planner
 
+import "errors"
+
 // SetBeforeTestWrite installs a hook run after a reply is parsed and before
 // its test file is checked and written, and returns the previous one.
 func SetBeforeTestWrite(f func()) func() {
@@ -16,6 +18,9 @@ func ParseOutline(text, briefID string) (map[string]any, []Dependency, error) {
 // parseOutline reads a one-pass outline reply; only tests use it, the planner
 // goes through mergeOutline.
 func parseOutline(text, briefID string) (map[string]any, []Dependency, error) {
-	doc, deps, _, _, err := mergeOutline(nil, nil, text, briefID, false)
+	doc, deps, _, _, err := mergeOutline(nil, nil, text, briefID, true)
+	if err == nil && len(objects(doc["components"])) == 0 {
+		return nil, nil, errors.New("contract outline lists no component")
+	}
 	return doc, deps, err
 }

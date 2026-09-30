@@ -26,7 +26,7 @@ func comp(id string) string {
 func outlineStages(g *rig) []string {
 	var out []string
 	for _, s := range g.stagesCalled() {
-		if s == "contract:outline" {
+		if s == "contract:outline:1" {
 			out = append(out, s)
 		}
 	}
@@ -41,72 +41,37 @@ func componentIDs(g *rig) string {
 	return strings.Join(ids, " ")
 }
 
-func TestOutlineContinuesWhileMoreIsTrue(t *testing.T) {
-	t.Run("two passes", func(t *testing.T) {
-		g := newRig(t, approving(), variant(t, map[string]string{
-			"contract.outline.txt":   `{` + outlineHeadJSON + `, "components": [` + comp("types") + `, ` + comp("greeting") + `], "types": [` + nameErrorType + `], "more": true}`,
-			"contract.outline.2.txt": `{"components": [` + comp("farewell") + `], "types": [], "more": false}`,
-		}))
-		g.mustPlan(planner.Options{StopAfter: "contract"})
-		if n := len(outlineStages(g)); n != 2 {
-			t.Fatalf("outline calls = %d, want 2", n)
+// The greeter brief has two features: a shared pass and one batch.
+func TestOutlineIsASharedPassAndBatches(t *testing.T) {
+	g := newRig(t, approving())
+	g.mustPlan(planner.Options{StopAfter: "contract"})
+	if got := passStages(g); got != "contract:outline:1 contract:outline:2" {
+		t.Fatalf("outline stages = %q", got)
+	}
+	if got := componentIDs(g); got != "types greeting farewell" {
+		t.Errorf("components = %q", got)
+	}
+	// The batch names what is already declared; the shared pass does not.
+	n := 0
+	for _, r := range g.fake.Requests() {
+		if !strings.HasPrefix(planner.StageOf(r), "contract:outline") {
+			continue
 		}
-		if got := componentIDs(g); got != "types greeting farewell" {
-			t.Errorf("components = %q, want the passes merged in order", got)
+		n++
+		p := r.Messages[1].Content
+		if n == 1 && !strings.Contains(p, "<emitted>\n(nothing yet)\n</emitted>") {
+			t.Errorf("shared pass must list nothing as emitted")
 		}
-		if len(g.contracts().Types) != 1 || len(g.contracts().Functions) != 3 {
-			t.Error("the merged contract lost a type or function")
+		if n == 2 && !strings.Contains(p, "<emitted>\ncomponents: types\ntypes: name-error\n</emitted>") {
+			t.Errorf("batch must list the ids of the shared pass:\n%s", p)
 		}
-		// The continuation names what is already emitted; the first call does not.
-		n := 0
-		for _, r := range g.fake.Requests() {
-			if planner.StageOf(r) != "contract:outline" {
-				continue
-			}
-			n++
-			p := r.Messages[1].Content
-			if n == 1 && !strings.Contains(p, "<emitted>\n(nothing yet)\n</emitted>") {
-				t.Errorf("first outline call must list nothing as emitted")
-			}
-			if n == 2 && !strings.Contains(p, "<emitted>\ncomponents: types, greeting\ntypes: name-error\n</emitted>") {
-				t.Errorf("second outline call must list the ids of pass 1")
-			}
-		}
-		if n != 2 {
-			t.Errorf("saw %d outline requests, want 2", n)
-		}
-	})
-	t.Run("three passes", func(t *testing.T) {
-		g := newRig(t, approving(), variant(t, map[string]string{
-			"contract.outline.txt":   `{` + outlineHeadJSON + `, "components": [` + comp("types") + `], "types": [` + nameErrorType + `], "more": true}`,
-			"contract.outline.2.txt": `{"components": [` + comp("greeting") + `], "more": true}`,
-			"contract.outline.3.txt": `{"components": [` + comp("farewell") + `]}`,
-		}))
-		g.mustPlan(planner.Options{StopAfter: "contract"})
-		if n := len(outlineStages(g)); n != 3 {
-			t.Fatalf("outline calls = %d, want 3", n)
-		}
-		if got := componentIDs(g); got != "types greeting farewell" {
-			t.Errorf("components = %q", got)
-		}
-	})
-	t.Run("one pass is unchanged", func(t *testing.T) {
-		g := newRig(t, approving())
-		g.mustPlan(planner.Options{StopAfter: "contract"})
-		if n := len(outlineStages(g)); n != 1 {
-			t.Fatalf("outline calls = %d, want 1", n)
-		}
-		if got := componentIDs(g); got != "types greeting farewell" {
-			t.Errorf("components = %q", got)
-		}
-	})
+	}
 }
 
 func TestOutlineDropsAnIdenticalDuplicateSilently(t *testing.T) {
-	first := `{` + outlineHeadJSON + `, "components": [` + comp("types") + `, ` + comp("greeting") + `], "types": [` + nameErrorType + `], "more": true}`
 	g := newRig(t, approving(), variant(t, map[string]string{
-		"contract.outline.txt":   first,
-		"contract.outline.2.txt": `{"components": [` + comp("greeting") + `, ` + comp("farewell") + `], "types": [` + nameErrorType + `], "more": false}`,
+		"contract.outline.1.txt": `{` + outlineHeadJSON + `, "components": [` + comp("types") + `, ` + comp("greeting") + `], "types": [` + nameErrorType + `]}`,
+		"contract.outline.2.txt": `{"components": [` + comp("greeting") + `, ` + comp("farewell") + `], "types": [` + nameErrorType + `]}`,
 	}))
 	g.mustPlan(planner.Options{StopAfter: "contract"})
 	if got := componentIDs(g); got != "types greeting farewell" || len(g.contracts().Types) != 1 {
@@ -115,64 +80,25 @@ func TestOutlineDropsAnIdenticalDuplicateSilently(t *testing.T) {
 	if w := g.sink.OfKind("warning"); len(w) != 0 {
 		t.Errorf("identical duplicates raised warnings: %v", w)
 	}
-
-}
-
-func TestOutlineNeedsProgressWhenItSaysMore(t *testing.T) {
-	g := newRig(t, approving(), variant(t, map[string]string{
-		"contract.outline.txt":   `{` + outlineHeadJSON + `, "components": [` + comp("types") + `], "more": true}`,
-		"contract.outline.2.txt": `{"components": [], "more": true}`,
-		"contract.outline.3.txt": `{"components": [], "more": true}`,
-	}))
-	if _, err := g.plan(planner.Options{StopAfter: "contract"}); err == nil || !strings.Contains(err.Error(), "adds nothing") {
-		t.Fatalf("err = %v, want a refusal of a pass that says more but adds nothing", err)
-	}
-}
-
-func TestOutlinePassCapEndsWithAFixedError(t *testing.T) {
-	files := map[string]string{}
-	for i := 1; i <= 25; i++ {
-		name := "contract.outline.txt"
-		if i > 1 {
-			name = fmt.Sprintf("contract.outline.%d.txt", i)
-		}
-		head := ""
-		if i == 1 {
-			head = outlineHeadJSON + ", "
-		}
-		files[name] = `{` + head + `"components": [` + comp(fmt.Sprintf("part-%d", i)) + `], "more": true}`
-	}
-	g := newRig(t, approving(), variant(t, files))
-	_, err := g.plan(planner.Options{StopAfter: "contract"})
-	if err == nil || !strings.Contains(err.Error(), "contract:outline") || !strings.Contains(err.Error(), "20 passes") {
-		t.Fatalf("err = %v, want a fixed message naming the stage and the cap", err)
-	}
-	if n := len(outlineStages(g)); n != 20 {
-		t.Errorf("outline calls = %d, want exactly the cap of 20", n)
-	}
 }
 
 func TestOutlineResumeDoesNotAskForStoredPasses(t *testing.T) {
-	first := `{` + outlineHeadJSON + `, "components": [` + comp("types") + `, ` + comp("greeting") + `], "types": [` + nameErrorType + `], "more": true}`
 	g := newRig(t, approving(), variant(t, map[string]string{
-		"contract.outline.txt":   first,
-		"contract.outline.2.txt": "the model fell over",
-		"contract.outline.3.txt": "and again",
+		"contract.outline.1.txt": `{` + outlineHeadJSON + `, "components": [` + comp("types") + `], "types": [` + nameErrorType + `]}`,
+		"contract.outline.2.txt": "the model fell over", "contract.outline.2.2.txt": "and again",
 	}))
 	if _, err := g.plan(planner.Options{StopAfter: "contract"}); err == nil {
-		t.Fatal("want the outline to fail on its second pass")
+		t.Fatal("want the outline to fail on its batch")
 	}
 	if g.has("contracts.json") || !g.has("_state/contract.json") {
-		t.Fatal("the first pass must be stored and contracts.json not written yet")
+		t.Fatal("the shared pass must be stored and contracts.json not written yet")
 	}
-
-	// After the restart the first request for the stage is the second pass.
 	g.wire(variant(t, map[string]string{
-		"contract.outline.txt": `{"components": [` + comp("farewell") + `], "more": false}`,
+		"contract.outline.2.txt": `{"components": [` + comp("greeting") + `, ` + comp("farewell") + `]}`,
 	}))
 	g.mustPlan(planner.Options{RunID: greeterID, StopAfter: "contract"})
-	if n := len(outlineStages(g)); n != 1 {
-		t.Errorf("resume made %d outline calls, want 1 (only the unfinished pass)", n)
+	if got := passStages(g); got != "contract:outline:2" {
+		t.Errorf("resume made outline calls %q, want only the unfinished batch", got)
 	}
 	if got := componentIDs(g); got != "types greeting farewell" {
 		t.Errorf("components = %q", got)
@@ -184,7 +110,7 @@ func TestBudgets(t *testing.T) {
 	g.mustPlan(planner.Options{StopAfter: "contract"})
 	for _, r := range g.fake.Requests() {
 		switch planner.StageOf(r) {
-		case "contract:outline":
+		case "contract:outline:1", "contract:outline:2":
 			if r.MaxTokens < 16000 || r.MaxGrownTokens < 32768 {
 				t.Errorf("outline request max_tokens %d grown cap %d, want >= 16000 and >= 32768", r.MaxTokens, r.MaxGrownTokens)
 			}
@@ -196,17 +122,17 @@ func TestBudgets(t *testing.T) {
 	}
 }
 
-// A type written in pass 1 may use a type that only pass 2 writes.
+// A type written in the shared pass may use a type that only a batch writes.
 func TestOutlineAllowsAUsesOfALaterPass(t *testing.T) {
-	later := `{"id": "late-type", "package": "greet", "file": "internal/greet/late.go", "decl": "// LateType is written in pass 2.\ntype LateType int"}`
+	later := `{"id": "late-type", "package": "greet", "file": "internal/greet/late.go", "decl": "// LateType is written in the batch.\ntype LateType int"}`
 	early := `{"id": "early-type", "package": "greet", "file": "internal/greet/early.go", "uses": ["late-type"], "decl": "// EarlyType uses LateType.\ntype EarlyType struct{ L LateType }"}`
 	g := newRig(t, approving(), variant(t, map[string]string{
-		"contract.outline.txt":   `{` + outlineHeadJSON + `, "components": [` + comp("types") + `, ` + comp("greeting") + `], "types": [` + nameErrorType + `, ` + early + `], "more": true}`,
-		"contract.outline.2.txt": `{"components": [` + comp("farewell") + `], "types": [` + later + `], "more": false}`,
+		"contract.outline.1.txt": `{` + outlineHeadJSON + `, "components": [` + comp("types") + `], "types": [` + nameErrorType + `, ` + early + `]}`,
+		"contract.outline.2.txt": `{"components": [` + comp("greeting") + `, ` + comp("farewell") + `], "types": [` + later + `]}`,
 	}))
 	g.mustPlan(planner.Options{StopAfter: "contract"})
-	if n := len(outlineStages(g)); n != 2 {
-		t.Errorf("outline calls = %d, want 2 (no retry of pass 1)", n)
+	if got := passStages(g); got != "contract:outline:1 contract:outline:2" {
+		t.Errorf("outline stages = %q, want no retry and no repair", got)
 	}
 	if len(g.contracts().Types) != 3 {
 		t.Errorf("types = %d, want 3", len(g.contracts().Types))
@@ -231,20 +157,20 @@ const missingType = `{"id": "missing-type", "package": "greet", "file": "interna
 // excluding the model.
 func TestOutlineRepairsADanglingUses(t *testing.T) {
 	g := newRig(t, approving(), variant(t, map[string]string{
-		"contract.outline.txt":   danglingFirst("missing-type"),
-		"contract.outline.2.txt": `{"types": [` + missingType + `]}`,
+		"contract.outline.txt":        danglingFirst("missing-type"),
+		"contract.outline.repair.txt": `{"types": [` + missingType + `]}`,
 	}))
 	g.mustPlan(planner.Options{StopAfter: "contract"})
-	if n := len(outlineStages(g)); n != 2 {
-		t.Fatalf("outline calls = %d, want the pass and one repair", n)
+	if n := count(g.stagesCalled(), "contract:outline:repair"); n != 1 {
+		t.Fatalf("repair calls = %d, want 1", n)
 	}
 	n := 0
 	for _, r := range g.fake.Requests() {
-		if planner.StageOf(r) == "contract:outline" {
+		if planner.StageOf(r) == "contract:outline:repair" {
 			n++
 			p := r.Messages[1].Content
-			if has := strings.Contains(p, "<unresolved>\nmissing-type\n</unresolved>"); has != (n == 2) {
-				t.Errorf("outline call %d: unresolved section present = %v", n, has)
+			if !strings.Contains(p, "<unresolved>\nmissing-type\n</unresolved>") {
+				t.Errorf("repair call %d lacks the unresolved section", n)
 			}
 		}
 	}
@@ -254,15 +180,15 @@ func TestOutlineRepairsADanglingUses(t *testing.T) {
 	rows, _ := g.led.List(context.Background(), greeterID, ledger.Filter{TaskType: "contract"})
 	outline := 0
 	for _, r := range rows {
-		if r.Stage == "contract:outline" {
+		if strings.HasPrefix(r.Stage, "contract:outline") {
 			outline++
 			if r.Outcome != ledger.OutcomeOK || r.TaskType != "contract" {
 				t.Errorf("outline row = %s/%s, want ok and contract", r.Outcome, r.TaskType)
 			}
 		}
 	}
-	if outline != 2 {
-		t.Errorf("outline ledger rows = %d, want one per attempt (2)", outline)
+	if outline != 3 {
+		t.Errorf("outline ledger rows = %d, want one per attempt (shared, batch, repair)", outline)
 	}
 }
 
@@ -270,9 +196,9 @@ func TestOutlineRepairsADanglingUses(t *testing.T) {
 // the id syntax, counts the rest, and quotes nothing else.
 func TestOutlineStillDanglingAfterRepairsFailsNamingTheIDs(t *testing.T) {
 	g := newRig(t, approving(), variant(t, map[string]string{
-		"contract.outline.txt":   danglingFirst("missing-type", "ghost CANARY words"),
-		"contract.outline.2.txt": `{"types": []}`,
-		"contract.outline.3.txt": `{"types": []}`,
+		"contract.outline.txt":          danglingFirst("missing-type", "ghost CANARY words"),
+		"contract.outline.repair.txt":   `{"types": []}`,
+		"contract.outline.repair.2.txt": `{"types": []}`,
 	}))
 	_, err := g.plan(planner.Options{StopAfter: "contract"})
 	if err == nil || !strings.Contains(err.Error(), "contract:outline") || !strings.Contains(err.Error(), `"missing-type"`) || !strings.Contains(err.Error(), "2 repair passes") {
@@ -281,25 +207,25 @@ func TestOutlineStillDanglingAfterRepairsFailsNamingTheIDs(t *testing.T) {
 	if strings.Contains(err.Error(), "CANARY") || strings.Contains(err.Error(), "ghost") {
 		t.Errorf("err quotes an id that fails the id syntax: %v", err)
 	}
-	if n := len(outlineStages(g)); n != 3 {
-		t.Errorf("outline calls = %d, want the pass and two repairs", n)
+	if n := count(g.stagesCalled(), "contract:outline:repair"); n != 2 {
+		t.Errorf("repair calls = %d, want two", n)
 	}
 }
 
 func TestOutlineRepairPassesAreStoredAndNotReAsked(t *testing.T) {
 	g := newRig(t, approving(), variant(t, map[string]string{
-		"contract.outline.txt":   danglingFirst("missing-type"),
-		"contract.outline.2.txt": "the model fell over",
-		"contract.outline.3.txt": "and again",
+		"contract.outline.txt":          danglingFirst("missing-type"),
+		"contract.outline.repair.txt":   "the model fell over",
+		"contract.outline.repair.2.txt": "and again",
 	}))
 	if _, err := g.plan(planner.Options{StopAfter: "contract"}); err == nil {
 		t.Fatal("want the first repair to fail")
 	}
 	// After the restart the first outline request is the second repair attempt.
-	g.wire(variant(t, map[string]string{"contract.outline.txt": `{"types": [` + missingType + `]}`}))
+	g.wire(variant(t, map[string]string{"contract.outline.repair.txt": `{"types": [` + missingType + `]}`}))
 	g.mustPlan(planner.Options{RunID: greeterID, StopAfter: "contract"})
-	if n := len(outlineStages(g)); n != 1 {
-		t.Errorf("resume made %d outline calls, want 1 (the pass is stored)", n)
+	if n := count(g.stagesCalled(), "contract:outline:repair"); n != 1 || len(outlineStages(g)) != 0 {
+		t.Errorf("resume made %d repair calls and %d pass calls, want 1 and 0", n, len(outlineStages(g)))
 	}
 	if len(g.contracts().Types) != 3 {
 		t.Errorf("types = %d, want 3", len(g.contracts().Types))
@@ -309,16 +235,16 @@ func TestOutlineRepairPassesAreStoredAndNotReAsked(t *testing.T) {
 // A failed repair attempt is an attempt: the count survives a restart.
 func TestFailedOutlineRepairsCountAcrossResumes(t *testing.T) {
 	bad := variant(t, map[string]string{"contract.outline.txt": danglingFirst("missing-type"),
-		"contract.outline.2.txt": "the model fell over", "contract.outline.3.txt": "and again"})
+		"contract.outline.repair.txt": "the model fell over", "contract.outline.repair.2.txt": "and again"})
 	g := newRig(t, approving(), bad)
 	if _, err := g.plan(planner.Options{StopAfter: "contract"}); err == nil {
 		t.Fatal("want the first repair to fail")
 	}
-	g.wire(variant(t, map[string]string{"contract.outline.txt": "fell over", "contract.outline.2.txt": "again"}))
+	g.wire(variant(t, map[string]string{"contract.outline.repair.txt": "fell over", "contract.outline.repair.2.txt": "again"}))
 	if _, err := g.plan(planner.Options{RunID: greeterID, StopAfter: "contract"}); err == nil {
 		t.Fatal("want the second repair to fail")
 	}
-	g.wire(variant(t, map[string]string{"contract.outline.txt": `{"types": [` + missingType + `]}`}))
+	g.wire(variant(t, map[string]string{"contract.outline.repair.txt": `{"types": [` + missingType + `]}`}))
 	_, err := g.plan(planner.Options{RunID: greeterID, StopAfter: "contract"})
 	if err == nil || !strings.Contains(err.Error(), "2 repair passes") || len(g.stagesCalled()) != 0 {
 		t.Fatalf("err = %v calls %v, want the bound reached from the stored count with no call", err, g.stagesCalled())
@@ -369,7 +295,7 @@ func TestOutlinePromptHasNoStrayPlaceholder(t *testing.T) {
 	g := newRig(t, approving())
 	g.mustPlan(planner.Options{StopAfter: "contract"})
 	for _, r := range g.fake.Requests() {
-		if planner.StageOf(r) != "contract:outline" {
+		if planner.StageOf(r) != "contract:outline:1" {
 			continue
 		}
 		p := r.Messages[1].Content

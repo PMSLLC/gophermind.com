@@ -59,8 +59,8 @@ func TestSchemaInvalidReplyIsAskedAgainWithThePointers(t *testing.T) {
 	bad := `{` + outlineHeadJSON + `, "components": [` + comp("types") + `, ` + comp("greeting") + `, ` + comp("farewell") + `],
  "types": [{"id": "name-error", "package": "greet", "file": "internal/greet/errors.go", "CANARYfield": "CANARY reply text"}]}`
 	g := newRig(t, approving(), variant(t, map[string]string{
-		"contract.outline.txt":   bad,
-		"contract.outline.2.txt": `{` + outlineHeadJSON + `, "components": [` + comp("types") + `, ` + comp("greeting") + `, ` + comp("farewell") + `], "types": [` + nameErrorType + `]}`,
+		"contract.outline.1.txt":   bad,
+		"contract.outline.1.2.txt": `{` + outlineHeadJSON + `, "components": [` + comp("types") + `, ` + comp("greeting") + `, ` + comp("farewell") + `], "types": [` + nameErrorType + `]}`,
 	}))
 	g.mustPlan(planner.Options{StopAfter: "contract"})
 	if n := len(outlineStages(g)); n != 2 {
@@ -69,7 +69,7 @@ func TestSchemaInvalidReplyIsAskedAgainWithThePointers(t *testing.T) {
 	var second string
 	seen := 0
 	for _, r := range g.fake.Requests() {
-		if planner.StageOf(r) == "contract:outline" {
+		if planner.StageOf(r) == "contract:outline:1" {
 			seen++
 			if seen == 2 {
 				for _, m := range r.Messages {
@@ -92,14 +92,14 @@ func TestSchemaInvalidReplyIsAskedAgainWithThePointers(t *testing.T) {
 // already normalised contract; a later pass still names the earlier ids in the
 // model's own spelling.
 func TestNormalisedIDsSurviveAResume(t *testing.T) {
-	first := strings.Replace(pascalOutline, `}]}`, `}], "more": true}`, 1)
+	first := pascalOutline
 	g := newRig(t, approving(), variant(t, map[string]string{
-		"contract.outline.txt": first, "contract.outline.2.txt": "the model fell over", "contract.outline.3.txt": "and again",
+		"contract.outline.1.txt": first, "contract.outline.2.txt": "the model fell over", "contract.outline.2.2.txt": "and again",
 	}))
 	if _, err := g.plan(planner.Options{StopAfter: "contract"}); err == nil {
 		t.Fatal("want pass 2 to fail")
 	}
-	g.wire(variant(t, map[string]string{"contract.outline.txt": `{"components": [{"id": "Audit_Log", "package": "greet", "exports": []}],
+	g.wire(variant(t, map[string]string{"contract.outline.2.txt": `{"components": [{"id": "Audit_Log", "package": "greet", "exports": []}],
  "types": [{"id": "AuditEntry", "package": "greet", "file": "internal/greet/audit.go", "decl": "// AuditEntry is one record.\ntype AuditEntry struct{}", "uses": ["NameError"]}]}`,
 		"contract.farewell.txt": `{"types": [], "functions": [{"id": "fn-farewell", "package": "greet", "file": "internal/greet/farewell.go", "signature": "func Farewell() error", "doc": "Farewell.", "uses": ["name-error", "Send_Receipt"]}], "more": false}`,
 		"contract.audit-log.txt": `{"types": [], "functions": [{"id": "fn-audit", "package": "greet", "file": "internal/greet/audit.go", "signature": "func Audit() error", "doc": "Audit records.", "uses": ["AuditEntry"]},

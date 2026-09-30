@@ -1,0 +1,12 @@
+The components for the Greeting and Farewell features.
+
+```json
+{
+  "components": [
+    {"id": "greeting", "package": "greet", "exports": [],
+     "integration_tests": [{"name": "greets a trimmed name", "given": "Greet(\"  Ada  \")", "expect": "Hello, Ada!", "command": "go test ./internal/greet -run TestGreetIntegration"}]},
+    {"id": "farewell", "package": "greet", "exports": []}
+  ],
+  "types": []
+}
+```

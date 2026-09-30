@@ -23,7 +23,7 @@ func TestContractIsBuiltInPassesAndValidated(t *testing.T) {
 	g := newRig(t, approving())
 	g.mustPlan(planner.Options{StopAfter: "contract"})
 
-	if got := strings.Join(g.stagesCalled(), " "); got != "clarify contract:outline contract:types contract:greeting contract:farewell" {
+	if got := strings.Join(g.stagesCalled(), " "); got != "clarify contract:outline:1 contract:outline:2 contract:types contract:greeting contract:farewell" {
 		t.Errorf("calls = %s", got)
 	}
 	c := g.contracts()
@@ -57,11 +57,11 @@ func TestContractIsBuiltInPassesAndValidated(t *testing.T) {
 	}
 
 	rows, _ := g.led.List(context.Background(), greeterID, ledger.Filter{TaskType: "contract"})
-	if len(rows) != 4 {
-		t.Fatalf("contract rows = %d, want 4", len(rows))
+	if len(rows) != 5 {
+		t.Fatalf("contract rows = %d, want 5", len(rows))
 	}
-	if rows[0].Stage != "contract:outline" || rows[0].Scope != "brief" || rows[1].Stage != "contract:types" || rows[1].Scope != "component" {
-		t.Errorf("rows = %s/%s then %s/%s", rows[0].Stage, rows[0].Scope, rows[1].Stage, rows[1].Scope)
+	if rows[0].Stage != "contract:outline:1" || rows[0].Scope != "brief" || rows[2].Stage != "contract:types" || rows[2].Scope != "component" {
+		t.Errorf("rows = %s/%s then %s/%s", rows[0].Stage, rows[0].Scope, rows[2].Stage, rows[2].Scope)
 	}
 }
 

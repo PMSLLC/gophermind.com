@@ -210,7 +210,7 @@ func TestLedgerRowsCarryTheTaskTypeAndTheNodeClass(t *testing.T) {
 			t.Errorf("row %s: task %q, node %q, class %q", r.Stage, r.TaskType, r.NodeID, r.NodeClass)
 		}
 	}
-	want := map[string]int{"clarify": 1, "contract": 4, "decompose": 3, "coverage": 1, "testwrite": 3}
+	want := map[string]int{"clarify": 1, "contract": 5, "decompose": 3, "coverage": 1, "testwrite": 3}
 	for task, n := range want {
 		if byTask[task] != n {
 			t.Errorf("%d rows of task type %s, want %d (all: %v)", byTask[task], task, n, byTask)
@@ -227,7 +227,7 @@ func TestLedgerRowsCarryTheTaskTypeAndTheNodeClass(t *testing.T) {
 	for _, s := range sum {
 		groups[s.TaskType+"/"+s.NodeClass] = s.Calls
 	}
-	if groups["testwrite/validation"] != 2 || groups["testwrite/pure"] != 1 || groups["contract/"] != 4 {
+	if groups["testwrite/validation"] != 2 || groups["testwrite/pure"] != 1 || groups["contract/"] != 5 {
 		t.Errorf("summary groups = %v", groups)
 	}
 }

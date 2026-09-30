@@ -88,7 +88,7 @@ its output is already in the run folder.
 |---|---|---|
 | Load | Validates the brief, makes sure its secrets are in the vault, creates the run folder | `brief.md`, `requirements.json` |
 | Clarify | Asks the model what it needs to know, then asks you (or takes the defaults when the brief says `assume_and_document`) | `answers.json` |
-| Contract | The outline in passes (repeated while the model says more remains), then one call per component, also repeated while more remains | `contracts.json` |
+| Contract | The outline in harness-driven passes (a shared pass, then one per batch of 3 features), then one call per component (continued while it adds new functions) | `contracts.json` |
 | Decompose | One node per function, at most 8 functions per call | the root and component nodes, drafts in `_state/` |
 | Coverage | Maps every requirement of the brief to the nodes and tests that satisfy it | `coverage.json`, acceptance tests on the root node |
 | Approve | Shows the plan and waits for a decision | `approval.json` |
@@ -103,16 +103,25 @@ provider returns a truncation error, the router records that attempt as outcome
 `error` with error_kind `truncated` (not `malformed`), and retries the same model once with double the
 budget. The Contract outline asks for 16000 tokens and may grow to 32768; every
 other stage keeps its own budget and the router's 16384 cap. A large brief does
-not need a bigger reply: the outline is written in passes of about 12 components
-and 12 types, a pass sets `"more": true` until the list is complete, and each
-later call is told the ids already written. Passes are merged by id (an
-identical repeat is dropped, a different one is an error naming the id), the
-whole merged outline is validated after every pass, and each pass is stored in
-`_state/contract.json`, so a resumed run asks only for the unfinished pass. At
-most 20 passes are made before the stage stops with an error. Between passes
+not need a bigger reply: the harness drives the outline passes, because a model
+cannot tell what is left (it repeats earlier ids and still says more). Pass 1
+(`contract:outline:1`) is the shared pass: module, conventions, dependencies, the
+`types` component and the shared domain types, and no feature component. Then
+the brief's features, in brief order, are split into batches of 3
+(`outlineBatchSize`) and each batch is one pass (`contract:outline:2`, `:3`,
+...): the prompt carries the whole brief, names the batch's features, and lists
+the component and type ids already declared, which it may reference in `uses`
+but must not repeat. The model never says `more`; the field is accepted and
+ignored, and there is no cap on the number of passes because the batch list, not
+the model, ends them. A pass that adds nothing new is not an error: it raises the
+warning `outline_pass_empty` (the batch number only) and the run goes on; the
+Coverage stage later checks the plan against the brief. Passes are merged by id
+(first emission kept), each pass is stored in `_state/contract.json` together
+with the batch list (`outline_batches`) and the index of the next batch
+(`outline_batch_next`), so a resumed run asks only for the unfinished pass. Between passes
 only local checks run (a type may use one a later pass writes); when the
 outline is complete, ids still used but never declared are asked for in up to 2
-repair passes (stored like any pass), and only then does the stage fail, naming
+repair passes (`contract:outline:repair`, stored like any pass), and only then does the stage fail, naming
 at most 10 of the ids. An id that a later emission repeats with different content (in the same reply
 or a later pass, for components, types and functions) is model noise, not a
 plan defect: the first emission is kept, the repeat is dropped, a warning
@@ -150,7 +159,9 @@ component ids `logs` and `outline` are reserved (a run folder and a stage
 name); the repair stage is `contract:_repair`, which no component can be named
 because ids cannot start with an underscore, so a component called Repair is
 fine. Failed repair attempts count toward the bound across restarts.
-Component passes work the same way: a function may use
+Component passes work the same way: a component reply may say `more` and is
+continued only while each reply adds a new function (a repeat with nothing new ends
+the component, it is not an error); a function may use
 one a later component writes, and ids still undeclared after every component is
 written go through up to 2 `contract:_repair` passes.
 
