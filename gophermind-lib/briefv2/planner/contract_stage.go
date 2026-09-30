@@ -43,6 +43,9 @@ type contractState struct {
 	OutlineSharedIDs  []string `json:"outline_shared_ids,omitempty"`
 	// ComponentPasses counts the stored passes of each component, for the cap.
 	ComponentPasses map[string]int `json:"component_passes,omitempty"`
+	// SchemaRepairs counts the passes that asked for fields the merged contract
+	// lacked (attempts that failed count too, across restarts).
+	SchemaRepairs int `json:"schema_repairs,omitempty"`
 	// OutlineRepairs counts the repair passes stored; OutlineDone is set once
 	// the outline has no unresolved reference and dependencies.json is written.
 	OutlineRepairs int  `json:"outline_repairs,omitempty"`
@@ -416,6 +419,16 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 	// and the stored contract carries only declared ids.
 	st.Doc = resolveRefs(st.Doc)
 	if err := writeJSON(r.path(stateContract), st); err != nil {
+		return err
+	}
+
+	// The merged contract is stored. Fields a node lacks are asked for again,
+	// for those nodes only, before the last validation.
+	itemSchemasFix, err := contractItemSchemas("types", "functions")
+	if err != nil {
+		return err
+	}
+	if err := p.repairSchema(ctx, r, &st, answersText(as), itemSchemasFix); err != nil {
 		return err
 	}
 

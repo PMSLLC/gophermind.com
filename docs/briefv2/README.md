@@ -170,6 +170,21 @@ the component, it is not an error; at most 40 passes per component, then a fixed
 one a later component writes, and ids still undeclared after every component is
 written go through up to 2 `contract:_repair` passes.
 
+The merged contract is stored in `_state/contract.json` before its last
+validation. If a node then lacks a required field (a function without `doc`,
+`signature`, `file` or `package`; a type without `decl`, `file` or `package`),
+the stage asks for those nodes again in up to 2 `contract:_schema` passes, at
+most 10 nodes per call: the prompt lists each id, the fields it lacks and the
+node as it stands, and only the missing fields are taken from the reply (the
+first emission's other fields stay). Attempts count across restarts
+(`schema_repairs`), and nothing already asked is asked again on `resume`. After
+the bound only a missing `doc`, a documentation comment, is filled with
+`<Name> implements <component> behaviour described in the brief.` (Name from the
+signature) and the warning `doc_defaulted` gives the count and at most 10 ids;
+any other gap, and any gap that cannot be named (an id that fails the syntax),
+ends the stage with an error that names each node and field (at most 5 and a
+count), never a bare JSON pointer.
+
 Requirements and coverage. Every top-level bullet under `## Constraints` (C1,
 C2, ...) and `## Acceptance` (A1, A2, ...) and every `###` heading under
 `## Features` (F1, F2, ...) is one requirement, parsed by code. A constraint
