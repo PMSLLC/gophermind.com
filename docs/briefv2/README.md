@@ -113,9 +113,21 @@ most 20 passes are made before the stage stops with an error. Between passes
 only local checks run (a type may use one a later pass writes); when the
 outline is complete, ids still used but never declared are asked for in up to 2
 repair passes (stored like any pass), and only then does the stage fail, naming
-at most 10 of the ids. Component passes work the same way: a function may use
+at most 10 of the ids. An id that a later emission repeats with different content (in the same reply
+or a later pass, for components, types and functions) is model noise, not a
+plan defect: the first emission is kept, the repeat is dropped, a warning
+`outline_duplicate_ignored` names the ids (only ids that pass the id syntax,
+with a count) and they are listed in `_state/contract.json` under
+`ignored_duplicates`; coverage later checks the plan against the brief, so
+nothing the brief needs is lost. Identical repeats are dropped silently. A
+model's `exports` in the outline are ignored (the harness fills them). The
+component ids `logs` and `outline` are reserved (a run folder and a stage
+name); the repair stage is `contract:_repair`, which no component can be named
+because ids cannot start with an underscore, so a component called Repair is
+fine. Failed repair attempts count toward the bound across restarts.
+Component passes work the same way: a function may use
 one a later component writes, and ids still undeclared after every component is
-written go through up to 2 `contract:repair` passes.
+written go through up to 2 `contract:_repair` passes.
 
 Requirements and coverage. Every top-level bullet under `## Constraints` (C1,
 C2, ...) and `## Acceptance` (A1, A2, ...) and every `###` heading under

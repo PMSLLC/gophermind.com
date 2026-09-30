@@ -50,7 +50,7 @@ func TestParseAndMergeErrorsNeverQuoteTheReply(t *testing.T) {
 		`{"more": true, "functions": []} ` + c,
 	}
 	for i, r := range replies {
-		if _, _, err := mergePass(base, "greeting", r, testRunID); err != nil && strings.Contains(err.Error(), c) {
+		if _, _, _, err := mergePass(base, "greeting", r, testRunID); err != nil && strings.Contains(err.Error(), c) {
 			t.Errorf("reply %d: error quotes the reply: %v", i, err)
 		}
 	}

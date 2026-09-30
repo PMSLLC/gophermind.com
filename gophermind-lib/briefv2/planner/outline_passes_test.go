@@ -102,7 +102,7 @@ func TestOutlineContinuesWhileMoreIsTrue(t *testing.T) {
 	})
 }
 
-func TestOutlineDropsAnIdenticalDuplicateAndRefusesAConflictingOne(t *testing.T) {
+func TestOutlineDropsAnIdenticalDuplicateSilently(t *testing.T) {
 	first := `{` + outlineHeadJSON + `, "components": [` + comp("types") + `, ` + comp("greeting") + `], "types": [` + nameErrorType + `], "more": true}`
 	g := newRig(t, approving(), variant(t, map[string]string{
 		"contract.outline.txt":   first,
@@ -112,16 +112,10 @@ func TestOutlineDropsAnIdenticalDuplicateAndRefusesAConflictingOne(t *testing.T)
 	if got := componentIDs(g); got != "types greeting farewell" || len(g.contracts().Types) != 1 {
 		t.Errorf("components = %q, types %d: identical duplicates must be dropped", got, len(g.contracts().Types))
 	}
-
-	bad := newRig(t, approving(), variant(t, map[string]string{
-		"contract.outline.txt":   first,
-		"contract.outline.2.txt": `{"components": [{"id": "greeting", "package": "other", "exports": []}], "more": false}`,
-		"contract.outline.3.txt": `{"components": [{"id": "greeting", "package": "other", "exports": []}], "more": false}`,
-	}))
-	_, err := bad.plan(planner.Options{StopAfter: "contract"})
-	if err == nil || !strings.Contains(err.Error(), `"greeting"`) {
-		t.Fatalf("err = %v, want the conflicting id named", err)
+	if w := g.sink.OfKind("warning"); len(w) != 0 {
+		t.Errorf("identical duplicates raised warnings: %v", w)
 	}
+
 }
 
 func TestOutlineNeedsProgressWhenItSaysMore(t *testing.T) {
@@ -295,21 +289,39 @@ func TestOutlineStillDanglingAfterRepairsFailsNamingTheIDs(t *testing.T) {
 func TestOutlineRepairPassesAreStoredAndNotReAsked(t *testing.T) {
 	g := newRig(t, approving(), variant(t, map[string]string{
 		"contract.outline.txt":   danglingFirst("missing-type"),
-		"contract.outline.2.txt": `{"types": []}`,
-		"contract.outline.3.txt": "the model fell over",
-		"contract.outline.4.txt": "and again",
+		"contract.outline.2.txt": "the model fell over",
+		"contract.outline.3.txt": "and again",
 	}))
 	if _, err := g.plan(planner.Options{StopAfter: "contract"}); err == nil {
-		t.Fatal("want the second repair to fail")
+		t.Fatal("want the first repair to fail")
 	}
-	// After the restart the first outline request is the second repair.
+	// After the restart the first outline request is the second repair attempt.
 	g.wire(variant(t, map[string]string{"contract.outline.txt": `{"types": [` + missingType + `]}`}))
 	g.mustPlan(planner.Options{RunID: greeterID, StopAfter: "contract"})
 	if n := len(outlineStages(g)); n != 1 {
-		t.Errorf("resume made %d outline calls, want 1 (passes and the first repair are stored)", n)
+		t.Errorf("resume made %d outline calls, want 1 (the pass is stored)", n)
 	}
 	if len(g.contracts().Types) != 3 {
 		t.Errorf("types = %d, want 3", len(g.contracts().Types))
+	}
+}
+
+// A failed repair attempt is an attempt: the count survives a restart.
+func TestFailedOutlineRepairsCountAcrossResumes(t *testing.T) {
+	bad := variant(t, map[string]string{"contract.outline.txt": danglingFirst("missing-type"),
+		"contract.outline.2.txt": "the model fell over", "contract.outline.3.txt": "and again"})
+	g := newRig(t, approving(), bad)
+	if _, err := g.plan(planner.Options{StopAfter: "contract"}); err == nil {
+		t.Fatal("want the first repair to fail")
+	}
+	g.wire(variant(t, map[string]string{"contract.outline.txt": "fell over", "contract.outline.2.txt": "again"}))
+	if _, err := g.plan(planner.Options{RunID: greeterID, StopAfter: "contract"}); err == nil {
+		t.Fatal("want the second repair to fail")
+	}
+	g.wire(variant(t, map[string]string{"contract.outline.txt": `{"types": [` + missingType + `]}`}))
+	_, err := g.plan(planner.Options{RunID: greeterID, StopAfter: "contract"})
+	if err == nil || !strings.Contains(err.Error(), "2 repair passes") || len(g.stagesCalled()) != 0 {
+		t.Fatalf("err = %v calls %v, want the bound reached from the stored count with no call", err, g.stagesCalled())
 	}
 }
 
@@ -330,7 +342,16 @@ const goldOutlineDeps = "Here.\n```json\n" + `{"module": "example.com/greeter",
 ` + "```\n"
 
 // The golden files were recorded from the planner as it was before the
-// outline passes existed: a one-pass outline must write the same bytes.
+// outline passes existed. Provenance: the repo at 682d332 was extracted with
+// `git archive 682d332 | tar -x` (no checkout), its one-pass path was run on
+// these fixtures, and the sha256 of its output equals the committed files:
+//
+//	plain.contracts.json     b045d9797a621a01f70c9a00dd8c8871d935c57bf7c661bb512d6985c43c41d4
+//	plain.dependencies.json  37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570
+//	deps.contracts.json      fb65c06dd2359087390fb3cf5dfef7c222e1aa61ee75e58b7d6a3a172d82a05c
+//	deps.dependencies.json   f7904755d859d97dac0eaeefa9a5988945d4e374acfd2095ea5aac1b4127b9b8
+//
+// A one-pass outline must write the same bytes.
 func TestOnePassOutlineWritesThePreWaveBytes(t *testing.T) {
 	for name, dirs := range map[string][]string{"plain": nil, "deps": {variant(t, map[string]string{"contract.outline.txt": goldOutlineDeps})}} {
 		g := newRig(t, approving(), dirs...)

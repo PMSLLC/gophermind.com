@@ -20,7 +20,7 @@ func greetReply(uses ...string) string {
 ], "more": false}`
 }
 
-func repairStages(g *rig) int { return count(g.stagesCalled(), "contract:repair") }
+func repairStages(g *rig) int { return count(g.stagesCalled(), "contract:_repair") }
 
 // A function may use a function of a component that a later pass writes.
 func TestComponentPassMayUseAFunctionOfALaterComponent(t *testing.T) {
@@ -47,14 +47,14 @@ const ghostFn = `{"types": [], "functions": [
 func TestADanglingFunctionReferenceIsRepairedInOnePass(t *testing.T) {
 	g := newRig(t, approving(), variant(t, map[string]string{
 		"contract.greeting.txt": greetReply("name-error", "fn-ghost"),
-		"contract.repair.txt":   ghostFn,
+		"contract._repair.txt":  ghostFn,
 	}))
 	g.mustPlan(planner.Options{StopAfter: "contract"})
 	if n := repairStages(g); n != 1 {
 		t.Fatalf("repair calls = %d, want 1", n)
 	}
 	for _, r := range g.fake.Requests() {
-		if planner.StageOf(r) == "contract:repair" {
+		if planner.StageOf(r) == "contract:_repair" {
 			p := r.Messages[1].Content
 			if !strings.Contains(p, "<unresolved>\nfn-ghost (used by fn-greet in component greeting)\n</unresolved>") {
 				t.Errorf("repair prompt lacks the unresolved id with its owner:\n%s", p)
@@ -74,10 +74,10 @@ func TestADanglingFunctionReferenceIsRepairedInOnePass(t *testing.T) {
 	rows, _ := g.led.List(context.Background(), greeterID, ledger.Filter{TaskType: "contract"})
 	n := 0
 	for _, r := range rows {
-		if r.Stage == "contract:repair" {
+		if r.Stage == "contract:_repair" {
 			n++
-			if r.Outcome != ledger.OutcomeOK {
-				t.Errorf("repair row outcome = %s", r.Outcome)
+			if r.Outcome != ledger.OutcomeOK || r.TaskType != "contract" || r.NodeClass != "" {
+				t.Errorf("repair row = %s task %q class %q, want ok, contract and no class (like every contract stage)", r.Outcome, r.TaskType, r.NodeClass)
 			}
 		}
 	}
@@ -88,12 +88,12 @@ func TestADanglingFunctionReferenceIsRepairedInOnePass(t *testing.T) {
 
 func TestStillDanglingAfterTheRepairBoundNamesTheIDs(t *testing.T) {
 	g := newRig(t, approving(), variant(t, map[string]string{
-		"contract.greeting.txt": greetReply("name-error", "fn-ghost", "ghost CANARY words"),
-		"contract.repair.txt":   `{"types": [], "functions": []}`,
-		"contract.repair.2.txt": `{"types": [], "functions": []}`,
+		"contract.greeting.txt":  greetReply("name-error", "fn-ghost", "ghost CANARY words"),
+		"contract._repair.txt":   `{"types": [], "functions": []}`,
+		"contract._repair.2.txt": `{"types": [], "functions": []}`,
 	}))
 	_, err := g.plan(planner.Options{StopAfter: "contract"})
-	if err == nil || !strings.Contains(err.Error(), `"fn-ghost"`) || !strings.Contains(err.Error(), "2 repair passes") || !strings.Contains(err.Error(), "contract:repair") {
+	if err == nil || !strings.Contains(err.Error(), `"fn-ghost"`) || !strings.Contains(err.Error(), "2 repair passes") || !strings.Contains(err.Error(), "contract:_repair") {
 		t.Fatalf("err = %v, want the stage, the id and the bound", err)
 	}
 	if strings.Contains(err.Error(), "CANARY") || strings.Contains(err.Error(), "ghost C") {
@@ -106,18 +106,56 @@ func TestStillDanglingAfterTheRepairBoundNamesTheIDs(t *testing.T) {
 
 func TestComponentRepairPassesAreStoredAndNotReAsked(t *testing.T) {
 	g := newRig(t, approving(), variant(t, map[string]string{
-		"contract.greeting.txt": greetReply("name-error", "fn-ghost"),
-		"contract.repair.txt":   `{"types": [], "functions": []}`,
-		"contract.repair.2.txt": "the model fell over",
-		"contract.repair.3.txt": "and again",
+		"contract.greeting.txt":  greetReply("name-error", "fn-ghost"),
+		"contract._repair.txt":   "the model fell over",
+		"contract._repair.2.txt": "and again",
 	}))
 	if _, err := g.plan(planner.Options{StopAfter: "contract"}); err == nil {
+		t.Fatal("want the repair to fail")
+	}
+	g.wire(variant(t, map[string]string{"contract._repair.txt": ghostFn}))
+	g.mustPlan(planner.Options{RunID: greeterID, StopAfter: "contract"})
+	if got := strings.Join(g.stagesCalled(), " "); got != "contract:_repair" {
+		t.Errorf("resume called %q, want only the unfinished repair", got)
+	}
+}
+
+// A failed repair attempt is an attempt: the count survives a restart.
+func TestFailedComponentRepairsCountAcrossResumes(t *testing.T) {
+	bad := variant(t, map[string]string{"contract.greeting.txt": greetReply("name-error", "fn-ghost"),
+		"contract._repair.txt": "the model fell over", "contract._repair.2.txt": "and again"})
+	g := newRig(t, approving(), bad)
+	if _, err := g.plan(planner.Options{StopAfter: "contract"}); err == nil {
+		t.Fatal("want the first repair to fail")
+	}
+	g.wire(bad)
+	if _, err := g.plan(planner.Options{RunID: greeterID, StopAfter: "contract"}); err == nil {
 		t.Fatal("want the second repair to fail")
 	}
-	g.wire(variant(t, map[string]string{"contract.repair.txt": ghostFn}))
-	g.mustPlan(planner.Options{RunID: greeterID, StopAfter: "contract"})
-	if got := strings.Join(g.stagesCalled(), " "); got != "contract:repair" {
-		t.Errorf("resume called %q, want only the unfinished repair", got)
+	g.wire(variant(t, map[string]string{"contract._repair.txt": ghostFn}))
+	_, err := g.plan(planner.Options{RunID: greeterID, StopAfter: "contract"})
+	if err == nil || !strings.Contains(err.Error(), "2 repair passes") {
+		t.Fatalf("err = %v, want the bound reached from the stored count", err)
+	}
+	if len(g.stagesCalled()) != 0 {
+		t.Errorf("a third repair was asked: %v", g.stagesCalled())
+	}
+}
+
+// A brief component may be called Repair: the repair stage has an id no
+// component can have.
+func TestAComponentNamedRepairDoesNotCollideWithTheRepairStage(t *testing.T) {
+	g := newRig(t, approving(), variant(t, map[string]string{
+		"contract.outline.txt": `{` + outlineHeadJSON + `, "components": [` + comp("types") + `, ` + comp("repair") + `], "types": [` + nameErrorType + `]}`,
+		"contract.repair.txt": `{"types": [], "functions": [
+  {"id": "fn-fix", "package": "greet", "file": "internal/greet/fix.go", "signature": "func Fix() error", "doc": "Fix repairs.", "uses": ["fn-ghost"]}
+], "more": false}`,
+		"contract._repair.txt": strings.Replace(ghostFn, `"greeting"`, `"repair"`, 1),
+	}))
+	g.mustPlan(planner.Options{StopAfter: "contract"})
+	calls := g.stagesCalled()
+	if count(calls, "contract:repair") != 1 || count(calls, "contract:_repair") != 1 {
+		t.Errorf("calls = %v, want one component pass named repair and one repair pass", calls)
 	}
 }
 

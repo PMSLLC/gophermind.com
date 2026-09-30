@@ -3,7 +3,7 @@ You are the architect for GopherMind. The contract below has every component wri
 {{.Unresolved}}
 </unresolved>
 
-Reply with what is missing: write each missing function or type in full, or resend a declaration whose `uses` names a wrong id with the corrected list. A function you write must say which component it belongs to in its `component` field (an id from the outline); a function you resend keeps its component. Do not repeat anything that is already right.
+Reply with what is missing: write each missing function or type in full. A function you write must say which component it belongs to in its `component` field (an id from the outline). An id that is already declared keeps its first version, so resending it changes nothing.
 
 Outline (module, conventions, all components):
 <outline>

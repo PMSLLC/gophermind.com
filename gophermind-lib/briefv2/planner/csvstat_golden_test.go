@@ -19,8 +19,11 @@ var csvstatFiles = map[string]string{
 ], "more": false}`,
 }
 
-// The golden files were recorded from the planner before the outline passes
-// and the deferred reference checks existed.
+// The golden files were recorded from the planner at 682d332, before the
+// outline passes and the deferred reference checks existed (extracted with
+// `git archive 682d332 | tar -x`, run there, sha256 equal to the committed
+// files): csvstat.contracts.json 753c2a4b1cda2374fa4d0de6651ff3c8180dd35778fb1d83cd65774fc9711512,
+// csvstat.dependencies.json 37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570.
 func TestSingleComponentContractWritesThePreWaveBytes(t *testing.T) {
 	g := newRig(t, approving(), variant(t, csvstatFiles))
 	g.mustPlan(planner.Options{StopAfter: "contract"})

@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"gophermind/gophermind-lib/briefv2/contract"
+	"gophermind/gophermind-lib/briefv2/events"
 	"gophermind/gophermind-lib/briefv2/router"
 	"gophermind/gophermind-lib/briefv2/schema"
 )
@@ -38,6 +39,38 @@ type contractState struct {
 	// Repairs counts the stored repair passes that ask for ids the written
 	// components use but never declare.
 	Repairs int `json:"repairs,omitempty"`
+	// IgnoredDuplicates lists, for the run report, the ids a later emission
+	// repeated with different content; the first emission was kept.
+	IgnoredDuplicates []string `json:"ignored_duplicates,omitempty"`
+}
+
+const maxIgnoredRecorded = 200
+
+// noteIgnored records dropped duplicate emissions in the state and reports
+// them as one warning: ids that pass the id syntax (at most 64 bytes, at most
+// 10 named) and the count, never content.
+func (p *Planner) noteIgnored(st *contractState, stage string, ignored []string) {
+	if len(ignored) == 0 {
+		return
+	}
+	for _, n := range ignored {
+		if len(st.IgnoredDuplicates) < maxIgnoredRecorded {
+			st.IgnoredDuplicates = append(st.IgnoredDuplicates, n)
+		}
+	}
+	shown := ignored
+	if len(shown) > maxUnresolvedInError {
+		shown = shown[:maxUnresolvedInError]
+	}
+	p.emit(events.KindWarning, stage, "", fmt.Sprintf(
+		"outline_duplicate_ignored: %d later emissions of an id already written were dropped and the first kept (%s)",
+		len(ignored), strings.Join(shown, ", ")))
+}
+
+// failedAttempt is true for a model call that ended in an error other than
+// the caller giving up: it counts as a repair attempt.
+func failedAttempt(ctx context.Context, err error) bool {
+	return err != nil && ctx.Err() == nil
 }
 
 // maxOutlinePasses bounds the outline loop so a model that never finishes
@@ -48,6 +81,11 @@ const maxOutlinePasses = 20
 // maxOutlineRepairs bounds the passes that ask the model to write the ids a
 // finished outline uses but never declared.
 const maxOutlineRepairs = 2
+
+// repairStage is the stage of the passes that ask for ids the written
+// components use but never declared. A component id cannot start with an
+// underscore, so no component can own this stage name.
+const repairStage = "contract:_repair"
 
 const (
 	maxUnresolvedInPrompt = 50
@@ -82,21 +120,24 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			if err != nil {
 				return err
 			}
-			var replace map[string]bool
-			if len(unresolved) > 0 {
-				replace = unresolvedDeclarers(st.Doc)
-			}
 			more := false
+			var ignored []string
 			cs := callSpec{stage: "contract:outline", taskType: "contract", scope: router.ScopeBrief,
 				maxTokens: maxTokensOutline, maxGrown: maxGrownOutline}
 			if err := p.call(ctx, r, cs, prompt, func(text string) error {
-				doc, ds, m, err := mergeOutline(st.Doc, st.Deps, StripReply(text), r.id, replace)
+				doc, ds, m, ign, err := mergeOutline(st.Doc, st.Deps, StripReply(text), r.id, len(unresolved) > 0)
 				if err != nil {
 					return err
 				}
-				st.Doc, st.Deps, more = doc, ds, m
+				st.Doc, st.Deps, more, ignored = doc, ds, m, ign
 				return nil
 			}); err != nil {
+				if failedAttempt(ctx, err) && len(unresolved) > 0 {
+					st.OutlineRepairs++
+					if werr := writeJSON(r.path(stateContract), st); werr != nil {
+						return werr
+					}
+				}
 				return err
 			}
 			if len(unresolved) == 0 {
@@ -105,6 +146,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			} else {
 				st.OutlineRepairs++
 			}
+			p.noteIgnored(&st, "contract", ignored)
 			return writeJSON(r.path(stateContract), st)
 		}
 		for st.Doc == nil || st.OutlineMore {
@@ -161,17 +203,19 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 				return err
 			}
 			more := false
+			var ignored []string
 			cs := callSpec{stage: "contract:" + id, taskType: "contract", scope: router.ScopeComponent, maxTokens: maxTokensContract}
 			if err := p.call(ctx, r, cs, prompt, func(text string) error {
-				doc, m, err := mergePass(st.Doc, id, StripReply(text), r.id)
+				doc, m, ign, err := mergePass(st.Doc, id, StripReply(text), r.id)
 				if err != nil {
 					return err
 				}
-				st.Doc, more = doc, m
+				st.Doc, more, ignored = doc, m, ign
 				return nil
 			}); err != nil {
 				return err
 			}
+			p.noteIgnored(&st, "contract:"+id, ignored)
 			if !more {
 				st.Done = append(st.Done, id)
 			}
@@ -192,7 +236,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			break
 		}
 		if st.Repairs >= maxOutlineRepairs {
-			return unresolvedErr("contract:repair", un)
+			return unresolvedErr(repairStage, un)
 		}
 		prompt, err := render("contract_repair", map[string]string{
 			"Outline":  mustJSON(map[string]any{"module": st.Doc["module"], "conventions": st.Doc["conventions"], "components": st.Doc["components"]}),
@@ -201,18 +245,25 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 		if err != nil {
 			return err
 		}
-		replace := unresolvedDeclarers(st.Doc)
-		cs := callSpec{stage: "contract:repair", taskType: "contract", scope: router.ScopeBrief, maxTokens: maxTokensContract}
+		var ignored []string
+		cs := callSpec{stage: repairStage, taskType: "contract", scope: router.ScopeBrief, maxTokens: maxTokensContract}
 		if err := p.call(ctx, r, cs, prompt, func(text string) error {
-			doc, err := mergeRepair(st.Doc, StripReply(text), r.id, replace)
+			doc, ign, err := mergeRepair(st.Doc, StripReply(text), r.id)
 			if err != nil {
 				return err
 			}
-			st.Doc = doc
+			st.Doc, ignored = doc, ign
 			return nil
 		}); err != nil {
+			if failedAttempt(ctx, err) {
+				st.Repairs++
+				if werr := writeJSON(r.path(stateContract), st); werr != nil {
+					return werr
+				}
+			}
 			return err
 		}
+		p.noteIgnored(&st, repairStage, ignored)
 		st.Repairs++
 		if err := writeJSON(r.path(stateContract), st); err != nil {
 			return err
@@ -244,8 +295,8 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 
 // mergeOutline adds one outline pass to a copy of doc (nil for the first
 // pass) and checks the merged outline; a rejected reply leaves doc as it was.
-// Components and types are merged by id: an id seen before with identical
-// content is dropped, with different content is an error. The first pass
+// Components and types are merged by id: a repeat of an id is dropped and the
+// first emission kept. The first pass
 // fixes the module and the conventions. more is the reply's "more" flag.
 //
 // Between passes only what is local and monotone is checked (schema shape,
@@ -254,7 +305,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 // unresolved; an unresolved reference is not an error here, the planner asks
 // for it. replace, when set, is a repair pass: its ids may replace the
 // declaration of an id it names, and "more" is ignored.
-func mergeOutline(doc map[string]any, have []Dependency, text, briefID string, replace map[string]bool) (map[string]any, []Dependency, bool, error) {
+func mergeOutline(doc map[string]any, have []Dependency, text, briefID string, repair bool) (map[string]any, []Dependency, bool, []string, error) {
 	var o struct {
 		Module      string           `json:"module"`
 		Conventions map[string]any   `json:"conventions"`
@@ -264,15 +315,15 @@ func mergeOutline(doc map[string]any, have []Dependency, text, briefID string, r
 		More        bool             `json:"more"`
 	}
 	if err := json.Unmarshal([]byte(text), &o); err != nil {
-		return nil, nil, false, fmt.Errorf("contract outline is not a JSON object (%s)", jsonErr(err))
+		return nil, nil, false, nil, fmt.Errorf("contract outline is not a JSON object (%s)", jsonErr(err))
 	}
 	first := doc == nil
 	if first && len(o.Components) == 0 {
-		return nil, nil, false, errors.New("contract outline lists no component")
+		return nil, nil, false, nil, errors.New("contract outline lists no component")
 	}
 	deps, err := ParseDependencies(o.Deps)
 	if err != nil {
-		return nil, nil, false, err
+		return nil, nil, false, nil, err
 	}
 	var next map[string]any
 	if first {
@@ -282,21 +333,15 @@ func mergeOutline(doc map[string]any, have []Dependency, text, briefID string, r
 			"types": []any{}, "functions": []any{}, "components": []any{},
 		}
 	} else if next, err = copyDoc(doc); err != nil {
-		return nil, nil, false, err
+		return nil, nil, false, nil, err
 	}
-	added := 0
-	var comps []any
-	if comps, added, err = mergeByID(next["components"], o.Components, added, "component", nil, func(c map[string]any) {
-		if _, ok := c["exports"].([]any); !ok {
-			c["exports"] = []any{}
-		}
-	}); err != nil {
-		return nil, nil, false, err
-	}
-	var types []any
-	if types, added, err = mergeByID(next["types"], o.Types, added, "type", replace, nil); err != nil {
-		return nil, nil, false, err
-	}
+	// The harness fills a component's exports once its functions exist; a
+	// model's exports in the outline would name functions that are not there.
+	comps, added, ignored := mergeByID(next["components"], o.Components, 0, "component", func(c map[string]any) {
+		c["exports"] = []any{}
+	})
+	types, added, ign2 := mergeByID(next["types"], o.Types, added, "type", nil)
+	ignored = append(ignored, ign2...)
 	next["components"], next["types"] = comps, types
 
 	merged := append([]Dependency{}, have...)
@@ -305,7 +350,7 @@ func mergeOutline(doc map[string]any, have []Dependency, text, briefID string, r
 		for _, h := range merged {
 			if h.Module == d.Module {
 				if h != d {
-					return nil, nil, false, fmt.Errorf("contract outline lists dependency %s twice with different content", boundedModule(d.Module))
+					return nil, nil, false, nil, fmt.Errorf("contract outline lists dependency %s twice with different content", boundedModule(d.Module))
 				}
 				dup = true
 			}
@@ -316,9 +361,9 @@ func mergeOutline(doc map[string]any, have []Dependency, text, briefID string, r
 		}
 	}
 	sort.Slice(merged, func(a, b int) bool { return merged[a].Module < merged[b].Module })
-	more := o.More && replace == nil
+	more := o.More && !repair
 	if !first && more && added == 0 {
-		return nil, nil, false, errors.New("contract outline says more remains but adds nothing new")
+		return nil, nil, false, nil, errors.New("contract outline says more remains but adds nothing new")
 	}
 	var verr error
 	if more || len(unresolvedUses(next)) > 0 {
@@ -327,9 +372,9 @@ func mergeOutline(doc map[string]any, have []Dependency, text, briefID string, r
 		_, verr = validateContractDoc(next, briefID)
 	}
 	if verr != nil {
-		return nil, nil, false, verr
+		return nil, nil, false, nil, verr
 	}
-	return next, merged, more, nil
+	return next, merged, more, ignored, nil
 }
 
 var (
@@ -388,24 +433,6 @@ func unresolvedUses(doc map[string]any) []string {
 	return out
 }
 
-// unresolvedDeclarers is the set of type ids whose uses name an undeclared id.
-func unresolvedDeclarers(doc map[string]any) map[string]bool {
-	un := map[string]bool{}
-	for _, u := range unresolvedUses(doc) {
-		un[u] = true
-	}
-	out := map[string]bool{}
-	for _, o := range objects(doc["types"]) {
-		for _, u := range strList(o["uses"]) {
-			if un[u] {
-				id, _ := o["id"].(string)
-				out[id] = true
-			}
-		}
-	}
-	return out
-}
-
 // unresolvedPromptText lists up to 50 of the ids that pass the id syntax, one
 // per line, and says how many more are not shown.
 func unresolvedPromptText(ids []string) string {
@@ -437,10 +464,14 @@ func unresolvedErr(stage string, ids []string) error {
 		stage, len(ids), maxOutlineRepairs, strings.Join(named, ", "))
 }
 
-// mergeByID appends the new objects to list, dropping an identical repeat of
-// an id and refusing a repeat whose content differs. added counts the objects
-// that were new. An id in replace may be redefined. An id repeated inside one reply is always an error. prep, when set, normalises an object before it is compared.
-func mergeByID(list any, in []map[string]any, added int, what string, replace map[string]bool, prep func(map[string]any)) ([]any, int, error) {
+// mergeByID appends the new objects to list. A repeat of an id (within the
+// reply or of an earlier one) is dropped and the first emission kept: silently
+// when the content is identical, otherwise it is returned in ignored, named
+// with boundedID (an id that fails the id syntax is reported by length). That
+// is model noise, not a plan defect, and nothing the brief needs is lost
+// because the first emission stays. added counts the objects that were new.
+// prep, when set, normalises an object before it is compared.
+func mergeByID(list any, in []map[string]any, added int, what string, prep func(map[string]any)) ([]any, int, []string) {
 	out, _ := list.([]any)
 	at := map[string]int{}
 	for i, x := range out {
@@ -450,26 +481,17 @@ func mergeByID(list any, in []map[string]any, added int, what string, replace ma
 			}
 		}
 	}
-	inReply := map[string]bool{}
+	var ignored []string
 	for _, m := range in {
 		if prep != nil {
 			prep(m)
 		}
 		id, _ := m["id"].(string)
-		if inReply[id] {
-			return nil, 0, fmt.Errorf("contract: duplicate %s id %s in one reply", what, boundedID(id))
-		}
-		inReply[id] = true
 		if i, ok := at[id]; ok && id != "" {
 			old, _ := json.Marshal(out[i])
 			cur, _ := json.Marshal(m)
 			if !bytes.Equal(old, cur) {
-				if replace[id] {
-					out[i] = m
-					added++
-					continue
-				}
-				return nil, 0, fmt.Errorf("contract outline lists %s %s twice with different content", what, boundedID(id))
+				ignored = append(ignored, what+" "+boundedID(id))
 			}
 			continue
 		}
@@ -479,7 +501,7 @@ func mergeByID(list any, in []map[string]any, added int, what string, replace ma
 		out = append(out, m)
 		added++
 	}
-	return out, added, nil
+	return out, added, ignored
 }
 
 // outlineFixedText is the module and conventions the first pass fixed, for the
@@ -513,38 +535,41 @@ func outlineEmittedText(doc map[string]any) string {
 	return b.String()
 }
 
-// mergePass adds one component pass to a copy of doc and validates the whole
-// contract again. It never changes doc, so a rejected reply leaves no trace.
-func mergePass(doc map[string]any, component, text, briefID string) (map[string]any, bool, error) {
+// mergePass adds one component pass to a copy of doc and checks the merged
+// contract locally (references wait until every component is written). It
+// never changes doc, so a rejected reply leaves no trace. A function or type
+// that repeats an id already written keeps its first emission; ignored lists
+// the repeats that differed.
+func mergePass(doc map[string]any, component, text, briefID string) (map[string]any, bool, []string, error) {
 	var pass struct {
 		Types     []map[string]any `json:"types"`
 		Functions []map[string]any `json:"functions"`
 		More      bool             `json:"more"`
 	}
 	if err := json.Unmarshal([]byte(text), &pass); err != nil {
-		return nil, false, fmt.Errorf("contract reply for %s is not a JSON object (%s)", component, jsonErr(err))
+		return nil, false, nil, fmt.Errorf("contract reply for %s is not a JSON object (%s)", component, jsonErr(err))
 	}
 	if pass.More && len(pass.Functions) == 0 {
-		return nil, false, fmt.Errorf("contract reply for %s says more remains but holds no function", component)
+		return nil, false, nil, fmt.Errorf("contract reply for %s says more remains but holds no function", component)
 	}
 	next, err := copyDoc(doc)
 	if err != nil {
-		return nil, false, err
+		return nil, false, nil, err
 	}
-	types, _ := next["types"].([]any)
-	for _, t := range pass.Types {
-		types = append(types, t)
-	}
-	fns, _ := next["functions"].([]any)
 	for _, f := range pass.Functions {
 		f["component"] = component
-		fns = append(fns, f)
+	}
+	types, added, ignored := mergeByID(next["types"], pass.Types, 0, "type", nil)
+	fns, added, ign2 := mergeByID(next["functions"], pass.Functions, added, "function", nil)
+	ignored = append(ignored, ign2...)
+	if pass.More && added == 0 {
+		return nil, false, nil, fmt.Errorf("contract reply for %s says more remains but adds nothing new", component)
 	}
 	next["types"], next["functions"] = types, fns
 	if err := validateOutlineShape(next, briefID); err != nil {
-		return nil, false, err
+		return nil, false, nil, err
 	}
-	return next, pass.More, nil
+	return next, pass.More, ignored, nil
 }
 
 var componentIDRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
@@ -616,32 +641,32 @@ func localChecks(c *contract.Contracts, briefID string) error {
 		switch {
 		case !componentIDRE.MatchString(comp.ID):
 			return fmt.Errorf("contract: component id %s must be lower case letters, digits and dashes", boundedID(comp.ID))
-		case comp.ID == "logs" || comp.ID == "outline" || comp.ID == "repair":
-			return fmt.Errorf("contract: component id %q is reserved", comp.ID)
+		case comp.ID == "logs" || comp.ID == "outline":
+			return fmt.Errorf("contract: component id %s is reserved (logs and outline name a folder and a stage of the run)", boundedID(comp.ID))
 		case comp.ID == briefID:
-			return fmt.Errorf("contract: component id %q is the run id", comp.ID)
+			return fmt.Errorf("contract: component id %s is the run id", boundedID(comp.ID))
 		case comps[comp.ID]:
-			return fmt.Errorf("contract: duplicate component id %q", comp.ID)
+			return fmt.Errorf("contract: duplicate component id %s", boundedID(comp.ID))
 		}
 		comps[comp.ID] = true
 	}
 	for _, t := range c.Types {
 		if err := cleanGoFile(t.File); err != nil {
-			return fmt.Errorf("contract: type %s: %w", t.ID, err)
+			return fmt.Errorf("contract: type %s: %w", boundedID(t.ID), err)
 		}
 	}
 	for _, f := range c.Functions {
 		if comps[f.ID] || f.ID == briefID {
-			return fmt.Errorf("contract: function id %q is also a component or the run id", f.ID)
+			return fmt.Errorf("contract: function id %s is also a component or the run id", boundedID(f.ID))
 		}
 		if !comps[f.Component] {
-			return fmt.Errorf("contract: function %s belongs to unknown component (%d bytes)", f.ID, len(f.Component))
+			return fmt.Errorf("contract: function %s belongs to unknown component (%d bytes)", boundedID(f.ID), len(f.Component))
 		}
 		if err := cleanGoFile(f.File); err != nil {
-			return fmt.Errorf("contract: function %s: %w", f.ID, err)
+			return fmt.Errorf("contract: function %s: %w", boundedID(f.ID), err)
 		}
 		if _, err := parseSignature(f.Signature); err != nil {
-			return fmt.Errorf("contract: function %s: %w", f.ID, err)
+			return fmt.Errorf("contract: function %s: %w", boundedID(f.ID), err)
 		}
 	}
 	return nil
@@ -794,49 +819,40 @@ func briefSection(r *run, component string) string {
 	return r.brief.Sections["Architecture"]
 }
 
-// mergeRepair adds a repair reply to a copy of doc. A function names its
-// component in "component" (kept from the declaration it replaces when it
-// omits it). An id in replace may be redefined; any other conflicting
-// redefinition is an error. The merged contract is checked locally only.
-func mergeRepair(doc map[string]any, text, briefID string, replace map[string]bool) (map[string]any, error) {
+// mergeRepair adds a repair reply to a copy of doc. A new function names its
+// component in "component". A repeat of an id already written keeps the first
+// emission. The merged contract is checked locally only.
+func mergeRepair(doc map[string]any, text, briefID string) (map[string]any, []string, error) {
 	var pass struct {
 		Types     []map[string]any `json:"types"`
 		Functions []map[string]any `json:"functions"`
 	}
 	if err := json.Unmarshal([]byte(text), &pass); err != nil {
-		return nil, fmt.Errorf("contract repair reply is not a JSON object (%s)", jsonErr(err))
+		return nil, nil, fmt.Errorf("contract repair reply is not a JSON object (%s)", jsonErr(err))
 	}
 	next, err := copyDoc(doc)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	old := map[string]string{}
+	have := map[string]bool{}
 	for _, f := range objects(next["functions"]) {
 		id, _ := f["id"].(string)
-		old[id], _ = f["component"].(string)
+		have[id] = true
 	}
 	for _, f := range pass.Functions {
 		id, _ := f["id"].(string)
-		if c, _ := f["component"].(string); c == "" {
-			if prev := old[id]; prev != "" {
-				f["component"] = prev
-			} else {
-				return nil, fmt.Errorf("contract repair: function %s names no component", boundedID(id))
-			}
+		if c, _ := f["component"].(string); c == "" && !have[id] {
+			return nil, nil, fmt.Errorf("contract repair: function %s names no component", boundedID(id))
 		}
 	}
-	var types, fns []any
-	if types, _, err = mergeByID(next["types"], pass.Types, 0, "type", replace, nil); err != nil {
-		return nil, err
-	}
-	if fns, _, err = mergeByID(next["functions"], pass.Functions, 0, "function", replace, nil); err != nil {
-		return nil, err
-	}
+	types, _, ignored := mergeByID(next["types"], pass.Types, 0, "type", nil)
+	fns, _, ign2 := mergeByID(next["functions"], pass.Functions, 0, "function", nil)
+	ignored = append(ignored, ign2...)
 	next["types"], next["functions"] = types, fns
 	if err := validateOutlineShape(next, briefID); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return next, nil
+	return next, ignored, nil
 }
 
 // unresolvedOwnersText lists up to 50 unresolved ids that pass the id syntax,

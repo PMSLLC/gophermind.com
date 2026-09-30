@@ -2,7 +2,7 @@ You are the architect for GopherMind. Produce the outline of the contract for th
 
 Requirements:
 - Go only. Standard library unless the brief's Constraints allow modules.
-- Components map to the brief's ### Feature headings plus a `types` component for shared declarations. A component id is lower case letters, digits and dashes. Never use `logs` or `outline` as an id.
+- Components map to the brief's ### Feature headings plus a `types` component for shared declarations. A component id is lower case letters, digits and dashes. Never use `logs` or `outline` as an id (they name a folder and a stage of the run).
 - List the components in dependency order: a component comes after every component whose functions it calls.
 - Every type decl is complete Go source with a doc comment, exactly as it will appear in the file. `uses` lists the ids of other types the decl references.
 - Every `file` is a path relative to the repository root.
@@ -25,11 +25,11 @@ Ids already emitted by earlier passes:
 {{.Emitted}}
 </emitted>
 {{if .Unresolved}}
-Repair: the outline above is complete, but {{.UnresolvedCount}} ids are listed in a `uses` array and were never declared by any type:
+Repair: the outline above is complete, but {{.UnresolvedCount}} ids are listed in a `uses` array and were never declared by any type or function:
 <unresolved>
 {{.Unresolved}}
 </unresolved>
-Reply in the same JSON shape with the missing types written in full (and a component only if one is really missing), or resend a type whose `uses` names a wrong id with the corrected list. Set `more` to false. Do not repeat anything that is already right.
+Reply in the same JSON shape with the missing types written in full (and a component only if one is really missing). An id that an earlier pass already wrote keeps its first version, so resending it changes nothing. Set `more` to false.
 {{end}}
 Brief:
 <brief>
