@@ -22,6 +22,10 @@ const (
 	gitTimeout   = 5 * time.Minute
 )
 
+// testGit redirects the git binary. It is set only from _test.go; production always resolves git
+// through exec.LookPath once, in NewCLI.
+var testGit string
+
 var (
 	branchRe = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,100}$`)
 	idRe     = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
@@ -70,7 +74,7 @@ func NewCLI(dir, runID string) (*CLI, error) {
 	if st, err := os.Stat(abs); err != nil || !st.IsDir() {
 		return nil, errors.New("gitland: repo directory is not a directory")
 	}
-	bin := os.Getenv("GITLAND_TEST_GIT")
+	bin := testGit
 	if bin == "" {
 		bin, err = exec.LookPath("git")
 		if err != nil {
@@ -81,7 +85,20 @@ func NewCLI(dir, runID string) (*CLI, error) {
 	if err != nil {
 		return nil, errors.New("gitland: cannot make private home")
 	}
-	return &CLI{dir: abs, git: bin, runID: runID, home: home}, nil
+	c := &CLI{dir: abs, git: bin, runID: runID, home: home}
+	out, err := c.run("rev-parse", "--show-toplevel")
+	if err == nil {
+		var top string
+		top, err = filepath.EvalSymlinks(strings.TrimRight(string(out), "\n"))
+		if err == nil && top != abs {
+			err = ErrNotRepoRoot
+		}
+	}
+	if err != nil {
+		_ = c.Close()
+		return nil, ErrNotRepoRoot
+	}
+	return c, nil
 }
 
 // Close removes the private HOME made by NewCLI, only when it still looks like ours.
@@ -124,6 +141,9 @@ func (c *CLI) env() []string {
 		"GIT_AUTHOR_EMAIL=gophermind@localhost",
 		"GIT_COMMITTER_EMAIL=gophermind@localhost",
 		"GIT_OPTIONAL_LOCKS=0",
+		"GIT_EDITOR=true",
+		"GIT_PAGER=cat",
+		"GIT_CEILING_DIRECTORIES=" + filepath.Dir(c.dir),
 		"GIT_LITERAL_PATHSPECS=1",
 	}
 }
@@ -161,6 +181,24 @@ func guard(args []string) (string, error) {
 	if noVerify && sub != "commit" {
 		return "", ErrForbiddenGitArgs
 	}
+	if sub == "merge" {
+		ff := false
+		for _, a := range args {
+			if a == "--" {
+				break
+			}
+			switch {
+			case a == "--ff-only":
+				ff = true
+			case a == "--no-ff", a == "--squash", a == "-s", a == "--strategy", strings.HasPrefix(a, "--strategy="),
+				strings.HasPrefix(a, "-X"), strings.HasPrefix(a, "--strategy-option"), strings.HasPrefix(a, "-s"):
+				return "", ErrForbiddenGitArgs
+			}
+		}
+		if !ff {
+			return "", ErrForbiddenGitArgs
+		}
+	}
 	if sub == "branch" {
 		for _, a := range args {
 			if a == "--" {
@@ -176,7 +214,10 @@ func guard(args []string) (string, error) {
 }
 
 // runCode is the single place git is spawned. A non-zero exit is returned as the code with a nil error.
-func (c *CLI) runCode(args ...string) ([]byte, int, error) {
+func (c *CLI) runCode(args ...string) ([]byte, int, error) { return c.runIn(nil, args...) }
+
+// runIn is runCode with data on stdin.
+func (c *CLI) runIn(stdin []byte, args ...string) ([]byte, int, error) {
 	sub, err := guard(args)
 	if err != nil {
 		return nil, 0, err
@@ -190,6 +231,9 @@ func (c *CLI) runCode(args ...string) ([]byte, int, error) {
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = nil
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
 	if err := cmd.Run(); err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
@@ -200,8 +244,10 @@ func (c *CLI) runCode(args ...string) ([]byte, int, error) {
 	return out.Bytes(), 0, nil
 }
 
-func (c *CLI) run(args ...string) ([]byte, error) {
-	out, code, err := c.runCode(args...)
+func (c *CLI) run(args ...string) ([]byte, error) { return c.runStdin(nil, args...) }
+
+func (c *CLI) runStdin(stdin []byte, args ...string) ([]byte, error) {
+	out, code, err := c.runIn(stdin, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -358,13 +404,12 @@ func cleanText(s string, max int) string {
 		}
 	}
 	out := strings.TrimSpace(b.String())
-	for len(out) > max {
-		_, size := utf8.DecodeLastRuneInString(out[:max])
-		out = out[:max]
-		if !utf8.ValidString(out) {
-			out = out[:len(out)-size]
+	if len(out) > max {
+		cut := max
+		for cut > 0 && !utf8.RuneStart(out[cut]) {
+			cut--
 		}
-		break
+		out = out[:cut]
 	}
 	return strings.TrimSpace(out)
 }
@@ -498,6 +543,9 @@ func (c *CLI) Restore(paths []string) error {
 		return errors.New("gitland: cannot resolve repo")
 	}
 	for _, p := range paths {
+		if st, err := os.Lstat(filepath.Join(root, filepath.FromSlash(p))); err == nil && st.IsDir() {
+			return errors.New("gitland: refusing to restore a directory")
+		}
 		_, code, err := c.runCode("ls-files", "--error-unmatch", "--", p)
 		if err != nil {
 			return err
@@ -552,12 +600,13 @@ func (c *CLI) Diff(base string) ([]byte, error) {
 		files = append(files, f)
 	}
 	if len(files) > 0 {
-		if _, err := c.run(append([]string{"add", "--intent-to-add", "--"}, files...)...); err != nil {
+		list := []byte(strings.Join(files, "\x00") + "\x00")
+		if _, err := c.runStdin(list, "add", "--intent-to-add", "--pathspec-from-file=-", "--pathspec-file-nul"); err != nil {
 			return nil, err
 		}
 		// put the index back as found once the patch is read
 		defer func() {
-			_, _ = c.run(append([]string{"restore", "--staged", "--"}, files...)...)
+			_, _ = c.runStdin(list, "restore", "--staged", "--pathspec-from-file=-", "--pathspec-file-nul")
 		}()
 	}
 	return c.run("diff", "--no-color", "--binary", "--no-ext-diff", "--no-textconv", "--no-renames", base, "--")
@@ -570,7 +619,7 @@ func (c *CLI) LeafCommit(nodeID string) (string, bool, error) {
 	const f = "%H%x1f%s%x1f%(trailers:key=GopherMind-Node,valueonly,unfold)%x1f%(trailers:key=GopherMind-Repair,valueonly,unfold)%x1e"
 	out, err := c.run("log", "--format="+f)
 	if err != nil {
-		return "", false, nil
+		return "", false, err
 	}
 	for _, rec := range strings.Split(string(out), "\x1e") {
 		parts := strings.Split(strings.TrimLeft(rec, "\n"), "\x1f")
