@@ -71,17 +71,17 @@ func loadErr(err error, doc map[string]any) error {
 	if errors.As(err, &ve) {
 		return errors.New(schemaErr(ve))
 	}
-	keep := map[string]bool{}
+	keep := map[string]string{}
 	for _, key := range []string{"types", "functions", "components"} {
 		for _, o := range objects(doc[key]) {
 			if id, ok := o["id"].(string); ok {
-				keep[fmt.Sprintf("%q", id)] = true
+				keep[fmt.Sprintf("%q", id)] = boundedID(id)
 			}
 		}
 	}
 	msg := quotedRE.ReplaceAllStringFunc(err.Error(), func(q string) string {
-		if keep[q] {
-			return q
+		if b, ok := keep[q]; ok {
+			return b
 		}
 		return fmt.Sprintf("<%d bytes>", len(q)-2)
 	})

@@ -16,6 +16,6 @@ func ParseOutline(text, briefID string) (map[string]any, []Dependency, error) {
 // parseOutline reads a one-pass outline reply; only tests use it, the planner
 // goes through mergeOutline.
 func parseOutline(text, briefID string) (map[string]any, []Dependency, error) {
-	doc, deps, _, err := mergeOutline(nil, nil, text, briefID, nil)
+	doc, deps, _, _, err := mergeOutline(nil, nil, text, briefID, false)
 	return doc, deps, err
 }

@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -31,7 +32,6 @@ func TestParseOutline(t *testing.T) {
 		{"no components", `"components": [{"id": "types", "package": "x"}, {"id": "greeting", "package": "x"}]`, `"components": []`, "lists no component"},
 		{"reserved id logs", `"id": "greeting"`, `"id": "logs"`, "reserved"},
 		{"reserved id outline", `"id": "greeting"`, `"id": "outline"`, "reserved"},
-		{"duplicate component", `"id": "greeting"`, `"id": "types"`, "duplicate component"},
 		{"component named like the run", `"id": "greeting"`, `"id": "gm-2026-09-29-900"`, "is the run id"},
 		{"type file leaves the repo", `internal/x/errors.go`, `../x/errors.go`, "inside the repository"},
 		{"type file is absolute", `internal/x/errors.go`, `/etc/errors.go`, "relative path"},
@@ -57,7 +57,7 @@ func TestMergePass(t *testing.T) {
 		return `{"id": "` + id + `", "package": "x", "file": "` + file + `", "signature": "` + sig + `", "doc": "d", "uses": [` + uses + `]}`
 	}
 	good := `{"types": [], "functions": [` + fn("fn-greet", "func Greet(name string) (string, error)", "internal/x/greet.go", `"name-error"`) + `], "more": true}`
-	doc, more, err := mergePass(base, "greeting", good, testRunID)
+	doc, more, _, err := mergePass(base, "greeting", good, testRunID)
 	if err != nil || !more {
 		t.Fatalf("mergePass = more %v, %v", more, err)
 	}
@@ -70,7 +70,7 @@ func TestMergePass(t *testing.T) {
 
 	// A reference to an id nobody has declared yet is not refused here: a later
 	// component may declare it. It is reported as unresolved instead.
-	later, _, err := mergePass(doc, "greeting", `{"functions": [`+fn("fn-a", "func A()", "internal/x/a.go", `"fn-later"`)+`]}`, testRunID)
+	later, _, _, err := mergePass(doc, "greeting", `{"functions": [`+fn("fn-a", "func A()", "internal/x/a.go", `"fn-later"`)+`]}`, testRunID)
 	if err != nil || strings.Join(unresolvedUses(later), ",") != "fn-later" {
 		t.Errorf("deferred reference: err %v unresolved %v", err, unresolvedUses(later))
 	}
@@ -81,12 +81,11 @@ func TestMergePass(t *testing.T) {
 		{"signature is two declarations", `{"functions": [` + fn("fn-a", "func A() {}\\nfunc B()", "internal/x/a.go", ``) + `]}`, "exactly one function"},
 		{"file leaves the repo", `{"functions": [` + fn("fn-a", "func A()", "../a.go", ``) + `]}`, "inside the repository"},
 		{"file is not Go", `{"functions": [` + fn("fn-a", "func A()", "internal/x/a.txt", ``) + `]}`, "not a Go file"},
-		{"id repeats", `{"functions": [` + fn("fn-greet", "func Greet()", "internal/x/g.go", ``) + `]}`, "duplicate id"},
 		{"not json", "here are the functions", "not a JSON object"},
 	}
 	for _, c := range bad {
 		t.Run(c.name, func(t *testing.T) {
-			_, _, err := mergePass(doc, "greeting", c.reply, testRunID)
+			_, _, _, err := mergePass(doc, "greeting", c.reply, testRunID)
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Errorf("err = %v, want it to contain %q", err, c.want)
 			}
@@ -119,37 +118,95 @@ func TestSlug(t *testing.T) {
 	}
 }
 
-// Model-supplied ids in the new error paths are bounded and syntax-checked.
-func TestOutlineMergeErrorsNeverQuoteArbitraryIDs(t *testing.T) {
+// A repeated id keeps the first emission; identical repeats are silent, a
+// different one is reported by bounded id only.
+func TestMergeKeepsTheFirstEmission(t *testing.T) {
+	const canary = "CANARY-decl-text"
+	list := []any{map[string]any{"id": "a", "v": "first"}}
+	in := []map[string]any{
+		{"id": "a", "v": "first"}, // identical: silent
+		{"id": "a", "v": canary},  // different: ignored, reported
+		{"id": "b", "v": "x"},
+		{"id": "b", "v": canary},
+		{"id": "has spaces " + canary, "v": "1"},
+		{"id": "has spaces " + canary, "v": "2"},
+	}
+	out, added, ignored := mergeByID(list, in, 0, "type", nil)
+	if len(out) != 3 || added != 2 {
+		t.Fatalf("out %d added %d, want 3 and 2", len(out), added)
+	}
+	if out[0].(map[string]any)["v"] != "first" {
+		t.Error("the first emission was replaced")
+	}
+	want := []string{`type "a"`, `type "b"`, fmt.Sprintf("type <%d bytes>", len("has spaces "+canary))}
+	if strings.Join(ignored, "|") != strings.Join(want, "|") {
+		t.Errorf("ignored = %v, want %v", ignored, want)
+	}
+	for _, n := range ignored {
+		if strings.Contains(n, "CANARY") {
+			t.Errorf("ignored entry quotes content: %s", n)
+		}
+	}
+}
+
+func TestBoundedID(t *testing.T) {
 	const canary = "CANARY ID with spaces"
-	long := strings.Repeat("a", 200)
-	first := `{"module": "example.com/x", "conventions": {"layout": ["a"], "naming": ["a"], "errors": "e", "testing": "t"},
-	 "components": [{"id": "` + canary + `", "package": "x"}, {"id": "` + long + `", "package": "x"}], "more": true}`
-	doc, _, _, err := mergeOutline(nil, nil, first, testRunID, nil)
-	if err == nil {
-		// A pass that is locally valid is kept; the ids are refused at the end.
-		_ = doc
-	}
-	for _, c := range []struct{ name, text string }{
-		{"duplicate in one reply", `{"components": [{"id": "` + canary + `", "package": "x"}, {"id": "` + canary + `", "package": "x"}]}`},
-		{"long duplicate in one reply", `{"components": [{"id": "` + long + `", "package": "x"}, {"id": "` + long + `", "package": "x"}]}`},
-	} {
-		_, _, _, err := mergeOutline(nil, nil, c.text, testRunID, nil)
-		if err == nil {
-			t.Fatalf("%s: want an error", c.name)
-		}
-		if strings.Contains(err.Error(), canary) || strings.Contains(err.Error(), long) || strings.Contains(err.Error(), "CANARY") {
-			t.Errorf("%s: error quotes the id: %v", c.name, err)
-		}
-	}
+	long := strings.Repeat("a", 10000)
 	if got := boundedID("fine-id"); got != `"fine-id"` {
 		t.Errorf("boundedID = %s", got)
 	}
 	if got := boundedID(canary); got != fmt.Sprintf("<%d bytes>", len(canary)) {
 		t.Errorf("boundedID(bad syntax) = %s", got)
 	}
-	if got := boundedID(long); len(got) > 70 || !strings.HasPrefix(got, `"aaa`) {
-		t.Errorf("boundedID(long) = %s, want at most 64 bytes of the id", got)
+	if got := boundedID(long); len(got) != 66 || !strings.HasPrefix(got, `"aaa`) {
+		t.Errorf("boundedID(10KB) has length %d, want 64 bytes of the id in quotes", len(got))
+	}
+}
+
+// Every model-supplied id in a validation error is bounded, even a 10KB one.
+func TestValidationErrorsBoundEveryID(t *testing.T) {
+	huge := strings.Repeat("a", 10000)
+	doc := func(comps, types, fns string) map[string]any {
+		var d map[string]any
+		raw := `{"spec_version": "2.0", "brief_id": "` + testRunID + `", "revision": 0, "module": "example.com/x",
+		 "conventions": {"layout": ["a"], "naming": ["a"], "errors": "e", "testing": "t"},
+		 "components": [` + comps + `], "types": [` + types + `], "functions": [` + fns + `]}`
+		if err := json.Unmarshal([]byte(raw), &d); err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	comp := func(id string) string { return `{"id": "` + id + `", "package": "x", "exports": []}` }
+	typ := func(id, file string) string {
+		return `{"id": "` + id + `", "package": "x", "file": "` + file + `", "decl": "// T.\ntype T int"}`
+	}
+	fn := func(id, comp, file, sig string) string {
+		return `{"id": "` + id + `", "component": "` + comp + `", "package": "x", "file": "` + file + `", "signature": "` + sig + `", "doc": "d", "uses": []}`
+	}
+	cases := map[string]map[string]any{
+		"component id":        doc(comp("Bad"+huge), "", ""),
+		"reserved component":  doc(comp("logs"), "", ""),
+		"duplicate component": doc(comp(huge)+", "+comp(huge), "", ""),
+		"type file":           doc(comp("a"), typ(huge, "../x.go"), ""),
+		"function component":  doc(comp("a"), "", fn("fn-"+huge, "b", "internal/x/a.go", "func A()")),
+		"function is comp":    doc(comp("fn-"+huge), "", fn("fn-"+huge, "fn-"+huge, "internal/x/a.go", "func A()")),
+		"function file":       doc(comp("a"), "", fn("fn-"+huge, "a", "../a.go", "func A()")),
+		"function signature":  doc(comp("a"), "", fn("fn-"+huge, "a", "internal/x/a.go", "A(")),
+	}
+	for name, d := range cases {
+		for _, check := range []func(map[string]any) error{
+			func(d map[string]any) error { return validateOutlineShape(d, testRunID) },
+			func(d map[string]any) error { _, err := validateContractDoc(d, testRunID); return err },
+		} {
+			err := check(d)
+			if err == nil {
+				t.Errorf("%s: want an error", name)
+				continue
+			}
+			if len(err.Error()) > 600 || strings.Contains(err.Error(), strings.Repeat("a", 100)) {
+				t.Errorf("%s: error carries a long id (%d bytes): %.120s", name, len(err.Error()), err)
+			}
+		}
 	}
 }
 
@@ -162,16 +219,29 @@ func TestMergeRepairErrorsNeverQuoteReplyText(t *testing.T) {
 	for name, reply := range map[string]string{
 		"no component":  `{"functions": [{"id": "` + canary + `", "package": "x", "file": "internal/x/a.go", "signature": "func A()", "doc": "d", "uses": []}]}`,
 		"not json":      "CANARY prose",
-		"conflicting":   `{"types": [{"id": "name-error", "package": "x", "file": "internal/x/errors.go", "decl": "// CANARY\ntype NameError int"}]}`,
 		"unknown owner": `{"functions": [{"id": "fn-a", "component": "CANARY", "package": "x", "file": "internal/x/a.go", "signature": "func A()", "doc": "d", "uses": []}]}`,
 	} {
-		_, err := mergeRepair(base, reply, testRunID, nil)
+		_, _, err := mergeRepair(base, reply, testRunID)
 		if err == nil {
 			t.Errorf("%s: want an error", name)
 			continue
 		}
 		if strings.Contains(err.Error(), "CANARY") {
 			t.Errorf("%s: error quotes reply text: %v", name, err)
+		}
+	}
+}
+
+// A model's exports in the outline are replaced by the harness's.
+func TestOutlineIgnoresModelExports(t *testing.T) {
+	text := strings.Replace(okOutline, `{"id": "greeting", "package": "x"}`, `{"id": "greeting", "package": "x", "exports": ["fn-nope"]}`, 1)
+	doc, _, err := parseOutline(text, testRunID)
+	if err != nil {
+		t.Fatalf("an outline naming unwritten exports must not be an unusable reply: %v", err)
+	}
+	for _, c := range objects(doc["components"]) {
+		if len(strList(c["exports"])) != 0 {
+			t.Errorf("component %v keeps the model's exports %v", c["id"], c["exports"])
 		}
 	}
 }
