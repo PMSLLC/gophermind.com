@@ -705,3 +705,25 @@ func TestHasSecretForms(t *testing.T) {
 		t.Error("no secrets, no match")
 	}
 }
+
+// A secret split across lines or with whitespace inserted is caught by
+// HasSecret, as the doc comment promises (the whitespace-stripped form).
+func TestHasSecretWhitespaceStripped(t *testing.T) {
+	const sec = "CANARY-SECRET-VALUE"
+	for _, s := range []string{
+		"CANARY-SEC\nRET-VALUE",
+		"CANARY -SECRET- VALUE",
+		"pkg_CANARY-\tSECRET-VALUE_x",
+		"TestName_CANARY-SE CRET-VA LUE",
+	} {
+		if !HasSecret(s, []string{sec}) {
+			t.Errorf("HasSecret(%q) = false, want true", s)
+		}
+	}
+	if HasSecret("CANARY-SECRET\nother-VALUE", []string{sec}) {
+		t.Error("an unrelated split text was flagged")
+	}
+	if !HasSecret("s3cr3t\nvalue+/=x", []string{"s3cr3t value+/=x"}) {
+		t.Error("a secret that holds a space is missed when split across lines")
+	}
+}

@@ -346,9 +346,14 @@ func TestStartResumeSeam(t *testing.T) {
 	if _, err := g.start(t); err != nil {
 		t.Fatal(err)
 	}
-	_, err := g.start(t)
-	if err == nil || !strings.Contains(err.Error(), "resume is added in Task 14") {
-		t.Fatalf("second start err = %v, want the resume stub", err)
+	// The second start is a resume: Wave 0 is not built again, nothing is
+	// past pending, so the run is not reported as resumed.
+	rc, err := g.start(t)
+	if err != nil {
+		t.Fatalf("second start: %v", err)
+	}
+	if rc.state.Resumed || len(g.fake.Requests()) != 0 {
+		t.Fatalf("resumed = %v, model calls %d", rc.state.Resumed, len(g.fake.Requests()))
 	}
 }
 
@@ -650,8 +655,8 @@ func TestWave0RetryAfterScanFindingSucceeds(t *testing.T) {
 		t.Fatalf("%d model calls", n)
 	}
 	// A third start is now a resume.
-	if _, err := g.start(t); err == nil || !strings.Contains(err.Error(), "resume is added in Task 14") {
-		t.Fatalf("third start err = %v, want the resume stub", err)
+	if _, err := g.start(t); err != nil {
+		t.Fatalf("third start (a resume): %v", err)
 	}
 }
 

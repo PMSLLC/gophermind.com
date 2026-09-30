@@ -205,19 +205,6 @@ func unattributableStop(w int, locs []string) *stopError {
 		Message: fmt.Sprintf("executor: wave %d failed its integration checks in a place no leaf owns: %s", w, strings.Join(locs, ", "))}
 }
 
-// repairWave is the repair loop of spec 8.3. Task 12a ships the stub: the run
-// ends failed with the failure classes only. Task 12b replaces the body; the
-// signature is what runWave calls and does not change. final says whether the
-// failing check was the whole-module one.
-func (rc *runCtx) repairWave(ctx context.Context, w int, res checkResult, final bool) (*stopError, error) {
-	var kinds []string
-	for _, f := range res.Failures {
-		kinds = append(kinds, f.Kind)
-	}
-	return &stopError{Status: "failed", Reason: "wave_check_failed",
-		Message: fmt.Sprintf("executor: wave %d failed its integration checks (%s)", w, strings.Join(kinds, ", "))}, nil
-}
-
 // waveChecks is spec 8.3 with no model: go build and go vet over ./..., then one
 // race test run per package that holds a verified leaf (Funcs restricted to
 // those leaves, so a later leaf's stub is never run), or, when final, one run of
@@ -249,6 +236,9 @@ func (rc *runCtx) waveChecks(ctx context.Context, w int, final bool) (checkResul
 			shown[i] = rc.scrubText(p)
 		}
 		rc.emit("stray_write", node, fmt.Sprintf("%d files written by the wave checks were removed", len(stray)))
+		if se, ok := stopOf(cerr); ok && se.Status == "interrupted" {
+			return checkResult{}, cerr // the interruption is the truer reason
+		}
 		return checkResult{}, &stopError{Status: "failed", Reason: "stray_write",
 			Message: fmt.Sprintf("executor: the checks of wave %d wrote files outside the plan (removed): %s", w, strings.Join(shown, ", "))}
 	}
@@ -349,7 +339,33 @@ func (rc *runCtx) failureOf(ctx context.Context, v runner.Verdict, dir string) (
 	return checkFailure{}, errors.New("executor: a wave check could not run (a fault of the harness, not of a leaf)")
 }
 
-var qnameRE = regexp.MustCompile(`^(.*?)\.((?:Test|Example|Benchmark|Fuzz)[A-Za-z0-9_]*(?:/.*)?)$`)
+var qnameTestRE = regexp.MustCompile(`^(?:Test|Example|Benchmark|Fuzz)[A-Za-z0-9_]*(?:/.*)?$`)
+
+// splitQName splits a package-qualified test name at a ".Test" style boundary.
+// A module path or a subtest name may hold one too, so the boundary is the last
+// one that leaves a known package on its left, else the last one.
+func (rc *runCtx) splitQName(q string) (dir, name string, ok bool) {
+	known := map[string]bool{".": true}
+	for _, l := range rc.plan.Leaves {
+		known[l.Dir] = true
+	}
+	last := -1
+	for i := len(q) - 1; i > 0; i-- {
+		if q[i-1] != '.' || !qnameTestRE.MatchString(q[i:]) {
+			continue
+		}
+		if last < 0 {
+			last = i
+		}
+		if d := rc.dirOfPackage(q[:i-1]); known[d] {
+			return d, q[i:], true
+		}
+	}
+	if last < 0 {
+		return "", q, false
+	}
+	return rc.dirOfPackage(q[:last-1]), q[last:], true
+}
 
 // moduleFailures splits the failure of a ./... run by package, using the
 // package-qualified names the runner reports. Locations go to the package that
@@ -365,10 +381,7 @@ func (rc *runCtx) moduleFailures(ctx context.Context, v runner.Verdict) ([]check
 	}
 	names := map[string][]string{}
 	for _, q := range v.QNames {
-		dir, name := "", q
-		if m := qnameRE.FindStringSubmatch(q); m != nil {
-			dir, name = rc.dirOfPackage(m[1]), m[2]
-		}
+		dir, name, _ := rc.splitQName(q)
 		names[dir] = append(names[dir], name)
 	}
 	dirs := make([]string, 0, len(names))

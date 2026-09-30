@@ -213,10 +213,26 @@ func newScan(secrets []string) *scan {
 }
 
 // HasSecret reports whether s holds any of the secret values in one of the
-// forms the packer scrubs (raw, %q, JSON, URL and base64, each for secrets of
-// minSecretLen bytes or more). Callers outside the packer use it so that there
+// forms the packer scrubs (raw, %q, JSON, URL and base64, and the raw secret
+// with whitespace removed, matched against s with its whitespace removed, each
+// for secrets of minSecretLen bytes or more). Callers outside the packer use it so that there
 // is one definition of "contains a secret".
-func HasSecret(s string, secrets []string) bool { return newScan(secrets).has(s) }
+func HasSecret(s string, secrets []string) bool {
+	sc := newScan(secrets)
+	if sc.has(s) {
+		return true
+	}
+	if len(sc.stripped) == 0 {
+		return false
+	}
+	w := stripWS(s)
+	for _, st := range sc.stripped {
+		if strings.Contains(w, st) {
+			return true
+		}
+	}
+	return false
+}
 
 func (sc *scan) has(s string) bool {
 	for _, f := range sc.forms {

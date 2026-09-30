@@ -34,6 +34,9 @@ func (r Report) Summary() string {
 	}
 	line("%s", title)
 	line("Sandbox: %s", esc(r.Sandbox))
+	for _, e := range r.Environment {
+		line("Environment: %s", esc(e))
+	}
 	line("Nodes: %d total, %d verified, %d failed, %d escalated, %d blocked",
 		r.Nodes.Total, r.Nodes.Verified, r.Nodes.Failed, r.Nodes.Escalated, r.Nodes.Blocked)
 	line("Waves: %d", r.Waves)

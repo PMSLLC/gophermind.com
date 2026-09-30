@@ -3,6 +3,7 @@ package executor
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -129,12 +130,6 @@ func sorted(in []string) []string {
 		return nil
 	}
 	out := append([]string(nil), in...)
-	for i := range out {
-		for j := i + 1; j < len(out); j++ {
-			if out[j] < out[i] {
-				out[i], out[j] = out[j], out[i]
-			}
-		}
-	}
+	sort.Strings(out)
 	return out
 }

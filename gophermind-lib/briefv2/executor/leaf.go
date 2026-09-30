@@ -230,6 +230,9 @@ func (rc *runCtx) newLeafRun(ctx context.Context, l *Leaf, in leafIn) (*leafRun,
 		return nil, err
 	}
 	swap := NewSwap(rc.o.Repo, l, rc.git, stub)
+	if rc.diffOnly {
+		swap.NoCommit()
+	}
 	if in.Repair > 0 {
 		swap.Reopen()
 	}
@@ -701,13 +704,20 @@ func (lr *leafRun) finishPass(ctx context.Context, committed bool, hash string) 
 	rc, l := lr.rc, lr.l
 	if !committed {
 		var err error
-		if lr.in.Repair > 0 || lr.reopened {
+		// The plan must be what was approved when it is committed.
+		if se := rc.planIntact(); se != nil {
+			return se
+		}
+		switch {
+		case rc.diffOnly:
+			err = lr.swap.PassNoCommit() // diff_only commits nothing: the tree is the result
+		case lr.in.Repair > 0 || lr.reopened:
 			round := lr.in.Repair
 			if round < 1 {
 				round = 1
 			}
 			hash, err = lr.swap.PassRepair(round)
-		} else {
+		default:
 			hash, err = lr.swap.Pass(l.Title)
 		}
 		if err != nil {
@@ -854,6 +864,9 @@ func (lr *leafRun) record(ctx context.Context, e ladderEntry, started time.Time,
 	rc := lr.rc
 	prov, model, _ := settings.SplitEntry(e.Name)
 	reason = rc.scrubReason(reason)
+	if reason == "" && verdict == blackboard.VerdictFail {
+		reason = class // a failed attempt always says why: the fixed class outlives the scrub
+	}
 	a := blackboard.Attempt{
 		Model: model, Provider: prov, Revision: lr.rev, Order: e.Pos, StartedAt: started,
 		DurationMS: rc.o.Now().Sub(started).Milliseconds(), Verdict: verdict, FailureReason: reason, ReplySHA256: sha,

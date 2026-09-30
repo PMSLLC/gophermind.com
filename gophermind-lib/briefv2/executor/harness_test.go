@@ -651,6 +651,12 @@ func (f *fakeChecker) CheckLeaf(ctx context.Context, c runner.LeafCheck) runner.
 }
 
 func (f *fakeChecker) Run(context.Context, runner.Spec) runner.Result {
+	f.mu.Lock()
+	scripted := f.RepoScript != nil
+	f.mu.Unlock()
+	if scripted {
+		return runner.Result{} // go mod verify and the like pass once the repository-wide checks are scripted
+	}
 	f.t.Error("fakeChecker.Run: not scripted")
 	return runner.Result{ExitCode: -1, Err: errors.New("fakeChecker: unscripted call")}
 }

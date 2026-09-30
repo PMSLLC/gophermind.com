@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"gophermind/gophermind-lib/briefv2/human"
 	"gophermind/gophermind-lib/briefv2/pathsafe"
 	"gophermind/gophermind-lib/briefv2/planner"
 	"gophermind/gophermind-lib/briefv2/report"
@@ -124,7 +125,9 @@ func LoadEscalations(runDir string) ([]report.Escalation, error) {
 // escalation with the same kind, task type, model, node, revision and round as
 // one already recorded is not recorded again (a resumed run repeats the step
 // that recorded it), and when the repeat carries an AnsweredBy the record gets
-// it. A record that already has an answer keeps it.
+// it. A gate-absent or unattended-default answer is replaced by a later one
+// (a person answering on resume) and Answers counts the answers; any other
+// recorded answer is kept.
 func AppendEscalation(runDir string, e report.Escalation) error {
 	notesMu.Lock()
 	defer notesMu.Unlock()
@@ -140,10 +143,18 @@ func AppendEscalation(runDir string, e report.Escalation) error {
 		if !same(list[i]) {
 			continue
 		}
-		if e.AnsweredBy == "" || list[i].AnsweredBy != "" {
+		cur := list[i].AnsweredBy
+		replace := cur == human.AnsweredByGateAbsent || cur == human.AnsweredByUnattended
+		if e.AnsweredBy == "" || e.AnsweredBy == cur || (cur != "" && !replace) {
 			return nil
 		}
 		list[i].AnsweredBy = e.AnsweredBy
+		if list[i].Answers == 0 {
+			list[i].Answers = 1
+		}
+		if cur != "" {
+			list[i].Answers++
+		}
 		return writeStateJSON(runDir, stateEscalations, list)
 	}
 	return writeStateJSON(runDir, stateEscalations, append(list, e))
