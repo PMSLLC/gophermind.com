@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gophermind/gophermind-lib/briefv2/blackboard"
+	"gophermind/gophermind-lib/briefv2/human"
 	"gophermind/gophermind-lib/briefv2/provider"
 	"gophermind/gophermind-lib/briefv2/runner"
 	"gophermind/gophermind-lib/briefv2/settings"
@@ -66,7 +67,9 @@ func TestAdoptRefusesWhatTheGateRefuses(t *testing.T) {
 // _state/leaf-results.json, and a run rebuilt from disk has the reason.
 func TestTerminalReasonSurvivesRestart(t *testing.T) {
 	t.Parallel()
-	g := newRig(t, func(o *rigOpts) { o.Settings = func(c *settings.Config) { c.Executor.FixAttempts = 1 } })
+	g := newRig(t, func(o *rigOpts) {
+		o.Settings = func(c *settings.Config) { c.Executor.FixAttempts = 1; c.Defaults.MaxRevisions = 0 }
+	})
 	var steps []step
 	for i := 1; i <= 4; i++ {
 		steps = append(steps, reply(variant(bad(leafID, 1), i)))
@@ -75,6 +78,7 @@ func TestTerminalReasonSurvivesRestart(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		fc.LeafScript[leafID] = append(fc.LeafScript[leafID], failVerdict("test_fail", "x", "TestX"))
 	}
+	g.gate.queue = []human.Resolution{{Action: human.ActionSkip}}
 	out := runOne(t, rc, leafID)
 	if out.Status != blackboard.StatusFailed {
 		t.Fatalf("outcome = %+v", out)
@@ -83,7 +87,7 @@ func TestTerminalReasonSurvivesRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res[leafID].Status != string(blackboard.StatusFailed) || res[leafID].Reason != "ladder_exhausted" {
+	if res[leafID].Status != string(blackboard.StatusFailed) || res[leafID].Reason != "skipped by human" {
 		t.Fatalf("persisted result = %+v", res[leafID])
 	}
 	rc2, err := newRunCtx(context.Background(), g.options())
@@ -91,8 +95,8 @@ func TestTerminalReasonSurvivesRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer rc2.close()
-	if got := rc2.rep.reasons[leafID]; got != "ladder_exhausted" {
-		t.Fatalf("reason after a restart = %q, want ladder_exhausted", got)
+	if got := rc2.rep.reasons[leafID]; got != "skipped by human" {
+		t.Fatalf("reason after a restart = %q, want skipped by human", got)
 	}
 }
 
@@ -119,8 +123,10 @@ func TestNothingChargedIsNotALeafFailure(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			g := newRig(t)
+			// No revision left: a leaf that ends exhausted goes to the gate, which skips it.
+			g := newRig(t, func(o *rigOpts) { o.Settings = func(c *settings.Config) { c.Defaults.MaxRevisions = 0 } })
 			rc, _ := g.leafRC(t, Script{"implement:" + leafID: tc.steps}, true)
+			g.gate.queue = []human.Resolution{{Action: human.ActionSkip}}
 			out, err := rc.runLeaf(context.Background(), g.plan.Leaf(leafID), leafIn{})
 			if err != nil {
 				t.Fatalf("runLeaf: %v", err)
@@ -225,8 +231,9 @@ func TestDirectiveAndCgoRepliesNeverWritten(t *testing.T) {
 	for name, src := range map[string]string{"generate": gen, "cgo": cgo} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			g := newRig(t)
+			g := newRig(t, func(o *rigOpts) { o.Settings = func(c *settings.Config) { c.Defaults.MaxRevisions = 0 } })
 			rc, fc := g.leafRC(t, Script{"implement:" + leafID: {reply(src), reply(src), reply(src), reply(src)}}, true)
+			g.gate.queue = []human.Resolution{{Action: human.ActionSkip}}
 			out := runOne(t, rc, leafID)
 			if out.Status == blackboard.StatusVerified || fc.checks(leafID) != 0 || g.leafCommits(leafID) != 0 {
 				t.Fatalf("outcome %+v checks %d commits %d: a forbidden directive was accepted", out, fc.checks(leafID), g.leafCommits(leafID))
