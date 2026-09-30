@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -22,6 +23,8 @@ const (
 	defaultMaxReq      = int64(64 << 20)
 	defaultMaxResp     = int64(512 << 20)
 	maxRequestDuration = 10 * time.Minute
+	defaultMaxTunnel   = int64(256 << 20)
+	defaultIdle        = 2 * time.Minute
 	maxTunnelDuration  = 30 * time.Minute
 	closeWait          = 5 * time.Second
 	maxRecorded        = 4096
@@ -39,6 +42,8 @@ type Config struct {
 
 	maxReqBytes  int64
 	maxRespBytes int64
+	maxTunnel    int64
+	idleTimeout  time.Duration
 	resolve      func(ctx context.Context, host string) ([]net.IP, error)
 	dial         func(ctx context.Context, network, addr string) (net.Conn, error)
 }
@@ -71,10 +76,11 @@ type Proxy struct {
 	failures []Failure
 	warnings []Failure
 
-	wg        sync.WaitGroup
-	serveDone chan struct{}
-	closeOnce sync.Once
-	closeErr  error
+	wg            sync.WaitGroup
+	serveDone     chan struct{}
+	closeOnce     sync.Once
+	closeErr      error
+	closeReported atomic.Bool
 }
 
 var errDenied = errors.New("proxy: destination denied")
@@ -114,6 +120,21 @@ func New(c Config) (*Proxy, error) {
 	if c.maxRespBytes <= 0 {
 		c.maxRespBytes = defaultMaxResp
 	}
+	if c.maxTunnel <= 0 {
+		c.maxTunnel = defaultMaxTunnel
+	}
+	if c.idleTimeout <= 0 {
+		c.idleTimeout = defaultIdle
+	}
+	rules := make([]Rule, len(c.Rules))
+	for i, r := range c.Rules {
+		h, ok := normalizeRuleHost(r.Host)
+		if !ok {
+			return nil, fmt.Errorf("proxy: rule %d has an invalid host", i)
+		}
+		rules[i] = Rule{Host: h, Critical: r.Critical}
+	}
+	c.Rules = rules
 	if c.resolve == nil {
 		c.resolve = func(ctx context.Context, h string) ([]net.IP, error) {
 			addrs, err := net.DefaultResolver.LookupIPAddr(ctx, h)
@@ -189,7 +210,10 @@ func (p *Proxy) Close() error {
 		p.closed = true
 		p.mu.Unlock()
 		p.cancel()
-		_ = p.srv.Close()
+		var errs []error
+		if err := p.srv.Close(); err != nil {
+			errs = append(errs, errors.New("proxy: server close failed"))
+		}
 		p.mu.Lock()
 		for c := range p.tunnels {
 			_ = c.Close()
@@ -204,9 +228,16 @@ func (p *Proxy) Close() error {
 		<-p.serveDone
 		p.tr.CloseIdleConnections()
 		p.logMu.Lock()
-		p.closeErr = p.logf.Close()
+		if err := p.logf.Close(); err != nil {
+			errs = append(errs, errors.New("proxy: log close failed"))
+		}
 		p.logMu.Unlock()
+		p.closeErr = errors.Join(errs...)
 	})
+	// only the call that performed the shutdown reports its error
+	if p.closeReported.CompareAndSwap(false, true) {
+		return p.closeErr
+	}
 	return nil
 }
 
@@ -418,6 +449,7 @@ func (p *Proxy) authorize(w http.ResponseWriter, ri *reqInfo, rawHost, rawPort s
 	host, valid := normalizeHost(rawHost)
 	if !valid {
 		ri.host = "-"
+		p.record(ri.node, "-", "denied", false)
 		deny(w)
 		p.logReq(ri, "denied", http.StatusForbidden, 0)
 		return "", "", false, false
@@ -437,6 +469,9 @@ func classify(err error) string {
 	if errors.Is(err, errDenied) {
 		return "denied"
 	}
+	if errors.Is(err, context.Canceled) {
+		return "canceled"
+	}
 	var ne net.Error
 	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &ne) && ne.Timeout()) {
 		return "timeout"
@@ -446,6 +481,11 @@ func classify(err error) string {
 
 func (p *Proxy) failStatus(w http.ResponseWriter, ri *reqInfo, host string, critical bool, err error) {
 	kind := classify(err)
+	if kind == "canceled" {
+		// the client went away or the proxy is closing: not an upstream failure
+		p.logReq(ri, "error", 0, 0)
+		return
+	}
 	p.record(ri.node, host, kind, critical)
 	switch kind {
 	case "denied":
@@ -642,22 +682,68 @@ func (p *Proxy) connect(w http.ResponseWriter, r *http.Request, ri *reqInfo) {
 	dl := p.cfg.Now().Add(maxTunnelDuration)
 	_ = client.SetDeadline(dl)
 	_ = upstream.SetDeadline(dl)
-	var total atomic.Int64
-	done := make(chan struct{}, 2)
-	pipe := func(dst io.Writer, src io.Reader) {
-		n, _ := io.Copy(dst, src)
-		total.Add(n)
-		done <- struct{}{}
-	}
+	t := &tunnelState{max: p.cfg.maxTunnel, idle: p.cfg.idleTimeout, now: p.cfg.Now}
+	t.last.Store(p.cfg.Now().UnixNano())
 	var clientIn io.Reader = client
 	if bufrw != nil {
 		clientIn = bufrw.Reader
 	}
-	go pipe(upstream, clientIn)
-	go pipe(client, upstream)
+	done := make(chan struct{}, 2)
+	go func() { t.pipe(upstream, clientIn, client); done <- struct{}{} }()
+	go func() { t.pipe(client, upstream, upstream); done <- struct{}{} }()
 	<-done
 	client.Close()
 	upstream.Close()
 	<-done
-	p.logReq(ri, "allowed", 0, total.Load())
+	switch t.reason.Load() {
+	case reasonCap:
+		p.record(ri.node, host, "tunnel_cap", false)
+	case reasonIdle:
+		p.record(ri.node, host, "tunnel_idle", false)
+	}
+	p.logReq(ri, "allowed", 0, t.total.Load())
+}
+
+const (
+	reasonCap  = 1
+	reasonIdle = 2
+)
+
+// tunnelState is shared by both directions of one CONNECT tunnel: a total
+// byte cap, and an idle timeout counted from the last byte in either direction.
+type tunnelState struct {
+	max    int64
+	idle   time.Duration
+	now    func() time.Time
+	total  atomic.Int64
+	last   atomic.Int64
+	reason atomic.Int32
+}
+
+func (t *tunnelState) pipe(dst io.Writer, src io.Reader, srcConn net.Conn) {
+	buf := make([]byte, 32<<10)
+	for {
+		_ = srcConn.SetReadDeadline(t.now().Add(t.idle))
+		n, err := src.Read(buf)
+		if n > 0 {
+			t.last.Store(t.now().UnixNano())
+			if t.total.Add(int64(n)) > t.max {
+				t.reason.CompareAndSwap(0, reasonCap)
+				return
+			}
+			if _, werr := dst.Write(buf[:n]); werr != nil {
+				return
+			}
+		}
+		if err != nil {
+			var ne net.Error
+			if errors.As(err, &ne) && ne.Timeout() {
+				if t.now().UnixNano()-t.last.Load() < int64(t.idle) {
+					continue // the other direction is active
+				}
+				t.reason.CompareAndSwap(0, reasonIdle)
+			}
+			return
+		}
+	}
 }
