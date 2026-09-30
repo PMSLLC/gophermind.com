@@ -612,3 +612,34 @@ func TestTheTestWriterNeverWritesThroughASymlink(t *testing.T) {
 		}
 	})
 }
+
+// A parent directory swapped for a link to the outside while the model is
+// answering is caught by the checks made just before the write.
+func TestAParentSwappedForALinkDuringTheCallIsRefused(t *testing.T) {
+	g := newRig(t, approving())
+	outside := t.TempDir()
+	dir := filepath.Join(g.repo, "internal", "greet")
+	swapped := false
+	defer planner.SetBeforeTestWrite(func() {
+		if swapped {
+			return
+		}
+		swapped = true
+		if err := os.RemoveAll(filepath.Join(g.repo, "internal")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(g.repo, "internal"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(outside, dir); err != nil {
+			t.Skip(err)
+		}
+	})()
+	_, err := g.plan(planner.Options{})
+	if err == nil || !strings.Contains(err.Error(), "outside the repository") {
+		t.Fatalf("err = %v", err)
+	}
+	if ents, _ := os.ReadDir(outside); len(ents) != 0 {
+		t.Errorf("%d entries were written outside the repository", len(ents))
+	}
+}
