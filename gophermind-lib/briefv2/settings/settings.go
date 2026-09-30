@@ -43,6 +43,8 @@ type ProviderConfig struct {
 	MaxConcurrent int          `yaml:"max_concurrent"`
 	Models        []ModelEntry `yaml:"models"`
 	APIKeySecret  string       `yaml:"api_key_secret,omitempty"`
+	// ReasoningEffort: none, low, medium or high. Empty means the field is not sent.
+	ReasoningEffort string `yaml:"reasoning_effort,omitempty"`
 }
 
 type Privacy struct {
@@ -89,7 +91,7 @@ func Default() *Config {
 	return &Config{
 		Providers: []ProviderConfig{
 			{Name: "mini", BaseURL: "http://192.168.1.35:11434/v1", Visibility: Private, MaxConcurrent: 1,
-				Models: []ModelEntry{{ID: "qwen3.6:35b-a3b", ContextTokens: 32768}}},
+				Models: []ModelEntry{{ID: "qwen3.6:35b-a3b", ContextTokens: 32768}}, ReasoningEffort: "none"},
 			{Name: "kilo", BaseURL: "https://api.kilo.ai/api/gateway", Visibility: Public, MaxConcurrent: 2,
 				Models: []ModelEntry{{ID: "kilo-auto/free", ContextTokens: 131072}}},
 			{Name: "ovh", BaseURL: "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1", Visibility: Public, MaxConcurrent: 1,
@@ -207,6 +209,11 @@ func (c *Config) Validate() error {
 		}
 		if p.MaxConcurrent < 1 {
 			return fmt.Errorf("%s: max_concurrent must be at least 1, got %d", where, p.MaxConcurrent)
+		}
+		switch p.ReasoningEffort {
+		case "", "none", "low", "medium", "high":
+		default:
+			return fmt.Errorf("%s: reasoning_effort must be none, low, medium or high, got %q", where, p.ReasoningEffort)
 		}
 		if len(p.Models) == 0 {
 			return fmt.Errorf("%s: at least one model is required", where)

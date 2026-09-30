@@ -144,6 +144,7 @@ func TestValidateRejects(t *testing.T) {
 		{"backoff max below initial", func(c *settings.Config) { c.RateLimits.BackoffMaxSeconds = 1 }, "backoff_max_seconds"},
 		{"zero cooldown", func(c *settings.Config) { c.RateLimits.CooldownAfter429Seconds = 0 }, "cooldown_after_429_seconds"},
 		{"bad human mode", func(c *settings.Config) { c.Human.Mode = "carrier pigeon" }, "human.mode"},
+		{"bad reasoning effort", func(c *settings.Config) { c.Providers[0].ReasoningEffort = "max" }, "reasoning_effort"},
 		{"no vault path", func(c *settings.Config) { c.Vault.Path = "" }, "vault.path"},
 	}
 	for _, c := range cases {
@@ -241,5 +242,36 @@ func TestBuildProvidersSecretFailuresNameTheSecretNotItsValue(t *testing.T) {
 	_, err := cfg.BuildProviders(nil, func(string) (string, error) { return "sk-LEAK", errors.New("vault locked") })
 	if err == nil || !strings.Contains(err.Error(), "kilo-key") || strings.Contains(err.Error(), "sk-LEAK") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+func TestReasoningEffortDefaultsToNoneForMiniOnly(t *testing.T) {
+	c := settings.Default()
+	for _, p := range c.Providers {
+		want := ""
+		if p.Name == "mini" {
+			want = "none"
+		}
+		if p.ReasoningEffort != want {
+			t.Errorf("%s reasoning_effort = %q, want %q", p.Name, p.ReasoningEffort, want)
+		}
+	}
+	path := filepath.Join(t.TempDir(), "gophermind.yaml")
+	if _, err := settings.Load(path); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	if !strings.Contains(string(b), "reasoning_effort: none") {
+		t.Errorf("written defaults lack reasoning_effort: none")
+	}
+	if strings.Count(string(b), "reasoning_effort") != 1 {
+		t.Errorf("reasoning_effort should appear once (mini only)")
+	}
+	for _, ok := range []string{"none", "low", "medium", "high"} {
+		c := settings.Default()
+		c.Providers[1].ReasoningEffort = ok
+		if err := c.Validate(); err != nil {
+			t.Errorf("%s rejected: %v", ok, err)
+		}
 	}
 }

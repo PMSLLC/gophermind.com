@@ -33,6 +33,7 @@ func (r *Router) attempt(ctx context.Context, info CallInfo, req provider.Reques
 	maxBackoff := time.Duration(r.cfg.RateLimits.BackoffMaxSeconds) * time.Second
 	mult := time.Duration(r.cfg.RateLimits.BackoffMultiplier)
 
+	grew := false
 	for try := 0; ; try++ {
 		if err := r.acquire(ctx, provName); err != nil {
 			return Result{}, EntryReason{}, false, err
@@ -70,7 +71,26 @@ func (r *Router) attempt(ctx context.Context, info CallInfo, req provider.Reques
 		var tl provider.ErrContextTooLong
 		var au provider.ErrAuth
 		var nf provider.ErrModelNotFound
+		var tr provider.ErrTruncated
+		var er provider.ErrEmptyReply
 		switch {
+		case errors.As(cerr, &tr):
+			row.Outcome, row.ErrorKind = ledger.OutcomeError, "truncated"
+			r.record(ctx, row)
+			// The model spent its whole budget: try once more on this entry with double.
+			if bigger := grownBudget(req.MaxTokens); !grew && bigger > req.MaxTokens {
+				grew = true
+				req.MaxTokens = bigger
+				try--
+				continue
+			}
+			return Result{}, EntryReason{Entry: entry, Kind: ReasonFailed, Detail: "reply truncated at the token limit"}, false, nil
+
+		case errors.As(cerr, &er):
+			row.Outcome, row.ErrorKind = ledger.OutcomeError, "empty_reply"
+			r.record(ctx, row)
+			return Result{}, EntryReason{Entry: entry, Kind: ReasonFailed, Detail: "empty reply"}, false, nil
+
 		case errors.As(cerr, &rl):
 			d := rl.RetryAfter
 			if d <= 0 {
@@ -131,4 +151,19 @@ func (r *Router) attempt(ctx context.Context, info CallInfo, req provider.Reques
 			backoff = maxBackoff
 		}
 	}
+}
+
+// maxGrownTokens caps the doubled budget after a truncated reply.
+const maxGrownTokens = 16384
+
+// grownBudget doubles a token budget once, capped; an unset budget becomes 8192.
+func grownBudget(n int) int {
+	g := n * 2
+	if n <= 0 {
+		g = 8192
+	}
+	if g > maxGrownTokens {
+		g = maxGrownTokens
+	}
+	return g
 }

@@ -35,7 +35,7 @@ func (c *Config) BuildProviders(client *http.Client, secret func(name string) (s
 		}
 		out[p.Name] = provider.NewOpenAI(provider.Config{
 			Name: p.Name, BaseURL: p.BaseURL, APIKey: key, MaxConcurrent: p.MaxConcurrent,
-			HTTPClient: client, Models: models,
+			HTTPClient: client, Models: models, ReasoningEffort: p.ReasoningEffort,
 		})
 	}
 	return out, nil

@@ -818,3 +818,79 @@ func TestAProviderNeverRunsMoreCallsAtOnceThanItsMaxConcurrent(t *testing.T) {
 		t.Errorf("calls %d rows %d", g.mini.Calls(), len(g.rows(t)))
 	}
 }
+
+func TestTruncationRetriesOnceOnTheSameEntryWithADoubledBudget(t *testing.T) {
+	g := newRig(t, func(call int, r provider.Request) (provider.Response, error) {
+		if call == 1 {
+			return provider.Response{}, provider.ErrTruncated{Provider: "mini"}
+		}
+		return provider.Response{Text: "ok", Model: r.Model}, nil
+	}, nil, nil, nil)
+	rq := req("hi")
+	rq.MaxTokens = 100
+	res, err := g.r.Call(context.Background(), info(router.TierStrong, router.ScopeNode), rq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Entry != "mini/qwen" || g.mini.Calls() != 2 {
+		t.Errorf("entry %s calls %d", res.Entry, g.mini.Calls())
+	}
+	reqs := g.mini.Requests()
+	if reqs[0].MaxTokens != 100 || reqs[1].MaxTokens != 200 {
+		t.Errorf("max_tokens %d then %d, want 100 then 200", reqs[0].MaxTokens, reqs[1].MaxTokens)
+	}
+	rows := g.rows(t)
+	if len(rows) != 2 || rows[0].Outcome != ledger.OutcomeError || rows[0].ErrorKind != "truncated" || rows[1].Outcome != ledger.OutcomeOK {
+		t.Errorf("rows = %+v", rows)
+	}
+}
+
+func TestTruncationTwiceFailsOverToTheNextEntry(t *testing.T) {
+	g := newRig(t, func(int, provider.Request) (provider.Response, error) {
+		return provider.Response{}, provider.ErrTruncated{Provider: "mini"}
+	}, okText("from kilo"), nil, nil)
+	res, err := g.r.Call(context.Background(), info(router.TierStandard, router.ScopeNode), req("hi"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Entry != "kilo/auto" || g.mini.Calls() != 2 {
+		t.Errorf("entry %s mini calls %d", res.Entry, g.mini.Calls())
+	}
+	if n := len(g.rows(t)); n != 3 {
+		t.Errorf("%d rows, want 3 (two truncated, one ok)", n)
+	}
+}
+
+func TestTruncationBudgetIsCapped(t *testing.T) {
+	g := newRig(t, func(call int, r provider.Request) (provider.Response, error) {
+		if call == 1 {
+			return provider.Response{}, provider.ErrTruncated{Provider: "mini"}
+		}
+		return provider.Response{Text: "ok", Model: r.Model}, nil
+	}, nil, nil, func(c *settings.Config) { c.Providers[0].Models[0].ContextTokens = 100000 })
+	rq := req("hi")
+	rq.MaxTokens = 12000
+	if _, err := g.r.Call(context.Background(), info(router.TierStrong, router.ScopeNode), rq); err != nil {
+		t.Fatal(err)
+	}
+	if got := g.mini.Requests()[1].MaxTokens; got != 16384 {
+		t.Errorf("retry max_tokens = %d, want the 16384 cap", got)
+	}
+}
+
+func TestEmptyReplyIsOneFailedAttemptAndFailsOver(t *testing.T) {
+	g := newRig(t, func(int, provider.Request) (provider.Response, error) {
+		return provider.Response{}, provider.ErrEmptyReply{Provider: "mini"}
+	}, okText("from kilo"), nil, nil)
+	res, err := g.r.Call(context.Background(), info(router.TierStandard, router.ScopeNode), req("hi"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Entry != "kilo/auto" || g.mini.Calls() != 1 {
+		t.Errorf("entry %s mini calls %d (an empty reply is not retried on the same entry)", res.Entry, g.mini.Calls())
+	}
+	rows := g.rows(t)
+	if len(rows) != 2 || rows[0].Outcome != ledger.OutcomeError || rows[0].ErrorKind != "empty_reply" || rows[1].Outcome != ledger.OutcomeOK {
+		t.Errorf("rows = %+v", rows)
+	}
+}
