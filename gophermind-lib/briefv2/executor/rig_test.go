@@ -205,6 +205,14 @@ func (g *rig) planOffline(briefPath string, mem *memSecrets) {
 	// in a rig reads the variable.
 	planMu.Lock()
 	defer planMu.Unlock()
+	prev, had := os.LookupEnv("GOPHERMIND_CONFIG_DIR")
+	defer func() {
+		if had {
+			os.Setenv("GOPHERMIND_CONFIG_DIR", prev)
+		} else {
+			os.Unsetenv("GOPHERMIND_CONFIG_DIR")
+		}
+	}()
 	os.Setenv("GOPHERMIND_CONFIG_DIR", g.t.TempDir())
 	fake, err := planner.FixtureProvider(filepath.Join(greeterDir, "planner"))
 	if err != nil {
@@ -301,3 +309,19 @@ func fileExists(path string) bool {
 }
 
 func containsCanary(s string) bool { return strings.Contains(s, canarySecret) }
+
+// planOffline must leave GOPHERMIND_CONFIG_DIR as it found it: the variable is
+// process-wide, and TestMain's value must not be replaced by the path of a
+// temporary directory that the test's cleanup deletes.
+func TestPlanOfflineRestoresConfigDirEnv(t *testing.T) {
+	t.Setenv("GOPHERMIND_CONFIG_DIR", "/stable/config/dir")
+	newRig(t)
+	if got := os.Getenv("GOPHERMIND_CONFIG_DIR"); got != "/stable/config/dir" {
+		t.Fatalf("GOPHERMIND_CONFIG_DIR = %q after planning, want it unchanged", got)
+	}
+	os.Unsetenv("GOPHERMIND_CONFIG_DIR")
+	newRig(t)
+	if v, ok := os.LookupEnv("GOPHERMIND_CONFIG_DIR"); ok {
+		t.Fatalf("GOPHERMIND_CONFIG_DIR = %q after planning, want it unset as before", v)
+	}
+}
