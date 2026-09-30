@@ -82,6 +82,9 @@ type rig struct {
 	secrets          Secrets // in-memory, GREETER_TOKEN = CANARY-SECRET-VALUE
 	git              gitland.Repo
 	plan             *Plan
+	fake             *scriptedProvider // set by wire
+	router           *router.Router    // the real router over the fake providers, set by wire
+	gate             *scriptGate       // set by wire
 }
 
 type rigOpts struct {

@@ -1,0 +1,187 @@
+package executor
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"gophermind/gophermind-lib/briefv2/gitland"
+	"gophermind/gophermind-lib/briefv2/pathsafe"
+)
+
+// SwapState is what the disk holds for one leaf.
+type SwapState int
+
+const (
+	SwapStubOnly SwapState = iota
+	SwapRealOnly
+	SwapBoth
+	SwapNeither
+)
+
+func (s SwapState) String() string {
+	switch s {
+	case SwapStubOnly:
+		return "stub only"
+	case SwapRealOnly:
+		return "real only"
+	case SwapBoth:
+		return "both"
+	}
+	return "neither"
+}
+
+// Swap is the stub/real file swap of spec 8.1 for one leaf's attempt
+// sequence. It has no path parameter: the only files it writes or removes are
+// the leaf's own File and StubFile, every write goes through pathsafe (atomic
+// temp file and rename, so a half-written real file never exists), and the
+// only commit it makes is of those two paths.
+type Swap struct {
+	repo    string
+	leaf    *Leaf
+	git     gitland.Repo
+	stubSrc []byte
+	reopen  bool
+	passed  bool
+}
+
+func NewSwap(repo string, l *Leaf, git gitland.Repo, stubSrc []byte) *Swap {
+	return &Swap{repo: repo, leaf: l, git: git, stubSrc: stubSrc}
+}
+
+// Enter removes the stub, then writes the real file. When the write fails the
+// stub is written back before the error is returned.
+func (s *Swap) Enter(source []byte) error {
+	s.passed = false
+	if !s.reopen {
+		if err := pathsafe.Remove(s.repo, s.leaf.StubFile); err != nil {
+			return err
+		}
+	}
+	if err := pathsafe.Replace(s.repo, s.leaf.File, source); err != nil {
+		if !s.reopen {
+			if rerr := pathsafe.Replace(s.repo, s.leaf.StubFile, s.stubSrc); rerr != nil {
+				return errors.Join(err, rerr)
+			}
+		}
+		return err
+	}
+	return nil
+}
+
+// Fail removes the real file and puts the stub back; both steps run even when
+// the first fails, and it is idempotent. In reopen mode the file is restored
+// from git instead and no stub is written. After a pass it does nothing.
+func (s *Swap) Fail() error {
+	if s.passed {
+		return nil
+	}
+	if s.reopen {
+		return s.git.Restore([]string{s.leaf.File})
+	}
+	err1 := pathsafe.Remove(s.repo, s.leaf.File)
+	err2 := pathsafe.Replace(s.repo, s.leaf.StubFile, s.stubSrc)
+	return errors.Join(err1, err2)
+}
+
+// Reopen is repair mode: the stub is never restored and Fail restores File
+// from git.
+func (s *Swap) Reopen() { s.reopen = true }
+
+// ready refuses a commit unless the real file is on disk and the stub is not.
+func (s *Swap) ready() error {
+	st, err := s.State()
+	if err != nil {
+		return err
+	}
+	if st != SwapRealOnly {
+		return fmt.Errorf("executor: leaf %s is not in the real-file state (%s)", s.leaf.ID, st)
+	}
+	return nil
+}
+
+// Pass commits the leaf: the real file added and the stub removed in one
+// commit. On an error it does nothing else; the caller's deferred Fail
+// restores the tree. It returns the short hash.
+func (s *Swap) Pass(title string) (string, error) {
+	if err := s.ready(); err != nil {
+		return "", err
+	}
+	h, err := s.git.CommitLeaf(s.leaf.ID, title, []string{s.leaf.File}, []string{s.leaf.StubFile})
+	if err != nil {
+		return "", err
+	}
+	s.passed = true
+	return h, nil
+}
+
+// PassRepair commits a repair of an already committed leaf (repair mode).
+func (s *Swap) PassRepair(round int) (string, error) {
+	if err := s.ready(); err != nil {
+		return "", err
+	}
+	h, err := s.git.CommitRepair(s.leaf.ID, round, []string{s.leaf.File})
+	if err != nil {
+		return "", err
+	}
+	s.passed = true
+	return h, nil
+}
+
+// kind reports whether rel exists. A link, a directory or anything but a
+// regular file is an error: it is not a state the swap can be in.
+func (s *Swap) kind(rel string) (bool, error) {
+	abs, err := pathsafe.ResolveSource(s.repo, rel)
+	if err != nil {
+		return false, err
+	}
+	fi, err := os.Lstat(abs)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("executor: leaf %s: cannot inspect %s", s.leaf.ID, filepath.Base(abs))
+	}
+	if !fi.Mode().IsRegular() {
+		return false, fmt.Errorf("executor: leaf %s: %s is not a regular file", s.leaf.ID, filepath.Base(abs))
+	}
+	return true, nil
+}
+
+// State reports what the disk holds.
+func (s *Swap) State() (SwapState, error) {
+	stub, err := s.kind(s.leaf.StubFile)
+	if err != nil {
+		return SwapNeither, err
+	}
+	real, err := s.kind(s.leaf.File)
+	if err != nil {
+		return SwapNeither, err
+	}
+	switch {
+	case stub && real:
+		return SwapBoth, nil
+	case stub:
+		return SwapStubOnly, nil
+	case real:
+		return SwapRealOnly, nil
+	}
+	return SwapNeither, nil
+}
+
+// Normalize is the resume step of spec 8.1: a leaf with both files has its stub
+// removed, one with neither gets the stub, one with only one is left alone.
+func (s *Swap) Normalize() error {
+	st, err := s.State()
+	if err != nil {
+		return err
+	}
+	switch st {
+	case SwapBoth:
+		return pathsafe.Remove(s.repo, s.leaf.StubFile)
+	case SwapNeither:
+		return pathsafe.Replace(s.repo, s.leaf.StubFile, s.stubSrc)
+	}
+	return nil
+}
