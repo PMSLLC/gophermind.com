@@ -12,6 +12,7 @@ import (
 
 	"gophermind/gophermind-lib/briefv2/brief"
 	"gophermind/gophermind-lib/briefv2/contract"
+	"gophermind/gophermind-lib/briefv2/events"
 	"gophermind/gophermind-lib/briefv2/router"
 	"gophermind/gophermind-lib/briefv2/schema"
 
@@ -126,7 +127,68 @@ func (p *Planner) decomposeMissing(ctx context.Context, r *run, c *contract.Cont
 			}
 		}
 	}
+	dropped := breakDependencyCycles(c, *dec)
+	for _, w := range dropped {
+		p.emit(events.KindWarning, "decompose", "", w)
+	}
+	if len(dropped) > 0 {
+		return writeJSON(r.path(stateDecomposed), dec)
+	}
 	return nil
+}
+
+// breakDependencyCycles removes, deterministically, the back edges of the
+// function dependency graph. Two functions may call each other (the contract
+// allows it), but a wave plan cannot. Nodes are visited in contract order and
+// each node's dependencies in sorted order; an edge into a node still being
+// visited is the back edge and is dropped. Nothing is lost: the dropped
+// function's signature still reaches the node through dependency_signatures.
+// It returns one warning per dropped edge, naming ids only.
+func breakDependencyCycles(c *contract.Contracts, dec decomposed) []string {
+	drafts := map[string]map[string]any{}
+	for _, list := range dec.Components {
+		for _, d := range list {
+			id, _ := d["id"].(string)
+			drafts[id] = d
+		}
+	}
+	const (
+		visiting = 1
+		done     = 2
+	)
+	state := map[string]int{}
+	var warnings []string
+	var visit func(id string)
+	visit = func(id string) {
+		state[id] = visiting
+		deps := strList(drafts[id]["depends_on"])
+		sort.Strings(deps)
+		kept := []string{}
+		for _, dep := range deps {
+			if drafts[dep] == nil {
+				kept = append(kept, dep)
+				continue
+			}
+			if state[dep] == visiting {
+				warnings = append(warnings, fmt.Sprintf("functions %s and %s depend on each other; %s no longer waits for %s", id, dep, id, dep))
+				continue
+			}
+			kept = append(kept, dep)
+			if state[dep] == 0 {
+				visit(dep)
+			}
+		}
+		if len(kept) != len(deps) {
+			drafts[id]["depends_on"] = kept
+		}
+		state[id] = done
+	}
+	for _, f := range c.Functions {
+		if drafts[f.ID] != nil && state[f.ID] == 0 {
+			visit(f.ID)
+		}
+	}
+	return warnings
 }
 
 // decomposeCall asks for the nodes of one batch of one component's functions.
