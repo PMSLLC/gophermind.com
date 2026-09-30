@@ -1197,15 +1197,17 @@ func (rc *runCtx) observeCritical(id string, failed bool) (bool, error) {
 }
 
 // scrubReason keeps a failure reason out of the stores when it holds a secret
-// value (a test name can be built from data): only its class is kept.
+// value in any form the packer scrubs (a test name can be built from data):
+// only its class is kept, and a reason with no class to keep becomes empty.
 func (rc *runCtx) scrubReason(reason string) string {
-	for _, sec := range rc.secretValues() {
-		if sec != "" && strings.Contains(reason, sec) {
-			class, _, _ := strings.Cut(reason, ":")
-			return class
-		}
+	if !packer.HasSecret(reason, rc.secretValues()) {
+		return reason
 	}
-	return reason
+	class, _, found := strings.Cut(reason, ":")
+	if !found || packer.HasSecret(class, rc.secretValues()) {
+		return ""
+	}
+	return class
 }
 
 // scrubNames drops the test names that hold a secret value.
@@ -1213,14 +1215,7 @@ func (rc *runCtx) scrubNames(names []string) []string {
 	secrets := rc.secretValues()
 	var out []string
 	for _, n := range names {
-		clean := true
-		for _, sec := range secrets {
-			if sec != "" && strings.Contains(n, sec) {
-				clean = false
-				break
-			}
-		}
-		if clean {
+		if !packer.HasSecret(n, secrets) {
 			out = append(out, n)
 		}
 	}
