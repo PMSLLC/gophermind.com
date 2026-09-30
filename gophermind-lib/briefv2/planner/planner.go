@@ -186,7 +186,7 @@ type callSpec struct {
 	stage     string // full stage name, for example decompose:greeting
 	taskType  string // clarify, contract, decompose, coverage, testwrite
 	nodeID    string
-	nodeClass string
+	nodeClass string // leaf calls only (spec: node_class is for a leaf call); every stage call leaves it empty
 	scope     router.Scope
 	maxTokens int
 	// maxGrown, when positive, is the cap on the doubled budget the router

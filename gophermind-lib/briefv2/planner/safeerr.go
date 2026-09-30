@@ -34,6 +34,9 @@ func jsonErr(err error) string {
 // schemaErr describes a schema failure by the location of each failing value
 // and, for a missing property, the property's name (which the schema, not the
 // reply, supplies).
+// maxSchemaPointers is how many pointers a schema failure names; the rest are counted.
+const maxSchemaPointers = 5
+
 func schemaErr(ve *jsonschema.ValidationError) string {
 	var parts []string
 	var walk func(e *jsonschema.ValidationError)
@@ -55,8 +58,8 @@ func schemaErr(ve *jsonschema.ValidationError) string {
 		}
 	}
 	walk(ve)
-	if len(parts) > 8 {
-		parts = append(parts[:8], "and more")
+	if len(parts) > maxSchemaPointers {
+		parts = append(parts[:maxSchemaPointers], fmt.Sprintf("and %d more", len(parts)-maxSchemaPointers))
 	}
 	return "the contract fails its schema: " + strings.Join(parts, "; ")
 }

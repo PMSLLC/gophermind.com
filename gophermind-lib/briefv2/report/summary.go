@@ -50,6 +50,12 @@ func (r Report) Summary() string {
 			line("  %s", esc(f))
 		}
 	}
+	if len(r.PlannerWarnings) > 0 {
+		line("Planner warnings:")
+		for _, w := range r.PlannerWarnings {
+			line("  %s", esc(w))
+		}
+	}
 	if r.Landing != nil {
 		line("Landing: branch %s, commit %s, merged into %s", esc(r.Landing.Branch), esc(r.Landing.Commit), esc(r.Landing.MergedInto))
 	}
