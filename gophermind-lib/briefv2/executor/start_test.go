@@ -386,22 +386,66 @@ func TestSandboxSettingAndAvailabilityRecorded(t *testing.T) {
 	}
 }
 
-func TestSandboxOffRefusedOffDarwinUnlessExplicit(t *testing.T) {
+// Off darwin the sandbox cannot be used, so the run is refused unless the
+// user's settings say off explicitly. "on", an unset value and "auto" are all
+// refusals, and none of them reaches a model.
+func TestSandboxOffDarwinRules(t *testing.T) {
 	old := hostOS
 	hostOS = "linux"
 	t.Cleanup(func() { hostOS = old })
-	g := newRig(t) // sandbox "off" is explicit in the rig
-	if rc := g.newRC(t); rc.sandboxOn {
-		t.Fatal("explicit off was not honoured")
+	for _, c := range []struct {
+		name, setting string
+		ok            bool
+	}{
+		{"explicit off is honoured", "off", true},
+		{"on is refused", "on", false},
+		{"unset is refused", "", false},
+		{"auto is refused", "auto", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			g := newRig(t)
+			g.cfg.Executor.Sandbox = c.setting // set after the rig validated its own config
+			g.wire(Script{})
+			rc, err := newRunCtx(context.Background(), g.options())
+			if c.ok {
+				if err != nil || rc.sandboxOn {
+					t.Fatalf("explicit off: err = %v", err)
+				}
+				rc.close()
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "sandbox") {
+				t.Fatalf("setting %q: err = %v, want a refusal naming the sandbox", c.setting, err)
+			}
+			if n := len(g.fake.Requests()); n != 0 {
+				t.Fatal("model calls before the refusal")
+			}
+		})
 	}
-	g2 := newRig(t, func(o *rigOpts) { o.Settings = func(c *settings.Config) { c.Executor.Sandbox = "on" } })
-	g2.wire(Script{})
-	_, err := newRunCtx(context.Background(), g2.options())
-	if err == nil || !strings.Contains(err.Error(), "sandbox") {
-		t.Fatalf("off-darwin with sandbox on: err = %v, want a refusal naming the sandbox", err)
+}
+
+func TestPreflightCreatesNothingBeforeTheRepoRootIsConfirmed(t *testing.T) {
+	g := newRig(t)
+	g.wire(Script{})
+	if err := os.Rename(filepath.Join(g.repo, ".git"), filepath.Join(t.TempDir(), "moved-git")); err != nil {
+		t.Fatal(err)
 	}
-	if n := len(g2.fake.Requests()); n != 0 {
-		t.Fatal("model calls before the refusal")
+	if err := os.Mkdir(filepath.Join(g.repo, ".git"), 0o755); err != nil { // present but not a repository
+		t.Fatal(err)
+	}
+	o := g.options()
+	o.Git = nil // startRun makes its own CLI, which must refuse first
+	_, err := newRunCtx(context.Background(), o)
+	if err == nil {
+		t.Fatal("a repository without a valid .git was accepted")
+	}
+	for _, p := range []string{g.id + "-scratch"} {
+		if fileExists(filepath.Join(g.repo, ".gophermind", p)) {
+			t.Fatalf(".gophermind/%s was created before the repository was confirmed", p)
+		}
+	}
+	if fileExists(g.cfg.Executor.GoModCache) {
+		t.Fatal("the module cache directory was created before the repository was confirmed")
 	}
 }
 
@@ -547,3 +591,81 @@ func TestMakeModuleProxyIsOffline(t *testing.T) {
 }
 
 func sandboxUsable() bool { return sandbox.Preflight(context.Background()) == nil }
+
+func TestWave0RetryAfterScanFindingSucceeds(t *testing.T) {
+	g := newRig(t)
+	orig := g.read("go.mod")
+	write(t, g.abs("go.mod"), orig+"\nreplace example.org/x => ../x\n")
+	g.gitCmd("add", "go.mod")
+	g.gitCmd("commit", "-q", "-m", "a go.mod with a replace directive")
+	_, err := g.start(t)
+	wantStop(t, err, "failed", "forbidden_go_mod")
+	st, _ := LoadState(g.runDir)
+	if st.StartedAt == "" || st.Wave0Done {
+		t.Fatalf("state after the failure = %+v", st)
+	}
+
+	write(t, g.abs("go.mod"), orig) // the corrected go.mod is a tracked change: allowed on a Wave 0 retry
+	rc, err := g.start(t)
+	if err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if !rc.state.Wave0Done {
+		t.Fatal("Wave0Done is not set after the retry")
+	}
+	if n := strings.TrimSpace(g.gitCmd("rev-list", "--count", "main..gm/"+g.id)); n != "1" {
+		t.Fatalf("the work branch has %s commits, want exactly the Wave 0 commit", n)
+	}
+	if n := len(g.sink.OfKind("wave0_commit")); n != 1 {
+		t.Fatalf("%d wave0_commit events, want 1", n)
+	}
+	for _, l := range g.plan.Leaves {
+		if !rc.state.RedChecked[l.ID] {
+			t.Fatalf("leaf %s not red checked", l.ID)
+		}
+	}
+	if d, _ := g.git.Dirty(); len(d) != 0 {
+		t.Fatalf("tree dirty after the retry: %v", d)
+	}
+	if n := len(g.fake.Requests()); n != 0 {
+		t.Fatalf("%d model calls", n)
+	}
+	// A third start is now a resume.
+	if _, err := g.start(t); err == nil || !strings.Contains(err.Error(), "resume is added in Task 14") {
+		t.Fatalf("third start err = %v, want the resume stub", err)
+	}
+}
+
+func TestWave0RetryRefusedWhenBranchHasCommits(t *testing.T) {
+	g := newRig(t)
+	tf := g.plan.Leaf("fn-greet").TestFile
+	write(t, g.abs(tf), g.read(tf)+"\nvar _ = undefinedByWave0Test\n")
+	_, err := g.start(t)
+	wantStop(t, err, "failed", "wave0_build")
+	g.gitCmd("commit", "--allow-empty", "-q", "-m", "CANARY-unexpected")
+	_, err = g.start(t)
+	if err == nil || !strings.Contains(err.Error(), "work branch") {
+		t.Fatalf("retry err = %v, want a refusal naming the work branch", err)
+	}
+	if strings.Contains(err.Error(), "CANARY") {
+		t.Fatal("commit text in the error")
+	}
+	if n := len(g.sink.OfKind("wave0_commit")); n != 0 {
+		t.Fatal("Wave 0 committed on a moved branch")
+	}
+}
+
+func TestWave0RetryRefusesForeignDirt(t *testing.T) {
+	g := newRig(t)
+	tf := g.plan.Leaf("fn-greet").TestFile
+	good := g.read(tf)
+	write(t, g.abs(tf), good+"\nvar _ = undefinedByWave0Test\n")
+	_, err := g.start(t)
+	wantStop(t, err, "failed", "wave0_build")
+	write(t, g.abs(tf), good)
+	write(t, g.abs("notes.txt"), "x\n")
+	_, err = g.start(t)
+	if err == nil || !strings.Contains(err.Error(), "notes.txt") {
+		t.Fatalf("retry err = %v, want a refusal naming notes.txt", err)
+	}
+}

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sort"
 	"strings"
@@ -125,11 +126,31 @@ func newRunCtx(ctx context.Context, o Options) (*runCtx, error) {
 		streak: &proxy.Streak{},
 		rep:    &runReport{blocked: map[string]string{}, reasons: map[string]string{}},
 	}
+	// The git layer first: it confirms the repository root before preflight
+	// creates any directory under it.
+	if err := rc.openGit(); err != nil {
+		rc.close()
+		return nil, err
+	}
 	if err := rc.preflight(ctx); err != nil {
 		rc.close()
 		return nil, err
 	}
 	return rc, nil
+}
+
+func (rc *runCtx) openGit() error {
+	if rc.o.Git != nil {
+		rc.git = rc.o.Git
+		return nil
+	}
+	cli, err := gitland.NewCLI(rc.plan.Repo, rc.plan.RunID)
+	if err != nil {
+		return errors.New("executor: the git layer could not start (the repository root was not confirmed)")
+	}
+	rc.git = cli
+	rc.closers = append(rc.closers, cli.Close)
+	return nil
 }
 
 func pathEntries(p string) []string {
@@ -403,18 +424,11 @@ func (rc *runCtx) allowDirty() []string {
 // begin is spec steps 8 to 10: git, the board and state, then Wave 0 on a fresh
 // run. Fresh versus resume is decided by _state/executor.json alone.
 func (rc *runCtx) begin(ctx context.Context) error {
-	if rc.o.Git != nil {
-		rc.git = rc.o.Git
-	} else {
-		cli, err := gitland.NewCLI(rc.plan.Repo, rc.plan.RunID)
-		if err != nil {
-			return errors.New("executor: the git layer could not start")
-		}
-		rc.git = cli
-		rc.closers = append(rc.closers, cli.Close)
-	}
 	if rc.state.StartedAt != "" {
-		return rc.resume(ctx)
+		if rc.state.Wave0Done {
+			return rc.resume(ctx)
+		}
+		return rc.retryWave0(ctx)
 	}
 
 	allow := map[string]bool{}
@@ -473,7 +487,63 @@ func (rc *runCtx) begin(ctx context.Context) error {
 	return rc.wave0(ctx)
 }
 
-// resume is replaced in Task 14.
+// wave0Paths is every file Wave 0 may leave dirty or commit: the tests, the
+// contract type files, the stubs, go.mod and go.sum.
+func (rc *runCtx) wave0Paths() []string {
+	paths := append([]string{}, rc.allowDirty()...)
+	for _, t := range rc.plan.Contracts.Types {
+		paths = append(paths, t.File)
+	}
+	for _, l := range rc.plan.Leaves {
+		paths = append(paths, l.StubFile)
+	}
+	return uniqueSorted(append(paths, "go.mod", "go.sum"))
+}
+
+// retryWave0 re-enters Wave 0 for a run that started and stopped before its
+// Wave 0 commit (a plan defect, a forbidden go.mod, an unreachable proxy).
+// The work branch is reused only while it still points at the base tip, the
+// dirty paths must be Wave 0's own, and every step of Wave 0 is idempotent
+// (types and stubs are rewritten only when they differ, RedChecked persists,
+// nothing is committed twice because nothing was).
+func (rc *runCtx) retryWave0(ctx context.Context) error {
+	if !reflect.DeepEqual(rc.state.PlanHashes, rc.plan.Hashes) {
+		return errors.New("executor: the plan changed since this run started; Wave 0 cannot be retried")
+	}
+	allow := rc.wave0Paths()
+	if rc.diffOnly {
+		ok := map[string]bool{}
+		for _, p := range allow {
+			ok[p] = true
+		}
+		dirty, err := rc.git.Dirty()
+		if err != nil {
+			return errors.New("executor: the repository state could not be read")
+		}
+		var foreign []string
+		for _, p := range dirty {
+			if !ok[p] {
+				foreign = append(foreign, p)
+			}
+		}
+		if len(foreign) > 0 {
+			return fmt.Errorf("executor: repository is not clean: %d path(s) outside Wave 0's files: %s", len(foreign), firstThree(foreign))
+		}
+	} else {
+		base := rc.plan.Brief.Front.BaseBranch
+		if base == "" {
+			base = "main"
+		}
+		if err := rc.git.Reenter(base, rc.state.Branch, allow); err != nil {
+			return fmt.Errorf("executor: Wave 0 cannot be retried: %w", err)
+		}
+	}
+	rc.emit("wave0_retry", "", "re-entering Wave 0")
+	return rc.wave0(ctx)
+}
+
+// resume is replaced in Task 14. It handles only the states where Wave 0 is
+// done; a run that stopped before its Wave 0 commit goes through retryWave0.
 func (rc *runCtx) resume(ctx context.Context) error {
 	return errors.New("executor: resume is added in Task 14")
 }
@@ -533,31 +603,21 @@ func (rc *runCtx) wave0(ctx context.Context) error {
 		return &stopError{Status: "failed", Reason: reason, Message: "executor: Wave 0: " + describeFindings(rc.plan, found)}
 	}
 
-	// go build of a single main package writes its binary into the working
-	// directory, and a test may write files too. Whatever the checks below add
-	// that was not there before is removed again (new files only); a declared
-	// file whose content changed stops the run.
+	// A test may write files while the checks run. Whatever the checks add that
+	// was not there before is removed again (new files only), also when a check
+	// fails so that a retry starts from the declared files; a declared file whose
+	// content changed stops the run.
 	before, err := TakeSnapshot(repo, rc.git)
 	if err != nil {
 		return errors.New("executor: the repository state could not be read")
 	}
-	env, err := rc.env("wave0", envLeaf)
-	if err != nil {
-		return err
+	checkErr := rc.wave0Checks(ctx)
+	cleanErr := rc.cleanCheckOutput(before)
+	if checkErr != nil {
+		return checkErr
 	}
-	if v := rc.chk.BuildVet(ctx, repo, env); !v.Pass() {
-		if v.Faulted() {
-			return faultOf(v, "the Wave 0 build check")
-		}
-		return &stopError{Status: "failed", Reason: "wave0_build",
-			Message: "executor: Wave 0 build check failed (" + v.Class + ")" + locations(v.Locations)}
-	}
-
-	if err := rc.redCheck(ctx); err != nil {
-		return err
-	}
-	if err := rc.cleanCheckOutput(before); err != nil {
-		return err
+	if cleanErr != nil {
+		return cleanErr
 	}
 
 	paths := append([]string{}, rc.allowDirty()...)
@@ -687,6 +747,22 @@ func faultOf(v runner.Verdict, what string) error {
 	return fmt.Errorf("executor: %s could not run (%w)", what, v.Err)
 }
 
+// wave0Checks is the build check of everything, then the red check.
+func (rc *runCtx) wave0Checks(ctx context.Context) error {
+	env, err := rc.env("wave0", envLeaf)
+	if err != nil {
+		return err
+	}
+	if v := rc.chk.BuildVet(ctx, rc.o.Repo, env); !v.Pass() {
+		if v.Faulted() {
+			return faultOf(v, "the Wave 0 build check")
+		}
+		return &stopError{Status: "failed", Reason: "wave0_build",
+			Message: "executor: Wave 0 build check failed (" + v.Class + ")" + locations(v.Locations)}
+	}
+	return rc.redCheck(ctx)
+}
+
 // redCheck runs each leaf's test against its stub, once, before its first model
 // call. A failure is the expected outcome. A pass is a weak test (warned, the
 // run continues). A build or vet failure is a plan defect and stops the run.
@@ -707,6 +783,9 @@ func (rc *runCtx) redCheck(ctx context.Context) error {
 				Message: fmt.Sprintf("executor: the red check of %s failed to %s (a plan defect)%s", l.ID, v.Class, locations(v.Locations))}
 		}
 		rc.state.RedChecked[l.ID] = true
+		if err := rc.state.Save(rc.o.RunDir); err != nil {
+			return err
+		}
 	}
-	return rc.state.Save(rc.o.RunDir)
+	return nil
 }

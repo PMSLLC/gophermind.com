@@ -172,7 +172,7 @@ func TestHostileArgumentsAreRefusedAndTerminated(t *testing.T) {
 	r.CheckLeaf(ctx, LeafCheck{Repo: repo, Dir: "internal/x", TestFunc: "TestX", Files: []string{"internal/x/a.go"}, Env: env})
 	b, _ := os.ReadFile(logf)
 	log := string(b)
-	for _, want := range []string{"-l -- internal/x/a.go", "build -- ./internal/x", "vet -- ./internal/x"} {
+	for _, want := range []string{"-l -- internal/x/a.go", "build -o /dev/null -- ./internal/x", "vet -- ./internal/x"} {
 		if !strings.Contains(log, want) {
 			t.Errorf("argv log missing %q:\n%s", want, log)
 		}

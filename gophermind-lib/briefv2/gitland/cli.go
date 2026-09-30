@@ -307,6 +307,15 @@ func (c *CLI) Start(baseBranch, workBranch string, allowDirty []string) error {
 		_, err := c.run("switch", workBranch)
 		return err
 	}
+	if err := c.checkDirty(allowDirty); err != nil {
+		return err
+	}
+	_, err := c.run("switch", "-c", workBranch, baseBranch)
+	return err
+}
+
+// checkDirty requires every dirty path to be one of allowDirty. The caller holds c.mu.
+func (c *CLI) checkDirty(allowDirty []string) error {
 	dirty, err := c.Dirty()
 	if err != nil {
 		return err
@@ -332,7 +341,45 @@ func (c *CLI) Start(baseBranch, workBranch string, allowDirty []string) error {
 		}
 		return fmt.Errorf("%w: %d path(s) not allowed: %s", ErrDirtyTree, len(foreign), strings.Join(q, ", "))
 	}
-	_, err = c.run("switch", "-c", workBranch, baseBranch)
+	return nil
+}
+
+// Reenter is Start for a run that began and stopped before its Wave 0 commit.
+// A missing work branch is made as Start makes it. An existing one is reused
+// only when it still points exactly at base's tip (no commit of its own, base
+// not moved); otherwise the error is ErrWorkBranchMoved and nothing changes.
+// The dirty paths must be within allowDirty, as in Start.
+func (c *CLI) Reenter(baseBranch, workBranch string, allowDirty []string) error {
+	if !validBranch(baseBranch) || !validBranch(workBranch) {
+		return errors.New("gitland: invalid branch name")
+	}
+	if err := validPaths(allowDirty); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	baseTip, code, err := c.runCode("rev-parse", "--verify", "--quiet", "refs/heads/"+baseBranch)
+	if err != nil {
+		return err
+	} else if code != 0 {
+		return fmt.Errorf("gitland: base branch %s does not exist", baseBranch)
+	}
+	c.base, c.work = baseBranch, workBranch
+	workTip, code, err := c.runCode("rev-parse", "--verify", "--quiet", "refs/heads/"+workBranch)
+	if err != nil {
+		return err
+	}
+	if err := c.checkDirty(allowDirty); err != nil {
+		return err
+	}
+	if code != 0 {
+		_, err := c.run("switch", "-c", workBranch, baseBranch)
+		return err
+	}
+	if !bytes.Equal(bytes.TrimSpace(baseTip), bytes.TrimSpace(workTip)) {
+		return ErrWorkBranchMoved
+	}
+	_, err = c.run("switch", workBranch)
 	return err
 }
 

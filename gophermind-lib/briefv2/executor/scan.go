@@ -172,7 +172,6 @@ func ScanGoSource(rel string, src []byte) ([]Finding, error) {
 
 	pkgOf := map[string]string{} // local name -> import path
 	dotted := map[string]map[string]bool{}
-	hasLog := false
 	for _, spec := range f.Imports {
 		p, err := strconv.Unquote(spec.Path.Value)
 		if err != nil {
@@ -183,9 +182,6 @@ func ScanGoSource(rel string, src []byte) ([]Finding, error) {
 			add("cgo", spec.Pos())
 		case p == "testing" && !isTest:
 			add("testing", spec.Pos())
-		}
-		if p == "log" {
-			hasLog = true
 		}
 		name := importName(spec, p)
 		switch name {
@@ -209,32 +205,37 @@ func ScanGoSource(rel string, src []byte) ([]Finding, error) {
 	}
 
 	for _, decl := range f.Decls {
-		if fd, ok := decl.(*ast.FuncDecl); ok && fd.Recv == nil {
-			if (fd.Name.Name == "main" && isMain && !isTest) || (fd.Name.Name == "TestMain" && isTest) {
-				continue // the one place a process may end itself
-			}
+		if isTest {
+			break // harness-written tests are not scanned for exits (they may use TestMain and t.Fatal)
+		}
+		if fd, ok := decl.(*ast.FuncDecl); ok && fd.Recv == nil && fd.Name.Name == "main" && isMain {
+			continue // the one place a process may end itself
 		}
 		sels := map[*ast.Ident]bool{}
 		ast.Inspect(decl, func(n ast.Node) bool {
 			switch x := n.(type) {
 			case *ast.SelectorExpr:
 				sels[x.Sel] = true
+				flagged := false
 				if id, ok := x.X.(*ast.Ident); ok && id.Obj == nil {
 					if p, ok := pkgOf[id.Name]; ok {
 						if exitFuncs[p][x.Sel.Name] {
 							add("exit", x.Pos())
+							flagged = true
 						}
 						if p == "flag" && !isMain && flagExit[x.Sel.Name] {
 							add("flagexit", x.Pos())
 						}
-						return true
 					}
 				}
-				if hasLog && loggerMethods[x.Sel.Name] {
-					add("exit", x.Pos()) // (*log.Logger).Fatal and friends
+				if !flagged && loggerMethods[x.Sel.Name] {
+					// Any receiver or package: a *log.Logger can reach a function through a variable, a
+					// parameter or an interface, and a logging package may exit on Fatal. A method named
+					// Fatal on a user type is flagged too (a documented false positive).
+					add("exit", x.Pos())
 				}
 			case *ast.CallExpr:
-				if id, ok := x.Fun.(*ast.Ident); ok && id.Name == "recover" && id.Obj == nil && !isTest {
+				if id, ok := x.Fun.(*ast.Ident); ok && id.Name == "recover" && id.Obj == nil {
 					add("recover", id.Pos())
 				}
 			case *ast.Ident:
