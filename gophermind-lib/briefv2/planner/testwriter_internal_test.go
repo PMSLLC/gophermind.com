@@ -214,3 +214,33 @@ func TestTestwriterErrorsNeverQuoteTheReply(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckTestSourceImportsAreStdOrOwnModule(t *testing.T) {
+	const mod = "example.com/greeter"
+	src := func(imp string) string {
+		return "package greet\n\nimport (\n\t\"testing\"\n\t_ \"" + imp + "\"\n)\n\nfunc TestGreet(t *testing.T) {}\n"
+	}
+	for _, ok := range []string{"fmt", "net/http/httptest", "testing", "encoding/json", mod, mod + "/internal/names"} {
+		if err := checkTestSource(src(ok), "greet", "TestGreet", mod); err != nil {
+			t.Errorf("%s was refused: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"internal/foo", "foo/bar", "foo", "vendor/x", "internal", "myreplace", "example.com/other"} {
+		if err := checkTestSource(src(bad), "greet", "TestGreet", mod); err == nil {
+			t.Errorf("%s was accepted", bad)
+		}
+	}
+}
+
+func TestSafeTestPathRefusesASymlinkedParentInsideTheRepo(t *testing.T) {
+	repo, _ := filepath.EvalSymlinks(t.TempDir())
+	if err := os.MkdirAll(filepath.Join(repo, "real"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(repo, "real"), filepath.Join(repo, "link")); err != nil {
+		t.Skip(err)
+	}
+	if _, err := safeTestPath(repo, "link/x_test.go"); err == nil || !strings.Contains(err.Error(), "symbolic link") {
+		t.Errorf("err = %v", err)
+	}
+}

@@ -28,6 +28,10 @@ import (
 // finished, and the hash of the test file written for it.
 type testwriterState struct {
 	Nodes map[string]writtenTests `json:"nodes"`
+	// Pending is the node whose file is about to be written: recorded before
+	// the write, so a crash between the write and the save of Nodes is
+	// recognised on resume by the file's hash instead of refused as foreign.
+	Pending map[string]writtenTests `json:"pending,omitempty"`
 }
 
 type writtenTests struct {
@@ -125,11 +129,12 @@ func (p *Planner) testwriter(ctx context.Context, r *run) error {
 		if _, done := st.Nodes[id]; done {
 			continue
 		}
-		wt, err := p.writeTests(ctx, r, c, d, classes[id])
+		wt, err := p.writeTests(ctx, r, c, d, classes[id], &st)
 		if err != nil {
 			return fmt.Errorf("node %s: %w", id, err)
 		}
 		st.Nodes[id] = wt
+		delete(st.Pending, id)
 		if err := writeJSON(r.path(stateTestwriter), st); err != nil {
 			return err
 		}
@@ -138,7 +143,7 @@ func (p *Planner) testwriter(ctx context.Context, r *run) error {
 }
 
 // writeTests makes the model call for one node and writes its test file.
-func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts, d map[string]any, class string) (writtenTests, error) {
+func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts, d map[string]any, class string, st *testwriterState) (writtenTests, error) {
 	id, _ := d["id"].(string)
 	ct, _ := d["contract"].(map[string]any)
 	file, _ := ct["file"].(string)
@@ -149,7 +154,13 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	if err != nil {
 		return writtenTests{}, err
 	}
-	if exists(abs) {
+	if _, err := os.Lstat(abs); err == nil {
+		// Only a file this run recorded, byte for byte, is accepted.
+		if pend, ok := st.Pending[id]; ok {
+			if raw, err := os.ReadFile(abs); err == nil && hashHex(raw) == pend.SHA256 {
+				return pend, nil
+			}
+		}
 		return writtenTests{}, fmt.Errorf("test file %s already exists and this run did not write it; move it away, then resume", path.Base(rel))
 	}
 	prompt, err := render("testwriter", map[string]string{
@@ -171,14 +182,31 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	if err != nil {
 		return writtenTests{}, err
 	}
+	wt := writtenTests{Tests: tests, TestFile: rel, SHA256: hashHex([]byte(source))}
+	if st.Pending == nil {
+		st.Pending = map[string]writtenTests{}
+	}
+	st.Pending[id] = wt
+	if err := writeJSON(r.path(stateTestwriter), *st); err != nil {
+		return writtenTests{}, err
+	}
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 		return writtenTests{}, fmt.Errorf("creating the folder for %s: %s", path.Base(rel), osReason(err))
 	}
-	if err := os.WriteFile(abs, []byte(source), 0o644); err != nil {
+	// O_EXCL fails on any existing entry, a symbolic link included, and never
+	// follows one at the final component.
+	f, err := os.OpenFile(abs, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
 		return writtenTests{}, fmt.Errorf("writing %s: %s", path.Base(rel), osReason(err))
 	}
-	sum := sha256.Sum256([]byte(source))
-	return writtenTests{Tests: tests, TestFile: rel, SHA256: hex.EncodeToString(sum[:])}, nil
+	_, werr := f.WriteString(source)
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		return writtenTests{}, fmt.Errorf("writing %s: %s", path.Base(rel), osReason(werr))
+	}
+	return wt, nil
 }
 
 // parseTestwrite checks a Test-writer reply: enough tests, each described,
@@ -216,6 +244,22 @@ func parseTestwrite(text string, ct map[string]any, pkg, funcName, module string
 	return tests, reply.TestFile, nil
 }
 
+func hashHex(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+// stdTopLevel is the set of standard library top-level path elements. A path
+// whose first element is not in it is standard only if it is the module's own.
+// internal and vendor are deliberately absent.
+var stdTopLevel = func() map[string]bool {
+	m := map[string]bool{}
+	for _, n := range strings.Fields("archive bufio bytes cmp compress container context crypto database debug embed encoding errors expvar flag fmt go hash html image index io iter log maps math mime net os path plugin reflect regexp runtime slices sort strconv strings structs sync syscall testing text time unicode unique unsafe weak") {
+		m[n] = true
+	}
+	return m
+}()
+
 // checkTestSource refuses a test file that is not the one asked for.
 func checkTestSource(src, pkg, funcName, module string) error {
 	f, err := parser.ParseFile(token.NewFileSet(), "", src, parser.SkipObjectResolution)
@@ -231,7 +275,7 @@ func checkTestSource(src, pkg, funcName, module string) error {
 			return errors.New("test file has an unreadable import")
 		}
 		first, _, _ := strings.Cut(p, "/")
-		standard := !strings.Contains(first, ".")
+		standard := stdTopLevel[first]
 		own := module != "" && (p == module || strings.HasPrefix(p, module+"/"))
 		if !standard && !own {
 			return fmt.Errorf("test file imports a package (%d bytes) outside the standard library and this module; only the standard library and this module (%s) are allowed", len(p), module)
@@ -287,6 +331,22 @@ func safeTestPath(repo, rel string) (string, error) {
 	}
 	if real != root && !strings.HasPrefix(real, root+string(filepath.Separator)) {
 		return "", fmt.Errorf("test file path (%d bytes) resolves outside the repository", len(rel))
+	}
+	// No directory the path passes through may be a symbolic link, even one
+	// that points back inside the repository.
+	cur := repo
+	for _, part := range strings.Split(path.Dir(rel), "/") {
+		if part == "." {
+			continue
+		}
+		cur = filepath.Join(cur, part)
+		fi, err := os.Lstat(cur)
+		if err != nil {
+			break
+		}
+		if fi.Mode()&os.ModeSymlink != 0 {
+			return "", fmt.Errorf("test file path (%d bytes) passes through a symbolic link", len(rel))
+		}
 	}
 	return abs, nil
 }
