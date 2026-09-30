@@ -94,7 +94,18 @@ func RenderPlan(runDir string) (markdown, hash string, err error) {
 	fmt.Fprintf(&s, "# Plan: %s\n\n", f.Title)
 	fmt.Fprintf(&s, "- Run: %s\n- Repository: %s\n- Landing: %s onto %s\n- On ambiguity: %s\n- Contract revision: %d\n\n", f.ID, f.Repo, f.Landing, f.BaseBranch, f.OnAmbiguity, c.Revision)
 
-	s.WriteString("## Components\n\n| Component | Functions | Waves |\n|---|---|---|\n")
+	deps, err := ReadDependencies(runDir)
+	if err != nil {
+		return "", "", err
+	}
+	s.WriteString("## Dependencies\n\n")
+	if len(deps) == 0 {
+		s.WriteString("none\n")
+	}
+	for _, d := range deps {
+		fmt.Fprintf(&s, "- %s@%s: %s\n", d.Module, d.Version, oneLine(d.Purpose, 300))
+	}
+	s.WriteString("\n## Components\n\n| Component | Functions | Waves |\n|---|---|---|\n")
 	total, top := 0, -1
 	for _, comp := range c.Components {
 		drafts := dec.Components[comp.ID]
@@ -209,7 +220,7 @@ func RenderPlan(runDir string) (markdown, hash string, err error) {
 }
 
 // hashedFiles are the run folder files whose bytes are part of the plan hash.
-var hashedFiles = []string{fileContracts, stateDecomposed, stateClasses, fileCoverage, fileAnswers}
+var hashedFiles = []string{fileContracts, stateDecomposed, stateClasses, fileCoverage, fileAnswers, fileDependencies}
 
 func orNone(list []string) string {
 	if len(list) == 0 {

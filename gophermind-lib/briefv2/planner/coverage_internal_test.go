@@ -39,7 +39,7 @@ func TestCoverageParseErrorsNeverQuoteTheReply(t *testing.T) {
 		`{"map": [], "types": [{"id": "` + c + `", "package": "x", "file": "internal/x/e.go", "decl": "type T int"}]}`,
 		`{"map": [], "types": [{"id": "t", "package": "x", "file": "/` + c + `.go", "decl": "type T int"}]}`,
 	}
-	base, err := parseOutline(okOutline, testRunID)
+	base, _, err := parseOutline(okOutline, testRunID)
 	if err != nil {
 		t.Fatal(err)
 	}

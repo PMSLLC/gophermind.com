@@ -9,6 +9,7 @@ Requirements:
 - Leave each component's `exports` empty; the harness fills it.
 - `integration_tests` for a component describe behavior that needs more than one of its functions. Give `name`, `given`, `expect`, and a `command`.
 - Error handling follows one convention stated in `conventions.errors`.
+- `dependencies`: third-party Go modules the module needs, each `{module, version, purpose}`, version pinned like `v1.9.3`; `[]` when only the standard library is needed.
 - No secrets. Refer to secrets by environment variable name only.
 - There is no limit on the number of components or types. Do not merge features to keep the list short.
 
@@ -23,7 +24,7 @@ Answers to clarifying questions:
 </answers>
 
 Respond with one JSON object and nothing else:
-{"module": "...", "conventions": {"layout": ["..."], "naming": ["..."], "errors": "...", "logging": "...", "testing": "..."}, "components": [{"id": "...", "package": "...", "exports": [], "integration_tests": []}], "types": [<type>]}
+{"module": "...", "conventions": {"layout": ["..."], "naming": ["..."], "errors": "...", "logging": "...", "testing": "..."}, "components": [{"id": "...", "package": "...", "exports": [], "integration_tests": []}], "types": [<type>], "dependencies": []}
 
 Each <type> matches this schema:
 <schema>

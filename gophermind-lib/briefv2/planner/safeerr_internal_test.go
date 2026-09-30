@@ -9,7 +9,7 @@ const replyCanary = "CANARY-4c1d9e"
 
 // No error a parse or merge path returns may quote the reply.
 func TestParseAndMergeErrorsNeverQuoteTheReply(t *testing.T) {
-	base, err := parseOutline(okOutline, testRunID)
+	base, _, err := parseOutline(okOutline, testRunID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +29,7 @@ func TestParseAndMergeErrorsNeverQuoteTheReply(t *testing.T) {
 		strings.Replace(okOutline, `"decl": "type NameError struct{}"`, `"decl": "type NameError struct{}", "uses": ["`+c+`"]`, 1),
 	}
 	for i, o := range outlines {
-		if _, err := parseOutline(o, testRunID); err != nil && strings.Contains(err.Error(), c) {
+		if _, _, err := parseOutline(o, testRunID); err != nil && strings.Contains(err.Error(), c) {
 			t.Errorf("outline %d: error quotes the reply: %v", i, err)
 		}
 	}

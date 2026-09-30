@@ -13,7 +13,7 @@ const okOutline = `{"module": "example.com/x",
  "types": [{"id": "name-error", "package": "x", "file": "internal/x/errors.go", "decl": "type NameError struct{}"}]}`
 
 func TestParseOutline(t *testing.T) {
-	doc, err := parseOutline(okOutline, testRunID)
+	doc, _, err := parseOutline(okOutline, testRunID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestParseOutline(t *testing.T) {
 	}
 	for _, c := range bad {
 		t.Run(c.name, func(t *testing.T) {
-			_, err := parseOutline(strings.Replace(okOutline, c.edit, c.with, 1), testRunID)
+			_, _, err := parseOutline(strings.Replace(okOutline, c.edit, c.with, 1), testRunID)
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Errorf("err = %v, want it to contain %q", err, c.want)
 			}
@@ -48,7 +48,7 @@ func TestParseOutline(t *testing.T) {
 }
 
 func TestMergePass(t *testing.T) {
-	base, err := parseOutline(okOutline, testRunID)
+	base, _, err := parseOutline(okOutline, testRunID)
 	if err != nil {
 		t.Fatal(err)
 	}
