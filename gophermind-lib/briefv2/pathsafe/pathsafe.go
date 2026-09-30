@@ -16,6 +16,25 @@ import (
 	"strings"
 )
 
+// protectedName reports whether a path component is .git or .gophermind, in
+// any case and with trailing dots or spaces, which some file systems ignore.
+func protectedName(part string) bool {
+	part = strings.TrimRight(part, ". ")
+	return strings.EqualFold(part, ".git") || strings.EqualFold(part, ".gophermind")
+}
+
+func hasGitName(parts []string) bool {
+	for _, p := range parts {
+		if protectedName(p) {
+			return true
+		}
+	}
+	return false
+}
+
+// maxBase keeps the base name plus the temp file suffix under 255 bytes.
+const maxBase = 200
+
 var sourceName = regexp.MustCompile(`^[A-Za-z0-9_./-]+\.go$`)
 
 func exists(p string) bool {
@@ -47,8 +66,7 @@ func ResolveSource(repo, rel string) (string, error) {
 	if strings.HasSuffix(rel, "_test.go") {
 		return "", fmt.Errorf("source file path (%d bytes) is a test file", len(rel))
 	}
-	first, _, _ := strings.Cut(rel, "/")
-	if first == ".git" || first == ".gophermind" {
+	if hasGitName(strings.Split(rel, "/")) {
 		return "", fmt.Errorf("source file path (%d bytes) is under .git or .gophermind", len(rel))
 	}
 	return resolve(repo, rel, "source file", true)
@@ -60,7 +78,7 @@ func ResolveSource(repo, rel string) (string, error) {
 func resolve(repo, rel, what string, checkFinal bool) (string, error) {
 	root, err := filepath.EvalSymlinks(repo)
 	if err != nil {
-		return "", err
+		return "", errors.New("the repository root cannot be resolved")
 	}
 	abs := filepath.Join(repo, filepath.FromSlash(rel))
 	dir := filepath.Dir(abs)
@@ -73,7 +91,7 @@ func resolve(repo, rel, what string, checkFinal bool) (string, error) {
 	}
 	real, err := filepath.EvalSymlinks(dir)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%s path (%d bytes) cannot be resolved inside the repository", what, len(rel))
 	}
 	if real != root && !strings.HasPrefix(real, root+string(filepath.Separator)) {
 		return "", fmt.Errorf("%s path (%d bytes) resolves outside the repository", what, len(rel))
@@ -107,7 +125,7 @@ func InsideRepo(repo, dir string) error {
 	}
 	real, err := filepath.EvalSymlinks(dir)
 	if err != nil || (real != root && !strings.HasPrefix(real, root+string(filepath.Separator))) {
-		return errors.New("test file directory resolves outside the repository")
+		return errors.New("directory resolves outside the repository")
 	}
 	return nil
 }
@@ -130,6 +148,9 @@ func Replace(repo, rel string, data []byte) (err error) {
 		return err
 	}
 	dir := filepath.Dir(abs)
+	if len(filepath.Base(abs)) > maxBase {
+		return fmt.Errorf("source file path (%d bytes) has a name that is too long", len(rel))
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("creating the folder for %s: %s", path.Base(rel), osReason(err))
 	}
@@ -138,6 +159,10 @@ func Replace(repo, rel string, data []byte) (err error) {
 	}
 	if fi, lerr := os.Lstat(abs); lerr == nil && (fi.Mode()&os.ModeSymlink != 0 || fi.IsDir()) {
 		return fmt.Errorf("source file path (%d bytes) is a symbolic link or a directory", len(rel))
+	}
+	realDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return errors.New("the destination directory cannot be resolved")
 	}
 	var suffix [8]byte
 	if _, err := rand.Read(suffix[:]); err != nil {
@@ -169,8 +194,46 @@ func Replace(repo, rel string, data []byte) (err error) {
 	if err = f.Close(); err != nil {
 		return fmt.Errorf("writing %s: %s", path.Base(rel), osReason(err))
 	}
+	beforeRename()
+	// A parent swapped for a link since the checks above would make the
+	// rename land somewhere else, .git inside the repository included.
+	if err = checkParents(repo, rel); err != nil {
+		return err
+	}
 	if err = os.Rename(tmp, abs); err != nil {
 		return fmt.Errorf("writing %s: %s", path.Base(rel), osReason(err))
+	}
+	afterRename()
+	if now, rerr := filepath.EvalSymlinks(filepath.Dir(abs)); rerr != nil || now != realDir {
+		// Undo only the file this call created.
+		if strings.HasPrefix(abs, repo+string(filepath.Separator)) {
+			os.Remove(abs)
+		}
+		err = fmt.Errorf("source file path (%d bytes) changed while it was written", len(rel))
+		return err
+	}
+	return nil
+}
+
+// checkParents refuses a path whose existing directory components are
+// symbolic links or protected names, checked one component at a time.
+func checkParents(repo, rel string) error {
+	cur := repo
+	for _, part := range strings.Split(path.Dir(rel), "/") {
+		if part == "." {
+			continue
+		}
+		cur = filepath.Join(cur, part)
+		if protectedName(part) {
+			return fmt.Errorf("source file path (%d bytes) is under .git or .gophermind", len(rel))
+		}
+		fi, err := os.Lstat(cur)
+		if err != nil {
+			return fmt.Errorf("source file path (%d bytes) changed while it was written", len(rel))
+		}
+		if fi.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("source file path (%d bytes) passes through a symbolic link", len(rel))
+		}
 	}
 	return nil
 }
@@ -196,3 +259,6 @@ func Remove(repo, rel string) error {
 	}
 	return nil
 }
+
+var beforeRename = func() {}
+var afterRename = func() {}
