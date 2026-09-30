@@ -1,26 +1,49 @@
-# GopherMind v2: brief to build (offline foundations)
+# GopherMind v2: brief to build (foundations and planner)
 
 v2 turns a written brief (a markdown file with YAML front matter) into a tree of
 task nodes that agents build, wave by wave, against a shared contract. This
-directory documents the offline foundations only: brief loading, the secret
-vault, the node tree with waves, contract slicing, and the run directory. No
-model calls happen in any of it.
+directory documents the foundations (brief loading, the secret vault, the node
+tree with waves, contract slicing, the run directory) and the planner, which
+takes a brief as far as an approved plan with its tests written. Nothing is
+built or executed yet; that is the executor plan.
 
 ## Commands
 
 ```text
 gophermind brief validate <brief.md>
+gophermind brief plan <brief.md> [--yes] [--gate terminal|file] [--fake <fixture-dir>] [--allow-public]
+gophermind brief resume <run-id> [--yes] [--gate terminal|file] [--fake <fixture-dir>] [--allow-public]
+gophermind brief status <run-id>
+gophermind brief coverage <run-id>
+gophermind brief calls <run-id>
 gophermind brief vault set <NAME>      (value from a terminal prompt or stdin)
 gophermind brief vault list
 gophermind brief tree check <run-dir>
 ```
 
-Anything else under `gophermind brief` prints this usage and exits 1. The run,
-resume, status and report subcommands arrive in later plans (deviation D1).
+Anything else under `gophermind brief` prints this usage and exits 1. The run
+and report subcommands arrive with the executor plan (deviation D1).
 
-Exit codes: 0 ok, 1 error (usage, unreadable file, failed check), 2 invalid
-brief (the message names the offending field). Codes 3 and 4 are reserved for
-human gates in a later plan.
+Exit codes: 0 ok, 1 error (usage, unreadable file, failed check, uncovered
+requirements), 2 invalid brief (the message names the offending field), 3
+waiting on a human (`plan` and `resume` with the file gate). Code 4 is reserved
+for an escalated leaf in the executor plan.
+
+`plan` takes a brief through Load, Clarify, Contract, Decompose, Coverage,
+Approve and Test-writer (see "Planning a brief"). `resume` continues a run from
+its first unfinished stage; the run id is the brief's `id`. `--yes` records the
+approval as given by the flag without showing the plan. `--gate file` writes
+`QUESTIONS.md` and `APPROVAL.md` into the run folder and exits 3 until they are
+filled in; the default comes from `human.mode` in the settings. `--fake` answers
+every model call from a directory of canned replies and needs no settings file,
+no network and no model (several directories may be given, comma separated; the
+first one holding a reply wins). `--allow-public` lets public providers see the
+whole brief, and the run's status says so afterwards.
+
+`status` prints each stage, what the run is waiting for, how many requirements
+are covered, and the model calls summed by task type and node class. `coverage`
+prints what covers each requirement of the brief and the warnings. `calls`
+prints one line per model call.
 
 `validate` prints one `warning:` line to stderr for each undeclared token that
 looks like a secret name. Warnings never change the exit code.
@@ -55,6 +78,75 @@ worktree, where `.git` is a file, the exclude entry goes into the main
 repository's `info/exclude` (found through `gitdir:` and `commondir`). A `.git`
 that cannot be resolved is an error and nothing is created; a directory with no
 `.git` is left alone.
+
+## Planning a brief
+
+`gophermind brief plan` runs these stages. Each one is skipped on `resume` when
+its output is already in the run folder.
+
+| Stage | What it does | Output |
+|---|---|---|
+| Load | Validates the brief, makes sure its secrets are in the vault, creates the run folder | `brief.md`, `requirements.json` |
+| Clarify | Asks the model what it needs to know, then asks you (or takes the defaults when the brief says `assume_and_document`) | `answers.json` |
+| Contract | One outline call, then one call per component, repeated while the model says more remains | `contracts.json` |
+| Decompose | One node per function, at most 8 functions per call | the root and component nodes, drafts in `_state/` |
+| Coverage | Maps every requirement of the brief to the nodes and tests that satisfy it | `coverage.json`, acceptance tests on the root node |
+| Approve | Shows the plan and waits for a decision | `approval.json` |
+| Test-writer | Writes the tests of every function from its contract alone | test files in the target repository, the finished tree, blackboard rows |
+
+Size. Nothing caps the number of components, functions or tests. A large brief
+makes more calls, never a coarser plan.
+
+Requirements and coverage. Every top-level bullet under `## Constraints` (C1,
+C2, ...) and `## Acceptance` (A1, A2, ...) and every `###` heading under
+`## Features` (F1, F2, ...) is one requirement, parsed by code. A constraint
+needs a covering node or a root test, a feature needs a covering node, and an
+acceptance bullet needs a root test with a command. Gaps go back to the model
+for up to `defaults.max_coverage_rounds` rounds; if any remain the run stops
+with exit 1 and lists them, and nothing is approved. Write briefs with one
+obligation per bullet: a bullet that bundles three counts as one requirement.
+
+Leaf checks. A function node is refused unless its signature parses as Go, it
+describes every parameter and every result, it lists at least one error
+condition when the function returns `error`, and it carries a node class
+(`pure`, `validation`, `handler`, `client`, `storage`, `concurrency`, `wiring`,
+`other`). A test file is refused unless it parses, holds the expected test
+function, imports only the standard library and the module's own packages, and
+comes with at least one test per error condition plus one for the happy path.
+
+What a model may not decide. Dependency signatures, waves, the path of a test
+file and the command of every function test (`go test ./<dir> -run ^<Test>$`)
+are derived by code. The only model-written commands in a plan are the root
+acceptance tests, and the approval summary prints each one in full.
+
+Nothing is written into the target repository before `approval.json` exists and
+matches the plan as it stands. Test files are left uncommitted.
+
+Run folder files added by the planner: `requirements.json`, `answers.json`,
+`contracts.json`, `coverage.json`, `approval.json`, and working files under
+`_state/` (`tree check` skips all of these). `<config dir>/runs/<run-id>.json`
+records where a run's folder is, so `resume`, `status`, `coverage` and `calls`
+need only the id.
+
+## Settings
+
+`<config dir>/gophermind.yaml` is written with defaults the first time `plan`
+runs without `--fake`: the Mac mini as the one private provider, and two
+providers that need no key. `models` lists, per tier (`strong`, `standard`,
+`any`), the `provider/model` entries to try in order. `privacy.mode` is
+`need_to_know` (public providers see single functions only) or `private_only`.
+A provider's key is never in this file: `api_key_secret` names an entry set with
+`gophermind brief vault set`.
+
+## The call ledger
+
+Every model call, including every failed attempt, is one row in the `calls`
+table of `<config dir>/blackboard.db`: stage, task type (`clarify`, `contract`,
+`decompose`, `coverage`, `testwrite`), node class for a call about one function,
+provider, model requested and served, token counts, duration, and outcome. The
+prompt and the reply are never stored, only their sizes and SHA-256 hashes.
+`gophermind brief calls <run-id>` prints the rows; `status` prints them summed by
+task type and node class, which is how models are compared by kind of work.
 
 ## Environment block
 
@@ -135,7 +227,17 @@ gophermind-lib/briefv2/
   tree/       nodes, cycle check, waves, readiness, file store
   contract/   load, Slice, Diff, Affected
   rundir/     .gophermind/<id>/ layout, kept out of git via .git/info/exclude
-cmd/gophermind/brief.go   the `gophermind brief ...` command group
+  db/         the shared SQLite file and its migrations
+  blackboard/ runtime state of every node (rows, claims, attempts)
+  ledger/     one row per model call
+  events/     progress events and sinks
+  provider/   the provider interface, the OpenAI-compatible client, a scripted fake
+  settings/   gophermind.yaml
+  router/     fallback chains, cooldowns, the privacy rule
+  human/      the human gate: terminal, file, programmatic
+  planner/    requirements, the stages, coverage, prompts, the offline fixture provider
+cmd/gophermind/brief.go        the `gophermind brief ...` command group
+cmd/gophermind/brief_plan.go   plan, resume, status, coverage, calls
 docs/briefv2/handoff/     the original handoff, for reference (copied from the zip; the only edits are that
                            interfaces/blackboard.go was gofmt'd and interfaces/ has a go.mod so the repo's
                            Go tooling skips it: it holds two packages, blackboard and provider, meant to be

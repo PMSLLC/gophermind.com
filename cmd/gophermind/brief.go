@@ -18,12 +18,18 @@ var vaultOptions vault.Options
 
 const briefUsage = `usage:
   gophermind brief validate <brief.md>
+  gophermind brief plan <brief.md> [--yes] [--gate terminal|file] [--fake <fixture-dir>] [--allow-public]
+  gophermind brief resume <run-id> [--yes] [--gate terminal|file] [--fake <fixture-dir>] [--allow-public]
+  gophermind brief status <run-id>
+  gophermind brief coverage <run-id>
+  gophermind brief calls <run-id>
   gophermind brief vault set <NAME>      (value from a terminal prompt or stdin)
   gophermind brief vault list
   gophermind brief tree check <run-dir>`
 
 // runBrief implements `gophermind brief ...` and returns the process exit
-// code: 0 ok, 1 error, 2 invalid brief.
+// code: 0 ok, 1 error, 2 invalid brief, 3 waiting on a human (plan and resume
+// with the file gate).
 func runBrief(args []string, in *os.File, out, errw io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprintln(errw, briefUsage)
@@ -36,6 +42,20 @@ func runBrief(args []string, in *os.File, out, errw io.Writer) int {
 			return 1
 		}
 		return briefValidate(args[1], out, errw)
+	case "plan", "resume":
+		return briefPlan(args[0], args[1:], in, out, errw)
+	case "status", "coverage", "calls":
+		if len(args) != 2 {
+			fmt.Fprintln(errw, briefUsage)
+			return 1
+		}
+		switch args[0] {
+		case "status":
+			return briefStatus(args[1], out, errw)
+		case "coverage":
+			return briefCoverage(args[1], out, errw)
+		}
+		return briefCalls(args[1], out, errw)
 	case "vault":
 		return briefVault(args[1:], in, out, errw)
 	case "tree":
