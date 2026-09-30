@@ -347,6 +347,9 @@ func objects(v any) []map[string]any {
 
 // strList returns the strings of a decoded array.
 func strList(v any) []string {
+	if ss, ok := v.([]string); ok {
+		return append([]string{}, ss...)
+	}
 	arr, _ := v.([]any)
 	out := make([]string, 0, len(arr))
 	for _, x := range arr {

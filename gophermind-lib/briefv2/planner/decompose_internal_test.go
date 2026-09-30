@@ -168,3 +168,31 @@ func TestDecomposeErrorsNeverQuoteTheReply(t *testing.T) {
 		})
 	}
 }
+
+func TestBreakDependencyCyclesIsDeterministicAndLeavesAnAcyclicPlan(t *testing.T) {
+	c := &contract.Contracts{Functions: []contract.Function{{ID: "a"}, {ID: "b"}, {ID: "c"}}}
+	mk := func() decomposed {
+		return decomposed{Components: map[string][]map[string]any{"x": {
+			{"id": "a", "depends_on": []string{"b"}},
+			{"id": "b", "depends_on": []any{"c"}},
+			{"id": "c", "depends_on": []string{"a", "b"}},
+		}}}
+	}
+	d1, d2 := mk(), mk()
+	w1, w2 := breakDependencyCycles(c, d1), breakDependencyCycles(c, d2)
+	if len(w1) == 0 || strings.Join(w1, "|") != strings.Join(w2, "|") {
+		t.Fatalf("warnings %v vs %v", w1, w2)
+	}
+	for _, w := range w1 {
+		if !strings.Contains(w, "depend on each other") {
+			t.Errorf("warning %q", w)
+		}
+	}
+	if _, err := waves(map[string][]string{"a": strList(d1.Components["x"][0]["depends_on"]),
+		"b": strList(d1.Components["x"][1]["depends_on"]), "c": strList(d1.Components["x"][2]["depends_on"])}); err != nil {
+		t.Errorf("still cyclic: %v", err)
+	}
+	if again := breakDependencyCycles(c, d1); len(again) != 0 {
+		t.Errorf("second pass dropped more: %v", again)
+	}
+}

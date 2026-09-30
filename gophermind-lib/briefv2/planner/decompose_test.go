@@ -273,3 +273,49 @@ func TestDecomposeResumeSkipsFinishedComponents(t *testing.T) {
 		t.Errorf("resume called %q, want only decompose:farewell", got)
 	}
 }
+
+// Two functions that use each other pass the contract (a cycle in uses is
+// legal Go), so the plan must break one edge instead of failing after every
+// Decompose call, on every resume.
+func TestFunctionsThatUseEachOtherStillPlan(t *testing.T) {
+	fn := func(id, name, file, uses string) string {
+		return `{"id": "` + id + `", "package": "greet", "file": "internal/greet/` + file + `",
+   "signature": "func ` + name + `(name string) (string, error)", "doc": "d", "uses": ["name-error", "` + uses + `"]}`
+	}
+	draft := func(id, title, name, file string) string {
+		return `{"id": "` + id + `", "title": "` + title + `", "description": "d.", "model_tier": "any", "node_class": "validation", "depends_on": [],
+    "contract": {"package": "greet", "file": "internal/greet/` + file + `", "signature": "func ` + name + `(name string) (string, error)",
+      "inputs": [{"name": "name", "type": "string"}],
+      "outputs": [{"name": "message", "type": "string"}, {"name": "err", "type": "error"}],
+      "errors": [{"when": "name is empty", "returns": "*NameError"}], "side_effects": []}}`
+	}
+	dir := variant(t, map[string]string{
+		"contract.greeting.txt": `{"types": [], "functions": [` + fn("fn-greet", "Greet", "greet.go", "fn-farewell") + `,` +
+			fn("fn-farewell", "Farewell", "farewell.go", "fn-greet") + `], "more": false}`,
+		"contract.farewell.txt": `{"types": [], "functions": [], "more": false}`,
+		"decompose.greeting.txt": "```json\n[" + draft("fn-greet", "Greet", "Greet", "greet.go") + "," +
+			draft("fn-farewell", "Farewell", "Farewell", "farewell.go") + "]\n```",
+	})
+	g := newRig(t, approving(), dir)
+	g.mustPlan(planner.Options{StopAfter: "decompose"})
+
+	d := g.drafts()
+	if !d.Done {
+		t.Fatal("decomposed.json is not done")
+	}
+	edges := 0
+	for _, drafts := range d.Components {
+		for _, n := range drafts {
+			for _, dep := range strs(n["depends_on"]) {
+				if dep == "fn-greet" || dep == "fn-farewell" {
+					edges++
+				}
+			}
+		}
+	}
+	if edges != 1 {
+		t.Errorf("%d edges between the two functions, want exactly 1 (one back edge dropped)", edges)
+	}
+	// A resume must not fail again.
+	g.mustPlan(planner.Options{RunID: greeterID, StopAfter: "decompose"})
+}
