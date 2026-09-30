@@ -49,7 +49,7 @@ provider     Provider interface (handoff) + OpenAI-compatible client + fake (fix
 ledger       Ledger interface + SQLite implementation (the calls table)
 blackboard   Blackboard interface (handoff, exact) + SQLite implementation
 db           opens ~/.gophermind/blackboard.db, applies migrations, hands out the shared *sql.DB
-config       reads gophermind.yaml, writes defaults on first use, validates
+settings     reads gophermind.yaml, writes defaults on first use, validates
 ```
 
 Existing packages reused unchanged: `brief`, `tree`, `contract`, `vault`, `schema`, `rundir`, `execenv` (later). Existing v1 code (`plantree`, `orchestrate`, `phaseflow`, `freellm`) is not modified. `freellm.Registry` supplies base URLs and documented limits for the default provider list; its usage counter is not used by v2 (the ledger replaces it for v2 runs).
@@ -70,9 +70,17 @@ type CallInfo struct {
     Scope    Scope
     Revision int
     Exclude  []string // provider/model entries to skip, used after a malformed reply
+    Only     string   // if set, try only this provider/model entry
 }
 
-func (r *Router) Call(ctx context.Context, info CallInfo, req provider.Request) (provider.Response, error)
+type Result struct {
+    provider.Response
+    CallID   int64  // the ledger row this attempt wrote
+    Entry    string // provider/model that was asked
+    ChainPos int
+}
+
+func (r *Router) Call(ctx context.Context, info CallInfo, req provider.Request) (Result, error)
 ```
 
 The router walks `models[tier]` in order. For each `provider/model` entry it:
@@ -81,7 +89,7 @@ The router walks `models[tier]` in order. For each `provider/model` entry it:
 2. Skips the entry, recording outcome `too_long`, if the estimated prompt size (bytes divided by 4, plus 10 percent) plus the request's `MaxTokens` exceeds the model's context.
 3. Takes one of the provider's `max_concurrent` slots, calls the provider with `config.call_timeout` (default 10 minutes; the mini is slow), and releases the slot.
 4. Writes one ledger row for the attempt whatever happened.
-5. On success returns the response. On `ErrRateLimited` it puts the provider in cooldown for `Retry-After` or `cooldown_after_429_seconds` and moves on. On `ErrTransient` it retries the same model with backoff up to 3 times, then treats it as rate limited. On `ErrContextTooLong` it moves on. On `ErrAuth` it disables the provider for the run and warns once. On a malformed reply (the stage's parser rejects it) the stage retries the same model once with the parse error appended, then calls the router again with `exclude` set to that model.
+5. On success returns the response. On `ErrRateLimited` it puts the provider in cooldown for `Retry-After` or `cooldown_after_429_seconds` and moves on. On `ErrTransient` it retries the same model with backoff up to 3 times, then treats it as rate limited. On `ErrContextTooLong` it moves on. On `ErrAuth` it disables the provider for the run and warns once. On a malformed reply (the stage's parser rejects it) `router.CallParsed` marks that ledger row `malformed`, retries the same model once (`Only`) with the parse error appended, then calls the router again with that model in `Exclude`, until a reply parses or the chain is exhausted. A provider that answers 404 "model not found" (the mini's Ollama did this on 2026-09-29 when a model was removed) is treated as `model_missing`: that entry is skipped for the rest of the run and a warning is emitted.
 
 If every entry is unavailable only because of cooldowns, the router waits for the shortest cooldown and tries again, for up to `max_wait_minutes` (default 30) in total per call. When the chain is exhausted it returns `*ChainExhausted`, which lists each entry and why it was skipped or failed, so the caller can decide between waiting, asking a human, or failing.
 
@@ -118,12 +126,13 @@ outcome, error_kind, retry_after_s
 ```
 
 - `model_served` comes from the reply, because Kilo Code's auto-router picks the model (a live probe returned `stealth/space-bunny-alpha` for `kilo-auto/free`).
-- `outcome` is one of `ok`, `rate_limited`, `timeout`, `malformed`, `auth`, `too_long`, `error`.
+- `outcome` is one of `ok`, `rate_limited`, `timeout`, `malformed`, `auth`, `too_long`, `model_missing`, `error`. A reply that arrives fine but fails the stage's parser is first recorded `ok` and then corrected to `malformed` with `Amend`.
 - Prompt and reply text are never stored, only sizes and SHA-256 hashes. Indexes: `(run_id, at)` and `(run_id, node_id)`.
 
 ```go
 type Ledger interface {
-    Record(ctx context.Context, c Call) error
+    Record(ctx context.Context, c *Call) error                      // sets c.ID
+    Amend(ctx context.Context, id int64, o Outcome, errorKind string) error
     List(ctx context.Context, runID string, f Filter) ([]Call, error)
     Summary(ctx context.Context, runID string) ([]ModelSummary, error) // per provider/model: calls, tokens, total time, outcome counts
 }
@@ -148,17 +157,19 @@ Each stage is idempotent and skipped on resume when its output already exists in
 | Stage | Output | Tier | Scope |
 |---|---|---|---|
 | Load | run folder, `brief.md` copy, secrets in the vault under `run/<id>` | none | none |
-| Clarify | `answers.json` (questions asked, answers given) | strong | brief |
-| Approve | `approval.json` with `approved_at`, `approved_by`, and a hash of the rendered plan | none | none |
+| Clarify | `answers.json` (questions asked, answers given or assumed) | strong | brief |
 | Contract (Wave 0) | `contracts.json`, validated against the contract schema | strong | brief |
-| Decompose | `root.json`, component and function nodes with contracts, waves, and harness-derived `dependency_signatures`; blackboard rows | strong | component |
-| Test-writer | test files written to the target repo, tests recorded on each node; the list of `*_test.go` paths the executor must treat as forbidden for implementers | strong | node |
+| Decompose | function node drafts in `_state/decomposed.json`, then the root and component nodes in the tree; waves and harness-derived `dependency_signatures` computed | strong | component |
+| Approve | `approval.json` with `approved_at`, `approved_by`, and a hash of the rendered plan | none | none |
+| Test-writer | test files written to the target repo, tests recorded on each leaf node, the complete tree written and checked, blackboard rows created | strong | node |
+
+Approve comes after Decompose, not straight after Clarify as SPEC.md's lifecycle lists it, because the plan being approved (components, function counts per component, wave count, as BUILD_PLAN item 5 says to render) only exists once Contract and Decompose have run. Contract and Decompose only make model calls and write inside the run folder; Test-writer is the first stage that touches the target repo, and it refuses to run without a matching `approval.json`.
 
 Prompts are the six templates in `docs/briefv2/handoff/prompts/`, adopted as written with two changes: the `QUESTION:` protocol below, and output-format reminders trimmed to what the parsers check. Each reply is stripped of code fences and leading prose before parsing. A reply that still does not parse counts as `malformed`.
 
 **Target repo.** The brief's `repo` must be an existing local path (`~` is expanded). Test-writer writes test files into its working tree and leaves them uncommitted; the git-landing plan commits them in the Wave 0 commit. A `repo` that is a URL is rejected in this plan with a message saying cloning belongs to git landing.
 
-**Approval gate.** The plan (component list, function count per component, wave count) is rendered as Markdown and hashed. Nothing after Approve runs without an `approval.json` whose hash matches. `--yes` records `approved_by: "flag"`.
+**Approval gate.** The plan (component list, function count per component, wave count, assumptions made, secret and env names, hosts, landing mode) is rendered as Markdown and hashed. Test-writer, and everything the executor plan adds, refuses to run without an `approval.json` whose hash matches the plan as it stands. `--yes` records `approved_by: "flag"`.
 
 **Pause and ask.** A Decompose or Test-writer reply containing `QUESTION:` alone on a line is routed to the human gate, the answer is stored in `answers.json`, and that one call is rerun with the answer added. In `on_ambiguity: assume_and_document` mode the planner instead picks the conservative option and records it in the node's `assumptions`.
 
@@ -265,6 +276,9 @@ All in process, no network, table-driven, using temp directories.
 | P4 | Every outbound request goes through the harness proxy | Providers take an injected `*http.Client`. Until the proxy plan lands the planner uses a plain client. This plan makes model calls only, never runs commands, and the executor plan must not run commands before the proxy exists |
 | P5 | One provider order per tier | Each entry also has a visibility, and calls carry a scope; the router enforces a need-to-know rule the handoff does not have |
 | P6 | Human gate modes `interactive` and `file` | Also a programmatic adapter, for the run service and the app |
+| P7 | Lifecycle: Clarify, Approve, Contract, Decompose | Approve after Decompose, because the plan it shows does not exist earlier (see section 9) |
+| P8 | Provider errors: rate limited, context too long, auth, transient | Also `ErrModelNotFound`, after a real 404 on 2026-09-29 when the mini's model was removed mid-run |
+| P9 | `Blackboard` and provider interfaces only | `Router.Call` returns a `Result` carrying the ledger row id; `Ledger.Record` takes a pointer and there is an `Amend`; the package that reads `gophermind.yaml` is named `settings` to avoid clashing with `gophermind-lib/config` |
 
 ## 16. Risks and open items
 
