@@ -24,7 +24,13 @@ Ids already emitted by earlier passes:
 <emitted>
 {{.Emitted}}
 </emitted>
-
+{{if .Unresolved}}
+Repair: the outline above is complete, but {{.UnresolvedCount}} ids are listed in a `uses` array and were never declared by any type:
+<unresolved>
+{{.Unresolved}}
+</unresolved>
+Reply in the same JSON shape with the missing types written in full (and a component only if one is really missing), or resend a type whose `uses` names a wrong id with the corrected list. Set `more` to false. Do not repeat anything that is already right.
+{{end}}
 Brief:
 <brief>
 {{.Brief}}

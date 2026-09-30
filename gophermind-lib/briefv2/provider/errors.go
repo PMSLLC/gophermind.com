@@ -7,8 +7,9 @@ type ErrModelNotFound struct{ Model string }
 
 func (e ErrModelNotFound) Error() string { return "provider: model not found: " + e.Model }
 
-// ErrTruncated: the reply had empty content and finish_reason "length": the
-// model spent the whole token budget before answering. The router retries once
+// ErrTruncated: the reply ended with finish_reason "length", whether or not
+// some text arrived: the model spent the whole token budget before finishing.
+// The partial text is discarded. The router retries once
 // on the same entry with a larger budget. It names the provider only.
 type ErrTruncated struct{ Provider string }
 

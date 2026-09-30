@@ -31,12 +31,25 @@ type contractState struct {
 	Deps          []Dependency `json:"deps,omitempty"`
 	OutlineMore   bool         `json:"outline_more,omitempty"`
 	OutlinePasses int          `json:"outline_passes,omitempty"`
+	// OutlineRepairs counts the repair passes stored; OutlineDone is set once
+	// the outline has no unresolved reference and dependencies.json is written.
+	OutlineRepairs int  `json:"outline_repairs,omitempty"`
+	OutlineDone    bool `json:"outline_done,omitempty"`
 }
 
 // maxOutlinePasses bounds the outline loop so a model that never finishes
 // cannot spend calls forever. It bounds calls, not the plan: each pass adds
 // about a dozen components and types.
 const maxOutlinePasses = 20
+
+// maxOutlineRepairs bounds the passes that ask the model to write the ids a
+// finished outline uses but never declared.
+const maxOutlineRepairs = 2
+
+const (
+	maxUnresolvedInPrompt = 50
+	maxUnresolvedInError  = 10
+)
 
 func contractDone(r *run) bool { return exists(r.path(fileContracts)) }
 
@@ -53,26 +66,28 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 	if err != nil {
 		return err
 	}
-	if !found || st.OutlineMore {
+	if !found || (st.OutlinePasses > 0 && !st.OutlineDone) {
 		typeSchema, err := contractItemSchemas("types")
 		if err != nil {
 			return err
 		}
-		for {
-			if st.OutlinePasses >= maxOutlinePasses {
-				return fmt.Errorf("stage contract:outline did not finish after %d passes; the model keeps saying more remains", maxOutlinePasses)
-			}
+		ask := func(unresolved []string) error {
 			prompt, err := render("contract_outline", map[string]string{
 				"Brief": string(r.src), "Answers": answersText(as), "TypeSchema": typeSchema,
-				"Fixed": outlineFixedText(st.Doc), "Emitted": outlineEmittedText(st.Doc)})
+				"Fixed": outlineFixedText(st.Doc), "Emitted": outlineEmittedText(st.Doc),
+				"Unresolved": unresolvedPromptText(unresolved), "UnresolvedCount": fmt.Sprint(len(unresolved))})
 			if err != nil {
 				return err
+			}
+			var replace map[string]bool
+			if len(unresolved) > 0 {
+				replace = unresolvedDeclarers(st.Doc)
 			}
 			more := false
 			cs := callSpec{stage: "contract:outline", taskType: "contract", scope: router.ScopeBrief,
 				maxTokens: maxTokensOutline, maxGrown: maxGrownOutline}
 			if err := p.call(ctx, r, cs, prompt, func(text string) error {
-				doc, ds, m, err := mergeOutline(st.Doc, st.Deps, StripReply(text), r.id)
+				doc, ds, m, err := mergeOutline(st.Doc, st.Deps, StripReply(text), r.id, replace)
 				if err != nil {
 					return err
 				}
@@ -81,16 +96,41 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			}); err != nil {
 				return err
 			}
-			st.OutlinePasses++
-			st.OutlineMore = more
-			if err := writeJSON(r.path(stateContract), st); err != nil {
+			if len(unresolved) == 0 {
+				st.OutlinePasses++
+				st.OutlineMore = more
+			} else {
+				st.OutlineRepairs++
+			}
+			return writeJSON(r.path(stateContract), st)
+		}
+		for st.Doc == nil || st.OutlineMore {
+			if st.OutlinePasses >= maxOutlinePasses {
+				return fmt.Errorf("stage contract:outline did not finish after %d passes; the model keeps saying more remains", maxOutlinePasses)
+			}
+			if err := ask(nil); err != nil {
 				return err
 			}
-			if !more {
+		}
+		// The outline is complete as written; ids it uses but never declared are
+		// asked for, not treated as an unusable reply.
+		for {
+			un := unresolvedUses(st.Doc)
+			if len(un) == 0 {
 				break
 			}
+			if st.OutlineRepairs >= maxOutlineRepairs {
+				return unresolvedErr(un)
+			}
+			if err := ask(un); err != nil {
+				return err
+			}
 		}
+		st.OutlineDone = true
 		if err := writeJSON(r.path(fileDependencies), st.Deps); err != nil {
+			return err
+		}
+		if err := writeJSON(r.path(stateContract), st); err != nil {
 			return err
 		}
 	}
@@ -164,20 +204,19 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 	return writeJSON(r.path(fileContracts), st.Doc)
 }
 
-// parseOutline turns a one-pass outline reply into the start of
-// contracts.json: the harness supplies the version, the brief id and an empty
-// function list.
-func parseOutline(text, briefID string) (map[string]any, []Dependency, error) {
-	doc, deps, _, err := mergeOutline(nil, nil, text, briefID)
-	return doc, deps, err
-}
-
 // mergeOutline adds one outline pass to a copy of doc (nil for the first
-// pass) and validates the whole merged outline again; a rejected reply leaves
-// doc as it was. Components and types are merged by id: an id seen before with
-// identical content is dropped, with different content is an error. The first
-// pass fixes the module and the conventions. more is the reply's "more" flag.
-func mergeOutline(doc map[string]any, have []Dependency, text, briefID string) (map[string]any, []Dependency, bool, error) {
+// pass) and checks the merged outline; a rejected reply leaves doc as it was.
+// Components and types are merged by id: an id seen before with identical
+// content is dropped, with different content is an error. The first pass
+// fixes the module and the conventions. more is the reply's "more" flag.
+//
+// Between passes only what is local and monotone is checked (schema shape,
+// id syntax, duplicates, file paths), because a type may use one a later pass
+// writes. Reference checks run once the outline is complete and nothing is
+// unresolved; an unresolved reference is not an error here, the planner asks
+// for it. replace, when set, is a repair pass: its ids may replace the
+// declaration of an id it names, and "more" is ignored.
+func mergeOutline(doc map[string]any, have []Dependency, text, briefID string, replace map[string]bool) (map[string]any, []Dependency, bool, error) {
 	var o struct {
 		Module      string           `json:"module"`
 		Conventions map[string]any   `json:"conventions"`
@@ -209,7 +248,7 @@ func mergeOutline(doc map[string]any, have []Dependency, text, briefID string) (
 	}
 	added := 0
 	var comps []any
-	if comps, added, err = mergeByID(next["components"], o.Components, added, "component", func(c map[string]any) {
+	if comps, added, err = mergeByID(next["components"], o.Components, added, "component", nil, func(c map[string]any) {
 		if _, ok := c["exports"].([]any); !ok {
 			c["exports"] = []any{}
 		}
@@ -217,7 +256,7 @@ func mergeOutline(doc map[string]any, have []Dependency, text, briefID string) (
 		return nil, nil, false, err
 	}
 	var types []any
-	if types, added, err = mergeByID(next["types"], o.Types, added, "type", nil); err != nil {
+	if types, added, err = mergeByID(next["types"], o.Types, added, "type", replace, nil); err != nil {
 		return nil, nil, false, err
 	}
 	next["components"], next["types"] = comps, types
@@ -228,7 +267,7 @@ func mergeOutline(doc map[string]any, have []Dependency, text, briefID string) (
 		for _, h := range merged {
 			if h.Module == d.Module {
 				if h != d {
-					return nil, nil, false, fmt.Errorf("contract outline lists one dependency twice with different content (module %d bytes)", len(d.Module))
+					return nil, nil, false, fmt.Errorf("contract outline lists dependency %s twice with different content", boundedModule(d.Module))
 				}
 				dup = true
 			}
@@ -239,19 +278,131 @@ func mergeOutline(doc map[string]any, have []Dependency, text, briefID string) (
 		}
 	}
 	sort.Slice(merged, func(a, b int) bool { return merged[a].Module < merged[b].Module })
-	if !first && o.More && added == 0 {
+	more := o.More && replace == nil
+	if !first && more && added == 0 {
 		return nil, nil, false, errors.New("contract outline says more remains but adds nothing new")
 	}
-	if _, err := validateContractDoc(next, briefID); err != nil {
-		return nil, nil, false, err
+	var verr error
+	if more || len(unresolvedUses(next)) > 0 {
+		verr = validateOutlineShape(next, briefID)
+	} else {
+		_, verr = validateContractDoc(next, briefID)
 	}
-	return next, merged, o.More, nil
+	if verr != nil {
+		return nil, nil, false, verr
+	}
+	return next, merged, more, nil
+}
+
+var (
+	idSyntaxRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
+	// An id is named in an error or a prompt only when it has the syntax of an
+	// id, cut to this length; anything else is reported by its length.
+	maxBoundedID = 64
+)
+
+// boundedID is how a model-supplied id may appear in an error: quoted and cut
+// to 64 bytes when it has the syntax of an id, otherwise only its length.
+func boundedID(id string) string {
+	if !idSyntaxRE.MatchString(id) {
+		return fmt.Sprintf("<%d bytes>", len(id))
+	}
+	if len(id) > maxBoundedID {
+		id = id[:maxBoundedID]
+	}
+	return fmt.Sprintf("%q", id)
+}
+
+// boundedModule is boundedID for a module path.
+func boundedModule(m string) string {
+	if !depModuleRE.MatchString(m) {
+		return fmt.Sprintf("<%d bytes>", len(m))
+	}
+	if len(m) > maxBoundedID {
+		m = m[:maxBoundedID]
+	}
+	return fmt.Sprintf("%q", m)
+}
+
+// unresolvedUses lists, in order of first use, the ids a declaration's uses
+// names that no type or function declares.
+func unresolvedUses(doc map[string]any) []string {
+	declared := map[string]bool{}
+	for _, key := range []string{"types", "functions"} {
+		for _, o := range objects(doc[key]) {
+			if id, ok := o["id"].(string); ok {
+				declared[id] = true
+			}
+		}
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, key := range []string{"types", "functions"} {
+		for _, o := range objects(doc[key]) {
+			for _, u := range strList(o["uses"]) {
+				if !declared[u] && !seen[u] {
+					seen[u] = true
+					out = append(out, u)
+				}
+			}
+		}
+	}
+	return out
+}
+
+// unresolvedDeclarers is the set of type ids whose uses name an undeclared id.
+func unresolvedDeclarers(doc map[string]any) map[string]bool {
+	un := map[string]bool{}
+	for _, u := range unresolvedUses(doc) {
+		un[u] = true
+	}
+	out := map[string]bool{}
+	for _, o := range objects(doc["types"]) {
+		for _, u := range strList(o["uses"]) {
+			if un[u] {
+				id, _ := o["id"].(string)
+				out[id] = true
+			}
+		}
+	}
+	return out
+}
+
+// unresolvedPromptText lists up to 50 of the ids that pass the id syntax, one
+// per line, and says how many more are not shown.
+func unresolvedPromptText(ids []string) string {
+	if len(ids) == 0 {
+		return ""
+	}
+	var shown []string
+	for _, id := range ids {
+		if idSyntaxRE.MatchString(id) && len(id) <= maxBoundedID && len(shown) < maxUnresolvedInPrompt {
+			shown = append(shown, id)
+		}
+	}
+	text := strings.Join(shown, "\n")
+	if hidden := len(ids) - len(shown); hidden > 0 {
+		text += fmt.Sprintf("\n(and %d more ids not shown)", hidden)
+	}
+	return text
+}
+
+// unresolvedErr is the error after the repair passes are spent.
+func unresolvedErr(ids []string) error {
+	var named []string
+	for _, id := range ids {
+		if idSyntaxRE.MatchString(id) && len(named) < maxUnresolvedInError {
+			named = append(named, boundedID(id))
+		}
+	}
+	return fmt.Errorf("stage contract:outline: %d ids are used but never declared after %d repair passes (named: %s; other ids fail the id syntax or are not shown)",
+		len(ids), maxOutlineRepairs, strings.Join(named, ", "))
 }
 
 // mergeByID appends the new objects to list, dropping an identical repeat of
 // an id and refusing a repeat whose content differs. added counts the objects
-// that were new. An id repeated inside one reply is always an error. prep, when set, normalises an object before it is compared.
-func mergeByID(list any, in []map[string]any, added int, what string, prep func(map[string]any)) ([]any, int, error) {
+// that were new. An id in replace may be redefined. An id repeated inside one reply is always an error. prep, when set, normalises an object before it is compared.
+func mergeByID(list any, in []map[string]any, added int, what string, replace map[string]bool, prep func(map[string]any)) ([]any, int, error) {
 	out, _ := list.([]any)
 	at := map[string]int{}
 	for i, x := range out {
@@ -268,14 +419,19 @@ func mergeByID(list any, in []map[string]any, added int, what string, prep func(
 		}
 		id, _ := m["id"].(string)
 		if inReply[id] {
-			return nil, 0, fmt.Errorf("contract: duplicate %s id %q in one reply", what, id)
+			return nil, 0, fmt.Errorf("contract: duplicate %s id %s in one reply", what, boundedID(id))
 		}
 		inReply[id] = true
 		if i, ok := at[id]; ok && id != "" {
 			old, _ := json.Marshal(out[i])
 			cur, _ := json.Marshal(m)
 			if !bytes.Equal(old, cur) {
-				return nil, 0, fmt.Errorf("contract outline lists %s %q twice with different content", what, id)
+				if replace[id] {
+					out[i] = m
+					added++
+					continue
+				}
+				return nil, 0, fmt.Errorf("contract outline lists %s %s twice with different content", what, boundedID(id))
 			}
 			continue
 		}
@@ -368,43 +524,66 @@ func validateContractDoc(doc map[string]any, briefID string) (*contract.Contract
 	if err != nil {
 		return nil, loadErr(err, doc)
 	}
+	return c, localChecks(c, briefID)
+}
+
+// validateOutlineShape is validateContractDoc without the reference checks.
+func validateOutlineShape(doc map[string]any, briefID string) error {
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		return err
+	}
+	if err := schema.Validate(schema.KindContract, raw); err != nil {
+		return loadErr(err, doc)
+	}
+	var c contract.Contracts
+	if err := json.Unmarshal(raw, &c); err != nil {
+		return err
+	}
+	return localChecks(&c, briefID)
+}
+
+// localChecks are the checks only the planner knows, and that do not need the
+// complete contract: ids that would collide in the tree or with a stage name,
+// files that leave the repository, signatures that are not Go.
+func localChecks(c *contract.Contracts, briefID string) error {
 	if c.BriefID != briefID {
-		return nil, fmt.Errorf("contract: brief_id does not match the run id (%d bytes)", len(c.BriefID))
+		return fmt.Errorf("contract: brief_id does not match the run id (%d bytes)", len(c.BriefID))
 	}
 	comps := map[string]bool{}
 	for _, comp := range c.Components {
 		switch {
 		case !componentIDRE.MatchString(comp.ID):
-			return nil, fmt.Errorf("contract: component id %q must be lower case letters, digits and dashes", comp.ID)
+			return fmt.Errorf("contract: component id %s must be lower case letters, digits and dashes", boundedID(comp.ID))
 		case comp.ID == "logs" || comp.ID == "outline":
-			return nil, fmt.Errorf("contract: component id %q is reserved", comp.ID)
+			return fmt.Errorf("contract: component id %q is reserved", comp.ID)
 		case comp.ID == briefID:
-			return nil, fmt.Errorf("contract: component id %q is the run id", comp.ID)
+			return fmt.Errorf("contract: component id %q is the run id", comp.ID)
 		case comps[comp.ID]:
-			return nil, fmt.Errorf("contract: duplicate component id %q", comp.ID)
+			return fmt.Errorf("contract: duplicate component id %q", comp.ID)
 		}
 		comps[comp.ID] = true
 	}
 	for _, t := range c.Types {
 		if err := cleanGoFile(t.File); err != nil {
-			return nil, fmt.Errorf("contract: type %s: %w", t.ID, err)
+			return fmt.Errorf("contract: type %s: %w", t.ID, err)
 		}
 	}
 	for _, f := range c.Functions {
 		if comps[f.ID] || f.ID == briefID {
-			return nil, fmt.Errorf("contract: function id %q is also a component or the run id", f.ID)
+			return fmt.Errorf("contract: function id %q is also a component or the run id", f.ID)
 		}
 		if !comps[f.Component] {
-			return nil, fmt.Errorf("contract: function %s belongs to unknown component (%d bytes)", f.ID, len(f.Component))
+			return fmt.Errorf("contract: function %s belongs to unknown component (%d bytes)", f.ID, len(f.Component))
 		}
 		if err := cleanGoFile(f.File); err != nil {
-			return nil, fmt.Errorf("contract: function %s: %w", f.ID, err)
+			return fmt.Errorf("contract: function %s: %w", f.ID, err)
 		}
 		if _, err := parseSignature(f.Signature); err != nil {
-			return nil, fmt.Errorf("contract: function %s: %w", f.ID, err)
+			return fmt.Errorf("contract: function %s: %w", f.ID, err)
 		}
 	}
-	return c, nil
+	return nil
 }
 
 // cleanGoFile accepts a Go file path that stays inside the repository:

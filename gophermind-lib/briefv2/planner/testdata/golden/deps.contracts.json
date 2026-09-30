@@ -1,0 +1,83 @@
+{
+  "brief_id": "gm-2026-09-29-900",
+  "components": [
+    {
+      "exports": [
+        "fn-name-error-error"
+      ],
+      "id": "types",
+      "package": "greet"
+    },
+    {
+      "exports": [
+        "fn-greet"
+      ],
+      "id": "greeting",
+      "package": "greet"
+    },
+    {
+      "exports": [
+        "fn-farewell"
+      ],
+      "id": "farewell",
+      "package": "greet"
+    }
+  ],
+  "conventions": {
+    "errors": "Functions return *NameError.",
+    "layout": [
+      "internal/greet: pure functions."
+    ],
+    "naming": [
+      "Verbs."
+    ],
+    "testing": "Table-driven tests."
+  },
+  "functions": [
+    {
+      "component": "types",
+      "doc": "Error returns the reason, so *NameError satisfies error.",
+      "file": "internal/greet/errors.go",
+      "id": "fn-name-error-error",
+      "package": "greet",
+      "signature": "func (e *NameError) Error() string",
+      "uses": [
+        "name-error"
+      ]
+    },
+    {
+      "component": "greeting",
+      "doc": "Greet trims the name and returns Hello, \u003cname\u003e!. An empty name is an error.",
+      "file": "internal/greet/greet.go",
+      "id": "fn-greet",
+      "package": "greet",
+      "signature": "func Greet(name string) (string, error)",
+      "uses": [
+        "name-error",
+        "fn-name-error-error"
+      ]
+    },
+    {
+      "component": "farewell",
+      "doc": "Farewell trims the name and returns Goodbye, \u003cname\u003e!. An empty name is an error.",
+      "file": "internal/greet/farewell.go",
+      "id": "fn-farewell",
+      "package": "greet",
+      "signature": "func Farewell(name string) (string, error)",
+      "uses": [
+        "name-error"
+      ]
+    }
+  ],
+  "module": "example.com/greeter",
+  "revision": 0,
+  "spec_version": "2.0",
+  "types": [
+    {
+      "decl": "// NameError says why a name was refused.\ntype NameError struct {\n\tReason string\n}",
+      "file": "internal/greet/errors.go",
+      "id": "name-error",
+      "package": "greet"
+    }
+  ]
+}
