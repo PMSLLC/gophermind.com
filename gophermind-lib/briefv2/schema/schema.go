@@ -83,3 +83,14 @@ func Validate(kind Kind, doc []byte) error {
 	}
 	return sch.Validate(v)
 }
+
+// Raw returns the embedded schema file for kind, byte for byte. The Contract
+// prompt shows it to the model so the reply can be validated against the same
+// text.
+func Raw(kind Kind) ([]byte, error) {
+	s, ok := sources[kind]
+	if !ok {
+		return nil, fmt.Errorf("schema: unknown kind %q", kind)
+	}
+	return files.ReadFile(s.file)
+}

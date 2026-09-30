@@ -110,3 +110,20 @@ func TestUnknownKindAndBadJSON(t *testing.T) {
 		t.Error("malformed JSON must error")
 	}
 }
+
+func TestRawReturnsTheEmbeddedSchema(t *testing.T) {
+	raw, err := schema.Raw(schema.KindContract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("Raw(KindContract) is not JSON: %v", err)
+	}
+	if doc["$id"] != "https://gophermind.local/schema/contract/2.0" {
+		t.Errorf("$id = %v", doc["$id"])
+	}
+	if _, err := schema.Raw("nope"); err == nil {
+		t.Error("unknown kind must error")
+	}
+}

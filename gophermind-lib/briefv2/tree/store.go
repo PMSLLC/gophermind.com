@@ -15,7 +15,8 @@ type Store struct{ dir string }
 
 func NewStore(dir string) *Store { return &Store{dir: dir} }
 
-var notNodes = map[string]bool{"contracts.json": true, "answers.json": true, "approval.json": true, "report.json": true}
+var notNodes = map[string]bool{"contracts.json": true, "answers.json": true, "approval.json": true, "report.json": true,
+	"requirements.json": true, "coverage.json": true}
 
 // Write validates n against the node schema and writes it atomically.
 func (s *Store) Write(n Node) error {
@@ -60,8 +61,9 @@ func (s *Store) WriteAll(t *Tree) error {
 	return nil
 }
 
-// Load reads every node file, skipping run artifacts, and rejects a node that
-// is stored somewhere other than its own Path().
+// Load reads every node file, skipping run artifacts, logs/ and the planner's
+// _state/ working folder, and rejects a node that is stored somewhere other
+// than its own Path().
 func (s *Store) Load() (*Tree, error) {
 	var nodes []Node
 	err := filepath.WalkDir(s.dir, func(p string, d fs.DirEntry, err error) error {
@@ -71,7 +73,7 @@ func (s *Store) Load() (*Tree, error) {
 		rel, _ := filepath.Rel(s.dir, p)
 		rel = filepath.ToSlash(rel)
 		if d.IsDir() {
-			if rel == "logs" {
+			if rel == "logs" || rel == "_state" {
 				return filepath.SkipDir
 			}
 			return nil

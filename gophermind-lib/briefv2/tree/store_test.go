@@ -217,3 +217,25 @@ func TestWriteAllWritesNothingForABadStructure(t *testing.T) {
 		t.Fatalf("WriteAll wrote %d entries for a bad tree", len(ents))
 	}
 }
+
+func TestLoadSkipsPlannerArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	s := tree.NewStore(dir)
+	if err := s.Write(fn(t, "fn-a", "comp", 0)); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"requirements.json", "coverage.json", "_state/decomposed.json", "_state/status.json"} {
+		p := filepath.Join(dir, f)
+		_ = os.MkdirAll(filepath.Dir(p), 0o700)
+		if err := os.WriteFile(p, []byte(`{"not":"a node"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tr, err := s.Load()
+	if err != nil {
+		t.Fatalf("planner artifacts must not be read as nodes: %v", err)
+	}
+	if len(tr.Nodes) != 1 {
+		t.Errorf("loaded %d nodes, want 1", len(tr.Nodes))
+	}
+}

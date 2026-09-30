@@ -1,0 +1,5 @@
+{"types": [], "functions": [
+  {"id": "fn-name-error-error", "package": "greet", "file": "internal/greet/errors.go",
+   "signature": "func (e *NameError) Error() string",
+   "doc": "Error returns the reason, so *NameError satisfies error.", "uses": ["name-error"]}
+], "more": false}

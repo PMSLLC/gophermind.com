@@ -1,0 +1,23 @@
+Here is the outline.
+
+```json
+{
+  "module": "example.com/greeter",
+  "conventions": {
+    "layout": ["internal/greet: pure functions that build messages. No I/O."],
+    "naming": ["Exported functions are verbs."],
+    "errors": "Functions return *NameError as error and never panic.",
+    "testing": "Table-driven tests next to the code."
+  },
+  "components": [
+    {"id": "types", "package": "greet", "exports": []},
+    {"id": "greeting", "package": "greet", "exports": [],
+     "integration_tests": [{"name": "greets a trimmed name", "given": "Greet(\"  Ada  \")", "expect": "Hello, Ada!", "command": "go test ./internal/greet -run TestGreetIntegration"}]},
+    {"id": "farewell", "package": "greet", "exports": []}
+  ],
+  "types": [
+    {"id": "name-error", "package": "greet", "file": "internal/greet/errors.go",
+     "decl": "// NameError says why a name was refused.\ntype NameError struct {\n\tReason string\n}"}
+  ]
+}
+```
