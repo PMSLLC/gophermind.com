@@ -137,7 +137,7 @@ func hostProxy(t *testing.T, target string, resolved []net.IP, rules ...Rule) (*
 	return p, &dialed, &calls
 }
 
-var publicIP = []net.IP{net.ParseIP("203.0.113.9")}
+var publicIP = []net.IP{net.ParseIP("93.184.216.34")}
 
 func TestProxyListensOnLoopbackPort(t *testing.T) {
 	a := newProxy(t)
@@ -249,13 +249,14 @@ func TestNormalizeHost(t *testing.T) {
 func TestForbiddenIP(t *testing.T) {
 	bad := []string{"127.0.0.1", "127.5.5.5", "::1", "10.0.0.1", "172.16.0.1", "172.31.255.255", "192.168.1.1",
 		"169.254.169.254", "169.254.1.1", "100.64.0.1", "0.0.0.0", "::", "::ffff:10.0.0.1", "::ffff:127.0.0.1",
-		"fe80::1", "fc00::1", "fd00::1", "224.0.0.1", "255.255.255.255", "198.18.0.1", "240.0.0.1", "64:ff9b::7f00:1"}
+		"fe80::1", "fc00::1", "fd00::1", "224.0.0.1", "255.255.255.255", "198.18.0.1", "240.0.0.1", "64:ff9b::7f00:1",
+		"192.0.2.1", "198.51.100.7", "203.0.113.9", "2002:7f00:1::1", "::7f00:1", "::8.8.8.8", "ff02::1"}
 	for _, s := range bad {
 		if !forbiddenIP(net.ParseIP(s)) {
 			t.Errorf("%s should be forbidden", s)
 		}
 	}
-	good := []string{"93.184.216.34", "8.8.8.8", "172.32.0.1", "203.0.113.9", "2606:4700::1111"}
+	good := []string{"93.184.216.34", "8.8.8.8", "172.32.0.1", "2606:4700::1111"}
 	for _, s := range good {
 		if forbiddenIP(net.ParseIP(s)) {
 			t.Errorf("%s should be allowed", s)
@@ -330,7 +331,7 @@ func TestProxyAllowDeny(t *testing.T) {
 		}
 	}
 	for _, d := range *dialed {
-		if !strings.HasPrefix(d, "203.0.113.9:") {
+		if !strings.HasPrefix(d, "93.184.216.34:") {
 			t.Errorf("dialed %q, not the resolved IP", d)
 		}
 	}
@@ -474,7 +475,7 @@ func TestHostnameResolvingToPrivateDenied(t *testing.T) {
 		}
 	}
 	// mixed answers: one bad address denies the lot
-	p, dialed, _ := hostProxy(t, addr, []net.IP{net.ParseIP("203.0.113.9"), net.ParseIP("10.0.0.1")}, Rule{Host: "mixed.test"})
+	p, dialed, _ := hostProxy(t, addr, []net.IP{net.ParseIP("93.184.216.34"), net.ParseIP("10.0.0.1")}, Rule{Host: "mixed.test"})
 	resp, _ := via(t, p, "fn-a").Get("http://mixed.test/")
 	resp.Body.Close()
 	if resp.StatusCode != 403 || len(*dialed) != 0 {
@@ -493,7 +494,7 @@ func TestResolveOnceDialResolvedIP(t *testing.T) {
 	if *calls != 1 {
 		t.Fatalf("resolver called %d times", *calls)
 	}
-	if len(*dialed) != 1 || (*dialed)[0] != "203.0.113.9:8123" {
+	if len(*dialed) != 1 || (*dialed)[0] != "93.184.216.34:8123" {
 		t.Fatalf("dialed %v", *dialed)
 	}
 }
@@ -544,28 +545,239 @@ func TestHopByHopStripped(t *testing.T) {
 
 func TestRequestAndResponseCaps(t *testing.T) {
 	srv, _ := upstream(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" {
+		switch r.URL.Path {
+		case "/known":
+			w.Header().Set("Content-Length", "4096")
+			_, _ = w.Write([]byte(strings.Repeat("x", 4096)))
+		case "/chunked":
+			fl := w.(http.Flusher)
+			for i := 0; i < 8; i++ {
+				_, _ = w.Write([]byte(strings.Repeat("x", 512)))
+				fl.Flush()
+			}
+		default:
 			_, _ = io.Copy(io.Discard, r.Body)
-			return
 		}
-		_, _ = w.Write([]byte(strings.Repeat("x", 4096)))
 	})
 	p := newProxyCfg(t, Config{Rules: []Rule{{Host: "127.0.0.1"}}, maxReqBytes: 1024, maxRespBytes: 1024})
 	c := via(t, p, "fn-a")
-	resp, err := c.Post(srv.URL, "text/plain", strings.NewReader(strings.Repeat("y", 4096)))
-	if err == nil {
+	resp, err := c.Post(srv.URL+"/post", "text/plain", strings.NewReader(strings.Repeat("y", 4096)))
+	if err != nil {
+		t.Fatalf("oversized request: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 413 {
+		t.Fatalf("oversized request status %d", resp.StatusCode)
+	}
+	resp, err = c.Get(srv.URL + "/known")
+	if err != nil {
+		t.Fatalf("known-length response: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 502 {
+		t.Fatalf("oversized known-length response status %d", resp.StatusCode)
+	}
+	resp, err = c.Get(srv.URL + "/chunked")
+	if err != nil {
+		t.Fatalf("chunked response: %v", err)
+	}
+	b, rerr := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if rerr == nil || len(b) > 1024 {
+		t.Fatalf("chunked response not aborted at the cap: %d bytes, err %v", len(b), rerr)
+	}
+}
+
+func TestHostHeaderForcedToURLHost(t *testing.T) {
+	var mu sync.Mutex
+	var resolved []string
+	seen := make(chan string, 1)
+	srv, addr := upstream(t, func(w http.ResponseWriter, r *http.Request) { seen <- r.Host })
+	p := newProxyCfg(t, Config{
+		Rules: []Rule{{Host: "a.test"}, {Host: "b.test"}},
+		resolve: func(ctx context.Context, h string) ([]net.IP, error) {
+			mu.Lock()
+			resolved = append(resolved, h)
+			mu.Unlock()
+			return publicIP, nil
+		},
+		dial: func(ctx context.Context, network, a string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "tcp", addr)
+		},
+	})
+	_ = srv
+	if st := rawRequest(t, p, "GET http://a.test/ HTTP/1.1\r\nHost: b.test\r\n\r\n"); st != 200 {
+		t.Fatalf("status %d", st)
+	}
+	if h := <-seen; h != "a.test" {
+		t.Fatalf("upstream saw Host %q", h)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(resolved) != 1 || resolved[0] != "a.test" {
+		t.Fatalf("resolved %v", resolved)
+	}
+}
+
+func TestClientAbortIsNotAFailure(t *testing.T) {
+	started := make(chan struct{}, 1)
+	srv, _ := upstream(t, func(w http.ResponseWriter, r *http.Request) {
+		started <- struct{}{}
+		select {
+		case <-r.Context().Done():
+		case <-time.After(2 * time.Second):
+		}
+	})
+	p := newProxy(t, Rule{Host: "127.0.0.1", Critical: true})
+	ctx, cancel := context.WithCancel(context.Background())
+	req, _ := http.NewRequestWithContext(ctx, "GET", srv.URL, nil)
+	go func() { <-started; cancel() }()
+	if resp, err := via(t, p, "fn-a").Do(req); err == nil {
 		resp.Body.Close()
-		if resp.StatusCode != 413 {
-			t.Fatalf("oversized request status %d", resp.StatusCode)
+	}
+	readLog(t, p, 1)
+	time.Sleep(200 * time.Millisecond)
+	if f := p.Failures("fn-a", time.Time{}); len(f) != 0 {
+		t.Fatalf("client abort recorded %v", f)
+	}
+	if w := p.Warnings("fn-a", time.Time{}); len(w) != 0 {
+		t.Fatalf("client abort recorded warning %v", w)
+	}
+	var s Streak
+	for i := 0; i < 3; i++ {
+		s.Observe("fn-a", len(p.Failures("fn-a", time.Time{})) > 0)
+	}
+	if s.Export()["fn-a"] != 0 {
+		t.Fatal("streak moved")
+	}
+}
+
+func openTunnel(t *testing.T, p *Proxy) (net.Conn, func()) {
+	t.Helper()
+	echo, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		for {
+			c, err := echo.Accept()
+			if err != nil {
+				return
+			}
+			go func() { defer c.Close(); _, _ = io.Copy(c, c) }()
+		}
+	}()
+	conn, err := net.Dial("tcp", p.Addr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.SetDeadline(time.Now().Add(8 * time.Second))
+	tg := echo.Addr().String()
+	fmt.Fprintf(conn, "CONNECT %s HTTP/1.1\r\nHost: %s\r\nProxy-Authorization: Basic %s\r\n\r\n", tg, tg,
+		base64.StdEncoding.EncodeToString([]byte("node-fn-a:x")))
+	br := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(br, nil)
+	if err != nil || resp.StatusCode != 200 {
+		t.Fatalf("tunnel: %v", err)
+	}
+	return conn, func() { conn.Close(); echo.Close() }
+}
+
+func TestTunnelByteCap(t *testing.T) {
+	p := newProxyCfg(t, Config{Rules: []Rule{{Host: "127.0.0.1"}}, maxTunnel: 1024})
+	conn, done := openTunnel(t, p)
+	defer done()
+	go func() {
+		buf := []byte(strings.Repeat("z", 512))
+		for i := 0; i < 64; i++ {
+			if _, err := conn.Write(buf); err != nil {
+				return
+			}
+		}
+	}()
+	n, err := io.Copy(io.Discard, conn)
+	_ = err
+	if n > 4096 {
+		t.Fatalf("tunnel carried %d bytes past a 1024 cap", n)
+	}
+	w := failuresEventually(t, func() []Failure { return p.Warnings("fn-a", time.Time{}) }, 1)
+	if len(w) != 1 || w[0].Kind != "tunnel_cap" || w[0].Host != "127.0.0.1" {
+		t.Fatalf("warnings %v", w)
+	}
+}
+
+func TestTunnelIdleTimeout(t *testing.T) {
+	p := newProxyCfg(t, Config{Rules: []Rule{{Host: "127.0.0.1"}}, idleTimeout: 200 * time.Millisecond})
+	conn, done := openTunnel(t, p)
+	defer done()
+	start := time.Now()
+	_, _ = io.Copy(io.Discard, conn)
+	if time.Since(start) > 4*time.Second {
+		t.Fatal("idle tunnel not closed")
+	}
+	w := failuresEventually(t, func() []Failure { return p.Warnings("fn-a", time.Time{}) }, 1)
+	if len(w) != 1 || w[0].Kind != "tunnel_idle" {
+		t.Fatalf("warnings %v", w)
+	}
+}
+
+func TestConnectDialTimeoutBounded(t *testing.T) {
+	p := newProxyCfg(t, Config{
+		Rules: []Rule{{Host: "127.0.0.1", Critical: true}},
+		Dial:  150 * time.Millisecond,
+		dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	})
+	start := time.Now()
+	st, conn := rawConnect(t, p, "127.0.0.1:9")
+	conn.Close()
+	if st != 504 || time.Since(start) > 2*time.Second {
+		t.Fatalf("status %d after %v", st, time.Since(start))
+	}
+	f := failuresEventually(t, func() []Failure { return p.Failures("-", time.Time{}) }, 1)
+	if len(f) != 1 || f[0].Kind != "timeout" {
+		t.Fatalf("failures %v", f)
+	}
+}
+
+func TestMalformedHostRecordedAsWarning(t *testing.T) {
+	p := newProxy(t, Rule{Host: "example.test"})
+	if st := rawRequest(t, p, "GET http://2130706433/ HTTP/1.1\r\nHost: x\r\n\r\n"); st != 403 {
+		t.Fatalf("status %d", st)
+	}
+	w := failuresEventually(t, func() []Failure { return p.Warnings("-", time.Time{}) }, 1)
+	if len(w) != 1 || w[0].Kind != "denied" {
+		t.Fatalf("warnings %v", w)
+	}
+}
+
+func TestNewValidatesRules(t *testing.T) {
+	for _, bad := range []string{"*.com", "*", "a b", ""} {
+		_, err := New(Config{Listen: "127.0.0.1:0", LogPath: filepath.Join(t.TempDir(), "l"), Rules: []Rule{{Host: bad}}})
+		if err == nil || !strings.Contains(err.Error(), "invalid host") {
+			t.Errorf("rule %q: %v", bad, err)
 		}
 	}
-	resp, err = c.Get(srv.URL)
-	if err == nil {
-		b, rerr := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if rerr == nil && len(b) > 1024 {
-			t.Fatalf("response not capped: %d bytes", len(b))
-		}
+	p := newProxy(t, Rule{Host: "Example.TEST."})
+	if ok, _ := matchRules(p.cfg.Rules, "example.test"); !ok {
+		t.Error("rule not normalized")
+	}
+}
+
+func TestCloseReturnsShutdownError(t *testing.T) {
+	p, err := New(Config{Listen: "127.0.0.1:0", LogPath: filepath.Join(t.TempDir(), "l")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = p.logf.Close() // simulate a failing log shutdown
+	if err := p.Close(); err == nil {
+		t.Fatal("Close hid the log close error")
+	}
+	if err := p.Close(); err != nil {
+		t.Fatalf("second Close: %v", err)
 	}
 }
 
