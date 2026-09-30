@@ -25,6 +25,7 @@ import (
 )
 
 func TestScriptedProviderPopsPerStage(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	g.wire(Script{
 		"implement:fn-greet":    {{Text: "one"}, {Text: "two"}},
@@ -120,6 +121,7 @@ func TestScriptedProviderInjections(t *testing.T) {
 }
 
 func TestScriptedReplyTextStaysOutOfLedger(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	g.wire(Script{"implement:fn-greet": {{Text: "REPLY-" + canarySecret}, {Text: "REPLY-" + canarySecret}, {Text: "ok"}, {Text: "ok"}}})
 	ctx := context.Background()
@@ -149,6 +151,7 @@ func TestScriptedReplyTextStaysOutOfLedger(t *testing.T) {
 }
 
 func TestScriptGateRecordsAndDefaultsToStop(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	g.wire(Script{})
 	res, err := g.gate.Escalate(context.Background(), human.Escalation{NodeID: "fn-greet", Reason: "r"})
@@ -166,6 +169,7 @@ func TestScriptGateRecordsAndDefaultsToStop(t *testing.T) {
 }
 
 func TestOptionsUsesRealCollaborators(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	g.wire(Script{})
 	o := g.options()
@@ -189,6 +193,7 @@ func TestGoodAndBadReadFixtures(t *testing.T) {
 // harness_test helpers used by several files follow.
 
 func TestWave0HelperCommitsTestsAndStubs(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	g.startWave0()
 	dirty, err := g.git.Dirty()

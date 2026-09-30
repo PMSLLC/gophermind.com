@@ -9,6 +9,7 @@ import (
 )
 
 func TestStrayFileFailsAttempt(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	g.startWave0()
 	testFile := g.plan.Leaf("fn-greet").TestFile
@@ -46,6 +47,7 @@ func TestStrayFileFailsAttempt(t *testing.T) {
 }
 
 func TestStrayIgnoresAlreadyDirtyUnlessChanged(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	g.startWave0()
 	write(t, g.abs("scratch.txt"), "v1\n")
@@ -68,6 +70,7 @@ func TestStrayIgnoresAlreadyDirtyUnlessChanged(t *testing.T) {
 }
 
 func TestStrayCatchesNewDirectoriesSymlinksAndDeletes(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	g.startWave0()
 	snap, err := TakeSnapshot(g.repo, g.git)
@@ -103,6 +106,7 @@ func TestStrayCatchesNewDirectoriesSymlinksAndDeletes(t *testing.T) {
 }
 
 func TestSnapshotHashesSymlinkWithoutFollowing(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	g.startWave0()
 	secret := filepath.Join(t.TempDir(), "s")
@@ -128,6 +132,7 @@ func TestSnapshotHashesSymlinkWithoutFollowing(t *testing.T) {
 }
 
 func TestStrayCatchesIgnoredFiles(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	g.startWave0()
 	write(t, filepath.Join(g.repo, ".git", "info", "exclude"), "*.log\nbuild/\n")
@@ -156,6 +161,7 @@ func TestStrayCatchesIgnoredFiles(t *testing.T) {
 }
 
 func TestUnreadableFileIsNotADeletedFile(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	g.startWave0()
 	write(t, g.abs("a.txt"), "secret\n")

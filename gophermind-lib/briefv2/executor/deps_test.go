@@ -29,6 +29,7 @@ var twoDeps = []planner.Dependency{
 }
 
 func TestDepsStepFetchesOnlyListed(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	rc := g.newRC(t)
 	twoDepProxy(t)
@@ -64,6 +65,7 @@ func TestDepsStepFetchesOnlyListed(t *testing.T) {
 }
 
 func TestDepsStepBadVersionStopsRun(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	rc := g.newRC(t)
 	twoDepProxy(t)
@@ -173,6 +175,7 @@ func TestDepsStepVetsBeforeTouchingAnything(t *testing.T) {
 }
 
 func TestGoModVerifyAtEnd(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	rc := g.newRC(t)
 	twoDepProxy(t)

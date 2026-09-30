@@ -13,6 +13,7 @@ import (
 // code relies on it: the real planner, run offline over the scripted replies,
 // leaves an approved plan of five leaves in three waves.
 func TestGreeterFixturePlanIsApproved(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	if err := planner.VerifyApproval(g.runDir); err != nil {
 		t.Fatalf("VerifyApproval: %v", err)

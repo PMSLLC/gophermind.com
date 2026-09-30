@@ -24,6 +24,7 @@ func sha(t *testing.T, path string) string {
 }
 
 func TestLoadPlanGreeter(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	p := g.plan
 
@@ -151,6 +152,7 @@ func snapshot(t *testing.T, dir string) map[string]string {
 }
 
 func TestLoadPlanNeverWrites(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	before := snapshot(t, g.runDir)
 	repoBefore := g.gitCmd("status", "--porcelain", "--untracked-files=all")
@@ -166,6 +168,7 @@ func TestLoadPlanNeverWrites(t *testing.T) {
 }
 
 func TestLoadPlanRefusesChangedPlan(t *testing.T) {
+	t.Parallel()
 	g := newRig(t)
 	deps := filepath.Join(g.runDir, "dependencies.json")
 	raw, err := os.ReadFile(deps)
@@ -189,6 +192,7 @@ func TestLoadPlanRefusesChangedPlan(t *testing.T) {
 }
 
 func TestLoadPlanRefusesBrokenPlans(t *testing.T) {
+	t.Parallel()
 	edit := func(t *testing.T, path string, f func(doc map[string]any)) {
 		t.Helper()
 		raw, err := os.ReadFile(path)
@@ -301,6 +305,7 @@ func editNode(t *testing.T, path string, f func(doc map[string]any)) {
 // TestLeafNetworkComesFromRoot: the brief's network block sits on the root
 // node only; it applies to every leaf unless the leaf has its own list.
 func TestLeafNetworkComesFromRoot(t *testing.T) {
+	t.Parallel()
 	hosts := []any{
 		map[string]any{"host": "api.example.com", "critical": true},
 		map[string]any{"host": "cdn.example.com", "critical": false},
