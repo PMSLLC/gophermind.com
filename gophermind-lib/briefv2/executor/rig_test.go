@@ -86,6 +86,7 @@ type rig struct {
 	fake             *scriptedProvider // set by wire
 	router           *router.Router    // the real router over the fake providers, set by wire
 	gate             *scriptGate       // set by wire
+	dbPath           string            // the SQLite file behind board and ledger
 }
 
 type rigOpts struct {
@@ -141,7 +142,8 @@ func newRig(t *testing.T, mods ...func(*rigOpts)) *rig {
 	briefPath := filepath.Join(t.TempDir(), "brief.md")
 	write(t, briefPath, text)
 
-	d, err := db.Open(filepath.Join(t.TempDir(), "bb.db"))
+	g.dbPath = filepath.Join(t.TempDir(), "bb.db")
+	d, err := db.Open(g.dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}

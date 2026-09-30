@@ -14,12 +14,14 @@ import (
 	"testing"
 	"time"
 
+	"gophermind/gophermind-lib/briefv2/blackboard"
 	"gophermind/gophermind-lib/briefv2/human"
 	"gophermind/gophermind-lib/briefv2/ledger"
 	"gophermind/gophermind-lib/briefv2/packer"
 	"gophermind/gophermind-lib/briefv2/pathsafe"
 	"gophermind/gophermind-lib/briefv2/provider"
 	"gophermind/gophermind-lib/briefv2/router"
+	"gophermind/gophermind-lib/briefv2/runner"
 )
 
 func TestScriptedProviderPopsPerStage(t *testing.T) {
@@ -539,3 +541,249 @@ func useModuleProxy(t *testing.T, url string) {
 	testHooks = depsHooks{GoProxy: url, GoSumDB: "off"}
 	t.Cleanup(func() { testHooks = old })
 }
+
+// ---- Task 11a support: a scripted checker and readers for the stores ----
+
+// outputOf makes a runner.Output holding text. Output has no constructor, so a
+// real shell prints the text once and the runner captures it.
+func outputOf(text string) runner.Output {
+	r := runner.New(runner.Config{})
+	res := r.Run(context.Background(), runner.Spec{
+		Dir: os.TempDir(), Argv: []string{"/bin/sh", "-c", `printf '%s' "$1"`, "sh", text}, Env: []string{"PATH=/usr/bin:/bin"},
+	})
+	if res.Err != nil {
+		panic("harness: outputOf: " + res.Err.Error())
+	}
+	return res.Out
+}
+
+// failVerdict is a failing verdict of the class with names and output text.
+func failVerdict(class string, out string, names ...string) runner.Verdict {
+	return runner.Verdict{Class: class, Names: names, Events: 1, Out: outputOf(out)}
+}
+
+// passVerdict is a pass with one test event.
+func passVerdict() runner.Verdict { return runner.Verdict{Events: 1} }
+
+// fakeChecker is the Checker of the leaf-loop tests. CheckLeaf pops the next
+// scripted verdict of the leaf (found by its test function) and runs Hook, if
+// set, while the "check" is under way. A call with nothing scripted fails the
+// test. Run, BuildVet and Test are not used by a leaf loop; Task 12a adds a
+// RepoScript for the repository-wide ones.
+type fakeChecker struct {
+	t          *testing.T
+	mu         sync.Mutex
+	LeafScript map[string][]runner.Verdict
+	Hook       func(repo string)
+	byFunc     map[string]string
+	calls      map[string]int
+	files      map[string][][]string
+}
+
+func newFakeChecker(g *rig) *fakeChecker {
+	f := &fakeChecker{t: g.t, LeafScript: map[string][]runner.Verdict{}, byFunc: map[string]string{}, calls: map[string]int{}, files: map[string][][]string{}}
+	for _, l := range g.plan.Leaves {
+		f.byFunc[l.TestFunc] = l.ID
+	}
+	return f
+}
+
+var _ Checker = (*fakeChecker)(nil)
+
+func (f *fakeChecker) CheckLeaf(ctx context.Context, c runner.LeafCheck) runner.Verdict {
+	f.mu.Lock()
+	id := f.byFunc[c.TestFunc]
+	f.calls[id]++
+	f.files[id] = append(f.files[id], append([]string(nil), c.Files...))
+	queue := f.LeafScript[id]
+	var v runner.Verdict
+	ok := len(queue) > 0
+	if ok {
+		v, f.LeafScript[id] = queue[0], queue[1:]
+	}
+	hook := f.Hook
+	f.mu.Unlock()
+	if hook != nil {
+		hook(c.Repo)
+	}
+	if !ok {
+		f.t.Errorf("fakeChecker: no verdict scripted for leaf %q", id)
+		return runner.Verdict{Class: runner.ClassHarness, Err: errors.New("fakeChecker: unscripted call")}
+	}
+	return v
+}
+
+func (f *fakeChecker) Run(context.Context, runner.Spec) runner.Result {
+	f.t.Error("fakeChecker.Run: not scripted")
+	return runner.Result{ExitCode: -1, Err: errors.New("fakeChecker: unscripted call")}
+}
+
+func (f *fakeChecker) BuildVet(context.Context, string, []string) runner.Verdict {
+	f.t.Error("fakeChecker.BuildVet: not scripted")
+	return runner.Verdict{Class: runner.ClassHarness, Err: errors.New("fakeChecker: unscripted call")}
+}
+
+func (f *fakeChecker) Test(context.Context, runner.TestSet) runner.Verdict {
+	f.t.Error("fakeChecker.Test: not scripted")
+	return runner.Verdict{Class: runner.ClassHarness, Err: errors.New("fakeChecker: unscripted call")}
+}
+
+// checks is how many times the leaf was checked.
+func (f *fakeChecker) checks(id string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls[id]
+}
+
+// leafRC is a started run (Wave 0 done, real runner) over the scripted
+// providers, with every leaf ready to claim. With fake set, the checker is a
+// fakeChecker and the rig's rc.chk is replaced by it.
+func (g *rig) leafRC(t *testing.T, script Script, fake bool) (*runCtx, *fakeChecker) {
+	t.Helper()
+	g.wire(script)
+	rc, err := startRun(context.Background(), g.options())
+	if rc != nil {
+		t.Cleanup(rc.close)
+	}
+	if err != nil {
+		t.Fatalf("startRun: %v", err)
+	}
+	var fc *fakeChecker
+	if fake {
+		fc = newFakeChecker(g)
+		rc.chk = fc
+	}
+	for _, l := range g.plan.Leaves {
+		if err := g.board.SetStatus(context.Background(), g.id, l.ID, blackboard.StatusPending, blackboard.StatusReady); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return rc, fc
+}
+
+func (g *rig) row(t *testing.T, id string) blackboard.Row {
+	t.Helper()
+	r, err := g.board.Get(context.Background(), g.id, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+// attemptsOf is the attempts recorded on the blackboard for the node.
+func attemptsOf(t *testing.T, board blackboard.Blackboard, id string) []blackboard.Attempt {
+	t.Helper()
+	r, err := board.Get(context.Background(), greeterID, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r.Attempts
+}
+
+// verdictsOf is "fail,fail,pass" for the attempts of the node.
+func verdictsOf(t *testing.T, board blackboard.Blackboard, id string) string {
+	t.Helper()
+	var out []string
+	for _, a := range attemptsOf(t, board, id) {
+		out = append(out, string(a.Verdict))
+	}
+	return strings.Join(out, ",")
+}
+
+// reasonsOf is the failure reasons of the attempts, in order.
+func reasonsOf(t *testing.T, board blackboard.Blackboard, id string) []string {
+	t.Helper()
+	var out []string
+	for _, a := range attemptsOf(t, board, id) {
+		out = append(out, a.FailureReason)
+	}
+	return out
+}
+
+// implementCalls is the ledger rows of the leaf's implement stage, oldest first.
+func implementCalls(t *testing.T, led ledger.Ledger, id string) []ledger.Call {
+	t.Helper()
+	rows, err := led.List(context.Background(), greeterID, ledger.Filter{Stage: "implement:" + id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rows
+}
+
+// stagesOf is the stage of every request the scripted providers received.
+func stagesOf(fake *scriptedProvider) []string {
+	var out []string
+	for _, r := range fake.Requests() {
+		out = append(out, stageOf(r))
+	}
+	return out
+}
+
+// userText is the last user message of a request: the packed prompt.
+func userText(r provider.Request) string {
+	for i := len(r.Messages) - 1; i >= 0; i-- {
+		if r.Messages[i].Role == provider.RoleUser {
+			return r.Messages[i].Content
+		}
+	}
+	return ""
+}
+
+// leafCommits is how many commits of the leaf the work branch holds.
+func (g *rig) leafCommits(id string) int {
+	g.t.Helper()
+	out := strings.TrimSpace(g.gitCmd("log", "--format=%s", "--grep=^gm("+id+"): "))
+	if out == "" {
+		return 0
+	}
+	return len(strings.Split(out, "\n"))
+}
+
+// variant makes a reply that differs from src but behaves the same, so a
+// script can hold many distinct failing replies.
+func variant(src string, n int) string { return src + fmt.Sprintf("\n// variant %d\n", n) }
+
+// hasCanary reports whether any store the run writes holds canary: the SQLite
+// file (and its WAL), the events, every file of the run folder, the ledger
+// rows, the blackboard rows and the commit messages of the work branch. The
+// repository's source files are not a store: a passing reply is committed.
+func hasCanary(t *testing.T, g *rig, canary string) bool {
+	t.Helper()
+	found := false
+	check := func(where string, b []byte) {
+		if bytes.Contains(b, []byte(canary)) {
+			t.Logf("canary %q found in %s", canary, where)
+			found = true
+		}
+	}
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if b, err := os.ReadFile(g.dbPath + suffix); err == nil {
+			check("sqlite"+suffix, b)
+		}
+	}
+	for _, e := range g.sink.Events() {
+		check("an event", []byte(fmt.Sprintf("%+v", e)))
+	}
+	_ = filepath.WalkDir(g.runDir, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if b, rerr := os.ReadFile(p); rerr == nil {
+			check(p, b)
+		}
+		return nil
+	})
+	ctx := context.Background()
+	if rows, err := g.led.List(ctx, g.id, ledger.Filter{}); err == nil {
+		check("the ledger", []byte(fmt.Sprintf("%+v", rows)))
+	}
+	if rows, err := g.board.List(ctx, g.id, blackboard.Filter{}); err == nil {
+		check("the blackboard", []byte(fmt.Sprintf("%+v", rows)))
+	}
+	check("commit messages", []byte(g.gitCmd("log", "--all", "--format=%B")))
+	return found
+}
+
+// stubPath is the absolute path of the leaf's stub file; realPath of its file.
+func (g *rig) stubPath(l *Leaf) string { return filepath.Join(g.repo, filepath.FromSlash(l.StubFile)) }
+func (g *rig) realPath(l *Leaf) string { return filepath.Join(g.repo, filepath.FromSlash(l.File)) }
