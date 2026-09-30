@@ -8,15 +8,21 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"embed"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"go/format"
 	"go/parser"
 	"go/token"
+	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"text/template"
+	"unicode"
+	"unicode/utf8"
 
 	"gophermind/gophermind-lib/briefv2/contract"
 )
@@ -44,8 +50,10 @@ type NodeView struct {
 
 const (
 	maxFailureNames = 8
-	maxFailureLines = 30
-	maxFailureBytes = 2048
+	maxFailureKeep  = 15   // lines kept at each end of the failure text
+	maxFailureBytes = 2048 // total, marker included
+	maxLineBytes    = 512  // one line is clipped (head and tail kept) to this
+	condenseKeep    = 5    // lines kept at each end when the budget cut applies
 )
 
 // Failure is the only thing carried from one attempt to the next, in memory only.
@@ -54,14 +62,18 @@ type Failure struct {
 	Lines []string
 }
 
-// NewFailure keeps at most 8 names, the first 30 non-blank lines of output cut
-// to 2048 bytes in total on a line boundary, and drops every name and line that
-// contains a non-empty secret value. Secrets are dropped before any cut, so a
-// cut cannot split a secret and leave part of it behind.
+// NewFailure keeps at most 8 names and the failure text: the first and last
+// lines of the output (up to 15 at each end), a line `[N lines omitted]`
+// between them when lines were cut, and at most 2048 bytes in total. A line
+// longer than 512 bytes keeps its head and tail with `...` between. Names and
+// lines that contain a secret value (see minSecretLen) are dropped first, and so
+// are lines that together spell one with whitespace removed, so a cut cannot
+// leave part of a secret behind.
 func NewFailure(names []string, output string, secrets []string) Failure {
+	sc := newScan(secrets)
 	var f Failure
 	for _, n := range names {
-		if n == "" || hasSecret(n, secrets) {
+		if n == "" || sc.has(n) {
 			continue
 		}
 		if len(f.Names) == maxFailureNames {
@@ -69,12 +81,9 @@ func NewFailure(names []string, output string, secrets []string) Failure {
 		}
 		f.Names = append(f.Names, strings.ToValidUTF8(n, "?"))
 	}
-	total := 0
+	var lines []string
 	for _, raw := range strings.Split(output, "\n") {
-		if len(f.Lines) == maxFailureLines {
-			break
-		}
-		if hasSecret(raw, secrets) {
+		if sc.has(raw) {
 			continue
 		}
 		l := strings.TrimRight(raw, "\r")
@@ -85,35 +94,177 @@ func NewFailure(names []string, output string, secrets []string) Failure {
 		if strings.TrimSpace(l) == "" {
 			continue
 		}
-		if total+len(l)+1 > maxFailureBytes {
-			break
-		}
-		total += len(l) + 1
-		f.Lines = append(f.Lines, l)
+		lines = append(lines, l)
 	}
+	f.Lines = fitLines(sc.scrub(lines))
 	return f
 }
 
 // Empty reports whether there is nothing to feed back.
 func (f Failure) Empty() bool { return len(f.Names) == 0 && len(f.Lines) == 0 }
 
-func hasSecret(s string, secrets []string) bool {
-	for _, sec := range secrets {
-		if sec != "" && strings.Contains(s, sec) {
+var omittedRE = regexp.MustCompile(`^\[(\d+) lines omitted\]$`)
+
+func clipLine(l string) string {
+	if len(l) <= maxLineBytes {
+		return l
+	}
+	n := (maxLineBytes - 3) / 2
+	h := n
+	for h > 0 && !utf8.RuneStart(l[h]) {
+		h--
+	}
+	t := len(l) - n
+	for t < len(l) && !utf8.RuneStart(l[t]) {
+		t++
+	}
+	return l[:h] + "..." + l[t:]
+}
+
+// condense keeps the first k and last k lines and puts `[N lines omitted]`
+// between them; N counts real lines (an earlier marker adds its own count).
+func condense(lines []string, k int) []string {
+	if len(lines) <= 2*k {
+		return lines
+	}
+	omitted := 0
+	for _, l := range lines[k : len(lines)-k] {
+		if m := omittedRE.FindStringSubmatch(l); m != nil {
+			n, _ := strconv.Atoi(m[1])
+			omitted += n
+		} else {
+			omitted++
+		}
+	}
+	out := append([]string(nil), lines[:k]...)
+	out = append(out, fmt.Sprintf("[%d lines omitted]", omitted))
+	return append(out, lines[len(lines)-k:]...)
+}
+
+func fitLines(lines []string) []string {
+	clipped := make([]string, len(lines))
+	for i, l := range lines {
+		clipped[i] = clipLine(l)
+	}
+	for k := maxFailureKeep; ; k-- {
+		out := condense(clipped, k)
+		size := 0
+		for _, l := range out {
+			size += len(l) + 1
+		}
+		if size <= maxFailureBytes || k == 1 {
+			return out
+		}
+	}
+}
+
+// minSecretLen is the shortest secret value that is scanned for. A shorter
+// value is not a credible secret (it would match ordinary text and drop
+// legitimate output); it still never reaches a prompt by construction, because
+// values are never put into any prompt input.
+const minSecretLen = 6
+
+// scan finds secret values. For each secret of minSecretLen bytes or more it
+// matches the raw value and its %q-escaped, JSON-escaped, URL-escaped and
+// standard and URL base64 forms.
+type scan struct {
+	forms    []string
+	stripped []string
+}
+
+func stripWS(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+func newScan(secrets []string) *scan {
+	sc := &scan{}
+	seen := map[string]bool{}
+	add := func(s string) {
+		if s != "" && !seen[s] {
+			seen[s] = true
+			sc.forms = append(sc.forms, s)
+			if st := stripWS(s); len(st) >= minSecretLen && !seen["\x00"+st] {
+				seen["\x00"+st] = true
+				sc.stripped = append(sc.stripped, st)
+			}
+		}
+	}
+	for _, s := range secrets {
+		if len(s) < minSecretLen {
+			continue
+		}
+		add(s)
+		q := strconv.Quote(s)
+		add(q[1 : len(q)-1])
+		j, _ := json.Marshal(s)
+		add(string(j[1 : len(j)-1]))
+		add(url.QueryEscape(s))
+		add(url.PathEscape(s))
+		for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.URLEncoding, base64.RawStdEncoding, base64.RawURLEncoding} {
+			add(enc.EncodeToString([]byte(s)))
+		}
+	}
+	return sc
+}
+
+func (sc *scan) has(s string) bool {
+	for _, f := range sc.forms {
+		if strings.Contains(s, f) {
 			return true
 		}
 	}
 	return false
 }
 
-func dropSecretLines(in []string, secrets []string) []string {
-	var out []string
-	for _, s := range in {
-		if !hasSecret(s, secrets) {
-			out = append(out, s)
+// scrub drops every line that contains a secret, and every line that takes
+// part in a secret spelled across lines (whitespace removed), until none is left.
+func (sc *scan) scrub(lines []string) []string {
+	cur := make([]string, 0, len(lines))
+	for _, l := range lines {
+		if !sc.has(l) {
+			cur = append(cur, l)
 		}
 	}
-	return out
+	for len(sc.stripped) > 0 {
+		var flat []byte
+		var owner []int
+		for i, l := range cur {
+			for _, b := range []byte(stripWS(l)) {
+				flat = append(flat, b)
+				owner = append(owner, i)
+			}
+		}
+		bad := map[int]bool{}
+		for _, st := range sc.stripped {
+			for from := 0; ; {
+				i := bytes.Index(flat[from:], []byte(st))
+				if i < 0 {
+					break
+				}
+				i += from
+				for j := i; j < i+len(st); j++ {
+					bad[owner[j]] = true
+				}
+				from = i + 1
+			}
+		}
+		if len(bad) == 0 {
+			break
+		}
+		next := make([]string, 0, len(cur))
+		for i, l := range cur {
+			if !bad[i] {
+				next = append(next, l)
+			}
+		}
+		cur = next
+	}
+	return cur
 }
 
 // Inputs is what the caller adds to a NodeView for one attempt.
@@ -150,7 +301,9 @@ func newPacked(text string, dropped []string) Packed {
 	return Packed{Text: text, Bytes: len(text), Tokens: EstimateTokens(len(text)), SHA256: hex.EncodeToString(sum[:]), Dropped: dropped}
 }
 
-// EstimateTokens is ceil(ceil(bytes/4) * 1.1) in integer arithmetic.
+// EstimateTokens is ceil(ceil(bytes/4) * 1.1) in integer arithmetic. The plan's
+// table lists 1101 for 4001 bytes; that is an arithmetic slip, the formula gives
+// 1102 (ceil(1001 * 1.1)) and the formula is what is implemented.
 func EstimateTokens(bytes int) int {
 	t := (bytes + 3) / 4
 	return (t*11 + 9) / 10
@@ -202,6 +355,22 @@ type state struct {
 	testSrc  string
 }
 
+var sectionTagRE = regexp.MustCompile(`(?i)<\s*(file|signature|contract|dependency_signatures|constraints|revision_notes|tests|previous_failure|attempts)\s*>`)
+
+// esc makes untrusted text unable to close or open a section: every "</"
+// becomes `<\/` and a bare section tag gets a backslash after the "<".
+func esc(s string) string {
+	s = strings.ReplaceAll(s, "</", `<\/`)
+	return sectionTagRE.ReplaceAllString(s, `<\$1>`)
+}
+
+func escAll(m map[string]string) map[string]string {
+	for k, v := range m {
+		m[k] = esc(v)
+	}
+	return m
+}
+
 func (s *state) render() (string, error) {
 	deps := "(none)"
 	if len(s.deps) > 0 {
@@ -229,11 +398,11 @@ func (s *state) render() (string, error) {
 		}
 		failure = b.String()
 	}
-	return renderTemplate("implement", map[string]string{
+	return renderTemplate("implement", escAll(map[string]string{
 		"File": s.n.File, "Package": s.n.Package, "Signature": s.n.Signature,
 		"Contract": s.contract, "Deps": deps, "Constraints": cons, "Notes": notes,
 		"TestFile": s.n.TestFile, "TestSource": strings.TrimRight(s.testSrc, "\n"), "Failure": failure,
-	})
+	}))
 }
 
 // Pack builds the prompt for one leaf and cuts it to the budget in a fixed
@@ -252,17 +421,18 @@ func Pack(n NodeView, c *contract.Contracts, in Inputs) (Packed, error) {
 	if err != nil {
 		return Packed{}, errors.New("packer: the function is not in the contracts")
 	}
+	sc := newScan(in.Secrets)
 	s := &state{
 		n: n, contract: strings.Join(slice, "\n\n"), deps: append([]string(nil), n.DependencySignatures...),
-		notes:   dropSecretLines(in.Notes, in.Secrets),
-		fail:    Failure{Names: dropSecretLines(in.Failure.Names, in.Secrets), Lines: dropSecretLines(in.Failure.Lines, in.Secrets)},
+		notes:   sc.scrub(in.Notes),
+		fail:    Failure{Names: scrubNames(in.Failure.Names, sc), Lines: sc.scrub(in.Failure.Lines)},
 		testSrc: n.TestSource,
 	}
 	text, err := s.render()
 	if err != nil {
 		return Packed{}, errors.New("packer: the prompt template failed")
 	}
-	if hasSecret(text, in.Secrets) {
+	if sc.has(text) {
 		return Packed{}, errors.New("packer: a secret value is present in the prompt inputs")
 	}
 	var dropped []string
@@ -280,10 +450,10 @@ func Pack(n NodeView, c *contract.Contracts, in Inputs) (Packed, error) {
 	}
 	steps := []func() (string, bool){
 		func() (string, bool) {
-			if len(s.fail.Lines) <= 10 {
+			if len(s.fail.Lines) <= 2*condenseKeep+1 {
 				return "", false
 			}
-			s.fail.Lines = s.fail.Lines[:10]
+			s.fail.Lines = condense(s.fail.Lines, condenseKeep)
 			return "failure:lines10", true
 		},
 		func() (string, bool) {
@@ -343,6 +513,16 @@ func Pack(n NodeView, c *contract.Contracts, in Inputs) (Packed, error) {
 	return newPacked(text, dropped), nil
 }
 
+func scrubNames(names []string, sc *scan) []string {
+	var out []string
+	for _, n := range names {
+		if !sc.has(n) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
 func removeAt(in []string, i int) []string {
 	out := make([]string, 0, len(in)-1)
 	out = append(out, in[:i]...)
@@ -352,11 +532,14 @@ func removeAt(in []string, i int) []string {
 var (
 	declFuncRE  = regexp.MustCompile(`(?m)^func\s+(?:\(\s*\w*\s*\*?\s*(\w+)[^)]*\)\s*)?(\w+)`)
 	declTypeRE  = regexp.MustCompile(`(?m)^(?:type|var|const)\s+(\w+)`)
-	declGroupRE = regexp.MustCompile(`(?m)^\t(\w+)\b`)
+	groupOpenRE = regexp.MustCompile(`^(?:var|const|type)\s*\($`)
+	memberRE    = regexp.MustCompile(`^[\t ]+(\w+)\b`)
+	wordRE      = regexp.MustCompile(`\w+`)
 )
 
 // declaredNames lists the identifiers one dependency block declares: function
-// and method names, receiver types, types, vars, consts and grouped members.
+// and method names, receiver types, types, vars, consts and the members of a
+// grouped var, const or type block (only inside the parentheses).
 func declaredNames(block string) []string {
 	var names []string
 	for _, m := range declFuncRE.FindAllStringSubmatch(block, -1) {
@@ -365,8 +548,18 @@ func declaredNames(block string) []string {
 	for _, m := range declTypeRE.FindAllStringSubmatch(block, -1) {
 		names = append(names, m[1])
 	}
-	for _, m := range declGroupRE.FindAllStringSubmatch(block, -1) {
-		names = append(names, m[1])
+	inGroup := false
+	for _, l := range strings.Split(block, "\n") {
+		switch {
+		case groupOpenRE.MatchString(strings.TrimRight(l, " \t")):
+			inGroup = true
+		case inGroup && strings.HasPrefix(l, ")"):
+			inGroup = false
+		case inGroup:
+			if m := memberRE.FindStringSubmatch(l); m != nil {
+				names = append(names, m[1])
+			}
+		}
 	}
 	return names
 }
@@ -374,15 +567,15 @@ func declaredNames(block string) []string {
 // unnamedDeps returns the indexes (ascending) of dependency blocks that declare
 // no identifier the contract slice mentions.
 func unnamedDeps(deps []string, slice []string) []int {
-	text := strings.Join(slice, "\n")
+	words := map[string]bool{}
+	for _, w := range wordRE.FindAllString(strings.Join(slice, "\n"), -1) {
+		words[w] = true
+	}
 	var out []int
 	for i, d := range deps {
 		named := false
 		for _, name := range declaredNames(d) {
-			if name == "" || name == "_" {
-				continue
-			}
-			if regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\b`).MatchString(text) {
+			if name != "" && name != "_" && words[name] {
 				named = true
 				break
 			}
@@ -414,14 +607,20 @@ func stripTestComments(src string) (out string, ok bool) {
 	return dropBlank(src, func(l string) bool { return strings.HasPrefix(l, "//") }), false
 }
 
+// dropBlank removes blank lines and the lines extra accepts, except inside a
+// raw string (an odd number of backticks opens or closes one).
 func dropBlank(src string, extra func(trimmed string) bool) string {
 	var keep []string
+	inRaw := false
 	for _, l := range strings.Split(src, "\n") {
 		t := strings.TrimSpace(l)
-		if t == "" || extra(t) {
+		if !inRaw && (t == "" || extra(t)) {
 			continue
 		}
 		keep = append(keep, l)
+		if strings.Count(l, "`")%2 == 1 {
+			inRaw = !inRaw
+		}
 	}
 	return strings.Join(keep, "\n") + "\n"
 }

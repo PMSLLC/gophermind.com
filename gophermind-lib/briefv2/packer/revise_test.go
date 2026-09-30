@@ -2,6 +2,7 @@ package packer
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -10,7 +11,7 @@ import (
 func TestPackReviseNoReplyText(t *testing.T) {
 	n := baseNode()
 	hist := []string{"attempt 1: test_failed TestMakeWidget", "attempt 2: build_failed"}
-	p, err := PackRevise(n, contractsFixture(t), hist)
+	p, err := PackRevise(n, contractsFixture(t), hist, Inputs{Budget: 8000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,18 +29,18 @@ func TestPackReviseNoReplyText(t *testing.T) {
 		t.Error("reply forms missing")
 	}
 	// Only the given history lines: no other attempt text.
-	q, _ := PackRevise(n, contractsFixture(t), nil)
+	q, _ := PackRevise(n, contractsFixture(t), nil, Inputs{Budget: 8000})
 	if strings.Contains(q.Text, "attempt 1") {
 		t.Error("history not caller-driven")
 	}
 	const canary = "CANARY-revise"
-	r, _ := PackRevise(n, contractsFixture(t), []string{canary})
+	r, _ := PackRevise(n, contractsFixture(t), []string{canary}, Inputs{Budget: 8000})
 	forms := fmt.Sprintf("%v %+v %#v %s %q", r, r, r, r, r)
 	js, _ := json.Marshal(r)
 	if strings.Contains(forms, canary) || strings.Contains(string(js), canary) || !strings.Contains(forms, r.SHA256) {
 		t.Error("Packed forms leak or lack the sha")
 	}
-	if _, err := PackRevise(n, nil, nil); err == nil {
+	if _, err := PackRevise(n, nil, nil, Inputs{Budget: 8000}); err == nil {
 		t.Error("nil contracts accepted")
 	}
 }
@@ -78,5 +79,51 @@ func TestParseRevise(t *testing.T) {
 				t.Errorf("got %v %q %v", notes, problem, err)
 			}
 		})
+	}
+}
+
+func TestPackReviseSecretsAndBudget(t *testing.T) {
+	n := baseNode()
+	const sec = "CANARY-secret-value"
+	p, err := PackRevise(n, contractsFixture(t), []string{"attempt 1 " + sec, "attempt 2 ok"}, Inputs{Budget: 8000, Secrets: []string{sec}})
+	if err != nil || strings.Contains(p.Text, sec) || !strings.Contains(p.Text, "attempt 2 ok") {
+		t.Fatalf("history not redacted: %v", err)
+	}
+	bad := n
+	bad.TestSource = baseTest + "// " + sec + "\n"
+	if _, err := PackRevise(bad, contractsFixture(t), nil, Inputs{Budget: 8000, Secrets: []string{sec}}); err == nil || strings.Contains(err.Error(), sec) {
+		t.Errorf("err = %v", err)
+	}
+	if _, err := PackRevise(n, contractsFixture(t), nil, Inputs{}); err == nil {
+		t.Error("zero budget accepted")
+	}
+	// Budget cuts: history to the last 3, then test comments, then the floor error.
+	var hist []string
+	for i := 0; i < 12; i++ {
+		hist = append(hist, fmt.Sprintf("attempt %02d: test_failed TestMakeWidget %s", i, strings.Repeat("n", 60)))
+	}
+	n.TestSource = commentedTest
+	full, err := PackRevise(n, contractsFixture(t), hist, Inputs{Budget: 100000})
+	if err != nil || len(full.Dropped) != 0 {
+		t.Fatal(err)
+	}
+	cut, err := PackRevise(n, contractsFixture(t), hist, Inputs{Budget: full.Tokens - 1})
+	if err != nil || strings.Join(cut.Dropped, ",") != "history:last3" || !strings.Contains(cut.Text, "attempt 11") || strings.Contains(cut.Text, "attempt 08") {
+		t.Errorf("dropped %v (%v)", cut.Dropped, err)
+	}
+	var floor *ErrFloorOverBudget
+	if _, err := PackRevise(n, contractsFixture(t), hist, Inputs{Budget: 200}); !errors.As(err, &floor) || floor.Tokens <= 200 {
+		t.Errorf("err = %v", err)
+	}
+	stripped, _ := stripTestComments(commentedTest)
+	sn := n
+	sn.TestSource = stripped
+	small, err := PackRevise(sn, contractsFixture(t), hist[:3], Inputs{Budget: 100000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mid, err := PackRevise(n, contractsFixture(t), hist[:3], Inputs{Budget: small.Tokens})
+	if err != nil || strings.Join(mid.Dropped, ",") != "test_comments" {
+		t.Errorf("dropped %v (%v)", mid.Dropped, err)
 	}
 }
