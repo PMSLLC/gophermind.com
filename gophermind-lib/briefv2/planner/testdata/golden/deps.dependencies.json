@@ -1,0 +1,12 @@
+[
+  {
+    "module": "github.com/alpha/a",
+    "version": "v0.1.0",
+    "purpose": "a"
+  },
+  {
+    "module": "github.com/zeta/z",
+    "version": "v1.2.3",
+    "purpose": "z"
+  }
+]

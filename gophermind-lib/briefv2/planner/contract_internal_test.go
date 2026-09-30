@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -109,5 +110,39 @@ func TestSlug(t *testing.T) {
 		if got := slug(in); got != want {
 			t.Errorf("slug(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// Model-supplied ids in the new error paths are bounded and syntax-checked.
+func TestOutlineMergeErrorsNeverQuoteArbitraryIDs(t *testing.T) {
+	const canary = "CANARY ID with spaces"
+	long := strings.Repeat("a", 200)
+	first := `{"module": "example.com/x", "conventions": {"layout": ["a"], "naming": ["a"], "errors": "e", "testing": "t"},
+	 "components": [{"id": "` + canary + `", "package": "x"}, {"id": "` + long + `", "package": "x"}], "more": true}`
+	doc, _, _, err := mergeOutline(nil, nil, first, testRunID, nil)
+	if err == nil {
+		// A pass that is locally valid is kept; the ids are refused at the end.
+		_ = doc
+	}
+	for _, c := range []struct{ name, text string }{
+		{"duplicate in one reply", `{"components": [{"id": "` + canary + `", "package": "x"}, {"id": "` + canary + `", "package": "x"}]}`},
+		{"long duplicate in one reply", `{"components": [{"id": "` + long + `", "package": "x"}, {"id": "` + long + `", "package": "x"}]}`},
+	} {
+		_, _, _, err := mergeOutline(nil, nil, c.text, testRunID, nil)
+		if err == nil {
+			t.Fatalf("%s: want an error", c.name)
+		}
+		if strings.Contains(err.Error(), canary) || strings.Contains(err.Error(), long) || strings.Contains(err.Error(), "CANARY") {
+			t.Errorf("%s: error quotes the id: %v", c.name, err)
+		}
+	}
+	if got := boundedID("fine-id"); got != `"fine-id"` {
+		t.Errorf("boundedID = %s", got)
+	}
+	if got := boundedID(canary); got != fmt.Sprintf("<%d bytes>", len(canary)) {
+		t.Errorf("boundedID(bad syntax) = %s", got)
+	}
+	if got := boundedID(long); len(got) > 70 || !strings.HasPrefix(got, `"aaa`) {
+		t.Errorf("boundedID(long) = %s, want at most 64 bytes of the id", got)
 	}
 }

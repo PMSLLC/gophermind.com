@@ -12,3 +12,10 @@ func SetBeforeTestWrite(f func()) func() {
 func ParseOutline(text, briefID string) (map[string]any, []Dependency, error) {
 	return parseOutline(text, briefID)
 }
+
+// parseOutline reads a one-pass outline reply; only tests use it, the planner
+// goes through mergeOutline.
+func parseOutline(text, briefID string) (map[string]any, []Dependency, error) {
+	doc, deps, _, err := mergeOutline(nil, nil, text, briefID, nil)
+	return doc, deps, err
+}

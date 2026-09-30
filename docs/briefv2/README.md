@@ -99,8 +99,8 @@ makes more calls, never a coarser plan.
 
 Truncation and outline passes. A reply the model cut off at the token limit
 (finish reason `length`) is a truncation even when some text arrived: the
-provider returns a truncation error, the router records that attempt as
-`truncated` (not `malformed`), and retries the same model once with double the
+provider returns a truncation error, the router records that attempt as outcome
+`error` with error_kind `truncated` (not `malformed`), and retries the same model once with double the
 budget. The Contract outline asks for 16000 tokens and may grow to 32768; every
 other stage keeps its own budget and the router's 16384 cap. A large brief does
 not need a bigger reply: the outline is written in passes of about 12 components
@@ -109,7 +109,11 @@ later call is told the ids already written. Passes are merged by id (an
 identical repeat is dropped, a different one is an error naming the id), the
 whole merged outline is validated after every pass, and each pass is stored in
 `_state/contract.json`, so a resumed run asks only for the unfinished pass. At
-most 20 passes are made before the stage stops with an error.
+most 20 passes are made before the stage stops with an error. Between passes
+only local checks run (a type may use one a later pass writes); when the
+outline is complete, ids still used but never declared are asked for in up to 2
+repair passes (stored like any pass), and only then does the stage fail, naming
+at most 10 of the ids.
 
 Requirements and coverage. Every top-level bullet under `## Constraints` (C1,
 C2, ...) and `## Acceptance` (A1, A2, ...) and every `###` heading under
