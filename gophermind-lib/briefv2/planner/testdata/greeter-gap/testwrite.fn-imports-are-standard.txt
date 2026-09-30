@@ -1,0 +1,20 @@
+{
+  "tests": [
+    {
+      "name": "accepts standard packages",
+      "given": "fmt and net/http",
+      "expect": "true"
+    },
+    {
+      "name": "accepts no imports",
+      "given": "nil",
+      "expect": "true"
+    },
+    {
+      "name": "refuses a module path",
+      "given": "fmt and github.com/x/y",
+      "expect": "false"
+    }
+  ],
+  "test_file": "package greet\n\nimport (\n\t\"strings\"\n\t\"testing\"\n)\n\nfunc TestImportsAreStandard(t *testing.T) {\n\tcases := []struct {\n\t\tname  string\n\t\tpaths []string\n\t\twant  bool\n\t}{\n\t\t{\"accepts standard packages\", []string{\"fmt\", \"net/http\"}, true},\n\t\t{\"accepts no imports\", nil, true},\n\t\t{\"refuses a module path\", []string{\"fmt\", \"github.com/x/y\"}, false},\n\t}\n\tfor _, c := range cases {\n\t\tt.Run(c.name, func(t *testing.T) {\n\t\t\tif got := ImportsAreStandard(c.paths); got != c.want {\n\t\t\t\tt.Errorf(\"ImportsAreStandard(%s) = %v, want %v\", strings.Join(c.paths, \",\"), got, c.want)\n\t\t\t}\n\t\t})\n\t}\n}\n"
+}
