@@ -273,8 +273,8 @@ func TestSchemaErrorBoundsThePointers(t *testing.T) {
 	if err == nil {
 		t.Fatal("want a schema error")
 	}
-	if n := strings.Count(err.Error(), "/types/"); n != 5 || !strings.Contains(err.Error(), "and 15 more") {
-		t.Errorf("err = %v, want 5 pointers and 15 more", err)
+	if n := strings.Count(err.Error(), "is missing decl"); n != 5 || !strings.Contains(err.Error(), "and 15 more") {
+		t.Errorf("err = %v, want 5 nodes and 15 more", err)
 	}
 }
 

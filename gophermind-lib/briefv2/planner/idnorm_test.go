@@ -82,8 +82,8 @@ func TestSchemaInvalidReplyIsAskedAgainWithThePointers(t *testing.T) {
 			}
 		}
 	}
-	if !strings.Contains(second, "/types/0") {
-		t.Errorf("the retry does not list the offending pointers:\n%s", second)
+	if !strings.Contains(second, `type "name-error" is missing decl`) {
+		t.Errorf("the retry does not name the node and the field:\n%s", second)
 	}
 	if strings.Contains(second, "CANARY") {
 		t.Errorf("the retry note quotes reply text:\n%s", second)

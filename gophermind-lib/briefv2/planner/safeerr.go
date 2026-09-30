@@ -72,7 +72,7 @@ var quotedRE = regexp.MustCompile(`"(?:[^"\\]|\\.)*"`)
 func loadErr(err error, doc map[string]any) error {
 	var ve *jsonschema.ValidationError
 	if errors.As(err, &ve) {
-		return errors.New(schemaErr(ve))
+		return errors.New(nodeSchemaErr(ve, doc))
 	}
 	keep := map[string]string{}
 	for _, key := range []string{"types", "functions", "components"} {
