@@ -1,0 +1,9 @@
+package main
+
+import "net/http"
+
+// serve registers no route and ignores the listen error.
+func serve(addr string) error {
+	http.ListenAndServe(addr, http.NewServeMux())
+	return nil
+}

@@ -1,0 +1,20 @@
+```json
+{
+  "module": "example.com/greeter",
+  "conventions": {
+    "layout": ["internal/greet: pure functions that build messages. No I/O.", "cmd/greeter: the HTTP handlers and the server."],
+    "naming": ["Exported functions are verbs."],
+    "errors": "Functions return *NameError as error and never panic.",
+    "testing": "Table-driven tests next to the code."
+  },
+  "components": [
+    {"id": "types", "package": "greet", "exports": []},
+    {"id": "greet", "package": "greet", "exports": []},
+    {"id": "server", "package": "main", "exports": []}
+  ],
+  "types": [
+    {"id": "name-error", "package": "greet", "file": "internal/greet/errors.go",
+     "decl": "// NameError says why a name was refused.\ntype NameError struct {\n\tReason string\n}\n\n// Error returns the reason, so *NameError satisfies error.\nfunc (e *NameError) Error() string { return e.Reason }"}
+  ]
+}
+```

@@ -1,0 +1,11 @@
+package main
+
+import (
+	"fmt"
+	"net/http"
+)
+
+// helloHandler has no default name.
+func helloHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "Hello, %s!", r.URL.Query().Get("name"))
+}

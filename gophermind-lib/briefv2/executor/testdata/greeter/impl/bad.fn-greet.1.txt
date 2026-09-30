@@ -1,0 +1,6 @@
+package greet
+
+// Greet returns Hello, <name>! without trimming and never refuses.
+func Greet(name string) (string, error) {
+	return "Hello, " + name + "!", nil
+}

@@ -1,0 +1,6 @@
+package main
+
+// serve never listens.
+func serve(addr string) error {
+	return nil
+}

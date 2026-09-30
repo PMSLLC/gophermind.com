@@ -1,0 +1,15 @@
+package main
+
+import (
+	"fmt"
+	"net/http"
+)
+
+// helloHandler says Goodbye by mistake.
+func helloHandler(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		name = "world"
+	}
+	fmt.Fprintf(w, "Goodbye, %s!", name)
+}

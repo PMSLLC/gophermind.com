@@ -1,0 +1,6 @@
+package greet
+
+// Farewell returns Goodbye, <name>! without trimming and never refuses.
+func Farewell(name string) (string, error) {
+	return "Goodbye, " + name + "!", nil
+}

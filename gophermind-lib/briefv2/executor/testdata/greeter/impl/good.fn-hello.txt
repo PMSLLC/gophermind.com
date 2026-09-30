@@ -1,0 +1,15 @@
+package main
+
+import (
+	"fmt"
+	"net/http"
+)
+
+// helloHandler writes Hello, <name>! for the name query parameter, or world when it is empty.
+func helloHandler(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		name = "world"
+	}
+	fmt.Fprintf(w, "Hello, %s!", name)
+}

@@ -1,0 +1,50 @@
+[
+  {
+    "id": "fn-bye",
+    "title": "Handle GET /bye",
+    "description": "Write the farewell for the name query parameter.",
+    "model_tier": "any",
+    "node_class": "handler",
+    "depends_on": ["fn-farewell"],
+    "contract": {
+      "inputs": [
+        {"name": "w", "type": "http.ResponseWriter", "constraints": []},
+        {"name": "r", "type": "*http.Request", "constraints": ["The name query parameter may be absent"]}
+      ],
+      "outputs": [],
+      "errors": [],
+      "side_effects": ["writes the response body"]
+    }
+  },
+  {
+    "id": "fn-hello",
+    "title": "Handle GET /hello",
+    "description": "Write the greeting for the name query parameter.",
+    "model_tier": "any",
+    "node_class": "handler",
+    "depends_on": ["fn-greet"],
+    "contract": {
+      "inputs": [
+        {"name": "w", "type": "http.ResponseWriter", "constraints": []},
+        {"name": "r", "type": "*http.Request", "constraints": ["The name query parameter may be absent"]}
+      ],
+      "outputs": [],
+      "errors": [],
+      "side_effects": ["writes the response body"]
+    }
+  },
+  {
+    "id": "fn-serve",
+    "title": "Serve HTTP",
+    "description": "Register both routes and listen on the address.",
+    "model_tier": "any",
+    "node_class": "wiring",
+    "depends_on": ["fn-bye", "fn-hello"],
+    "contract": {
+      "inputs": [{"name": "addr", "type": "string", "constraints": ["host:port"]}],
+      "outputs": [{"name": "err", "type": "error", "description": "the error http.ListenAndServe returned"}],
+      "errors": [{"when": "the address cannot be listened on", "returns": "the error from http.ListenAndServe"}],
+      "side_effects": ["listens on a TCP port"]
+    }
+  }
+]

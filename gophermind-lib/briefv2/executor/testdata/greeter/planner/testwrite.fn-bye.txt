@@ -1,0 +1,10 @@
+{
+  "tests": [
+    {
+      "name": "answers concurrent callers correctly",
+      "given": "four callers at once, one with no name",
+      "expect": "each body is Goodbye, <its own name>! or Goodbye, world!"
+    }
+  ],
+  "test_file": "package main\n\nimport (\n\t\"net/http/httptest\"\n\t\"sync\"\n\t\"testing\"\n)\n\nfunc TestBye(t *testing.T) {\n\tcases := []struct{ name, want string }{\n\t\t{\"Ada\", \"Goodbye, Ada!\"},\n\t\t{\"Bob\", \"Goodbye, Bob!\"},\n\t\t{\"\", \"Goodbye, world!\"},\n\t\t{\"Di\", \"Goodbye, Di!\"},\n\t}\n\tvar wg sync.WaitGroup\n\tfail := make(chan string, len(cases))\n\tfor _, c := range cases {\n\t\twg.Add(1)\n\t\tgo func(name, want string) {\n\t\t\tdefer wg.Done()\n\t\t\trec := httptest.NewRecorder()\n\t\t\tbyeHandler(rec, httptest.NewRequest(\"GET\", \"/bye?name=\"+name, nil))\n\t\t\tif got := rec.Body.String(); got != want {\n\t\t\t\tfail <- \"byeHandler for \" + name + \" wrote \" + got + \", want \" + want\n\t\t\t}\n\t\t}(c.name, c.want)\n\t}\n\twg.Wait()\n\tclose(fail)\n\tfor msg := range fail {\n\t\tt.Error(msg)\n\t}\n}\n"
+}

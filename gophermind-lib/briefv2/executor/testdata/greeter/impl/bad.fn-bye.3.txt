@@ -1,0 +1,15 @@
+package main
+
+import (
+	"fmt"
+	"net/http"
+)
+
+// byeHandler says Bye.
+func byeHandler(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		name = "world"
+	}
+	fmt.Fprintf(w, "Bye, %s!", name)
+}

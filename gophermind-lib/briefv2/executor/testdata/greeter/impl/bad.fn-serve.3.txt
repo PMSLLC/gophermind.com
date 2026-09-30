@@ -1,0 +1,12 @@
+package main
+
+import "net/http"
+
+// serve listens in a goroutine and returns at once.
+func serve(addr string) error {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/hello", helloHandler)
+	mux.HandleFunc("/bye", byeHandler)
+	go http.ListenAndServe(addr, mux)
+	return nil
+}

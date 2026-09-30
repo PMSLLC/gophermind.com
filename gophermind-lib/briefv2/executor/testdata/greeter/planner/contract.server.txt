@@ -1,0 +1,14 @@
+{"types": [], "functions": [
+  {"id": "fn-bye", "package": "main", "file": "cmd/greeter/bye.go",
+   "signature": "func byeHandler(w http.ResponseWriter, r *http.Request)",
+   "doc": "byeHandler writes Goodbye, <name>! for the name query parameter, or world when it is empty.",
+   "uses": ["fn-farewell"]},
+  {"id": "fn-hello", "package": "main", "file": "cmd/greeter/hello.go",
+   "signature": "func helloHandler(w http.ResponseWriter, r *http.Request)",
+   "doc": "helloHandler writes Hello, <name>! for the name query parameter, or world when it is empty.",
+   "uses": ["fn-greet"]},
+  {"id": "fn-serve", "package": "main", "file": "cmd/greeter/serve.go",
+   "signature": "func serve(addr string) error",
+   "doc": "serve registers /hello and /bye on a ServeMux and calls http.ListenAndServe on addr.",
+   "uses": ["fn-bye", "fn-hello"]}
+], "more": false}

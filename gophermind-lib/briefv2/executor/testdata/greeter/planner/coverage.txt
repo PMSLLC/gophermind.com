@@ -1,0 +1,69 @@
+{
+  "map": [
+    {
+      "requirement": "F1",
+      "nodes": [
+        "fn-greet"
+      ]
+    },
+    {
+      "requirement": "F2",
+      "nodes": [
+        "fn-farewell"
+      ]
+    },
+    {
+      "requirement": "F3",
+      "nodes": [
+        "fn-serve",
+        "fn-hello",
+        "fn-bye"
+      ]
+    },
+    {
+      "requirement": "C1",
+      "nodes": []
+    },
+    {
+      "requirement": "C2",
+      "nodes": [
+        "fn-greet",
+        "fn-farewell",
+        "fn-hello",
+        "fn-bye",
+        "fn-serve"
+      ]
+    },
+    {
+      "requirement": "A1",
+      "nodes": []
+    },
+    {
+      "requirement": "A2",
+      "nodes": []
+    }
+  ],
+  "root_tests": [
+    {
+      "requirement": "C1",
+      "name": "formatted and vetted",
+      "given": "the full tree is verified",
+      "expect": "gofmt lists nothing and vet exits 0",
+      "command": "test -z \"$(gofmt -l .)\" && go vet ./..."
+    },
+    {
+      "requirement": "A1",
+      "name": "hello over HTTP",
+      "given": "the built greeter on a free port",
+      "expect": "GET /hello?name=Ada returns Hello, Ada!",
+      "command": "port=$(perl -MIO::Socket::INET -e '$s=IO::Socket::INET->new(Listen=>1,LocalAddr=>\"127.0.0.1\",LocalPort=>0,Proto=>\"tcp\") or die; print $s->sockport')\ngreeter --addr 127.0.0.1:$port & pid=$!\ni=0; until curl -sf \"http://127.0.0.1:$port/hello?name=Ada\" >/dev/null 2>&1 || [ $i -ge 50 ]; do i=$((i+1)); sleep 0.1; done\ncurl -sf \"http://127.0.0.1:$port/hello?name=Ada\" | grep -qx 'Hello, Ada!'; rc=$?; kill $pid; exit $rc\n"
+    },
+    {
+      "requirement": "A2",
+      "name": "bye over HTTP",
+      "given": "the built greeter on a free port and GREETER_TOKEN set",
+      "expect": "GET /bye?name=Ada returns Goodbye, Ada!",
+      "command": "test -n \"$GREETER_TOKEN\" || exit 1\nport=$(perl -MIO::Socket::INET -e '$s=IO::Socket::INET->new(Listen=>1,LocalAddr=>\"127.0.0.1\",LocalPort=>0,Proto=>\"tcp\") or die; print $s->sockport')\ngreeter --addr 127.0.0.1:$port & pid=$!\ni=0; until curl -sf \"http://127.0.0.1:$port/bye?name=Ada\" >/dev/null 2>&1 || [ $i -ge 50 ]; do i=$((i+1)); sleep 0.1; done\ncurl -sf \"http://127.0.0.1:$port/bye?name=Ada\" | grep -qx 'Goodbye, Ada!'; exit $?\n"
+    }
+  ]
+}

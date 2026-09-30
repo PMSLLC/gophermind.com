@@ -1,0 +1,11 @@
+package main
+
+import (
+	"fmt"
+	"net/http"
+)
+
+// byeHandler has no default name.
+func byeHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "Goodbye, %s!", r.URL.Query().Get("name"))
+}
