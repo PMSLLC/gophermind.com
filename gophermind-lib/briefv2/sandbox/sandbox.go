@@ -1,15 +1,28 @@
 // Package sandbox builds the macOS sandbox-exec profile every child process of
 // the executor runs under, and wraps an exec.Cmd to use it.
+//
+// Ruling: the plan mandates "(allow default)" followed by targeted denies, so
+// process exec, fork, signals and mach-lookup stay open. Only file writes,
+// reads of the home directory and network access are contained. The residual
+// risk is that model-written code can still reach mach services, exec any
+// binary it can read, and signal other processes of the same user. A
+// (deny process-exec) rule was tried in scope and left out: go test must run
+// binaries it builds under the scratch directory, so a deny would be broad or
+// would break the toolchain.
 package sandbox
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Profile names the paths a sandboxed child may touch. Writes to <Repo>/.git are
@@ -53,21 +66,79 @@ func Required(mode, goos string) (bool, error) {
 	return true, nil
 }
 
-// resolve validates one path and returns it with symlinks resolved. Errors name
-// the field and a byte count, never the path.
-func resolve(field, p string) (string, error) {
-	if !filepath.IsAbs(p) {
-		return "", fmt.Errorf("sandbox: %s (%d bytes) is not an absolute path", field, len(p))
+// pathOpts tunes resolve per field.
+type pathOpts struct {
+	writable     bool // may not be "/" nor the user's home directory
+	missingSkip  bool // a path that does not exist is skipped, not an error
+	missingAsOK  bool // a missing tail is allowed if its nearest ancestor resolves
+	allowShallow bool // permit fewer than two path components
+}
+
+func validChars(p string) bool {
+	if !utf8.ValidString(p) {
+		return false
 	}
-	if strings.ContainsAny(p, "\"\\\x00\n") {
-		return "", fmt.Errorf("sandbox: %s (%d bytes) contains a character not allowed in a profile", field, len(p))
+	for _, r := range p {
+		if r == '"' || r == '\\' || !unicode.IsPrint(r) {
+			return false
+		}
+	}
+	return true
+}
+
+func components(p string) int {
+	t := strings.Trim(p, "/")
+	if t == "" {
+		return 0
+	}
+	return strings.Count(t, "/") + 1
+}
+
+// resolve validates one path and returns it with symlinks resolved. Errors name
+// the field, never the path. A skipped path returns "" and a nil error.
+func resolve(field, p string, o pathOpts) (string, error) {
+	if !filepath.IsAbs(p) {
+		return "", fmt.Errorf("sandbox: %s is not an absolute path", field)
+	}
+	if !validChars(p) {
+		return "", fmt.Errorf("sandbox: %s contains a character not allowed in a profile", field)
 	}
 	r, err := filepath.EvalSymlinks(p)
-	if err != nil {
-		return "", fmt.Errorf("sandbox: %s (%d bytes) cannot be resolved", field, len(p))
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
+		if o.missingSkip {
+			return "", nil
+		}
+		if o.missingAsOK {
+			cur, rest := filepath.Clean(p), ""
+			for {
+				parent := filepath.Dir(cur)
+				rest = filepath.Join(filepath.Base(cur), rest)
+				if parent == cur {
+					break
+				}
+				cur = parent
+				if base, e := filepath.EvalSymlinks(cur); e == nil {
+					r, err = filepath.Join(base, rest), nil
+					break
+				}
+			}
+		}
 	}
-	if !filepath.IsAbs(r) || strings.ContainsAny(r, "\"\\\x00\n") {
-		return "", fmt.Errorf("sandbox: %s (%d bytes) contains a character not allowed in a profile", field, len(p))
+	if err != nil {
+		return "", fmt.Errorf("sandbox: %s cannot be resolved", field)
+	}
+	if !filepath.IsAbs(r) || !validChars(r) {
+		return "", fmt.Errorf("sandbox: %s contains a character not allowed in a profile", field)
+	}
+	if !o.allowShallow && components(r) < 2 {
+		return "", fmt.Errorf("sandbox: %s is too broad to sandbox", field)
+	}
+	if o.writable {
+		if h, e := os.UserHomeDir(); e == nil && h != "" {
+			if hr, e := filepath.EvalSymlinks(h); e == nil && hr == r {
+				return "", fmt.Errorf("sandbox: %s is too broad to sandbox", field)
+			}
+		}
 	}
 	return r, nil
 }
@@ -90,13 +161,14 @@ func (p Profile) Text() (string, error) {
 		in    string
 		out   *string
 		must  bool
+		opts  pathOpts
 	}{
-		{"Repo", p.Repo, &repo, true},
-		{"Scratch", p.Scratch, &scratch, true},
-		{"GoCache", p.GoCache, &goCache, true},
-		{"RunDir", p.RunDir, &runDir, false},
-		{"GoModCache", p.GoModCache, &modCache, false},
-		{"Home", p.Home, &home, false},
+		{"Repo", p.Repo, &repo, true, pathOpts{writable: true}},
+		{"Scratch", p.Scratch, &scratch, true, pathOpts{writable: true}},
+		{"GoCache", p.GoCache, &goCache, true, pathOpts{writable: true}},
+		{"RunDir", p.RunDir, &runDir, false, pathOpts{writable: true, missingAsOK: true}},
+		{"GoModCache", p.GoModCache, &modCache, false, pathOpts{writable: p.ModCacheWritable}},
+		{"Home", p.Home, &home, false, pathOpts{}},
 	} {
 		if req.in == "" {
 			if req.must {
@@ -104,17 +176,19 @@ func (p Profile) Text() (string, error) {
 			}
 			continue
 		}
-		if *req.out, err = resolve(req.field, req.in); err != nil {
+		if *req.out, err = resolve(req.field, req.in, req.opts); err != nil {
 			return "", err
 		}
 	}
 	ro := make([]string, 0, len(p.ReadOnly))
 	for i, r := range p.ReadOnly {
-		v, err := resolve(fmt.Sprintf("ReadOnly[%d]", i), r)
+		v, err := resolve(fmt.Sprintf("ReadOnly[%d]", i), r, pathOpts{missingSkip: true, allowShallow: true})
 		if err != nil {
 			return "", err
 		}
-		ro = append(ro, v)
+		if v != "" {
+			ro = append(ro, v)
+		}
 	}
 
 	writes := []string{repo, scratch, goCache}
