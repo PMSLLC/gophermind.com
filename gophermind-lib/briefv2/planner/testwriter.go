@@ -20,6 +20,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"gophermind/gophermind-lib/briefv2/contract"
+	"gophermind/gophermind-lib/briefv2/pathsafe"
 	"gophermind/gophermind-lib/briefv2/router"
 	"gophermind/gophermind-lib/briefv2/tree"
 )
@@ -141,7 +142,7 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	pkg, _ := ct["package"].(string)
 	funcName := testFuncName(id)
 	rel := testFilePath(id, file)
-	abs, err := safeTestPath(r.repo, rel)
+	abs, err := pathsafe.ResolveTest(r.repo, rel)
 	if err != nil {
 		return writtenTests{}, err
 	}
@@ -185,7 +186,7 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	// Check it again before each step that touches the disk.
 	beforeTestWrite()
 	recheck := func() error {
-		if _, err := safeTestPath(r.repo, rel); err != nil {
+		if _, err := pathsafe.ResolveTest(r.repo, rel); err != nil {
 			return err
 		}
 		if _, err := os.Lstat(abs); err == nil {
@@ -204,13 +205,13 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	if err := recheck(); err != nil {
 		return writtenTests{}, err
 	}
-	f, err := os.OpenFile(abs, os.O_WRONLY|os.O_CREATE|os.O_EXCL|openNoFollow, 0o644)
+	f, err := os.OpenFile(abs, os.O_WRONLY|os.O_CREATE|os.O_EXCL|pathsafe.NoFollow, 0o644)
 	if err != nil {
 		return writtenTests{}, fmt.Errorf("writing %s: %s", path.Base(rel), osReason(err))
 	}
 	// A directory swapped for a link after the last check would have been
 	// followed by the open: undo that write.
-	if err := insideRepo(r.repo, filepath.Dir(abs)); err != nil {
+	if err := pathsafe.InsideRepo(r.repo, filepath.Dir(abs)); err != nil {
 		f.Close()
 		os.Remove(abs)
 		return writtenTests{}, err
@@ -316,57 +317,6 @@ func checkTestSource(src, pkg, funcName, module string) error {
 	return fmt.Errorf("test file has no func %s(t *testing.T)", funcName)
 }
 
-// safeTestPath returns where rel lands inside repo, refusing anything that is
-// not a test file strictly inside the repository, including a path that would
-// pass through a symbolic link pointing out of it.
-func safeTestPath(repo, rel string) (string, error) {
-	if rel == "" || path.IsAbs(rel) || strings.Contains(rel, `\`) || path.Clean(rel) != rel || rel == ".." || strings.HasPrefix(rel, "../") {
-		return "", fmt.Errorf("test file path (%d bytes) is not a clean path inside the repository", len(rel))
-	}
-	if !strings.HasSuffix(rel, "_test.go") {
-		return "", fmt.Errorf("test file path (%d bytes) does not end in _test.go", len(rel))
-	}
-	root, err := filepath.EvalSymlinks(repo)
-	if err != nil {
-		return "", err
-	}
-	abs := filepath.Join(repo, filepath.FromSlash(rel))
-	// The deepest directory on the way that already exists decides where the
-	// file would really be written.
-	dir := filepath.Dir(abs)
-	for !exists(dir) {
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
-	real, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		return "", err
-	}
-	if real != root && !strings.HasPrefix(real, root+string(filepath.Separator)) {
-		return "", fmt.Errorf("test file path (%d bytes) resolves outside the repository", len(rel))
-	}
-	// No directory the path passes through may be a symbolic link, even one
-	// that points back inside the repository.
-	cur := repo
-	for _, part := range strings.Split(path.Dir(rel), "/") {
-		if part == "." {
-			continue
-		}
-		cur = filepath.Join(cur, part)
-		fi, err := os.Lstat(cur)
-		if err != nil {
-			break
-		}
-		if fi.Mode()&os.ModeSymlink != 0 {
-			return "", fmt.Errorf("test file path (%d bytes) passes through a symbolic link", len(rel))
-		}
-	}
-	return abs, nil
-}
-
 // finishTree writes the complete tree, checks it, records the test files the
 // executor must never let an implementer edit, and creates the blackboard rows.
 func (p *Planner) finishTree(ctx context.Context, r *run, c *contract.Contracts, dec decomposed, st testwriterState, w map[string]int) error {
@@ -458,19 +408,6 @@ func (p *Planner) finishTree(ctx context.Context, r *run, c *contract.Contracts,
 	}
 	r.status.PlannedAt = p.d.Now().UTC().Format("2006-01-02T15:04:05Z")
 	return r.saveStatus()
-}
-
-// insideRepo refuses a directory whose real location is outside the repository.
-func insideRepo(repo, dir string) error {
-	root, err := filepath.EvalSymlinks(repo)
-	if err != nil {
-		return errors.New("the repository root cannot be resolved")
-	}
-	real, err := filepath.EvalSymlinks(dir)
-	if err != nil || (real != root && !strings.HasPrefix(real, root+string(filepath.Separator))) {
-		return errors.New("test file directory resolves outside the repository")
-	}
-	return nil
 }
 
 // beforeTestWrite is a seam for tests: it runs between the model call and the
