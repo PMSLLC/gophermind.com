@@ -682,3 +682,26 @@ func TestDeclaredNamesGroupOnly(t *testing.T) {
 		t.Errorf("names = %v", names)
 	}
 }
+
+func TestHasSecretForms(t *testing.T) {
+	const sec = "s3cr3t value+/=x"
+	q := strconv.Quote(sec)
+	forms := []string{
+		sec, q[1 : len(q)-1], url.QueryEscape(sec), url.PathEscape(sec),
+		base64.StdEncoding.EncodeToString([]byte(sec)), base64.URLEncoding.EncodeToString([]byte(sec)),
+	}
+	for _, f := range forms {
+		if !HasSecret("prefix "+f+" suffix", []string{sec}) {
+			t.Errorf("form %q not found", f)
+		}
+	}
+	if HasSecret("nothing here", []string{sec}) {
+		t.Error("clean text flagged")
+	}
+	if HasSecret(sec, []string{"short"}) {
+		t.Error("a secret under the minimum length must not match")
+	}
+	if HasSecret("anything", nil) {
+		t.Error("no secrets, no match")
+	}
+}

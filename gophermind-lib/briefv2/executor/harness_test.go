@@ -593,6 +593,28 @@ type fakeChecker struct {
 	byFunc     map[string]string
 	calls      map[string]int
 	files      map[string][][]string
+
+	// RepoScript scripts the repository-wide checks of a wave. While it is nil
+	// BuildVet and Test are errors (a leaf loop must not call them); once set, a
+	// call with nothing scripted passes. RepoHook runs inside every BuildVet.
+	RepoScript *repoScript
+	RepoHook   func(repo string)
+	buildVets  int
+	testCalls  []repoCall
+}
+
+// repoScript holds the verdicts of BuildVet (in order) and of Test, keyed by
+// TestSet.Pkg (in order per package).
+type repoScript struct {
+	BuildVet []runner.Verdict
+	Test     map[string][]runner.Verdict
+}
+
+// repoCall is what one Test call was asked.
+type repoCall struct {
+	Pkg   string
+	Funcs []string
+	Race  bool
 }
 
 func newFakeChecker(g *rig) *fakeChecker {
@@ -633,14 +655,41 @@ func (f *fakeChecker) Run(context.Context, runner.Spec) runner.Result {
 	return runner.Result{ExitCode: -1, Err: errors.New("fakeChecker: unscripted call")}
 }
 
-func (f *fakeChecker) BuildVet(context.Context, string, []string) runner.Verdict {
-	f.t.Error("fakeChecker.BuildVet: not scripted")
-	return runner.Verdict{Class: runner.ClassHarness, Err: errors.New("fakeChecker: unscripted call")}
+func (f *fakeChecker) BuildVet(ctx context.Context, repo string, env []string) runner.Verdict {
+	f.mu.Lock()
+	rs, hook := f.RepoScript, f.RepoHook
+	if rs == nil {
+		f.mu.Unlock()
+		f.t.Error("fakeChecker.BuildVet: not scripted")
+		return runner.Verdict{Class: runner.ClassHarness, Err: errors.New("fakeChecker: unscripted call")}
+	}
+	f.buildVets++
+	v := runner.Verdict{}
+	if len(rs.BuildVet) > 0 {
+		v, rs.BuildVet = rs.BuildVet[0], rs.BuildVet[1:]
+	}
+	f.mu.Unlock()
+	if hook != nil {
+		hook(repo)
+	}
+	return v
 }
 
-func (f *fakeChecker) Test(context.Context, runner.TestSet) runner.Verdict {
-	f.t.Error("fakeChecker.Test: not scripted")
-	return runner.Verdict{Class: runner.ClassHarness, Err: errors.New("fakeChecker: unscripted call")}
+func (f *fakeChecker) Test(ctx context.Context, t runner.TestSet) runner.Verdict {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.RepoScript == nil {
+		f.t.Error("fakeChecker.Test: not scripted")
+		return runner.Verdict{Class: runner.ClassHarness, Err: errors.New("fakeChecker: unscripted call")}
+	}
+	f.testCalls = append(f.testCalls, repoCall{Pkg: t.Pkg, Funcs: append([]string(nil), t.Funcs...), Race: t.Race})
+	q := f.RepoScript.Test[t.Pkg]
+	if len(q) == 0 {
+		return passVerdict()
+	}
+	v := q[0]
+	f.RepoScript.Test[t.Pkg] = q[1:]
+	return v
 }
 
 // checks is how many times the leaf was checked.
