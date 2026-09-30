@@ -515,3 +515,100 @@ func TestNoSecretValueLeavesTheVault(t *testing.T) {
 		}
 	}
 }
+
+// A crash between writing a test file and saving the state: the file is
+// recognised by its recorded hash and no model call is repeated; a file with
+// other content is still refused.
+func TestResumeAfterACrashBetweenTheWriteAndTheSave(t *testing.T) {
+	crash := func(t *testing.T) *rig {
+		g := newRig(t, approving())
+		g.mustPlan(planner.Options{})
+		var st struct {
+			Nodes   map[string]json.RawMessage `json:"nodes"`
+			Pending map[string]json.RawMessage `json:"pending"`
+		}
+		if err := json.Unmarshal(g.read("_state/testwriter.json"), &st); err != nil {
+			t.Fatal(err)
+		}
+		st.Pending = map[string]json.RawMessage{"fn-greet": st.Nodes["fn-greet"]}
+		delete(st.Nodes, "fn-greet")
+		writeFileT(t, filepath.Join(g.runDir, "_state", "testwriter.json"), st)
+		var status map[string]any
+		if err := json.Unmarshal(g.read("_state/status.json"), &status); err != nil {
+			t.Fatal(err)
+		}
+		delete(status, "planned_at")
+		writeFileT(t, filepath.Join(g.runDir, "_state", "status.json"), status)
+		g.wire()
+		return g
+	}
+	t.Run("the recorded file is accepted", func(t *testing.T) {
+		g := crash(t)
+		g.mustPlan(planner.Options{RunID: greeterID})
+		if got := g.stagesCalled(); len(got) != 0 {
+			t.Errorf("resume called %v", got)
+		}
+	})
+	t.Run("a foreign file is refused", func(t *testing.T) {
+		g := crash(t)
+		mine := filepath.Join(g.repo, "internal", "greet", "fn_greet_test.go")
+		if err := os.WriteFile(mine, []byte("package greet\n// written by a person\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, err := g.plan(planner.Options{RunID: greeterID})
+		if err == nil || !strings.Contains(err.Error(), "already exists") {
+			t.Fatalf("err = %v", err)
+		}
+		if got, _ := os.ReadFile(mine); !strings.Contains(string(got), "written by a person") {
+			t.Error("the file was overwritten")
+		}
+	})
+}
+
+func writeFileT(t *testing.T, path string, v any) {
+	t.Helper()
+	raw, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A symbolic link at the final path, even a dangling one, is never written through.
+func TestTheTestWriterNeverWritesThroughASymlink(t *testing.T) {
+	t.Run("dangling link at the final path", func(t *testing.T) {
+		g := newRig(t, approving())
+		outside := filepath.Join(t.TempDir(), "target")
+		dir := filepath.Join(g.repo, "internal", "greet")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(outside, filepath.Join(dir, "fn_greet_test.go")); err != nil {
+			t.Skip(err)
+		}
+		if _, err := g.plan(planner.Options{}); err == nil || !strings.Contains(err.Error(), "already exists") {
+			t.Fatalf("err = %v", err)
+		}
+		if _, err := os.Stat(outside); err == nil {
+			t.Error("a file was written through the link")
+		}
+	})
+	t.Run("parent directory linked outside", func(t *testing.T) {
+		g := newRig(t, approving())
+		outside := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(g.repo, "internal"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(outside, filepath.Join(g.repo, "internal", "greet")); err != nil {
+			t.Skip(err)
+		}
+		if _, err := g.plan(planner.Options{}); err == nil || !strings.Contains(err.Error(), "outside the repository") {
+			t.Fatalf("err = %v", err)
+		}
+		if ents, _ := os.ReadDir(outside); len(ents) != 0 {
+			t.Error("a file was written outside the repository")
+		}
+	})
+}
