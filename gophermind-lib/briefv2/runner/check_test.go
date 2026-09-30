@@ -280,3 +280,46 @@ func TestBuildLeavesNoOutputFile(t *testing.T) {
 		t.Fatal("a binary was written into the package directory")
 	}
 }
+
+// Two temp repos that share one GOCACHE, with the same package path and file
+// names but different code, never see each other's compile or test results;
+// and go test never serves a cached result (-count=1): a test that appends to
+// a file runs once per check.
+func TestSharedGoCacheIsContentAddressedAndResultsAreNotCached(t *testing.T) {
+	counter := filepath.Join(realDir(t), "runs")
+	mk := func(body, cache string) *rig {
+		g := newRig(t, map[string]string{
+			"a.go": "package t\n\nfunc Val() int { return " + body + " }\n",
+			"a_test.go": "package t\n\nimport (\n\t\"os\"\n\t\"testing\"\n)\n\nfunc TestVal(t *testing.T) {\n" +
+				"\tf, err := os.OpenFile(os.Getenv(\"GM_COUNT_FILE\"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)\n" +
+				"\tif err == nil {\n\t\tf.WriteString(\"x\\n\")\n\t\tf.Close()\n\t}\n" +
+				"\tif Val() != 1 {\n\t\tt.Fatal(\"bad\")\n\t}\n}\n",
+		})
+		g.r = New(Config{Grace: time.Second}) // unsandboxed: the cache is shared across two sandbox profiles otherwise
+		for i, kv := range g.env {
+			if strings.HasPrefix(kv, "GOCACHE=") {
+				g.env[i] = "GOCACHE=" + cache
+			}
+		}
+		g.env = append(g.env, "GM_COUNT_FILE="+counter)
+		return g
+	}
+	cache := realDir(t)
+	okRepo, badRepo := mk("1", cache), mk("2", cache)
+	check := func(g *rig) Verdict {
+		return g.r.CheckLeaf(context.Background(), g.leaf("TestVal", 0, "a.go"))
+	}
+	if v := check(okRepo); !v.Pass() {
+		t.Fatalf("first repo: %q", v.Reason())
+	}
+	if v := check(badRepo); v.Class != ClassTestFail {
+		t.Fatalf("second repo with different code: %q, want test_fail (it must not see the first repo's pass)", v.Reason())
+	}
+	if v := check(okRepo); !v.Pass() {
+		t.Fatalf("first repo again: %q (it must not see the second repo's failure)", v.Reason())
+	}
+	raw, err := os.ReadFile(counter)
+	if err != nil || strings.Count(string(raw), "x") != 3 {
+		t.Fatalf("the test ran %d times for 3 checks (err %v): go test served a cached result", strings.Count(string(raw), "x"), err)
+	}
+}
