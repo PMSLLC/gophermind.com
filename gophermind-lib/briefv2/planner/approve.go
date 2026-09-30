@@ -53,9 +53,10 @@ func (p *Planner) approve(ctx context.Context, r *run) error {
 }
 
 // RenderPlan is the plan as a person approves it, and its SHA-256. It is
-// built only from files in the run folder, and it contains everything in
-// coverage.json, so changing the contract, a draft, an answer or the coverage
-// mapping after approval changes the hash.
+// built only from files in the run folder. The hash covers the summary text
+// and the bytes of contracts.json, the drafts and classes, coverage.json and
+// answers.json, so changing a signature, a file path, a dependency, an
+// answer or the coverage mapping after approval changes the hash.
 func RenderPlan(runDir string) (markdown, hash string, err error) {
 	r := &run{dir: runDir}
 	src, err := os.ReadFile(r.path(fileBrief))
@@ -191,9 +192,24 @@ func RenderPlan(runDir string) (markdown, hash string, err error) {
 	}
 
 	markdown = s.String()
-	sum := sha256.Sum256([]byte(markdown))
-	return markdown, hex.EncodeToString(sum[:]), nil
+	// The summary cannot show every signature, file path or dependency edge, so
+	// the hash also folds in the files that decide what is written to the
+	// repository. Changing any byte of them after approval invalidates it.
+	h := sha256.New()
+	h.Write([]byte(markdown))
+	for _, name := range hashedFiles {
+		raw, err := os.ReadFile(r.path(name))
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", "", err
+		}
+		fmt.Fprintf(h, "\x00%s\x00%d\x00", name, len(raw))
+		h.Write(raw)
+	}
+	return markdown, hex.EncodeToString(h.Sum(nil)), nil
 }
+
+// hashedFiles are the run folder files whose bytes are part of the plan hash.
+var hashedFiles = []string{fileContracts, stateDecomposed, stateClasses, fileCoverage, fileAnswers}
 
 func orNone(list []string) string {
 	if len(list) == 0 {

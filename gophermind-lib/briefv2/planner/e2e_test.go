@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -409,6 +410,10 @@ func TestTheTestWriterOnlyWritesItsOwnFilesInsideTheRepo(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(g.runDir, "_state", "decomposed.json"), []byte(edited), 0o600); err != nil {
 			t.Fatal(err)
 		}
+		// The edit invalidates the approval; approve again so the path guard is what is tested.
+		if err := os.Remove(filepath.Join(g.runDir, "approval.json")); err != nil {
+			t.Fatal(err)
+		}
 		g.wire()
 		_, err := g.plan(planner.Options{RunID: greeterID})
 		if err == nil || !strings.Contains(err.Error(), "node fn-greet") || !strings.Contains(err.Error(), "is not a clean path inside the repository") {
@@ -641,5 +646,41 @@ func TestAParentSwappedForALinkDuringTheCallIsRefused(t *testing.T) {
 	}
 	if ents, _ := os.ReadDir(outside); len(ents) != 0 {
 		t.Errorf("%d entries were written outside the repository", len(ents))
+	}
+}
+
+// The approval covers what will be written to the repository: signatures,
+// file paths and dependency edges, none of which the summary text shows.
+func TestEditingASignatureAFilePathOrADependsOnInvalidatesTheApproval(t *testing.T) {
+	cases := []struct{ name, file, from, to string }{
+		{"a signature in the contract", "contracts.json", "func Greet(name string) (string, error)", "func Greet(name string, loud bool) (string, error)"},
+		{"a file path in the contract", "contracts.json", "internal/greet/greet.go", "internal/greet/hello.go"},
+		{"a file path in a draft", "_state/decomposed.json", "internal/greet/farewell.go", "internal/greet/bye.go"},
+		{"a depends_on in a draft", "_state/decomposed.json", "re:\"depends_on\": \\[\\s*\"fn-name-error-error\"\\s*\\]", `"depends_on": []`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			g := newRig(t, approving())
+			g.mustPlan(planner.Options{StopAfter: "approve"})
+			raw := string(g.read(c.file))
+			edited := strings.Replace(raw, c.from, c.to, 1)
+			if re, ok := strings.CutPrefix(c.from, "re:"); ok {
+				edited = regexp.MustCompile(re).ReplaceAllLiteralString(raw, c.to)
+			}
+			if edited == raw {
+				t.Fatalf("the edit %q did not change %s", c.from, c.file)
+			}
+			if err := os.WriteFile(filepath.Join(g.runDir, c.file), []byte(edited), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			g.wire()
+			_, err := g.plan(planner.Options{RunID: greeterID})
+			if err == nil || !strings.Contains(err.Error(), "approval.json does not match the plan as it stands") {
+				t.Fatalf("err = %v, want the stale approval refused", err)
+			}
+			if files := g.repoFiles(); len(files) != 0 {
+				t.Errorf("files written after a stale approval: %v", files)
+			}
+		})
 	}
 }
