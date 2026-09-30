@@ -237,3 +237,106 @@ func TestRemoveRefusesTestFile(t *testing.T) {
 		t.Errorf("err = %v, exists = %v", err, exists(p))
 	}
 }
+
+func TestResolveSourceRefusesGitNamesAnywhere(t *testing.T) {
+	repo, _ := filepath.EvalSymlinks(t.TempDir())
+	for _, rel := range []string{".GIT/x.go", ".Gophermind/x.go", "sub/.git/x.go", "a/b/.GIT/x.go", "sub/.gophermind/run/x.go", ".git./x.go", "sub/.git../x.go", ".GophermIND./x.go"} {
+		if _, err := pathsafe.ResolveSource(repo, rel); err == nil || !strings.Contains(err.Error(), "is under .git or .gophermind") {
+			t.Errorf("ResolveSource(%q) = %v", rel, err)
+		}
+	}
+	if _, err := pathsafe.ResolveSource(repo, "sub/.github/x.go"); err != nil {
+		t.Errorf(".github refused: %v", err)
+	}
+}
+
+func TestPathErrorsNeverQuotePaths(t *testing.T) {
+	repo, _ := filepath.EvalSymlinks(t.TempDir())
+	const canary = "CANARYDANGLE"
+	if err := os.Symlink(filepath.Join(t.TempDir(), "missing-"+canary), filepath.Join(repo, canary)); err != nil {
+		t.Skip(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "file"+canary), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rels := []string{canary + "/x.go", canary + "/a/b.go", "file" + canary + "/x.go", canary + "/x_test.go"}
+	for _, rel := range rels {
+		check := func(name string, err error) {
+			if err == nil {
+				t.Errorf("%s(%q): no error", name, rel)
+			} else if strings.Contains(err.Error(), canary) || strings.Contains(err.Error(), repo) {
+				t.Errorf("%s(%q) quotes a path: %v", name, rel, err)
+			}
+		}
+		if strings.HasSuffix(rel, "_test.go") {
+			_, err := pathsafe.ResolveTest(repo, rel)
+			check("ResolveTest", err)
+			continue
+		}
+		// ResolveSource only answers; a file used as a directory fails at write.
+		if _, err := pathsafe.ResolveSource(repo, rel); err != nil || !strings.HasPrefix(rel, "file") {
+			check("ResolveSource", err)
+		}
+		check("Replace", pathsafe.Replace(repo, rel, []byte("x")))
+		check("Remove", pathsafe.Remove(repo, rel))
+	}
+	// A missing repository root.
+	_, err := pathsafe.ResolveSource(filepath.Join(repo, "nope"+canary), "x.go")
+	if err == nil || strings.Contains(err.Error(), canary) {
+		t.Errorf("missing root: %v", err)
+	}
+	if err := pathsafe.InsideRepo(repo, filepath.Join(repo, "nope"+canary)); err == nil || strings.Contains(err.Error(), canary) || strings.Contains(err.Error(), "test file") {
+		t.Errorf("InsideRepo: %v", err)
+	}
+}
+
+func TestReplaceRefusesParentSwappedToGitBeforeRename(t *testing.T) {
+	repo, _ := filepath.EvalSymlinks(t.TempDir())
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, "pkg"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	swap := func() {
+		os.Rename(filepath.Join(repo, "pkg"), filepath.Join(repo, "pkg-moved"))
+		os.Symlink(filepath.Join(repo, ".git"), filepath.Join(repo, "pkg"))
+	}
+	defer pathsafe.SetBeforeRename(swap)()
+	if err := pathsafe.Replace(repo, "pkg/x.go", []byte("package pkg\n")); err == nil {
+		t.Fatal("swapped parent accepted")
+	}
+	ents, _ := os.ReadDir(filepath.Join(repo, ".git"))
+	if len(ents) != 0 {
+		t.Errorf(".git was written to: %v", ents)
+	}
+}
+
+func TestReplaceUndoesWhenParentSwappedAfterRename(t *testing.T) {
+	repo, _ := filepath.EvalSymlinks(t.TempDir())
+	if err := os.MkdirAll(filepath.Join(repo, "pkg"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	defer pathsafe.SetAfterRename(func() {
+		os.Rename(filepath.Join(repo, "pkg"), filepath.Join(repo, "pkg-moved"))
+		os.Symlink(filepath.Join(repo, ".git"), filepath.Join(repo, "pkg"))
+	})()
+	if err := pathsafe.Replace(repo, "pkg/x.go", []byte("package pkg\n")); err == nil {
+		t.Fatal("swap after rename accepted")
+	}
+}
+
+func TestReplaceRefusesLongBasename(t *testing.T) {
+	repo, _ := filepath.EvalSymlinks(t.TempDir())
+	rel := strings.Repeat("a", 240) + ".go"
+	err := pathsafe.Replace(repo, rel, []byte("x"))
+	if err == nil || strings.Contains(err.Error(), "aaaa") {
+		t.Errorf("err = %v", err)
+	}
+	if err := pathsafe.Replace(repo, strings.Repeat("a", 190)+".go", []byte("x")); err != nil {
+		t.Errorf("190-byte name refused: %v", err)
+	}
+}
