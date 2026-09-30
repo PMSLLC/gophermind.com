@@ -1,6 +1,7 @@
 package packer
 
 import (
+	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
@@ -45,5 +46,46 @@ func TestImportPolicyAllowedList(t *testing.T) {
 	}
 	if strings.Contains(s, "CANARY") {
 		t.Error("canary")
+	}
+}
+
+func TestImportPathSyntax(t *testing.T) {
+	p := ImportPolicy{Module: "example.com/greeter", Deps: []string{"github.com/x/y"}}
+	bad := []string{"fmt/../os/exec", "example.com/greeter/../../evil", "fmt/x", "fmt//x", "/fmt", "fmt/", "./fmt", "fmt/./x",
+		"a\\b", "fmt x", "fmt\n", "github.com/x/y/internal/z", "github.com/x/y/../../q", "net/http/nosuch", "os/nosuch", "example.com/greeter/x y"}
+	for _, b := range bad {
+		if got := p.Check([]string{b}); len(got) != 1 {
+			t.Errorf("%q must be refused", b)
+		}
+	}
+	for _, g := range []string{"uuid", "encoding/json", "net/http", "example.com/greeter/internal/x", "github.com/x/y/sub"} {
+		if got := p.Check([]string{g}); len(got) != 0 {
+			t.Errorf("%q must be allowed: %v", g, got)
+		}
+	}
+}
+
+func TestStdListMatchesToolchain(t *testing.T) {
+	goBin, err := exec.LookPath("go")
+	if err != nil {
+		t.Skip("go not on PATH")
+	}
+	out, err := exec.Command(goBin, "list", "std").Output()
+	if err != nil {
+		t.Skip("go list std failed")
+	}
+	want := map[string]bool{}
+	for _, l := range strings.Fields(string(out)) {
+		if !strings.Contains("/"+l+"/", "/internal/") && !strings.Contains("/"+l+"/", "/vendor/") {
+			want[l] = true
+		}
+	}
+	for l := range want {
+		if !stdPackages[l] {
+			t.Errorf("stdlist.txt lacks %s; regenerate with go list std", l)
+		}
+	}
+	if !stdPackages["uuid"] {
+		t.Error("uuid missing")
 	}
 }
