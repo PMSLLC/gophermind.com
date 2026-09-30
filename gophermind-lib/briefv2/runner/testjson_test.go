@@ -33,6 +33,7 @@ func TestParseTestJSON(t *testing.T) {
 		tmo    bool
 		build  bool
 		pkg    bool
+		raw    bool
 	}{
 		{name: "all pass with subtests",
 			in:     ev("run", "TestX") + ev("run", "TestX/a") + ev("pass", "TestX/a") + ev("pass", "TestX") + ev("pass", ""),
@@ -53,8 +54,8 @@ func TestParseTestJSON(t *testing.T) {
 			in:    `{"Action":"fail","Package":"pkg","FailedBuild":"pkg"}` + "\n",
 			build: true, pkg: true},
 		{name: "old raw build failure",
-			in:    "# pkg\n./a.go:3:1: undefined: x\nFAIL\tpkg [build failed]\n",
-			build: true},
+			in:  "# pkg\n./a.go:3:1: undefined: x\nFAIL\tpkg [build failed]\n",
+			raw: true},
 		{name: "race warning",
 			in:     ev("run", "TestX") + evOut("TestX", "WARNING: DATA RACE\\n") + ev("pass", "TestX") + ev("fail", ""),
 			events: 2, passed: []string{"pkg.TestX"}, pkg: true},
@@ -84,7 +85,7 @@ func TestParseTestJSON(t *testing.T) {
 			if !reflect.DeepEqual(append([]string(nil), r.Failed...), append([]string(nil), c.failed...)) {
 				t.Errorf("Failed = %v, want %v", r.Failed, c.failed)
 			}
-			if r.Panicked != c.panic || r.TimedOut != c.tmo || r.BuildFailed != c.build || r.PkgFailed != c.pkg {
+			if r.Panicked != c.panic || r.TimedOut != c.tmo || r.BuildFailed != c.build || r.PkgFailed != c.pkg || r.RawBuildFailed != c.raw {
 				t.Errorf("panic=%v timeout=%v build=%v pkg=%v, want %v %v %v %v", r.Panicked, r.TimedOut, r.BuildFailed, r.PkgFailed, c.panic, c.tmo, c.build, c.pkg)
 			}
 		})
@@ -135,5 +136,47 @@ func TestParseLocations(t *testing.T) {
 				t.Fatalf("got %v, want %v", got, c.want)
 			}
 		})
+	}
+}
+
+func TestSameNamedTestInTwoPackagesKeepsPackage(t *testing.T) {
+	in := `{"Action":"run","Package":"m/a","Test":"TestX"}` + "\n" +
+		`{"Action":"fail","Package":"m/a","Test":"TestX"}` + "\n" +
+		`{"Action":"run","Package":"m/b","Test":"TestX"}` + "\n" +
+		`{"Action":"pass","Package":"m/b","Test":"TestX"}` + "\n"
+	r := ParseTestJSON(strings.NewReader(in))
+	if !reflect.DeepEqual(r.Failed, []string{"m/a.TestX"}) || !r.Passed["m/b.TestX"] || r.Passed["m/a.TestX"] {
+		t.Fatalf("failed=%v passed=%v", r.Failed, r.Passed)
+	}
+}
+
+func TestFailIsStickyAfterAFakePass(t *testing.T) {
+	in := ev("run", "TestX") + ev("pass", "TestX") + ev("fail", "TestX") + ev("fail", "")
+	r := ParseTestJSON(strings.NewReader(in))
+	if r.Passed["pkg.TestX"] || !reflect.DeepEqual(r.Failed, []string{"pkg.TestX"}) {
+		t.Fatalf("failed=%v passed=%v", r.Failed, r.Passed)
+	}
+}
+
+func TestParserDropsOversizeLinesAndKeepsGoing(t *testing.T) {
+	big := strings.Repeat("x", 3<<20)
+	in := ev("run", "TestX") + evOut("TestX", big) + ev("pass", "TestX") + ev("pass", "")
+	r := ParseTestJSON(strings.NewReader(in))
+	if r.Events != 2 || !r.Passed["pkg.TestX"] || r.Dropped != 1 || r.Pkgs["pkg"] != "pass" {
+		t.Fatalf("events=%d passed=%v dropped=%d pkgs=%v", r.Events, r.Passed, r.Dropped, r.Pkgs)
+	}
+}
+
+func TestParserBoundsTheNumberOfTests(t *testing.T) {
+	var b strings.Builder
+	for i := 0; i < 50; i++ {
+		b.WriteString(ev("pass", "T"+strings.Repeat("a", i%7)+string(rune('A'+i%26))+string(rune('a'+i/26))))
+	}
+	p := newStreamParser(1024)
+	p.maxTests = 10
+	_, _ = p.Write([]byte(b.String()))
+	r := p.finish()
+	if !r.Overflow || len(r.Passed) > 10 {
+		t.Fatalf("overflow=%v passed=%d", r.Overflow, len(r.Passed))
 	}
 }
