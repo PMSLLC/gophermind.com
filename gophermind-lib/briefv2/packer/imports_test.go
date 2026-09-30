@@ -1,6 +1,7 @@
 package packer
 
 import (
+	"os"
 	"os/exec"
 	"reflect"
 	"strings"
@@ -83,6 +84,17 @@ func TestStdListMatchesToolchain(t *testing.T) {
 	for l := range want {
 		if !stdPackages[l] {
 			t.Errorf("stdlist.txt lacks %s; regenerate with go list std", l)
+		}
+	}
+	ver, err := exec.Command(goBin, "version").Output()
+	recorded, rerr := os.ReadFile("stdlist.version")
+	if err == nil && rerr == nil {
+		if f := strings.Fields(string(ver)); len(f) >= 3 && f[2] == strings.TrimSpace(string(recorded)) {
+			for l := range stdPackages {
+				if !want[l] {
+					t.Errorf("stdlist.txt has %s which go list std does not; regenerate", l)
+				}
+			}
 		}
 	}
 	if !stdPackages["uuid"] {

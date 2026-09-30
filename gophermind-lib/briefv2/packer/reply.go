@@ -1,6 +1,12 @@
 // Package packer owns both halves of the executor's model contract: the
 // prompt (Task 5b) and the reply checks here. Reply text never appears in an
 // error: errors name a kind, a line and column, and sizes.
+//
+// Residual risk: the reply gate is an AST check and cannot prove that model
+// code never ends the process early. Known paths (os.Exit, log.Fatal*, flag
+// ExitOnError, the testing package, init functions) are refused, but other std
+// paths may still exit or print. The runner's pass rule and the acceptance run
+// against the built binary are the backstop, not this gate.
 package packer
 
 import (
@@ -27,7 +33,9 @@ type Expect struct {
 	FuncName string
 	HasRecv  bool
 	// Declared lists the names the rest of the contract declares at package
-	// level. A helper in a reply may not reuse one.
+	// level. A helper in a reply may not reuse one. Callers MUST fill it (an
+	// empty non-nil slice means the contract declares nothing else): nil fails
+	// closed, and every helper declaration in the reply is then refused.
 	Declared []string
 	canon    string
 	recvBase string
@@ -273,7 +281,10 @@ func gate(f *ast.File, e Expect, target *ast.FuncDecl) string {
 		if imp.Name != nil {
 			name = imp.Name.Name
 		}
-		if name == "." && processControl[p] != nil {
+		if p == "testing" {
+			return "testing import not allowed in model source"
+		}
+		if name == "." && (processControl[p] != nil || p == "flag") {
 			return "dot import of a process-control package"
 		}
 		alias[name] = p
@@ -293,6 +304,9 @@ func gate(f *ast.File, e Expect, target *ast.FuncDecl) string {
 		}
 	}
 	okName := func(n string) bool {
+		if e.Declared == nil {
+			return false
+		}
 		for _, r := range n {
 			return unicode.IsLower(r) && !taken[n]
 		}
@@ -336,8 +350,13 @@ func gate(f *ast.File, e Expect, target *ast.FuncDecl) string {
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch v := n.(type) {
 		case *ast.SelectorExpr:
-			if x, ok := v.X.(*ast.Ident); ok && processControl[alias[x.Name]][v.Sel.Name] {
-				kind = "forbidden call (process exit or fatal log)"
+			if x, ok := v.X.(*ast.Ident); ok {
+				if processControl[alias[x.Name]][v.Sel.Name] {
+					kind = "forbidden call (process exit or fatal log)"
+				}
+				if alias[x.Name] == "flag" && (v.Sel.Name == "ExitOnError" || v.Sel.Name == "ContinueOnError") {
+					kind = "forbidden flag error handling (ExitOnError)"
+				}
 			}
 		case *ast.Ident:
 			if v.Name == "recover" {
