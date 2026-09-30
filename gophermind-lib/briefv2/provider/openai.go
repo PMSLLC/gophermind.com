@@ -41,12 +41,15 @@ type wireRequest struct {
 	MaxTokens   int           `json:"max_tokens,omitempty"`
 	Temperature float64       `json:"temperature"`
 	Stop        []string      `json:"stop,omitempty"`
+	// ReasoningEffort is omitted when empty.
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 }
 
 type wireReply struct {
 	Model   string `json:"model"`
 	Choices []struct {
-		Message wireMessage `json:"message"`
+		Message      wireMessage `json:"message"`
+		FinishReason string      `json:"finish_reason"`
 	} `json:"choices"`
 	Usage struct {
 		PromptTokens     int `json:"prompt_tokens"`
@@ -56,7 +59,7 @@ type wireReply struct {
 }
 
 func (o *OpenAI) Complete(ctx context.Context, req Request) (Response, error) {
-	wr := wireRequest{Model: req.Model, MaxTokens: req.MaxTokens, Temperature: req.Temperature, Stop: req.StopSequences}
+	wr := wireRequest{Model: req.Model, MaxTokens: req.MaxTokens, Temperature: req.Temperature, Stop: req.StopSequences, ReasoningEffort: o.cfg.ReasoningEffort}
 	for _, m := range req.Messages {
 		wr.Messages = append(wr.Messages, wireMessage{Role: string(m.Role), Content: m.Content})
 	}
@@ -111,6 +114,12 @@ func (o *OpenAI) Complete(ctx context.Context, req Request) (Response, error) {
 	}
 	if len(wp.Choices) == 0 {
 		return Response{}, ErrTransient{Cause: fmt.Errorf("provider %s: reply had no choices", o.cfg.Name)}
+	}
+	if strings.TrimSpace(wp.Choices[0].Message.Content) == "" {
+		if wp.Choices[0].FinishReason == "length" {
+			return Response{}, ErrTruncated{Provider: o.cfg.Name}
+		}
+		return Response{}, ErrEmptyReply{Provider: o.cfg.Name}
 	}
 	served := wp.Model
 	if served == "" {

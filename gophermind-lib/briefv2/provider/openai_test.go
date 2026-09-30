@@ -241,3 +241,76 @@ func TestFakeIsSafeForConcurrentUseAndHonorsCancellation(t *testing.T) {
 		t.Error("a cancelled call must not reach the script")
 	}
 }
+
+// thinking imitates qwen3.6: unless the request says reasoning_effort none the
+// answer goes to a non-standard reasoning field, content is empty and the
+// budget runs out.
+func thinking(seen *[]map[string]any) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		var body map[string]any
+		json.Unmarshal(b, &body)
+		*seen = append(*seen, body)
+		if body["reasoning_effort"] == "none" {
+			io.WriteString(w, `{"choices":[{"finish_reason":"stop","message":{"content":"[1]"}}]}`)
+			return
+		}
+		io.WriteString(w, `{"choices":[{"finish_reason":"length","message":{"content":"","reasoning":"hmm `+canary+`"}}]}`)
+	})
+}
+
+func newThinking(t *testing.T, effort string, seen *[]map[string]any) provider.Provider {
+	t.Helper()
+	srv := httptest.NewServer(thinking(seen))
+	t.Cleanup(srv.Close)
+	return provider.NewOpenAI(provider.Config{
+		Name: "mini", BaseURL: srv.URL + "/v1", MaxConcurrent: 1, HTTPClient: srv.Client(), ReasoningEffort: effort,
+		Models: []provider.ModelInfo{{ID: "qwen", ContextTokens: 32768}},
+	})
+}
+
+func TestReasoningEffortIsSentOnlyWhenConfigured(t *testing.T) {
+	var seen []map[string]any
+	p := newThinking(t, "none", &seen)
+	got, err := p.Complete(context.Background(), request())
+	if err != nil || got.Text != "[1]" {
+		t.Fatalf("got %+v err %v", got, err)
+	}
+	if seen[0]["reasoning_effort"] != "none" {
+		t.Errorf("body = %v", seen[0])
+	}
+
+	seen = nil
+	p = newThinking(t, "", &seen)
+	p.Complete(context.Background(), request())
+	if _, has := seen[0]["reasoning_effort"]; has {
+		t.Errorf("reasoning_effort sent when not configured: %v", seen[0])
+	}
+}
+
+func TestEmptyContentWithLengthIsATruncationError(t *testing.T) {
+	var seen []map[string]any
+	p := newThinking(t, "", &seen)
+	_, err := p.Complete(context.Background(), request())
+	var tr provider.ErrTruncated
+	if !errors.As(err, &tr) {
+		t.Fatalf("err = %v, want ErrTruncated", err)
+	}
+	if strings.Contains(err.Error(), canary) || !strings.Contains(err.Error(), "mini") {
+		t.Errorf("error text %q", err)
+	}
+}
+
+func TestEmptyContentForAnotherReasonIsAnEmptyReplyError(t *testing.T) {
+	p := newProvider(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"choices":[{"finish_reason":"stop","message":{"content":"  \n","reasoning":"`+canary+`"}}]}`)
+	}), "")
+	_, err := p.Complete(context.Background(), request())
+	var er provider.ErrEmptyReply
+	if !errors.As(err, &er) {
+		t.Fatalf("err = %v, want ErrEmptyReply", err)
+	}
+	if strings.Contains(err.Error(), canary) {
+		t.Errorf("error text %q leaks reply text", err)
+	}
+}

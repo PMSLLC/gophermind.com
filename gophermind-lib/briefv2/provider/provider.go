@@ -66,6 +66,10 @@ type Config struct {
 	MaxConcurrent int
 	HTTPClient    *http.Client // routed through the proxy; never nil
 	Models        []ModelInfo
+	// ReasoningEffort is sent as the top-level reasoning_effort field when set
+	// (none, low, medium, high). Thinking models such as qwen3.6 need "none" to
+	// answer in content instead of spending the budget on hidden reasoning.
+	ReasoningEffort string
 }
 
 // Typed errors the router switches on. Any other error is treated as Transient.
