@@ -13,7 +13,7 @@ func (e ErrModelNotFound) Error() string { return "provider: model not found: " 
 type ErrTruncated struct{ Provider string }
 
 func (e ErrTruncated) Error() string {
-	return "provider " + e.Provider + ": reply truncated at the token limit with no content"
+	return "provider " + e.Provider + ": reply truncated at the token limit"
 }
 
 // ErrEmptyReply: the reply had empty content for a reason other than the

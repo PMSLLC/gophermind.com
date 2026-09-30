@@ -78,7 +78,7 @@ func (r *Router) attempt(ctx context.Context, info CallInfo, req provider.Reques
 			row.Outcome, row.ErrorKind = ledger.OutcomeError, "truncated"
 			r.record(ctx, row)
 			// The model spent its whole budget: try once more on this entry with double.
-			if bigger := grownBudget(req.MaxTokens); !grew && bigger > req.MaxTokens {
+			if bigger := grownBudget(req.MaxTokens, req.MaxGrownTokens); !grew && bigger > req.MaxTokens {
 				grew = true
 				req.MaxTokens = bigger
 				try--
@@ -156,14 +156,18 @@ func (r *Router) attempt(ctx context.Context, info CallInfo, req provider.Reques
 // maxGrownTokens caps the doubled budget after a truncated reply.
 const maxGrownTokens = 16384
 
-// grownBudget doubles a token budget once, capped; an unset budget becomes 8192.
-func grownBudget(n int) int {
+// grownBudget doubles a token budget once, capped at limit (the request's own
+// cap when positive, else maxGrownTokens); an unset budget becomes 8192.
+func grownBudget(n, limit int) int {
+	if limit <= 0 {
+		limit = maxGrownTokens
+	}
 	g := n * 2
 	if n <= 0 {
 		g = 8192
 	}
-	if g > maxGrownTokens {
-		g = maxGrownTokens
+	if g > limit {
+		g = limit
 	}
 	return g
 }

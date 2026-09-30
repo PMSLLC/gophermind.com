@@ -894,3 +894,61 @@ func TestEmptyReplyIsOneFailedAttemptAndFailsOver(t *testing.T) {
 		t.Errorf("rows = %+v", rows)
 	}
 }
+
+// A truncated reply that a bigger budget then answers: one row per attempt,
+// the first marked truncated (never malformed), and the entry stays usable
+// for the next call in the same walk.
+func TestTruncationThenSuccessIsNotExcludedAsUnusable(t *testing.T) {
+	g := newRig(t, func(call int, r provider.Request) (provider.Response, error) {
+		switch call {
+		case 1:
+			return provider.Response{}, provider.ErrTruncated{Provider: "mini"}
+		case 2:
+			return provider.Response{Text: "partial-then-fixed", Model: r.Model}, nil
+		}
+		return provider.Response{Text: "fine", Model: r.Model}, nil
+	}, okText("from kilo"), nil, func(c *settings.Config) { c.Providers[0].Models[0].ContextTokens = 100000 })
+	rq := req("hi")
+	rq.MaxTokens = 8000
+	var parsed int
+	res, err := g.r.CallParsed(context.Background(), info(router.TierStrong, router.ScopeNode), rq, func(string) error { parsed++; return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Entry != "mini/qwen" || parsed != 1 {
+		t.Errorf("entry %s parsed %d, want mini/qwen and the parser run once on the good reply", res.Entry, parsed)
+	}
+	reqs := g.mini.Requests()
+	if len(reqs) != 2 || reqs[0].MaxTokens != 8000 || reqs[1].MaxTokens != 16000 {
+		t.Fatalf("requests = %d, max_tokens %v", len(reqs), reqs)
+	}
+	rows := g.rows(t)
+	if len(rows) != 2 || rows[0].ErrorKind != "truncated" || rows[0].Outcome == ledger.OutcomeMalformed || rows[1].Outcome != ledger.OutcomeOK {
+		t.Errorf("rows = %+v", rows)
+	}
+	// The next call still goes to the same entry first.
+	res2, err := g.r.Call(context.Background(), info(router.TierStrong, router.ScopeNode), req("again"))
+	if err != nil || res2.Entry != "mini/qwen" {
+		t.Errorf("next call entry %q err %v, want mini/qwen (not excluded)", res2.Entry, err)
+	}
+}
+
+// The grown-budget cap is a property of the call, so the outline can ask for
+// more than the global cap while other stages keep it.
+func TestGrowthCapComesFromTheRequest(t *testing.T) {
+	g := newRig(t, func(call int, r provider.Request) (provider.Response, error) {
+		if call == 1 {
+			return provider.Response{}, provider.ErrTruncated{Provider: "mini"}
+		}
+		return provider.Response{Text: "ok", Model: r.Model}, nil
+	}, nil, nil, func(c *settings.Config) { c.Providers[0].Models[0].ContextTokens = 100000 })
+	rq := req("hi")
+	rq.MaxTokens = 16000
+	rq.MaxGrownTokens = 32768
+	if _, err := g.r.Call(context.Background(), info(router.TierStrong, router.ScopeNode), rq); err != nil {
+		t.Fatal(err)
+	}
+	if got := g.mini.Requests()[1].MaxTokens; got != 32000 {
+		t.Errorf("retry max_tokens = %d, want 32000 (double, under the request's 32768 cap)", got)
+	}
+}

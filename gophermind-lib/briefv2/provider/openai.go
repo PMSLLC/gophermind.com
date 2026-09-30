@@ -115,10 +115,12 @@ func (o *OpenAI) Complete(ctx context.Context, req Request) (Response, error) {
 	if len(wp.Choices) == 0 {
 		return Response{}, ErrTransient{Cause: fmt.Errorf("provider %s: reply had no choices", o.cfg.Name)}
 	}
+	// A reply cut at the token limit is never a success, whether or not some
+	// text arrived: a partial reply is not usable and a bigger budget may fix it.
+	if wp.Choices[0].FinishReason == "length" {
+		return Response{}, ErrTruncated{Provider: o.cfg.Name}
+	}
 	if strings.TrimSpace(wp.Choices[0].Message.Content) == "" {
-		if wp.Choices[0].FinishReason == "length" {
-			return Response{}, ErrTruncated{Provider: o.cfg.Name}
-		}
 		return Response{}, ErrEmptyReply{Provider: o.cfg.Name}
 	}
 	served := wp.Model
