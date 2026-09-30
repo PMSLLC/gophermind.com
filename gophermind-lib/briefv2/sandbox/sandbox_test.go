@@ -384,32 +384,46 @@ func portOf(l net.Listener) string {
 	return port
 }
 
-// The target is a documentation-range address (RFC 5737) that no host answers, so
-// the test needs no network: the sandbox denial is the "Operation not permitted"
-// error from connect, distinct from the unsandboxed control's timeout or
-// unreachable error. (An address of this machine's own interface counts as
-// localhost to sandbox-exec and is deliberately not used.)
+// The denied target is a documentation-range address (RFC 5737) that no host
+// answers, so the test needs no network: the sandbox denial is the "Operation
+// not permitted" error from connect. The positive control is a loopback
+// listener reached under the very same profile. The unsandboxed run of the same
+// connect is only logged: a VPN or firewall may itself return EPERM.
 func TestSandboxDeniesNonLoopback(t *testing.T) {
 	skipIfNoSandbox(t)
 	const target, port = "192.0.2.1", "80"
-	// nc's -w does not bound connect on macOS (the control can run ~75s), so cap it.
-	cctx, ccancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer ccancel()
-	ctl, _ := exec.CommandContext(cctx, "/usr/bin/nc", "-zv", "-w", "1", target, port).CombinedOutput()
-	if strings.Contains(string(ctl), "Operation not permitted") {
-		t.Skip("unsandboxed control is itself denied; the test cannot tell the sandbox apart")
+	p := baseProfile(t)
+	run := func(sandboxed bool, host, port string) (string, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "/usr/bin/nc", "-zv", "-w", "1", host, port)
+		if sandboxed {
+			w, err := Wrap(cmd, p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cmd = w
+		}
+		out, err := cmd.CombinedOutput()
+		return string(out), err
 	}
-	cmd := exec.Command("/usr/bin/nc", "-zv", "-w", "1", target, port)
-	w, err := Wrap(cmd, baseProfile(t))
+	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatal(err)
+		t.Skip("cannot listen: " + err.Error())
 	}
-	out, err := w.CombinedOutput()
+	defer l.Close()
+	if out, err := run(true, "127.0.0.1", portOf(l)); err != nil {
+		t.Fatalf("sandboxed loopback connect failed (positive control): %v %s", err, out)
+	}
+	out, err := run(true, target, port)
 	if err == nil {
 		t.Fatal("sandboxed non-loopback connect succeeded")
 	}
-	if !strings.Contains(string(out), "Operation not permitted") {
-		t.Fatalf("connect failed but not with a sandbox denial: %v", err)
+	if !strings.Contains(out, "Operation not permitted") {
+		t.Fatalf("non-loopback connect failed but not with a sandbox denial (timeout?): %v", err)
+	}
+	if cout, _ := run(false, target, port); strings.Contains(cout, "Operation not permitted") {
+		t.Log("note: the unsandboxed control also saw EPERM (VPN or firewall); the assertions above do not depend on it")
 	}
 }
 
@@ -448,7 +462,9 @@ func TestSandboxGoBuildAndTest(t *testing.T) {
 		"x_test.go": `package sbmod
 
 import (
+	"errors"
 	"net"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -459,11 +475,16 @@ func TestAdd(t *testing.T) {
 	}
 }
 
+// The sandbox alone turns this dial into EPERM; unsandboxed it times out or is
+// unreachable, so a pass proves the deny rather than an unanswered address.
 func TestNoExternal(t *testing.T) {
 	c, err := net.DialTimeout("tcp", "192.0.2.1:80", time.Second)
 	if err == nil {
 		c.Close()
 		t.Fatal("dial to a non-loopback address succeeded")
+	}
+	if !errors.Is(err, syscall.EPERM) {
+		t.Fatalf("dial error is not a permission error: %v", err)
 	}
 }
 `,
@@ -495,5 +516,219 @@ func TestNoExternal(t *testing.T) {
 	}
 	if err != nil {
 		t.Fatalf("go test under sandbox failed: %v\n%s", err, out)
+	}
+}
+
+func TestProfileRejectsBroadPaths(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		t.Skip("no home directory")
+	}
+	good := realDir(t)
+	broad := []string{"/", "/private", home, home + "/"}
+	for _, field := range []string{"Repo", "Scratch", "GoCache", "RunDir", "GoModCache"} {
+		for _, bp := range broad {
+			p := Profile{Repo: good, Scratch: good, GoCache: good, ModCacheWritable: true}
+			switch field {
+			case "Repo":
+				p.Repo = bp
+			case "Scratch":
+				p.Scratch = bp
+			case "GoCache":
+				p.GoCache = bp
+			case "RunDir":
+				p.RunDir = bp
+			case "GoModCache":
+				p.GoModCache = bp
+			}
+			_, err := p.Text()
+			if err == nil {
+				t.Fatalf("%s=%q accepted", field, bp)
+			}
+			if !strings.Contains(err.Error(), field) || strings.Contains(err.Error(), home) {
+				t.Fatalf("%s: bad error %v", field, err)
+			}
+		}
+	}
+	// Home itself may be broad-ish only as a read deny; "/" is still refused.
+	if _, err := (Profile{Repo: good, Scratch: good, GoCache: good, Home: "/"}).Text(); err == nil {
+		t.Fatal("Home=/ accepted")
+	}
+}
+
+func TestProfileSkipsMissingReadOnlyAndCreatesNoRunDir(t *testing.T) {
+	p := baseProfile(t)
+	missing := filepath.Join(realDir(t), "gone-secretname")
+	p.ReadOnly = []string{missing, realDir(t)}
+	p.RunDir = filepath.Join(p.Repo, ".gophermind", "gm-new")
+	txt, err := p.Text()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(txt, "gone-secretname") {
+		t.Fatal("missing ReadOnly entry rendered")
+	}
+	if !strings.Contains(txt, p.RunDir) {
+		t.Fatal("RunDir not rendered")
+	}
+	if exists(p.RunDir) {
+		t.Fatal("Text created the RunDir")
+	}
+}
+
+// topLevelForms parses SBPL just enough to list the "head arg" of each top
+// level form, honoring quoted strings.
+func topLevelForms(t *testing.T, txt string) []string {
+	t.Helper()
+	var forms []string
+	depth, inStr := 0, false
+	start := -1
+	for i := 0; i < len(txt); i++ {
+		c := txt[i]
+		if inStr {
+			if c == '\\' {
+				i++
+			} else if c == '"' {
+				inStr = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inStr = true
+		case '(':
+			if depth == 0 {
+				start = i + 1
+			}
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				f := strings.Fields(txt[start:i])
+				if len(f) < 2 {
+					t.Fatalf("short form %q", txt[start:i])
+				}
+				forms = append(forms, f[0]+" "+f[1])
+			}
+		}
+	}
+	if depth != 0 || inStr {
+		t.Fatal("unbalanced profile")
+	}
+	return forms
+}
+
+func TestProfileHostilePathsInjectNothing(t *testing.T) {
+	expected := []string{
+		"version 1", "allow default", "deny file-write*", "allow file-write*",
+		"deny file-write*", "deny file-write*", "deny file-read*", "allow file-read*",
+		"deny file-write*", "deny file-write*", "deny network*",
+		"allow network-outbound", "allow network-inbound", "allow network-bind",
+	}
+	hostile := []string{
+		"x)y", "(allow default", "(allow default)", "a\"b", "a\\b", "a\nb", "a\tb", "a\rb",
+		"a\xffb", "a\x00b", "a\u2028b", ")(allow file-write* (subpath \"/\"))",
+	}
+	fields := []string{"Repo", "RunDir", "Scratch", "GoCache", "GoModCache", "Home", "ReadOnly"}
+	for _, field := range fields {
+		for _, h := range hostile {
+			base := realDir(t)
+			path := filepath.Join(base, h)
+			// Names the filesystem can hold are created so they resolve.
+			if err := os.Mkdir(path, 0o755); err != nil && field != "RunDir" {
+				// not creatable: the path must still be refused, not injected
+				_ = err
+			}
+			good := realDir(t)
+			p := Profile{Repo: good, Scratch: realDir(t), GoCache: realDir(t),
+				RunDir: filepath.Join(good, "run"), GoModCache: realDir(t), Home: realDir(t),
+				ReadOnly: []string{realDir(t)}}
+			switch field {
+			case "Repo":
+				p.Repo = path
+				p.RunDir = ""
+			case "RunDir":
+				p.RunDir = path
+			case "Scratch":
+				p.Scratch = path
+			case "GoCache":
+				p.GoCache = path
+			case "GoModCache":
+				p.GoModCache = path
+			case "Home":
+				p.Home = path
+			case "ReadOnly":
+				p.ReadOnly = []string{path}
+			}
+			txt, err := p.Text()
+			if err != nil {
+				if !strings.Contains(err.Error(), field) || strings.Contains(err.Error(), h) {
+					t.Fatalf("%s %q: unexpected error %q", field, h, err)
+				}
+				continue
+			}
+			forms := topLevelForms(t, txt)
+			want := expected
+			if field == "Repo" {
+				// no RunDir: two run-dir denies drop out
+				want = []string{"version 1", "allow default", "deny file-write*", "allow file-write*",
+					"deny file-write*", "deny file-read*", "allow file-read*", "deny file-write*",
+					"deny network*", "allow network-outbound", "allow network-inbound", "allow network-bind"}
+			}
+			if strings.Join(forms, "|") != strings.Join(want, "|") {
+				t.Fatalf("%s %q: forms %q, want %q", field, h, forms, want)
+			}
+		}
+	}
+}
+
+func TestSandboxDeniesGitUnlinkAndRename(t *testing.T) {
+	skipIfNoSandbox(t)
+	ops := map[string]func(repo string) []string{
+		"unlink HEAD": func(r string) []string { return []string{"rm", filepath.Join(r, ".git", "HEAD")} },
+		"rename HEAD": func(r string) []string {
+			return []string{"mv", filepath.Join(r, ".git", "HEAD"), filepath.Join(r, ".git", "HEAD2")}
+		},
+		"rename .git": func(r string) []string { return []string{"mv", filepath.Join(r, ".git"), filepath.Join(r, "moved")} },
+		"remove .git": func(r string) []string { return []string{"rm", "-rf", filepath.Join(r, ".git")} },
+		"rename in": func(r string) []string {
+			return []string{"mv", filepath.Join(r, "ok.txt"), filepath.Join(r, ".git", "ok.txt")}
+		},
+		"rename hooks": func(r string) []string {
+			return []string{"mv", filepath.Join(r, ".git", "hooks"), filepath.Join(r, "hooks")}
+		},
+	}
+	setup := func(t *testing.T) Profile {
+		p := baseProfile(t)
+		for _, d := range []string{".git/hooks"} {
+			if err := os.MkdirAll(filepath.Join(p.Repo, d), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, f := range []string{".git/HEAD", "ok.txt"} {
+			if err := os.WriteFile(filepath.Join(p.Repo, f), []byte("x"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return p
+	}
+	for name, op := range ops {
+		t.Run(name, func(t *testing.T) {
+			p := setup(t)
+			args := op(p.Repo)
+			bin, _ := exec.LookPath(args[0])
+			if err := runWrapped(t, p, bin, args[1:]...); err == nil {
+				t.Fatal("sandboxed operation succeeded")
+			}
+			if !exists(filepath.Join(p.Repo, ".git", "HEAD")) || !exists(filepath.Join(p.Repo, ".git", "hooks")) {
+				t.Fatal(".git was changed")
+			}
+			// control: the same operation on a fresh repo succeeds unsandboxed
+			q := setup(t)
+			args = op(q.Repo)
+			if err := exec.Command(args[0], args[1:]...).Run(); err != nil {
+				t.Fatalf("control failed: %v", err)
+			}
+		})
 	}
 }
