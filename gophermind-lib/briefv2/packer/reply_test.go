@@ -50,8 +50,8 @@ func TestParseReplyContract(t *testing.T) {
 		{"missing func", "package greet\n\nfunc Other() {}\n", e, false, "", "not found"},
 		{"two funcs", goodFile + "\nfunc Greet(name string) (string, error) { return \"\", nil }\n", e, false, "", "declared 2 times"},
 		{"syntax", "package greet\n\nfunc Greet( {\n", e, false, "", "syntax error at line 3 col"},
-		{"receiver differs", "package greet\n\ntype G struct{}\n\nfunc (g G) Hello() string { return \"\" }\n", recv, false, "", "signature mismatch"},
-		{"receiver ok", "package greet\n\ntype G struct{}\n\nfunc (g *G) Hello() string { return \"\" }\n", recv, true, "", ""},
+		{"receiver differs", "package greet\n\nfunc (g G) Hello() string { return \"\" }\n", recv, false, "", "signature mismatch"},
+		{"receiver ok", "package greet\n\nfunc (g *G) Hello() string { return \"\" }\n", recv, true, "", ""},
 	}
 	for _, c := range cases {
 		r, err := ParseReply(c.text, c.e)
@@ -130,7 +130,7 @@ func TestReplySignatureMismatchMalformed(t *testing.T) {
 	e := fixture(t)
 	pe, _ := NewExpect("greet", "func (g *G) Hello() string")
 	file := func(sig string) string {
-		return "package greet\n\ntype G struct{}\n\n" + sig + " { panic(0) }\n"
+		return "package greet\n\n" + sig + " { panic(0) }\n"
 	}
 	bad := []struct {
 		name string
@@ -182,7 +182,7 @@ func TestParseErrorNoCanary(t *testing.T) {
 	for _, text := range texts {
 		_, err := ParseReply(text, e)
 		if err == nil {
-			t.Errorf("expected error for %q", text[:20])
+			t.Errorf("expected error for %q", text[:min(len(text), 20)])
 			continue
 		}
 		if strings.Contains(err.Error(), "CANARY") {

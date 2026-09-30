@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // Expect is what a reply is checked against. Build it once per node with NewExpect.
@@ -25,10 +26,21 @@ type Expect struct {
 	Package  string
 	FuncName string
 	HasRecv  bool
+	// Declared lists the names the rest of the contract declares at package
+	// level. A helper in a reply may not reuse one.
+	Declared []string
 	canon    string
+	recvBase string
 }
 
+// Size caps on a reply, checked before anything is parsed.
+const (
+	MaxReplyBytes = 256 << 10
+	MaxReplyLines = 6000
+)
+
 // canonical renders a function head without body, doc, comments or layout.
+// The type parameter list (names and constraints) is part of it.
 func canonical(fd *ast.FuncDecl) string {
 	var b strings.Builder
 	if fd.Recv != nil {
@@ -39,8 +51,43 @@ func canonical(fd *ast.FuncDecl) string {
 			b.WriteString(types.ExprString(f.Type) + ";")
 		}
 	}
-	b.WriteString("|" + fd.Name.Name + "|" + types.ExprString(fd.Type))
+	b.WriteString("|" + fd.Name.Name + "|")
+	if tp := fd.Type.TypeParams; tp != nil {
+		b.WriteString("[")
+		for _, f := range tp.List {
+			for _, n := range f.Names {
+				b.WriteString(n.Name + ",")
+			}
+			b.WriteString(" " + types.ExprString(f.Type) + ";")
+		}
+		b.WriteString("]")
+	}
+	b.WriteString(types.ExprString(fd.Type))
 	return b.String()
+}
+
+// recvBase names the receiver's base type ("" for a plain function).
+func recvBase(fd *ast.FuncDecl) string {
+	if fd.Recv == nil || len(fd.Recv.List) == 0 {
+		return ""
+	}
+	x := fd.Recv.List[0].Type
+	for {
+		switch v := x.(type) {
+		case *ast.StarExpr:
+			x = v.X
+		case *ast.ParenExpr:
+			x = v.X
+		case *ast.IndexExpr:
+			x = v.X
+		case *ast.IndexListExpr:
+			x = v.X
+		case *ast.Ident:
+			return v.Name
+		default:
+			return ""
+		}
+	}
 }
 
 // NewExpect parses the contract's signature. An error means the contract is
@@ -57,7 +104,7 @@ func NewExpect(pkg, signature string) (Expect, error) {
 	if !ok {
 		return Expect{}, errors.New("the contract signature is not a function declaration")
 	}
-	return Expect{Package: pkg, FuncName: fd.Name.Name, HasRecv: fd.Recv != nil, canon: canonical(fd)}, nil
+	return Expect{Package: pkg, FuncName: fd.Name.Name, HasRecv: fd.Recv != nil, canon: canonical(fd), recvBase: recvBase(fd)}, nil
 }
 
 // Reply is the checked outcome of a model reply.
@@ -87,6 +134,12 @@ func ParseReply(text string, e Expect) (Reply, error) {
 	body := strings.TrimSpace(text)
 	if body == "" {
 		return r, malformed("empty reply")
+	}
+	if len(text) > MaxReplyBytes {
+		return r, malformed(fmt.Sprintf("reply too large (%d bytes, limit %d)", len(text), MaxReplyBytes))
+	}
+	if n := strings.Count(text, "\n") + 1; n > MaxReplyLines {
+		return r, malformed(fmt.Sprintf("reply has too many lines (%d, limit %d)", n, MaxReplyLines))
 	}
 	lines := strings.Split(body, "\n")
 	for _, l := range lines {
@@ -160,7 +213,7 @@ func ParseReply(text string, e Expect) (Reply, error) {
 	}
 	var found []*ast.FuncDecl
 	for _, d := range f.Decls {
-		if fd, ok := d.(*ast.FuncDecl); ok && fd.Name.Name == e.FuncName && (fd.Recv != nil) == e.HasRecv {
+		if fd, ok := d.(*ast.FuncDecl); ok && fd.Name.Name == e.FuncName && (fd.Recv != nil) == e.HasRecv && recvBase(fd) == e.recvBase {
 			found = append(found, fd)
 		}
 	}
@@ -172,6 +225,9 @@ func ParseReply(text string, e Expect) (Reply, error) {
 	}
 	if canonical(found[0]) != e.canon {
 		return r, malformed("signature mismatch for " + e.FuncName)
+	}
+	if kind := gate(f, e, found[0]); kind != "" {
+		return r, malformed(kind)
 	}
 	out, err := format.Source([]byte(src))
 	if err != nil {
@@ -185,4 +241,110 @@ func ParseReply(text string, e Expect) (Reply, error) {
 	}
 	r.Source = out
 	return r, nil
+}
+
+var forbiddenDirectives = []string{"//go:generate", "//go:linkname", "//go:embed", "//go:build", "//go:cgo", "//export ", "// +build", "//+build"}
+
+// processControl lists the calls that could end or fake the end of a test run.
+var processControl = map[string]map[string]bool{
+	"os":      {"Exit": true},
+	"syscall": {"Exit": true},
+	"log":     {"Fatal": true, "Fatalf": true, "Fatalln": true, "Panic": true, "Panicf": true, "Panicln": true},
+	"runtime": {"Goexit": true},
+}
+
+// gate enforces, on every reply, what leaf code may do. It returns a fixed
+// kind and never any reply text. The runner cannot tell a real pass from an
+// init() that prints pass lines and calls os.Exit(0); this is the mitigation.
+func gate(f *ast.File, e Expect, target *ast.FuncDecl) string {
+	for _, cg := range f.Comments {
+		for _, c := range cg.List {
+			for _, p := range forbiddenDirectives {
+				if strings.HasPrefix(c.Text, p) {
+					return "directive not allowed"
+				}
+			}
+		}
+	}
+	alias := map[string]string{}
+	for _, imp := range f.Imports {
+		p, _ := strconv.Unquote(imp.Path.Value)
+		name := p[strings.LastIndex(p, "/")+1:]
+		if imp.Name != nil {
+			name = imp.Name.Name
+		}
+		if name == "." && processControl[p] != nil {
+			return "dot import of a process-control package"
+		}
+		alias[name] = p
+	}
+	taken := map[string]bool{}
+	for _, n := range e.Declared {
+		taken[n] = true
+	}
+	local := map[string]bool{}
+	for _, d := range f.Decls {
+		if gd, ok := d.(*ast.GenDecl); ok {
+			for _, s := range gd.Specs {
+				if ts, ok := s.(*ast.TypeSpec); ok {
+					local[ts.Name.Name] = true
+				}
+			}
+		}
+	}
+	okName := func(n string) bool {
+		for _, r := range n {
+			return unicode.IsLower(r) && !taken[n]
+		}
+		return false
+	}
+	const bad = "declaration not allowed (init, exported, blank, foreign method or name collision)"
+	for _, d := range f.Decls {
+		switch d := d.(type) {
+		case *ast.FuncDecl:
+			if d == target {
+				continue
+			}
+			if d.Recv == nil && d.Name.Name == "init" {
+				return "init function not allowed"
+			}
+			if d.Recv != nil {
+				if !local[recvBase(d)] {
+					return bad
+				}
+			} else if !okName(d.Name.Name) {
+				return bad
+			}
+		case *ast.GenDecl:
+			for _, s := range d.Specs {
+				switch s := s.(type) {
+				case *ast.TypeSpec:
+					if !okName(s.Name.Name) {
+						return bad
+					}
+				case *ast.ValueSpec:
+					for _, n := range s.Names {
+						if !okName(n.Name) {
+							return bad
+						}
+					}
+				}
+			}
+		}
+	}
+	kind := ""
+	ast.Inspect(f, func(n ast.Node) bool {
+		switch v := n.(type) {
+		case *ast.SelectorExpr:
+			if x, ok := v.X.(*ast.Ident); ok && processControl[alias[x.Name]][v.Sel.Name] {
+				kind = "forbidden call (process exit or fatal log)"
+			}
+		case *ast.Ident:
+			if v.Name == "recover" {
+				kind = "forbidden call (recover)"
+			}
+		}
+		return kind == ""
+	})
+	return kind
 }
