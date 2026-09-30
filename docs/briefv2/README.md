@@ -129,8 +129,17 @@ normalised before validation: a model's `IntakeSession`, `intake_session` or
 other runs of characters one dash; a function id also gets its `fn-` prefix),
 and every reference to it in the same reply (`uses`, a function's `component`)
 or to an earlier pass is rewritten the same way, so a resumed run, whose stored
-contract is already normalised, rewrites identically. Ids that already match
-the syntax are never touched. Two different spellings that become one id keep
+contract is already normalised, rewrites identically. A declared id that
+already matches the syntax is never touched, and neither is a reference to one.
+A reference to an id nobody has declared yet (a function a later pass writes,
+for example `ValidateEmail` or `validate-email`) keeps both forms,
+`validate-email|fn-validate-email`, in the stored contract until every
+component is written; then each becomes whichever form is declared (if both
+are, a function's `uses` takes the function and a type's the type), and
+contracts.json carries declared ids only. A reference still undeclared goes to
+the repair pass as one id, `validate-email`, with a hint that a function would
+be `fn-validate-email`. (A type that names a function a later pass writes is
+asked for in the outline repair as a type first.) Two different spellings that become one id keep
 the first. A warning `outline_id_normalized` gives the count and at most 10
 examples (the old id only when it is at most 64 printable ASCII bytes, else its
 length); the total is kept in `_state/contract.json` as `ids_normalized`. A

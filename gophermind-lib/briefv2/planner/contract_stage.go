@@ -260,7 +260,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 	// Every component is written; ids a function or type uses but nobody
 	// declared are asked for, not treated as an unusable reply.
 	for {
-		un := unresolvedUses(st.Doc)
+		un := unresolvedFinal(st.Doc)
 		if len(un) == 0 {
 			break
 		}
@@ -303,6 +303,13 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 		if err := writeJSON(r.path(stateContract), st); err != nil {
 			return err
 		}
+	}
+
+	// Every reference is declared now: pending ones become the declared form,
+	// and the stored contract carries only declared ids.
+	st.Doc = resolveRefs(st.Doc)
+	if err := writeJSON(r.path(stateContract), st); err != nil {
+		return err
 	}
 
 	// A component whose exports the outline left empty exports all its functions.
@@ -400,10 +407,10 @@ func mergeOutline(doc map[string]any, have []Dependency, text, briefID string, r
 		return nil, nil, false, nil, errors.New("contract outline says more remains but adds nothing new")
 	}
 	var verr error
-	if more || len(unresolvedUses(next)) > 0 {
+	if more || len(unresolvedFinal(next)) > 0 {
 		verr = validateOutlineShape(next, briefID)
 	} else {
-		_, verr = validateContractDoc(next, briefID)
+		_, verr = validateContractDoc(resolveRefs(next), briefID)
 	}
 	if verr != nil {
 		return nil, nil, false, nil, verr
@@ -437,21 +444,30 @@ func boundedModule(m string) string {
 }
 
 // unresolvedUses lists, in order of first use, the ids a declaration's uses
-// names that no type or function declares.
-func unresolvedUses(doc map[string]any) []string {
-	declared := map[string]bool{}
-	for _, key := range []string{"types", "functions"} {
-		for _, o := range objects(doc[key]) {
-			if id, ok := o["id"].(string); ok {
-				declared[id] = true
-			}
-		}
-	}
+// names that no type or function declares. A function's pending
+// reference is not listed (see unresolvedFinal).
+func unresolvedUses(doc map[string]any) []string { return unresolved(doc, false) }
+
+// unresolvedFinal is unresolvedUses for a contract whose components are all
+// written: a function's pending reference counts too, named by its type form.
+func unresolvedFinal(doc map[string]any) []string { return unresolved(doc, true) }
+
+func unresolved(doc map[string]any, final bool) []string {
+	declared := declaredIDs(doc)
 	var out []string
 	seen := map[string]bool{}
 	for _, key := range []string{"types", "functions"} {
 		for _, o := range objects(doc[key]) {
 			for _, u := range strList(o["uses"]) {
+				if t, f, ok := pendingRef(u); ok {
+					// Before the components are written no function exists, so a
+					// function's pending reference waits; a type's is a missing
+					// type the outline repair asks for.
+					if declared[t] || declared[f] || (!final && key == "functions") {
+						continue
+					}
+					u = t
+				}
 				if !declared[u] && !seen[u] {
 					seen[u] = true
 					out = append(out, u)
@@ -916,6 +932,7 @@ func mergeRepair(doc map[string]any, text, briefID string) (map[string]any, []st
 // each with the declarations that use it and their components.
 func unresolvedOwnersText(doc map[string]any, ids []string) string {
 	users := map[string][]string{}
+	hint := map[string]string{} // canonical id -> its function form, for a pending reference
 	for _, key := range []string{"types", "functions"} {
 		for _, o := range objects(doc[key]) {
 			id, _ := o["id"].(string)
@@ -924,6 +941,10 @@ func unresolvedOwnersText(doc map[string]any, ids []string) string {
 				who += " in component " + fmt.Sprint(o["component"])
 			}
 			for _, u := range strList(o["uses"]) {
+				if t, f, ok := pendingRef(u); ok {
+					u = t
+					hint[t] = f
+				}
 				users[u] = append(users[u], who)
 			}
 		}
@@ -931,7 +952,11 @@ func unresolvedOwnersText(doc map[string]any, ids []string) string {
 	var lines []string
 	for _, id := range ids {
 		if idSyntaxRE.MatchString(id) && len(id) <= maxBoundedID && len(lines) < maxUnresolvedInPrompt {
-			lines = append(lines, id+" (used by "+strings.Join(users[id], ", ")+")")
+			kind := ""
+			if f, ok := hint[id]; ok {
+				kind = " [a type, or a function whose id is " + f + "]"
+			}
+			lines = append(lines, id+kind+" (used by "+strings.Join(users[id], ", ")+")")
 		}
 	}
 	text := strings.Join(lines, "\n")
