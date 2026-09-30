@@ -1,6 +1,7 @@
 package brief_test
 
 import (
+	"fmt"
 	"os"
 	"sort"
 	"strings"
@@ -303,5 +304,54 @@ func TestLegitimateNamesStillParse(t *testing.T) {
 	src := strings.Replace(ex, "env:\n", "env:\n  - name: DATA_DIR\n    purpose: p\n", 1)
 	if _, err := brief.Parse([]byte(src)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestBodyChecksNameTheLineNotTheText(t *testing.T) {
+	ex := string(loadExample(t))
+	lineOf := func(s, needle string) int {
+		i := strings.Index(s, needle)
+		return strings.Count(s[:i], "\n") + 1
+	}
+	cases := []struct {
+		name, from, to string
+		wantLine       func(edited string) int
+		wantMsg        string
+	}{
+		{"an unterminated fence", "## Data\n", "## Data\n\n```\nSECRET-CANARY\n", func(e string) int { return lineOf(e, "```\nSECRET-CANARY") }, "never closed"},
+		{"a prose line under Constraints", "## Constraints\n", "## Constraints\n\nSECRET-CANARY stays at column 0.\n", func(e string) int { return lineOf(e, "SECRET-CANARY") }, "not a bullet"},
+		{"a bold line under Acceptance", "## Acceptance\n", "## Acceptance\n\n**SECRET-CANARY**\n", func(e string) int { return lineOf(e, "**SECRET") }, "not a bullet"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			edited := strings.Replace(ex, c.from, c.to, 1)
+			if edited == ex {
+				t.Fatal("edit did not apply")
+			}
+			_, err := brief.Parse([]byte(edited))
+			var inv *brief.InvalidError
+			if !asInvalid(err, &inv) {
+				t.Fatalf("err = %v, want an invalid-brief error", err)
+			}
+			if !strings.Contains(err.Error(), fmt.Sprintf("line %d", c.wantLine(edited))) || !strings.Contains(err.Error(), c.wantMsg) {
+				t.Errorf("err = %q, want line %d and %q", err, c.wantLine(edited), c.wantMsg)
+			}
+			if strings.Contains(err.Error(), "CANARY") {
+				t.Errorf("error carries brief text: %q", err)
+			}
+		})
+	}
+}
+
+func TestBulletFormsAndCommentsAreAccepted(t *testing.T) {
+	ex := string(loadExample(t))
+	ok := strings.Replace(ex, "## Constraints\n", "## Constraints\n\n<!-- a note\nover two lines -->\n### A sub heading\n+ plus bullet\n1. numbered\n2) paren\n   continuation\n", 1)
+	if _, err := brief.Parse([]byte(ok)); err != nil {
+		t.Fatal(err)
+	}
+	for line, want := range map[string]bool{"- a": true, "* a": true, "+ a": true, "12. a": true, "3) a": true, "-a": false, "1.a": false, "text": false, "**b**": false} {
+		if _, got := brief.BulletText(line); got != want {
+			t.Errorf("BulletText(%q) = %v, want %v", line, got, want)
+		}
 	}
 }

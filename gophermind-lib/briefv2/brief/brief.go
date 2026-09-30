@@ -172,6 +172,9 @@ func Parse(src []byte) (*Brief, error) {
 		}
 	}
 
+	if err := checkBody(body, b.bodyLine); err != nil {
+		return nil, err
+	}
 	sections, features, err := parseSections(body)
 	if err != nil {
 		return nil, err
@@ -305,4 +308,67 @@ func (b *Brief) UndeclaredSecrets() []Warning {
 		}
 	}
 	return out
+}
+
+var bulletRE = regexp.MustCompile(`^(?:[-*+]|[0-9]+[.)])[ \t]+(.*)$`)
+
+// BulletText reports whether line, taken at column 0, opens a list bullet
+// ("- ", "* ", "+ ", "1. " or "1) ") and returns the text after the marker.
+func BulletText(line string) (string, bool) {
+	m := bulletRE.FindStringSubmatch(line)
+	if m == nil {
+		return "", false
+	}
+	return strings.TrimSpace(m[1]), true
+}
+
+// checkBody rejects a body that would silently lose requirements: a code
+// fence that never closes (it hides every later bullet), and, under
+// Constraints and Acceptance, a non-blank line that is not a bullet, an
+// indented continuation, a heading, a comment or part of a fence. Errors name
+// the file line, never the text. firstLine is the file line of the first body line.
+func checkBody(body string, firstLine int) error {
+	section := ""
+	inFence, inComment := false, false
+	fenceLine := 0
+	for i, line := range strings.Split(body, "\n") {
+		n := firstLine + i
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
+			inFence = !inFence
+			if inFence {
+				fenceLine = n
+			}
+			continue
+		}
+		if inFence {
+			continue
+		}
+		if strings.HasPrefix(line, "## ") {
+			section = strings.TrimSpace(line[3:])
+			inComment = false
+			continue
+		}
+		if section != "Constraints" && section != "Acceptance" {
+			continue
+		}
+		if inComment {
+			inComment = !strings.Contains(line, "-->")
+			continue
+		}
+		if strings.HasPrefix(t, "<!--") {
+			inComment = !strings.Contains(t, "-->")
+			continue
+		}
+		if t == "" || line[0] == ' ' || line[0] == '\t' || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if _, ok := BulletText(line); !ok {
+			return invalid("line %d, under \"## %s\": not a bullet (start it with \"- \", \"* \", \"+ \" or \"1. \"), so it would not count as a requirement", n, section)
+		}
+	}
+	if inFence {
+		return invalid("line %d: a code fence is opened and never closed, so every later line would be hidden", fenceLine)
+	}
+	return nil
 }
