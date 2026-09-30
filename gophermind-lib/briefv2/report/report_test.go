@@ -742,3 +742,41 @@ func TestEnvironmentLinesAreReportedAndPrinted(t *testing.T) {
 		t.Fatalf("the proof lines are not last: %q", l)
 	}
 }
+
+func TestWriteFileAtomicPrivate(t *testing.T) {
+	base := t.TempDir()
+	run := filepath.Join(base, "run")
+	if err := os.Mkdir(run, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := report.WriteFile(run, "changes.patch", []byte("one"), opt(base)); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(filepath.Join(run, "changes.patch"))
+	if err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("stat = %v, %v; want mode 600", fi, err)
+	}
+	// a file that is a symbolic link is replaced, never followed
+	victim := filepath.Join(base, "victim")
+	os.WriteFile(victim, []byte("keep"), 0o600)
+	os.Remove(filepath.Join(run, "changes.patch"))
+	if err := os.Symlink(victim, filepath.Join(run, "changes.patch")); err != nil {
+		t.Skip("no symlinks")
+	}
+	if err := report.WriteFile(run, "changes.patch", []byte("two"), opt(base)); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(victim); string(b) != "keep" {
+		t.Fatal("WriteFile followed a symbolic link")
+	}
+	// a name with a path is refused, and no temp file is left behind
+	if err := report.WriteFile(run, "../x", []byte("x"), opt(base)); err == nil {
+		t.Fatal("a name with a path was accepted")
+	}
+	ents, _ := os.ReadDir(run)
+	for _, e := range ents {
+		if strings.Contains(e.Name(), ".tmp") {
+			t.Errorf("temp file %s left behind", e.Name())
+		}
+	}
+}

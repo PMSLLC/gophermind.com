@@ -231,7 +231,7 @@ func (rc *runCtx) newLeafRun(ctx context.Context, l *Leaf, in leafIn) (*leafRun,
 	}
 	swap := NewSwap(rc.o.Repo, l, rc.git, stub)
 	if rc.diffOnly {
-		swap.NoCommit()
+		swap.NoCommit(rc.o.RunDir)
 	}
 	if in.Repair > 0 {
 		swap.Reopen()

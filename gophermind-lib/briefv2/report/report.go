@@ -548,22 +548,32 @@ type WriteOptions struct {
 }
 
 func Write(runDir string, r Report, o WriteOptions) error {
-	if runDir == "" {
-		return errors.New("report: no run folder")
-	}
-	if err := checkRunDir(runDir, o.RepoRoot); err != nil {
-		return err
-	}
 	raw, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		return errors.New("report: cannot encode the report")
 	}
-	raw = append(raw, '\n')
+	return WriteFile(runDir, FileName, append(raw, '\n'), o)
+}
+
+// WriteFile stores data as runDir/name (a plain file name), mode 0600, by temp
+// file, fsync and rename, then syncs the folder. The run folder is checked as
+// for Write; an existing name that is a link is replaced, never followed. It is
+// the one atomic private writer for files of a run folder.
+func WriteFile(runDir, name string, data []byte, o WriteOptions) error {
+	if runDir == "" {
+		return errors.New("report: no run folder")
+	}
+	if name == "" || name != filepath.Base(name) || name == "." || name == ".." {
+		return errors.New("report: the file name must be a plain name")
+	}
+	if err := checkRunDir(runDir, o.RepoRoot); err != nil {
+		return err
+	}
 	var suffix [8]byte
 	if _, err := rand.Read(suffix[:]); err != nil {
 		return errors.New("report: no random source for a temp file name")
 	}
-	tmp := filepath.Join(runDir, "."+FileName+".tmp"+hex.EncodeToString(suffix[:]))
+	tmp := filepath.Join(runDir, "."+name+".tmp"+hex.EncodeToString(suffix[:]))
 	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL|pathsafe.NoFollow, 0o600)
 	if err != nil {
 		return errors.New("report: cannot create the temp file")
@@ -576,7 +586,7 @@ func Write(runDir string, r Report, o WriteOptions) error {
 	if err := f.Chmod(0o600); err != nil {
 		return fail("report: cannot set the file mode")
 	}
-	if _, err := f.Write(raw); err != nil {
+	if _, err := f.Write(data); err != nil {
 		return fail("report: cannot write the temp file")
 	}
 	if err := f.Sync(); err != nil {
@@ -586,9 +596,9 @@ func Write(runDir string, r Report, o WriteOptions) error {
 		os.Remove(tmp)
 		return errors.New("report: cannot close the temp file")
 	}
-	if err := os.Rename(tmp, filepath.Join(runDir, FileName)); err != nil {
+	if err := os.Rename(tmp, filepath.Join(runDir, name)); err != nil {
 		os.Remove(tmp)
-		return errors.New("report: cannot move the report into place")
+		return errors.New("report: cannot move the file into place")
 	}
 	d, err := os.Open(runDir)
 	if err != nil {

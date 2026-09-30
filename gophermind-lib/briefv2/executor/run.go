@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"sort"
+	"strings"
 	"time"
 
 	"gophermind/gophermind-lib/briefv2/blackboard"
@@ -15,12 +16,12 @@ import (
 	"gophermind/gophermind-lib/briefv2/report"
 )
 
-// runFlags are set only by the package tests, through run. chk replaces the
-// checker once Wave 0 is done, so a test can script the checks of the leaves
-// and of the waves.
+// runFlags are set only by the package tests, through run. afterStart is the
+// one test seam: it is called with the started run (Wave 0 done) before any
+// wave, so a test can replace or wrap what the run calls.
 type runFlags struct {
 	skipAcceptance bool
-	chk            Checker
+	afterStart     func(*runCtx)
 }
 
 // Run is the executor: it builds the approved plan and returns the run Report.
@@ -53,8 +54,8 @@ func run(ctx context.Context, o Options, f runFlags) (Report, error) {
 		}
 	}
 	defer rc.close()
-	if f.chk != nil {
-		rc.chk = f.chk
+	if f.afterStart != nil {
+		f.afterStart(rc)
 	}
 
 	rctx, cause, release := rc.runContext(ctx)
@@ -143,10 +144,7 @@ func (rc *runCtx) planIntact() *stopError {
 		return bad
 	}
 	for key, want := range rc.plan.Hashes {
-		rel := key
-		if len(key) > 5 && key[:5] == "tree/" {
-			rel = key[5:]
-		}
+		rel := strings.TrimPrefix(key, "tree/")
 		raw, err := readPlanFile(rc.o.RunDir, rel)
 		if err != nil || hashHex(raw) != want {
 			return bad
@@ -160,12 +158,15 @@ func (rc *runCtx) planIntact() *stopError {
 // class, "skipped by human" or the last attempt's class. Any other leaf whose
 // direct dependency (in id order) is not verified gives "<id>: blocked by
 // <dep>" and is counted as blocked; a leaf whose dependencies are all verified
-// but that the run never reached gives "<id>: not_run: <reason>". No line holds
-// output text.
+// and whose work began (claimed, in progress, reopened) gives "<id>:
+// interrupted: <reason>"; one the run never reached gives "<id>: not_run:
+// <reason>". No line holds output text.
 func (rc *runCtx) unfinished(rows []blackboard.Row, reason string) (blocked []string, failures []string) {
 	status := map[string]blackboard.Status{}
+	rowOf := map[string]blackboard.Row{}
 	for _, r := range rows {
 		status[r.NodeID] = r.Status
+		rowOf[r.NodeID] = r
 	}
 	if reason == "" {
 		reason = "run_ended"
@@ -204,9 +205,25 @@ func (rc *runCtx) unfinished(rows []blackboard.Row, reason string) (blocked []st
 			failures = append(failures, l.ID+": blocked by "+blocker)
 			continue
 		}
+		if touched(rowOf[l.ID]) {
+			failures = append(failures, l.ID+": interrupted: "+reason)
+			continue
+		}
 		failures = append(failures, l.ID+": not_run: "+reason)
 	}
 	return blocked, failures
+}
+
+// touched reports that work on a leaf began: it was claimed, is being revised,
+// or was reopened (a ready row with attempts or a raised revision).
+func touched(r blackboard.Row) bool {
+	switch r.Status {
+	case blackboard.StatusClaimed, blackboard.StatusInProgress, blackboard.StatusNeedsRevision:
+		return true
+	case blackboard.StatusReady:
+		return r.Revision > 0 || len(r.Attempts) > 0
+	}
+	return false
 }
 
 var safeVersion = regexp.MustCompile(`^[A-Za-z0-9._+~-]{1,64}$`)
