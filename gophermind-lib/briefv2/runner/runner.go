@@ -9,6 +9,14 @@
 // executor refuses to run off darwin unless the sandbox is off, and no Windows
 // target exists, so there is no Windows stub.
 //
+// Residual risk: go test decides "pass" from the text its test binary prints, so code that
+// runs before the testing framework (an init function) can print the exact lines go test turns
+// into events ("=== RUN", "--- PASS", "PASS") and call os.Exit(0); such a leaf verifies without
+// its tests having run (TestInitForgeryDocumentsActualBehaviour records this). Everything a
+// passing test prints after the framework starts is inert (fake JSON, fake fail lines and
+// panic text do not change a pass), and a fake "--- PASS" cannot outvote a real failure. The
+// backstop is the acceptance run against the built binary, which does not trust test output.
+//
 // Output text is reachable only through Output.Text. Nothing here logs, formats
 // or serializes it, and errors never quote it (decision E8).
 package runner
@@ -21,6 +29,7 @@ import (
 	"errors"
 	"fmt"
 	"hash"
+	"io"
 	"io/fs"
 	"os/exec"
 	"path/filepath"
@@ -35,6 +44,7 @@ import (
 const (
 	defaultOutputCap = 65536
 	defaultGrace     = 2 * time.Second
+	defaultStageTime = 5 * time.Minute
 )
 
 // Output is captured combined stdout and stderr. Its text is reachable only
@@ -46,16 +56,6 @@ type Output struct {
 	size      int
 	truncated bool
 	sum       [32]byte
-}
-
-func newOutput(text string, limit int) Output {
-	b := []byte(text)
-	o := Output{size: len(b), sum: sha256.Sum256(b)}
-	if limit > 0 && len(b) > limit {
-		b, o.truncated = b[:limit], true
-	}
-	o.text = b
-	return o
 }
 
 // Text is the first OutputCap bytes the process wrote.
@@ -116,6 +116,7 @@ type cappedWriter struct {
 	limit int
 	size  int
 	h     hash.Hash
+	tee   io.Writer // sees every byte, in order, under the mutex; must not fail or block
 }
 
 func newCappedWriter(limit int) *cappedWriter {
@@ -127,6 +128,9 @@ func (w *cappedWriter) Write(p []byte) (int, error) {
 	defer w.mu.Unlock()
 	w.size += len(p)
 	w.h.Write(p)
+	if w.tee != nil {
+		_, _ = w.tee.Write(p)
+	}
 	if room := w.limit - len(w.buf); room > 0 {
 		if len(p) < room {
 			room = len(p)
@@ -149,6 +153,9 @@ type Config struct {
 	Sandbox   *sandbox.Profile // nil means run unsandboxed (settings say off)
 	OutputCap int              // bytes kept; <=0 means 65536
 	Grace     time.Duration    // cmd.WaitDelay after the leader exits; <=0 means 2s
+	// StageTimeout bounds every check stage (gofmt, build, vet) and a go test run that has no
+	// timeout of its own; <=0 means 5 minutes.
+	StageTimeout time.Duration
 }
 
 // Runner runs commands. It holds no per-call state.
@@ -161,6 +168,9 @@ func New(c Config) *Runner {
 	}
 	if c.Grace <= 0 {
 		c.Grace = defaultGrace
+	}
+	if c.StageTimeout <= 0 {
+		c.StageTimeout = defaultStageTime
 	}
 	return &Runner{cfg: c}
 }
@@ -175,6 +185,8 @@ type Spec struct {
 	// ModCacheWritable is true (the deps step, spec 14, decision E15). Ignored when
 	// Config.Sandbox is nil.
 	ModCacheWritable bool
+
+	stream io.Writer // internal: receives every output byte as it is written (the go test -json parser)
 }
 
 // Shell returns the argv for a shell command line.
@@ -207,6 +219,7 @@ func (r *Runner) Run(ctx context.Context, s Spec) Result {
 		return Result{ExitCode: -1, Err: errors.New("runner: Argv[0] must be an absolute path")}
 	}
 	w := newCappedWriter(r.cfg.OutputCap)
+	w.tee = s.stream
 	cmd := exec.Command(s.Argv[0], s.Argv[1:]...)
 	cmd.Dir = s.Dir
 	cmd.Env = append([]string{}, s.Env...) // non-nil: an empty Env means an empty environment
@@ -240,16 +253,20 @@ func (r *Runner) Run(ctx context.Context, s Spec) Result {
 	var res Result
 	select {
 	case <-done:
+		// Leftovers: a server or sleep the command backgrounded must not outlive it (spec 9),
+		// so the group we started (pgid is the leader's pid) is killed once more, at once
+		// after the reap; ESRCH is fine. The only way that number could name someone else's
+		// group is the pid wrapping around within microseconds of the whole group ending.
+		_ = syscall.Kill(-pgid, syscall.SIGKILL)
 	case <-timeout:
 		res.TimedOut = true
-		_ = syscall.Kill(-pgid, syscall.SIGKILL)
+		_ = syscall.Kill(-pgid, syscall.SIGKILL) // before the reap: the leader's pid is still ours
 		<-done
 	case <-ctx.Done():
 		res.Canceled = true
 		_ = syscall.Kill(-pgid, syscall.SIGKILL)
 		<-done
 	}
-	_ = syscall.Kill(-pgid, syscall.SIGKILL) // leftovers: always, even after a clean exit (ESRCH is fine)
 	res.Duration = time.Since(start)
 	res.ExitCode = -1
 	if cmd.ProcessState != nil {
