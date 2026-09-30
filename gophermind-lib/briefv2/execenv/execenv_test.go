@@ -48,6 +48,8 @@ func TestBuildExactEnvironment(t *testing.T) {
 		"HTTP_PROXY=http://node-fn-a@127.0.0.1:8480",
 		"JWT_SIGNING_KEY=s3cret-value",
 		"LISTEN_ADDR=:8080",
+		"NO_PROXY=127.0.0.1,localhost,::1",
+		"no_proxy=127.0.0.1,localhost,::1",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got  %q\nwant %q", got, want)
@@ -416,5 +418,106 @@ func TestInvalidVariableNames(t *testing.T) {
 				t.Fatalf("want invalid variable name, got %v", err)
 			}
 		})
+	}
+}
+
+func TestGoEnvAllowList(t *testing.T) {
+	for _, k := range []string{"GOTOOLCHAIN", "GOPROXY", "GOFLAGS", "GOSUMDB", "GOPRIVATE"} {
+		t.Run("allowed "+k, func(t *testing.T) {
+			in := base()
+			in.GoEnv = map[string]string{k: "v"}
+			got, err := execenv.Build(in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !contains(got, k+"=v") {
+				t.Errorf("%s=v missing from %q", k, got)
+			}
+		})
+	}
+	for _, k := range []string{"CGO_ENABLED", "GOPATH", "HOME", "GOFLAGS ", "goproxy"} {
+		t.Run("rejected "+k, func(t *testing.T) {
+			in := base()
+			in.GoEnv = map[string]string{k: "v"}
+			_, err := execenv.Build(in)
+			if err == nil || !strings.Contains(err.Error(), "is not allowed") {
+				t.Fatalf("want is not allowed, got %v", err)
+			}
+		})
+	}
+}
+
+func TestGoFlagsRejectToolexec(t *testing.T) {
+	bad := []string{"-toolexec=x", "-toolexec x", "-mod=readonly -overlay=f.json", "--toolexec=x"}
+	for _, v := range bad {
+		t.Run(v, func(t *testing.T) {
+			in := base()
+			in.GoEnv = map[string]string{"GOFLAGS": v}
+			_, err := execenv.Build(in)
+			if err == nil || !strings.Contains(err.Error(), "GOFLAGS may not contain -toolexec or -overlay") {
+				t.Fatalf("want toolexec error, got %v", err)
+			}
+		})
+	}
+	in := base()
+	in.GoEnv = map[string]string{"GOFLAGS": "-mod=readonly -trimpath"}
+	if _, err := execenv.Build(in); err != nil {
+		t.Fatalf("plain flags must pass: %v", err)
+	}
+}
+
+func TestNoProxyAlwaysEmitted(t *testing.T) {
+	got, err := execenv.Build(base())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"NO_PROXY=127.0.0.1,localhost,::1", "no_proxy=127.0.0.1,localhost,::1",
+		"HTTP_PROXY=http://node-fn-a@127.0.0.1:8480", "HTTPS_PROXY=http://node-fn-a@127.0.0.1:8480",
+	} {
+		if !contains(got, want) {
+			t.Errorf("%q missing from %q", want, got)
+		}
+	}
+	in := base()
+	in.ProxyURL = ""
+	got, err = execenv.Build(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kv := range got {
+		if strings.HasPrefix(kv, "NO_PROXY=") || strings.HasPrefix(kv, "no_proxy=") {
+			t.Errorf("no_proxy present without a ProxyURL: %q", kv)
+		}
+	}
+}
+
+func TestBriefCannotDeclareGoEnvNames(t *testing.T) {
+	in := base()
+	in.Env = []brief.EnvVar{{Name: "GOFLAGS", Purpose: "p", Default: strp("x")}}
+	if _, err := execenv.Build(in); err == nil || !strings.Contains(err.Error(), "is reserved for the harness") {
+		t.Fatalf("env: got %v", err)
+	}
+	in = base()
+	in.Secrets = []string{"GOPROXY"}
+	in.SecretValues = secrets(map[string]string{"GOPROXY": "x"})
+	if _, err := execenv.Build(in); err == nil || !strings.Contains(err.Error(), "is reserved for the harness") {
+		t.Fatalf("secret: got %v", err)
+	}
+}
+
+func TestToolchainAcceptsCgoEnabled(t *testing.T) {
+	in := base()
+	in.Toolchain = map[string]string{"CGO_ENABLED": "0"}
+	got, err := execenv.Build(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(got, "CGO_ENABLED=0") {
+		t.Errorf("CGO_ENABLED=0 missing from %q", got)
+	}
+	in.Toolchain = map[string]string{"GOFLAGS": "x"}
+	if _, err := execenv.Build(in); err == nil {
+		t.Fatal("GOFLAGS in Toolchain must still fail")
 	}
 }

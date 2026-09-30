@@ -345,3 +345,24 @@ func TestWatchDeliversChanges(t *testing.T) {
 		t.Fatal("channel not closed after cancel")
 	}
 }
+
+func TestAttemptReplySHA256RoundTrips(t *testing.T) {
+	b, _ := newBB(t)
+	ctx := context.Background()
+	initReady(t, b, "r", "n")
+	sum := "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+	at := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	if err := b.AppendAttempt(ctx, "r", "n", Attempt{Model: "m1", Order: 1, StartedAt: at, Verdict: VerdictPass, ReplySHA256: sum}); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.AppendAttempt(ctx, "r", "n", Attempt{Model: "m2", Order: 2, StartedAt: at, Verdict: VerdictError}); err != nil {
+		t.Fatal(err)
+	}
+	row, err := b.Get(ctx, "r", "n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(row.Attempts) != 2 || row.Attempts[0].ReplySHA256 != sum || row.Attempts[1].ReplySHA256 != "" {
+		t.Fatalf("attempts = %+v", row.Attempts)
+	}
+}
