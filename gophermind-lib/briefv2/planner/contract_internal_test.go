@@ -68,9 +68,15 @@ func TestMergePass(t *testing.T) {
 		t.Error("mergePass changed the document it was given")
 	}
 
+	// A reference to an id nobody has declared yet is not refused here: a later
+	// component may declare it. It is reported as unresolved instead.
+	later, _, err := mergePass(doc, "greeting", `{"functions": [`+fn("fn-a", "func A()", "internal/x/a.go", `"fn-later"`)+`]}`, testRunID)
+	if err != nil || strings.Join(unresolvedUses(later), ",") != "fn-later" {
+		t.Errorf("deferred reference: err %v unresolved %v", err, unresolvedUses(later))
+	}
+
 	bad := []struct{ name, reply, want string }{
 		{"more with nothing new", `{"types": [], "functions": [], "more": true}`, "holds no function"},
-		{"uses an id nobody declared", `{"functions": [` + fn("fn-a", "func A()", "internal/x/a.go", `"fn-later"`) + `]}`, "unknown id"},
 		{"signature is not Go", `{"functions": [` + fn("fn-a", "A(name) string", "internal/x/a.go", ``) + `]}`, "not valid Go"},
 		{"signature is two declarations", `{"functions": [` + fn("fn-a", "func A() {}\\nfunc B()", "internal/x/a.go", ``) + `]}`, "exactly one function"},
 		{"file leaves the repo", `{"functions": [` + fn("fn-a", "func A()", "../a.go", ``) + `]}`, "inside the repository"},
@@ -144,5 +150,28 @@ func TestOutlineMergeErrorsNeverQuoteArbitraryIDs(t *testing.T) {
 	}
 	if got := boundedID(long); len(got) > 70 || !strings.HasPrefix(got, `"aaa`) {
 		t.Errorf("boundedID(long) = %s, want at most 64 bytes of the id", got)
+	}
+}
+
+func TestMergeRepairErrorsNeverQuoteReplyText(t *testing.T) {
+	base, _, err := parseOutline(okOutline, testRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const canary = "CANARY fn id"
+	for name, reply := range map[string]string{
+		"no component":  `{"functions": [{"id": "` + canary + `", "package": "x", "file": "internal/x/a.go", "signature": "func A()", "doc": "d", "uses": []}]}`,
+		"not json":      "CANARY prose",
+		"conflicting":   `{"types": [{"id": "name-error", "package": "x", "file": "internal/x/errors.go", "decl": "// CANARY\ntype NameError int"}]}`,
+		"unknown owner": `{"functions": [{"id": "fn-a", "component": "CANARY", "package": "x", "file": "internal/x/a.go", "signature": "func A()", "doc": "d", "uses": []}]}`,
+	} {
+		_, err := mergeRepair(base, reply, testRunID, nil)
+		if err == nil {
+			t.Errorf("%s: want an error", name)
+			continue
+		}
+		if strings.Contains(err.Error(), "CANARY") {
+			t.Errorf("%s: error quotes reply text: %v", name, err)
+		}
 	}
 }
