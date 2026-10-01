@@ -6,6 +6,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -45,6 +46,9 @@ func Open(path string) (*sql.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("db: %w", err)
 	}
+	if err := ownerOnly(path); err != nil {
+		return nil, err
+	}
 	dsn := "file:" + path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
 	d, err := sql.Open("sqlite", dsn)
 	if err != nil {
@@ -56,6 +60,25 @@ func Open(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("db: %w", err)
 	}
 	return d, nil
+}
+
+// ownerOnly creates the database file and its write-ahead log and shared-memory
+// files with mode 0600 before SQLite opens them (SQLite would otherwise create
+// them with the process umask, commonly 0644) and tightens any that already
+// exist. The folder may be world-readable; the files never are.
+func ownerOnly(path string) error {
+	for _, p := range []string{path, path + "-wal", path + "-shm"} {
+		f, err := os.OpenFile(p, os.O_RDWR|os.O_CREATE, 0o600)
+		if err != nil {
+			return errors.New("db: cannot create the database files")
+		}
+		err = f.Chmod(0o600)
+		f.Close()
+		if err != nil {
+			return errors.New("db: cannot restrict the database files to the owner")
+		}
+	}
+	return nil
 }
 
 // ClearRun deletes every blackboard row, event and ledger row of runID. A new
