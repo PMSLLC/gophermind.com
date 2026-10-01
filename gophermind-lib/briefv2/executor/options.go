@@ -36,6 +36,8 @@ type Options struct {
 	// only the caller knows (which provider base URL host answered). Fixed
 	// words, ids and host names only.
 	EnvNotes []string
+
+	noRedCheck bool // tests only: skip the acceptance red check of Wave 0
 }
 
 // Report is the run report the executor returns.

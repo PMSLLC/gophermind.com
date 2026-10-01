@@ -45,22 +45,24 @@ func (e *stopError) Error() string { return e.Message }
 
 // runCtx is everything one run shares (called rc everywhere).
 type runCtx struct {
-	o         Options
-	cfg       *settings.Config
-	plan      *Plan
-	state     State
-	chk       Checker // *runner.Runner in production
-	git       gitland.Repo
-	closers   []func() error // the CLI, the executor's own proxy; Run closes them
-	prox      *proxy.Proxy
-	streak    *proxy.Streak // critical-host streak, mirrored into state.CriticalStreak
-	policy    packer.ImportPolicy
-	diffOnly  bool
-	bins      map[string]string // built binary name -> SHA-256, taken when it was built
-	accept    acceptPlan        // what the acceptance stage must prove (spec 9), computed before anything starts
-	sandboxOn bool
-	goBin     string
-	gitBin    string
+	o          Options
+	cfg        *settings.Config
+	plan       *Plan
+	state      State
+	chk        Checker // *runner.Runner in production
+	git        gitland.Repo
+	closers    []func() error // the CLI, the executor's own proxy; Run closes them
+	prox       *proxy.Proxy
+	streak     *proxy.Streak // critical-host streak, mirrored into state.CriticalStreak
+	policy     packer.ImportPolicy
+	diffOnly   bool
+	bins       map[string]string // built binary name -> SHA-256, taken when it was built
+	accept     acceptPlan        // what the acceptance stage must prove (spec 9), computed before anything starts
+	serveAddr  string            // the address of the server the plan's serve declaration started, while it runs
+	noRedCheck bool              // tests only: skip the acceptance red check of Wave 0
+	sandboxOn  bool
+	goBin      string
+	gitBin     string
 
 	scratch, home, goCache, modCache, binDir string
 
@@ -139,7 +141,7 @@ func newRunCtx(ctx context.Context, o Options) (*runCtx, error) {
 		return nil, err
 	}
 	rc := &runCtx{
-		o: o, cfg: o.Settings, plan: plan, state: state,
+		o: o, cfg: o.Settings, plan: plan, state: state, noRedCheck: o.noRedCheck,
 		policy: plan.Policy(), diffOnly: plan.Brief.Front.Landing == "diff_only",
 		streak: &proxy.Streak{},
 		rep:    &runReport{blocked: map[string]string{}, reasons: map[string]string{}},
@@ -479,8 +481,8 @@ func allowlist(p *Plan, cfg *settings.Config) (allow, critical []string) {
 	return allow, critical
 }
 
-// allowDirty is every leaf's test file: the Test-writer leaves them
-// uncommitted, and Wave 0 commits them.
+// allowDirty is every leaf's test file and every Go acceptance test: the
+// Test-writer leaves them uncommitted, and Wave 0 commits them.
 func (rc *runCtx) allowDirty() []string {
 	seen := map[string]bool{}
 	var out []string
@@ -488,6 +490,12 @@ func (rc *runCtx) allowDirty() []string {
 		if !seen[l.TestFile] {
 			seen[l.TestFile] = true
 			out = append(out, l.TestFile)
+		}
+	}
+	for _, f := range rc.plan.acceptTestFiles() {
+		if !seen[f] {
+			seen[f] = true
+			out = append(out, f)
 		}
 	}
 	sort.Strings(out)
@@ -619,6 +627,9 @@ func (rc *runCtx) retryWave0(ctx context.Context) error {
 // the build check, the red check, the commit.
 func (rc *runCtx) wave0(ctx context.Context) error {
 	repo := rc.o.Repo
+	if se := rc.checkAcceptTests(); se != nil {
+		return se
+	}
 	typePaths, err := WriteTypes(repo, rc.plan.Contracts, rc.policy)
 	if err != nil {
 		return fmt.Errorf("executor: Wave 0: the contract types could not be written: %w", err)
@@ -835,7 +846,10 @@ func (rc *runCtx) wave0Checks(ctx context.Context) error {
 		return &stopError{Status: "failed", Reason: "wave0_build",
 			Message: "executor: Wave 0 build check failed (" + v.Class + ")" + locations(v.Locations)}
 	}
-	return rc.redCheck(ctx)
+	if err := rc.redCheck(ctx); err != nil {
+		return err
+	}
+	return rc.redCheckAcceptance(ctx)
 }
 
 // redCheck runs each leaf's test against its stub, once, before its first model

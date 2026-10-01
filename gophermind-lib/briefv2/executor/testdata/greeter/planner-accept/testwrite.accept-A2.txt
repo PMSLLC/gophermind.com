@@ -1,0 +1,3 @@
+{
+  "test_file": "package acceptance\n\nimport (\n\t\"io\"\n\t\"net/http\"\n\t\"os\"\n\t\"strings\"\n\t\"testing\"\n\t\"time\"\n)\n\nfunc TestA2(t *testing.T) {\n\tbase := os.Getenv(\"GM_ACCEPTANCE_URL\")\n\tif base == \"\" {\n\t\tt.Fatal(\"GM_ACCEPTANCE_URL is not set\")\n\t}\n\tc := &http.Client{Timeout: 5 * time.Second}\n\tresp, err := c.Get(base + \"/bye?name=Ada\")\n\tif err != nil {\n\t\tt.Fatalf(\"get: %v\", err)\n\t}\n\tdefer resp.Body.Close()\n\tb, _ := io.ReadAll(resp.Body)\n\tif resp.StatusCode != 200 || strings.TrimSpace(string(b)) != \"Goodbye, Ada!\" {\n\t\tt.Fatalf(\"status %d body %q\", resp.StatusCode, b)\n\t}\n}\n"
+}

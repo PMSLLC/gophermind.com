@@ -415,6 +415,7 @@ func (g *rig) options() Options {
 		RunDir: g.runDir, Repo: g.repo, Caller: g.router, Board: g.board, Ledger: g.led,
 		Gate: g.gate, Sink: g.sink, Settings: g.cfg, Secrets: g.secrets, Git: g.git,
 		LedgerErrors: g.router.LedgerErrors,
+		noRedCheck:   true, // the red check has its own tests (acceptance_red_test.go)
 	}
 }
 
