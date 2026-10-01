@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"gophermind/gophermind-lib/briefv2/provider"
 	"gophermind/gophermind-lib/briefv2/settings"
 )
@@ -273,5 +275,47 @@ func TestReasoningEffortDefaultsToNoneForMiniOnly(t *testing.T) {
 		if err := c.Validate(); err != nil {
 			t.Errorf("%s rejected: %v", ok, err)
 		}
+	}
+}
+
+func TestBaseURLFallbacksRoundTripAndValidate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gophermind.yaml")
+	c := settings.Default()
+	c.Providers[0].BaseURLFallbacks = []string{"http://10.8.0.6:11434/v1", "https://alt.example.com/v1"}
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	c.Providers[0].BaseURLFallbacks = []string{"http://10.8.0.6:11434/v1"}
+	body, err := yaml.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := settings.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"http://10.8.0.6:11434/v1"}; !reflect.DeepEqual(got.Providers[0].BaseURLFallbacks, want) {
+		t.Errorf("fallbacks = %v, want %v", got.Providers[0].BaseURLFallbacks, want)
+	}
+	for _, bad := range []string{"", "10.8.0.6:11434", "ftp://10.8.0.6/v1", "http://", "http://u:p@10.8.0.6/v1", "not a url"} {
+		c := settings.Default()
+		c.Providers[0].BaseURLFallbacks = []string{bad}
+		err := c.Validate()
+		if err == nil || !strings.Contains(err.Error(), "base_url_fallbacks") {
+			t.Errorf("fallback %q: err = %v, want a base_url_fallbacks error", bad, err)
+		}
+		if err != nil && bad != "" && strings.Contains(err.Error(), bad) {
+			t.Errorf("fallback %q: the error quotes the value: %v", bad, err)
+		}
+	}
+}
+
+func TestDefaultMiniHasTheVPNFallback(t *testing.T) {
+	d := settings.Default()
+	if d.Providers[0].Name != "mini" || !reflect.DeepEqual(d.Providers[0].BaseURLFallbacks, []string{"http://10.8.0.6:11434/v1"}) {
+		t.Errorf("mini fallbacks = %v", d.Providers[0].BaseURLFallbacks)
 	}
 }

@@ -23,6 +23,7 @@ import (
 	"gophermind/gophermind-lib/briefv2/ledger"
 	"gophermind/gophermind-lib/briefv2/planner"
 	"gophermind/gophermind-lib/briefv2/provider"
+	"gophermind/gophermind-lib/briefv2/report"
 	"gophermind/gophermind-lib/briefv2/router"
 	"gophermind/gophermind-lib/briefv2/settings"
 	"gophermind/gophermind-lib/briefv2/vault"
@@ -311,6 +312,18 @@ func briefStatus(runID string, out, errw io.Writer) int {
 	if err != nil {
 		fmt.Fprintf(errw, "error: %v\n", err)
 		return exitError
+	}
+	var rep *report.Report
+	if r, rerr := report.Read(st.RunDir); rerr == nil {
+		rep = &r
+	}
+	lines, err := executorLines(context.Background(), blackboard.NewSQLite(d), planner.RunRecord{RunID: st.RunID, RunDir: st.RunDir, Repo: st.Repo}, rep)
+	if err != nil {
+		fmt.Fprintf(errw, "error: %v\n", err)
+		return exitError
+	}
+	for _, l := range lines {
+		fmt.Fprintln(out, l)
 	}
 	fmt.Fprintln(out, "\nmodel calls by task type and node class:")
 	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)

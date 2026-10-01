@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -45,6 +46,10 @@ type ProviderConfig struct {
 	APIKeySecret  string       `yaml:"api_key_secret,omitempty"`
 	// ReasoningEffort: none, low, medium or high. Empty means the field is not sent.
 	ReasoningEffort string `yaml:"reasoning_effort,omitempty"`
+	// BaseURLFallbacks are tried in order when BaseURL does not answer within
+	// 3 s at preflight and at the start of a run (the mini's VPN address, for
+	// one). Optional; the first one that answers is used for the process only.
+	BaseURLFallbacks []string `yaml:"base_url_fallbacks,omitempty"`
 }
 
 type Privacy struct {
@@ -93,7 +98,8 @@ func Default() *Config {
 	c := &Config{
 		Providers: []ProviderConfig{
 			{Name: "mini", BaseURL: "http://192.168.1.35:11434/v1", Visibility: Private, MaxConcurrent: 1,
-				Models: []ModelEntry{{ID: "qwen3.6:35b-a3b", ContextTokens: 32768}}, ReasoningEffort: "none"},
+				Models: []ModelEntry{{ID: "qwen3.6:35b-a3b", ContextTokens: 32768}}, ReasoningEffort: "none",
+				BaseURLFallbacks: []string{"http://10.8.0.6:11434/v1"}},
 			{Name: "kilo", BaseURL: "https://api.kilo.ai/api/gateway", Visibility: Public, MaxConcurrent: 2,
 				Models: []ModelEntry{{ID: "kilo-auto/free", ContextTokens: 131072}}},
 			{Name: "ovh", BaseURL: "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1", Visibility: Public, MaxConcurrent: 1,
@@ -212,6 +218,11 @@ func (c *Config) Validate() error {
 		if p.BaseURL == "" {
 			return fmt.Errorf("%s: base_url is required", where)
 		}
+		for _, u := range p.BaseURLFallbacks {
+			if !validBaseURL(u) {
+				return fmt.Errorf("%s: base_url_fallbacks entries must be http or https URLs with a host and no credentials", where)
+			}
+		}
 		if p.Visibility != Private && p.Visibility != Public {
 			return fmt.Errorf("%s: visibility must be private or public, got %q", where, p.Visibility)
 		}
@@ -293,6 +304,13 @@ func (c *Config) Validate() error {
 		return err
 	}
 	return validateToolchain(c.Toolchain)
+}
+
+// validBaseURL accepts an absolute http or https URL with a host and no
+// user information.
+func validBaseURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Hostname() != "" && u.User == nil
 }
 
 // Visibility reports a provider's visibility; ok is false for an unknown name.

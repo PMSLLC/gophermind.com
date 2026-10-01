@@ -266,11 +266,11 @@ func (rc *runCtx) environment() []string {
 			}
 		}
 	}
-	return []string{
+	return append([]string{
 		fmt.Sprintf("sandbox: %s (sandbox-exec %s)", rc.sandboxLabel(), rc.rep.sandboxExec),
 		fmt.Sprintf("binary: %s commit %s", version, commit),
 		fmt.Sprintf("go: %s %s/%s", runtime.Version(), runtime.GOOS, runtime.GOARCH),
-	}
+	}, rc.o.EnvNotes...)
 }
 
 // buildReport is the one place a Report is made. It reads the ledger, the

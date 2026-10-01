@@ -178,7 +178,7 @@ func TestBriefTreeCheckFullExampleReportsDanglingDependency(t *testing.T) {
 }
 
 func TestBriefUnknownSubcommandPrintsUsage(t *testing.T) {
-	code, _, errs := runBriefCmd(t, "", "run", "x.md")
+	code, _, errs := runBriefCmd(t, "", "frobnicate", "x.md")
 	if code != 1 || !strings.Contains(errs, "usage") {
 		t.Errorf("code=%d err=%q", code, errs)
 	}
