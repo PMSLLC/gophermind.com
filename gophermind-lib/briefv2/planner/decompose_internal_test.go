@@ -50,8 +50,6 @@ func TestLeafChecks(t *testing.T) {
 		{"unknown node_class", `"node_class": "validation"`, `"node_class": "magic"`, `node_class (5 bytes) is not one of pure, validation`},
 		{"no node_class", `"node_class": "validation", `, ``, `node_class (0 bytes) is not one of`},
 		{"depends on an id nobody declared", `"depends_on": []`, `"depends_on": ["fn-ghost"]`, "unknown id"},
-		{"a field the schema does not have", `"title": "Greet"`, `"title": "Greet", "notes": "x"`, "additional properties"},
-		{"no title", `"title": "Greet", `, ``, "title"},
 		{"no contract", `"contract": {`, `"agreement": {`, "contract is missing"},
 	}
 	for _, b := range bad {
@@ -103,6 +101,27 @@ func TestLeafChecks(t *testing.T) {
 	})
 }
 
+// A property the schema forbids is dropped, a missing title is derived from the
+// signature; neither quotes the reply.
+func TestExtraPropertiesAreDroppedAndATitleIsDerived(t *testing.T) {
+	c, err := contract.Load([]byte(leafContract))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &run{id: "gm-2026-09-29-900", brief: &brief.Brief{}}
+	d := strings.Replace(okDraft, `"title": "Greet"`, `"title": "", "CANARY-key": "CANARY-value"`, 1)
+	res, err := splitDrafts("["+d+"]", "greeting", c.Functions[:1], c, r)
+	if err != nil || len(res.good) != 1 || len(res.bad) != 0 {
+		t.Fatalf("res %+v err %v", res, err)
+	}
+	if res.good[0]["title"] != "Greet" || res.good[0]["CANARY-key"] != nil {
+		t.Errorf("title %v, extra %v", res.good[0]["title"], res.good[0]["CANARY-key"])
+	}
+	if strings.Contains(strings.Join(res.notes, " "), "CANARY") || len(res.notes) < 2 {
+		t.Errorf("notes %v", res.notes)
+	}
+}
+
 func TestWaves(t *testing.T) {
 	got, err := waves(map[string][]string{"root": nil, "a": nil, "b": {"a"}, "c": {"a", "b"}, "d": {"c"}})
 	if err != nil {
@@ -146,7 +165,6 @@ func TestDecomposeErrorsNeverQuoteTheReply(t *testing.T) {
 		"unknown node id":        edit(`"id": "fn-greet"`, `"id": "`+canary+`"`),
 		"node_class":             edit(`"node_class": "validation"`, `"node_class": "`+canary+`"`),
 		"depends_on":             edit(`"depends_on": []`, `"depends_on": ["`+canary+`"]`),
-		"extra property":         edit(`"title": "Greet"`, `"title": "Greet", "`+canary+`": "`+canary+`"`),
 		"title of wrong type":    edit(`"title": "Greet"`, `"title": {"`+canary+`": 1}`),
 		"input name, no type":    edit(`{"name": "times", "type": "int"}`, `{"name": "`+canary+`", "type": ""}`),
 		"undeclared input":       edit(`{"name": "times", "type": "int"}`, `{"name": "`+canary+`", "type": "int"}`),

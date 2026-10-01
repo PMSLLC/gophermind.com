@@ -121,6 +121,7 @@ func (p *Planner) decomposeMissing(ctx context.Context, r *run, c *contract.Cont
 			if err != nil {
 				return err
 			}
+			p.noteLeafNormalized(res.notes)
 			// The nodes that passed are stored now; the others wait for their repair.
 			dec.Components[comp.ID] = append(dec.Components[comp.ID], res.good...)
 			dec.Pending = append(dec.Pending, res.bad...)
@@ -268,6 +269,11 @@ type nodeEnv struct {
 	isFunction     map[string]bool
 	known          map[string]bool
 	c              *contract.Contracts
+	// notes records, per node checked, the shape changes made before the checks
+	// (field and kind only); details is the schema failure of the node last
+	// checked, as field and keyword.
+	notes   []string
+	details []string
 }
 
 func newNodeEnv(component string, c *contract.Contracts, r *run) *nodeEnv {
@@ -307,13 +313,26 @@ func (e *nodeEnv) normalizeNode(f contract.Function, d map[string]any) (class st
 		kinds = append(kinds, kind)
 		msgs = append(msgs, fmt.Sprintf("node %s: "+format, append([]any{f.ID}, a...)...))
 	}
+	e.details = nil
 	class, _ = d["node_class"].(string)
+	if !contains(nodeClasses, class) {
+		// A node class written into model_tier is a slip of the field, not a refusal.
+		if t, _ := d["model_tier"].(string); contains(nodeClasses, strings.ToLower(strings.TrimSpace(t))) {
+			class = strings.ToLower(strings.TrimSpace(t))
+			e.notes = append(e.notes, f.ID+" node_class from model_tier")
+		}
+	}
 	if !contains(nodeClasses, class) {
 		defect(defNodeClass, "node_class (%d bytes) is not one of %s", len(class), strings.Join(nodeClasses, ", "))
 	}
 	for _, k := range []string{"node_class", "tests", "wave", "claim", "attempts", "result"} {
 		delete(d, k)
 	}
+	fnName := ""
+	if fd, perr := parseSignature(f.Signature); perr == nil {
+		fnName = fd.Name.Name
+	}
+	normalizeShape(d, fnName, func(field, what string) { e.notes = append(e.notes, f.ID+" "+field+" "+what) })
 	d["spec_version"], d["kind"], d["parent"] = "2.0", "function", e.component
 	d["status"], d["revision"], d["brief_ref"] = "pending", 0, e.ref
 	if t, _ := d["title"].(string); len([]rune(t)) > 120 {
@@ -387,6 +406,9 @@ func (e *nodeEnv) normalizeNode(f contract.Function, d map[string]any) (class st
 	d["context"] = nctx
 	if verr := validateDraft(d); verr != nil {
 		defect(defSchema, "%v", verr)
+		if ve := draftSchemaFailure(d); ve != nil {
+			e.details = schemaDetails(ve)
+		}
 	}
 	return class, kinds, msgs, nil
 }
@@ -398,6 +420,7 @@ type draftResult struct {
 	classes map[string]string
 	bad     []pendingDraft
 	noise   []string
+	notes   []string // shape changes made before the checks
 }
 
 // splitDrafts reads a Decompose reply for the functions asked for. A node that
@@ -444,12 +467,14 @@ func splitDrafts(text, component string, fns []contract.Function, c *contract.Co
 			return draftResult{}, err
 		}
 		if len(kinds) > 0 {
-			res.bad = append(res.bad, pendingDraft{Component: component, ID: f.ID, Raw: raw, Defects: kinds, msg: strings.Join(msgs, "; ")})
+			res.bad = append(res.bad, pendingDraft{Component: component, ID: f.ID, Raw: raw, Defects: kinds,
+				Details: append([]string(nil), env.details...), msg: strings.Join(msgs, "; ")})
 			continue
 		}
 		res.classes[f.ID] = class
 		res.good = append(res.good, d)
 	}
+	res.notes = env.notes
 	return res, nil
 }
 
@@ -555,9 +580,29 @@ func hasInput(inputs []map[string]any, param string) bool {
 	return false
 }
 
-// validateDraft checks a draft against the node schema. A function node is
-// only schema-valid once it has tests and a wave, which come later, so the
-// check runs on a copy that has placeholders for both.
+// draftSchemaFailure validates a draft against the node schema and returns the
+// failure, or nil. A function node is only schema-valid once it has tests and a
+// wave, which come later, so the check runs on a copy that has placeholders for
+// both.
+func draftSchemaFailure(d map[string]any) *jsonschema.ValidationError {
+	cp, err := copyDoc(d)
+	if err != nil {
+		return nil
+	}
+	cp["wave"] = 0
+	cp["tests"] = []any{map[string]any{"name": "placeholder", "level": "unit", "given": "", "expect": "", "command": "true"}}
+	raw, err := json.Marshal(cp)
+	if err != nil {
+		return nil
+	}
+	var ve *jsonschema.ValidationError
+	if errors.As(schema.Validate(schema.KindNode, raw), &ve) {
+		return ve
+	}
+	return nil
+}
+
+// validateDraft checks a draft against the node schema (see draftSchemaFailure).
 func validateDraft(d map[string]any) error {
 	cp, err := copyDoc(d)
 	if err != nil {

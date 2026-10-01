@@ -1,0 +1,50 @@
+{
+ "component": "tasks",
+ "raw": {
+  "contract": {
+   "errors": [
+    {
+     "returns": "TaskNotAMemberError",
+     "when": "The assignee is not a member of the company."
+    }
+   ],
+   "file": "internal/task/validators.go",
+   "inputs": [
+    {
+     "name": "ctx",
+     "type": "context.Context"
+    },
+    {
+     "name": "companyID",
+     "type": "uuid.UUID"
+    },
+    {
+     "name": "assigneeID",
+     "type": "uuid.UUID"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "error",
+     "type": "error"
+    }
+   ],
+   "package": "internal/task",
+   "side_effects": [
+    {
+     "target": "fn-is-company-member",
+     "type": "call"
+    }
+   ],
+   "signature": "func ValidateTaskAssignee(ctx context.Context, companyID uuid.UUID, assigneeID uuid.UUID) error"
+  },
+  "depends_on": [
+   "fn-is-company-member"
+  ],
+  "description": "Validates that the assignee is a member of the company. Returns TaskNotAMemberError if not.",
+  "id": "fn-validate-task-assignee",
+  "model_tier": "standard",
+  "node_class": "validation",
+  "title": "Validate Task Assignee Membership"
+ }
+}

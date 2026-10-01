@@ -33,6 +33,7 @@ type pendingDraft struct {
 	Raw       map[string]any `json:"raw,omitempty"` // the node as the model sent it; nil when it sent none
 	Defects   []string       `json:"defects"`
 	Tries     int            `json:"tries,omitempty"`
+	Details   []string       `json:"details,omitempty"` // schema failures as field and keyword
 	msg       string         // the defect messages, for tests; never stored or printed
 }
 
@@ -116,6 +117,7 @@ func (p *Planner) repairDrafts(ctx context.Context, r *run, c *contract.Contract
 		}
 		return writeJSON(r.path(stateDecomposed), dec)
 	}
+	var notes []string
 	// settle tries a pending node again after a change: true when it is now a draft.
 	settle := func(pd *pendingDraft) (bool, error) {
 		f, ok := fn[pd.ID]
@@ -127,17 +129,38 @@ func (p *Planner) repairDrafts(ctx context.Context, r *run, c *contract.Contract
 			return false, nil
 		}
 		d := cloneMap(pd.Raw)
-		class, kinds, _, err := newNodeEnv(pd.Component, c, r).normalizeNode(f, d)
+		env := newNodeEnv(pd.Component, c, r)
+		class, kinds, _, err := env.normalizeNode(f, d)
+		notes = append(notes, env.notes...)
 		if err != nil {
 			return false, err
 		}
 		if len(kinds) > 0 {
-			pd.Defects = kinds
+			pd.Defects, pd.Details = kinds, append([]string(nil), env.details...)
 			return false, nil
 		}
 		dec.Components[pd.Component] = append(dec.Components[pd.Component], d)
 		classes[pd.ID] = class
 		return true, nil
+	}
+	defer func() { p.noteLeafNormalized(notes) }()
+
+	// A node saved by an earlier run is checked again with today's checks (and
+	// today's shape normalisation) before any model is asked about it.
+	var still []pendingDraft
+	for _, pd := range dec.Pending {
+		pd := pd
+		ok, err := settle(&pd)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			still = append(still, pd)
+		}
+	}
+	dec.Pending = still
+	if err := save(); err != nil {
+		return err
 	}
 
 	pos := func(id string) int {
@@ -237,7 +260,11 @@ func (p *Planner) repairDrafts(ctx context.Context, r *run, c *contract.Contract
 			}
 		}
 		rest = append(rest, pd)
-		failed = append(failed, fmt.Sprintf("%s (%s)", boundedID(pd.ID), strings.Join(pd.Defects, ", ")))
+		what := strings.Join(pd.Defects, ", ")
+		if len(pd.Details) > 0 {
+			what += ": " + strings.Join(pd.Details[:min(len(pd.Details), 3)], ", ")
+		}
+		failed = append(failed, fmt.Sprintf("%s (%s)", boundedID(pd.ID), what))
 	}
 	dec.Pending = rest
 	if n > 0 {
@@ -340,8 +367,12 @@ func fixNodeText(pd pendingDraft, f contract.Function, level int) string {
 			}
 		}
 	}
-	return fmt.Sprintf("function %q\ndefects: %s\nfields to write: %s\ncontract entry:\n%s\nthe node as it stands:\n%s\n\n",
-		pd.ID, strings.Join(pd.Defects, ", "), strings.Join(defectFields(pd.Defects), ", "), mustJSON(entry), mustJSON(cur))
+	where := ""
+	if len(pd.Details) > 0 {
+		where = "where: " + strings.Join(pd.Details, "; ") + "\n"
+	}
+	return fmt.Sprintf("function %q\ndefects: %s\n%sfields to write: %s\ncontract entry:\n%s\nthe node as it stands:\n%s\n\n",
+		pd.ID, strings.Join(pd.Defects, ", "), where, strings.Join(defectFields(pd.Defects), ", "), mustJSON(entry), mustJSON(cur))
 }
 
 // defaultLeaf derives the structural fields of a node from its function's
@@ -436,4 +467,19 @@ func defaultLeaf(raw map[string]any, f contract.Function) error {
 	}
 	ct["errors"] = errs
 	return nil
+}
+
+// noteLeafNormalized reports the shape changes made to nodes before the checks
+// as one warning: a count and at most 10 examples (function id, field, kind).
+func (p *Planner) noteLeafNormalized(notes []string) {
+	if len(notes) == 0 {
+		return
+	}
+	shown := notes
+	if len(shown) > maxDefaultedIDsShown {
+		shown = shown[:maxDefaultedIDsShown]
+	}
+	p.emit(events.KindWarning, "decompose", "", fmt.Sprintf(
+		"leaf_normalized: %d values in function nodes were reshaped to the node schema before the checks (%s)",
+		len(notes), strings.Join(shown, "; ")))
 }

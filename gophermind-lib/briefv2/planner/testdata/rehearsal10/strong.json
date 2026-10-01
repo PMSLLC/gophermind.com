@@ -1,0 +1,65 @@
+{
+ "component": "reminders-and-accountability",
+ "raw": {
+  "contract": {
+   "errors": [
+    {
+     "returns": "context error",
+     "when": "ctx is cancelled or deadline exceeded"
+    },
+    {
+     "returns": "non-nil error",
+     "when": "task is nil"
+    },
+    {
+     "returns": "wrapped error from SendNotification",
+     "when": "SendNotification fails"
+    }
+   ],
+   "file": "internal/notify/scheduler.go",
+   "inputs": [
+    {
+     "description": "Context for cancellation and deadlines.",
+     "name": "ctx",
+     "type": "context.Context"
+    },
+    {
+     "description": "The task to send the reminder for. Must not be nil.",
+     "name": "task",
+     "type": "*Task"
+    },
+    {
+     "description": "The specific reminder slot (e.g., d7, d2) to trigger.",
+     "name": "slot",
+     "type": "ReminderSlot"
+    }
+   ],
+   "outputs": [
+    {
+     "description": "Non-nil if sending fails or context is cancelled.",
+     "name": "error",
+     "type": "error"
+    }
+   ],
+   "package": "internal/notify",
+   "side_effects": [
+    {
+     "description": "Sends the actual reminder notification.",
+     "target": "fn-send-notification",
+     "type": "call"
+    }
+   ],
+   "signature": "func SendReminderForSlot(ctx context.Context, task *Task, slot ReminderSlot) error"
+  },
+  "depends_on": [
+   "task",
+   "reminder-slot",
+   "fn-send-notification"
+  ],
+  "description": "Sends a reminder notification for a specific slot if one hasn't been sent yet. Ensures idempotency.",
+  "id": "fn-send-reminder-for-slot",
+  "model_tier": "strong",
+  "node_class": "handler",
+  "title": "Send Reminder for Specific Slot"
+ }
+}

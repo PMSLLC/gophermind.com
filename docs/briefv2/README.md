@@ -363,6 +363,22 @@ the component, it is not an error; at most 40 passes per component, then a fixed
 one a later component writes, and ids still undeclared after every component is
 written go through up to 2 `contract:_repair` passes.
 
+Reshaped nodes. Before the leaf checks run, a Decompose node is normalised for
+deviations that change only its shape: `side_effects` entries sent as objects
+(`{type, target, description}`) become one string each, a string where an array
+is wanted becomes a one-element array, null becomes an empty array or object, a
+`model_tier` is trimmed and case-folded to the schema's enum (an invalid value
+becomes `standard`; a node class written there is taken as the `node_class` when
+that is missing), properties the schema forbids are dropped, and an empty title is
+derived from the function name in the signature. The warning `leaf_normalized`
+gives the count and at most 10 examples (function id, field, kind of change,
+never the content). A node that still fails the schema is reported to its repair
+by field and keyword in a fixed vocabulary (`field:contract.side_effects[]
+keyword:type`, `[]` for an array item, only property names the schema knows), and
+the stage failure names the same for at most 10 nodes. Nodes saved as pending by
+an earlier run are checked again with the current normalisation before any model
+is asked.
+
 Decompose repairs one node at a time. A node of a Decompose reply that fails a
 leaf check (an input per parameter, an output per result, `errors` for a function
 that returns `error`, a node class, a title, a description, known `depends_on`
@@ -382,6 +398,18 @@ titles, descriptions, node classes and dependencies are never invented, so a nod
 still missing one of them ends the stage with an error naming it. A reply that is
 not a JSON array of nodes at all is still an unusable reply. Nodes in a reply that
 nobody asked for, or repeated, are ignored (the first is kept).
+
+Developer debug dump (not for graded runs). When `GOPHERMIND_DEBUG_DUMP_DIR` names
+an existing directory, the planner writes, for every model reply it parses,
+`<stage>-<n>.request.json` (the prompt messages it built; a router retry after an
+unusable reply adds the previous reply and the error to the prompt, which is not
+shown) and `<stage>-<n>.reply.txt` (the raw reply) with mode 0600, and prints
+`debug dump enabled` on stderr once. It exists to see what a model really sent
+when a run fails and is never referenced from the ledger, the state, the events
+or the report. It is ignored, with a warning on stderr, when the directory is
+inside the target repository, the run folder or the config folder. The
+orchestrator never sets it; do not set it for a graded run, because the files
+hold prompts and replies in clear text.
 
 Prompt size. Every contract call is sized to the smallest context window among
 the models of the strong tier (`context_tokens` in `gophermind.yaml`): the

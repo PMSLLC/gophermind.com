@@ -70,7 +70,10 @@ const (
 	Waiting Outcome = "waiting" // a person has to answer before the run can go on
 )
 
-type Planner struct{ d Deps }
+type Planner struct {
+	d    Deps
+	dump dumpState
+}
 
 func New(d Deps) *Planner {
 	if d.Sink == nil {
@@ -201,6 +204,13 @@ func (p *Planner) call(ctx context.Context, r *run, cs callSpec, prompt string, 
 		TaskType: cs.taskType, NodeClass: cs.nodeClass}
 	req := request(cs.stage, prompt, cs.maxTokens)
 	req.MaxGrownTokens = cs.maxGrown
+	if p.dumpDir(r) != "" {
+		inner := parse
+		parse = func(text string) error {
+			p.dumpReply(r, cs.stage, req, text)
+			return inner(text)
+		}
+	}
 	_, err := p.d.Caller.CallParsed(ctx, info, req, parse)
 	var ce *router.ChainExhausted
 	if errors.As(err, &ce) && ce.OnlyPrivacy() {

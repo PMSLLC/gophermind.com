@@ -1,0 +1,62 @@
+{
+ "component": "tasks",
+ "raw": {
+  "contract": {
+   "errors": [
+    {
+     "returns": "database error",
+     "when": "The database write fails."
+    }
+   ],
+   "file": "internal/task/service.go",
+   "inputs": [
+    {
+     "name": "ctx",
+     "type": "context.Context"
+    },
+    {
+     "name": "taskID",
+     "type": "uuid.UUID"
+    },
+    {
+     "name": "actorID",
+     "type": "uuid.UUID"
+    },
+    {
+     "name": "field",
+     "type": "string"
+    },
+    {
+     "name": "oldVal",
+     "type": "*string"
+    },
+    {
+     "name": "newVal",
+     "type": "*string"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "error",
+     "type": "error"
+    }
+   ],
+   "package": "internal/task",
+   "side_effects": [
+    {
+     "target": "task-history",
+     "type": "write"
+    }
+   ],
+   "signature": "func RecordTaskHistory(ctx context.Context, taskID uuid.UUID, actorID uuid.UUID, field string, oldVal, newVal *string) error"
+  },
+  "depends_on": [
+   "task-history"
+  ],
+  "description": "Records a change to a task in the history table.",
+  "id": "fn-record-task-history",
+  "model_tier": "standard",
+  "node_class": "storage",
+  "title": "Record Task History Entry"
+ }
+}
