@@ -179,8 +179,11 @@ A provider may list `base_url_fallbacks` in the settings. When `base_url` does n
 Every child process of a run (builds, vet, tests, acceptance commands and the
 built binaries) runs under `sandbox-exec` on macOS. It may write only the
 repository, a per-run scratch directory and the caches, it cannot write the run
-folder or `.git`, it cannot read the rest of your home directory, and it cannot
-reach any address but loopback. Off macOS the executor refuses to start unless
+folder or `.git`, it cannot read the rest of your home directory, it cannot read
+`.env`, `.env.*`, `*.pem`, `*.key`, `id_rsa*` or `.git/config` inside the repo, and
+it cannot reach any address but the loopback ports the run lists (the harness
+proxy, the acceptance addresses and the loopback `host:port` of URL-valued
+secrets), so a local Ollama or Postgres is out of reach unless it is listed. Off macOS the executor refuses to start unless
 `executor.sandbox: off` is set; the setting is recorded in the report and printed
 at the start and end. Only the deps step reaches a module proxy: the harness runs
 a small forward proxy on loopback, with a host allowlist, and fetches modules
@@ -188,6 +191,26 @@ through it (the child itself only ever talks to loopback). Leaf commands run wit
 `GOPROXY=off`, so no leaf depends on the network. The proxy is policy and an audit
 log (`proxy.log`); the sandbox is the containment. A run whose
 `dependencies.json` is empty never touches the network.
+
+The profile also closes the macOS escape routes that `(allow default)` leaves open:
+a child cannot start anything through Launch Services (`open`, Apple events,
+`osascript`), read the clipboard, talk to the security daemons, signal a process
+outside its own process group, or exec `open`, `osascript`, `security`,
+`launchctl`, `sudo`, `ssh`, `scp`, `nc`, `su` or `login`. `curl`, `go` and `git`
+stay executable, but `git` run inside the sandbox cannot read `.git/config` and
+fails; the harness runs its own git outside it. A child that calls `setsid` leaves
+the process group, so after every command the runner finds the descendants by
+ancestry, kills them and records a warning if one survives. The proxy pins a
+provider's allowlist entry to its `base_url` port (so the Mac mini's address
+reaches port 11434 only, never ssh or a database), while a brief `network` entry
+without a port still matches every port of its host. The state database
+(`blackboard.db`, with its `-wal` and `-shm` files) is created owner-only (0600).
+Model calls never follow a redirect and ignore `HTTP_PROXY`; a call that times
+out puts that model on a cooldown (`rate_limits.cooldown_after_timeout_seconds`,
+default 60) and the next model in the chain is tried; a provider may set
+`call_timeout_seconds` (at least 1) to override `defaults.call_timeout`, and a new
+config gives the private mini 1500 (25 minutes); `settings.Validate` refuses a
+`private` provider whose `base_url` is not a private-network host.
 
 ## Executor settings
 
