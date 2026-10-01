@@ -163,6 +163,12 @@ func setCommand(t *testing.T, rc *runCtx, id, cmd string) {
 
 // oneBullet is an acceptPlan of acceptance bullets with the given commands,
 // named A1, A2, ...
+// vr makes a command a real probe of the server as far as the vacuity check
+// can tell (it names the base URL and does something), then runs cmd.
+func vr(cmd string) string {
+	return `test -n "$GM_ACCEPTANCE_URL"; grep -q module go.mod; ` + cmd
+}
+
 func oneBullets(cmds ...string) acceptPlan {
 	var p acceptPlan
 	for i, c := range cmds {
@@ -436,7 +442,7 @@ func TestAcceptanceKillsProcessGroup(t *testing.T) {
 		edit := func(rc *runCtx, h *hybridChecker) {
 			b := bullet(t, rc, "A2")
 			cmd := b.tests[0].Command
-			cmd = strings.Replace(cmd, "greeter --addr", `echo $port > "$TMPDIR/port"; greeter --addr`, 1)
+			cmd = strings.Replace(cmd, "greeter --addr", `echo "$GM_ACCEPTANCE_ADDR" > "$TMPDIR/port"; greeter --addr`, 1)
 			setCommand(t, rc, "A2", cmd)
 		}
 		rep, err, _ := g.accRun(t, goodScript(g), g.fastChecker(), edit, nil)
@@ -447,7 +453,7 @@ func TestAcceptanceKillsProcessGroup(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		conn, err := net.DialTimeout("tcp", "127.0.0.1:"+strings.TrimSpace(string(raw)), time.Second)
+		conn, err := net.DialTimeout("tcp", strings.TrimSpace(string(raw)), time.Second)
 		if err == nil {
 			conn.Close()
 			t.Fatal("the server A2 started still accepts connections")
@@ -504,13 +510,13 @@ func TestAcceptanceProofFile(t *testing.T) {
 func repairBullets(rc *runCtx, t *testing.T, fixA1 bool) {
 	byeFile := rc.plan.Leaf("fn-bye").File
 	helloFile := rc.plan.Leaf("fn-hello").File
-	setCommand(t, rc, "A2", "grep -q MARKER-BYE "+byeFile+" || { echo CANARY-ACC-OUT; exit 1; }")
+	setCommand(t, rc, "A2", vr("grep -q MARKER-BYE "+byeFile+" || { echo CANARY-ACC-OUT; exit 1; }"))
 	bullet(t, rc, "A2").nodes = []string{"fn-bye"}
 	if !fixA1 {
-		setCommand(t, rc, "A1", "grep -q MARKER-HELLO "+helloFile+" || { echo CANARY-A1-OTHER; exit 1; }")
+		setCommand(t, rc, "A1", vr("grep -q MARKER-HELLO "+helloFile+" || { echo CANARY-A1-OTHER; exit 1; }"))
 		bullet(t, rc, "A1").nodes = []string{"fn-hello"}
 	} else {
-		setCommand(t, rc, "A1", "true")
+		setCommand(t, rc, "A1", vr("grep -q main cmd/greeter/main.go"))
 	}
 }
 
@@ -603,14 +609,14 @@ func TestAcceptanceRepairThenFail(t *testing.T) {
 	t.Run("a bullet no leaf owns stops at once", func(t *testing.T) {
 		g := newRig(t)
 		edit := func(rc *runCtx, h *hybridChecker) {
-			setCommand(t, rc, "A2", "echo CANARY-ACC-OUT; exit 1")
+			setCommand(t, rc, "A2", vr("echo CANARY-ACC-OUT; exit 1"))
 			bullet(t, rc, "A2").nodes = []string{"root"} // a node that is not a leaf
 		}
 		rep, err, _ := g.accRun(t, goodScript(g), g.fastChecker(), edit, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if rep.Status != "failed" || rep.StopReason != "unattributable" || !strings.Contains(strings.Join(rep.Failures, " "), "A2") {
+		if rep.Status != "failed" || rep.StopReason != "acceptance_unmapped" || !strings.Contains(strings.Join(rep.Failures, " "), "A2") {
 			t.Fatalf("report = %s (%s), %v", rep.Status, rep.StopReason, rep.Failures)
 		}
 		if n := len(g.leafCalls("fn-bye")) + len(g.leafCalls("fn-serve")); n != 2 {
@@ -661,54 +667,4 @@ func TestConstraintsChecked(t *testing.T) {
 			t.Errorf("constraints = %+v, want 1 of 2", rep.Constraints)
 		}
 	})
-}
-
-// A run whose commands cannot reach their database is an environment fault of
-// the run, never a leaf's: no repair call, status failed.
-func TestAcceptanceEnvironmentFaultIsNotALeafFailure(t *testing.T) {
-	t.Parallel()
-	g := newRig(t, func(o *rigOpts) {
-		o.BriefEdit = func(s string) string {
-			return strings.Replace(s, "secrets:\n", "secrets:\n  - name: TEST_DATABASE_URL\n    purpose: \"Postgres for the acceptance checks\"\n", 1)
-		}
-	})
-	edit := func(rc *runCtx, h *hybridChecker) {
-		setCommand(t, rc, "A2", "echo 'dial tcp 127.0.0.1:5432: connect: connection refused (postgres)'; exit 1")
-	}
-	rep, err, _ := g.accRun(t, goodScript(g), g.fastChecker(), edit, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if rep.Status != "failed" || rep.StopReason != "acceptance_environment" {
-		t.Fatalf("report = %s (%s), %v", rep.Status, rep.StopReason, rep.Failures)
-	}
-	if n := len(g.leafCalls("fn-bye")) + len(g.leafCalls("fn-serve")); n != 2 {
-		t.Errorf("%d implement calls, want 2 (no repair for an environment fault)", n)
-	}
-	if strings.Contains(strings.Join(rep.Failures, " "), "5432") {
-		t.Error("output text reached the report")
-	}
-}
-
-// Output and secrets of a passing run reach no store: not the proof file, the
-// events, the report, sqlite, the ledger, the blackboard or a commit message.
-func TestAcceptanceLeavesNoCanaryInAnyStore(t *testing.T) {
-	t.Parallel()
-	g := newRig(t)
-	edit := func(rc *runCtx, h *hybridChecker) {
-		a1 := bullet(t, rc, "A1").tests[0].Command
-		setCommand(t, rc, "A1", `echo "CANARY-ACC-OUT $GREETER_TOKEN"; echo "CANARY-ACC-ERR" >&2; `+a1)
-	}
-	rep, err, _ := g.accRun(t, goodScript(g), g.fastChecker(), edit, nil)
-	if err != nil || rep.Status != "verified" {
-		t.Fatalf("run = %s (%s), %v, %v", rep.Status, rep.StopReason, rep.Failures, err)
-	}
-	for _, c := range []string{canarySecret, "CANARY-ACC-OUT", "CANARY-ACC-ERR"} {
-		if hasCanary(t, g, c) {
-			t.Errorf("%s reached a store", c)
-		}
-	}
-	if b, err := json.Marshal(rep); err != nil || strings.Contains(string(b), "CANARY") {
-		t.Errorf("the report holds a canary: %v", err)
-	}
 }

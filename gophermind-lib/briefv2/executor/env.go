@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gophermind/gophermind-lib/briefv2/execenv"
@@ -73,7 +74,19 @@ func (rc *runCtx) env(nodeID string, mode envMode) ([]string, error) {
 			in.SecretValues = func(names []string) ([]string, error) { return rc.o.Secrets.Env(scope, names) }
 		}
 	}
-	return execenv.Build(in)
+	out, err := execenv.Build(in)
+	if err != nil || mode != envAcceptance {
+		return out, err
+	}
+	// The acceptance run belongs to no node: execenv insists on an id, and the
+	// variable that carries it is dropped again.
+	kept := out[:0]
+	for _, e := range out {
+		if !strings.HasPrefix(e, "GOPHERMIND_NODE=") {
+			kept = append(kept, e)
+		}
+	}
+	return kept, nil
 }
 
 // goCmd runs one go command in the repository. Only envDeps makes the module
