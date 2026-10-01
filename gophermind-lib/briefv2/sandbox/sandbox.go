@@ -2,13 +2,15 @@
 // the executor runs under, and wraps an exec.Cmd to use it.
 //
 // Ruling: the plan mandates "(allow default)" followed by targeted denies, so
-// process exec, fork, signals and mach-lookup stay open. Only file writes,
-// reads of the home directory and network access are contained. The residual
-// risk is that model-written code can still reach mach services, exec any
-// binary it can read, and signal other processes of the same user. A
-// (deny process-exec) rule was tried in scope and left out: go test must run
-// binaries it builds under the scratch directory, so a deny would be broad or
-// would break the toolchain.
+// fork and ordinary exec stay open and go test can run binaries it builds under
+// the scratch directory. The targeted denies cover the escapes a reviewer
+// verified with the real sandbox-exec: Launch Services (open, lsd, Apple
+// events, osascript), the pasteboard, the security daemons, signals to
+// processes outside the child's own process group, a short list of launcher
+// and remote-access binaries, loopback ports that were not listed, secret-named
+// files in the repo and writes under <repo>/.gophermind. SBPL has no port
+// ranges and the compiler refuses a profile of several thousand port filters,
+// so LoopbackRange is expanded into single ports and capped at maxRangePorts.
 package sandbox
 
 import (
@@ -19,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -36,6 +39,27 @@ type Profile struct {
 	ModCacheWritable bool     // true only for the deps step
 	ReadOnly         []string // toolchain roots: GOROOT, the directories of go and git, PATH entries
 	Home             string   // the real home directory; empty means no home rule
+	LoopbackPorts    []int    // loopback TCP ports a child may connect to; none listed means no loopback at all
+	LoopbackRange    [2]int   // inclusive range of further loopback ports (at most maxRangePorts); {0,0} means none
+}
+
+// maxRangePorts is the widest LoopbackRange the sandbox compiler accepts with margin.
+const maxRangePorts = 4096
+
+// deniedExec lists binaries a child may not execute. curl, go and git stay allowed.
+var deniedExec = []string{
+	"/usr/bin/open", "/usr/bin/osascript", "/usr/bin/security", "/bin/launchctl", "/usr/bin/sudo",
+	"/usr/bin/ssh", "/usr/bin/scp", "/usr/bin/nc", "/usr/bin/su", "/usr/bin/login",
+}
+
+// secretRegex lists the file name patterns denied for reads inside the repo.
+// They sit inside a require-all with the repo subpath, so the repo path itself is
+// never placed in a regex and needs no regex escaping.
+var secretRegex = []string{
+	`/\.env(\.[^/]*)?$`,
+	`\.pem$`,
+	`\.key$`,
+	`/id_rsa[^/]*$`,
 }
 
 // ErrSandboxRequired is returned when the platform has no sandbox and the
@@ -151,6 +175,35 @@ func subpaths(ps []string) string {
 	return strings.Join(parts, " ")
 }
 
+// loopbackPorts validates LoopbackPorts and LoopbackRange and returns the sorted,
+// de-duplicated port list. Errors name the field, never the value.
+func (p Profile) loopbackPorts() ([]int, error) {
+	seen := map[int]bool{}
+	for _, n := range p.LoopbackPorts {
+		if n < 1 || n > 65535 {
+			return nil, errors.New("sandbox: LoopbackPorts holds a port outside 1-65535")
+		}
+		seen[n] = true
+	}
+	if lo, hi := p.LoopbackRange[0], p.LoopbackRange[1]; lo != 0 || hi != 0 {
+		if lo < 1 || hi > 65535 || lo > hi {
+			return nil, errors.New("sandbox: LoopbackRange is not a valid port range")
+		}
+		if hi-lo+1 > maxRangePorts {
+			return nil, errors.New("sandbox: LoopbackRange is too wide")
+		}
+		for n := lo; n <= hi; n++ {
+			seen[n] = true
+		}
+	}
+	out := make([]int, 0, len(seen))
+	for n := range seen {
+		out = append(out, n)
+	}
+	sort.Ints(out)
+	return out, nil
+}
+
 // Text returns the SBPL profile. Later rules win in SBPL, so the denies precede
 // the specific allows and are repeated after the read allow.
 func (p Profile) Text() (string, error) {
@@ -191,6 +244,11 @@ func (p Profile) Text() (string, error) {
 		}
 	}
 
+	ports, err := p.loopbackPorts()
+	if err != nil {
+		return "", err
+	}
+
 	writes := []string{repo, scratch, goCache}
 	reads := []string{repo, scratch, goCache}
 	if modCache != "" {
@@ -205,25 +263,60 @@ func (p Profile) Text() (string, error) {
 	}
 
 	gitDeny := fmt.Sprintf("(deny file-write* (subpath %q) (literal %q))\n", repo+"/.git", repo+"/.git")
+	// Writes under <repo>/.gophermind are denied (other briefs' run directories,
+	// ledgers and caches); a scratch or cache directory placed inside it stays
+	// writable, and the run's own RunDir is denied again after that.
+	gmDir := repo + "/.gophermind"
+	gmDeny := fmt.Sprintf("(deny file-write* (subpath %q))\n", gmDir)
+	for _, w := range []string{scratch, goCache} {
+		if strings.HasPrefix(w, gmDir+"/") {
+			gmDeny += fmt.Sprintf("(allow file-write* (subpath %q))\n", w)
+		}
+	}
 	runDeny := ""
 	if runDir != "" {
 		runDeny = fmt.Sprintf("(deny file-write* (subpath %q))\n", runDir)
 	}
+	writeDeny := gitDeny + gmDeny + runDeny
 
 	var b strings.Builder
 	b.WriteString("(version 1)\n(allow default)\n")
+	// Escape routes that (allow default) leaves open: Launch Services and Apple
+	// events, the pasteboard, the security daemons, signals to outsiders and
+	// launcher binaries. Later rules win, so each deny is followed by its allow.
+	b.WriteString("(deny mach-lookup (global-name-prefix \"com.apple.coreservices\") (global-name-prefix \"com.apple.lsd\"))\n")
+	b.WriteString("(deny mach-lookup (global-name \"com.apple.pasteboard.1\"))\n")
+	b.WriteString("(deny mach-lookup (global-name \"com.apple.SecurityServer\") (global-name \"com.apple.securityd\") (global-name \"com.apple.security.agent\"))\n")
+	b.WriteString("(deny mach-lookup (global-name \"com.apple.coreservices.appleevents\"))\n")
+	b.WriteString("(deny signal)\n")
+	b.WriteString("(allow signal (target self) (target pgrp) (target children))\n")
+	lits := make([]string, len(deniedExec))
+	for i, e := range deniedExec {
+		lits[i] = fmt.Sprintf("(literal %q)", e)
+	}
+	fmt.Fprintf(&b, "(deny process-exec %s)\n", strings.Join(lits, " "))
 	b.WriteString("(deny file-write*)\n")
 	fmt.Fprintf(&b, "(allow file-write* %s (literal \"/dev/null\") (literal \"/dev/tty\"))\n", subpaths(writes))
-	b.WriteString(gitDeny)
-	b.WriteString(runDeny)
+	b.WriteString(writeDeny)
 	if home != "" {
 		fmt.Fprintf(&b, "(deny file-read* (subpath %q))\n", home)
 		fmt.Fprintf(&b, "(allow file-read* %s)\n", subpaths(reads))
-		b.WriteString(gitDeny)
-		b.WriteString(runDeny)
+		b.WriteString(writeDeny)
 	}
+	// Secret-named files in the repo are unreadable whether or not a home rule
+	// exists; these come after the reads allow so they win.
+	for _, re := range secretRegex {
+		fmt.Fprintf(&b, "(deny file-read* (require-all (subpath %q) (regex #\"%s\")))\n", repo, re)
+	}
+	fmt.Fprintf(&b, "(deny file-read* (literal %q))\n", repo+"/.git/config")
 	b.WriteString("(deny network*)\n")
-	b.WriteString("(allow network-outbound (remote ip \"localhost:*\"))\n")
+	if len(ports) > 0 {
+		pf := make([]string, len(ports))
+		for i, n := range ports {
+			pf[i] = fmt.Sprintf("(remote ip \"localhost:%d\")", n)
+		}
+		fmt.Fprintf(&b, "(allow network-outbound %s)\n", strings.Join(pf, " "))
+	}
 	b.WriteString("(allow network-inbound (local ip \"localhost:*\"))\n")
 	b.WriteString("(allow network-bind (local ip \"localhost:*\"))\n")
 	return b.String(), nil
