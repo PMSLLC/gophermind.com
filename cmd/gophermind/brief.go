@@ -20,6 +20,9 @@ const briefUsage = `usage:
   gophermind brief validate <brief.md>
   gophermind brief plan <brief.md> [--yes] [--gate terminal|file] [--fake <fixture-dir>] [--allow-public]
   gophermind brief resume <run-id> [--yes] [--gate terminal|file] [--fake <fixture-dir>] [--allow-public]
+  gophermind brief run <run-id> [--gate terminal|file] [--repo <path>] [--workers n]
+  gophermind brief run <run-id> --check-env      (environment preflight, no model call; exit 6 on a failed check)
+  gophermind brief report <run-id> [--json]
   gophermind brief status <run-id>
   gophermind brief coverage <run-id>
   gophermind brief calls <run-id>
@@ -28,8 +31,8 @@ const briefUsage = `usage:
   gophermind brief tree check <run-dir>`
 
 // runBrief implements `gophermind brief ...` and returns the process exit
-// code: 0 ok, 1 error, 2 invalid brief, 3 waiting on a human (plan and resume
-// with the file gate).
+// code: 0 ok, 1 error, 2 invalid brief, 3 waiting on a human (file gate), 4
+// escalated, 5 interrupted (run), 6 failed preflight (run --check-env).
 func runBrief(args []string, in *os.File, out, errw io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprintln(errw, briefUsage)
@@ -44,6 +47,10 @@ func runBrief(args []string, in *os.File, out, errw io.Writer) int {
 		return briefValidate(args[1], out, errw)
 	case "plan", "resume":
 		return briefPlan(args[0], args[1:], in, out, errw)
+	case "run":
+		return briefRun(args[1:], in, out, errw)
+	case "report":
+		return briefReport(args[1:], out, errw)
 	case "status", "coverage", "calls":
 		if len(args) != 2 {
 			fmt.Fprintln(errw, briefUsage)

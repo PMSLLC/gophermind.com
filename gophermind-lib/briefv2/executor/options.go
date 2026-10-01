@@ -32,6 +32,10 @@ type Options struct {
 	Proxy        *proxy.Proxy // nil means the executor starts its own
 	LedgerErrors func() int   // (*router.Router).LedgerErrors; nil means none
 	Now          func() time.Time
+	// EnvNotes are extra lines for the report's environment section, for what
+	// only the caller knows (which provider base URL host answered). Fixed
+	// words, ids and host names only.
+	EnvNotes []string
 }
 
 // Report is the run report the executor returns.
