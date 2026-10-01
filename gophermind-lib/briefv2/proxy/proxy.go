@@ -135,7 +135,7 @@ func New(c Config) (*Proxy, error) {
 		if !ok {
 			return nil, errInvalidRuleHost
 		}
-		rules[i] = Rule{Host: h, Critical: r.Critical}
+		rules[i] = Rule{Host: h, Critical: r.Critical, Port: r.Port}
 	}
 	c.Rules = rules
 	if c.resolve == nil {
@@ -458,7 +458,7 @@ func (p *Proxy) authorize(w http.ResponseWriter, ri *reqInfo, rawHost, rawPort s
 		return "", "", false, false
 	}
 	ri.host = host
-	allowed, crit := matchRules(p.cfg.Rules, host)
+	allowed, crit := matchRules(p.cfg.Rules, host, n)
 	if !allowed {
 		p.record(ri.node, host, "denied", criticalDenied(p.cfg.Rules, host))
 		deny(w)
@@ -521,7 +521,8 @@ func (p *Proxy) dialContext(ctx context.Context, network, addr string) (net.Conn
 }
 
 func (p *Proxy) dialHost(ctx context.Context, host, port string) (net.Conn, error) {
-	if allowed, _ := matchRules(p.cfg.Rules, host); !allowed {
+	pn, _ := strconv.Atoi(port)
+	if allowed, _ := matchRules(p.cfg.Rules, host, pn); !allowed {
 		return nil, errDenied
 	}
 	if isIPLiteral(host) {
