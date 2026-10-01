@@ -22,6 +22,7 @@ import (
 	"gophermind/gophermind-lib/briefv2/provider"
 	"gophermind/gophermind-lib/briefv2/router"
 	"gophermind/gophermind-lib/briefv2/runner"
+	"gophermind/gophermind-lib/briefv2/vault"
 )
 
 func TestScriptedProviderPopsPerStage(t *testing.T) {
@@ -228,7 +229,8 @@ type Script map[string][]step
 // depend on which chain entry served the call. It knows stages from the system
 // message (packer.SystemPrefix) and keeps every request.
 type scriptedProvider struct {
-	Loop bool // repeat the last step of a stage when it is exhausted
+	Loop   bool               // repeat the last step of a stage when it is exhausted
+	Before func(stage string) // runs when a call for the stage arrives, before its step answers (never under the lock)
 
 	mu     sync.Mutex
 	script map[string][]step
@@ -273,7 +275,11 @@ func (sp *scriptedProvider) next(req provider.Request) (step, error) {
 		sp.fail("scripted provider: no reply left for stage %q", stage)
 		return step{}, fmt.Errorf("scripted provider: no reply left for stage %q", stage)
 	}
+	before := sp.Before
 	sp.mu.Unlock()
+	if before != nil {
+		before(stage)
+	}
 	return st, nil
 }
 
@@ -906,3 +912,54 @@ func traced(rc *runCtx) *traceBoard {
 
 // useChecker is the runFlags.afterStart that replaces the run's checker.
 func useChecker(c Checker) func(*runCtx) { return func(rc *runCtx) { rc.chk = c } }
+
+// TestRigInReopens: a rig over a directory the caller owns can be closed and
+// rebuilt from the directory alone (what a second process does): the same
+// plan, the same blackboard rows, the same secret, and no second planning.
+func TestRigInReopens(t *testing.T) {
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := newRigIn(t, dir, Script{})
+	ctx := context.Background()
+	if err := a.board.InitRun(ctx, a.id, []string{"fn-greet"}, map[string]int{"fn-greet": 0}); err != nil {
+		t.Fatal(err)
+	}
+	rowsA, err := a.board.List(ctx, a.id, blackboard.Filter{})
+	if err != nil || len(rowsA) == 0 {
+		t.Fatalf("rows = %d, %v", len(rowsA), err)
+	}
+	approvalA, err := os.ReadFile(filepath.Join(a.runDir, "approval.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.close()
+
+	b := newRigIn(t, dir, Script{})
+	if b.repo != a.repo || b.runDir != a.runDir || b.id != a.id {
+		t.Fatalf("paths differ: %s %s vs %s %s", b.repo, b.runDir, a.repo, a.runDir)
+	}
+	rowsB, err := b.board.List(ctx, b.id, blackboard.Filter{})
+	if err != nil || len(rowsB) != len(rowsA) {
+		t.Fatalf("rebuilt rows = %d, %v; want %d", len(rowsB), err, len(rowsA))
+	}
+	for i := range rowsA {
+		if rowsA[i].NodeID != rowsB[i].NodeID || rowsA[i].Status != rowsB[i].Status {
+			t.Errorf("row %d differs: %v vs %v", i, rowsA[i], rowsB[i])
+		}
+	}
+	approvalB, _ := os.ReadFile(filepath.Join(b.runDir, "approval.json"))
+	if !bytes.Equal(approvalA, approvalB) {
+		t.Error("the plan was made again")
+	}
+	if len(b.plan.Leaves) != len(a.plan.Leaves) || len(b.plan.Leaves) != 5 {
+		t.Errorf("leaves = %d, want 5", len(b.plan.Leaves))
+	}
+	if v, ok := b.secrets.Get(vault.RunScope(b.id), greeterSecret); !ok || v != canarySecret {
+		t.Error("the rebuilt rig does not hold the run's secret")
+	}
+	if b.fake == nil || b.router == nil || b.gate == nil {
+		t.Error("newRigIn must wire the script")
+	}
+}

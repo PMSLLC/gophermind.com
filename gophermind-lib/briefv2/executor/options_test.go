@@ -167,3 +167,23 @@ func TestOptionsNeverPrintSecrets(t *testing.T) {
 		}
 	}
 }
+
+// The CLI's --workers is refused unless it is 1, with the same words as the
+// executor.workers setting.
+func TestCheckWorkers(t *testing.T) {
+	t.Parallel()
+	for _, n := range []int{0, -1, 2, 8, 1000} {
+		err := CheckWorkers(n)
+		if err == nil || err.Error() != "--workers must be 1 until leaf-isolated trees exist" {
+			t.Errorf("CheckWorkers(%d) = %v, want the fixed refusal", n, err)
+		}
+	}
+	if err := CheckWorkers(1); err != nil {
+		t.Errorf("CheckWorkers(1) = %v, want nil", err)
+	}
+	c := settings.Default()
+	c.Executor.Workers = 2
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "must be 1 until leaf-isolated trees exist") {
+		t.Errorf("settings refuse workers 2 with %v: the wording must stay shared with the flag", err)
+	}
+}

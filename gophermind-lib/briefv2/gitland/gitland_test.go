@@ -1019,3 +1019,113 @@ func TestReenterWorkBranch(t *testing.T) {
 		}
 	})
 }
+
+// A run killed between the final commit and the fast-forward, or after the
+// fast-forward, is resumed by a new CLI: Finish must not make a second final
+// commit (spec 10: no commit is made twice).
+func TestFinishIsIdempotentAfterAKill(t *testing.T) {
+	setup := func(t *testing.T) (*CLI, string) {
+		c := newRepo(t)
+		if err := c.Start("main", "gm/x", nil); err != nil {
+			t.Fatal(err)
+		}
+		put(t, c, "a.go", "package x\n")
+		if _, err := c.CommitLeaf("fn-a", "A", []string{"a.go"}, nil); err != nil {
+			t.Fatal(err)
+		}
+		return c, gx(t, c, "rev-parse", "main")
+	}
+	finals := func(t *testing.T, c *CLI) int {
+		out := gx(t, c, "log", "--all", "--format=%s", "--grep=^gm(run): ")
+		if strings.TrimSpace(out) == "" {
+			return 0
+		}
+		return len(strings.Split(out, "\n"))
+	}
+	resumed := func(t *testing.T, c *CLI) *CLI {
+		n, err := NewCLI(c.dir, "run-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = n.Close() })
+		if err := n.Start("main", "gm/x", nil); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	t.Run("after the fast-forward", func(t *testing.T) {
+		c, _ := setup(t)
+		first, err := c.Finish("built")
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := resumed(t, c)
+		second, err := n.Finish("built")
+		if err != nil || second != first {
+			t.Fatalf("second Finish = %q, %v; want %q", second, err, first)
+		}
+		if finals(t, c) != 1 {
+			t.Fatalf("final commits = %d, want 1", finals(t, c))
+		}
+		if gx(t, c, "rev-parse", "main") != gx(t, c, "rev-parse", "gm/x") {
+			t.Fatal("main and the work branch differ")
+		}
+	})
+	t.Run("between the final commit and the fast-forward", func(t *testing.T) {
+		c, oldMain := setup(t)
+		if _, err := c.Finish("built"); err != nil {
+			t.Fatal(err)
+		}
+		work := gx(t, c, "rev-parse", "gm/x")
+		gx(t, c, "switch", "gm/x")
+		gx(t, c, "update-ref", "refs/heads/main", oldMain) // the kill came before the merge
+		n := resumed(t, c)
+		hash, err := n.Finish("built")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if finals(t, c) != 1 {
+			t.Fatalf("final commits = %d, want 1", finals(t, c))
+		}
+		if gx(t, c, "rev-parse", "main") != work || gx(t, c, "rev-parse", "gm/x") != work {
+			t.Fatal("main was not fast-forwarded to the existing final commit")
+		}
+		if hash != gx(t, c, "rev-parse", "--short", "main") {
+			t.Fatalf("hash %q is not main's tip", hash)
+		}
+	})
+}
+
+func TestIsAncestor(t *testing.T) {
+	c := newRepo(t)
+	if err := c.Start("main", "gm/x", nil); err != nil {
+		t.Fatal(err)
+	}
+	base, err := c.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	put(t, c, "a.go", "package x\n")
+	tip, err := c.CommitLeaf("fn-a", "A", []string{"a.go"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		rev  string
+		want bool
+	}{{base, true}, {tip, true}} {
+		if got, err := c.IsAncestor(tc.rev); err != nil || got != tc.want {
+			t.Errorf("IsAncestor(%s) = %v, %v; want %v", tc.rev, got, err, tc.want)
+		}
+	}
+	gx(t, c, "update-ref", "refs/heads/gm/x", base) // the branch moved back
+	if got, err := c.IsAncestor(tip); err != nil || got {
+		t.Errorf("IsAncestor(tip) after the branch moved back = %v, %v; want false", got, err)
+	}
+	if _, err := c.IsAncestor("--all"); err == nil {
+		t.Error("IsAncestor accepted an option as a revision")
+	}
+	if _, err := c.IsAncestor("0000000"); err == nil {
+		t.Error("IsAncestor of an unknown object is an error, not an answer")
+	}
+}

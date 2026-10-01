@@ -572,14 +572,18 @@ func (c *CLI) Finish(msg string) (string, error) {
 	} else if code != 0 {
 		return "", ErrIndexNotClean
 	}
-	first, rest, _ := strings.Cut(strings.TrimSpace(msg), "\n")
-	args := []string{"commit", "--allow-empty", "--no-verify", "-m", "gm(run): " + cleanText(first, subjectLimit)}
-	if rest = strings.TrimSpace(rest); rest != "" {
-		args = append(args, "-m", rest)
-	}
-	args = append(args, "-m", c.runTrailer())
-	if _, err := c.run(args...); err != nil {
+	if done, err := c.finalCommitExists(); err != nil {
 		return "", err
+	} else if !done {
+		first, rest, _ := strings.Cut(strings.TrimSpace(msg), "\n")
+		args := []string{"commit", "--allow-empty", "--no-verify", "-m", "gm(run): " + cleanText(first, subjectLimit)}
+		if rest = strings.TrimSpace(rest); rest != "" {
+			args = append(args, "-m", rest)
+		}
+		args = append(args, "-m", c.runTrailer())
+		if _, err := c.run(args...); err != nil {
+			return "", err
+		}
 	}
 	_, code, err := c.runCode("merge-base", "--is-ancestor", c.base, c.work)
 	if err != nil {
@@ -701,4 +705,34 @@ func (c *CLI) LeafCommit(nodeID string) (string, bool, error) {
 		}
 	}
 	return "", false, nil
+}
+
+var revRe = regexp.MustCompile(`^[0-9a-f]{4,64}$`)
+
+func (c *CLI) IsAncestor(rev string) (bool, error) {
+	if !revRe.MatchString(rev) {
+		return false, errors.New("gitland: invalid revision")
+	}
+	_, code, err := c.runCode("merge-base", "--is-ancestor", rev, "HEAD")
+	if err != nil {
+		return false, err
+	}
+	switch code {
+	case 0:
+		return true, nil
+	case 1:
+		return false, nil
+	}
+	return false, &gitErr{sub: "merge-base", code: code}
+}
+
+// finalCommitExists reports that the tip of the current branch is this run's own final commit: a Finish that was
+// cut off after making it must not make a second one.
+func (c *CLI) finalCommitExists() (bool, error) {
+	out, err := c.run("log", "-1", "--format=%s%x1f%(trailers:key=GopherMind-Run,valueonly,unfold)")
+	if err != nil {
+		return false, err
+	}
+	subject, trailer, _ := strings.Cut(strings.TrimRight(string(out), "\n"), "\x1f")
+	return strings.HasPrefix(subject, "gm(run): ") && strings.TrimSpace(trailer) == c.runID, nil
 }

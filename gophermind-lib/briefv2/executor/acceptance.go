@@ -860,7 +860,7 @@ func (rc *runCtx) finish(ctx context.Context, f runFlags) (finishResult, error) 
 func stopFailure(se *stopError) []string {
 	switch se.Reason {
 	case "acceptance_failed", "constraint_failed", "acceptance_environment", "acceptance_unmapped", "acceptance_tampered",
-		"acceptance_stray", "acceptance_leak", "acceptance_vacuous", "acceptance_build", "tree_not_clean":
+		"acceptance_stray", "acceptance_leak", "acceptance_vacuous", "acceptance_build", "tree_not_clean", "foreign_dirt", "repo_moved":
 		return []string{strings.TrimPrefix(se.Message, "executor: ")}
 	}
 	return nil

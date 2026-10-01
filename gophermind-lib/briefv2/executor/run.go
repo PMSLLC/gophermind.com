@@ -3,11 +3,14 @@ package executor
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
 	"regexp"
 	"runtime"
 	"runtime/debug"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"gophermind/gophermind-lib/briefv2/blackboard"
@@ -37,7 +40,12 @@ func run(ctx context.Context, o Options, f runFlags) (Report, error) {
 		o.Now = time.Now
 	}
 	started := o.Now()
-	rc, err := startRun(ctx, o)
+	// A signal during start (Wave 0, a resume's checks) cancels the start too.
+	// This registration overlaps runContext's own until the run context exists,
+	// so there is no gap in which a signal would kill the process.
+	sctx, stopSig := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stopSig()
+	rc, err := startRun(sctx, o)
 	var stop *stopError
 	if err != nil {
 		se, isStop := stopOf(err)
@@ -46,8 +54,11 @@ func run(ctx context.Context, o Options, f runFlags) (Report, error) {
 			return Report{}, err
 		case isStop:
 			stop = se
-		case ctx.Err() != nil:
+		case sctx.Err() != nil:
 			stop = interruptStop("")
+			if ctx.Err() == nil {
+				stop = interruptStop("signal")
+			}
 		default:
 			rc.close()
 			return Report{}, err
@@ -60,6 +71,7 @@ func run(ctx context.Context, o Options, f runFlags) (Report, error) {
 
 	rctx, cause, release := rc.runContext(ctx)
 	defer release()
+	stopSig()
 
 	var fault error
 	if stop == nil {
@@ -82,6 +94,14 @@ func run(ctx context.Context, o Options, f runFlags) (Report, error) {
 		if fault != nil {
 			fin = finishResult{Status: "failed", Reason: "harness_fault"}
 		}
+	}
+	// An interruption in any stage (waves, acceptance, landing) is named by what
+	// ended the run context: the limit, a signal, or the caller.
+	if fin.Status == "interrupted" && fin.Reason == "cancelled" && cause() != "" {
+		fin.Reason = cause()
+	}
+	if stop == nil || stop.Reason != "repo_moved" { // a refused resume must not accept the moved branch
+		rc.recordTip()
 	}
 
 	rc.emit("sandbox", "", fmt.Sprintf("%s; sandbox-exec %s", rc.sandboxLabel(), rc.rep.sandboxExec))

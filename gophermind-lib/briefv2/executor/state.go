@@ -34,8 +34,9 @@ type State struct {
 	PlanHashes     map[string]string `json:"plan_hashes"` // recorded at first start, compared on every start
 	StartedAt      string            `json:"started_at"`  // empty means no state was ever written: a fresh run
 	Branch         string            `json:"branch"`
-	Wave0Done      bool              `json:"wave0_done"` // the Wave 0 commit was made
-	Resumed        bool              `json:"resumed"`    // sticky: once a run has resumed, every later report says so (R11)
+	Wave0Done      bool              `json:"wave0_done"`    // the Wave 0 commit was made
+	Resumed        bool              `json:"resumed"`       // sticky: once a run has resumed, every later report says so (R11)
+	Tip            string            `json:"tip,omitempty"` // the work branch tip last recorded: a resume refuses a branch that no longer contains it
 	ExtraRevisions map[string]int    `json:"extra_revisions"`
 	CriticalStreak map[string]int    `json:"critical_streak"` // S10
 	RedChecked     map[string]bool   `json:"red_checked"`
