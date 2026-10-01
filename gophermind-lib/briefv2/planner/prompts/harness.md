@@ -5,7 +5,7 @@ How root test commands are run (the harness contract):
 - No placeholders: a command is run exactly as written. A variable such as $ID must be set earlier in the same command, or be one of the GM_ACCEPTANCE_* names or a declared env or secret name.
 
 A root test must be able to fail. A reviewer rejects it, naming one of these findings, when:
-- masked_failure: it throws the exit status away (`|| true`, `|| :`, `|| echo ...`, `|| exit 0`, `2>/dev/null ||`, `set +e`, a last line of `; true` or `; echo ...`). A guard that exits non-zero is fine: `|| exit 1`.
+- masked_failure: it throws the exit status away (`|| true`, `|| :`, `|| echo ...`, `|| exit 0`, `2>/dev/null || true`, `set +e`, a last line of `; true` or `; echo ...`). A guard that exits non-zero is fine: `|| exit 1`.
 - success_echo: a trailing `&& echo OK` is the only thing that "asserts".
 - placeholder: it holds `{id}`, `<id>`, `...`, TODO or "(simulate".
 - undefined_variable: it uses a $VARIABLE nothing defines.

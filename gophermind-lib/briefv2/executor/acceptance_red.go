@@ -16,7 +16,7 @@ import (
 
 // maxRedTimeout caps one red check command: a command that is still running
 // then did not pass quickly against a stub, which counts as red.
-const maxRedTimeout = 120 * time.Second
+const maxRedTimeout = 30 * time.Second
 
 func (rc *runCtx) redTimeout() time.Duration {
 	d := rc.acceptanceTimeout()

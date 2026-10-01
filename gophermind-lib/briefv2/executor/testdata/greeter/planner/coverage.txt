@@ -56,14 +56,14 @@
       "name": "hello over HTTP",
       "given": "the built greeter on a free port",
       "expect": "GET /hello?name=Ada returns Hello, Ada!",
-      "command": "greeter --addr \"$GM_ACCEPTANCE_ADDR\" & pid=$!\ni=0; until curl -sf \"$GM_ACCEPTANCE_URL/hello?name=Ada\" >/dev/null 2>&1 || [ $i -ge 300 ]; do i=$((i+1)); sleep 0.1; done\ncurl -sf \"$GM_ACCEPTANCE_URL/hello?name=Ada\" | grep -qx 'Hello, Ada!'; rc=$?; kill $pid; exit $rc\n"
+      "command": "greeter --addr \"$GM_ACCEPTANCE_ADDR\" & pid=$!\ni=0; until curl -sf \"$GM_ACCEPTANCE_URL/hello?name=Ada\" >/dev/null 2>&1 || ! kill -0 $pid 2>/dev/null || [ $i -ge 300 ]; do i=$((i+1)); sleep 0.1; done\ncurl -sf \"$GM_ACCEPTANCE_URL/hello?name=Ada\" | grep -qx 'Hello, Ada!'; rc=$?; kill $pid; exit $rc\n"
     },
     {
       "requirement": "A2",
       "name": "bye over HTTP",
       "given": "the built greeter on a free port and GREETER_TOKEN set",
       "expect": "GET /bye?name=Ada returns Goodbye, Ada!",
-      "command": "test -n \"$GREETER_TOKEN\" || exit 1\ngreeter --addr \"$GM_ACCEPTANCE_ADDR\" & pid=$!\ni=0; until curl -sf \"$GM_ACCEPTANCE_URL/bye?name=Ada\" >/dev/null 2>&1 || [ $i -ge 300 ]; do i=$((i+1)); sleep 0.1; done\ncurl -sf \"$GM_ACCEPTANCE_URL/bye?name=Ada\" | grep -qx 'Goodbye, Ada!'; exit $?\n"
+      "command": "test -n \"$GREETER_TOKEN\" || exit 1\ngreeter --addr \"$GM_ACCEPTANCE_ADDR\" & pid=$!\ni=0; until curl -sf \"$GM_ACCEPTANCE_URL/bye?name=Ada\" >/dev/null 2>&1 || ! kill -0 $pid 2>/dev/null || [ $i -ge 300 ]; do i=$((i+1)); sleep 0.1; done\ncurl -sf \"$GM_ACCEPTANCE_URL/bye?name=Ada\" | grep -qx 'Goodbye, Ada!'; exit $?\n"
     }
   ]
 }

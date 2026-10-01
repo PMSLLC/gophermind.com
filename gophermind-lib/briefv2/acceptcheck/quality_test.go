@@ -92,6 +92,7 @@ func TestQualityGoodRewritesAreAccepted(t *testing.T) {
 		`STUDIO_FAKE_NOW=2023-12-05 venture-server reminder-job`,
 		`grep -rq argon2 internal/auth && go vet ./...`,
 		`go vet ./... || exit 1`,
+		`kill -0 $$ 2>/dev/null || [ 1 -ge 300 ]`,
 		`test -f go.mod || { echo missing; exit 1; }`,
 		"venture-server serve &\npid=$!\nsleep 1\ncurl -fsS \"$GM_ACCEPTANCE_URL/healthz\" | grep -qx ok\nrc=$?\nkill $pid\nexit $rc",
 		`sh -c 'go vet ./...'`,
