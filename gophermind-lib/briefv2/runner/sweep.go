@@ -96,21 +96,22 @@ func (s *sweeper) snapshot() []procInfo {
 	return found
 }
 
-// poll snapshots until stop is closed: often at first, when daemonizing
-// children appear, then once a second.
+// poll snapshots until stop is closed: every 200 ms at first, when daemonizing
+// children appear, then once a second. A command that ends before the first
+// sample costs no ps call.
 func (s *sweeper) poll(stop <-chan struct{}) {
 	began := time.Now()
 	for {
-		s.snapshot()
 		d := time.Second
 		if time.Since(began) < 5*time.Second {
-			d = 100 * time.Millisecond
+			d = 200 * time.Millisecond
 		}
 		select {
 		case <-stop:
 			return
 		case <-time.After(d):
 		}
+		s.snapshot()
 	}
 }
 
@@ -132,13 +133,15 @@ func (s *sweeper) killEscapees() {
 // finish kills every remembered process that is still the same process, waits
 // briefly, and returns how many remain.
 func (s *sweeper) finish() int {
-	s.snapshot()
 	s.mu.Lock()
 	seen := make(map[int]string, len(s.seen))
 	for k, v := range s.seen {
 		seen[k] = v
 	}
 	s.mu.Unlock()
+	if len(seen) == 0 {
+		return 0 // a command that left nothing behind costs no ps call
+	}
 	alive := func() []int {
 		var pids []int
 		for _, p := range listProcs() {
