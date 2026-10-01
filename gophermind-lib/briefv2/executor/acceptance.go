@@ -8,13 +8,20 @@ package executor
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"gophermind/gophermind-lib/briefv2/blackboard"
@@ -23,6 +30,7 @@ import (
 	"gophermind/gophermind-lib/briefv2/planner"
 	"gophermind/gophermind-lib/briefv2/report"
 	"gophermind/gophermind-lib/briefv2/runner"
+	"gophermind/gophermind-lib/briefv2/vault"
 )
 
 // fileAcceptance is the proof file in the run folder.
@@ -36,8 +44,9 @@ type Counts struct {
 
 // CommandProof is the proof of one root test command. No output text is stored.
 type CommandProof struct {
-	Test        string `json:"test"`    // the root test's name
-	Command     string `json:"command"` // fixed text with ids only ("root test A1 #1"): the command itself is in coverage.json
+	Test        string `json:"test"`                     // the root test's name
+	Command     string `json:"command"`                  // fixed text with ids only ("root test A1 #1"): the command itself is in coverage.json
+	CommandSHA  string `json:"command_sha256,omitempty"` // SHA-256 of the raw command text, never the text
 	ExitCode    int    `json:"exit_code"`
 	TimedOut    bool   `json:"timed_out"`
 	DurationMS  int64  `json:"duration_ms"`
@@ -54,8 +63,23 @@ type BulletProof struct {
 	Verdict     string         `json:"verdict"` // "pass" or "fail"
 }
 
-// AcceptanceFile is <run>/acceptance.json.
+// BinaryProof is the SHA-256 of one built binary, taken before the first command.
+type BinaryProof struct {
+	Name   string `json:"name"`
+	SHA256 string `json:"sha256"`
+}
+
+// acceptanceSchema is the version of acceptance.json; 2 added schema_version,
+// complete, binaries and command_sha256 (all additive).
+const acceptanceSchema = 2
+
+// AcceptanceFile is <run>/acceptance.json. It is written at the start of every
+// round with complete false and again at the end with complete true, so a round
+// that was cut off leaves the file of its start, never a half-counted result.
 type AcceptanceFile struct {
+	SchemaVersion       int           `json:"schema_version,omitempty"`
+	Complete            bool          `json:"complete"`
+	Binaries            []BinaryProof `json:"binaries,omitempty"`
 	RequirementsCovered Counts        `json:"requirements_covered"` // copied from coverage.json and requirements.json
 	Acceptance          Counts        `json:"acceptance"`
 	ConstraintsChecked  Counts        `json:"constraints_checked"`
@@ -114,6 +138,9 @@ func mapAcceptance(reqs []planner.Requirement, cov planner.CoverageFile) (accept
 			p.constraints = append(p.constraints, pb)
 		}
 	}
+	if ids := vacuousBullets(p, nil); len(ids) > 0 {
+		return acceptPlan{}, &vacuousError{IDs: ids}
+	}
 	return p, nil
 }
 
@@ -135,6 +162,7 @@ func (rc *runCtx) buildBinaries(ctx context.Context) error {
 			Message: "executor: listing the cmd packages for the acceptance run failed"}
 	}
 	module := rc.plan.Contracts.Module
+	rc.bins = map[string]string{}
 	for _, line := range strings.Split(res.Out.Text(), "\n") {
 		f := strings.Fields(line)
 		if len(f) != 2 || f[0] != "main" {
@@ -154,6 +182,108 @@ func (rc *runCtx) buildBinaries(ctx context.Context) error {
 			return &stopError{Status: "failed", Reason: "acceptance_build",
 				Message: "executor: go build of ./" + rc.scrubText(rel) + " for the acceptance run failed"}
 		}
+		sum, err := fileSHA(out)
+		if err != nil {
+			return &stopError{Status: "failed", Reason: "acceptance_build",
+				Message: "executor: a binary built for the acceptance run cannot be read"}
+		}
+		rc.bins[filepath.Base(rel)] = sum
+	}
+	return nil
+}
+
+// fileSHA is the SHA-256 of a regular file, refusing a link.
+func fileSHA(path string) (string, error) {
+	fi, err := os.Lstat(path)
+	if err != nil || !fi.Mode().IsRegular() {
+		return "", errors.New("not a regular file")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func (rc *runCtx) binNames() []string {
+	names := make([]string, 0, len(rc.bins))
+	for n := range rc.bins {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// binaryProofs is the recorded hashes, in name order.
+func (rc *runCtx) binaryProofs() []BinaryProof {
+	var out []BinaryProof
+	for _, n := range rc.binNames() {
+		out = append(out, BinaryProof{Name: n, SHA256: rc.bins[n]})
+	}
+	return out
+}
+
+// checkBinaries fails the run when a built binary is no longer the one that was
+// built: a command of the acceptance run could write to the scratch directory.
+func (rc *runCtx) checkBinaries() *stopError {
+	for _, n := range rc.binNames() {
+		sum, err := fileSHA(filepath.Join(rc.binDir, n))
+		if err != nil || sum != rc.bins[n] {
+			return &stopError{Status: "failed", Reason: "acceptance_tampered",
+				Message: "executor: a built binary changed while the acceptance run was going"}
+		}
+	}
+	return nil
+}
+
+// acceptPidFile is where a command may record the pid of a server it starts
+// (GM_ACCEPTANCE_PIDFILE), so that one that escaped the process group is found.
+func (rc *runCtx) acceptPidFile() string { return filepath.Join(rc.scratch, "acceptance.pid") }
+
+// freeAddr is a free loopback address for one command.
+func freeAddr() (string, error) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return "", err
+	}
+	defer l.Close()
+	return l.Addr().String(), nil
+}
+
+// afterCommand is what the harness checks once a command is over and its
+// process group was killed: the binaries are intact, nothing listens on the
+// command's address and the pid the command recorded is gone. A leftover is
+// killed, and the run fails acceptance_leak.
+func (rc *runCtx) afterCommand(addr string) *stopError {
+	if se := rc.checkBinaries(); se != nil {
+		return se
+	}
+	leak := false
+	if raw, err := os.ReadFile(rc.acceptPidFile()); err == nil {
+		if pid, err := strconv.Atoi(strings.TrimSpace(string(raw))); err == nil && pid > 1 {
+			if syscall.Kill(pid, 0) == nil {
+				leak = true
+				_ = syscall.Kill(pid, syscall.SIGKILL)
+			}
+		}
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		c, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
+		if err != nil {
+			break
+		}
+		c.Close()
+		if time.Now().After(deadline) {
+			leak = true
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if leak {
+		return &stopError{Status: "failed", Reason: "acceptance_leak",
+			Message: "executor: a process started by an acceptance command outlived it (killed)"}
 	}
 	return nil
 }
@@ -166,13 +296,22 @@ func ctxErrOr(ctx context.Context) error {
 }
 
 // runRootTest runs one root test command with sh -c from the repo root through
-// rc.chk.Run. The runner.Result carries the output in memory only; the
-// CommandProof carries hashes.
+// rc.chk.Run, on a fresh loopback address it is given through
+// GM_ACCEPTANCE_ADDR and GM_ACCEPTANCE_URL (and the built binaries' directory
+// through GM_ACCEPTANCE_BIN). The runner.Result carries the output in memory
+// only; the CommandProof carries hashes.
 func (rc *runCtx) runRootTest(ctx context.Context, t planner.RootTest) (CommandProof, runner.Result, error) {
 	env, err := rc.env("acceptance", envAcceptance)
 	if err != nil {
 		return CommandProof{}, runner.Result{}, errors.New("executor: the environment of the acceptance run could not be built")
 	}
+	addr, err := freeAddr()
+	if err != nil {
+		return CommandProof{}, runner.Result{}, errors.New("executor: no free loopback port for the acceptance run")
+	}
+	env = append(env, "GM_ACCEPTANCE_ADDR="+addr, "GM_ACCEPTANCE_URL=http://"+addr,
+		"GM_ACCEPTANCE_BIN="+rc.binDir, "GM_ACCEPTANCE_PIDFILE="+rc.acceptPidFile())
+	_ = os.Remove(rc.acceptPidFile())
 	res := rc.chk.Run(ctx, runner.Spec{
 		Dir: rc.o.Repo, Argv: runner.Shell(t.Command), Env: env,
 		Timeout: rc.acceptanceTimeout(),
@@ -183,8 +322,12 @@ func (rc *runCtx) runRootTest(ctx context.Context, t planner.RootTest) (CommandP
 	if res.Err != nil {
 		return CommandProof{}, res, fmt.Errorf("executor: an acceptance command could not be started (%w)", res.Err)
 	}
+	if se := rc.afterCommand(addr); se != nil {
+		return CommandProof{}, res, se
+	}
+	sum := sha256.Sum256([]byte(t.Command))
 	p := CommandProof{
-		Test: rc.scrubText(t.Name), ExitCode: res.ExitCode, TimedOut: res.TimedOut,
+		Test: rc.scrubText(t.Name), CommandSHA: hex.EncodeToString(sum[:]), ExitCode: res.ExitCode, TimedOut: res.TimedOut,
 		DurationMS: res.Duration.Milliseconds(), OutputBytes: res.Out.Size(), OutputSHA: res.Out.SHA256(),
 		Passed: res.ExitCode == 0 && !res.TimedOut,
 	}
@@ -196,7 +339,6 @@ type failedBullet struct {
 	Command  string
 	ExitCode int
 	TimedOut bool
-	Env      bool // the failure is the environment (no database), not a leaf
 	Nodes    []string
 	Failure  packer.Failure // packer.NewFailure(nil, output, secrets): capped, secret-stripped, memory only
 }
@@ -207,36 +349,6 @@ func firstLine(s string) string {
 		s = s[:i]
 	}
 	return s
-}
-
-var (
-	dbRefusedHints = []string{"connection refused", "could not connect", "no such host", "i/o timeout", "econnrefused", "connection reset"}
-	dbContextHints = []string{"postgres", "5432", "pq:", "pgx", "database"}
-)
-
-// environmentFault reports a failure that is the database being unreachable:
-// the brief declares a database secret and the output says a connection to a
-// database failed. It reads the output in memory and keeps nothing of it.
-func (rc *runCtx) environmentFault(out string) bool {
-	declared := false
-	for _, s := range rc.plan.Brief.Front.Secrets {
-		if s.Name == "TEST_DATABASE_URL" || s.Name == "DATABASE_URL" {
-			declared = true
-		}
-	}
-	if !declared {
-		return false
-	}
-	low := strings.ToLower(out)
-	has := func(hints []string) bool {
-		for _, h := range hints {
-			if strings.Contains(low, h) {
-				return true
-			}
-		}
-		return false
-	}
-	return has(dbRefusedHints) && has(dbContextHints)
 }
 
 func (rc *runCtx) runBullet(ctx context.Context, pb planBullet) (BulletProof, *failedBullet, error) {
@@ -257,7 +369,7 @@ func (rc *runCtx) runBullet(ctx context.Context, pb planBullet) (BulletProof, *f
 			text := res.Out.Text()
 			fb = &failedBullet{
 				Req: pb.req, Command: proof.Command, ExitCode: proof.ExitCode, TimedOut: proof.TimedOut,
-				Env: rc.environmentFault(text), Nodes: pb.nodes, Failure: packer.NewFailure(nil, text, rc.secretValues()),
+				Nodes: pb.nodes, Failure: packer.NewFailure(nil, text, rc.secretValues()),
 			}
 		}
 	}
@@ -277,6 +389,14 @@ func (rc *runCtx) acceptanceRun(ctx context.Context, p acceptPlan, round int) (A
 		Acceptance:          Counts{Total: len(p.acceptance)},
 		ConstraintsChecked:  Counts{Total: len(p.constraints)},
 		Round:               round, Bullets: []BulletProof{}, Constraints: []BulletProof{},
+		SchemaVersion: acceptanceSchema, Binaries: rc.binaryProofs(),
+	}
+	if err := rc.writeAcceptance(file); err != nil { // the start of the round: complete is false
+		return file, nil, err
+	}
+	snap, err := TakeSnapshot(rc.o.Repo, rc.git)
+	if err != nil {
+		return file, nil, err
 	}
 	failed := map[string]failedBullet{}
 	do := func(list []planBullet, into *[]BulletProof, c *Counts) error {
@@ -302,14 +422,29 @@ func (rc *runCtx) acceptanceRun(ctx context.Context, p acceptPlan, round int) (A
 	if err := do(p.constraints, &file.Constraints, &file.ConstraintsChecked); err != nil {
 		return AcceptanceFile{}, nil, err
 	}
-	raw, err := json.MarshalIndent(file, "", "  ")
-	if err != nil {
-		return file, failed, errors.New("executor: encoding acceptance.json failed")
-	}
-	if err := report.WriteFile(rc.o.RunDir, fileAcceptance, append(raw, '\n'), report.WriteOptions{RepoRoot: rc.o.Repo}); err != nil {
+	file.Complete = true
+	if err := rc.writeAcceptance(file); err != nil {
 		return file, failed, err
 	}
+	if stray, err := snap.Stray(rc.o.Repo, rc.git); err != nil {
+		return file, failed, err
+	} else if len(stray) > 0 {
+		if err := Revert(rc.git, stray); err != nil {
+			return file, failed, errors.New("executor: removing the files the acceptance commands wrote failed")
+		}
+		rc.emit("stray_write", "acceptance", fmt.Sprintf("%d files written by the acceptance commands were removed", len(stray)))
+		return file, failed, &stopError{Status: "failed", Reason: "acceptance_stray",
+			Message: fmt.Sprintf("executor: the acceptance commands of round %d wrote %d file(s) into the repository (removed)", round, len(stray))}
+	}
 	return file, failed, nil
+}
+
+func (rc *runCtx) writeAcceptance(file AcceptanceFile) error {
+	raw, err := json.MarshalIndent(file, "", "  ")
+	if err != nil {
+		return errors.New("executor: encoding acceptance.json failed")
+	}
+	return report.WriteFile(rc.o.RunDir, fileAcceptance, append(raw, '\n'), report.WriteOptions{RepoRoot: rc.o.Repo})
 }
 
 func counts(f AcceptanceFile) accResult {
@@ -354,11 +489,15 @@ func (rc *runCtx) acceptance(ctx context.Context) (accResult, *stopError, error)
 			return acc, nil, nil
 		}
 		ids, accFailed := rc.failedIDs(p, failed)
+		var unmapped []string
 		for _, id := range ids {
-			if failed[id].Env {
-				return acc, &stopError{Status: "failed", Reason: "acceptance_environment",
-					Message: fmt.Sprintf("executor: acceptance %s could not reach its database (an environment fault, not a leaf failure)", id)}, nil
+			if len(rc.attribute(failed[id])) == 0 {
+				unmapped = append(unmapped, id)
 			}
+		}
+		if len(unmapped) > 0 {
+			return acc, &stopError{Status: "failed", Reason: "acceptance_unmapped",
+				Message: "executor: acceptance failed for " + strings.Join(unmapped, ", ") + ", which no leaf is mapped to, so no repair was tried"}, nil
 		}
 		if round >= bound {
 			return acc, rc.acceptStop(ids, failed, accFailed), nil
@@ -389,22 +528,13 @@ func (rc *runCtx) acceptStop(ids []string, failed map[string]failedBullet, accFa
 }
 
 // attribute is the leaves that own a failing bullet: the leaf nodes the
-// coverage file lists for it, or, when it lists none at all (the planner maps
-// an acceptance bullet to no node), the leaves whose contract package is main,
-// which make the built binaries the bullet exercises. Empty means the bullet
-// cannot be attributed.
+// coverage file lists for it (spec 9). A bullet with none is unmapped and ends
+// the run; there is no guessing which leaf to rebuild.
 func (rc *runCtx) attribute(b failedBullet) []string {
 	var ids []string
 	for _, n := range b.Nodes {
 		if rc.plan.Leaf(n) != nil {
 			ids = append(ids, n)
-		}
-	}
-	if len(b.Nodes) == 0 {
-		for _, l := range rc.plan.Leaves {
-			if l.Package == "main" {
-				ids = append(ids, l.ID)
-			}
 		}
 	}
 	sort.Strings(ids)
@@ -492,6 +622,74 @@ type finishResult struct {
 	Landing        *report.Landing
 }
 
+// checkEnvironment is the harness's own connectivity check before acceptance:
+// every declared secret whose value is a URL with a loopback host is dialled
+// (2 seconds). An unreachable one stops the run acceptance_environment, naming
+// the secret only; no output of any command is read to decide it.
+func (rc *runCtx) checkEnvironment() *stopError {
+	if rc.o.Secrets == nil {
+		return nil
+	}
+	scope := vault.RunScope(rc.plan.RunID)
+	for _, sec := range rc.plan.Brief.Front.Secrets {
+		val, ok := rc.o.Secrets.Get(scope, sec.Name)
+		if !ok {
+			continue
+		}
+		u, err := url.Parse(val)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			continue
+		}
+		host := u.Hostname()
+		if host != "127.0.0.1" && host != "localhost" && host != "::1" {
+			continue
+		}
+		port := u.Port()
+		if port == "" {
+			port = map[string]string{"postgres": "5432", "postgresql": "5432", "mysql": "3306", "redis": "6379", "http": "80", "https": "443"}[u.Scheme]
+		}
+		if port == "" {
+			continue
+		}
+		c, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), 2*time.Second)
+		if err != nil {
+			return &stopError{Status: "failed", Reason: "acceptance_environment",
+				Message: "executor: the host of secret " + sec.Name + " is not reachable (an environment fault, not a leaf failure)"}
+		}
+		c.Close()
+	}
+	return nil
+}
+
+// treeClean requires that only declared files differ from the landed state:
+// nothing in commit mode; in diff_only the plan's own files.
+func (rc *runCtx) treeClean() *stopError {
+	dirty, err := rc.git.Dirty()
+	if err != nil {
+		return &stopError{Status: "failed", Reason: "tree_not_clean", Message: "executor: the repository state could not be read"}
+	}
+	ok := map[string]bool{}
+	if rc.diffOnly {
+		for _, p := range rc.wave0Paths() {
+			ok[p] = true
+		}
+		for _, l := range rc.plan.Leaves {
+			ok[l.File] = true
+		}
+	}
+	n := 0
+	for _, p := range dirty {
+		if !ok[p] {
+			n++
+		}
+	}
+	if n > 0 {
+		return &stopError{Status: "failed", Reason: "tree_not_clean",
+			Message: fmt.Sprintf("executor: %d path(s) outside the plan's files are dirty after acceptance", n)}
+	}
+	return nil
+}
+
 // decide is the first test of the final status: verified only when every leaf
 // row is verified. A row that is not verified, or cannot be read, never yields
 // verified: escalated when a leaf is escalated, else failed with the first
@@ -542,8 +740,15 @@ func (rc *runCtx) finish(ctx context.Context, f runFlags) (finishResult, error) 
 	}
 	acc := none
 	if !f.skipAcceptance {
+		if se := rc.checkEnvironment(); se != nil {
+			return finishResult{Status: se.Status, Reason: se.Reason, Acc: none, Failures: stopFailure(se)}, nil
+		}
 		if err := rc.buildBinaries(ctx); err != nil {
 			return rc.finishFromError(ctx, err, none)
+		}
+		if ids := vacuousBullets(rc.accept, rc.binNames()); len(ids) > 0 {
+			se := &vacuousError{IDs: ids}
+			return finishResult{Status: "failed", Reason: "acceptance_vacuous", Acc: none, Failures: []string{strings.TrimPrefix(se.Error(), "executor: ")}}, nil
 		}
 		var stop *stopError
 		var err error
@@ -559,6 +764,18 @@ func (rc *runCtx) finish(ctx context.Context, f runFlags) (finishResult, error) 
 		}
 		if acc.Passed != acc.Total || acc.ConstraintsPassed != acc.ConstraintsTotal {
 			return finishResult{Status: "failed", Reason: "acceptance_failed", Acc: acc}, nil
+		}
+		// Build, vet and the race tests over ./... once more, now that acceptance
+		// (and any repair it made) is over.
+		ws := rc.waves()
+		res, err := rc.waveChecks(ctx, ws[len(ws)-1], true)
+		if err != nil {
+			return rc.finishFromError(ctx, err, acc)
+		}
+		if !res.Pass() {
+			kind := integrationKind(res)
+			return finishResult{Status: "failed", Reason: "final_" + kind, Acc: acc,
+				Failures: []string{"the final " + kind + " check failed after acceptance"}}, nil
 		}
 	}
 	if err := rc.verifyModules(ctx); err != nil {
@@ -579,6 +796,11 @@ func (rc *runCtx) finish(ctx context.Context, f runFlags) (finishResult, error) 
 		return finishResult{Status: "failed", Reason: reason, Acc: acc, Failures: []string{describeFindings(rc.plan, found)}}, nil
 	}
 	rc.emit("scan", "", "clean")
+	if !f.skipAcceptance {
+		if se := rc.treeClean(); se != nil {
+			return finishResult{Status: se.Status, Reason: se.Reason, Acc: acc, Failures: stopFailure(se)}, nil
+		}
+	}
 	landing, stop, err := rc.land(ctx, acc)
 	if err != nil {
 		return rc.finishFromError(ctx, err, acc)
@@ -594,7 +816,8 @@ func (rc *runCtx) finish(ctx context.Context, f runFlags) (finishResult, error) 
 // codes, never output).
 func stopFailure(se *stopError) []string {
 	switch se.Reason {
-	case "acceptance_failed", "constraint_failed", "acceptance_environment", "unattributable", "acceptance_build":
+	case "acceptance_failed", "constraint_failed", "acceptance_environment", "acceptance_unmapped", "acceptance_tampered",
+		"acceptance_stray", "acceptance_leak", "acceptance_vacuous", "acceptance_build", "tree_not_clean":
 		return []string{strings.TrimPrefix(se.Message, "executor: ")}
 	}
 	return nil
@@ -626,7 +849,7 @@ func (rc *runCtx) land(ctx context.Context, acc accResult) (*report.Landing, *st
 		// The work branch is left as it is; the report names it, with no commit on the base.
 		var l *report.Landing
 		if rc.state.Branch != "" {
-			l = &report.Landing{Branch: rc.state.Branch, MergedInto: rc.baseBranch()}
+			l = &report.Landing{Branch: rc.state.Branch}
 		}
 		return l, &stopError{Status: "failed", Reason: "landing_blocked", Message: "executor: " + msg}, nil
 	}

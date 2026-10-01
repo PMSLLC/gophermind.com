@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -168,7 +169,7 @@ func TestFinishOrder(t *testing.T) {
 		g := newRig(t)
 		var rec *recGit
 		edit := func(rc *runCtx, h *hybridChecker) {
-			setCommand(t, rc, "A2", "exit 1")
+			setCommand(t, rc, "A2", vr("exit 1"))
 			bullet(t, rc, "A2").nodes = []string{"root"}
 		}
 		rep, err, log := g.accRun(t, goodScript(g), g.fastChecker(), edit, withRecGit(g, nil, &rec))
@@ -225,7 +226,7 @@ func TestLandingBlockedIsFailedNotError(t *testing.T) {
 	if rep.Status != "failed" || rep.StopReason != "landing_blocked" {
 		t.Fatalf("report = %s (%s)", rep.Status, rep.StopReason)
 	}
-	if rep.Landing == nil || rep.Landing.Branch == "" || rep.Landing.Commit != "" {
+	if rep.Landing == nil || rep.Landing.Branch == "" || rep.Landing.Commit != "" || rep.Landing.MergedInto != "" {
 		t.Errorf("landing = %+v, want the work branch and no commit", rep.Landing)
 	}
 }
@@ -250,7 +251,7 @@ func TestAcceptanceInterruptedIsNotAPass(t *testing.T) {
 	fc := g.fastChecker()
 	hook := func(rc *runCtx) {
 		rc.chk = &hybridChecker{fakeChecker: fc, real: rc.chk, log: &orderLog{}}
-		setCommand(t, rc, "A1", `echo started > "$TMPDIR/started"; sleep 300`)
+		setCommand(t, rc, "A1", vr(`echo started > "$TMPDIR/started"; sleep 300`))
 	}
 	rep, err := run(ctx, g.options(), runFlags{afterStart: hook})
 	if err != nil {
@@ -262,7 +263,12 @@ func TestAcceptanceInterruptedIsNotAPass(t *testing.T) {
 	if rep.Acceptance.Passed != 0 {
 		t.Errorf("acceptance = %+v, want nothing passed", rep.Acceptance)
 	}
-	if fileExists(filepath.Join(g.runDir, "acceptance.json")) {
-		t.Error("acceptance.json was written for a cut-off run")
+	raw, err := os.ReadFile(filepath.Join(g.runDir, "acceptance.json"))
+	if err != nil {
+		t.Fatalf("a cancelled round left no acceptance.json: %v", err)
+	}
+	var file AcceptanceFile
+	if err := json.Unmarshal(raw, &file); err != nil || file.Complete || file.Acceptance.Passed != 0 || file.Round != 0 {
+		t.Errorf("acceptance.json of a cancelled round = %+v (%v), want complete:false, round 0, nothing passed", file, err)
 	}
 }

@@ -76,7 +76,7 @@ func run(ctx context.Context, o Options, f runFlags) (Report, error) {
 	case fault != nil:
 		fin = finishResult{Status: "failed", Reason: "harness_fault"}
 	case stop != nil:
-		fin = finishResult{Status: stop.Status, Reason: stop.Reason}
+		fin = finishResult{Status: stop.Status, Reason: stop.Reason, Failures: stopFailure(stop)}
 	default:
 		fin, fault = rc.finish(rctx, f)
 		if fault != nil {
