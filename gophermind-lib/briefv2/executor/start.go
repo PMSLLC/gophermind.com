@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"gophermind/gophermind-lib/briefv2/blackboard"
 	"gophermind/gophermind-lib/briefv2/brief"
 	"gophermind/gophermind-lib/briefv2/events"
 	"gophermind/gophermind-lib/briefv2/gitland"
@@ -68,6 +67,9 @@ type runCtx struct {
 	sched     schedState    // the scheduler's memory of interrupted leaves (Task 11b)
 	limit     time.Duration // test override of max_run_minutes (Task 14); zero means the setting
 	heartbeat time.Duration // test override of heartbeat_seconds; zero means the setting
+	// afterFunc is the run's wall clock: it calls f once after d and returns the
+	// function that cancels it. Nil means time.AfterFunc; tests inject a manual one.
+	afterFunc func(d time.Duration, f func()) (stop func())
 }
 
 // runReport holds the counters that become report.Input.
@@ -569,49 +571,6 @@ func (rc *runCtx) retryWave0(ctx context.Context) error {
 	return rc.wave0(ctx)
 }
 
-// resume is the basic resume of a run whose Wave 0 is done; Task 14 replaces
-// it with the full one (files on disk, foreign dirt, limits). It refuses a plan
-// that changed since the run started, makes sure the work branch is checked
-// out, and records that the run resumed once a row is past pending. Nothing
-// here calls a model, so a verified leaf is never built again: the scheduler
-// skips every verified row.
-func (rc *runCtx) resume(ctx context.Context) error {
-	if !reflect.DeepEqual(rc.state.PlanHashes, rc.plan.Hashes) {
-		return &stopError{Status: "failed", Reason: "plan_changed",
-			Message: "executor: the plan changed since this run started"}
-	}
-	// A diff_only repair that was cut off leaves its candidate on disk and the
-	// verified file under _state: put the verified file back first.
-	if err := restorePriors(rc.o.Repo, rc.o.RunDir, rc.plan.Leaves); err != nil {
-		return err
-	}
-	if !rc.diffOnly && rc.state.Branch != "" {
-		cur, err := rc.git.Branch()
-		if err != nil {
-			return errors.New("executor: the current branch could not be read")
-		}
-		if cur != rc.state.Branch {
-			if err := rc.git.Start(rc.baseBranch(), rc.state.Branch, nil); err != nil {
-				return errors.New("executor: the work branch of this run could not be checked out")
-			}
-		}
-	}
-	rows, err := rc.o.Board.List(ctx, rc.plan.RunID, blackboard.Filter{})
-	if err != nil {
-		return errors.New("executor: the blackboard could not be read")
-	}
-	for _, r := range rows {
-		if r.Status != blackboard.StatusPending {
-			rc.state.Resumed = true
-			break
-		}
-	}
-	if !rc.state.Resumed {
-		return nil
-	}
-	return rc.state.Save(rc.o.RunDir)
-}
-
 // wave0 is spec 14 in order: types and stubs, go.mod, the deps step, the scan,
 // the build check, the red check, the commit.
 func (rc *runCtx) wave0(ctx context.Context) error {
@@ -708,6 +667,7 @@ func (rc *runCtx) wave0(ctx context.Context) error {
 		rc.emit("wave0_commit", "", "diff_only: nothing committed")
 	}
 	rc.state.Wave0Done = true
+	rc.state.Tip = rc.tipNow()
 	return rc.state.Save(rc.o.RunDir)
 }
 

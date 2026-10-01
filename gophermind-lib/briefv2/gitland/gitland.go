@@ -34,6 +34,9 @@ type Repo interface {
 	Branch() (string, error)
 	// LeafCommit finds the leaf commit for nodeID on the current branch. ok is false when none exists.
 	LeafCommit(nodeID string) (hash string, ok bool, err error)
+	// IsAncestor reports whether the commit rev is HEAD or one of its ancestors. A resume uses it to prove the work
+	// branch still contains what the run recorded; an unknown revision is an error, not an answer.
+	IsAncestor(rev string) (bool, error)
 }
 
 var (

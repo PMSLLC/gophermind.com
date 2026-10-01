@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -90,6 +91,7 @@ type rig struct {
 	router           *router.Router    // the real router over the fake providers, set by wire
 	gate             *scriptGate       // set by wire
 	dbPath           string            // the SQLite file behind board and ledger
+	db               *sql.DB           // closed by close
 }
 
 type rigOpts struct {
@@ -121,41 +123,81 @@ func newRig(t *testing.T, mods ...func(*rigOpts)) *rig {
 		}
 		t.Logf("the temporary repository %s could not be removed after 30 tries: %v", repo, err)
 	})
+	return buildRig(t, ro, repo, filepath.Join(t.TempDir(), "bb.db"), t.TempDir(), t.TempDir(), true)
+}
+
+// newRigIn is the rig over a directory the caller owns: the repository
+// (dir/repo), the SQLite file (dir/bb.db), the module cache (dir/modcache) and
+// so the run folder all live under dir, so a second process can rebuild the
+// same rig from dir alone. It plans only when dir/repo does not exist yet; an
+// existing one is reopened (the plan, the board and the repository are kept,
+// the in-memory secret is set again). stale_claim_seconds is 1 so a killed
+// worker's claim goes stale at once. The script is wired.
+func newRigIn(t *testing.T, dir string, script Script) *rig {
+	t.Helper()
+	t.Cleanup(func() { makeTreeWritable(dir) }) // runs before the owner's TempDir removal
+	repo := filepath.Join(dir, "repo")
+	_, statErr := os.Stat(repo)
+	g := buildRig(t, rigOpts{Settings: func(c *settings.Config) { c.Executor.StaleClaimSeconds = 1 }},
+		repo, filepath.Join(dir, "bb.db"), filepath.Join(dir, "modcache"), filepath.Join(dir, "brief"), statErr != nil)
+	g.wire(script)
+	return g
+}
+
+// close closes the database and the git layer. Safe to call twice.
+func (g *rig) close() {
+	g.db.Close()
+	if c, ok := g.git.(interface{ Close() error }); ok {
+		c.Close()
+	}
+}
+
+// buildRig makes the rig over the given paths. With plan it also creates the
+// repository, writes the brief and runs the real planner; without it the
+// repository, the database and the plan already exist.
+func buildRig(t *testing.T, ro rigOpts, repo, dbPath, modBase, briefDir string, plan bool) *rig {
+	t.Helper()
 	g := &rig{t: t, repo: repo, id: greeterID, sink: events.NewCollector()}
 	g.runDir = filepath.Join(repo, ".gophermind", greeterID)
+	mem := newMemSecrets()
+	g.secrets = mem
 
-	copyTree(t, filepath.Join(greeterDir, "repo"), repo)
-	write(t, filepath.Join(repo, "go.mod"), "module example.com/greeter\n\ngo 1.22\n")
-	write(t, filepath.Join(repo, ".gitignore"), ".gophermind/\n")
-	g.gitCmd("init", "-q", "-b", "main")
-	g.gitCmd("config", "user.email", "rig@example.com")
-	g.gitCmd("config", "user.name", "Rig")
-	g.gitCmd("config", "commit.gpgsign", "false")
-	g.gitCmd("add", "go.mod", ".gitignore", "cmd/greeter/main.go")
-	g.gitCmd("commit", "-q", "-m", "seed")
-
-	raw, err := os.ReadFile(filepath.Join(greeterDir, "brief.md"))
-	if err != nil {
-		t.Fatal(err)
+	if plan {
+		copyTree(t, filepath.Join(greeterDir, "repo"), repo)
+		write(t, filepath.Join(repo, "go.mod"), "module example.com/greeter\n\ngo 1.22\n")
+		write(t, filepath.Join(repo, ".gitignore"), ".gophermind/\n")
+		g.gitCmd("init", "-q", "-b", "main")
+		g.gitCmd("config", "user.email", "rig@example.com")
+		g.gitCmd("config", "user.name", "Rig")
+		g.gitCmd("config", "commit.gpgsign", "false")
+		g.gitCmd("add", "go.mod", ".gitignore", "cmd/greeter/main.go")
+		g.gitCmd("commit", "-q", "-m", "seed")
 	}
-	text := strings.Replace(string(raw), "REPO_DIR", repo, 1)
-	if ro.BriefEdit != nil {
-		text = ro.BriefEdit(text)
-	}
-	briefPath := filepath.Join(t.TempDir(), "brief.md")
-	write(t, briefPath, text)
 
-	g.dbPath = filepath.Join(t.TempDir(), "bb.db")
+	g.dbPath = dbPath
 	d, err := db.Open(g.dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
+	g.db = d
 	t.Cleanup(func() { d.Close() })
 	g.led, g.board = ledger.NewSQLite(d), blackboard.NewSQLite(d)
 
-	mem := newMemSecrets()
-	g.secrets = mem
-	g.planOffline(briefPath, mem)
+	if plan {
+		raw, err := os.ReadFile(filepath.Join(greeterDir, "brief.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := strings.Replace(string(raw), "REPO_DIR", repo, 1)
+		if ro.BriefEdit != nil {
+			text = ro.BriefEdit(text)
+		}
+		briefPath := filepath.Join(briefDir, "brief.md")
+		write(t, briefPath, text)
+		g.planOffline(briefPath, mem)
+	} else if err := mem.Set(vault.RunScope(g.id), greeterSecret, canarySecret); err != nil {
+		t.Fatal(err)
+	}
 
 	g.cfg = settings.Default()
 	g.cfg.Providers = []settings.ProviderConfig{
@@ -170,9 +212,8 @@ func newRig(t *testing.T, mods ...func(*rigOpts)) *rig {
 	g.cfg.Executor.Workers = 1
 	// The module cache is a temp directory (never the real ~/.gophermind), and the
 	// toolchain PATH holds the go this test run uses.
-	modDir := t.TempDir()
-	t.Cleanup(func() { makeTreeWritable(modDir) }) // the go tool makes cached modules read-only
-	g.cfg.Executor.GoModCache = filepath.Join(modDir, "gomodcache")
+	t.Cleanup(func() { makeTreeWritable(modBase) }) // the go tool makes cached modules read-only
+	g.cfg.Executor.GoModCache = filepath.Join(modBase, "gomodcache")
 	g.cfg.Toolchain = map[string]string{"PATH": testToolchainPATH(t)}
 	if ro.Settings != nil {
 		ro.Settings(g.cfg)

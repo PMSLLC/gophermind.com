@@ -15,10 +15,16 @@ import (
 // Both directories are made under os.TempDir and removed at exit through
 // removeTestDir, which refuses anything else.
 func TestMain(m *testing.M) {
-	cache, err := os.MkdirTemp("", "gm-exectest-cache-")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "TestMain: no cache directory")
-		os.Exit(2)
+	// A child process of a kill test shares its parent's GOCACHE (it is the
+	// parent's to remove) instead of compiling everything cold.
+	cache, shared := os.Getenv("GM_TEST_GOCACHE"), true
+	if cache == "" {
+		var err error
+		shared = false
+		if cache, err = os.MkdirTemp("", "gm-exectest-cache-"); err != nil {
+			fmt.Fprintln(os.Stderr, "TestMain: no cache directory")
+			os.Exit(2)
+		}
 	}
 	cfg, err := os.MkdirTemp("", "gm-exectest-cfg-")
 	if err != nil {
@@ -37,7 +43,9 @@ func TestMain(m *testing.M) {
 	})
 	code := m.Run()
 	watchdog.Stop()
-	removeTestDir(cache)
+	if !shared {
+		removeTestDir(cache)
+	}
 	removeTestDir(cfg)
 	os.Exit(code)
 }

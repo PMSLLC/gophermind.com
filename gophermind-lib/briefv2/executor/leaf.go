@@ -733,6 +733,7 @@ func (lr *leafRun) finishPass(ctx context.Context, committed bool, hash string) 
 		return fmt.Errorf("executor: marking %s verified failed", l.ID)
 	}
 	lr.final = true
+	rc.recordTip()
 	if err := rc.setResult(l.ID, blackboard.StatusVerified, ""); err != nil {
 		return err
 	}

@@ -77,6 +77,16 @@ func (o *Options) validate() error {
 	return nil
 }
 
+// CheckWorkers is the check the CLI makes on --workers before it builds Options:
+// leaves share one working tree, so only 1 is accepted. The wording matches
+// settings.Validate's refusal of executor.workers.
+func CheckWorkers(n int) error {
+	if n != 1 {
+		return errors.New("--workers must be 1 until leaf-isolated trees exist")
+	}
+	return nil
+}
+
 // String names the run folder, the repository and which collaborators are
 // set. It never prints a collaborator's own value, so an Options handed to a
 // log line, an error or %v cannot show a secret.

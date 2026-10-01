@@ -72,7 +72,7 @@ func TestLoadSkipsNonNodeFilesAndRuntime(t *testing.T) {
 	if err := s.Write(fn(t, "fn-a", "comp", 0)); err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range []string{"contracts.json", "answers.json", "approval.json", "report.json", "dependencies.json", "comp/fn-a.runtime.json"} {
+	for _, f := range []string{"contracts.json", "answers.json", "approval.json", "report.json", "dependencies.json", "acceptance.json", "comp/fn-a.runtime.json"} {
 		p := filepath.Join(dir, f)
 		_ = os.MkdirAll(filepath.Dir(p), 0o700)
 		if err := os.WriteFile(p, []byte(`{"not":"a node"}`), 0o600); err != nil {
