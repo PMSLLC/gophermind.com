@@ -2,6 +2,7 @@ package executor
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -106,8 +107,21 @@ func firstCommand(stmt string) string {
 
 var loopbackLiterals = []string{"127.0.0.1", "localhost", "[::1]"}
 
-// vacuousCommand says that an acceptance root test cannot prove the server.
-// bins are the built binaries' names; nil at start (nothing is built yet).
+var (
+	goRefuseRE = regexp.MustCompile(`(^|[\s;&|(])go\s+(run|install|get|generate)(\s|$)`)
+	goPkgRE    = regexp.MustCompile(`(^|[\s;&|(])go\s+(build|vet|test)\b[^\n;&|]*\s\./`)
+	curlRE     = regexp.MustCompile(`(^|[^A-Za-z0-9_./-])curl([^A-Za-z0-9_-]|$)`)
+	binDirOpRE = regexp.MustCompile(`(^|[\s/"])bin(/|\s|"|$)`)
+	mutators   = map[string]bool{"rm": true, "mv": true, "cp": true, "chmod": true, "ln": true}
+)
+
+// vacuousCommand says that an acceptance root test cannot prove anything. It
+// is refused when its whole effect is a no-op, when it runs go run, install,
+// get or generate, runs a binary by a path outside the built bin directory, or
+// removes, moves, copies, changes or links into the bin directory. Otherwise it
+// is accepted when it mentions go build, vet or test with a package pattern, a
+// built binary's name (bins), curl, the acceptance address variables or a
+// loopback address. bins are the main packages' directory names under cmd/.
 func vacuousCommand(cmd string, bins []string) bool {
 	real := false
 	for _, st := range shellSplit(cmd, false) {
@@ -127,24 +141,21 @@ func vacuousCommand(cmd string, bins []string) bool {
 				return true // a binary run by path, not the one built
 			}
 		}
-	}
-	if !real || goBuildRE.MatchString(cmd) {
-		return true
-	}
-	if strings.Contains(cmd, "GM_ACCEPTANCE_URL") || strings.Contains(cmd, "GM_ACCEPTANCE_ADDR") {
-		return false
-	}
-	loopback := false
-	for _, l := range loopbackLiterals {
-		if strings.Contains(cmd, l) {
-			loopback = true
+		if mutators[c] && (strings.Contains(st, "GM_ACCEPTANCE_BIN") || binDirOpRE.MatchString(st)) {
+			return true
 		}
 	}
-	if !loopback {
+	if !real || goRefuseRE.MatchString(cmd) {
 		return true
 	}
-	if len(bins) == 0 {
+	if goPkgRE.MatchString(cmd) || curlRE.MatchString(cmd) ||
+		strings.Contains(cmd, "GM_ACCEPTANCE_URL") || strings.Contains(cmd, "GM_ACCEPTANCE_ADDR") {
 		return false
+	}
+	for _, l := range loopbackLiterals {
+		if strings.Contains(cmd, l) {
+			return false
+		}
 	}
 	for _, b := range bins {
 		if regexp.MustCompile(`(^|[^A-Za-z0-9_./-])` + regexp.QuoteMeta(b) + `([^A-Za-z0-9_-]|$)`).MatchString(cmd) {
@@ -166,4 +177,26 @@ func vacuousBullets(p acceptPlan, bins []string) []string {
 		}
 	}
 	return ids
+}
+
+var unsetRE = regexp.MustCompile("with [`'\"]?([A-Za-z_][A-Za-z0-9_]*)[`'\"]? unset")
+
+// unsetNames are the declared secret and env names a bullet's text says it runs
+// without, by the exact phrase "with NAME unset" (case sensitive).
+func (rc *runCtx) unsetNames(text string) []string {
+	declared := map[string]bool{}
+	for _, s := range rc.plan.Brief.Front.Secrets {
+		declared[s.Name] = true
+	}
+	for _, e := range rc.plan.Brief.Front.Env {
+		declared[e.Name] = true
+	}
+	var out []string
+	for _, m := range unsetRE.FindAllStringSubmatch(text, -1) {
+		if declared[m[1]] {
+			out = append(out, m[1])
+		}
+	}
+	sort.Strings(out)
+	return out
 }
