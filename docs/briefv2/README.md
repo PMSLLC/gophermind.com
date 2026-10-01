@@ -537,7 +537,7 @@ run|install|get|generate`, a binary by a path, nothing that touches a build or t
 server), and the executor still uses only that level. Its `Quality` level says a
 command cannot fail for the right reason, and the planner uses it. The findings
 are a fixed vocabulary and never quote a command: `masked_failure` (`|| true`,
-`|| :`, `|| echo ...`, `|| exit 0`, `2>/dev/null ||`, `set +e`, a last line of
+`|| :`, `|| echo ...`, `|| exit 0`, `2>/dev/null || true`, `set +e`, a last line of
 `; true` or `; echo ...`), `success_echo` (a trailing `&& echo OK` is the only
 assertion), `placeholder` (`{id}`, `<id>`, `...`, TODO, `(simulate`),
 `undefined_variable` (a `$NAME` nothing earlier in the command sets and that is

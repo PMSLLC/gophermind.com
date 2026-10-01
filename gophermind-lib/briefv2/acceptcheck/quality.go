@@ -406,11 +406,7 @@ func (q *qual) script(script string, ctxAsserted, top bool) {
 		first, fargs := cmdAt(i)
 		rhsMask := first == "true" || first == ":" || first == "echo" || first == "printf" ||
 			(first == "exit" && (len(fargs) == 0 || fargs[0].lit == "0"))
-		devnull := false
-		if i > 0 && len(stmts[i-1].words) > 0 {
-			devnull = stmts[i-1].words[len(stmts[i-1].words)-1].lit == "2>/dev/null"
-		}
-		if rhsMask || devnull {
+		if rhsMask {
 			q.set[FindMasked] = true
 		}
 	}
