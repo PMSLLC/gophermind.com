@@ -96,15 +96,15 @@ func (s *sweeper) snapshot() []procInfo {
 	return found
 }
 
-// poll snapshots until stop is closed: every 200 ms at first, when daemonizing
-// children appear, then once a second. A command that ends before the first
+// poll snapshots until stop is closed: every 500 ms at first, when daemonizing
+// children appear, then every 2 s. A command that ends before the first
 // sample costs no ps call.
 func (s *sweeper) poll(stop <-chan struct{}) {
 	began := time.Now()
 	for {
-		d := time.Second
+		d := 2 * time.Second
 		if time.Since(began) < 5*time.Second {
-			d = 200 * time.Millisecond
+			d = 500 * time.Millisecond
 		}
 		select {
 		case <-stop:
