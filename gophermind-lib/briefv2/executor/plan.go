@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"gophermind/gophermind-lib/briefv2/brief"
 	"gophermind/gophermind-lib/briefv2/contract"
@@ -346,4 +347,27 @@ func rootNetwork(tr *tree.Tree, rootID string) ([]NetHost, error) {
 		out = append(out, NetHost{Host: h.Host, Critical: h.Critical})
 	}
 	return out, nil
+}
+
+// binNames are the directory names of the main packages under cmd/ that the
+// plan's leaves write: the binaries the acceptance run will build.
+func (p *Plan) binNames() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, l := range p.Leaves {
+		if l.Package != "main" {
+			continue
+		}
+		rest, ok := strings.CutPrefix(l.Dir, "cmd/")
+		if !ok {
+			continue
+		}
+		name := strings.SplitN(rest, "/", 2)[0]
+		if name != "" && !seen[name] {
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
 }

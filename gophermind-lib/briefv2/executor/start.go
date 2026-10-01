@@ -140,7 +140,7 @@ func newRunCtx(ctx context.Context, o Options) (*runCtx, error) {
 	}
 	// Spec 9 tripwire, before a file is touched or a model is called: an
 	// acceptance bullet with no root test can never make N smaller.
-	if rc.accept, err = mapAcceptance(plan.Requirements, plan.Coverage); err != nil {
+	if rc.accept, err = mapAcceptance(plan.Requirements, plan.Coverage, plan.binNames()...); err != nil {
 		reason := "acceptance_unmapped"
 		var v *vacuousError
 		if errors.As(err, &v) {

@@ -104,7 +104,7 @@ type planBullet struct {
 // coverage.json (cov). It never reads N from coverage.json. It errors, naming
 // the requirement id, for an acceptance requirement with no root test or with a
 // root test whose command is blank (spec 9 tripwire).
-func mapAcceptance(reqs []planner.Requirement, cov planner.CoverageFile) (acceptPlan, error) {
+func mapAcceptance(reqs []planner.Requirement, cov planner.CoverageFile, bins ...string) (acceptPlan, error) {
 	nodes := map[string][]string{}
 	for _, c := range cov.Covered {
 		nodes[c.Requirement] = c.Nodes
@@ -138,7 +138,7 @@ func mapAcceptance(reqs []planner.Requirement, cov planner.CoverageFile) (accept
 			p.constraints = append(p.constraints, pb)
 		}
 	}
-	if ids := vacuousBullets(p, nil); len(ids) > 0 {
+	if ids := vacuousBullets(p, bins); len(ids) > 0 {
 		return acceptPlan{}, &vacuousError{IDs: ids}
 	}
 	return p, nil
@@ -300,10 +300,19 @@ func ctxErrOr(ctx context.Context) error {
 // GM_ACCEPTANCE_ADDR and GM_ACCEPTANCE_URL (and the built binaries' directory
 // through GM_ACCEPTANCE_BIN). The runner.Result carries the output in memory
 // only; the CommandProof carries hashes.
-func (rc *runCtx) runRootTest(ctx context.Context, t planner.RootTest) (CommandProof, runner.Result, error) {
+func (rc *runCtx) runRootTest(ctx context.Context, t planner.RootTest, unset ...string) (CommandProof, runner.Result, error) {
 	env, err := rc.env("acceptance", envAcceptance)
 	if err != nil {
 		return CommandProof{}, runner.Result{}, errors.New("executor: the environment of the acceptance run could not be built")
+	}
+	for _, name := range unset {
+		kept := env[:0]
+		for _, e := range env {
+			if !strings.HasPrefix(e, name+"=") {
+				kept = append(kept, e)
+			}
+		}
+		env = kept
 	}
 	addr, err := freeAddr()
 	if err != nil {
@@ -354,12 +363,16 @@ func firstLine(s string) string {
 func (rc *runCtx) runBullet(ctx context.Context, pb planBullet) (BulletProof, *failedBullet, error) {
 	bp := BulletProof{Requirement: pb.req.ID, Text: rc.scrubText(pb.req.Text), Commands: []CommandProof{}, Verdict: "pass"}
 	var fb *failedBullet
+	unset := rc.unsetNames(pb.req.Text)
 	for i, t := range pb.tests {
-		proof, res, err := rc.runRootTest(ctx, t)
+		proof, res, err := rc.runRootTest(ctx, t, unset...)
 		if err != nil {
 			return bp, nil, err
 		}
 		proof.Command = fmt.Sprintf("root test %s #%d", pb.req.ID, i+1)
+		if len(unset) > 0 {
+			proof.Command += " (unset " + strings.Join(unset, ", ") + ")"
+		}
 		bp.Commands = append(bp.Commands, proof)
 		if proof.Passed {
 			continue
@@ -632,6 +645,9 @@ func (rc *runCtx) checkEnvironment() *stopError {
 	}
 	scope := vault.RunScope(rc.plan.RunID)
 	for _, sec := range rc.plan.Brief.Front.Secrets {
+		if !rc.needsSecret(sec.Name) {
+			continue
+		}
 		val, ok := rc.o.Secrets.Get(scope, sec.Name)
 		if !ok {
 			continue
@@ -659,6 +675,33 @@ func (rc *runCtx) checkEnvironment() *stopError {
 		c.Close()
 	}
 	return nil
+}
+
+// needsSecret says that some bullet runs with the variable: its text or one of
+// its commands names it and the bullet does not say "with NAME unset".
+func (rc *runCtx) needsSecret(name string) bool {
+	for _, list := range [][]planBullet{rc.accept.acceptance, rc.accept.constraints} {
+		for _, pb := range list {
+			unset := false
+			for _, u := range rc.unsetNames(pb.req.Text) {
+				if u == name {
+					unset = true
+				}
+			}
+			if unset {
+				continue
+			}
+			if strings.Contains(pb.req.Text, name) {
+				return true
+			}
+			for _, t := range pb.tests {
+				if strings.Contains(t.Command, name) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // treeClean requires that only declared files differ from the landed state:
