@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -99,6 +100,7 @@ func TestProfileOrder(t *testing.T) {
 	p.GoModCache = realDir(t)
 	p.ReadOnly = []string{realDir(t)}
 	p.Home = realDir(t)
+	p.LoopbackPorts = []int{8080}
 	txt, err := p.Text()
 	if err != nil {
 		t.Fatal(err)
@@ -159,10 +161,10 @@ func TestProfileOrder(t *testing.T) {
 	if !strings.Contains(writeLine(txt2), p.GoModCache) {
 		t.Fatal("modcache not writable with ModCacheWritable")
 	}
-	// No home means no home rule and no reads allow.
+	// No home means no home rule and no reads allow (the secret-file denies remain).
 	p.Home = ""
 	txt3, _ := p.Text()
-	if strings.Contains(txt3, "file-read*") {
+	if strings.Contains(txt3, "(allow file-read*") || strings.Contains(txt3, fmt.Sprintf("(deny file-read* (subpath %q))", p.Repo)) {
 		t.Fatal("read rules present without Home")
 	}
 }
@@ -397,7 +399,7 @@ func TestSandboxDeniesNonLoopback(t *testing.T) {
 	run := func(sandboxed bool, host, port string) (string, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, "/usr/bin/nc", "-zv", "-w", "1", host, port)
+		cmd := exec.CommandContext(ctx, "/bin/bash", "-c", "exec 3<>/dev/tcp/$1/$2", "bash", host, port)
 		if sandboxed {
 			w, err := Wrap(cmd, p)
 			if err != nil {
@@ -413,6 +415,8 @@ func TestSandboxDeniesNonLoopback(t *testing.T) {
 		t.Skip("cannot listen: " + err.Error())
 	}
 	defer l.Close()
+	lp, _ := strconv.Atoi(portOf(l))
+	p.LoopbackPorts = []int{lp}
 	if out, err := run(true, "127.0.0.1", portOf(l)); err != nil {
 		t.Fatalf("sandboxed loopback connect failed (positive control): %v %s", err, out)
 	}
@@ -437,7 +441,10 @@ func TestSandboxAllowsLoopback(t *testing.T) {
 		t.Skip("cannot listen: " + err.Error())
 	}
 	defer l.Close()
-	if err := runWrapped(t, baseProfile(t), "/usr/bin/nc", "-z", "-w", "2", "127.0.0.1", portOf(l)); err != nil {
+	p := baseProfile(t)
+	lp, _ := strconv.Atoi(portOf(l))
+	p.LoopbackPorts = []int{lp}
+	if err := runWrapped(t, p, "/bin/bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/$1", "bash", portOf(l)); err != nil {
 		t.Fatalf("sandboxed loopback connect failed: %v", err)
 	}
 }
@@ -636,12 +643,20 @@ func topLevelForms(t *testing.T, txt string) []string {
 }
 
 func TestProfileHostilePathsInjectNothing(t *testing.T) {
-	expected := []string{
-		"version 1", "allow default", "deny file-write*", "allow file-write*",
-		"deny file-write*", "deny file-write*", "deny file-read*", "allow file-read*",
-		"deny file-write*", "deny file-write*", "deny network*",
-		"allow network-outbound", "allow network-inbound", "allow network-bind",
+	hardening := []string{
+		"deny mach-lookup", "deny mach-lookup", "deny mach-lookup", "deny mach-lookup",
+		"deny signal", "allow signal", "deny process-exec",
 	}
+	secretDenies := []string{"deny file-read*", "deny file-read*", "deny file-read*", "deny file-read*", "deny file-read*"}
+	expected := []string{
+		"version 1", "allow default"}
+	expected = append(expected, hardening...)
+	expected = append(expected, "deny file-write*", "allow file-write*",
+		"deny file-write*", "deny file-write*", "deny file-write*", "deny file-read*", "allow file-read*",
+		"deny file-write*", "deny file-write*", "deny file-write*")
+	expected = append(expected, secretDenies...)
+	expected = append(expected, "deny network*",
+		"allow network-outbound", "allow network-inbound", "allow network-bind")
 	hostile := []string{
 		"x)y", "(allow default", "(allow default)", "a\"b", "a\\b", "a\nb", "a\tb", "a\rb",
 		"a\xffb", "a\x00b", "a\u2028b", ")(allow file-write* (subpath \"/\"))",
@@ -659,7 +674,7 @@ func TestProfileHostilePathsInjectNothing(t *testing.T) {
 			good := realDir(t)
 			p := Profile{Repo: good, Scratch: realDir(t), GoCache: realDir(t),
 				RunDir: filepath.Join(good, "run"), GoModCache: realDir(t), Home: realDir(t),
-				ReadOnly: []string{realDir(t)}}
+				ReadOnly: []string{realDir(t)}, LoopbackPorts: []int{8080}}
 			switch field {
 			case "Repo":
 				p.Repo = path
@@ -688,9 +703,12 @@ func TestProfileHostilePathsInjectNothing(t *testing.T) {
 			want := expected
 			if field == "Repo" {
 				// no RunDir: two run-dir denies drop out
-				want = []string{"version 1", "allow default", "deny file-write*", "allow file-write*",
-					"deny file-write*", "deny file-read*", "allow file-read*", "deny file-write*",
-					"deny network*", "allow network-outbound", "allow network-inbound", "allow network-bind"}
+				want = []string{"version 1", "allow default"}
+				want = append(want, hardening...)
+				want = append(want, "deny file-write*", "allow file-write*",
+					"deny file-write*", "deny file-write*", "deny file-read*", "allow file-read*", "deny file-write*", "deny file-write*")
+				want = append(want, secretDenies...)
+				want = append(want, "deny network*", "allow network-outbound", "allow network-inbound", "allow network-bind")
 			}
 			if strings.Join(forms, "|") != strings.Join(want, "|") {
 				t.Fatalf("%s %q: forms %q, want %q", field, h, forms, want)
