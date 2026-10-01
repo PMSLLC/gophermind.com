@@ -190,13 +190,20 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 		}
 		allBatches := outlineBatches(featureNames)
 		ask := func(stage string, batch, unresolved []string) error {
-			prompt, err := render("contract_outline", map[string]string{
-				"Brief": string(r.src), "Answers": answersText(as), "TypeSchema": typeSchema,
-				"Fixed": outlineFixedText(st.Doc), "Emitted": outlineEmittedText(st.Doc, st.OutlineSharedIDs),
-				"Batch":      strings.Join(batch, ", "),
-				"Unresolved": unresolvedPromptText(unresolved), "UnresolvedCount": fmt.Sprint(len(unresolved))})
-			if err != nil {
-				return err
+			names := batch
+			if len(names) == 0 {
+				names = featureNames
+			}
+			build := func(level int) (string, error) {
+				brief := string(r.src)
+				if level > 0 {
+					brief = briefExcerpt(r, names, level)
+				}
+				return render("contract_outline", map[string]string{
+					"Brief": brief, "Answers": answersText(as), "TypeSchema": typeSchema,
+					"Fixed": outlineFixedText(st.Doc), "Emitted": outlineEmittedTextAt(st.Doc, st.OutlineSharedIDs, level),
+					"Batch":      strings.Join(batch, ", "),
+					"Unresolved": unresolvedPromptText(unresolved), "UnresolvedCount": fmt.Sprint(len(unresolved))})
 			}
 			var ignored []string
 			var notes idNotes
@@ -205,7 +212,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			first := st.Doc == nil
 			cs := callSpec{stage: stage, taskType: "contract", scope: router.ScopeBrief,
 				maxTokens: maxTokensOutline, maxGrown: maxGrownOutline}
-			if err := p.call(ctx, r, cs, prompt, func(text string) error {
+			if err := p.callSized(ctx, r, cs, build, func(text string) error {
 				text, nt, err := normalizeReply(st.Doc, StripReply(text), replyOutline)
 				if err != nil {
 					return err
@@ -315,23 +322,22 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			continue
 		}
 		for {
-			prompt, err := render("contract_component", map[string]string{
-				"Component":    mustJSON(comp),
-				"Outline":      mustJSON(map[string]any{"module": st.Doc["module"], "conventions": st.Doc["conventions"], "components": st.Doc["components"]}),
-				"Declared":     declaredText(st.Doc),
-				"Written":      writtenText(st.Doc, id),
-				"BriefSection": briefSection(r, id),
-				"Answers":      answersText(as),
-				"ItemSchemas":  itemSchemas,
-			})
-			if err != nil {
-				return err
+			build := func(level int) (string, error) {
+				return render("contract_component", map[string]string{
+					"Component":    mustJSON(comp),
+					"Outline":      outlineJSONAt(st.Doc, level),
+					"Declared":     declaredTextAt(st.Doc, level),
+					"Written":      writtenText(st.Doc, id),
+					"BriefSection": briefSectionAt(r, id, level),
+					"Answers":      answersText(as),
+					"ItemSchemas":  itemSchemas,
+				})
 			}
 			more := false
 			var ignored []string
 			var notes idNotes
 			cs := callSpec{stage: "contract:" + id, taskType: "contract", scope: router.ScopeComponent, maxTokens: maxTokensContract}
-			if err := p.call(ctx, r, cs, prompt, func(text string) error {
+			if err := p.callSized(ctx, r, cs, build, func(text string) error {
 				text, nt, err := normalizeReply(st.Doc, StripReply(text), replyComponent)
 				if err != nil {
 					return err
@@ -377,17 +383,17 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 		if st.Repairs >= maxOutlineRepairs {
 			return unresolvedErr(repairStage, un)
 		}
-		prompt, err := render("contract_repair", map[string]string{
-			"Outline":  mustJSON(map[string]any{"module": st.Doc["module"], "conventions": st.Doc["conventions"], "components": st.Doc["components"]}),
-			"Declared": declaredText(st.Doc), "Answers": answersText(as), "ItemSchemas": itemSchemas,
-			"Unresolved": unresolvedOwnersText(st.Doc, un), "UnresolvedCount": fmt.Sprint(len(un))})
-		if err != nil {
-			return err
+		build := func(level int) (string, error) {
+			return render("contract_repair", map[string]string{
+				"Outline":  outlineJSONAt(st.Doc, level),
+				"Declared": declaredTextAt(st.Doc, level), "Answers": answersText(as), "ItemSchemas": itemSchemas,
+				"BriefSections": briefExcerpt(r, featuresOfComponents(r, unresolvedOwnerComponents(st.Doc, un)), repairExcerptLevel(level)),
+				"Unresolved":    unresolvedOwnersText(st.Doc, un), "UnresolvedCount": fmt.Sprint(len(un))})
 		}
 		var ignored []string
 		var notes idNotes
 		cs := callSpec{stage: repairStage, taskType: "contract", scope: router.ScopeBrief, maxTokens: maxTokensContract}
-		if err := p.call(ctx, r, cs, prompt, func(text string) error {
+		if err := p.callSized(ctx, r, cs, build, func(text string) error {
 			text, nt, err := normalizeReply(st.Doc, StripReply(text), replyRepair)
 			if err != nil {
 				return err
@@ -747,6 +753,22 @@ func cutBytes(s string, n int) string {
 // one short entry per withheld component, so a batch prompt does not grow with
 // the brief. Duplicate handling never depends on the model seeing this list.
 func outlineEmittedText(doc map[string]any, shared []string) string {
+	return outlineEmittedTextLimits(doc, shared, maxEmittedRecent, maxEmittedSummaries)
+}
+
+// outlineEmittedTextAt is the list for a prompt level: from level 2 fewer ids
+// are listed in full and no summaries.
+func outlineEmittedTextAt(doc map[string]any, shared []string, level int) string {
+	switch {
+	case level >= 3:
+		return outlineEmittedTextLimits(doc, shared, 15, 0)
+	case level == 2:
+		return outlineEmittedTextLimits(doc, shared, 40, 0)
+	}
+	return outlineEmittedText(doc, shared)
+}
+
+func outlineEmittedTextLimits(doc map[string]any, shared []string, recent, summaries int) string {
 	if doc == nil {
 		return "(nothing yet)"
 	}
@@ -763,7 +785,7 @@ func outlineEmittedText(doc map[string]any, shared []string) string {
 		}
 		return strings.Join(ids, ", ")
 	}
-	if len(comps)+len(types) <= maxEmittedRecent {
+	if len(comps)+len(types) <= recent {
 		return fmt.Sprintf("components: %s\ntypes: %s", join(comps), join(types))
 	}
 	isShared := map[string]bool{}
@@ -784,17 +806,17 @@ func outlineEmittedText(doc map[string]any, shared []string) string {
 		}
 	}
 	takeC := len(restC)
-	if takeC > maxEmittedRecent*2/3 {
-		takeC = maxEmittedRecent * 2 / 3
+	if takeC > recent*2/3 {
+		takeC = recent * 2 / 3
 	}
 	takeT := len(restT)
-	if takeT > maxEmittedRecent-takeC {
-		takeT = maxEmittedRecent - takeC
+	if takeT > recent-takeC {
+		takeT = recent - takeC
 	}
-	if takeC < len(restC) && takeC+takeT < maxEmittedRecent {
+	if takeC < len(restC) && takeC+takeT < recent {
 		takeC = len(restC)
-		if takeC > maxEmittedRecent-takeT {
-			takeC = maxEmittedRecent - takeT
+		if takeC > recent-takeT {
+			takeC = recent - takeT
 		}
 	}
 	withheld := len(restC) - takeC + len(restT) - takeT
@@ -807,7 +829,7 @@ func outlineEmittedText(doc map[string]any, shared []string) string {
 	fmt.Fprintf(&b, "(and %d more ids, names withheld)", withheld)
 	var sums []string
 	for _, o := range restC[:len(restC)-takeC] {
-		if len(sums) == maxEmittedSummaries {
+		if len(sums) >= summaries {
 			break
 		}
 		sum := idOf(o)
@@ -817,7 +839,7 @@ func outlineEmittedText(doc map[string]any, shared []string) string {
 		sums = append(sums, cutBytes(sum, emittedSummaryBytes))
 	}
 	if len(sums) > 0 {
-		fmt.Fprintf(&b, "\nearlier components (id, first export; at most %d shown): %s", maxEmittedSummaries, strings.Join(sums, ", "))
+		fmt.Fprintf(&b, "\nearlier components (id, first export; at most %d shown): %s", summaries, strings.Join(sums, ", "))
 	}
 	return cutBytes(b.String(), maxEmittedTextBytes)
 }
@@ -1174,6 +1196,30 @@ func mergeRepair(doc map[string]any, text, briefID string) (map[string]any, []st
 		return nil, nil, err
 	}
 	return next, ignored, nil
+}
+
+// unresolvedOwnerComponents lists the components whose functions use an id in
+// ids, in document order.
+func unresolvedOwnerComponents(doc map[string]any, ids []string) []string {
+	want := map[string]bool{}
+	for _, id := range ids {
+		want[id] = true
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, f := range objects(doc["functions"]) {
+		c, _ := f["component"].(string)
+		for _, u := range strList(f["uses"]) {
+			if t, _, ok := pendingRef(u); ok {
+				u = t
+			}
+			if want[u] && c != "" && !seen[c] {
+				seen[c] = true
+				out = append(out, c)
+			}
+		}
+	}
+	return out
 }
 
 // unresolvedOwnersText lists up to 50 unresolved ids that pass the id syntax,

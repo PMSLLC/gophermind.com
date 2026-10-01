@@ -12,7 +12,12 @@ Reply with one JSON object and nothing else: {"types": [...], "functions": [...]
 - `file` is a path relative to the repository root. `package` is the Go package name. `decl` is the complete Go declaration with its doc comment.
 - Ids are lower case letters, digits and dashes only: a type id is `intake-session`, never `IntakeSession` or `intake_session`, and a function id is `fn-validate-email`.
 
-Outline (module and components):
+Brief sections of the components that own these nodes (an excerpt, not the whole brief):
+<brief>
+{{.BriefSections}}
+</brief>
+
+Outline (the module and the components that own these nodes):
 <outline>
 {{.Outline}}
 </outline>

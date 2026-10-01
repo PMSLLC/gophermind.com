@@ -952,3 +952,21 @@ func TestGrowthCapComesFromTheRequest(t *testing.T) {
 		t.Errorf("retry max_tokens = %d, want 32000 (double, under the request's 32768 cap)", got)
 	}
 }
+
+func TestChainExhaustedOnlyTooLong(t *testing.T) {
+	tl := router.EntryReason{Entry: "a/x", Kind: router.ReasonTooLong}
+	cases := map[string]struct {
+		ce   *router.ChainExhausted
+		want bool
+	}{
+		"every entry too long":   {&router.ChainExhausted{Reasons: []router.EntryReason{tl, tl}}, true},
+		"one too long, one auth": {&router.ChainExhausted{Reasons: []router.EntryReason{tl, {Kind: router.ReasonAuth}}}, false},
+		"a bad reply too":        {&router.ChainExhausted{Reasons: []router.EntryReason{tl}, ParseErr: errors.New("x")}, false},
+		"no reasons":             {&router.ChainExhausted{}, false},
+	}
+	for name, c := range cases {
+		if got := c.ce.OnlyTooLong(); got != c.want {
+			t.Errorf("%s: OnlyTooLong = %v, want %v", name, got, c.want)
+		}
+	}
+}
