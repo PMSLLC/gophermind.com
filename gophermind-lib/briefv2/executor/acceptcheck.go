@@ -23,146 +23,380 @@ var noopCommands = map[string]bool{
 
 var shellKeywords = map[string]bool{
 	"if": true, "then": true, "else": true, "elif": true, "fi": true, "do": true, "done": true,
-	"while": true, "until": true, "!": true, "{": true, "}": true, "(": true, ")": true, "time": true,
+	"while": true, "until": true, "for": true, "!": true, "{": true, "}": true, "(": true, ")": true, "time": true,
 }
+
+var wrappers = map[string]bool{"env": true, "command": true, "exec": true, "nohup": true, "builtin": true, "timeout": true}
 
 var (
-	assignRE  = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
-	goBuildRE = regexp.MustCompile(`(^|[\s;&|(])go\s+(run|build|install|test)(\s|$)`)
-	systemDir = []string{"/usr/bin/", "/bin/", "/usr/sbin/", "/sbin/"}
-	binDirRef = []string{"$GM_ACCEPTANCE_BIN/", "${GM_ACCEPTANCE_BIN}/", `"$GM_ACCEPTANCE_BIN"/`, `"${GM_ACCEPTANCE_BIN}"/`}
+	assignRE   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
+	systemDir  = []string{"/usr/bin/", "/bin/", "/usr/sbin/", "/sbin/"}
+	binDirRef  = []string{"$GM_ACCEPTANCE_BIN/", "${GM_ACCEPTANCE_BIN}/"}
+	goRefuseRE = regexp.MustCompile(`(^|[^A-Za-z0-9_])go\s+(run|install|get|generate)(\s|$|['"])`)
+	binDirOpRE = regexp.MustCompile(`(^|[\s/"])bin(/|\s|"|$)`)
+	mutators   = map[string]bool{"rm": true, "mv": true, "cp": true, "chmod": true, "ln": true}
+	shells     = map[string]bool{"sh": true, "bash": true, "dash": true, "zsh": true}
 )
-
-// shellSplit cuts a command at top-level separators (newline ; & |), or, with
-// words set, at whitespace, leaving quotes and $( ) groups whole.
-func shellSplit(cmd string, words bool) []string {
-	var out []string
-	var cur strings.Builder
-	var single, double bool
-	depth := 0
-	flush := func() {
-		if s := strings.TrimSpace(cur.String()); s != "" {
-			out = append(out, s)
-		}
-		cur.Reset()
-	}
-	rs := []rune(cmd)
-	for i := 0; i < len(rs); i++ {
-		c := rs[i]
-		switch {
-		case single:
-			if c == '\'' {
-				single = false
-			}
-		case double:
-			if c == '\\' && i+1 < len(rs) {
-				cur.WriteRune(c)
-				i++
-				c = rs[i]
-			} else if c == '"' {
-				double = false
-			}
-		case c == '\\' && i+1 < len(rs):
-			cur.WriteRune(c)
-			i++
-			c = rs[i]
-		case c == '\'':
-			single = true
-		case c == '"':
-			double = true
-		case c == '(':
-			depth++
-		case c == ')':
-			if depth > 0 {
-				depth--
-			}
-		case depth == 0 && !words && (c == '\n' || c == ';' || c == '|' || c == '&'):
-			redirect := c == '&' && ((i > 0 && (rs[i-1] == '>' || rs[i-1] == '<')) || (i+1 < len(rs) && rs[i+1] == '>'))
-			if !redirect {
-				flush()
-				continue
-			}
-		case depth == 0 && words && (c == ' ' || c == '\t' || c == '\n'):
-			flush()
-			continue
-		}
-		cur.WriteRune(c)
-	}
-	flush()
-	return out
-}
-
-// firstCommand is the command word of a simple statement: keywords and
-// NAME=value words skipped. Empty for a bare assignment.
-func firstCommand(stmt string) string {
-	for _, w := range shellSplit(stmt, true) {
-		w = strings.TrimLeft(w, "({")
-		if w == "" || shellKeywords[w] || assignRE.MatchString(w) {
-			continue
-		}
-		return w
-	}
-	return ""
-}
 
 var loopbackLiterals = []string{"127.0.0.1", "localhost", "[::1]"}
 
-var (
-	goRefuseRE = regexp.MustCompile(`(^|[\s;&|(])go\s+(run|install|get|generate)(\s|$)`)
-	goPkgRE    = regexp.MustCompile(`(^|[\s;&|(])go\s+(build|vet|test)\b[^\n;&|]*\s\./`)
-	curlRE     = regexp.MustCompile(`(^|[^A-Za-z0-9_./-])curl([^A-Za-z0-9_-]|$)`)
-	binDirOpRE = regexp.MustCompile(`(^|[\s/"])bin(/|\s|"|$)`)
-	mutators   = map[string]bool{"rm": true, "mv": true, "cp": true, "chmod": true, "ln": true}
-)
+// word is one shell word: its text with the quotes taken off.
+type word struct{ lit string }
 
-// vacuousCommand says that an acceptance root test cannot prove anything. It
-// is refused when its whole effect is a no-op, when it runs go run, install,
-// get or generate, runs a binary by a path outside the built bin directory, or
-// removes, moves, copies, changes or links into the bin directory. Otherwise it
-// is accepted when it mentions go build, vet or test with a package pattern, a
-// built binary's name (bins), curl, the acceptance address variables or a
-// loopback address. bins are the main packages' directory names under cmd/.
-func vacuousCommand(cmd string, bins []string) bool {
-	real := false
-	for _, st := range shellSplit(cmd, false) {
-		c := firstCommand(st)
-		if c == "" || noopCommands[c] {
-			continue
+// stmt is a run of words between operators; op is the operator before it
+// ("" for the first, ";" also stands for a newline).
+type stmt struct {
+	op    string
+	words []word
+}
+
+// shellParse reads cmd into statements and the scripts hidden in $( ) and
+// backticks. Comments (an unquoted # at the start of a word) are dropped.
+func shellParse(cmd string) (stmts []stmt, subs []string) {
+	rs := []rune(cmd)
+	var cur strings.Builder
+	var words []word
+	have := false
+	op := ""
+	pushWord := func() {
+		if have {
+			words = append(words, word{lit: cur.String()})
 		}
-		real = true
-		if strings.Contains(c, "/") {
-			ok := false
-			for _, p := range append(append([]string{}, systemDir...), binDirRef...) {
-				if strings.HasPrefix(c, p) {
-					ok = true
+		cur.Reset()
+		have = false
+	}
+	pushStmt := func(next string) {
+		pushWord()
+		if len(words) > 0 {
+			stmts = append(stmts, stmt{op: op, words: words})
+		}
+		words = nil
+		op = next
+	}
+	// group reads from rs[i] (just after an opener) to the matching closer.
+	group := func(i int, open, closeR rune) (string, int) {
+		depth, start := 1, i
+		for ; i < len(rs); i++ {
+			switch rs[i] {
+			case '\\':
+				i++
+			case '\'':
+				for i++; i < len(rs) && rs[i] != '\''; i++ {
+				}
+			case '"':
+				for i++; i < len(rs) && rs[i] != '"'; i++ {
+					if rs[i] == '\\' {
+						i++
+					}
+				}
+			case open:
+				if open != closeR {
+					depth++
+				}
+			case closeR:
+				depth--
+				if depth == 0 {
+					return string(rs[start:i]), i
 				}
 			}
-			if !ok {
-				return true // a binary run by path, not the one built
-			}
 		}
-		if mutators[c] && (strings.Contains(st, "GM_ACCEPTANCE_BIN") || binDirOpRE.MatchString(st)) {
+		return string(rs[start:]), len(rs)
+	}
+	for i := 0; i < len(rs); i++ {
+		c := rs[i]
+		switch {
+		case c == ' ' || c == '\t' || c == '\r':
+			pushWord()
+		case c == '\n':
+			pushStmt(";")
+		case c == '#' && !have:
+			for i < len(rs) && rs[i] != '\n' {
+				i++
+			}
+			i--
+		case c == '\\' && i+1 < len(rs):
+			i++
+			if rs[i] != '\n' {
+				cur.WriteRune(rs[i])
+				have = true
+			}
+		case c == '\'':
+			have = true
+			for i++; i < len(rs) && rs[i] != '\''; i++ {
+				cur.WriteRune(rs[i])
+			}
+		case c == '"':
+			have = true
+			for i++; i < len(rs) && rs[i] != '"'; i++ {
+				if rs[i] == '\\' && i+1 < len(rs) {
+					i++
+				} else if rs[i] == '$' && i+1 < len(rs) && rs[i+1] == '(' && !(i+2 < len(rs) && rs[i+2] == '(') {
+					s, j := group(i+2, '(', ')')
+					subs = append(subs, s)
+					cur.WriteString("$(" + s + ")")
+					i = j
+					continue
+				} else if rs[i] == '`' {
+					s, j := group(i+1, '`', '`')
+					subs = append(subs, s)
+					cur.WriteString("`" + s + "`")
+					i = j
+					continue
+				}
+				cur.WriteRune(rs[i])
+			}
+		case c == '$' && i+1 < len(rs) && rs[i+1] == '(' && !(i+2 < len(rs) && rs[i+2] == '('):
+			have = true
+			s, j := group(i+2, '(', ')')
+			subs = append(subs, s)
+			cur.WriteString("$(" + s + ")")
+			i = j
+		case c == '`':
+			have = true
+			s, j := group(i+1, '`', '`')
+			subs = append(subs, s)
+			cur.WriteString("`" + s + "`")
+			i = j
+		case c == ';':
+			if i+1 < len(rs) && rs[i+1] == ';' {
+				i++
+			}
+			pushStmt(";")
+		case c == '&' && ((i > 0 && (rs[i-1] == '>' || rs[i-1] == '<')) || (i+1 < len(rs) && rs[i+1] == '>')):
+			cur.WriteRune(c)
+			have = true
+		case c == '&' || c == '|':
+			o := string(c)
+			if i+1 < len(rs) && rs[i+1] == c {
+				o += string(c)
+				i++
+			}
+			pushStmt(o)
+		case (c == '(' || c == ')') && !have:
+			pushWord()
+			words = append(words, word{lit: string(c)})
+		default:
+			cur.WriteRune(c)
+			have = true
+		}
+	}
+	pushStmt("")
+	return stmts, subs
+}
+
+// commandIndex is the index of the command word: assignments, keywords and
+// wrappers (env and its options, nohup, timeout and its duration) skipped.
+// -1 when there is none.
+func commandIndex(ws []word) int {
+	for i := 0; i < len(ws); i++ {
+		w := ws[i].lit
+		switch {
+		case w == "" || assignRE.MatchString(w) || (shellKeywords[w] && w != "for"):
+			continue
+		case wrappers[w]:
+			for i+1 < len(ws) {
+				n := ws[i+1].lit
+				if n == "-u" || n == "-C" || n == "-S" {
+					i += 2
+					continue
+				}
+				if strings.HasPrefix(n, "-") || assignRE.MatchString(n) || (w == "timeout" && regexp.MustCompile(`^[0-9.]+[smhd]?$`).MatchString(n)) {
+					i++
+					continue
+				}
+				break
+			}
+			continue
+		}
+		return i
+	}
+	return -1
+}
+
+type block struct {
+	kind  string // if, while, until, for
+	cond  int    // 1 known true, -1 known false, 0 unknown
+	phase string // cond, then, else, do
+}
+
+func (b block) dead() bool {
+	switch {
+	case b.kind == "if" && b.phase == "then":
+		return b.cond == -1
+	case b.kind == "if" && b.phase == "else":
+		return b.cond == 1
+	case b.kind == "while" && b.phase == "do":
+		return b.cond == -1
+	case b.kind == "until" && b.phase == "do":
+		return b.cond == 1
+	}
+	return false
+}
+
+func known(cmd string) int {
+	switch cmd {
+	case "true", ":":
+		return 1
+	case "false":
+		return -1
+	}
+	return 0
+}
+
+type verdict struct{ accepted, refused bool }
+
+func (v *verdict) merge(o verdict) {
+	v.accepted = v.accepted || o.accepted
+	v.refused = v.refused || o.refused
+}
+
+func hasPrefixAny(s string, ps []string) bool {
+	for _, p := range ps {
+		if strings.HasPrefix(s, p) {
 			return true
 		}
 	}
-	if !real || goRefuseRE.MatchString(cmd) {
+	return false
+}
+
+// analyze reads a script and says whether a statement that will run is a
+// probe (accepted) or something forbidden (refused). Statements after an
+// unconditional exit, the right side of `true ||` and `false &&`, and the dead
+// branch of `if true` / `if false` are ignored.
+func analyze(script string, bins []string, depth int) verdict {
+	var v verdict
+	if depth > 4 {
+		return v
+	}
+	stmts, subs := shellParse(script)
+	var stack []block
+	deadExit := false
+	prevKnown := 0
+	for _, st := range stmts {
+		ws := st.words
+		// keywords and their blocks
+		for len(ws) > 0 {
+			k := ws[0].lit
+			if !shellKeywords[k] {
+				break
+			}
+			ws = ws[1:]
+			switch k {
+			case "if", "while", "until", "for":
+				b := block{kind: k, phase: "cond"}
+				if i := commandIndex(ws); i >= 0 && len(ws) == i+1 {
+					b.cond = known(ws[i].lit)
+				}
+				stack = append(stack, b)
+			case "elif":
+				if len(stack) > 0 {
+					stack[len(stack)-1].phase, stack[len(stack)-1].cond = "cond", 0
+				}
+			case "then", "do":
+				if len(stack) > 0 {
+					stack[len(stack)-1].phase = k
+				}
+			case "else":
+				if len(stack) > 0 {
+					stack[len(stack)-1].phase = "else"
+				}
+			case "fi", "done":
+				if len(stack) > 0 {
+					stack = stack[:len(stack)-1]
+				}
+			}
+		}
+		if len(ws) == 0 {
+			continue
+		}
+		live := !deadExit
+		for _, b := range stack {
+			if b.dead() {
+				live = false
+			}
+		}
+		if (st.op == "||" && prevKnown == 1) || (st.op == "&&" && prevKnown == -1) {
+			live = false
+		}
+		i := commandIndex(ws)
+		if i < 0 {
+			continue
+		}
+		cmd := ws[i].lit
+		args := ws[i+1:]
+		if !live {
+			continue
+		}
+		prevKnown = known(cmd)
+		if cmd == "exit" && len(stack) == 0 && (st.op == "" || st.op == ";") {
+			deadExit = true
+		}
+		base := cmd
+		if hasPrefixAny(cmd, systemDir) {
+			base = cmd[strings.LastIndex(cmd, "/")+1:]
+		}
+		if strings.Contains(cmd, "/") && base == cmd && !hasPrefixAny(cmd, binDirRef) {
+			v.refused = true // a binary run by a path that is not the built one
+		}
+		if mutators[base] {
+			for _, a := range args {
+				if strings.Contains(a.lit, "GM_ACCEPTANCE_BIN") || binDirOpRE.MatchString(a.lit) {
+					v.refused = true
+				}
+			}
+		}
+		switch {
+		case base == "go" && len(args) >= 2 && (args[0].lit == "build" || args[0].lit == "vet" || args[0].lit == "test"):
+			for _, a := range args[1:] {
+				if a.lit == "./..." || strings.HasPrefix(a.lit, "./") {
+					v.accepted = true
+				}
+			}
+		case base == "curl", hasPrefixAny(cmd, binDirRef):
+			v.accepted = true
+		case shells[base]:
+			for j, a := range args {
+				if a.lit == "-c" && j+1 < len(args) {
+					v.merge(analyze(args[j+1].lit, bins, depth+1))
+				}
+			}
+		}
+		for _, b := range bins {
+			if base == b {
+				v.accepted = true
+			}
+		}
+		if !noopCommands[base] {
+			for _, a := range args {
+				if strings.Contains(a.lit, "GM_ACCEPTANCE_URL") || strings.Contains(a.lit, "GM_ACCEPTANCE_ADDR") {
+					v.accepted = true
+				}
+				for _, l := range loopbackLiterals {
+					if strings.Contains(a.lit, l) {
+						v.accepted = true
+					}
+				}
+			}
+		}
+	}
+	for _, s := range subs {
+		v.merge(analyze(s, bins, depth+1))
+	}
+	return v
+}
+
+// vacuousCommand says that an acceptance root test cannot prove anything: no
+// statement that will run is a probe (go build, vet or test with a package
+// pattern; curl; a built binary; a command given the acceptance address or a
+// loopback address), or something forbidden runs (go run, install, get or
+// generate anywhere in the text, a binary by a path outside the bin
+// directory, or rm, mv, cp, chmod or ln on the bin directory).
+func vacuousCommand(cmd string, bins []string) bool {
+	if goRefuseRE.MatchString(cmd) {
 		return true
 	}
-	if goPkgRE.MatchString(cmd) || curlRE.MatchString(cmd) ||
-		strings.Contains(cmd, "GM_ACCEPTANCE_URL") || strings.Contains(cmd, "GM_ACCEPTANCE_ADDR") {
-		return false
-	}
-	for _, l := range loopbackLiterals {
-		if strings.Contains(cmd, l) {
-			return false
-		}
-	}
-	for _, b := range bins {
-		if regexp.MustCompile(`(^|[^A-Za-z0-9_./-])` + regexp.QuoteMeta(b) + `([^A-Za-z0-9_-]|$)`).MatchString(cmd) {
-			return false
-		}
-	}
-	return true
+	v := analyze(cmd, bins, 0)
+	return v.refused || !v.accepted
 }
 
 // vacuousBullets is the ids of the acceptance bullets that have a vacuous root test.

@@ -166,7 +166,7 @@ func setCommand(t *testing.T, rc *runCtx, id, cmd string) {
 // vr makes a command a real probe of the server as far as the vacuity check
 // can tell (it names the base URL and does something), then runs cmd.
 func vr(cmd string) string {
-	return `test -n "$GM_ACCEPTANCE_URL"; grep -q module go.mod; ` + cmd
+	return `curl -s -m 1 "$GM_ACCEPTANCE_URL" >/dev/null 2>&1; ` + cmd
 }
 
 func oneBullets(cmds ...string) acceptPlan {
