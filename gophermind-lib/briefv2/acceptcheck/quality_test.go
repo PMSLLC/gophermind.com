@@ -159,6 +159,7 @@ func TestQualityPlaceholders(t *testing.T) {
 		`curl -fsS "$GM_ACCEPTANCE_URL/x" | grep -q '{"ok":true}'`,
 		`test "$HOME" != ""`,
 		`test -n "$STUDIO_FAKE_NOW" && go vet ./...`,
+		`test -n "$UNDECLARED_SECRET" || exit 1; go vet ./...`,
 		`id=1; curl -fsS "$GM_ACCEPTANCE_BIN/../x" | grep -q ok`,
 	}
 	for _, cmd := range ok {

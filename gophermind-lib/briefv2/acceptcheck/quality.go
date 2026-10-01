@@ -200,6 +200,23 @@ func qualityPlaceholders(script string, o Options, set map[Finding]bool) {
 	for _, n := range o.Env {
 		known[n] = true
 	}
+	// A variable a test statement reads (test -n "$X", [ -z "$X" ]) is a probe
+	// that fails loudly when it is empty, not a placeholder.
+	for _, st := range stmts {
+		if i := commandIndex(st.words); i >= 0 {
+			if b := baseOf(st.words[i].lit); b == "test" || b == "[" || b == "[[" {
+				for _, w := range st.words[i+1:] {
+					for _, m := range varUseRE.FindAllStringSubmatch(w.lit, -1) {
+						name := m[1]
+						if name == "" {
+							name = m[3]
+						}
+						known[name] = true
+					}
+				}
+			}
+		}
+	}
 	defAt := map[string]int{}
 	for _, re := range []*regexp.Regexp{varDefRE, varLoopRE} {
 		for _, m := range re.FindAllStringSubmatchIndex(rest, -1) {
