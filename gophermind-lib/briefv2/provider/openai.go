@@ -23,8 +23,22 @@ type OpenAI struct{ cfg Config }
 
 var _ Provider = (*OpenAI)(nil)
 
-// NewOpenAI builds the client. cfg.HTTPClient is used as given; when it is nil
-// http.DefaultClient is used (the harness proxy plan replaces this).
+// NewHTTPClient returns the client provider calls should use: it never follows a
+// redirect (a 307 would re-POST the prompt to another host), ignores the proxy
+// environment and gives up after timeout (0 means the caller's context alone
+// bounds the call).
+func NewHTTPClient(timeout time.Duration) *http.Client {
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.Proxy = nil
+	return &http.Client{Timeout: timeout, Transport: tr, CheckRedirect: refuseRedirect}
+}
+
+var errRedirect = errors.New("the server answered with a redirect")
+
+func refuseRedirect(*http.Request, []*http.Request) error { return errRedirect }
+
+// NewOpenAI builds the client. cfg.HTTPClient is used as given, except that it never
+// follows a redirect; when it is nil NewHTTPClient(0) is used.
 func NewOpenAI(cfg Config) Provider { return &OpenAI{cfg: cfg} }
 
 func (o *OpenAI) Name() string        { return o.cfg.Name }
@@ -77,7 +91,13 @@ func (o *OpenAI) Complete(ctx context.Context, req Request) (Response, error) {
 	}
 	client := o.cfg.HTTPClient
 	if client == nil {
-		client = http.DefaultClient
+		client = NewHTTPClient(0)
+	} else {
+		// Whatever client the caller built, a redirect is never followed: it would
+		// re-send the prompt (a 307 or 308 keeps the POST body) to another host.
+		c := *client
+		c.CheckRedirect = refuseRedirect
+		client = &c
 	}
 
 	start := time.Now()

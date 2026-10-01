@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -179,10 +178,9 @@ func briefPlan(verb string, args []string, in *os.File, out, errw io.Writer) int
 			fmt.Fprintf(errw, "error: %v\n", err)
 			return exitError
 		}
-		// The harness proxy does not exist yet (spec deviation P4), so the
-		// providers get a plain client. The router bounds every call with
-		// defaults.call_timeout.
-		providers, err = cfg.BuildProviders(&http.Client{}, func(name string) (string, error) {
+		// Providers get a client that never follows a redirect and ignores the proxy
+		// environment. The router bounds every call with its call timeout.
+		providers, err = cfg.BuildProviders(providerHTTPClient(cfg), func(name string) (string, error) {
 			vlt, err := openVault()
 			if err != nil {
 				return "", err

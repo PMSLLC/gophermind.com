@@ -242,7 +242,7 @@ func (r *Router) gate(info CallInfo, entry, provName string) (EntryReason, bool)
 		return EntryReason{Entry: entry, Kind: ReasonNoProvider}, true
 	}
 	r.mu.Lock()
-	missing, disabled, until := r.missing[entry], r.disabled[provName], r.cooldown[provName]
+	missing, disabled, until := r.missing[entry], r.disabled[provName], r.cooldownUntil(entry, provName)
 	r.mu.Unlock()
 	switch {
 	case missing:
@@ -268,7 +268,7 @@ func (r *Router) shortestCooldown(reasons []EntryReason) (wait time.Duration, co
 			continue
 		}
 		provName, _, _ := settings.SplitEntry(x.Entry)
-		d := r.cooldown[provName].Sub(r.now())
+		d := r.cooldownUntil(x.Entry, provName).Sub(r.now())
 		if d < 0 {
 			d = 0
 		}
@@ -279,10 +279,32 @@ func (r *Router) shortestCooldown(reasons []EntryReason) (wait time.Duration, co
 	return wait, cooling
 }
 
-func (r *Router) setCooldown(provName string, d time.Duration) {
+// setCooldown cools key down for d. A key is a provider name (rate limits and
+// repeated failures) or a "provider/model" entry (a timeout); provider names
+// hold no slash, so the two never collide.
+func (r *Router) setCooldown(key string, d time.Duration) {
 	r.mu.Lock()
-	r.cooldown[provName] = r.now().Add(d)
+	r.cooldown[key] = r.now().Add(d)
 	r.mu.Unlock()
+}
+
+// cooldownUntil is the later of an entry's own cooldown and its provider's.
+// The caller holds r.mu.
+func (r *Router) cooldownUntil(entry, provName string) time.Time {
+	a, b := r.cooldown[entry], r.cooldown[provName]
+	if a.After(b) {
+		return a
+	}
+	return b
+}
+
+// timeoutCooldown is how long an entry is skipped after its call timed out.
+func (r *Router) timeoutCooldown() time.Duration {
+	s := r.cfg.RateLimits.CooldownAfterTimeoutSeconds
+	if s < 1 {
+		s = 60
+	}
+	return time.Duration(s) * time.Second
 }
 
 func (r *Router) defaultCooldown() time.Duration {

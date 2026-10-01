@@ -970,3 +970,102 @@ func TestChainExhaustedOnlyTooLong(t *testing.T) {
 		}
 	}
 }
+
+// countingBlocker blocks until its context ends and counts the calls.
+type countingBlocker struct {
+	name string
+	n    atomic.Int32
+}
+
+func (b *countingBlocker) Name() string { return b.name }
+func (b *countingBlocker) Models() []provider.ModelInfo {
+	return []provider.ModelInfo{{ID: "qwen", ContextTokens: 1000}}
+}
+func (b *countingBlocker) Complete(ctx context.Context, _ provider.Request) (provider.Response, error) {
+	b.n.Add(1)
+	<-ctx.Done()
+	return provider.Response{}, ctx.Err()
+}
+
+func TestTimeoutCoolsTheEntryAndTheNextEntryAnswers(t *testing.T) {
+	cfg := testConfig()
+	cfg.Defaults.CallTimeout = 20 * time.Millisecond
+	cfg.RateLimits.CooldownAfterTimeoutSeconds = 7
+	dead := &countingBlocker{name: "mini"}
+	kilo := provider.NewFake("kilo", []provider.ModelInfo{{ID: "auto", ContextTokens: 100000}}, okText("from kilo"))
+	g := &rig{}
+	g.build(t, cfg, map[string]provider.Provider{"mini": dead, "kilo": kilo}, nil)
+	call := func() router.Result {
+		t.Helper()
+		res, err := g.r.Call(context.Background(), info(router.TierStandard, router.ScopeNode), req("hi"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	if res := call(); res.Entry != "kilo/auto" || dead.n.Load() != 1 {
+		t.Fatalf("first call: entry %s, dead calls %d", res.Entry, dead.n.Load())
+	}
+	// A dead provider no longer costs a call_timeout on every call.
+	if res := call(); res.Entry != "kilo/auto" || dead.n.Load() != 1 {
+		t.Fatalf("second call: entry %s, dead calls %d", res.Entry, dead.n.Load())
+	}
+	g.clk.advance(6 * time.Second)
+	call()
+	if dead.n.Load() != 1 {
+		t.Fatal("the cooldown ended early")
+	}
+	g.clk.advance(2 * time.Second)
+	call()
+	if dead.n.Load() != 2 {
+		t.Fatalf("the entry was not retried after the cooldown: %d", dead.n.Load())
+	}
+}
+
+func TestTimeoutCooldownDefaultsToSixtySecondsWhenUnset(t *testing.T) {
+	cfg := testConfig()
+	cfg.Defaults.CallTimeout = 20 * time.Millisecond
+	cfg.RateLimits.CooldownAfterTimeoutSeconds = 0
+	dead := &countingBlocker{name: "mini"}
+	kilo := provider.NewFake("kilo", []provider.ModelInfo{{ID: "auto", ContextTokens: 100000}}, okText("k"))
+	g := &rig{}
+	g.build(t, cfg, map[string]provider.Provider{"mini": dead, "kilo": kilo}, nil)
+	for i := 0; i < 2; i++ {
+		if _, err := g.r.Call(context.Background(), info(router.TierStandard, router.ScopeNode), req("hi")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	g.clk.advance(59 * time.Second)
+	_, _ = g.r.Call(context.Background(), info(router.TierStandard, router.ScopeNode), req("hi"))
+	if dead.n.Load() != 1 {
+		t.Fatalf("calls = %d", dead.n.Load())
+	}
+	g.clk.advance(2 * time.Second)
+	_, _ = g.r.Call(context.Background(), info(router.TierStandard, router.ScopeNode), req("hi"))
+	if dead.n.Load() != 2 {
+		t.Fatalf("calls = %d", dead.n.Load())
+	}
+}
+
+func TestPerProviderCallTimeoutOverride(t *testing.T) {
+	cfg := testConfig()
+	cfg.Defaults.CallTimeout = time.Hour
+	one := 1
+	cfg.Providers[0].CallTimeoutSeconds = &one
+	b := &countingBlocker{name: "mini"}
+	g := &rig{}
+	g.build(t, cfg, map[string]provider.Provider{"mini": b}, nil)
+	start := time.Now()
+	_, err := g.r.Call(context.Background(), info(router.TierStrong, router.ScopeNode), req("hi"))
+	var ce *router.ChainExhausted
+	if !errors.As(err, &ce) || ce.Reasons[0].Kind != router.ReasonFailed {
+		t.Fatalf("err = %v", err)
+	}
+	if d := time.Since(start); d < 900*time.Millisecond || d > 20*time.Second {
+		t.Fatalf("the call took %v, want about the 1 s override", d)
+	}
+	rows := g.rows(t)
+	if len(rows) != 1 || rows[0].Outcome != ledger.OutcomeTimeout {
+		t.Errorf("rows = %+v", rows)
+	}
+}

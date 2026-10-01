@@ -11,10 +11,10 @@ import (
 // entry. A provider with api_key_secret gets its key from secret(name); the
 // value goes to the provider and nowhere else, and it never appears in an
 // error. client is the HTTP client every provider uses; nil means
-// http.DefaultClient (the harness proxy plan replaces this).
+// provider.NewHTTPClient(0) (no redirects, no proxy environment).
 func (c *Config) BuildProviders(client *http.Client, secret func(name string) (string, error)) (map[string]provider.Provider, error) {
 	if client == nil {
-		client = http.DefaultClient
+		client = provider.NewHTTPClient(0)
 	}
 	out := make(map[string]provider.Provider, len(c.Providers))
 	for _, p := range c.Providers {

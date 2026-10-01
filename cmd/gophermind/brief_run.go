@@ -176,7 +176,7 @@ func briefRun(args []string, in *os.File, out, errw io.Writer) int {
 	}
 	if providers == nil {
 		var res []probeResult
-		client := &http.Client{}
+		client := providerHTTPClient(cfg)
 		cfg, res = resolveBaseURLs(ctx, cfg, client)
 		for _, r := range res {
 			if !r.Answered {
@@ -530,6 +530,14 @@ func executorLines(ctx context.Context, board blackboard.Blackboard, rec planner
 }
 
 // ---- base URLs ----
+
+// providerHTTPClient is the client every provider call and probe uses: no
+// redirects, no proxy environment, and a backstop timeout one minute past the
+// longest call timeout in the settings (the router's per-call context is the
+// real bound).
+func providerHTTPClient(cfg *settings.Config) *http.Client {
+	return provider.NewHTTPClient(cfg.MaxCallTimeout() + time.Minute)
+}
 
 // probeTimeout bounds one reachability probe of a provider base URL.
 var probeTimeout = 3 * time.Second
