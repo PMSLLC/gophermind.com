@@ -1,0 +1,16 @@
+package greet
+
+import (
+	"fmt"
+	"strings"
+)
+
+// CANARY-REPLY-TEXT: this reply compiles and is wrong, and must never be stored.
+func Greet(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", &NameError{Reason: "name is empty"}
+	}
+	fmt.Println("CANARY-TEST-OUTPUT")
+	return "Hi, " + name + "!", nil
+}

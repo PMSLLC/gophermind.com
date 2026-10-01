@@ -15,6 +15,14 @@ import (
 // Both directories are made under os.TempDir and removed at exit through
 // removeTestDir, which refuses anything else.
 func TestMain(m *testing.M) {
+	// A git hook (the pre-push gate runs these tests) exports GIT_DIR,
+	// GIT_WORK_TREE, GIT_INDEX_FILE and friends. Left in the environment they
+	// make every git a test or the executor spawns act on the real repository.
+	for _, kv := range os.Environ() {
+		if name, _, _ := strings.Cut(kv, "="); strings.HasPrefix(name, "GIT_") {
+			os.Unsetenv(name)
+		}
+	}
 	// A child process of a kill test shares its parent's GOCACHE (it is the
 	// parent's to remove) instead of compiling everything cold.
 	cache, shared := os.Getenv("GM_TEST_GOCACHE"), true

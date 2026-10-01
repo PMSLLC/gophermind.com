@@ -1,0 +1,3 @@
+I would be glad to help with that function. Here is how I would approach it:
+first read the contract, then think about the empty name case, and finally
+write the body. I have not written any code yet, so there is no file below.
