@@ -65,3 +65,18 @@ func (e *ChainExhausted) OnlyPrivacy() bool {
 	}
 	return true
 }
+
+// OnlyTooLong reports whether every entry was skipped or refused because the
+// prompt does not fit its model, and no reply was ever seen. The caller can
+// then send a smaller prompt instead of giving up or excluding the model.
+func (e *ChainExhausted) OnlyTooLong() bool {
+	if len(e.Reasons) == 0 || e.ParseErr != nil {
+		return false
+	}
+	for _, r := range e.Reasons {
+		if r.Kind != ReasonTooLong {
+			return false
+		}
+	}
+	return true
+}

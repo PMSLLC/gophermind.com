@@ -7,6 +7,11 @@ Reply with what is missing: write each missing function or type in full. A funct
 
 Ids are lower case letters, digits and dashes only: a type id is `intake-session`, never `IntakeSession` or `intake_session`, and a function id is `fn-validate-email`. Write the missing ids exactly as they are listed above, and every id in `uses` and `component` the same way.
 
+Brief sections of the components that use these ids (an excerpt, not the whole brief):
+<brief>
+{{.BriefSections}}
+</brief>
+
 Outline (module, conventions, all components):
 <outline>
 {{.Outline}}

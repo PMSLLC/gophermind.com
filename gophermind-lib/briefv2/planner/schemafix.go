@@ -297,7 +297,7 @@ func mergeFieldRepair(doc map[string]any, text string, asked []gapNode) (map[str
 
 // gapNodesText lists the nodes to fix: id, the fields missing (the schema's own
 // names) and the node as it stands.
-func gapNodesText(doc map[string]any, nodes []gapNode) string {
+func gapNodesText(doc map[string]any, nodes []gapNode, level int) string {
 	var b strings.Builder
 	for _, n := range nodes {
 		for _, o := range objects(doc[n.list]) {
@@ -306,7 +306,7 @@ func gapNodesText(doc map[string]any, nodes []gapNode) string {
 			}
 			fields := append([]string(nil), n.fields...)
 			sort.Strings(fields)
-			fmt.Fprintf(&b, "%s %q is missing: %s\n%s\n\n", strings.TrimSuffix(n.list, "s"), n.id, strings.Join(fields, ", "), mustJSON(o))
+			fmt.Fprintf(&b, "%s %q is missing: %s\n%s\n\n", strings.TrimSuffix(n.list, "s"), n.id, strings.Join(fields, ", "), mustJSON(trimNode(o, level)))
 		}
 	}
 	return strings.TrimSpace(b.String())
@@ -345,16 +345,17 @@ func (p *Planner) repairSchema(ctx context.Context, r *run, st *contractState, a
 				hi = len(nodes)
 			}
 			batch := nodes[lo:hi]
-			prompt, err := render("contract_schema_fix", map[string]string{
-				"Nodes": gapNodesText(st.Doc, batch), "Count": fmt.Sprint(len(batch)),
-				"Answers": answers, "ItemSchemas": itemSchemas,
-				"Outline": mustJSON(map[string]any{"module": st.Doc["module"], "components": st.Doc["components"]})})
-			if err != nil {
-				return err
+			build := func(level int) (string, error) {
+				owners := nodeOwners(st.Doc, batch)
+				return render("contract_schema_fix", map[string]string{
+					"Nodes": gapNodesText(st.Doc, batch, level), "Count": fmt.Sprint(len(batch)),
+					"Answers": answers, "ItemSchemas": itemSchemas,
+					"BriefSections": briefExcerpt(r, featuresOfComponents(r, owners), repairExcerptLevel(level)),
+					"Outline":       mustJSON(map[string]any{"module": st.Doc["module"], "components": componentsByID(st.Doc, owners)})})
 			}
 			var notes idNotes
 			cs := callSpec{stage: schemaRepairStage, taskType: "contract", scope: router.ScopeBrief, maxTokens: maxTokensContract}
-			if err := p.call(ctx, r, cs, prompt, func(text string) error {
+			if err := p.callSized(ctx, r, cs, build, func(text string) error {
 				text, nt, err := normalizeReply(st.Doc, StripReply(text), replyRepair)
 				if err != nil {
 					return err
@@ -398,4 +399,55 @@ func (p *Planner) repairSchema(ctx context.Context, r *run, st *contractState, a
 		return errors.New(issuesText(fmt.Sprintf("stage contract: the contract still fails its schema after %d repair passes", maxSchemaRepairs), issues))
 	}
 	return nil
+}
+
+// trimNode is a node for a prompt: complete up to level 2; at level 3 only its
+// identity, signature and doc, with a declaration cut short.
+func trimNode(o map[string]any, level int) map[string]any {
+	if level < maxPromptLevel {
+		return o
+	}
+	out := map[string]any{}
+	for _, k := range []string{"id", "component", "package", "file", "signature", "doc"} {
+		if v, ok := o[k]; ok {
+			out[k] = v
+		}
+	}
+	if d, ok := o["decl"].(string); ok {
+		out["decl"] = capText(d, 300)
+	}
+	return out
+}
+
+// nodeOwners lists the components that own the function nodes in nodes.
+func nodeOwners(doc map[string]any, nodes []gapNode) []string {
+	want := map[string]bool{}
+	for _, n := range nodes {
+		if n.list == "functions" {
+			want[n.id] = true
+		}
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, f := range objects(doc["functions"]) {
+		id, _ := f["id"].(string)
+		if c, _ := f["component"].(string); want[id] && c != "" && !seen[c] {
+			seen[c] = true
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// componentsByID is the component objects with these ids.
+func componentsByID(doc map[string]any, ids []string) []any {
+	out := []any{}
+	for _, c := range objects(doc["components"]) {
+		for _, id := range ids {
+			if c["id"] == id {
+				out = append(out, c)
+			}
+		}
+	}
+	return out
 }

@@ -28,6 +28,14 @@ func brokenRig(t *testing.T, field string, extra map[string]string) *rig {
 	files := map[string]string{"contract.greeting.txt": bigGreeting(136)}
 	g := newRig(t, approving(), variant(t, files))
 	g.mustPlan(planner.Options{StopAfter: "contract"})
+	breakState(t, g, field)
+	g.wire(variant(t, extra))
+	return g
+}
+
+// breakState removes one field of fn-g135 from the stored state and deletes
+// contracts.json, the way the final validation would find a gap.
+func breakState(t *testing.T, g *rig, field string) {
 	path := filepath.Join(g.runDir, "_state", "contract.json")
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -54,8 +62,6 @@ func brokenRig(t *testing.T, field string, extra map[string]string) *rig {
 	if err := os.Remove(filepath.Join(g.runDir, "contracts.json")); err != nil {
 		t.Fatal(err)
 	}
-	g.wire(variant(t, extra))
-	return g
 }
 
 func fnByID(g *rig, id string) (doc, sig string) {

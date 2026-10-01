@@ -196,7 +196,7 @@ func TestNormalizeExamplesAreBounded(t *testing.T) {
 // functions.
 func TestContractPromptsStateTheIDSyntax(t *testing.T) {
 	for _, name := range []string{"contract_outline", "contract_component", "contract_repair"} {
-		out, err := render(name, map[string]string{"Brief": "b", "Answers": "a", "TypeSchema": "s", "Fixed": "f", "Emitted": "e", "Unresolved": "u", "UnresolvedCount": "1",
+		out, err := render(name, map[string]string{"Brief": "b", "BriefSections": "bs", "Answers": "a", "TypeSchema": "s", "Fixed": "f", "Emitted": "e", "Unresolved": "u", "UnresolvedCount": "1",
 			"Component": "c", "Outline": "o", "Declared": "d", "Written": "w", "BriefSection": "bs", "ItemSchemas": "i"})
 		if err != nil {
 			t.Fatal(err)

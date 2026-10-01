@@ -170,6 +170,25 @@ the component, it is not an error; at most 40 passes per component, then a fixed
 one a later component writes, and ids still undeclared after every component is
 written go through up to 2 `contract:_repair` passes.
 
+Prompt size. Every contract call is sized to the smallest context window among
+the models of the strong tier (`context_tokens` in `gophermind.yaml`): the
+estimate of the prompt (bytes/4 plus a tenth, the router's own) plus the reserved
+reply plus a 1000 token headroom must fit. If it does not, optional context
+shrinks in a fixed order instead of the call failing. Level 0 is everything (an
+outline pass carries the whole brief, so a small brief is sent unchanged). Level
+1 replaces the brief by an excerpt: Overview, Data, Architecture and Constraints
+plus only the features the pass concerns, each capped. Level 2 cuts the
+declared-ids list and the caps further and lists declarations without their
+text. Level 3 trims existing nodes to signature and doc. The repair passes
+(`contract:_repair`, `contract:_schema`, the outline repair) never carry the whole
+brief: they carry the offending nodes, their components and the brief sections
+of those components' features. If a model refuses a prompt as too long (the
+router's typed `too_long`, which is not an unusable reply) the prompt is rebuilt
+one level down and asked again; when level 3 is refused or does not fit, the stage
+fails with a fixed message naming the stage. Each call reports
+`prompt_tokens_estimate`, `reserved`, `window` and `level` as a `prompt_size`
+event (sizes only).
+
 The merged contract is stored in `_state/contract.json` before its last
 validation. If a node then lacks a required field (a function without `doc`,
 `signature`, `file` or `package`; a type without `decl`, `file` or `package`),
