@@ -38,7 +38,45 @@ var (
 	shells     = map[string]bool{"sh": true, "bash": true, "dash": true, "zsh": true}
 )
 
-var loopbackLiterals = []string{"127.0.0.1", "localhost", "[::1]"}
+// loopbackRE: a loopback host:port, a loopback URL, localhost followed by a
+// slash, or a bare 127.x.x.x or ::1 word. A word that only contains
+// "localhost" (localhost.txt) is not one.
+var loopbackRE = regexp.MustCompile(`(^|[^A-Za-z0-9_.-])(` +
+	`(localhost|127\.[0-9]+\.[0-9]+\.[0-9]+|\[::1\]):[0-9]+` +
+	`|https?://(localhost|127\.[0-9]+\.[0-9]+\.[0-9]+|\[::1\])` +
+	`|localhost/` +
+	`|127\.[0-9]+\.[0-9]+\.[0-9]+|\[?::1\]?)($|[^A-Za-z0-9_.-])`)
+
+// goFlagValue are go build, vet and test flags that take a separate value.
+var goFlagValue = map[string]bool{
+	"-o": true, "-tags": true, "-run": true, "-count": true, "-p": true, "-timeout": true, "-ldflags": true,
+	"-gcflags": true, "-asmflags": true, "-mod": true, "-modfile": true, "-coverprofile": true, "-bench": true,
+	"-cpu": true, "-parallel": true, "-covermode": true, "-vet": true, "-exec": true, "-buildmode": true,
+	"-compiler": true, "-pkgdir": true, "-toolexec": true, "-overlay": true, "-C": true, "-coverpkg": true,
+	"-benchtime": true, "-skip": true, "-shuffle": true, "-fuzz": true, "-blockprofile": true, "-cpuprofile": true,
+	"-memprofile": true, "-outputdir": true, "-trimpath": false,
+}
+
+var goPkgArgRE = regexp.MustCompile(`^(\.|\.\.\.|(\./|\.\./)?[A-Za-z0-9_][A-Za-z0-9_.\-]*(/[A-Za-z0-9_.\-]+)*(/\.\.\.)?|\./\.\.\.|(\./)[A-Za-z0-9_./\-]*(/\.\.\.)?)$`)
+
+// goPackageArg reports a package argument after go build, vet or test: ".",
+// "./...", "./path", "./path/...", or an import path, with the flags and
+// their values skipped.
+func goPackageArg(args []word) bool {
+	for i := 0; i < len(args); i++ {
+		a := args[i].lit
+		if strings.HasPrefix(a, "-") {
+			if goFlagValue[a] && !strings.Contains(a, "=") {
+				i++
+			}
+			continue
+		}
+		if goPkgArgRE.MatchString(a) {
+			return true
+		}
+	}
+	return false
+}
 
 // word is one shell word: its text with the quotes taken off.
 type word struct{ lit string }
@@ -52,7 +90,7 @@ type stmt struct {
 
 // shellParse reads cmd into statements and the scripts hidden in $( ) and
 // backticks. Comments (an unquoted # at the start of a word) are dropped.
-func shellParse(cmd string) (stmts []stmt, subs []string) {
+func shellParse(cmd string) (stmts []stmt, subs []string, unterminated bool) {
 	rs := []rune(cmd)
 	var cur strings.Builder
 	var words []word
@@ -64,6 +102,38 @@ func shellParse(cmd string) (stmts []stmt, subs []string) {
 		}
 		cur.Reset()
 		have = false
+	}
+	type heredoc struct {
+		delim string
+		strip bool
+	}
+	var pending []heredoc
+	// skipBodies consumes the lines after the current one up to each pending
+	// delimiter: they are data, not statements.
+	skipBodies := func(i int) int {
+		for _, h := range pending {
+			found := false
+			for i+1 < len(rs) {
+				j := i + 1
+				for j < len(rs) && rs[j] != '\n' {
+					j++
+				}
+				line := string(rs[i+1 : j])
+				i = j
+				if h.strip {
+					line = strings.TrimLeft(line, "\t")
+				}
+				if line == h.delim {
+					found = true
+					break
+				}
+			}
+			if !found {
+				unterminated = true
+			}
+		}
+		pending = nil
+		return i
 	}
 	pushStmt := func(next string) {
 		pushWord()
@@ -109,6 +179,28 @@ func shellParse(cmd string) (stmts []stmt, subs []string) {
 			pushWord()
 		case c == '\n':
 			pushStmt(";")
+			if len(pending) > 0 {
+				i = skipBodies(i)
+			}
+		case c == '<' && i+1 < len(rs) && rs[i+1] == '<' && !(i+2 < len(rs) && rs[i+2] == '<'):
+			pushWord()
+			i += 2
+			strip := false
+			if i < len(rs) && rs[i] == '-' {
+				strip = true
+				i++
+			}
+			for i < len(rs) && (rs[i] == ' ' || rs[i] == '\t') {
+				i++
+			}
+			var d strings.Builder
+			for ; i < len(rs) && !strings.ContainsRune(" \t\n;&|()<>", rs[i]); i++ {
+				if rs[i] != '\'' && rs[i] != '"' && rs[i] != '\\' {
+					d.WriteRune(rs[i])
+				}
+			}
+			i--
+			pending = append(pending, heredoc{delim: d.String(), strip: strip})
 		case c == '#' && !have:
 			for i < len(rs) && rs[i] != '\n' {
 				i++
@@ -181,7 +273,10 @@ func shellParse(cmd string) (stmts []stmt, subs []string) {
 		}
 	}
 	pushStmt("")
-	return stmts, subs
+	if len(pending) > 0 {
+		unterminated = true
+	}
+	return stmts, subs, unterminated
 }
 
 // commandIndex is the index of the command word: assignments, keywords and
@@ -259,6 +354,11 @@ func hasPrefixAny(s string, ps []string) bool {
 	return false
 }
 
+// Known limits: the reader does not expand variables or follow function calls,
+// so `c=true; $c || curl x` (a variable holding true) and a function that is
+// defined and never called are accepted when a probe sits in them. Both need a
+// planner that writes them on purpose.
+//
 // analyze reads a script and says whether a statement that will run is a
 // probe (accepted) or something forbidden (refused). Statements after an
 // unconditional exit, the right side of `true ||` and `false &&`, and the dead
@@ -268,8 +368,12 @@ func analyze(script string, bins []string, depth int) verdict {
 	if depth > 4 {
 		return v
 	}
-	stmts, subs := shellParse(script)
+	stmts, subs, bad := shellParse(script)
+	if bad {
+		v.refused = true // a here-document that never ends: the script is not what it seems
+	}
 	var stack []block
+	groups := 0 // open { } and ( ): what is inside runs only under a condition or in a subshell
 	deadExit := false
 	prevKnown := 0
 	for _, st := range stmts {
@@ -282,6 +386,12 @@ func analyze(script string, bins []string, depth int) verdict {
 			}
 			ws = ws[1:]
 			switch k {
+			case "{", "(":
+				groups++
+			case "}", ")":
+				if groups > 0 {
+					groups--
+				}
 			case "if", "while", "until", "for":
 				b := block{kind: k, phase: "cond"}
 				if i := commandIndex(ws); i >= 0 && len(ws) == i+1 {
@@ -306,6 +416,13 @@ func analyze(script string, bins []string, depth int) verdict {
 				}
 			}
 		}
+		if len(ws) > 1 && strings.HasSuffix(ws[0].lit, "()") { // f() { ...: the body is read as if it ran
+			ws = ws[1:]
+			for len(ws) > 0 && (ws[0].lit == "{" || ws[0].lit == "(") {
+				groups++
+				ws = ws[1:]
+			}
+		}
 		if len(ws) == 0 {
 			continue
 		}
@@ -328,8 +445,13 @@ func analyze(script string, bins []string, depth int) verdict {
 			continue
 		}
 		prevKnown = known(cmd)
-		if cmd == "exit" && len(stack) == 0 && (st.op == "" || st.op == ";") {
-			deadExit = true
+		deadAfter := false
+		// Only a top-level, unconditional exit (or exec, which replaces the
+		// shell) ends the script; one inside a group, a subshell, an if or a loop,
+		// or on the right of && or ||, is reached only under a condition.
+		firstWord := ws[0].lit
+		if (cmd == "exit" || firstWord == "exec") && len(stack) == 0 && groups == 0 && (st.op == "" || st.op == ";") {
+			deadAfter = true
 		}
 		base := cmd
 		if hasPrefixAny(cmd, systemDir) {
@@ -347,10 +469,8 @@ func analyze(script string, bins []string, depth int) verdict {
 		}
 		switch {
 		case base == "go" && len(args) >= 2 && (args[0].lit == "build" || args[0].lit == "vet" || args[0].lit == "test"):
-			for _, a := range args[1:] {
-				if a.lit == "./..." || strings.HasPrefix(a.lit, "./") {
-					v.accepted = true
-				}
+			if goPackageArg(args[1:]) {
+				v.accepted = true
 			}
 		case base == "curl", hasPrefixAny(cmd, binDirRef):
 			v.accepted = true
@@ -366,15 +486,16 @@ func analyze(script string, bins []string, depth int) verdict {
 				v.accepted = true
 			}
 		}
+		if deadAfter {
+			deadExit = true
+		}
 		if !noopCommands[base] {
 			for _, a := range args {
 				if strings.Contains(a.lit, "GM_ACCEPTANCE_URL") || strings.Contains(a.lit, "GM_ACCEPTANCE_ADDR") {
 					v.accepted = true
 				}
-				for _, l := range loopbackLiterals {
-					if strings.Contains(a.lit, l) {
-						v.accepted = true
-					}
+				if loopbackRE.MatchString(a.lit) {
+					v.accepted = true
 				}
 			}
 		}
