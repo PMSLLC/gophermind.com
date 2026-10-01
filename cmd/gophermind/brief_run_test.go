@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -1276,5 +1277,42 @@ func TestBriefStatusDoesNotCreateADatabase(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(cfgDir, "blackboard.db")); err == nil {
 		t.Error("status created a database")
+	}
+}
+
+func TestProviderHTTPClientIsHardened(t *testing.T) {
+	cfg := settings.Default()
+	long := 3 * 3600
+	cfg.Providers[2].CallTimeoutSeconds = &long
+	c := providerHTTPClient(cfg)
+	if want := 3*time.Hour + time.Minute; c.Timeout != want {
+		t.Errorf("timeout = %v, want %v", c.Timeout, want)
+	}
+	if c.CheckRedirect == nil || c.CheckRedirect(&http.Request{}, nil) == nil {
+		t.Error("redirects are followed")
+	}
+	if tr, ok := c.Transport.(*http.Transport); !ok || tr.Proxy != nil {
+		t.Error("the proxy environment is consulted")
+	}
+	if got := providerHTTPClient(settings.Default()).Timeout; got != 25*time.Minute+time.Minute {
+		t.Errorf("default timeout = %v", got)
+	}
+}
+
+func TestBriefClientsNeverFollowRedirects(t *testing.T) {
+	var hits atomic.Int32
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+	defer other.Close()
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL, http.StatusTemporaryRedirect)
+	}))
+	defer first.Close()
+	resp, err := providerHTTPClient(settings.Default()).Post(first.URL, "application/json", strings.NewReader("prompt"))
+	if err == nil {
+		resp.Body.Close()
+		t.Fatal("the 307 was followed or returned as success")
+	}
+	if hits.Load() != 0 {
+		t.Fatal("the prompt reached the redirect target")
 	}
 }

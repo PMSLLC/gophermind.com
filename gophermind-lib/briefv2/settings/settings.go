@@ -51,6 +51,9 @@ type ProviderConfig struct {
 	// 3 s at preflight and at the start of a run (the mini's VPN address, for
 	// one). Optional; the first one that answers is used for the process only.
 	BaseURLFallbacks []string `yaml:"base_url_fallbacks,omitempty"`
+	// CallTimeoutSeconds overrides defaults.call_timeout for this provider. Nil means
+	// the global value; a value below 1 is refused.
+	CallTimeoutSeconds *int `yaml:"call_timeout_seconds,omitempty"`
 }
 
 type Privacy struct {
@@ -67,9 +70,12 @@ type Defaults struct {
 
 type RateLimits struct {
 	CooldownAfter429Seconds int `yaml:"cooldown_after_429_seconds"`
-	BackoffInitialSeconds   int `yaml:"backoff_initial_seconds"`
-	BackoffMaxSeconds       int `yaml:"backoff_max_seconds"`
-	BackoffMultiplier       int `yaml:"backoff_multiplier"`
+	// CooldownAfterTimeoutSeconds is how long a chain entry is skipped after a call to it
+	// timed out. Omitted or 0 in a file means 60.
+	CooldownAfterTimeoutSeconds int `yaml:"cooldown_after_timeout_seconds"`
+	BackoffInitialSeconds       int `yaml:"backoff_initial_seconds"`
+	BackoffMaxSeconds           int `yaml:"backoff_max_seconds"`
+	BackoffMultiplier           int `yaml:"backoff_multiplier"`
 }
 
 type Human struct {
@@ -100,7 +106,7 @@ func Default() *Config {
 		Providers: []ProviderConfig{
 			{Name: "mini", BaseURL: "http://192.168.1.35:11434/v1", Visibility: Private, MaxConcurrent: 1,
 				Models: []ModelEntry{{ID: "qwen3.6:35b-a3b", ContextTokens: 32768}}, ReasoningEffort: "none",
-				BaseURLFallbacks: []string{"http://10.8.0.6:11434/v1"}},
+				BaseURLFallbacks: []string{"http://10.8.0.6:11434/v1"}, CallTimeoutSeconds: intPtr(1500)},
 			{Name: "kilo", BaseURL: "https://api.kilo.ai/api/gateway", Visibility: Public, MaxConcurrent: 2,
 				Models: []ModelEntry{{ID: "kilo-auto/free", ContextTokens: 131072}}},
 			{Name: "ovh", BaseURL: "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1", Visibility: Public, MaxConcurrent: 1,
@@ -114,13 +120,15 @@ func Default() *Config {
 		Privacy: Privacy{Mode: "need_to_know"},
 		Defaults: Defaults{MaxContextTokens: 8000, MaxRevisions: 2, MaxCoverageRounds: 2,
 			CallTimeout: 10 * time.Minute, MaxWaitMinutes: 30},
-		RateLimits: RateLimits{CooldownAfter429Seconds: 60, BackoffInitialSeconds: 5, BackoffMaxSeconds: 300, BackoffMultiplier: 2},
+		RateLimits: RateLimits{CooldownAfter429Seconds: 60, CooldownAfterTimeoutSeconds: 60, BackoffInitialSeconds: 5, BackoffMaxSeconds: 300, BackoffMultiplier: 2},
 		Human:      Human{Mode: "terminal"},
 		Vault:      Vault{Path: "~/.gophermind/vault.age"},
 	}
 	c.applyExecutorDefaults()
 	return c
 }
+
+func intPtr(n int) *int { return &n }
 
 // Path is ~/.gophermind/gophermind.yaml, or under GOPHERMIND_CONFIG_DIR.
 func Path() (string, error) {
@@ -153,6 +161,9 @@ func Load(path string) (*Config, error) {
 	}
 	if err := checkExplicitZeroCounts(data); err != nil {
 		return nil, fmt.Errorf("settings: %s: %w", path, err)
+	}
+	if c.RateLimits.CooldownAfterTimeoutSeconds == 0 {
+		c.RateLimits.CooldownAfterTimeoutSeconds = 60 // an existing file without the key
 	}
 	c.applyExecutorDefaults()
 	if err := c.Validate(); err != nil {
@@ -218,6 +229,18 @@ func (c *Config) Validate() error {
 		where = "provider " + p.Name
 		if p.BaseURL == "" {
 			return fmt.Errorf("%s: base_url is required", where)
+		}
+		if !validBaseURL(p.BaseURL) {
+			return fmt.Errorf("%s: base_url must be an http or https URL with a host and no credentials", where)
+		}
+		// A private provider's prompts go to its base_url, so that host must be on a
+		// private network, whatever privacy.mode says. A public provider is not
+		// checked: under private_only it is never called.
+		if p.Visibility == Private && !c.FallbackAllowed(p, p.BaseURL) {
+			return fmt.Errorf("%s: base_url must be a private-network host (loopback, RFC 1918, 100.64.0.0/10, link-local, IPv6 ULA, or a .local, .internal or .lan name) because the provider's visibility is private", where)
+		}
+		if p.CallTimeoutSeconds != nil && *p.CallTimeoutSeconds < 1 {
+			return fmt.Errorf("%s: call_timeout_seconds must be at least 1, got %d", where, *p.CallTimeoutSeconds)
 		}
 		for _, u := range p.BaseURLFallbacks {
 			if !validBaseURL(u) {
@@ -291,6 +314,8 @@ func (c *Config) Validate() error {
 	switch {
 	case r.CooldownAfter429Seconds < 1:
 		return fmt.Errorf("rate_limits.cooldown_after_429_seconds must be at least 1, got %d", r.CooldownAfter429Seconds)
+	case r.CooldownAfterTimeoutSeconds < 1:
+		return fmt.Errorf("rate_limits.cooldown_after_timeout_seconds must be at least 1, got %d", r.CooldownAfterTimeoutSeconds)
 	case r.BackoffInitialSeconds < 1:
 		return fmt.Errorf("rate_limits.backoff_initial_seconds must be at least 1, got %d", r.BackoffInitialSeconds)
 	case r.BackoffMaxSeconds < r.BackoffInitialSeconds:
@@ -338,7 +363,9 @@ func (c *Config) FallbackAllowed(p ProviderConfig, raw string) bool {
 var cgnat = netip.MustParsePrefix("100.64.0.0/10")
 
 // privateHost: loopback, RFC 1918, the CGNAT/VPN range 100.64/10, link-local,
-// IPv6 ULA, or a name ending in .local, .internal or .lan (or localhost).
+// IPv6 ULA, or a name ending in .local, .internal, .lan or .invalid (or localhost).
+// RFC 2606 guarantees a .invalid name never resolves, so no prompt can leave the
+// machine through one (test fixtures use them).
 func privateHost(host string) bool {
 	if a, err := netip.ParseAddr(strings.Trim(host, "[]")); err == nil {
 		a = a.Unmap()
@@ -348,7 +375,7 @@ func privateHost(host string) bool {
 	if h == "localhost" {
 		return true
 	}
-	for _, suf := range []string{".local", ".internal", ".lan"} {
+	for _, suf := range []string{".local", ".internal", ".lan", ".invalid"} {
 		if strings.HasSuffix(h, suf) {
 			return true
 		}
@@ -383,4 +410,26 @@ func (c *Config) ModelInfo(entry string) (provider.ModelInfo, bool) {
 		}
 	}
 	return provider.ModelInfo{}, false
+}
+
+// CallTimeoutFor is the call timeout for a provider: its own override or
+// defaults.call_timeout.
+func (c *Config) CallTimeoutFor(providerName string) time.Duration {
+	for _, p := range c.Providers {
+		if p.Name == providerName && p.CallTimeoutSeconds != nil && *p.CallTimeoutSeconds >= 1 {
+			return time.Duration(*p.CallTimeoutSeconds) * time.Second
+		}
+	}
+	return c.Defaults.CallTimeout
+}
+
+// MaxCallTimeout is the longest call timeout any provider can have.
+func (c *Config) MaxCallTimeout() time.Duration {
+	max := c.Defaults.CallTimeout
+	for _, p := range c.Providers {
+		if d := c.CallTimeoutFor(p.Name); d > max {
+			max = d
+		}
+	}
+	return max
 }

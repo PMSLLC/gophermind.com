@@ -379,3 +379,128 @@ func TestLoadAcceptsAValidPrivateFallbackFile(t *testing.T) {
 		t.Fatalf("err = %v, config = %+v", err, got)
 	}
 }
+
+func TestProviderCallTimeoutOverride(t *testing.T) {
+	d := settings.Default()
+	if d.Providers[0].Name != "mini" || d.Providers[0].CallTimeoutSeconds == nil || *d.Providers[0].CallTimeoutSeconds != 1500 {
+		t.Fatalf("a new config's private provider must get 25 minutes: %+v", d.Providers[0].CallTimeoutSeconds)
+	}
+	if d.Providers[1].CallTimeoutSeconds != nil || d.Providers[2].CallTimeoutSeconds != nil {
+		t.Error("public providers take the global timeout")
+	}
+	if d.Defaults.CallTimeout != 10*time.Minute {
+		t.Errorf("global default changed: %v", d.Defaults.CallTimeout)
+	}
+	if got := d.CallTimeoutFor("mini"); got != 25*time.Minute {
+		t.Errorf("mini timeout = %v", got)
+	}
+	if got := d.CallTimeoutFor("kilo"); got != 10*time.Minute {
+		t.Errorf("kilo timeout = %v", got)
+	}
+	if got := d.CallTimeoutFor("nope"); got != 10*time.Minute {
+		t.Errorf("unknown provider timeout = %v", got)
+	}
+	for _, bad := range []int{0, -1} {
+		c := settings.Default()
+		c.Providers[1].CallTimeoutSeconds = &bad
+		err := c.Validate()
+		if err == nil || !strings.Contains(err.Error(), "call_timeout_seconds") || !strings.Contains(err.Error(), "kilo") {
+			t.Errorf("value %d: err = %v", bad, err)
+		}
+	}
+	// An existing file without the key keeps the global timeout.
+	path := filepath.Join(t.TempDir(), "gophermind.yaml")
+	if _, err := settings.Load(path); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(path)
+	if !strings.Contains(string(raw), "call_timeout_seconds: 1500") {
+		t.Fatalf("new file lacks the mini override:\n%s", raw)
+	}
+	old := strings.ReplaceAll(string(raw), "      call_timeout_seconds: 1500\n", "")
+	if old == string(raw) {
+		t.Fatal("could not strip the override from the sample file")
+	}
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := settings.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.CallTimeoutFor("mini"); got != 10*time.Minute {
+		t.Errorf("an existing file changed: mini timeout = %v", got)
+	}
+}
+
+func TestCooldownAfterTimeoutSetting(t *testing.T) {
+	if got := settings.Default().RateLimits.CooldownAfterTimeoutSeconds; got != 60 {
+		t.Fatalf("default = %d", got)
+	}
+	path := filepath.Join(t.TempDir(), "gophermind.yaml")
+	if _, err := settings.Load(path); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(path)
+	lines := strings.Split(string(raw), "\n")
+	var keep []string
+	for _, l := range lines {
+		if !strings.Contains(l, "cooldown_after_timeout_seconds") {
+			keep = append(keep, l)
+		}
+	}
+	if len(keep) == len(lines) {
+		t.Fatal("the new file does not write cooldown_after_timeout_seconds")
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(keep, "\n")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := settings.Load(path)
+	if err != nil {
+		t.Fatalf("an existing file without the key must load: %v", err)
+	}
+	if c.RateLimits.CooldownAfterTimeoutSeconds != 60 {
+		t.Errorf("omitted key = %d, want 60", c.RateLimits.CooldownAfterTimeoutSeconds)
+	}
+	bad := settings.Default()
+	bad.RateLimits.CooldownAfterTimeoutSeconds = -3
+	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), "cooldown_after_timeout_seconds") {
+		t.Errorf("negative: %v", err)
+	}
+}
+
+func TestBaseURLMustMatchVisibility(t *testing.T) {
+	cases := []struct {
+		name    string
+		mutate  func(c *settings.Config)
+		wantErr bool
+	}{
+		{"private provider, private URL", func(c *settings.Config) {}, false},
+		{"private provider, public URL", func(c *settings.Config) { c.Providers[0].BaseURL = "https://api.example.com/v1" }, true},
+		{"private provider, public URL, private_only", func(c *settings.Config) {
+			c.Privacy.Mode = "private_only"
+			c.Providers[0].BaseURL = "https://api.example.com/v1"
+		}, true},
+		{"private provider, public IP", func(c *settings.Config) { c.Providers[0].BaseURL = "http://8.8.8.8/v1" }, true},
+		{"private provider, hostname without a private suffix", func(c *settings.Config) { c.Providers[0].BaseURL = "http://mini/v1" }, true},
+		{"private provider, .local name", func(c *settings.Config) { c.Providers[0].BaseURL = "http://baby-jesus.local:11434/v1" }, false},
+		{"private_only keeps public providers configured but unused", func(c *settings.Config) { c.Privacy.Mode = "private_only" }, false},
+		{"public provider, private URL", func(c *settings.Config) { c.Providers[1].BaseURL = "http://10.8.0.6/v1" }, false},
+		{"malformed URL", func(c *settings.Config) { c.Providers[0].BaseURL = "not a url" }, true},
+	}
+	for _, c := range cases {
+		cfg := settings.Default()
+		c.mutate(cfg)
+		err := cfg.Validate()
+		if (err != nil) != c.wantErr {
+			t.Errorf("%s: err = %v, wantErr %v", c.name, err, c.wantErr)
+			continue
+		}
+		if err != nil {
+			msg := err.Error()
+			if !strings.Contains(msg, "base_url") || !strings.Contains(msg, "mini") || strings.Contains(msg, "example.com") || strings.Contains(msg, "8.8.8.8") {
+				t.Errorf("%s: message %q must name the provider and key only", c.name, msg)
+			}
+		}
+	}
+}

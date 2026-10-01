@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -161,7 +160,7 @@ func briefPreflight(ctx context.Context, rec planner.RunRecord, repo string, cfg
 	}
 
 	// providers every tier chain uses
-	_, res := resolveBaseURLs(ctx, cfg, &http.Client{})
+	_, res := resolveBaseURLs(ctx, cfg, providerHTTPClient(cfg))
 	for _, r := range res {
 		name := "provider " + r.Provider
 		switch {

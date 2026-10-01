@@ -38,7 +38,8 @@ func (r *Router) attempt(ctx context.Context, info CallInfo, req provider.Reques
 		if err := r.acquire(ctx, provName); err != nil {
 			return Result{}, EntryReason{}, false, err
 		}
-		callCtx, cancel := context.WithTimeout(ctx, r.cfg.Defaults.CallTimeout)
+		callTimeout := r.cfg.CallTimeoutFor(provName)
+		callCtx, cancel := context.WithTimeout(ctx, callTimeout)
 		r2 := req
 		r2.Model = model
 		start := r.now()
@@ -131,9 +132,12 @@ func (r *Router) attempt(ctx context.Context, info CallInfo, req provider.Reques
 
 		case errors.Is(cerr, context.DeadlineExceeded):
 			// Our own call_timeout expired (the caller's context is still live).
+			// The entry sits out a cooldown, so the next call does not wait out another
+			// call_timeout on a dead provider; the walk goes on to the next entry.
 			row.Outcome, row.ErrorKind = ledger.OutcomeTimeout, "timeout"
 			r.record(ctx, row)
-			return Result{}, EntryReason{Entry: entry, Kind: ReasonFailed, Detail: "timed out after " + r.cfg.Defaults.CallTimeout.String()}, false, nil
+			r.setCooldown(entry, r.timeoutCooldown())
+			return Result{}, EntryReason{Entry: entry, Kind: ReasonFailed, Detail: "timed out after " + callTimeout.String()}, false, nil
 		}
 
 		// ErrTransient, and anything else the provider returned: retry with backoff.
