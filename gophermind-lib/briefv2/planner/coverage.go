@@ -17,6 +17,9 @@ type CoverageFile struct {
 	Covered   []Covered  `json:"covered"`
 	RootTests []RootTest `json:"root_tests"`
 	Warnings  []string   `json:"warnings"`
+	// Serve is how the executor starts the server for the Go acceptance tests;
+	// absent when the plan has none.
+	Serve *Serve `json:"serve,omitempty"`
 }
 
 // ReadCoverage reads a run folder's coverage.json.
@@ -58,8 +61,9 @@ func oneLine(text string, n int) string {
 func coverageDone(r *run) bool { return exists(r.path(fileCoverage)) }
 
 // coverage is the Coverage stage: the model proposes what covers each
-// requirement, code checks it, gaps go back for up to max_coverage_rounds
-// fill rounds, and a plan with a gap left never reaches approval.
+// requirement, code checks it, gaps and root tests that fail the quality gate
+// go back for up to max_coverage_rounds fill rounds, and a plan with a gap or a
+// weak root test left never reaches approval.
 func (p *Planner) coverage(ctx context.Context, r *run) error {
 	// A fill round that died after it extended the contract left functions
 	// without nodes; write those first.
@@ -70,7 +74,7 @@ func (p *Planner) coverage(ctx context.Context, r *run) error {
 	if err != nil {
 		return err
 	}
-	prompt, err := render("coverage", map[string]string{"Requirements": requirementsText(r.reqs), "Nodes": nodesText(nodes)})
+	prompt, err := render("coverage", map[string]string{"Requirements": requirementsText(r.reqs), "Nodes": nodesText(nodes), "Harness": harnessContract()})
 	if err != nil {
 		return err
 	}
@@ -87,25 +91,35 @@ func (p *Planner) coverage(ctx context.Context, r *run) error {
 		return err
 	}
 
+	qo := qualityOptions(r.brief.Front)
+	reply = reply.withGoAcceptance(r.reqs)
 	covered, gaps := CheckCoverage(r.reqs, nodes, reply)
+	weak := rootTestDefects(r.reqs, reply.RootTests, qo)
 	rounds := 0
-	for len(gaps) > 0 && rounds < p.d.Settings.Defaults.MaxCoverageRounds {
+	for (len(gaps) > 0 || len(weak) > 0) && rounds < p.d.Settings.Defaults.MaxCoverageRounds {
 		rounds++
 		for _, g := range gaps {
 			p.emit(events.KindCoverageGap, "coverage", "", fmt.Sprintf("round %d: %s", rounds, gapLine(g)))
 		}
-		fill, err := p.coverageFill(ctx, r, gaps, nodes)
+		for _, w := range weak {
+			p.emit(events.KindCoverageGap, "coverage", "", fmt.Sprintf("round %d: %s root test quality [%s]", rounds, w.Requirement, strings.Join(w.Findings, ", ")))
+		}
+		fill, err := p.coverageFill(ctx, r, gaps, weak, nodes)
 		if err != nil {
 			return err
 		}
-		reply = reply.Merge(fill)
+		reply = mergeFill(reply, fill, weak).withGoAcceptance(r.reqs)
 		if nodes, err = PlanNodes(r.dir); err != nil {
 			return err
 		}
 		covered, gaps = CheckCoverage(r.reqs, nodes, reply)
+		weak = rootTestDefects(r.reqs, reply.RootTests, qo)
 	}
 	if len(gaps) > 0 {
 		return &CoverageError{Gaps: gaps}
+	}
+	if len(weak) > 0 {
+		return &QualityError{Items: weak}
 	}
 
 	warnings := PathWarnings(r.src, nodes)
@@ -122,14 +136,14 @@ func (p *Planner) coverage(ctx context.Context, r *run) error {
 	if err := p.rewriteSkeleton(r, reply.RootTests); err != nil {
 		return err
 	}
-	return writeJSON(r.path(fileCoverage), CoverageFile{Rounds: rounds, Covered: covered, RootTests: reply.RootTests, Warnings: warnings})
+	return writeJSON(r.path(fileCoverage), CoverageFile{Rounds: rounds, Covered: covered, RootTests: reply.RootTests, Warnings: warnings, Serve: reply.Serve})
 }
 
 // coverageFill asks the model to close the gaps. Its reply may map gaps to
 // nodes, add root tests, and declare contract functions and types that are
 // missing; declarations are appended to contracts.json and decomposed before
 // it returns.
-func (p *Planner) coverageFill(ctx context.Context, r *run, gaps []Gap, nodes []PlanNode) (CoverageReply, error) {
+func (p *Planner) coverageFill(ctx context.Context, r *run, gaps []Gap, weak []QualityItem, nodes []PlanNode) (CoverageReply, error) {
 	var doc map[string]any
 	if _, err := readJSON(r.path(fileContracts), &doc); err != nil {
 		return CoverageReply{}, err
@@ -137,6 +151,9 @@ func (p *Planner) coverageFill(ctx context.Context, r *run, gaps []Gap, nodes []
 	var gapText, compText strings.Builder
 	for _, g := range gaps {
 		fmt.Fprintf(&gapText, "%s (line %d): %s\n  reason: %s\n", g.Requirement, g.Line, oneLine(g.Text, 600), g.Reason)
+	}
+	if len(gaps) == 0 {
+		gapText.WriteString("none\n")
 	}
 	for _, c := range objects(doc["components"]) {
 		fmt.Fprintf(&compText, "%v (package %v)\n", c["id"], c["package"])
@@ -146,7 +163,7 @@ func (p *Planner) coverageFill(ctx context.Context, r *run, gaps []Gap, nodes []
 		return CoverageReply{}, err
 	}
 	prompt, err := render("coverage_fill", map[string]string{
-		"Gaps": strings.TrimRight(gapText.String(), "\n"), "Nodes": nodesText(nodes),
+		"Gaps": strings.TrimRight(gapText.String(), "\n"), "Weak": weakText(weak), "Harness": harnessContract(), "Nodes": nodesText(nodes),
 		"Components": strings.TrimRight(compText.String(), "\n"), "ItemSchemas": itemSchemas})
 	if err != nil {
 		return CoverageReply{}, err

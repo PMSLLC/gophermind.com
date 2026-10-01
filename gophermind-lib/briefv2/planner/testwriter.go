@@ -131,6 +131,9 @@ func (p *Planner) testwriter(ctx context.Context, r *run) error {
 			return err
 		}
 	}
+	if err := p.writeAcceptanceTests(ctx, r, c, &st); err != nil {
+		return err
+	}
 	return p.finishTree(ctx, r, c, dec, st, w)
 }
 
@@ -182,6 +185,16 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	if err := writeJSON(r.path(stateTestwriter), *st); err != nil {
 		return writtenTests{}, err
 	}
+	if err := placeTestFile(r, abs, rel, source); err != nil {
+		return writtenTests{}, err
+	}
+	return wt, nil
+}
+
+// placeTestFile writes a test file the model produced, after checking the path
+// again: the first check was made before a model call that can take minutes.
+// It refuses an existing entry, a link and a folder that leads out of the repo.
+func placeTestFile(r *run, abs, rel, source string) error {
 	// The path was checked before the model call, which can take minutes.
 	// Check it again before each step that touches the disk.
 	beforeTestWrite()
@@ -195,35 +208,35 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 		return nil
 	}
 	if err := recheck(); err != nil {
-		return writtenTests{}, err
+		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
-		return writtenTests{}, fmt.Errorf("creating the folder for %s: %s", path.Base(rel), osReason(err))
+		return fmt.Errorf("creating the folder for %s: %s", path.Base(rel), osReason(err))
 	}
 	// O_EXCL fails on any existing entry, a symbolic link included, and never
 	// follows one at the final component.
 	if err := recheck(); err != nil {
-		return writtenTests{}, err
+		return err
 	}
 	f, err := os.OpenFile(abs, os.O_WRONLY|os.O_CREATE|os.O_EXCL|pathsafe.NoFollow, 0o644)
 	if err != nil {
-		return writtenTests{}, fmt.Errorf("writing %s: %s", path.Base(rel), osReason(err))
+		return fmt.Errorf("writing %s: %s", path.Base(rel), osReason(err))
 	}
 	// A directory swapped for a link after the last check would have been
 	// followed by the open: undo that write.
 	if err := pathsafe.InsideRepo(r.repo, filepath.Dir(abs)); err != nil {
 		f.Close()
 		os.Remove(abs)
-		return writtenTests{}, err
+		return err
 	}
 	_, werr := f.WriteString(source)
 	if cerr := f.Close(); werr == nil {
 		werr = cerr
 	}
 	if werr != nil {
-		return writtenTests{}, fmt.Errorf("writing %s: %s", path.Base(rel), osReason(werr))
+		return fmt.Errorf("writing %s: %s", path.Base(rel), osReason(werr))
 	}
-	return wt, nil
+	return nil
 }
 
 // parseTestwrite checks a Test-writer reply: enough tests, each described,
@@ -395,6 +408,19 @@ func (p *Planner) finishTree(ctx context.Context, r *run, c *contract.Contracts,
 	}
 	sort.Strings(ids)
 	sort.Strings(files)
+	accept := map[string]LeafTest{}
+	for _, b := range goBullets(r.reqs, cov.Serve) {
+		wt, ok := st.Nodes[acceptKey(b)]
+		if !ok {
+			return fmt.Errorf("acceptance requirement %s has no test", b.Requirement)
+		}
+		files = append(files, wt.TestFile)
+		accept[b.Requirement] = LeafTest{TestFile: wt.TestFile, TestFunc: b.Func, SHA256: wt.SHA256}
+	}
+	sort.Strings(files)
+	if err := writeJSON(r.path(stateAcceptTests), accept); err != nil {
+		return err
+	}
 	if err := writeJSON(r.path(stateTestFiles), files); err != nil {
 		return err
 	}

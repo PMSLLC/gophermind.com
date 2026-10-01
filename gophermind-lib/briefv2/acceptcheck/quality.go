@@ -383,9 +383,6 @@ func (q *qual) script(script string, ctxAsserted, top bool) {
 				}
 			}
 		}
-		if base == "exit" && len(args) == 1 && args[0].lit == "0" && st.op != "||" {
-			q.set[FindMasked] = true
-		}
 		if st.op != "||" {
 			continue
 		}
@@ -423,7 +420,8 @@ func (q *qual) script(script string, ctxAsserted, top bool) {
 		base, args := cmdAt(last)
 		op := stmts[lastP.idx[0]].op
 		if (op == ";" || op == "") && n > 1 && !bg(last) {
-			if base == "true" || base == ":" || base == "echo" || base == "printf" {
+			if base == "true" || base == ":" || base == "echo" || base == "printf" ||
+				(base == "exit" && len(args) == 1 && args[0].lit == "0") {
 				q.set[FindMasked] = true
 			}
 		}

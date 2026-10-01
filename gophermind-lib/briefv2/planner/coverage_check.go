@@ -37,6 +37,9 @@ type RootTest struct {
 type CoverageReply struct {
 	Map       []MapEntry `json:"map"`
 	RootTests []RootTest `json:"root_tests"`
+	// Serve, when present, says how the executor starts the built server once
+	// for the Go acceptance tests (see acceptance_go.go).
+	Serve *Serve `json:"serve,omitempty"`
 }
 
 // Gap is a requirement nothing in the plan covers, and why.
@@ -72,6 +75,11 @@ func ParseCoverageReply(text string, reqs []Requirement) (CoverageReply, error) 
 			return CoverageReply{}, fmt.Errorf("coverage reply: map names unknown requirement (%d bytes)", len(m.Requirement))
 		}
 	}
+	if r.Serve != nil {
+		if err := r.Serve.check(); err != nil {
+			return CoverageReply{}, err
+		}
+	}
 	for _, t := range r.RootTests {
 		if !known[t.Requirement] {
 			return CoverageReply{}, fmt.Errorf("coverage reply: root test names unknown requirement (%d bytes)", len(t.Requirement))
@@ -90,7 +98,10 @@ func ParseCoverageReply(text string, reqs []Requirement) (CoverageReply, error) 
 // requirement are unioned, keeping order; a root test is appended unless one
 // with the same requirement and name is already there.
 func (r CoverageReply) Merge(other CoverageReply) CoverageReply {
-	out := CoverageReply{Map: []MapEntry{}, RootTests: []RootTest{}}
+	out := CoverageReply{Map: []MapEntry{}, RootTests: []RootTest{}, Serve: r.Serve}
+	if out.Serve == nil {
+		out.Serve = other.Serve
+	}
 	at := map[string]int{}
 	add := func(m MapEntry) {
 		i, ok := at[m.Requirement]

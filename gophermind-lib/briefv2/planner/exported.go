@@ -54,6 +54,17 @@ func ReadLeafTests(runDir string) (map[string]LeafTest, error) {
 	return out, nil
 }
 
+// ReadAcceptanceTests reads _state/acceptance_tests.json: acceptance requirement
+// id to the Go test the Test-writer wrote for it (the file as the planner wrote
+// it, its test function and its hash). An absent file is an empty map.
+func ReadAcceptanceTests(runDir string) (map[string]LeafTest, error) {
+	out := map[string]LeafTest{}
+	if _, err := readJSON((&run{dir: runDir}).path(stateAcceptTests), &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ReadClasses reads _state/classes.json: node id to node class.
 func ReadClasses(runDir string) (map[string]string, error) {
 	return loadClasses(&run{dir: runDir})

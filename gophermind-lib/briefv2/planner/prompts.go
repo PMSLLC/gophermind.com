@@ -29,6 +29,16 @@ func render(name string, data map[string]string) (string, error) {
 	return b.String(), nil
 }
 
+// harnessContract is the shared description of how root test commands are run
+// (prompts/harness.md), put into every prompt that asks for one.
+func harnessContract() string {
+	raw, err := promptFS.ReadFile("prompts/harness.md")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(raw))
+}
+
 // request is the shape of every planner call: a system line naming the stage
 // (the offline fixture provider keys its canned replies on it) and the prompt.
 func request(stage, prompt string, maxTokens int) provider.Request {

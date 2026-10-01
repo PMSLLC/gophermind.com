@@ -29,6 +29,7 @@ const (
 	stateTestwriter   = "_state/testwriter.json"
 	stateTestFiles    = "_state/test_files.json"
 	stateLeafTests    = "_state/leaf_tests.json"
+	stateAcceptTests  = "_state/acceptance_tests.json"
 	stagePrefixSystem = "GopherMind planner. Stage: "
 )
 
