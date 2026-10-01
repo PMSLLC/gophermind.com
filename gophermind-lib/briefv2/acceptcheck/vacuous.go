@@ -134,6 +134,8 @@ func shellParse(cmd string) (stmts []stmt, subs []string, unterminated bool) {
 		pushWord()
 		if len(words) > 0 {
 			stmts = append(stmts, stmt{op: op, words: words})
+		} else if op == "&" && next == ";" {
+			return // "cmd &" then a newline: the next statement still follows a background one
 		}
 		words = nil
 		op = next
