@@ -26,26 +26,41 @@ func cmdCov(cmd string) (reqs []planner.Requirement, cov planner.CoverageFile) {
 func TestAcceptanceVacuousRootTests(t *testing.T) {
 	t.Parallel()
 	refused := map[string]string{
-		"true":           "true",
-		"colon":          ":",
-		"exit 0":         "exit 0",
-		"echo":           `echo "$GM_ACCEPTANCE_URL"`,
-		"printf":         `printf ok`,
-		"sleep":          `sleep 1`,
-		"test alone":     `test -n "$GM_ACCEPTANCE_URL"`,
-		"bracket alone":  `[ -n "$GM_ACCEPTANCE_URL" ]`,
-		"several no-ops": "true; echo hi\nexit 0",
-		"go run":         `go run ./cmd/greeter & curl -sf "$GM_ACCEPTANCE_URL"`,
-		"go install":     `go install ./cmd/greeter && curl -sf "$GM_ACCEPTANCE_URL"`,
-		"go get":         `go get example.com/x && curl -sf "$GM_ACCEPTANCE_URL"`,
-		"go generate":    `go generate ./... && curl -sf "$GM_ACCEPTANCE_URL"`,
-		"rm the bin dir": `rm -f "$GM_ACCEPTANCE_BIN"/greeter; curl -sf "$GM_ACCEPTANCE_URL"`,
-		"cp over a bin":  `cp /bin/ls "$GM_ACCEPTANCE_BIN/greeter"; curl -sf "$GM_ACCEPTANCE_URL"`,
-		"comments only":  "# nothing here\n",
-		"go build alone": `go build`,
-		"relative path":  `./greeter --addr "$GM_ACCEPTANCE_ADDR" & curl -sf "$GM_ACCEPTANCE_URL"`,
-		"absolute path":  `/tmp/x/greeter --addr "$GM_ACCEPTANCE_ADDR" & curl -sf "$GM_ACCEPTANCE_URL"`,
-		"no url at all":  `grep -q x README.md`,
+		"true":                "true",
+		"colon":               ":",
+		"exit 0":              "exit 0",
+		"echo":                `echo "$GM_ACCEPTANCE_URL"`,
+		"printf":              `printf ok`,
+		"sleep":               `sleep 1`,
+		"test alone":          `test -n "$GM_ACCEPTANCE_URL"`,
+		"bracket alone":       `[ -n "$GM_ACCEPTANCE_URL" ]`,
+		"several no-ops":      "true; echo hi\nexit 0",
+		"go run":              `go run ./cmd/greeter & curl -sf "$GM_ACCEPTANCE_URL"`,
+		"go install":          `go install ./cmd/greeter && curl -sf "$GM_ACCEPTANCE_URL"`,
+		"go get":              `go get example.com/x && curl -sf "$GM_ACCEPTANCE_URL"`,
+		"go generate":         `go generate ./... && curl -sf "$GM_ACCEPTANCE_URL"`,
+		"rm the bin dir":      `rm -f "$GM_ACCEPTANCE_BIN"/greeter; curl -sf "$GM_ACCEPTANCE_URL"`,
+		"cp over a bin":       `cp /bin/ls "$GM_ACCEPTANCE_BIN/greeter"; curl -sf "$GM_ACCEPTANCE_URL"`,
+		"comments only":       "# nothing here\n",
+		"go build alone":      `go build`,
+		"relative path":       `./greeter --addr "$GM_ACCEPTANCE_ADDR" & curl -sf "$GM_ACCEPTANCE_URL"`,
+		"absolute path":       `/tmp/x/greeter --addr "$GM_ACCEPTANCE_ADDR" & curl -sf "$GM_ACCEPTANCE_URL"`,
+		"no url at all":       `grep -q x README.md`,
+		"exit then curl":      `exit 0 && curl x`,
+		"true or curl":        `true || curl x`,
+		"if false":            "if false; then curl x; fi",
+		"curl in a comment":   `ls # go build ./...`,
+		"go test in a string": `ls; echo "go test ./..."`,
+		"test of the url":     `ls; test -n "$GM_ACCEPTANCE_URL"`,
+		"echo go build":       `echo go build ./...`,
+		"true then comment":   `true # curl`,
+		"colon then word":     `: curl`,
+		"sh -c go run":        `sh -c 'go run ./x'`,
+		"bash -c go run":      `bash -c "go run ./x"`,
+		"unconditional exit":  "exit 0\ncurl -s localhost:8080",
+		"false and curl":      `false && curl x`,
+		"if true else":        "if true; then ls; else curl x; fi",
+		"while false":         "while false; do curl x; done",
 	}
 	for name, cmd := range refused {
 		t.Run("refuses "+name, func(t *testing.T) {
@@ -72,6 +87,15 @@ func TestAcceptanceVacuousRootTests(t *testing.T) {
 		"go build then curl":     `go build -o /tmp/x ./cmd/greeter; curl -sf "$GM_ACCEPTANCE_URL"`,
 		"echo then curl":         "echo start\ncurl -sf \"$GM_ACCEPTANCE_URL/hello\"",
 		"system curl by path":    `/usr/bin/curl -sf "$GM_ACCEPTANCE_URL/hello"`,
+		"sh -c go test":          `sh -c 'go test ./...'`,
+		"bash -c curl":           `bash -c "curl -s localhost:8080/healthz"`,
+		"serve and curl":         `venture-server serve & sleep 1; curl -s localhost:8080/healthz | grep -q ok`,
+		"multi line script":      "greeter --addr \"$GM_ACCEPTANCE_ADDR\" &\npid=$!\nsleep 1\ncurl -s \"$GM_ACCEPTANCE_URL/hello\" | grep -q Hello\nrc=$?\nkill $pid\nexit $rc",
+		"exit guarded":           "test -n x || exit 1\ncurl -s localhost:8080",
+		"if curl":                "if curl -sf localhost:8080; then ls; fi",
+		"if true then":           "if true; then curl x; fi",
+		"curl in subshell":       `ls "$(curl -s localhost:8080)"`,
+		"env wrapper":            `env FOO=1 curl -s localhost:8080`,
 		"from the bin dir":       `"$GM_ACCEPTANCE_BIN"/greeter --addr "$GM_ACCEPTANCE_ADDR" & curl -sf "$GM_ACCEPTANCE_URL"`,
 	}
 	for name, cmd := range accepted {
@@ -184,6 +208,11 @@ func TestAcceptanceStrayWriteFails(t *testing.T) {
 	}
 	if fileExists(filepath.Join(g.repo, "stray-from-acceptance.txt")) {
 		t.Error("the stray file was not removed")
+	}
+	var f AcceptanceFile
+	raw, _ := os.ReadFile(filepath.Join(g.runDir, "acceptance.json"))
+	if err := json.Unmarshal(raw, &f); err != nil || f.Complete || f.Reason != "acceptance_stray" {
+		t.Errorf("acceptance.json = complete %v reason %q (%v), want complete:false with the reason", f.Complete, f.Reason, err)
 	}
 }
 
@@ -475,5 +504,111 @@ func TestAcceptanceEnvironmentOnlyWhenReferenced(t *testing.T) {
 	}
 	if rep, err, _ := g2.accRun(t, goodScript(g2), g2.fastChecker(), edit, nil); err != nil || rep.Status != "verified" {
 		t.Fatalf("unset: %s (%s), %v, %v", rep.Status, rep.StopReason, rep.Failures, err)
+	}
+}
+
+// A built binary is rebuilt after every acceptance repair round.
+func TestAcceptanceRebuildsBinaryAfterRepair(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	script := goodScript(g)
+	repaired := strings.Replace(good("fn-bye"), `"Goodbye, %s!"`, `"Goodbye, %s! REPAIRED"`, 1)
+	if repaired == good("fn-bye") {
+		t.Fatal("the fixture reply has no text to change")
+	}
+	script["implement:fn-bye"] = append(script["implement:fn-bye"], reply(repaired))
+	fc := g.fastChecker()
+	fc.LeafScript["fn-bye"] = []runner.Verdict{passVerdict(), passVerdict()}
+	edit := func(rc *runCtx, h *hybridChecker) {
+		setCommand(t, rc, "A2", `greeter --addr "$GM_ACCEPTANCE_ADDR" & pid=$!
+i=0; until curl -sf "$GM_ACCEPTANCE_URL/bye?name=Ada" >/dev/null 2>&1 || [ $i -ge 50 ]; do i=$((i+1)); sleep 0.1; done
+curl -sf "$GM_ACCEPTANCE_URL/bye?name=Ada" | grep -q REPAIRED; rc=$?; kill $pid; exit $rc`)
+		bullet(t, rc, "A2").nodes = []string{"fn-bye"}
+	}
+	rep, err, log := g.accRun(t, script, fc, edit, nil)
+	if err != nil || rep.Status != "verified" || rep.Acceptance.Passed != 2 {
+		t.Fatalf("run = %s (%s), %v, %v", rep.Status, rep.StopReason, rep.Failures, err)
+	}
+	if n := log.count("gobuild"); n != 2 {
+		t.Errorf("%d binary builds, want 2 (one before, one after the repair)", n)
+	}
+	var f AcceptanceFile
+	raw, _ := os.ReadFile(filepath.Join(g.runDir, "acceptance.json"))
+	if err := json.Unmarshal(raw, &f); err != nil || f.Round != 1 || !f.Complete || len(f.Binaries) != 1 {
+		t.Errorf("acceptance.json = round %d complete %v binaries %v (%v)", f.Round, f.Complete, f.Binaries, err)
+	}
+}
+
+func freePort(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	return strings.TrimPrefix(l.Addr().String(), "127.0.0.1:")
+}
+
+func TestLiteralPorts(t *testing.T) {
+	t.Parallel()
+	got := literalPorts("curl localhost:8080/x; curl http://127.0.0.1:9090 [::1]:7 --port 1234 localhost:8080")
+	if strings.Join(got, ",") != "7,8080,9090" {
+		t.Errorf("literalPorts = %v", got)
+	}
+}
+
+func TestAcceptancePortsNamedInCommands(t *testing.T) {
+	t.Parallel()
+	t.Run("a port already in use is an environment fault", func(t *testing.T) {
+		g := newRig(t)
+		rc, _ := g.leafRC(t, goodScript(g), false)
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer l.Close()
+		port := strings.TrimPrefix(l.Addr().String(), "127.0.0.1:")
+		_, _, err = rc.acceptanceRun(context.Background(), oneBullets("curl -s localhost:"+port+" && touch ran-anyway"), 0)
+		se, ok := stopOf(err)
+		if !ok || se.Reason != "acceptance_environment" || !strings.Contains(se.Message, port) {
+			t.Fatalf("error = %v, want acceptance_environment naming %s", err, port)
+		}
+		if fileExists(filepath.Join(g.repo, "ran-anyway")) {
+			t.Error("the command ran although its port was taken")
+		}
+	})
+	t.Run("a server left on a named port fails the round", func(t *testing.T) {
+		g := newRig(t)
+		rc, _ := g.leafRC(t, goodScript(g), false)
+		port := freePort(t)
+		cmd := `perl -MPOSIX -MIO::Socket::INET -e 'if (fork) { exit 0 } POSIX::setsid(); $s = IO::Socket::INET->new(Listen => 500, LocalAddr => "127.0.0.1", LocalPort => ` + port + `) or die; sleep 25'
+sleep 1 # curl 127.0.0.1:` + port + "\n"
+		_, _, err := rc.acceptanceRun(context.Background(), oneBullets(cmd), 0)
+		se, ok := stopOf(err)
+		if !ok || se.Reason != "acceptance_leak" || !strings.Contains(se.Message, port) {
+			t.Fatalf("error = %v, want acceptance_leak naming %s", err, port)
+		}
+	})
+}
+
+// A passing acceptance run that prints a secret and output leaves neither in a store.
+func TestAcceptanceLeavesNoCanaryInAnyStore(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	edit := func(rc *runCtx, h *hybridChecker) {
+		a1 := bullet(t, rc, "A1").tests[0].Command
+		setCommand(t, rc, "A1", `echo "CANARY-ACC-OUT $GREETER_TOKEN"; echo "CANARY-ACC-ERR" >&2; `+a1)
+	}
+	rep, err, _ := g.accRun(t, goodScript(g), g.fastChecker(), edit, nil)
+	if err != nil || rep.Status != "verified" {
+		t.Fatalf("run = %s (%s), %v, %v", rep.Status, rep.StopReason, rep.Failures, err)
+	}
+	for _, c := range []string{canarySecret, "CANARY-ACC-OUT", "CANARY-ACC-ERR"} {
+		if hasCanary(t, g, c) {
+			t.Errorf("%s reached a store", c)
+		}
+	}
+	if b, err := json.Marshal(rep); err != nil || strings.Contains(string(b), "CANARY") {
+		t.Errorf("the report holds a canary: %v", err)
 	}
 }

@@ -79,6 +79,7 @@ const acceptanceSchema = 2
 type AcceptanceFile struct {
 	SchemaVersion       int           `json:"schema_version,omitempty"`
 	Complete            bool          `json:"complete"`
+	Reason              string        `json:"reason,omitempty"` // why a round that ended early is not complete
 	Binaries            []BinaryProof `json:"binaries,omitempty"`
 	RequirementsCovered Counts        `json:"requirements_covered"` // copied from coverage.json and requirements.json
 	Acceptance          Counts        `json:"acceptance"`
@@ -162,6 +163,7 @@ func (rc *runCtx) buildBinaries(ctx context.Context) error {
 			Message: "executor: listing the cmd packages for the acceptance run failed"}
 	}
 	module := rc.plan.Contracts.Module
+	rc.removeBinaries()
 	rc.bins = map[string]string{}
 	for _, line := range strings.Split(res.Out.Text(), "\n") {
 		f := strings.Fields(line)
@@ -190,6 +192,20 @@ func (rc *runCtx) buildBinaries(ctx context.Context) error {
 		rc.bins[filepath.Base(rel)] = sum
 	}
 	return nil
+}
+
+// removeBinaries deletes the binaries of the last build, each a regular file
+// directly inside the bin directory under a name this run recorded.
+func (rc *runCtx) removeBinaries() {
+	for name := range rc.bins {
+		if name != filepath.Base(name) || name == "." || name == ".." || name == "" {
+			continue
+		}
+		p := filepath.Join(rc.binDir, name)
+		if fi, err := os.Lstat(p); err == nil && fi.Mode().IsRegular() && filepath.Dir(p) == rc.binDir {
+			_ = os.Remove(p)
+		}
+	}
 }
 
 // fileSHA is the SHA-256 of a regular file, refusing a link.
@@ -251,11 +267,44 @@ func freeAddr() (string, error) {
 	return l.Addr().String(), nil
 }
 
+var portRE = regexp.MustCompile(`(?:localhost|127\.0\.0\.1|\[::1\]):([0-9]{1,5})`)
+
+// literalPorts are the loopback ports a command names (localhost:N,
+// 127.0.0.1:N, [::1]:N), sorted and unique, as numbers in text.
+func literalPorts(cmd string) []string {
+	seen := map[int]bool{}
+	var nums []int
+	for _, m := range portRE.FindAllStringSubmatch(cmd, -1) {
+		n, err := strconv.Atoi(m[1])
+		if err == nil && n > 0 && n < 65536 && !seen[n] {
+			seen[n] = true
+			nums = append(nums, n)
+		}
+	}
+	sort.Ints(nums)
+	out := make([]string, len(nums))
+	for i, n := range nums {
+		out[i] = strconv.Itoa(n)
+	}
+	return out
+}
+
+func accepting(port string) bool {
+	for _, h := range []string{"127.0.0.1", "::1"} {
+		c, err := net.DialTimeout("tcp", net.JoinHostPort(h, port), 200*time.Millisecond)
+		if err == nil {
+			c.Close()
+			return true
+		}
+	}
+	return false
+}
+
 // afterCommand is what the harness checks once a command is over and its
 // process group was killed: the binaries are intact, nothing listens on the
 // command's address and the pid the command recorded is gone. A leftover is
 // killed, and the run fails acceptance_leak.
-func (rc *runCtx) afterCommand(addr string) *stopError {
+func (rc *runCtx) afterCommand(addr string, ports []string) *stopError {
 	if se := rc.checkBinaries(); se != nil {
 		return se
 	}
@@ -281,9 +330,23 @@ func (rc *runCtx) afterCommand(addr string) *stopError {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	if leak {
-		return &stopError{Status: "failed", Reason: "acceptance_leak",
-			Message: "executor: a process started by an acceptance command outlived it (killed)"}
+	var open []string
+	for _, p := range ports {
+		deadline := time.Now().Add(time.Second)
+		for accepting(p) {
+			if time.Now().After(deadline) {
+				open = append(open, p)
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+	if leak || len(open) > 0 {
+		msg := "executor: a process started by an acceptance command outlived it (killed)"
+		if len(open) > 0 {
+			msg += "; still accepting on port " + strings.Join(open, ", ")
+		}
+		return &stopError{Status: "failed", Reason: "acceptance_leak", Message: msg}
 	}
 	return nil
 }
@@ -321,6 +384,13 @@ func (rc *runCtx) runRootTest(ctx context.Context, t planner.RootTest, unset ...
 	env = append(env, "GM_ACCEPTANCE_ADDR="+addr, "GM_ACCEPTANCE_URL=http://"+addr,
 		"GM_ACCEPTANCE_BIN="+rc.binDir, "GM_ACCEPTANCE_PIDFILE="+rc.acceptPidFile())
 	_ = os.Remove(rc.acceptPidFile())
+	ports := literalPorts(t.Command)
+	for _, p := range ports {
+		if accepting(p) { // something else holds it: a stale server could make the bullet pass
+			return CommandProof{}, runner.Result{}, &stopError{Status: "failed", Reason: "acceptance_environment",
+				Message: "executor: port " + p + " named by an acceptance command is already in use (an environment fault)"}
+		}
+	}
 	res := rc.chk.Run(ctx, runner.Spec{
 		Dir: rc.o.Repo, Argv: runner.Shell(t.Command), Env: env,
 		Timeout: rc.acceptanceTimeout(),
@@ -331,7 +401,7 @@ func (rc *runCtx) runRootTest(ctx context.Context, t planner.RootTest, unset ...
 	if res.Err != nil {
 		return CommandProof{}, res, fmt.Errorf("executor: an acceptance command could not be started (%w)", res.Err)
 	}
-	if se := rc.afterCommand(addr); se != nil {
+	if se := rc.afterCommand(addr, ports); se != nil {
 		return CommandProof{}, res, se
 	}
 	sum := sha256.Sum256([]byte(t.Command))
@@ -435,19 +505,25 @@ func (rc *runCtx) acceptanceRun(ctx context.Context, p acceptPlan, round int) (A
 	if err := do(p.constraints, &file.Constraints, &file.ConstraintsChecked); err != nil {
 		return AcceptanceFile{}, nil, err
 	}
-	file.Complete = true
-	if err := rc.writeAcceptance(file); err != nil {
+	stray, err := snap.Stray(rc.o.Repo, rc.git)
+	if err != nil {
 		return file, failed, err
 	}
-	if stray, err := snap.Stray(rc.o.Repo, rc.git); err != nil {
-		return file, failed, err
-	} else if len(stray) > 0 {
+	if len(stray) > 0 {
+		file.Reason = "acceptance_stray" // the round is not complete
+		if err := rc.writeAcceptance(file); err != nil {
+			return file, failed, err
+		}
 		if err := Revert(rc.git, stray); err != nil {
 			return file, failed, errors.New("executor: removing the files the acceptance commands wrote failed")
 		}
 		rc.emit("stray_write", "acceptance", fmt.Sprintf("%d files written by the acceptance commands were removed", len(stray)))
 		return file, failed, &stopError{Status: "failed", Reason: "acceptance_stray",
 			Message: fmt.Sprintf("executor: the acceptance commands of round %d wrote %d file(s) into the repository (removed)", round, len(stray))}
+	}
+	file.Complete = true
+	if err := rc.writeAcceptance(file); err != nil {
+		return file, failed, err
 	}
 	return file, failed, nil
 }
@@ -517,6 +593,14 @@ func (rc *runCtx) acceptance(ctx context.Context) (accResult, *stopError, error)
 		}
 		if se, err := rc.acceptRepair(ctx, round+1, ids, failed); err != nil || se != nil {
 			return acc, se, err
+		}
+		// A repair changed leaves, maybe under cmd/: the rerun must use a binary
+		// built from them, with a new baseline for the tamper check.
+		if err := rc.buildBinaries(ctx); err != nil {
+			if se, ok := stopOf(err); ok {
+				return acc, se, nil
+			}
+			return acc, nil, err
 		}
 	}
 }
