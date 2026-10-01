@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -195,4 +196,20 @@ func TestBreakDependencyCyclesIsDeterministicAndLeavesAnAcyclicPlan(t *testing.T
 	if again := breakDependencyCycles(c, d1); len(again) != 0 {
 		t.Errorf("second pass dropped more: %v", again)
 	}
+}
+
+// normalizeDrafts is splitDrafts read strictly: any defect or noise is an
+// error, with the message of the first. The leaf-check tests use it.
+func normalizeDrafts(text, component string, fns []contract.Function, c *contract.Contracts, r *run) ([]map[string]any, map[string]string, error) {
+	res, err := splitDrafts(text, component, fns, c, r)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(res.noise) > 0 {
+		return nil, nil, errors.New(res.noise[0])
+	}
+	if len(res.bad) > 0 {
+		return nil, nil, errors.New(res.bad[0].msg)
+	}
+	return res.good, res.classes, nil
 }

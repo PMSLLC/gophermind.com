@@ -170,6 +170,26 @@ the component, it is not an error; at most 40 passes per component, then a fixed
 one a later component writes, and ids still undeclared after every component is
 written go through up to 2 `contract:_repair` passes.
 
+Decompose repairs one node at a time. A node of a Decompose reply that fails a
+leaf check (an input per parameter, an output per result, `errors` for a function
+that returns `error`, a node class, a title, a description, known `depends_on`
+ids, the node schema) no longer sinks its batch: the nodes that passed are stored
+at once, and the others are kept in `_state/decomposed.json` under `pending` with
+their defects as fixed words (`outputs_count`, `inputs_missing`, `errors_missing`,
+`title`, ...) and the passes spent on them. Up to 2 `decompose:_fix` passes ask for
+only those nodes, at most 8 per call: the prompt carries each node's id, its
+defects, the contract entry of the function and the node as it stands, and only
+the fields the defects name are taken from the answer. Failed attempts count
+across restarts. After the bound, `inputs`, `outputs` and `errors` of a node whose
+defects are all structural are derived from the function's signature (an input per
+parameter, an output per result named by the result name or `result` and `err`,
+description `returned value`, and `returned error` for a function that returns
+`error`) and the warning `leaf_defaulted` gives the count and at most 10 ids;
+titles, descriptions, node classes and dependencies are never invented, so a node
+still missing one of them ends the stage with an error naming it. A reply that is
+not a JSON array of nodes at all is still an unusable reply. Nodes in a reply that
+nobody asked for, or repeated, are ignored (the first is kept).
+
 Prompt size. Every contract call is sized to the smallest context window among
 the models of the strong tier (`context_tokens` in `gophermind.yaml`): the
 estimate of the prompt (bytes/4 plus a tenth, the router's own) plus the reserved

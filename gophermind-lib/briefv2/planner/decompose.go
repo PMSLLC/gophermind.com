@@ -29,6 +29,9 @@ const decomposeBatch = 8
 type decomposed struct {
 	Components map[string][]map[string]any `json:"components"`
 	Done       bool                        `json:"done"`
+	// Pending are the nodes whose reply failed a check: kept with their
+	// defects and the passes spent on them until they are repaired.
+	Pending []pendingDraft `json:"pending,omitempty"`
 }
 
 func loadDecomposed(r *run) (decomposed, error) {
@@ -100,6 +103,9 @@ func (p *Planner) decomposeMissing(ctx context.Context, r *run, c *contract.Cont
 			have[id] = true
 		}
 	}
+	for _, pd := range dec.Pending {
+		have[pd.ID] = true
+	}
 	for _, comp := range c.Components {
 		var missing []contract.Function
 		for _, f := range c.Functions {
@@ -111,12 +117,14 @@ func (p *Planner) decomposeMissing(ctx context.Context, r *run, c *contract.Cont
 			n := min(decomposeBatch, len(missing))
 			batch := missing[:n]
 			missing = missing[n:]
-			drafts, got, err := p.decomposeCall(ctx, r, c, comp, batch)
+			res, err := p.decomposeCall(ctx, r, c, comp, batch)
 			if err != nil {
 				return err
 			}
-			dec.Components[comp.ID] = append(dec.Components[comp.ID], drafts...)
-			for id, class := range got {
+			// The nodes that passed are stored now; the others wait for their repair.
+			dec.Components[comp.ID] = append(dec.Components[comp.ID], res.good...)
+			dec.Pending = append(dec.Pending, res.bad...)
+			for id, class := range res.classes {
 				classes[id] = class
 			}
 			if err := writeJSON(r.path(stateClasses), classes); err != nil {
@@ -126,6 +134,9 @@ func (p *Planner) decomposeMissing(ctx context.Context, r *run, c *contract.Cont
 				return err
 			}
 		}
+	}
+	if err := p.repairDrafts(ctx, r, c, dec, classes); err != nil {
+		return err
 	}
 	dropped := breakDependencyCycles(c, *dec)
 	for _, w := range dropped {
@@ -192,14 +203,14 @@ func breakDependencyCycles(c *contract.Contracts, dec decomposed) []string {
 }
 
 // decomposeCall asks for the nodes of one batch of one component's functions.
-func (p *Planner) decomposeCall(ctx context.Context, r *run, c *contract.Contracts, comp contract.Component, batch []contract.Function) ([]map[string]any, map[string]string, error) {
+func (p *Planner) decomposeCall(ctx context.Context, r *run, c *contract.Contracts, comp contract.Component, batch []contract.Function) (draftResult, error) {
 	var uses []string
 	for _, f := range batch {
 		uses = append(uses, f.Uses...)
 	}
 	slice, err := c.Slice(uses, "")
 	if err != nil {
-		return nil, nil, err
+		return draftResult{}, err
 	}
 	sliceText := strings.Join(slice, "\n\n")
 	if sliceText == "" {
@@ -211,101 +222,120 @@ func (p *Planner) decomposeCall(ctx context.Context, r *run, c *contract.Contrac
 		"BriefSection":  briefSection(r, comp.ID),
 	})
 	if err != nil {
-		return nil, nil, err
+		return draftResult{}, err
 	}
-	var drafts []map[string]any
-	var classes map[string]string
+	var res draftResult
 	cs := callSpec{stage: "decompose:" + comp.ID, taskType: "decompose", scope: router.ScopeComponent, maxTokens: maxTokensDecompose}
 	err = p.callAsking(ctx, r, cs, prompt, func(text string) error {
-		d, cl, err := normalizeDrafts(StripReply(text), comp.ID, batch, c, r)
+		d, err := splitDrafts(StripReply(text), comp.ID, batch, c, r)
 		if err != nil {
 			return err
 		}
-		drafts, classes = d, cl
+		res = d
 		return nil
 	})
-	return drafts, classes, err
+	if err != nil {
+		return draftResult{}, err
+	}
+	return res, nil
 }
 
 // nodeClasses is the closed list a draft's node_class must come from.
 var nodeClasses = []string{"pure", "validation", "handler", "client", "storage", "concurrency", "wiring", "other"}
 
-// normalizeDrafts turns a Decompose reply into function node drafts: exactly
-// one per function asked for, with every field the harness owns set or
-// overwritten by code, and every leaf check applied. Any failure is an error,
-// which makes the reply malformed. The second result maps node id to the
-// node_class the model gave; the class is not part of the node document.
-func normalizeDrafts(text, component string, fns []contract.Function, c *contract.Contracts, r *run) ([]map[string]any, map[string]string, error) {
-	var got []map[string]any
-	if err := json.Unmarshal([]byte(text), &got); err != nil {
-		return nil, nil, fmt.Errorf("decompose reply is not a JSON array of nodes (%s)", jsonErr(err))
-	}
-	want := map[string]bool{}
-	for _, f := range fns {
-		want[f.ID] = true
-	}
-	byID := map[string]map[string]any{}
-	for i, d := range got {
-		id, _ := d["id"].(string)
-		switch {
-		case !want[id]:
-			return nil, nil, fmt.Errorf("decompose reply node %d (id of %d bytes) is not one of the functions asked for", i+1, len(id))
-		case byID[id] != nil:
-			return nil, nil, fmt.Errorf("decompose reply has two nodes for %s", id)
-		}
-		byID[id] = d
-	}
-	isFunction, known := map[string]bool{}, map[string]bool{}
+// draftDefect kinds, a fixed vocabulary: they name what is wrong with a node
+// without quoting the reply, and say which fields to ask for again.
+const (
+	defMissingNode   = "missing_node"
+	defNodeClass     = "node_class"
+	defTitle         = "title"
+	defDescription   = "description"
+	defContract      = "contract_missing"
+	defInputsMissing = "inputs_missing"
+	defInputType     = "input_type"
+	defOutputsCount  = "outputs_count"
+	defOutputType    = "output_type"
+	defErrorsMissing = "errors_missing"
+	defErrorsPartial = "errors_incomplete"
+	defDepends       = "depends_unknown"
+	defSchema        = "schema"
+)
+
+// nodeEnv is what normalising one node needs besides the node.
+type nodeEnv struct {
+	component, ref string
+	constraints    []any
+	isFunction     map[string]bool
+	known          map[string]bool
+	c              *contract.Contracts
+}
+
+func newNodeEnv(component string, c *contract.Contracts, r *run) *nodeEnv {
+	e := &nodeEnv{component: component, c: c, isFunction: map[string]bool{}, known: map[string]bool{}, ref: "#architecture"}
 	for _, f := range c.Functions {
-		isFunction[f.ID], known[f.ID] = true, true
+		e.isFunction[f.ID], e.known[f.ID] = true, true
 	}
 	for _, t := range c.Types {
-		known[t.ID] = true
+		e.known[t.ID] = true
 	}
-	var constraints []any
 	for _, q := range r.reqs {
 		if q.Kind == ReqConstraint {
-			constraints = append(constraints, q.Text)
+			e.constraints = append(e.constraints, q.Text)
 		}
 	}
-	ref := "#architecture"
 	for _, f := range r.brief.Features {
 		if slug(f.Name) == component {
-			ref = "#features/" + component
+			e.ref = "#features/" + component
 		}
 	}
+	return e
+}
 
-	out := make([]map[string]any, 0, len(fns))
-	classes := map[string]string{}
-	for _, f := range fns {
-		d := byID[f.ID]
-		if d == nil {
-			return nil, nil, fmt.Errorf("decompose reply has no node for %s", f.ID)
+// normalizeNode turns one node of a reply into a draft: every field the
+// harness owns is set or overwritten by code and every leaf check applied. It
+// returns the node_class the model gave (not part of the node document), the
+// defects found (kinds, with a message for each that quotes nothing of the
+// reply) and an error only when the contract itself is unusable. d is changed
+// in place; on defects it is not a draft.
+func (e *nodeEnv) normalizeNode(f contract.Function, d map[string]any) (class string, kinds, msgs []string, err error) {
+	defect := func(kind, format string, a ...any) {
+		for _, k := range kinds {
+			if k == kind {
+				return
+			}
 		}
-		class, _ := d["node_class"].(string)
-		if !contains(nodeClasses, class) {
-			return nil, nil, fmt.Errorf("node %s: node_class (%d bytes) is not one of %s", f.ID, len(class), strings.Join(nodeClasses, ", "))
-		}
-		classes[f.ID] = class
-		for _, k := range []string{"node_class", "tests", "wave", "claim", "attempts", "result"} {
-			delete(d, k)
-		}
-		d["spec_version"], d["kind"], d["parent"] = "2.0", "function", component
-		d["status"], d["revision"], d["brief_ref"] = "pending", 0, ref
-		if t, _ := d["title"].(string); len([]rune(t)) > 120 {
-			d["title"] = string([]rune(t)[:120])
-		}
-		if _, ok := d["model_tier"]; !ok {
-			d["model_tier"] = "standard"
-		}
-		ct, ok := d["contract"].(map[string]any)
-		if !ok {
-			return nil, nil, fmt.Errorf("node %s: contract is missing", f.ID)
-		}
+		kinds = append(kinds, kind)
+		msgs = append(msgs, fmt.Sprintf("node %s: "+format, append([]any{f.ID}, a...)...))
+	}
+	class, _ = d["node_class"].(string)
+	if !contains(nodeClasses, class) {
+		defect(defNodeClass, "node_class (%d bytes) is not one of %s", len(class), strings.Join(nodeClasses, ", "))
+	}
+	for _, k := range []string{"node_class", "tests", "wave", "claim", "attempts", "result"} {
+		delete(d, k)
+	}
+	d["spec_version"], d["kind"], d["parent"] = "2.0", "function", e.component
+	d["status"], d["revision"], d["brief_ref"] = "pending", 0, e.ref
+	if t, _ := d["title"].(string); len([]rune(t)) > 120 {
+		d["title"] = string([]rune(t)[:120])
+	}
+	if t, _ := d["title"].(string); strings.TrimSpace(t) == "" {
+		defect(defTitle, "title is missing or empty")
+	}
+	if t, _ := d["description"].(string); strings.TrimSpace(t) == "" {
+		defect(defDescription, "description is missing or empty")
+	}
+	if _, ok := d["model_tier"]; !ok {
+		d["model_tier"] = "standard"
+	}
+	ct, ok := d["contract"].(map[string]any)
+	if !ok {
+		defect(defContract, "contract is missing")
+	} else {
 		ct["package"], ct["file"], ct["signature"] = f.Package, f.File, f.Signature
-		fd, err := parseSignature(f.Signature)
-		if err != nil {
-			return nil, nil, fmt.Errorf("node %s: %w", f.ID, err)
+		fd, perr := parseSignature(f.Signature)
+		if perr != nil {
+			return class, kinds, msgs, fmt.Errorf("node %s: %w", f.ID, perr)
 		}
 		declared := map[string]bool{}
 		if fd.Type.Params != nil {
@@ -315,56 +345,135 @@ func normalizeDrafts(text, component string, fns []contract.Function, c *contrac
 				}
 			}
 		}
-		if err := checkLeaf(ct, fd, declared); err != nil {
-			return nil, nil, fmt.Errorf("node %s: %w", f.ID, err)
+		for _, ld := range leafDefects(ct, fd, declared) {
+			defect(ld.kind, "%s", ld.msg)
 		}
-
-		// depends_on holds node ids only; types reach the node through its
-		// dependency signatures.
-		deps := append(strList(d["depends_on"]), f.Uses...)
-		for i, id := range deps {
-			if !known[id] {
-				return nil, nil, fmt.Errorf("node %s: depends_on entry %d (%d bytes) is an unknown id", f.ID, i+1, len(id))
-			}
-		}
-		sigs, err := c.Slice(deps, f.ID)
-		if err != nil {
-			return nil, nil, fmt.Errorf("node %s: depends_on: %w", f.ID, err)
-		}
-		fnDeps := []string{}
-		for _, id := range deps {
-			if isFunction[id] && id != f.ID && !contains(fnDeps, id) {
-				fnDeps = append(fnDeps, id)
-			}
-		}
-		sort.Strings(fnDeps)
-		d["depends_on"] = fnDeps
-		nctx, _ := d["context"].(map[string]any)
-		if nctx == nil {
-			nctx = map[string]any{}
-		}
-		nctx["dependency_signatures"] = sigs
-		if _, ok := nctx["constraints"]; !ok && len(constraints) > 0 {
-			nctx["constraints"] = constraints
-		}
-		d["context"] = nctx
-
-		if err := validateDraft(d); err != nil {
-			return nil, nil, fmt.Errorf("node %s: %w", f.ID, err)
-		}
-		out = append(out, d)
 	}
-	return out, classes, nil
+
+	// depends_on holds node ids only; types reach the node through its
+	// dependency signatures.
+	deps := append(strList(d["depends_on"]), f.Uses...)
+	unknown := false
+	for i, id := range deps {
+		if !e.known[id] {
+			defect(defDepends, "depends_on entry %d (%d bytes) is an unknown id", i+1, len(id))
+			unknown = true
+		}
+	}
+	if len(kinds) > 0 || unknown {
+		return class, kinds, msgs, nil
+	}
+	sigs, serr := e.c.Slice(deps, f.ID)
+	if serr != nil {
+		defect(defDepends, "depends_on: %v", serr)
+		return class, kinds, msgs, nil
+	}
+	fnDeps := []string{}
+	for _, id := range deps {
+		if e.isFunction[id] && id != f.ID && !contains(fnDeps, id) {
+			fnDeps = append(fnDeps, id)
+		}
+	}
+	sort.Strings(fnDeps)
+	d["depends_on"] = fnDeps
+	nctx, _ := d["context"].(map[string]any)
+	if nctx == nil {
+		nctx = map[string]any{}
+	}
+	nctx["dependency_signatures"] = sigs
+	if _, ok := nctx["constraints"]; !ok && len(e.constraints) > 0 {
+		nctx["constraints"] = e.constraints
+	}
+	d["context"] = nctx
+	if verr := validateDraft(d); verr != nil {
+		defect(defSchema, "%v", verr)
+	}
+	return class, kinds, msgs, nil
 }
+
+// draftResult is what a Decompose reply held: the nodes that passed, the nodes
+// that did not (to be asked for again), and the noise that was ignored.
+type draftResult struct {
+	good    []map[string]any
+	classes map[string]string
+	bad     []pendingDraft
+	noise   []string
+}
+
+// splitDrafts reads a Decompose reply for the functions asked for. A node that
+// fails a check does not discard the others: it comes back in bad with its
+// defects. A node nobody asked for, or a second node for the same function, is
+// noise and ignored (the first is kept). Only a reply that is not a JSON array
+// of objects is an error, which makes it an unusable reply.
+func splitDrafts(text, component string, fns []contract.Function, c *contract.Contracts, r *run) (draftResult, error) {
+	var got []map[string]any
+	if err := json.Unmarshal([]byte(text), &got); err != nil {
+		return draftResult{}, fmt.Errorf("decompose reply is not a JSON array of nodes (%s)", jsonErr(err))
+	}
+	res := draftResult{classes: map[string]string{}}
+	want := map[string]bool{}
+	for _, f := range fns {
+		want[f.ID] = true
+	}
+	byID := map[string]map[string]any{}
+	for i, d := range got {
+		id, _ := d["id"].(string)
+		switch {
+		case !want[id]:
+			res.noise = append(res.noise, fmt.Sprintf("decompose reply node %d (id of %d bytes) is not one of the functions asked for", i+1, len(id)))
+		case byID[id] != nil:
+			res.noise = append(res.noise, fmt.Sprintf("decompose reply has two nodes for %s", id))
+		default:
+			byID[id] = d
+		}
+	}
+	env := newNodeEnv(component, c, r)
+	for _, f := range fns {
+		d := byID[f.ID]
+		if d == nil {
+			res.bad = append(res.bad, pendingDraft{Component: component, ID: f.ID, Defects: []string{defMissingNode},
+				msg: fmt.Sprintf("decompose reply has no node for %s", f.ID)})
+			continue
+		}
+		raw, err := copyDoc(d)
+		if err != nil {
+			return draftResult{}, err
+		}
+		class, kinds, msgs, err := env.normalizeNode(f, d)
+		if err != nil {
+			return draftResult{}, err
+		}
+		if len(kinds) > 0 {
+			res.bad = append(res.bad, pendingDraft{Component: component, ID: f.ID, Raw: raw, Defects: kinds, msg: strings.Join(msgs, "; ")})
+			continue
+		}
+		res.classes[f.ID] = class
+		res.good = append(res.good, d)
+	}
+	return res, nil
+}
+
+// leafDefect is one thing wrong with a leaf's contract, with its kind.
+type leafDefect struct{ kind, msg string }
 
 // checkLeaf is what every leaf must carry before it may enter the plan: an
 // input for every parameter, an output for every result, and an error entry
-// when the function can fail.
+// when the function can fail. It returns the first defect as an error.
 func checkLeaf(ct map[string]any, fd *ast.FuncDecl, declared map[string]bool) error {
+	if ds := leafDefects(ct, fd, declared); len(ds) > 0 {
+		return errors.New(ds[0].msg)
+	}
+	return nil
+}
+
+// leafDefects lists every leaf check that fails, in the order of checkLeaf.
+func leafDefects(ct map[string]any, fd *ast.FuncDecl, declared map[string]bool) []leafDefect {
+	var out []leafDefect
+	add := func(kind, format string, a ...any) { out = append(out, leafDefect{kind, fmt.Sprintf(format, a...)}) }
 	inputs := objects(ct["inputs"])
 	for i, in := range inputs {
 		if s, _ := in["type"].(string); strings.TrimSpace(s) == "" {
-			return fmt.Errorf("%s has no type", inputLabel(in, i, declared))
+			add(defInputType, "%s has no type", inputLabel(in, i, declared))
 		}
 	}
 	params, unnamed := 0, false
@@ -382,13 +491,13 @@ func checkLeaf(ct map[string]any, fd *ast.FuncDecl, declared map[string]bool) er
 					continue
 				}
 				if !hasInput(inputs, name.Name) {
-					return fmt.Errorf("inputs has no entry for parameter %q", name.Name)
+					add(defInputsMissing, "inputs has no entry for parameter %q", name.Name)
 				}
 			}
 		}
 	}
 	if unnamed && len(inputs) < params {
-		return fmt.Errorf("inputs has %d entries for %d parameters", len(inputs), params)
+		add(defInputsMissing, "inputs has %d entries for %d parameters", len(inputs), params)
 	}
 
 	results, returnsError := 0, false
@@ -402,11 +511,11 @@ func checkLeaf(ct map[string]any, fd *ast.FuncDecl, declared map[string]bool) er
 	}
 	outputs := objects(ct["outputs"])
 	if len(outputs) < results {
-		return fmt.Errorf("outputs has %d entries for %d results", len(outputs), results)
+		add(defOutputsCount, "outputs has %d entries for %d results", len(outputs), results)
 	}
 	for i, o := range outputs {
 		if s, _ := o["type"].(string); strings.TrimSpace(s) == "" {
-			return fmt.Errorf("output %d has no type", i+1)
+			add(defOutputType, "output %d has no type", i+1)
 		}
 	}
 
@@ -415,13 +524,13 @@ func checkLeaf(ct map[string]any, fd *ast.FuncDecl, declared map[string]bool) er
 		when, _ := e["when"].(string)
 		returns, _ := e["returns"].(string)
 		if strings.TrimSpace(when) == "" || strings.TrimSpace(returns) == "" {
-			return fmt.Errorf("errors entry %d needs both when and returns", i+1)
+			add(defErrorsPartial, "errors entry %d needs both when and returns", i+1)
 		}
 	}
 	if returnsError && len(errs) == 0 {
-		return errors.New("the function returns error but errors lists no condition")
+		add(defErrorsMissing, "the function returns error but errors lists no condition")
 	}
-	return nil
+	return out
 }
 
 // inputLabel names an input in an error: by name when it is a parameter the
