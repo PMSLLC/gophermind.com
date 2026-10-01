@@ -133,13 +133,21 @@ func newRig(t *testing.T, mods ...func(*rigOpts)) *rig {
 // existing one is reopened (the plan, the board and the repository are kept,
 // the in-memory secret is set again). stale_claim_seconds is 1 so a killed
 // worker's claim goes stale at once. The script is wired.
-func newRigIn(t *testing.T, dir string, script Script) *rig {
+func newRigIn(t *testing.T, dir string, script Script, mods ...func(*rigOpts)) *rig {
 	t.Helper()
 	t.Cleanup(func() { makeTreeWritable(dir) }) // runs before the owner's TempDir removal
 	repo := filepath.Join(dir, "repo")
 	_, statErr := os.Stat(repo)
-	g := buildRig(t, rigOpts{Settings: func(c *settings.Config) { c.Executor.StaleClaimSeconds = 1 }},
-		repo, filepath.Join(dir, "bb.db"), filepath.Join(dir, "modcache"), filepath.Join(dir, "brief"), statErr != nil)
+	var extra rigOpts
+	for _, m := range mods {
+		m(&extra)
+	}
+	g := buildRig(t, rigOpts{BriefEdit: extra.BriefEdit, Settings: func(c *settings.Config) {
+		c.Executor.StaleClaimSeconds = 1
+		if extra.Settings != nil {
+			extra.Settings(c)
+		}
+	}}, repo, filepath.Join(dir, "bb.db"), filepath.Join(dir, "modcache"), filepath.Join(dir, "brief"), statErr != nil)
 	g.wire(script)
 	return g
 }
