@@ -182,6 +182,12 @@ func TestPreflightGitIgnoresInheritedGitVariables(t *testing.T) {
 // vault holds GREETER_TOKEN = cliCanary.
 func plannedGreeter(t *testing.T) (id, repo string) {
 	t.Helper()
+	return plannedGreeterWith(t, nil)
+}
+
+// plannedGreeterWith is plannedGreeter with the brief text edited first.
+func plannedGreeterWith(t *testing.T, edit func(string) string) (id, repo string) {
+	t.Helper()
 	t.Setenv("GOPHERMIND_CONFIG_DIR", t.TempDir())
 	old := vaultOptions
 	vaultOptions = vault.Options{WorkFactor: 10}
@@ -202,7 +208,11 @@ func plannedGreeter(t *testing.T) (id, repo string) {
 		t.Fatal(err)
 	}
 	briefPath := filepath.Join(t.TempDir(), "brief.md")
-	if err := os.WriteFile(briefPath, []byte(strings.Replace(string(raw), "REPO_DIR", repo, 1)), 0o600); err != nil {
+	text := strings.Replace(string(raw), "REPO_DIR", repo, 1)
+	if edit != nil {
+		text = edit(text)
+	}
+	if err := os.WriteFile(briefPath, []byte(text), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	code, out, errs := runBriefCmd(t, "", "plan", briefPath, "--yes", "--fake", filepath.Join(greeterExecDir, "planner"))
@@ -480,8 +490,8 @@ func TestExitCodes(t *testing.T) {
 			t.Errorf("exitFor(%s, %q) = %d, want %d", c.status, c.stop, got, c.want)
 		}
 	}
-	for name, got := range map[string]int{"done": exitDone, "error": exitError, "invalid": exitInvalid, "waiting": exitWaiting, "escalated": exitEscalated, "interrupted": exitInterrupted, "preflight": exitPreflight} {
-		want := map[string]int{"done": 0, "error": 1, "invalid": 2, "waiting": 3, "escalated": 4, "interrupted": 5, "preflight": 6}[name]
+	for name, got := range map[string]int{"done": exitDone, "error": exitError, "invalid": exitInvalid, "waiting": exitWaiting, "escalated": exitEscalated, "interrupted": exitInterrupted, "preflight": exitPreflight, "fault": exitFault} {
+		want := map[string]int{"done": 0, "error": 1, "invalid": 2, "waiting": 3, "escalated": 4, "interrupted": 5, "preflight": 6, "fault": 7}[name]
 		if got != want {
 			t.Errorf("exit%s = %d, want %d", name, got, want)
 		}
@@ -511,12 +521,18 @@ func TestBriefRunPrintsSummaryAndPathOnEveryExitPath(t *testing.T) {
 		{"escalated", summaryReport(execGreeterID, "escalated", "human_stop"), nil, 4, ""},
 		{"waiting", summaryReport(execGreeterID, "escalated", "waiting_on_human"), nil, 3, "waiting: answer in "},
 		{"interrupted", summaryReport(execGreeterID, "interrupted", "signal"), nil, 5, "interrupted; continue with `gophermind brief run "},
-		{"harness fault with a report", summaryReport(execGreeterID, "failed", "harness_fault"), errors.New("executor: reading the ledger for the report failed"), 1, "error: executor: reading the ledger"},
+		{"harness fault with a report", summaryReport(execGreeterID, "failed", "harness_fault"), errors.New("executor: reading the ledger for the report failed"), exitFault, "error: executor: reading the ledger"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			id, repo := plannedGreeter(t)
 			useRun(t, goodReplies(t, ""))
+			inner := runHook
+			runHook = func() (*settings.Config, map[string]provider.Provider, error) {
+				cfg, p, err := inner()
+				cfg.Executor.Sandbox = "off"
+				return cfg, p, err
+			}
 			stubExecutor(t, func(_ context.Context, o executor.Options) (executor.Report, error) { return c.rep, c.err })
 			code, out, errs := runBriefCmd(t, "", "run", id)
 			if code != c.code {
@@ -526,7 +542,7 @@ func TestBriefRunPrintsSummaryAndPathOnEveryExitPath(t *testing.T) {
 			if !strings.Contains(errs, "report: "+filepath.Join(runDirOf(repo, id), "report.json")) || !strings.Contains(errs, c.note) {
 				t.Errorf("err = %q", errs)
 			}
-			if !strings.Contains(out, "Sandbox: off") || !strings.Contains(errs, "sandbox: off") {
+			if !strings.Contains(out, "Sandbox: off") || strings.Count(errs, "sandbox: off\n") != 1 {
 				t.Errorf("sandbox off is not announced: out=%q err=%q", out, errs)
 			}
 		})
@@ -545,7 +561,7 @@ func TestBriefRunHarnessErrorsWithoutAReportAreNonZero(t *testing.T) {
 			return executor.Report{}, errors.New(c.err)
 		})
 		code, out, errs := runBriefCmd(t, "", "run", id)
-		if code != exitError || !strings.Contains(errs, c.want) || strings.Contains(out, "Requirements covered") {
+		if code != exitFault || !strings.Contains(errs, c.want) || strings.Contains(out, "Requirements covered") {
 			t.Errorf("%q: code=%d out=%q err=%q", c.err, code, out, errs)
 		}
 		if _, err := os.Stat(filepath.Join(runDirOf(repo, id), "report.json")); err == nil {
@@ -1066,15 +1082,16 @@ func TestResolveBaseURLsTimesOutAHungPrimary(t *testing.T) {
 	}
 }
 
-func TestResolveBaseURLsOnlyProbesTheStrongTier(t *testing.T) {
+func TestResolveBaseURLsProbesEveryProviderTheChainsUse(t *testing.T) {
 	cfg := planner.FixtureSettings()
-	cfg.Providers = append(cfg.Providers, settings.ProviderConfig{Name: "other", BaseURL: "http://" + closedAddr(t) + "/v1", Visibility: settings.Private, MaxConcurrent: 1,
-		Models: []settings.ModelEntry{{ID: "m", ContextTokens: 1000}}})
-	cfg.Models["any"] = []string{"fake/fixture", "other/m"}
 	good := answering(t)
 	cfg.Providers[0].BaseURL = good.URL + "/v1"
+	cfg.Providers = append(cfg.Providers,
+		settings.ProviderConfig{Name: "other", BaseURL: good.URL + "/v1", Visibility: settings.Private, MaxConcurrent: 1, Models: []settings.ModelEntry{{ID: "m", ContextTokens: 1000}}},
+		settings.ProviderConfig{Name: "unused", BaseURL: "http://" + closedAddr(t) + "/v1", Visibility: settings.Private, MaxConcurrent: 1, Models: []settings.ModelEntry{{ID: "m", ContextTokens: 1000}}})
+	cfg.Models["any"] = []string{"fake/fixture", "other/m"}
 	_, res := resolveBaseURLs(context.Background(), cfg, &http.Client{})
-	if len(res) != 1 || res[0].Provider != "fake" {
+	if len(res) != 2 || res[0].Provider != "fake" || res[1].Provider != "other" {
 		t.Errorf("results = %+v", res)
 	}
 }
@@ -1096,4 +1113,168 @@ func loadTreeWaves(runDir string) (int, error) {
 		}
 	}
 	return len(seen), nil
+}
+
+func TestBriefRunSettingsFaultIsSeven(t *testing.T) {
+	id, _ := plannedGreeter(t)
+	runHook = func() (*settings.Config, map[string]provider.Provider, error) {
+		return nil, nil, errors.New("settings: invalid")
+	}
+	t.Cleanup(func() { runHook = nil })
+	if code, _, errs := runBriefCmd(t, "", "run", id); code != exitFault || !strings.Contains(errs, "error: settings: invalid") {
+		t.Errorf("code=%d err=%q", code, errs)
+	}
+}
+
+// ---- preflight: vault passphrase only when the run opens the vault ----
+
+func withoutSecrets(text string) string {
+	i := strings.Index(text, "secrets:\n")
+	j := strings.Index(text, "---\n\n")
+	if i < 0 || j < i {
+		panic("fixture brief changed")
+	}
+	return text[:i] + text[j:]
+}
+
+func TestBriefRunCheckEnvPassphraseOnlyWhenTheVaultIsNeeded(t *testing.T) {
+	id, _ := plannedGreeterWith(t, withoutSecrets)
+	srv := answering(t)
+	goBin, _ := exec.LookPath("go")
+	hook := func(mod func(*settings.Config)) {
+		runHook = func() (*settings.Config, map[string]provider.Provider, error) {
+			cfg := planner.FixtureSettings()
+			cfg.Providers[0].BaseURL = srv.URL + "/v1"
+			cfg.Executor.Sandbox = "off"
+			cfg.Executor.GoModCache = filepath.Join(t.TempDir(), "gomodcache")
+			cfg.Toolchain = map[string]string{"PATH": filepath.Dir(goBin) + ":/usr/bin:/bin"}
+			if mod != nil {
+				mod(cfg)
+			}
+			return cfg, nil, nil
+		}
+	}
+	t.Cleanup(func() { runHook = nil })
+	t.Setenv(vault.PassphraseEnv, "")
+
+	hook(nil)
+	code, out, errs := runBriefCmd(t, "", "run", id, "--check-env")
+	if code != 0 || !strings.Contains(out, "pass: vault passphrase: not needed") {
+		t.Fatalf("not needed: code=%d out=%q err=%q", code, out, errs)
+	}
+	hook(func(c *settings.Config) { c.Providers[0].APIKeySecret = "FAKE_KEY" })
+	code, out, errs = runBriefCmd(t, "", "run", id, "--check-env")
+	if code != exitPreflight || !strings.Contains(out, "FAIL: vault passphrase") {
+		t.Errorf("needed for a provider key: code=%d out=%q err=%q", code, out, errs)
+	}
+}
+
+// ---- probes ----
+
+func TestProbeAcceptsOnlyRealAnswers(t *testing.T) {
+	serve := func(version, models int) *httptest.Server {
+		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/api/version":
+				w.WriteHeader(version)
+			case "/v1/models":
+				w.WriteHeader(models)
+			default:
+				w.WriteHeader(404)
+			}
+		}))
+		t.Cleanup(s.Close)
+		return s
+	}
+	for _, c := range []struct {
+		name            string
+		version, models int
+		want            bool
+	}{
+		{"ollama", 200, 404, true},
+		{"openai-compatible", 404, 200, true},
+		{"auth required", 404, 401, true},
+		{"forbidden", 404, 403, true},
+		{"nothing known", 404, 404, false},
+		{"server error", 500, 503, false},
+		{"version unauthorised is not an answer", 401, 404, false},
+		{"redirect", 302, 302, false},
+	} {
+		s := serve(c.version, c.models)
+		if got := probeBaseURL(context.Background(), &http.Client{}, s.URL+"/v1"); got != c.want {
+			t.Errorf("%s: probe = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestResolveBaseURLsNeverFallsBackAcrossVisibility(t *testing.T) {
+	cfg := planner.FixtureSettings() // fake is private
+	cfg.Providers[0].BaseURL = "http://" + closedAddr(t) + "/v1"
+	cfg.Providers[0].BaseURLFallbacks = []string{"http://203.0.113.9:11434/v1"} // a public literal, never dialled
+	old := probeTimeout
+	probeTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { probeTimeout = old })
+	got, res := resolveBaseURLs(context.Background(), cfg, &http.Client{Transport: failingTransport{t}})
+	if got.Providers[0].BaseURL != cfg.Providers[0].BaseURL || res[0].Answered || res[0].Fallback {
+		t.Errorf("a public fallback was used or probed for a private provider: %+v", res)
+	}
+}
+
+// failingTransport fails the test when asked to reach a host that is not loopback.
+type failingTransport struct{ t *testing.T }
+
+func (f failingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	if h := r.URL.Hostname(); h != "127.0.0.1" {
+		f.t.Errorf("a request went to %s", h)
+	}
+	return nil, errors.New("no network")
+}
+
+// ---- status never writes ----
+
+func TestBriefStatusIsReadOnly(t *testing.T) {
+	id, _ := plannedGreeter(t)
+	dbPath := filepath.Join(os.Getenv("GOPHERMIND_CONFIG_DIR"), "blackboard.db")
+	before, err := os.ReadFile(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fi, _ := os.Stat(dbPath)
+	// A file that cannot be written: any read-write open of it fails.
+	if err := os.Chmod(dbPath, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dbPath, 0o600) })
+	code, out, errs := runBriefCmd(t, "", "status", id)
+	if code != 0 || !strings.Contains(out, "model calls by task type") {
+		t.Fatalf("code=%d out=%q err=%q", code, out, errs)
+	}
+	after, _ := os.ReadFile(dbPath)
+	fi2, _ := os.Stat(dbPath)
+	if !bytes.Equal(before, after) || !fi.ModTime().Equal(fi2.ModTime()) {
+		t.Error("brief status changed the database file")
+	}
+	if code, _, errs := runBriefCmd(t, "", "calls", id); code != 0 {
+		t.Errorf("calls: code=%d err=%q", code, errs)
+	}
+}
+
+// status of a run whose database is gone says so; it does not create or migrate one.
+func TestBriefStatusDoesNotCreateADatabase(t *testing.T) {
+	id, _ := plannedGreeter(t)
+	cfgDir := os.Getenv("GOPHERMIND_CONFIG_DIR")
+	for _, name := range []string{"blackboard.db", "blackboard.db-wal", "blackboard.db-shm"} {
+		p := filepath.Join(cfgDir, name)
+		if filepath.Dir(p) != cfgDir || !strings.HasPrefix(filepath.Base(p), "blackboard.db") {
+			t.Fatal("unexpected path")
+		}
+		_ = os.Remove(p)
+	}
+	code, _, errs := runBriefCmd(t, "", "status", id)
+	if code != 1 || !strings.Contains(errs, "cannot be opened for reading") {
+		t.Errorf("code=%d err=%q", code, errs)
+	}
+	if _, err := os.Stat(filepath.Join(cfgDir, "blackboard.db")); err == nil {
+		t.Error("status created a database")
+	}
 }

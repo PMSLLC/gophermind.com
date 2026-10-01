@@ -281,7 +281,7 @@ func TestReasoningEffortDefaultsToNoneForMiniOnly(t *testing.T) {
 func TestBaseURLFallbacksRoundTripAndValidate(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "gophermind.yaml")
 	c := settings.Default()
-	c.Providers[0].BaseURLFallbacks = []string{"http://10.8.0.6:11434/v1", "https://alt.example.com/v1"}
+	c.Providers[0].BaseURLFallbacks = []string{"http://10.8.0.6:11434/v1", "http://mini.local:11434/v1"}
 	if err := c.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -317,5 +317,65 @@ func TestDefaultMiniHasTheVPNFallback(t *testing.T) {
 	d := settings.Default()
 	if d.Providers[0].Name != "mini" || !reflect.DeepEqual(d.Providers[0].BaseURLFallbacks, []string{"http://10.8.0.6:11434/v1"}) {
 		t.Errorf("mini fallbacks = %v", d.Providers[0].BaseURLFallbacks)
+	}
+}
+
+func TestFallbackPrivacyRules(t *testing.T) {
+	cases := []struct {
+		name    string
+		mutate  func(c *settings.Config)
+		wantErr bool
+	}{
+		{"private provider, VPN address", func(c *settings.Config) { c.Providers[0].BaseURLFallbacks = []string{"http://10.8.0.6:11434/v1"} }, false},
+		{"private provider, loopback, RFC1918, CGNAT, link-local, ULA, .internal", func(c *settings.Config) {
+			c.Providers[0].BaseURLFallbacks = []string{"http://127.0.0.1/v1", "http://localhost/v1", "http://172.20.1.1/v1", "http://192.168.9.9/v1",
+				"http://100.64.1.2/v1", "http://169.254.1.1/v1", "http://[fd00::1]/v1", "http://box.internal/v1", "http://box.lan/v1"}
+		}, false},
+		{"private provider, public IP", func(c *settings.Config) { c.Providers[0].BaseURLFallbacks = []string{"http://8.8.8.8/v1"} }, true},
+		{"private provider, public host", func(c *settings.Config) { c.Providers[0].BaseURLFallbacks = []string{"https://api.example.com/v1"} }, true},
+		{"private provider, just outside 172.16/12", func(c *settings.Config) { c.Providers[0].BaseURLFallbacks = []string{"http://172.32.0.1/v1"} }, true},
+		{"private_only, hostname", func(c *settings.Config) {
+			c.Privacy.Mode = "private_only"
+			c.Providers[0].BaseURLFallbacks = []string{"http://mini.example.com/v1"}
+		}, true},
+		{"private_only, public provider with a public fallback", func(c *settings.Config) {
+			c.Privacy.Mode = "private_only"
+			c.Providers[1].BaseURLFallbacks = []string{"https://alt.example.com/v1"}
+		}, true},
+		{"public provider, public fallback", func(c *settings.Config) { c.Providers[1].BaseURLFallbacks = []string{"https://alt.example.com/v1"} }, false},
+		{"public provider, private fallback (different visibility)", func(c *settings.Config) { c.Providers[1].BaseURLFallbacks = []string{"http://10.8.0.6/v1"} }, true},
+	}
+	for _, c := range cases {
+		cfg := settings.Default()
+		c.mutate(cfg)
+		err := cfg.Validate()
+		if (err != nil) != c.wantErr {
+			t.Errorf("%s: err = %v, wantErr %v", c.name, err, c.wantErr)
+			continue
+		}
+		if err != nil {
+			msg := err.Error()
+			if !strings.Contains(msg, "base_url_fallbacks") || !strings.Contains(msg, "mini") && !strings.Contains(msg, "kilo") || strings.Contains(msg, "example.com") || strings.Contains(msg, "8.8.8.8") {
+				t.Errorf("%s: message %q must name the provider and key only", c.name, msg)
+			}
+		}
+	}
+}
+
+func TestFallbackAllowedMirrorsValidate(t *testing.T) {
+	cfg := settings.Default()
+	mini := cfg.Providers[0]
+	if !cfg.FallbackAllowed(mini, "http://10.8.0.6:11434/v1") || cfg.FallbackAllowed(mini, "https://api.example.com/v1") {
+		t.Error("FallbackAllowed disagrees with Validate for a private provider")
+	}
+}
+
+func TestLoadAcceptsAValidPrivateFallbackFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gophermind.yaml")
+	if _, err := settings.Load(path); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := settings.Load(path); err != nil || len(got.Providers[0].BaseURLFallbacks) != 1 {
+		t.Fatalf("err = %v, config = %+v", err, got)
 	}
 }

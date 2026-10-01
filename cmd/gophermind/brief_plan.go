@@ -303,7 +303,7 @@ func briefStatus(runID string, out, errw io.Writer) int {
 		fmt.Fprintf(out, "incomplete ledger: %d model call(s) could not be recorded\n", st.LedgerErrors)
 	}
 
-	d, code := openBriefDB(errw)
+	d, code := openBriefDBReadOnly(errw)
 	if d == nil {
 		return code
 	}
@@ -350,7 +350,7 @@ func briefCalls(runID string, out, errw io.Writer) int {
 		fmt.Fprintf(errw, "error: %v\n", err)
 		return exitError
 	}
-	d, code := openBriefDB(errw)
+	d, code := openBriefDBReadOnly(errw)
 	if d == nil {
 		return code
 	}
