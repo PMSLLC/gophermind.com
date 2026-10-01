@@ -200,6 +200,9 @@ type Result struct {
 	Canceled bool // ctx was cancelled
 	Out      Output
 	Err      error // start failure only; never wraps output
+	// Warnings are fixed texts (never output) about the run itself, such as a
+	// descendant that survived the post-run sweep.
+	Warnings []string
 }
 
 func startErr(err error) error {
@@ -211,6 +214,9 @@ func startErr(err error) error {
 	}
 	return errors.New("runner: could not start the program")
 }
+
+// killProc kills one process; tests replace it.
+var killProc = func(pid int) error { return syscall.Kill(pid, syscall.SIGKILL) }
 
 // Run runs s. The whole process group is killed on timeout or cancellation, and
 // once more after every run so a command's backgrounded leftovers cannot outlive it.
@@ -242,6 +248,9 @@ func (r *Runner) Run(ctx context.Context, s Spec) Result {
 		return Result{ExitCode: -1, Err: startErr(err)}
 	}
 	pgid := cmd.Process.Pid
+	sw := newSweeper(pgid)
+	stopPoll := make(chan struct{})
+	go sw.poll(stopPoll)
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 	var timeout <-chan time.Time
@@ -260,12 +269,18 @@ func (r *Runner) Run(ctx context.Context, s Spec) Result {
 		_ = syscall.Kill(-pgid, syscall.SIGKILL)
 	case <-timeout:
 		res.TimedOut = true
+		sw.killEscapees()                        // descendants outside the group (setsid) while the ancestry is intact
 		_ = syscall.Kill(-pgid, syscall.SIGKILL) // before the reap: the leader's pid is still ours
 		<-done
 	case <-ctx.Done():
 		res.Canceled = true
+		sw.killEscapees()
 		_ = syscall.Kill(-pgid, syscall.SIGKILL)
 		<-done
+	}
+	close(stopPoll)
+	if sw.finish() > 0 {
+		res.Warnings = append(res.Warnings, survivorWarning)
 	}
 	res.Duration = time.Since(start)
 	res.ExitCode = -1
