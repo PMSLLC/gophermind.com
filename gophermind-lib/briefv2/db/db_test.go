@@ -1,7 +1,9 @@
 package db_test
 
 import (
+	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 
@@ -68,4 +70,91 @@ func TestDefaultPathUsesConfigDir(t *testing.T) {
 	if err != nil || p != filepath.Join(dir, "blackboard.db") {
 		t.Errorf("DefaultPath = %q, %v", p, err)
 	}
+}
+
+func modeOf(t *testing.T, path string) os.FileMode {
+	t.Helper()
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("%s: %v", filepath.Base(path), err)
+	}
+	return fi.Mode().Perm()
+}
+
+// The database holds run state and the model-call ledger: owner only, including
+// the write-ahead log and shared-memory files SQLite creates beside it, in a
+// config folder that is itself world-readable.
+func TestDatabaseFilesAreOwnerOnly(t *testing.T) {
+	old := syscall.Umask(0o022)
+	defer syscall.Umask(old)
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GOPHERMIND_CONFIG_DIR", dir)
+	path, err := db.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := db.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	for i := 0; i < 20; i++ {
+		if _, err := d.Exec(`INSERT INTO events (run_id, node_id, kind, at) VALUES ('r','n','k',?)`, db.TS(time.Now())); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if m := modeOf(t, path+suffix); m != 0o600 {
+			t.Errorf("blackboard.db%s mode = %o, want 600", suffix, m)
+		}
+	}
+	// a second connection set (another process) and a reopen keep the modes
+	d2, err := db.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d2.Close()
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if m := modeOf(t, path+suffix); m != 0o600 {
+			t.Errorf("after reopen, blackboard.db%s mode = %o, want 600", suffix, m)
+		}
+	}
+}
+
+func TestOpenTightensAnExistingLooseDatabase(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bb.db")
+	d, err := db.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.Close()
+	for _, s := range []string{"", "-wal", "-shm"} {
+		if err := os.WriteFile(path+s, mustRead(t, path+s), 0o644); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		_ = os.Chmod(path+s, 0o644)
+	}
+	d, err = db.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	for _, s := range []string{"", "-wal", "-shm"} {
+		if m := modeOf(t, path+s); m != 0o600 {
+			t.Errorf("%q mode = %o, want 600", s, m)
+		}
+	}
+}
+
+func mustRead(t *testing.T, p string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(p)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	return b
 }
