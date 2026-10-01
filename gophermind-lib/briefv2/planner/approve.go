@@ -26,6 +26,15 @@ func approveDone(r *run) bool { return exists(r.path(fileApproval)) }
 // approve shows the plan to a person and records the decision. Nothing past
 // this stage runs without an approval.json whose hash matches the plan.
 func (p *Planner) approve(ctx context.Context, r *run) error {
+	// A coverage.json that was edited after its stage, or written by an older
+	// planner, is held to the same quality gate as the stage itself.
+	cov, err := ReadCoverage(r.dir)
+	if err != nil {
+		return err
+	}
+	if weak := rootTestDefects(r.reqs, cov.RootTests, qualityOptions(r.brief.Front)); len(weak) > 0 {
+		return &QualityError{Items: weak}
+	}
 	md, hash, err := RenderPlan(r.dir)
 	if err != nil {
 		return err
@@ -168,7 +177,11 @@ func RenderPlan(runDir string) (markdown, hash string, err error) {
 	}
 	fmt.Fprintf(&s, "- Secrets (names only): %s\n- Environment: %s\n- Hosts: %s\n", orNone(secrets), orNone(env), orNone(hosts))
 
-	s.WriteString("\n## Coverage\n\n| Requirement | Text | Covered by | Root tests |\n|---|---|---|---|\n")
+	quality := map[string][]string{}
+	for _, it := range rootTestDefects(reqs, cov.RootTests, qualityOptions(f)) {
+		quality[it.Requirement] = it.Findings
+	}
+	s.WriteString("\n## Coverage\n\n| Requirement | Text | Covered by | Root tests | Quality |\n|---|---|---|---|---|\n")
 	text := map[string]string{}
 	for _, q := range reqs {
 		text[q.ID] = q.Text
@@ -177,7 +190,7 @@ func RenderPlan(runDir string) (markdown, hash string, err error) {
 		}
 	}
 	for _, cv := range cov.Covered {
-		fmt.Fprintf(&s, "| %s | %s | %s | %s |\n", cv.Requirement, cell(oneLine(text[cv.Requirement], 80)), cell(orNone(cv.Nodes)), cell(orNone(cv.RootTests)))
+		fmt.Fprintf(&s, "| %s | %s | %s | %s | %s |\n", cv.Requirement, cell(oneLine(text[cv.Requirement], 80)), cell(orNone(cv.Nodes)), cell(orNone(cv.RootTests)), cell(qualityCell(quality, cv.Requirement)))
 	}
 	fmt.Fprintf(&s, "\nRequirements covered: %d of %d\n", len(cov.Covered), len(reqs))
 	if cov.Rounds > 0 {
