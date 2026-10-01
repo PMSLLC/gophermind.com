@@ -91,13 +91,8 @@ func briefPreflight(ctx context.Context, rec planner.RunRecord, repo string, cfg
 		c.pass("clean tree", "")
 	}
 
-	// vault passphrase, declared secrets
-	_, pwErr := runPassphraseNoPrompt(in)
-	if pwErr != nil {
-		c.fail("vault passphrase", "not set and no terminal to prompt; set GOPHERMIND_VAULT_PASSPHRASE")
-	} else {
-		c.pass("vault passphrase", "")
-	}
+	// vault passphrase, declared secrets. The vault is opened by a run only for a
+	// declared secret or a provider's api_key_secret; otherwise no passphrase is needed.
 	var secretNames []string
 	var b *brief.Brief
 	if src, err := os.ReadFile(filepath.Join(rec.RunDir, "brief.md")); err == nil {
@@ -107,6 +102,21 @@ func briefPreflight(ctx context.Context, rec planner.RunRecord, repo string, cfg
 		for _, s := range b.Front.Secrets {
 			secretNames = append(secretNames, s.Name)
 		}
+	}
+	vaultNeeded := len(secretNames) > 0
+	for _, p := range cfg.Providers {
+		if p.APIKeySecret != "" {
+			vaultNeeded = true
+		}
+	}
+	_, pwErr := runPassphraseNoPrompt(in)
+	switch {
+	case !vaultNeeded:
+		c.pass("vault passphrase", "not needed")
+	case pwErr != nil:
+		c.fail("vault passphrase", "not set and no terminal to prompt; set GOPHERMIND_VAULT_PASSPHRASE")
+	default:
+		c.pass("vault passphrase", "")
 	}
 	if len(secretNames) > 0 {
 		var v *vault.Vault
@@ -150,7 +160,7 @@ func briefPreflight(ctx context.Context, rec planner.RunRecord, repo string, cfg
 		}
 	}
 
-	// providers of the strong tier
+	// providers every tier chain uses
 	_, res := resolveBaseURLs(ctx, cfg, &http.Client{})
 	for _, r := range res {
 		name := "provider " + r.Provider

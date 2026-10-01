@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -222,6 +223,9 @@ func (c *Config) Validate() error {
 			if !validBaseURL(u) {
 				return fmt.Errorf("%s: base_url_fallbacks entries must be http or https URLs with a host and no credentials", where)
 			}
+			if !c.FallbackAllowed(p, u) {
+				return fmt.Errorf("%s: base_url_fallbacks entries must keep the provider's visibility: a private provider, or any provider under privacy.mode private_only, takes only private-network hosts, and a public provider only public ones", where)
+			}
 		}
 		if p.Visibility != Private && p.Visibility != Public {
 			return fmt.Errorf("%s: visibility must be private or public, got %q", where, p.Visibility)
@@ -311,6 +315,45 @@ func (c *Config) Validate() error {
 func validBaseURL(raw string) bool {
 	u, err := url.Parse(raw)
 	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Hostname() != "" && u.User == nil
+}
+
+// FallbackAllowed says whether raw may stand in for p's base_url without
+// changing who sees the prompts and the provider's key. The router's privacy
+// rule keys on visibility, so a private provider (and every provider under
+// privacy.mode private_only) may only fall back to a private-network host and a
+// public provider only to a public one. The host is judged by its literal text:
+// no name is resolved.
+func (c *Config) FallbackAllowed(p ProviderConfig, raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Hostname() == "" {
+		return false
+	}
+	private := privateHost(u.Hostname())
+	if p.Visibility == Private || c.Privacy.Mode == "private_only" {
+		return private
+	}
+	return !private
+}
+
+var cgnat = netip.MustParsePrefix("100.64.0.0/10")
+
+// privateHost: loopback, RFC 1918, the CGNAT/VPN range 100.64/10, link-local,
+// IPv6 ULA, or a name ending in .local, .internal or .lan (or localhost).
+func privateHost(host string) bool {
+	if a, err := netip.ParseAddr(strings.Trim(host, "[]")); err == nil {
+		a = a.Unmap()
+		return a.IsLoopback() || a.IsPrivate() || a.IsLinkLocalUnicast() || cgnat.Contains(a)
+	}
+	h := strings.ToLower(strings.TrimSuffix(host, "."))
+	if h == "localhost" {
+		return true
+	}
+	for _, suf := range []string{".local", ".internal", ".lan"} {
+		if strings.HasSuffix(h, suf) {
+			return true
+		}
+	}
+	return false
 }
 
 // Visibility reports a provider's visibility; ok is false for an unknown name.

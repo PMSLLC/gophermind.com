@@ -29,11 +29,21 @@ Anything else under `gophermind brief` prints this usage and exits 1.
 "Running a plan").
 
 Exit codes: 0 ok (for `run`: verified), 1 error (usage, unreadable file, failed
-check, uncovered requirements, a failed run, a harness fault), 2 invalid brief
-(the message names the offending field), 3 waiting on a human (`plan`, `resume`
-and `run` with the file gate), 4 an escalated leaf or a human stop (`run`), 5
-interrupted by a signal or `max_run_minutes`, resumable (`run`), 6 a failed
-preflight (`run --check-env`; not a run).
+check, uncovered requirements, a failed run), 2 invalid brief (the message names
+the offending field), 3 waiting on a human (`plan`, `resume` and `run` with the
+file gate), 4 an escalated leaf or a human stop (`run`), 5 interrupted by a
+signal or `max_run_minutes`, resumable (`run`), 6 a failed preflight (`run
+--check-env`; not a run), 7 a harness fault (`run`: the repository cannot be
+opened, the sandbox is refused, the settings are invalid, the plan changed since
+the run started, a leaf is held by a live worker).
+
+For an orchestrator driving `gophermind brief run`: stdout carries the summary,
+whose last two lines are `Requirements covered: N of N` and `Acceptance passed: N
+of N`; stderr carries progress lines, `report: <path>`, `waiting: ...`,
+`interrupted; ...` and `sandbox: off` (printed once, at the start; the summary's
+`Sandbox:` line and the report's environment section record it afterwards). A
+failed run exits 1 and a harness fault exits 7, so the two can be told apart; a
+harness fault that left no report prints `error: ...` and no summary.
 
 `plan` takes a brief through Load, Clarify, Contract, Decompose, Coverage,
 Approve and Test-writer (see "Planning a brief"). `resume` continues a run from
@@ -131,8 +141,7 @@ fixed words only, so they are safe to read after a `kill -9`. At the end, on eve
 path that produced a report (including a failed or interrupted one), the command
 prints `report: <path>` to stderr and the summary to stdout. `waiting: answer in
 <run folder>, then run gophermind brief run <id>` appears when the file gate is
-waiting. When the sandbox is off, `sandbox: off` is printed at the start and the
-end.
+waiting. When the sandbox is off, `sandbox: off` is printed once, at the start.
 
 `gophermind brief report <run-id>` prints the summary of `report.json` (readable
 for schema versions 1 and 2). `--json` prints the file unchanged. With no report
@@ -145,31 +154,25 @@ blackboard and takes no claim.
 
 An escalation that needs a person ends the run with exit 4 (or 3 with the file
 gate). A harness error that left no report (the plan changed since the run started,
-a leaf held by a live worker, a refused preflight) prints `error: ...` and exits 1;
+a leaf held by a live worker, a refused preflight) prints `error: ...` and exits 7;
 for a live worker, wait up to `executor.stale_claim_seconds` and run again.
 
 ### Preflight without a run
 
-`gophermind brief run <run-id> --check-env` checks the environment and calls no
-model. It prints one line per check, `pass: <name>` or `FAIL: <name>: <reason>`,
-then `preflight: N of M passed`, and exits 6 when any check failed and 0 when all
-passed. The checks, by their fixed names: `sandbox` (the setting, and that
-`sandbox-exec` runs when it is on), `go toolchain` (`go` found on the settings
-toolchain PATH), `git repository`, `clean tree` (clean except the test files of the
-plan; a run that has already started is left to the executor), `vault passphrase`,
-`secret <NAME>` for each declared secret (present under the run's scope; names
-only, never values), `secret host <NAME>` for each secret whose value is a URL with
-a loopback host (a 2 second dial), `provider <name>` for each provider of the
-strong tier (an HTTP GET of `/api/version` on the host, then of `<base_url>/models`, 3
-seconds in all; any answer below 500 counts), `approval` (present and valid) and `disk space` (2 GiB free where the
-module cache lives).
+`gophermind brief run <run-id> --check-env` checks the environment and calls no model. It prints one line per check, `pass: <name>` or `FAIL: <name>: <reason>`, then `preflight: N of M passed`, and exits 6 when any check failed and 0 when all passed. Nothing is written. The checks, by their fixed names:
 
-A provider may list `base_url_fallbacks` in the settings. When `base_url` does not
-answer within 3 seconds, the fallbacks are tried in order, at preflight and at the
-start of a run, and the first that answers is used for that process only: the
-settings file is never rewritten. The default mini entry lists its VPN address
-(`http://10.8.0.6:11434/v1`). The preflight says which host answered, and the run
-report's environment section records the host (host only, never the URL).
+- `sandbox`: the setting, and that `sandbox-exec` runs when it is on.
+- `go toolchain`: a `go` binary on the settings toolchain PATH.
+- `git repository`: the repository root holds a `.git` entry (the check does not look for the `git` binary; the next check runs it).
+- `clean tree`: `git status` shows nothing changed except the test files of the plan (a run that has already started is left to the executor).
+- `vault passphrase`: the passphrase is in `GOPHERMIND_VAULT_PASSPHRASE` or a terminal is attached. It is `not needed` (and passes) when the brief declares no secret and no provider names an `api_key_secret`, because the run never opens the vault then.
+- `secret <NAME>` for each declared secret: present under the run's scope (names only, never values).
+- `secret host <NAME>` for each secret whose value is a URL with a loopback host: a 2 second dial.
+- `provider <name>` for each provider that any tier chain uses: `GET /api/version` on the host answers 200, or `GET <base_url>/models` answers 2xx, 401 or 403 (a server that wants a key is there), within 3 seconds in all. A redirect, a 404 or a 5xx is not an answer.
+- `approval`: present and valid.
+- `disk space`: 2 GiB free where the module cache lives.
+
+A provider may list `base_url_fallbacks` in the settings. When `base_url` does not answer, the fallbacks are tried in order, at preflight and at the start of a run, and the first that answers is used for that process only: the settings file is never rewritten. A fallback may not change who sees the prompts and the provider's key. The router's privacy rule keys on a provider's visibility, so a `private` provider (and every provider under `privacy.mode: private_only`) accepts only a private-network host: loopback, RFC 1918, the VPN range 100.64.0.0/10, link-local, IPv6 ULA, or a name ending in `.local`, `.internal` or `.lan`; a public provider accepts only public hosts. The host is judged by its text and no name is resolved. `settings.Validate` refuses a violating entry (the message names the provider and the key), and preflight and the start of a run skip one without dialling it. The default mini entry lists its VPN address (`http://10.8.0.6:11434/v1`). The preflight says which host answered, and the run report's environment section records the host (host only, never the URL).
 
 ## Sandbox and network
 

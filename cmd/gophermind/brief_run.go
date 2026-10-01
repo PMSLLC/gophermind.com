@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 
 	"gophermind/gophermind-lib/briefv2/blackboard"
 	"gophermind/gophermind-lib/briefv2/brief"
+	"gophermind/gophermind-lib/briefv2/db"
 	"gophermind/gophermind-lib/briefv2/events"
 	"gophermind/gophermind-lib/briefv2/executor"
 	"gophermind/gophermind-lib/briefv2/human"
@@ -36,6 +38,7 @@ const (
 	exitEscalated   = 4 // an escalated leaf or a human stop
 	exitInterrupted = 5 // signal or max_run_minutes; resumable
 	exitPreflight   = 6 // `brief run --check-env` found a failed check; not a run
+	exitFault       = 7 // a harness fault: no repo, sandbox refused, settings invalid, plan changed, live worker
 )
 
 // runHook is nil in production. A test sets it to replace settings loading and
@@ -155,17 +158,17 @@ func briefRun(args []string, in *os.File, out, errw io.Writer) int {
 	if runHook != nil {
 		if cfg, providers, err = runHook(); err != nil {
 			fmt.Fprintf(errw, "error: %v\n", err)
-			return exitError
+			return exitFault
 		}
 	} else {
 		path, err := settings.Path()
 		if err != nil {
 			fmt.Fprintf(errw, "error: %v\n", err)
-			return exitError
+			return exitFault
 		}
 		if cfg, err = settings.Load(path); err != nil {
 			fmt.Fprintf(errw, "error: %v\n", err)
-			return exitError
+			return exitFault
 		}
 	}
 	if checkEnv {
@@ -256,7 +259,7 @@ func briefRun(args []string, in *os.File, out, errw io.Writer) int {
 // finishRun prints what a run left behind, on every path: the error, the
 // report path and the summary, whose last two lines are the proof lines.
 func finishRun(id, runDir string, rep executor.Report, err error, out, errw io.Writer) int {
-	code := exitError
+	code := exitFault
 	if err != nil {
 		var inv *brief.InvalidError
 		if errors.As(err, &inv) {
@@ -276,9 +279,6 @@ func finishRun(id, runDir string, rep executor.Report, err error, out, errw io.W
 		fmt.Fprintf(errw, "waiting: answer in %s, then run gophermind brief run %s\n", runDir, id)
 	case rep.Status == "interrupted":
 		fmt.Fprintf(errw, "interrupted; continue with `gophermind brief run %s`\n", id)
-	}
-	if rep.Sandbox == "off" {
-		fmt.Fprintln(errw, "sandbox: off")
 	}
 	fmt.Fprintf(errw, "report: %s\n", filepath.Join(runDir, report.FileName))
 	fmt.Fprint(out, rep.Summary())
@@ -542,45 +542,58 @@ type probeResult struct {
 	Fallback bool // a base_url_fallbacks entry answered, not base_url
 }
 
-// resolveBaseURLs probes every provider of the strong tier: base_url first,
+// resolveBaseURLs probes every provider the tier chains use: base_url first,
 // then base_url_fallbacks in order. The first that answers within
-// probeTimeout is used. It returns a copy of cfg with those base URLs, so the
-// override lasts for the process and the config file is never rewritten; a
+// probeTimeout is used. A fallback that would change who sees the prompts (a
+// public host for a private provider, or any public host under
+// privacy.mode private_only) is skipped without being dialled, even when the
+// config was not validated. It returns a copy of cfg with those base URLs, so
+// the override lasts for the process and the config file is never rewritten; a
 // provider nothing answered for keeps its base_url.
 func resolveBaseURLs(ctx context.Context, cfg *settings.Config, client *http.Client) (*settings.Config, []probeResult) {
 	c := *cfg
 	c.Providers = append([]settings.ProviderConfig(nil), cfg.Providers...)
 	var res []probeResult
 	seen := map[string]bool{}
-	for _, entry := range cfg.Models["strong"] {
-		name, _, ok := settings.SplitEntry(entry)
-		if !ok || seen[name] {
-			continue
-		}
-		seen[name] = true
-		for i, p := range c.Providers {
-			if p.Name != name {
+	for _, tier := range settings.Tiers {
+		for _, entry := range cfg.Models[tier] {
+			name, _, ok := settings.SplitEntry(entry)
+			if !ok || seen[name] {
 				continue
 			}
-			r := probeResult{Provider: name}
-			for j, base := range append([]string{p.BaseURL}, p.BaseURLFallbacks...) {
-				if probeBaseURL(ctx, client, base) {
-					r.Answered, r.Fallback = true, j > 0
-					if u, err := url.Parse(base); err == nil {
-						r.Host = u.Hostname()
-					}
-					c.Providers[i].BaseURL = base
-					break
+			seen[name] = true
+			for i, p := range c.Providers {
+				if p.Name != name {
+					continue
 				}
+				r := probeResult{Provider: name}
+				bases := []string{p.BaseURL}
+				for _, fb := range p.BaseURLFallbacks {
+					if cfg.FallbackAllowed(p, fb) {
+						bases = append(bases, fb)
+					}
+				}
+				for j, base := range bases {
+					if probeBaseURL(ctx, client, base) {
+						r.Answered, r.Fallback = true, j > 0
+						if u, err := url.Parse(base); err == nil {
+							r.Host = u.Hostname()
+						}
+						c.Providers[i].BaseURL = base
+						break
+					}
+				}
+				res = append(res, r)
 			}
-			res = append(res, r)
 		}
 	}
 	return &c, res
 }
 
-// probeBaseURL says whether base answers: GET /api/version on its origin, then
-// GET <base>/models, within probeTimeout in all. Any answer below 500 counts.
+// probeBaseURL says whether base answers, within probeTimeout in all: GET
+// /api/version on its origin answers with 200, or GET <base>/models answers
+// 2xx, or 401 or 403 (a server that wants a key is there). Anything else, a
+// redirect, a 404 or a 5xx, is not an answer.
 func probeBaseURL(ctx context.Context, client *http.Client, base string) bool {
 	u, err := url.Parse(base)
 	if err != nil || u.Host == "" {
@@ -588,12 +601,23 @@ func probeBaseURL(ctx context.Context, client *http.Client, base string) bool {
 	}
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
-	for _, target := range []string{u.Scheme + "://" + u.Host + "/api/version", strings.TrimRight(base, "/") + "/models"} {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	c := *client
+	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	targets := []struct {
+		url string
+		ok  func(code int) bool
+	}{
+		{u.Scheme + "://" + u.Host + "/api/version", func(code int) bool { return code == http.StatusOK }},
+		{strings.TrimRight(base, "/") + "/models", func(code int) bool {
+			return code/100 == 2 || code == http.StatusUnauthorized || code == http.StatusForbidden
+		}},
+	}
+	for _, t := range targets {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.url, nil)
 		if err != nil {
 			return false
 		}
-		resp, err := client.Do(req)
+		resp, err := c.Do(req)
 		if err != nil {
 			if ctx.Err() != nil {
 				return false
@@ -602,7 +626,7 @@ func probeBaseURL(ctx context.Context, client *http.Client, base string) bool {
 		}
 		io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
 		resp.Body.Close()
-		if resp.StatusCode < 500 {
+		if t.ok(resp.StatusCode) {
 			return true
 		}
 	}
@@ -619,4 +643,23 @@ func envNotes(res []probeResult) []string {
 		}
 	}
 	return notes
+}
+
+// openBriefDBReadOnly opens the existing database for reading only: status and
+// calls must not migrate, create files or checkpoint.
+func openBriefDBReadOnly(errw io.Writer) (*sql.DB, int) {
+	path, err := db.DefaultPath()
+	if err == nil {
+		if _, err = os.Stat(path); err == nil {
+			var d *sql.DB
+			if d, err = sql.Open("sqlite", "file:"+path+"?mode=ro&_pragma=busy_timeout(5000)"); err == nil {
+				if err = d.Ping(); err == nil {
+					return d, exitDone
+				}
+				d.Close()
+			}
+		}
+	}
+	fmt.Fprintln(errw, "error: the run database cannot be opened for reading")
+	return nil, exitError
 }
