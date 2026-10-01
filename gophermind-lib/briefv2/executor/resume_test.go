@@ -586,6 +586,14 @@ func greeterReplies() Script {
 	return s
 }
 
+// greeterRepairReplies is greeterReplies with a second, different reply for
+// fn-greet: the repair's candidate.
+func greeterRepairReplies() Script {
+	s := greeterReplies()
+	s["implement:fn-greet"] = append(s["implement:fn-greet"], reply(variant(good("fn-greet"), 1)))
+	return s
+}
+
 // blockHere is how a child "reaches" its kill point: it names the point to the
 // parent and waits to be killed.
 func blockHere(dir string) {
@@ -599,9 +607,42 @@ type killChecker struct {
 	Checker
 	point string
 	dir   string
+	greet *Leaf // the leaf the repair points work on
 	mu    sync.Mutex
 	vets  int
 	done  bool
+	tests int // integration test calls of greet's package
+	leafs int // leaf checks of greet's test function
+}
+
+// repairFailure is the integration failure the repair points inject once: the
+// wave check of wave 0 fails in fn-greet's test, as a real integration bug would.
+func (k *killChecker) Test(ctx context.Context, t runner.TestSet) runner.Verdict {
+	if (k.point == "repair" || k.point == "repair_ref") && t.Pkg == "./"+k.greet.Dir {
+		k.mu.Lock()
+		k.tests++
+		first := k.tests == 1
+		k.mu.Unlock()
+		if first {
+			return runner.Verdict{Class: runner.ClassTestFail, Names: []string{k.greet.TestFunc + "/empty"}}
+		}
+	}
+	return k.Checker.Test(ctx, t)
+}
+
+// CheckLeaf parks the child while the repair's candidate is on disk: the second
+// leaf check of fn-greet is the repair attempt.
+func (k *killChecker) CheckLeaf(ctx context.Context, c runner.LeafCheck) runner.Verdict {
+	if k.point == "repair" && c.TestFunc == k.greet.TestFunc {
+		k.mu.Lock()
+		k.leafs++
+		hit := k.leafs == 2
+		k.mu.Unlock()
+		if hit {
+			blockHere(k.dir)
+		}
+	}
+	return k.Checker.CheckLeaf(ctx, c)
 }
 
 func (k *killChecker) BuildVet(ctx context.Context, repo string, env []string) runner.Verdict {
@@ -635,12 +676,26 @@ func (k *killChecker) Run(ctx context.Context, s runner.Spec) runner.Result {
 // killGit blocks the child right after the landing, before the report.
 type killGit struct {
 	gitland.Repo
-	dir string
+	dir   string
+	point string
+}
+
+// CommitLeaf parks the child just before or just after the commit of fn-greet:
+// the file is written and not committed, or committed and not recorded.
+func (k *killGit) CommitLeaf(nodeID, title string, add, remove []string) (string, error) {
+	if nodeID == "fn-greet" && k.point == "pre_commit" {
+		blockHere(k.dir)
+	}
+	h, err := k.Repo.CommitLeaf(nodeID, title, add, remove)
+	if err == nil && nodeID == "fn-greet" && k.point == "post_commit" {
+		blockHere(k.dir)
+	}
+	return h, err
 }
 
 func (k *killGit) Finish(msg string) (string, error) {
 	h, err := k.Repo.Finish(msg)
-	if err == nil {
+	if err == nil && k.point == "landed" {
 		blockHere(k.dir)
 	}
 	return h, err
@@ -654,7 +709,11 @@ func TestResumeChildProcess(t *testing.T) {
 		return
 	}
 	dir, point := os.Getenv("GM_RESUME_DIR"), os.Getenv("GM_RESUME_POINT")
-	g := newRigIn(t, dir, greeterReplies())
+	script := greeterReplies()
+	if point == "repair" {
+		script = greeterRepairReplies()
+	}
+	g := newRigIn(t, dir, script)
 	stage := map[string]string{"after_first_leaf": "implement:fn-greet", "mid_leaf": "implement:fn-bye"}[point]
 	g.fake.Before = func(s string) {
 		if stage != "" && s == stage {
@@ -662,11 +721,9 @@ func TestResumeChildProcess(t *testing.T) {
 		}
 	}
 	o := g.options()
-	if point == "landed" {
-		o.Git = &killGit{Repo: g.git, dir: dir}
-	}
+	o.Git = &killGit{Repo: g.git, dir: dir, point: point}
 	rep, err := Run2(context.Background(), o, func(rc *runCtx) {
-		rc.chk = &killChecker{Checker: rc.chk, point: point, dir: dir}
+		rc.chk = &killChecker{Checker: rc.chk, point: point, dir: dir, greet: rc.plan.Leaf("fn-greet")}
 	})
 	t.Fatalf("the child ran to its end (%s) without reaching the kill point %s: %v", rep.Status, point, err)
 }
@@ -690,43 +747,59 @@ func TestResumeAfterKill(t *testing.T) {
 		t.Skip("no shared go cache")
 	}
 
-	// The uninterrupted run every killed-and-resumed run must equal.
-	refDir, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	// The uninterrupted runs every killed-and-resumed run must equal: the plain
+	// one, and one that suffers the same injected integration failure (repair).
 	type refEnd struct {
 		tree     string
 		subjects []string
+		calls    map[string]int
 		err      error
 	}
-	refc := make(chan refEnd, 1)
-	ref := newRigIn(t, refDir, greeterReplies())
-	go func() {
-		rep, err := Run(context.Background(), ref.options())
-		if err == nil && rep.Status != "verified" {
-			err = fmt.Errorf("the reference run is %s (%s): %v", rep.Status, rep.StopReason, rep.Failures)
+	startRef := func(point string, script Script) chan refEnd {
+		dir, err := filepath.EvalSymlinks(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
 		}
-		tree, subjects := "", []string(nil)
-		if err == nil {
-			tree, subjects = treeAndSubjects(ref)
-		}
-		refc <- refEnd{tree, subjects, err}
-	}()
+		ref := newRigIn(t, dir, script)
+		c := make(chan refEnd, 1)
+		go func() {
+			rep, err := run(context.Background(), ref.options(), runFlags{afterStart: func(rc *runCtx) {
+				rc.chk = &killChecker{Checker: rc.chk, point: point, dir: dir, greet: rc.plan.Leaf("fn-greet")}
+			}})
+			if err == nil && rep.Status != "verified" {
+				err = fmt.Errorf("the reference run is %s (%s): %v", rep.Status, rep.StopReason, rep.Failures)
+			}
+			e := refEnd{err: err, calls: map[string]int{}}
+			if err == nil {
+				e.tree, e.subjects = treeAndSubjects(ref)
+				for _, l := range ref.plan.Leaves {
+					e.calls[l.ID] = len(ref.implementRows(t, l.ID))
+				}
+			}
+			c <- e
+		}()
+		return c
+	}
+	refs := map[string]chan refEnd{"": startRef("", greeterReplies()), "repair": startRef("repair_ref", greeterRepairReplies())}
+	wants := map[string]*refEnd{}
+	var wantMu sync.Mutex
 
 	points := []struct {
 		name  string
 		leaf  string // the leaf in flight at the kill, if any
 		stale bool   // a claim is left behind
+		ref   string
 	}{
-		{"after_first_leaf", "fn-greet", true},
-		{"mid_leaf", "fn-bye", true},
-		{"wavecheck", "", false},
-		{"acceptance", "", false},
-		{"landed", "", false},
+		{"after_first_leaf", "fn-greet", true, ""},
+		{"mid_leaf", "fn-bye", true, ""},
+		{"pre_commit", "fn-greet", true, ""},
+		{"post_commit", "fn-greet", true, ""},
+		{"repair", "fn-greet", true, "repair"},
+		{"wavecheck", "", false, ""},
+		{"acceptance", "", false, ""},
+		{"landed", "", false, ""},
+		{"mid_landing", "", false, ""},
 	}
-	var refOnce sync.Once
-	var want refEnd
 	for _, pt := range points {
 		pt := pt
 		t.Run(pt.name, func(t *testing.T) {
@@ -739,6 +812,24 @@ func TestResumeAfterKill(t *testing.T) {
 
 			cmd := exec.Command(os.Args[0], "-test.run=^TestResumeChildProcess$")
 			cmd.Env = append(os.Environ(), "GM_RESUME_CHILD=1", "GM_RESUME_DIR="+dir, "GM_RESUME_POINT="+pt.name, "GM_TEST_GOCACHE="+cache)
+			if pt.name == "mid_landing" {
+				// A git on PATH that parks the child inside gitland, after the
+				// final commit and before the fast-forward merge.
+				realGit := "/usr/bin/git" // not a guard wrapper that may refuse an empty environment
+				if _, err := os.Stat(realGit); err != nil {
+					var lerr error
+					if realGit, lerr = exec.LookPath("git"); lerr != nil {
+						t.Skip("git not on PATH")
+					}
+				}
+				bin := t.TempDir()
+				// gitland starts git with an empty environment, so the paths are in the script.
+				script := "#!/bin/sh\nfor a in \"$@\"; do\n  if [ \"$a\" = \"--ff-only\" ]; then : > '" + filepath.Join(dir, "in-flight") + "'; sleep 600; fi\ndone\nexec '" + realGit + "' \"$@\"\n"
+				if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				cmd.Env = append(cmd.Env, "PATH="+bin+":"+os.Getenv("PATH"))
+			}
 			var out bytes.Buffer
 			cmd.Stdout, cmd.Stderr = &out, &out
 			if err := cmd.Start(); err != nil {
@@ -824,7 +915,7 @@ func TestResumeAfterKill(t *testing.T) {
 				switch {
 				case strings.HasPrefix(s, "gm(run): "):
 					final++
-				case strings.HasPrefix(s, "gm(fn-"):
+				case strings.HasPrefix(s, "gm(fn-") && !strings.Contains(s, "): repair round"):
 					perLeaf[s[3:strings.Index(s, ")")]]++
 				}
 			}
@@ -836,7 +927,7 @@ func TestResumeAfterKill(t *testing.T) {
 			if final != 1 {
 				t.Errorf("final commits = %d, want 1 (main fast-forwarded once)", final)
 			}
-			trailers := strings.Fields(g.gitCmd("log", "--format=%(trailers:key=GopherMind-Node,valueonly,unfold)", "main"))
+			trailers := strings.Fields(g.gitCmd("log", "--invert-grep", "--grep=): repair round", "--format=%(trailers:key=GopherMind-Node,valueonly,unfold)", "main"))
 			seen := map[string]bool{}
 			for _, tr := range trailers {
 				if seen[tr] {
@@ -894,9 +985,22 @@ func TestResumeAfterKill(t *testing.T) {
 			}
 
 			// The same end state as the run nobody interrupted.
-			refOnce.Do(func() { want = <-refc })
+			wantMu.Lock()
+			if wants[pt.ref] == nil {
+				e := <-refs[pt.ref]
+				wants[pt.ref] = &e
+			}
+			want := *wants[pt.ref]
+			wantMu.Unlock()
 			if want.err != nil {
 				t.Fatalf("reference: %v", want.err)
+			}
+			for _, l := range g.plan.Leaves {
+				n, w := len(g.implementRows(t, l.ID)), want.calls[l.ID]
+				// The call a kill cut off wrote no ledger row (a row is written when the call ends), so its repeat is the only one.
+				if n != w {
+					t.Errorf("%s has %d implement rows, the uninterrupted run %d", l.ID, n, w)
+				}
 			}
 			tree, subs := treeAndSubjects(g)
 			if tree != want.tree {
@@ -1060,5 +1164,102 @@ func TestResumeLeavesNoCanaryInAnyStore(t *testing.T) {
 		if raw, err := os.ReadFile(filepath.Join(g.runDir, "_state", name)); err == nil && strings.Contains(string(raw), "CANARY") {
 			t.Errorf("%s holds a canary", name)
 		}
+	}
+}
+
+// Commits that are not this run's, on the work branch or on the base, stop a
+// resume before anything is changed.
+func TestResumeRefusesForeignCommitAndMovedBase(t *testing.T) {
+	t.Parallel()
+	refuse := func(t *testing.T, g *rig, reason, want string) {
+		t.Helper()
+		g.wire(goodScript(g))
+		rep, err := run(context.Background(), g.options(), runFlags{skipAcceptance: true, afterStart: useChecker(g.fastChecker())})
+		if err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		if rep.Status != "failed" || rep.StopReason != reason {
+			t.Fatalf("report = %s (%s), want failed %s; failures %v", rep.Status, rep.StopReason, reason, rep.Failures)
+		}
+		if msg := strings.Join(rep.Failures, "\n"); !strings.Contains(msg, want) {
+			t.Errorf("failures %q do not contain %q", rep.Failures, want)
+		}
+		if n := len(g.fake.Requests()); n != 0 {
+			t.Errorf("provider calls = %d, want 0", n)
+		}
+	}
+	t.Run("a foreign commit on the work branch", func(t *testing.T) {
+		g := newRig(t)
+		g.interruptedRun(t, goodScript(g), g.fastChecker(), "leaf_verified", "fn-farewell")
+		g.gitCmd("commit", "--allow-empty", "-m", "someone else")
+		refuse(t, g, "repo_moved", "1 commit(s) this run did not make")
+	})
+	t.Run("main moved since the run began", func(t *testing.T) {
+		g := newRig(t)
+		g.interruptedRun(t, goodScript(g), g.fastChecker(), "leaf_verified", "fn-farewell")
+		tree := strings.TrimSpace(g.gitCmd("rev-parse", "main^{tree}"))
+		c := strings.TrimSpace(g.gitCmd("commit-tree", tree, "-p", "main", "-m", "main moved"))
+		g.gitCmd("update-ref", "refs/heads/main", c)
+		refuse(t, g, "base_moved", "base branch moved")
+	})
+	t.Run("gm commits beyond the recorded tip are accepted", func(t *testing.T) {
+		g := newRig(t)
+		g.interruptedRun(t, goodScript(g), g.fastChecker(), "leaf_verified", "fn-farewell")
+		st, err := LoadState(g.runDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		st.Tip = strings.TrimSpace(g.gitCmd("rev-parse", "--short", "HEAD~1")) // a kill before the tip was recorded
+		if err := st.Save(g.runDir); err != nil {
+			t.Fatal(err)
+		}
+		fc := newFakeChecker(g)
+		fc.RepoScript = &repoScript{Test: map[string][]runner.Verdict{}}
+		second := goodScript(g)
+		delete(second, "implement:fn-farewell")
+		g.wire(second)
+		for _, id := range []string{"fn-greet", "fn-bye", "fn-hello", "fn-serve"} {
+			fc.LeafScript[id] = []runner.Verdict{passVerdict()}
+		}
+		rep, err := run(context.Background(), g.options(), runFlags{skipAcceptance: true, afterStart: useChecker(fc)})
+		if err != nil || rep.Status != "verified" {
+			t.Fatalf("run = %s (%s), %v, failures %v", rep.Status, rep.StopReason, err, rep.Failures)
+		}
+	})
+}
+
+// A tip that cannot be saved is a harness fault, not a silent skip.
+func TestRecordTipReportsSaveFailure(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	rc, _ := g.schedRC(t, Script{})
+	rc.state.Tip = "stale"
+	dir := filepath.Join(g.runDir, "_state")
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	if err := rc.recordTip(); err == nil {
+		t.Fatal("recordTip hid a save failure")
+	}
+}
+
+// A resume that finds a live heartbeat says how long the wait is and which
+// leaves hold it (ids and a count of seconds only).
+func TestLiveWorkerEventSaysHowLongToWait(t *testing.T) {
+	t.Parallel()
+	g := newRig(t, staleOne)
+	g.started(t)
+	g.plantDead(t, "fn-greet", true)
+	rc, err := startRun(context.Background(), g.options())
+	if rc != nil {
+		defer rc.close()
+	}
+	if err == nil {
+		t.Fatal("no error")
+	}
+	evs := g.sink.OfKind("resume_blocked")
+	if len(evs) != 1 || !strings.Contains(evs[0].Message, "fn-greet") || !strings.Contains(evs[0].Message, "wait up to") {
+		t.Fatalf("resume_blocked events = %+v", evs)
 	}
 }

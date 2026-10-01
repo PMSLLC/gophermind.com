@@ -231,6 +231,10 @@ func buildRig(t *testing.T, ro rigOpts, repo, dbPath, modBase, briefDir string, 
 
 	g.plan, err = LoadPlan(g.runDir, repo)
 	if err != nil {
+		// A run killed while landing leaves the repository on the base branch.
+		g.plan, err = retryPlanOnWorkBranch(Options{RunDir: g.runDir, Repo: repo, Git: g.git}, err)
+	}
+	if err != nil {
 		t.Fatal(err)
 	}
 	return g

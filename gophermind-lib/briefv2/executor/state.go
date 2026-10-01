@@ -378,3 +378,54 @@ func restorePriors(repo, runDir string, leaves []*Leaf) error {
 	}
 	return nil
 }
+
+// reopenPrefix names the markers of a repair in flight: _state/reopen-<id>.
+const reopenPrefix = "reopen-"
+
+// reopenMarker says that a committed leaf is being repaired: it is written
+// before the first candidate of a repair reaches the disk, so a resume that
+// finds the committed file dirty knows it holds a candidate, not a first
+// build. It holds ids and numbers only.
+type reopenMarker struct {
+	Leaf     string `json:"leaf"`
+	Round    int    `json:"round"`
+	Revision int    `json:"revision"`
+}
+
+func writeReopenMarker(runDir string, m reopenMarker) error {
+	return writeStateJSON(runDir, reopenPrefix+m.Leaf, m)
+}
+
+func readReopenMarker(runDir, id string) (reopenMarker, bool, error) {
+	var m reopenMarker
+	found, err := readStateJSON(runDir, reopenPrefix+id, &m)
+	if err != nil || !found || m.Leaf != id {
+		return reopenMarker{}, false, err
+	}
+	return m, true, nil
+}
+
+// removeReopenMarker deletes _state/reopen-<id>. The guard: the name must
+// start with reopenPrefix and the target must be a regular file in _state.
+func removeReopenMarker(runDir, id string) error {
+	name := reopenPrefix + id
+	if id == "" || name != filepath.Base(name) {
+		return errors.New("executor: refusing to remove a file that is not a reopen marker")
+	}
+	dir, ok, err := stateDir(runDir, false)
+	if err != nil || !ok {
+		return err
+	}
+	path := filepath.Join(dir, name)
+	fi, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil || !fi.Mode().IsRegular() {
+		return errors.New("executor: a reopen marker is not a regular file")
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return errors.New("executor: removing a reopen marker failed")
+	}
+	return nil
+}

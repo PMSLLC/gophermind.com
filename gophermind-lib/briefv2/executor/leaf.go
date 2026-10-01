@@ -106,9 +106,10 @@ type leafRun struct {
 	permClass   string            // the first permanent provider-level class seen
 	streakSince time.Time         // proxy failures before this time belong to an earlier attempt
 
-	reopened bool // the leaf was already committed and failed its check: the fix commits as a repair
-	passed   bool // the real file is committed: the stub must not be restored
-	final    bool // a terminal status was set: the claim must not be released
+	reopened  bool // the leaf was already committed and failed its check: the fix commits as a repair
+	markRound int  // the repair round a reopen marker recorded (a resume of a repair), else 0
+	passed    bool // the real file is committed: the stub must not be restored
+	final     bool // a terminal status was set: the claim must not be released
 }
 
 var (
@@ -245,6 +246,9 @@ func (rc *runCtx) newLeafRun(ctx context.Context, l *Leaf, in leafIn) (*leafRun,
 		return nil, fmt.Errorf("executor: reading the row of %s failed", l.ID)
 	}
 	lr.rev = row.Revision
+	if in.Repair > 0 {
+		swap.Track(rc.o.RunDir, in.Repair, row.Revision)
+	}
 	for i, a := range row.Attempts {
 		lr.history = append(lr.history, historyLine(i+1, a))
 	}
@@ -562,21 +566,34 @@ func (lr *leafRun) adoptOnDisk(ctx context.Context) (done bool, out leafOutcome,
 	if err != nil {
 		return false, out, errors.New("executor: the repository state could not be read")
 	}
+	mark, marked, err := readReopenMarker(rc.o.RunDir, l.ID)
+	if err != nil {
+		return false, out, err
+	}
 	committed, hash := false, ""
-	if !inList(dirty, l.File) {
+	candidate := false // a repair candidate over a committed file: a pass commits a repair, a failure restores the commit
+	if !inList(dirty, l.File) || marked {
 		h, found, err := rc.git.LeafCommit(l.ID)
 		if err != nil {
 			return false, out, fmt.Errorf("executor: looking for the commit of %s failed", l.ID)
 		}
-		committed, hash = found, h
+		if inList(dirty, l.File) {
+			candidate = found
+		} else {
+			committed, hash = found, h
+		}
 	}
 	src, err := readNoFollow(filepath.Join(rc.o.Repo, filepath.FromSlash(l.File)))
 	if err != nil {
 		return false, out, fmt.Errorf("executor: the file of leaf %s is not readable", l.ID)
 	}
-	if committed {
+	if committed || candidate {
 		lr.swap.Reopen() // Fail restores the committed content
 		lr.reopened = true
+		if candidate {
+			lr.markRound = mark.Round
+			lr.swap.Track(rc.o.RunDir, mark.Round, mark.Revision)
+		}
 	}
 	// Enter the file's own bytes so the swap owns it: a failed check then
 	// restores the stub (or the committed file) through the one code path.
@@ -714,6 +731,9 @@ func (lr *leafRun) finishPass(ctx context.Context, committed bool, hash string) 
 		case lr.in.Repair > 0 || lr.reopened:
 			round := lr.in.Repair
 			if round < 1 {
+				round = lr.markRound
+			}
+			if round < 1 {
 				round = 1
 			}
 			hash, err = lr.swap.PassRepair(round)
@@ -725,6 +745,9 @@ func (lr *leafRun) finishPass(ctx context.Context, committed bool, hash string) 
 		}
 	}
 	lr.passed = true
+	if err := removeReopenMarker(rc.o.RunDir, l.ID); err != nil { // a repair that was committed before a kill
+		return err
+	}
 	wc := context.WithoutCancel(ctx)
 	if err := rc.o.Board.SetResult(wc, rc.plan.RunID, l.ID, blackboard.Result{FilesChanged: []string{l.File, l.StubFile}, Commit: hash}); err != nil {
 		return fmt.Errorf("executor: recording the result of %s failed", l.ID)
@@ -733,7 +756,9 @@ func (lr *leafRun) finishPass(ctx context.Context, committed bool, hash string) 
 		return fmt.Errorf("executor: marking %s verified failed", l.ID)
 	}
 	lr.final = true
-	rc.recordTip()
+	if err := rc.recordTip(); err != nil {
+		return err
+	}
 	if err := rc.setResult(l.ID, blackboard.StatusVerified, ""); err != nil {
 		return err
 	}

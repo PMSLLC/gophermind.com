@@ -736,3 +736,49 @@ func (c *CLI) finalCommitExists() (bool, error) {
 	subject, trailer, _ := strings.Cut(strings.TrimRight(string(out), "\n"), "\x1f")
 	return strings.HasPrefix(subject, "gm(run): ") && strings.TrimSpace(trailer) == c.runID, nil
 }
+
+func (c *CLI) ForeignCommits(since string) (int, error) {
+	rev := c.base
+	if since != "" {
+		if !revRe.MatchString(since) {
+			return 0, errors.New("gitland: invalid revision")
+		}
+		rev = since
+	}
+	if rev == "" {
+		return 0, errors.New("gitland: ForeignCommits called before Start")
+	}
+	out, err := c.run("log", "--format=%s%x1f%(trailers:key=GopherMind-Run,valueonly,unfold)%x1e", rev+"..HEAD")
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, rec := range strings.Split(string(out), "\x1e") {
+		rec = strings.TrimLeft(rec, "\n")
+		if rec == "" {
+			continue
+		}
+		subject, trailer, _ := strings.Cut(rec, "\x1f")
+		if !strings.HasPrefix(subject, "gm(") || strings.TrimSpace(trailer) != c.runID {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (c *CLI) CanFastForward() (bool, error) {
+	if c.base == "" || c.work == "" {
+		return false, errors.New("gitland: CanFastForward called before Start")
+	}
+	_, code, err := c.runCode("merge-base", "--is-ancestor", c.base, c.work)
+	if err != nil {
+		return false, err
+	}
+	switch code {
+	case 0:
+		return true, nil
+	case 1:
+		return false, nil
+	}
+	return false, &gitErr{sub: "merge-base", code: code}
+}

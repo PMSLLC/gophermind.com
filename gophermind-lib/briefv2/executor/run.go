@@ -100,8 +100,11 @@ func run(ctx context.Context, o Options, f runFlags) (Report, error) {
 	if fin.Status == "interrupted" && fin.Reason == "cancelled" && cause() != "" {
 		fin.Reason = cause()
 	}
-	if stop == nil || stop.Reason != "repo_moved" { // a refused resume must not accept the moved branch
-		rc.recordTip()
+	if refused := stop != nil && (stop.Reason == "repo_moved" || stop.Reason == "base_moved"); !refused { // a refused resume must not accept the moved branch
+		if err := rc.recordTip(); err != nil && fault == nil {
+			fault = err
+			fin = finishResult{Status: "failed", Reason: "harness_fault"}
+		}
 	}
 
 	rc.emit("sandbox", "", fmt.Sprintf("%s; sandbox-exec %s", rc.sandboxLabel(), rc.rep.sandboxExec))

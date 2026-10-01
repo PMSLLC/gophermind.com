@@ -55,6 +55,13 @@ type Swap struct {
 	runDir   string
 	prior    []byte
 	hasPrior bool
+
+	// In repair mode with commits, the marker _state/reopen-<id> is written
+	// before the first candidate reaches the disk and removed once the repair
+	// is committed or undone (Track sets what it records).
+	track    bool
+	round    int
+	revision int
 }
 
 func NewSwap(repo string, l *Leaf, git gitland.Repo, stubSrc []byte) *Swap {
@@ -87,6 +94,11 @@ func (s *Swap) Enter(source []byte) error {
 			}
 		}
 		s.prior, s.hasPrior = prior, true
+	}
+	if s.reopen && !s.noCommit && s.track {
+		if err := writeReopenMarker(s.runDir, reopenMarker{Leaf: s.leaf.ID, Round: s.round, Revision: s.revision}); err != nil {
+			return err
+		}
 	}
 	if !s.reopen {
 		if err := pathsafe.Remove(s.repo, s.leaf.StubFile); err != nil {
@@ -125,7 +137,13 @@ func (s *Swap) Fail() error {
 			}
 			return removeStatePrior(s.runDir, priorPrefix+s.leaf.ID)
 		}
-		return s.git.Restore([]string{s.leaf.File})
+		if err := s.git.Restore([]string{s.leaf.File}); err != nil {
+			return err
+		}
+		if s.track {
+			return removeReopenMarker(s.runDir, s.leaf.ID)
+		}
+		return nil
 	}
 	err1 := pathsafe.Remove(s.repo, s.leaf.File)
 	err2 := pathsafe.Replace(s.repo, s.leaf.StubFile, s.stubSrc)
@@ -148,6 +166,12 @@ func (s *Swap) PassNoCommit() error {
 		return removeStatePrior(s.runDir, priorPrefix+s.leaf.ID)
 	}
 	return nil
+}
+
+// Track makes a repair leave a marker in <runDir>/_state while a candidate may
+// be on disk (round and revision are what it records).
+func (s *Swap) Track(runDir string, round, revision int) {
+	s.track, s.runDir, s.round, s.revision = true, runDir, round, revision
 }
 
 // Reopen is repair mode: the stub is never restored and Fail restores File
@@ -191,6 +215,9 @@ func (s *Swap) PassRepair(round int) (string, error) {
 		return "", err
 	}
 	s.passed = true
+	if s.track {
+		return h, removeReopenMarker(s.runDir, s.leaf.ID)
+	}
 	return h, nil
 }
 

@@ -1129,3 +1129,45 @@ func TestIsAncestor(t *testing.T) {
 		t.Error("IsAncestor of an unknown object is an error, not an answer")
 	}
 }
+
+// ForeignCommits counts the commits after a revision that this run did not
+// make (no gm( subject with its run trailer); CanFastForward says whether the
+// base branch is still an ancestor of the work branch.
+func TestForeignCommitsAndCanFastForward(t *testing.T) {
+	c := newRepo(t)
+	if err := c.Start("main", "gm/x", nil); err != nil {
+		t.Fatal(err)
+	}
+	put(t, c, "a.go", "package x\n")
+	first, err := c.CommitLeaf("fn-a", "A", []string{"a.go"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, err := c.ForeignCommits(""); err != nil || n != 0 {
+		t.Fatalf("ForeignCommits(base) = %d, %v; want 0", n, err)
+	}
+	if ok, err := c.CanFastForward(); err != nil || !ok {
+		t.Fatalf("CanFastForward = %v, %v; want true", ok, err)
+	}
+	gx(t, c, "commit", "--allow-empty", "-m", "someone else")
+	gx(t, c, "commit", "--allow-empty", "-m", "gm(fn-z): looks ours but has no trailer")
+	if n, err := c.ForeignCommits(""); err != nil || n != 2 {
+		t.Fatalf("ForeignCommits(base) = %d, %v; want 2", n, err)
+	}
+	if n, err := c.ForeignCommits(first); err != nil || n != 2 {
+		t.Fatalf("ForeignCommits(first) = %d, %v; want 2", n, err)
+	}
+	head, _ := c.Head()
+	if n, err := c.ForeignCommits(head); err != nil || n != 0 {
+		t.Fatalf("ForeignCommits(head) = %d, %v; want 0", n, err)
+	}
+	if _, err := c.ForeignCommits("--all"); err == nil {
+		t.Error("ForeignCommits accepted an option as a revision")
+	}
+	gx(t, c, "switch", "main")
+	gx(t, c, "commit", "--allow-empty", "-m", "main moved")
+	gx(t, c, "switch", "gm/x")
+	if ok, err := c.CanFastForward(); err != nil || ok {
+		t.Fatalf("CanFastForward after main moved = %v, %v; want false", ok, err)
+	}
+}
