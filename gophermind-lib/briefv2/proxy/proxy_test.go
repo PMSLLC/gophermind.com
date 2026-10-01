@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -182,12 +183,13 @@ func TestBuildRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []Rule{
-		{"*.cdn.example.test", false},
-		{"192.168.1.35", false},
-		{"api.kilo.ai", false},
-		{"proxy.golang.org", false},
-		{"registry.example.test", true},
-		{"sum.golang.org", false},
+		{"*.cdn.example.test", false, 0},
+		{"192.168.1.35", false, 11434},
+		{"api.kilo.ai", false, 0},
+		{"api.kilo.ai", false, 443},
+		{"proxy.golang.org", false, 0},
+		{"registry.example.test", true, 0},
+		{"sum.golang.org", false, 0},
 	}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("got %v want %v", got, want)
@@ -199,10 +201,8 @@ func TestBuildRules(t *testing.T) {
 		}
 	}
 	got, _ = BuildRules([]brief.Network{{Host: "api.kilo.ai", Critical: true}}, provs, true)
-	for _, r := range got {
-		if r.Host == "api.kilo.ai" && !r.Critical {
-			t.Fatal("critical not OR-ed")
-		}
+	if _, crit := matchRules(got, "api.kilo.ai", 443); !crit {
+		t.Fatal("critical not OR-ed")
 	}
 	_, err = BuildRules(nil, []string{"http://ok.test", "http://bad host/%zz-SECRETCANARY"}, false)
 	if err == nil || !strings.Contains(err.Error(), "1") || strings.Contains(err.Error(), "SECRETCANARY") || strings.Contains(err.Error(), "bad host") {
@@ -265,7 +265,7 @@ func TestForbiddenIP(t *testing.T) {
 }
 
 func TestMatchRules(t *testing.T) {
-	rules := []Rule{{"example.test", false}, {"*.suffix.test", false}, {"127.0.0.1", false}, {"crit.test", true}}
+	rules := []Rule{{"example.test", false, 0}, {"*.suffix.test", false, 0}, {"127.0.0.1", false, 0}, {"crit.test", true, 0}}
 	cases := []struct {
 		host  string
 		allow bool
@@ -282,20 +282,20 @@ func TestMatchRules(t *testing.T) {
 		{"crit.test", true, true},
 	}
 	for _, c := range cases {
-		a, cr := matchRules(rules, c.host)
+		a, cr := matchRules(rules, c.host, 443)
 		if a != c.allow || cr != c.crit {
 			t.Errorf("%s: got %v,%v want %v,%v", c.host, a, cr, c.allow, c.crit)
 		}
 	}
 	// a wildcard never matches an IP literal
-	if a, _ := matchRules([]Rule{{"*.0.0.1", false}}, "127.0.0.1"); a {
+	if a, _ := matchRules([]Rule{{"*.0.0.1", false, 0}}, "127.0.0.1", 80); a {
 		t.Error("wildcard matched an IP")
 	}
 }
 
 func TestProxyAllowDeny(t *testing.T) {
 	srv, addr := upstream(t, okHandler("upstream-body"))
-	rules := []Rule{{"exact.test", false}, {"*.example.test", false}}
+	rules := []Rule{{"exact.test", false, 0}, {"*.example.test", false, 0}}
 	p, dialed, _ := hostProxy(t, addr, publicIP, rules...)
 	c := via(t, p, "fn-a")
 
@@ -793,7 +793,7 @@ func TestNewValidatesRules(t *testing.T) {
 		}
 	}
 	p := newProxy(t, Rule{Host: "Example.TEST."})
-	if ok, _ := matchRules(p.cfg.Rules, "example.test"); !ok {
+	if ok, _ := matchRules(p.cfg.Rules, "example.test", 80); !ok {
 		t.Error("rule not normalized")
 	}
 }
@@ -1154,5 +1154,95 @@ func TestProxyCloseIsClean(t *testing.T) {
 	}
 	if n := runtime.NumGoroutine(); n > base+2 {
 		t.Fatalf("goroutines %d, baseline %d", n, base)
+	}
+}
+
+func TestBuildRulesPinsProviderPorts(t *testing.T) {
+	got, err := BuildRules(nil, []string{
+		"http://192.168.1.35/v1", "https://api.example.test/v1", "http://10.8.0.6:8083/v1", "https://[::1]:8443/x",
+	}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int{"192.168.1.35": 80, "api.example.test": 443, "10.8.0.6": 8083, "::1": 8443}
+	if len(got) != len(want) {
+		t.Fatalf("rules = %v", got)
+	}
+	for _, r := range got {
+		if want[r.Host] != r.Port || r.Port == 0 {
+			t.Errorf("rule %v: want port %d", r, want[r.Host])
+		}
+	}
+	// a brief entry without a port stays port-free (any port): current semantics
+	got, _ = BuildRules([]brief.Network{{Host: "10.8.0.6"}}, []string{"http://10.8.0.6:8083/v1"}, true)
+	if len(got) != 2 || got[0].Port != 0 {
+		t.Fatalf("brief entry lost its meaning: %v", got)
+	}
+	for _, bad := range []string{"http://x.test:0/v1", "http://x.test:99999/v1", "http://x.test:abc/v1"} {
+		if _, err := BuildRules(nil, []string{bad}, true); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}
+
+func TestMatchRulesPort(t *testing.T) {
+	rules := []Rule{{"10.8.0.6", false, 8083}, {"any.test", false, 0}, {"*.pin.test", false, 443}}
+	cases := []struct {
+		host string
+		port int
+		ok   bool
+	}{
+		{"10.8.0.6", 8083, true}, {"10.8.0.6", 22, false}, {"10.8.0.6", 5432, false}, {"10.8.0.6", 3306, false},
+		{"any.test", 22, true}, {"any.test", 1, true},
+		{"a.pin.test", 443, true}, {"a.pin.test", 22, false},
+	}
+	for _, c := range cases {
+		if ok, _ := matchRules(rules, c.host, c.port); ok != c.ok {
+			t.Errorf("%s:%d allowed=%v want %v", c.host, c.port, ok, c.ok)
+		}
+	}
+}
+
+// A provider rule on an IP literal reaches that port only. The upstream on the
+// other port stands in for ssh, MySQL or Postgres on the same machine.
+func TestProxyProviderIPLiteralPortPinned(t *testing.T) {
+	_, allowed := upstream(t, okHandler("model-reply"))
+	srv2, other := upstream(t, okHandler("secret-service"))
+	_ = srv2
+	_, ap, _ := net.SplitHostPort(allowed)
+	apn, _ := strconv.Atoi(ap)
+	p := newProxy(t, Rule{Host: "127.0.0.1", Port: apn})
+	c := via(t, p, "fn-a")
+	resp, err := c.Get("http://" + allowed + "/v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || string(b) != "model-reply" {
+		t.Fatalf("pinned port refused: %d %q", resp.StatusCode, b)
+	}
+	resp, err = c.Get("http://" + other + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("other port on the same IP: status %d", resp.StatusCode)
+	}
+	w := failuresEventually(t, func() []Failure { return p.Warnings("fn-a", time.Time{}) }, 1)
+	if w[0].Kind != "denied" {
+		t.Fatalf("warning = %+v", w[0])
+	}
+	// CONNECT to the other port is refused too
+	conn, err := net.Dial("tcp", p.Addr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	fmt.Fprintf(conn, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", other, other)
+	line, _ := bufio.NewReader(conn).ReadString('\n')
+	if !strings.Contains(line, "403") {
+		t.Fatalf("CONNECT to the other port: %q", line)
 	}
 }

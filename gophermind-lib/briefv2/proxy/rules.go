@@ -11,6 +11,7 @@ import (
 	"net/netip"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 
 	"gophermind/gophermind-lib/briefv2/brief"
@@ -18,9 +19,16 @@ import (
 
 // Rule allows one host. Host is exact, or "*.suffix" (any subdomain of suffix,
 // never suffix itself); lowercase, no port.
+//
+// Port 0 means any port (a brief network entry has no port, so it keeps that
+// meaning). A non-zero Port pins the rule to that port: BuildRules pins every
+// provider-derived rule to the base URL's port (80 or 443 by scheme when the URL
+// has none), so a provider host that is an IP literal such as the Mac mini cannot
+// be used to reach its ssh, MySQL or Postgres ports.
 type Rule struct {
 	Host     string
 	Critical bool
+	Port     int
 }
 
 // errInvalidRuleHost is the one error for a rule host that fails validation; it
@@ -29,42 +37,68 @@ var errInvalidRuleHost = errors.New("proxy: rule has an invalid host")
 
 var goHosts = []string{"proxy.golang.org", "sum.golang.org"}
 
-// BuildRules is the allowlist: the brief's network entries, the host of every
-// provider base URL (port dropped) and the Go module hosts unless noGoHosts.
-// Duplicates merge and Critical is OR-ed. Errors name the index only.
+// BuildRules is the allowlist: the brief's network entries (any port), the host
+// of every provider base URL pinned to that URL's port (80 or 443 by scheme when
+// it has none) and the Go module hosts unless noGoHosts. Duplicates merge and
+// Critical is OR-ed. Errors name the index only.
 func BuildRules(network []brief.Network, providerBaseURLs []string, noGoHosts bool) ([]Rule, error) {
-	m := map[string]bool{}
-	add := func(h string, crit bool) {
-		m[h] = m[h] || crit
+	type key struct {
+		host string
+		port int
+	}
+	m := map[key]bool{}
+	add := func(h string, port int, crit bool) {
+		k := key{h, port}
+		m[k] = m[k] || crit
 	}
 	for _, n := range network {
 		h, ok := normalizeRuleHost(n.Host)
 		if !ok {
 			return nil, errInvalidRuleHost
 		}
-		add(h, n.Critical)
+		add(h, 0, n.Critical)
 	}
 	for i, raw := range providerBaseURLs {
+		bad := fmt.Errorf("proxy: provider base URL %d is not a valid URL", i)
 		u, err := url.Parse(raw)
 		if err != nil || u.Hostname() == "" {
-			return nil, fmt.Errorf("proxy: provider base URL %d is not a valid URL", i)
+			return nil, bad
 		}
 		h, ok := normalizeHost(u.Hostname())
 		if !ok {
-			return nil, fmt.Errorf("proxy: provider base URL %d is not a valid URL", i)
+			return nil, bad
 		}
-		add(h, false)
+		port := 0
+		switch ps := u.Port(); {
+		case ps != "":
+			port, err = strconv.Atoi(ps)
+			if err != nil || port < 1 || port > 65535 {
+				return nil, bad
+			}
+		case strings.EqualFold(u.Scheme, "https"):
+			port = 443
+		case strings.EqualFold(u.Scheme, "http"):
+			port = 80
+		default:
+			return nil, bad
+		}
+		add(h, port, false)
 	}
 	if !noGoHosts {
 		for _, h := range goHosts {
-			add(h, false)
+			add(h, 0, false)
 		}
 	}
 	out := make([]Rule, 0, len(m))
-	for h, c := range m {
-		out = append(out, Rule{Host: h, Critical: c})
+	for k, c := range m {
+		out = append(out, Rule{Host: k.host, Critical: c, Port: k.port})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Host < out[j].Host })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Host != out[j].Host {
+			return out[i].Host < out[j].Host
+		}
+		return out[i].Port < out[j].Port
+	})
 	return out, nil
 }
 
@@ -159,11 +193,14 @@ func forbiddenIP(ip net.IP) bool {
 	return false
 }
 
-// matchRules reports whether host (already normalized) is allowed and whether
-// the matching rule is critical. An IP literal matches only an exact rule.
-func matchRules(rules []Rule, host string) (allowed, critical bool) {
+// matchRules reports whether host (already normalized) on port is allowed and
+// whether the matching rule is critical. A rule with a non-zero Port matches that port only. An IP literal matches only an exact rule.
+func matchRules(rules []Rule, host string, port int) (allowed, critical bool) {
 	ip := isIPLiteral(host)
 	for _, r := range rules {
+		if r.Port != 0 && r.Port != port {
+			continue
+		}
 		if strings.HasPrefix(r.Host, "*.") {
 			if ip {
 				continue
