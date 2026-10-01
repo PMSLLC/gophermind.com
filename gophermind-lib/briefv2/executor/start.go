@@ -20,6 +20,7 @@ import (
 	"gophermind/gophermind-lib/briefv2/gitland"
 	"gophermind/gophermind-lib/briefv2/packer"
 	"gophermind/gophermind-lib/briefv2/pathsafe"
+	"gophermind/gophermind-lib/briefv2/planner"
 	"gophermind/gophermind-lib/briefv2/proxy"
 	"gophermind/gophermind-lib/briefv2/runner"
 	"gophermind/gophermind-lib/briefv2/sandbox"
@@ -122,7 +123,13 @@ func newRunCtx(ctx context.Context, o Options) (*runCtx, error) {
 	}
 	plan, err := LoadPlan(o.RunDir, o.Repo)
 	if err != nil {
-		return nil, err
+		// A run killed while landing leaves the repository on the base branch,
+		// where the Test-writer's files committed by Wave 0 are not: the plan
+		// loads once the work branch is checked out again. Only an intact plan
+		// of a run with Wave 0 done is retried, so a changed plan modifies nothing.
+		if plan, err = retryPlanOnWorkBranch(o, err); err != nil {
+			return nil, err
+		}
 	}
 	if err := gitland.ValidateLanding(plan.Brief.Front.Landing); err != nil {
 		return nil, err
@@ -161,6 +168,43 @@ func newRunCtx(ctx context.Context, o Options) (*runCtx, error) {
 		return nil, err
 	}
 	return rc, nil
+}
+
+// retryPlanOnWorkBranch checks out the work branch recorded in the state and
+// loads the plan again; it returns first when that is not the situation.
+func retryPlanOnWorkBranch(o Options, first error) (*Plan, error) {
+	st, err := LoadState(o.RunDir)
+	if err != nil || !st.Wave0Done || st.Branch == "" || planner.VerifyApproval(o.RunDir) != nil {
+		return nil, first
+	}
+	raw, err := readPlanFile(o.RunDir, "brief.md")
+	if err != nil {
+		return nil, first
+	}
+	b, err := brief.Parse(raw)
+	if err != nil || b.Front.Landing == "diff_only" {
+		return nil, first
+	}
+	base := b.Front.BaseBranch
+	if base == "" {
+		base = "main"
+	}
+	g := o.Git
+	if g == nil {
+		cli, err := gitland.NewCLI(o.Repo, filepath.Base(o.RunDir))
+		if err != nil {
+			return nil, first
+		}
+		defer cli.Close()
+		g = cli
+	}
+	if cur, err := g.Branch(); err != nil || cur == st.Branch {
+		return nil, first
+	}
+	if err := g.Start(base, st.Branch, nil); err != nil {
+		return nil, first
+	}
+	return LoadPlan(o.RunDir, o.Repo)
 }
 
 func (rc *runCtx) openGit() error {
@@ -667,7 +711,11 @@ func (rc *runCtx) wave0(ctx context.Context) error {
 		rc.emit("wave0_commit", "", "diff_only: nothing committed")
 	}
 	rc.state.Wave0Done = true
-	rc.state.Tip = rc.tipNow()
+	tip, err := rc.tipNow()
+	if err != nil {
+		return err
+	}
+	rc.state.Tip = tip
 	return rc.state.Save(rc.o.RunDir)
 }
 

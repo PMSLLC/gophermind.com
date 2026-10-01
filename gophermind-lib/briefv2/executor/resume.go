@@ -16,38 +16,48 @@ import (
 // branch is no longer where this run left it.
 const resumeMovedMessage = "executor: the repository moved since this run stopped (the work branch no longer contains the commits this run made); nothing was changed"
 
+// resumeBaseMovedMessage is the fixed text of a resume refused early because
+// landing could no longer be a fast-forward.
+const resumeBaseMovedMessage = "executor: the base branch moved since this run started, so the work branch can no longer be fast-forwarded onto it; nothing was changed"
+
 // maxDirtShown is how many foreign paths a stop names.
 const maxDirtShown = 5
 
-// tipNow is the work branch tip, or "" when there is none to record (diff_only
-// makes no branch and no commit) or git cannot say.
-func (rc *runCtx) tipNow() string {
+// tipNow is the work branch tip, or "" when there is none to record
+// (diff_only makes no branch and no commit). Git being unable to say is an error.
+func (rc *runCtx) tipNow() (string, error) {
 	if rc.diffOnly || rc.state.Branch == "" {
-		return ""
+		return "", nil
 	}
 	head, err := rc.git.Head()
 	if err != nil {
-		return ""
+		return "", errors.New("executor: the work branch tip could not be read")
 	}
-	return head
+	return head, nil
 }
 
 // recordTip saves the work branch tip in the state file. It runs after every
 // commit the run makes and when the run ends, so a later resume can prove the
-// branch only grew. A failure to record is not a fault: the next record fixes
-// it, and the check is skipped while the tip is unknown.
-func (rc *runCtx) recordTip() {
-	tip := rc.tipNow()
-	if tip == "" {
-		return
+// branch only grew by this run's own commits. A tip that cannot be read or
+// saved is a harness fault: a silent skip would let a later resume accept
+// foreign commits.
+func (rc *runCtx) recordTip() error {
+	tip, err := rc.tipNow()
+	if err != nil || tip == "" {
+		return err
 	}
 	stateMu.Lock()
 	defer stateMu.Unlock()
 	if rc.state.Tip == tip {
-		return
+		return nil
 	}
+	prev := rc.state.Tip
 	rc.state.Tip = tip
-	_ = rc.state.Save(rc.o.RunDir)
+	if err := rc.state.Save(rc.o.RunDir); err != nil {
+		rc.state.Tip = prev
+		return err
+	}
+	return nil
 }
 
 // resume is spec 10 steps 1 to 4 for a run whose _state/executor.json exists
@@ -97,6 +107,18 @@ func (rc *runCtx) resume(ctx context.Context) error {
 	}
 	if len(live) > 0 {
 		sort.Strings(live)
+		// A killed worker's claim goes stale after stale_claim_seconds: say how
+		// long to wait (ids and seconds only), then refuse.
+		stale := time.Duration(rc.cfg.Executor.StaleClaimSeconds) * time.Second
+		var wait time.Duration
+		for _, r := range rows {
+			if inList(live, r.NodeID) {
+				if left := stale - rc.o.Now().Sub(r.HeartbeatAt); left > wait {
+					wait = left
+				}
+			}
+		}
+		rc.emit("resume_blocked", "", fmt.Sprintf("claims held by a live heartbeat: %s; wait up to %d s for them to go stale", strings.Join(live, ", "), int(wait.Seconds())+1))
 		return fmt.Errorf("executor: node %s is held by a live worker", live[0])
 	}
 	listed := "none"
@@ -114,6 +136,24 @@ func (rc *runCtx) resume(ctx context.Context) error {
 			if err != nil || !ok {
 				return &stopError{Status: "failed", Reason: "repo_moved", Message: resumeMovedMessage}
 			}
+		}
+		// Everything after the recorded tip (everything after the base when none
+		// was recorded) must be this run's own commit: a kill between a commit
+		// and the tip record leaves such commits, a person's commit is foreign.
+		n, err := rc.git.ForeignCommits(rc.state.Tip)
+		if err != nil {
+			return errors.New("executor: the commits of the work branch could not be read")
+		}
+		if n > 0 {
+			return &stopError{Status: "failed", Reason: "repo_moved",
+				Message: fmt.Sprintf("executor: the work branch holds %d commit(s) this run did not make; nothing was changed", n)}
+		}
+		// A base that moved makes the final fast-forward impossible: refuse now,
+		// not after the whole build.
+		if ok, err := rc.git.CanFastForward(); err != nil {
+			return errors.New("executor: the base branch could not be compared with the work branch")
+		} else if !ok {
+			return &stopError{Status: "failed", Reason: "base_moved", Message: resumeBaseMovedMessage}
 		}
 	}
 	// A diff_only repair that was cut off leaves its candidate on disk and the

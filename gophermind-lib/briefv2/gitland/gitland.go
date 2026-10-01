@@ -37,6 +37,11 @@ type Repo interface {
 	// IsAncestor reports whether the commit rev is HEAD or one of its ancestors. A resume uses it to prove the work
 	// branch still contains what the run recorded; an unknown revision is an error, not an answer.
 	IsAncestor(rev string) (bool, error)
+	// ForeignCommits counts the commits after since (a revision, or the base branch when empty) up to HEAD that this
+	// run did not make: a commit counts as the run's only with a gm( subject and this run's GopherMind-Run trailer.
+	ForeignCommits(since string) (int, error)
+	// CanFastForward reports whether the base branch is still an ancestor of the work branch (Start must have run).
+	CanFastForward() (bool, error)
 }
 
 var (
