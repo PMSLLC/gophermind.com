@@ -33,6 +33,8 @@ import (
 	"io/fs"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -185,6 +187,12 @@ type Spec struct {
 	// ModCacheWritable is true (the deps step, spec 14, decision E15). Ignored when
 	// Config.Sandbox is nil.
 	ModCacheWritable bool
+	// LoopbackPorts are loopback TCP ports this one command may connect to, added to the
+	// profile's own list. The ports named as 127.0.0.1:N, localhost:N or [::1]:N in Env
+	// (the harness proxy URL, GM_ACCEPTANCE_ADDR, a URL-valued secret) are added
+	// automatically, so the executor needs to set this only for a port Env does not name.
+	// Ignored when Config.Sandbox is nil.
+	LoopbackPorts []int
 
 	stream io.Writer // internal: receives every output byte as it is written (the go test -json parser)
 }
@@ -215,6 +223,30 @@ func startErr(err error) error {
 	return errors.New("runner: could not start the program")
 }
 
+var envPortRE = regexp.MustCompile(`(?i)(?:localhost|127\.0\.0\.1|\[::1\]):([0-9]{1,5})\b`)
+
+// envPorts returns the loopback ports an environment names.
+func envPorts(env []string) []int {
+	var out []int
+	for _, e := range env {
+		for _, m := range envPortRE.FindAllStringSubmatch(e, -1) {
+			if n, err := strconv.Atoi(m[1]); err == nil && n >= 1 && n <= 65535 {
+				out = append(out, n)
+			}
+		}
+	}
+	return out
+}
+
+// mergePorts concatenates port lists into a new slice, so a caller's profile is never mutated.
+func mergePorts(lists ...[]int) []int {
+	var out []int
+	for _, l := range lists {
+		out = append(out, l...)
+	}
+	return out
+}
+
 // killProc kills one process; tests replace it.
 var killProc = func(pid int) error { return syscall.Kill(pid, syscall.SIGKILL) }
 
@@ -237,6 +269,7 @@ func (r *Runner) Run(ctx context.Context, s Spec) Result {
 		if s.ModCacheWritable {
 			p.ModCacheWritable = true
 		}
+		p.LoopbackPorts = mergePorts(p.LoopbackPorts, s.LoopbackPorts, envPorts(s.Env))
 		wrapped, err := sandbox.Wrap(cmd, p)
 		if err != nil {
 			return Result{ExitCode: -1, Err: err}
