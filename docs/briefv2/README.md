@@ -104,8 +104,9 @@ The order of a run:
 3. Types and stubs: the contract's type declarations and one stub per leaf are
    written, so every package builds.
 4. The deps step: the only step that touches the network (see below).
-5. Wave 0 commit: the test files the planner wrote, the types, the stubs, `go.mod`
-   and `go.sum`.
+5. Wave 0 commit: the test files the planner wrote (leaf tests and Go acceptance
+   tests), the types, the stubs, `go.mod` and `go.sum`; first the acceptance red
+   check (see Acceptance root tests).
 6. Waves in order. Each leaf is built from its contract alone through the
    escalation ladder (the same model again with the failure, the next model of the
    tier, a human); after each wave the harness builds, vets and runs the race
@@ -521,6 +522,75 @@ Run folder files added by the planner: `requirements.json`, `answers.json`,
 records where a run's folder is, so `resume`, `status`, `coverage` and `calls`
 need only the id.
 
+## Acceptance root tests
+
+A root test is the shell command that proves one acceptance bullet (or a
+command-checked constraint). The executor counts a bullet as passed when its
+command exits 0, so a command that cannot fail makes `Acceptance passed: N of N`
+meaningless. Five rules keep that number honest.
+
+**One shared checker.** `briefv2/acceptcheck` reads a command the way the shell
+does (quotes, pipes, `&&`, `||`, `$( )`, here-documents, `sh -c`). The planner and
+the executor both import it; the planner never imports the executor. Its
+`Vacuous` level says a command cannot prove the built server at all (a no-op, `go
+run|install|get|generate`, a binary by a path, nothing that touches a build or the
+server), and the executor still uses only that level. Its `Quality` level says a
+command cannot fail for the right reason, and the planner uses it. The findings
+are a fixed vocabulary and never quote a command: `masked_failure` (`|| true`,
+`|| :`, `|| echo ...`, `|| exit 0`, `2>/dev/null ||`, `set +e`, a last line of
+`; true` or `; echo ...`), `success_echo` (a trailing `&& echo OK` is the only
+assertion), `placeholder` (`{id}`, `<id>`, `...`, TODO, `(simulate`),
+`undefined_variable` (a `$NAME` nothing earlier in the command sets and that is
+not a `GM_ACCEPTANCE_*`, declared env or secret name), `curl_unasserted` (no
+`-f`/`--fail` and the output is not tested), `jq_unasserted` (no `-e` and the
+output is not tested) and `print_only` (echo, printf, cat, ls, find without
+`-exec`, head, awk without `exit`). A guard that exits non-zero (`|| exit 1`) is fine.
+
+**The prompts state the harness contract.** `planner/prompts/harness.md` is put into
+the Coverage and Coverage-fill prompts: commands run with `sh -c` from the repo
+root; every main package under `cmd/` is built into a directory that is first on
+`PATH`; `GM_ACCEPTANCE_ADDR`, `GM_ACCEPTANCE_URL`, `GM_ACCEPTANCE_BIN` and
+`GM_ACCEPTANCE_PIDFILE` are exported; no placeholders; pass means exit 0. It has
+three good and three bad examples, and a test holds every example to the checker.
+
+**The quality gate.** After the first Coverage reply and after each fill round the
+checker runs on every root test. A finding is a coverage defect handled by the
+existing bounded fill rounds: the fill prompt lists requirement ids and finding
+names only, and a replacement root test drops the flagged one. A root test that is
+still weak after `max_coverage_rounds` stops the planner before approval with a
+fixed message of at most 10 requirement ids and finding names (a
+`planner.QualityError`); `approve` runs the same check, so a `coverage.json` edited
+by hand cannot be approved either. `APPROVAL.md` has a `Quality` column per
+requirement: `ok` or the finding names.
+
+**Go acceptance tests.** A narrative acceptance bullet (no command in backticks)
+that describes a flow is proven by a Go test, not a shell script. When the
+Coverage reply declares `serve` (`{"command": "venture-server serve", "ready":
+"/healthz"}`, kept in `coverage.json`, so the approval hash covers it) the harness
+fixes that bullet's root test command to `go test -tags acceptance ./acceptance
+-run '^TestA8$' -count=1 -v`, whatever the model wrote. After approval the
+Test-writer writes `acceptance/<id>_test.go`: package `acceptance`, standard
+library only (no `os/exec`, `syscall`, `httptest`), one `TestA<N>`, a `//go:build
+acceptance` line the harness adds (so a plain `go test ./...` never runs it),
+`os.Getenv("GM_ACCEPTANCE_URL")`, `t.Fatal` on any unmet expectation, never
+`t.Skip`, and helpers only with the prefix `a<N>`. The file goes through
+`pathsafe`, is hashed into `_state/acceptance_tests.json` (like
+`leaf_tests.json`), is committed by Wave 0 and is checked against its hash before
+Wave 0 and before every acceptance round (`test_file_changed`). The executor
+starts the `serve` command once per acceptance round, waits until the ready path
+answers, runs those tests against `GM_ACCEPTANCE_URL`, kills the process group
+and checks nothing is left (`acceptance_serve`, `acceptance_leak`). Any command
+that is one plain `go test` invocation is run through `go test -json` and judged
+by the runner's rule: a test ran and passed, none failed, every test named by
+`-run` passed, a skipped test is not a pass.
+
+**The acceptance red check.** At Wave 0, once the stubs compile, each root test
+that exercises the server (it runs a built binary, curl, a `GM_ACCEPTANCE_*`
+variable, a loopback address, or a go test of the acceptance package) runs
+against the stub repository and must fail. One that passes proves nothing: the run
+stops `failed` with `acceptance_not_red`, naming bullet ids only. Commands that
+only check the code (`go build`, `go vet`, `gofmt`, `grep`) are exempt.
+
 ## Settings
 
 `<config dir>/gophermind.yaml` is written with defaults the first time `plan`
@@ -630,6 +700,7 @@ gophermind-lib/briefv2/
   router/     fallback chains, cooldowns, the privacy rule
   human/      the human gate: terminal, file, programmatic
   planner/    requirements, the stages, coverage, prompts, the offline fixture provider
+  acceptcheck/ the shell-aware checker of acceptance root test commands (planner and executor)
   executor/   the plan loader, leaf loop, waves, acceptance, resume, landing
   report/     report.json and the printed summary
   gitland/    the work branch, commits and landing

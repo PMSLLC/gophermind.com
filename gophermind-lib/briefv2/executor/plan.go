@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"gophermind/gophermind-lib/briefv2/acceptcheck"
 	"gophermind/gophermind-lib/briefv2/brief"
 	"gophermind/gophermind-lib/briefv2/contract"
 	"gophermind/gophermind-lib/briefv2/packer"
@@ -32,6 +33,8 @@ type Plan struct {
 	byID                map[string]*Leaf
 	Requirements        []planner.Requirement
 	Coverage            planner.CoverageFile
+	Serve               *planner.Serve              // how to start the server for the Go acceptance tests, or nil
+	AcceptTests         map[string]planner.LeafTest // acceptance requirement id -> its Go test (the planner's manifest)
 	Deps                []planner.Dependency
 	Classes             map[string]string
 	Hashes              map[string]string // "contracts.json", "tree/<path>" -> hex sha256, taken at load
@@ -152,10 +155,19 @@ func LoadPlan(runDir, repo string) (*Plan, error) {
 		return nil, errors.New("executor: dependencies.json is not readable")
 	}
 
+	accept, err := planner.ReadAcceptanceTests(runDir)
+	if err != nil {
+		return nil, fmt.Errorf("executor: _state/acceptance_tests.json is not readable (%s)", planner.JSONErr(err))
+	}
+
 	p := &Plan{
 		RunID: c.BriefID, RunDir: runDir, Repo: repo,
 		Brief: b, BriefRepo: b.Front.Repo, Contracts: c,
 		byID: map[string]*Leaf{}, Requirements: reqs, Coverage: cov, Deps: deps, Classes: classes, Hashes: hashes,
+		Serve: cov.Serve, AcceptTests: accept,
+	}
+	if err := p.checkAcceptTests(repo); err != nil {
+		return nil, err
 	}
 	fns := map[string]contract.Function{}
 	for _, f := range c.Functions {
@@ -367,6 +379,54 @@ func (p *Plan) binNames() []string {
 			seen[name] = true
 			out = append(out, name)
 		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// checkAcceptTests holds the Go acceptance tests the planner wrote to the same
+// rules as a leaf's test: a path the sandbox allows, a regular file in the
+// repository, a recorded hash, and every acceptance package root test names only
+// tests of the manifest.
+func (p *Plan) checkAcceptTests(repo string) error {
+	byFunc := map[string]bool{}
+	for id, at := range p.AcceptTests {
+		abs, err := pathsafe.ResolveTest(repo, at.TestFile)
+		if err != nil {
+			return fmt.Errorf("executor: the acceptance test of %s: its path is not allowed", id)
+		}
+		if fi, err := os.Lstat(abs); err != nil || !fi.Mode().IsRegular() {
+			return fmt.Errorf("executor: the acceptance test of %s is missing from the repository", id)
+		}
+		if at.TestFunc == "" || at.SHA256 == "" {
+			return fmt.Errorf("executor: the acceptance test of %s is not fully recorded", id)
+		}
+		byFunc[at.TestFunc] = true
+	}
+	for _, t := range p.Coverage.RootTests {
+		gt, ok := acceptcheck.ParseGoTest(t.Command)
+		if !ok || !isAcceptancePkg(gt.Pkg) {
+			continue
+		}
+		for _, fn := range gt.Funcs {
+			if !byFunc[fn] {
+				return fmt.Errorf("executor: the root test of %s runs an acceptance test the planner did not record", t.Requirement)
+			}
+		}
+	}
+	return nil
+}
+
+// isAcceptancePkg says a go test package argument is the acceptance package.
+func isAcceptancePkg(pkg string) bool {
+	return pkg == "./"+planner.AcceptanceDir || strings.HasPrefix(pkg, "./"+planner.AcceptanceDir+"/")
+}
+
+// acceptTestFiles is the repo-relative path of every acceptance test, sorted.
+func (p *Plan) acceptTestFiles() []string {
+	var out []string
+	for _, at := range p.AcceptTests {
+		out = append(out, at.TestFile)
 	}
 	sort.Strings(out)
 	return out

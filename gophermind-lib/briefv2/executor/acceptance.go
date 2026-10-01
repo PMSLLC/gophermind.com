@@ -24,6 +24,7 @@ import (
 	"syscall"
 	"time"
 
+	"gophermind/gophermind-lib/briefv2/acceptcheck"
 	"gophermind/gophermind-lib/briefv2/blackboard"
 	"gophermind/gophermind-lib/briefv2/gitland"
 	"gophermind/gophermind-lib/briefv2/packer"
@@ -318,7 +319,7 @@ func (rc *runCtx) afterCommand(addr string, ports []string) *stopError {
 		}
 	}
 	deadline := time.Now().Add(time.Second)
-	for {
+	for addr != "" {
 		c, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
 		if err != nil {
 			break
@@ -361,13 +362,23 @@ func ctxErrOr(ctx context.Context) error {
 // runRootTest runs one root test command with sh -c from the repo root through
 // rc.chk.Run, on a fresh loopback address it is given through
 // GM_ACCEPTANCE_ADDR and GM_ACCEPTANCE_URL (and the built binaries' directory
-// through GM_ACCEPTANCE_BIN). The runner.Result carries the output in memory
-// only; the CommandProof carries hashes.
+// through GM_ACCEPTANCE_BIN). A command that is one plain go test invocation is
+// run as go test -json instead and judged by the test runner's pass rule. A
+// command that runs the acceptance package gets the address of the server the
+// plan's serve declaration started, while one is running. The runner.Result
+// carries the output in memory only; the CommandProof carries hashes.
 func (rc *runCtx) runRootTest(ctx context.Context, t planner.RootTest, unset ...string) (CommandProof, runner.Result, error) {
+	return rc.runRootTestFull(ctx, t, rc.acceptanceTimeout(), unset...)
+}
+
+// runRootTestFull is runRootTest with the command's time limit given.
+func (rc *runCtx) runRootTestFull(ctx context.Context, t planner.RootTest, timeout time.Duration, unset ...string) (CommandProof, runner.Result, error) {
 	env, err := rc.env("acceptance", envAcceptance)
 	if err != nil {
 		return CommandProof{}, runner.Result{}, errors.New("executor: the environment of the acceptance run could not be built")
 	}
+	gt, isGoTest := acceptcheck.ParseGoTest(t.Command)
+	unset = append(append([]string(nil), unset...), gt.Unset...)
 	for _, name := range unset {
 		kept := env[:0]
 		for _, e := range env {
@@ -377,9 +388,12 @@ func (rc *runCtx) runRootTest(ctx context.Context, t planner.RootTest, unset ...
 		}
 		env = kept
 	}
-	addr, err := freeAddr()
-	if err != nil {
-		return CommandProof{}, runner.Result{}, errors.New("executor: no free loopback port for the acceptance run")
+	shared := isGoTest && isAcceptancePkg(gt.Pkg) && rc.serveAddr != ""
+	addr := rc.serveAddr
+	if !shared {
+		if addr, err = freeAddr(); err != nil {
+			return CommandProof{}, runner.Result{}, errors.New("executor: no free loopback port for the acceptance run")
+		}
 	}
 	env = append(env, "GM_ACCEPTANCE_ADDR="+addr, "GM_ACCEPTANCE_URL=http://"+addr,
 		"GM_ACCEPTANCE_BIN="+rc.binDir, "GM_ACCEPTANCE_PIDFILE="+rc.acceptPidFile())
@@ -391,26 +405,111 @@ func (rc *runCtx) runRootTest(ctx context.Context, t planner.RootTest, unset ...
 				Message: "executor: port " + p + " named by an acceptance command is already in use (an environment fault)"}
 		}
 	}
-	res := rc.chk.Run(ctx, runner.Spec{
-		Dir: rc.o.Repo, Argv: runner.Shell(t.Command), Env: env,
-		Timeout: rc.acceptanceTimeout(),
-	})
+	spec := runner.Spec{Dir: rc.o.Repo, Argv: runner.Shell(t.Command), Env: env, Timeout: timeout}
+	if isGoTest {
+		argv, err := rc.goTestArgv(gt)
+		if err != nil {
+			return CommandProof{}, runner.Result{}, err
+		}
+		spec.Argv = argv
+		spec.Env = append(env, gt.Env...)
+	}
+	res := rc.chk.Run(ctx, spec)
 	if res.Canceled || (res.Err == nil && ctx.Err() != nil) {
 		return CommandProof{}, res, ctxErrOr(ctx)
 	}
 	if res.Err != nil {
 		return CommandProof{}, res, fmt.Errorf("executor: an acceptance command could not be started (%w)", res.Err)
 	}
-	if se := rc.afterCommand(addr, ports); se != nil {
+	after := addr
+	if shared {
+		after = "" // the server is still up: its shutdown is checked when it stops
+	}
+	if se := rc.afterCommand(after, ports); se != nil {
 		return CommandProof{}, res, se
 	}
 	sum := sha256.Sum256([]byte(t.Command))
+	passed := res.ExitCode == 0 && !res.TimedOut
+	if isGoTest {
+		passed = goTestPassed(res, gt)
+	}
 	p := CommandProof{
 		Test: rc.scrubText(t.Name), CommandSHA: hex.EncodeToString(sum[:]), ExitCode: res.ExitCode, TimedOut: res.TimedOut,
 		DurationMS: res.Duration.Milliseconds(), OutputBytes: res.Out.Size(), OutputSHA: res.Out.SHA256(),
-		Passed: res.ExitCode == 0 && !res.TimedOut,
+		Passed: passed,
 	}
 	return p, res, nil
+}
+
+// goTestArgv is go test -json for a recognised plain go test command: the
+// flags the command named (-tags, -race, -short, -run as an anchored list) and
+// its package. -v is dropped: -json already carries every event.
+func (rc *runCtx) goTestArgv(gt acceptcheck.GoTest) ([]string, error) {
+	argv := []string{rc.goBin, "test", "-count=1", "-json"}
+	if gt.Tags != "" {
+		argv = append(argv, "-tags", gt.Tags)
+	}
+	if gt.Race {
+		argv = append(argv, "-race")
+	}
+	if gt.Short {
+		argv = append(argv, "-short")
+	}
+	if len(gt.Funcs) > 0 {
+		re, err := runner.RunRegex(gt.Funcs)
+		if err != nil {
+			return nil, errors.New("executor: an acceptance go test names a test the runner cannot select")
+		}
+		argv = append(argv, "-run", re)
+	}
+	return append(argv, gt.Pkg), nil
+}
+
+// goTestPassed is the runner's pass rule for a go test acceptance command: it
+// exited 0 in time, at least one test ran and passed, none failed, the build
+// held, and every test its -run named passed (a skipped test is not a pass). A
+// stream cut by the output cap keeps the exit status and the events it holds.
+func goTestPassed(res runner.Result, gt acceptcheck.GoTest) bool {
+	if res.ExitCode != 0 || res.TimedOut {
+		return false
+	}
+	rep := runner.ParseTestJSON(strings.NewReader(res.Out.Text()))
+	if rep.Events == 0 || rep.PkgFailed || rep.BuildFailed || len(rep.Failed) > 0 || len(rep.Passed) == 0 {
+		return false
+	}
+	if res.Out.Truncated() {
+		return true
+	}
+	for _, name := range gt.Funcs {
+		found := false
+		for k := range rep.Passed {
+			if strings.HasSuffix(k, "."+name) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+// plainTestOutput turns a go test -json stream into the text the test printed,
+// for the capped failure lines a repair round shows a leaf: JSON event lines
+// become their Output field, any other line stays.
+func plainTestOutput(text string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(text, "\n") {
+		var ev struct{ Output string }
+		if strings.HasPrefix(line, "{") && json.Unmarshal([]byte(line), &ev) == nil {
+			b.WriteString(ev.Output)
+			continue
+		}
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 type failedBullet struct {
@@ -477,9 +576,19 @@ func (rc *runCtx) acceptanceRun(ctx context.Context, p acceptPlan, round int) (A
 	if err := rc.writeAcceptance(file); err != nil { // the start of the round: complete is false
 		return file, nil, err
 	}
+	if se := rc.checkAcceptTests(); se != nil {
+		return file, nil, se
+	}
 	snap, err := TakeSnapshot(rc.o.Repo, rc.git)
 	if err != nil {
 		return file, nil, err
+	}
+	var sp *serveProc
+	if rc.needsServe(p) {
+		if sp, err = rc.startServe(ctx); err != nil {
+			return file, nil, err
+		}
+		defer rc.dropServe(sp)
 	}
 	failed := map[string]failedBullet{}
 	do := func(list []planBullet, into *[]BulletProof, c *Counts) error {
@@ -504,6 +613,11 @@ func (rc *runCtx) acceptanceRun(ctx context.Context, p acceptPlan, round int) (A
 	}
 	if err := do(p.constraints, &file.Constraints, &file.ConstraintsChecked); err != nil {
 		return AcceptanceFile{}, nil, err
+	}
+	if sp != nil {
+		if se := rc.stopServe(sp); se != nil {
+			return file, failed, se
+		}
 	}
 	stray, err := snap.Stray(rc.o.Repo, rc.git)
 	if err != nil {
@@ -944,7 +1058,7 @@ func (rc *runCtx) finish(ctx context.Context, f runFlags) (finishResult, error) 
 func stopFailure(se *stopError) []string {
 	switch se.Reason {
 	case "acceptance_failed", "constraint_failed", "acceptance_environment", "acceptance_unmapped", "acceptance_tampered",
-		"acceptance_stray", "acceptance_leak", "acceptance_vacuous", "acceptance_build", "tree_not_clean", "foreign_dirt", "repo_moved", "base_moved":
+		"acceptance_stray", "acceptance_leak", "acceptance_vacuous", "acceptance_build", "acceptance_serve", "acceptance_not_red", "tree_not_clean", "foreign_dirt", "repo_moved", "base_moved":
 		return []string{strings.TrimPrefix(se.Message, "executor: ")}
 	}
 	return nil

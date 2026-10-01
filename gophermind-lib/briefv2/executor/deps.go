@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"gophermind/gophermind-lib/briefv2/planner"
 	"gophermind/gophermind-lib/briefv2/runner"
@@ -15,6 +16,9 @@ import (
 type depsHooks struct {
 	GoProxy string // "https://proxy.golang.org"
 	GoSumDB string // "" means the go default (sum.golang.org)
+	// RedTimeout, when positive, is the time limit of one acceptance red check
+	// command (tests make it short: a command that has not passed by then is red).
+	RedTimeout time.Duration
 }
 
 var testHooks = depsHooks{GoProxy: "https://proxy.golang.org"}

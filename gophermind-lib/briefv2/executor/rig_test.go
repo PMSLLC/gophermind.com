@@ -97,6 +97,9 @@ type rig struct {
 type rigOpts struct {
 	Settings  func(*settings.Config) // edit the config before it is validated
 	BriefEdit func(string) string    // edit the brief text before planning
+	// PlannerDirs are fixture directories searched before testdata/greeter/planner
+	// when the plan is made (the first one holding a reply wins).
+	PlannerDirs []string
 }
 
 func newRig(t *testing.T, mods ...func(*rigOpts)) *rig {
@@ -202,7 +205,7 @@ func buildRig(t *testing.T, ro rigOpts, repo, dbPath, modBase, briefDir string, 
 		}
 		briefPath := filepath.Join(briefDir, "brief.md")
 		write(t, briefPath, text)
-		g.planOffline(briefPath, mem)
+		g.planOffline(briefPath, mem, ro.PlannerDirs)
 	} else if err := mem.Set(vault.RunScope(g.id), greeterSecret, canarySecret); err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +254,7 @@ func buildRig(t *testing.T, ro rigOpts, repo, dbPath, modBase, briefDir string, 
 // planOffline runs the real planner over the scripted replies in
 // testdata/greeter/planner, so approval, coverage, the tree, the test files
 // and _state/leaf_tests.json are produced by the code under test.
-func (g *rig) planOffline(briefPath string, mem *memSecrets) {
+func (g *rig) planOffline(briefPath string, mem *memSecrets, dirs []string) {
 	g.t.Helper()
 	// The planner finds its run file through the process environment, so each
 	// planning step takes the lock and its own config directory. Nothing else
@@ -267,7 +270,7 @@ func (g *rig) planOffline(briefPath string, mem *memSecrets) {
 		}
 	}()
 	os.Setenv("GOPHERMIND_CONFIG_DIR", g.t.TempDir())
-	fake, err := planner.FixtureProvider(filepath.Join(greeterDir, "planner"))
+	fake, err := planner.FixtureProvider(append(append([]string{}, dirs...), filepath.Join(greeterDir, "planner"))...)
 	if err != nil {
 		g.t.Fatal(err)
 	}

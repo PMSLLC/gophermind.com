@@ -40,6 +40,7 @@ func TestMain(m *testing.M) {
 		os.Exit(2)
 	}
 	goCacheOverride = cache
+	testHooks.RedTimeout = 4 * time.Second
 	os.Setenv("GOPHERMIND_CONFIG_DIR", cfg)
 	// Go's default -timeout is 10 minutes per package and its panic names
 	// whichever test happens to be running. A package that is slow looks like a
