@@ -9,7 +9,8 @@ Defect words:
 - `outputs_count`, `output_type`: `outputs` needs one entry, with `name` and `type`, for every result of the signature.
 - `errors_missing`, `errors_incomplete`: a function that returns `error` needs at least one `errors` entry, and every entry needs `when` and `returns`.
 - `depends_unknown`: `depends_on` names an id that is not in the contract.
-- `schema`: the node does not match the node schema.
+- `schema`: the node does not match the node schema; its `where:` line names each failing `field:` (`[]` is an array item) and the schema `keyword:` it breaks (`type`, `enum`, `required`, `additionalProperties`, ...).
+- Shapes: `side_effects` is an array of strings, one short sentence each (never objects); `inputs`, `outputs` and `errors` are arrays of objects; `model_tier` is `strong`, `standard` or `any`, never a node class.
 
 The nodes:
 <nodes>

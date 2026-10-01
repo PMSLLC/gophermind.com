@@ -1,0 +1,64 @@
+{
+ "component": "reminders-and-accountability",
+ "raw": {
+  "contract": {
+   "errors": [
+    {
+     "returns": "context error",
+     "when": "ctx is cancelled or deadline exceeded"
+    },
+    {
+     "returns": "non-nil error",
+     "when": "task is nil"
+    },
+    {
+     "returns": "wrapped error from SendNotification",
+     "when": "SendNotification fails for any action"
+    }
+   ],
+   "file": "internal/notify/escalation.go",
+   "inputs": [
+    {
+     "description": "Context for cancellation and deadlines.",
+     "name": "ctx",
+     "type": "context.Context"
+    },
+    {
+     "description": "The task being escalated. Must not be nil.",
+     "name": "task",
+     "type": "*Task"
+    },
+    {
+     "description": "List of actions to execute. May be empty.",
+     "name": "actions",
+     "type": "[]EscalationAction"
+    }
+   ],
+   "outputs": [
+    {
+     "description": "Non-nil if any action fails or context is cancelled.",
+     "name": "error",
+     "type": "error"
+    }
+   ],
+   "package": "internal/notify",
+   "side_effects": [
+    {
+     "description": "Sends notifications to owners/admins as part of escalation.",
+     "target": "fn-send-notification",
+     "type": "call"
+    }
+   ],
+   "signature": "func ExecuteEscalationActions(ctx context.Context, task *Task, actions []EscalationAction) error"
+  },
+  "depends_on": [
+   "task",
+   "fn-send-notification"
+  ],
+  "description": "Executes the required escalation actions for a task, such as sending notifications or creating new tasks.",
+  "id": "fn-execute-escalation-actions",
+  "model_tier": "strong",
+  "node_class": "handler",
+  "title": "Execute Escalation Actions for Task"
+ }
+}

@@ -1,6 +1,9 @@
 package planner
 
-import "errors"
+import (
+	"errors"
+	"io"
+)
 
 // SetBeforeTestWrite installs a hook run after a reply is parsed and before
 // its test file is checked and written, and returns the previous one.
@@ -27,3 +30,10 @@ func parseOutline(text, briefID string) (map[string]any, []Dependency, error) {
 
 // MaxEmittedTextBytes exposes the cap on the declared-ids list to the external tests.
 const MaxEmittedTextBytes = maxEmittedTextBytes
+
+// SetDebugOut replaces where the debug dump notices go and returns the restore.
+func SetDebugOut(w io.Writer) func() {
+	old := debugOut
+	debugOut = w
+	return func() { debugOut = old }
+}
