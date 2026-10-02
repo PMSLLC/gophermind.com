@@ -753,6 +753,9 @@ func TestHarnessFaultMidRunStillWritesReport(t *testing.T) {
 	if rep.Status != "failed" || rep.StopReason != "harness_fault" {
 		t.Errorf("report = %s (%s)", rep.Status, rep.StopReason)
 	}
+	if rep.ExitCode != 7 {
+		t.Errorf("report exit code = %d, want 7", rep.ExitCode)
+	}
 	if rd := readReportFile(t, g); rd.StopReason != "harness_fault" {
 		t.Errorf("report.json = %+v", rd.StopReason)
 	}

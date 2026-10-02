@@ -296,7 +296,7 @@ func TestExitCodeMapping(t *testing.T) {
 		status, stop string
 		want         int
 	}{{"verified", "", 0}, {"failed", "x", 1}, {"escalated", "x", 4}, {"escalated", "waiting_on_human", 3},
-		{"interrupted", "", 5}, {"weird", "", 1}} {
+		{"interrupted", "", 5}, {"weird", "", 1}, {"failed", "harness_fault", 7}} {
 		if got := report.ExitCode(c.status, c.stop); got != c.want {
 			t.Errorf("%s/%s: %d want %d", c.status, c.stop, got, c.want)
 		}

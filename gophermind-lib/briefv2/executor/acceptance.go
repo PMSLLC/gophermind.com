@@ -146,6 +146,42 @@ func mapAcceptance(reqs []planner.Requirement, cov planner.CoverageFile, bins ..
 	return p, nil
 }
 
+// checkCoverageTotal is the other half of the spec 9 tripwire: coverage.json
+// covers every requirement of the plan exactly once, names no requirement the
+// plan does not have, and the entry of an acceptance bullet names a root test.
+// The planner only writes such a file; a file that falls short was changed
+// after approval or comes from a planner that is wrong, and the run must not
+// start on it. The message names requirement ids only.
+func checkCoverageTotal(reqs []planner.Requirement, cov planner.CoverageFile) error {
+	known := map[string]planner.Requirement{}
+	for _, rq := range reqs {
+		known[rq.ID] = rq
+	}
+	seen := map[string]int{}
+	var bad []string
+	for _, c := range cov.Covered {
+		seen[c.Requirement]++
+		rq, ok := known[c.Requirement]
+		switch {
+		case !ok:
+			bad = append(bad, c.Requirement+" (not a requirement of the plan)")
+		case seen[c.Requirement] == 2:
+			bad = append(bad, c.Requirement+" (covered twice)")
+		case rq.Kind == planner.ReqAcceptance && len(c.RootTests) == 0:
+			bad = append(bad, c.Requirement+" (an acceptance bullet with no root test)")
+		}
+	}
+	for _, rq := range reqs {
+		if seen[rq.ID] == 0 {
+			bad = append(bad, rq.ID+" (not covered)")
+		}
+	}
+	if len(bad) > 0 {
+		return fmt.Errorf("executor: coverage.json does not cover the plan exactly: %s", strings.Join(bad, ", "))
+	}
+	return nil
+}
+
 var binNameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
 // buildBinaries builds every main package under cmd/ to <bin>/<dirname> with
@@ -1057,7 +1093,7 @@ func (rc *runCtx) finish(ctx context.Context, f runFlags) (finishResult, error) 
 // codes, never output).
 func stopFailure(se *stopError) []string {
 	switch se.Reason {
-	case "acceptance_failed", "constraint_failed", "acceptance_environment", "acceptance_unmapped", "acceptance_tampered",
+	case "acceptance_failed", "constraint_failed", "acceptance_environment", "acceptance_unmapped", "coverage_incomplete", "acceptance_tampered",
 		"acceptance_stray", "acceptance_leak", "acceptance_vacuous", "acceptance_build", "acceptance_serve", "acceptance_not_red", "tree_not_clean", "foreign_dirt", "repo_moved", "base_moved":
 		return []string{strings.TrimPrefix(se.Message, "executor: ")}
 	}
@@ -1095,9 +1131,21 @@ func (rc *runCtx) land(ctx context.Context, acc accResult) (*report.Landing, *st
 		return l, &stopError{Status: "failed", Reason: "landing_blocked", Message: "executor: " + msg}, nil
 	}
 	if rc.diffOnly {
+		// The patch is the whole working tree against the base: a path that is
+		// no leaf's and not Wave 0's would ride along, so it is refused.
+		dirty, err := rc.git.Dirty()
+		if err != nil {
+			return blocked("the repository state could not be read")
+		}
+		if foreign := rc.foreignDirt(dirty, nil); len(foreign) > 0 {
+			return blocked(fmt.Sprintf("the working tree holds %d path(s) outside the plan, so no patch was made", len(foreign)))
+		}
 		patch, err := rc.git.Diff(rc.baseBranch())
 		if err != nil {
 			return blocked("the patch could not be made")
+		}
+		if packer.HasSecret(string(patch), rc.secretValues()) {
+			return blocked("the patch holds a secret value, so it was not written")
 		}
 		if err := report.WriteFile(rc.o.RunDir, "changes.patch", patch, report.WriteOptions{RepoRoot: rc.o.Repo}); err != nil {
 			return blocked("changes.patch could not be written")

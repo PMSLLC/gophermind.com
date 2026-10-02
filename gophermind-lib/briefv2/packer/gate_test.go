@@ -84,6 +84,8 @@ func TestReplyGateRefusals(t *testing.T) {
 		"syscall exit":           "import \"syscall\"\nfunc h() { syscall.Exit(0) }",
 		"log fatal":              "import \"log\"\nfunc h() { log.Fatalf(\"x\") }",
 		"log panicln":            "import \"log\"\nfunc h() { log.Panicln(\"x\") }",
+		"logger fatal method":    "import \"log\"\nfunc h(l *log.Logger) { l.Fatal(\"x\") }",
+		"interface panicf":       "func h(l interface{ Panicf(string, ...any) }) { l.Panicf(\"x\") }",
 		"goexit":                 "import \"runtime\"\nfunc h() { runtime.Goexit() }",
 		"recover":                "func h() { defer func() { _ = recover() }() }",
 	}
