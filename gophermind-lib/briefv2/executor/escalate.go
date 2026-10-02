@@ -14,6 +14,9 @@ import (
 // reasonSkipped is the reason of a leaf a person chose to skip.
 const reasonSkipped = "skipped by human"
 
+// reasonPanic is the terminal reason of a leaf whose run panicked.
+const reasonPanic = "harness_panic"
+
 // humanStop is the run ending at the human gate: a stop answer, no gate, or a
 // gate that failed. Spec 7.4 and R14: no answer means stop.
 func humanStop(id string) *stopError {
@@ -140,7 +143,7 @@ func (rc *runCtx) escalate(ctx context.Context, l *Leaf, from blackboard.Status,
 	switch res.Action {
 	case human.ActionRetry:
 		if note := strings.TrimSpace(res.Note); note != "" {
-			if err := AddNote(rc.o.RunDir, l.ID, note); err != nil {
+			if err := AddNote(rc.o.RunDir, l.ID, rc.scrubText(note)); err != nil {
 				return res, err
 			}
 		}

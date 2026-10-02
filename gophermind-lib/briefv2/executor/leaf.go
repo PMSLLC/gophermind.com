@@ -18,6 +18,7 @@ import (
 	"gophermind/gophermind-lib/briefv2/human"
 	"gophermind/gophermind-lib/briefv2/packer"
 	"gophermind/gophermind-lib/briefv2/provider"
+	"gophermind/gophermind-lib/briefv2/proxy"
 	"gophermind/gophermind-lib/briefv2/report"
 	"gophermind/gophermind-lib/briefv2/router"
 	"gophermind/gophermind-lib/briefv2/runner"
@@ -28,10 +29,11 @@ import (
 // runner output to show. They are fixed text: nothing of the refused reply is
 // ever put into one.
 const (
-	noteForbidden = "The previous reply was refused before anything was written: it used a file header, a diff, several code fences or another form that is not allowed. Reply with exactly one Go source file in one code fence."
-	noteMalformed = "The previous file did not parse or does not satisfy the contract: the package, the exact signature and the allowed declarations. Reply with exactly one Go source file in one code fence."
-	noteStray     = "The previous reply was refused: something other than the target file was written while its tests ran. Write only the target file."
-	noteCritical  = "The previous reply was refused: a request to a critical network host failed while its tests ran."
+	noteSecretInSource = "The previous reply was refused before anything was written: its source held a secret value. Never write a secret into source; read it from the environment."
+	noteForbidden      = "The previous reply was refused before anything was written: it used a file header, a diff, several code fences or another form that is not allowed. Reply with exactly one Go source file in one code fence."
+	noteMalformed      = "The previous file did not parse or does not satisfy the contract: the package, the exact signature and the allowed declarations. Reply with exactly one Go source file in one code fence."
+	noteStray          = "The previous reply was refused: something other than the target file was written while its tests ran. Write only the target file."
+	noteCritical       = "The previous reply was refused: a request to a critical network host failed while its tests ran."
 )
 
 // noteImports is the sentence for a reply that imports a package the policy
@@ -293,6 +295,21 @@ func (rc *runCtx) runLeaf(ctx context.Context, l *Leaf, in leafIn) (out leafOutc
 			}
 		}
 	}()
+	// Registered after the cleanup above so it runs first: a panic anywhere in
+	// the leaf becomes a terminal failure of this leaf (the panic value is not
+	// kept: it can quote anything), or, when the work was already committed, a
+	// harness fault that leaves the leaf to be adopted on the next run.
+	defer func() {
+		if r := recover(); r == nil {
+			return
+		}
+		rc.emit("warning", l.ID, "a panic ended the leaf")
+		if lr.passed {
+			out, err = leafOutcome{}, fmt.Errorf("executor: leaf %s panicked after its commit", l.ID)
+			return
+		}
+		out, err = lr.fail(ctx, reasonPanic, nil)
+	}()
 
 	if serr := rc.o.Board.SetStatus(ctx, runID, l.ID, blackboard.StatusClaimed, blackboard.StatusInProgress); serr != nil {
 		if ctx.Err() != nil {
@@ -525,9 +542,9 @@ func (lr *leafRun) toHuman(ctx context.Context, reason string) (leafOutcome, boo
 		lr.cp[lr.rev] = 0
 		ok, cerr := rc.o.Board.Claim(ctx, rc.plan.RunID, l.ID, lr.worker)
 		if ctx.Err() != nil {
-			// The row was put back to ready by the retry: nothing to release, and the
-			// next run takes the leaf from there.
-			lr.final = true
+			// A claim that was taken is released by the deferred release (final stays
+			// false); without one the row is ready already and the next run takes it.
+			lr.final = !ok
 			return leafOutcome{Interrupted: true}, true, nil
 		}
 		if cerr != nil || !ok {
@@ -634,7 +651,7 @@ func (lr *leafRun) adoptOnDisk(ctx context.Context) (done bool, out leafOutcome,
 	case !v.Pass():
 		lr.prev = failureOf(v, rc.secretValues())
 	default:
-		if err := lr.finishPass(ctx, committed, hash); err != nil {
+		if err := lr.finishPass(ctx, committed, hash, nil); err != nil {
 			return false, out, err
 		}
 		return true, leafOutcome{Status: blackboard.StatusVerified}, nil
@@ -658,6 +675,8 @@ func (lr *leafRun) gate(src []byte) (class, note string) {
 		return ClassForbiddenWrite, noteForbidden
 	case len(lr.rc.plan.Policy().Check(r.Imports)) > 0:
 		return ClassImportNotAllowed, noteImports(lr.rc.plan.Policy())
+	case packer.HasSecret(string(src), lr.rc.secretValues()):
+		return ClassForbiddenWrite, noteSecretInSource
 	}
 	if findings, serr := ScanGoSource(lr.l.File, src); serr != nil || len(findings) > 0 {
 		return ClassForbiddenWrite, noteForbidden
@@ -717,7 +736,7 @@ func (rc *runCtx) criticalSince(id string, t time.Time) []string {
 // finishPass is the done definition met: commit (unless adopted), record the
 // result and set verified. Once the commit exists the stub must never be
 // restored, so passed is set before anything that can still fail.
-func (lr *leafRun) finishPass(ctx context.Context, committed bool, hash string) error {
+func (lr *leafRun) finishPass(ctx context.Context, committed bool, hash string, record func() error) error {
 	rc, l := lr.rc, lr.l
 	if !committed {
 		var err error
@@ -751,6 +770,13 @@ func (lr *leafRun) finishPass(ctx context.Context, committed bool, hash string) 
 	wc := context.WithoutCancel(ctx)
 	if err := rc.o.Board.SetResult(wc, rc.plan.RunID, l.ID, blackboard.Result{FilesChanged: []string{l.File, l.StubFile}, Commit: hash}); err != nil {
 		return fmt.Errorf("executor: recording the result of %s failed", l.ID)
+	}
+	if record != nil {
+		// The pass attempt goes on the row first: a crash between the two writes
+		// must not lose it.
+		if err := record(); err != nil {
+			return err
+		}
 	}
 	if err := rc.o.Board.SetStatus(wc, rc.plan.RunID, l.ID, blackboard.StatusInProgress, blackboard.StatusVerified); err != nil {
 		return fmt.Errorf("executor: marking %s verified failed", l.ID)
@@ -1002,6 +1028,9 @@ func (lr *leafRun) attempt(ctx context.Context, e ladderEntry, k int) (end entry
 	if findings, serr := ScanGoSource(l.File, reply.Source); serr != nil || len(findings) > 0 {
 		return lr.refused(ctx, e, started, reply, ClassForbiddenWrite, failureText(noteForbidden))
 	}
+	if packer.HasSecret(string(reply.Source), rc.secretValues()) {
+		return lr.refused(ctx, e, started, reply, ClassForbiddenWrite, failureText(noteSecretInSource))
+	}
 	return lr.check(ctx, e, started, reply)
 }
 
@@ -1183,10 +1212,10 @@ func (lr *leafRun) check(ctx context.Context, e ladderEntry, started time.Time, 
 		class, next = v.Class, failureOf(v, rc.secretValues())
 		reason = v.Reason()
 	default:
-		if err := lr.finishPass(ctx, false, ""); err != nil {
-			return endFailed, true, err
+		recordPass := func() error {
+			return lr.record(ctx, e, started, blackboard.VerdictPass, "pass", "", &v, reply.SHA256)
 		}
-		if err := lr.record(ctx, e, started, blackboard.VerdictPass, "pass", "", &v, reply.SHA256); err != nil {
+		if err := lr.finishPass(ctx, false, "", recordPass); err != nil {
 			return endFailed, true, err
 		}
 		return endFailed, true, nil
@@ -1212,9 +1241,15 @@ func (rc *runCtx) warningsSince(id string, t time.Time) []string {
 	}
 	var out []string
 	for _, w := range rc.prox.Warnings(id, t) {
-		out = append(out, fmt.Sprintf("a request to %s failed (%s)", w.Host, w.Kind))
+		out = append(out, rc.warningLine(w))
 	}
 	return out
+}
+
+// warningLine is one failed request as a line for the events: a host built
+// from data can hold a secret, and then the line is the redaction mark.
+func (rc *runCtx) warningLine(w proxy.Failure) string {
+	return rc.scrubText(fmt.Sprintf("a request to %s failed (%s)", w.Host, w.Kind))
 }
 
 // observeCritical counts one checked attempt toward the critical streak of the
