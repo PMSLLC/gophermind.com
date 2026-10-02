@@ -476,7 +476,7 @@ func TestExitCodes(t *testing.T) {
 	}{
 		{"verified", "", 0},
 		{"failed", "", 1},
-		{"failed", "harness_fault", 1},
+		{"failed", "harness_fault", exitFault},
 		{"failed", "integration_skipped", 1},
 		{"escalated", "waiting_on_human", 3},
 		{"escalated", "human_stop", 4},

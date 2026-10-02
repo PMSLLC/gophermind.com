@@ -261,6 +261,12 @@ var processControl = map[string]map[string]bool{
 	"runtime": {"Goexit": true},
 }
 
+// exitMethods are the method and function names the final source scan of the
+// executor (scan.go) refuses on any receiver: a logger reached through a
+// variable, a parameter or an interface can end the process. The reply gate
+// refuses the same names so a reply the scan would refuse never reaches it.
+var exitMethods = map[string]bool{"Fatal": true, "Fatalf": true, "Fatalln": true, "Panic": true, "Panicf": true, "Panicln": true}
+
 // gate enforces, on every reply, what leaf code may do. It returns a fixed
 // kind and never any reply text. The runner cannot tell a real pass from an
 // init() that prints pass lines and calls os.Exit(0); this is the mitigation.
@@ -350,6 +356,9 @@ func gate(f *ast.File, e Expect, target *ast.FuncDecl) string {
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch v := n.(type) {
 		case *ast.SelectorExpr:
+			if exitMethods[v.Sel.Name] {
+				kind = "forbidden call (process exit or fatal log)"
+			}
 			if x, ok := v.X.(*ast.Ident); ok {
 				if processControl[alias[x.Name]][v.Sel.Name] {
 					kind = "forbidden call (process exit or fatal log)"

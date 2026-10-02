@@ -196,6 +196,9 @@ func ExitCode(status, stopReason string) int {
 	case "verified":
 		return 0
 	case "failed":
+		if stopReason == "harness_fault" {
+			return 7 // the process exit code of a harness fault (spec 19)
+		}
 		return 1
 	case "escalated":
 		if stopReason == "waiting_on_human" {

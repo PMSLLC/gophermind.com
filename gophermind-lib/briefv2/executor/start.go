@@ -149,6 +149,9 @@ func newRunCtx(ctx context.Context, o Options) (*runCtx, error) {
 	if err := rc.loadReasons(); err != nil {
 		return nil, err
 	}
+	if err := checkCoverageTotal(plan.Requirements, plan.Coverage); err != nil {
+		return rc, &stopError{Status: "failed", Reason: "coverage_incomplete", Message: err.Error()}
+	}
 	// Spec 9 tripwire, before a file is touched or a model is called: an
 	// acceptance bullet with no root test can never make N smaller.
 	if rc.accept, err = mapAcceptance(plan.Requirements, plan.Coverage, plan.binNames()...); err != nil {
