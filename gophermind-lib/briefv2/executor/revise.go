@@ -80,7 +80,7 @@ func (lr *leafRun) revise(ctx context.Context) (contractProblem bool, err error)
 	}
 
 	for _, n := range notes {
-		if err := AddNote(rc.o.RunDir, l.ID, n); err != nil {
+		if err := AddNote(rc.o.RunDir, l.ID, rc.scrubText(n)); err != nil {
 			return false, err
 		}
 	}
