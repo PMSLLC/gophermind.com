@@ -89,6 +89,7 @@ This is why the unification work waits: every change to the planner, the executo
 
 1. G's open items: the name of the root package after the rename (`build` proposed), whether `CREDITS.md` keeps a PhaseFlow thank-you line (proposed yes), stream cap and polling defaults, run retention (G spec section 13).
 2. After the graded run: revisit merging the branch, re-check the eight unverified review claims, then start A.
+5. Backlog, outside the unification goal (added 2026-10-08): bring the free LLM providers from `git@github.com:tashfeenahmed/freellmapi.git` into GopherMind. Not started. Before any code: read the repo (licence, what it wraps, how it authenticates), compare it with `docs/free-providers.md`, decide whether to depend on it or reimplement the providers behind the router, and apply the privacy rules (a public provider may only see node-scope calls). Third-party code is treated as untrusted until reviewed.
 4. Enrich's cost on the real brief (136 function nodes in the rehearsal) is unmeasured; measure on the csvstat brief first.
 
 ## 9. How to resume
