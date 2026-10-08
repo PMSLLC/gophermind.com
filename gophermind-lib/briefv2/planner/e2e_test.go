@@ -464,7 +464,9 @@ func TestAPublicProviderOnlyEverSeesNodeScopeCalls(t *testing.T) {
 	cfg := planner.FixtureSettings()
 	cfg.Providers = append(cfg.Providers, settings.ProviderConfig{Name: "pub", BaseURL: "http://public.invalid/v1",
 		Visibility: settings.Public, MaxConcurrent: 1, Models: []settings.ModelEntry{{ID: "fixture", ContextTokens: 1 << 20}}})
-	cfg.Models["strong"] = []string{"pub/fixture", "fake/fixture"}
+	for _, tier := range []string{"strong", "standard", "any"} {
+		cfg.Models[tier] = []string{"pub/fixture", "fake/fixture"}
+	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -708,5 +710,80 @@ func TestFinishedTreeCarriesRequirementIDsErrorLinksAndDecisions(t *testing.T) {
 	}
 	if got := fmt.Sprint(g.node("greeting/component.json")["requirement_ids"]); !strings.Contains(got, "F1") {
 		t.Errorf("greeting requirement_ids = %s", got)
+	}
+}
+
+// The Test-writer follows the node's model_tier exactly as Enrich does, and is
+// strong for every node when routing is off.
+func TestTestwriterFollowsTheNodeTier(t *testing.T) {
+	std := strings.ReplaceAll(string(mustRead(t, filepath.Join("testdata", "greeter", "decompose.greeting.txt"))), `"model_tier": "any"`, `"model_tier": "standard"`)
+	for _, tc := range []struct {
+		name  string
+		route bool
+		dir   string
+		want  string
+	}{{"any node, routing on", true, "", "any"}, {"standard node, routing on", true, "std", "standard"}, {"routing off", false, "", "strong"}} {
+		t.Run(tc.name, func(t *testing.T) {
+			var g *rig
+			if tc.dir != "" {
+				g = newRig(t, approving(), variant(t, map[string]string{"decompose.greeting.txt": std}))
+			} else {
+				g = newRig(t, approving())
+			}
+			g.cfg.Defaults.RouteByNodeTier = &tc.route
+			g.mustPlan(planner.Options{})
+			rows, err := g.led.List(context.Background(), greeterID, ledger.Filter{Stage: "testwrite:fn-greet"})
+			if err != nil || len(rows) == 0 {
+				t.Fatalf("rows = %d, %v", len(rows), err)
+			}
+			for _, row := range rows {
+				if row.Tier != tc.want {
+					t.Errorf("testwrite:fn-greet tier = %q, want %q", row.Tier, tc.want)
+				}
+			}
+		})
+	}
+}
+
+// A decision_ids entry that names no settled question is refused at tree
+// finish, naming the node and the id, before anything is embedded.
+func TestTreeFinishRefusesADanglingDecisionID(t *testing.T) {
+	g := newRig(t, approving())
+	g.mustPlan(planner.Options{StopAfter: "approve"})
+	var doc any
+	if err := json.Unmarshal(g.read("_state/decomposed.json"), &doc); err != nil {
+		t.Fatal(err)
+	}
+	var walk func(v any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case map[string]any:
+			if x["id"] == "fn-greet" {
+				x["decision_ids"] = []any{"q-dangling"}
+			}
+			for _, c := range x {
+				walk(c)
+			}
+		case []any:
+			for _, c := range x {
+				walk(c)
+			}
+		}
+	}
+	walk(doc)
+	raw, _ := json.Marshal(doc)
+	if err := os.WriteFile(filepath.Join(g.runDir, "_state", "decomposed.json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(g.runDir, "approval.json")); err != nil {
+		t.Fatal(err)
+	}
+	g.wire()
+	_, err := g.plan(planner.Options{RunID: greeterID})
+	if err == nil || !strings.Contains(err.Error(), "fn-greet") || !strings.Contains(err.Error(), "q-dangling") {
+		t.Fatalf("err = %v, want fn-greet and q-dangling named", err)
+	}
+	if g.has("greeting/fn-greet.json") {
+		t.Error("a tree with a dangling decision id was written")
 	}
 }

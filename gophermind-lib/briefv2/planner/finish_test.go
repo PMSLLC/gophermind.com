@@ -88,7 +88,9 @@ func TestParseTestwriteRequiresPolarityAndCoverageOfEveryError(t *testing.T) {
 		"a negative test that is not negative": {func(s string) string {
 			return strings.Replace(s, `"polarity":"negative","covers":"error:2"`, `"polarity":"success","covers":"error:2"`, 1)
 		}, grpPolarity},
-		"bad covers": {func(s string) string { return strings.Replace(s, `"covers":"input:r"`, `"covers":"everything"`, 1) }, grpEnum},
+		"error index beyond the declared errors": {func(s string) string { return strings.Replace(s, `"covers":"error:2"`, `"covers":"error:99"`, 1) }, grpEnum},
+		"error index zero":                       {func(s string) string { return strings.Replace(s, `"covers":"error:2"`, `"covers":"error:0"`, 1) }, grpEnum},
+		"bad covers":                             {func(s string) string { return strings.Replace(s, `"covers":"input:r"`, `"covers":"everything"`, 1) }, grpEnum},
 	} {
 		_, _, err := parseTestwrite(testsReply(c.mut(good), goodTestFile), ct, "httpapi", "TestRegister", "example.com/acme", nil)
 		if err == nil {
