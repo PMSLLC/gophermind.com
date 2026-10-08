@@ -171,3 +171,7 @@ Done on 2026-10-07 after John's answers (section 10): `2026-10-07-planner-phasef
 1. A GOAL.md graded run is active on the branch (executor fix waves open, `/project` not built, 0 attempts). Decided: finish it first; this work starts after.
 2. `/project` on v2 is already specified and planned on the branch (`2026-09-30-project-single-entry-design.md`, 14 tasks). The merge does not need a new `/project` design; v1 is kept as `/plan-v1` until after the perfect release (that spec's ruling R2).
 3. Defect 5 of v2 originally said nothing was saved; the opt-in `GOPHERMIND_DEBUG_DUMP_DIR` dump exists and is now noted there.
+
+## 12. Addendum: the eight claims checked (2026-10-08, goal task 1)
+
+Checked against the code by a read-only agent. Claims 1 to 6 and 8 are CONFIRMED with the file and line evidence given in section 8. Claim 7 is PARTLY true: the v2 planner wraps the brief (`prompts/clarify.md`), the answers (`contract_schema_fix.md`, `contract_outline.md`) and node text in tags, but `render()` neutralises nothing, so text containing the closing tag can end its section; v1 neutralised fenced blocks and quoted the decisions block. Consequence: the B plan gained Task 14 (untrusted text cannot close a data section).
