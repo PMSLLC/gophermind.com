@@ -488,7 +488,7 @@ func TestAPublicProviderOnlyEverSeesNodeScopeCalls(t *testing.T) {
 }
 
 // A secret's value is in the vault and nowhere else: not in the run folder,
-// the repository, the run registry, or the database.
+// the repository or the run registry.
 func TestNoSecretValueLeavesTheVault(t *testing.T) {
 	g := newRig(t, approving())
 	g.briefPath = writeBrief(t, g.repo, withSecret)
@@ -500,8 +500,7 @@ func TestNoSecretValueLeavesTheVault(t *testing.T) {
 	if got := strs(root["secrets"]); len(got) != 1 || got[0] != "GREETER_API_KEY" {
 		t.Errorf("root secrets = %v, want the name only", got)
 	}
-	g.db.Close()
-	dirs := []string{g.repo, os.Getenv("GOPHERMIND_CONFIG_DIR"), filepath.Dir(g.dbPath)}
+	dirs := []string{g.repo, os.Getenv("GOPHERMIND_CONFIG_DIR")}
 	for _, dir := range dirs {
 		filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
 			if err == nil && !d.IsDir() {

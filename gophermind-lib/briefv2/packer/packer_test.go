@@ -16,11 +16,11 @@ import (
 	"unicode/utf8"
 
 	"gophermind/gophermind-lib/briefv2/contract"
-	"gophermind/gophermind-lib/briefv2/db"
 	"gophermind/gophermind-lib/briefv2/events"
 	"gophermind/gophermind-lib/briefv2/ledger"
 	"gophermind/gophermind-lib/briefv2/provider"
 	"gophermind/gophermind-lib/briefv2/router"
+	"gophermind/gophermind-lib/briefv2/runfs"
 	"gophermind/gophermind-lib/briefv2/settings"
 )
 
@@ -477,18 +477,14 @@ func TestNoPromptTextPersisted(t *testing.T) {
 		}
 	}
 
-	// Through a real router, ledger and database file.
+	// Through a real router, ledger and run folder.
 	cfg := settings.Default()
 	fake := provider.NewFake("mini", []provider.ModelInfo{{ID: "qwen3.6:35b-a3b", ContextTokens: 32768}},
 		func(_ int, req provider.Request) (provider.Response, error) {
 			return provider.Response{Text: "package greet\n", Model: req.Model}, nil
 		})
-	path := filepath.Join(t.TempDir(), "bb.db")
-	d, err := db.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	led := ledger.NewSQLite(d)
+	runDir := t.TempDir()
+	led := ledger.NewFS(runfs.Fixed(runDir))
 	sink := events.NewCollector()
 	r := router.New(cfg, map[string]provider.Provider{"mini": fake}, led, sink)
 	req := provider.Request{Messages: []provider.Message{
@@ -510,17 +506,26 @@ func TestNoPromptTextPersisted(t *testing.T) {
 	if strings.Contains(string(rowJSON), canary) || strings.Contains(string(evJSON), canary) {
 		t.Error("canary in ledger rows or events")
 	}
-	if err := d.Close(); err != nil {
-		t.Fatal(err)
-	}
-	for _, f := range []string{path, path + "-wal", path + "-shm"} {
-		b, err := os.ReadFile(f)
-		if err != nil {
-			continue
+	files := 0
+	err = filepath.WalkDir(runDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		files++
+		b, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return rerr
 		}
 		if strings.Contains(string(b), canary) {
-			t.Errorf("canary in %s", filepath.Base(f))
+			t.Errorf("canary in %s", filepath.Base(path))
 		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files == 0 {
+		t.Error("the ledger wrote no file, so the scan proved nothing")
 	}
 }
 

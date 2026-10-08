@@ -221,11 +221,6 @@ func archiveOf(t *testing.T, repo, sha string) string {
 func e2eStores(t *testing.T, g *rig, rep Report, runErr error) map[string][]byte {
 	t.Helper()
 	st := map[string][]byte{}
-	for _, suffix := range []string{"", "-wal", "-shm"} {
-		if b, err := os.ReadFile(g.dbPath + suffix); err == nil {
-			st["sqlite"+suffix] = b
-		}
-	}
 	root := filepath.Join(g.repo, ".gophermind")
 	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil {

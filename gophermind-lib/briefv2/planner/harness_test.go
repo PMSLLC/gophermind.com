@@ -2,7 +2,6 @@ package planner_test
 
 import (
 	"context"
-	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,7 +9,6 @@ import (
 	"testing"
 
 	"gophermind/gophermind-lib/briefv2/blackboard"
-	"gophermind/gophermind-lib/briefv2/db"
 	"gophermind/gophermind-lib/briefv2/events"
 	"gophermind/gophermind-lib/briefv2/human"
 	"gophermind/gophermind-lib/briefv2/ledger"
@@ -82,10 +80,8 @@ type rig struct {
 	repo      string // the target repository (a temp dir)
 	runDir    string // <repo>/.gophermind/<id>
 	briefPath string
-	dbPath    string
-	db        *sql.DB
-	led       *ledger.SQLite
-	board     *blackboard.SQLite
+	led       ledger.Ledger
+	board     blackboard.Blackboard
 	sink      *events.Collector
 	gate      human.Gate
 	fake      *provider.Fake
@@ -106,13 +102,13 @@ func newRig(t *testing.T, gate human.Gate, dirs ...string) *rig {
 	}
 	g.runDir = filepath.Join(g.repo, ".gophermind", greeterID)
 	g.briefPath = writeBrief(t, g.repo, nil)
-	g.dbPath = filepath.Join(t.TempDir(), "bb.db")
-	d, err := db.Open(g.dbPath)
-	if err != nil {
-		t.Fatal(err)
+	// The planner creates the run folder and writes the run record; the file
+	// backends find the folder through it, as the commands do.
+	resolve := func(id string) (string, error) {
+		rec, err := planner.LookupRun(id)
+		return rec.RunDir, err
 	}
-	t.Cleanup(func() { d.Close() })
-	g.db, g.led, g.board = d, ledger.NewSQLite(d), blackboard.NewSQLite(d)
+	g.led, g.board = ledger.NewFS(resolve), blackboard.NewFS(resolve)
 	g.wire(dirs...)
 	return g
 }
@@ -137,7 +133,7 @@ func writeBrief(t *testing.T, repo string, edit func(string) string) string {
 }
 
 // wire builds a fresh provider, router and dependency set, the way a new
-// process would on `resume`. The repo, config dir and database stay.
+// process would on `resume`. The repo and config dir stay.
 func (g *rig) wire(dirs ...string) {
 	g.t.Helper()
 	fake, err := planner.FixtureProvider(append(dirs, greeter)...)
@@ -149,8 +145,7 @@ func (g *rig) wire(dirs ...string) {
 	g.sink = events.NewCollector()
 	g.router = router.New(g.cfg, map[string]provider.Provider{"fake": fake}, g.led, g.sink)
 	g.deps = planner.Deps{Caller: g.router, Gate: g.gate, Sink: g.sink, Board: g.board, Settings: g.cfg,
-		LedgerErrors: g.router.LedgerErrors,
-		ResetRun:     func(ctx context.Context, id string) error { return db.ClearRun(ctx, g.db, id) }}
+		LedgerErrors: g.router.LedgerErrors}
 }
 
 func (g *rig) plan(o planner.Options) (planner.Outcome, error) {
