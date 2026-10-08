@@ -868,3 +868,183 @@ func variant(t *testing.T, files map[string]string) string {
 	}
 	return dir
 }
+
+func TestRunPanicInPlannerSeamIsHarnessFault(t *testing.T) {
+	rr := newRunRig(t)
+	withPlanner(t, func(context.Context, planner.Deps, planner.Options) (planner.Outcome, error) {
+		panic("SECRET-canary-in-panic")
+	})
+	got := rr.run()
+	wantResult(t, got, ExitFault, "harness_fault", "harness_fault")
+	if rr.exec.calls != 0 {
+		t.Error("the executor ran")
+	}
+	all := rr.out.String() + rr.errb.String()
+	if strings.Contains(all, "SECRET-canary") || strings.Contains(all, "goroutine ") {
+		t.Errorf("panic text leaked: %q", all)
+	}
+	if !strings.Contains(rr.errb.String(), "planner") {
+		t.Errorf("the fixed message does not name the stage: %q", rr.errb.String())
+	}
+	if !strings.Contains(rr.out.String(), "stopped: harness_fault") {
+		t.Errorf("no report printed: %q", rr.out.String())
+	}
+}
+
+func TestRunPanicInExecutorSeamIsHarnessFault(t *testing.T) {
+	rr := newRunRig(t)
+	rr.exec.fn = func(executor.Options) (executor.Report, error) { panic("SECRET-canary-in-panic") }
+	wantResult(t, rr.run(), ExitFault, "harness_fault", "harness_fault")
+	p := rr.project()
+	if p.ExitCode != ExitFault || p.StopReason != "harness_fault" {
+		t.Errorf("project.json = %d %q", p.ExitCode, p.StopReason)
+	}
+	all := rr.out.String() + rr.errb.String()
+	if strings.Contains(all, "SECRET-canary") || !strings.Contains(rr.errb.String(), "executor") {
+		t.Errorf("Err = %q", rr.errb.String())
+	}
+	lines := strings.Split(strings.TrimRight(rr.out.String(), "\n"), "\n")
+	if n := len(lines); n < 2 || !strings.HasPrefix(lines[n-2], "Requirements covered: ") || !strings.HasPrefix(lines[n-1], "Acceptance passed: ") {
+		t.Errorf("proof lines missing: %q", lines)
+	}
+}
+
+func TestRunPanicBeforeTheReportExistsIsNotACrash(t *testing.T) {
+	rr := newRunRig(t)
+	rr.env.Probe = func(context.Context, *settings.Config) (*settings.Config, []envcheck.ProbeResult) {
+		panic("SECRET-canary-in-panic")
+	}
+	got := rr.run()
+	wantResult(t, got, ExitFault, "harness_fault", "harness_fault")
+	if strings.Contains(rr.out.String()+rr.errb.String(), "SECRET-canary") {
+		t.Error("panic text leaked")
+	}
+}
+
+// stuckAfterFirst accepts one write, then blocks forever.
+type stuckAfterFirst struct {
+	n       int32
+	release chan struct{}
+}
+
+func (s *stuckAfterFirst) Write(p []byte) (int, error) {
+	if atomic.AddInt32(&s.n, 1) > 1 {
+		<-s.release
+	}
+	return len(p), nil
+}
+
+func TestRunStuckStderrNeverLosesTheReport(t *testing.T) {
+	rr := newRunRig(t)
+	rr.exec.err = errors.New("executor: boom")
+	sw := &stuckAfterFirst{release: make(chan struct{})}
+	defer close(sw.release)
+	rr.o.Err = sw
+	done := make(chan Result, 1)
+	go func() { done <- rr.run() }()
+	select {
+	case got := <-done:
+		wantResult(t, got, ExitFault, "harness_fault", "harness_fault")
+	case <-time.After(60 * time.Second):
+		t.Fatal("a stuck stderr held up teardown")
+	}
+	if !rr.hasProject() || !strings.Contains(rr.out.String(), "stopped: harness_fault") {
+		t.Error("the report was lost")
+	}
+}
+
+func TestRunGradedResumedVerdictIsMachineReadable(t *testing.T) {
+	rr := newRunRig(t)
+	rr.exec.rep = executor.Report{RunID: gID, Status: "verified", Resumed: true, Sandbox: "off"}
+	rr.o.Graded, rr.o.ExpectHead = true, headOf(t, rr.repo)
+	wantResult(t, rr.run(), ExitVerified, "verified", "")
+	p := rr.project()
+	if p.GradedValid || !strings.Contains(p.GradedInvalidReason, "resumed") {
+		t.Errorf("graded_valid %v reason %q", p.GradedValid, p.GradedInvalidReason)
+	}
+	if !strings.Contains(rr.out.String(), "graded: INVALID (the run resumed)") {
+		t.Errorf("Out = %q", rr.out.String())
+	}
+	rr2 := newRunRig(t)
+	rr2.o.Graded, rr2.o.ExpectHead = true, headOf(t, rr2.repo)
+	rr2.run()
+	if p := rr2.project(); !p.GradedValid || p.GradedInvalidReason != "" {
+		t.Errorf("a clean graded run: valid %v reason %q", p.GradedValid, p.GradedInvalidReason)
+	}
+}
+
+// dropOneCovered removes the last covered requirement from coverage.json.
+func dropOneCovered(t *testing.T, runDir string) {
+	t.Helper()
+	path := filepath.Join(runDir, "coverage.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	cov := doc["covered"].([]any)
+	doc["covered"] = cov[:len(cov)-1]
+	out, _ := json.Marshal(doc)
+	if err := os.WriteFile(path, out, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type dropBeforeApprove struct {
+	human.Gate
+	t      *testing.T
+	runDir string
+}
+
+func (g dropBeforeApprove) Approve(ctx context.Context, p human.PlanSummary) (human.Decision, error) {
+	dropOneCovered(g.t, g.runDir)
+	return g.Gate.Approve(ctx, p)
+}
+
+func TestRunApprovalRefusedForCoverage(t *testing.T) {
+	rr := newRunRig(t)
+	withPlanner(t, func(ctx context.Context, d planner.Deps, o planner.Options) (planner.Outcome, error) {
+		d.Gate = dropBeforeApprove{d.Gate, t, rr.runDir()}
+		return planner.New(d).Run(ctx, o)
+	})
+	wantResult(t, rr.run(), ExitFailed, "failed", "plan:approve")
+	if rr.exec.calls != 0 {
+		t.Error("the executor ran")
+	}
+	p := rr.project()
+	c := p.Plan.RequirementsCovered
+	if c.Total != 7 || c.Covered != 6 {
+		t.Errorf("requirements covered = %+v, want 6 of 7", c)
+	}
+	if !strings.Contains(rr.out.String(), "Requirements covered: 6 of 7") {
+		t.Errorf("Out = %q", rr.out.String())
+	}
+}
+
+func TestRunCorruptCoverageIsMarkedMissingIsQuiet(t *testing.T) {
+	rr := newRunRig(t)
+	rr.exec.fn = func(o executor.Options) (executor.Report, error) {
+		if err := os.WriteFile(filepath.Join(o.RunDir, "coverage.json"), []byte("{broken"), 0o600); err != nil {
+			t.Error(err)
+		}
+		return executor.Report{RunID: gID, Status: "verified", Sandbox: "off"}, nil
+	}
+	rr.run()
+	if p := rr.project(); p.CoverageError == "" {
+		t.Error("coverage_error is empty for a corrupt file")
+	}
+	if !strings.Contains(rr.out.String(), "coverage error: ") {
+		t.Errorf("Out = %q", rr.out.String())
+	}
+	q := newRunRig(t, plannerTestdata(t, "greeter-stuck"))
+	q.run()
+	if p := q.project(); p.CoverageError != "" {
+		t.Errorf("a missing coverage.json is not an error: %q", p.CoverageError)
+	}
+	if strings.Contains(q.out.String(), "coverage error") {
+		t.Error("quiet zero was marked")
+	}
+}

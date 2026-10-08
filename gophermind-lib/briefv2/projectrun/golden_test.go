@@ -88,6 +88,7 @@ by_node_class[].not_run
 by_node_class[].passes
 by_node_class[].prompt_tokens
 by_node_class[].verified
+coverage_error
 executor
 executor.acceptance
 executor.acceptance.passed
@@ -121,6 +122,8 @@ executor.weak_tests
 exit_code
 finished_at
 graded
+graded_invalid_reason
+graded_valid
 mode
 plan
 plan.acceptance_total
@@ -142,6 +145,7 @@ preflight[].detail
 preflight[].fix
 preflight[].name
 preflight[].ok
+progress_dropped
 providers
 providers[].fallback
 providers[].host
@@ -167,5 +171,4 @@ title
 understanding
 understanding.confirmed_by
 understanding.hash
-
 `
