@@ -101,3 +101,16 @@ func TestStdListMatchesToolchain(t *testing.T) {
 		t.Error("uuid missing")
 	}
 }
+
+func TestIsStdPackageName(t *testing.T) {
+	for _, name := range []string{"http", "json", "fmt", "context", "sync", "sql", "filepath"} {
+		if !IsStdPackageName(name) {
+			t.Errorf("%q is the name of a standard library package", name)
+		}
+	}
+	for _, name := range []string{"acme", "store", "", "Http"} {
+		if IsStdPackageName(name) {
+			t.Errorf("%q is not the name of a standard library package", name)
+		}
+	}
+}

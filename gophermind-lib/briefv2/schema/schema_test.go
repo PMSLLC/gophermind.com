@@ -127,3 +127,66 @@ func TestRawReturnsTheEmbeddedSchema(t *testing.T) {
 		t.Error("unknown kind must error")
 	}
 }
+func TestNodeGroupsValidateAndRejectBadShapes(t *testing.T) {
+	base := func(extra string) []byte {
+		return []byte(`{"spec_version":"2.0","id":"fn-a","kind":"function","parent":"c","title":"t","description":"d","brief_ref":"#x","status":"pending","wave":0,
+"contract":{"package":"p","file":"p/a.go","signature":"func A()","inputs":[],"outputs":[]},
+"tests":[{"name":"n","level":"unit","given":"g","expect":"e","command":"go test ./p"}]` + extra + `}`)
+	}
+	good := map[string]string{
+		"rationale":       `,"rationale":"Serves the registration form so a visitor can sign up."`,
+		"construction":    `,"construction":{"approach_chosen":"a","steps":["one","two"]}`,
+		"alternatives":    `,"alternatives":[{"approach":"x","rejected_because":"y"}]`,
+		"alternatives na": `,"alternatives":{"not_applicable":"there is only one sensible way to write this"}`,
+		"security":        `,"security":{"trust_boundary":"none"}`,
+		"performance":     `,"performance":{"complexity":"O(1)","max_latency_ms":null,"concurrency":"none","hot_path":false}`,
+		"observability":   `,"observability":{"log_events":[{"level":"warn","msg":"m","fields":["f"]}],"trace_span":null}`,
+		"portability":     `,"portability":{"os":["linux"],"arch":["amd64"],"go_min":"1.22","cgo":false}`,
+		"profile_hooks":   `,"profile_hooks":["bench"]`,
+		"refactor_notes":  `,"refactor_notes":[{"what":"w","why":"y","when":"z"}]`,
+		"ids":             `,"requirement_ids":["C1","A2","F3"],"decision_ids":["q1","decompose-greeting-q1"],"open_questions":[]`,
+		"decisions":       `,"decisions":[{"id":"q1","question":"Which store?","kind":"decision","options":["memory","postgres"],"recommended":"memory","answer":"memory","answered_by":"accepted","round":1,"raised_by":"clarify","settled_at":"2026-10-08T00:00:00Z","history":[{"at":"2026-10-08T00:01:00Z","answer":"postgres"}]}]`,
+	}
+	for name, extra := range good {
+		if err := schema.Validate(schema.KindNode, base(extra)); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	bad := map[string]string{
+		"short rationale":    `,"rationale":"too short"`,
+		"one step":           `,"construction":{"approach_chosen":"a","steps":["one"]}`,
+		"short na reason":    `,"alternatives":{"not_applicable":"none"}`,
+		"na plus content":    `,"alternatives":{"not_applicable":"there is only one sensible way to write this","approach":"x"}`,
+		"bad boundary":       `,"security":{"trust_boundary":"sideways"}`,
+		"bad concurrency":    `,"performance":{"complexity":"O(1)","concurrency":"maybe","hot_path":false}`,
+		"bad log level":      `,"observability":{"log_events":[{"level":"loud","msg":"m"}]}`,
+		"bad go_min":         `,"portability":{"os":["linux"],"arch":["amd64"],"go_min":"one","cgo":false}`,
+		"bad hook":           `,"profile_hooks":["gdb"]`,
+		"empty refactor":     `,"refactor_notes":[]`,
+		"bad requirement id": `,"requirement_ids":["X1"]`,
+		"unknown group":      `,"zzz":{}`,
+		"decision no answer": `,"decisions":[{"id":"q1","question":"Which store?","kind":"decision","answered_by":"human","raised_by":"clarify"}]`,
+		"decision bad actor": `,"decisions":[{"id":"q1","question":"Q?","kind":"decision","answer":"a","answered_by":"robot","raised_by":"clarify"}]`,
+	}
+	for name, extra := range bad {
+		if err := schema.Validate(schema.KindNode, base(extra)); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	tests := func(item string) []byte {
+		return []byte(`{"spec_version":"2.0","id":"fn-a","kind":"function","parent":"c","title":"t","description":"d","brief_ref":"#x","status":"pending","wave":0,
+"contract":{"package":"p","file":"p/a.go","signature":"func A()","inputs":[],"outputs":[],"errors":[{"when":"w","returns":"r","kind":"sentinel","test":"n"}]},
+"tests":[` + item + `]}`)
+	}
+	if err := schema.Validate(schema.KindNode, tests(`{"name":"n","level":"unit","given":"g","expect":"e","command":"c","polarity":"negative","covers":"error:1"}`)); err != nil {
+		t.Errorf("test polarity and covers: %v", err)
+	}
+	for _, item := range []string{
+		`{"name":"n","level":"unit","given":"g","expect":"e","command":"c","polarity":"sideways"}`,
+		`{"name":"n","level":"unit","given":"g","expect":"e","command":"c","covers":"everything"}`,
+	} {
+		if err := schema.Validate(schema.KindNode, tests(item)); err == nil {
+			t.Errorf("accepted %s", item)
+		}
+	}
+}
