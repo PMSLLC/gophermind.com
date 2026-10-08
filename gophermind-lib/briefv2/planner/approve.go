@@ -114,6 +114,14 @@ func RenderPlan(runDir string) (markdown, hash string, err error) {
 	if err != nil {
 		return "", "", err
 	}
+	est, err := loadEnriched(r)
+	if err != nil {
+		return "", "", err
+	}
+	facts, err := loadFacts(r)
+	if err != nil {
+		return "", "", err
+	}
 	w, err := planWaves(c.BriefID, c, dec)
 	if err != nil {
 		return "", "", err
@@ -160,6 +168,8 @@ func RenderPlan(runDir string) (markdown, hash string, err error) {
 		top = max(top, hi)
 	}
 	fmt.Fprintf(&s, "\nFunctions: %d in %d wave(s).\n\n", total, top+1)
+	writeGroupSummary(&s, c, dec, est, cov)
+	fmt.Fprintf(&s, "%s\n\n", checksSkipped(facts))
 
 	s.WriteString("## Assumptions\n\n")
 	n := 0
