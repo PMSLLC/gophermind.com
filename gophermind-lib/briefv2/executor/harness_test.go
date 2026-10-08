@@ -363,6 +363,10 @@ func (s *scriptGate) Approve(context.Context, human.PlanSummary) (human.Decision
 	return human.Decision{}, errors.New("scriptGate: Approve is not used by the executor")
 }
 
+func (s *scriptGate) Confirm(context.Context, human.Understanding) (human.Decision, error) {
+	return human.Decision{Approved: true, By: "test"}, nil
+}
+
 func (s *scriptGate) Escalate(_ context.Context, e human.Escalation) (human.Resolution, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

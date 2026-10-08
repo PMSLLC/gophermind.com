@@ -32,6 +32,9 @@ type scriptGate struct {
 	err      error // returned by every call when set (human.ErrWaiting for a gate nobody answers)
 	asked    []human.Question
 	plans    []human.PlanSummary
+
+	understandings []human.Understanding
+	confirm        *human.Decision
 }
 
 var _ human.Gate = (*scriptGate)(nil)
@@ -62,6 +65,19 @@ func (g *scriptGate) Approve(ctx context.Context, plan human.PlanSummary) (human
 		return human.Decision{}, g.err
 	}
 	return g.decision, nil
+}
+
+func (g *scriptGate) Confirm(ctx context.Context, u human.Understanding) (human.Decision, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.understandings = append(g.understandings, u)
+	if g.err != nil {
+		return human.Decision{}, g.err
+	}
+	if g.confirm != nil {
+		return *g.confirm, nil
+	}
+	return human.Decision{Approved: true, By: "test"}, nil
 }
 
 func (g *scriptGate) Escalate(ctx context.Context, e human.Escalation) (human.Resolution, error) {

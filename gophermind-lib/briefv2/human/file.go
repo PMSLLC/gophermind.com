@@ -23,9 +23,10 @@ var _ Gate = (*File)(nil)
 func NewFile(dir string) *File { return &File{dir: dir} }
 
 var (
-	blockRE = regexp.MustCompile("(?ms)^```([a-z]+) ?([^\\n]*)\\n(.*?)^```[ \\t]*$")
-	hashRE  = regexp.MustCompile(`(?m)^Plan hash: (\S+)`)
-	unsafeR = regexp.MustCompile(`[^A-Za-z0-9._-]`)
+	blockRE             = regexp.MustCompile("(?ms)^```([a-z]+) ?([^\\n]*)\\n(.*?)^```[ \\t]*$")
+	hashRE              = regexp.MustCompile(`(?m)^Plan hash: (\S+)`)
+	understandingHashRE = regexp.MustCompile(`(?m)^Understanding hash: (\S+)`)
+	unsafeR             = regexp.MustCompile(`[^A-Za-z0-9._-]`)
 )
 
 type block struct{ kind, id, text string }
@@ -78,12 +79,26 @@ func (f *File) Ask(ctx context.Context, qs []Question) ([]Answer, error) {
 	}
 	if !found {
 		var b strings.Builder
-		b.WriteString("# Questions\n\nFill in each answer block, save the file, then run `gophermind brief resume`.\n")
+		b.WriteString("# Questions\n")
+		if len(qs) > 0 && qs[0].Round > 0 {
+			fmt.Fprintf(&b, "\nRound %d.\n", qs[0].Round)
+		}
+		b.WriteString("\nFill in each answer block, save the file, then run `gophermind brief resume`.\n")
 		b.WriteString("A block that already holds text is the default answer; leave it to accept it.\n")
+		b.WriteString("Write `accept` in a block to take the recommended answer shown for that question.\n")
 		for i, q := range qs {
 			fmt.Fprintf(&b, "\n## Question %d (id: %s)\n\n%s\n", i+1, q.ID, q.Text)
+			if q.Why != "" {
+				fmt.Fprintf(&b, "\nWhy it matters: %s\n", q.Why)
+			}
 			if len(q.Options) > 0 {
 				fmt.Fprintf(&b, "\nOptions: %s\n", strings.Join(q.Options, " | "))
+			}
+			if q.Recommended != "" {
+				fmt.Fprintf(&b, "\nRecommended: %s\n", q.Recommended)
+				if q.RecommendedWhy != "" {
+					fmt.Fprintf(&b, "Why: %s\n", q.RecommendedWhy)
+				}
 			}
 			fmt.Fprintf(&b, "\n```answer %s\n%s\n```\n", q.ID, q.Default)
 		}
@@ -104,7 +119,12 @@ func (f *File) Ask(ctx context.Context, qs []Question) ([]Answer, error) {
 		if blocks[i].text == "" {
 			return nil, ErrWaiting
 		}
-		answers[i] = Answer{ID: q.ID, Text: blocks[i].text, Assumed: q.Default != "" && blocks[i].text == q.Default}
+		text := blocks[i].text
+		if q.Recommended != "" && strings.EqualFold(text, "accept") {
+			answers[i] = Answer{ID: q.ID, Text: q.Recommended, Accepted: true}
+			continue
+		}
+		answers[i] = Answer{ID: q.ID, Text: text, Assumed: q.Default != "" && text == q.Default}
 	}
 	if err := validateAnswers(qs, answers); err != nil {
 		return nil, err
@@ -138,6 +158,37 @@ func (f *File) Approve(ctx context.Context, plan PlanSummary) (Decision, error) 
 	}
 	body := fmt.Sprintf("# Approval\n\nRead the plan, then write `approve` or `reject: <reason>` in the decision block and run `gophermind brief resume`.\n\n"+
 		"Plan hash: %s\n\n---\n\n%s\n\n---\n\n```decision\n\n```\n", plan.Hash, plan.Markdown)
+	if err := f.write(name, body); err != nil {
+		return Decision{}, err
+	}
+	return Decision{}, ErrWaiting
+}
+
+func (f *File) Confirm(ctx context.Context, u Understanding) (Decision, error) {
+	const name = "UNDERSTANDING.md"
+	data, found, err := f.read(name)
+	if err != nil {
+		return Decision{}, err
+	}
+	if found {
+		if m := understandingHashRE.FindSubmatch(data); m != nil && string(m[1]) == u.Hash {
+			blocks := parseBlocks(data, "decision")
+			if len(blocks) != 1 {
+				return Decision{}, fmt.Errorf("human: %s must contain exactly one decision block", name)
+			}
+			if blocks[0].text == "" {
+				return Decision{}, ErrWaiting
+			}
+			approved, note, ok := parseDecision(blocks[0].text)
+			if !ok {
+				return Decision{}, fmt.Errorf("human: %s: write approve, or reject followed by a reason", name)
+			}
+			return Decision{Approved: approved, By: "file", Note: note}, nil
+		}
+		// The understanding changed since the file was written: an old answer must not confirm a new one.
+	}
+	body := fmt.Sprintf("# Understanding\n\nRead it, then write `approve` or `reject: <reason>` in the decision block and run `gophermind brief resume`.\n\n"+
+		"Understanding hash: %s\n\n---\n\n%s\n\n---\n\n```decision\n\n```\n", u.Hash, u.Markdown)
 	if err := f.write(name, body); err != nil {
 		return Decision{}, err
 	}

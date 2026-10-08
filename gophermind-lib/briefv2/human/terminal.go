@@ -46,6 +46,13 @@ func (t *Terminal) Ask(ctx context.Context, qs []Question) ([]Answer, error) {
 		if q.Default != "" {
 			fmt.Fprintf(t.out, "  (press Enter for: %s)\n", q.Default)
 		}
+		if q.Recommended != "" {
+			why := ""
+			if q.RecommendedWhy != "" {
+				why = " (" + q.RecommendedWhy + ")"
+			}
+			fmt.Fprintf(t.out, "  Recommended: %s%s\n  (type accept to take it)\n", q.Recommended, why)
+		}
 		for {
 			fmt.Fprint(t.out, "> ")
 			line, err := t.readLine(ctx)
@@ -68,6 +75,10 @@ func (t *Terminal) Ask(ctx context.Context, qs []Question) ([]Answer, error) {
 				fmt.Fprintln(t.out, "An answer is required.")
 				continue
 			}
+			if q.Recommended != "" && strings.EqualFold(line, "accept") {
+				out = append(out, Answer{ID: q.ID, Text: q.Recommended, Accepted: true})
+				break
+			}
 			if n, convErr := strconv.Atoi(line); convErr == nil && n >= 1 && n <= len(q.Options) {
 				line = q.Options[n-1]
 			}
@@ -86,6 +97,27 @@ func (t *Terminal) Approve(ctx context.Context, plan PlanSummary) (Decision, err
 		if err != nil && strings.TrimSpace(line) == "" {
 			if errors.Is(err, io.EOF) {
 				return Decision{}, errors.New("human: input ended before the plan was approved or rejected")
+			}
+			return Decision{}, err
+		}
+		if strings.TrimSpace(line) == "" {
+			return Decision{Approved: false, By: "terminal"}, nil
+		}
+		if approved, note, ok := parseDecision(line); ok {
+			return Decision{Approved: approved, By: "terminal", Note: note}, nil
+		}
+		fmt.Fprintln(t.out, "Answer y or n, optionally followed by a note.")
+	}
+}
+
+func (t *Terminal) Confirm(ctx context.Context, u Understanding) (Decision, error) {
+	fmt.Fprintf(t.out, "\n%s\n\nUnderstanding hash: %s\n", u.Markdown, u.Hash)
+	for {
+		fmt.Fprint(t.out, "Confirm this understanding? [y/N] ")
+		line, err := t.readLine(ctx)
+		if err != nil && strings.TrimSpace(line) == "" {
+			if errors.Is(err, io.EOF) {
+				return Decision{}, errors.New("human: input ended before the understanding was confirmed or rejected")
 			}
 			return Decision{}, err
 		}

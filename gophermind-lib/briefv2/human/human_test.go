@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -533,5 +534,119 @@ func TestProgrammaticCancellationFailureAndDoubleReply(t *testing.T) {
 	req.Resolve(human.Resolution{}) // no action
 	if err := <-done; err == nil {
 		t.Error("a resolution without an action was accepted")
+	}
+}
+
+func TestTerminalShowsTheRecommendationAndAcceptsIt(t *testing.T) {
+	var out strings.Builder
+	term := human.NewTerminal(strings.NewReader("accept\n"), &out)
+	got, err := term.Ask(context.Background(), []human.Question{{ID: "q1", Text: "Which store?", Options: []string{"memory", "postgres"}, Recommended: "memory", RecommendedWhy: "no database is declared"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[0].Text != "memory" || !got[0].Accepted || got[0].Assumed {
+		t.Errorf("answer = %+v", got[0])
+	}
+	if !strings.Contains(out.String(), "Recommended: memory") || !strings.Contains(out.String(), "no database is declared") {
+		t.Errorf("the recommendation was not shown:\n%s", out.String())
+	}
+}
+
+func TestTerminalRefusesABlankAnswerWhenOnlyARecommendationExists(t *testing.T) {
+	var out strings.Builder
+	term := human.NewTerminal(strings.NewReader("\nmemory\n"), &out)
+	got, err := term.Ask(context.Background(), []human.Question{{ID: "q1", Text: "Which store?", Options: []string{"memory", "postgres"}, Recommended: "postgres"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[0].Text != "memory" || got[0].Accepted {
+		t.Errorf("a blank line must not take the recommendation: %+v", got[0])
+	}
+	if !strings.Contains(out.String(), "An answer is required.") {
+		t.Errorf("the blank answer was not refused:\n%s", out.String())
+	}
+}
+
+func TestTerminalAcceptWithoutARecommendationIsFreeText(t *testing.T) {
+	term := human.NewTerminal(strings.NewReader("accept\n"), io.Discard)
+	got, err := term.Ask(context.Background(), []human.Question{{ID: "q1", Text: "Name?"}})
+	if err != nil || got[0].Text != "accept" || got[0].Accepted {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+}
+
+func TestTerminalConfirm(t *testing.T) {
+	for in, want := range map[string]bool{"y\n": true, "yes please\n": true, "n\n": false, "\n": false} {
+		term := human.NewTerminal(strings.NewReader(in), io.Discard)
+		d, err := term.Confirm(context.Background(), human.Understanding{Markdown: "# U", Hash: "abc"})
+		if err != nil || d.Approved != want || d.By != "terminal" {
+			t.Errorf("input %q: %+v, %v", in, d, err)
+		}
+	}
+}
+
+func TestFileGateWritesTheRecommendationAndReadsAccept(t *testing.T) {
+	dir := t.TempDir()
+	g := human.NewFile(dir)
+	qs := []human.Question{{ID: "q1", Text: "Which store?", Round: 2, Options: []string{"memory", "postgres"}, Recommended: "memory", RecommendedWhy: "no database is declared"}}
+	if _, err := g.Ask(context.Background(), qs); !errors.Is(err, human.ErrWaiting) {
+		t.Fatalf("first call = %v, want ErrWaiting", err)
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, "QUESTIONS.md"))
+	for _, want := range []string{"Round 2", "Recommended: memory", "no database is declared", "```answer q1"} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("QUESTIONS.md lacks %q:\n%s", want, raw)
+		}
+	}
+	filled := strings.Replace(string(raw), "```answer q1\n\n```", "```answer q1\naccept\n```", 1)
+	if err := os.WriteFile(filepath.Join(dir, "QUESTIONS.md"), []byte(filled), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := g.Ask(context.Background(), qs)
+	if err != nil || got[0].Text != "memory" || !got[0].Accepted {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "QUESTIONS.answered.md")); err != nil {
+		t.Errorf("the answered file was not archived, so the next round would reuse it: %v", err)
+	}
+}
+
+func TestFileGateConfirmWaitsThenReadsTheDecisionAndIgnoresAStaleHash(t *testing.T) {
+	dir := t.TempDir()
+	g := human.NewFile(dir)
+	u := human.Understanding{Markdown: "# Understanding\n\nBody", Hash: "h1"}
+	if _, err := g.Confirm(context.Background(), u); !errors.Is(err, human.ErrWaiting) {
+		t.Fatalf("first call = %v", err)
+	}
+	p := filepath.Join(dir, "UNDERSTANDING.md")
+	raw, _ := os.ReadFile(p)
+	if !strings.Contains(string(raw), "Understanding hash: h1") {
+		t.Fatalf("the hash line is missing:\n%s", raw)
+	}
+	if err := os.WriteFile(p, []byte(strings.Replace(string(raw), "```decision\n\n```", "```decision\napprove\n```", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d, err := g.Confirm(context.Background(), u)
+	if err != nil || !d.Approved || d.By != "file" {
+		t.Fatalf("got %+v, %v", d, err)
+	}
+	// The understanding changed: an old answer must not confirm a new one.
+	if _, err := g.Confirm(context.Background(), human.Understanding{Markdown: "# U2", Hash: "h2"}); !errors.Is(err, human.ErrWaiting) {
+		t.Fatalf("a stale confirmation was accepted: %v", err)
+	}
+}
+
+func TestProgrammaticConfirm(t *testing.T) {
+	p := human.NewProgrammatic()
+	go func() {
+		r := <-p.Requests()
+		if r.Kind != human.KindConfirm || r.Understanding.Hash != "h" {
+			t.Errorf("request = %+v", r)
+		}
+		r.Decide(human.Decision{Approved: true})
+	}()
+	d, err := p.Confirm(context.Background(), human.Understanding{Markdown: "m", Hash: "h"})
+	if err != nil || !d.Approved || d.By != "programmatic" {
+		t.Fatalf("got %+v, %v", d, err)
 	}
 }
