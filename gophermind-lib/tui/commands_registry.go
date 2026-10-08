@@ -17,8 +17,8 @@ type slashCommand struct {
 var slashCommands = []slashCommand{
 	{Name: "/help", Arg: "", Desc: "show this help"},
 	{Name: "/clear", Arg: "", Desc: "clear the transcript and reset the session"},
-	{Name: "/project", Arg: "<name> <brief>", Desc: "plan a brief into phases, tasks and steps, then approve and export it"},
-	{Name: "/project-execute", Arg: "", Desc: "run every pending task in the approved plan autonomously"},
+	{Name: "/plan-v1", Arg: "<name> <brief>", Desc: "v1 planner: plan a brief into phases, tasks and steps (deprecated, use /project)"},
+	{Name: "/plan-v1-execute", Arg: "", Desc: "run every pending task in the approved plan autonomously"},
 	{Name: "/questions", Arg: "[change]", Desc: "answer the plan's open questions in one round (\"change\" revisits answered ones)"},
 	{Name: "/phase", Arg: "<cmd>", Desc: "run a PhaseFlow workflow command"},
 	{Name: "/config", Arg: "", Desc: "open the configuration wizard"},
@@ -57,3 +57,6 @@ func helpLine() string {
 	s += " · y/n/a to approve · Esc to interrupt"
 	return s
 }
+
+// planV1Deprecation is the first transcript line of the v1 planner commands.
+const planV1Deprecation = "deprecated: /plan-v1 and /plan-v1-execute are the v1 planner and will be removed after the AI Venture Studio release; /project runs the v2 planner and executor"

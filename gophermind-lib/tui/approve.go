@@ -13,8 +13,8 @@ import (
 	"gophermind/gophermind-lib/plantree/plan"
 )
 
-// This file is the end of the /project flow: the summary the owner approves,
-// and what approving does. Both entrances reach it, "/project" when its
+// This file is the end of the /plan-v1 flow: the summary the owner approves,
+// and what approving does. Both entrances reach it, "/plan-v1" when its
 // passes leave nothing but approval, and "/questions" when the round it ran
 // does, so there is one approval prompt rather than two.
 
@@ -39,7 +39,7 @@ func (m model) afterProjectPasses(msg projectPassesDoneMsg) (tea.Model, tea.Cmd)
 
 // offerApproval shows the plan's summary and asks for approval when approval
 // is the only thing left, and otherwise says what is outstanding. It is what
-// both /project and /questions end at, so the plan is only ever approved
+// both /plan-v1 and /questions end at, so the plan is only ever approved
 // through one prompt.
 func (m model) offerApproval(actions plantree.Actions) model {
 	already := false
@@ -76,13 +76,13 @@ func (m model) offerApproval(actions plantree.Actions) model {
 		// Approved and exported: nothing to do, and re-exporting could only
 		// replace files a run may already be using.
 		if root, err := os.Getwd(); err == nil && phaseflow.New(root).Approved() {
-			m.appendLine(projectDoneStyle.Render("This plan is already approved and exported. Run /project-execute to build it."))
+			m.appendLine(projectDoneStyle.Render("This plan is already approved and exported. Run /plan-v1-execute to build it."))
 			m.proj = projNone
 			m.sync()
 			return m
 		}
 		m.appendLine(projectBannerStyle.Render(planSummary(repo, name)))
-		m.appendLine("This plan is already approved, but it has not been exported, so /project-execute cannot run yet. Export it now? y to export, or \"cancel\".")
+		m.appendLine("This plan is already approved, but it has not been exported, so /plan-v1-execute cannot run yet. Export it now? y to export, or \"cancel\".")
 		m.proj = projApprove
 		m.sync()
 		return m
@@ -141,7 +141,7 @@ func planSummary(repo *plantree.Repo, name string) string {
 // handleProjectApproval processes an approve, revise or cancel input.
 //
 // Approving marks every step approved and reviewed, exports the legacy
-// planning files, and says that /project-execute can run. Revising does NOT
+// planning files, and says that /plan-v1-execute can run. Revising does NOT
 // re-plan from free text: nothing in this milestone turns a sentence into a
 // changed plan, and pretending otherwise would be worse than saying so. It
 // points at /questions change, which does have a real re-planning path, and
@@ -150,7 +150,7 @@ func (m model) handleProjectApproval(text string) (model, tea.Cmd, bool) {
 	kind, revise := parseApproval(text)
 	switch kind {
 	case approvalCancel:
-		m.appendLine("Plan left unapproved. /project " + m.projName + " brings this prompt back.")
+		m.appendLine("Plan left unapproved. /plan-v1 " + m.projName + " brings this prompt back.")
 		m.proj = projNone
 		m.sync()
 		return m, nil, true
@@ -159,7 +159,7 @@ func (m model) handleProjectApproval(text string) (model, tea.Cmd, bool) {
 		if revise != "" {
 			m.appendLine("project: free-text revision is not wired to a re-planning pass, so nothing was changed by: " + oneLine(revise))
 		}
-		m.appendLine("To change the plan, run /questions change: changing an answer flags exactly the steps it invalidated and plans them again. Then /project " + m.projName + " returns here.")
+		m.appendLine("To change the plan, run /questions change: changing an answer flags exactly the steps it invalidated and plans them again. Then /plan-v1 " + m.projName + " returns here.")
 		m.proj = projNone
 		m.sync()
 		return m, nil, true
@@ -194,11 +194,11 @@ func (m model) approveAndExport() (model, tea.Cmd, bool) {
 		// The export removes the approval marker before it writes, so the
 		// project is not approved for execution until an export completes.
 		nm, cmd := m.projectError(exportRefusal(err) +
-			"\nThe steps are approved, but the project is currently unapproved for execution: /project-execute will refuse until an export succeeds. Fix the cause above, then run /project " + m.projName + " and answer y to try again.")
+			"\nThe steps are approved, but the project is currently unapproved for execution: /plan-v1-execute will refuse until an export succeeds. Fix the cause above, then run /plan-v1 " + m.projName + " and answer y to try again.")
 		return nm, cmd, true
 	}
 	m.appendLine(renderExportReport(rep))
-	m.appendLine(projectDoneStyle.Render("Plan approved and exported. Run /project-execute to build it."))
+	m.appendLine(projectDoneStyle.Render("Plan approved and exported. Run /plan-v1-execute to build it."))
 	m.proj = projNone
 	m.sync()
 	return m, nil, true

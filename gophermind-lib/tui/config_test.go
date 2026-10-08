@@ -8,7 +8,7 @@ import (
 )
 
 // TestHandleConfigDoneAppliesSpeedModelLive is the deferred follow-up from
-// feat/project-execute (#6): m.speedModel was frozen at startup, so changing
+// feat/plan-v1-execute (#6): m.speedModel was frozen at startup, so changing
 // it via /config had no effect until a full restart. handleConfigDone must
 // now apply a changed SpeedModel to the live model, the same way it already
 // does for Model/ApprovalMode/MaxIter.

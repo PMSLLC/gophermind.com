@@ -158,7 +158,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.st = stateIdle
 		m.cancel = nil
 		// A round that left nothing but approval hands over to the same
-		// approval prompt /project uses, rather than printing "next: approve"
+		// approval prompt /plan-v1 uses, rather than printing "next: approve"
 		// and making the owner find the command that does it.
 		nm := m.offerApproval(msg.actions)
 		return nm, tea.Batch(nm.beginAttention(), waitFor(m.sub))
@@ -180,7 +180,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// than surfacing a raw "context canceled" error.
 		if errors.Is(msg.err, context.Canceled) {
 			if len(m.execOutcomes) > 0 {
-				// Cancelled mid /project-execute: whatever tasks already
+				// Cancelled mid /plan-v1-execute: whatever tasks already
 				// finished are real work done, not noise to discard along
 				// with the run.
 				m.appendLine(renderError("⨯ cancelled — " + renderExecCancelSummary(m.execOutcomes)))
@@ -194,7 +194,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stream = ""
 		m.st = stateIdle
 		m.cancel = nil
-		// A cancelled or failed pass ends the round, and the /project flow
+		// A cancelled or failed pass ends the round, and the /plan-v1 flow
 		// with it, so the session is not left in a phase whose keys nothing
 		// handles. Both resume from the tree, so nothing written is lost.
 		if m.qphase == qRunning {
@@ -202,7 +202,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.proj == projRunning {
 			m.proj = projNone
-			m.appendLine("project: the planning run stopped; /project " + m.projName + " resumes it from the tree")
+			m.appendLine("project: the planning run stopped; /plan-v1 " + m.projName + " resumes it from the tree")
 		}
 		m.sync()
 		return m, tea.Batch(m.beginAttention(), waitFor(m.sub))
@@ -404,7 +404,7 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		return m, nil
 	}
 
-	// While a /project flow is active, its state machine consumes input. It
+	// While a /plan-v1 flow is active, its state machine consumes input. It
 	// declines a slash command, and the model it hands back has already left
 	// the flow, so the command below runs in a clean state.
 	if m.proj != projNone {
@@ -487,16 +487,16 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		return m.handleConfigCommand()
 	}
 
-	// "/project <name> <brief>" plans the brief into .planning/plan, asks its
+	// "/plan-v1 <name> <brief>" plans the brief into .planning/plan, asks its
 	// questions, then approves and exports. Subsequent input is consumed by
 	// the block above until the flow ends.
-	if strings.Fields(text)[0] == "/project" {
+	if strings.Fields(text)[0] == "/plan-v1" {
 		return m.handleProjectCommand(text)
 	}
 
-	// "/project-execute" runs every pending task in the approved plan
+	// "/plan-v1-execute" runs every pending task in the approved plan
 	// autonomously, streaming per-task progress; see execute.go.
-	if strings.Fields(text)[0] == "/project-execute" {
+	if strings.Fields(text)[0] == "/plan-v1-execute" {
 		return m.handleProjectExecuteCommand()
 	}
 

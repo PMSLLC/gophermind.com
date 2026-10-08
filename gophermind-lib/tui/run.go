@@ -24,7 +24,7 @@ type Config struct {
 	// endpoint, which shows no attribution.
 	Profile string
 	// SpeedModel is the faster/cheaper model tier used for tasks whose plan
-	// assignment resolves to "speed" (see /project-execute); Model doubles as
+	// assignment resolves to "speed" (see /plan-v1-execute); Model doubles as
 	// the "strong" tier. Empty disables tier resolution (falls back to Model).
 	SpeedModel       string
 	Mode             string // "auto" | "ask"
