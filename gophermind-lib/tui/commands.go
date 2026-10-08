@@ -103,9 +103,9 @@ func (m *model) handlePhaseCommand(full string) (reply string, agentTask string)
 
 	case "plan", "execute", "verify", "milestone":
 		// These move development forward, so they're gated behind an approved
-		// project plan (see /project). CLI `gophermind phase` is not gated.
+		// project plan (see /plan-v1). CLI `gophermind phase` is not gated.
 		if !e.Approved() {
-			return "⚠ project outline not approved — run /project to finish it first", ""
+			return "⚠ project outline not approved — run /plan-v1 to finish it first", ""
 		}
 		prompt, err := e.BuildStepPrompt(sub, rest)
 		if err != nil {

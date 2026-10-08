@@ -57,8 +57,8 @@ type model struct {
 	sub     chan tea.Msg // agent events + approval requests + done/err arrive here
 	allowed *allowSet
 
-	model      string // model name, for the status line; also the "strong" tier for /project-execute
-	speedModel string // "speed" tier model for /project-execute (empty falls back to model)
+	model      string // model name, for the status line; also the "strong" tier for /plan-v1-execute
+	speedModel string // "speed" tier model for /plan-v1-execute (empty falls back to model)
 	mode       string // "auto" | "ask"
 	profile    string // active config profile; "" for the default endpoint
 	hyperlinks bool   // terminal supports OSC 8; false keeps output plain
@@ -100,7 +100,7 @@ type model struct {
 	pending approvalMsg // valid when st == stateApproval
 	cancel  context.CancelFunc
 
-	// /project state machine (see project.go and approve.go). proj is projNone
+	// /plan-v1 state machine (see project.go and approve.go). proj is projNone
 	// unless the flow is active: it names the project being planned. The plan
 	// itself lives on disk in .planning/plan, so nothing about it is held here
 	// and a cancelled flow loses nothing.
@@ -121,7 +121,7 @@ type model struct {
 	round     questionRound
 	completer plan.Completer
 
-	// execOutcomes accumulates /project-execute's finished tasks as they
+	// execOutcomes accumulates /plan-v1-execute's finished tasks as they
 	// stream in via execProgressMsg, so a Ctrl-C mid-run can tally a partial
 	// summary (see the errMsg case in update.go) instead of just "cancelled".
 	// execDoneMsg clears it once the run's own authoritative summary has been

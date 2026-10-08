@@ -16,16 +16,16 @@ import (
 	"gophermind/gophermind-lib/plantree/plan"
 )
 
-// This file implements "/project <name> <brief>": read the brief file, build
+// This file implements "/plan-v1 <name> <brief>": read the brief file, build
 // the plan tree in .planning/plan with the two planning passes, ask the
 // questions the passes raised in the round question_round.go hosts, then
-// approve the plan and export it for /project-execute.
+// approve the plan and export it for /plan-v1-execute.
 //
 // It replaced the interview: the model no longer writes ROADMAP.md and
 // assignments.json itself, so there is nothing to interview it into writing.
 // See docs/superpowers/specs/2026-09-19-brief-workflow-design.md.
 
-// projPhase is the step of the /project flow the model is in.
+// projPhase is the step of the /plan-v1 flow the model is in.
 type projPhase int
 
 const (
@@ -90,9 +90,9 @@ func looksLikeBriefPath(s string) bool {
 	return false
 }
 
-// parseProjectCommand splits "/project <name> <brief-path>" into a name and
+// parseProjectCommand splits "/plan-v1 <name> <brief-path>" into a name and
 // the brief path. The last token is the brief when it is a real file; a lone
-// token is always the name, because /project requires one.
+// token is always the name, because /plan-v1 requires one.
 //
 // A last token that was clearly meant to be a path (it has a separator or a
 // document extension) but is not a readable file is an error. It used to
@@ -119,7 +119,7 @@ func parseProjectCommand(text string) (name, briefPath string, err error) {
 	return strings.TrimSpace(strings.Join(rest, " ")), "", nil
 }
 
-// handleProjectCommand dispatches "/project [name] [brief-path]".
+// handleProjectCommand dispatches "/plan-v1 [name] [brief-path]".
 func (m model) handleProjectCommand(text string) (model, tea.Cmd) {
 	name, briefPath, err := parseProjectCommand(text)
 	if err != nil {
@@ -137,9 +137,10 @@ func (m model) handleProjectCommand(text string) (model, tea.Cmd) {
 
 // startProject reads the brief, scaffolds .planning/ if this is a new
 // project, and starts the two planning passes. With no brief path it resumes
-// the plan already in .planning/plan, which is what makes /project safe to
+// the plan already in .planning/plan, which is what makes /plan-v1 safe to
 // re-run after an error or a cancel.
 func (m model) startProject(name, briefPath string) (model, tea.Cmd) {
+	m.appendLine(planV1Deprecation)
 	root, err := os.Getwd()
 	if err != nil {
 		return m.projectError(err.Error())
@@ -186,7 +187,7 @@ func (m model) startProject(name, briefPath string) (model, tea.Cmd) {
 func briefFor(repo *plantree.Repo, briefPath string, existing bool) (string, error) {
 	if briefPath == "" {
 		if !existing {
-			return "", errors.New("give a brief file: /project <name> <path to the brief>")
+			return "", errors.New("give a brief file: /plan-v1 <name> <path to the brief>")
 		}
 		stored, err := plan.ReadBrief(repo)
 		if err != nil {
@@ -212,7 +213,7 @@ func briefFor(repo *plantree.Repo, briefPath string, existing bool) (string, err
 	// letting RunPass1 refuse after the run has apparently started.
 	stored, err := plan.ReadBrief(repo)
 	if err == nil && strings.TrimSpace(stored) != "" && stored != string(b) {
-		return "", errors.New("a plan already exists here and was built from a different brief; run /project <name> with no brief to resume it, or remove " + repo.Dir() + " to start over")
+		return "", errors.New("a plan already exists here and was built from a different brief; run /plan-v1 <name> with no brief to resume it, or remove " + repo.Dir() + " to start over")
 	}
 	return string(b), nil
 }
@@ -271,7 +272,7 @@ func windowOf(ctx context.Context, client *llm.Client, known int) int {
 //
 // Both passes take the same run lock, which is re-entrant within a process,
 // so the nesting is not a deadlock. Both also resume from the tree, so a
-// cancelled or failed run loses nothing already written and /project with
+// cancelled or failed run loses nothing already written and /plan-v1 with
 // the same name continues it.
 func runPasses(ctx context.Context, repo *plantree.Repo, c plan.Completer, client *llm.Client, known int, name, brief string, sub chan tea.Msg) tea.Msg {
 	unlock, err := plan.AcquireRun(repo)
@@ -324,7 +325,7 @@ func runPasses(ctx context.Context, repo *plantree.Repo, c plan.Completer, clien
 // because another run holds the plan, and what to do about it.
 func planBusyRefusal(err error, name string) string {
 	if errors.Is(err, plan.ErrRunBusy) {
-		return "another planning run is working on this plan right now, so nothing was changed. Wait for it to finish (or stop it), then run /project " + name + " again. (" + err.Error() + ")"
+		return "another planning run is working on this plan right now, so nothing was changed. Wait for it to finish (or stop it), then run /plan-v1 " + name + " again. (" + err.Error() + ")"
 	}
 	return "the planning run could not start, and nothing was changed: " + err.Error()
 }
@@ -362,7 +363,7 @@ func renderPass1Result(r plan.Result) string {
 	return line + "; specifying every step now"
 }
 
-// handleProjectInput routes an input line while a /project flow is active.
+// handleProjectInput routes an input line while a /plan-v1 flow is active.
 // It reports handled=false when the flow is not active, so the caller
 // proceeds normally. There is no projRunning case: while the passes run the
 // session is not idle, and handleSubmit never routes input here then.
@@ -372,7 +373,7 @@ func (m model) handleProjectInput(text string) (model, tea.Cmd, bool) {
 	// which it would otherwise swallow as a revision request.
 	if (m.proj == projAwaitName || m.proj == projApprove) && strings.HasPrefix(text, "/") {
 		if m.proj == projApprove {
-			m.appendLine("Plan left unapproved. /project " + m.projName + " brings the approval prompt back.")
+			m.appendLine("Plan left unapproved. /plan-v1 " + m.projName + " brings the approval prompt back.")
 		}
 		m.proj = projNone
 		return m, nil, false
@@ -380,7 +381,7 @@ func (m model) handleProjectInput(text string) (model, tea.Cmd, bool) {
 	switch m.proj {
 	case projAwaitName:
 		m.proj = projNone
-		name, briefPath, err := parseProjectCommand("/project " + strings.TrimSpace(text))
+		name, briefPath, err := parseProjectCommand("/plan-v1 " + strings.TrimSpace(text))
 		if err != nil {
 			nm, cmd := m.projectError(err.Error())
 			return nm, cmd, true
@@ -417,13 +418,13 @@ var (
 				Padding(0, 1)
 )
 
-// projectDialogText is the instruction shown in the /project dialog panel.
+// projectDialogText is the instruction shown in the /plan-v1 dialog panel.
 func projectDialogText(p projPhase, name string) string {
 	switch p {
 	case projAwaitName:
 		return "new project · type a name and the path to its brief"
 	case projRunning:
-		return name + " · planning · esc or ctrl-c to stop, /project " + name + " resumes"
+		return name + " · planning · esc or ctrl-c to stop, /plan-v1 " + name + " resumes"
 	case projApprove:
 		return name + " · review · y to approve · revise · cancel"
 	}

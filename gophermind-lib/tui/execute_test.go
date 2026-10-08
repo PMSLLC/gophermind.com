@@ -14,36 +14,36 @@ import (
 	"gophermind/gophermind-lib/tools"
 )
 
-// TestProjectExecuteGatedOnApproval verifies "/project-execute" against an
+// TestProjectExecuteGatedOnApproval verifies "/plan-v1-execute" against an
 // unapproved plan prints the same gate message as /phase's gated subcommands
 // and never enters stateWorking (no run starts).
 func TestProjectExecuteGatedOnApproval(t *testing.T) {
 	dir := t.TempDir()
 	withWorkdir(t, dir, func() {
 		m := testModel(t)
-		m.input.SetValue("/project-execute")
+		m.input.SetValue("/plan-v1-execute")
 		m2, _ := m.handleSubmit()
 		if !strings.Contains(m2.content, "not approved") {
 			t.Errorf("expected a 'not approved' gate message, got %q", m2.content)
 		}
 		if m2.st == stateWorking {
-			t.Error("gated /project-execute should not enter stateWorking")
+			t.Error("gated /plan-v1-execute should not enter stateWorking")
 		}
 	})
 }
 
-// TestProjectExecuteInHelp verifies /project-execute is discoverable via /help.
+// TestProjectExecuteInHelp verifies /plan-v1-execute is discoverable via /help.
 func TestProjectExecuteInHelp(t *testing.T) {
 	m := testModel(t)
 	m.input.SetValue("/help")
 	m2, _ := m.handleSubmit()
-	if !strings.Contains(m2.content, "/project-execute") {
-		t.Errorf("help text missing /project-execute: %q", m2.content)
+	if !strings.Contains(m2.content, "/plan-v1-execute") {
+		t.Errorf("help text missing /plan-v1-execute: %q", m2.content)
 	}
 }
 
 // TestProjectExecuteApprovedStartsRun verifies that against an approved plan
-// with a pending task, "/project-execute" enters stateWorking and launches the
+// with a pending task, "/plan-v1-execute" enters stateWorking and launches the
 // run. The context is cancelled immediately after handleSubmit returns so the
 // background goroutine's phaseflow.Execute call observes ctx.Err() before
 // dispatching the (would-be networked) task run — this test only exercises the
@@ -75,7 +75,7 @@ func TestProjectExecuteApprovedStartsRun(t *testing.T) {
 
 		m := testModel(t)
 		m.agent = ag
-		m.input.SetValue("/project-execute")
+		m.input.SetValue("/plan-v1-execute")
 		m2, _ := m.handleSubmit()
 
 		if m2.st != stateWorking {
@@ -250,7 +250,7 @@ func TestRenderExecSummaryCountsContractFlagged(t *testing.T) {
 }
 
 // TestRenderExecEventToolCallShowsTaskAndName is the deferred follow-up from
-// feat/project-execute (#3): a task's tool activity was invisible until it
+// feat/plan-v1-execute (#3): a task's tool activity was invisible until it
 // finished. renderExecEvent must prefix the interactive session's own
 // tool-call rendering with the task ID, so a wave's concurrent tasks are
 // distinguishable in the shared transcript.
@@ -334,7 +334,7 @@ func TestExecDoneMsgClearsOutcomes(t *testing.T) {
 }
 
 // TestCancelledExecutorRunShowsPartialSummary is the deferred follow-up from
-// feat/project-execute (#7): Ctrl-C mid-run showed only "cancelled", with no
+// feat/plan-v1-execute (#7): Ctrl-C mid-run showed only "cancelled", with no
 // tally of what had already finished. It must now report the same counts
 // renderExecSummary would, using whatever outcomes arrived before the cancel.
 func TestCancelledExecutorRunShowsPartialSummary(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 	"gophermind/gophermind-lib/phaseflow"
 )
 
-// This file implements the `/project-execute` command: the autonomous per-task
+// This file implements the `/plan-v1-execute` command: the autonomous per-task
 // executor (Spec 2). It runs every pending task in .planning/assignments.json,
 // each in a fresh, isolated agent context, streaming per-task progress to the
 // transcript as the run proceeds. See
@@ -29,11 +29,12 @@ type execEventMsg orchestrate.TaskEvent
 // processed (or the run was cancelled and stopped early).
 type execDoneMsg struct{ summary phaseflow.RunSummary }
 
-// handleProjectExecuteCommand dispatches "/project-execute": gated on the plan
+// handleProjectExecuteCommand dispatches "/plan-v1-execute": gated on the plan
 // being approved (like /phase plan|execute|verify|milestone), it launches the
 // executor on a goroutine and returns immediately with the model set to
 // stateWorking; progress streams back via execProgressMsg/execDoneMsg.
 func (m model) handleProjectExecuteCommand() (model, tea.Cmd) {
+	m.appendLine(planV1Deprecation)
 	root, err := os.Getwd()
 	if err != nil {
 		m.appendLine("project-execute: cannot determine working directory: " + err.Error())
@@ -42,7 +43,7 @@ func (m model) handleProjectExecuteCommand() (model, tea.Cmd) {
 	}
 	e := phaseflow.New(root)
 	if !e.Approved() {
-		m.appendLine("⚠ project outline not approved — run /project to finish it first")
+		m.appendLine("⚠ project outline not approved — run /plan-v1 to finish it first")
 		m.sync()
 		return m, nil
 	}

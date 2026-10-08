@@ -210,7 +210,7 @@ func TestNoSuggestionsWhileWorking(t *testing.T) {
 // stale candidates from before the newline lingered. Reproduction: typing
 // "/p" opens the command menu (see TestCommandProviderMenuOnMultipleMatches);
 // Ctrl+J then inserts a newline; a subsequent Tab spliced the stale
-// "/project" candidate (Replace: 0, Text: "roject") at the new cursor
+// "/plan-v1" candidate (Replace: 0, Text: "lan-v1") at the new cursor
 // position, corrupting the input to "/p\nroject" instead of leaving the
 // input alone (the "/p\n" prefix no longer matches any slash command, so the
 // menu should have closed).
@@ -227,7 +227,7 @@ func TestNewlineKeyRequeriesCompletion(t *testing.T) {
 	got2, _ := m2.handleKey(tea.KeyMsg{Type: tea.KeyTab})
 	m3 := got2.(model)
 
-	if m3.input.Value() == "/p\nroject" {
+	if m3.input.Value() == "/p\nlan-v1" {
 		t.Errorf("input.Value() = %q after newline+Tab, want no stale-candidate corruption", m3.input.Value())
 	}
 }

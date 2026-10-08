@@ -32,16 +32,16 @@ func TestParseApproval(t *testing.T) {
 // TestParseProjectCommandNameOnly pins the resume grammar: a name with no
 // trailing file path is not mistaken for one.
 func TestParseProjectCommandNameOnly(t *testing.T) {
-	name, brief, err := parseProjectCommand("/project My Cool App")
+	name, brief, err := parseProjectCommand("/plan-v1 My Cool App")
 	if name != "My Cool App" || brief != "" || err != nil {
 		t.Errorf("got (%q,%q,%v), want (%q,%q,nil)", name, brief, err, "My Cool App", "")
 	}
 }
 
-// TestParseProjectCommandNoName covers the bare "/project" case that asks for
+// TestParseProjectCommandNoName covers the bare "/plan-v1" case that asks for
 // a name interactively.
 func TestParseProjectCommandNoName(t *testing.T) {
-	name, brief, err := parseProjectCommand("/project")
+	name, brief, err := parseProjectCommand("/plan-v1")
 	if name != "" || brief != "" || err != nil {
 		t.Errorf("got (%q,%q,%v), want empty name and brief", name, brief, err)
 	}
@@ -51,19 +51,19 @@ func TestParseProjectCommandNoName(t *testing.T) {
 // the brief, and everything before it is the project name.
 func TestParseProjectCommandWithBrief(t *testing.T) {
 	brief := writeBrief(t, "a CLI tool")
-	name, gotBrief, err := parseProjectCommand("/project My Cool App " + brief)
+	name, gotBrief, err := parseProjectCommand("/plan-v1 My Cool App " + brief)
 	if name != "My Cool App" || gotBrief != brief || err != nil {
 		t.Errorf("got (%q,%q,%v), want (%q,%q,nil)", name, gotBrief, err, "My Cool App", brief)
 	}
 }
 
 // TestParseProjectCommandSingleTokenNotMistakenForBrief guards the two-field
-// case: "/project <path>" alone has no name before the path, so per the
+// case: "/plan-v1 <path>" alone has no name before the path, so per the
 // design it is treated as a (probably odd-looking) name, not a nameless
-// brief. /project always requires a name.
+// brief. /plan-v1 always requires a name.
 func TestParseProjectCommandSingleTokenNotMistakenForBrief(t *testing.T) {
 	brief := writeBrief(t, "a CLI tool")
-	name, gotBrief, err := parseProjectCommand("/project " + brief)
+	name, gotBrief, err := parseProjectCommand("/plan-v1 " + brief)
 	if name != brief || gotBrief != "" || err != nil {
 		t.Errorf("got (%q,%q,%v), want the lone token treated as the name", name, gotBrief, err)
 	}
@@ -75,7 +75,7 @@ func TestParseProjectCommandSingleTokenNotMistakenForBrief(t *testing.T) {
 // it and a plan built from no brief at all.
 func TestParseProjectCommandMissingBriefIsAnError(t *testing.T) {
 	for _, bad := range []string{"/no/such/file.md", "brief.md", "notes.txt"} {
-		name, gotBrief, err := parseProjectCommand("/project Widget " + bad)
+		name, gotBrief, err := parseProjectCommand("/plan-v1 Widget " + bad)
 		if err == nil {
 			t.Errorf("parseProjectCommand with %q = (%q,%q), want an error", bad, name, gotBrief)
 			continue
@@ -89,7 +89,7 @@ func TestParseProjectCommandMissingBriefIsAnError(t *testing.T) {
 // TestParseProjectCommandPlainWordsAreStillAName: only something path-shaped
 // is read as a brief, so an ordinary multi-word name still works.
 func TestParseProjectCommandPlainWordsAreStillAName(t *testing.T) {
-	name, brief, err := parseProjectCommand("/project Widget Factory Mark II")
+	name, brief, err := parseProjectCommand("/plan-v1 Widget Factory Mark II")
 	if name != "Widget Factory Mark II" || brief != "" || err != nil {
 		t.Errorf("got (%q,%q,%v)", name, brief, err)
 	}
@@ -98,7 +98,7 @@ func TestParseProjectCommandPlainWordsAreStillAName(t *testing.T) {
 // TestParseProjectCommandDirectoryIsAnError: a directory is not a brief.
 func TestParseProjectCommandDirectoryIsAnError(t *testing.T) {
 	dir := t.TempDir()
-	if _, _, err := parseProjectCommand("/project Widget " + dir); err == nil {
+	if _, _, err := parseProjectCommand("/plan-v1 Widget " + dir); err == nil {
 		t.Error("a directory was accepted as a brief")
 	}
 }

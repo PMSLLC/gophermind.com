@@ -15,13 +15,13 @@ import (
 	"gophermind/gophermind-lib/plantree/plan"
 )
 
-// atApproval runs /project to the approval prompt: the question answered,
+// atApproval runs /plan-v1 to the approval prompt: the question answered,
 // every step specified.
 func atApproval(t *testing.T) (model, string, *planFake) {
 	t.Helper()
 	f := &planFake{}
 	m, dir, brief := projectModel(t, f)
-	m = settle(t, submit(t, m, "/project Gophernote "+brief))
+	m = settle(t, submit(t, m, "/plan-v1 Gophernote "+brief))
 	m = settle(t, keys(t, m, key(tea.KeySpace), key(tea.KeyCtrlS)))
 	if m.proj != projApprove {
 		t.Fatalf("no approval prompt:\n%s", m.content)
@@ -45,7 +45,7 @@ func blockCatalog(t *testing.T, dir string) string {
 }
 
 // After a successful plan.Approve and a failed export, the message tells the
-// owner to run /project again and answer y. That has to reach the prompt.
+// owner to run /plan-v1 again and answer y. That has to reach the prompt.
 func TestRerunAfterAFailedExportReachesTheApprovalPromptAgain(t *testing.T) {
 	m, dir, _ := atApproval(t)
 	blocker := blockCatalog(t, dir)
@@ -60,7 +60,7 @@ func TestRerunAfterAFailedExportReachesTheApprovalPromptAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m = settle(t, submit(t, m, "/project Gophernote"))
+	m = settle(t, submit(t, m, "/plan-v1 Gophernote"))
 	if m.proj != projApprove {
 		t.Fatalf("the rerun did not offer the approval prompt again (proj=%v):\n%s", m.proj, m.content)
 	}
@@ -71,7 +71,7 @@ func TestRerunAfterAFailedExportReachesTheApprovalPromptAgain(t *testing.T) {
 	if !phaseflow.New(dir).Approved() {
 		t.Fatalf("answering y after the cause was fixed did not approve:\n%s", m.content)
 	}
-	if m.proj != projNone || !strings.Contains(m.content, "/project-execute") {
+	if m.proj != projNone || !strings.Contains(m.content, "/plan-v1-execute") {
 		t.Errorf("proj=%v, transcript:\n%s", m.proj, m.content)
 	}
 }
@@ -88,11 +88,11 @@ func TestRerunAfterASuccessfulExportSaysItIsReady(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m = settle(t, submit(t, m, "/project Gophernote"))
+	m = settle(t, submit(t, m, "/plan-v1 Gophernote"))
 	if m.proj != projNone {
 		t.Errorf("proj = %v, want the flow ended", m.proj)
 	}
-	if !strings.Contains(m.content, "already approved and exported") || !strings.Contains(m.content, "/project-execute") {
+	if !strings.Contains(m.content, "already approved and exported") || !strings.Contains(m.content, "/plan-v1-execute") {
 		t.Errorf("the rerun does not say the plan is exported and ready:\n%s", m.content)
 	}
 	after, _ := os.ReadFile(phaseflow.AssignmentsPath(dir))
@@ -101,12 +101,12 @@ func TestRerunAfterASuccessfulExportSaysItIsReady(t *testing.T) {
 	}
 }
 
-// startPass sizes its pass for the model's window, like the /project run.
+// startPass sizes its pass for the model's window, like the /plan-v1 run.
 func TestStartPassUsesTheSizesForTheWindow(t *testing.T) {
 	stepsPerPrompt := func(window int) []int {
 		f := &planFake{}
 		m, _, brief := projectModel(t, f)
-		m = settle(t, submit(t, m, "/project Gophernote "+brief))
+		m = settle(t, submit(t, m, "/plan-v1 Gophernote "+brief))
 		m.planWindow = window // what the probe reports; read by the pass the answer starts
 		before := len(f.seen())
 		m = settle(t, keys(t, m, key(tea.KeySpace), key(tea.KeyCtrlS)))
@@ -162,7 +162,7 @@ func TestProjectSaysWhenTheWindowIsTooSmall(t *testing.T) {
 	f := &planFake{}
 	m, _, brief := projectModel(t, f)
 	m.planWindow = 4096
-	m = settle(t, submit(t, m, "/project Gophernote "+brief))
+	m = settle(t, submit(t, m, "/plan-v1 Gophernote "+brief))
 	if !strings.Contains(m.content, "no setting is safe") {
 		t.Errorf("the transcript does not warn before the run:\n%s", m.content)
 	}
@@ -176,7 +176,7 @@ var chunkProgress = regexp.MustCompile(`planning chunk (\d+) of (\d+)`)
 func TestProjectShowsChunkProgress(t *testing.T) {
 	f := &planFake{}
 	m, _, brief := projectModel(t, f)
-	m = settle(t, submit(t, m, "/project Gophernote "+brief))
+	m = settle(t, submit(t, m, "/plan-v1 Gophernote "+brief))
 	all := chunkProgress.FindAllStringSubmatch(m.content, -1)
 	if len(all) < 2 {
 		t.Fatalf("the transcript shows %d chunk progress line(s), want one per chunk:\n%s", len(all), m.content)
@@ -219,13 +219,13 @@ func TestOneLineStripsTerminalControls(t *testing.T) {
 func TestScaffoldIsAnnouncedOnlyOnAFreshProject(t *testing.T) {
 	f := &planFake{}
 	m, _, brief := projectModel(t, f)
-	m = settle(t, submit(t, m, "/project Gophernote "+brief))
+	m = settle(t, submit(t, m, "/plan-v1 Gophernote "+brief))
 	if !strings.Contains(m.content, "scaffolded") || !strings.Contains(m.content, "placeholder ROADMAP.md") {
 		t.Errorf("a fresh project does not say .planning was scaffolded with placeholders:\n%s", m.content)
 	}
 	m = keys(t, m, key(tea.KeyEsc), key(tea.KeyEsc))
 	m.content = ""
-	m = settle(t, submit(t, m, "/project Gophernote"))
+	m = settle(t, submit(t, m, "/plan-v1 Gophernote"))
 	if strings.Contains(m.content, "scaffolded") {
 		t.Errorf("a resume announced a scaffold:\n%s", m.content)
 	}
@@ -257,7 +257,7 @@ func TestProjectSaysInPlainWordsWhenAnotherRunHoldsThePlan(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer other()
-	m = settle(t, submit(t, m, "/project Gophernote "+brief))
+	m = settle(t, submit(t, m, "/plan-v1 Gophernote "+brief))
 	for _, want := range []string{"another planning run is working on this plan", "nothing was changed"} {
 		if !strings.Contains(m.content, want) {
 			t.Errorf("transcript is missing %q:\n%s", want, m.content)

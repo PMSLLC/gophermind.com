@@ -127,7 +127,7 @@ func (m model) frame() string {
 		)
 	}
 
-	// During a guided /project flow, show a dialog panel above the input.
+	// During a guided /plan-v1 flow, show a dialog panel above the input.
 	if m.proj != projNone {
 		return lipgloss.JoinVertical(
 			lipgloss.Left,

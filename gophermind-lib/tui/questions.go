@@ -15,7 +15,7 @@ import (
 
 // This file hosts the question round (question_round.go) inside the session:
 // the "/questions" command, the writes to the question store, and the pass-2
-// run that follows. M6 makes "/project" enter the same round; until then this
+// run that follows. M6 makes "/plan-v1" enter the same round; until then this
 // command is how the round is reached, and it works on the plan tree in
 // <cwd>/.planning/plan.
 
@@ -309,8 +309,8 @@ func (m model) startPass(repo *plantree.Repo, c plan.Completer) (tea.Model, tea.
 			sub <- errMsg{err: err}
 			return
 		}
-		// The same sizes /project uses: a pass sized for the defaults would
-		// overflow a small window that /project itself planned for.
+		// The same sizes /plan-v1 uses: a pass sized for the defaults would
+		// overflow a small window that /plan-v1 itself planned for.
 		_, opt2 := plan.SizesFor(windowOf(ctx, client, known))
 		opt2.Reconcile = waiting > 0
 		opt2.Progress = func(done, total int) {

@@ -136,7 +136,7 @@ func TestSlashProjectRunsBothPassesAndOpensTheRound(t *testing.T) {
 	f := &planFake{}
 	m, dir, brief := projectModel(t, f)
 
-	m = submit(t, m, "/project Gophernote "+brief)
+	m = submit(t, m, "/plan-v1 Gophernote "+brief)
 	if m.proj != projRunning || m.st != stateWorking {
 		t.Fatalf("proj = %v, state = %v, want the passes running; transcript:\n%s", m.proj, m.st, m.content)
 	}
@@ -167,13 +167,13 @@ func TestSlashProjectRunsBothPassesAndOpensTheRound(t *testing.T) {
 }
 
 // TestSlashProjectResumesAfterACancel: Esc mid-run stops the passes, and
-// running /project with the name alone continues from the tree, with no
+// running /plan-v1 with the name alone continues from the tree, with no
 // brief path and no repeated work.
 func TestSlashProjectResumesAfterACancel(t *testing.T) {
 	f := &planFake{gate: make(chan struct{}), started: make(chan struct{})}
 	m, dir, brief := projectModel(t, f)
 
-	m = submit(t, m, "/project Gophernote "+brief)
+	m = submit(t, m, "/plan-v1 Gophernote "+brief)
 	<-f.started // the first chunk's pass is in flight
 	m.cancel()  // what Esc does
 	close(f.gate)
@@ -196,7 +196,7 @@ func TestSlashProjectResumesAfterACancel(t *testing.T) {
 
 	// Resume with the name alone: the stored brief is re-supplied.
 	m.completer = &planFake{}
-	m = settle(t, submit(t, m, "/project Gophernote"))
+	m = settle(t, submit(t, m, "/plan-v1 Gophernote"))
 	if !strings.Contains(m.content, "Resuming the plan") {
 		t.Errorf("the resume was not announced:\n%s", m.content)
 	}
@@ -217,7 +217,7 @@ func TestSlashProjectResumesAfterACancel(t *testing.T) {
 func TestSlashProjectRefusesADifferentBriefOnAnExistingPlan(t *testing.T) {
 	f := &planFake{}
 	m, dir, brief := projectModel(t, f)
-	m = settle(t, submit(t, m, "/project Gophernote "+brief))
+	m = settle(t, submit(t, m, "/plan-v1 Gophernote "+brief))
 	if m.qphase != qAsking {
 		t.Fatalf("no round:\n%s", m.content)
 	}
@@ -227,7 +227,7 @@ func TestSlashProjectRefusesADifferentBriefOnAnExistingPlan(t *testing.T) {
 	if err := os.WriteFile(other, []byte("# Something else\nentirely.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	m = submit(t, m, "/project Gophernote "+other)
+	m = submit(t, m, "/plan-v1 Gophernote "+other)
 	if m.proj != projNone || !strings.Contains(m.content, "different brief") {
 		t.Errorf("proj = %v, transcript:\n%s", m.proj, m.content)
 	}
@@ -239,7 +239,7 @@ func TestSlashProjectRefusesADifferentBriefOnAnExistingPlan(t *testing.T) {
 func TestProjectApprovalRefusesWhileAQuestionIsOpen(t *testing.T) {
 	f := &planFake{}
 	m, dir, brief := projectModel(t, f)
-	m = settle(t, submit(t, m, "/project Gophernote "+brief))
+	m = settle(t, submit(t, m, "/plan-v1 Gophernote "+brief))
 	m = settle(t, keys(t, m, key(tea.KeySpace), key(tea.KeyCtrlS)))
 	if m.proj != projApprove {
 		t.Fatalf("no approval prompt:\n%s", m.content)
@@ -328,7 +328,7 @@ func TestRenderExportReportAnnouncesReplacedFiles(t *testing.T) {
 func TestProjectExportFailureSaysTheProjectIsUnapproved(t *testing.T) {
 	f := &planFake{}
 	m, dir, brief := projectModel(t, f)
-	m = settle(t, submit(t, m, "/project Gophernote "+brief))
+	m = settle(t, submit(t, m, "/plan-v1 Gophernote "+brief))
 	m = settle(t, keys(t, m, key(tea.KeySpace), key(tea.KeyCtrlS)))
 	if m.proj != projApprove {
 		t.Fatalf("no approval prompt:\n%s", m.content)
@@ -344,7 +344,7 @@ func TestProjectExportFailureSaysTheProjectIsUnapproved(t *testing.T) {
 	if phaseflow.New(dir).Approved() {
 		t.Fatalf("the export should have refused:\n%s", m.content)
 	}
-	for _, want := range []string{"approved:", "agent catalog", "currently unapproved for execution", "/project Gophernote"} {
+	for _, want := range []string{"approved:", "agent catalog", "currently unapproved for execution", "/plan-v1 Gophernote"} {
 		if !strings.Contains(m.content, want) {
 			t.Errorf("transcript is missing %q:\n%s", want, m.content)
 		}
@@ -353,13 +353,13 @@ func TestProjectExportFailureSaysTheProjectIsUnapproved(t *testing.T) {
 
 // TestSlashProjectEndToEnd is Task 7: brief in, answered question, approval,
 // exported files that phaseflow validates, and pending tasks for
-// /project-execute. The dir is clean, so no agent catalog exists and the
+// /plan-v1-execute. The dir is clean, so no agent catalog exists and the
 // export seeds one.
 func TestSlashProjectEndToEnd(t *testing.T) {
 	f := &planFake{}
 	m, dir, brief := projectModel(t, f)
 
-	m = settle(t, submit(t, m, "/project Gophernote "+brief))
+	m = settle(t, submit(t, m, "/plan-v1 Gophernote "+brief))
 	if m.qphase != qAsking {
 		t.Fatalf("no round:\n%s", m.content)
 	}
@@ -394,7 +394,7 @@ func TestSlashProjectEndToEnd(t *testing.T) {
 	if m.proj != projNone {
 		t.Fatalf("proj = %v after approving", m.proj)
 	}
-	for _, want := range []string{"approved: 3 step(s) marked reviewed", "exported 2 phase(s) and 2 task(s)", "seeded", "/project-execute"} {
+	for _, want := range []string{"approved: 3 step(s) marked reviewed", "exported 2 phase(s) and 2 task(s)", "seeded", "/plan-v1-execute"} {
 		if !strings.Contains(m.content, want) {
 			t.Errorf("transcript is missing %q:\n%s", want, m.content)
 		}
@@ -402,7 +402,7 @@ func TestSlashProjectEndToEnd(t *testing.T) {
 
 	e := phaseflow.New(dir)
 	if !e.Approved() {
-		t.Fatal("the approval marker /project-execute gates on was not written")
+		t.Fatal("the approval marker /plan-v1-execute gates on was not written")
 	}
 	rep, err := e.ValidatePlan()
 	if err != nil || !rep.Complete {
@@ -429,7 +429,7 @@ func TestSlashProjectEndToEnd(t *testing.T) {
 		}
 	}
 	if pending != 2 {
-		t.Errorf("%d pending tasks, want the 2 /project-execute would run", pending)
+		t.Errorf("%d pending tasks, want the 2 /plan-v1-execute would run", pending)
 	}
 	// And the decision the owner ended on, the changed one, reached SPEC.md.
 	spec, err := os.ReadFile(filepath.Join(phaseflow.PlanningDir(dir), export.SpecFileName))
