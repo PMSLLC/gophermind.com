@@ -32,7 +32,7 @@ Today there are two of everything:
 | 7 | Attempt artifacts | Save them: scrubbed reply and compiler or test output per attempt, in the run folder, with a setting to turn it off | John, "save artifacts" |
 | 8 | Node content | All groups on every node (rationale, construction, errors, tests, security, performance, portability, observability, alternatives, refactoring), not only on some node classes | John, "require all groups everywhere" |
 | 9 | Branch | Do not merge. `main` stays docs-only; all code work stays on `feat/briefv2-planner-core` in the worktree. Supersedes John's earlier "merge first" | John, 2026-10-07 (later the same day) |
-| 10 | Question model | Proposed, not yet decided: rounds with a dependency tree, fact probe, confirm-understanding gate (the grilling doc, section 7) | open |
+| 10 | Question model | Rounds with a dependency tree, fact probe, confirm-understanding gate, decision records, caps of 4 model calls and 30 questions | John, 2026-10-07 (yes to all four). Specified in `2026-10-07-node-widening-and-question-model-design.md` |
 | 11 | Sequencing against GOAL.md | Finish the graded run first. None of A to F starts until the GOAL.md graded run has finished; until then this document and the two reviews are the only output of this work | John, 2026-10-07 |
 
 ## 3. The work, in order
@@ -42,7 +42,7 @@ Each item gets its own plan and its own build. All code work happens on `feat/br
 | # | Sub-project | Depends on | Spec |
 |---|---|---|---|
 | A | Filesystem run state replaces SQLite, with attempt artifacts | nothing | section 4 of this document; plan written 2026-10-07: `docs/superpowers/plans/2026-10-07-filesystem-run-state.md` (9 tasks, not started) |
-| B | Node widening and the question model | A (decision records, attempts) | sections 5 and 6 |
+| B | Node widening and the question model | A (decision records, attempts) | `docs/superpowers/specs/2026-10-07-node-widening-and-question-model-design.md` (sections 5 and 6 of this document are the summary) |
 | C | `/project` plans and builds through v2 | A, B | the existing `2026-09-30-project-single-entry-design.md` and plan (14 tasks, not built), amended by section 7 |
 | D | PhaseFlow view: `.planning/` files and the pipeline endpoints read the run folder | A, C | section 8 |
 | E | Planner revise stage: rewrite a node after a failure | B | its own spec; neither v1 nor v2 does this today |
