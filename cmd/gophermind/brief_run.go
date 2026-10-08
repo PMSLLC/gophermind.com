@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -18,6 +17,7 @@ import (
 
 	"gophermind/gophermind-lib/briefv2/blackboard"
 	"gophermind/gophermind-lib/briefv2/brief"
+	"gophermind/gophermind-lib/briefv2/envcheck"
 	"gophermind/gophermind-lib/briefv2/events"
 	"gophermind/gophermind-lib/briefv2/executor"
 	"gophermind/gophermind-lib/briefv2/human"
@@ -372,23 +372,7 @@ func (s *runSink) Emit(e events.Event) {
 	fmt.Fprintln(s.printSink.w, line)
 }
 
-// safeLine keeps the first line of s, printable ASCII only, at most 160 bytes.
-func safeLine(s string) string {
-	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
-		s = s[:i]
-	}
-	b := make([]byte, 0, len(s))
-	for _, r := range s {
-		if r < 0x20 || r > 0x7e {
-			r = '?'
-		}
-		b = append(b, byte(r))
-		if len(b) == 160 {
-			break
-		}
-	}
-	return string(b)
-}
+func safeLine(s string) string { return envcheck.SafeLine(s) }
 
 // ---- status ----
 
@@ -532,115 +516,16 @@ func providerHTTPClient(cfg *settings.Config) *http.Client {
 }
 
 // probeTimeout bounds one reachability probe of a provider base URL.
-var probeTimeout = 3 * time.Second
+var probeTimeout = envcheck.DefaultProbeTimeout
 
-// probeResult is what resolveBaseURLs found for one provider of the strong tier.
-type probeResult struct {
-	Provider string
-	Host     string // host name only of the base URL that answered
-	Answered bool
-	Fallback bool // a base_url_fallbacks entry answered, not base_url
-}
+type probeResult = envcheck.ProbeResult
 
-// resolveBaseURLs probes every provider the tier chains use: base_url first,
-// then base_url_fallbacks in order. The first that answers within
-// probeTimeout is used. A fallback that would change who sees the prompts (a
-// public host for a private provider, or any public host under
-// privacy.mode private_only) is skipped without being dialled, even when the
-// config was not validated. It returns a copy of cfg with those base URLs, so
-// the override lasts for the process and the config file is never rewritten; a
-// provider nothing answered for keeps its base_url.
 func resolveBaseURLs(ctx context.Context, cfg *settings.Config, client *http.Client) (*settings.Config, []probeResult) {
-	c := *cfg
-	c.Providers = append([]settings.ProviderConfig(nil), cfg.Providers...)
-	var res []probeResult
-	seen := map[string]bool{}
-	for _, tier := range settings.Tiers {
-		for _, entry := range cfg.Models[tier] {
-			name, _, ok := settings.SplitEntry(entry)
-			if !ok || seen[name] {
-				continue
-			}
-			seen[name] = true
-			for i, p := range c.Providers {
-				if p.Name != name {
-					continue
-				}
-				r := probeResult{Provider: name}
-				bases := []string{p.BaseURL}
-				for _, fb := range p.BaseURLFallbacks {
-					if cfg.FallbackAllowed(p, fb) {
-						bases = append(bases, fb)
-					}
-				}
-				for j, base := range bases {
-					if probeBaseURL(ctx, client, base) {
-						r.Answered, r.Fallback = true, j > 0
-						if u, err := url.Parse(base); err == nil {
-							r.Host = u.Hostname()
-						}
-						c.Providers[i].BaseURL = base
-						break
-					}
-				}
-				res = append(res, r)
-			}
-		}
-	}
-	return &c, res
+	return envcheck.ResolveBaseURLs(ctx, cfg, client, probeTimeout)
 }
 
-// probeBaseURL says whether base answers, within probeTimeout in all: GET
-// /api/version on its origin answers with 200, or GET <base>/models answers
-// 2xx, or 401 or 403 (a server that wants a key is there). Anything else, a
-// redirect, a 404 or a 5xx, is not an answer.
 func probeBaseURL(ctx context.Context, client *http.Client, base string) bool {
-	u, err := url.Parse(base)
-	if err != nil || u.Host == "" {
-		return false
-	}
-	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
-	defer cancel()
-	c := *client
-	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	targets := []struct {
-		url string
-		ok  func(code int) bool
-	}{
-		{u.Scheme + "://" + u.Host + "/api/version", func(code int) bool { return code == http.StatusOK }},
-		{strings.TrimRight(base, "/") + "/models", func(code int) bool {
-			return code/100 == 2 || code == http.StatusUnauthorized || code == http.StatusForbidden
-		}},
-	}
-	for _, t := range targets {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.url, nil)
-		if err != nil {
-			return false
-		}
-		resp, err := c.Do(req)
-		if err != nil {
-			if ctx.Err() != nil {
-				return false
-			}
-			continue
-		}
-		io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
-		resp.Body.Close()
-		if t.ok(resp.StatusCode) {
-			return true
-		}
-	}
-	return false
+	return envcheck.ProbeBaseURL(ctx, client, base, probeTimeout)
 }
 
-// envNotes is what the report's environment section says about the providers:
-// the host that answered, host only.
-func envNotes(res []probeResult) []string {
-	var notes []string
-	for _, r := range res {
-		if r.Answered {
-			notes = append(notes, fmt.Sprintf("provider %s: base url host %s answered", r.Provider, safeLine(r.Host)))
-		}
-	}
-	return notes
-}
+func envNotes(res []probeResult) []string { return envcheck.EnvNotes(res) }
