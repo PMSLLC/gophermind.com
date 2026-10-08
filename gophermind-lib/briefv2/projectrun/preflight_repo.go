@@ -66,10 +66,12 @@ func (p *pre) repoChecks() []Check {
 		if err != nil {
 			return fail("repo", "HEAD is detached in "+repo, p.putOn(base))
 		}
-		if h := strings.TrimSpace(head); h != base {
+		// An interrupted run leaves the repo on its work branch; --resume
+		// continues from there.
+		if h := strings.TrimSpace(head); h != base && !(p.o.Resume && h == p.b.Front.WorkBranchName()) {
 			return fail("repo", "HEAD is on branch "+h+", not the base branch "+base, p.putOn(base))
 		}
-		return pass("repo", repo+" on branch "+base)
+		return pass("repo", repo+" on branch "+strings.TrimSpace(head))
 	}()
 	out = append(out, repoCheck)
 

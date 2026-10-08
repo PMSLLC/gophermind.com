@@ -64,6 +64,33 @@ func TestPreflightRepoChecks(t *testing.T) {
 	}
 }
 
+// An interrupted run leaves the repo on its work branch; --resume must be able
+// to start from there (found by the end-to-end resume test).
+func TestPreflightRepoOnWorkBranchPassesOnlyWithResume(t *testing.T) {
+	work := "gm/" + rigRunID
+	for _, tc := range []struct {
+		name   string
+		branch string
+		resume bool
+		ok     bool
+	}{
+		{"work branch with resume", work, true, true},
+		{"work branch without resume", work, false, false},
+		{"another branch with resume", "other", true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRig(t)
+			gitIn(t, r.repo, "checkout", "-q", "-b", tc.branch)
+			r.o.Resume = tc.resume
+			if tc.ok {
+				wantOK(t, r.run(), "repo")
+			} else {
+				wantFail(t, r.run(), "repo")
+			}
+		})
+	}
+}
+
 func TestPreflightRepoFixNamesBranchAndRev(t *testing.T) {
 	r := newRig(t)
 	gitIn(t, r.repo, "checkout", "-q", "-b", "other")
