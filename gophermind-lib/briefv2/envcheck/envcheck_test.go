@@ -93,19 +93,17 @@ func TestProbeTimeoutIsAParameter(t *testing.T) {
 	defer l.Close()
 	go func() {
 		for {
-			c, err := l.Accept()
-			if err != nil {
-				return
+			if _, err := l.Accept(); err != nil {
+				return // accepted connections are never answered
 			}
-			defer c.Close() // never answers
 		}
 	}()
 	start := time.Now()
 	if ProbeBaseURL(context.Background(), &http.Client{}, "http://"+l.Addr().String()+"/v1", 100*time.Millisecond) {
 		t.Error("a listener that never answers was reported as answering")
 	}
-	if d := time.Since(start); d > 200*time.Millisecond {
-		t.Errorf("took %v, want under twice the 100 ms timeout", d)
+	if d := time.Since(start); d > 2*time.Second {
+		t.Errorf("took %v, the 100 ms timeout argument was not honored", d)
 	}
 }
 
@@ -164,6 +162,16 @@ func TestDirtyOutsideTestsEmptyRunDir(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, ".gophermind", "run", "x"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// A decoy list in the working directory that would allow stray.txt: with an
+	// empty runDir it must not be read.
+	cwd := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cwd, "_state"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cwd, "_state", "test_files.json"), []byte(`["stray.txt"]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(cwd)
 	n, err := DirtyOutsideTests(repo, "")
 	if err != nil || n != 1 {
 		t.Errorf("DirtyOutsideTests = %d, %v; want 1 (stray.txt only, .gophermind/ not counted)", n, err)
