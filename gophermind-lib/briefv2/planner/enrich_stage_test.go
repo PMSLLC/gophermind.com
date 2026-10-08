@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"gophermind/gophermind-lib/briefv2/human"
 	"gophermind/gophermind-lib/briefv2/ledger"
@@ -125,6 +126,9 @@ func TestEnrichFailsNamingTheNodeWhenTheRepairBoundIsSpent(t *testing.T) {
 	}
 	if calls.count("enrich:_fix") != 2 {
 		t.Errorf("repair calls = %d, want 2", calls.count("enrich:_fix"))
+	}
+	if !strings.Contains(err.Error(), "_state/enriched.json") {
+		t.Errorf("the error does not say how to reset: %v", err)
 	}
 }
 
@@ -275,5 +279,147 @@ func TestEnrichStagesFollowTheNodeTier(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A decision settled while the stage runs (a QUESTION: answered in the same
+// run) can be cited by the reply that was shaped by it.
+func TestEnrichReplyMayCiteTheDecisionItsOwnQuestionSettled(t *testing.T) {
+	respond := func(stage string, call int, nodes []enrichNode, prompt string) string {
+		if stage == "enrich:greeting" && !strings.Contains(prompt, "Answer from the owner") {
+			return "QUESTION:\nShould Greet log refused names?"
+		}
+		out := make([]map[string]any, len(nodes))
+		for i, n := range nodes {
+			out[i] = goodEnrichment(n)
+			if stage == "enrich:greeting" {
+				out[i]["decision_ids"] = []any{"enrich-greeting-q2"}
+			}
+		}
+		b, _ := json.Marshal(out)
+		return string(b)
+	}
+	g, calls := enrichRig(t, respond)
+	gate := g.gate.(*scriptGate)
+	gate.answer = func(q human.Question) string {
+		if strings.HasPrefix(q.ID, "enrich-") {
+			return "no, never log names"
+		}
+		return "yes"
+	}
+	g.mustPlan(planner.Options{StopAfter: "approve"})
+	if calls.count("enrich:_fix") != 0 {
+		t.Errorf("the reply that cites its own decision needed %d repairs", calls.count("enrich:_fix"))
+	}
+	rec := string(g.read("decisions/enrich-greeting-q2.md"))
+	if !strings.Contains(rec, "fn-greet") {
+		t.Errorf("the decision record does not list the node that cites it:\n%s", rec)
+	}
+}
+
+func staleEnriched(t *testing.T, g *rig, pending []map[string]any) {
+	t.Helper()
+	var st map[string]any
+	if err := json.Unmarshal(g.read("_state/enriched.json"), &st); err != nil {
+		t.Fatal(err)
+	}
+	st["done"], st["pending"] = false, pending
+	raw, _ := json.Marshal(st)
+	if err := os.WriteFile(filepath.Join(g.runDir, "_state", "enriched.json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func planWithin(t *testing.T, g *rig, o planner.Options) (planner.Outcome, error) {
+	t.Helper()
+	type res struct {
+		out planner.Outcome
+		err error
+	}
+	ch := make(chan res, 1)
+	go func() { out, err := g.plan(o); ch <- res{out, err} }()
+	select {
+	case r := <-ch:
+		return r.out, r.err
+	case <-time.After(20 * time.Second):
+		t.Fatal("the repair loop did not end")
+		return "", nil
+	}
+}
+
+func TestEnrichRepairEndsWhenAPendingEntryNamesAComponentThatIsGone(t *testing.T) {
+	g, _ := enrichRig(t, allGood)
+	g.mustPlan(planner.Options{StopAfter: "enrich"})
+	staleEnriched(t, g, []map[string]any{{"component": "ghost", "id": "fn-greet", "defects": []string{"group_missing"}, "fields": []string{"security"}}})
+	if out, err := planWithin(t, g, planner.Options{RunID: greeterID, StopAfter: "enrich"}); err != nil || out != planner.Done {
+		t.Fatalf("resume = %v, %v", out, err)
+	}
+}
+
+func TestEnrichRepairDropsAPendingEntryWithNoDraftAndNeverCallsWithAnEmptyBatch(t *testing.T) {
+	g, _ := enrichRig(t, allGood)
+	g.mustPlan(planner.Options{StopAfter: "enrich"})
+	staleEnriched(t, g, []map[string]any{{"component": "greeting", "id": "fn-nope", "defects": []string{"group_missing"}, "fields": []string{"security"}}})
+	calls := withEnrichment(g, func(stage string, call int, nodes []enrichNode, prompt string) string {
+		if len(nodes) == 0 {
+			t.Errorf("the model was called with an empty batch in stage %s", stage)
+		}
+		return goodEnrichmentJSON(nodes)
+	})
+	if out, err := planWithin(t, g, planner.Options{RunID: greeterID, StopAfter: "enrich"}); err != nil || out != planner.Done {
+		t.Fatalf("resume = %v, %v", out, err)
+	}
+	if n := calls.count("enrich:_fix"); n != 0 {
+		t.Errorf("%d repair calls for a node that has no draft", n)
+	}
+	if raw := g.read("_state/enriched.json"); !strings.Contains(string(raw), "fn-nope") || strings.Contains(string(raw), `"pending"`) {
+		t.Errorf("the dropped entry should be noted in warnings and gone from pending: %s", raw)
+	}
+}
+
+func TestEnrichKeepsOnlyKnownFieldsOfAPendingReply(t *testing.T) {
+	const canary = "CANARY-raw-9921"
+	respond := func(stage string, call int, nodes []enrichNode, _ string) string {
+		out := make([]map[string]any, len(nodes))
+		for i, n := range nodes {
+			out[i] = goodEnrichment(n)
+			if n.ID == "fn-greet" {
+				delete(out[i], "security")
+				out[i]["zz_extra"] = canary
+			}
+		}
+		b, _ := json.Marshal(out)
+		return string(b)
+	}
+	g, _ := enrichRig(t, respond)
+	if _, err := g.plan(planner.Options{StopAfter: "enrich"}); err == nil {
+		t.Fatal("a node that never gets its security group must fail the stage")
+	}
+	raw := g.read("_state/enriched.json")
+	if strings.Contains(string(raw), canary) || !strings.Contains(string(raw), "fn-greet") {
+		t.Errorf("enriched.json = %s", raw)
+	}
+}
+
+func TestEnrichIgnoresANodeOutsideTheBatch(t *testing.T) {
+	respond := func(stage string, call int, nodes []enrichNode, _ string) string {
+		out := make([]map[string]any, 0, len(nodes)+1)
+		for _, n := range nodes {
+			out = append(out, goodEnrichment(n))
+		}
+		if stage == "enrich:greeting" {
+			other := goodEnrichment(enrichNode{ID: "fn-farewell"})
+			other["rationale"] = "SNEAKED in by the greeting call for a node of another component."
+			out = append(out, other)
+		}
+		b, _ := json.Marshal(out)
+		return string(b)
+	}
+	g, _ := enrichRig(t, respond)
+	g.mustPlan(planner.Options{StopAfter: "enrich"})
+	for _, d := range g.drafts().Components["farewell"] {
+		if r, _ := d["rationale"].(string); strings.Contains(r, "SNEAKED") {
+			t.Errorf("fn-farewell took a rationale from another component's call: %v", r)
+		}
 	}
 }

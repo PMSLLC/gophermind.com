@@ -114,7 +114,7 @@ func (e *EnrichError) Error() string {
 	if len(shown) > 5 {
 		shown = shown[:5]
 	}
-	return fmt.Sprintf("%d node(s) still fail the group checks after %d repairs: %s", len(e.Items), maxEnrichRepairs, strings.Join(shown, "; "))
+	return fmt.Sprintf("%d node(s) still fail the group checks after %d repairs: %s (to try again, remove _state/enriched.json from the run folder and resume; enriched nodes are kept)", len(e.Items), maxEnrichRepairs, strings.Join(shown, "; "))
 }
 
 // groupEnvFor gathers what the group checks need that is the same for every node.
@@ -295,10 +295,12 @@ func splitEnrich(text string, batch []map[string]any, c *contract.Contracts, env
 		}
 		raw := map[string]any{}
 		for k, v := range prev[id] {
-			raw[k] = v
+			if contains(enrichFieldsAll, k) {
+				raw[k] = v
+			}
 		}
 		for k, v := range reply {
-			if k != "id" {
+			if contains(enrichFieldsAll, k) {
 				raw[k] = v
 			}
 		}
@@ -386,7 +388,17 @@ func (p *Planner) enrichCall(ctx context.Context, r *run, c *contract.Contracts,
 	var res enrichResult
 	cs := callSpec{stage: stage, taskType: "enrich", scope: router.ScopeComponent, maxTokens: maxTokensEnrich, tier: p.batchTier(batch)}
 	err = p.callAsking(ctx, r, cs, prompt, func(text string) error {
-		got, perr := splitEnrich(StripReply(text), batch, c, env, prev)
+		// A question answered during this call settled a decision the reply may cite.
+		fresh := env
+		if cur, qerr := loadQStore(r); qerr == nil {
+			fresh.Decisions = map[string]bool{}
+			for _, q := range cur.Questions {
+				if q.Status == qSettled {
+					fresh.Decisions[q.ID] = true
+				}
+			}
+		}
+		got, perr := splitEnrich(StripReply(text), batch, c, fresh, prev)
 		if perr != nil {
 			return perr
 		}
@@ -515,6 +527,30 @@ func (p *Planner) applyEnrichment(dec *decomposed, st *enrichedState, res enrich
 // failing after that ends the stage with an EnrichError: nothing is invented.
 func (p *Planner) repairEnrichment(ctx context.Context, r *run, c *contract.Contracts, dec *decomposed, st *enrichedState, env groupEnv) error {
 	cfg := p.d.Settings.Defaults
+	inPlan := map[string]contract.Component{}
+	for _, comp := range c.Components {
+		inPlan[comp.ID] = comp
+	}
+	// An entry with no draft, or whose draft belongs to a component the plan no
+	// longer has, cannot be repaired: it is dropped with a note, so the loop ends.
+	kept := st.Pending[:0]
+	for _, pe := range st.Pending {
+		cname, _, ok := draftIndex(dec, pe.ID)
+		if _, known := inPlan[cname]; !ok || !known {
+			w := fmt.Sprintf("%s: a pending repair was dropped because the node or its component is no longer in the plan", boundedID(pe.ID))
+			if !contains(st.Warnings, w) {
+				st.Warnings = append(st.Warnings, w)
+			}
+			p.emit(events.KindWarning, "enrich", "", w)
+			continue
+		}
+		pe.Component = cname
+		kept = append(kept, pe)
+	}
+	st.Pending = kept
+	if err := st.save(r); err != nil {
+		return err
+	}
 	for {
 		byComp := map[string][]pendingEnrich{}
 		for _, pe := range st.Pending {
@@ -536,6 +572,9 @@ func (p *Planner) repairEnrichment(ctx context.Context, r *run, c *contract.Cont
 						drafts = append(drafts, dec.Components[cname][i])
 						prev[pe.ID] = pe.Raw
 					}
+				}
+				if len(drafts) == 0 {
+					return fmt.Errorf("enrich: %d pending repair(s) have no draft; remove _state/enriched.json from the run folder and resume", len(chunk))
 				}
 				res, err := p.enrichCall(ctx, r, c, comp, drafts, env, chunk, prev)
 				if err != nil {
