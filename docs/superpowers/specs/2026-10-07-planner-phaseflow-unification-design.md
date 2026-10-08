@@ -17,7 +17,7 @@ Today there are two of everything:
 | Executor | `phaseflow.ExecuteWithReviser`, called only from `gophermind-lib/tui/execute.go` | briefv2 `executor.Run` (`gophermind brief run`) |
 | Run state | `.planning/` Markdown and `assignments.json` | SQLite `~/.gophermind/blackboard.db` (tables `rows`, `events`, `calls`) plus `_state/*.json` |
 
-"One version" is read here as: each row ends with one entry. That reading is an assumption (section 10, item 1).
+"One version" means there is no v1 and v2: each row ends with one entry, the old one is removed, and the version names go (decision 12, John 2026-10-08).
 
 ## 2. Decisions
 
@@ -33,6 +33,8 @@ Today there are two of everything:
 | 8 | Node content | All groups on every node (rationale, construction, errors, tests, security, performance, portability, observability, alternatives, refactoring), not only on some node classes | John, "require all groups everywhere" |
 | 9 | Branch | Do not merge. `main` stays docs-only; all code work stays on `feat/briefv2-planner-core` in the worktree. Supersedes John's earlier "merge first" | John, 2026-10-07 (later the same day) |
 | 10 | Question model | Rounds with a dependency tree, fact probe, confirm-understanding gate, decision records, caps of 4 model calls and 30 questions | John, 2026-10-07 (yes to all four). Specified in `2026-10-07-node-widening-and-question-model-design.md` |
+| 12 | One version | No v1 and v2. When the work has landed there is one planner and one executor: the v1 planner and executor are removed (not kept under another name) and the "v2" and `briefv2` names are dropped. Until then the `/project` spec keeps v1 as `/plan-v1` so the server, the desktop app and `/phase` keep working; removal is sub-project G | John, 2026-10-08 |
+| 13 | The rehearsal run `gm-2026-09-29-002` | Not needed. Runs recorded only in the old SQLite file are not migrated | John, 2026-10-08 |
 | 11 | Sequencing against GOAL.md | Finish the graded run first. None of A to F starts until the GOAL.md graded run has finished; until then this document and the two reviews are the only output of this work | John, 2026-10-07 |
 
 ## 3. The work, in order
@@ -47,6 +49,7 @@ Each item gets its own plan and its own build. All code work happens on `feat/br
 | D | PhaseFlow view: `.planning/` files and the pipeline endpoints read the run folder | A, C | section 8 |
 | E | Planner revise stage: rewrite a node after a failure | B | its own spec; neither v1 nor v2 does this today |
 | F | Parallel waves | A | its own spec; the executor runs one worker today |
+| G | Retire v1 and drop the version names: remove `plantree`, the PhaseFlow executor and the v1 `orchestrate` runner, rename `briefv2`, and move the server, the desktop app and `/phase` onto the one system | C, D | its own spec, after a caller inventory (the TUI, `serve/pipeline*.go`, `gophermind-osx`, `cmd/gophermind/phase.go`); runs after the graded release |
 
 ## 4. Sub-project A: filesystem run state
 
@@ -135,16 +138,16 @@ For a v2 run, `ROADMAP.md`, `STATE.md`, `assignments.json`, and the pipeline sta
 
 ## 9. Not in scope
 
-- Deleting `plantree`, `orchestrate`, or the PhaseFlow executor code (needs the caller inventory: TUI, server pipeline, desktop app, `/phase`).
+- Deleting `plantree`, `orchestrate`, or the PhaseFlow executor code, and renaming `briefv2`: that is sub-project G (decision 12), after a caller inventory (TUI, server pipeline, desktop app, `/phase`).
 - Any change to the executor's ladder or sandbox beyond the artifact writes in section 4.3.
 - Git landing, the proxy and the sandbox (already built on the branch).
 - Cross-run queries in SQL. A cross-run report becomes a scan of run folders, added only if asked.
 
 ## 10. Open items
 
-1. **Meaning of "one version".** This spec reads it as one planner, one executor, and one state store. If John meant only one of these, sections 2 and 3 shrink to that one.
+1. **Meaning of "one version" (decided, John 2026-10-08).** No v1 and v2: one planner, one executor, one state store, and the version names go. Sub-project G does the removal.
 2. **Merge (decided).** Not merging. `main` stays docs-only, as `CONTEXT.md` describes; the branch stays in its worktree. The dry-run merge of the committed histories on 2026-10-07 found no conflicts (main 4 ahead, branch 108 ahead), and the uncommitted files on `main` that would have collided with a merge (an untracked copy of the planner-core plan, `planner/testdata/aivs`, a one-line edit to the planner-core spec) were identical to or contained in the branch versions. A test run of the branch was started and stopped partway at the decision (7 packages passed and none failed; the executor package had not run), so the branch's test state is unverified by this work. Revisit the merge after the graded run.
 3. **Sequencing against GOAL.md (decided).** Finish the graded run first (decision 11). Consequence for this document: sub-project A's plan, and every later plan, is written but not started until the graded run ends. If the graded run's attempts reveal planner or executor defects, they are fixed under the GOAL.md rules (fix GopherMind, never the target repo) and may change the premises in the review; re-check the review's section 8 claims then.
-4. **Old database.** Check whether `~/.gophermind/blackboard.db` (laptop and the mini) holds a run that must survive, in particular the real-brief rehearsal `gm-2026-09-29-002`.
+4. **Old database (decided, John 2026-10-08).** The rehearsal run `gm-2026-09-29-002` is not needed; nothing in `~/.gophermind/blackboard.db` is migrated.
 5. **Locking under many workers.** Section 4.3 rule 3 uses lock files. If sub-project F raises the worker count, measure the contention before trusting it.
 6. **Executor spec changes.** R15 (output never stored) and the executor spec's "Not in scope" line on the planner revise stage change with this work; the executor spec on the branch is edited when A and E are built, not before.

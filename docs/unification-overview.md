@@ -26,7 +26,7 @@ John asked for the planner to be tightly integrated with PhaseFlow. Reading both
 | `docs/superpowers/plans/2026-10-08-node-widening-and-question-model.md` | Sub-project B plan (13 tasks) | written, not started |
 | `docs/GOAL.md` and `docs/superpowers/specs/2026-09-30-project-single-entry-design.md` (branch) | The graded run and `/project` as the single entry point, which this work must not disturb | active |
 
-## 4. The six sub-projects and their order
+## 4. The seven sub-projects and their order
 
 | # | Sub-project | Detail | State |
 |---|---|---|---|
@@ -36,6 +36,7 @@ John asked for the planner to be tightly integrated with PhaseFlow. Reading both
 | D | PhaseFlow as a read-only view of the run folder, reusing v1's file-watcher feed | umbrella spec section 8 | outline |
 | E | A planner revise stage that rewrites a node after a failure (neither v1 nor v2 does this) | none yet | not specified |
 | F | Parallel waves in the executor | none yet | not specified |
+| G | Retire v1 and drop the version names (no v1 and v2): remove `plantree`, the PhaseFlow executor and the v1 runner, rename `briefv2`, move the server, the desktop app and `/phase` onto the one system | umbrella spec decision 12; needs a caller inventory | not specified; after the graded release |
 
 Nothing in A to F starts until the GOAL.md graded run has finished (decision 11).
 
@@ -46,7 +47,7 @@ Nothing in A to F starts until the GOAL.md graded run has finished (decision 11)
 | 2026-10-07 | All of: shared executor, shared state, PhaseFlow commands driving the planner; split into sub-projects |
 | 2026-10-07 | Design from what the two codebases already do, not field by field |
 | 2026-10-07 | The planner's router owns model fallback |
-| 2026-10-07 | One version: one planner, one executor, one state store (this reading is an assumption, see open items) |
+| 2026-10-07 | One version: one planner, one executor, one state store |
 | 2026-10-07 | Nodes and their run state are browsable files, not SQL |
 | 2026-10-07 | Order: files, node widening with the question model, `/project` on v2, the PhaseFlow view, the revise stage, parallel waves |
 | 2026-10-07 | Save attempt artifacts (scrubbed, in the run folder, with a setting to turn them off) |
@@ -54,6 +55,7 @@ Nothing in A to F starts until the GOAL.md graded run has finished (decision 11)
 | 2026-10-07 | Do not merge the branch; `main` stays docs-only |
 | 2026-10-07 | Finish the GOAL.md graded run first |
 | 2026-10-07 | Clarify as rounds with a dependency tree; the confirm-understanding gate; decision records; caps of 4 model calls and 30 questions |
+| 2026-10-08 | One version means no v1 and v2: v1 is removed and the version names go (sub-project G); the rehearsal run `gm-2026-09-29-002` is not needed |
 | 2026-10-08 | Explicit, validated not-applicable answers are allowed where the node-group table says so |
 | 2026-10-08 | Stages that work on one node follow that node's `model_tier` |
 | 2026-10-08 | Every question and answer is also recorded in the node tree |
@@ -66,14 +68,24 @@ Nothing in A to F starts until the GOAL.md graded run has finished (decision 11)
 - Neither version rewrites a node after a failure.
 - A node-scope call may reach a public provider, so Test-writer and implement prompts receive a projection of a node that excludes its reasoning groups and its decisions.
 
-## 7. Open items for John
+## 7. The graded run
 
-1. Does "one version" mean planner, executor and state store all (assumed yes)?
-2. Is the rehearsal run `gm-2026-09-29-002`, recorded in the old SQLite file, needed after the graded run?
-3. After the graded run: revisit merging the branch, re-check the eight unverified review claims, then start A.
-4. Enrich's cost on the real brief (136 function nodes in the rehearsal) is unmeasured; measure on the csvstat brief first.
+`docs/GOAL.md` is a standing goal John set on 2026-09-29: GopherMind must build the AI Venture Studio server (`~/OtherProjects/AIVentureStudio`) from its brief, in one clean run of `/project`, using only the Mac mini's model. The product is AIVentureStudio; GopherMind is the tool that has to get good enough to build it.
 
-## 8. How to resume
+- **One attempt** is one `/project` run on the brief, from a cleared target repo to a finished build, in one process with no restart, no resume and no hand edit. An attempt also fails if GopherMind printed an error, skipped or abandoned a task, or stopped to ask a human, or if the coverage report is not `Requirements covered: N of N`.
+- **A failed attempt is dead.** It is recorded in `docs/goals/attempts/NN.md` (20 lines at most), the target repo is cleared, GopherMind is fixed (never the target repo), and a new attempt starts.
+- **The run stops at a perfect release:** a clean attempt where `go build`, `go vet` and `go test -race` pass in the target repo, every acceptance bullet passes against the built server, the plan covers every requirement, the ledger shows which model did each call, and GopherMind committed the result on `main` there (then the orchestrator tags it `v0.1.0`).
+- **Where it stands (from CONTEXT.md, 2026-09-30):** the v2 planner is built and proven on the real brief up to approval; the executor is built with fix waves still open; `/project` as the single entry point is specified and planned (14 tasks) but not built; there have been 0 graded attempts.
+
+This is why the unification work waits: every change to the planner, the executor, the node schema or the run-state format would change what the graded run is graded on.
+
+## 8. Open items for John
+
+1. After the graded run: revisit merging the branch, re-check the eight unverified review claims, then start A.
+2. Sub-project G (removing v1 and the version names) needs a caller inventory and its own spec.
+3. Enrich's cost on the real brief (136 function nodes in the rehearsal) is unmeasured; measure on the csvstat brief first.
+
+## 9. How to resume
 
 1. Read this page, then `CONTEXT.md` (the 2026-10-07 and 2026-10-08 sections at the end).
 2. Confirm the graded run has finished (`docs/GOAL.md`, the worktree's `docs/goals/attempts/`).
