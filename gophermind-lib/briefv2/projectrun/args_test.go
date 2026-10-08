@@ -1,19 +1,9 @@
 package projectrun
 
 import (
-	"os"
 	"strings"
 	"testing"
 )
-
-func TestMain(m *testing.M) {
-	for _, kv := range os.Environ() {
-		if strings.HasPrefix(kv, "GIT_") {
-			os.Unsetenv(strings.SplitN(kv, "=", 2)[0])
-		}
-	}
-	os.Exit(m.Run())
-}
 
 func TestParseArgsTable(t *testing.T) {
 	cases := []struct {
