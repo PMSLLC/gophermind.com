@@ -66,6 +66,12 @@ func TestConfirmIsRedoneWhenAnAnswerChanges(t *testing.T) {
 	if err := os.WriteFile(p, []byte(strings.Replace(string(raw), `"answer": "yes"`, `"answer": "no"`, 1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// answers.json is the derived view; an answer change keeps it in step.
+	ap := filepath.Join(g.runDir, "answers.json")
+	araw, _ := os.ReadFile(ap)
+	if err := os.WriteFile(ap, []byte(strings.Replace(string(araw), `"answer": "yes"`, `"answer": "no"`, 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := g.plan(planner.Options{RunID: greeterID, StopAfter: "confirm"}); err != nil {
 		t.Fatal(err)
 	}
@@ -112,22 +118,41 @@ func TestConfirmFileGateWaitsForTheOwner(t *testing.T) {
 	}
 }
 
-func TestConfirmIsRedoneWhenAnswersJSONIsEdited(t *testing.T) {
+func TestConfirmRefusesWhenAnswersJSONWasEditedAndLeavesItAlone(t *testing.T) {
 	gate := approving()
 	g := newRig(t, gate, fixtureDir(t, map[string]string{"clarify.txt": chainQuestions, "clarify.more.txt": "[]"}))
 	g.mustPlan(planner.Options{StopAfter: "confirm"})
 	p := filepath.Join(g.runDir, "answers.json")
 	raw, _ := os.ReadFile(p)
-	if err := os.WriteFile(p, []byte(strings.Replace(string(raw), `"answer": "yes"`, `"answer": "no"`, 1)), 0o600); err != nil {
+	edited := strings.Replace(string(raw), `"answer": "yes"`, `"answer": "no"`, 1)
+	if edited == string(raw) {
+		t.Fatal("the edit changed nothing")
+	}
+	if err := os.WriteFile(p, []byte(edited), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := g.plan(planner.Options{RunID: greeterID, StopAfter: "confirm"})
+	if err == nil || !strings.Contains(err.Error(), "answers.json differs from _state/clarify/questions.json") {
+		t.Fatalf("err = %v, want the derived-view refusal", err)
+	}
+	if got, _ := os.ReadFile(p); string(got) != edited {
+		t.Errorf("the edited answers.json was overwritten:\n%s", got)
+	}
+	if len(gate.understandings) != 1 {
+		t.Errorf("the gate saw %d understandings; the refusal must come before asking", len(gate.understandings))
+	}
+}
+
+func TestConfirmOfALegacyRunStillConfirms(t *testing.T) {
+	gate := approving()
+	g := newRig(t, gate, fixtureDir(t, map[string]string{"clarify.txt": "[]", "clarify.more.txt": "[]"}))
+	g.mustPlan(planner.Options{StopAfter: "load"})
+	if err := os.WriteFile(filepath.Join(g.runDir, "answers.json"),
+		[]byte(`{"answers":[{"id":"q1","stage":"clarify","question":"Old?","answer":"kept","assumed":false}]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	g.mustPlan(planner.Options{RunID: greeterID, StopAfter: "confirm"})
-	if len(gate.understandings) != 2 {
-		t.Errorf("an edited answers.json must put the understanding to the gate again: %d", len(gate.understandings))
-	}
-	// Confirming again leaves a consistent run: a third pass asks nothing.
-	g.mustPlan(planner.Options{RunID: greeterID, StopAfter: "confirm"})
-	if len(gate.understandings) != 2 {
-		t.Errorf("the confirmation did not hold: %d", len(gate.understandings))
+	if _, _, ok := readUnderstandingRec(t, g.runDir); !ok {
+		t.Error("a legacy run was not confirmed")
 	}
 }

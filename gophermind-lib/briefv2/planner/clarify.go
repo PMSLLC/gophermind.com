@@ -133,7 +133,7 @@ func (p *Planner) clarifyRound(ctx context.Context, r *run, s *qstore, facts fac
 			// Parsing forbids an unknown or cyclic depends_on, so only a hand-edited
 			// store gets here. Finishing would drop the question unasked.
 			return fmt.Errorf("question %s is open but can never be asked: it waits on %s, which is unknown or cyclic; fix its depends_on in %s",
-				open[0].ID, strings.Join(open[0].DependsOn, ", "), fileQuestions)
+				open[0].ID, oneLine(strings.Join(open[0].DependsOn, ", "), 200), fileQuestions)
 		}
 		return nil
 	}
