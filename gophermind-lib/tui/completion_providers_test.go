@@ -45,9 +45,10 @@ func TestCommandProviderMenuOnMultipleMatches(t *testing.T) {
 	p := newCommandProvider()
 	input := "/p"
 	got := p.Suggest(input, len(input))
-	// "/plan-v1", "/plan-v1-execute", "/phase", and "/provider" all start
-	// with "/p".
+	// "/project", "/plan-v1", "/plan-v1-execute", "/phase", and "/provider"
+	// all start with "/p".
 	want := []bubblecomplete.Candidate{
+		{Text: "roject", Display: "/project <brief> [flags]", Replace: 0},
 		{Text: "lan-v1", Display: "/plan-v1 <name> <brief>", Replace: 0},
 		{Text: "lan-v1-execute", Display: "/plan-v1-execute", Replace: 0},
 		{Text: "hase", Display: "/phase <cmd>", Replace: 0},

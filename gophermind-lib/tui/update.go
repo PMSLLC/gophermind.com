@@ -166,6 +166,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case projectPassesDoneMsg:
 		return m.afterProjectPasses(msg)
 
+	case projectV2LineMsg:
+		m.appendLine(string(msg))
+		m.sync()
+		return m, waitFor(m.sub)
+
+	case projectV2DoneMsg:
+		m.appendLine(projectV2DoneLine(msg))
+		m.projV2 = false
+		m.st = stateIdle
+		m.cancel = nil
+		m.sync()
+		return m, tea.Batch(m.beginAttention(), waitFor(m.sub))
+
 	case execDoneMsg:
 		m.appendLine(renderExecSummary(msg.summary))
 		m.execOutcomes = nil
@@ -485,6 +498,12 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 	// and reports back. It reuses the same wizard that runs on first launch.
 	if strings.Fields(text)[0] == "/config" {
 		return m.handleConfigCommand()
+	}
+
+	// "/project <brief> [flags]" plans and builds a v2 brief in one run; see
+	// project_v2.go.
+	if strings.Fields(text)[0] == "/project" {
+		return m.handleProjectV2Command(text)
 	}
 
 	// "/plan-v1 <name> <brief>" plans the brief into .planning/plan, asks its
