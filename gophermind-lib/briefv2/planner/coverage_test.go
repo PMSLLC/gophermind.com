@@ -261,7 +261,7 @@ func TestCoverageDecomposesFunctionsLeftWithoutANode(t *testing.T) {
 		"enrich.greeting.2.txt":  string(mustRead(t, filepath.Join(greeterGap, "enrich.greeting.2.txt"))),
 	}))
 	g.mustPlan(planner.Options{RunID: greeterID, StopAfter: "coverage"})
-	if got := strings.Join(g.stagesCalled(), " "); !strings.HasSuffix(got, "decompose:greeting enrich:greeting coverage") {
+	if got := strings.Join(g.stagesCalled(), " "); got != "enrich:types enrich:greeting enrich:farewell enrich_comp:types enrich_comp:greeting enrich_comp:farewell enrich_root decompose:greeting enrich:greeting coverage" {
 		t.Errorf("calls = %q, want the missing node decomposed, enriched and then coverage", got)
 	}
 	if got := len(g.drafts().Components["greeting"]); got != 2 {
