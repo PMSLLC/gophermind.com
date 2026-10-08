@@ -3,6 +3,7 @@ package planner
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -22,6 +23,10 @@ type CoverageFile struct {
 	Serve *Serve `json:"serve,omitempty"`
 }
 
+// ErrNoCoverage is wrapped by ReadCoverage when coverage.json does not exist,
+// so a caller can tell a plan that has not been covered yet from a corrupt file.
+var ErrNoCoverage = errors.New("no coverage.json")
+
 // ReadCoverage reads a run folder's coverage.json.
 func ReadCoverage(runDir string) (CoverageFile, error) {
 	var f CoverageFile
@@ -31,7 +36,7 @@ func ReadCoverage(runDir string) (CoverageFile, error) {
 		return f, err
 	}
 	if !found {
-		return f, fmt.Errorf("planner: %s has no coverage.json; the coverage stage has not finished", runDir)
+		return f, fmt.Errorf("planner: %s has no coverage.json; the coverage stage has not finished: %w", runDir, ErrNoCoverage)
 	}
 	return f, nil
 }
