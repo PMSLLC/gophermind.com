@@ -1,0 +1,182 @@
+[
+  {
+    "id": "fn-bye",
+    "rationale": "Serves the fn-bye part of the brief so callers get the behaviour the contract promises.",
+    "construction": {
+      "approach_chosen": "write it directly",
+      "steps": [
+        "Check the input.",
+        "Build and return the result."
+      ]
+    },
+    "alternatives": {
+      "not_applicable": "there is one obvious way to write a function this small"
+    },
+    "error_kinds": [],
+    "portability": {
+      "os": [
+        "linux",
+        "darwin"
+      ],
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "go_min": "1.21",
+      "cgo": false,
+      "deps": []
+    },
+    "security": {
+      "trust_boundary": "external_input",
+      "untrusted_inputs": [
+        "r"
+      ],
+      "authz": "none",
+      "secret_use": [],
+      "threats": [
+        {
+          "threat": "a hostile name query parameter",
+          "mitigation": "the name is only echoed after trimming"
+        }
+      ]
+    },
+    "performance": {
+      "complexity": "O(n)",
+      "max_latency_ms": null,
+      "alloc_budget": "one small string",
+      "concurrency": "none",
+      "hot_path": false
+    },
+    "observability": {
+      "log_events": [],
+      "metrics": [],
+      "trace_span": null
+    },
+    "refactor_notes": {
+      "not_applicable": "nothing worth restructuring in a function this small"
+    },
+    "profile_hooks": {
+      "not_applicable": "this function is too small to profile usefully"
+    },
+    "assumptions": [],
+    "open_questions": [],
+    "decision_ids": []
+  },
+  {
+    "id": "fn-hello",
+    "rationale": "Serves the fn-hello part of the brief so callers get the behaviour the contract promises.",
+    "construction": {
+      "approach_chosen": "write it directly",
+      "steps": [
+        "Check the input.",
+        "Build and return the result."
+      ]
+    },
+    "alternatives": {
+      "not_applicable": "there is one obvious way to write a function this small"
+    },
+    "error_kinds": [],
+    "portability": {
+      "os": [
+        "linux",
+        "darwin"
+      ],
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "go_min": "1.21",
+      "cgo": false,
+      "deps": []
+    },
+    "security": {
+      "trust_boundary": "external_input",
+      "untrusted_inputs": [
+        "r"
+      ],
+      "authz": "none",
+      "secret_use": [],
+      "threats": [
+        {
+          "threat": "a hostile name query parameter",
+          "mitigation": "the name is only echoed after trimming"
+        }
+      ]
+    },
+    "performance": {
+      "complexity": "O(n)",
+      "max_latency_ms": null,
+      "alloc_budget": "one small string",
+      "concurrency": "none",
+      "hot_path": false
+    },
+    "observability": {
+      "log_events": [],
+      "metrics": [],
+      "trace_span": null
+    },
+    "refactor_notes": {
+      "not_applicable": "nothing worth restructuring in a function this small"
+    },
+    "profile_hooks": {
+      "not_applicable": "this function is too small to profile usefully"
+    },
+    "assumptions": [],
+    "open_questions": [],
+    "decision_ids": []
+  },
+  {
+    "id": "fn-serve",
+    "rationale": "Serves the fn-serve part of the brief so callers get the behaviour the contract promises.",
+    "construction": {
+      "approach_chosen": "write it directly",
+      "steps": [
+        "Check the input.",
+        "Build and return the result."
+      ]
+    },
+    "alternatives": {
+      "not_applicable": "there is one obvious way to write a function this small"
+    },
+    "error_kinds": [
+      "other"
+    ],
+    "portability": {
+      "os": [
+        "linux",
+        "darwin"
+      ],
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "go_min": "1.21",
+      "cgo": false,
+      "deps": []
+    },
+    "security": {
+      "not_applicable": "the function handles no input from outside the process"
+    },
+    "performance": {
+      "complexity": "O(n)",
+      "max_latency_ms": null,
+      "alloc_budget": "one small string",
+      "concurrency": "none",
+      "hot_path": false
+    },
+    "observability": {
+      "log_events": [],
+      "metrics": [],
+      "trace_span": null
+    },
+    "refactor_notes": {
+      "not_applicable": "nothing worth restructuring in a function this small"
+    },
+    "profile_hooks": {
+      "not_applicable": "this function is too small to profile usefully"
+    },
+    "assumptions": [],
+    "open_questions": [],
+    "decision_ids": []
+  }
+]

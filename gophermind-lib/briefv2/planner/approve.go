@@ -44,7 +44,12 @@ func (p *Planner) approve(ctx context.Context, r *run) error {
 	if err != nil {
 		return err
 	}
-	if bad := openQuestionNodes(dec); len(bad) > 0 {
+	est, err := loadEnriched(r)
+	if err != nil {
+		return err
+	}
+	bad := append(openQuestionNodes(dec), openQuestionStructures(est)...)
+	if len(bad) > 0 {
 		return fmt.Errorf("%d node(s) still list open questions (first: %s); answer them with `gophermind brief answer` and resume", len(bad), strings.Join(bad[:min(len(bad), 5)], ", "))
 	}
 	if err := p.refreshDecisions(r); err != nil {
@@ -295,7 +300,7 @@ func citedByFunctions(dec decomposed) map[string][]string {
 }
 
 // refreshDecisions rewrites every decision record so it lists the nodes that
-// cite it. Task 8 extends it with the component and root records.
+// cite it. Component and root nodes that cite a decision are listed too.
 func (p *Planner) refreshDecisions(r *run) error {
 	s, err := loadQStore(r)
 	if err != nil {
@@ -306,6 +311,18 @@ func (p *Planner) refreshDecisions(r *run) error {
 		return err
 	}
 	cited := citedByFunctions(dec)
+	est, err := loadEnriched(r)
+	if err != nil {
+		return err
+	}
+	for comp, g := range est.Components {
+		for _, q := range strList(g["decision_ids"]) {
+			cited[q] = append(cited[q], comp)
+		}
+	}
+	for _, q := range strList(est.Root["decision_ids"]) {
+		cited[q] = append(cited[q], "root")
+	}
 	for _, q := range s.Questions {
 		if q.Status == qSettled {
 			if err := writeDecision(r, q, cited[q.ID]); err != nil {

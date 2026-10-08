@@ -51,10 +51,13 @@ func TestDecomposeWritesDraftsClassesAndTheSkeleton(t *testing.T) {
 		greet["brief_ref"] != "#features/greeting" || greet["spec_version"] != "2.0" {
 		t.Errorf("harness-owned fields on fn-greet = %v", greet)
 	}
-	for _, k := range []string{"node_class", "tests", "wave"} {
+	for _, k := range []string{"tests", "wave"} {
 		if _, ok := greet[k]; ok {
 			t.Errorf("draft still carries %q", k)
 		}
+	}
+	if greet["node_class"] != "validation" {
+		t.Errorf("fn-greet node_class = %v, want validation (kept on the draft)", greet["node_class"])
 	}
 	// depends_on keeps node ids only; the type reaches the node as a signature.
 	if got := strs(greet["depends_on"]); len(got) != 1 || got[0] != "fn-name-error-error" {

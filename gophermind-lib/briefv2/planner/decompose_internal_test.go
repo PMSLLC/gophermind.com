@@ -231,3 +231,21 @@ func normalizeDrafts(text, component string, fns []contract.Function, c *contrac
 	}
 	return res.good, res.classes, nil
 }
+
+// A node class written into model_tier is recovered, and the draft then carries
+// it as node_class, so the recovery is not a schema defect.
+func TestNodeClassRecoveredFromModelTierStaysOnTheDraft(t *testing.T) {
+	c, err := contract.Load([]byte(leafContract))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &run{id: "gm-2026-09-29-900", brief: &brief.Brief{}}
+	one := strings.Replace(okDraft, `"node_class": "validation"`, `"model_tier": "validation"`, 1)
+	drafts, classes, err := normalizeDrafts("["+one+"]", "greeting", c.Functions[:1], c, r)
+	if err != nil {
+		t.Fatalf("a class in model_tier was refused: %v", err)
+	}
+	if classes["fn-greet"] != "validation" || drafts[0]["node_class"] != "validation" {
+		t.Errorf("classes = %v, node_class = %v", classes, drafts[0]["node_class"])
+	}
+}
