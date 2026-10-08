@@ -114,6 +114,7 @@ var stages = []stage{
 	{"confirm", (*Planner).confirm, confirmDone},
 	{"contract", (*Planner).contract, contractDone},
 	{"decompose", (*Planner).decompose, decomposeDone},
+	{"enrich", (*Planner).enrich, enrichDone},
 	{"coverage", (*Planner).coverage, coverageDone},
 	{"approve", (*Planner).approve, approveDone},
 	{"testwriter", (*Planner).testwriter, testwriterDone},
@@ -192,12 +193,18 @@ type callSpec struct {
 	// maxGrown, when positive, is the cap on the doubled budget the router
 	// retries with after a truncated reply; zero keeps the router's default.
 	maxGrown int
+	// tier is the model tier chain; empty means strong.
+	tier router.Tier
 }
 
 // call makes one model call through the router. parse receives the raw reply
 // text; an error from it marks the reply malformed and takes the retry path.
 func (p *Planner) call(ctx context.Context, r *run, cs callSpec, prompt string, parse func(text string) error) error {
-	info := router.CallInfo{RunID: r.id, Stage: cs.stage, NodeID: cs.nodeID, Tier: router.TierStrong, Scope: cs.scope,
+	tier := cs.tier
+	if tier == "" {
+		tier = router.TierStrong
+	}
+	info := router.CallInfo{RunID: r.id, Stage: cs.stage, NodeID: cs.nodeID, Tier: tier, Scope: cs.scope,
 		TaskType: cs.taskType, NodeClass: cs.nodeClass}
 	req := request(cs.stage, prompt, cs.maxTokens)
 	req.MaxGrownTokens = cs.maxGrown

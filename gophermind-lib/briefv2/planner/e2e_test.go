@@ -212,7 +212,7 @@ func TestLedgerRowsCarryTheTaskTypeAndTheNodeClass(t *testing.T) {
 			t.Errorf("row %s: task %q, node %q, class %q", r.Stage, r.TaskType, r.NodeID, r.NodeClass)
 		}
 	}
-	want := map[string]int{"clarify": 2, "contract": 5, "decompose": 3, "coverage": 1, "testwrite": 3}
+	want := map[string]int{"clarify": 2, "contract": 5, "decompose": 3, "coverage": 1, "enrich": 7, "testwrite": 3}
 	for task, n := range want {
 		if byTask[task] != n {
 			t.Errorf("%d rows of task type %s, want %d (all: %v)", byTask[task], task, n, byTask)

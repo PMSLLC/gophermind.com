@@ -325,7 +325,14 @@ func (e *nodeEnv) normalizeNode(f contract.Function, d map[string]any) (class st
 	if !contains(nodeClasses, class) {
 		defect(defNodeClass, "node_class (%d bytes) is not one of %s", len(class), strings.Join(nodeClasses, ", "))
 	}
-	for _, k := range []string{"node_class", "tests", "wave", "claim", "attempts", "result"} {
+	// The class stays on the draft (the Enrich stage and the ledger read it) and is
+	// set before validateDraft so a class recovered from model_tier is not a schema defect.
+	if contains(nodeClasses, class) {
+		d["node_class"] = class
+	} else {
+		delete(d, "node_class")
+	}
+	for _, k := range []string{"tests", "wave", "claim", "attempts", "result"} {
 		delete(d, k)
 	}
 	fnName := ""
@@ -806,6 +813,24 @@ func buildSkeleton(r *run, maxContext, maxRevisions int, c *contract.Contracts, 
 		}
 		comps = append(comps, doc)
 	}
+	st, err := loadEnriched(r)
+	if err != nil {
+		return nil, nil, err
+	}
+	for k, v := range st.Root {
+		root[k] = v
+	}
+	for _, doc := range comps {
+		id, _ := doc["id"].(string)
+		for k, v := range st.Components[id] {
+			doc[k] = v
+		}
+	}
+	qs, err := loadQStore(r)
+	if err != nil {
+		return nil, nil, err
+	}
+	embedDecisions(qs, root, comps)
 	return root, comps, nil
 }
 

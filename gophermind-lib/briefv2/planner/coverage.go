@@ -254,6 +254,9 @@ func (p *Planner) refreshPlan(ctx context.Context, r *run) error {
 	if err := p.decomposeMissing(ctx, r, c, &dec); err != nil {
 		return err
 	}
+	if err := p.enrichMissing(ctx, r, c, &dec); err != nil {
+		return err
+	}
 	if _, err := planWaves(r.id, c, dec); err != nil {
 		return err
 	}

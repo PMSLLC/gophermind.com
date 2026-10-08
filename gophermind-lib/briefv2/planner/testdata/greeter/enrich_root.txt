@@ -1,0 +1,6 @@
+{
+  "rationale": "Greets and says goodbye to a name, refusing an empty one, as the brief asks.",
+  "assumptions": [],
+  "open_questions": [],
+  "decision_ids": []
+}

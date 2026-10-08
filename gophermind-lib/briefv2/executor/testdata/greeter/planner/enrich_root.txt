@@ -1,0 +1,6 @@
+{
+  "rationale": "Greets and says goodbye to a name over HTTP, as the brief asks.",
+  "assumptions": [],
+  "open_questions": [],
+  "decision_ids": []
+}

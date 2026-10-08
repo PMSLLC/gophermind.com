@@ -65,4 +65,7 @@ const (
 	maxTokensCoverage  = 6000
 	maxTokensFill      = 8000
 	maxTokensTestwrite = 6000
+
+	maxTokensEnrich          = 8000
+	maxTokensEnrichStructure = 1500
 )
