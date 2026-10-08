@@ -17,6 +17,9 @@ import (
 
 var runIDRE = regexp.MustCompile(`^gm-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3}$`)
 
+// ValidRunID reports whether s has the shape of a run id (gm-YYYY-MM-DD-NNN).
+func ValidRunID(s string) bool { return runIDRE.MatchString(s) }
+
 // load is the Load stage. For `plan` it validates the brief, makes sure its
 // secrets are in the vault, creates the run folder and writes the
 // requirements. For `resume` it finds the run and reads the same things back.
