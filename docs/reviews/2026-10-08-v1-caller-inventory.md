@@ -52,3 +52,8 @@ Not importers: the Wails app in `desktop/` (no pipeline code), `ios/` (no pipeli
 
 1. **The wire contract.** (a) Keep today's JSON shape and map nodes to it (`phaseflow.Task` fields), so the app changes only where it imports the types; or (b) define one new contract around nodes (with a `schema_version`), richer, with the server and the app released together. Recommended: (b), because there is no v1 to stay compatible with once v1 is removed, both clients are yours, and the node carries the data the app would otherwise lack. Keep field names where the meaning is unchanged so the change is mostly additive.
 2. **What `/phase` becomes.** (a) A thin front end over the one system: `phase roadmap` and `phase plan` feed the planner, `phase execute` runs the executor, `phase verify` runs acceptance, `phase milestone` archives a run, and ROADMAP.md and STATE.md are generated views; (b) keep PhaseFlow as a separate manual workflow (a second planning model, against decision 12); or (c) retire `/phase`. Recommended: (a). The open design point is that `/phase` starts from a roadmap and the pipeline from a brief; the mapping is to treat a phase as a brief section.
+
+## 8. Decided (John, 2026-10-08)
+
+1. Wire contract: option (b), one new node-based contract with a `schema_version`, server and app released together.
+2. `/phase`: option (c), retired. Consequence: nothing generates `.planning/` files, so sub-project D becomes the run view. Specified in `docs/superpowers/specs/2026-10-08-retire-v1-and-upgrade-consumers-design.md`.

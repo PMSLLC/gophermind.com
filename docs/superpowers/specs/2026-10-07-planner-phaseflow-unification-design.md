@@ -26,7 +26,7 @@ Today there are two of everything:
 | 1 | Which planner | briefv2 `planner`. `/project` becomes v2 | John; GOAL task 4 |
 | 2 | Which executor | briefv2 `executor.Run` | John |
 | 3 | Where run state lives | Files inside the run folder `.gophermind/<run>/`. No SQLite anywhere in briefv2, and no option to switch it back on | John, "browsable filesystem" |
-| 4 | What PhaseFlow becomes | A read-only view generated from the run folder. It has no state of its own for a v2 run | the one-version rule |
+| 4 | What PhaseFlow becomes | Superseded by decisions 15 and 16: PhaseFlow is retired; the run folder is read through `runview` | John, 2026-10-08 |
 | 5 | Model fallback | The planner's router owns it | John, 2026-10-07 |
 | 6 | Order of work | Files, then node widening with the question model, then `/project` on v2, then the PhaseFlow view, then the planner revise stage, then parallel waves | John, "use your order", 2026-10-07 |
 | 7 | Attempt artifacts | Save them: scrubbed reply and compiler or test output per attempt, in the run folder, with a setting to turn it off | John, "save artifacts" |
@@ -34,6 +34,9 @@ Today there are two of everything:
 | 9 | Branch | Do not merge. `main` stays docs-only; all code work stays on `feat/briefv2-planner-core` in the worktree. Supersedes John's earlier "merge first" | John, 2026-10-07 (later the same day) |
 | 10 | Question model | Rounds with a dependency tree, fact probe, confirm-understanding gate, decision records, caps of 4 model calls and 30 questions | John, 2026-10-07 (yes to all four). Specified in `2026-10-07-node-widening-and-question-model-design.md` |
 | 12 | One version | No v1 and v2. When the work has landed there is one planner and one executor: the v1 planner and executor are removed (not kept under another name) and the "v2" and `briefv2` names are dropped. Until then the `/project` spec keeps v1 as `/plan-v1` so the server, the desktop app and `/phase` keep working; removal is sub-project G | John, 2026-10-08 |
+| 14 | The pipeline contract | One new node-based contract with a `schema_version`; the server and the desktop app are released together; no compatibility layer for the old shape | John, 2026-10-08 |
+| 15 | `/phase` | Retired, together with PhaseFlow's workflow, prompts and `.planning/` model | John, 2026-10-08 |
+| 16 | Consequence for D | No `.planning/` files are generated; D is the run view | follows from 15 |
 | 13 | The rehearsal run `gm-2026-09-29-002` | Not needed. Runs recorded only in the old SQLite file are not migrated | John, 2026-10-08 |
 | 11 | Sequencing against GOAL.md | Finish the graded run first. None of A to F starts until the GOAL.md graded run has finished; until then this document and the two reviews are the only output of this work | John, 2026-10-07 |
 
@@ -46,10 +49,10 @@ Each item gets its own plan and its own build. All code work happens on `feat/br
 | A | Filesystem run state replaces SQLite, with attempt artifacts | nothing | section 4 of this document; plan written 2026-10-07: `docs/superpowers/plans/2026-10-07-filesystem-run-state.md` (9 tasks, not started) |
 | B | Node widening and the question model | A (decision records, attempts) | `docs/superpowers/specs/2026-10-07-node-widening-and-question-model-design.md` (sections 5 and 6 of this document are the summary); plan written 2026-10-08: `docs/superpowers/plans/2026-10-08-node-widening-and-question-model.md` (13 tasks, not started) |
 | C | `/project` plans and builds through v2 | A, B | the existing `2026-09-30-project-single-entry-design.md` and plan (14 tasks, not built), amended by section 7 |
-| D | PhaseFlow view: `.planning/` files and the pipeline endpoints read the run folder | A, C | section 8 |
+| D | The run view: `runview` and the pipeline endpoints over the run folder (no `.planning/` files are generated) | A, B | section 8 and the G spec |
 | E | Planner revise stage: rewrite a node after a failure | B | its own spec; neither v1 nor v2 does this today |
 | F | Parallel waves | A | its own spec; the executor runs one worker today |
-| G | Retire v1 and drop the version names: remove `plantree`, the PhaseFlow executor and the v1 `orchestrate` runner, rename `briefv2`, and move the server, the desktop app and `/phase` onto the one system | C, D | its own spec, after a caller inventory (the TUI, `serve/pipeline*.go`, `gophermind-osx`, `cmd/gophermind/phase.go`); runs after the graded release |
+| G | Retire v1 and `/phase`, upgrade the server and the desktop app, drop the version names | C, D | `docs/superpowers/specs/2026-10-08-retire-v1-and-upgrade-consumers-design.md`; runs after the graded release |
 
 ## 4. Sub-project A: filesystem run state
 
@@ -132,9 +135,9 @@ Already designed and planned on the branch: `2026-09-30-project-single-entry-des
 
 This document therefore does not specify C again. It amends it in three places once A and B are built: the preflight and state-clearing sections must name the file layout of section 4 (no database to clear); the unattended policy gains `ConfirmUnderstanding`; and the report gains the node-class dimension from the review. The ruling on the v1 planner that GOAL task 4 asks for is R2 as written: `/project` is v2 only, v1 is renamed, and deletion waits for a caller inventory.
 
-## 8. Sub-project D: PhaseFlow as a view
+## 8. Sub-project D: the run view (changed 2026-10-08)
 
-For a v2 run, `ROADMAP.md`, `STATE.md`, `assignments.json`, and the pipeline state endpoints (`GET /pipeline/state`, the `run-report` event) are generated from the run folder (nodes, `.state.json` files, `report.json`). They are written by one function and never edited by hand, so there is no second copy of the state to disagree. Live progress reuses v1's file-watcher to SSE feed (`serve/pipeline_watch.go`), which fits file-based state directly; its non-blocking hub and event names (`task-status`, `task-attempt`, `wave-changed`, `run-report`) are kept so the desktop app's pipeline panel keeps working. The mapping needs these decisions, taken when D is specified: how a component maps to a PhaseFlow phase; the wave numbering gap (the v2 tree gives a dependency-free function wave 0, PhaseFlow's `AssignWaves` gives it wave 1); and which PhaseFlow commands (`verify`, `milestone`) still apply to a v2 run.
+PhaseFlow is retired (decision 15), so there is no `.planning/` view to generate. Sub-project D is the **run view**: a `runview` library that reads a run folder and follows it live, and the pipeline endpoints (`/pipeline/runs`, `/state`, `/node`, `/artifact`, `/decisions`, `/events`, `/report`) that serve it under one new node-based contract with a `schema_version`, consumed by the server's dashboard and the desktop app. It is specified together with sub-project G in `docs/superpowers/specs/2026-10-08-retire-v1-and-upgrade-consumers-design.md`. The file-watcher to SSE idea of v1 survives as `runview.Follow` over `_state/events.jsonl`, with replay from a given event number.
 
 ## 9. Not in scope
 
