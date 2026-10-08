@@ -164,10 +164,10 @@ Done on 2026-10-07 after John's answers (section 10): `2026-10-07-planner-phasef
 | 1. Order | Use the recommended order: file state, node widening, `/project` on v2, PhaseFlow view, planner revise stage, parallel waves |
 | 2. Attempt artifacts | Save them (scrubbed, in the run folder, with a setting to turn it off) |
 | 3. Node size | Require all groups on every node, not only on some node classes |
-| 4. Merge state | Merge the branch to `main` first. On hold: see the unification spec, section 10, items 2 and 3 |
+| 4. Merge state | First answer: merge the branch to `main` first. Later the same day, after the main-is-docs-only arrangement and the active GOAL.md run came to light: do not merge, leave `main` docs-only, and finish the graded run before any of this work starts |
 
 ## 11. Corrections after reading CONTEXT.md
 
-1. A GOAL.md graded run is active on the branch (executor fix waves open, `/project` not built, 0 attempts). The sequencing of this work against it is an open decision.
+1. A GOAL.md graded run is active on the branch (executor fix waves open, `/project` not built, 0 attempts). Decided: finish it first; this work starts after.
 2. `/project` on v2 is already specified and planned on the branch (`2026-09-30-project-single-entry-design.md`, 14 tasks). The merge does not need a new `/project` design; v1 is kept as `/plan-v1` until after the perfect release (that spec's ruling R2).
 3. Defect 5 of v2 originally said nothing was saved; the opt-in `GOPHERMIND_DEBUG_DUMP_DIR` dump exists and is now noted there.
