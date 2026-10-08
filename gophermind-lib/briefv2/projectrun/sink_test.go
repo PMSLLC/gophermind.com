@@ -2,7 +2,9 @@ package projectrun
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"gophermind/gophermind-lib/briefv2/events"
@@ -55,5 +57,38 @@ func TestSinkCountsPlannerWarnings(t *testing.T) {
 	want := Counts{LeafDefaulted: 5, DocDefaulted: 4, LeafNormalized: 5, OutlineIDNormalized: 6}
 	if got != want {
 		t.Fatalf("got %+v want %+v", got, want)
+	}
+}
+
+func TestSinkConcurrentEmit(t *testing.T) {
+	const n = 64
+	var b bytes.Buffer // not safe for concurrent use: only the sink's lock protects it
+	s := NewSink(&b)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			s.Emit(events.Event{Kind: events.KindWarning, Message: fmt.Sprintf("leaf_defaulted: 2 nodes %d", i)})
+			s.Emit(events.Event{Kind: events.KindWarning, Message: "doc_defaulted: 3 functions"})
+			s.Emit(events.Event{Kind: events.KindStageStarted, Stage: fmt.Sprintf("stage%d", i)})
+			_ = s.Counts()
+		}(i)
+	}
+	wg.Wait()
+	if got := s.Counts(); got.LeafDefaulted != 2*n || got.DocDefaulted != 3*n {
+		t.Fatalf("counts %+v", got)
+	}
+	ls := strings.Split(strings.TrimRight(b.String(), "\n"), "\n")
+	if len(ls) != 3*n {
+		t.Fatalf("%d lines, want %d", len(ls), 3*n)
+	}
+	for _, l := range ls {
+		ok := strings.HasPrefix(l, "warning: leaf_defaulted: 2 nodes ") ||
+			l == "warning: doc_defaulted: 3 functions" ||
+			(strings.HasPrefix(l, "stage") && strings.HasSuffix(l, ": started"))
+		if !ok {
+			t.Fatalf("interleaved or torn line %q", l)
+		}
 	}
 }
