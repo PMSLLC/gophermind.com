@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"gophermind/gophermind-lib/briefv2/artifacts"
 	"gophermind/gophermind-lib/briefv2/blackboard"
 	"gophermind/gophermind-lib/briefv2/human"
 	"gophermind/gophermind-lib/briefv2/packer"
@@ -106,6 +107,7 @@ type leafRun struct {
 	charged     int               // VerdictFail attempts of the current revision
 	unavailable string            // why a revision ended Interrupted with nothing charged: provider_unavailable or a configuration class
 	permClass   string            // the first permanent provider-level class seen
+	art         attemptArt        // what the current attempt produced, saved by record
 	streakSince time.Time         // proxy failures before this time belong to an earlier attempt
 
 	reopened  bool // the leaf was already committed and failed its check: the fix commits as a repair
@@ -910,6 +912,14 @@ func (lr *leafRun) runEntry(ctx context.Context, e ladderEntry) (entryEnd, error
 	return endFailed, nil
 }
 
+// attemptArt is what the current attempt produced and record will save. It is
+// memory only and is cleared when the attempt is recorded.
+type attemptArt struct {
+	raw    string // the reply text as the model wrote it (the last text the parser saw)
+	source []byte // the formatted file the reply carried
+	out    string // the check output
+}
+
 // record appends one attempt to the blackboard. It holds the model, the
 // verdict, counts, the failure reason and the reply hash: never text.
 func (lr *leafRun) record(ctx context.Context, e ladderEntry, started time.Time, verdict blackboard.Verdict, class, reason string, v *runner.Verdict, sha string) error {
@@ -933,6 +943,7 @@ func (lr *leafRun) record(ctx context.Context, e ladderEntry, started time.Time,
 	if err := rc.o.Board.AppendAttempt(context.WithoutCancel(ctx), rc.plan.RunID, lr.l.ID, a); err != nil {
 		return fmt.Errorf("executor: recording an attempt of %s failed", lr.l.ID)
 	}
+	rc.saveArtifacts(lr, a, class)
 	lr.history = append(lr.history, historyLine(len(lr.history)+1, a))
 	if sha != "" {
 		lr.lastSHA[e.Name] = sha
@@ -942,6 +953,22 @@ func (lr *leafRun) record(ctx context.Context, e ladderEntry, started time.Time,
 	}
 	rc.emit("attempt", lr.l.ID, fmt.Sprintf("entry %s %s %s", e.Name, verdict, class))
 	return nil
+}
+
+// saveArtifacts writes the reply and the check output of the attempt just
+// recorded. A failure to write is told by a warning event and never fails the
+// attempt: the verdict is already on the blackboard, and a full disk must not
+// throw away an hour of model work.
+func (rc *runCtx) saveArtifacts(lr *leafRun, a blackboard.Attempt, class string) {
+	art := lr.art
+	lr.art = attemptArt{}
+	_, err := rc.art.Save(lr.l.ID, artifacts.Meta{
+		Provider: a.Provider, Model: a.Model, Revision: a.Revision, Order: a.Order, Verdict: string(a.Verdict),
+		Class: class, Reason: a.FailureReason, ReplySHA256: a.ReplySHA256, StartedAt: a.StartedAt, DurationMS: a.DurationMS,
+	}, artifacts.Files{Source: art.source, Raw: art.raw, CheckOutput: art.out})
+	if err != nil {
+		rc.emit("warning", lr.l.ID, "artifacts: an attempt could not be saved")
+	}
 }
 
 // tooLongEnd records an entry that cannot hold the prompt: no provider call,
@@ -964,6 +991,7 @@ func (lr *leafRun) attempt(ctx context.Context, e ladderEntry, k int) (end entry
 		return endInterrupted, true, nil
 	}
 	started := rc.o.Now()
+	lr.art = attemptArt{}
 
 	packed, tooLong, err := lr.pack(e)
 	if err != nil {
@@ -993,6 +1021,7 @@ func (lr *leafRun) attempt(ctx context.Context, e ladderEntry, k int) (end entry
 	var reply packer.Reply
 	lastSHA := "" // hash of the last reply the parse saw, good or not
 	parse := func(text string) error {
+		lr.art.raw = text
 		r, perr := packer.ParseReply(text, lr.expect)
 		reply, lastSHA = r, r.SHA256
 		return perr
@@ -1003,6 +1032,7 @@ func (lr *leafRun) attempt(ctx context.Context, e ladderEntry, k int) (end entry
 	if _, cerr := rc.o.Caller.CallParsed(ctx, info, req, parse); cerr != nil {
 		return lr.providerError(ctx, e, started, cerr, lastSHA)
 	}
+	lr.art.source = reply.Source
 
 	// A repeat of the previous reply on this entry, whatever the gate would say
 	// of it, is identical: hashed first so a refused reply cannot burn every fix.
@@ -1178,6 +1208,7 @@ func (lr *leafRun) check(ctx context.Context, e ladderEntry, started time.Time, 
 		return endFailed, true, fmt.Errorf("executor: writing the file of leaf %s failed", l.ID)
 	}
 	v := settle(rc.checkLeaf(ctx, l))
+	lr.art.out = v.Out.Text()
 	stray, err := lr.cleanStray(snap)
 	if err != nil {
 		return endFailed, true, err

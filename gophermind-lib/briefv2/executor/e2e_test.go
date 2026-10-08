@@ -235,6 +235,9 @@ func e2eStores(t *testing.T, g *rig, rep Report, runErr error) map[string][]byte
 			if d.Name() == "bin" {
 				return filepath.SkipDir // built binaries hold the source they were built from
 			}
+			if d.Name() == "attempts" {
+				return filepath.SkipDir // kept scrubbed replies and output on purpose; see TestExecutorArtifactsDoNotLeakACanarySecret
+			}
 			return nil
 		}
 		if b, rerr := os.ReadFile(p); rerr == nil {

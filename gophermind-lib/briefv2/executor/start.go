@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"gophermind/gophermind-lib/briefv2/artifacts"
 	"gophermind/gophermind-lib/briefv2/brief"
 	"gophermind/gophermind-lib/briefv2/events"
 	"gophermind/gophermind-lib/briefv2/gitland"
@@ -67,9 +68,10 @@ type runCtx struct {
 	scratch, home, goCache, modCache, binDir string
 
 	rep       *runReport
-	sched     schedState    // the scheduler's memory of interrupted leaves (Task 11b)
-	limit     time.Duration // test override of max_run_minutes (Task 14); zero means the setting
-	heartbeat time.Duration // test override of heartbeat_seconds; zero means the setting
+	sched     schedState        // the scheduler's memory of interrupted leaves (Task 11b)
+	limit     time.Duration     // test override of max_run_minutes (Task 14); zero means the setting
+	heartbeat time.Duration     // test override of heartbeat_seconds; zero means the setting
+	art       *artifacts.Writer // saves the scrubbed reply and check output of each attempt (settings executor.artifacts)
 	// afterFunc is the run's wall clock: it calls f once after d and returns the
 	// function that cancels it. Nil means time.AfterFunc; tests inject a manual one.
 	afterFunc func(d time.Duration, f func()) (stop func())
@@ -146,6 +148,7 @@ func newRunCtx(ctx context.Context, o Options) (*runCtx, error) {
 		streak: &proxy.Streak{},
 		rep:    &runReport{blocked: map[string]string{}, reasons: map[string]string{}},
 	}
+	rc.art = artifacts.New(o.RunDir, rc.cfg.Executor.Artifacts == "on", rc.cfg.Executor.ArtifactMaxBytes, rc.scrubText)
 	if err := rc.loadReasons(); err != nil {
 		return nil, err
 	}

@@ -842,6 +842,11 @@ func hasCanary(t *testing.T, g *rig, canary string) bool {
 		check("an event", []byte(fmt.Sprintf("%+v", e)))
 	}
 	_ = filepath.WalkDir(g.runDir, func(p string, d os.DirEntry, err error) error {
+		if err == nil && d.IsDir() && d.Name() == "attempts" && canary != canarySecret {
+			// attempts/ keeps the scrubbed reply and check output on purpose; only a
+			// secret value must never be there (TestExecutorArtifactsDoNotLeakACanarySecret).
+			return filepath.SkipDir
+		}
 		if err != nil || d.IsDir() {
 			return nil
 		}
