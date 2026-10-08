@@ -26,6 +26,7 @@ John asked for the planner to be tightly integrated with PhaseFlow. Reading both
 | `docs/superpowers/specs/2026-10-08-retire-v1-and-upgrade-consumers-design.md` | Sub-projects D and G: the `runview` library, the new pipeline contract, the server and desktop app upgrade, retiring `/phase` and v1, dropping the version names | draft for review |
 | `docs/superpowers/plans/2026-10-07-filesystem-run-state.md` | Sub-project A plan: files instead of SQLite, attempt artifacts (9 tasks) | written, not started |
 | `docs/superpowers/plans/2026-10-08-node-widening-and-question-model.md` | Sub-project B plan (13 tasks) | written, not started |
+| `docs/GOAL-UNIFICATION.md` | The goal document that finishes A to G, E and F, with the verification matrix, the stop conditions and the report; start it with the `goal` skill once the graded run is done | written, not started |
 | `docs/GOAL.md` and `docs/superpowers/specs/2026-09-30-project-single-entry-design.md` (branch) | The graded run and `/project` as the single entry point, which this work must not disturb | active |
 
 ## 4. The seven sub-projects and their order
