@@ -1,17 +1,17 @@
 {
   "tests": [
     {
-      "name": "says goodbye to a name",
+      "name": "says goodbye to a name", "polarity": "success", "covers": "happy",
       "given": "\"Ada\"",
       "expect": "Goodbye, Ada! and a nil error"
     },
     {
-      "name": "trims the name",
+      "name": "trims the name", "polarity": "boundary", "covers": "input:name",
       "given": "\"  Ada  \"",
       "expect": "Goodbye, Ada! and a nil error"
     },
     {
-      "name": "refuses an empty name",
+      "name": "refuses an empty name", "polarity": "negative", "covers": "error:1",
       "given": "\"   \"",
       "expect": "an empty string and a *NameError"
     }

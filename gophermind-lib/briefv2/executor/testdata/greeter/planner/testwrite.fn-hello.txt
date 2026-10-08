@@ -1,12 +1,12 @@
 {
   "tests": [
     {
-      "name": "greets the named caller",
+      "name": "greets the named caller", "polarity": "success", "covers": "happy",
       "given": "GET /hello?name=Ada",
       "expect": "Hello, Ada!"
     },
     {
-      "name": "defaults the name to world",
+      "name": "defaults the name to world", "polarity": "boundary", "covers": "input:r",
       "given": "GET /hello",
       "expect": "Hello, world!"
     }

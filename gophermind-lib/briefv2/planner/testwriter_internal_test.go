@@ -79,19 +79,20 @@ func TestTestwriterRepliesNeedATestPerErrorCondition(t *testing.T) {
 	}}
 	src := strings.ReplaceAll(okTestSource, "\n\t\"example.com/greeter/internal/names\"\n", "")
 	src = strings.Replace(src, "names.Default", `"x"`, 1)
+	pc := map[string]string{"a": `"polarity": "success", "covers": "happy"`, "b": `"polarity": "negative", "covers": "error:1"`, "c": `"polarity": "negative", "covers": "error:2"`}
 	test := func(name string) string {
-		return `{"name": "` + name + `", "given": "g", "expect": "e", "level": "acceptance", "command": "rm -rf /"}`
+		return `{"name": "` + name + `", "given": "g", "expect": "e", "level": "acceptance", "command": "rm -rf /", ` + pc[name] + `}`
 	}
 	reply := func(tests ...string) string {
 		quoted, _ := jsonString(src)
 		return `{"tests": [` + strings.Join(tests, ",") + `], "test_file": ` + quoted + `}`
 	}
 
-	_, _, err := parseTestwrite(reply(test("a"), test("b")), ct, "greet", "TestGreet", "example.com/greeter")
+	_, _, err := parseTestwrite(reply(test("a"), test("b")), ct, "greet", "TestGreet", "example.com/greeter", nil)
 	if err == nil || !strings.Contains(err.Error(), "has 2 tests; the contract lists 2 error conditions, so at least 3 are needed") {
 		t.Fatalf("two tests for two error conditions: err = %v", err)
 	}
-	tests, got, err := parseTestwrite(reply(test("a"), test("b"), test("c")), ct, "greet", "TestGreet", "example.com/greeter")
+	tests, got, err := parseTestwrite(reply(test("a"), test("b"), test("c")), ct, "greet", "TestGreet", "example.com/greeter", nil)
 	if err != nil {
 		t.Fatalf("three tests were refused: %v", err)
 	}
@@ -109,11 +110,11 @@ func TestTestwriterRepliesNeedATestPerErrorCondition(t *testing.T) {
 		"no given":  `{"name": "a", "expect": "e"}`,
 		"no expect": `{"name": "a", "given": "g", "expect": ""}`,
 	} {
-		if _, _, err := parseTestwrite(reply(test("a"), test("b"), bad), ct, "greet", "TestGreet", "example.com/greeter"); err == nil || !strings.Contains(err.Error(), "needs a name, a given and an expect") {
+		if _, _, err := parseTestwrite(reply(test("a"), test("b"), bad), ct, "greet", "TestGreet", "example.com/greeter", nil); err == nil || !strings.Contains(err.Error(), "needs a name, a given and an expect") {
 			t.Errorf("%s: err = %v", name, err)
 		}
 	}
-	if _, _, err := parseTestwrite("not json", ct, "greet", "TestGreet", "example.com/greeter"); err == nil {
+	if _, _, err := parseTestwrite("not json", ct, "greet", "TestGreet", "example.com/greeter", nil); err == nil {
 		t.Error("a reply that is not JSON was accepted")
 	}
 }
@@ -156,7 +157,7 @@ func TestTestwriterErrorsNeverQuoteTheReply(t *testing.T) {
 	}
 	for name, reply := range replies {
 		t.Run(name, func(t *testing.T) {
-			_, _, err := parseTestwrite(reply, ct, "greet", "TestGreet", "example.com/greeter")
+			_, _, err := parseTestwrite(reply, ct, "greet", "TestGreet", "example.com/greeter", nil)
 			if err == nil {
 				t.Fatal("the reply was accepted")
 			}

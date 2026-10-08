@@ -1,7 +1,7 @@
 {
   "tests": [
     {
-      "name": "answers concurrent callers correctly",
+      "name": "answers concurrent callers correctly", "polarity": "success", "covers": "happy",
       "given": "four callers at once, one with no name",
       "expect": "each body is Goodbye, <its own name>! or Goodbye, world!"
     }

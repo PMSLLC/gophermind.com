@@ -3,6 +3,7 @@ package planner_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -683,5 +684,29 @@ func TestEditingASignatureAFilePathOrADependsOnInvalidatesTheApproval(t *testing
 				t.Errorf("files written after a stale approval: %v", files)
 			}
 		})
+	}
+}
+
+// The finished tree links each error to the test that covers it, names the
+// requirements each node serves, and carries the decisions function nodes cite.
+func TestFinishedTreeCarriesRequirementIDsErrorLinksAndDecisions(t *testing.T) {
+	g := newRig(t, approving())
+	g.mustPlan(planner.Options{})
+	fn := g.node("greeting/fn-greet.json")
+	errs, _ := fn["contract"].(map[string]any)["errors"].([]any)
+	if len(errs) != 1 || errs[0].(map[string]any)["test"] != "refuses an empty name" {
+		t.Errorf("errors = %v, want the covering test linked by covers, not by position", errs)
+	}
+	if got := fmt.Sprint(fn["requirement_ids"]); got != "[A3 C1]" {
+		t.Errorf("fn-greet requirement_ids = %s, want [A3 C1]", got)
+	}
+	if _, ok := fn["decisions"].([]any); !ok {
+		t.Errorf("fn-greet has no decisions array: %v", fn["decisions"])
+	}
+	if got := fmt.Sprint(g.node("root.json")["requirement_ids"]); !strings.Contains(got, "F1") || !strings.Contains(got, "A3") {
+		t.Errorf("root requirement_ids = %s", got)
+	}
+	if got := fmt.Sprint(g.node("greeting/component.json")["requirement_ids"]); !strings.Contains(got, "F1") {
+		t.Errorf("greeting requirement_ids = %s", got)
 	}
 }
