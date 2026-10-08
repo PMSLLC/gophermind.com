@@ -67,37 +67,41 @@ func writeGroupSummary(s *strings.Builder, c *contract.Contracts, dec decomposed
 	sort.Strings(noReq)
 	fmt.Fprintf(s, "\nNodes that no requirement names: %s.\n", orNone(firstN(noReq, 10)))
 
-	warns := make([]string, 0, len(est.Warnings))
-	for _, w := range est.Warnings {
-		warns = append(warns, oneLine(w, summaryMax))
-	}
-	sort.Strings(warns)
-	s.WriteString("\nEnrich warnings:\n\n")
-	if len(warns) == 0 {
-		s.WriteString("None.\n")
-	}
-	for _, w := range firstN(warns, 10) {
-		fmt.Fprintf(s, "- %s\n", w)
-	}
-
-	s.WriteString("\nComponent assumptions:\n\n")
-	n := 0
-	for _, comp := range c.Components {
-		for _, a := range strList(est.Components[comp.ID]["assumptions"]) {
-			fmt.Fprintf(s, "- %s: %s\n", oneLine(comp.ID, 80), oneLine(a, summaryMax))
-			n++
+	if len(est.Components) == 0 && est.Root == nil {
+		s.WriteString("\nEnrich has not run for this plan.\n")
+	} else {
+		warns := make([]string, 0, len(est.Warnings))
+		for _, w := range est.Warnings {
+			warns = append(warns, oneLine(w, summaryMax))
 		}
-	}
-	if n == 0 {
-		s.WriteString("None.\n")
-	}
-	s.WriteString("\nRoot assumptions:\n\n")
-	root := strList(est.Root["assumptions"])
-	if len(root) == 0 {
-		s.WriteString("None.\n")
-	}
-	for _, a := range root {
-		fmt.Fprintf(s, "- %s\n", oneLine(a, summaryMax))
+		sort.Strings(warns)
+		s.WriteString("\nEnrich warnings:\n\n")
+		if len(warns) == 0 {
+			s.WriteString("None.\n")
+		}
+		for _, w := range firstN(warns, 10) {
+			fmt.Fprintf(s, "- %s\n", w)
+		}
+
+		s.WriteString("\nComponent assumptions:\n\n")
+		n := 0
+		for _, comp := range c.Components {
+			for _, a := range strList(est.Components[comp.ID]["assumptions"]) {
+				fmt.Fprintf(s, "- %s: %s\n", oneLine(comp.ID, 80), oneLine(a, summaryMax))
+				n++
+			}
+		}
+		if n == 0 {
+			s.WriteString("None.\n")
+		}
+		s.WriteString("\nRoot assumptions:\n\n")
+		root := strList(est.Root["assumptions"])
+		if len(root) == 0 {
+			s.WriteString("None.\n")
+		}
+		for _, a := range root {
+			fmt.Fprintf(s, "- %s\n", oneLine(a, summaryMax))
+		}
 	}
 
 	open := append(openQuestionNodes(dec), openQuestionStructures(est)...)
@@ -111,6 +115,9 @@ func writeGroupSummary(s *strings.Builder, c *contract.Contracts, dec decomposed
 // checksSkipped names the group checks that could not run because the
 // repository has no go.mod (or none that states a Go version).
 func checksSkipped(f factsFile) string {
+	if f.OS == "" {
+		return "Checks skipped: go_min against the Go version in go.mod (facts unavailable)."
+	}
 	if f.GoVersion == "" {
 		return "Checks skipped: go_min against the Go version in go.mod (the repository has no go.mod with a go line)."
 	}

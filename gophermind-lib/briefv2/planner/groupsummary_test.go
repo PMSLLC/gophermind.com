@@ -15,7 +15,7 @@ func TestGroupSummaryCountsNotApplicableAnswersAndBoundaries(t *testing.T) {
 		{"id": "fn-b", "security": map[string]any{"trust_boundary": "none"}, "alternatives": na, "open_questions": []any{}},
 		{"id": "fn-c", "security": na, "open_questions": []any{"Which store?"}},
 	}}}
-	est := enrichedState{Warnings: []string{"fn-b: 1 type name(s) in the signature are not declared in the contract"}}
+	est := enrichedState{Root: map[string]any{}, Warnings: []string{"fn-b: 1 type name(s) in the signature are not declared in the contract"}}
 	cov := CoverageFile{Covered: []Covered{{Requirement: "F1", Nodes: []string{"fn-a"}}}}
 	var b strings.Builder
 	writeGroupSummary(&b, c, dec, est, cov)
@@ -75,10 +75,47 @@ func TestGroupSummaryShowsBoundariesPerComponentAndStructureAssumptions(t *testi
 }
 
 func TestChecksSkippedNamesTheGoModChecks(t *testing.T) {
-	if got := checksSkipped(factsFile{}); !strings.Contains(got, "Checks skipped: ") || !strings.Contains(got, "go_min") || strings.Contains(got, "none") {
+	if got := checksSkipped(factsFile{OS: "darwin"}); !strings.Contains(got, "Checks skipped: ") || !strings.Contains(got, "go_min") || !strings.Contains(got, "no go.mod") || strings.Contains(got, "none") {
 		t.Errorf("no go.mod: %q", got)
 	}
-	if got := checksSkipped(factsFile{GoVersion: "1.22"}); got != "Checks skipped: none." {
+	if got := checksSkipped(factsFile{}); !strings.Contains(got, "go_min") || !strings.Contains(got, "facts unavailable") || strings.Contains(got, "go.mod)") {
+		t.Errorf("no facts: %q", got)
+	}
+	if got := checksSkipped(factsFile{OS: "darwin", GoVersion: "1.22"}); got != "Checks skipped: none." {
 		t.Errorf("with go.mod: %q", got)
+	}
+}
+
+func TestGroupSummaryWhenEnrichHasNotRun(t *testing.T) {
+	c := &contract.Contracts{Components: []contract.Component{{ID: "alpha"}}}
+	var b strings.Builder
+	writeGroupSummary(&b, c, decomposed{}, enrichedState{}, CoverageFile{})
+	out := b.String()
+	if !strings.Contains(out, "Enrich has not run for this plan.") {
+		t.Errorf("lacks the not-run line:\n%s", out)
+	}
+	for _, bad := range []string{"Enrich warnings:", "Component assumptions:", "Root assumptions:"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("not-run summary prints %q:\n%s", bad, out)
+		}
+	}
+	if !strings.Contains(out, "Open questions: none") || !strings.Contains(out, "Trust boundaries per component") {
+		t.Errorf("other sections missing:\n%s", out)
+	}
+}
+
+func TestGroupSummaryCleanEnrichPassStillPrintsNone(t *testing.T) {
+	c := &contract.Contracts{Components: []contract.Component{{ID: "alpha"}}}
+	est := enrichedState{Components: map[string]map[string]any{"alpha": {"assumptions": []any{}}}, Root: map[string]any{"assumptions": []any{}}}
+	var b strings.Builder
+	writeGroupSummary(&b, c, decomposed{}, est, CoverageFile{})
+	out := b.String()
+	for _, want := range []string{"Enrich warnings:\n\nNone.", "Component assumptions:\n\nNone.", "Root assumptions:\n\nNone."} {
+		if !strings.Contains(out, want) {
+			t.Errorf("lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "has not run") {
+		t.Errorf("clean pass reported as not run:\n%s", out)
 	}
 }
