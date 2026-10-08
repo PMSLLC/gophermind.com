@@ -22,8 +22,15 @@ const (
 // entries must match it too so a reference can never carry a path.
 var idPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
-// reservedComponentID collides with the run's logs/ directory.
-const reservedComponentID = "logs"
+// reservedComponentIDs are run-folder names that sit next to the component
+// folders: logs/ (the run's logs), attempts/ (saved model attempts) and
+// decisions/ (a later sub-project). A component with one of these ids would
+// share its folder.
+var reservedComponentIDs = map[string]bool{"logs": true, "attempts": true, "decisions": true}
+
+// IsReservedComponentID reports whether id names a run folder and so cannot
+// be a component id.
+func IsReservedComponentID(id string) bool { return reservedComponentIDs[id] }
 
 // Node exposes the fields the tree logic needs and keeps the full decoded
 // document so nothing else is lost on a round trip.
@@ -78,7 +85,7 @@ func (n Node) checkRefs() error {
 			return fmt.Errorf("tree: node %q: invalid depends_on entry %q", n.ID, d)
 		}
 	}
-	if n.Kind == KindComponent && n.ID == reservedComponentID {
+	if n.Kind == KindComponent && IsReservedComponentID(n.ID) {
 		return fmt.Errorf("tree: node %q: component id %q is reserved", n.ID, n.ID)
 	}
 	return nil

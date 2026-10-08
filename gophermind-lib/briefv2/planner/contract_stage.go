@@ -18,6 +18,7 @@ import (
 	"gophermind/gophermind-lib/briefv2/events"
 	"gophermind/gophermind-lib/briefv2/router"
 	"gophermind/gophermind-lib/briefv2/schema"
+	"gophermind/gophermind-lib/briefv2/tree"
 )
 
 // contractState is _state/contract.json: the contract as far as it has been
@@ -983,8 +984,8 @@ func localChecks(c *contract.Contracts, briefID string) error {
 		switch {
 		case !componentIDRE.MatchString(comp.ID):
 			return fmt.Errorf("contract: component id %s must be lower case letters, digits and dashes", boundedID(comp.ID))
-		case comp.ID == "logs" || comp.ID == "outline":
-			return fmt.Errorf("contract: component id %s is reserved (logs and outline name a folder and a stage of the run)", boundedID(comp.ID))
+		case tree.IsReservedComponentID(comp.ID) || comp.ID == "outline":
+			return fmt.Errorf("contract: component id %s is reserved (logs, attempts and decisions name folders of the run, outline a stage)", boundedID(comp.ID))
 		case comp.ID == briefID:
 			return fmt.Errorf("contract: component id %s is the run id", boundedID(comp.ID))
 		case comps[comp.ID]:

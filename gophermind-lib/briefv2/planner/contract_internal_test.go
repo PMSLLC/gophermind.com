@@ -31,6 +31,8 @@ func TestParseOutline(t *testing.T) {
 	bad := []struct{ name, edit, with, want string }{
 		{"no components", `"components": [{"id": "types", "package": "x"}, {"id": "greeting", "package": "x"}]`, `"components": []`, "lists no component"},
 		{"reserved id logs", `"id": "greeting"`, `"id": "logs"`, "reserved"},
+		{"reserved id attempts", `"id": "greeting"`, `"id": "attempts"`, "reserved"},
+		{"reserved id decisions", `"id": "greeting"`, `"id": "decisions"`, "reserved"},
 		{"reserved id outline", `"id": "greeting"`, `"id": "outline"`, "reserved"},
 		{"component named like the run", `"id": "greeting"`, `"id": "gm-2026-09-29-900"`, "is the run id"},
 		{"type file leaves the repo", `internal/x/errors.go`, `../x/errors.go`, "inside the repository"},
@@ -45,6 +47,14 @@ func TestParseOutline(t *testing.T) {
 				t.Errorf("err = %v, want it to contain %q", err, c.want)
 			}
 		})
+	}
+}
+
+func TestOutlineAcceptsNearReservedIDs(t *testing.T) {
+	for _, id := range []string{"log", "attempt", "decision"} {
+		if _, _, err := parseOutline(strings.Replace(okOutline, `"id": "greeting"`, `"id": "`+id+`"`, 1), testRunID); err != nil {
+			t.Errorf("component id %q must pass: %v", id, err)
+		}
 	}
 }
 
@@ -196,6 +206,8 @@ func TestValidationErrorsBoundEveryID(t *testing.T) {
 	cases := map[string]map[string]any{
 		"component id":        doc(comp("Bad"+huge), "", ""),
 		"reserved component":  doc(comp("logs"), "", ""),
+		"reserved attempts":   doc(comp("attempts"), "", ""),
+		"reserved decisions":  doc(comp("decisions"), "", ""),
 		"duplicate component": doc(comp(huge)+", "+comp(huge), "", ""),
 		"type file":           doc(comp("a"), typ(huge, "../x.go"), ""),
 		"function component":  doc(comp("a"), "", fn("fn-"+huge, "b", "internal/x/a.go", "func A()")),
