@@ -55,21 +55,14 @@ func changeAnswerIn(r *run, questionID, text string, now time.Time) (ChangeRepor
 	if q.Answer == text {
 		return ChangeReport{}, errors.New("that is already the answer")
 	}
-	q.History = append(q.History, qhistory{At: q.SettledAt, Answer: q.Answer})
-	if len(q.History) > maxHistory {
-		q.History = q.History[len(q.History)-maxHistory:]
-	}
-	q.Answer, q.AnsweredBy, q.SettledAt = text, byHuman, stamp(now)
-	if err := s.save(r); err != nil {
+	// The reset comes first and is safe to repeat: a crash after it but before
+	// the new answer is saved leaves the old answer, and running the same
+	// command again redoes the reset and saves the answer. The nodes that cite
+	// the question are read before the reset, so the record lists what it shaped.
+	cited, err := citedByOf(r, q.ID)
+	if err != nil {
 		return ChangeReport{}, err
 	}
-	if err := writeAnswersView(r, s); err != nil {
-		return ChangeReport{}, err
-	}
-	if err := writeDecision(r, *q, nil); err != nil {
-		return ChangeReport{}, err
-	}
-
 	var rep ChangeReport
 	comp := componentOfStage(q.RaisedBy)
 	kind, _, _ := strings.Cut(q.RaisedBy, ":")
@@ -95,6 +88,20 @@ func changeAnswerIn(r *run, questionID, text string, now time.Time) (ChangeRepor
 	default:
 		rep.Reset, rep.Removed = "contract", resetFromContract(r)
 	}
+	q.History = append(q.History, qhistory{At: q.SettledAt, Answer: q.Answer})
+	if len(q.History) > maxHistory {
+		q.History = q.History[len(q.History)-maxHistory:]
+	}
+	q.Answer, q.AnsweredBy, q.SettledAt = text, byHuman, stamp(now)
+	if err := s.save(r); err != nil {
+		return ChangeReport{}, err
+	}
+	if err := writeAnswersView(r, s); err != nil {
+		return ChangeReport{}, err
+	}
+	if err := writeDecision(r, *q, cited); err != nil {
+		return ChangeReport{}, err
+	}
 	_ = removeFile(r.path(stateQuestion))
 	if _, err := readJSON(r.path(stateStatus), &r.status); err == nil && r.status.Waiting != "" {
 		r.status.Waiting = ""
@@ -103,6 +110,16 @@ func changeAnswerIn(r *run, questionID, text string, now time.Time) (ChangeRepor
 		}
 	}
 	return rep, nil
+}
+
+// citedByOf lists the nodes (functions, components, the root) whose
+// decision_ids name the question.
+func citedByOf(r *run, id string) ([]string, error) {
+	cited, err := citedByAll(r)
+	if err != nil {
+		return nil, err
+	}
+	return cited[id], nil
 }
 
 // componentOfStage is the component a stage name refers to

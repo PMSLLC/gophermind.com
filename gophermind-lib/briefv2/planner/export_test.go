@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"context"
 	"errors"
 	"io"
 )
@@ -36,4 +37,16 @@ func SetDebugOut(w io.Writer) func() {
 	old := debugOut
 	debugOut = w
 	return func() { debugOut = old }
+}
+
+// ApproveStage runs only the approve stage of an existing run, the way Run
+// would reach it, so a test can hand it a run that is not in a state the
+// earlier stages would let through.
+func ApproveStage(p *Planner, runID string) error {
+	ctx := context.Background()
+	r, err := p.load(ctx, Options{RunID: runID})
+	if err != nil {
+		return err
+	}
+	return p.approve(ctx, r)
 }
