@@ -235,13 +235,14 @@ func e2eStores(t *testing.T, g *rig, rep Report, runErr error) map[string][]byte
 			if d.Name() == "bin" {
 				return filepath.SkipDir // built binaries hold the source they were built from
 			}
-			if d.Name() == "attempts" {
-				return filepath.SkipDir // kept scrubbed replies and output on purpose; see TestExecutorArtifactsDoNotLeakACanarySecret
-			}
 			return nil
 		}
 		if b, rerr := os.ReadFile(p); rerr == nil {
-			st["file:"+p] = b
+			if strings.Contains(filepath.ToSlash(p), "/attempts/") {
+				st["attempt:"+p] = b // kept scrubbed replies and output on purpose: noLeak checks only the secret here
+			} else {
+				st["file:"+p] = b
+			}
 		}
 		return nil
 	})
@@ -306,7 +307,9 @@ func distinctLines(text string, minLen int, legit string) []string {
 	return out
 }
 
-// noLeak fails for every needle found in any store.
+// noLeak fails for every needle found in any store. The "attempt:" stores
+// (attempts/) hold the scrubbed reply and check output on purpose, so only the
+// declared secret value is looked for there.
 func noLeak(t *testing.T, stores map[string][]byte, needles []string) {
 	t.Helper()
 	names := make([]string, 0, len(stores))
@@ -316,6 +319,9 @@ func noLeak(t *testing.T, stores map[string][]byte, needles []string) {
 	sort.Strings(names)
 	for _, n := range needles {
 		for _, name := range names {
+			if strings.HasPrefix(name, "attempt:") && n != canarySecret {
+				continue
+			}
 			if bytes.Contains(stores[name], []byte(n)) {
 				t.Errorf("%q (%d bytes) was found in %s", n, len(n), tailName(name))
 			}
