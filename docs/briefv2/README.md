@@ -13,6 +13,7 @@ which builds that plan, proves it and commits it (`gophermind brief run`).
 gophermind brief validate <brief.md>
 gophermind brief plan <brief.md> [--yes] [--gate terminal|file] [--fake <fixture-dir>] [--allow-public]
 gophermind brief resume <run-id> [--yes] [--gate terminal|file] [--fake <fixture-dir>] [--allow-public]
+gophermind brief answer <run-id> <question-id> <new answer...>
 gophermind brief run <run-id> [--gate terminal|file] [--repo <path>] [--workers n]
 gophermind brief run <run-id> --check-env      (environment preflight, no model call)
 gophermind brief report <run-id> [--json]
@@ -45,8 +46,8 @@ of N`; stderr carries progress lines, `report: <path>`, `waiting: ...`,
 failed run exits 1 and a harness fault exits 7, so the two can be told apart; a
 harness fault that left no report prints `error: ...` and no summary.
 
-`plan` takes a brief through Load, Clarify, Contract, Decompose, Coverage,
-Approve and Test-writer (see "Planning a brief"). `resume` continues a run from
+`plan` takes a brief through Load, Clarify, Confirm, Contract, Decompose, Enrich,
+Coverage, Approve and Test-writer (see "Planning a brief"). `resume` continues a run from
 its first unfinished stage; the run id is the brief's `id`. `--yes` records the
 approval as given by the flag without showing the plan. `--gate file` writes
 `QUESTIONS.md` and `APPROVAL.md` into the run folder and exits 3 until they are
@@ -339,12 +340,115 @@ its output is already in the run folder.
 | Stage | What it does | Output |
 |---|---|---|
 | Load | Validates the brief, makes sure its secrets are in the vault, creates the run folder | `brief.md`, `requirements.json` |
-| Clarify | Asks the model what it needs to know, then asks you (or takes the defaults when the brief says `assume_and_document`) | `answers.json` |
+| Clarify | Asks the questions the brief leaves open, in rounds (see "Questions and rounds"); an unattended run (`assume_and_document`) answers each with its recommendation and records that nobody was asked | `_state/clarify/`, `answers.json`, `decisions/` |
+| Confirm | Shows the shared understanding (settled questions, facts, assumptions) and waits for the owner to confirm it | `UNDERSTANDING.md`, `_state/understanding.json` |
 | Contract | The outline in harness-driven passes (a shared pass, then one per batch of 3 features), then one call per component (continued while it adds new functions) | `contracts.json` |
 | Decompose | One node per function, at most 8 functions per call | the root and component nodes, drafts in `_state/` |
+| Enrich | Writes the node groups (see "Node groups") of every function, then of every component and the root | `_state/enriched.json`, the drafts in `_state/` |
 | Coverage | Maps every requirement of the brief to the nodes and tests that satisfy it | `coverage.json`, acceptance tests on the root node |
-| Approve | Shows the plan and waits for a decision | `approval.json` |
-| Test-writer | Writes the tests of every function from its contract alone | test files in the target repository, the finished tree, blackboard rows |
+| Approve | Refuses while a node lists an open question or the understanding is not confirmed, shows the plan and waits for a decision | `approval.json` |
+| Test-writer | Writes the tests of every function from its contract alone, each with a polarity and a `covers` | test files in the target repository, the finished tree, blackboard rows |
+
+The stage names, in order, are `load`, `clarify`, `confirm`, `contract`,
+`decompose`, `enrich`, `coverage`, `approve` and `testwriter`.
+
+### Questions and rounds
+
+Clarify runs a probe before the first model call. The probe reads the target
+repository without running anything (is it a git repository, the `go.mod` module
+and Go version, the packages and their exported names, the operating system and
+architecture, the names of declared secrets and the hosts the brief lists; never
+a secret value) and writes `_state/clarify/facts.json`. The Clarify prompt carries
+it as a "Known facts" block, so a question the repository already answers is
+never asked. A question of kind `fact` carries a `fact_key` from a closed list and
+is answered from the facts (answered by `probe`); a fact the probe cannot answer
+is shown to the person as a decision.
+
+Questions form a tree: each has `depends_on`, and only the frontier (open
+questions whose prerequisites are settled) is put to the gate, numbered, each
+with its options and a recommendation. The terminal gate and the file gate both
+accept the word `accept` as the answer, which takes the recommendation. After
+the frontier is answered and no question is open, one follow-up call (stage
+`clarify:more`) asks what the settled decisions unblock or raise; it returns `[]`
+when there is nothing more, and Clarify ends. Two caps stop a runaway: 4 model
+calls (`defaults.clarify_max_calls`) and 30 questions
+(`defaults.clarify_max_questions`) per run. A question raised mid-stage (Decompose,
+Enrich, a repair) is stored and answered the same way.
+
+Files Clarify and Confirm keep in the run folder:
+
+- `_state/clarify/questions.json`: the question store, every question with its status and answer
+- `_state/clarify/facts.json`: what the probe found
+- `_state/clarify/rounds.jsonl`: one line per round (append only)
+- `decisions/<id>.md`: a browsable record per settled question, listing the nodes it shaped
+- `UNDERSTANDING.md` and `_state/understanding.json`: the text the owner confirmed, its hash, who confirmed and when
+- `answers.json`: the settled answers in the form older runs used
+
+Every question and answer is also written into the tree: the root node's
+`decisions` holds the whole conversation, and each component and function node's
+`decisions` holds the records its `decision_ids` cite (copied by code from the
+store; a model never writes them).
+
+`gophermind brief answer <run-id> <question-id> <new answer...>` changes a
+settled answer and undoes the work that used it. A Clarify answer (or one given
+to a repair stage) removes everything from the Contract stage on, the confirmation
+and the approval; a Decompose answer resets that component's drafts and Enrich
+output; an Enrich answer resets only the Enrich output of that component (or the
+root). The old answer is kept in the record's history. A new `resume` then asks
+for a new confirmation and a new approval. Nothing can be changed once the
+Test-writer has written tests or the executor has started. An answer the probe
+established from the repository cannot be changed this way.
+
+### Node groups
+
+Enrich adds these groups to every function node: `rationale`, `construction`,
+`alternatives`, `portability`, `security`, `performance`, `observability`,
+`refactor_notes`, `profile_hooks`, `assumptions`, `open_questions` and
+`decision_ids`; `error_kinds` fill each contract error's `kind`; code adds
+`requirement_ids`, `decisions` and the `go_type` of every input and output.
+Components and the root get `rationale`, `assumptions`, `open_questions`,
+`decision_ids` and `decisions`. Test-writer adds `polarity` and `covers` to every
+test and the `test` link of every contract error (a `success` test covering
+`happy`, and a `negative` test covering `error:<n>` for each error).
+
+A group that truly does not apply is answered `{"not_applicable": "<reason>"}`.
+The reason must be at least 20 characters and may not be a non-answer such as
+`none` or `n/a`. Where it is allowed:
+
+| Group | Not applicable allowed |
+|---|---|
+| `rationale`, `construction` | never |
+| `alternatives`, `refactor_notes`, `profile_hooks`, `portability` | always |
+| `performance` | for `pure` nodes |
+| `security` | never for `handler`, `client`, `storage`, `concurrency` |
+| `observability` | only for `pure` nodes |
+
+The approval summary shows, per component, the trust boundaries and the number of
+not-applicable answers per group, every assumption, the warnings (an unresolved Go
+type is a warning, not a failure) and the checks skipped for lack of `go.mod`. A
+node that still lists an `open_questions` entry cannot be approved. Enrich runs
+in batches of `defaults.enrich_batch_size` function nodes per call (default 4); a
+reply cut off at the token limit halves the batch and asks again, down to one node.
+
+### Settings for planning
+
+Four keys under `defaults` in `gophermind.yaml` control the above (an explicit 0
+for a count is refused, and an older file without the keys still loads):
+`clarify_max_calls` (4), `clarify_max_questions` (30),
+`enrich_batch_size` (4) and `route_by_node_tier` (true: Enrich and Test-writer pick
+their model chain from each node's `model_tier`; false: they use the strong chain
+as the other planner stages do).
+
+### Privacy of node-scope calls
+
+A node-scope call (the Test-writer, and the executor's implement call) may be shown
+to a public provider. Its prompt carries the contract, the dependency signatures,
+the constraints and, for the implement call, the build groups (`construction`,
+`security`, `observability`, `performance`, `portability`). It never carries
+`rationale`, `alternatives`, `refactor_notes`, `assumptions`, `open_questions`,
+`decision_ids` or `decisions`, because those hold reasoning drawn from the brief.
+A build group that cannot be read stops the prompt build for that node instead of
+being left out.
 
 Size. Nothing caps the number of components, functions or tests. A large brief
 makes more calls, never a coarser plan.
