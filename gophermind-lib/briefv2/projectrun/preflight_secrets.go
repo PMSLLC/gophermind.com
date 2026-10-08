@@ -94,7 +94,7 @@ func (p *pre) vault(cfg *settings.Config) vaultResult {
 }
 
 func isLoopbackHost(h string) bool {
-	if h == "localhost" {
+	if strings.EqualFold(h, "localhost") {
 		return true
 	}
 	ip := net.ParseIP(h)
@@ -125,15 +125,19 @@ func (p *pre) databaseChecks(store SecretStore) []Check {
 		if port == "" {
 			port = "5432"
 		}
+		if q := u.Query(); q.Has("host") || q.Has("hostaddr") {
+			out = append(out, fail(label, "the URL carries a host or hostaddr parameter that overrides the host", "store a URL without host= or hostaddr= parameters: gophermind brief vault set "+s.Name))
+			continue
+		}
 		tunnel := "ssh -N -L " + port + ":127.0.0.1:5432 mini"
 		if !isLoopbackHost(host) {
 			out = append(out, fail(label, "non-loopback host "+net.JoinHostPort(host, port)+": the sandbox denies it", tunnel))
 			continue
 		}
-		if err := p.env.Dial(p.ctx, "127.0.0.1:"+port); err != nil {
-			out = append(out, fail(label, "127.0.0.1:"+port+" refused the connection", tunnel))
+		if err := p.env.Dial(p.ctx, net.JoinHostPort(host, port)); err != nil {
+			out = append(out, fail(label, net.JoinHostPort(host, port)+" refused the connection", tunnel))
 		} else {
-			out = append(out, pass(label, "127.0.0.1:"+port+" accepts connections"))
+			out = append(out, pass(label, net.JoinHostPort(host, port)+" accepts connections"))
 		}
 		key := "loopback:" + port + "/" + strings.TrimPrefix(u.Path, "/")
 		if prev, dup := seen[key]; dup {

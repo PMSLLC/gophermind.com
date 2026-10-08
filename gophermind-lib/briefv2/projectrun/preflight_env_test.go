@@ -208,3 +208,22 @@ func TestPreflightExpectBinaryCommit(t *testing.T) {
 		t.Error("binary check without --expect-binary-commit")
 	}
 }
+
+func TestPreflightRequirePrivateOnlyModePublicTierEntry(t *testing.T) {
+	r := newRig(t)
+	r.cfg.Providers = append(r.cfg.Providers, settings.ProviderConfig{
+		Name: "pub", BaseURL: "https://example.com/v1", Visibility: settings.Public, MaxConcurrent: 1,
+		Models: []settings.ModelEntry{{ID: "m", ContextTokens: 1000}},
+	})
+	r.cfg.Models["standard"] = []string{"fake/fixture", "pub/m"}
+	r.cfg.Privacy.Mode = "private_only"
+	r.writeSettings()
+	r.o.RequirePrivate = true
+	got := wantFail(t, r.run(), "privacy")
+	if !strings.Contains(got.Detail, "pub") || !strings.HasPrefix(got.Fix, "set privacy.mode: private_only and name only private providers in models.strong, models.standard and models.any in ") {
+		t.Errorf("%+v", got)
+	}
+	r.cfg.Models["standard"] = []string{"fake/fixture"}
+	r.writeSettings()
+	wantOK(t, r.run(), "privacy")
+}

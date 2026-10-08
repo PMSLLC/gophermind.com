@@ -341,3 +341,40 @@ func TestPreflightMissingListedNoModelCallNothingWritten(t *testing.T) {
 		t.Errorf("config %v store %v", res.Config, res.Store)
 	}
 }
+
+func TestPreflightWarningNamesTokenNeverValue(t *testing.T) {
+	r := newRig(t)
+	src, err := os.ReadFile("../testdata/example/brief.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := "Mail goes through SENDGRID_KEY=sk-live-VALUE123 today."
+	b, err := brief.Parse([]byte(strings.Replace(string(src), "## Overview\n", "## Overview\n\n"+line+"\n", 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Front.ID, b.Front.Repo, b.Front.BaseBranch, b.Front.Landing, b.Front.Secrets = rigRunID, r.repo, "main", "commit", nil
+	r.b = b
+	res := r.run()
+	var warns []Check
+	for _, c := range res.Checks {
+		if c.Name == "warning" {
+			warns = append(warns, c)
+			if strings.Contains(c.Detail, "VALUE123") || strings.Contains(c.Detail, "sk-live") {
+				t.Errorf("value in %q", c.Detail)
+			}
+		}
+	}
+	var got *Check
+	for i := range warns {
+		if strings.Contains(warns[i].Detail, "SENDGRID_KEY") {
+			got = &warns[i]
+		}
+	}
+	if got == nil || !got.OK || !strings.Contains(got.Detail, "line ") {
+		t.Fatalf("warnings %+v", warns)
+	}
+	if len(Failed(res.Checks)) != 0 {
+		t.Errorf("a warning must not fail: %+v", Failed(res.Checks))
+	}
+}
