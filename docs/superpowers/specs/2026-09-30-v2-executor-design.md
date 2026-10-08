@@ -289,6 +289,8 @@ executor:
   stale_claim_seconds: 120
   output_cap_bytes: 65536
   heartbeat_seconds: 30
+  artifacts: on          # on | off; off stores hashes and sizes only, no reply or check output
+  artifact_max_bytes: 65536   # cap on each saved attempt file
   go_mod_cache: ~/.gophermind/gomodcache
   max_run_minutes: 720
   sandbox: on            # on | off; off is required explicitly on any OS but darwin, and is recorded in the report
@@ -492,7 +494,7 @@ Under `gophermind brief`: `run <id> [--gate terminal|file] [--repo <path>] [--wo
 | R12 | Acceptance N comes from `requirements.json`, not the executor's own list; failure repairs mapped nodes for 2 rounds then fails loud | If `requirements.json` mis-parses a bullet, N is wrong in the strict direction (a bullet counted without a test fails the run) |
 | R13 | Landing: work branch `gm/<id>`, per-leaf commits, an empty final commit, ff-only merge into base; no rebase, no force, no push | A moved `main` blocks landing and needs a person; the alternative (rebasing) rewrites GopherMind's history |
 | R14 | Escalation with no gate answer means `stop`; skip yields run status `failed` | A batch run halts on the first stuck leaf instead of finishing the rest; chosen because GOAL.md counts an abandoned task as a failed attempt anyway |
-| R15 | Runner output lives in memory only; persisted failures are class, names, counts, hashes | A resumed leaf loses its last failure text and spends one check (no model call) to rebuild it |
+| R15 | Replies and check output are saved, scrubbed, under `attempts/` unless `executor.artifacts` is `off`; prompts are never stored. Persisted failures in the ledger are class, names, counts, hashes | A resumed leaf loses its last failure text and spends one check (no model call) to rebuild it |
 | R17 | Add `ReplySHA256` to the attempt record (hash only) | A schema migration on the blackboard; without it the identical-reply guard is lost on resume and one extra call may repeat |
 | R18 | Types and stubs written by the harness at run start, committed in Wave 0; stub swapped out and restored around every attempt | A wrong type declaration is a plan defect that stops the run before any model call rather than being patched by a leaf |
 | R19 | `max_run_minutes` (default 720) ends the run cleanly, resumable, exit 5 | Too low interrupts a legitimate long run (resume continues it); too high lets a stuck run occupy the mini |

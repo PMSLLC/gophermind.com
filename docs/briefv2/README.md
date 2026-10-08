@@ -204,8 +204,8 @@ the process group, so after every command the runner finds the descendants by
 ancestry, kills them and records a warning if one survives. The proxy pins a
 provider's allowlist entry to its `base_url` port (so the Mac mini's address
 reaches port 11434 only, never ssh or a database), while a brief `network` entry
-without a port still matches every port of its host. The state database
-(`blackboard.db`, with its `-wal` and `-shm` files) is created owner-only (0600).
+without a port still matches every port of its host. State files
+are created owner-only (files 0600, directories 0700).
 Model calls never follow a redirect and ignore `HTTP_PROXY`; a call that times
 out puts that model on a cooldown (`rate_limits.cooldown_after_timeout_seconds`,
 default 60) and the next model in the chain is tried; a provider may set
@@ -231,6 +231,8 @@ executor:
   go_mod_cache: ~/.gophermind/gomodcache
   max_run_minutes: 720
   sandbox: on                   # on | off
+  artifacts: on                 # on | off
+  artifact_max_bytes: 65536     # cap on each saved attempt file
   proxy: {listen: "127.0.0.1:0", log: proxy.log}
 toolchain:
   PATH: /usr/local/go/bin:/usr/bin:/bin
@@ -286,6 +288,37 @@ Secrets are stored age-encrypted, in scopes: `harness` (used by
   newlines (so `cat key.pem | gophermind brief vault set KEY` keeps the full
   PEM), minus exactly one trailing newline. Empty input is an error.
 - The vault file is fsynced before the rename and its directory is synced after.
+
+## Where a run keeps its state
+
+All state of a run lives in its folder, as files you can open. There is no
+database.
+
+```text
+.gophermind/<run>/
+  brief.md  contracts.json  approval.json  coverage.json   unchanged
+  <component>/component.json                               plan, unchanged
+  <component>/<fn-id>.json                                 plan, unchanged
+  <component>/<fn-id>.runtime.json                         status, revision, wave, attempts, result, claim, updated_at
+  root.runtime.json, <component>/component.runtime.json    the same, for non-function nodes
+  _state/events.jsonl                                      one JSON object per line, append only
+  _state/calls.jsonl                                       one JSON object per line, append only (the call ledger)
+  attempts/<node-id>/<n>/                                  reply.go, check-output.txt, attempt.json (scrubbed)
+```
+
+Run state is never written into plan node files: the executor hashes the plan
+files and refuses to resume when they changed. A worker's claim lives inside the
+node's `.runtime.json`; a transient `<node>.runtime.json.lock` file (exclusive
+create) makes each read-modify-write atomic and is gone when the write finishes.
+
+Two settings in the `executor` section control the attempt files:
+`executor.artifacts` (`on` or `off`, default `on`) and
+`executor.artifact_max_bytes` (default 65536, the cap on each saved file). With
+`artifacts: on`, the model reply and the combined check output of each attempt
+are saved under `attempts/`, passed through the secret scrubbers first. Prompts
+are never stored. With `artifacts: off` only hashes and sizes are stored.
+
+A run folder is self-contained: copy it to move the run.
 
 ## Run directory
 
@@ -497,20 +530,19 @@ No source or test files are written to the target repository before
 files are left uncommitted.
 
 Clearing a run. A brief id names one run, and the run's state lives in two
-places: the run folder inside the repository, and, under the config dir
+places: the run folder inside the repository (which holds the node state,
+events, call ledger and attempt files), and, under the config dir
 (`~/.gophermind`, or `GOPHERMIND_CONFIG_DIR`), the run record
-`runs/<run-id>.json`, the rows of the run id in `blackboard.db` (blackboard,
-events, ledger) and the run's vault scope. To start a brief again from nothing:
+`runs/<run-id>.json` and the run's vault scope. To start a brief again from nothing:
 
 1. In the target repository: `git reset --hard <baseline>` and
    `git clean -fdx -e .remember`. This removes the run folder and any test
    files the test-writer wrote. If the clean is skipped, an untracked test file
    left by the earlier run makes the test-writer stop with an error rather
    than overwrite a file it did not write; delete it.
-2. Nothing else is required: `gophermind brief plan` on the same brief clears
-   the run id's rows in `blackboard.db` when it creates the new run folder and
-   replaces the old run record, so no stale ledger row, wave or claim carries
-   over. (`rm ~/.gophermind/runs/<run-id>.json` is harmless.)
+2. Nothing else is required: `gophermind brief plan` on the same brief creates
+   a fresh run folder and replaces the old run record, so no stale ledger line,
+   wave or claim carries over. (`rm ~/.gophermind/runs/<run-id>.json` is harmless.)
 
 A run folder that holds only what Load writes (the brief, `requirements.json`,
 an empty `logs/`, `_state/status.json`) is replaced by `plan` without complaint.
@@ -603,8 +635,8 @@ A provider's key is never in this file: `api_key_secret` names an entry set with
 
 ## The call ledger
 
-Every model call, including every failed attempt, is one row in the `calls`
-table of `<config dir>/blackboard.db`: stage, task type (`clarify`, `contract`,
+Every model call, including every failed attempt, is one line of
+`.gophermind/<run-id>/_state/calls.jsonl` (append only): stage, task type (`clarify`, `contract`,
 `decompose`, `coverage`, `testwrite`), node class for a call about one function
 (a leaf call only: the clarify, contract, decompose and coverage stage calls leave it empty),
 provider, model requested and served, token counts, duration, and outcome. The
