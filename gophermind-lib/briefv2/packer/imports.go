@@ -3,6 +3,7 @@ package packer
 import (
 	_ "embed"
 	"fmt"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -131,3 +132,16 @@ func (p ImportPolicy) Describe(imports []string) string {
 	}
 	return fmt.Sprintf("%d disallowed imports (first is import index %d)", n, first)
 }
+
+// stdNames holds the last path element of every standard library package: the
+// name a qualified identifier such as http.Request uses.
+var stdNames = func() map[string]bool {
+	m := map[string]bool{}
+	for p := range stdPackages {
+		m[path.Base(p)] = true
+	}
+	return m
+}()
+
+// IsStdPackageName reports whether name is the name of a standard library package.
+func IsStdPackageName(name string) bool { return stdNames[name] }
