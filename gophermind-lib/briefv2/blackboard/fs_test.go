@@ -2,30 +2,28 @@ package blackboard
 
 import (
 	"context"
-	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"gophermind/gophermind-lib/briefv2/db"
+	"gophermind/gophermind-lib/briefv2/runfs"
+	"gophermind/gophermind-lib/briefv2/tree"
 )
 
-func newBB(t *testing.T) (*SQLite, *sql.DB) {
+func newBB(t *testing.T) *FS {
 	t.Helper()
-	d, err := db.Open(filepath.Join(t.TempDir(), "bb.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { d.Close() })
-	return NewSQLite(d), d
+	return NewFS(runfs.Fixed(t.TempDir()), WithFlatLayout())
 }
 
 // initReady creates the nodes and moves them to ready.
-func initReady(t *testing.T, b *SQLite, run string, ids ...string) {
+func initReady(t *testing.T, b *FS, run string, ids ...string) {
 	t.Helper()
 	ctx := context.Background()
 	waves := map[string]int{}
@@ -43,7 +41,7 @@ func initReady(t *testing.T, b *SQLite, run string, ids ...string) {
 }
 
 func TestInitRunIsIdempotent(t *testing.T) {
-	b, _ := newBB(t)
+	b := newBB(t)
 	ctx := context.Background()
 	if err := b.InitRun(ctx, "r", []string{"a", "b"}, map[string]int{"a": 0, "b": 1}); err != nil {
 		t.Fatal(err)
@@ -65,7 +63,7 @@ func TestInitRunIsIdempotent(t *testing.T) {
 }
 
 func TestClaimRaceHasExactlyOneWinner(t *testing.T) {
-	b, _ := newBB(t)
+	b := newBB(t)
 	ctx := context.Background()
 	initReady(t, b, "r", "leaf")
 	var wins atomic.Int32
@@ -99,7 +97,7 @@ func TestClaimRaceHasExactlyOneWinner(t *testing.T) {
 }
 
 func TestClaimOnlyWorksOnReadyNodes(t *testing.T) {
-	b, _ := newBB(t)
+	b := newBB(t)
 	ctx := context.Background()
 	if err := b.InitRun(ctx, "r", []string{"a"}, map[string]int{"a": 0}); err != nil {
 		t.Fatal(err)
@@ -131,7 +129,7 @@ func TestSetStatusTransitions(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			b, _ := newBB(t)
+			b := newBB(t)
 			ctx := context.Background()
 			if err := b.InitRun(ctx, "r", []string{"n"}, map[string]int{"n": 0}); err != nil {
 				t.Fatal(err)
@@ -160,7 +158,7 @@ func TestSetStatusTransitions(t *testing.T) {
 }
 
 func TestSetStatusIsCompareAndSet(t *testing.T) {
-	b, _ := newBB(t)
+	b := newBB(t)
 	ctx := context.Background()
 	initReady(t, b, "r", "n")
 	// The row is ready; claiming to move from pending must fail even though pending->ready is a legal edge.
@@ -173,7 +171,7 @@ func TestSetStatusIsCompareAndSet(t *testing.T) {
 }
 
 func TestHeartbeatAndReleaseRequireTheOwner(t *testing.T) {
-	b, _ := newBB(t)
+	b := newBB(t)
 	ctx := context.Background()
 	initReady(t, b, "r", "n")
 	if ok, _ := b.Claim(ctx, "r", "n", "alice"); !ok {
@@ -201,7 +199,7 @@ func TestHeartbeatAndReleaseRequireTheOwner(t *testing.T) {
 }
 
 func TestReleaseStaleReleasesOnlyOldClaims(t *testing.T) {
-	b, _ := newBB(t)
+	b := newBB(t)
 	ctx := context.Background()
 	initReady(t, b, "r", "old", "fresh", "idle")
 	base := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
@@ -230,7 +228,7 @@ func TestReleaseStaleReleasesOnlyOldClaims(t *testing.T) {
 }
 
 func TestAttemptsAndResultRoundTrip(t *testing.T) {
-	b, _ := newBB(t)
+	b := newBB(t)
 	ctx := context.Background()
 	initReady(t, b, "r", "n")
 	started := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
@@ -265,7 +263,7 @@ func TestAttemptsAndResultRoundTrip(t *testing.T) {
 }
 
 func TestConcurrentAppendAttemptLosesNothing(t *testing.T) {
-	b, _ := newBB(t)
+	b := newBB(t)
 	ctx := context.Background()
 	initReady(t, b, "r", "n")
 	var wg sync.WaitGroup
@@ -286,7 +284,7 @@ func TestConcurrentAppendAttemptLosesNothing(t *testing.T) {
 }
 
 func TestListFilters(t *testing.T) {
-	b, _ := newBB(t)
+	b := newBB(t)
 	ctx := context.Background()
 	if err := b.InitRun(ctx, "r", []string{"a", "b", "c"}, map[string]int{"a": 0, "b": 1, "c": 1}); err != nil {
 		t.Fatal(err)
@@ -313,7 +311,7 @@ func TestListFilters(t *testing.T) {
 }
 
 func TestWatchDeliversChanges(t *testing.T) {
-	b, _ := newBB(t)
+	b := newBB(t)
 	b.poll = 20 * time.Millisecond
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -347,7 +345,7 @@ func TestWatchDeliversChanges(t *testing.T) {
 }
 
 func TestAttemptReplySHA256RoundTrips(t *testing.T) {
-	b, _ := newBB(t)
+	b := newBB(t)
 	ctx := context.Background()
 	initReady(t, b, "r", "n")
 	sum := "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
@@ -364,5 +362,148 @@ func TestAttemptReplySHA256RoundTrips(t *testing.T) {
 	}
 	if len(row.Attempts) != 2 || row.Attempts[0].ReplySHA256 != sum || row.Attempts[1].ReplySHA256 != "" {
 		t.Fatalf("attempts = %+v", row.Attempts)
+	}
+}
+
+func TestFSReadsDoNotWrite(t *testing.T) {
+	dir := t.TempDir()
+	b := NewFS(runfs.Fixed(dir), WithFlatLayout())
+	ctx := context.Background()
+	if _, err := b.List(ctx, "r", Filter{}); err != nil {
+		t.Fatalf("List of an empty run: %v", err)
+	}
+	if _, err := b.Get(ctx, "r", "nothing"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Get of a missing node: %v", err)
+	}
+	ents, _ := os.ReadDir(dir)
+	if len(ents) != 0 {
+		t.Errorf("reads created %d entries in the run folder", len(ents))
+	}
+}
+
+func TestFSRefusesAnUnsafeNodeID(t *testing.T) {
+	dir := t.TempDir()
+	b := NewFS(runfs.Fixed(dir), WithFlatLayout())
+	ctx := context.Background()
+	for _, id := range []string{"../escape", "/abs", "a/b", "", "UPPER", ".hidden"} {
+		if err := b.InitRun(ctx, "r", []string{id}, map[string]int{id: 0}); err == nil {
+			t.Errorf("InitRun accepted node id %q", id)
+		}
+	}
+	ents, _ := os.ReadDir(filepath.Dir(dir))
+	for _, e := range ents {
+		if e.Name() == "escape" {
+			t.Error("a node id escaped the run folder")
+		}
+	}
+}
+
+func TestFSNeverReadsATornFile(t *testing.T) {
+	b := newBB(t)
+	ctx := context.Background()
+	initReady(t, b, "r", "n")
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 200; i++ {
+			_ = b.AppendAttempt(ctx, "r", "n", Attempt{Model: "m", Verdict: VerdictFail, FailureReason: strings.Repeat("x", 500)})
+		}
+		close(done)
+	}()
+	for {
+		select {
+		case <-done:
+			wg.Wait()
+			return
+		default:
+			if _, err := b.Get(ctx, "r", "n"); err != nil {
+				t.Fatalf("a read during a write failed: %v", err)
+			}
+		}
+	}
+}
+
+func TestFSRuntimeFileSitsBesideTheNodeFile(t *testing.T) {
+	dir := t.TempDir()
+	s := tree.NewStore(dir)
+	for _, raw := range []string{
+		`{"spec_version":"2.0","id":"rt","kind":"root","title":"t","description":"d","brief_ref":"#x","status":"pending","children":["comp"]}`,
+		`{"spec_version":"2.0","id":"comp","kind":"component","parent":"rt","title":"t","description":"d","brief_ref":"#x","status":"pending","children":["fn-a"]}`,
+		`{"spec_version":"2.0","id":"fn-a","kind":"function","parent":"comp","title":"t","description":"d","brief_ref":"#x","status":"pending","wave":0,"depends_on":[],
+"contract":{"package":"p","file":"p/fn-a.go","signature":"func F()","inputs":[],"outputs":[]},
+"tests":[{"name":"n","level":"unit","given":"g","expect":"e","command":"go test ./p"}]}`,
+	} {
+		n, err := tree.ParseNode([]byte(raw))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Write(n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b := NewFS(runfs.Fixed(dir))
+	ctx := context.Background()
+	if err := b.InitRun(ctx, "run1", []string{"rt", "comp", "fn-a"}, map[string]int{"rt": 2, "comp": 1, "fn-a": 0}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"root.runtime.json", "comp/component.runtime.json", "comp/fn-a.runtime.json"} {
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(want))); err != nil {
+			t.Errorf("expected %s beside the node file: %v", want, err)
+		}
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, "comp", "fn-a.runtime.json"))
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil || doc["node_id"] != "fn-a" || doc["status"] != "pending" {
+		t.Errorf("runtime file = %s (%v)", raw, err)
+	}
+	if _, err := b.Get(ctx, "run1", "ghost"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("a node that is not in the tree: err = %v, want ErrNotFound", err)
+	}
+	if loaded, err := s.Load(); err != nil || len(loaded.Nodes) != 3 {
+		t.Errorf("Load must still see only the 3 plan nodes: %d, %v", len(loaded.Nodes), err)
+	}
+}
+
+func TestFSEventsAreOneJSONLinePerChange(t *testing.T) {
+	dir := t.TempDir()
+	b := NewFS(runfs.Fixed(dir), WithFlatLayout())
+	ctx := context.Background()
+	initReady(t, b, "r", "n")
+	if ok, _ := b.Claim(ctx, "r", "n", "w"); !ok {
+		t.Fatal("claim")
+	}
+	lines, _, err := runfs.ReadLines(filepath.Join(dir, "_state", "events.jsonl"), 0)
+	if err != nil || len(lines) != 2 {
+		t.Fatalf("event lines = %d, %v; want 2 (ready, claimed)", len(lines), err)
+	}
+	var e struct {
+		RunID  string `json:"run_id"`
+		NodeID string `json:"node_id"`
+		Kind   string `json:"kind"`
+		At     string `json:"at"`
+	}
+	if err := json.Unmarshal(lines[1], &e); err != nil || e.Kind != "status" || e.NodeID != "n" {
+		t.Errorf("last event = %s (%v)", lines[1], err)
+	}
+}
+
+func TestFSLeavesAStaleLockBehindNothing(t *testing.T) {
+	dir := t.TempDir()
+	b := NewFS(runfs.Fixed(dir), WithFlatLayout())
+	ctx := context.Background()
+	initReady(t, b, "r", "n")
+	lock := filepath.Join(dir, "nodes", "n.runtime.json.lock")
+	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour)
+	_ = os.Chtimes(lock, old, old)
+	if ok, err := b.Claim(ctx, "r", "n", "w"); err != nil || !ok {
+		t.Fatalf("claim past a dead holder's lock: %v %v", ok, err)
+	}
+	if _, err := os.Stat(lock); !os.IsNotExist(err) {
+		t.Errorf("lock still present after the claim: %v", err)
 	}
 }
