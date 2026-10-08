@@ -40,13 +40,13 @@ func TestClassStatsAggregatesRowsClassesAndCalls(t *testing.T) {
 		{NodeClass: "pure", PromptTokens: 10, CompletionTokens: 5},
 		{NodeClass: "pure", PromptTokens: 20, CompletionTokens: 1},
 		{NodeClass: "handler", PromptTokens: 7, CompletionTokens: 3},
-		{NodeClass: "storage", PromptTokens: 99, CompletionTokens: 99}, // class absent from the rows
+		{NodeClass: "storage", PromptTokens: 99, CompletionTokens: 99}, // class with no rows: folded into unclassified
 	}
 	got := ClassStats(rows, classes, calls)
 	want := []ClassStat{
 		{Class: "pure", Leaves: 2, Verified: 2, Attempts: 3, Passes: 2, FirstTryWins: 1, FirstPassRate: 0.5, Calls: 2, PromptTokens: 30, CompletionTokens: 6},
 		{Class: "handler", Leaves: 3, Failed: 1, Escalated: 1, NotRun: 1, Attempts: 3, FirstPassRate: 0, Calls: 1, PromptTokens: 7, CompletionTokens: 3},
-		{Class: "unclassified", Leaves: 2, Verified: 1, NotRun: 1, Attempts: 1, Passes: 1, FirstTryWins: 1, FirstPassRate: 0.5},
+		{Class: "unclassified", Leaves: 2, Verified: 1, NotRun: 1, Attempts: 1, Passes: 1, FirstTryWins: 1, FirstPassRate: 0.5, Calls: 1, PromptTokens: 99, CompletionTokens: 99},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got  %+v\nwant %+v", got, want)
@@ -77,5 +77,26 @@ func TestClassStatsRateRoundsToFourPlaces(t *testing.T) {
 	}
 	if len(ClassStats(nil, nil, nil)) != 0 {
 		t.Fatal("no rows must give no entries")
+	}
+}
+
+func TestClassStatsTotalsReconcileWithLedger(t *testing.T) {
+	rows := []blackboard.Row{{NodeID: "a/f1", Status: blackboard.StatusVerified}}
+	classes := map[string]string{"a/f1": "pure"}
+	calls := []ledger.Call{
+		{NodeClass: "pure", PromptTokens: 1, CompletionTokens: 2},
+		{NodeClass: "", PromptTokens: 10, CompletionTokens: 20},
+		{NodeClass: "bogus", PromptTokens: 100, CompletionTokens: 200},
+		{NodeClass: "storage", PromptTokens: 1000, CompletionTokens: 2000},
+	}
+	var n int
+	var p, c int64
+	for _, s := range ClassStats(rows, classes, calls) {
+		n += s.Calls
+		p += s.PromptTokens
+		c += s.CompletionTokens
+	}
+	if n != 4 || p != 1111 || c != 2222 {
+		t.Fatalf("calls %d prompt %d completion %d", n, p, c)
 	}
 }

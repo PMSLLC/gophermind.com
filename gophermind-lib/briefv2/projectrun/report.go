@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"gophermind/gophermind-lib/briefv2/report"
 	"gophermind/gophermind-lib/briefv2/runfs"
@@ -112,6 +113,21 @@ type ProjectReport struct {
 	FinishedAt          string            `json:"finished_at"`
 }
 
+// maxFieldRunes bounds every free-text string written to project.json.
+const maxFieldRunes = 200
+
+// capText keeps the first line of s, cut to maxFieldRunes runes without
+// splitting a rune.
+func capText(s string) string {
+	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
+		s = s[:i]
+	}
+	if utf8.RuneCountInString(s) > maxFieldRunes {
+		s = string([]rune(s)[:maxFieldRunes])
+	}
+	return strings.ToValidUTF8(s, "?")
+}
+
 // hostOnly reduces whatever a caller holds (a URL, host:port, a bare host) to
 // the host name: no scheme, credentials, port, path or query.
 func hostOnly(s string) string {
@@ -147,10 +163,7 @@ func (p *ProjectReport) Text() string {
 	line := func(format string, a ...any) { fmt.Fprintf(&b, format+"\n", a...) }
 	line("gophermind %s (commit %s, built %s)", oneLine(p.Binary.Version), oneLine(p.Binary.Commit), oneLine(p.Binary.Date))
 	line("binary: %s", oneLine(p.Binary.Path))
-	title := oneLine(p.Title)
-	if len(title) > 120 {
-		title = title[:120]
-	}
+	title := oneLine(capText(p.Title))
 	line("project: %s %s", oneLine(p.RunID), title)
 	line("mode: %s, graded: %s, resumed: %s", oneLine(p.Mode), yn(p.Graded), yn(p.Resumed))
 	line("repo: %s (brief repo: %s)", oneLine(p.Repo.Path), oneLine(p.Repo.BriefRepo))
@@ -180,10 +193,14 @@ func (p *ProjectReport) Text() string {
 	if p.Mode == "unattended" {
 		ids := make([]string, 0, len(a.ClarifyDefaulted))
 		for _, c := range a.ClarifyDefaulted {
-			ids = append(ids, oneLine(c.ID))
+			ids = append(ids, oneLine(capText(c.ID)))
 		}
-		line("on_ambiguity=%s overridden by unattended policy: %d clarify question(s) answered by their recommendations (%s) in %d round(s), %d by the fact probe; %d conservative assumption(s); text in %s/_state/project.json",
-			oneLine(a.BriefSetting), len(a.ClarifyDefaulted), strings.Join(ids, ", "), a.Rounds, a.ByAnsweredBy["probe"], a.ConservativeAssumptions, oneLine(p.RunDir))
+		idList := ""
+		if len(ids) > 0 {
+			idList = " (" + strings.Join(ids, ", ") + ")"
+		}
+		line("on_ambiguity=%s overridden by unattended policy: %d clarify question(s) answered by their recommendations%s in %d round(s), %d by the fact probe; %d conservative assumption(s); text in %s/_state/project.json",
+			oneLine(a.BriefSetting), len(a.ClarifyDefaulted), idList, a.Rounds, a.ByAnsweredBy["probe"], a.ConservativeAssumptions, oneLine(p.RunDir))
 	} else {
 		line("on_ambiguity=%s, attended: %d question(s) answered by a person in %d round(s); text in %s/_state/project.json",
 			oneLine(a.BriefSetting), a.ByAnsweredBy["human"]+a.ByAnsweredBy["accepted"], a.Rounds, oneLine(p.RunDir))
@@ -225,6 +242,15 @@ func WriteReport(runDir string, p *ProjectReport) error {
 	cp.Providers = append([]ProviderInfo(nil), p.Providers...)
 	for i := range cp.Providers {
 		cp.Providers[i].Host = hostOnly(cp.Providers[i].Host)
+	}
+	cp.Title = capText(p.Title)
+	cp.PlannerWarningLines = make([]string, len(p.PlannerWarningLines))
+	for i, l := range p.PlannerWarningLines {
+		cp.PlannerWarningLines[i] = capText(l)
+	}
+	cp.Ambiguity.ClarifyDefaulted = make([]ClarifyDefault, len(p.Ambiguity.ClarifyDefaulted))
+	for i, c := range p.Ambiguity.ClarifyDefaulted {
+		cp.Ambiguity.ClarifyDefaulted[i] = ClarifyDefault{ID: capText(c.ID), Question: capText(c.Question), Answer: capText(c.Answer)}
 	}
 	raw, err := json.MarshalIndent(&cp, "", "  ")
 	if err != nil {

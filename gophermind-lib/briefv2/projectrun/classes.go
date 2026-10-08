@@ -91,7 +91,7 @@ func ClassStats(rows []blackboard.Row, classes map[string]string, calls []ledger
 	for _, c := range calls {
 		s, ok := by[c.NodeClass]
 		if !ok {
-			continue
+			s = get("unclassified")
 		}
 		s.Calls++
 		s.PromptTokens += int64(c.PromptTokens)

@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"gophermind/gophermind-lib/briefv2/report"
 	"gophermind/gophermind-lib/briefv2/tree"
@@ -268,5 +269,49 @@ func TestGradedInvalidLine(t *testing.T) {
 	p.Graded = false
 	if strings.Contains(p.Text(), "graded: INVALID") {
 		t.Error("line present when not graded")
+	}
+}
+
+func TestAmbiguityLineWithoutDefaultsHasNoParentheses(t *testing.T) {
+	p := sampleReport()
+	p.Ambiguity.ClarifyDefaulted = nil
+	txt := p.Text()
+	if !strings.Contains(txt, "0 clarify question(s) answered by their recommendations in 2 round(s)") {
+		t.Errorf("text:\n%s", txt)
+	}
+	if strings.Contains(txt, "recommendations (") || strings.Contains(txt, "()") {
+		t.Errorf("empty parentheses:\n%s", txt)
+	}
+}
+
+func TestProjectJSONFieldsAreCapped(t *testing.T) {
+	long := strings.Repeat("é", 5000) + "\nsecond line"
+	p := sampleReport()
+	p.Title = long
+	p.PlannerWarningLines = []string{long}
+	p.Ambiguity.ClarifyDefaulted = []ClarifyDefault{{ID: long, Question: long, Answer: long}}
+	dir := t.TempDir()
+	if err := WriteReport(dir, p); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, "_state", "project.json"))
+	var back ProjectReport
+	if err := json.Unmarshal(raw, &back); err != nil {
+		t.Fatal(err)
+	}
+	cd := back.Ambiguity.ClarifyDefaulted[0]
+	for name, s := range map[string]string{"title": back.Title, "line": back.PlannerWarningLines[0], "id": cd.ID, "question": cd.Question, "answer": cd.Answer} {
+		if n := utf8.RuneCountInString(s); n != maxFieldRunes {
+			t.Errorf("%s has %d runes, want %d", name, n, maxFieldRunes)
+		}
+		if strings.ContainsAny(s, "\r\n") || !utf8.ValidString(s) {
+			t.Errorf("%s is not one valid line", name)
+		}
+	}
+	if p.Title != long {
+		t.Error("WriteReport changed the caller's report")
+	}
+	if utf8.RuneCountInString(lines(p.Text())[2]) > len("project: ")+len(p.RunID)+1+maxFieldRunes*2 {
+		t.Error("printed title unbounded")
 	}
 }
