@@ -211,6 +211,13 @@ func (p *Planner) call(ctx context.Context, r *run, cs callSpec, prompt string, 
 			return inner(text)
 		}
 	}
+	{
+		inner := parse
+		parse = func(text string) error {
+			p.saveReply(r, cs.stage, text)
+			return inner(text)
+		}
+	}
 	_, err := p.d.Caller.CallParsed(ctx, info, req, parse)
 	var ce *router.ChainExhausted
 	if errors.As(err, &ce) && ce.OnlyPrivacy() {
