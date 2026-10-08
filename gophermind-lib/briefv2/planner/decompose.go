@@ -335,6 +335,13 @@ func (e *nodeEnv) normalizeNode(f contract.Function, d map[string]any) (class st
 	for _, k := range []string{"tests", "wave", "claim", "attempts", "result"} {
 		delete(d, k)
 	}
+	// The Enrich groups are Enrich's to write; a Decompose reply that carries
+	// them would make enrichMissing treat the node as already enriched.
+	for _, k := range enrichFieldsAll {
+		delete(d, k)
+	}
+	delete(d, "decisions")
+	delete(d, "decision_ids")
 	fnName := ""
 	if fd, perr := parseSignature(f.Signature); perr == nil {
 		fnName = fd.Name.Name

@@ -499,3 +499,105 @@ func TestATruncatedReplyForASingleNodeStillFails(t *testing.T) {
 		t.Fatalf("err = %v, want the stage to fail naming the truncation once the batch is one node", err)
 	}
 }
+
+func TestARepairStageQuestionSettledAndCitedPassesTheNodeSchema(t *testing.T) {
+	respond := func(stage string, call int, nodes []enrichNode, prompt string) string {
+		if stage == "enrich:_fix" {
+			if !strings.Contains(prompt, "Answer from the owner") {
+				return "QUESTION:\nShould the security group name the caller?"
+			}
+			out := make([]map[string]any, len(nodes))
+			for i, n := range nodes {
+				out[i] = goodEnrichment(n)
+				out[i]["decision_ids"] = []any{"enrich-_fix-q2"}
+			}
+			b, _ := json.Marshal(out)
+			return string(b)
+		}
+		return dropGroup("fn-greet", "security", false)(stage, call, nodes, prompt)
+	}
+	g := newRig(t, approving(), fixtureDir(t, map[string]string{"clarify.more.txt": "[]"}))
+	withEnrichment(g, respond)
+	gate := g.gate.(*scriptGate)
+	gate.answer = func(q human.Question) string {
+		if strings.HasPrefix(q.ID, "enrich-") {
+			return "yes, name the caller"
+		}
+		return "yes"
+	}
+	g.mustPlan(planner.Options{StopAfter: "approve"})
+	// finishTree validates every node against the schema; a bad decision id fails the plan.
+	if !g.has("decisions/enrich-_fix-q2.md") {
+		t.Error("no decision record for the repair-stage question")
+	}
+}
+
+func TestAFunctionBatchQuestionSettledAndCitedByTheComponentCall(t *testing.T) {
+	respond := func(stage string, call int, nodes []enrichNode, prompt string) string {
+		if stage == "enrich:greeting" && !strings.Contains(prompt, "Answer from the owner") {
+			return "QUESTION:\nShould Greet log refused names?"
+		}
+		return goodEnrichmentJSON(nodes)
+	}
+	g := newRig(t, approving(), fixtureDir(t, map[string]string{"clarify.more.txt": "[]"}))
+	calls := withEnrichmentErr(g, func(stage string, call int, nodes []enrichNode, prompt string) (string, error) {
+		return respond(stage, call, nodes, prompt), nil
+	}, func(stage, prompt string) string {
+		if stage == "enrich_comp:greeting" {
+			return `{"rationale":"Groups the functions that implement one part of the brief so they can be built and tested together.","assumptions":[],"open_questions":[],"decision_ids":["enrich-greeting-q2"]}`
+		}
+		return goodStructureJSON
+	})
+	gate := g.gate.(*scriptGate)
+	gate.answer = func(q human.Question) string {
+		if strings.HasPrefix(q.ID, "enrich-") {
+			return "no, never log names"
+		}
+		return "yes"
+	}
+	if out, err := g.plan(planner.Options{StopAfter: "enrich"}); err != nil || out != planner.Done {
+		t.Fatalf("plan = %v, %v", out, err)
+	}
+	if n := calls.count("enrich_comp:greeting"); n != 1 {
+		t.Errorf("the component call ran %d times, want 1 (a rejected citation is retried)", n)
+	}
+}
+
+func TestADecomposeReplyThatPrefillsEnrichGroupsStillGoesThroughEnrich(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "greeter", "decompose.greeting.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(string(raw)), "```json"), "```"))
+	var nodes []map[string]any
+	if err := json.Unmarshal([]byte(body), &nodes); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range nodes {
+		n["rationale"] = "A prefilled rationale the Decompose model should never have written at all."
+		n["security"] = map[string]any{"trust_boundary": "none"}
+		n["decision_ids"] = []any{"q1"}
+	}
+	out, _ := json.Marshal(nodes)
+	g := newRig(t, approving(), fixtureDir(t, map[string]string{"clarify.more.txt": "[]", "decompose.greeting.txt": string(out)}))
+	calls := withEnrichment(g, allGood)
+	if o, err := g.plan(planner.Options{StopAfter: "enrich"}); err != nil || o != planner.Done {
+		t.Fatalf("plan = %v, %v", o, err)
+	}
+	asked := false
+	for i, s := range calls.stages {
+		if s == "enrich:greeting" && strings.Contains(calls.prompts[i], "fn-greet") {
+			asked = true
+		}
+	}
+	if !asked {
+		t.Error("a node with prefilled groups was never sent to Enrich")
+	}
+	for _, d := range g.drafts().Components["greeting"] {
+		if d["id"] == "fn-greet" {
+			if r, _ := d["rationale"].(string); strings.Contains(r, "prefilled") {
+				t.Error("the Decompose model's rationale was kept")
+			}
+		}
+	}
+}
