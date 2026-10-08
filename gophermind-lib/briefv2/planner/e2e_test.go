@@ -263,11 +263,13 @@ func TestNothingTouchesTheRepoWithoutApproval(t *testing.T) {
 // Stop after each stage in turn and resume: no stage that had finished makes
 // a model call again.
 func TestResumeRepeatsOnlyWhatIsUnfinished(t *testing.T) {
-	order := []string{"load", "clarify", "confirm", "contract", "decompose", "coverage", "approve"}
+	order := []string{"load", "clarify", "confirm", "contract", "decompose", "enrich", "coverage", "approve"}
 	owner := func(stage string) string {
 		switch name, _, _ := strings.Cut(stage, ":"); name {
 		case "coverage_fill":
 			return "coverage"
+		case "enrich_comp", "enrich_root":
+			return "enrich"
 		case "testwrite":
 			return "testwriter"
 		default:
@@ -302,7 +304,7 @@ func TestResumeRepeatsOnlyWhatIsUnfinished(t *testing.T) {
 	t.Run("waiting for approval", func(t *testing.T) {
 		gate := approving()
 		gate.approveErr = human.ErrWaiting
-		g := newRig(t, gate, variant(t, map[string]string{"clarify.txt": "[]"}))
+		g := newRig(t, gate)
 		out, err := g.plan(planner.Options{})
 		if err != nil || out != planner.Waiting {
 			t.Fatalf("Run = %q, %v; want waiting", out, err)

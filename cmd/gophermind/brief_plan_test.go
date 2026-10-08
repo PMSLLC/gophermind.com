@@ -67,11 +67,21 @@ func TestBriefPlanWithTheFileGate(t *testing.T) {
 	if !strings.Contains(out, "gophermind brief resume "+greeterRunID) || !strings.Contains(errs, "clarify: started") {
 		t.Errorf("plan output: out=%q err=%q", out, errs)
 	}
-	fill(t, filepath.Join(runDir, "QUESTIONS.md"), "answer", "Yes, and collapse inner spaces too.")
+	fill(t, filepath.Join(runDir, "QUESTIONS.md"), "answer", "accept")
 
 	code, out, errs = runBriefCmd(t, "", "resume", greeterRunID, "--fake", greeterFixture, "--gate", "file")
 	if code != 3 {
-		t.Fatalf("first resume: code=%d out=%q err=%q, want 3 (waiting for approval)", code, out, errs)
+		t.Fatalf("first resume: code=%d out=%q err=%q, want 3 (waiting for the understanding)", code, out, errs)
+	}
+	understanding, err := os.ReadFile(filepath.Join(runDir, "UNDERSTANDING.md"))
+	if err != nil || !strings.Contains(string(understanding), "Understanding hash: ") {
+		t.Fatalf("UNDERSTANDING.md was not written: %v", err)
+	}
+	fill(t, filepath.Join(runDir, "UNDERSTANDING.md"), "decision", "approve")
+
+	code, out, errs = runBriefCmd(t, "", "resume", greeterRunID, "--fake", greeterFixture, "--gate", "file")
+	if code != 3 {
+		t.Fatalf("second resume: code=%d out=%q err=%q, want 3 (waiting for approval)", code, out, errs)
 	}
 	approval, err := os.ReadFile(filepath.Join(runDir, "APPROVAL.md"))
 	if err != nil || !strings.Contains(string(approval), "Requirements covered: 7 of 7") {
@@ -88,7 +98,7 @@ func TestBriefPlanWithTheFileGate(t *testing.T) {
 
 	code, out, errs = runBriefCmd(t, "", "resume", greeterRunID, "--fake", greeterFixture, "--gate", "file")
 	if code != 0 || !strings.Contains(out, "planned: "+greeterRunID) || !strings.Contains(out, "Requirements covered: 7 of 7") {
-		t.Fatalf("second resume: code=%d out=%q err=%q", code, out, errs)
+		t.Fatalf("third resume: code=%d out=%q err=%q", code, out, errs)
 	}
 	if _, err := os.Stat(filepath.Join(repo, "internal", "greet", "fn_greet_test.go")); err != nil {
 		t.Errorf("the test file was not written: %v", err)
@@ -108,7 +118,7 @@ func TestBriefPlanWithTheFileGate(t *testing.T) {
 		}
 	}
 	code, out, _ = runBriefCmd(t, "", "calls", greeterRunID)
-	if code != 0 || !strings.Contains(out, "13 call(s)") || !strings.Contains(out, "testwrite:fn-greet") || !strings.Contains(out, "contract:outline") {
+	if code != 0 || !strings.Contains(out, "21 call(s)") || !strings.Contains(out, "testwrite:fn-greet") || !strings.Contains(out, "contract:outline") {
 		t.Errorf("calls: code=%d out=%q", code, out)
 	}
 	for _, want := range []string{"TASK", "CLASS", "validation", "OUTCOME"} {
@@ -122,11 +132,11 @@ func TestBriefPlanWithTheFileGate(t *testing.T) {
 	}
 }
 
-// At a terminal with nothing typed, the default answer is taken and --yes
-// stands in for the approval.
+// At a terminal, typing accept takes the recommended answer and --yes
+// stands in for the confirmation and the approval.
 func TestBriefPlanWithYesAtATerminal(t *testing.T) {
 	repo, briefPath := planEnv(t)
-	code, out, errs := runBriefCmd(t, "", "plan", "--yes", "--fake", greeterFixture, "--gate", "terminal", "--allow-public", briefPath)
+	code, out, errs := runBriefCmd(t, "accept\n", "plan", "--yes", "--fake", greeterFixture, "--gate", "terminal", "--allow-public", briefPath)
 	if code != 0 || !strings.Contains(out, "planned: "+greeterRunID) {
 		t.Fatalf("plan: code=%d out=%q err=%q", code, out, errs)
 	}
@@ -185,7 +195,7 @@ func TestBriefPlanExitCodes(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			code, out, errs := runBriefCmd(t, "", c.args...)
+			code, out, errs := runBriefCmd(t, "accept\naccept\n", c.args...)
 			if code != c.code || !strings.Contains(errs, c.want) {
 				t.Errorf("code=%d out=%q err=%q, want %d and %q", code, out, errs, c.code, c.want)
 			}

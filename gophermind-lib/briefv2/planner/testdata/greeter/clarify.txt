@@ -1,1 +1,1 @@
-[{"id": "q1", "question": "Should a name be trimmed of surrounding spaces before it is used?", "why_it_matters": "It changes what Greet returns and what the tests expect.", "default_if_unanswered": "Yes, trim it."}]
+[{"id":"q1","question":"Should a name be trimmed of surrounding spaces before it is used?","why_it_matters":"It changes what Greet returns and what the tests expect.","options":["Yes, trim it.","No, use it exactly as given."],"recommended":"Yes, trim it.","recommended_why":"A name with stray spaces is almost always a typing slip."}]

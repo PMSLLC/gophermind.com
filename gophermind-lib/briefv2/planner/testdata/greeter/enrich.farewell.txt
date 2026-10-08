@@ -1,56 +1,73 @@
 [
-  {
-    "id": "fn-farewell",
-    "rationale": "Serves the fn-farewell part of the brief so callers get the behaviour the contract promises.",
-    "construction": {
-      "approach_chosen": "write it directly",
-      "steps": [
-        "Check the input.",
-        "Build and return the result."
-      ]
-    },
-    "alternatives": {
-      "not_applicable": "there is one obvious way to write a function this small"
-    },
-    "error_kinds": [
-      "typed"
-    ],
-    "portability": {
-      "os": [
-        "linux",
-        "darwin"
-      ],
-      "arch": [
-        "amd64",
-        "arm64"
-      ],
-      "go_min": "1.21",
-      "cgo": false,
-      "deps": []
-    },
-    "security": {
-      "not_applicable": "the function handles no input from outside the process"
-    },
-    "performance": {
-      "complexity": "O(n)",
-      "max_latency_ms": null,
-      "alloc_budget": "one small string",
-      "concurrency": "none",
-      "hot_path": false
-    },
-    "observability": {
-      "log_events": [],
-      "metrics": [],
-      "trace_span": null
-    },
-    "refactor_notes": {
-      "not_applicable": "nothing worth restructuring in a function this small"
-    },
-    "profile_hooks": {
-      "not_applicable": "this function is too small to profile usefully"
-    },
-    "assumptions": [],
-    "open_questions": [],
-    "decision_ids": []
-  }
+ {
+  "id": "fn-farewell",
+  "rationale": "Builds the farewell for a name and refuses an empty one, which is the Farewell feature of the brief.",
+  "construction": {
+   "approach_chosen": "trim the name, refuse it when empty, otherwise format the farewell",
+   "steps": [
+    "Trim the surrounding spaces from the name.",
+    "Return a NameError when nothing is left.",
+    "Return Goodbye, <name>! otherwise."
+   ]
+  },
+  "alternatives": [
+   {
+    "approach": "return an empty string for an empty name",
+    "rejected_because": "the brief requires a *NameError"
+   }
+  ],
+  "error_kinds": [
+   "typed"
+  ],
+  "portability": {
+   "os": [
+    "linux",
+    "darwin"
+   ],
+   "arch": [
+    "amd64",
+    "arm64"
+   ],
+   "go_min": "1.21",
+   "cgo": false,
+   "deps": []
+  },
+  "security": {
+   "trust_boundary": "external_input",
+   "untrusted_inputs": [
+    "name"
+   ],
+   "authz": "none",
+   "secret_use": [],
+   "threats": [
+    {
+     "threat": "a very long name",
+     "mitigation": "the function does no I/O and allocates one string"
+    }
+   ]
+  },
+  "performance": {
+   "complexity": "O(n)",
+   "max_latency_ms": null,
+   "alloc_budget": "one string",
+   "concurrency": "safe_for_concurrent_use",
+   "hot_path": false
+  },
+  "observability": {
+   "log_events": [],
+   "metrics": [],
+   "trace_span": null
+  },
+  "refactor_notes": {
+   "not_applicable": "nothing worth restructuring in a function this small"
+  },
+  "profile_hooks": {
+   "not_applicable": "this function is too small to profile usefully"
+  },
+  "assumptions": [],
+  "open_questions": [],
+  "decision_ids": [
+   "q1"
+  ]
+ }
 ]
