@@ -12,6 +12,7 @@ import (
 	"gophermind/gophermind-lib/briefv2/human"
 	"gophermind/gophermind-lib/briefv2/ledger"
 	"gophermind/gophermind-lib/briefv2/planner"
+	"gophermind/gophermind-lib/briefv2/provider"
 )
 
 var allGroups = []string{"rationale", "construction", "alternatives", "portability", "security", "performance", "observability",
@@ -421,5 +422,80 @@ func TestEnrichIgnoresANodeOutsideTheBatch(t *testing.T) {
 		if r, _ := d["rationale"].(string); strings.Contains(r, "SNEAKED") {
 			t.Errorf("fn-farewell took a rationale from another component's call: %v", r)
 		}
+	}
+}
+
+// Two functions in one component, so that one Enrich batch holds two nodes.
+var twoFunctionFiles = map[string]string{
+	"contract.greeting.txt": `{"types": [], "functions": [
+  {"id": "fn-greet", "package": "greet", "file": "internal/greet/greet.go",
+   "signature": "func Greet(name string) (string, error)",
+   "doc": "Greet trims the name and returns Hello, <name>!. An empty name is an error.",
+   "uses": ["name-error", "fn-name-error-error"]},
+  {"id": "fn-welcome", "package": "greet", "file": "internal/greet/welcome.go",
+   "signature": "func Welcome(name string) (string, error)",
+   "doc": "Welcome trims the name and returns Welcome, <name>!. An empty name is an error.",
+   "uses": ["name-error"]}
+], "more": false}`,
+	"decompose.greeting.txt": `[
+  {"id": "fn-greet", "title": "Greet a name", "description": "Build the greeting for a name, refusing an empty one.",
+   "model_tier": "any", "node_class": "validation", "depends_on": ["name-error", "fn-name-error-error"],
+   "contract": {"package": "greet", "file": "internal/greet/greet.go", "signature": "func Greet(name string) (string, error)",
+    "inputs": [{"name": "name", "type": "string", "constraints": ["May be empty"]}],
+    "outputs": [{"name": "message", "type": "string", "description": "Hello, <name>!"}, {"name": "err", "type": "error", "description": "nil when usable"}],
+    "errors": [{"when": "name is empty after trimming", "returns": "*NameError"}], "side_effects": []}},
+  {"id": "fn-welcome", "title": "Welcome a name", "description": "Build the welcome for a name, refusing an empty one.",
+   "model_tier": "any", "node_class": "validation", "depends_on": ["name-error"],
+   "contract": {"package": "greet", "file": "internal/greet/welcome.go", "signature": "func Welcome(name string) (string, error)",
+    "inputs": [{"name": "name", "type": "string", "constraints": ["May be empty"]}],
+    "outputs": [{"name": "message", "type": "string", "description": "Welcome, <name>!"}, {"name": "err", "type": "error", "description": "nil when usable"}],
+    "errors": [{"when": "name is empty after trimming", "returns": "*NameError"}], "side_effects": []}}
+]`,
+}
+
+func TestATruncatedEnrichReplyHalvesTheBatchAndGoesOn(t *testing.T) {
+	g := newRig(t, approving(), fixtureDir(t, map[string]string{"clarify.more.txt": "[]"}), variant(t, twoFunctionFiles))
+	var sizes []int
+	calls := withEnrichmentErr(g, func(stage string, _ int, nodes []enrichNode, _ string) (string, error) {
+		if stage == "enrich:greeting" {
+			sizes = append(sizes, len(nodes))
+			if len(nodes) > 1 {
+				return "", provider.ErrTruncated{Provider: "fake"}
+			}
+		}
+		return goodEnrichmentJSON(nodes), nil
+	})
+	if _, err := g.plan(planner.Options{StopAfter: "enrich"}); err != nil {
+		t.Fatalf("a truncated reply must halve the batch, not fail the stage: %v", err)
+	}
+	if len(sizes) < 3 || sizes[0] != 2 || sizes[len(sizes)-1] != 1 || sizes[len(sizes)-2] != 1 {
+		t.Errorf("batch sizes asked for = %v, want 2 (truncated) and then 1, 1", sizes)
+	}
+	if calls.count("enrich:_fix") != 0 {
+		t.Errorf("repair calls = %d, want none", calls.count("enrich:_fix"))
+	}
+	enriched := 0
+	for _, drafts := range g.drafts().Components {
+		for _, d := range drafts {
+			if d["rationale"] != nil {
+				enriched++
+			}
+		}
+	}
+	if enriched != 4 {
+		t.Errorf("%d nodes carry their groups, want 4", enriched)
+	}
+}
+
+func TestATruncatedReplyForASingleNodeStillFails(t *testing.T) {
+	g := newRig(t, approving(), fixtureDir(t, map[string]string{"clarify.more.txt": "[]"}), variant(t, twoFunctionFiles))
+	withEnrichmentErr(g, func(stage string, _ int, nodes []enrichNode, _ string) (string, error) {
+		if stage == "enrich:greeting" {
+			return "", provider.ErrTruncated{Provider: "fake"}
+		}
+		return goodEnrichmentJSON(nodes), nil
+	})
+	if _, err := g.plan(planner.Options{StopAfter: "enrich"}); err == nil || !strings.Contains(err.Error(), "truncated") {
+		t.Fatalf("err = %v, want the stage to fail naming the truncation once the batch is one node", err)
 	}
 }

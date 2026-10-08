@@ -85,7 +85,7 @@ func (r *Router) attempt(ctx context.Context, info CallInfo, req provider.Reques
 				try--
 				continue
 			}
-			return Result{}, EntryReason{Entry: entry, Kind: ReasonFailed, Detail: "reply truncated at the token limit"}, false, nil
+			return Result{}, EntryReason{Entry: entry, Kind: ReasonFailed, Detail: TruncatedDetail}, false, nil
 
 		case errors.As(cerr, &er):
 			row.Outcome, row.ErrorKind = ledger.OutcomeError, "empty_reply"
