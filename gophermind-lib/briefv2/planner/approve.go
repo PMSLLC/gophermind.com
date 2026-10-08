@@ -19,6 +19,8 @@ type approval struct {
 	ApprovedAt string `json:"approved_at"`
 	ApprovedBy string `json:"approved_by"`
 	PlanHash   string `json:"plan_hash"`
+	// UnderstandingHash is the hash of the understanding that was confirmed.
+	UnderstandingHash string `json:"understanding_hash,omitempty"`
 }
 
 func approveDone(r *run) bool { return exists(r.path(fileApproval)) }
@@ -34,6 +36,19 @@ func (p *Planner) approve(ctx context.Context, r *run) error {
 	}
 	if weak := rootTestDefects(r.reqs, cov.RootTests, qualityOptions(r.brief.Front)); len(weak) > 0 {
 		return &QualityError{Items: weak}
+	}
+	if !confirmDone(r) {
+		return errNotConfirmed
+	}
+	dec, err := loadDecomposed(r)
+	if err != nil {
+		return err
+	}
+	if bad := openQuestionNodes(dec); len(bad) > 0 {
+		return fmt.Errorf("%d node(s) still list open questions (first: %s); answer them with `gophermind brief answer` and resume", len(bad), strings.Join(bad[:min(len(bad), 5)], ", "))
+	}
+	if err := p.refreshDecisions(r); err != nil {
+		return err
 	}
 	md, hash, err := RenderPlan(r.dir)
 	if err != nil {
@@ -58,7 +73,8 @@ func (p *Planner) approve(ctx context.Context, r *run) error {
 			by = "gate"
 		}
 	}
-	return writeJSON(r.path(fileApproval), approval{ApprovedAt: p.d.Now().UTC().Format("2006-01-02T15:04:05Z"), ApprovedBy: by, PlanHash: hash})
+	u, _ := readUnderstanding(r)
+	return writeJSON(r.path(fileApproval), approval{ApprovedAt: p.d.Now().UTC().Format("2006-01-02T15:04:05Z"), ApprovedBy: by, PlanHash: hash, UnderstandingHash: u.Hash})
 }
 
 // RenderPlan is the plan as a person approves it, and its SHA-256. It is
@@ -233,7 +249,7 @@ func RenderPlan(runDir string) (markdown, hash string, err error) {
 }
 
 // hashedFiles are the run folder files whose bytes are part of the plan hash.
-var hashedFiles = []string{fileContracts, stateDecomposed, stateClasses, fileCoverage, fileAnswers, fileDependencies}
+var hashedFiles = []string{fileContracts, stateDecomposed, stateClasses, fileCoverage, fileAnswers, fileDependencies, stateUnderstanding, stateEnriched}
 
 func orNone(list []string) string {
 	if len(list) == 0 {
@@ -244,3 +260,58 @@ func orNone(list []string) string {
 
 // cell makes text safe inside a markdown table cell.
 func cell(s string) string { return strings.ReplaceAll(s, "|", `\|`) }
+
+// openQuestionNodes lists the function nodes that still list an open question.
+func openQuestionNodes(dec decomposed) []string {
+	var out []string
+	for _, drafts := range dec.Components {
+		for _, d := range drafts {
+			if len(openQuestionDefects(d)) > 0 {
+				id, _ := d["id"].(string)
+				out = append(out, id)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// citedByFunctions maps a question id to the function nodes whose decision_ids
+// name it.
+func citedByFunctions(dec decomposed) map[string][]string {
+	out := map[string][]string{}
+	for _, drafts := range dec.Components {
+		for _, d := range drafts {
+			id, _ := d["id"].(string)
+			for _, q := range strList(d["decision_ids"]) {
+				out[q] = append(out[q], id)
+			}
+		}
+	}
+	for q := range out {
+		sort.Strings(out[q])
+	}
+	return out
+}
+
+// refreshDecisions rewrites every decision record so it lists the nodes that
+// cite it. Task 8 extends it with the component and root records.
+func (p *Planner) refreshDecisions(r *run) error {
+	s, err := loadQStore(r)
+	if err != nil {
+		return err
+	}
+	dec, err := loadDecomposed(r)
+	if err != nil {
+		return err
+	}
+	cited := citedByFunctions(dec)
+	for _, q := range s.Questions {
+		if q.Status == qSettled {
+			if err := writeDecision(r, q, cited[q.ID]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
