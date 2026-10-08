@@ -504,3 +504,96 @@ func TestBaseURLMustMatchVisibility(t *testing.T) {
 		}
 	}
 }
+
+func TestPlannerDefaultsKeys(t *testing.T) {
+	c := settings.Default()
+	d := c.Defaults
+	if d.ClarifyMaxCalls != 4 || d.ClarifyMaxQuestions != 30 || d.EnrichBatchSize != 4 || !d.RouteByTier() {
+		t.Fatalf("defaults = %+v", d)
+	}
+	var y struct {
+		Defaults settings.Defaults `yaml:"defaults"`
+	}
+	if err := yaml.Unmarshal([]byte("defaults:\n  clarify_max_calls: 2\n  route_by_node_tier: false\n"), &y); err != nil {
+		t.Fatal(err)
+	}
+	if y.Defaults.ClarifyMaxCalls != 2 || y.Defaults.RouteByTier() {
+		t.Errorf("decoded %+v", y.Defaults)
+	}
+}
+
+func TestPlannerDefaultsAreValidated(t *testing.T) {
+	for name, edit := range map[string]func(*settings.Config){
+		"clarify_max_calls":     func(c *settings.Config) { c.Defaults.ClarifyMaxCalls = 0 },
+		"clarify_max_questions": func(c *settings.Config) { c.Defaults.ClarifyMaxQuestions = 0 },
+		"enrich_batch_size":     func(c *settings.Config) { c.Defaults.EnrichBatchSize = 0 },
+	} {
+		c := settings.Default()
+		edit(c)
+		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), name) {
+			t.Errorf("%s = 0 must be refused, got %v", name, err)
+		}
+	}
+	c := settings.Default()
+	c.Defaults.ClarifyMaxQuestions = 1001
+	if err := c.Validate(); err == nil {
+		t.Error("clarify_max_questions over 1000 must be refused")
+	}
+	c = settings.Default()
+	c.Defaults.EnrichBatchSize = 33
+	if err := c.Validate(); err == nil {
+		t.Error("enrich_batch_size over 32 must be refused")
+	}
+}
+
+// A gophermind.yaml written before the planner keys existed loads, and the
+// new keys take their defaults (Load decodes onto an empty config).
+func TestLoadOldFileWithoutPlannerKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gophermind.yaml")
+	body, err := yaml.Marshal(settings.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var old []string
+	for _, line := range strings.Split(string(body), "\n") {
+		k := strings.TrimSpace(line)
+		if strings.HasPrefix(k, "clarify_max_") || strings.HasPrefix(k, "enrich_batch_size:") || strings.HasPrefix(k, "route_by_node_tier:") {
+			continue
+		}
+		old = append(old, line)
+	}
+	if len(old) != len(strings.Split(string(body), "\n"))-3 && len(old) != len(strings.Split(string(body), "\n"))-4 {
+		t.Fatal("did not strip exactly the new keys")
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(old, "\n")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := settings.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := c.Defaults
+	if d.ClarifyMaxCalls != 4 || d.ClarifyMaxQuestions != 30 || d.EnrichBatchSize != 4 || !d.RouteByTier() {
+		t.Errorf("defaults = %+v", d)
+	}
+}
+
+func TestLoadRefusesExplicitZeroPlannerKeys(t *testing.T) {
+	for _, key := range []string{"clarify_max_calls", "clarify_max_questions", "enrich_batch_size"} {
+		path := filepath.Join(t.TempDir(), "gophermind.yaml")
+		body, err := yaml.Marshal(settings.Default())
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := strings.Replace(string(body), key+": ", key+": 0 #", 1)
+		if text == string(body) {
+			t.Fatalf("key %s not found in marshalled defaults", key)
+		}
+		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := settings.Load(path); err == nil || !strings.Contains(err.Error(), key) {
+			t.Errorf("%s: 0 must be refused on load, got %v", key, err)
+		}
+	}
+}

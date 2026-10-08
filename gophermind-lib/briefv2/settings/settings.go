@@ -61,12 +61,20 @@ type Privacy struct {
 }
 
 type Defaults struct {
-	MaxContextTokens  int           `yaml:"max_context_tokens"`
-	MaxRevisions      int           `yaml:"max_revisions"`
-	MaxCoverageRounds int           `yaml:"max_coverage_rounds"`
-	CallTimeout       time.Duration `yaml:"call_timeout"`
-	MaxWaitMinutes    int           `yaml:"max_wait_minutes"`
+	MaxContextTokens    int           `yaml:"max_context_tokens"`
+	MaxRevisions        int           `yaml:"max_revisions"`
+	MaxCoverageRounds   int           `yaml:"max_coverage_rounds"`
+	CallTimeout         time.Duration `yaml:"call_timeout"`
+	MaxWaitMinutes      int           `yaml:"max_wait_minutes"`
+	ClarifyMaxCalls     int           `yaml:"clarify_max_calls"`     // model calls in the Clarify loop
+	ClarifyMaxQuestions int           `yaml:"clarify_max_questions"` // questions asked in a run
+	EnrichBatchSize     int           `yaml:"enrich_batch_size"`     // function nodes per Enrich call
+	RouteByNodeTier     *bool         `yaml:"route_by_node_tier"`    // node stages use the node's model_tier chain; unset means true
 }
+
+// RouteByTier reports whether stages that work on one node use that node's
+// model_tier. It is true unless the setting says false.
+func (d Defaults) RouteByTier() bool { return d.RouteByNodeTier == nil || *d.RouteByNodeTier }
 
 type RateLimits struct {
 	CooldownAfter429Seconds int `yaml:"cooldown_after_429_seconds"`
@@ -119,13 +127,33 @@ func Default() *Config {
 		},
 		Privacy: Privacy{Mode: "need_to_know"},
 		Defaults: Defaults{MaxContextTokens: 8000, MaxRevisions: 2, MaxCoverageRounds: 2,
-			CallTimeout: 10 * time.Minute, MaxWaitMinutes: 30},
+			CallTimeout: 10 * time.Minute, MaxWaitMinutes: 30,
+			ClarifyMaxCalls: 4, ClarifyMaxQuestions: 30, EnrichBatchSize: 4},
 		RateLimits: RateLimits{CooldownAfter429Seconds: 60, CooldownAfterTimeoutSeconds: 60, BackoffInitialSeconds: 5, BackoffMaxSeconds: 300, BackoffMultiplier: 2},
 		Human:      Human{Mode: "terminal"},
 		Vault:      Vault{Path: "~/.gophermind/vault.age"},
 	}
 	c.applyExecutorDefaults()
 	return c
+}
+
+// applyPlannerDefaults fills the planner keys an older file lacks. A negative
+// value is left alone so Validate can refuse it; an explicit 0 was already
+// refused by checkExplicitZeroCounts.
+func (c *Config) applyPlannerDefaults() {
+	d := Default().Defaults
+	for _, f := range []struct {
+		v   *int
+		def int
+	}{
+		{&c.Defaults.ClarifyMaxCalls, d.ClarifyMaxCalls},
+		{&c.Defaults.ClarifyMaxQuestions, d.ClarifyMaxQuestions},
+		{&c.Defaults.EnrichBatchSize, d.EnrichBatchSize},
+	} {
+		if *f.v == 0 {
+			*f.v = f.def
+		}
+	}
 }
 
 func intPtr(n int) *int { return &n }
@@ -166,6 +194,7 @@ func Load(path string) (*Config, error) {
 		c.RateLimits.CooldownAfterTimeoutSeconds = 60 // an existing file without the key
 	}
 	c.applyExecutorDefaults()
+	c.applyPlannerDefaults()
 	if err := c.Validate(); err != nil {
 		return nil, fmt.Errorf("settings: %s: %w", path, err)
 	}
@@ -309,6 +338,12 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("defaults.call_timeout must be positive, got %v", d.CallTimeout)
 	case d.MaxWaitMinutes < 0:
 		return fmt.Errorf("defaults.max_wait_minutes must not be negative, got %d", d.MaxWaitMinutes)
+	case d.ClarifyMaxCalls < 1:
+		return fmt.Errorf("defaults.clarify_max_calls must be at least 1, got %d", d.ClarifyMaxCalls)
+	case d.ClarifyMaxQuestions < 1 || d.ClarifyMaxQuestions > 1000:
+		return fmt.Errorf("defaults.clarify_max_questions must be between 1 and 1000, got %d", d.ClarifyMaxQuestions)
+	case d.EnrichBatchSize < 1 || d.EnrichBatchSize > 32:
+		return fmt.Errorf("defaults.enrich_batch_size must be between 1 and 32, got %d", d.EnrichBatchSize)
 	}
 	r := c.RateLimits
 	switch {

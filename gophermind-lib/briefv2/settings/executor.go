@@ -164,6 +164,7 @@ func validateToolchain(t map[string]string) error {
 func checkExplicitZeroCounts(raw []byte) error {
 	var doc struct {
 		Executor map[string]any `yaml:"executor"`
+		Defaults map[string]any `yaml:"defaults"`
 	}
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
 		return nil // the strict decode already reported any syntax problem
@@ -172,6 +173,13 @@ func checkExplicitZeroCounts(raw []byte) error {
 		if v, ok := doc.Executor[key]; ok {
 			if n, isInt := v.(int); isInt && n == 0 {
 				return fmt.Errorf("executor.%s must be at least 1", key)
+			}
+		}
+	}
+	for _, key := range []string{"clarify_max_calls", "clarify_max_questions", "enrich_batch_size"} {
+		if v, ok := doc.Defaults[key]; ok {
+			if n, isInt := v.(int); isInt && n == 0 {
+				return fmt.Errorf("defaults.%s must be at least 1", key)
 			}
 		}
 	}
