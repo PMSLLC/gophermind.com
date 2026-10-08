@@ -156,3 +156,21 @@ func TestRenderPlanListsDependencies(t *testing.T) {
 		t.Error("Dependencies comes after Components")
 	}
 }
+
+func TestRenderPlanShowsTheNodeGroupsAndChecksSkipped(t *testing.T) {
+	g := newRig(t, approving())
+	g.mustPlan(planner.Options{StopAfter: "contract"})
+	g.mustPlan(planner.Options{RunID: greeterID, StopAfter: "approve"})
+	md, _, err := planner.RenderPlan(g.runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"## Node groups", "Trust boundaries", "Checks skipped: "} {
+		if !strings.Contains(md, want) {
+			t.Errorf("plan lacks %q:\n%s", want, md)
+		}
+	}
+	if strings.Index(md, "## Node groups") < strings.Index(md, "## Components") {
+		t.Error("Node groups comes before Components")
+	}
+}
