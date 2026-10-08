@@ -731,7 +731,7 @@
       "uniqueItems": true,
       "items": {
         "type": "string",
-        "pattern": "^[a-z0-9][a-z0-9:-]*$"
+        "pattern": "^[a-z0-9][a-z0-9:_-]*$"
       }
     },
     "decisions": {
@@ -750,7 +750,7 @@
         "properties": {
           "id": {
             "type": "string",
-            "pattern": "^[a-z0-9][a-z0-9:-]*$"
+            "pattern": "^[a-z0-9][a-z0-9:_-]*$"
           },
           "question": {
             "type": "string",

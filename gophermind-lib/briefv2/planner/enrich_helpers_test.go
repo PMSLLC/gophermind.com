@@ -93,7 +93,7 @@ type enrichResponderErr func(stage string, call int, nodes []enrichNode, prompt 
 
 // withEnrichmentErr is withEnrichment for a responder that can return an error,
 // for example provider.ErrTruncated.
-func withEnrichmentErr(g *rig, respond enrichResponderErr) *enrichCalls {
+func withEnrichmentErr(g *rig, respond enrichResponderErr, structure ...func(stage, prompt string) string) *enrichCalls {
 	calls := &enrichCalls{}
 	base := g.fake
 	var mu sync.Mutex
@@ -118,7 +118,11 @@ func withEnrichmentErr(g *rig, respond enrichResponderErr) *enrichCalls {
 		n := seen[stage]
 		mu.Unlock()
 		if stage == "enrich_root" || strings.HasPrefix(stage, "enrich_comp:") {
-			return provider.Response{Text: goodStructureJSON, Model: "fixture", Usage: provider.Usage{PromptTokens: 1, CompletionTokens: 1}}, nil
+			text := goodStructureJSON
+			if len(structure) > 0 {
+				text = structure[0](stage, prompt)
+			}
+			return provider.Response{Text: text, Model: "fixture", Usage: provider.Usage{PromptTokens: 1, CompletionTokens: 1}}, nil
 		}
 		var nodes []enrichNode
 		if m := nodesRE.FindStringSubmatch(prompt); m != nil {

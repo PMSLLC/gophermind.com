@@ -621,6 +621,13 @@ func (p *Planner) enrichStructure(ctx context.Context, r *run, c *contract.Contr
 	if err != nil {
 		return err
 	}
+	// A function batch may have raised and settled a question since env was built.
+	env.Decisions = map[string]bool{}
+	for _, q := range qs.Questions {
+		if q.Status == qSettled {
+			env.Decisions[q.ID] = true
+		}
+	}
 	for _, comp := range c.Components {
 		if st.Components[comp.ID] != nil {
 			continue

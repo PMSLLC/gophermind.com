@@ -390,14 +390,23 @@ Every question and answer is also written into the tree: the root node's
 store; a model never writes them).
 
 `gophermind brief answer <run-id> <question-id> <new answer...>` changes a
-settled answer and undoes the work that used it. A Clarify answer (or one given
-to a repair stage) removes everything from the Contract stage on, the confirmation
-and the approval; a Decompose answer resets that component's drafts and Enrich
-output; an Enrich answer resets only the Enrich output of that component (or the
-root). The old answer is kept in the record's history. A new `resume` then asks
-for a new confirmation and a new approval. Nothing can be changed once the
+settled answer and undoes the work that used it. What is redone depends on
+which stage raised the question:
+
+| Answer given to | Removed or reset | Asks again |
+|---|---|---|
+| Clarify, or a repair stage | everything from the Contract stage on, `understanding.json`, the coverage and the approval | a new confirmation and a new approval |
+| Decompose of a component | that component's drafts, classes and Enrich output, the coverage and the approval | a new approval (the confirmation stands) |
+| Enrich of a component | only that component's Enrich output, the coverage and the approval | a new approval (the confirmation stands) |
+| Enrich of the root | only the root's Enrich output, the coverage and the approval | a new approval (the confirmation stands) |
+
+The old answer is kept in the record's history. Nothing can be changed once the
 Test-writer has written tests or the executor has started. An answer the probe
 established from the repository cannot be changed this way.
+
+Current behavior to know about: a Test-writer question that is settled after
+approval rewrites `answers.json`, which the approval hashes, so the next run
+asks to approve the plan again.
 
 ### Node groups
 
