@@ -74,7 +74,7 @@ func (s *Store) Load() (*Tree, error) {
 		rel, _ := filepath.Rel(s.dir, p)
 		rel = filepath.ToSlash(rel)
 		if d.IsDir() {
-			if rel == "logs" || rel == "_state" {
+			if rel == "logs" || rel == "_state" || rel == "attempts" {
 				return filepath.SkipDir
 			}
 			return nil
