@@ -55,7 +55,7 @@ func request(stage, prompt string, maxTokens int) provider.Request {
 // Output budgets per stage, in tokens. They bound one reply, not the plan:
 // a large brief makes more calls, never longer ones.
 const (
-	maxTokensClarify  = 2048
+	maxTokensClarify  = 4096
 	maxTokensContract = 8000
 	// The outline lists every component and type of a large brief in one reply,
 	// so it gets a larger budget, and a larger cap when the router grows it.

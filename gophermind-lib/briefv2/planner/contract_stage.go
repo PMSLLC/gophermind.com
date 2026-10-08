@@ -169,6 +169,9 @@ func contractDone(r *run) bool { return exists(r.path(fileContracts)) }
 // remain, the model never says more), then one call per component, repeated
 // while the model says more remains for that component.
 func (p *Planner) contract(ctx context.Context, r *run) error {
+	if !confirmDone(r) {
+		return errNotConfirmed
+	}
 	as, err := loadAnswers(r)
 	if err != nil {
 		return err

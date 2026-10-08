@@ -23,7 +23,7 @@ func TestContractIsBuiltInPassesAndValidated(t *testing.T) {
 	g := newRig(t, approving())
 	g.mustPlan(planner.Options{StopAfter: "contract"})
 
-	if got := strings.Join(g.stagesCalled(), " "); got != "clarify contract:outline:1 contract:outline:2 contract:types contract:greeting contract:farewell" {
+	if got := strings.Join(g.stagesCalled(), " "); got != "clarify clarify:more contract:outline:1 contract:outline:2 contract:types contract:greeting contract:farewell" {
 		t.Errorf("calls = %s", got)
 	}
 	c := g.contracts()
@@ -133,7 +133,7 @@ func TestContractResumeSkipsFinishedComponents(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, s := range st.Stages {
-		if want := s.Name == "load" || s.Name == "clarify" || s.Name == "contract"; s.Done != want {
+		if want := s.Name == "load" || s.Name == "clarify" || s.Name == "confirm" || s.Name == "contract"; s.Done != want {
 			t.Errorf("stage %s done = %v, want %v", s.Name, s.Done, want)
 		}
 	}

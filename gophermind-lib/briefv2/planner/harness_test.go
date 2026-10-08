@@ -29,9 +29,12 @@ type scriptGate struct {
 	mu       sync.Mutex
 	answer   func(q human.Question) string
 	decision human.Decision
-	err      error // returned by every call when set (human.ErrWaiting for a gate nobody answers)
-	asked    []human.Question
-	plans    []human.PlanSummary
+	// approveErr is returned by Approve alone (a gate that confirms but has not approved yet).
+	approveErr error
+	err        error // returned by every call when set (human.ErrWaiting for a gate nobody answers)
+	asked      []human.Question
+	plans      []human.PlanSummary
+	rounds     [][]string // the question ids of each Ask call, in order
 
 	understandings []human.Understanding
 	confirm        *human.Decision
@@ -43,6 +46,11 @@ func (g *scriptGate) Ask(ctx context.Context, qs []human.Question) ([]human.Answ
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.asked = append(g.asked, qs...)
+	ids := make([]string, len(qs))
+	for i, q := range qs {
+		ids[i] = q.ID
+	}
+	g.rounds = append(g.rounds, ids)
 	if g.err != nil {
 		return nil, g.err
 	}
@@ -61,6 +69,9 @@ func (g *scriptGate) Approve(ctx context.Context, plan human.PlanSummary) (human
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.plans = append(g.plans, plan)
+	if g.approveErr != nil {
+		return human.Decision{}, g.approveErr
+	}
 	if g.err != nil {
 		return human.Decision{}, g.err
 	}

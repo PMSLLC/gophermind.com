@@ -650,3 +650,16 @@ func TestProgrammaticConfirm(t *testing.T) {
 		t.Fatalf("got %+v, %v", d, err)
 	}
 }
+
+func TestTerminalConfirmEmptyInputIsNotAConfirmation(t *testing.T) {
+	u := human.Understanding{Markdown: "# Understanding\n", Hash: "abc"}
+	g := human.NewTerminal(strings.NewReader(""), &bytes.Buffer{})
+	d, err := g.Confirm(context.Background(), u)
+	if err == nil || d.Approved {
+		t.Errorf("empty input: %+v, %v; want an error and Approved=false", d, err)
+	}
+	g = human.NewTerminal(strings.NewReader("\n"), &bytes.Buffer{})
+	if d, err := g.Confirm(context.Background(), u); err != nil || d.Approved {
+		t.Errorf("a blank line: %+v, %v; want Approved=false", d, err)
+	}
+}
