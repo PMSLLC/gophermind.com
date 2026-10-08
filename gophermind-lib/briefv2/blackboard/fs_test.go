@@ -508,13 +508,13 @@ func TestFSLeavesAStaleLockBehindNothing(t *testing.T) {
 	}
 }
 
-func TestFSListSeesANodeFolderNamedAttempts(t *testing.T) {
+func TestFSListIgnoresTheRunFoldersThatAreNotNodes(t *testing.T) {
 	dir := t.TempDir()
 	s := tree.NewStore(dir)
 	for _, raw := range []string{
-		`{"spec_version":"2.0","id":"rt","kind":"root","title":"t","description":"d","brief_ref":"#x","status":"pending","children":["attempts"]}`,
-		`{"spec_version":"2.0","id":"attempts","kind":"component","parent":"rt","title":"t","description":"d","brief_ref":"#x","status":"pending","children":["fn-a"]}`,
-		`{"spec_version":"2.0","id":"fn-a","kind":"function","parent":"attempts","title":"t","description":"d","brief_ref":"#x","status":"pending","wave":0,"depends_on":[],
+		`{"spec_version":"2.0","id":"rt","kind":"root","title":"t","description":"d","brief_ref":"#x","status":"pending","children":["comp"]}`,
+		`{"spec_version":"2.0","id":"comp","kind":"component","parent":"rt","title":"t","description":"d","brief_ref":"#x","status":"pending","children":["fn-a"]}`,
+		`{"spec_version":"2.0","id":"fn-a","kind":"function","parent":"comp","title":"t","description":"d","brief_ref":"#x","status":"pending","wave":0,"depends_on":[],
 "contract":{"package":"p","file":"p/fn-a.go","signature":"func F()","inputs":[],"outputs":[]},
 "tests":[{"name":"n","level":"unit","given":"g","expect":"e","command":"go test ./p"}]}`,
 	} {
@@ -530,8 +530,19 @@ func TestFSListSeesANodeFolderNamedAttempts(t *testing.T) {
 	ctx := context.Background()
 	clock := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	b.now = func() time.Time { return clock }
-	if err := b.InitRun(ctx, "r", []string{"rt", "attempts", "fn-a"}, map[string]int{"rt": 2, "attempts": 1, "fn-a": 0}); err != nil {
+	if err := b.InitRun(ctx, "r", []string{"rt", "comp", "fn-a"}, map[string]int{"rt": 2, "comp": 1, "fn-a": 0}); err != nil {
 		t.Fatal(err)
+	}
+	// Valid runtime documents inside the artifact folders: a wrong walk would list them.
+	for _, rel := range []string{"_state", "attempts/n/1", "decisions", "logs"} {
+		d := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		doc := `{"node_id":"ghost-` + strings.ReplaceAll(rel, "/", "-") + `","run_id":"r","status":"pending","attempts":[]}`
+		if err := os.WriteFile(filepath.Join(d, "x.runtime.json"), []byte(doc), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := b.SetStatus(ctx, "r", "fn-a", StatusPending, StatusReady); err != nil {
 		t.Fatal(err)
@@ -540,8 +551,15 @@ func TestFSListSeesANodeFolderNamedAttempts(t *testing.T) {
 		t.Fatalf("claim: %v %v", ok, err)
 	}
 	rows, err := b.List(ctx, "r", Filter{})
-	if err != nil || len(rows) != 3 {
-		t.Fatalf("List = %d rows, %v; want 3 including fn-a under attempts/", len(rows), err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, r := range rows {
+		got[r.NodeID] = true
+	}
+	if len(rows) != 3 || !got["rt"] || !got["comp"] || !got["fn-a"] {
+		t.Fatalf("List = %v; want exactly rt, comp, fn-a", got)
 	}
 	clock = clock.Add(time.Minute)
 	ids, err := b.ReleaseStale(ctx, "r", 0)
