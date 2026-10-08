@@ -17,7 +17,7 @@ func specDefaults() settings.ExecutorConfig {
 		Workers: 1, FixAttempts: 2, RepairRounds: 2, AcceptanceRepairRounds: 2,
 		TestTimeoutSeconds: 120, AcceptanceTimeoutSeconds: 300, StaleClaimSeconds: 120,
 		OutputCapBytes: 65536, HeartbeatSeconds: 30, GoModCache: "~/.gophermind/gomodcache",
-		MaxRunMinutes: 720, Sandbox: "on",
+		MaxRunMinutes: 720, Sandbox: "on", Artifacts: "on", ArtifactMaxBytes: 65536,
 		Proxy: settings.ExecutorProxy{Listen: "127.0.0.1:0", Log: "proxy.log"},
 	}
 }
@@ -126,6 +126,7 @@ func TestExecutorSettingsValidate(t *testing.T) {
 		"output_cap_bytes":           func(e *settings.ExecutorConfig, v int) { e.OutputCapBytes = v },
 		"heartbeat_seconds":          func(e *settings.ExecutorConfig, v int) { e.HeartbeatSeconds = v },
 		"max_run_minutes":            func(e *settings.ExecutorConfig, v int) { e.MaxRunMinutes = v },
+		"artifact_max_bytes":         func(e *settings.ExecutorConfig, v int) { e.ArtifactMaxBytes = v },
 	}
 	type tc struct {
 		name   string
@@ -284,5 +285,21 @@ func TestExecutorWorkersMustBeOne(t *testing.T) {
 	c := settings.Default()
 	if c.Executor.Workers != 1 || c.Validate() != nil {
 		t.Errorf("the default must be 1 and valid, got %d", c.Executor.Workers)
+	}
+}
+
+func TestExecutorArtifactsSetting(t *testing.T) {
+	d := settings.DefaultExecutor()
+	if d.Artifacts != "on" || d.ArtifactMaxBytes != 65536 {
+		t.Fatalf("defaults = %q, %d; want on, 65536", d.Artifacts, d.ArtifactMaxBytes)
+	}
+	var e settings.ExecutorConfig
+	if err := yaml.Unmarshal([]byte("artifacts: off\nartifact_max_bytes: 1000\n"), &e); err != nil || e.Artifacts != "off" || e.ArtifactMaxBytes != 1000 {
+		t.Errorf("decoded %q %d, %v", e.Artifacts, e.ArtifactMaxBytes, err)
+	}
+	c := settings.Default()
+	c.Executor.Artifacts = "maybe"
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "executor.artifacts") {
+		t.Errorf("artifacts: maybe must be refused, got %v", err)
 	}
 }

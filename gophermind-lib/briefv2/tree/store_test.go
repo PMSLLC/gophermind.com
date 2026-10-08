@@ -239,3 +239,22 @@ func TestLoadSkipsPlannerArtifacts(t *testing.T) {
 		t.Errorf("loaded %d nodes, want 1", len(tr.Nodes))
 	}
 }
+
+func TestLoadSkipsTheAttemptsFolder(t *testing.T) {
+	dir := t.TempDir()
+	s := tree.NewStore(dir)
+	if err := s.Write(fn(t, "fn-a", "comp", 0)); err != nil {
+		t.Fatal(err)
+	}
+	a := filepath.Join(dir, "attempts", "fn-a", "1")
+	if err := os.MkdirAll(a, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(a, "attempt.json"), []byte(`{"provider":"mini"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	back, err := s.Load()
+	if err != nil || len(back.Nodes) != 1 {
+		t.Fatalf("Load = %d nodes, %v; attempt.json must not be read as a node", len(back.Nodes), err)
+	}
+}

@@ -23,7 +23,9 @@ type ExecutorConfig struct {
 	HeartbeatSeconds         int           `yaml:"heartbeat_seconds"`
 	GoModCache               string        `yaml:"go_mod_cache"` // starts with ~/; the executor expands it
 	MaxRunMinutes            int           `yaml:"max_run_minutes"`
-	Sandbox                  string        `yaml:"sandbox"` // "on" | "off"
+	Sandbox                  string        `yaml:"sandbox"`            // "on" | "off"
+	Artifacts                string        `yaml:"artifacts"`          // "on" | "off": save the reply and check output of each attempt under attempts/
+	ArtifactMaxBytes         int           `yaml:"artifact_max_bytes"` // cap on each saved file
 	Proxy                    ExecutorProxy `yaml:"proxy"`
 }
 
@@ -43,7 +45,7 @@ func DefaultExecutor() ExecutorConfig {
 		Workers: 1, FixAttempts: 2, RepairRounds: 2, AcceptanceRepairRounds: 2,
 		TestTimeoutSeconds: 120, AcceptanceTimeoutSeconds: 300, StaleClaimSeconds: 120,
 		OutputCapBytes: 65536, HeartbeatSeconds: 30, GoModCache: "~/.gophermind/gomodcache",
-		MaxRunMinutes: 720, Sandbox: "on",
+		MaxRunMinutes: 720, Sandbox: "on", Artifacts: "on", ArtifactMaxBytes: 65536,
 		Proxy: ExecutorProxy{Listen: "127.0.0.1:0", Log: "proxy.log"},
 	}
 }
@@ -61,7 +63,7 @@ func (c *Config) applyExecutorDefaults() {
 		{&e.AcceptanceRepairRounds, d.AcceptanceRepairRounds}, {&e.TestTimeoutSeconds, d.TestTimeoutSeconds},
 		{&e.AcceptanceTimeoutSeconds, d.AcceptanceTimeoutSeconds}, {&e.StaleClaimSeconds, d.StaleClaimSeconds},
 		{&e.OutputCapBytes, d.OutputCapBytes}, {&e.HeartbeatSeconds, d.HeartbeatSeconds},
-		{&e.MaxRunMinutes, d.MaxRunMinutes},
+		{&e.MaxRunMinutes, d.MaxRunMinutes}, {&e.ArtifactMaxBytes, d.ArtifactMaxBytes},
 	} {
 		if *f.v == 0 {
 			*f.v = f.def
@@ -72,6 +74,9 @@ func (c *Config) applyExecutorDefaults() {
 	}
 	if e.Sandbox == "" {
 		e.Sandbox = d.Sandbox
+	}
+	if e.Artifacts == "" {
+		e.Artifacts = d.Artifacts
 	}
 	if e.Proxy.Listen == "" {
 		e.Proxy.Listen = d.Proxy.Listen
@@ -101,6 +106,7 @@ func (e ExecutorConfig) validate() error {
 		{"output_cap_bytes", e.OutputCapBytes, 64 << 20},
 		{"heartbeat_seconds", e.HeartbeatSeconds, 3600},
 		{"max_run_minutes", e.MaxRunMinutes, 10080},
+		{"artifact_max_bytes", e.ArtifactMaxBytes, 16 << 20},
 	} {
 		if f.v < 1 || f.v > f.max {
 			return fmt.Errorf("executor.%s must be between 1 and %d", f.key, f.max)
@@ -117,6 +123,9 @@ func (e ExecutorConfig) validate() error {
 	}
 	if e.Sandbox != "on" && e.Sandbox != "off" {
 		return fmt.Errorf("executor.sandbox must be on or off")
+	}
+	if e.Artifacts != "on" && e.Artifacts != "off" {
+		return fmt.Errorf("executor.artifacts must be on or off")
 	}
 	if !loopbackHostPort(e.Proxy.Listen) {
 		return fmt.Errorf("executor.proxy.listen must be a loopback host:port")
