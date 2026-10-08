@@ -2,30 +2,27 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
 
 	"golang.org/x/term"
 
 	"gophermind/gophermind-lib/briefv2/brief"
+	"gophermind/gophermind-lib/briefv2/envcheck"
 	"gophermind/gophermind-lib/briefv2/executor"
 	"gophermind/gophermind-lib/briefv2/planner"
 	"gophermind/gophermind-lib/briefv2/sandbox"
 	"gophermind/gophermind-lib/briefv2/settings"
 	"gophermind/gophermind-lib/briefv2/vault"
-	"gophermind/gophermind-lib/gitenv"
 )
 
 // minFreeBytes is the free space the module cache's file system must have.
-var minFreeBytes uint64 = 2 << 30
+var minFreeBytes = envcheck.DefaultMinFreeBytes
 
 // checkList collects the lines of `brief run --check-env`. Names are fixed
 // words and ids; reasons are fixed sentences. No value of a secret, no URL and
@@ -208,93 +205,12 @@ func runPassphraseNoPrompt(in *os.File) (string, error) {
 	return "", errNoPassphrase
 }
 
-func lookInPath(name, path string) (string, bool) {
-	for _, dir := range filepath.SplitList(path) {
-		if dir == "" || !filepath.IsAbs(dir) {
-			continue
-		}
-		p := filepath.Join(dir, name)
-		if fi, err := os.Stat(p); err == nil && fi.Mode().IsRegular() && fi.Mode().Perm()&0o111 != 0 {
-			return p, true
-		}
-	}
-	return "", false
-}
+func lookInPath(name, path string) (string, bool) { return envcheck.LookInPath(name, path) }
 
-// dirtyOutsideTests counts changed paths that are neither the test files the
-// planner placed (_state/test_files.json) nor under .gophermind/.
 func dirtyOutsideTests(repo, runDir string) (int, error) {
-	allowed := map[string]bool{}
-	if raw, err := os.ReadFile(filepath.Join(runDir, "_state", "test_files.json")); err == nil {
-		var files []string
-		if json.Unmarshal(raw, &files) == nil {
-			for _, f := range files {
-				allowed[filepath.ToSlash(f)] = true
-			}
-		}
-	}
-	// gitenv.Command drops every inherited GIT_* variable (a hook exports
-	// GIT_DIR), so git reads the repository it is given and no other.
-	cmd := gitenv.Command(repo, "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "core.sshCommand=",
-		"status", "--porcelain=v1", "-z", "--untracked-files=all")
-	cmd.Env = append(cmd.Env, "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1", "GIT_OPTIONAL_LOCKS=0")
-	raw, err := cmd.Output()
-	if err != nil {
-		return 0, err
-	}
-	n := 0
-	for _, e := range strings.Split(string(raw), "\x00") {
-		if len(e) < 4 {
-			continue
-		}
-		p := e[3:]
-		if allowed[p] || p == ".gophermind" || strings.HasPrefix(p, ".gophermind/") {
-			continue
-		}
-		n++
-	}
-	return n, nil
+	return envcheck.DirtyOutsideTests(repo, runDir)
 }
 
-// loopbackAddr returns host:port when val is a URL whose host is loopback.
-func loopbackAddr(val string) (string, bool) {
-	u, err := url.Parse(val)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return "", false
-	}
-	host := u.Hostname()
-	if host != "127.0.0.1" && host != "localhost" && host != "::1" {
-		return "", false
-	}
-	port := u.Port()
-	if port == "" {
-		port = map[string]string{"postgres": "5432", "postgresql": "5432", "mysql": "3306", "redis": "6379", "http": "80", "https": "443"}[u.Scheme]
-	}
-	if port == "" {
-		return "", false
-	}
-	return net.JoinHostPort(host, port), true
-}
+func loopbackAddr(val string) (string, bool) { return envcheck.LoopbackAddr(val) }
 
-// moduleCacheFree is the free space on the file system that holds the module
-// cache (or its nearest existing parent).
-func moduleCacheFree(modCache string) (uint64, error) {
-	p := modCache
-	if strings.HasPrefix(p, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return 0, err
-		}
-		p = filepath.Join(home, p[2:])
-	}
-	for {
-		if _, err := os.Stat(p); err == nil {
-			return freeBytes(p)
-		}
-		next := filepath.Dir(p)
-		if next == p {
-			return 0, os.ErrNotExist
-		}
-		p = next
-	}
-}
+func moduleCacheFree(modCache string) (uint64, error) { return envcheck.ModuleCacheFree(modCache) }
