@@ -206,3 +206,24 @@ func TestFixedResolvesEveryRunToTheSameFolder(t *testing.T) {
 		}
 	}
 }
+
+// A lock left by a killed process must be reclaimed inside one wait, so the
+// default wait has to outlast the default stale age.
+func TestDefaultLockWaitOutlastsTheStaleAge(t *testing.T) {
+	if runfs.LockWait <= runfs.LockStaleAfter {
+		t.Fatalf("LockWait %v <= LockStaleAfter %v", runfs.LockWait, runfs.LockStaleAfter)
+	}
+	lock := filepath.Join(t.TempDir(), "x.lock")
+	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-runfs.LockStaleAfter - time.Second)
+	if err := os.Chtimes(lock, old, old); err != nil {
+		t.Fatal(err)
+	}
+	unlock, err := runfs.Lock(lock, runfs.LockWait, runfs.LockStaleAfter)
+	if err != nil {
+		t.Fatalf("a lock past the stale age was not reclaimed: %v", err)
+	}
+	unlock()
+}

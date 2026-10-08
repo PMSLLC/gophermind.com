@@ -109,3 +109,46 @@ func TestARunFolderWithProgressStillRefusesAFreshPlan(t *testing.T) {
 		t.Fatal("a fresh plan over a run with progress was accepted")
 	}
 }
+
+// A plan that died during its first stage leaves a ledger, an events file and
+// saved replies under _state. None of that is progress: the folder is replaced.
+func TestALeftoverRunFolderWithOnlyLedgerAndRepliesIsReplaced(t *testing.T) {
+	g := newRig(t, approving())
+	g.mustPlan(planner.Options{StopAfter: "load"})
+	err := g.led.Record(context.Background(), &ledger.Call{RunID: greeterID, Stage: "clarify", Provider: "p", Outcome: ledger.Outcome("ok")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := filepath.Join(g.runDir, "_state")
+	if err := os.MkdirAll(filepath.Join(state, "replies"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		filepath.Join("replies", "clarify-1.txt"): "reply",
+		"events.jsonl":                            "{}\n",
+		"calls.lock":                              "",
+	} {
+		if err := os.WriteFile(filepath.Join(state, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	g.wire()
+	g.mustPlan(planner.Options{BriefPath: g.briefPath})
+}
+
+// Real stage output next to a ledger is still progress and is still refused.
+func TestARunFolderWithStageOutputAndLedgerStillRefuses(t *testing.T) {
+	g := newRig(t, approving())
+	g.mustPlan(planner.Options{StopAfter: "load"})
+	err := g.led.Record(context.Background(), &ledger.Call{RunID: greeterID, Stage: "clarify", Provider: "p", Outcome: ledger.Outcome("ok")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(g.runDir, "answers.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	g.wire()
+	if _, err := g.plan(planner.Options{BriefPath: g.briefPath}); err == nil {
+		t.Fatal("a fresh plan over a run with stage output was accepted")
+	}
+}

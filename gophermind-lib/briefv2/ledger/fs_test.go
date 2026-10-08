@@ -328,3 +328,39 @@ func TestFSReadsDoNotWrite(t *testing.T) {
 		t.Errorf("reads created %d entries", len(ents))
 	}
 }
+
+func TestFSIDsStayUniqueWhenCallsSeqIsCorrupt(t *testing.T) {
+	l, dir := newLedger(t)
+	ctx := context.Background()
+	seen := map[int64]bool{}
+	for i := 0; i < 3; i++ {
+		c := call("r", "s", "p", "m", ledger.OutcomeOK)
+		if err := l.Record(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+		seen[c.ID] = true
+	}
+	for _, body := range []string{"garbage\n", ""} {
+		if err := os.WriteFile(filepath.Join(dir, "_state", "calls.seq"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		c := call("r", "s", "p", "m", ledger.OutcomeOK)
+		if err := l.Record(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+		if seen[c.ID] {
+			t.Fatalf("id %d was handed out twice after calls.seq = %q", c.ID, body)
+		}
+		seen[c.ID] = true
+		if err := l.Amend(ctx, "r", c.ID, ledger.OutcomeTimeout, "x"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if os.Remove(filepath.Join(dir, "_state", "calls.seq")) != nil {
+		t.Fatal("no calls.seq")
+	}
+	c := call("r", "s", "p", "m", ledger.OutcomeOK)
+	if err := l.Record(ctx, c); err != nil || seen[c.ID] {
+		t.Fatalf("id %d reused or err %v with calls.seq missing", c.ID, err)
+	}
+}

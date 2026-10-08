@@ -74,6 +74,15 @@ func WriteFileAtomic(path string, data []byte) error {
 	return nil
 }
 
+// LockStaleAfter is the age after which a lock file belongs to a dead holder.
+// LockWait is how long a caller waits for a lock. It is longer than
+// LockStaleAfter so that resuming right after a kill -9 reclaims the dead
+// holder's lock instead of timing out.
+const (
+	LockStaleAfter = 30 * time.Second
+	LockWait       = LockStaleAfter + 10*time.Second
+)
+
 // ErrLockTimeout is returned by Lock when the lock stayed held for the whole wait.
 var ErrLockTimeout = errors.New("runfs: lock wait timed out")
 

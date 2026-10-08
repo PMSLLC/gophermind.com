@@ -22,6 +22,7 @@
 package runner
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -62,6 +63,17 @@ type Output struct {
 
 // Text is the first OutputCap bytes the process wrote.
 func (o Output) Text() string { return string(o.text) }
+
+// WholeLines is Text without a last line the cap cut short. A scrubber matches
+// whole secret values, so a secret cut by the cap would leave its prefix in
+// Text; saved copies of the output use this instead.
+func (o Output) WholeLines() string {
+	if !o.truncated || len(o.text) == 0 || o.text[len(o.text)-1] == '\n' {
+		return string(o.text)
+	}
+	i := bytes.LastIndexByte(o.text, '\n')
+	return string(o.text[:i+1])
+}
 
 // Size is the total bytes the process wrote, including any cut off.
 func (o Output) Size() int { return o.size }

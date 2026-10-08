@@ -55,8 +55,8 @@ func NewFS(resolve RunDirFunc, opts ...FSOption) *FS {
 		resolve: resolve,
 		now:     func() time.Time { return time.Now().UTC() },
 		poll:    250 * time.Millisecond,
-		wait:    10 * time.Second,
-		stale:   30 * time.Second,
+		wait:    runfs.LockWait,
+		stale:   runfs.LockStaleAfter,
 		paths:   map[string]map[string]string{},
 	}
 	for _, o := range opts {

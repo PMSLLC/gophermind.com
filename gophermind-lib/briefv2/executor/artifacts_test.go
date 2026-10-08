@@ -96,3 +96,40 @@ func TestRuntimeWritesInsideTheRunFolderAreNotStrayFiles(t *testing.T) {
 		t.Errorf("run folder writes were reported as stray: %v", stray)
 	}
 }
+
+// The runner cuts check output at output_cap_bytes before the scrubbers see
+// it, so a secret straddling the cap would leave an unscrubbed prefix. The
+// saved check output drops the cut line.
+func TestCheckOutputCutThroughASecretLeaksNoPrefix(t *testing.T) {
+	// The source holds the secret in two halves, so the source scan passes it;
+	// the panic message of the failing test prints it whole.
+	half := strings.Index(canarySecret, "-") + 1
+	boomOf := func(secret string) string {
+		return "package greet\n\nfunc Greet(name string) (string, error) {\n\tpanic(\"" + secret[:half] + "\" + \"" + secret[half:] + "\")\n}\n"
+	}
+	run := func(boom string, capBytes int) string {
+		g := newRig(t)
+		g.cfg.Executor.OutputCapBytes = capBytes
+		rc, _ := g.leafRC(t, Script{"implement:" + leafID: {reply(boom), reply(good(leafID))}}, false)
+		runOne(t, rc, leafID)
+		b, err := os.ReadFile(filepath.Join(g.runDir, "attempts", leafID, "1", "check-output.txt"))
+		if err != nil {
+			t.Fatalf("cap %d: attempt 1 has no check output: %v", capBytes, err)
+		}
+		return string(b)
+	}
+	// A reference run with a look-alike that is not a secret shows where the
+	// panic message sits in the output.
+	full := run(boomOf(canarySecret[:len(canarySecret)-1]+"x"), 65536)
+	at := strings.Index(full, "panic:")
+	if at < 0 {
+		t.Fatalf("the panic is not in the check output, the test proves nothing: %q", full)
+	}
+	// The panic message starts 7 bytes after "panic:" begins; cut the output
+	// 8 bytes into the secret.
+	capBytes := at + len("panic: ") + 8
+	got := run(boomOf(canarySecret), capBytes)
+	if strings.Contains(got, canarySecret[:8]) {
+		t.Errorf("cap %d: the saved check output holds a prefix of the canary secret: %q", capBytes, got)
+	}
+}
