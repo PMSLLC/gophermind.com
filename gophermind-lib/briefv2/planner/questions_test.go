@@ -68,6 +68,7 @@ func TestParseQuestionListRejects(t *testing.T) {
 		{"duplicate options", `[{"id":"q2","question":"a?","options":["` + canaryQ + `","` + canaryQ + `"]}]`, qparseOpts{}, "distinct"},
 		{"recommended is not an option", `[{"id":"q2","question":"a?","options":["a","b"],"recommended":"` + canaryQ + `"}]`, qparseOpts{}, "recommended"},
 		{"decision without a recommendation", `[{"id":"q2","question":"` + canaryQ + `?"}]`, qparseOpts{RequireRecommended: true}, "recommended"},
+		{"fact without a recommendation", `[{"id":"q2","kind":"fact","fact_key":"go_module","question":"` + canaryQ + `?"}]`, qparseOpts{RequireRecommended: true}, "recommended"},
 		{"over the cap", `[{"id":"q2","question":"` + canaryQ + `?"},{"id":"q3","question":"b?"}]`, qparseOpts{MaxTotal: 2}, "most important"},
 	}
 	for _, tc := range cases {
