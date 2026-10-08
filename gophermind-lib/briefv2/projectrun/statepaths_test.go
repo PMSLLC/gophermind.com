@@ -207,3 +207,25 @@ func TestPrintStatePathsFormat(t *testing.T) {
 		t.Fatalf("%q", buf.String())
 	}
 }
+
+func TestStatePathsCustomWorkBranch(t *testing.T) {
+	r := newRig(t)
+	r.b.Front.WorkBranch = "feat/x"
+	ps, err := StatePaths(r.o, r.b, r.env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spFind(t, ps, "git_branch_delete", "feat/x")
+}
+
+func TestStatePathsNoSecretsDeclared(t *testing.T) {
+	r := newRig(t)
+	ps, err := StatePaths(r.o, r.b, r.env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ext := spByAction(ps, "external")
+	if len(ext) != 1 || !strings.HasPrefix(ext[0].Path, "declared secrets: none;") {
+		t.Fatalf("%+v", ext)
+	}
+}

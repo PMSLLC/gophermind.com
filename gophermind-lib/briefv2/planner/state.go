@@ -63,7 +63,7 @@ func runRecordPath(runID string) (string, error) {
 // LookupRun reads <config dir>/runs/<run-id>.json.
 func LookupRun(runID string) (RunRecord, error) {
 	var rec RunRecord
-	if !runIDRE.MatchString(runID) {
+	if !ValidRunID(runID) {
 		return rec, fmt.Errorf("planner: %q is not a run id (want gm-YYYY-MM-DD-NNN)", runID)
 	}
 	path, err := runRecordPath(runID)

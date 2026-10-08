@@ -5,18 +5,15 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"gophermind/gophermind-lib/briefv2/brief"
+	"gophermind/gophermind-lib/briefv2/planner"
 )
 
 // StatePath is one thing a clean run must clear (or keep). Action is one of
 // delete_dir, git_branch_delete, git_reset, delete_file, keep, external.
 type StatePath struct{ Action, Scope, Path string }
-
-// stateRunIDRE is the run id shape planner.LookupRun accepts.
-var stateRunIDRE = regexp.MustCompile(`^gm-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3}$`)
 
 const defaultModCache = "~/.gophermind/gomodcache"
 
@@ -25,7 +22,7 @@ const defaultModCache = "~/.gophermind/gomodcache"
 // and dials nothing; the settings file is read only when it already exists.
 func StatePaths(o Options, b *brief.Brief, env Env) ([]StatePath, error) {
 	id := b.Front.ID
-	if !stateRunIDRE.MatchString(id) {
+	if !planner.ValidRunID(id) {
 		return nil, fmt.Errorf("projectrun: %q is not a run id (want gm-YYYY-MM-DD-NNN)", id)
 	}
 	repo := o.Repo
@@ -71,17 +68,21 @@ func StatePaths(o Options, b *brief.Brief, env Env) ([]StatePath, error) {
 	for _, s := range b.Front.Secrets {
 		names = append(names, s.Name)
 	}
+	declared := "none"
+	if len(names) > 0 {
+		declared = strings.Join(names, ", ")
+	}
 	return []StatePath{
 		{"delete_dir", "per-project-repo", filepath.Join(g, id)},
 		{"delete_dir", "per-project-repo", filepath.Join(g, id+"-scratch")},
 		{"keep", "per-project-repo", filepath.Join(repo, ".git", "info", "exclude")},
-		{"git_branch_delete", "per-project-repo-git", "gm/" + id},
+		{"git_branch_delete", "per-project-repo-git", b.Front.WorkBranchName()},
 		{"git_reset", "per-project-repo-git", repo},
 		{"delete_file", "per-project-global", filepath.Join(cfgDir, "runs", id+".json")},
 		{"keep", "global", vaultPath},
 		{"keep", "global", settingsPath},
 		{"keep", "global", cache},
-		{"external", "external", "declared secrets: " + strings.Join(names, ", ") + "; drop and recreate the databases behind the postgres URLs"},
+		{"external", "external", "declared secrets: " + declared + "; drop and recreate the databases behind the postgres URLs"},
 	}, nil
 }
 
