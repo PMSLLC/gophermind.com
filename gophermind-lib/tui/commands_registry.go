@@ -17,6 +17,7 @@ type slashCommand struct {
 var slashCommands = []slashCommand{
 	{Name: "/help", Arg: "", Desc: "show this help"},
 	{Name: "/clear", Arg: "", Desc: "clear the transcript and reset the session"},
+	{Name: "/project", Arg: "<brief> [flags]", Desc: "plan and build a v2 brief in one run, no second command"},
 	{Name: "/plan-v1", Arg: "<name> <brief>", Desc: "v1 planner: plan a brief into phases, tasks and steps (deprecated, use /project)"},
 	{Name: "/plan-v1-execute", Arg: "", Desc: "run every pending task in the approved plan autonomously"},
 	{Name: "/questions", Arg: "[change]", Desc: "answer the plan's open questions in one round (\"change\" revisits answered ones)"},

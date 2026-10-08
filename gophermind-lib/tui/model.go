@@ -99,6 +99,7 @@ type model struct {
 	st      state
 	pending approvalMsg // valid when st == stateApproval
 	cancel  context.CancelFunc
+	projV2  bool // a /project run (projectrun.Run) is working; see project_v2.go
 
 	// /plan-v1 state machine (see project.go and approve.go). proj is projNone
 	// unless the flow is active: it names the project being planned. The plan
