@@ -172,6 +172,9 @@ func Run(ctx context.Context, o Options, env Env) (result Result) {
 	// Run never panics. stage names what was running; a panic is reported with
 	// a fixed message and the stage, never the panic value, which could carry a
 	// secret. Once the report exists the usual finish path still runs.
+	// The deferred recover covers Run's own goroutine only. A panic in a
+	// goroutine the executor starts (executor/schedule.go workers, limits.go,
+	// serve.go, leaf.go) is outside its reach and is the executor's to recover.
 	stage := "preflight"
 	var finish func(status, stop, note string) Result
 	defer func() {
@@ -277,6 +280,7 @@ func Run(ctx context.Context, o Options, env Env) (result Result) {
 	// From here on every write to Err goes through the bounded progress
 	// queue, so a stuck stderr can drop lines but never hold up the run, the
 	// report or teardown.
+	rawErr := o.Err // prompts go here, synchronously: they block on the user anyway and must never drop
 	progress := newProgressWriter(o.Err)
 	errw := io.Writer(progress)
 	o.Err = errw
@@ -344,9 +348,9 @@ func Run(ctx context.Context, o Options, env Env) (result Result) {
 		deps.OpenSecrets = func() (planner.Secrets, error) { return d.vlt, nil }
 	}
 	if o.Attended {
-		gate = human.NewTerminal(o.In, errw)
+		gate = human.NewTerminal(o.In, rawErr)
 		deps.PromptSecret = func(name, purpose string) (string, error) {
-			return vault.ReadSecret(fmt.Sprintf("Value for %s (%s): ", name, purpose), o.In, errw)
+			return vault.ReadSecret(fmt.Sprintf("Value for %s (%s): ", name, purpose), o.In, rawErr)
 		}
 	} else {
 		gate = newUnattendedGate(func() (string, error) {
