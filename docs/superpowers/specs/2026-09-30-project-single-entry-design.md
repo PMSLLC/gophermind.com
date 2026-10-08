@@ -300,6 +300,7 @@ The executor and the planner's stage code are otherwise unchanged; `executor.Run
 | R13 | (7) | The shared environment checks live in `briefv2/envcheck`; `brief run --check-env` and `projectrun` call the same code | Two copies would drift; the extraction is behavior-neutral and proven by the unchanged cmd tests |
 | R14 | (3, 8.2a) | `ConfirmUnderstanding` is decided by the planner's rule when unattended (store complete, nothing open, `confirmed_by: unattended`, understanding hash in `approval.json`); the unattended gate's `Confirm` fails loudly if ever reached; attended runs use the terminal gate | A reader may expect a human to read `UNDERSTANDING.md`; the report names `confirmed_by` and prints the assumptions count, and `UNDERSTANDING.md` lists each assumption |
 | R15 | (11) | The node-class table is built by `projectrun` from rows, classes and the ledger; the executor's `report.json` is unchanged | `brief report` does not show it; a later schema bump can move it |
+| R16 | (5, 7) | `Run` recovers a panic in its own goroutine and ends `harness_fault`, exit 7, with the report written; goroutines the executor starts (`executor/schedule.go` workers, `limits.go`, `serve.go`, `leaf.go`) are out of that recover's scope and are the executor's to recover. Prompts of the attended gate and the secret prompt are written straight to stderr, never through the lossy progress queue | A panic in an executor goroutine still kills the process (exit 2) with no `project.json`; the executor owns that fix |
 
 ## 15. Tests
 

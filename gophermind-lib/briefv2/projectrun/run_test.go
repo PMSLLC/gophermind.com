@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -63,7 +64,7 @@ type runRig struct {
 	brief string
 	fake  *provider.Fake
 	out   *bytes.Buffer
-	errb  *bytes.Buffer
+	errb  *safeBuf
 	exec  *fakeExec
 	board blackboard.Blackboard
 	led   ledger.Ledger
@@ -72,7 +73,7 @@ type runRig struct {
 
 func newRunRig(t *testing.T, fixtureDirs ...string) *runRig {
 	t.Helper()
-	rr := &runRig{rig: newRig(t), out: &bytes.Buffer{}, errb: &bytes.Buffer{}, dirs: fixtureDirs}
+	rr := &runRig{rig: newRig(t), out: &bytes.Buffer{}, errb: &safeBuf{}, dirs: fixtureDirs}
 	rr.exec = &fakeExec{rep: executor.Report{RunID: gID, Status: "verified", Sandbox: "off"}}
 	rr.writeBrief(nil)
 	rr.useModel()
@@ -1048,3 +1049,73 @@ func TestRunCorruptCoverageIsMarkedMissingIsQuiet(t *testing.T) {
 		t.Error("quiet zero was marked")
 	}
 }
+
+// promptOnlyWriter passes prompt text through at once and blocks every other
+// line (progress) until released, as a paused pager would.
+type promptOnlyWriter struct {
+	mu      sync.Mutex
+	got     strings.Builder
+	release chan struct{}
+}
+
+func (w *promptOnlyWriter) Write(p []byte) (int, error) {
+	s := string(p)
+	if s != "" && s[0] >= 'a' && s[0] <= 'z' { // a progress line: "<stage>: ..."
+		<-w.release
+	}
+	w.mu.Lock()
+	w.got.WriteString(s)
+	w.mu.Unlock()
+	return len(p), nil
+}
+
+func (w *promptOnlyWriter) text() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.got.String()
+}
+
+func TestRunAttendedPromptsNeverDropAndComeBeforeTheRead(t *testing.T) {
+	rr := newRunRig(t)
+	w := &promptOnlyWriter{release: make(chan struct{})}
+	defer close(w.release)
+	in, pw, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer in.Close()
+	rr.o.Attended, rr.o.In, rr.o.Err = true, in, w
+	done := make(chan Result, 1)
+	go func() { done <- rr.run() }()
+	// Nothing has been typed yet: the question must already be on screen.
+	deadline := time.After(30 * time.Second)
+	for !strings.Contains(w.text(), "Question 1 of 1") {
+		select {
+		case <-deadline:
+			t.Fatalf("the prompt never reached Err while progress was stuck: %q", w.text())
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	if _, err := pw.WriteString("accept\ny\ny\n"); err != nil {
+		t.Fatal(err)
+	}
+	pw.Close()
+	select {
+	case got := <-done:
+		wantResult(t, got, ExitVerified, "verified", "")
+	case <-time.After(60 * time.Second):
+		t.Fatal("Run did not finish")
+	}
+}
+
+// safeBuf is a bytes.Buffer safe for the progress goroutine and the terminal
+// gate writing at once.
+type safeBuf struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *safeBuf) Write(p []byte) (int, error) { s.mu.Lock(); defer s.mu.Unlock(); return s.b.Write(p) }
+func (s *safeBuf) String() string              { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
+func (s *safeBuf) Reset()                      { s.mu.Lock(); defer s.mu.Unlock(); s.b.Reset() }
+func (s *safeBuf) Len() int                    { s.mu.Lock(); defer s.mu.Unlock(); return s.b.Len() }
