@@ -258,3 +258,24 @@ func TestLoadSkipsTheAttemptsFolder(t *testing.T) {
 		t.Fatalf("Load = %d nodes, %v; attempt.json must not be read as a node", len(back.Nodes), err)
 	}
 }
+
+func TestReservedComponentIDs(t *testing.T) {
+	for _, id := range []string{"logs", "attempts", "decisions"} {
+		if !tree.IsReservedComponentID(id) {
+			t.Errorf("IsReservedComponentID(%q) = false", id)
+		}
+		raw := fmt.Sprintf(`{"spec_version":"2.0","id":%q,"kind":"component","parent":"root-x","children":[],"title":"t","description":"d","brief_ref":"#x","status":"pending"}`, id)
+		if _, err := tree.ParseNode([]byte(raw)); err == nil || !strings.Contains(err.Error(), "reserved") {
+			t.Errorf("component id %q: err = %v, want a reserved error", id, err)
+		}
+	}
+	for _, id := range []string{"log", "attempt", "decision", "types", "greeting"} {
+		if tree.IsReservedComponentID(id) {
+			t.Errorf("IsReservedComponentID(%q) = true", id)
+		}
+		raw := fmt.Sprintf(`{"spec_version":"2.0","id":%q,"kind":"component","parent":"root-x","children":[],"title":"t","description":"d","brief_ref":"#x","status":"pending"}`, id)
+		if _, err := tree.ParseNode([]byte(raw)); err != nil {
+			t.Errorf("component id %q must pass: %v", id, err)
+		}
+	}
+}
