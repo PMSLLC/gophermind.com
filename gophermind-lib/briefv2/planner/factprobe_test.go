@@ -139,3 +139,89 @@ func TestAnswerFactsSettlesOnlyAnswerableFactsWhosePrerequisitesAreSettled(t *te
 		t.Error("an unanswerable fact, or a fact waiting on an open decision, must stay open")
 	}
 }
+
+func TestEnsureFactsIsStableAcrossResumes(t *testing.T) {
+	repo := t.TempDir()
+	writeRepoFile(t, repo, "go.mod", "module example.com/one\n\ngo 1.22\n")
+	r := &run{dir: t.TempDir(), repo: repo}
+	p := &Planner{}
+	first, err := p.ensureFacts(r)
+	if err != nil || first.Module != "example.com/one" {
+		t.Fatalf("%+v, %v", first, err)
+	}
+	writeRepoFile(t, repo, "go.mod", "module example.com/two\n\ngo 1.23\n")
+	second, err := p.ensureFacts(r)
+	if err != nil || !reflect.DeepEqual(first, second) {
+		t.Fatalf("second = %+v, %v; want %+v", second, err, first)
+	}
+	loaded, err := loadFacts(r)
+	if err != nil || !reflect.DeepEqual(first, loaded) {
+		t.Errorf("loadFacts = %+v, %v", loaded, err)
+	}
+	fi, err := os.Stat(r.path(fileFacts))
+	if err != nil || fi.Mode().Perm() != 0o600 {
+		t.Errorf("facts.json mode = %v, %v", fi, err)
+	}
+}
+
+func TestEnsureFactsDoesNotReprobeAfterCorruption(t *testing.T) {
+	r := &run{dir: t.TempDir(), repo: t.TempDir()}
+	writeRepoFile(t, r.dir, fileFacts, "{not json")
+	if _, err := (&Planner{}).ensureFacts(r); err == nil {
+		t.Fatal("a corrupt facts.json must be an error")
+	}
+	raw, _ := os.ReadFile(r.path(fileFacts))
+	if string(raw) != "{not json" {
+		t.Errorf("facts.json was overwritten: %q", raw)
+	}
+}
+
+func TestProbeIgnoresSymlinkedGoModAndGit(t *testing.T) {
+	repo, outside := t.TempDir(), t.TempDir()
+	writeRepoFile(t, outside, "go.mod", "module example.com/outside\n\ngo 1.22\n")
+	if err := os.Symlink(filepath.Join(outside, "go.mod"), filepath.Join(repo, "go.mod")); err != nil {
+		t.Skip("symlinks are not available")
+	}
+	if err := os.Symlink(outside, filepath.Join(repo, ".git")); err != nil {
+		t.Skip("symlinks are not available")
+	}
+	f, _ := probeFacts(repo, nil)
+	if f.Module != "" || f.GoVersion != "" || f.GitRepo {
+		t.Errorf("a symlink out of the repo was followed: %+v", f)
+	}
+}
+
+func TestProbeLimitsAreEnforced(t *testing.T) {
+	old1, old2, old3, old4 := probeMaxFiles, probeMaxPackages, probeMaxExports, probeMaxEntries
+	defer func() { probeMaxFiles, probeMaxPackages, probeMaxExports, probeMaxEntries = old1, old2, old3, old4 }()
+
+	repo := t.TempDir()
+	for _, d := range []string{"a", "b", "c", "d"} {
+		writeRepoFile(t, repo, d+"/x.go", "package x\nfunc A() {}\nfunc B() {}\nfunc C() {}\n")
+	}
+	probeMaxFiles, probeMaxPackages, probeMaxExports, probeMaxEntries = 400, 2, 2, 100000
+	f, _ := probeFacts(repo, nil)
+	if len(f.Packages) != 2 {
+		t.Errorf("probeMaxPackages: %d packages", len(f.Packages))
+	}
+	for _, p := range f.Packages {
+		if len(p.Exports) != 2 {
+			t.Errorf("probeMaxExports: %+v", p)
+		}
+	}
+	probeMaxFiles, probeMaxPackages, probeMaxExports = 2, 200, 50
+	f, _ = probeFacts(repo, nil)
+	if len(f.Packages) != 2 || !f.Truncated {
+		t.Errorf("probeMaxFiles: %+v", f)
+	}
+	probeMaxFiles, probeMaxEntries = 400, 3
+	f, _ = probeFacts(repo, nil)
+	if !f.Truncated || !strings.Contains(factsPrompt(f), "truncated") {
+		t.Errorf("probeMaxEntries: %+v", f)
+	}
+	probeMaxEntries = 100000
+	f, _ = probeFacts(repo, nil)
+	if f.Truncated || strings.Contains(factsPrompt(f), "truncated") {
+		t.Errorf("an untruncated probe says it is truncated: %+v", f)
+	}
+}

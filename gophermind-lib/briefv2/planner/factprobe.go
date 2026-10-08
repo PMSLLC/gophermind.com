@@ -38,11 +38,15 @@ type factsFile struct {
 	Arch        string        `json:"arch"`
 	SecretNames []string      `json:"secret_names,omitempty"` // names only
 	Hosts       []string      `json:"hosts,omitempty"`
+	Truncated   bool          `json:"truncated,omitempty"` // a limit stopped the walk early
 }
 
-const (
-	probeMaxFiles    = 400
-	probeMaxFileSize = 512 << 10
+const probeMaxFileSize = 512 << 10
+
+// Limits on the walk. They are variables so a test can lower them.
+var (
+	probeMaxFiles    = 400   // parsed .go files
+	probeMaxEntries  = 20000 // all directory entries visited
 	probeMaxPackages = 200
 	probeMaxExports  = 50
 )
@@ -74,16 +78,20 @@ func probeFacts(repo string, b *brief.Brief) (factsFile, error) {
 		return f, nil
 	}
 	f.RepoExists = true
-	if _, err := os.Stat(filepath.Join(real, ".git")); err == nil {
+	if gi, err := os.Lstat(filepath.Join(real, ".git")); err == nil && gi.Mode()&fs.ModeSymlink == 0 {
 		f.GitRepo = true
 	}
 	f.Module, f.GoVersion = readGoMod(filepath.Join(real, "go.mod"))
 
 	byDir := map[string]map[string]bool{}
-	files := 0
+	files, entries := 0, 0
 	_ = filepath.WalkDir(real, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil // an unreadable entry is skipped
+		}
+		if entries++; entries > probeMaxEntries {
+			f.Truncated = true
+			return filepath.SkipAll
 		}
 		if d.IsDir() {
 			if p != real && (probeSkipDirs[d.Name()] || strings.HasPrefix(d.Name(), ".")) {
@@ -95,6 +103,7 @@ func probeFacts(repo string, b *brief.Brief) (factsFile, error) {
 			return nil
 		}
 		if files >= probeMaxFiles {
+			f.Truncated = true
 			return filepath.SkipAll
 		}
 		info, err := d.Info()
@@ -127,6 +136,7 @@ func probeFacts(repo string, b *brief.Brief) (factsFile, error) {
 	}
 	sort.Strings(dirs)
 	if len(dirs) > probeMaxPackages {
+		f.Truncated = true
 		dirs = dirs[:probeMaxPackages]
 	}
 	for _, d := range dirs {
@@ -197,6 +207,9 @@ func recvTypeName(e ast.Expr) string {
 // readGoMod returns the module path and the go version of a go.mod, or empty
 // strings. Trailing comments are dropped; the file is read up to 64 KB.
 func readGoMod(path string) (module, goVersion string) {
+	if fi, err := os.Lstat(path); err != nil || !fi.Mode().IsRegular() {
+		return "", ""
+	}
 	fh, err := os.Open(path)
 	if err != nil {
 		return "", ""
@@ -293,6 +306,9 @@ func factsPrompt(f factsFile) string {
 		for _, p := range f.Packages {
 			b.WriteString("  - " + p.Dir + ": " + strings.Join(p.Exports, ", ") + "\n")
 		}
+	}
+	if f.Truncated {
+		b.WriteString("- the repository scan was truncated by a size limit; the package list may be incomplete\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
