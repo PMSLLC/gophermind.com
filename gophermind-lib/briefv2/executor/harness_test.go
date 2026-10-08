@@ -820,6 +820,7 @@ func (g *rig) leafCommits(id string) int {
 // script can hold many distinct failing replies.
 func variant(src string, n int) string { return src + fmt.Sprintf("\n// variant %d\n", n) }
 
+// A prompt cannot reach attempts/ by construction (the writer's Files has no prompt field).
 // hasCanary reports whether any store the run writes holds canary: the SQLite
 // file (and its WAL), the events, every file of the run folder, the ledger
 // rows, the blackboard rows and the commit messages of the work branch. The
