@@ -23,6 +23,9 @@ func VerifyApproval(runDir string) error {
 	if err != nil {
 		return err
 	}
+	if found && ap.UnderstandingHash == "" {
+		return errors.New("approval.json predates the confirmed understanding; remove it and resume to confirm the understanding and approve the plan again")
+	}
 	_, hash, err := RenderPlan(runDir)
 	if err != nil {
 		return err

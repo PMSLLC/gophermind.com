@@ -265,3 +265,45 @@ func TestChangedAnswerInvalidatesTheApprovalHash(t *testing.T) {
 		t.Fatal("answers.json is not part of the approval hash")
 	}
 }
+
+// The record of a changed answer lists the nodes the answer shaped, read before
+// the reset removes them; it never falls back to "none recorded" for a question
+// that nodes cite.
+func TestChangedAnswerRecordListsTheNodesItShaped(t *testing.T) {
+	r := changeRun(t)
+	write(t, r, "_state/decomposed.json", `{"components":{"greeting":[{"id":"fn-greet","decision_ids":["q1"]}],"types":[{"id":"fn-name"}]},"done":true}`)
+	write(t, r, "_state/enriched.json", `{"components":{"greeting":{"decision_ids":["q1"]}},"root":{"decision_ids":["q1"]},"done":true}`)
+	if _, err := changeAnswerIn(r, "q1", "no, keep spaces", changeNow); err != nil {
+		t.Fatal(err)
+	}
+	md, _ := os.ReadFile(filepath.Join(r.dir, "decisions", "q1.md"))
+	if strings.Contains(string(md), "none recorded") || !strings.Contains(string(md), "Shaped these nodes: fn-greet, greeting, root") {
+		t.Errorf("the record does not list the nodes the answer shaped:\n%s", md)
+	}
+}
+
+// A change that cannot reset the run leaves the old answer in place, so the
+// same command can be run again: nothing is half done.
+func TestAChangeThatCannotResetKeepsTheOldAnswerAndCanBeRepeated(t *testing.T) {
+	r := changeRun(t)
+	good, err := os.ReadFile(r.path("_state/decomposed.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, r, "_state/decomposed.json", `{not json`)
+	if _, err := changeAnswerIn(r, "decompose-greeting-q3", "yes, a pointer", changeNow); err == nil {
+		t.Fatal("a reset that cannot read the drafts must fail")
+	}
+	s, _ := loadQStore(r)
+	if q := s.get("decompose-greeting-q3"); q.Answer != "no" || len(q.History) != 0 {
+		t.Fatalf("the answer changed although the reset failed: %+v", q)
+	}
+	write(t, r, "_state/decomposed.json", string(good))
+	if _, err := changeAnswerIn(r, "decompose-greeting-q3", "yes, a pointer", changeNow); err != nil {
+		t.Fatalf("repeating the command: %v", err)
+	}
+	s, _ = loadQStore(r)
+	if q := s.get("decompose-greeting-q3"); q.Answer != "yes, a pointer" {
+		t.Errorf("answer = %q", q.Answer)
+	}
+}

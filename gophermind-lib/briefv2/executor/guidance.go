@@ -2,6 +2,7 @@ package executor
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -14,8 +15,10 @@ import (
 // refactor notes, assumptions, open questions, decision ids and the embedded
 // decisions carry reasoning from the brief, and an implement call may be shown
 // to a public provider. A group answered "not applicable" gives no lines; a
-// node planned before the groups existed gives no guidance.
-func guidanceFrom(d leafDoc) []packer.Guidance {
+// node planned before the groups existed gives no guidance. A group that is
+// present but cannot be read is an error, never a silent omission: leaving out
+// the security group would let an implement call run without its warnings.
+func guidanceFrom(d leafDoc) ([]packer.Guidance, error) {
 	var out []packer.Guidance
 	add := func(section string, lines []string) {
 		if len(lines) > 0 {
@@ -41,7 +44,9 @@ func guidanceFrom(d leafDoc) []packer.Guidance {
 			Mitigation string `json:"mitigation"`
 		} `json:"threats"`
 	}
-	if decodeGroup(d.Security, &sec) && sec.NotApplicable == "" {
+	if ok, err := decodeGroup(d.Security, &sec); err != nil {
+		return nil, fmt.Errorf("the security group is not readable: %w", err)
+	} else if ok && sec.NotApplicable == "" {
 		lines := []string{"Trust boundary: " + sec.TrustBoundary}
 		for _, in := range sec.UntrustedInputs {
 			lines = append(lines, "Untrusted input: "+in)
@@ -63,7 +68,9 @@ func guidanceFrom(d leafDoc) []packer.Guidance {
 			Kind string `json:"kind"`
 		} `json:"metrics"`
 	}
-	if decodeGroup(d.Observability, &obs) && obs.NotApplicable == "" {
+	if ok, err := decodeGroup(d.Observability, &obs); err != nil {
+		return nil, fmt.Errorf("the observability group is not readable: %w", err)
+	} else if ok && obs.NotApplicable == "" {
 		var lines []string
 		for _, e := range obs.LogEvents {
 			l := fmt.Sprintf("Log at %s: %q", e.Level, e.Msg)
@@ -85,7 +92,9 @@ func guidanceFrom(d leafDoc) []packer.Guidance {
 		Concurrency   string `json:"concurrency"`
 		HotPath       bool   `json:"hot_path"`
 	}
-	if decodeGroup(d.Performance, &perf) && perf.NotApplicable == "" {
+	if ok, err := decodeGroup(d.Performance, &perf); err != nil {
+		return nil, fmt.Errorf("the performance group is not readable: %w", err)
+	} else if ok && perf.NotApplicable == "" {
 		lines := []string{"Complexity: " + perf.Complexity}
 		if perf.MaxLatencyMS != nil {
 			lines = append(lines, fmt.Sprintf("Latency budget: %d ms", *perf.MaxLatencyMS))
@@ -108,8 +117,19 @@ func guidanceFrom(d leafDoc) []packer.Guidance {
 		BuildTags     []string `json:"build_tags"`
 		Deps          []string `json:"deps"`
 	}
-	if decodeGroup(d.Portability, &port) && port.NotApplicable == "" {
-		lines := []string{"Go " + port.GoMin + " or newer", "Operating systems: " + strings.Join(port.OS, ", "), "Architectures: " + strings.Join(port.Arch, ", ")}
+	if ok, err := decodeGroup(d.Portability, &port); err != nil {
+		return nil, fmt.Errorf("the portability group is not readable: %w", err)
+	} else if ok && port.NotApplicable == "" {
+		var lines []string
+		if port.GoMin != "" {
+			lines = append(lines, "Go "+port.GoMin+" or newer")
+		}
+		if len(port.OS) > 0 {
+			lines = append(lines, "Operating systems: "+strings.Join(port.OS, ", "))
+		}
+		if len(port.Arch) > 0 {
+			lines = append(lines, "Architectures: "+strings.Join(port.Arch, ", "))
+		}
 		if port.CGO {
 			lines = append(lines, "cgo: allowed")
 		} else {
@@ -123,13 +143,17 @@ func guidanceFrom(d leafDoc) []packer.Guidance {
 		}
 		add("portability", lines)
 	}
-	return out
+	return out, nil
 }
 
-// decodeGroup decodes a raw group into v and reports whether the group exists.
-func decodeGroup(raw json.RawMessage, v any) bool {
+// decodeGroup decodes a raw group into v. It reports whether the group exists;
+// a group that exists but does not decode is an error.
+func decodeGroup(raw json.RawMessage, v any) (bool, error) {
 	if len(raw) == 0 || string(raw) == "null" {
-		return false
+		return false, nil
 	}
-	return json.Unmarshal(raw, v) == nil
+	if err := json.Unmarshal(raw, v); err != nil {
+		return false, errors.New("its JSON does not match the group")
+	}
+	return true, nil
 }

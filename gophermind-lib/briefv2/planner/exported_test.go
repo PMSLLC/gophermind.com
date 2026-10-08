@@ -44,7 +44,7 @@ func TestVerifyApproval(t *testing.T) {
 	if err := planner.VerifyApproval(g.runDir); err != nil {
 		t.Errorf("match: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(g.runDir, "approval.json"), []byte(`{"plan_hash": "0000"}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(g.runDir, "approval.json"), []byte(`{"plan_hash": "0000", "understanding_hash": "1111"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	err := planner.VerifyApproval(g.runDir)

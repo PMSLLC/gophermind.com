@@ -309,21 +309,17 @@ func citedByFunctions(dec decomposed) map[string][]string {
 	return out
 }
 
-// refreshDecisions rewrites every decision record so it lists the nodes that
-// cite it. Component and root nodes that cite a decision are listed too.
-func (p *Planner) refreshDecisions(r *run) error {
-	s, err := loadQStore(r)
-	if err != nil {
-		return err
-	}
+// citedByAll maps a question id to every node (function, component or "root")
+// whose decision_ids name it.
+func citedByAll(r *run) (map[string][]string, error) {
 	dec, err := loadDecomposed(r)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	cited := citedByFunctions(dec)
 	est, err := loadEnriched(r)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for comp, g := range est.Components {
 		for _, q := range strList(g["decision_ids"]) {
@@ -332,6 +328,20 @@ func (p *Planner) refreshDecisions(r *run) error {
 	}
 	for _, q := range strList(est.Root["decision_ids"]) {
 		cited[q] = append(cited[q], "root")
+	}
+	return cited, nil
+}
+
+// refreshDecisions rewrites every decision record so it lists the nodes that
+// cite it. Component and root nodes that cite a decision are listed too.
+func (p *Planner) refreshDecisions(r *run) error {
+	s, err := loadQStore(r)
+	if err != nil {
+		return err
+	}
+	cited, err := citedByAll(r)
+	if err != nil {
+		return err
 	}
 	for _, q := range s.Questions {
 		if q.Status == qSettled {

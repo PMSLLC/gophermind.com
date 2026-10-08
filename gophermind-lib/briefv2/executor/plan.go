@@ -258,6 +258,10 @@ func (p *Plan) leaf(n tree.Node, rootNet []NetHost, fns map[string]contract.Func
 		return nil, fmt.Errorf("executor: leaf %s has an incomplete recorded test", n.ID)
 	}
 
+	guidance, err := guidanceFrom(d)
+	if err != nil {
+		return nil, fmt.Errorf("executor: leaf %s: %v", n.ID, err)
+	}
 	l := &Leaf{
 		ID: n.ID, Title: d.Title, Class: p.Classes[n.ID], Tier: d.ModelTier,
 		Package: d.Contract.Package, File: d.Contract.File, Signature: d.Contract.Signature,
@@ -266,7 +270,7 @@ func (p *Plan) leaf(n tree.Node, rootNet []NetHost, fns map[string]contract.Func
 		TestFile: lt.TestFile, TestFunc: lt.TestFunc, TestSHA256: lt.SHA256,
 		Constraints: d.Context.Constraints, DepSignatures: d.Context.DependencySignatures,
 		MaxContextTokens: d.Budget.MaxContextTokens, MaxRevisions: -1,
-		Guidance: guidanceFrom(d),
+		Guidance: guidance,
 	}
 	if n.Wave != nil {
 		l.Wave = *n.Wave
