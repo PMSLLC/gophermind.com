@@ -41,7 +41,7 @@ Each item gets its own plan and its own build. All code work happens on `feat/br
 
 | # | Sub-project | Depends on | Spec |
 |---|---|---|---|
-| A | Filesystem run state replaces SQLite, with attempt artifacts | nothing | section 4 of this document |
+| A | Filesystem run state replaces SQLite, with attempt artifacts | nothing | section 4 of this document; plan written 2026-10-07: `docs/superpowers/plans/2026-10-07-filesystem-run-state.md` (9 tasks, not started) |
 | B | Node widening and the question model | A (decision records, attempts) | sections 5 and 6 |
 | C | `/project` plans and builds through v2 | A, B | the existing `2026-09-30-project-single-entry-design.md` and plan (14 tasks, not built), amended by section 7 |
 | D | PhaseFlow view: `.planning/` files and the pipeline endpoints read the run folder | A, C | section 8 |
