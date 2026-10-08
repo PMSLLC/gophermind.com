@@ -93,7 +93,7 @@ type Ledger interface {
 	Record(ctx context.Context, c *Call) error
 	// Amend changes a stored row's outcome, for a reply that arrived fine but
 	// failed the stage's parser.
-	Amend(ctx context.Context, id int64, o Outcome, errorKind string) error
+	Amend(ctx context.Context, runID string, id int64, o Outcome, errorKind string) error
 	List(ctx context.Context, runID string, f Filter) ([]Call, error)
 	Summary(ctx context.Context, runID string) ([]ModelSummary, error)
 }
@@ -132,8 +132,8 @@ func (s *SQLite) Record(ctx context.Context, c *Call) error {
 	return nil
 }
 
-func (s *SQLite) Amend(ctx context.Context, id int64, o Outcome, errorKind string) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE calls SET outcome = ?, error_kind = ? WHERE id = ?`, string(o), errorKind, id)
+func (s *SQLite) Amend(ctx context.Context, runID string, id int64, o Outcome, errorKind string) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE calls SET outcome = ?, error_kind = ? WHERE id = ? AND run_id = ?`, string(o), errorKind, id, runID)
 	if err != nil {
 		return fmt.Errorf("ledger: %w", err)
 	}

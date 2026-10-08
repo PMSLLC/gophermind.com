@@ -2,27 +2,22 @@ package ledger_test
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
-	"gophermind/gophermind-lib/briefv2/db"
 	"gophermind/gophermind-lib/briefv2/ledger"
+	"gophermind/gophermind-lib/briefv2/runfs"
 )
 
-func newLedger(t *testing.T) (*ledger.SQLite, *sql.DB, string) {
+func newLedger(t *testing.T) (*ledger.FS, string) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "bb.db")
-	d, err := db.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { d.Close() })
-	return ledger.NewSQLite(d), d, path
+	dir := t.TempDir()
+	return ledger.NewFS(runfs.Fixed(dir)), dir
 }
 
 func call(run, stage, prov, model string, o ledger.Outcome) *ledger.Call {
@@ -34,7 +29,7 @@ func call(run, stage, prov, model string, o ledger.Outcome) *ledger.Call {
 }
 
 func TestRecordAssignsIDAndListReturnsFields(t *testing.T) {
-	l, _, _ := newLedger(t)
+	l, _ := newLedger(t)
 	ctx := context.Background()
 	c := call("r", "clarify", "mini", "qwen", ledger.OutcomeOK)
 	c.NodeID, c.Revision, c.PromptBytes, c.PromptSHA256 = "fn-a", 2, 400, "abc"
@@ -56,7 +51,7 @@ func TestRecordAssignsIDAndListReturnsFields(t *testing.T) {
 }
 
 func TestRecordRejectsIncompleteRows(t *testing.T) {
-	l, _, _ := newLedger(t)
+	l, _ := newLedger(t)
 	for _, c := range []*ledger.Call{
 		{Stage: "s", Provider: "p", Outcome: ledger.OutcomeOK},
 		{RunID: "r", Provider: "p", Outcome: ledger.OutcomeOK},
@@ -70,26 +65,26 @@ func TestRecordRejectsIncompleteRows(t *testing.T) {
 }
 
 func TestAmendChangesTheOutcome(t *testing.T) {
-	l, _, _ := newLedger(t)
+	l, _ := newLedger(t)
 	ctx := context.Background()
 	c := call("r", "contract", "mini", "qwen", ledger.OutcomeOK)
 	if err := l.Record(ctx, c); err != nil {
 		t.Fatal(err)
 	}
-	if err := l.Amend(ctx, c.ID, ledger.OutcomeMalformed, "component x is not a feature"); err != nil {
+	if err := l.Amend(ctx, c.RunID, c.ID, ledger.OutcomeMalformed, "component x is not a feature"); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := l.List(ctx, "r", ledger.Filter{})
 	if got[0].Outcome != ledger.OutcomeMalformed || got[0].ErrorKind != "component x is not a feature" {
 		t.Errorf("after amend: %+v", got[0])
 	}
-	if err := l.Amend(ctx, 9999, ledger.OutcomeError, ""); err == nil {
+	if err := l.Amend(ctx, "run-x", 9999, ledger.OutcomeError, ""); err == nil {
 		t.Error("amending an unknown row should fail")
 	}
 }
 
 func TestListFilters(t *testing.T) {
-	l, _, _ := newLedger(t)
+	l, _ := newLedger(t)
 	ctx := context.Background()
 	for _, c := range []*ledger.Call{
 		call("r", "clarify", "mini", "qwen", ledger.OutcomeOK),
@@ -123,7 +118,7 @@ func TestListFilters(t *testing.T) {
 }
 
 func TestSummaryMatchesAHandCount(t *testing.T) {
-	l, _, _ := newLedger(t)
+	l, _ := newLedger(t)
 	ctx := context.Background()
 	rows := []struct {
 		prov, model string
@@ -175,7 +170,7 @@ func TestSummaryMatchesAHandCount(t *testing.T) {
 // The same model doing different kinds of work is summarized once per kind,
 // so its results can be compared by task type and by class of function.
 func TestSummaryGroupsByTaskTypeAndNodeClass(t *testing.T) {
-	l, _, _ := newLedger(t)
+	l, _ := newLedger(t)
 	ctx := context.Background()
 	rows := []struct {
 		task, class string
@@ -215,7 +210,7 @@ func TestSummaryGroupsByTaskTypeAndNodeClass(t *testing.T) {
 }
 
 func TestNoPromptOrReplyTextIsEverStored(t *testing.T) {
-	l, d, path := newLedger(t)
+	l, dir := newLedger(t)
 	ctx := context.Background()
 	const canary = "CANARY-prompt-text-7f3a91"
 	n, sum := ledger.Digest([]byte(canary))
@@ -227,44 +222,109 @@ func TestNoPromptOrReplyTextIsEverStored(t *testing.T) {
 	if err := l.Record(ctx, c); err != nil {
 		t.Fatal(err)
 	}
-	rs, err := d.Query(`SELECT * FROM calls`)
+	raw, err := os.ReadFile(filepath.Join(dir, "_state", "calls.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	cols, _ := rs.Columns()
-	for rs.Next() {
-		vals := make([]any, len(cols))
-		ptrs := make([]any, len(cols))
-		for i := range vals {
-			ptrs[i] = &vals[i]
-		}
-		if err := rs.Scan(ptrs...); err != nil {
-			t.Fatal(err)
-		}
-		for i, v := range vals {
-			if strings.Contains(strings.ToLower(toString(v)), strings.ToLower(canary)) {
-				t.Errorf("column %s contains the prompt text", cols[i])
-			}
-		}
+	if strings.Contains(strings.ToLower(string(raw)), strings.ToLower(canary)) {
+		t.Errorf("calls.jsonl contains the prompt text")
 	}
-	rs.Close()
-	d.Close() // checkpoints the write-ahead log into the main file
-	for _, f := range []string{path, path + "-wal"} {
-		if b, err := os.ReadFile(f); err == nil && strings.Contains(string(b), canary) {
-			t.Errorf("%s contains the prompt text", f)
-		}
+	if !strings.Contains(string(raw), sum) || !strings.Contains(string(raw), fmt.Sprintf(`"prompt_bytes":%d`, n)) ||
+		!strings.Contains(string(raw), fmt.Sprintf(`"response_bytes":%d`, n)) {
+		t.Errorf("calls.jsonl lacks the SHA-256 or sizes: %s", raw)
 	}
 }
 
-func toString(v any) string {
-	switch x := v.(type) {
-	case nil:
-		return ""
-	case []byte:
-		return string(x)
-	case string:
-		return x
-	default:
-		return ""
+func TestFSIDsAreSequentialAndSurviveAReopen(t *testing.T) {
+	dir := t.TempDir()
+	l := ledger.NewFS(runfs.Fixed(dir))
+	ctx := context.Background()
+	mk := func() *ledger.Call {
+		return &ledger.Call{RunID: "r", Stage: "clarify", Provider: "mini", Outcome: ledger.OutcomeOK, TaskType: "clarify"}
+	}
+	a, b := mk(), mk()
+	if err := l.Record(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Record(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+	if a.ID != 1 || b.ID != 2 {
+		t.Fatalf("ids = %d, %d; want 1, 2", a.ID, b.ID)
+	}
+	c := mk()
+	if err := ledger.NewFS(runfs.Fixed(dir)).Record(ctx, c); err != nil || c.ID != 3 {
+		t.Fatalf("after a reopen: id = %d, %v; want 3", c.ID, err)
+	}
+}
+
+func TestFSConcurrentRecordsGetDistinctIDs(t *testing.T) {
+	l := ledger.NewFS(runfs.Fixed(t.TempDir()))
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	ids := make(chan int64, 50)
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c := &ledger.Call{RunID: "r", Stage: "s", Provider: "p", Outcome: ledger.OutcomeOK}
+			if err := l.Record(ctx, c); err != nil {
+				t.Error(err)
+				return
+			}
+			ids <- c.ID
+		}()
+	}
+	wg.Wait()
+	close(ids)
+	seen := map[int64]bool{}
+	for id := range ids {
+		if seen[id] {
+			t.Fatalf("id %d handed out twice", id)
+		}
+		seen[id] = true
+	}
+	rows, err := l.List(ctx, "r", ledger.Filter{})
+	if err != nil || len(rows) != 50 {
+		t.Fatalf("List = %d rows, %v; want 50", len(rows), err)
+	}
+}
+
+func TestFSAmendIsAFoldedLineNotARewrite(t *testing.T) {
+	dir := t.TempDir()
+	l := ledger.NewFS(runfs.Fixed(dir))
+	ctx := context.Background()
+	c := &ledger.Call{RunID: "r", Stage: "s", Provider: "p", Outcome: ledger.OutcomeOK}
+	if err := l.Record(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Amend(ctx, "r", c.ID, ledger.OutcomeMalformed, "malformed"); err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := l.List(ctx, "r", ledger.Filter{})
+	if len(rows) != 1 || rows[0].Outcome != ledger.OutcomeMalformed || rows[0].ErrorKind != "malformed" {
+		t.Fatalf("rows = %+v", rows)
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, "_state", "calls.jsonl"))
+	if n := strings.Count(string(raw), "\n"); n != 2 {
+		t.Errorf("calls.jsonl has %d lines, want 2 (the call and its amend): the file is append-only", n)
+	}
+	if err := l.Amend(ctx, "r", 999, ledger.OutcomeError, ""); err == nil {
+		t.Error("amending a call that does not exist must fail")
+	}
+}
+
+func TestFSReadsDoNotWrite(t *testing.T) {
+	dir := t.TempDir()
+	l := ledger.NewFS(runfs.Fixed(dir))
+	ctx := context.Background()
+	if rows, err := l.List(ctx, "r", ledger.Filter{}); err != nil || len(rows) != 0 {
+		t.Fatalf("List = %v, %v", rows, err)
+	}
+	if sum, err := l.Summary(ctx, "r"); err != nil || len(sum) != 0 {
+		t.Fatalf("Summary = %v, %v", sum, err)
+	}
+	if ents, _ := os.ReadDir(dir); len(ents) != 0 {
+		t.Errorf("reads created %d entries", len(ents))
 	}
 }

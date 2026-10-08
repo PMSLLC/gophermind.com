@@ -28,7 +28,7 @@ func (r *Router) CallParsed(ctx context.Context, info CallInfo, req provider.Req
 			return res, nil
 		}
 		lastParse = perr
-		r.markMalformed(ctx, res)
+		r.markMalformed(ctx, info.RunID, res)
 
 		// One more try on the same model, told what was wrong.
 		again := next
@@ -40,7 +40,7 @@ func (r *Router) CallParsed(ctx context.Context, info CallInfo, req provider.Req
 				return res2, nil
 			}
 			lastParse = perr2
-			r.markMalformed(ctx, res2)
+			r.markMalformed(ctx, info.RunID, res2)
 		} else {
 			var ce *ChainExhausted
 			if !errors.As(err, &ce) {
@@ -51,12 +51,12 @@ func (r *Router) CallParsed(ctx context.Context, info CallInfo, req provider.Req
 	}
 }
 
-func (r *Router) markMalformed(ctx context.Context, res Result) {
+func (r *Router) markMalformed(ctx context.Context, runID string, res Result) {
 	if r.led == nil || res.CallID == 0 {
 		return
 	}
 	// The error kind is a fixed word: a parser error can quote the reply, and reply text is never stored.
-	if err := r.led.Amend(context.WithoutCancel(ctx), res.CallID, ledger.OutcomeMalformed, "malformed"); err != nil {
+	if err := r.led.Amend(context.WithoutCancel(ctx), runID, res.CallID, ledger.OutcomeMalformed, "malformed"); err != nil {
 		r.noteLedgerError("", "", err)
 	}
 }
