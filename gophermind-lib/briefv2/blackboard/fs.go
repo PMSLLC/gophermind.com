@@ -301,8 +301,8 @@ func (f *FS) List(ctx context.Context, runID string, flt Filter) ([]Row, error) 
 		}
 		if d.IsDir() {
 			switch d.Name() {
-			case "_state", "attempts", "logs":
-				if p != runDir {
+			case "_state", "logs":
+				if filepath.Dir(p) == runDir {
 					return filepath.SkipDir
 				}
 			}

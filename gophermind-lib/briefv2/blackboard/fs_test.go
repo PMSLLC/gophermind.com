@@ -507,3 +507,53 @@ func TestFSLeavesAStaleLockBehindNothing(t *testing.T) {
 		t.Errorf("lock still present after the claim: %v", err)
 	}
 }
+
+func TestFSListSeesANodeFolderNamedAttempts(t *testing.T) {
+	dir := t.TempDir()
+	s := tree.NewStore(dir)
+	for _, raw := range []string{
+		`{"spec_version":"2.0","id":"rt","kind":"root","title":"t","description":"d","brief_ref":"#x","status":"pending","children":["attempts"]}`,
+		`{"spec_version":"2.0","id":"attempts","kind":"component","parent":"rt","title":"t","description":"d","brief_ref":"#x","status":"pending","children":["fn-a"]}`,
+		`{"spec_version":"2.0","id":"fn-a","kind":"function","parent":"attempts","title":"t","description":"d","brief_ref":"#x","status":"pending","wave":0,"depends_on":[],
+"contract":{"package":"p","file":"p/fn-a.go","signature":"func F()","inputs":[],"outputs":[]},
+"tests":[{"name":"n","level":"unit","given":"g","expect":"e","command":"go test ./p"}]}`,
+	} {
+		n, err := tree.ParseNode([]byte(raw))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Write(n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b := NewFS(runfs.Fixed(dir))
+	ctx := context.Background()
+	clock := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	b.now = func() time.Time { return clock }
+	if err := b.InitRun(ctx, "r", []string{"rt", "attempts", "fn-a"}, map[string]int{"rt": 2, "attempts": 1, "fn-a": 0}); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.SetStatus(ctx, "r", "fn-a", StatusPending, StatusReady); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := b.Claim(ctx, "r", "fn-a", "w"); err != nil || !ok {
+		t.Fatalf("claim: %v %v", ok, err)
+	}
+	rows, err := b.List(ctx, "r", Filter{})
+	if err != nil || len(rows) != 3 {
+		t.Fatalf("List = %d rows, %v; want 3 including fn-a under attempts/", len(rows), err)
+	}
+	clock = clock.Add(time.Minute)
+	ids, err := b.ReleaseStale(ctx, "r", 0)
+	if err != nil || len(ids) != 1 || ids[0] != "fn-a" {
+		t.Fatalf("ReleaseStale = %v, %v; want [fn-a]", ids, err)
+	}
+}
+
+func TestFSListOfAMissingRunFolder(t *testing.T) {
+	b := NewFS(runfs.Fixed(filepath.Join(t.TempDir(), "nope")), WithFlatLayout())
+	rows, err := b.List(context.Background(), "r", Filter{})
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("List = %d rows, %v; want none and no error", len(rows), err)
+	}
+}
