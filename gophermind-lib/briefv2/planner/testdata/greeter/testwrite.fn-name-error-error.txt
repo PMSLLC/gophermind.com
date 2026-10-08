@@ -1,12 +1,12 @@
 {
   "tests": [
     {
-      "name": "returns the reason",
+      "name": "returns the reason", "polarity": "success", "covers": "happy",
       "given": "Reason \"name is empty\"",
       "expect": "name is empty"
     },
     {
-      "name": "returns an empty reason unchanged",
+      "name": "returns an empty reason unchanged", "polarity": "success", "covers": "happy",
       "given": "Reason \"\"",
       "expect": "an empty string"
     }

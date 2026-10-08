@@ -1,12 +1,12 @@
 {
   "tests": [
     {
-      "name": "serves both routes",
+      "name": "serves both routes", "polarity": "success", "covers": "happy",
       "given": "a free loopback address",
       "expect": "/hello and /bye are registered"
     },
     {
-      "name": "returns the listen error",
+      "name": "returns the listen error", "polarity": "negative", "covers": "error:1",
       "given": "256.256.256.256:1",
       "expect": "a non-nil error"
     }

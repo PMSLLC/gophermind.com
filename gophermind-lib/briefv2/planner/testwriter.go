@@ -159,7 +159,7 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 		return writtenTests{}, fmt.Errorf("test file %s already exists and this run did not write it; move it away, then resume", path.Base(rel))
 	}
 	prompt, err := render("testwriter", map[string]string{
-		"Node": mustJSON(d), "PackageDir": path.Dir(file), "TestFuncName": funcName, "TestFile": rel})
+		"Node": mustJSON(testwriterView(d)), "PackageDir": path.Dir(file), "TestFuncName": funcName, "TestFile": rel})
 	if err != nil {
 		return writtenTests{}, err
 	}
@@ -167,7 +167,7 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	var source string
 	cs := callSpec{stage: "testwrite:" + id, taskType: "testwrite", nodeID: id, nodeClass: class, scope: router.ScopeNode, maxTokens: maxTokensTestwrite}
 	err = p.callAsking(ctx, r, cs, prompt, func(text string) error {
-		ts, src, err := parseTestwrite(StripReply(text), ct, pkg, funcName, c.Module)
+		ts, src, err := parseTestwrite(StripReply(text), ct, pkg, funcName, c.Module, hookList(d))
 		if err != nil {
 			return err
 		}
@@ -243,7 +243,7 @@ func placeTestFile(r *run, abs, rel, source string) error {
 // and a Go test file that parses, holds the expected test function, and
 // imports nothing outside the standard library and the module. Level and
 // command are set here, whatever the model wrote.
-func parseTestwrite(text string, ct map[string]any, pkg, funcName, module string) ([]map[string]any, string, error) {
+func parseTestwrite(text string, ct map[string]any, pkg, funcName, module string, hooks []string) ([]map[string]any, string, error) {
 	var reply struct {
 		Tests    []map[string]any `json:"tests"`
 		TestFile string           `json:"test_file"`
@@ -266,10 +266,18 @@ func parseTestwrite(text string, ct map[string]any, pkg, funcName, module string
 		if strings.TrimSpace(name) == "" || !okGiven || !okExpect || strings.TrimSpace(expect) == "" {
 			return nil, "", fmt.Errorf("test %d needs a name, a given and an expect", i+1)
 		}
-		tests = append(tests, map[string]any{"name": name, "level": "unit", "given": given, "expect": expect, "command": command})
+		pol, _ := t["polarity"].(string)
+		cov, _ := t["covers"].(string)
+		tests = append(tests, map[string]any{"name": name, "level": "unit", "given": given, "expect": expect, "command": command, "polarity": pol, "covers": cov})
+	}
+	if err := checkPolarity(tests, len(objects(ct["errors"]))); err != nil {
+		return nil, "", err
 	}
 	if err := checkTestSource(reply.TestFile, pkg, funcName, module); err != nil {
 		return nil, "", err
+	}
+	if contains(hooks, "bench") && !hasBenchmark(reply.TestFile, funcName) {
+		return nil, "", fmt.Errorf("%s: the profile hooks ask for a benchmark, but the test file has no Benchmark%s function", grpHookBench, strings.TrimPrefix(funcName, "Test"))
 	}
 	return tests, reply.TestFile, nil
 }
@@ -341,6 +349,21 @@ func (p *Planner) finishTree(ctx context.Context, r *run, c *contract.Contracts,
 	if err != nil {
 		return err
 	}
+	root["requirement_ids"] = toAnySlice(allRequirementIDs(cov))
+	for _, doc := range comps {
+		cid, _ := doc["id"].(string)
+		ids := map[string]bool{}
+		for _, d := range dec.Components[cid] {
+			fid, _ := d["id"].(string)
+			for _, q := range requirementIDsFor(cov, fid, cid) {
+				ids[q] = true
+			}
+		}
+		for _, q := range requirementIDsFor(cov, cid, "") {
+			ids[q] = true
+		}
+		doc["requirement_ids"] = toAnySlice(sortedKeys(ids))
+	}
 	docs := append([]map[string]any{root}, comps...)
 	files := []string{}
 	leafTests := map[string]LeafTest{}
@@ -356,10 +379,24 @@ func (p *Planner) finishTree(ctx context.Context, r *run, c *contract.Contracts,
 				return err
 			}
 			doc["tests"], doc["wave"] = wt.Tests, w[id]
+			if ct, ok := doc["contract"].(map[string]any); ok {
+				if err := linkErrorTests(ct, wt.Tests); err != nil {
+					return fmt.Errorf("node %s: %w", id, err)
+				}
+			}
+			doc["requirement_ids"] = toAnySlice(requirementIDsFor(cov, id, comp.ID))
 			docs = append(docs, doc)
 			files = append(files, wt.TestFile)
 			leafTests[id] = LeafTest{TestFile: wt.TestFile, TestFunc: testFuncName(id), SHA256: wt.SHA256}
 		}
+	}
+	qs, err := loadQStore(r)
+	if err != nil {
+		return err
+	}
+	embedDecisions(qs, nil, docs[1+len(comps):])
+	if bad := finishGroupDefects(docs, qs); len(bad) > 0 {
+		return fmt.Errorf("the finished tree is inconsistent: %s", strings.Join(bad[:min(len(bad), 5)], "; "))
 	}
 	nodes := make([]tree.Node, 0, len(docs))
 	for _, doc := range docs {

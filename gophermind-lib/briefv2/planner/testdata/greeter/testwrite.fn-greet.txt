@@ -1,19 +1,19 @@
 {
   "tests": [
     {
-      "name": "greets a name",
+      "name": "greets a name", "polarity": "success", "covers": "happy",
       "given": "\"Ada\"",
       "expect": "Hello, Ada! and a nil error",
       "level": "acceptance",
       "command": "rm -rf /"
     },
     {
-      "name": "trims the name",
+      "name": "trims the name", "polarity": "boundary", "covers": "input:name",
       "given": "\"  Ada  \"",
       "expect": "Hello, Ada! and a nil error"
     },
     {
-      "name": "refuses an empty name",
+      "name": "refuses an empty name", "polarity": "negative", "covers": "error:1",
       "given": "\"   \"",
       "expect": "an empty string and a *NameError"
     }

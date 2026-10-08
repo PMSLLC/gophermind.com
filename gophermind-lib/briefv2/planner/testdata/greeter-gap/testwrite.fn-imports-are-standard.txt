@@ -1,17 +1,17 @@
 {
   "tests": [
     {
-      "name": "accepts standard packages",
+      "name": "accepts standard packages", "polarity": "success", "covers": "happy",
       "given": "fmt and net/http",
       "expect": "true"
     },
     {
-      "name": "accepts no imports",
+      "name": "accepts no imports", "polarity": "success", "covers": "happy",
       "given": "nil",
       "expect": "true"
     },
     {
-      "name": "refuses a module path",
+      "name": "refuses a module path", "polarity": "boundary", "covers": "happy",
       "given": "fmt and github.com/x/y",
       "expect": "false"
     }
