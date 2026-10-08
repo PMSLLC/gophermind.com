@@ -821,8 +821,8 @@ func (g *rig) leafCommits(id string) int {
 func variant(src string, n int) string { return src + fmt.Sprintf("\n// variant %d\n", n) }
 
 // A prompt cannot reach attempts/ by construction (the writer's Files has no prompt field).
-// hasCanary reports whether any store the run writes holds canary: the SQLite
-// file (and its WAL), the events, every file of the run folder, the ledger
+// hasCanary reports whether any store the run writes holds canary: the config dir
+// (settings, run registry), the events, every file of the run folder, the ledger
 // rows, the blackboard rows and the commit messages of the work branch. The
 // repository's source files are not a store: a passing reply is committed.
 func hasCanary(t *testing.T, g *rig, canary string) bool {

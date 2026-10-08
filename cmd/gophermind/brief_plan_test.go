@@ -12,7 +12,7 @@ const (
 	greeterRunID   = "gm-2026-09-29-900"
 )
 
-// planEnv gives a test its own config dir (settings, run registry, database)
+// planEnv gives a test its own config dir (settings, run registry)
 // and a target repo, and returns the repo and a greeter brief pointing at it.
 func planEnv(t *testing.T) (repo, briefPath string) {
 	t.Helper()
