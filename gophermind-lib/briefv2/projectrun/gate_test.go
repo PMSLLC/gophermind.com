@@ -88,3 +88,11 @@ func TestUnattendedGateConfirmFailsLoudly(t *testing.T) {
 		t.Fatal("odd message")
 	}
 }
+
+func TestUnattendedGateRefusesEmptyPlanHash(t *testing.T) {
+	g := gateFor(t, []string{"C1"}, []string{"C1"}, true)
+	d, err := g.Approve(context.Background(), human.PlanSummary{})
+	if err != nil || d.Approved || d.Note == "" || d.Note == "plan " {
+		t.Fatalf("%+v %v", d, err)
+	}
+}

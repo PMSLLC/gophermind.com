@@ -59,6 +59,9 @@ func (g unattendedGate) Approve(_ context.Context, plan human.PlanSummary) (huma
 		return refuse(fmt.Sprintf("coverage %d of %d", n, len(reqs)))
 	}
 	h := plan.Hash
+	if h == "" {
+		return refuse("plan has no hash")
+	}
 	if len(h) > 12 {
 		h = h[:12]
 	}

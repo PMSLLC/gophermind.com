@@ -131,3 +131,44 @@ func TestExitCodes(t *testing.T) {
 		}
 	}
 }
+
+func TestParseArgsValueFlagsRefuseFlagLookingValues(t *testing.T) {
+	for _, f := range []string{"--repo", "--expect-head", "--expect-binary-commit", "--generate"} {
+		_, err := ParseArgs([]string{"b.md", f, "--resume"}, false)
+		if err == nil || !strings.Contains(err.Error(), "flag "+f+" needs a value") || strings.Contains(err.Error(), "--resume") {
+			t.Errorf("%s: err = %v", f, err)
+		}
+	}
+	o, err := ParseArgs([]string{"b.md", "--repo=-x"}, false)
+	if err != nil || o.Repo != "-x" {
+		t.Fatalf("%+v %v", o, err)
+	}
+}
+
+func TestParseArgsRefusesRepeatedFlags(t *testing.T) {
+	for _, args := range [][]string{
+		{"b.md", "--repo", "a", "--repo", "b"},
+		{"b.md", "--resume", "--resume"},
+		{"b.md", "--expect-head=x", "--expect-head=y"},
+	} {
+		_, err := ParseArgs(args, true)
+		if err == nil || !strings.Contains(err.Error(), "given twice") || strings.Contains(err.Error(), "=y") {
+			t.Errorf("%v: err = %v", args, err)
+		}
+	}
+}
+
+func TestParseArgsSpellingsAndEmptyValues(t *testing.T) {
+	for _, a := range []string{"-resume", "---resume", "-x"} {
+		_, err := ParseArgs([]string{"b.md", a}, true)
+		if err == nil || !strings.Contains(err.Error(), "unknown flag") {
+			t.Errorf("%s: err = %v", a, err)
+		}
+	}
+	for _, args := range [][]string{{"b.md", "--repo="}, {"b.md", "--repo", ""}} {
+		_, err := ParseArgs(args, true)
+		if err == nil || !strings.Contains(err.Error(), "flag --repo needs a value") {
+			t.Errorf("%v: err = %v", args, err)
+		}
+	}
+}
