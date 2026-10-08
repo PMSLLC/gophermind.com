@@ -90,10 +90,13 @@ func checkPolarity(tests []map[string]any, errors int) error {
 		if !coversRE.MatchString(cov) {
 			return fmt.Errorf("%s: test %d needs covers: happy, error:<n> or input:<name>", grpEnum, i+1)
 		}
+		var n int
+		if _, err := fmt.Sscanf(cov, "error:%d", &n); err == nil && (n < 1 || n > errors) {
+			return fmt.Errorf("%s: test %d covers an error condition the contract does not list", grpEnum, i+1)
+		}
 		if cov == "happy" && pol == "success" {
 			happy = true
 		}
-		var n int
 		if _, err := fmt.Sscanf(cov, "error:%d", &n); err == nil {
 			if pol != "negative" {
 				return fmt.Errorf("%s: test %d covers an error condition, so its polarity must be negative", grpPolarity, i+1)

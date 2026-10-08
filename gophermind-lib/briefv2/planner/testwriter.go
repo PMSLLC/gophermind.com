@@ -165,7 +165,7 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	}
 	var tests []map[string]any
 	var source string
-	cs := callSpec{stage: "testwrite:" + id, taskType: "testwrite", nodeID: id, nodeClass: class, scope: router.ScopeNode, maxTokens: maxTokensTestwrite}
+	cs := callSpec{stage: "testwrite:" + id, taskType: "testwrite", nodeID: id, nodeClass: class, tier: p.tierFor(strField(d, "model_tier")), scope: router.ScopeNode, maxTokens: maxTokensTestwrite}
 	err = p.callAsking(ctx, r, cs, prompt, func(text string) error {
 		ts, src, err := parseTestwrite(StripReply(text), ct, pkg, funcName, c.Module, hookList(d))
 		if err != nil {
@@ -393,6 +393,19 @@ func (p *Planner) finishTree(ctx context.Context, r *run, c *contract.Contracts,
 	qs, err := loadQStore(r)
 	if err != nil {
 		return err
+	}
+	settled := map[string]bool{}
+	for _, q := range qs.Questions {
+		if q.Status == qSettled {
+			settled[q.ID] = true
+		}
+	}
+	for _, doc := range docs {
+		for _, did := range strList(doc["decision_ids"]) {
+			if !settled[did] {
+				return fmt.Errorf("node %v cites decision %s, which is not a settled question", doc["id"], boundedID(did))
+			}
+		}
 	}
 	embedDecisions(qs, nil, docs[1+len(comps):])
 	if bad := finishGroupDefects(docs, qs); len(bad) > 0 {
