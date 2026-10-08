@@ -29,7 +29,9 @@ func (s *Sink) Counts() Counts {
 	return s.counts
 }
 
-// Emit implements events.Sink.
+// Emit implements events.Sink. It writes to w while holding the lock, so a
+// whole line is never interleaved with another; the cost is that a slow
+// writer blocks every emitter.
 func (s *Sink) Emit(e events.Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
