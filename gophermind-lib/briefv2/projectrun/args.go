@@ -42,7 +42,7 @@ func ParseArgs(args []string, allowAttended bool) (Options, error) {
 		if k := strings.IndexByte(name, '='); k >= 0 {
 			name, val, hasVal = name[:k], name[k+1:], true
 		}
-		if (boolFlags[name] || valueFlags[name]) && seen[name] {
+		if (boolFlags[name] || valueFlags[name]) && name != "generate" && seen[name] {
 			return o, fmt.Errorf("flag --%s given twice", name)
 		}
 		seen[name] = true
