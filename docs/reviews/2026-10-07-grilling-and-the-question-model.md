@@ -72,6 +72,8 @@ After the frontier is empty, render an **Understanding** document: settled decis
 
 ### 4.5 Answers flow into nodes
 
+Note (2026-10-08): refined by the B spec. Changing an answer restarts the planner from the stage that used it, and the full question and answer records are also written into the node tree (root: the whole conversation; each node: the records it cites). See `docs/superpowers/specs/2026-10-07-node-widening-and-question-model-design.md`, sections 7.7 and 7.8.
+
 Each node gets `decision_ids[]` (the answers that shaped it), alongside the new `assumptions[]` and `open_questions[]` fields in the widened node schema. This is the v1 `ChangeAnswer` semantics made precise: changing an answer re-plans only the nodes that cite it, spares verified leaves unless the answer changes a signature (which is `contract_flagged`, as in the executor), and adds a new revision to the affected nodes only.
 
 ### 4.6 Files

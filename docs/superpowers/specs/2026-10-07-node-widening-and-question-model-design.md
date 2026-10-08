@@ -1,6 +1,6 @@
 # Node Widening and the Question Model: Design (sub-project B)
 
-Status: draft for review. Date: 2026-10-07.
+Status: draft for review. Date: 2026-10-07. Updated 2026-10-08: John's answers recorded (decisions 9 and 10), questions and answers in the tree added (7.8), and the implementation plan written (`docs/superpowers/plans/2026-10-08-node-widening-and-question-model.md`, 13 tasks). Nothing is built.
 Scope: sub-project B of `2026-10-07-planner-phaseflow-unification-design.md`. Two parts: (1) every plan node carries everything needed to build, debug and analyse it; (2) the planner asks its questions the way the `grilling` skill does, as a tree answered in rounds.
 Builds on: `docs/superpowers/specs/2026-09-29-v2-planner-core-design.md` (planner), `docs/superpowers/specs/2026-09-30-v2-executor-design.md` (executor), `docs/superpowers/specs/2026-09-30-project-single-entry-design.md` (the unattended policy, section 8), and the two reviews in `docs/reviews/2026-10-07-*.md`. All three specs live on branch `feat/briefv2-planner-core` (worktree `~/OtherProjects/PMSLLC/gophermind-planner-core`).
 Sequencing: written, not started. Decision 11 of the unification spec holds: nothing here changes the planner, the executor or the node schema until the GOAL.md graded run has finished. B is built after sub-project A (file state), because it writes decision records and attempt data into the run folder.
@@ -277,7 +277,7 @@ docs/briefv2/README.md                    new stages, questions, decisions/, set
 
 1. **Meaning of "all groups everywhere" (decided, John 2026-10-08).** Explicit, validated not-applicable answers are allowed where 5.1 says so.
 2. **Tier routing (decided, John 2026-10-08).** Enrich and Test-writer follow each node's `model_tier`; the setting `route_by_node_tier` turns it off.
-3. **File gate for rounds.** The file adapter's exact file names and the header that carries the round number are settled in the implementation plan against `human/file.go`.
+3. **File gate for rounds (settled in the plan, Task 3).** The file adapter keeps `QUESTIONS.md`, writes `Round N.` under its heading, shows each recommendation, accepts the word `accept` in an answer block, and archives the file when answered, so each round starts a fresh file; `UNDERSTANDING.md` works like `APPROVAL.md`.
 4. **Selective re-plan.** Revisit once components are known before Clarify's questions are asked (for example, a second Clarify pass after the Contract outline).
 5. **Executor verification of the groups** (log events emitted, mitigations present): a later change with its own spec.
 6. **Cost on the real brief.** The number of function nodes (136 in the rehearsal) times the Enrich cost has not been measured.
