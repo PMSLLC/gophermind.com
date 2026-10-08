@@ -192,3 +192,52 @@ func TestGoVersionLess(t *testing.T) {
 		}
 	}
 }
+
+func TestNaAllowedClassMatrix(t *testing.T) {
+	classes := []string{"pure", "validation", "handler", "client", "storage", "concurrency", "wiring", "other"}
+	refusedSecurity := map[string]bool{"handler": true, "client": true, "storage": true, "concurrency": true}
+	for _, class := range classes {
+		for group, want := range map[string]bool{
+			"security":      !refusedSecurity[class],
+			"observability": class == "pure",
+			"performance":   class == "pure",
+		} {
+			if got := naAllowed(group, class); got != want {
+				t.Errorf("naAllowed(%s, %s) = %v, want %v", group, class, got, want)
+			}
+			m := groupsDoc(t, func(m map[string]any) {
+				m[group] = map[string]any{"not_applicable": "a sentence long enough to be a real reason here"}
+			})
+			if got := !hasKind(groupDefects(m, class, testEnv()), grpNAForbid); got != want {
+				t.Errorf("groupDefects %s na on %s: allowed = %v, want %v", group, class, got, want)
+			}
+		}
+	}
+}
+
+func TestEveryRequiredGroupIsReportedMissing(t *testing.T) {
+	for _, g := range []string{"rationale", "construction", "alternatives", "portability", "security", "performance",
+		"observability", "refactor_notes", "profile_hooks", "assumptions", "open_questions", "decision_ids"} {
+		t.Run(g, func(t *testing.T) {
+			ds := groupDefects(groupsDoc(t, func(m map[string]any) { delete(m, g) }), "handler", testEnv())
+			found := false
+			for _, d := range ds {
+				if d.kind == grpMissing && d.field == g {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("no group_missing defect for %s: %v", g, kindsOf(ds))
+			}
+		})
+	}
+}
+
+func TestTrustBoundaryNoneNeedsNoThreats(t *testing.T) {
+	m := groupsDoc(t, func(m map[string]any) {
+		m["security"] = map[string]any{"trust_boundary": "none", "threats": []any{}}
+	})
+	if ds := groupDefects(m, "handler", testEnv()); len(ds) != 0 {
+		t.Fatalf("defects: %v", kindsOf(ds))
+	}
+}
