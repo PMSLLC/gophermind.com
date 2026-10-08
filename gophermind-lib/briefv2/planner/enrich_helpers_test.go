@@ -83,6 +83,17 @@ type enrichResponder func(stage string, call int, nodes []enrichNode, prompt str
 // withEnrichment puts a provider in front of the rig's fixture provider that
 // answers the Enrich stages itself and passes every other stage through.
 func withEnrichment(g *rig, respond enrichResponder) *enrichCalls {
+	return withEnrichmentErr(g, func(stage string, call int, nodes []enrichNode, prompt string) (string, error) {
+		return respond(stage, call, nodes, prompt), nil
+	})
+}
+
+// enrichResponderErr is an enrichResponder that may fail the provider call.
+type enrichResponderErr func(stage string, call int, nodes []enrichNode, prompt string) (string, error)
+
+// withEnrichmentErr is withEnrichment for a responder that can return an error,
+// for example provider.ErrTruncated.
+func withEnrichmentErr(g *rig, respond enrichResponderErr) *enrichCalls {
 	calls := &enrichCalls{}
 	base := g.fake
 	var mu sync.Mutex
@@ -113,7 +124,11 @@ func withEnrichment(g *rig, respond enrichResponder) *enrichCalls {
 		if m := nodesRE.FindStringSubmatch(prompt); m != nil {
 			_ = json.Unmarshal([]byte(m[1]), &nodes)
 		}
-		return provider.Response{Text: respond(stage, n, nodes, prompt), Model: "fixture", Usage: provider.Usage{PromptTokens: 1, CompletionTokens: 1}}, nil
+		text, err := respond(stage, n, nodes, prompt)
+		if err != nil {
+			return provider.Response{}, err
+		}
+		return provider.Response{Text: text, Model: "fixture", Usage: provider.Usage{PromptTokens: 1, CompletionTokens: 1}}, nil
 	})
 	g.router = router.New(g.cfg, map[string]provider.Provider{"fake": wrapped}, g.led, g.sink)
 	g.deps.Caller = g.router

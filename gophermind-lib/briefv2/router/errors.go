@@ -17,6 +17,10 @@ const (
 	ReasonFailed       = "failed"        // the call was made and failed (for example a timeout)
 )
 
+// TruncatedDetail is the Detail of a ReasonFailed row whose reply was cut off at
+// the token limit, even after one retry with a doubled budget.
+const TruncatedDetail = "reply truncated at the token limit"
+
 // EntryReason is one row of a ChainExhausted report.
 type EntryReason struct {
 	Entry  string // provider/model
@@ -47,6 +51,17 @@ func (e *ChainExhausted) Error() string {
 		msg += "; last parse error: " + e.ParseErr.Error()
 	}
 	return msg
+}
+
+// Truncated reports whether an entry failed because its reply was cut off at
+// the token limit. A caller that can ask for less at a time may retry smaller.
+func (e *ChainExhausted) Truncated() bool {
+	for _, r := range e.Reasons {
+		if r.Kind == ReasonFailed && r.Detail == TruncatedDetail {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *ChainExhausted) Unwrap() error { return e.ParseErr }

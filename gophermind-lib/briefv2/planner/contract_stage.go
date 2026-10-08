@@ -105,6 +105,13 @@ func failedAttempt(ctx context.Context, err error) bool {
 	return errors.As(err, &ce) && ce.ParseErr != nil
 }
 
+// truncatedAttempt reports whether the call failed because the model's reply
+// was cut off at the token limit, which a smaller request can avoid.
+func truncatedAttempt(ctx context.Context, err error) bool {
+	var ce *router.ChainExhausted
+	return err != nil && ctx.Err() == nil && errors.As(err, &ce) && ce.Truncated()
+}
+
 // outlineBatchSize is how many of the brief's features one outline pass
 // covers. The harness, not the model, decides which passes remain.
 const outlineBatchSize = 3

@@ -459,7 +459,7 @@ func (p *Planner) enrichMissing(ctx context.Context, r *run, c *contract.Contrac
 			batch := missing[:n]
 			res, err := p.enrichCall(ctx, r, c, comp, batch, env, nil, nil)
 			if err != nil {
-				if failedAttempt(ctx, err) && n > 1 {
+				if (failedAttempt(ctx, err) || truncatedAttempt(ctx, err)) && n > 1 {
 					size = nextBatchSize(size, n, true)
 					continue
 				}
