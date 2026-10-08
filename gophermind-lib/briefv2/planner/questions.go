@@ -204,7 +204,7 @@ func (s qstore) nextNumber() int {
 // qparseOpts says how strictly a Clarify reply is read.
 type qparseOpts struct {
 	MaxTotal           int  // cap on all questions of the run, the ones already stored included; 0 means none
-	RequireRecommended bool // a decision must carry a recommended answer (the run takes recommendations)
+	RequireRecommended bool // a decision or a fact must carry a recommended answer (the run takes recommendations)
 	Round              int
 	RaisedBy           string
 }
@@ -306,7 +306,7 @@ func parseQuestionList(text string, have qstore, o qparseOpts) ([]qrec, error) {
 		if len(opts) > 0 && rec != "" && !contains(opts, rec) {
 			return nil, fmt.Errorf("clarify reply: the recommended answer of question %d must be one of its options", n)
 		}
-		if kind == "decision" && o.RequireRecommended && rec == "" {
+		if o.RequireRecommended && rec == "" {
 			return nil, fmt.Errorf("clarify reply: question %d needs a recommended answer", n)
 		}
 		out = append(out, qrec{
