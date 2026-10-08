@@ -1,48 +1,38 @@
 [
-  {
-    "id": "fn-name-error-error",
-    "rationale": "Serves the fn-name-error-error part of the brief so callers get the behaviour the contract promises.",
-    "construction": {
-      "approach_chosen": "write it directly",
-      "steps": [
-        "Check the input.",
-        "Build and return the result."
-      ]
-    },
-    "alternatives": {
-      "not_applicable": "there is one obvious way to write a function this small"
-    },
-    "error_kinds": [],
-    "portability": {
-      "os": [
-        "linux",
-        "darwin"
-      ],
-      "arch": [
-        "amd64",
-        "arm64"
-      ],
-      "go_min": "1.21",
-      "cgo": false,
-      "deps": []
-    },
-    "security": {
-      "not_applicable": "the function handles no input from outside the process"
-    },
-    "performance": {
-      "not_applicable": "a pure function with no cost or events worth recording"
-    },
-    "observability": {
-      "not_applicable": "a pure function with no cost or events worth recording"
-    },
-    "refactor_notes": {
-      "not_applicable": "nothing worth restructuring in a function this small"
-    },
-    "profile_hooks": {
-      "not_applicable": "this function is too small to profile usefully"
-    },
-    "assumptions": [],
-    "open_questions": [],
-    "decision_ids": []
-  }
+ {
+  "id": "fn-name-error-error",
+  "rationale": "Implements the error method of NameError so the type satisfies error and carries its reason.",
+  "construction": {
+   "approach_chosen": "return a fixed message built from the reason",
+   "steps": [
+    "Read the reason field.",
+    "Return the message that names it."
+   ]
+  },
+  "alternatives": {
+   "not_applicable": "there is one obvious way to write an error method"
+  },
+  "error_kinds": [],
+  "portability": {
+   "not_applicable": "nothing here depends on the platform in any way"
+  },
+  "security": {
+   "not_applicable": "it handles no input and holds no secret at all"
+  },
+  "performance": {
+   "not_applicable": "a pure function with no latency requirement of its own"
+  },
+  "observability": {
+   "not_applicable": "a pure function has nothing to log or measure"
+  },
+  "refactor_notes": {
+   "not_applicable": "nothing worth restructuring in a function this small"
+  },
+  "profile_hooks": {
+   "not_applicable": "this function is too small to profile usefully"
+  },
+  "assumptions": [],
+  "open_questions": [],
+  "decision_ids": []
+ }
 ]
