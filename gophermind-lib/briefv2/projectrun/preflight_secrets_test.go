@@ -169,6 +169,39 @@ func TestPreflightDatabaseLoopbackAndDistinct(t *testing.T) {
 	})
 }
 
+func TestPreflightDatabaseHostForms(t *testing.T) {
+	live := listener(t)
+	t.Run("uppercase localhost is loopback", func(t *testing.T) {
+		r := newRig(t)
+		r.declare("DATABASE_URL")
+		r.seed(vault.HarnessScope, map[string]string{"DATABASE_URL": "postgres://u:p@LOCALHOST:" + live + "/d"})
+		wantOK(t, r.run(), "database DATABASE_URL")
+	})
+	for _, q := range []string{"?host=db.example.com", "?hostaddr=10.1.2.3", "?sslmode=disable&host=/tmp"} {
+		t.Run("override "+q, func(t *testing.T) {
+			r := newRig(t)
+			r.declare("DATABASE_URL")
+			url := "postgres://dbusr:s3cretpw@127.0.0.1:" + live + "/dbnamex" + q
+			r.seed(vault.HarnessScope, map[string]string{"DATABASE_URL": url})
+			c := wantFail(t, r.run(), "database DATABASE_URL")
+			if strings.Contains(c.Detail+c.Fix, "s3cretpw") || strings.Contains(c.Detail+c.Fix, "db.example.com") || strings.Contains(c.Detail+c.Fix, "10.1.2.3") {
+				t.Errorf("URL part printed: %+v", c)
+			}
+		})
+	}
+	t.Run("ipv6 loopback dials the inspected host", func(t *testing.T) {
+		r := newRig(t)
+		r.declare("DATABASE_URL")
+		r.seed(vault.HarnessScope, map[string]string{"DATABASE_URL": "postgres://u:p@[::1]:6432/d"})
+		var dialed string
+		r.env.Dial = func(_ context.Context, addr string) error { dialed = addr; return nil }
+		wantOK(t, r.run(), "database DATABASE_URL")
+		if dialed != "[::1]:6432" {
+			t.Errorf("dialed %q", dialed)
+		}
+	})
+}
+
 func TestPreflightDatabaseTunnelHint(t *testing.T) {
 	r := newRig(t)
 	r.declare("DATABASE_URL")
