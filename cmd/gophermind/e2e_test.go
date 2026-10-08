@@ -40,7 +40,7 @@ func useRunE2E(t *testing.T, fn func(context.Context, string, int) (string, erro
 }
 
 // cliStoresHold reports every store of a finished CLI run that holds needle:
-// the run folder, the SQLite files under the config dir, every object of the
+// the run folder, the config dir, every object of the
 // repository and what the CLI printed.
 func cliStoresHold(t *testing.T, repo, needle string, printed ...string) []string {
 	t.Helper()

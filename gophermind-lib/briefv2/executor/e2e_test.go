@@ -212,8 +212,8 @@ func archiveOf(t *testing.T, repo, sha string) string {
 
 // ---- the stores ----
 
-// e2eStores is every byte the run could have written to a store: the SQLite
-// file and its WAL, the run folder and its scratch (state files, events,
+// e2eStores is every byte the run could have written to a store: the config dir
+// (settings, run registry), the run folder and its scratch (state files, events,
 // report.json, acceptance.json, the proxy log), the ledger and blackboard rows
 // as the code reads them, the events, every object of the target repository
 // (decompressed), the commit messages and what the CLI prints (the summary and

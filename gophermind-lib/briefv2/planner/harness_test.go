@@ -73,7 +73,7 @@ func approving() *scriptGate {
 	return &scriptGate{decision: human.Decision{Approved: true, By: "test"}}
 }
 
-// rig is one target repo, one config dir and one database, with a planner
+// rig is one target repo, one config dir and one run folder, with a planner
 // wired over a real router and the fixture provider.
 type rig struct {
 	t         *testing.T

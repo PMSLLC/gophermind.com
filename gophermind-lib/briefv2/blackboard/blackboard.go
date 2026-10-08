@@ -5,9 +5,8 @@
 // The blackboard holds RUNTIME state only. Node definitions live in the file tree
 // (.gophermind/<run>/...). A row is keyed by (RunID, NodeID).
 //
-// Reference backend: SQLite via modernc.org/sqlite (pure Go, no cgo), one file per
-// harness at ~/.gophermind/blackboard.db, WAL mode. Claim() must be a single
-// UPDATE ... WHERE status='ready' so it is atomic without application locks.
+// Backend: NewFS keeps one .runtime.json sidecar per node inside the run folder;
+// Claim() is atomic through an exclusive-create lock file next to the sidecar.
 package blackboard
 
 import (
@@ -106,7 +105,7 @@ type Event struct {
 }
 
 // Blackboard is the coordination store. All methods are safe for concurrent use
-// from multiple goroutines and, for the SQLite backend, multiple processes.
+// from multiple goroutines and, for a file backend, multiple processes.
 type Blackboard interface {
 	// InitRun creates a pending row for every node ID. Idempotent: existing rows are left alone,
 	// which is what --resume relies on.
