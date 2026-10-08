@@ -36,8 +36,8 @@ func TestClarifyAsksThePersonAndStoresTheAnswers(t *testing.T) {
 	g := newRig(t, gate)
 	g.mustPlan(planner.Options{StopAfter: "clarify"})
 
-	if len(gate.asked) != 1 || gate.asked[0].ID != "q1" || gate.asked[0].Default != "Yes, trim it." ||
-		!strings.Contains(gate.asked[0].Text, "It changes what Greet returns") {
+	if len(gate.asked) != 1 || gate.asked[0].ID != "q1" || gate.asked[0].Recommended != "Yes, trim it." ||
+		!strings.Contains(gate.asked[0].Why, "It changes what Greet returns") {
 		t.Fatalf("gate was asked %+v", gate.asked)
 	}
 	as := g.answers()
@@ -45,8 +45,8 @@ func TestClarifyAsksThePersonAndStoresTheAnswers(t *testing.T) {
 		t.Errorf("answers.json = %+v", as)
 	}
 	rows, err := g.led.List(context.Background(), greeterID, ledger.Filter{})
-	if err != nil || len(rows) != 1 {
-		t.Fatalf("ledger rows = %d, %v; want 1", len(rows), err)
+	if err != nil || len(rows) != 2 {
+		t.Fatalf("ledger rows = %d, %v; want 2 (the questions, then the follow-up round)", len(rows), err)
 	}
 	if rows[0].Stage != "clarify" || rows[0].TaskType != "clarify" || rows[0].Scope != "brief" || rows[0].Tier != "strong" {
 		t.Errorf("ledger row = %+v", rows[0])
@@ -98,8 +98,10 @@ func TestClarifyWaitingThenResumeDoesNotCallTheModelAgain(t *testing.T) {
 	gate.err = nil
 	g.wire() // a new process: fresh provider, same run
 	g.mustPlan(planner.Options{RunID: greeterID, StopAfter: "clarify"})
-	if n := len(g.fake.Requests()); n != 0 {
-		t.Errorf("resume made %d model calls, want 0", n)
+	// The question was not asked of the model again; only the follow-up round
+	// (what the answer unblocked) is a new call.
+	if got := g.stagesCalled(); len(got) != 1 || got[0] != "clarify:more" {
+		t.Errorf("resume called the model for %v, want only clarify:more", got)
 	}
 	if len(g.answers()) != 1 {
 		t.Errorf("answers.json = %+v", g.answers())
@@ -157,7 +159,7 @@ func (g *shortGate) Ask(ctx context.Context, qs []human.Question) ([]human.Answe
 func TestAClarifyReplyOfNullIsRetried(t *testing.T) {
 	g := newRig(t, approving(), variant(t, map[string]string{"clarify.txt": "null", "clarify.2.txt": "[]"}))
 	g.mustPlan(planner.Options{StopAfter: "clarify"})
-	if got := string(g.read("_state/clarify.json")); strings.Contains(got, "null") {
-		t.Errorf("clarify.json = %s", got)
+	if got := string(g.read("_state/clarify/questions.json")); strings.Contains(got, "null") || !strings.Contains(got, `"questions": []`) {
+		t.Errorf("questions.json = %s", got)
 	}
 }

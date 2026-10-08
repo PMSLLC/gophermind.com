@@ -84,6 +84,8 @@ func TestPlanEndToEnd(t *testing.T) {
 						as[i] = human.Answer{ID: q.ID, Text: "Yes, trim it."}
 					}
 					req.Answer(as)
+				case human.KindConfirm:
+					req.Decide(human.Decision{Approved: true, By: "programmatic"})
 				case human.KindApprove:
 					shown <- req.Plan
 					req.Decide(human.Decision{Approved: true, By: "programmatic"})
@@ -210,7 +212,7 @@ func TestLedgerRowsCarryTheTaskTypeAndTheNodeClass(t *testing.T) {
 			t.Errorf("row %s: task %q, node %q, class %q", r.Stage, r.TaskType, r.NodeID, r.NodeClass)
 		}
 	}
-	want := map[string]int{"clarify": 1, "contract": 5, "decompose": 3, "coverage": 1, "testwrite": 3}
+	want := map[string]int{"clarify": 2, "contract": 5, "decompose": 3, "coverage": 1, "testwrite": 3}
 	for task, n := range want {
 		if byTask[task] != n {
 			t.Errorf("%d rows of task type %s, want %d (all: %v)", byTask[task], task, n, byTask)
@@ -260,7 +262,7 @@ func TestNothingTouchesTheRepoWithoutApproval(t *testing.T) {
 // Stop after each stage in turn and resume: no stage that had finished makes
 // a model call again.
 func TestResumeRepeatsOnlyWhatIsUnfinished(t *testing.T) {
-	order := []string{"load", "clarify", "contract", "decompose", "coverage", "approve"}
+	order := []string{"load", "clarify", "confirm", "contract", "decompose", "coverage", "approve"}
 	owner := func(stage string) string {
 		switch name, _, _ := strings.Cut(stage, ":"); name {
 		case "coverage_fill":
@@ -298,7 +300,7 @@ func TestResumeRepeatsOnlyWhatIsUnfinished(t *testing.T) {
 
 	t.Run("waiting for approval", func(t *testing.T) {
 		gate := approving()
-		gate.err = human.ErrWaiting
+		gate.approveErr = human.ErrWaiting
 		g := newRig(t, gate, variant(t, map[string]string{"clarify.txt": "[]"}))
 		out, err := g.plan(planner.Options{})
 		if err != nil || out != planner.Waiting {
@@ -307,7 +309,7 @@ func TestResumeRepeatsOnlyWhatIsUnfinished(t *testing.T) {
 		if st, _ := planner.ReadStatus(greeterID); st.Waiting != "approve" {
 			t.Errorf("status.Waiting = %q, want approve", st.Waiting)
 		}
-		gate.err = nil
+		gate.approveErr = nil
 		g.wire()
 		g.mustPlan(planner.Options{RunID: greeterID})
 		for _, s := range g.stagesCalled() {

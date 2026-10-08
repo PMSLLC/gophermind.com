@@ -57,19 +57,19 @@ func TestParseAndMergeErrorsNeverQuoteTheReply(t *testing.T) {
 	if _, err := parseSignature("func " + c + "("); err == nil || strings.Contains(err.Error(), c) {
 		t.Errorf("parseSignature error = %v", err)
 	}
-	if _, err := parseClarify("[" + c + "]"); err == nil || strings.Contains(err.Error(), c) {
-		t.Errorf("parseClarify error = %v", err)
+	if _, err := parseQuestionList("["+c+"]", qstore{}, qparseOpts{}); err == nil || strings.Contains(err.Error(), c) {
+		t.Errorf("parseQuestionList error = %v", err)
 	}
-	if _, err := parseClarify(`{"` + c + `": 1}`); err == nil || strings.Contains(err.Error(), c) {
-		t.Errorf("parseClarify type error = %v", err)
+	if _, err := parseQuestionList(`{"`+c+`": 1}`, qstore{}, qparseOpts{}); err == nil || strings.Contains(err.Error(), c) {
+		t.Errorf("parseQuestionList type error = %v", err)
 	}
 }
 
-func TestParseClarifyRejectsNull(t *testing.T) {
-	if _, err := parseClarify("null"); err == nil {
+func TestParseQuestionListRejectsNull(t *testing.T) {
+	if _, err := parseQuestionList("null", qstore{}, qparseOpts{}); err == nil {
 		t.Error("null must be rejected")
 	}
-	if qs, err := parseClarify("[]"); err != nil || qs == nil {
+	if qs, err := parseQuestionList("[]", qstore{}, qparseOpts{}); err != nil || qs == nil {
 		t.Errorf("[] = %v, %v", qs, err)
 	}
 }

@@ -111,6 +111,7 @@ type stage struct {
 // stages after Load, in order.
 var stages = []stage{
 	{"clarify", (*Planner).clarify, clarifyDone},
+	{"confirm", (*Planner).confirm, confirmDone},
 	{"contract", (*Planner).contract, contractDone},
 	{"decompose", (*Planner).decompose, decomposeDone},
 	{"coverage", (*Planner).coverage, coverageDone},
@@ -276,6 +277,11 @@ func (p *Planner) callAsking(ctx context.Context, r *run, cs callSpec, prompt st
 			return fmt.Errorf("the model asked more than %d questions in stage %s (the last was %d bytes)", maxQuestionsPerCall, cs.stage, len(question))
 		}
 		if r.brief.Front.OnAmbiguity == "assume_and_document" {
+			// Nobody is asked, but the question and the assumption are kept like any answer.
+			id := fmt.Sprintf("%s-q%d", strings.ReplaceAll(cs.stage, ":", "-"), len(as.Answers)+1)
+			if as, err = p.recordAnswer(r, cs, id, question, "No answer was given; take the most conservative option.", byUnattended); err != nil {
+				return err
+			}
 			prompt += "\n\nNo human is available. Choose the most conservative option and record it in the node's \"assumptions\" array."
 			continue
 		}
@@ -290,8 +296,7 @@ func (p *Planner) callAsking(ctx context.Context, r *run, cs callSpec, prompt st
 		if len(got) != 1 {
 			return fmt.Errorf("the human gate returned %d answers for 1 question", len(got))
 		}
-		as.Answers = append(as.Answers, answer{ID: id, Stage: cs.stage, Question: question, Answer: got[0].Text, Assumed: got[0].Assumed})
-		if err := writeJSON(r.path(fileAnswers), as); err != nil {
+		if as, err = p.recordAnswer(r, cs, id, question, got[0].Text, answerBy(got[0])); err != nil {
 			return err
 		}
 		if err := removeFile(r.path(stateQuestion)); err != nil {
@@ -311,4 +316,36 @@ func (p *Planner) ask(ctx context.Context, qs []human.Question) ([]human.Answer,
 
 func answerNote(question, text string) string {
 	return "\n\nAnswer from the owner to your question:\n" + question + "\n" + text
+}
+
+// answerBy says who an answer came from, for the question store.
+func answerBy(a human.Answer) string {
+	switch {
+	case a.Accepted:
+		return byAccepted
+	case a.Assumed:
+		return byUnattended
+	}
+	return byHuman
+}
+
+// recordAnswer settles a question a stage raised in the store, rewrites the
+// answers.json view and the decision record, and returns the view.
+func (p *Planner) recordAnswer(r *run, cs callSpec, id, question, text, by string) (answersFile, error) {
+	qs, err := loadQStore(r)
+	if err != nil {
+		return answersFile{}, err
+	}
+	qs.Questions = append(qs.Questions, qrec{ID: id, Text: question, Kind: "decision", RaisedBy: cs.stage, Status: qSettled,
+		Answer: text, AnsweredBy: by, SettledAt: stamp(p.d.Now())})
+	if err := qs.save(r); err != nil {
+		return answersFile{}, err
+	}
+	if err := writeAnswersView(r, qs); err != nil {
+		return answersFile{}, err
+	}
+	if err := writeDecision(r, qs.Questions[len(qs.Questions)-1], nil); err != nil {
+		return answersFile{}, err
+	}
+	return loadAnswers(r)
 }

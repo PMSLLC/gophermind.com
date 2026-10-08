@@ -207,6 +207,19 @@ func TestAQuestionPausesOneCallAndRerunsOnlyThatCall(t *testing.T) {
 	if g.has("_state/question.json") {
 		t.Error("the pending question was not cleared once answered")
 	}
+	st := readStore(t, g.runDir)
+	var mid *storedQ
+	for i := range st.Questions {
+		if strings.HasPrefix(st.Questions[i].ID, "decompose-") {
+			mid = &st.Questions[i]
+		}
+	}
+	if mid == nil || mid.Status != "settled" || mid.AnsweredBy != "human" {
+		t.Fatalf("the mid-stage question was not recorded in the store: %+v", st.Questions)
+	}
+	if _, err := os.Stat(filepath.Join(g.runDir, "decisions", mid.ID+".md")); err != nil {
+		t.Errorf("no decision record for the mid-stage question: %v", err)
+	}
 }
 
 func TestAQuestionInAssumeModeGoesBackToTheModel(t *testing.T) {
@@ -231,6 +244,19 @@ func TestAQuestionInAssumeModeGoesBackToTheModel(t *testing.T) {
 	}
 	if !strings.Contains(second, "No human is available. Choose the most conservative option") {
 		t.Error("the rerun prompt does not tell the model to assume")
+	}
+	var mid *storedQ
+	st := readStore(t, g.runDir)
+	for i := range st.Questions {
+		if strings.HasPrefix(st.Questions[i].ID, "decompose-") {
+			mid = &st.Questions[i]
+		}
+	}
+	if mid == nil || mid.Status != "settled" || mid.AnsweredBy != "unattended-default" {
+		t.Fatalf("a mid-stage question in assume mode must be stored as a settled unattended answer: %+v", st.Questions)
+	}
+	if as := g.answers(); len(as) == 0 || !as[len(as)-1].Assumed {
+		t.Errorf("answers.json does not show the assumption: %+v", as)
 	}
 }
 
