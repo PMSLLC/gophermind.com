@@ -291,7 +291,9 @@ func TestNoSecretValueReachesAnyFileTheNewStagesWrite(t *testing.T) {
 			t.Errorf("%s was not among the files checked", want)
 		}
 	}
-	if !strings.Contains(string(g.read("_state/enriched.json")), "GREETER_API_KEY") && !strings.Contains(string(g.read("_state/decomposed.json")), "GREETER_API_KEY") {
+	// The enriched node drafts must carry the declared name (secret_use), or the
+	// scan above proves nothing about enrichment output.
+	if !strings.Contains(string(g.read("_state/decomposed.json")), "GREETER_API_KEY") {
 		t.Error("the declared secret's name never reached the enriched nodes, so the check proves nothing")
 	}
 	for _, req := range g.fake.Requests() {

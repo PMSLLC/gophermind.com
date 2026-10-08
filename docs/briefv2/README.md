@@ -439,6 +439,20 @@ for a count is refused, and an older file without the keys still loads):
 their model chain from each node's `model_tier`; false: they use the strong chain
 as the other planner stages do).
 
+### Runs planned before the question model
+
+A run planned before the question model has an `approval.json` that predates the
+confirmed understanding. On `resume` it is asked to confirm the understanding
+once. The plan hash now covers `_state/understanding.json` and
+`_state/enriched.json`, so the old approval no longer matches, and verification
+fails with:
+
+`approval.json predates the confirmed understanding; remove it and resume to confirm the understanding and approve the plan again`
+
+Delete `approval.json` and approve again. A run that has `answers.json` but no
+`_state/clarify/questions.json` is not asked its questions again: the store is
+rebuilt from `answers.json`.
+
 ### Privacy of node-scope calls
 
 A node-scope call (the Test-writer, and the executor's implement call) may be shown
