@@ -300,11 +300,10 @@ func (f *FS) List(ctx context.Context, runID string, flt Filter) ([]Row, error) 
 			return cerr
 		}
 		if d.IsDir() {
-			switch d.Name() {
-			case "_state", "logs":
-				if filepath.Dir(p) == runDir {
-					return filepath.SkipDir
-				}
+			// Directly under the run folder these hold run artifacts, never
+			// node runtime files.
+			if filepath.Dir(p) == runDir && (d.Name() == "_state" || tree.IsReservedComponentID(d.Name())) {
+				return filepath.SkipDir
 			}
 			return nil
 		}
