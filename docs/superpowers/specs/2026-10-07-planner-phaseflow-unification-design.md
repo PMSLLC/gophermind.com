@@ -69,22 +69,23 @@ Removed: `briefv2/db`, `briefv2/blackboard/sqlite.go`, and the SQLite implementa
   brief.md  contracts.json  approval.json  coverage.json   unchanged
   <component>/component.json                               plan, unchanged
   <component>/<fn-id>.json                                 plan, unchanged
-  <component>/<fn-id>.state.json                           NEW: status, revision, wave, attempts, result, updated_at
-  <component>/<fn-id>.claim                                NEW: exists only while a worker holds the node (worker, claimed_at, heartbeat_at)
-  root.state.json, <component>/component.state.json        NEW: same, for non-function nodes
+  <component>/<fn-id>.runtime.json                         NEW: status, revision, wave, attempts, result, claim (worker, claimed_at, heartbeat_at), updated_at
+  root.runtime.json, <component>/component.runtime.json    NEW: same, for non-function nodes
   _state/events.jsonl                                      NEW: one JSON object per line, append only (replaces table events)
   _state/calls.jsonl                                       NEW: one JSON object per line, append only (replaces table calls)
   attempts/<node-id>/<n>/                                  NEW: reply.go, check-output.txt, attempt.json (scrubbed; decision 7)
 ```
+
+There is no separate claim file: the claim lives inside the node's `.runtime.json`, and a transient `<node>.runtime.json.lock` file (exclusive create) makes each read-modify-write atomic. (As built; the first draft had `.state.json` and `.claim`.)
 
 Run state is never written into the plan node files. The executor hashes the plan files and refuses to resume when they changed ("plan files changed since the run started"), so writing status into them would trip that check.
 
 ### 4.3 Rules the filesystem implementation must keep
 
 1. **Atomic writes.** Every state file is written to a temporary file and renamed, as `tree.Store.Write` does. Files are mode 0600 and directories 0700.
-2. **Atomic claim.** The SQL `UPDATE ... WHERE status='ready'` is replaced by an exclusive create of `<fn-id>.claim` (`O_CREATE|O_EXCL`). Exactly one worker succeeds.
-3. **Transitions.** The allowed-transition table in `blackboard.go` is unchanged and enforced by `SetStatus`. A read-modify-write of a node's state file happens under an exclusive-create `<fn-id>.lock`, retried for a bounded time, and a lock older than `stale_claim_seconds` is reclaimed.
-4. **Heartbeat.** A worker refreshes `heartbeat_at` inside the claim file. A claim older than `stale_claim_seconds` is stale, as today.
+2. **Atomic claim.** The SQL `UPDATE ... WHERE status='ready'` is replaced by an exclusive create of the transient `<node>.runtime.json.lock` (`O_CREATE|O_EXCL`) plus an edit of the runtime file that records the claim. Exactly one worker succeeds.
+3. **Transitions.** The allowed-transition table in `blackboard.go` is unchanged and enforced by `SetStatus`. A read-modify-write of a node's state file happens under an exclusive-create `<node>.runtime.json.lock`, retried for a bounded time, and a lock older than `stale_claim_seconds` is reclaimed.
+4. **Heartbeat.** A worker refreshes `heartbeat_at` inside the runtime file's claim. A claim older than `stale_claim_seconds` is stale, as today.
 5. **Append-only logs.** `events.jsonl` and `calls.jsonl` are opened with `O_APPEND`, one write per line, so concurrent appends do not interleave. Ledger write failures keep the existing rule: the call result is kept, a `ledger_error` event is emitted, and the run is marked incomplete.
 6. **Watch.** The blackboard `Watch` is implemented by following `events.jsonl` (poll for new lines). No file-system notification library is added.
 7. **Path safety.** State paths derive from node IDs, which match `^[a-z0-9][a-z0-9-]*$`, joined through the `pathsafe` rules the executor already uses. A state path that escapes the run folder is refused.
@@ -93,8 +94,9 @@ Run state is never written into the plan node files. The executor hashes the pla
 
 ### 4.4 Other code that must learn the new files
 
-- `tree.Store.Load` must skip `*.state.json`, `*.claim`, `*.lock`, `attempts/` and `_state/`. Today it skips a fixed list of named files (`notNodes`) and a state sidecar would otherwise load as a node.
+- `tree.Store.Load` must skip `*.runtime.json`, `*.lock`, `attempts/` and `_state/`. Today it skips a fixed list of named files (`notNodes`) and a state sidecar would otherwise load as a node.
 - `report` and `brief status`, `brief calls`, `brief report` read the same interfaces, so they need no change beyond the constructors in `cmd/gophermind/brief_plan.go` and `brief_run.go`, which currently open the database.
+- `Ledger.Amend` takes the run id; the ledger appends an amend line instead of rewriting a call.
 - The executor's own `_state/leaf-results.json` and `_state/executor.json` already live in the run folder and stay as they are.
 
 ### 4.5 Existing data
