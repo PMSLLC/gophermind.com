@@ -23,6 +23,7 @@ func ParseArgs(args []string, allowAttended bool) (Options, error) {
 	var o Options
 	var pos []string
 	genN := 0
+	seen := map[string]bool{}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if a == "--" {
@@ -33,11 +34,18 @@ func ParseArgs(args []string, allowAttended bool) (Options, error) {
 			pos = append(pos, a)
 			continue
 		}
-		name := strings.TrimPrefix(strings.TrimPrefix(a, "-"), "-")
+		if !strings.HasPrefix(a, "--") {
+			return o, errors.New("unknown flag (flags are spelled with two dashes)")
+		}
+		name := a[2:]
 		val, hasVal := "", false
 		if k := strings.IndexByte(name, '='); k >= 0 {
 			name, val, hasVal = name[:k], name[k+1:], true
 		}
+		if (boolFlags[name] || valueFlags[name]) && seen[name] {
+			return o, fmt.Errorf("flag --%s given twice", name)
+		}
+		seen[name] = true
 		switch {
 		case boolFlags[name]:
 			if hasVal {
@@ -59,11 +67,14 @@ func ParseArgs(args []string, allowAttended bool) (Options, error) {
 			}
 		case valueFlags[name]:
 			if !hasVal {
-				if i+1 >= len(args) {
+				if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 					return o, fmt.Errorf("flag --%s needs a value", name)
 				}
 				i++
 				val = args[i]
+			}
+			if val == "" {
+				return o, fmt.Errorf("flag --%s needs a value", name)
 			}
 			switch name {
 			case "repo":
