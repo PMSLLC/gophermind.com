@@ -34,7 +34,7 @@ var _ Ledger = (*FS)(nil)
 
 // NewFS returns the filesystem ledger. resolve finds a run's folder.
 func NewFS(resolve RunDirFunc) *FS {
-	return &FS{resolve: resolve, wait: 10 * time.Second, stale: 30 * time.Second}
+	return &FS{resolve: resolve, wait: runfs.LockWait, stale: runfs.LockStaleAfter}
 }
 
 // wire is one line of calls.jsonl. Kind "amend" lines carry only ID, Outcome
@@ -103,15 +103,40 @@ func nextID(stateDir string) (int64, error) {
 	p := filepath.Join(stateDir, "calls.seq")
 	var last int64
 	if b, err := os.ReadFile(p); err == nil {
+		// A corrupt seq reads as 0; the largest id in calls.jsonl below
+		// keeps the next id above every id already handed out.
 		last, _ = strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return 0, err
+	}
+	if m, err := maxLoggedID(filepath.Join(stateDir, "calls.jsonl")); err != nil {
+		return 0, err
+	} else if m > last {
+		last = m
 	}
 	last++
 	if err := runfs.WriteFileAtomic(p, []byte(strconv.FormatInt(last, 10)+"\n")); err != nil {
 		return 0, err
 	}
 	return last, nil
+}
+
+// maxLoggedID returns the largest id on any line of calls.jsonl, or 0.
+func maxLoggedID(path string) (int64, error) {
+	lines, _, err := runfs.ReadLines(path, 0)
+	if err != nil {
+		return 0, err
+	}
+	var max int64
+	for _, ln := range lines {
+		var w struct {
+			ID int64 `json:"id"`
+		}
+		if json.Unmarshal(ln, &w) == nil && w.ID > max {
+			max = w.ID
+		}
+	}
+	return max, nil
 }
 
 func (f *FS) Record(ctx context.Context, c *Call) error {

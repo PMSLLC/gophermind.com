@@ -203,7 +203,8 @@ func (p *Planner) storeSecrets(b *brief.Brief) error {
 }
 
 // untouchedRunDir reports whether a run folder holds only what Load writes:
-// the brief, the requirements, an empty logs folder and a status file. Such a
+// the brief, the requirements, an empty logs folder, a status file and the
+// ledger, event and reply files a first stage leaves in _state. Such a
 // folder is left over from a plan that stopped before its first stage
 // finished, and replacing it loses nothing.
 func untouchedRunDir(dir string) bool {
@@ -224,7 +225,11 @@ func untouchedRunDir(dir string) bool {
 				return false
 			}
 			for _, s := range sub {
-				if s.Name() != "status.json" {
+				switch s.Name() {
+				case "status.json", "calls.jsonl", "calls.seq", "calls.lock", "events.jsonl", "replies":
+					// Ledger, events and saved replies of a plan that died
+					// in its first stage; replacing the folder drops them.
+				default:
 					return false
 				}
 			}

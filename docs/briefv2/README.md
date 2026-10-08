@@ -303,6 +303,7 @@ database.
   root.runtime.json, <component>/component.runtime.json    the same, for non-function nodes
   _state/events.jsonl                                      one JSON object per line, append only
   _state/calls.jsonl                                       one JSON object per line, append only (the call ledger)
+  _state/replies/<stage>-<n>.txt                          planner replies, saved when artifacts are on
   attempts/<node-id>/<n>/                                  reply.go, reply.txt, check-output.txt, attempt.json (scrubbed)
 ```
 

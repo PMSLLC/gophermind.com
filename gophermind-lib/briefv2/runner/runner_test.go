@@ -270,3 +270,12 @@ func TestRunSpecModCacheWritable(t *testing.T) {
 		t.Fatal("the caller's profile was mutated")
 	}
 }
+
+func TestOutputWholeLinesDropsACutLine(t *testing.T) {
+	w := &cappedWriter{limit: 12, h: sha256.New()}
+	_, _ = w.Write([]byte("abc\ndefgh\nijklmnop\n"))
+	o := w.output()
+	if got := o.WholeLines(); got != "abc\ndefgh\n" || o.Text() != "abc\ndefgh\nij" {
+		t.Errorf("WholeLines = %q, Text = %q", got, o.Text())
+	}
+}

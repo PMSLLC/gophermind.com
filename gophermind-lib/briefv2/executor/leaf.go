@@ -1208,7 +1208,7 @@ func (lr *leafRun) check(ctx context.Context, e ladderEntry, started time.Time, 
 		return endFailed, true, fmt.Errorf("executor: writing the file of leaf %s failed", l.ID)
 	}
 	v := settle(rc.checkLeaf(ctx, l))
-	lr.art.out = v.Out.Text()
+	lr.art.out = v.Out.WholeLines()
 	stray, err := lr.cleanStray(snap)
 	if err != nil {
 		return endFailed, true, err
