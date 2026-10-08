@@ -42,7 +42,7 @@ Each item gets its own plan and its own build. All code work happens on `feat/br
 | # | Sub-project | Depends on | Spec |
 |---|---|---|---|
 | A | Filesystem run state replaces SQLite, with attempt artifacts | nothing | section 4 of this document; plan written 2026-10-07: `docs/superpowers/plans/2026-10-07-filesystem-run-state.md` (9 tasks, not started) |
-| B | Node widening and the question model | A (decision records, attempts) | `docs/superpowers/specs/2026-10-07-node-widening-and-question-model-design.md` (sections 5 and 6 of this document are the summary) |
+| B | Node widening and the question model | A (decision records, attempts) | `docs/superpowers/specs/2026-10-07-node-widening-and-question-model-design.md` (sections 5 and 6 of this document are the summary); plan written 2026-10-08: `docs/superpowers/plans/2026-10-08-node-widening-and-question-model.md` (13 tasks, not started) |
 | C | `/project` plans and builds through v2 | A, B | the existing `2026-09-30-project-single-entry-design.md` and plan (14 tasks, not built), amended by section 7 |
 | D | PhaseFlow view: `.planning/` files and the pipeline endpoints read the run folder | A, C | section 8 |
 | E | Planner revise stage: rewrite a node after a failure | B | its own spec; neither v1 nor v2 does this today |

@@ -104,7 +104,7 @@ Each is a fixed word in the same vocabulary the Decompose repair loop already us
 | `na_reason` | the reason is under 20 characters or is a listed non-answer |
 | `enum` | any enum value outside its set |
 | `construction_short` | fewer than 2 steps, or an empty step |
-| `go_type_unresolved` | a type named in a signature's parameters or results is neither a Go builtin, nor a standard library type, nor a type declared in `contracts.json` (checked on `go_type`, which code derives) |
+| `go_type_unresolved` | a type named in a signature's parameters or results is neither a Go builtin, nor a standard library type, nor a type declared in `contracts.json` (checked on `go_type`, which code derives). A warning in the approval summary, not a failure: the Enrich model cannot repair the Contract |
 | `security_secret` | `secret_use` names something that is not a declared secret of the brief, or `untrusted_inputs` names something that is not a parameter |
 | `security_threats` | `trust_boundary` is anything but `none` and `threats` is empty |
 | `portability_go` | `go_min` is newer than the repo's `go.mod` Go version |
@@ -275,8 +275,8 @@ docs/briefv2/README.md                    new stages, questions, decisions/, set
 
 ## 13. Open items
 
-1. **Meaning of "all groups everywhere".** Read here as every group present on every node with an explicit, validated not-applicable allowed where 5.1 says so. If John meant no not-applicable at all, `alternatives`, `portability`, `performance`, `refactor_notes` and `profile_hooks` become mandatory real content on every node, including a pure one-line function, which invites filler.
-2. **Tier routing.** Whether weaker tiers are trusted with Enrich and Test-writer; measure on csvstat before the real brief.
+1. **Meaning of "all groups everywhere" (decided, John 2026-10-08).** Explicit, validated not-applicable answers are allowed where 5.1 says so.
+2. **Tier routing (decided, John 2026-10-08).** Enrich and Test-writer follow each node's `model_tier`; the setting `route_by_node_tier` turns it off.
 3. **File gate for rounds.** The file adapter's exact file names and the header that carries the round number are settled in the implementation plan against `human/file.go`.
 4. **Selective re-plan.** Revisit once components are known before Clarify's questions are asked (for example, a second Clarify pass after the Contract outline).
 5. **Executor verification of the groups** (log events emitted, mitigations present): a later change with its own spec.
