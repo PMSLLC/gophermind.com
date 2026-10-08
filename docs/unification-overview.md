@@ -22,6 +22,7 @@ John asked for the planner to be tightly integrated with PhaseFlow. Reading both
 | `docs/reviews/2026-10-07-planner-executor-v1-v2-review.md` | Four-agent review of v1 and v2: side-by-side table, ranked defects, keep and drop verdicts, the new node fields | review; eight agent claims still to spot-check (its section 8) |
 | `docs/reviews/2026-10-07-grilling-and-the-question-model.md` | The `grilling` skill against the v1 and v2 question models | decided; refined by the B spec |
 | `docs/superpowers/specs/2026-10-07-node-widening-and-question-model-design.md` | Sub-project B: the node groups, the Enrich stage, the question rounds, questions and answers in the tree | draft for review |
+| `docs/reviews/2026-10-08-v1-caller-inventory.md` | Who uses v1 (server, desktop app, `/phase`, the TUI) and what upgrading each means; two decisions for John | inventory; decisions open |
 | `docs/superpowers/plans/2026-10-07-filesystem-run-state.md` | Sub-project A plan: files instead of SQLite, attempt artifacts (9 tasks) | written, not started |
 | `docs/superpowers/plans/2026-10-08-node-widening-and-question-model.md` | Sub-project B plan (13 tasks) | written, not started |
 | `docs/GOAL.md` and `docs/superpowers/specs/2026-09-30-project-single-entry-design.md` (branch) | The graded run and `/project` as the single entry point, which this work must not disturb | active |
@@ -81,9 +82,10 @@ This is why the unification work waits: every change to the planner, the executo
 
 ## 8. Open items for John
 
-1. After the graded run: revisit merging the branch, re-check the eight unverified review claims, then start A.
-2. Sub-project G (removing v1 and the version names) needs a caller inventory and its own spec.
-3. Enrich's cost on the real brief (136 function nodes in the rehearsal) is unmeasured; measure on the csvstat brief first.
+1. Sub-project G wire contract (keep today's JSON shape or define one new node-based contract) and what `/phase` becomes: see `docs/reviews/2026-10-08-v1-caller-inventory.md`, section 7.
+2. After the graded run: revisit merging the branch, re-check the eight unverified review claims, then start A.
+3. Sub-project G needs its own spec once those two are decided.
+4. Enrich's cost on the real brief (136 function nodes in the rehearsal) is unmeasured; measure on the csvstat brief first.
 
 ## 9. How to resume
 
