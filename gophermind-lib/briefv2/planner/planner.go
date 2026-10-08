@@ -57,6 +57,12 @@ type Options struct {
 	// StopAfter ends the run once the named stage has finished (load, clarify,
 	// contract, decompose, coverage, approve). The run stays resumable.
 	StopAfter string
+	// Repo, for a plan, replaces the brief's repo field for the run folder and
+	// the run record. On a resume it must name the repo the run was planned in.
+	Repo string
+	// Unattended says no human is available: Clarify, Confirm and a mid-stage
+	// question follow takesRecommendations().
+	Unattended bool
 }
 
 type Outcome string
@@ -283,7 +289,7 @@ func (p *Planner) callAsking(ctx context.Context, r *run, cs callSpec, prompt st
 		if asked >= maxQuestionsPerCall {
 			return fmt.Errorf("the model asked more than %d questions in stage %s (the last was %d bytes)", maxQuestionsPerCall, cs.stage, len(question))
 		}
-		if r.brief.Front.OnAmbiguity == "assume_and_document" {
+		if r.takesRecommendations() {
 			// Nobody is asked, but the question and the assumption are kept like any answer.
 			id := fmt.Sprintf("%s-q%d", strings.ReplaceAll(cs.stage, ":", "-"), len(as.Answers)+1)
 			if as, err = p.recordAnswer(r, cs, id, question, "No answer was given; take the most conservative option.", byUnattended); err != nil {
