@@ -20,6 +20,7 @@ const briefUsage = `usage:
   gophermind brief validate <brief.md>
   gophermind brief plan <brief.md> [--yes] [--gate terminal|file] [--fake <fixture-dir>] [--allow-public]
   gophermind brief resume <run-id> [--yes] [--gate terminal|file] [--fake <fixture-dir>] [--allow-public]
+  gophermind brief answer <run-id> <question-id> <new answer...>
   gophermind brief run <run-id> [--gate terminal|file] [--repo <path>] [--workers n]
   gophermind brief run <run-id> --check-env      (environment preflight, no model call; exit 6 on a failed check)
   gophermind brief report <run-id> [--json]
@@ -47,6 +48,8 @@ func runBrief(args []string, in *os.File, out, errw io.Writer) int {
 		return briefValidate(args[1], out, errw)
 	case "plan", "resume":
 		return briefPlan(args[0], args[1:], in, out, errw)
+	case "answer":
+		return briefAnswer(args[1:], out, errw)
 	case "run":
 		return briefRun(args[1:], in, out, errw)
 	case "report":
