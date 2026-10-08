@@ -93,19 +93,6 @@ func (e Env) open(_ context.Context, _ Options, pre PreflightResult, b *brief.Br
 	return &deps{cfg: cfg, vlt: vlt, rt: rt, board: board, led: led}, nil
 }
 
-// lockedWriter serialises writes so the progress goroutine and the terminal
-// gate can share one stderr.
-type lockedWriter struct {
-	mu sync.Mutex
-	w  io.Writer
-}
-
-func (l *lockedWriter) Write(p []byte) (int, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.w.Write(p)
-}
-
 // progressWriter hands progress lines to a goroutine through a bounded queue.
 // Write never blocks: when the queue is full (a stuck stderr) the line is
 // dropped and counted. The Sink writes while holding its mutex, so this is
@@ -181,7 +168,29 @@ func stamp(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05Z") }
 
 // Run plans a brief and builds it in one process: preflight, state, planner,
 // approval, executor and report (spec sections 4 and 5).
-func Run(ctx context.Context, o Options, env Env) Result {
+func Run(ctx context.Context, o Options, env Env) (result Result) {
+	// Run never panics. stage names what was running; a panic is reported with
+	// a fixed message and the stage, never the panic value, which could carry a
+	// secret. Once the report exists the usual finish path still runs.
+	stage := "preflight"
+	var finish func(status, stop, note string) Result
+	defer func() {
+		if r := recover(); r == nil {
+			return
+		}
+		func() {
+			defer func() {
+				if recover() != nil {
+					result = Result{ExitFault, "harness_fault", "harness_fault"}
+				}
+			}()
+			fmt.Fprintf(o.Err, "error: internal fault in the %s stage; the run was stopped\n", stage)
+			result = Result{ExitFault, "harness_fault", "harness_fault"}
+			if finish != nil {
+				result = finish("harness_fault", "harness_fault", "")
+			}
+		}()
+	}()
 	if o.Out == nil {
 		o.Out = io.Discard
 	}
@@ -265,36 +274,34 @@ func Run(ctx context.Context, o Options, env Env) Result {
 		}
 	}
 
-	// From here on every write to Err goes through one lock, because the
-	// progress goroutine writes to it too.
-	errw := &lockedWriter{w: o.Err}
+	// From here on every write to Err goes through the bounded progress
+	// queue, so a stuck stderr can drop lines but never hold up the run, the
+	// report or teardown.
+	progress := newProgressWriter(o.Err)
+	errw := io.Writer(progress)
 	o.Err = errw
-	progress := newProgressWriter(errw)
 	sink := NewSink(progress)
-	var closeOnce sync.Once
-	closeProgress := func() {
-		closeOnce.Do(func() {
-			progress.Close()
-			if n := progress.dropped.Load(); n > 0 {
-				fmt.Fprintf(errw, "warning: %d progress line(s) were dropped because the terminal was slow\n", n)
-			}
-		})
-	}
-	defer closeProgress()
+	// No deferred Close: the panic handler above runs after any defer made here
+	// and must still be able to write; finish closes the queue.
 
 	// finish ends the run on every path after this point: stamp, write
-	// _state/project.json once the run folder exists, print the report.
-	finish := func(status, stop, note string) Result {
-		closeProgress()
+	// _state/project.json once the run folder exists, print the report, and
+	// only then let the progress queue drain (bounded).
+	finish = func(status, stop, note string) Result {
 		rep.Status, rep.StopReason = status, stop
 		rep.ExitCode = ExitCode(status, stop)
 		rep.FinishedAt = stamp(env.Now())
 		rep.Warnings = sink.Counts()
+		rep.GradedValid = true
+		if o.Graded && rep.Executor != nil && rep.Executor.Resumed {
+			rep.GradedValid, rep.GradedInvalidReason = false, "the run resumed"
+		}
 		if rec, err := planner.LookupRun(id); err == nil {
 			if fi, serr := os.Stat(rec.RunDir); serr == nil && fi.IsDir() {
 				rep.RunDir = rec.RunDir
-				readPlanFacts(rep, rec.RunDir, errw)
+				readPlanFacts(rep, rec.RunDir)
 				rep.Warnings.DuplicatesIgnored = duplicatesIgnored(rec.RunDir)
+				rep.ProgressDropped = int(progress.dropped.Load())
 				if err := WriteReport(rec.RunDir, rep); err != nil {
 					fmt.Fprintf(o.Err, "warning: _state/project.json could not be written: %v\n", err)
 				}
@@ -304,6 +311,7 @@ func Run(ctx context.Context, o Options, env Env) Result {
 		if note != "" {
 			fmt.Fprintln(o.Out, note)
 		}
+		progress.Close()
 		return Result{rep.ExitCode, status, stop}
 	}
 
@@ -312,6 +320,7 @@ func Run(ctx context.Context, o Options, env Env) Result {
 		return finish("failed", "attended_no_input", "")
 	}
 
+	stage = "setup"
 	d, err := env.open(ctx, o, pre, b, sink)
 	if err != nil {
 		fmt.Fprintf(o.Err, "error: %v\n", err)
@@ -353,6 +362,7 @@ func Run(ctx context.Context, o Options, env Env) Result {
 	} else {
 		po.BriefPath = o.BriefPath
 	}
+	stage = "planner"
 	outcome, perr2 := runPlanner(ctx, deps, po)
 	switch {
 	case perr2 != nil:
@@ -385,6 +395,7 @@ func Run(ctx context.Context, o Options, env Env) Result {
 		Gate: gate, Sink: sink, Settings: d.cfg, Secrets: secrets, LedgerErrors: d.rt.LedgerErrors,
 		EnvNotes: envcheck.EnvNotes(pre.Probes),
 	}
+	stage = "executor"
 	xr, xerr := env.RunExecutor(ctx, xo)
 	if xerr != nil {
 		var inv *brief.InvalidError
@@ -395,6 +406,7 @@ func Run(ctx context.Context, o Options, env Env) Result {
 		fmt.Fprintf(o.Err, "error: %s\n", xerr)
 		return finish("harness_fault", "harness_fault", "")
 	}
+	stage = "report"
 	rep.Executor = &xr
 	rep.Resumed = o.Resume || xr.Resumed
 	rep.ByNodeClass = nodeClassTable(ctx, d, id, rec.RunDir, errw)
@@ -456,7 +468,7 @@ func duplicatesIgnored(runDir string) int {
 // they exist. It runs on every path, so a plan that stopped at a stage still
 // reports the stages it finished and the coverage it reached. A corrupt
 // coverage.json is a warning; a missing one is zero covered.
-func readPlanFacts(rep *ProjectReport, runDir string, errw io.Writer) {
+func readPlanFacts(rep *ProjectReport, runDir string) {
 	if answers, err := planner.ReadAnswers(runDir); err == nil {
 		for _, a := range answers {
 			if a.Assumed && a.Stage == "clarify" {
@@ -490,8 +502,10 @@ func readPlanFacts(rep *ProjectReport, runDir string, errw io.Writer) {
 			}
 			rep.Plan.RequirementsCovered.Covered = len(seen)
 		} else if !errors.Is(err, planner.ErrNoCoverage) {
-			fmt.Fprintf(errw, "warning: coverage.json could not be read: %s\n", planner.JSONErr(err))
+			rep.CoverageError = "coverage.json could not be read: " + planner.JSONErr(err)
 		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		rep.CoverageError = "requirements.json could not be read: " + planner.JSONErr(err)
 	}
 	if t, err := tree.NewStore(runDir).Load(); err == nil {
 		maxWave := -1

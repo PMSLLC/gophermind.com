@@ -92,6 +92,8 @@ type ProjectReport struct {
 	Binary              BinaryInfo        `json:"binary"`
 	Mode                string            `json:"mode"` // unattended | attended
 	Graded              bool              `json:"graded"`
+	GradedValid         bool              `json:"graded_valid"` // meaningful only when graded
+	GradedInvalidReason string            `json:"graded_invalid_reason"`
 	Resumed             bool              `json:"resumed"`
 	Repo                RepoInfo          `json:"repo"`
 	Preflight           []Check           `json:"preflight"`
@@ -101,6 +103,8 @@ type ProjectReport struct {
 	Understanding       UnderstandingInfo `json:"understanding"`
 	Approval            ApprovalInfo      `json:"approval"`
 	Plan                PlanInfo          `json:"plan"`
+	CoverageError       string            `json:"coverage_error"` // empty unless coverage.json or requirements.json is unreadable
+	ProgressDropped     int               `json:"progress_dropped"`
 	Warnings            Counts            `json:"planner_warnings"`
 	PlannerWarningLines []string          `json:"planner_warning_lines"`
 	Stages              []StageInfo       `json:"stages"`
@@ -214,6 +218,9 @@ func (p *ProjectReport) Text() string {
 		w.DuplicatesIgnored, w.LeafDefaulted, w.DocDefaulted, w.LeafNormalized, w.OutlineIDNormalized)
 	line("approval: %s, plan %s, understanding %s", oneLine(p.Approval.By), hashPrefix(p.Approval.PlanHash), hashPrefix(p.Approval.UnderstandingHash))
 	line("plan: %d functions in %d wave(s)", p.Plan.Functions, p.Plan.Waves)
+	if p.CoverageError != "" {
+		line("coverage error: %s", oneLine(capText(p.CoverageError)))
+	}
 	if len(p.ByNodeClass) == 0 {
 		line("node classes: executor did not run")
 	}
@@ -244,6 +251,8 @@ func WriteReport(runDir string, p *ProjectReport) error {
 		cp.Providers[i].Host = hostOnly(cp.Providers[i].Host)
 	}
 	cp.Title = capText(p.Title)
+	cp.GradedInvalidReason = capText(p.GradedInvalidReason)
+	cp.CoverageError = capText(p.CoverageError)
 	cp.PlannerWarningLines = make([]string, len(p.PlannerWarningLines))
 	for i, l := range p.PlannerWarningLines {
 		cp.PlannerWarningLines[i] = capText(l)
