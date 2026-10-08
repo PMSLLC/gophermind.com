@@ -46,6 +46,52 @@ type NodeView struct {
 	TestFile             string // repo-relative path of the leaf's own test file
 	TestSource           string
 	MaxContextTokens     int // node budget; 0 when unset
+	Guidance             []Guidance
+}
+
+// Guidance is one section of build guidance for a leaf: how to construct it,
+// what to defend against, what to log, and its performance and portability
+// limits. Sections are construction, security, observability, performance and
+// portability, in that order. The planner's reasoning about why a function
+// exists, the alternatives it weighed and the decisions behind it are not
+// guidance and never reach a prompt: a leaf prompt may be shown to a public
+// provider.
+type Guidance struct {
+	Section string
+	Lines   []string
+}
+
+func copyGuidance(in []Guidance) []Guidance {
+	out := make([]Guidance, len(in))
+	for i, g := range in {
+		out[i] = Guidance{Section: g.Section, Lines: append([]string(nil), g.Lines...)}
+	}
+	return out
+}
+
+func guidanceText(gs []Guidance) string {
+	var b strings.Builder
+	for _, g := range gs {
+		if len(g.Lines) == 0 {
+			continue
+		}
+		fmt.Fprintf(&b, "%s:\n", g.Section)
+		for _, l := range g.Lines {
+			fmt.Fprintf(&b, "- %s\n", l)
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// dropGuidance removes a whole section and names the drop.
+func (s *state) dropGuidance(section string) (string, bool) {
+	for i, g := range s.guidance {
+		if g.Section == section {
+			s.guidance = append(s.guidance[:i:i], s.guidance[i+1:]...)
+			return "guidance:" + section, true
+		}
+	}
+	return "", false
 }
 
 const (
@@ -373,11 +419,12 @@ type state struct {
 	contract string
 	deps     []string
 	notes    []string
+	guidance []Guidance
 	fail     Failure
 	testSrc  string
 }
 
-var sectionTagRE = regexp.MustCompile(`(?i)<\s*(file|signature|contract|dependency_signatures|constraints|revision_notes|tests|previous_failure|attempts)\s*>`)
+var sectionTagRE = regexp.MustCompile(`(?i)<\s*(file|signature|contract|dependency_signatures|constraints|guidance|revision_notes|tests|previous_failure|attempts)\s*>`)
 
 // esc makes untrusted text unable to close or open a section: every "</"
 // becomes `<\/` and a bare section tag gets a backslash after the "<".
@@ -422,7 +469,7 @@ func (s *state) render() (string, error) {
 	}
 	return renderTemplate("implement", escAll(map[string]string{
 		"File": s.n.File, "Package": s.n.Package, "Signature": s.n.Signature,
-		"Contract": s.contract, "Deps": deps, "Constraints": cons, "Notes": notes,
+		"Contract": s.contract, "Deps": deps, "Constraints": cons, "Notes": notes, "Guidance": guidanceText(s.guidance),
 		"TestFile": s.n.TestFile, "TestSource": strings.TrimRight(s.testSrc, "\n"), "Failure": failure,
 	}))
 }
@@ -446,9 +493,10 @@ func Pack(n NodeView, c *contract.Contracts, in Inputs) (Packed, error) {
 	sc := newScan(in.Secrets)
 	s := &state{
 		n: n, contract: strings.Join(slice, "\n\n"), deps: append([]string(nil), n.DependencySignatures...),
-		notes:   sc.scrub(in.Notes),
-		fail:    Failure{Names: scrubNames(in.Failure.Names, sc), Lines: sc.scrub(in.Failure.Lines)},
-		testSrc: n.TestSource,
+		notes:    sc.scrub(in.Notes),
+		guidance: copyGuidance(n.Guidance),
+		fail:     Failure{Names: scrubNames(in.Failure.Names, sc), Lines: sc.scrub(in.Failure.Lines)},
+		testSrc:  n.TestSource,
 	}
 	text, err := s.render()
 	if err != nil {
@@ -491,6 +539,18 @@ func Pack(n NodeView, c *contract.Contracts, in Inputs) (Packed, error) {
 			}
 			s.notes = nil
 			return "notes", true
+		},
+		func() (string, bool) { return s.dropGuidance("performance") },
+		func() (string, bool) { return s.dropGuidance("portability") },
+		func() (string, bool) { return s.dropGuidance("observability") },
+		func() (string, bool) {
+			for i, g := range s.guidance {
+				if g.Section == "construction" && len(g.Lines) > 1 {
+					s.guidance[i].Lines = g.Lines[:1] // keep the approach, drop the steps
+					return "guidance:construction_steps", true
+				}
+			}
+			return "", false
 		},
 		func() (string, bool) {
 			out, _ := stripTestComments(s.testSrc)
