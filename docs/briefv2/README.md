@@ -299,11 +299,11 @@ database.
   brief.md  contracts.json  approval.json  coverage.json   unchanged
   <component>/component.json                               plan, unchanged
   <component>/<fn-id>.json                                 plan, unchanged
-  <component>/<fn-id>.runtime.json                         status, revision, wave, attempts, result, claim, updated_at
+  <component>/<fn-id>.runtime.json                         node_id, run_id, status, revision, wave, claim (worker, claimed_at), heartbeat_at, attempts, result, updated_at
   root.runtime.json, <component>/component.runtime.json    the same, for non-function nodes
   _state/events.jsonl                                      one JSON object per line, append only
   _state/calls.jsonl                                       one JSON object per line, append only (the call ledger)
-  attempts/<node-id>/<n>/                                  reply.go, check-output.txt, attempt.json (scrubbed)
+  attempts/<node-id>/<n>/                                  reply.go, reply.txt, check-output.txt, attempt.json (scrubbed)
 ```
 
 Run state is never written into plan node files: the executor hashes the plan
@@ -316,7 +316,8 @@ Two settings in the `executor` section control the attempt files:
 `executor.artifact_max_bytes` (default 65536, the cap on each saved file). With
 `artifacts: on`, the model reply and the combined check output of each attempt
 are saved under `attempts/`, passed through the secret scrubbers first. Prompts
-are never stored. With `artifacts: off` only hashes and sizes are stored.
+are never stored. With `artifacts: off` nothing is written under `attempts/`; the call ledger
+(`_state/calls.jsonl`) keeps hashes and sizes.
 
 A run folder is self-contained: copy it to move the run.
 
