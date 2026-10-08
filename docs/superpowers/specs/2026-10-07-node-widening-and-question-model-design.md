@@ -23,6 +23,8 @@ The same review found that neither planner asks questions well: v1 shows everyth
 | 6 | Attempt artifacts | Saved, scrubbed (sub-project A) | John, 2026-10-07 |
 | 7 | Where the new groups are written | A new planner stage, Enrich, between Decompose and Coverage (section 4) | this document |
 | 8 | Changing an answer | Restarts the planner from the stage that first used it; no selective node re-plan in this version (section 7.7) | this document |
+| 9 | Questions and answers in the tree | Every question and its answer is also recorded in the node tree itself: the root node carries the whole conversation, and each component and function node carries the records that shaped it (section 7.8) | John, 2026-10-08 |
+| 10 | Not-applicable answers; node-tier routing | Both yes | John, 2026-10-08 |
 
 ## 3. Goals and non-goals
 
@@ -81,6 +83,7 @@ The schema is `gophermind-lib/briefv2/schema/task-node.schema.json`. Every addit
 | `assumptions` | array of strings | Enrich (and, in assume mode, Decompose, as the prompt already says) | always (an empty array is a valid answer) |
 | `open_questions` | array of strings | Enrich | always; must be empty at approval |
 | `decision_ids` | array of question ids | Enrich, validated against the question store | always (an empty array is a valid answer) |
+| `decisions` | array of full question and answer records (section 7.8) | code, copied from the question store, never model-written | always on the root (the whole conversation); on components and functions, exactly the records named in `decision_ids` |
 
 Existing fields stay as they are: `title`, `description`, `brief_ref`, `status`, `wave`, `model_tier`, `revision`, `depends_on`, `context`, `network`, `secrets`, `budget`, plus the run fields `claim`, `attempts`, `result` (sub-project A writes those into `.runtime.json`).
 
@@ -88,7 +91,7 @@ Existing fields stay as they are: `title`, `description`, `brief_ref`, `status`,
 
 ### 5.2 Component and root nodes
 
-Components and the root get `rationale`, `requirement_ids`, `assumptions`, `open_questions` and `decision_ids`, with the same rules. The component's `description` is today copied from the brief's first paragraph (`decompose.go:741-748`); Enrich writes a real `rationale` for each component in one extra call per component (batch of one, small output). The leaf-defect checks of the next section run on them as well.
+Components and the root get `rationale`, `requirement_ids`, `assumptions`, `open_questions`, `decision_ids` and `decisions`, with the same rules. The component's `description` is today copied from the brief's first paragraph (`decompose.go:741-748`); Enrich writes a real `rationale` for each component in one extra call per component (batch of one, small output). The leaf-defect checks of the next section run on them as well.
 
 ### 5.3 What code checks (defect kinds)
 
@@ -112,7 +115,8 @@ Each is a fixed word in the same vocabulary the Decompose repair loop already us
 | `hook_bench` | `profile_hooks` has `bench` and the Test-writer's file has no `Benchmark` function (checked in `checkTestSource`) |
 | `error_test_missing` | an `errors[].test` names a test that is not in `tests` |
 | `polarity_missing` | `errors` has n entries and `tests` has fewer than n tests with polarity `negative`, or no `success` test |
-| `requirement_missing` | a function node has no `requirement_ids` after Coverage |
+| `requirement_missing` | a function node has no `requirement_ids` after Coverage. A warning in the approval summary, not a failure: a shared helper that no requirement names is legitimate |
+| `decisions_embed` | a node's embedded `decisions` ids differ from its `decision_ids`, or the root's `decisions` differ from the question store (checked at tree finish; code writes them, so this guards a bug or a hand edit) |
 
 `go_min` and the dependency list are read from the target repository's `go.mod`, which the Load stage already resolves; if the repo has no `go.mod` yet, the checks that need it are skipped and the skipped check is named in the approval summary.
 
@@ -123,7 +127,7 @@ The prompt asks for `polarity` and `covers` on every test. Code checks that ever
 ## 6. Consumers of the new groups
 
 - **Approval summary.** `RenderPlan` gains, per component, a count of nodes by security trust boundary, the number of not-applicable answers per group, every assumption, and the open questions (which must be none). A person approving sees where the plan says "not applicable" and why.
-- **Implement prompt.** The packer's leaf prompt gains a section built from `construction`, `security` (untrusted inputs and threats with their mitigations), `observability.log_events` (the leaf must emit these), `performance` and `portability`. This is the only executor-side change, it stays inside the leaf's token budget (`budget.max_context_tokens`), and sections are dropped from the bottom (refactor notes, alternatives, performance) when the budget is tight. Verification that the implementation honours them is a non-goal.
+- **Implement prompt.** The packer's leaf prompt gains a section built from `construction`, `security` (untrusted inputs and threats with their mitigations), `observability.log_events` (the leaf must emit these), `performance` and `portability`. `decisions`, `rationale`, `alternatives`, `refactor_notes`, `assumptions`, `open_questions` and `decision_ids` are never put in the prompt (they carry brief-derived reasoning; node scope may be shown to a public provider). The Test-writer prompt receives the same kind of projection: the contract, the dependency signatures and constraints, and `profile_hooks`. This is the only executor-side change, it stays inside the leaf's token budget (`budget.max_context_tokens`), and sections are dropped from the bottom (refactor notes, alternatives, performance) when the budget is tight. Verification that the implementation honours them is a non-goal.
 - **Analysis.** Nothing consumes `alternatives`, `refactor_notes`, `profile_hooks` or `rationale` in code; they exist so a person (and a later tool) can read a run folder and see why a node is what it is.
 
 ## 7. Part 2: the question model
@@ -136,7 +140,7 @@ The prompt asks for `polarity` and `covers` on every test. Code checks that ever
 |---|---|
 | `id` | `q1`, `q2`, ... unique for the run; mid-stage questions get `<stage>-q<n>` as today |
 | `text`, `why_it_matters` | as v2 today |
-| `kind` | `decision` or `fact` |
+| `kind`, `fact_key` | `decision` or `fact`; a fact carries a key from the closed list of 7.2 |
 | `depends_on[]` | ids of questions that must be settled first |
 | `options[]` | for a decision: 2 to 8 option labels, or empty for free text |
 | `recommended`, `recommended_why` | the recommended answer, which must equal an option label when options exist; required when the run is unattended (replaces v2's `default_if_unanswered`, which the parser still accepts as an alias for saved states) |
@@ -147,7 +151,7 @@ The prompt asks for `polarity` and `covers` on every test. Code checks that ever
 
 ### 7.2 The fact probe
 
-A deterministic step before round 1, `planner/factprobe.go`, writes `_state/clarify/facts.json` and puts it in the Clarify prompt as a "Known facts" block. It reads: whether the target repo exists and is a git repository, the `go.mod` module path and Go version, the package directories that exist and their exported identifier names, the toolchain version through the configured `PATH`, the operating system and architecture, the names of declared secrets and whether each is in the vault (never a value), and the hosts the brief lists. It runs no network call, reads no file other than `go.mod` and directory listings, and never reads a secret value. A model question tagged `fact` that the probe can answer is answered by code with `answered_by: probe` and logged; one it cannot answer is shown to the person as a decision.
+A deterministic step before round 1, `planner/factprobe.go`, writes `_state/clarify/facts.json` and puts it in the Clarify prompt as a "Known facts" block. It reads: whether the target repo exists and is a git repository, the `go.mod` module path and Go version, the package directories that exist and their exported identifier names, the operating system and architecture, the names of declared secrets (never a value; Load has already refused a run whose secrets are missing from the vault), and the hosts the brief lists. It runs no command and no network call (the planner makes model calls only), reads `go.mod`, directory listings and the repo's Go source files (the names of exported declarations only, never bodies, comments or string literals), and never reads a secret value. The host operating system and architecture come from the Go runtime; the target toolchain version is not probed. A `fact` question must carry a `fact_key` from a closed list (`go_module`, `go_version`, `repo_is_git`, `os`, `arch`, `packages`, `secret_names`, `hosts`); the probe answers it from `facts.json` with `answered_by: probe` and logs it. A fact question with no valid key, or one the probe cannot answer, is shown to the person as a decision.
 
 ### 7.3 Rounds
 
@@ -179,7 +183,7 @@ An answer is an option number, the word `accept` (take the recommendation; recor
 
 When a question settles, code writes `decisions/<id>.md` in the run folder: the question, why it matters, options, the recommendation, the answer, who answered, the round, and the nodes whose `decision_ids` cite it (filled at approve time and refreshed whenever nodes change). Browsing `decisions/` shows the whole conversation.
 
-The `confirm` stage renders `UNDERSTANDING.md` from the store: settled decisions with answers, assumptions taken (every `accepted` or `unattended-default` answer, labelled), the facts the probe established, and the sentence "Frontier empty: every branch visited". A new gate method, `Confirm(ctx, Understanding{Markdown, Hash}) (Decision, error)`, asks the person; every adapter and test fake gains it. The result is `understanding.json` (`confirmed_at`, `confirmed_by`, `understanding_hash`). Contract does not start without a matching `understanding.json`, and `approval.json` gains `understanding_hash`; `VerifyApproval` re-computes it, so an answer edited after confirmation invalidates both.
+The `confirm` stage renders `UNDERSTANDING.md` from the store: settled decisions with answers, assumptions taken (every `accepted` or `unattended-default` answer, labelled), the facts the probe established, and the sentence "Frontier empty: every branch visited". A new gate method, `Confirm(ctx, Understanding{Markdown, Hash}) (Decision, error)`, asks the person; every adapter and test fake gains it. The result is `_state/understanding.json` (`confirmed_at`, `confirmed_by`, `understanding_hash`; it lives in `_state/` because a root-level JSON file would be read as a node). Contract does not start without a matching confirmation, `approval.json` records `understanding_hash`, and the file is part of the plan hash, so an answer edited after confirmation invalidates the confirmation and the approval. The Understanding lists only Clarify-phase decisions: a question raised later by a stage is bound by the plan hash through `answers.json`, so answering one never makes the confirmation stale.
 
 Unattended (project-single-entry spec, section 8.2): every question takes its `recommended`; a decision with no `recommended` makes the reply malformed, as that spec already requires; the rounds still run so dependent questions still appear and are answered by their recommendations; `Confirm` returns `Approved: true, By: "unattended"` only when no question is open and the last model call returned `[]` or a cap forced the final round. `--yes` records `flag`, as for approval. `on_ambiguity: assume_and_document` behaves as unattended for Clarify; `halt` asks the gate.
 
@@ -192,6 +196,16 @@ Unattended (project-single-entry spec, section 8.2): every question takes its `r
 - Once Test-writer has written files into the repo, or the executor has started (`_state/executor.json` exists), the command refuses and says to start a new run.
 
 Selective re-planning (only the nodes whose `decision_ids` cite the answer) needs each question's effect to be known by component, which Clarify cannot do before the Contract stage has named the components. `decision_ids` on nodes therefore serves traceability and analysis in this version, not re-planning. This refines section 4.5 of the grilling review.
+
+### 7.8 Questions and answers in the tree
+
+The question store and `decisions/` are not the only record: every question and its answer is also written into the node tree, so reading the nodes alone tells the whole story.
+
+- The **root node** carries `decisions`: one record for every question of the run, in order, settled or not at the time the tree is written (at tree finish all are settled). A record holds the id, the question, why it matters, kind (and `fact_key`), `depends_on`, options, the recommendation and its reason, the answer, who answered (`human`, `accepted`, `unattended-default` or `probe`), the round, what raised it (`clarify` or a stage), when it settled, and `history` (earlier answers, newest last, from `brief answer`).
+- Each **component and function node** carries `decisions` too: copies of exactly the records its `decision_ids` name. A function that cites q2 and q5 shows those two questions and answers on the node, so the reason for a choice is on the node it shaped.
+- Code writes these records, copying them from the store at the moment the tree is written (skeleton, rewrite and tree finish); a model never writes them. A check at tree finish fails the stage when a node's `decisions` ids differ from its `decision_ids`, or the root's `decisions` differ from the store.
+- Node-scope calls never receive `decisions` (they carry brief-derived reasoning, like `rationale`).
+- The records are plan data, covered by the plan hash like the rest of the node. Because `brief answer` is refused once tests are written, the embedded records cannot go stale after the tree is final.
 
 ## 8. Settings
 
@@ -212,7 +226,7 @@ briefv2/planner/enrich.go, prompts/enrich.md, enrich_test.go     the Enrich stag
 briefv2/planner/checks_groups.go          the defect kinds of 5.3 (pure functions, table-driven tests)
 briefv2/planner/clarify.go                rewritten as the round loop; parse, frontier, caps
 briefv2/planner/factprobe.go              the fact probe
-briefv2/planner/questions.go              the store (_state/clarify/questions.json), settle, answers.json rewrite, decision records
+briefv2/planner/questions.go              the store (_state/clarify/questions.json), settle, answers.json rewrite, decision records, embedding of decisions into nodes
 briefv2/planner/confirm.go                the confirm stage, UNDERSTANDING.md, understanding.json
 briefv2/planner/planner.go                stages list, tier routing for node stages, callAsking writes to the store
 briefv2/planner/decompose.go              node_class onto the node; leaf checks also on component and root
@@ -234,6 +248,7 @@ docs/briefv2/README.md                    new stages, questions, decisions/, set
 - **Gate:** `accept` records `accepted`; a blank answer is refused; the file gate writes a round and resumes on the answered file; `Confirm` blocks Contract until confirmed; editing `answers.json` after confirmation invalidates `understanding.json` and `approval.json`.
 - **Unattended:** a decision with no `recommended` is malformed; every question takes its recommendation, marked assumed, with dependent rounds still run; `Confirm` returns `unattended`; no call to the gate happens.
 - **Decision records:** one file per settled question, rewritten on a changed answer; node `decision_ids` populate the "cited by" list.
+- **Questions and answers in the tree:** after tree finish the root's `decisions` equal the store (every question, answer, who answered, round, history); a function citing q2 and q5 carries exactly those two records; a hand edit of a node's `decisions` makes tree finish fail with `decisions_embed`; a node-scope prompt never contains a `decisions` record (canary test).
 - **`brief answer`:** a Clarify answer resets to Contract; a mid-stage answer redoes one call; both refuse after Test-writer or after the executor started.
 - **Fact probe:** reads only what 7.2 lists (a canary secret in the vault and a canary string in a source file never appear in `facts.json`).
 - **Packer:** the implement prompt includes the new section within the token budget and drops sections from the bottom when tight.
