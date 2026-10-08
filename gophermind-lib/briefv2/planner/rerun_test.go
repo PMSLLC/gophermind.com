@@ -125,8 +125,8 @@ func TestALeftoverRunFolderWithOnlyLedgerAndRepliesIsReplaced(t *testing.T) {
 	}
 	for name, body := range map[string]string{
 		filepath.Join("replies", "clarify-1.txt"): "reply",
-		"events.jsonl":                            "{}\n",
-		"calls.lock":                              "",
+		"events.jsonl": "{}\n",
+		"calls.lock":   "",
 	} {
 		if err := os.WriteFile(filepath.Join(state, name), []byte(body), 0o600); err != nil {
 			t.Fatal(err)
