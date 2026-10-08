@@ -31,6 +31,14 @@ const (
 	stateLeafTests    = "_state/leaf_tests.json"
 	stateAcceptTests  = "_state/acceptance_tests.json"
 	stagePrefixSystem = "GopherMind planner. Stage: "
+
+	fileQuestions      = "_state/clarify/questions.json"
+	fileFacts          = "_state/clarify/facts.json"
+	fileRounds         = "_state/clarify/rounds.jsonl"
+	stateUnderstanding = "_state/understanding.json"
+	stateEnriched      = "_state/enriched.json"
+	fileUnderstanding  = "UNDERSTANDING.md"
+	dirDecisions       = "decisions"
 )
 
 // RunRecord is how `resume`, `status` and `calls` find a run from its id
