@@ -54,6 +54,7 @@ type Leaf struct {
 	MaxContextTokens                                 int // 0 = brief, then settings default
 	MaxRevisions                                     int // -1 = settings default
 	Network                                          []NetHost
+	Guidance                                         []packer.Guidance
 }
 
 // NetHost is one host of a leaf's network block.
@@ -85,6 +86,14 @@ type leafDoc struct {
 		Host     string `json:"host"`
 		Critical bool   `json:"critical"`
 	} `json:"network"`
+	Construction *struct {
+		ApproachChosen string   `json:"approach_chosen"`
+		Steps          []string `json:"steps"`
+	} `json:"construction"`
+	Security      json.RawMessage `json:"security"`
+	Observability json.RawMessage `json:"observability"`
+	Performance   json.RawMessage `json:"performance"`
+	Portability   json.RawMessage `json:"portability"`
 }
 
 func hashHex(b []byte) string {
@@ -257,6 +266,7 @@ func (p *Plan) leaf(n tree.Node, rootNet []NetHost, fns map[string]contract.Func
 		TestFile: lt.TestFile, TestFunc: lt.TestFunc, TestSHA256: lt.SHA256,
 		Constraints: d.Context.Constraints, DepSignatures: d.Context.DependencySignatures,
 		MaxContextTokens: d.Budget.MaxContextTokens, MaxRevisions: -1,
+		Guidance: guidanceFrom(d),
 	}
 	if n.Wave != nil {
 		l.Wave = *n.Wave
@@ -287,6 +297,7 @@ func (p *Plan) View(l *Leaf, testSource string) packer.NodeView {
 		ID: l.ID, FuncID: l.FuncID, Package: l.Package, File: l.File, Signature: l.Signature,
 		DependencySignatures: l.DepSignatures, Constraints: l.Constraints,
 		TestFile: l.TestFile, TestSource: testSource, MaxContextTokens: l.MaxContextTokens,
+		Guidance: l.Guidance,
 	}
 }
 
