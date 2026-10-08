@@ -272,6 +272,7 @@ docs/briefv2/README.md                    new stages, questions, decisions/, set
 | planner spec, 5 | planner stage list | two stages added, `confirm` and `enrich` |
 | planner spec, 6 | all planner calls strong tier | node stages follow the node's tier (setting) |
 | executor spec R15 | replies never stored | sub-project A |
+| this spec, section 7 | the follow-up Clarify call is a Clarify call | stage `clarify:more` (its own stage name, task type `clarify`), so the ledger separates it from the first call |
 
 ## 13. Open items
 
