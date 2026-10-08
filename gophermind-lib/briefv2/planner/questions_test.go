@@ -319,3 +319,29 @@ func TestQStoreSaveRoundTripsAndIsPrivate(t *testing.T) {
 		t.Errorf("mode %v", fi.Mode())
 	}
 }
+
+func TestEmbeddedCopiesAreIndependent(t *testing.T) {
+	s := qstore{Questions: []qrec{{ID: "q1", Text: "A?", Kind: "decision", RaisedBy: "clarify", Status: qSettled, Answer: "x", AnsweredBy: byHuman,
+		Options: []string{"x", "y"}, DependsOn: []string{"q0"}, History: []qhistory{{At: "t", Answer: "w"}}}}}
+	root := map[string]any{"id": "run"}
+	a := map[string]any{"id": "fn-a", "decision_ids": []any{"q1"}}
+	b := map[string]any{"id": "fn-b", "decision_ids": []any{"q1"}}
+	embedDecisions(s, root, []map[string]any{a, b})
+
+	rec := a["decisions"].([]any)[0].(map[string]any)
+	rec["answer"] = "tampered"
+	rec["options"].([]any)[0] = "tampered"
+	rec["depends_on"].([]any)[0] = "tampered"
+	rec["history"].([]any)[0].(map[string]any)["answer"] = "tampered"
+
+	for name, doc := range map[string][]any{"root": root["decisions"].([]any), "fn-b": b["decisions"].([]any)} {
+		got := doc[0].(map[string]any)
+		if got["answer"] != "x" || got["options"].([]any)[0] != "x" || got["depends_on"].([]any)[0] != "q0" ||
+			got["history"].([]any)[0].(map[string]any)["answer"] != "w" {
+			t.Errorf("%s changed when fn-a's record was edited: %v", name, got)
+		}
+	}
+	if s.Questions[0].Answer != "x" || s.Questions[0].Options[0] != "x" {
+		t.Error("the store changed")
+	}
+}
