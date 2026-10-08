@@ -73,11 +73,6 @@ func (p *Planner) load(ctx context.Context, o Options) (*run, error) {
 	if err != nil {
 		return nil, fmt.Errorf("planner: load: %w", err)
 	}
-	if p.d.ResetRun != nil {
-		if err := p.d.ResetRun(ctx, b.Front.ID); err != nil {
-			return nil, fmt.Errorf("planner: load: %w", err)
-		}
-	}
 	briefPath, err := filepath.Abs(o.BriefPath)
 	if err != nil {
 		briefPath = o.BriefPath

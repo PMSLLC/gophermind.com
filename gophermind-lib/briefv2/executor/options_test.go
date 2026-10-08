@@ -10,11 +10,11 @@ import (
 	"testing"
 
 	"gophermind/gophermind-lib/briefv2/blackboard"
-	"gophermind/gophermind-lib/briefv2/db"
 	"gophermind/gophermind-lib/briefv2/events"
 	"gophermind/gophermind-lib/briefv2/ledger"
 	"gophermind/gophermind-lib/briefv2/provider"
 	"gophermind/gophermind-lib/briefv2/router"
+	"gophermind/gophermind-lib/briefv2/runfs"
 	"gophermind/gophermind-lib/briefv2/settings"
 )
 
@@ -30,14 +30,10 @@ func validOptions(t *testing.T) Options {
 	if err := os.Mkdir(filepath.Join(repo, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	d, err := db.Open(filepath.Join(t.TempDir(), "bb.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { d.Close() })
+	dir := t.TempDir()
 	return Options{
 		RunDir: filepath.Join(repo, ".gophermind", "gm-2026-09-30-901"), Repo: repo, Caller: stubCaller{},
-		Board: blackboard.NewSQLite(d), Ledger: ledger.NewSQLite(d), Settings: settings.Default(),
+		Board: blackboard.NewFS(runfs.Fixed(dir), blackboard.WithFlatLayout()), Ledger: ledger.NewFS(runfs.Fixed(dir)), Settings: settings.Default(),
 	}
 }
 

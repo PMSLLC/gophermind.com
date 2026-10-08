@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -19,11 +18,9 @@ import (
 
 	"gophermind/gophermind-lib/briefv2/blackboard"
 	"gophermind/gophermind-lib/briefv2/brief"
-	"gophermind/gophermind-lib/briefv2/db"
 	"gophermind/gophermind-lib/briefv2/events"
 	"gophermind/gophermind-lib/briefv2/executor"
 	"gophermind/gophermind-lib/briefv2/human"
-	"gophermind/gophermind-lib/briefv2/ledger"
 	"gophermind/gophermind-lib/briefv2/planner"
 	"gophermind/gophermind-lib/briefv2/provider"
 	"gophermind/gophermind-lib/briefv2/report"
@@ -237,16 +234,11 @@ func briefRun(args []string, in *os.File, out, errw io.Writer) int {
 		secrets = vlt
 	}
 
-	d, code := openBriefDB(errw)
-	if d == nil {
-		return code
-	}
-	defer d.Close()
+	board, led := briefBackends()
 	sink := &runSink{printSink: &printSink{w: errw}}
-	led := ledger.NewSQLite(d)
 	rt := router.New(&runCfg, providers, led, sink)
 	opts := executor.Options{
-		RunDir: rec.RunDir, Repo: repo, Caller: rt, Board: blackboard.NewSQLite(d), Ledger: led,
+		RunDir: rec.RunDir, Repo: repo, Caller: rt, Board: board, Ledger: led,
 		Gate: gate, Sink: sink, Settings: &runCfg, Secrets: secrets, LedgerErrors: rt.LedgerErrors, EnvNotes: notes,
 	}
 	if runCfg.Executor.Sandbox == "off" {
@@ -651,23 +643,4 @@ func envNotes(res []probeResult) []string {
 		}
 	}
 	return notes
-}
-
-// openBriefDBReadOnly opens the existing database for reading only: status and
-// calls must not migrate, create files or checkpoint.
-func openBriefDBReadOnly(errw io.Writer) (*sql.DB, int) {
-	path, err := db.DefaultPath()
-	if err == nil {
-		if _, err = os.Stat(path); err == nil {
-			var d *sql.DB
-			if d, err = sql.Open("sqlite", "file:"+path+"?mode=ro&_pragma=busy_timeout(5000)"); err == nil {
-				if err = d.Ping(); err == nil {
-					return d, exitDone
-				}
-				d.Close()
-			}
-		}
-	}
-	fmt.Fprintln(errw, "error: the run database cannot be opened for reading")
-	return nil, exitError
 }

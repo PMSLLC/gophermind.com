@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -326,7 +327,7 @@ func lastLines(s string, n int) []string {
 	return lines[len(lines)-n:]
 }
 
-func runDirOf(repo, id string) string { return filepath.Join(repo, ".gophermind", id) }
+func runDirInRepo(repo, id string) string { return filepath.Join(repo, ".gophermind", id) }
 
 func requireProofLines(t *testing.T, out string) {
 	t.Helper()
@@ -369,7 +370,7 @@ func TestBriefRunExitCodes(t *testing.T) {
 		id, repo := plannedGreeter(t)
 		useRun(t, goodReplies(t, "fn-greet"))
 		code, out, errs := runBriefCmd(t, "", "run", id, "--gate", "file")
-		if code != exitWaiting || !strings.Contains(errs, "waiting: answer in "+runDirOf(repo, id)) || !strings.Contains(errs, "gophermind brief run "+id) {
+		if code != exitWaiting || !strings.Contains(errs, "waiting: answer in "+runDirInRepo(repo, id)) || !strings.Contains(errs, "gophermind brief run "+id) {
 			t.Fatalf("code=%d out=%q err=%q", code, out, errs)
 		}
 		requireProofLinesAny(t, out)
@@ -387,11 +388,11 @@ func TestBriefRunExitCodes(t *testing.T) {
 			t.Fatalf("code=%d out=%q err=%q", code, out, errs)
 		}
 		requireProofLinesAny(t, out)
-		rep, err := report.Read(runDirOf(repo, id))
+		rep, err := report.Read(runDirInRepo(repo, id))
 		if err != nil || rep.Status != "interrupted" || rep.ExitCode != 5 {
 			t.Errorf("report = %+v, %v", rep, err)
 		}
-		if !strings.Contains(errs, "report: "+filepath.Join(runDirOf(repo, id), "report.json")) {
+		if !strings.Contains(errs, "report: "+filepath.Join(runDirInRepo(repo, id), "report.json")) {
 			t.Errorf("the report path is not printed: %q", errs)
 		}
 		// R11: the same command resumes and finishes the run.
@@ -401,7 +402,7 @@ func TestBriefRunExitCodes(t *testing.T) {
 			t.Fatalf("resume: code=%d out=%q err=%q", code, out, errs)
 		}
 		requireProofLines(t, out)
-		if rep, err := report.Read(runDirOf(repo, id)); err != nil || !rep.Resumed || rep.Status != "verified" {
+		if rep, err := report.Read(runDirInRepo(repo, id)); err != nil || !rep.Resumed || rep.Status != "verified" {
 			t.Errorf("resumed report = %+v, %v", rep, err)
 		}
 	})
@@ -415,7 +416,7 @@ func TestBriefRunExitCodes(t *testing.T) {
 	t.Run("an unapproved plan is 1 with no model call", func(t *testing.T) {
 		id, repo := plannedGreeter(t)
 		sp := useRun(t, goodReplies(t, ""))
-		ap := filepath.Join(runDirOf(repo, id), "approval.json")
+		ap := filepath.Join(runDirInRepo(repo, id), "approval.json")
 		if filepath.Base(ap) != "approval.json" || !strings.HasPrefix(ap, repo) {
 			t.Fatal("refusing to delete an unexpected path")
 		}
@@ -426,7 +427,7 @@ func TestBriefRunExitCodes(t *testing.T) {
 		if code != 1 || !strings.Contains(errs, "approval") || sp.Calls() != 0 || out != "" {
 			t.Errorf("code=%d out=%q err=%q calls=%d", code, out, errs, sp.Calls())
 		}
-		if _, err := os.Stat(filepath.Join(runDirOf(repo, id), "report.json")); err == nil {
+		if _, err := os.Stat(filepath.Join(runDirInRepo(repo, id), "report.json")); err == nil {
 			t.Error("a report was written for a run that never started")
 		}
 	})
@@ -540,7 +541,7 @@ func TestBriefRunPrintsSummaryAndPathOnEveryExitPath(t *testing.T) {
 				t.Fatalf("code=%d out=%q err=%q, want %d", code, out, errs, c.code)
 			}
 			requireProofLinesAny(t, out)
-			if !strings.Contains(errs, "report: "+filepath.Join(runDirOf(repo, id), "report.json")) || !strings.Contains(errs, c.note) {
+			if !strings.Contains(errs, "report: "+filepath.Join(runDirInRepo(repo, id), "report.json")) || !strings.Contains(errs, c.note) {
 				t.Errorf("err = %q", errs)
 			}
 			if !strings.Contains(out, "Sandbox: off") || strings.Count(errs, "sandbox: off\n") != 1 {
@@ -565,7 +566,7 @@ func TestBriefRunHarnessErrorsWithoutAReportAreNonZero(t *testing.T) {
 		if code != exitFault || !strings.Contains(errs, c.want) || strings.Contains(out, "Requirements covered") {
 			t.Errorf("%q: code=%d out=%q err=%q", c.err, code, out, errs)
 		}
-		if _, err := os.Stat(filepath.Join(runDirOf(repo, id), "report.json")); err == nil {
+		if _, err := os.Stat(filepath.Join(runDirInRepo(repo, id), "report.json")); err == nil {
 			t.Error("a report appeared")
 		}
 	}
@@ -589,7 +590,7 @@ func TestBriefRunRepoOverride(t *testing.T) {
 	if code, _, errs := runBriefCmd(t, "", "run", id); code != 0 || got.Repo != repo {
 		t.Fatalf("default: code=%d err=%q repo=%q want %q", code, errs, got.Repo, repo)
 	}
-	if got.RunDir != runDirOf(repo, id) || got.Gate == nil || got.Secrets == nil || got.Settings.Executor.Workers != 1 {
+	if got.RunDir != runDirInRepo(repo, id) || got.Gate == nil || got.Secrets == nil || got.Settings.Executor.Workers != 1 {
 		t.Errorf("options: %s", got)
 	}
 	other := newGitRepo(t)
@@ -679,7 +680,7 @@ func TestBriefReportPrints(t *testing.T) {
 	}
 	requireProofLines(t, out)
 	code, jout, _ := runBriefCmd(t, "", "report", id, "--json")
-	raw, err := os.ReadFile(filepath.Join(runDirOf(repo, id), "report.json"))
+	raw, err := os.ReadFile(filepath.Join(runDirInRepo(repo, id), "report.json"))
 	if err != nil || code != 0 || jout != string(raw) || !json.Valid([]byte(jout)) {
 		t.Errorf("--json: code=%d equal=%v err=%v", code, jout == string(raw), err)
 	}
@@ -702,7 +703,7 @@ func TestBriefReportReadsSchemaVersionOne(t *testing.T) {
 	r := summaryReport(id, "verified", "")
 	r.SchemaVersion = 1
 	raw, _ := json.MarshalIndent(r, "", "  ")
-	if err := os.WriteFile(filepath.Join(runDirOf(repo, id), "report.json"), append(raw, '\n'), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(runDirInRepo(repo, id), "report.json"), append(raw, '\n'), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	code, out, errs := runBriefCmd(t, "", "report", id)
@@ -733,7 +734,7 @@ func TestBriefStatusExecutorLines(t *testing.T) {
 	if code != 0 {
 		t.Fatal(out)
 	}
-	tr, err := loadTreeWaves(runDirOf(repo, id))
+	tr, err := loadTreeWaves(runDirInRepo(repo, id))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -870,7 +871,7 @@ func TestBriefRunCheckEnvPasses(t *testing.T) {
 	if !strings.HasSuffix(out, "preflight: 9 of 9 passed\n") {
 		t.Errorf("last line: %q", lastLines(out, 1))
 	}
-	if _, err := os.Stat(filepath.Join(runDirOf(e.repo, e.id), "report.json")); err == nil {
+	if _, err := os.Stat(filepath.Join(runDirInRepo(e.repo, e.id), "report.json")); err == nil {
 		t.Error("a preflight wrote a run report")
 	}
 }
@@ -900,7 +901,7 @@ func TestBriefRunCheckEnvFailuresExitSix(t *testing.T) {
 		}},
 		{"a provider that does not answer", "provider fake", func(t *testing.T, e *preflightEnv) { e.srv.Close() }},
 		{"no approval", "approval", func(t *testing.T, e *preflightEnv) {
-			ap := filepath.Join(runDirOf(e.repo, e.id), "approval.json")
+			ap := filepath.Join(runDirInRepo(e.repo, e.id), "approval.json")
 			if filepath.Base(ap) != "approval.json" || !strings.HasPrefix(ap, e.repo) {
 				t.Fatal("unexpected path")
 			}
@@ -1233,50 +1234,70 @@ func (f failingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 // ---- status never writes ----
 
+// snapshotFiles is path -> content and modification time of every file under dirs.
+func snapshotFiles(t *testing.T, dirs ...string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, dir := range dirs {
+		err := filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			b, rerr := os.ReadFile(p)
+			if rerr != nil {
+				return rerr
+			}
+			fi, rerr := d.Info()
+			if rerr != nil {
+				return rerr
+			}
+			out[p] = string(b) + "|" + fi.ModTime().String()
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	return out
+}
+
 func TestBriefStatusIsReadOnly(t *testing.T) {
-	id, _ := plannedGreeter(t)
-	dbPath := filepath.Join(os.Getenv("GOPHERMIND_CONFIG_DIR"), "blackboard.db")
-	before, err := os.ReadFile(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fi, _ := os.Stat(dbPath)
-	// A file that cannot be written: any read-write open of it fails.
-	if err := os.Chmod(dbPath, 0o444); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(dbPath, 0o600) })
+	id, repo := plannedGreeter(t)
+	dirs := []string{os.Getenv("GOPHERMIND_CONFIG_DIR"), runDirInRepo(repo, id)}
+	before := snapshotFiles(t, dirs...)
 	code, out, errs := runBriefCmd(t, "", "status", id)
 	if code != 0 || !strings.Contains(out, "model calls by task type") {
 		t.Fatalf("code=%d out=%q err=%q", code, out, errs)
 	}
-	after, _ := os.ReadFile(dbPath)
-	fi2, _ := os.Stat(dbPath)
-	if !bytes.Equal(before, after) || !fi.ModTime().Equal(fi2.ModTime()) {
-		t.Error("brief status changed the database file")
-	}
 	if code, _, errs := runBriefCmd(t, "", "calls", id); code != 0 {
 		t.Errorf("calls: code=%d err=%q", code, errs)
 	}
+	after := snapshotFiles(t, dirs...)
+	if !reflect.DeepEqual(before, after) {
+		t.Error("brief status or calls changed, added or removed a file in the run folder or the config dir")
+	}
 }
 
-// status of a run whose database is gone says so; it does not create or migrate one.
-func TestBriefStatusDoesNotCreateADatabase(t *testing.T) {
+// A database left by an older version is ignored: status neither reads nor
+// changes it, and creates no new one.
+func TestBriefStatusIgnoresALeftoverDatabase(t *testing.T) {
 	id, _ := plannedGreeter(t)
 	cfgDir := os.Getenv("GOPHERMIND_CONFIG_DIR")
-	for _, name := range []string{"blackboard.db", "blackboard.db-wal", "blackboard.db-shm"} {
-		p := filepath.Join(cfgDir, name)
-		if filepath.Dir(p) != cfgDir || !strings.HasPrefix(filepath.Base(p), "blackboard.db") {
-			t.Fatal("unexpected path")
+	leftover := filepath.Join(cfgDir, "blackboard.db")
+	if err := os.WriteFile(leftover, []byte("not a database"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errs := runBriefCmd(t, "", "status", id)
+	if code != 0 || !strings.Contains(out, "model calls by task type") {
+		t.Fatalf("code=%d out=%q err=%q", code, out, errs)
+	}
+	if b, err := os.ReadFile(leftover); err != nil || string(b) != "not a database" {
+		t.Errorf("status touched the leftover database: %q, %v", b, err)
+	}
+	for _, name := range []string{"blackboard.db-wal", "blackboard.db-shm"} {
+		if _, err := os.Stat(filepath.Join(cfgDir, name)); err == nil {
+			t.Errorf("status created %s", name)
 		}
-		_ = os.Remove(p)
-	}
-	code, _, errs := runBriefCmd(t, "", "status", id)
-	if code != 1 || !strings.Contains(errs, "cannot be opened for reading") {
-		t.Errorf("code=%d err=%q", code, errs)
-	}
-	if _, err := os.Stat(filepath.Join(cfgDir, "blackboard.db")); err == nil {
-		t.Error("status created a database")
 	}
 }
 

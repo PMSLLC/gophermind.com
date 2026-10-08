@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -14,9 +13,7 @@ import (
 	"sync"
 	"text/tabwriter"
 
-	"gophermind/gophermind-lib/briefv2/blackboard"
 	"gophermind/gophermind-lib/briefv2/brief"
-	"gophermind/gophermind-lib/briefv2/db"
 	"gophermind/gophermind-lib/briefv2/events"
 	"gophermind/gophermind-lib/briefv2/human"
 	"gophermind/gophermind-lib/briefv2/ledger"
@@ -215,15 +212,10 @@ func briefPlan(verb string, args []string, in *os.File, out, errw io.Writer) int
 		return exitError
 	}
 
-	d, code := openBriefDB(errw)
-	if d == nil {
-		return code
-	}
-	defer d.Close()
+	board, led := briefBackends()
 	sink := &printSink{w: errw}
-	rt := router.New(cfg, providers, ledger.NewSQLite(d), sink, router.WithAllowPublic(*allowPublic))
-	deps.Caller, deps.Sink, deps.Board, deps.LedgerErrors = rt, sink, blackboard.NewSQLite(d), rt.LedgerErrors
-	deps.ResetRun = func(ctx context.Context, id string) error { return db.ClearRun(ctx, d, id) }
+	rt := router.New(cfg, providers, led, sink, router.WithAllowPublic(*allowPublic))
+	deps.Caller, deps.Sink, deps.Board, deps.LedgerErrors = rt, sink, board, rt.LedgerErrors
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -262,18 +254,6 @@ func briefFail(errw io.Writer, err error) int {
 	return exitError
 }
 
-func openBriefDB(errw io.Writer) (*sql.DB, int) {
-	path, err := db.DefaultPath()
-	if err == nil {
-		var d *sql.DB
-		if d, err = db.Open(path); err == nil {
-			return d, exitDone
-		}
-	}
-	fmt.Fprintf(errw, "error: %v\n", err)
-	return nil, exitError
-}
-
 // briefStatus implements `gophermind brief status <run-id>`.
 func briefStatus(runID string, out, errw io.Writer) int {
 	st, err := planner.ReadStatus(runID)
@@ -301,12 +281,8 @@ func briefStatus(runID string, out, errw io.Writer) int {
 		fmt.Fprintf(out, "incomplete ledger: %d model call(s) could not be recorded\n", st.LedgerErrors)
 	}
 
-	d, code := openBriefDBReadOnly(errw)
-	if d == nil {
-		return code
-	}
-	defer d.Close()
-	sum, err := ledger.NewSQLite(d).Summary(context.Background(), runID)
+	board, led := briefBackends()
+	sum, err := led.Summary(context.Background(), runID)
 	if err != nil {
 		fmt.Fprintf(errw, "error: %v\n", err)
 		return exitError
@@ -315,7 +291,7 @@ func briefStatus(runID string, out, errw io.Writer) int {
 	if r, rerr := report.Read(st.RunDir); rerr == nil {
 		rep = &r
 	}
-	lines, err := executorLines(context.Background(), blackboard.NewSQLite(d), planner.RunRecord{RunID: st.RunID, RunDir: st.RunDir, Repo: st.Repo}, rep)
+	lines, err := executorLines(context.Background(), board, planner.RunRecord{RunID: st.RunID, RunDir: st.RunDir, Repo: st.Repo}, rep)
 	if err != nil {
 		fmt.Fprintf(errw, "error: %v\n", err)
 		return exitError
@@ -348,12 +324,8 @@ func briefCalls(runID string, out, errw io.Writer) int {
 		fmt.Fprintf(errw, "error: %v\n", err)
 		return exitError
 	}
-	d, code := openBriefDBReadOnly(errw)
-	if d == nil {
-		return code
-	}
-	defer d.Close()
-	rows, err := ledger.NewSQLite(d).List(context.Background(), runID, ledger.Filter{})
+	_, led := briefBackends()
+	rows, err := led.List(context.Background(), runID, ledger.Filter{})
 	if err != nil {
 		fmt.Fprintf(errw, "error: %v\n", err)
 		return exitError

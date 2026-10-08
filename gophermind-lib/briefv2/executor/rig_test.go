@@ -2,7 +2,6 @@ package executor
 
 import (
 	"context"
-	"database/sql"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,13 +11,13 @@ import (
 	"time"
 
 	"gophermind/gophermind-lib/briefv2/blackboard"
-	"gophermind/gophermind-lib/briefv2/db"
 	"gophermind/gophermind-lib/briefv2/events"
 	"gophermind/gophermind-lib/briefv2/gitland"
 	"gophermind/gophermind-lib/briefv2/ledger"
 	"gophermind/gophermind-lib/briefv2/planner"
 	"gophermind/gophermind-lib/briefv2/provider"
 	"gophermind/gophermind-lib/briefv2/router"
+	"gophermind/gophermind-lib/briefv2/runfs"
 	"gophermind/gophermind-lib/briefv2/settings"
 	"gophermind/gophermind-lib/briefv2/vault"
 )
@@ -74,15 +73,15 @@ var (
 // planMu serialises the planning step of newRig (see planOffline).
 var planMu sync.Mutex
 
-// rig is one greeter repository, one config dir and one database, with the
+// rig is one greeter repository, one config dir and one run folder, with the
 // approved plan the real planner produced offline from testdata/greeter.
 // Tasks 9c to 16 add the scripted provider, the router and the gate.
 type rig struct {
 	t                *testing.T
 	repo, runDir, id string
 	cfg              *settings.Config // chains "standard" and "strong": [a/m1, b/m2]
-	board            *blackboard.SQLite
-	led              *ledger.SQLite
+	board            blackboard.Blackboard
+	led              ledger.Ledger
 	sink             *events.Collector
 	secrets          Secrets // in-memory, GREETER_TOKEN = CANARY-SECRET-VALUE
 	git              gitland.Repo
@@ -90,8 +89,6 @@ type rig struct {
 	fake             *scriptedProvider // set by wire
 	router           *router.Router    // the real router over the fake providers, set by wire
 	gate             *scriptGate       // set by wire
-	dbPath           string            // the SQLite file behind board and ledger
-	db               *sql.DB           // closed by close
 }
 
 type rigOpts struct {
@@ -126,11 +123,11 @@ func newRig(t *testing.T, mods ...func(*rigOpts)) *rig {
 		}
 		t.Logf("the temporary repository %s could not be removed after 30 tries: %v", repo, err)
 	})
-	return buildRig(t, ro, repo, filepath.Join(t.TempDir(), "bb.db"), t.TempDir(), t.TempDir(), true)
+	return buildRig(t, ro, repo, t.TempDir(), t.TempDir(), true)
 }
 
 // newRigIn is the rig over a directory the caller owns: the repository
-// (dir/repo), the SQLite file (dir/bb.db), the module cache (dir/modcache) and
+// (dir/repo), the module cache (dir/modcache) and
 // so the run folder all live under dir, so a second process can rebuild the
 // same rig from dir alone. It plans only when dir/repo does not exist yet; an
 // existing one is reopened (the plan, the board and the repository are kept,
@@ -150,14 +147,13 @@ func newRigIn(t *testing.T, dir string, script Script, mods ...func(*rigOpts)) *
 		if extra.Settings != nil {
 			extra.Settings(c)
 		}
-	}}, repo, filepath.Join(dir, "bb.db"), filepath.Join(dir, "modcache"), filepath.Join(dir, "brief"), statErr != nil)
+	}}, repo, filepath.Join(dir, "modcache"), filepath.Join(dir, "brief"), statErr != nil)
 	g.wire(script)
 	return g
 }
 
-// close closes the database and the git layer. Safe to call twice.
+// close closes the git layer. Safe to call twice.
 func (g *rig) close() {
-	g.db.Close()
 	if c, ok := g.git.(interface{ Close() error }); ok {
 		c.Close()
 	}
@@ -165,8 +161,8 @@ func (g *rig) close() {
 
 // buildRig makes the rig over the given paths. With plan it also creates the
 // repository, writes the brief and runs the real planner; without it the
-// repository, the database and the plan already exist.
-func buildRig(t *testing.T, ro rigOpts, repo, dbPath, modBase, briefDir string, plan bool) *rig {
+// repository and the plan already exist.
+func buildRig(t *testing.T, ro rigOpts, repo, modBase, briefDir string, plan bool) *rig {
 	t.Helper()
 	g := &rig{t: t, repo: repo, id: greeterID, sink: events.NewCollector()}
 	g.runDir = filepath.Join(repo, ".gophermind", greeterID)
@@ -185,14 +181,8 @@ func buildRig(t *testing.T, ro rigOpts, repo, dbPath, modBase, briefDir string, 
 		g.gitCmd("commit", "-q", "-m", "seed")
 	}
 
-	g.dbPath = dbPath
-	d, err := db.Open(g.dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	g.db = d
-	t.Cleanup(func() { d.Close() })
-	g.led, g.board = ledger.NewSQLite(d), blackboard.NewSQLite(d)
+	// Tree layout: the runtime files land beside the node files in the run folder.
+	g.led, g.board = ledger.NewFS(runfs.Fixed(g.runDir)), blackboard.NewFS(runfs.Fixed(g.runDir))
 
 	if plan {
 		raw, err := os.ReadFile(filepath.Join(greeterDir, "brief.md"))

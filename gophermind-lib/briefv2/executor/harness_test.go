@@ -834,11 +834,6 @@ func hasCanary(t *testing.T, g *rig, canary string) bool {
 			found = true
 		}
 	}
-	for _, suffix := range []string{"", "-wal", "-shm"} {
-		if b, err := os.ReadFile(g.dbPath + suffix); err == nil {
-			check("sqlite"+suffix, b)
-		}
-	}
 	for _, e := range g.sink.Events() {
 		check("an event", []byte(fmt.Sprintf("%+v", e)))
 	}

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"gophermind/gophermind-lib/briefv2/blackboard"
 	"gophermind/gophermind-lib/briefv2/ledger"
 	"gophermind/gophermind-lib/briefv2/planner"
 )
@@ -17,19 +18,16 @@ type boardRow struct {
 
 func (g *rig) boardSnapshot() map[string]boardRow {
 	g.t.Helper()
-	rs, err := g.db.Query(`SELECT node_id, status, wave FROM rows WHERE run_id = ?`, greeterID)
-	if err != nil {
-		g.t.Fatal(err)
-	}
-	defer rs.Close()
 	out := map[string]boardRow{}
-	for rs.Next() {
-		var id string
-		var r boardRow
-		if err := rs.Scan(&id, &r.Status, &r.Wave); err != nil {
+	for w := 0; w < 30; w++ {
+		w := w
+		rows, err := g.board.List(context.Background(), greeterID, blackboard.Filter{Wave: &w})
+		if err != nil {
 			g.t.Fatal(err)
 		}
-		out[id] = r
+		for _, r := range rows {
+			out[r.NodeID] = boardRow{Status: string(r.Status), Wave: w}
+		}
 	}
 	return out
 }
@@ -55,8 +53,10 @@ func TestARerunAfterCleaningTheRepoPlansFromScratch(t *testing.T) {
 		t.Fatalf("first run left %d ledger rows and %d board rows", calls1, len(board1))
 	}
 
-	// Stale state a dead run could have left behind, then the clean.
-	if _, err := g.db.Exec(`UPDATE rows SET status = 'done', wave = 99`); err != nil {
+	// Stale state a dead run could have left behind in its run folder, then
+	// the clean. The state lives in the folder, so a fresh folder starts clean.
+	stale := filepath.Join(g.runDir, "stale.runtime.json")
+	if err := os.WriteFile(stale, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.RemoveAll(g.runDir); err != nil {
@@ -80,6 +80,9 @@ func TestARerunAfterCleaningTheRepoPlansFromScratch(t *testing.T) {
 		if got := board2[id]; got.Status != want.Status || got.Wave != want.Wave {
 			t.Errorf("row %s = %s wave %d, want %s wave %d", id, got.Status, got.Wave, want.Status, want.Wave)
 		}
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("the stale file of the old run folder survived the rerun: %v", err)
 	}
 	for _, f := range greeterTestFiles {
 		if _, err := os.Stat(filepath.Join(g.repo, f)); err != nil {

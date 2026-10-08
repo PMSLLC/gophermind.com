@@ -2,7 +2,6 @@ package router_test
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
@@ -12,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"gophermind/gophermind-lib/briefv2/db"
 	"gophermind/gophermind-lib/briefv2/events"
 	"gophermind/gophermind-lib/briefv2/ledger"
 	"gophermind/gophermind-lib/briefv2/provider"
 	"gophermind/gophermind-lib/briefv2/router"
+	"gophermind/gophermind-lib/briefv2/runfs"
 	"gophermind/gophermind-lib/briefv2/settings"
 )
 
@@ -79,15 +78,14 @@ func okText(text string) script {
 
 type rig struct {
 	r               *router.Router
-	led             *ledger.SQLite
-	db              *sql.DB
-	path            string
+	led             ledger.Ledger
+	runDir          string
 	sink            *events.Collector
 	clk             *clock
 	mini, kilo, ovh *provider.Fake
 }
 
-// newRig wires a router over three fakes and a real ledger in a temp database.
+// newRig wires a router over three fakes and a real file ledger in a temp run folder.
 // A nil script answers "ok".
 func newRig(t *testing.T, mini, kilo, ovh script, mutate func(*settings.Config), opts ...router.Option) *rig {
 	t.Helper()
@@ -112,13 +110,8 @@ func newRig(t *testing.T, mini, kilo, ovh script, mutate func(*settings.Config),
 // build finishes a rig: real ledger unless ledOverride is given.
 func (g *rig) build(t *testing.T, cfg *settings.Config, providers map[string]provider.Provider, ledOverride ledger.Ledger, opts ...router.Option) {
 	t.Helper()
-	g.path = filepath.Join(t.TempDir(), "bb.db")
-	d, err := db.Open(g.path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { d.Close() })
-	g.db, g.led = d, ledger.NewSQLite(d)
+	g.runDir = t.TempDir()
+	g.led = ledger.NewFS(runfs.Fixed(g.runDir))
 	g.sink, g.clk = events.NewCollector(), newClock()
 	var led ledger.Ledger = g.led
 	if ledOverride != nil {
@@ -580,7 +573,7 @@ func TestOnlyAndExcludeSteerTheWalk(t *testing.T) {
 	}
 }
 
-func TestNoPromptOrReplyTextReachesTheDatabase(t *testing.T) {
+func TestNoPromptOrReplyTextReachesTheRunFolder(t *testing.T) {
 	const canaryPrompt, canaryReply = "CANARY-PROMPT-8c41d2", "CANARY-REPLY-19ab73"
 	g := newRig(t,
 		func(int, provider.Request) (provider.Response, error) {
@@ -596,37 +589,27 @@ func TestNoPromptOrReplyTextReachesTheDatabase(t *testing.T) {
 	}); err == nil {
 		t.Fatal("a parser that rejects everything should exhaust the chain")
 	}
-	rs, err := g.db.Query(`SELECT * FROM calls`)
+	// Every file the ledger wrote into the run folder, whatever its name.
+	files := 0
+	err := filepath.WalkDir(g.runDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		files++
+		b, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return rerr
+		}
+		if strings.Contains(string(b), canaryPrompt) || strings.Contains(string(b), canaryReply) {
+			t.Errorf("%s contains prompt or reply text", path)
+		}
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	cols, _ := rs.Columns()
-	for rs.Next() {
-		vals := make([]any, len(cols))
-		ptrs := make([]any, len(cols))
-		for i := range vals {
-			ptrs[i] = &vals[i]
-		}
-		rs.Scan(ptrs...)
-		for i, v := range vals {
-			var s string
-			switch x := v.(type) {
-			case string:
-				s = x
-			case []byte:
-				s = string(x)
-			}
-			if strings.Contains(s, canaryPrompt) || strings.Contains(s, canaryReply) {
-				t.Errorf("column %s holds prompt or reply text: %q", cols[i], s)
-			}
-		}
-	}
-	rs.Close()
-	g.db.Close() // checkpoints the write-ahead log
-	for _, f := range []string{g.path, g.path + "-wal"} {
-		if b, err := os.ReadFile(f); err == nil && (strings.Contains(string(b), canaryPrompt) || strings.Contains(string(b), canaryReply)) {
-			t.Errorf("%s contains prompt or reply text", f)
-		}
+	if files == 0 {
+		t.Error("the ledger wrote no file, so the scan proved nothing")
 	}
 }
 

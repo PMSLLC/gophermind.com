@@ -45,11 +45,7 @@ type Deps struct {
 	// LedgerErrors reports how many ledger writes failed so far
 	// ((*router.Router).LedgerErrors); nil means none are counted.
 	LedgerErrors func() int
-	// ResetRun deletes the stored rows (blackboard, events, ledger) of a run id.
-	// A new plan calls it once its run folder exists, so a reused id starts
-	// clean. Nil means there is nothing to clear.
-	ResetRun func(ctx context.Context, runID string) error
-	Now      func() time.Time // nil means time.Now
+	Now          func() time.Time // nil means time.Now
 }
 
 // Options says what one Run call does.

@@ -96,7 +96,7 @@ func TestBriefRunE2EResumeAfterKill(t *testing.T) {
 		t.Fatalf("code=%d out=%q err=%q", code, out, errs)
 	}
 	requireProofLines(t, out)
-	if rep, err := report.Read(runDirOf(repo, id)); err != nil || rep.Status != "verified" || (runtime.GOOS == "darwin" && rep.Sandbox != "on") {
+	if rep, err := report.Read(runDirInRepo(repo, id)); err != nil || rep.Status != "verified" || (runtime.GOOS == "darwin" && rep.Sandbox != "on") {
 		t.Fatalf("report = %+v, %v", rep, err)
 	}
 	if hits := cliStoresHold(t, repo, cliCanary, out, errs); len(hits) > 0 {
@@ -147,7 +147,7 @@ wait:
 		t.Fatalf("resume: code=%d out=%q err=%q", code, out, errs)
 	}
 	requireProofLines(t, out)
-	rep, err := report.Read(runDirOf(repo, id))
+	rep, err := report.Read(runDirInRepo(repo, id))
 	if err != nil || rep.Status != "verified" || !rep.Resumed {
 		t.Fatalf("resumed report = %+v, %v", rep, err)
 	}
