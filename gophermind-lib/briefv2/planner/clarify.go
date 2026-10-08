@@ -11,9 +11,12 @@ import (
 	"gophermind/gophermind-lib/briefv2/runfs"
 )
 
-// takesRecommendations is true when the brief says no human is available:
-// every question takes its recommended answer, marked assumed.
-func (r *run) takesRecommendations() bool { return r.brief.Front.OnAmbiguity == "assume_and_document" }
+// takesRecommendations is true when no human is available, because the brief
+// says so or the caller runs unattended: every question takes its recommended
+// answer, marked assumed. It is the one place the policy is read.
+func (r *run) takesRecommendations() bool {
+	return r.brief.Front.OnAmbiguity == "assume_and_document" || r.opts.Unattended
+}
 
 func clarifyDone(r *run) bool {
 	s, err := loadQStore(r)

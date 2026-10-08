@@ -50,7 +50,11 @@ func (p *Planner) load(ctx context.Context, o Options) (*run, error) {
 	if err != nil {
 		return nil, err
 	}
-	repo, err := resolveRepo(b.Front.Repo)
+	repoField := b.Front.Repo
+	if o.Repo != "" {
+		repoField = o.Repo
+	}
+	repo, err := resolveRepo(repoField)
 	if err != nil {
 		return nil, err
 	}
@@ -100,6 +104,15 @@ func (p *Planner) loadExisting(o Options) (*run, error) {
 	rec, err := LookupRun(o.RunID)
 	if err != nil {
 		return nil, err
+	}
+	if o.Repo != "" {
+		want, err := resolveRepo(o.Repo)
+		if err != nil {
+			return nil, err
+		}
+		if want != rec.Repo {
+			return nil, fmt.Errorf("planner: run %s was planned in %s, not %s", o.RunID, rec.Repo, want)
+		}
 	}
 	src, err := os.ReadFile(filepath.Join(rec.RunDir, fileBrief))
 	if err != nil {
