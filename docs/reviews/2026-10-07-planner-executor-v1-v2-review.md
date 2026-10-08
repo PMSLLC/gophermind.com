@@ -58,7 +58,7 @@ Ranked by how much they hurt the merged goal.
 2. **Constraints are stamped on every node** instead of being mapped to the nodes that must obey them. A constraint can be "covered" by a root test alone.
 3. **`model_tier` is never used to route a planning call** (every planner call is `TierStrong`, `planner/planner.go:203`), and `node_class` lives in `_state/classes.json`, not on the node.
 4. **`assumptions` is a dead field.** It is prompted for in assume mode but is not in the decompose output list.
-5. **Nothing is saved for debugging a bad run.** Events go to stderr only. Prompts and replies are stored as hashes only. Failure output is reduced to a class and test names. A bad generation cannot be inspected afterwards.
+5. **Almost nothing is saved for debugging a bad run.** Events go to stderr only. Prompts and replies are stored as hashes only, and failure output is reduced to a class and test names. The one exception is the opt-in developer dump `GOPHERMIND_DEBUG_DUMP_DIR` (`planner/debugdump.go`), which is never set in graded runs, so a bad generation cannot normally be inspected afterwards.
 6. **Some passes are unproven.** A root acceptance command that is not `go test` passes on exit 0. A truncated `go test` output skips the `-run` name check. `diff_only` reports `verified` with no commits. The red-before-green check only warns.
 7. **State is split:** a global SQLite file but per-run `_state/executor.json`. A cleared database with `Wave0Done` true makes resume re-create every row as pending while git holds committed leaves (untested).
 8. **One worker only** (`workerCount` returns 1; the parallel branch is unreachable). Large files: `leaf.go` 1297 lines, `acceptance.go` 1166, `start.go` 883.
@@ -107,7 +107,7 @@ Also required: run the leaf-defect checks on component and root nodes, route pla
 | per node: files changed and diff stat from the commit | profiling and review |
 | run level: persisted `events.jsonl`, wave timings | timeline of a bad run |
 
-The saved reply and test output conflict with the executor spec's rule R15 (output never stored). That rule exists to keep secrets and large text out of state. It can be kept in spirit by scrubbing before write, using the existing scrubbing code, and by making storage a setting. This is decision 2 in section 7.
+The saved reply and test output conflict with the executor spec's rule R15 (output never stored). That rule exists to keep secrets and large text out of state. It is kept in spirit by scrubbing before write, using the existing scrubbing code, and by making storage a setting; the opt-in `GOPHERMIND_DEBUG_DUMP_DIR` dump is the existing precedent. John decided this on 2026-10-07 (section 10).
 
 ### 5.3 Reports
 
@@ -155,4 +155,19 @@ Add a node-class dimension to `report.json`, split attempts by failure stage per
 
 ## 9. Effect on the unification spec
 
-`2026-10-07-planner-phaseflow-unification-design.md` stays correct on decisions 1 to 6 and on sub-project A (file state). It needs these additions once John answers section 7: a node-widening sub-project between A and B, the v1 keepers in section 6 listed under B and C, the attempt artifacts in A's layout, and the revised order.
+Done on 2026-10-07 after John's answers (section 10): `2026-10-07-planner-phaseflow-unification-design.md` now has the agreed order, the attempt artifacts in sub-project A's layout, node widening and the question model as sub-project B, and the v1 keepers under B and the PhaseFlow view.
+
+## 10. Decisions recorded (John, 2026-10-07)
+
+| Section 7 question | Answer |
+|---|---|
+| 1. Order | Use the recommended order: file state, node widening, `/project` on v2, PhaseFlow view, planner revise stage, parallel waves |
+| 2. Attempt artifacts | Save them (scrubbed, in the run folder, with a setting to turn it off) |
+| 3. Node size | Require all groups on every node, not only on some node classes |
+| 4. Merge state | Merge the branch to `main` first. On hold: see the unification spec, section 10, items 2 and 3 |
+
+## 11. Corrections after reading CONTEXT.md
+
+1. A GOAL.md graded run is active on the branch (executor fix waves open, `/project` not built, 0 attempts). The sequencing of this work against it is an open decision.
+2. `/project` on v2 is already specified and planned on the branch (`2026-09-30-project-single-entry-design.md`, 14 tasks). The merge does not need a new `/project` design; v1 is kept as `/plan-v1` until after the perfect release (that spec's ruling R2).
+3. Defect 5 of v2 originally said nothing was saved; the opt-in `GOPHERMIND_DEBUG_DUMP_DIR` dump exists and is now noted there.

@@ -118,4 +118,8 @@ The file gate writes the same blocks to `questions-round-N.md` and reads `answer
 3. Keep `decisions/*.md` records (section 4.6). Recommended: yes.
 4. Round caps: 4 model calls and 30 questions. Adjust?
 
-Placement in the order agreed on 2026-10-07: this is part of step 3 (`/project` on v2 with v1's question UX), plus the `decision_ids`, `assumptions` and `open_questions` fields in step 2 (node widening).
+Placement in the order agreed on 2026-10-07: this is sub-project B (node widening and the question model) in the unification spec, built before `/project` on v2.
+
+Interaction with `/project` as the single entry point (`2026-09-30-project-single-entry-design.md`, section 8, on the branch): the attended form runs the rounds with a person at the gate. The unattended form takes every question's recommendation, marks it `Assumed`, records it on each affected node, and records `ConfirmUnderstanding` as `approved_by: unattended` with the understanding hash. The rounds still run unattended so that dependent questions still appear. That spec's rule that a graded attempt fails if GopherMind stops to ask a human is unchanged: no round may block in the unattended form.
+
+Status: decisions 1 to 4 in section 7 are still open (John has not answered them).
