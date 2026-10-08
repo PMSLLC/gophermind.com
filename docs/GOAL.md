@@ -2,6 +2,8 @@
 
 Set by John on 2026-09-29. Delegated run: no review gates between tasks, one report at the end.
 
+Update 2026-10-08: John ordered `docs/GOAL-UNIFICATION.md` to run first. Its tasks 4 (`/project`, with the other sub-projects) and 11.2 (the clean-run loop) carry out this document's tasks 4 and 5 on the unified system. This document stays authoritative for the loop and for the perfect release.
+
 ## Inputs
 
 - Brief: `gophermind-lib/briefv2/testdata/ai-venture-studio-server-brief.md` (tracked, 750 lines). `~/Downloads/ai-venture-studio-server-brief.md` is an older copy without the `env` block; the bodies are identical.

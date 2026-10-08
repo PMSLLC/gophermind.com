@@ -26,7 +26,7 @@ John asked for the planner to be tightly integrated with PhaseFlow. Reading both
 | `docs/superpowers/specs/2026-10-08-retire-v1-and-upgrade-consumers-design.md` | Sub-projects D and G: the `runview` library, the new pipeline contract, the server and desktop app upgrade, retiring `/phase` and v1, dropping the version names | draft for review |
 | `docs/superpowers/plans/2026-10-07-filesystem-run-state.md` | Sub-project A plan: files instead of SQLite, attempt artifacts (9 tasks) | written, not started |
 | `docs/superpowers/plans/2026-10-08-node-widening-and-question-model.md` | Sub-project B plan (13 tasks) | written, not started |
-| `docs/GOAL-UNIFICATION.md` | The goal document that finishes A to G, E and F, with the verification matrix, the stop conditions and the report; start it with the `goal` skill once the graded run is done | written, not started |
+| `docs/GOAL-UNIFICATION.md` | The goal document that finishes A to G, E and F and then the graded run, with the verification matrix, the stop conditions and the report | running (started 2026-10-08) |
 | `docs/GOAL.md` and `docs/superpowers/specs/2026-09-30-project-single-entry-design.md` (branch) | The graded run and `/project` as the single entry point, which this work must not disturb | active |
 
 ## 4. The seven sub-projects and their order
@@ -41,7 +41,7 @@ John asked for the planner to be tightly integrated with PhaseFlow. Reading both
 | F | Parallel waves in the executor | none yet | not specified |
 | G | Retire v1 and `/phase`, upgrade the server and the desktop app, drop the version names | G spec | specified; after the graded release |
 
-Nothing in A to F starts until the GOAL.md graded run has finished (decision 11).
+Decision 11 was reversed on 2026-10-08: the unification runs first (`docs/GOAL-UNIFICATION.md`), and the GOAL.md graded run is its task 11.2.
 
 ## 5. Decisions John has taken
 
@@ -56,11 +56,12 @@ Nothing in A to F starts until the GOAL.md graded run has finished (decision 11)
 | 2026-10-07 | Save attempt artifacts (scrubbed, in the run folder, with a setting to turn them off) |
 | 2026-10-07 | Every node carries all groups |
 | 2026-10-07 | Do not merge the branch; `main` stays docs-only |
-| 2026-10-07 | Finish the GOAL.md graded run first |
+| 2026-10-07 | Finish the GOAL.md graded run first (reversed on 2026-10-08, see below) |
 | 2026-10-07 | Clarify as rounds with a dependency tree; the confirm-understanding gate; decision records; caps of 4 model calls and 30 questions |
 | 2026-10-08 | One version means no v1 and v2: v1 is removed and the version names go (sub-project G); the rehearsal run `gm-2026-09-29-002` is not needed |
 | 2026-10-08 | The pipeline contract is one new node-based, versioned shape; server and desktop app are released together ("1 b") |
 | 2026-10-08 | `/phase` is retired ("2 c"); no `.planning/` files are generated |
+| 2026-10-08 | Run the unification first and skip the gate: the graded run is now the last big task of `docs/GOAL-UNIFICATION.md` |
 | 2026-10-08 | Explicit, validated not-applicable answers are allowed where the node-group table says so |
 | 2026-10-08 | Stages that work on one node follow that node's `model_tier` |
 | 2026-10-08 | Every question and answer is also recorded in the node tree |
@@ -93,6 +94,6 @@ This is why the unification work waits: every change to the planner, the executo
 ## 9. How to resume
 
 1. Read this page, then `CONTEXT.md` (the 2026-10-07 and 2026-10-08 sections at the end).
-2. Confirm the graded run has finished (`docs/GOAL.md`, the worktree's `docs/goals/attempts/`).
+2. Read `docs/goals/unification/` for the run's progress and report (the goal runs the graded run last).
 3. Spot-check the review's section 8 claims.
 4. Execute plan A, then plan B, subagent-driven (John's standing rule), on the branch, one writer at a time.

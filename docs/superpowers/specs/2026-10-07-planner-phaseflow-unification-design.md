@@ -38,7 +38,7 @@ Today there are two of everything:
 | 15 | `/phase` | Retired, together with PhaseFlow's workflow, prompts and `.planning/` model | John, 2026-10-08 |
 | 16 | Consequence for D | No `.planning/` files are generated; D is the run view | follows from 15 |
 | 13 | The rehearsal run `gm-2026-09-29-002` | Not needed. Runs recorded only in the old SQLite file are not migrated | John, 2026-10-08 |
-| 11 | Sequencing against GOAL.md | Finish the graded run first. None of A to F starts until the GOAL.md graded run has finished; until then this document and the two reviews are the only output of this work | John, 2026-10-07 |
+| 11 | Sequencing against GOAL.md | Reversed 2026-10-08: the unification runs first and the graded run is its last big task (`docs/GOAL-UNIFICATION.md`, task 11.2). Earlier text: finish the graded run first | John, 2026-10-08 ("run the unification first, skip the gate") |
 
 ## 3. The work, in order
 

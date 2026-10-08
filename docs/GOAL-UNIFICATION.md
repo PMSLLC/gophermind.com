@@ -2,6 +2,8 @@
 
 Set by John on 2026-10-08. Delegated run: no review gates between tasks, one report at the end. Start it with the `goal` skill. The map of every document named below is `docs/unification-overview.md`.
 
+Updated 2026-10-08 (later): John ordered the unification to run **before** the graded run ("run the unification first, skip the gate"). The gate of the first version of this document is removed, and the graded run of `docs/GOAL.md` is now the last big task of this goal (task 11).
+
 ## What finishing means
 
 All of this is done, on the feature branch, tested, documented and reported:
@@ -12,6 +14,7 @@ All of this is done, on the feature branch, tested, documented and reported:
 - Sub-project E: a planner revise stage rewrites a node after a failure.
 - Sub-project F: the executor runs leaves in parallel in isolated trees.
 - Sub-projects D and G: the `runview` library and the new pipeline contract; the server and the desktop app upgraded to it; v1 and `/phase` removed; the version names dropped.
+- The graded run of `docs/GOAL.md`: AIVentureStudio built from its brief in one clean `/project` run on the unified system, and the perfect release tagged `v0.1.0` in the target repo by that document's own rule.
 
 ## Inputs
 
@@ -24,6 +27,7 @@ All of this is done, on the feature branch, tested, documented and reported:
 
 ## Rulings already taken (do not reopen)
 
+- Sequencing (John, 2026-10-08): the unification runs first and the graded run after it. Decision 11 of the umbrella spec is reversed. `docs/GOAL.md` stays authoritative for the graded run itself.
 - One planner, one executor, one state store; no v1 and v2; `/phase` and PhaseFlow are retired.
 - One new node-based pipeline contract, `schema_version` 1; the server and the app are released together; no compatibility layer.
 - The root package after the rename is `gophermind-lib/build`; docs move to `docs/build/`. The CLI names (`gophermind brief ...`, `/project`) do not change.
@@ -39,7 +43,7 @@ All of this is done, on the feature branch, tested, documented and reported:
 - Never run `git worktree add`, `git checkout`, `git stash` or `--gw-force` in this checkout (the user's git wrapper blocks them). Use `git archive <sha> | tar -x -C <scratch>` for a scratch copy.
 - Run tests with a throwaway home: `gt() { HOME="$(mktemp -d)" GOCACHE="$(go env GOCACHE)" GOMODCACHE="$(go env GOMODCACHE)" go test "$@"; }`. The executor package takes about 11 minutes: `-timeout 30m`. A test that shells out to `git` strips every `GIT_*` variable first.
 - Tests run offline against canned or fake models. Only task 11 calls the mini. Check the mini's `memory_pressure` and swap before adding load; never load a second model.
-- Do not merge into `main`, do not push `main`, do not tag a release, do not deploy to the mini, do not install or notarise the desktop app. Those are John's. The goal ends with a ready-to-merge branch and a written list of the steps (task 13).
+- Do not merge into `main`, do not push `main`, do not tag a GopherMind release, do not deploy to the mini, do not install or notarise the desktop app. The one tag this goal makes is `v0.1.0` in the AIVentureStudio repo, by `docs/GOAL.md`'s perfect-release rule (task 11.2). Those are John's. The goal ends with a ready-to-merge branch and a written list of the steps (task 13).
 - Never print a credential; never `rm -rf` a variable path without the guard (assign, test it is absolute and inside the intended folder, print it, then `rm -rf -- "${target:?}"`).
 - No em dashes and no emojis in any text written.
 - Commit messages end with the two attribution lines the harness gives.
@@ -59,8 +63,8 @@ Claude tokens are the cost to keep down.
 
 Run them in this order. A task is done when its plan's tasks are committed, its verify commands pass, and its documentation is updated.
 
-0. **Gate.** The graded run (`docs/GOAL.md`) must have finished: `git -C ~/OtherProjects/AIVentureStudio tag -l v0.1.0` prints `v0.1.0`. If it does not, stop at once, write one line saying so to the report file, and do nothing else.
-1. **Baseline.** The worktree is clean; record the branch tip and run the whole suite once (`gt ./gophermind-lib/... ./cmd/... -count=1 -timeout 45m`, plus `gophermind-osx`'s own module) to a file; any failure that exists before this work is recorded, not fixed here. Spot-check the eight claims in `docs/reviews/2026-10-07-planner-executor-v1-v2-review.md` section 8 against the code; write the result as an addendum at the end of that file. If a claim is false and a plan's premise rests on it, correct that plan first.
+0. **State of the graded run's prerequisites.** The gate of the first version is removed. Read `.superpowers/sdd/2026-09-30-v2-executor/HANDOFF.md` and the two progress ledgers in the worktree (`.superpowers/sdd/2026-09-30-v2-executor/progress.md`, `.superpowers/sdd/2026-09-29-v2-planner-core/progress.md`), and list which `docs/GOAL.md` tasks are done and which executor fix waves are still open (GOAL task 3). Write the list to `.superpowers/sdd/2026-10-08-unification/progress.md`. Task 1 finishes what is open.
+1. **Baseline.** The worktree is clean; record the branch tip and run the whole suite once (`gt ./gophermind-lib/... ./cmd/... -count=1 -timeout 45m`, plus `gophermind-osx`'s own module) to a file; any failure that exists before this work is recorded, not fixed here, except that the executor fix waves still open from task 0 are finished first (one writer at a time, each with its tests), because the graded run needs them and A to C build on the executor. Spot-check the eight claims in `docs/reviews/2026-10-07-planner-executor-v1-v2-review.md` section 8 against the code; write the result as an addendum at the end of that file. If a claim is false and a plan's premise rests on it, correct that plan first.
 2. **Sub-project A.** Execute the A plan (9 tasks). Verify: the plan's own final task (end-to-end on the greeter plan, the no-SQL grep gate, `go build ./...`).
 3. **Sub-project B.** Execute the B plan (13 tasks). Verify: its Task 13 (end-to-end tests, full suite).
 4. **Sub-project C.** First amend the C plan for A and B exactly as the umbrella spec section 7 says (the preflight and clearing name the file layout; the unattended policy gains `ConfirmUnderstanding`; the report gains the node-class dimension), commit the amendment, then execute it (14 tasks). Verify: its final task, including a `/project` run on the csvstat brief in offline fake-provider mode.
@@ -72,7 +76,7 @@ Run them in this order. A task is done when its plan's tasks are committed, its 
 10. **Documentation sweep.** `README.md`, `docs/build/README.md`, `CHANGELOG.md` (the breaking changes: `/phase` removed, the pipeline contract, the file-based run state), `INDEX.md`, `docs/ARCHITECTURE-INDEX.md`, `docs/unification-overview.md` (every row's state, the paths after the rename, a list of renamed paths), `CONTEXT.md`. Run a search for stale statements: `briefv2`, `phaseflow`, `plantree`, `assignments.json`, `blackboard.db`, `.planning/` in live (non-historical) docs and code comments, and fix or justify each hit.
 11. **Smoke and regression on the real system.**
     1. On the csvstat brief against the mini: `/project` unattended from a cleared state to a verified build. Check by file inspection: every function node has every group; the root's `decisions` equals the question store; `attempts/` holds scrubbed artifacts; `calls.jsonl` and `events.jsonl` exist; no `blackboard.db` anywhere; the pipeline endpoints show the run.
-    2. One clean attempt on the AIVS brief by `docs/GOAL.md`'s loop rules (clear the target repo, one `/project` run, no restart, no hand edit), to prove the unified system still builds the graded target. If it fails, apply that goal's fail-and-fix loop (record in `docs/goals/attempts/NN.md`, fix GopherMind, clear, run again) until it passes or an escalation condition below holds. Do not tag in the target repo.
+    2. **The graded run.** Execute `docs/GOAL.md`'s clean-run loop on the AIVS brief, to its perfect release, on the unified system. First check the human prerequisites of `2026-09-30-project-single-entry-design.md` section 16: the vault passphrase and a vault holding `DATABASE_URL` and `TEST_DATABASE_URL` that point at two empty PostgreSQL 15+ databases on loopback (for example `ssh -N -L 55432:127.0.0.1:5432 mini`), a `~/.gophermind/gophermind.yaml` with `privacy.mode: private_only` and the mini in every tier, and the installed `gophermind-dev` binary. This goal cannot create them: if one is missing, write the exact list to the report and stop here with everything before it done. Otherwise run the loop: clear the target repo, one `/project` run, no restart, no hand edit; a failed attempt is dead, recorded in `docs/goals/attempts/NN.md`, GopherMind is fixed (never the target repo), and the loop runs again until the perfect release of `docs/GOAL.md` or an escalation condition below. On a perfect release, tag that commit `v0.1.0` in the target repo; that tag is the only thing added there.
 12. **Final verification matrix.** All of: the full suite in all three Go modules passes; `go vet ./...` clean; `gofmt -l` prints nothing; the grep gates pass; `gophermind brief validate` on both briefs prints no warning; the offline `brief plan --fake` and `brief run` on the greeter fixtures pass; the server's endpoints and the app's client tests pass.
 13. **The report, then stop.** Write `docs/goals/unification/report.md` (150 lines at most): what was built per sub-project with commit ranges, the verification results, any ruling made and why, anything left undone, and the numbered steps John must take: review and merge the branch (the dry-run merge result), deploy the server to the mini (`git pull` there, `sudo launchctl kickstart -k system/com.home.<service>`, then check the endpoints), build, sign and notarise the app and release it in the same window, tag the release. Commit it here and stop.
 
@@ -80,9 +84,9 @@ Run them in this order. A task is done when its plan's tasks are committed, its 
 
 Stop and write the reason, the evidence and the next step to the report file when:
 
-- Task 0 finds the graded run unfinished.
+- A human prerequisite of the graded run is missing at task 11.2 (write the list; everything before it stays done).
 - A task still fails its verify command after three fix rounds on the same failure (spec or plan wrong, or the code): record the failure in `docs/goals/unification/blocked.md` and stop; do not skip the task, because every later task depends on the earlier ones.
 - The git wrapper blocks a command this goal needs and the workaround above does not apply.
 - The mini runs out of memory or swap, or Ollama stops answering and a restart through launchd does not bring it back (task 11 only).
 - The AIVS regression attempt fails for 20 revisions of the same cause (the same limit `docs/GOAL.md` uses).
-- A step would need an action forbidden in "Execution rules" (merge, push `main`, deploy, install, tag).
+- A step would need an action forbidden in "Execution rules" (merge, push `main`, deploy, install, tag a GopherMind release).
