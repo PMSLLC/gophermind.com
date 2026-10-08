@@ -87,6 +87,14 @@ func (g lazyFileGate) Approve(ctx context.Context, plan human.PlanSummary) (huma
 	return f.Approve(ctx, plan)
 }
 
+func (g lazyFileGate) Confirm(ctx context.Context, u human.Understanding) (human.Decision, error) {
+	f, err := g.file()
+	if err != nil {
+		return human.Decision{}, err
+	}
+	return f.Confirm(ctx, u)
+}
+
 func (g lazyFileGate) Escalate(ctx context.Context, e human.Escalation) (human.Resolution, error) {
 	f, err := g.file()
 	if err != nil {

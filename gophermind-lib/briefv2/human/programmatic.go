@@ -12,6 +12,7 @@ const (
 	KindAsk      Kind = "ask"
 	KindApprove  Kind = "approve"
 	KindEscalate Kind = "escalate"
+	KindConfirm  Kind = "confirm"
 )
 
 type reply struct {
@@ -25,11 +26,12 @@ type reply struct {
 // Programmatic.Requests. Exactly one of Answer, Decide, Resolve, or Fail
 // completes it (the matching one for its Kind); a second call does nothing.
 type Request struct {
-	Kind       Kind
-	Questions  []Question
-	Plan       PlanSummary
-	Escalation Escalation
-	reply      chan reply
+	Kind          Kind
+	Questions     []Question
+	Plan          PlanSummary
+	Escalation    Escalation
+	Understanding Understanding
+	reply         chan reply
 }
 
 func (r *Request) send(x reply) {
@@ -83,6 +85,17 @@ func (p *Programmatic) Ask(ctx context.Context, qs []Question) ([]Answer, error)
 
 func (p *Programmatic) Approve(ctx context.Context, plan PlanSummary) (Decision, error) {
 	x, err := p.roundTrip(ctx, &Request{Kind: KindApprove, Plan: plan})
+	if err != nil {
+		return Decision{}, err
+	}
+	if x.decision.By == "" {
+		x.decision.By = "programmatic"
+	}
+	return x.decision, nil
+}
+
+func (p *Programmatic) Confirm(ctx context.Context, u Understanding) (Decision, error) {
+	x, err := p.roundTrip(ctx, &Request{Kind: KindConfirm, Understanding: u})
 	if err != nil {
 		return Decision{}, err
 	}

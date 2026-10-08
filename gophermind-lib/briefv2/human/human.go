@@ -21,14 +21,35 @@ type Question struct {
 	Text    string
 	Default string   // taken when the person leaves it alone; empty means an answer is required
 	Options []string // suggestions; the terminal lets a number pick one
+
+	// Why says why the answer matters. Kind is "decision" or "fact" (empty
+	// means decision). DependsOn lists the questions this one waits for;
+	// Recommended is advice, never preselected: only the word accept takes it.
+	// Round is the Clarify round the question belongs to, 0 outside Clarify.
+	Why            string
+	Kind           string
+	DependsOn      []string
+	Recommended    string
+	RecommendedWhy string
+	Round          int
 }
 
 // Answer answers the question with the same ID. Assumed is true when the
-// default was taken rather than typed.
+// default was taken rather than typed; Accepted is true when the person typed
+// accept to take the recommendation.
 type Answer struct {
-	ID      string
-	Text    string
-	Assumed bool
+	ID       string
+	Text     string
+	Assumed  bool
+	Accepted bool
+}
+
+// Understanding is what a person confirms before the planner builds anything:
+// the decisions made, the assumptions taken, and the facts established. Hash
+// binds a confirmation to this exact text.
+type Understanding struct {
+	Markdown string
+	Hash     string
 }
 
 // PlanSummary is the plan as shown for approval. Hash binds an approval to
@@ -92,6 +113,9 @@ type Gate interface {
 	// Ask blocks until every question is answered, in order.
 	Ask(ctx context.Context, qs []Question) ([]Answer, error)
 	Approve(ctx context.Context, plan PlanSummary) (Decision, error)
+	// Confirm asks the person to confirm the shared understanding. The answer
+	// has the same shape as Approve's.
+	Confirm(ctx context.Context, u Understanding) (Decision, error)
 	// Escalate is used by the executor plan.
 	Escalate(ctx context.Context, e Escalation) (Resolution, error)
 }
