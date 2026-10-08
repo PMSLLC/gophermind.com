@@ -29,8 +29,8 @@ const (
 
 // Provisioned names a secret and its source. It never carries a value.
 type Provisioned struct {
-	Name   string
-	Source Source
+	Name   string `json:"name"`
+	Source Source `json:"source"`
 }
 
 // Generate returns a fresh value of the given kind ("hex32" or "placeholder")

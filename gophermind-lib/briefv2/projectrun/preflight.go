@@ -13,10 +13,10 @@ import (
 
 // Check is one line of the pre-plan preflight.
 type Check struct {
-	Name   string
-	OK     bool
-	Detail string // ids, paths, counts; never a secret, never command output
-	Fix    string // the exact command or setting line to fix it; empty when OK
+	Name   string `json:"name"`
+	OK     bool   `json:"ok"`
+	Detail string `json:"detail"` // ids, paths, counts; never a secret, never command output
+	Fix    string `json:"fix"`    // the exact command or setting line to fix it; empty when OK
 }
 
 // PreflightResult is what Preflight found and what later stages reuse.
