@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -33,13 +34,16 @@ const projGreeterID = "gm-2026-09-29-900"
 // projRig is a throwaway repo, config dir and Env of fakes. Nothing here
 // touches the real ~/.gophermind, the real vault or the network.
 type projRig struct {
-	t         *testing.T
-	repo      string
-	brief     string
-	env       projectrun.Env
-	exec      func(executor.Options) (executor.Report, error)
-	execCalls int32
-	provCalls int32
+	t          *testing.T
+	repo       string
+	brief      string
+	env        projectrun.Env
+	exec       func(executor.Options) (executor.Report, error)
+	execCalls  int32
+	provCalls  int32
+	vaultOpens int32
+	cfgDir     string
+	environ    map[string]string
 }
 
 func projGit(t *testing.T, dir string, args ...string) {
@@ -73,6 +77,7 @@ func newProjRig(t *testing.T) *projRig {
 	}
 	r := &projRig{t: t, repo: t.TempDir()}
 	cfgDir := t.TempDir()
+	r.cfgDir = cfgDir
 	t.Setenv("GOPHERMIND_CONFIG_DIR", cfgDir)
 	projGit(t, r.repo, "init", "-q", "-b", "main")
 	if err := os.WriteFile(filepath.Join(r.repo, "README.md"), []byte("x\n"), 0o600); err != nil {
@@ -106,6 +111,7 @@ func newProjRig(t *testing.T) *projRig {
 		t.Fatal(err)
 	}
 	environ := map[string]string{"PATH": filepath.Dir(gitPath), vault.PassphraseEnv: "test-passphrase"}
+	r.environ = environ
 	vaultPath := filepath.Join(t.TempDir(), "vault.age")
 
 	env := projectrun.DefaultEnv()
@@ -113,6 +119,7 @@ func newProjRig(t *testing.T) *projRig {
 	env.ConfigDir = func() (string, error) { return cfgDir, nil }
 	env.VaultPath = func() (string, error) { return vaultPath, nil }
 	env.OpenVault = func(path, pass string) (*vault.Vault, error) {
+		atomic.AddInt32(&r.vaultOpens, 1)
 		return vault.Open(path, pass, vault.Options{WorkFactor: 10})
 	}
 	env.SandboxPreflight = func(context.Context) error { return nil }
@@ -260,6 +267,15 @@ func projLastLines(s string, n int) string {
 
 func TestProjectCLIPrintStatePaths(t *testing.T) {
 	r := newProjRig(t)
+	// Config, vault and settings live under a parent that does not exist, and
+	// the preflight would fail (no passphrase, no tools): the command must
+	// still exit 0, create nothing and open no vault.
+	missing := filepath.Join(t.TempDir(), "absent")
+	r.env.ConfigDir = func() (string, error) { return filepath.Join(missing, "cfg"), nil }
+	r.env.VaultPath = func() (string, error) { return filepath.Join(missing, "cfg", "vault.age"), nil }
+	r.env.SettingsPath = func() (string, error) { return filepath.Join(missing, "cfg", "gophermind.yaml"), nil }
+	r.env.Getenv = func(string) string { return "" }
+	r.env.LookPath = func(string, string) (string, bool) { return "", false }
 	code, out, errs := r.cmd("--print-state-paths")
 	if code != 0 {
 		t.Fatalf("code = %d, err %q", code, errs)
@@ -273,11 +289,28 @@ func TestProjectCLIPrintStatePaths(t *testing.T) {
 			t.Errorf("line is not <action>\\t<scope>\\t<path>: %q", l)
 		}
 	}
-	if r.provCalls != 0 || r.execCalls != 0 {
-		t.Errorf("work started: provider %d executor %d", r.provCalls, r.execCalls)
+	if r.provCalls != 0 || r.execCalls != 0 || r.vaultOpens != 0 {
+		t.Errorf("work started: provider %d executor %d vault %d", r.provCalls, r.execCalls, r.vaultOpens)
+	}
+	if _, err := os.Stat(missing); !os.IsNotExist(err) {
+		t.Errorf("the nonexistent parent was created (stat err %v)", err)
 	}
 	if _, err := os.Stat(filepath.Join(r.repo, ".gophermind")); err == nil {
 		t.Error("a run folder was made")
+	}
+}
+
+// An unreadable settings file makes StatePaths fail, and the command exits 1.
+// That is intended: the paths depend on executor.go_mod_cache from settings,
+// and a guess would list the wrong folder to delete.
+func TestProjectCLIPrintStatePathsInvalidSettings(t *testing.T) {
+	r := newProjRig(t)
+	if err := os.WriteFile(filepath.Join(r.cfgDir, "gophermind.yaml"), []byte("not_a_setting: [\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errs := r.cmd("--print-state-paths")
+	if code != 1 || out != "" || !strings.Contains(errs, "error: ") || !strings.Contains(errs, "settings") {
+		t.Errorf("code %d out %q err %q", code, out, errs)
 	}
 }
 
@@ -290,6 +323,11 @@ func TestProjectCLIPreflightOnly(t *testing.T) {
 		}
 		if r.provCalls != 0 || r.execCalls != 0 {
 			t.Error("work started")
+		}
+		// The greeter brief declares no secrets, so the preflight does not
+		// open the vault and Run opens nothing before or beside it.
+		if r.vaultOpens != 0 {
+			t.Errorf("vault opened %d times, want 0", r.vaultOpens)
 		}
 	})
 	t.Run("missing", func(t *testing.T) {
@@ -306,6 +344,20 @@ func TestProjectCLIPreflightOnly(t *testing.T) {
 			t.Errorf("stderr lists no missing item: %q", errs)
 		}
 	})
+	t.Run("no vault open before or without a passphrase", func(t *testing.T) {
+		for _, args := range [][]string{{"--preflight-only"}, {}} {
+			r := newProjRig(t)
+			r.environ[vault.PassphraseEnv] = ""
+			r.env.LookPath = func(string, string) (string, bool) { return "", false }
+			code, _, errs := r.cmd(args...)
+			if code != 6 {
+				t.Fatalf("%v: code = %d, err %q", args, code, errs)
+			}
+			if r.vaultOpens != 0 || r.provCalls != 0 || r.execCalls != 0 {
+				t.Errorf("%v: vault %d provider %d executor %d, want 0", args, r.vaultOpens, r.provCalls, r.execCalls)
+			}
+		}
+	})
 }
 
 func TestProjectCLINeverReadsStdinUnattended(t *testing.T) {
@@ -315,16 +367,23 @@ func TestProjectCLINeverReadsStdinUnattended(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pr.Close()
-	// Closing the write end first makes any read return EOF at once; closing
-	// the read end instead would make a read fail. Either way a read shows up
-	// as a changed pipe, so the test closes the read end and asserts the run
-	// still finishes without touching it.
-	pw.Close()
-	pr.Close()
+	defer pw.Close()
+	if _, err := pw.WriteString("y\n"); err != nil {
+		t.Fatal(err)
+	}
 	var out, errb bytes.Buffer
 	code := runProject([]string{r.brief, "--repo", r.repo}, pr, &out, &errb)
 	if code != 0 {
 		t.Fatalf("code = %d\nout:\n%s\nerr:\n%s", code, out.String(), errb.String())
+	}
+	// The bytes written before the run must still be there, unread.
+	if err := pr.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 8)
+	n, err := pr.Read(buf)
+	if err != nil || string(buf[:n]) != "y\n" {
+		t.Errorf("stdin was consumed: read %q, err %v", buf[:n], err)
 	}
 }
 

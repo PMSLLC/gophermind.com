@@ -2358,12 +2358,9 @@ Usage:
                                 GET /session, DELETE /session/{id}, POST /session/{id}/approve,
                                 POST /devices — see docs/mobile-serve.md
                                 pipeline: GET /pipeline (dashboard), GET /pipeline/state,
-                                GET /pipeline/events (SSE), GET /pipeline/report
-  gophermind project <brief.md> [--repo <path>] [--generate NAME=hex32|placeholder]... [--require-private]
-                      [--expect-head <rev>] [--graded] [--expect-binary-commit <sha>] [--resume] [--attended]
-                      [--preflight-only] [--print-state-paths]
-                                plan and build a v2 brief in one run (same as /project in the TUI)
-
+                                GET /pipeline/events (SSE), GET /pipeline/report`)
+	fmt.Fprintln(os.Stderr, projectUsage)
+	fmt.Fprintln(os.Stderr, `
 On first interactive launch with nothing configured, a short setup wizard runs
 and saves your choices to the global config (see below); later launches skip it.
 
