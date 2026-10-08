@@ -129,6 +129,17 @@ func (p *Planner) confirm(ctx context.Context, r *run) error {
 	if err != nil {
 		return err
 	}
+	// answers.json is derived from the store. A difference means someone edited
+	// it directly: refuse, and leave the file as it is.
+	if exists(r.path(fileQuestions)) {
+		as, err := loadAnswers(r)
+		if err != nil {
+			return err
+		}
+		if !sameJSON(as, answersView(s)) {
+			return errors.New("answers.json differs from _state/clarify/questions.json; it is derived, change answers with `gophermind brief answer`")
+		}
+	}
 	md, hash, err := currentUnderstanding(r)
 	if err != nil {
 		return err
@@ -158,10 +169,6 @@ func (p *Planner) confirm(ctx context.Context, r *run) error {
 		if by = d.By; by == "" {
 			by = "gate"
 		}
-	}
-	// answers.json is the store's view: bring it in line so the confirmation holds.
-	if err := writeAnswersView(r, s); err != nil {
-		return err
 	}
 	// The browsable copy is written only now. The file gate keeps its own
 	// UNDERSTANDING.md (the text, the hash and the decision block) in the same
