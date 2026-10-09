@@ -104,6 +104,7 @@ type Config struct {
 	Human      Human               `yaml:"human"`
 	Vault      Vault               `yaml:"vault"`
 	Executor   ExecutorConfig      `yaml:"executor"`
+	Revise     ReviseConfig        `yaml:"revise"`
 	Toolchain  map[string]string   `yaml:"toolchain"`
 }
 
@@ -134,6 +135,7 @@ func Default() *Config {
 		Vault:      Vault{Path: "~/.gophermind/vault.age"},
 	}
 	c.applyExecutorDefaults()
+	c.applyReviseDefaults()
 	return c
 }
 
@@ -194,6 +196,7 @@ func Load(path string) (*Config, error) {
 		c.RateLimits.CooldownAfterTimeoutSeconds = 60 // an existing file without the key
 	}
 	c.applyExecutorDefaults()
+	c.applyReviseDefaults()
 	c.applyPlannerDefaults()
 	if err := c.Validate(); err != nil {
 		return nil, fmt.Errorf("settings: %s: %w", path, err)
@@ -365,6 +368,9 @@ func (c *Config) Validate() error {
 		return errors.New("vault.path is required")
 	}
 	if err := c.Executor.validate(); err != nil {
+		return err
+	}
+	if err := c.Revise.validate(); err != nil {
 		return err
 	}
 	return validateToolchain(c.Toolchain)

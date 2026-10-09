@@ -165,6 +165,7 @@ func checkExplicitZeroCounts(raw []byte) error {
 	var doc struct {
 		Executor map[string]any `yaml:"executor"`
 		Defaults map[string]any `yaml:"defaults"`
+		Revise   map[string]any `yaml:"revise"`
 	}
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
 		return nil // the strict decode already reported any syntax problem
@@ -180,6 +181,13 @@ func checkExplicitZeroCounts(raw []byte) error {
 		if v, ok := doc.Defaults[key]; ok {
 			if n, isInt := v.(int); isInt && n == 0 {
 				return fmt.Errorf("defaults.%s must be at least 1", key)
+			}
+		}
+	}
+	for _, key := range []string{"max_tokens", "max_refusals"} {
+		if v, ok := doc.Revise[key]; ok {
+			if n, isInt := v.(int); isInt && n == 0 {
+				return fmt.Errorf("revise.%s must be at least 1", key)
 			}
 		}
 	}
