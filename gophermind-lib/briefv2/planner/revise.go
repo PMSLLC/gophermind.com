@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"gophermind/gophermind-lib/briefv2/brief"
 	"gophermind/gophermind-lib/briefv2/contract"
@@ -65,6 +66,40 @@ type Reviser struct{ p *Planner }
 
 // NewReviser returns a Reviser over the same dependencies the planner has.
 func NewReviser(d Deps) *Reviser { return &Reviser{p: New(d)} }
+
+const (
+	maxReviseInput      = 2048     // bytes of one text input of the revise prompt (failure, problem, one history line)
+	maxReviseTestSource = 64 << 10 // the test file is shown whole up to this size
+	removedLine         = "[line removed: secret value]"
+)
+
+// scrubInput is the stage's own defense in depth for a text input: the caller
+// scrubs too, but a caller bug must not send a secret value to a provider. A
+// line that holds one (any form packer.HasSecret knows) is replaced by a
+// marker; if the text still spells one across lines it is withheld whole. The
+// result is cut to max bytes after the scrub.
+func scrubInput(s string, secrets []string, max int) string {
+	if packer.HasSecret(s, secrets) {
+		lines := strings.Split(s, "\n")
+		for i, l := range lines {
+			if packer.HasSecret(l, secrets) {
+				lines[i] = removedLine
+			}
+		}
+		s = strings.Join(lines, "\n")
+		if packer.HasSecret(s, secrets) {
+			s = removedLine
+		}
+	}
+	if len(s) > max {
+		cut := max
+		for cut > 0 && !utf8.RuneStart(s[cut]) {
+			cut--
+		}
+		s = s[:cut] + "\n[cut]"
+	}
+	return s
+}
 
 var reviseIDRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
@@ -167,7 +202,7 @@ func (p *Planner) revisePrompt(r *run, c *contract.Contracts, orig map[string]an
 	data := map[string]string{
 		"Trigger": req.Trigger, "Revision": strconv.Itoa(req.Revision), "Remaining": strconv.Itoa(req.Remaining),
 		"Refused": strings.Join(req.Refused, ", "),
-		"Node":    mustJSON(reviseView(orig, component)), "Contract": strings.Join(slice, "\n\n"),
+		"Node":    scrubInput(mustJSON(reviseView(orig, component)), req.Secrets, maxReviseTestSource), "Contract": scrubInput(strings.Join(slice, "\n\n"), req.Secrets, maxReviseTestSource),
 		"TestFile": testFile, "TestSource": strings.TrimRight(req.TestSource, "\n"),
 		"Attempts": bulletList(req.History), "Failure": req.LastFailure, "Problem": req.Problem,
 		"Component": "", "BriefSection": "", "Decisions": "",
@@ -253,7 +288,20 @@ func (v *Reviser) Revise(ctx context.Context, req ReviseRequest) (ReviseProposal
 	if !ok {
 		return ReviseProposal{}, errors.New("planner: the node has no recorded test")
 	}
-	prompt, err := p.revisePrompt(r, c, orig, req, lt.TestFile)
+	sreq := req
+	sreq.Problem = scrubInput(req.Problem, req.Secrets, maxReviseInput)
+	sreq.LastFailure = scrubInput(req.LastFailure, req.Secrets, maxReviseInput)
+	sreq.TestSource = scrubInput(req.TestSource, req.Secrets, maxReviseTestSource)
+	sreq.Trigger = scrubInput(req.Trigger, req.Secrets, maxReviseInput)
+	sreq.History = make([]string, len(req.History))
+	for i, h := range req.History {
+		sreq.History[i] = scrubInput(h, req.Secrets, maxReviseInput)
+	}
+	sreq.Refused = make([]string, len(req.Refused))
+	for i, h := range req.Refused {
+		sreq.Refused[i] = scrubInput(h, req.Secrets, maxReviseInput)
+	}
+	prompt, err := p.revisePrompt(r, c, orig, sreq, lt.TestFile)
 	if err != nil {
 		return ReviseProposal{}, err
 	}
@@ -266,6 +314,9 @@ func (v *Reviser) Revise(ctx context.Context, req ReviseRequest) (ReviseProposal
 		scope = router.ScopeComponent
 	}
 	var got parsedRevise
+	// lastClass is shared by the router's two attempts on purpose: the class of the
+	// reply that ends the call is the one left in it, and only a call that ends
+	// unusable reads it.
 	lastClass := ClassReviseInvalid
 	cs := callSpec{stage: "revise:" + req.NodeID, taskType: "revise", nodeID: req.NodeID, nodeClass: class,
 		scope: scope, maxTokens: cfg.MaxTokens, tier: router.Tier(cfg.ModelTier), revision: req.Revision, skipSave: heldSecret}
@@ -380,7 +431,7 @@ func (p *Planner) reviseTests(ctx context.Context, r *run, c *contract.Contracts
 	pkg, _ := ct["package"].(string)
 	funcName := testFuncName(id)
 	prompt, err := render("testwriter", map[string]string{
-		"Node": mustJSON(testwriterView(merged)), "PackageDir": path.Dir(file), "TestFuncName": funcName, "TestFile": testFile})
+		"Node": scrubInput(mustJSON(testwriterView(merged)), req.Secrets, maxReviseTestSource), "PackageDir": path.Dir(file), "TestFuncName": funcName, "TestFile": testFile})
 	if err != nil {
 		return "", "", err
 	}

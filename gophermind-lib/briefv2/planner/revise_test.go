@@ -283,6 +283,16 @@ func (c *recCaller) CallParsed(ctx context.Context, info router.CallInfo, req pr
 	return c.inner.CallParsed(ctx, info, req, parse)
 }
 
+// requestsSince is every message (system, user, repair) of every request the
+// provider got after the first n requests.
+func requestsSince(g *rig, n int) [][]provider.Message {
+	var out [][]provider.Message
+	for _, rq := range g.fake.Requests()[n:] {
+		out = append(out, rq.Messages)
+	}
+	return out
+}
+
 func TestRevisePrivacyNodeScopeNeverCarriesReasoning(t *testing.T) {
 	g := planned(t, map[string]string{"revise.fn-greet.txt": descriptionPatch, "testwrite.fn-greet-r1.txt": testwriteReply(t, revisedGreetTest)})
 	// Put a canary into every group node scope must not see.
@@ -299,6 +309,7 @@ func TestRevisePrivacyNodeScopeNeverCarriesReasoning(t *testing.T) {
 	doc["refactor_notes"] = []any{map[string]any{"what": "REFACTOR-CANARY", "why": "later", "when": "later"}}
 	doc["assumptions"] = []any{"ASSUME-CANARY"}
 	doc["decisions"] = []any{map[string]any{"id": "q1", "question": "DECISION-CANARY?", "kind": "decision", "answer": "yes", "answered_by": "human", "raised_by": "clarify"}}
+	doc["decision_ids"] = []any{"dq1"}
 	edited, err := json.Marshal(doc)
 	if err != nil {
 		t.Fatal(err)
@@ -310,10 +321,27 @@ func TestRevisePrivacyNodeScopeNeverCarriesReasoning(t *testing.T) {
 	if err := store.Write(n); err != nil {
 		t.Fatal(err)
 	}
+	// Two settled decisions in the question store: the node names dq1 only.
+	qpath := filepath.Join(g.runDir, "_state", "clarify", "questions.json")
+	var qs map[string]any
+	if err := json.Unmarshal(fileBytes(t, g, "_state/clarify/questions.json"), &qs); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []map[string]any{
+		{"id": "dq1", "kind": "decision", "question": "NAMED-DECISION-CANARY?", "answer": "named answer", "status": "settled", "raised_by": "clarify"},
+		{"id": "dq2", "kind": "decision", "question": "UNNAMED-DECISION-CANARY?", "answer": "other answer", "status": "settled", "raised_by": "clarify"},
+	} {
+		qs["questions"] = append(qs["questions"].([]any), q)
+	}
+	qraw, _ := json.Marshal(qs)
+	if err := os.WriteFile(qpath, qraw, 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	rec := &recCaller{inner: g.router}
 	deps := g.deps
 	deps.Caller = rec
+	start := len(g.fake.Requests())
 	if _, err := planner.NewReviser(deps).Revise(context.Background(), reviseReq(t, g)); err != nil {
 		t.Fatal(err)
 	}
@@ -322,31 +350,30 @@ func TestRevisePrivacyNodeScopeNeverCarriesReasoning(t *testing.T) {
 			t.Errorf("stage %s ran at scope %s, want node", info.Stage, info.Scope)
 		}
 	}
-	for _, text := range rec.texts {
-		for _, banned := range []string{"RATIONALE-CANARY", "ALT-CANARY", "REFACTOR-CANARY", "ASSUME-CANARY", "DECISION-CANARY", "brief_ref", "decision_ids", "open_questions"} {
-			if strings.Contains(text, banned) {
-				t.Errorf("a node-scope prompt carries %q", banned)
-			}
-		}
-		if strings.Contains(text, runSecret) {
-			t.Error("a prompt carries the secret")
-		}
+	nodeReqs := requestsSince(g, start)
+	if len(nodeReqs) == 0 {
+		t.Fatal("no request reached the provider")
 	}
-	for _, rq := range g.fake.Requests() {
-		for _, m := range rq.Messages {
-			if strings.Contains(m.Content, runSecret) {
-				t.Errorf("a %s message sent to the provider carries the secret", m.Role)
+	for _, msgs := range nodeReqs {
+		for _, m := range msgs {
+			for _, banned := range []string{"RATIONALE-CANARY", "ALT-CANARY", "REFACTOR-CANARY", "ASSUME-CANARY", "DECISION-CANARY", "brief_ref", "decision_ids", "open_questions", runSecret} {
+				if strings.Contains(m.Content, banned) {
+					t.Errorf("a node-scope %s message carries %q", m.Role, banned)
+				}
 			}
 		}
 	}
-	if !strings.Contains(rec.texts[0], "attempt 1 a/m1 fail test_fail") || !strings.Contains(rec.texts[0], "Failing tests: TestGreet") {
+	first := nodeReqs[0][len(nodeReqs[0])-1].Content
+	if !strings.Contains(first, "attempt 1 a/m1 fail test_fail") || !strings.Contains(first, "Failing tests: TestGreet") {
 		t.Error("the revise prompt lacks the attempt history or the last failure")
 	}
 
-	// The component variant adds the brief section, rationale and assumptions, nothing else.
+	// The component variant adds the brief section, rationale, assumptions and
+	// the decisions the node names, nothing else.
 	g.cfg.Revise.Context = "component"
 	rec = &recCaller{inner: g.router}
 	deps.Caller = rec
+	start = len(g.fake.Requests())
 	if _, err := planner.NewReviser(deps).Revise(context.Background(), reviseReq(t, g)); err != nil {
 		t.Fatal(err)
 	}
@@ -355,19 +382,172 @@ func TestRevisePrivacyNodeScopeNeverCarriesReasoning(t *testing.T) {
 			t.Errorf("the component variant ran at scope %s", info.Scope)
 		}
 	}
-	text := rec.texts[0]
-	for _, want := range []string{"RATIONALE-CANARY", "ASSUME-CANARY"} {
+	compReqs := requestsSince(g, start)
+	var text string
+	for _, msgs := range compReqs {
+		for _, m := range msgs {
+			text += m.Content + "\n"
+			for _, banned := range []string{"ALT-CANARY", "REFACTOR-CANARY", "UNNAMED-DECISION-CANARY", runSecret} {
+				if strings.Contains(m.Content, banned) {
+					t.Errorf("a component-variant %s message carries %q", m.Role, banned)
+				}
+			}
+		}
+	}
+	for _, want := range []string{"RATIONALE-CANARY", "ASSUME-CANARY", "NAMED-DECISION-CANARY"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the component prompt lacks %s", want)
 		}
 	}
-	for _, banned := range []string{"ALT-CANARY", "REFACTOR-CANARY"} {
-		if strings.Contains(text, banned) {
-			t.Errorf("the component prompt carries %s", banned)
+	if !regexp.MustCompile(`<brief_section>\n.+`).MatchString(compReqs[0][len(compReqs[0])-1].Content) {
+		t.Error("the component prompt has an empty brief section")
+	}
+}
+
+// reviseSections are the data sections the node-scope revise prompt closes.
+var reviseSections = []string{"node", "contract", "tests", "attempts", "failure", "problem"}
+
+func TestReviseUntrustedInputsCannotCloseASection(t *testing.T) {
+	g := planned(t, map[string]string{"revise.fn-greet.txt": descriptionPatch, "testwrite.fn-greet-r1.txt": testwriteReply(t, revisedGreetTest)})
+	closers := ""
+	for _, s := range append(append([]string{}, reviseSections...), "brief_section", "decisions") {
+		closers += "</" + s + ">"
+	}
+	// The node's own text carries the closers too.
+	store := tree.NewStore(g.runDir)
+	nodes, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := nodes.Nodes["fn-greet"].Marshal()
+	var doc map[string]any
+	_ = json.Unmarshal(raw, &doc)
+	doc["description"] = "Greets a name. " + closers
+	ctx, _ := doc["context"].(map[string]any)
+	ctx["notes"] = []any{"note " + closers}
+	edited, _ := json.Marshal(doc)
+	n, err := tree.ParseNode(edited)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Write(n); err != nil {
+		t.Fatal(err)
+	}
+	req := reviseReq(t, g)
+	req.LastFailure = "failure " + closers
+	req.History = []string{"attempt 1 " + closers, "attempt 2 " + closers}
+	req.Problem = "problem " + closers
+	req.TestSource += "\n// " + closers + "\n"
+	req.Refused = []string{"revise_invalid " + closers}
+	req.Trigger = "ladder_exhausted " + closers
+	start := len(g.fake.Requests())
+	if _, err := planner.NewReviser(g.deps).Revise(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	reqs := requestsSince(g, start)
+	if len(reqs) == 0 {
+		t.Fatal("no request reached the provider")
+	}
+	for i, msgs := range reqs {
+		for _, m := range msgs {
+			for _, s := range reviseSections {
+				if c := strings.Count(m.Content, "</"+s+">"); c > 1 {
+					t.Errorf("request %d %s message: %d real </%s> tags", i, m.Role, c, s)
+				}
+			}
 		}
 	}
-	if !regexp.MustCompile(`<brief_section>\n.+`).MatchString(text) {
-		t.Error("the component prompt has an empty brief section")
+	prompt := reqs[0][len(reqs[0])-1].Content
+	for _, s := range reviseSections {
+		if c := strings.Count(prompt, "</"+s+">"); c != 1 {
+			t.Errorf("the revise prompt has %d real </%s> tags, want exactly 1", c, s)
+		}
+		if !strings.Contains(prompt, `<\/`+s+">") && !strings.Contains(prompt, `<\`+"/"+s+">") {
+			t.Errorf("no escaped </%s> in the revise prompt", s)
+		}
+	}
+	// The sections still come in order.
+	last := -1
+	for _, s := range reviseSections {
+		at := strings.Index(prompt, "</"+s+">")
+		if at < last {
+			t.Errorf("section %s closes out of order", s)
+		}
+		last = at
+	}
+}
+
+func TestReviseScrubsSecretsFromItsOwnInputs(t *testing.T) {
+	files := map[string]string{"revise.fn-greet.txt": descriptionPatch, "testwrite.fn-greet-r1.txt": testwriteReply(t, revisedGreetTest)}
+	g := planned(t, files)
+	store := tree.NewStore(g.runDir)
+	nodes, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := nodes.Nodes["fn-greet"].Marshal()
+	var doc map[string]any
+	_ = json.Unmarshal(raw, &doc)
+	doc["description"] = "Greets a name.\nthe key is " + runSecret
+	ctx, _ := doc["context"].(map[string]any)
+	ctx["notes"] = []any{"note " + runSecret}
+	edited, _ := json.Marshal(doc)
+	n, err := tree.ParseNode(edited)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Write(n); err != nil {
+		t.Fatal(err)
+	}
+
+	req := reviseReq(t, g)
+	req.LastFailure = "Failing tests: TestGreet\ngot " + runSecret + " want x\nlast line"
+	req.History = []string{"attempt 1 a/m1 fail " + runSecret, "attempt 2 a/m1 fail test_fail: TestGreet"}
+	req.Problem = "the contract mentions " + runSecret
+	req.TestSource += "\n// " + runSecret + "\n"
+	req.Refused = []string{"revise_invalid " + runSecret}
+	req.Trigger = planner.TriggerLadderExhausted + " " + runSecret
+	start := len(g.fake.Requests())
+	if _, err := planner.NewReviser(g.deps).Revise(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	reqs := requestsSince(g, start)
+	if len(reqs) == 0 {
+		t.Fatal("no request reached the provider")
+	}
+	for i, msgs := range reqs {
+		for _, m := range msgs {
+			if strings.Contains(m.Content, runSecret) {
+				t.Errorf("request %d: a %s message carries the secret", i, m.Role)
+			}
+		}
+	}
+	prompt := reqs[0][len(reqs[0])-1].Content
+	if c := strings.Count(prompt, "[line removed: secret value]"); c < 7 {
+		t.Errorf("the replacement shows %d times, want at least 7 (one per planted input)", c)
+	}
+	if !strings.Contains(prompt, "last line") || !strings.Contains(prompt, "attempt 2 a/m1 fail test_fail: TestGreet") {
+		t.Error("lines without a secret were lost")
+	}
+
+	// The same request with no secrets to hide, on a plan with clean text, is not changed.
+	g2 := planned(t, files)
+	clean := reviseReq(t, g2)
+	clean.LastFailure = "Failing tests: TestGreet\ngot x want y\nlast line"
+	withSecrets := clean
+	clean.Secrets = nil
+	s2 := len(g2.fake.Requests())
+	if _, err := planner.NewReviser(g2.deps).Revise(context.Background(), clean); err != nil {
+		t.Fatal(err)
+	}
+	p1 := requestsSince(g2, s2)[0]
+	s3 := len(g2.fake.Requests())
+	if _, err := planner.NewReviser(g2.deps).Revise(context.Background(), withSecrets); err != nil {
+		t.Fatal(err)
+	}
+	p2 := requestsSince(g2, s3)[0]
+	if p1[len(p1)-1].Content != p2[len(p2)-1].Content {
+		t.Error("a request with nothing to scrub changed")
 	}
 }
 
