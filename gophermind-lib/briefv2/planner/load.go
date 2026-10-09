@@ -160,14 +160,7 @@ func resolveRepo(repo string) (string, error) {
 	if strings.Contains(repo, "://") || strings.HasPrefix(repo, "git@") {
 		return "", &brief.InvalidError{Reason: fmt.Sprintf("repo: %q is a URL; the planner needs an existing local path (cloning belongs to git landing)", repo)}
 	}
-	if repo == "~" || strings.HasPrefix(repo, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		repo = filepath.Join(home, strings.TrimPrefix(repo, "~"))
-	}
-	abs, err := filepath.Abs(repo)
+	abs, err := ExpandRepo(repo)
 	if err != nil {
 		return "", err
 	}
@@ -175,6 +168,19 @@ func resolveRepo(repo string) (string, error) {
 		return "", &brief.InvalidError{Reason: fmt.Sprintf("repo: %s is not an existing directory", abs)}
 	}
 	return abs, nil
+}
+
+// ExpandRepo expands a leading ~ and makes the path absolute. It touches no
+// file: the path need not exist.
+func ExpandRepo(repo string) (string, error) {
+	if repo == "~" || strings.HasPrefix(repo, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		repo = filepath.Join(home, strings.TrimPrefix(repo, "~"))
+	}
+	return filepath.Abs(repo)
 }
 
 // storeSecrets makes sure every secret the brief declares is in the vault

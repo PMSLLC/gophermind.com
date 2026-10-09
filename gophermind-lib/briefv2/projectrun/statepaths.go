@@ -32,7 +32,10 @@ func StatePaths(o Options, b *brief.Brief, env Env) ([]StatePath, error) {
 	if repo == "" {
 		return nil, fmt.Errorf("projectrun: no repo: the brief names none and --repo is not set")
 	}
-	repo = filepath.Clean(repo)
+	repo, err := planner.ExpandRepo(repo)
+	if err != nil {
+		return nil, fmt.Errorf("projectrun: repo path: %w", err)
+	}
 	cfgDir, err := env.ConfigDir()
 	if err != nil {
 		return nil, fmt.Errorf("projectrun: config dir: %w", err)

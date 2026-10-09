@@ -209,14 +209,22 @@ func (p *ProjectReport) Text() string {
 		line("on_ambiguity=%s, attended: %d question(s) answered by a person in %d round(s); text in %s/_state/project.json",
 			oneLine(a.BriefSetting), a.ByAnsweredBy["human"]+a.ByAnsweredBy["accepted"], a.Rounds, oneLine(p.RunDir))
 	}
-	line("understanding: confirmed by %s, hash %s", oneLine(p.Understanding.ConfirmedBy), hashPrefix(p.Understanding.Hash))
+	if p.Understanding.ConfirmedBy == "" {
+		line("understanding: not reached")
+	} else {
+		line("understanding: confirmed by %s, hash %s", oneLine(p.Understanding.ConfirmedBy), hashPrefix(p.Understanding.Hash))
+	}
 	if a.MilestoneApprovals {
 		line("milestone_approvals: declared; the executor has no milestone gate; covered by the unattended plan approval")
 	}
 	w := p.Warnings
 	line("planner warnings: duplicates ignored %d, leaf_defaulted %d, doc_defaulted %d, leaf_normalized %d, outline_id_normalized %d",
 		w.DuplicatesIgnored, w.LeafDefaulted, w.DocDefaulted, w.LeafNormalized, w.OutlineIDNormalized)
-	line("approval: %s, plan %s, understanding %s", oneLine(p.Approval.By), hashPrefix(p.Approval.PlanHash), hashPrefix(p.Approval.UnderstandingHash))
+	if p.Approval.By == "" {
+		line("approval: not reached")
+	} else {
+		line("approval: %s, plan %s, understanding %s", oneLine(p.Approval.By), hashPrefix(p.Approval.PlanHash), hashPrefix(p.Approval.UnderstandingHash))
+	}
 	line("plan: %d functions in %d wave(s)", p.Plan.Functions, p.Plan.Waves)
 	if p.CoverageError != "" {
 		line("coverage error: %s", oneLine(capText(p.CoverageError)))

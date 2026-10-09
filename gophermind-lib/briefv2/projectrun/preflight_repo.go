@@ -179,6 +179,19 @@ func (p *pre) landing() Check {
 	return pass("landing", "")
 }
 
+// workBranch reports only a failure: a work_branch that starts with a dash
+// would be read as a git option, and the base branch is not a work branch.
+func (p *pre) workBranch() []Check {
+	wb := p.b.Front.WorkBranch
+	if wb == "" {
+		return nil
+	}
+	if strings.HasPrefix(wb, "-") || wb == p.b.Front.BaseBranch {
+		return []Check{fail("work branch", "work_branch must not start with - or equal the base branch", "set work_branch in the brief to a branch other than "+p.b.Front.BaseBranch)}
+	}
+	return nil
+}
+
 // graded: a graded attempt starts from a cleared state, at a known commit,
 // with no --resume rescue.
 func (p *pre) graded(leftovers []string) Check {

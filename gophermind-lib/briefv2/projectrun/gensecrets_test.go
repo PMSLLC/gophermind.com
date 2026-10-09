@@ -218,3 +218,13 @@ func TestProvisionNilStore(t *testing.T) {
 		t.Fatal("nil store with declared secrets must error")
 	}
 }
+
+func TestMarkPromptedReflectsAttendedPrompts(t *testing.T) {
+	st := newMem()
+	st.Set(vault.RunScope("r1"), "ASKED", "v")
+	in := []Provisioned{{"ASKED", SourceMissing}, {"GONE", SourceMissing}, {"HAVE", SourceVault}}
+	got := markPrompted(in, st, "r1")
+	if got[0].Source != SourcePrompt || got[1].Source != SourceMissing || got[2].Source != SourceVault {
+		t.Fatalf("got %+v", got)
+	}
+}

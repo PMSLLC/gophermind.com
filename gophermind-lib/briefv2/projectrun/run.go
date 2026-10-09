@@ -368,6 +368,9 @@ func Run(ctx context.Context, o Options, env Env) (result Result) {
 	}
 	stage = "planner"
 	outcome, perr2 := runPlanner(ctx, deps, po)
+	if o.Attended {
+		rep.Secrets = markPrompted(rep.Secrets, store, id)
+	}
 	switch {
 	case perr2 != nil:
 		var inv *brief.InvalidError

@@ -35,7 +35,7 @@ All of this is read from the code on branch `feat/briefv2-planner-core`.
 - `executor.Report.Resumed` is sticky: once any invocation resumed, every later report of that run says so.
 - `cmd/gophermind/brief_preflight.go` and the base-URL probing in `brief_run.go` are `package main`, so neither `projectrun` nor the TUI can import them.
 
-**State a run leaves** (A, B and the executor spec). There is no database: run state is files, and no `briefv2` package may import `database/sql` (`briefv2/nosql_test.go` enforces it). In the target repo, one run folder `.gophermind/<id>/` holds: `brief.md`, `requirements.json`, `answers.json` (a view derived from the question store), `contracts.json`, `dependencies.json`, `coverage.json`, `approval.json`, `UNDERSTANDING.md`, `decisions/<question-id>.md`, the tree node files (`root.json`, `<component>/component.json`, `<component>/<fn-id>.json`), a `*.runtime.json` beside every node file (status, revision, wave, claim, attempts, result; `blackboard.FS`), `attempts/<node-id>/<n>/` (scrubbed reply and check output, when `executor.artifacts` is on), `logs/`, `report.json` and `acceptance.json` (executor), `_state/project.json` (this spec), and `_state/` (`status.json`, `clarify/questions.json`, `clarify/facts.json`, `clarify/rounds.jsonl`, `understanding.json`, `classes.json`, `decomposed.json`, `enriched.json`, `leaf_tests.json`, `acceptance_tests.json`, `executor.json`, `leaf-results.json`, `events.jsonl`, `calls.jsonl` with `calls.seq`, `replies/<stage>-<n>.txt`). `_state/project.json` and not `_state/project.json` at the folder root, because `tree.Store.Load` treats every unlisted root-level `.json` file as a node and rejects it. Beside it sit `.gophermind/<id>-scratch/` and the git branch `gm/<id>`. Under `~/.gophermind` (or `GOPHERMIND_CONFIG_DIR`): `runs/<id>.json` (the run record that maps an id to its repo and folder, and what `blackboard.FS` and `ledger.FS` resolve through), `vault.age`, `gophermind.yaml`, and `gomodcache/`.
+**State a run leaves** (A, B and the executor spec). There is no database: run state is files, and no `briefv2` package may import `database/sql` (`briefv2/nosql_test.go` enforces it). In the target repo, one run folder `.gophermind/<id>/` holds: `brief.md`, `requirements.json`, `answers.json` (a view derived from the question store), `contracts.json`, `dependencies.json`, `coverage.json`, `approval.json`, `UNDERSTANDING.md`, `decisions/<question-id>.md`, the tree node files (`root.json`, `<component>/component.json`, `<component>/<fn-id>.json`), a `*.runtime.json` beside every node file (status, revision, wave, claim, attempts, result; `blackboard.FS`), `attempts/<node-id>/<n>/` (scrubbed reply and check output, when `executor.artifacts` is on), `logs/`, `report.json` and `acceptance.json` (executor), `_state/project.json` (this spec), and `_state/` (`status.json`, `clarify/questions.json`, `clarify/facts.json`, `clarify/rounds.jsonl`, `understanding.json`, `classes.json`, `decomposed.json`, `enriched.json`, `leaf_tests.json`, `acceptance_tests.json`, `executor.json`, `leaf-results.json`, `events.jsonl`, `calls.jsonl` with `calls.seq`, `replies/<stage>-<n>.txt`). `_state/project.json` and not `project.json` at the folder root, because `tree.Store.Load` treats every unlisted root-level `.json` file as a node and rejects it. Beside it sit `.gophermind/<id>-scratch/` and the work branch (`gm/<id>` unless the brief sets `work_branch`). Under `~/.gophermind` (or `GOPHERMIND_CONFIG_DIR`): `runs/<id>.json` (the run record that maps an id to its repo and folder, and what `blackboard.FS` and `ledger.FS` resolve through), `vault.age`, `gophermind.yaml`, and `gomodcache/`.
 
 ## 3. Goals and non-goals
 
@@ -88,7 +88,7 @@ Steps 5 and 6 are two calls in one process with one router, one blackboard and o
 
 `--resume` (R8) changes step 3 (existing run-scope values are kept), step 5 (`planner.Run` with `RunID`, which skips every stage whose `done` predicate holds, including Confirm while the understanding hash is unchanged) and records `resumed: true`. Without it, any leftover state is a preflight failure, so a healthy attempt cannot resume by accident. The no-restart rule: the healthy path is one `planner.Run` started from the brief path and one `executor.Run`; nothing on it may need, print or suggest `--resume`.
 
-`--graded` (implied by `--expect-head`, R12) is the mode of a graded attempt: it refuses `--resume` and `--attended`, refuses any leftover state (run folder, branch `gm/<id>`, `runs/<id>.json`), requires a clean target repo at the expected HEAD, and the report says `graded: yes` and `resumed: no`. A graded attempt is a single invocation; because `executor.Report.Resumed` is sticky, a `true` there in graded mode is printed as `graded: INVALID (the run resumed)`.
+`--graded` (implied by `--expect-head`, R12) is the mode of a graded attempt: it refuses `--resume` and `--attended`, refuses any leftover state (run folder, the work branch, `runs/<id>.json`), requires a clean target repo at the expected HEAD, and the report says `graded: yes` and `resumed: no`. A graded attempt is a single invocation; because `executor.Report.Resumed` is sticky, a `true` there in graded mode is printed as `graded: INVALID (the run resumed)`.
 
 ## 6. The two forms and the exit codes
 
@@ -221,23 +221,15 @@ Nothing outside rows 1 to 6 holds state of a run, and no step clears rows in a s
 The clear order matters, and the GOAL commands alone are not enough. After a failed attempt HEAD sits on branch `gm/<id>`; `git reset --hard goal-baseline` would move that branch instead of `main`, and after any attempt the surviving work branch (`gm/<id>` unless the brief sets `work_branch`) makes the next fresh `Start` switch to it instead of creating it (gitland `Start`: "work branch present: switch, no clean check"), carrying the old attempt's commits forward. So, with the git on `PATH` (never a hard-coded `/usr/bin/git`, never `git checkout`, `git stash`, `git worktree add` or `--gw-force`):
 
 ```bash
-R="$HOME/OtherProjects/AIVentureStudio"; ID=gm-2026-09-29-002; BR=gm/$ID   # both printed by --print-state-paths (BR: the git_branch_delete line; the brief's work_branch when it sets one)
-# 0. before clearing: archive the run folder (ledger, events, saved attempts, report.json, _state/project.json) and write the attempt record
-tar -C "$R/.gophermind" -czf "$SP/attempt-NN-$ID.tar.gz" "$ID"     # $SP: the scratchpad; copy what the record needs from it
-git -C "$R" symbolic-ref HEAD refs/heads/main         # put HEAD on the base branch without checkout or switch
-git -C "$R" branch --list "$BR" | grep -q . && git -C "$R" branch -D "$BR"
-git -C "$R" reset --hard goal-baseline                # GOAL command
-git -C "$R" clean -fdx -e .remember                   # GOAL command: also removes every run folder under .gophermind/
-# The run folder and the scratch folder are what clean removes. Where git is not resetting the repo, remove them by hand, each guarded:
-for target in "$R/.gophermind/$ID" "$R/.gophermind/$ID-scratch"; do
-  case "$target" in ""|"/"|"$HOME") echo refuse >&2 ;; "$HOME"/OtherProjects/*/.gophermind/gm-*) [ -d "$target" ] && rm -rf -- "${target:?}" ;; *) echo refuse >&2 ;; esac
-done
-target="$HOME/.gophermind/runs/$ID.json"
-case "$target" in ""|"/"|"$HOME") echo refuse >&2 ;; "$HOME"/.gophermind/runs/gm-*.json) rm -f -- "${target:?}" ;; *) echo refuse >&2 ;; esac
+R="$HOME/OtherProjects/AIVentureStudio"; ID=gm-2026-09-29-002
+BR="$(gophermind-dev project <brief> --repo "$R" --print-state-paths | awk -F'\t' '$1=="git_branch_delete"{print $3}')"   # the work branch
+scripts/clear-project-state.sh "$R" "$ID" "$BR" "$SP"     # $SP: the scratchpad, receives the archive
 # 10. reset both databases (psql through the tunnel or on the mini)
 # verify: git status clean, HEAD == goal-baseline, no work branch, no $R/.gophermind/$ID, then:
 gophermind-dev project <brief> ... --preflight-only     # exit 0
 ```
+
+`scripts/clear-project-state.sh` (tested by `projectrun/clear_script_test.go`) validates every argument before any git command (R absolute, not `/` or `$HOME`, holding `.git`; ID `gm-YYYY-MM-DD-NNN`; the work branch a valid name, not starting with `-`, not the base branch; the archive directory existing) and exits 1 otherwise. Then, in order: archive the run folder, `git symbolic-ref HEAD refs/heads/<base>`, `git branch -D` the work branch, `git reset --hard goal-baseline` (GOAL command), `git clean -fdx -e .remember` (GOAL command, also removes every run folder under `.gophermind/`), then remove by exact path the run folder, the scratch folder and the run record.
 
 The user's git wrapper (`~/.local/bin/git-wrapper/git`) blocks `git worktree add`, `git checkout`, `git stash` and `--gw-force`, and may block the three clear commands of GOAL (`git reset --hard goal-baseline`, `git clean -fdx -e .remember`, `git branch -D` on the work branch). Production code and tests never need a blocked command: they use `gitenv.Command` (clean environment) and the git on `PATH`, and the tests probe the wrapper and skip, naming this section, when it blocks the clear. The ORCHESTRATOR must run the three commands in the target repo before the first graded attempt (on a throwaway branch or a copy, to keep the real state) and, if the wrapper blocks any of them, ask John for explicit sign-off before any override. Nothing needs resetting by hand beyond the list above: the ledger and the blackboard are files in the run folder.
 
@@ -292,7 +284,7 @@ The executor and the planner's stage code are otherwise unchanged; `executor.Run
 | R5 | 5 | `gophermind-dev` built by a guard script (refuse unless clean and pushed) around the Makefile's own ldflags; `--expect-binary-commit`; version and commit in the report | The cask stays 0.9.0, so a typed `gophermind project` fails with an unknown verb, which is loud and safe |
 | R6 | 6 | Tests of section 15, offline, no real `~/.gophermind` | A graded attempt is the only proof against the real model |
 | R7 | (1, 3a) | Preflight failure is exit 6, is not a run failure, writes nothing, and reports every missing item at once | An orchestrator treating 6 as a failed attempt would waste attempts; the GOAL loop says preflight is fixed and rerun |
-| R8 | (1) | Leftover run folder or `gm/<id>` branch without `--resume` is refused | A crash recovery costs one flag; accidental carry-over would be silent |
+| R8 | (1) | Leftover run folder or work branch without `--resume` is refused | A crash recovery costs one flag; accidental carry-over would be silent |
 | R9 | (1) | `--repo` overrides the brief's repo at plan time and run time | Without it the brief would have to be edited by hand, which GOAL forbids |
 | R10 | (11) | Printed report holds ids and counts only; model-written text stays in 0600 files | A reader must open `_state/project.json` to see the defaulted questions |
 | R11 | (8.3) | Milestone flag recorded, not enforced | See R3c |

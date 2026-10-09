@@ -132,27 +132,24 @@ path, so nothing is guessed. Per project (keyed by the brief id):
 | vault, `gophermind.yaml`, `gomodcache/` | `~/.gophermind/` | keep |
 | the two databases | external | drop and recreate |
 
-Clear in this order. `R` and `ID` are printed by `--print-state-paths`; `BR` is
-its `git_branch_delete` line.
+Clear with `scripts/clear-project-state.sh`. It checks every argument before
+the first git command: the repo must be an absolute path, not `/` and not
+`$HOME`, and hold a `.git` directory; the id must match `gm-YYYY-MM-DD-NNN`; the
+work branch must be a valid branch name that does not start with a dash and is
+not the base branch; the archive directory must exist. Any failure exits 1 and
+touches nothing. Then it archives the whole run folder, puts HEAD on the base
+branch (`BASE_BRANCH`, default `main`), deletes the work branch, runs
+`git reset --hard goal-baseline` (`BASELINE` overrides) and
+`git clean -fdx -e .remember`, and removes what clean left behind: the run
+folder, the scratch folder and `$GOPHERMIND_CONFIG_DIR/runs/<id>.json`
+(default `~/.gophermind/runs/<id>.json`), each by its exact path.
 
 ```bash
-R="$HOME/OtherProjects/AIVentureStudio"; ID=gm-2026-09-29-002; BR=gm/$ID
-# 0. archive the whole run folder first (section 5)
-tar -C "$R/.gophermind" -czf "$SP/attempt-NN-$ID.tar.gz" "$ID"
-git -C "$R" symbolic-ref HEAD refs/heads/main
-git -C "$R" branch --list "$BR" | grep -q . && git -C "$R" branch -D "$BR"
-git -C "$R" reset --hard goal-baseline
-git -C "$R" clean -fdx -e .remember
-# guarded deletes for anything clean left behind
-for target in "$R/.gophermind/$ID" "$R/.gophermind/$ID-scratch"; do
-  case "$target" in ""|"/"|"$HOME") echo refuse >&2 ;;
-    "$HOME"/OtherProjects/*/.gophermind/gm-*) [ -d "$target" ] && rm -rf -- "${target:?}" ;;
-    *) echo refuse >&2 ;; esac
-done
-target="$HOME/.gophermind/runs/$ID.json"
-case "$target" in ""|"/"|"$HOME") echo refuse >&2 ;;
-  "$HOME"/.gophermind/runs/gm-*.json) rm -f -- "${target:?}" ;;
-  *) echo refuse >&2 ;; esac
+BRIEF=gophermind-lib/briefv2/testdata/ai-venture-studio-server-brief.md
+R="$HOME/OtherProjects/AIVentureStudio"; ID=gm-2026-09-29-002
+# the work branch is the git_branch_delete line, so a brief with work_branch works
+BR="$(gophermind-dev project "$BRIEF" --repo "$R" --print-state-paths | awk -F'\t' '$1=="git_branch_delete"{print $3}')"
+scripts/clear-project-state.sh "$R" "$ID" "$BR" "$SP"
 # then reset both databases, and verify: git status clean, HEAD == goal-baseline,
 # no work branch, no run folder, and a --preflight-only run exits 0
 ```
@@ -160,9 +157,9 @@ case "$target" in ""|"/"|"$HOME") echo refuse >&2 ;;
 Use the git on `PATH`; never `git checkout`, `git stash`, `git worktree add` or
 `--gw-force`. Wrapper warning: the user's git wrapper
 (`~/.local/bin/git-wrapper/git`) may block `git reset --hard goal-baseline`,
-`git clean -fdx -e .remember` and `git branch -D` on the work branch. The
-orchestrator tests these three in the target repo first (on a throwaway branch
-or a copy) and asks John for explicit sign-off before any override.
+`git clean -fdx -e .remember` and `git branch -D` on the work branch (the
+script runs all three). The orchestrator tests these three in the target repo
+first (on a throwaway branch or a copy) and asks John for explicit sign-off before any override.
 
 ## 5. Reading and archiving a run before clearing
 

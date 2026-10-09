@@ -229,3 +229,31 @@ func TestStatePathsNoSecretsDeclared(t *testing.T) {
 		t.Fatalf("%+v", ext)
 	}
 }
+
+func TestStatePathsExpandTildeAndRelativeRepo(t *testing.T) {
+	r := newRig(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	r.o.Repo = "~/x"
+	ps, err := StatePaths(r.o, r.b, r.env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(home, "x")
+	spFind(t, ps, "git_reset", want)
+	spFind(t, ps, "delete_dir", filepath.Join(want, ".gophermind", rigRunID))
+	if _, err := os.Stat(want); err == nil {
+		t.Error("StatePaths created the repo path")
+	}
+
+	r.o.Repo = "rel/repo"
+	ps, err = StatePaths(r.o, r.b, r.env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range ps {
+		if p.Action == "git_reset" && !filepath.IsAbs(p.Path) {
+			t.Errorf("git_reset path %q is not absolute", p.Path)
+		}
+	}
+}
