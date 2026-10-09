@@ -143,14 +143,33 @@ names (letters, digits, `/ _ . -`; no leading dash; no `..`). The work branch
 must not be the base branch. The archive directory must exist and be outside
 the repo.
 
-Then it archives the WHOLE `<repo>/.gophermind` folder (every run id, not only
-this one) into the archive directory, because `git clean -fdx` removes
-untracked files, including the run folders of other ids. After the archive it
-puts HEAD on the base branch, deletes the work branch, runs
-`git reset --hard goal-baseline` and `git clean -fdx -e .remember`, and removes
-what clean left behind by exact path: the run folder, the scratch folder and
-`$GOPHERMIND_CONFIG_DIR/runs/<id>.json` (default `~/.gophermind/runs/<id>.json`).
-Every git call after validation is `git -C <repo>`.
+Before any destructive step the script also checks that `BASELINE` names a
+commit and that `BASE_BRANCH` is a branch of the repo, and that
+`<repo>/.gophermind` is not a symlink (it checks again before the final
+removal, because `git reset --hard` can restore a tracked symlink). A repo
+whose `.git` is a file (a worktree or a submodule) and a bare repo are refused
+with `repo has no .git directory`.
+
+Then it archives, into the archive directory:
+
+- the WHOLE `<repo>/.gophermind` folder (every run id, not only this one) as
+  `attempt-<id>.tar.gz`, because `git clean -fdx` removes untracked files,
+  including the run folders of other ids; this step is skipped when
+  `<repo>/.gophermind` does not exist;
+- the work branch, if it exists: `work-branch-tip.txt` (its tip commit) and
+  `work-branch.bundle` (verify it with `git bundle verify`), so its commits are
+  recoverable after `git branch -D`;
+- `removed-files.txt`, the names (no contents) of the files `git clean` will
+  remove.
+
+After the archive it puts HEAD on the base branch, deletes the work branch,
+runs `git reset --hard goal-baseline` (`BASELINE` overrides this revision) and
+`git clean -fdx -e .remember`. Ignored files are removed too: `.env` files and
+build output in the repo go as well, and only `.remember` is kept. It then
+removes what clean left behind by exact path: the run folder, the scratch folder
+and `$GOPHERMIND_CONFIG_DIR/runs/<id>.json` (default
+`~/.gophermind/runs/<id>.json`). Every git call after validation is
+`git -C <repo>`.
 
 ```bash
 BRIEF=gophermind-lib/briefv2/testdata/ai-venture-studio-server-brief.md
