@@ -72,7 +72,7 @@ type Decision struct {
 // Revisions is how many times the planner rewrote the node before this
 // escalation, and Proposal is the scrubbed paragraph the revise stage gave when
 // it asked for a contract change or a split; both are empty when there is none.
-// Proposal is model text: a gate shows it through proposalLine.
+// Proposal, Reason and History are model-derived text: a gate shows them through gateLine.
 type Escalation struct {
 	NodeID    string
 	Reason    string
@@ -81,36 +81,36 @@ type Escalation struct {
 	Proposal  string
 }
 
-// maxProposalRunes bounds the proposal line a gate prints.
-const maxProposalRunes = 600
+// maxGateRunes bounds one model-derived line a gate prints, ellipsis included.
+const maxGateRunes = 600
 
-// proposalLine makes the model's proposal safe to print on one line: control
-// characters and line breaks become spaces, runs of spaces collapse, a backtick
-// becomes an apostrophe (so it cannot open a fenced block in a gate file), and
-// the text is cut to maxProposalRunes.
-func proposalLine(s string) string {
-	var b strings.Builder
+// gateLine makes model-derived text safe to print on one line: control
+// characters, line and paragraph separators, spaces and every format character
+// (bidi overrides and isolates, zero-width characters, the byte order mark)
+// become single spaces, a backtick becomes an apostrophe (so it cannot open a
+// fenced block in a gate file), and the text is cut to max runes with a
+// trailing "..." counted in that bound.
+func gateLine(s string, max int) string {
+	var out []rune
 	space := true
-	n := 0
 	for _, r := range s {
 		switch {
 		case r == '`':
 			r = '\''
-		case unicode.IsControl(r) || unicode.IsSpace(r):
+		case unicode.IsControl(r) || unicode.IsSpace(r) || unicode.Is(unicode.Cf, r) ||
+			unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r):
 			r = ' '
 		}
 		if r == ' ' && space {
 			continue
 		}
 		space = r == ' '
-		if n == maxProposalRunes {
-			b.WriteString("...")
-			break
-		}
-		b.WriteRune(r)
-		n++
+		out = append(out, r)
 	}
-	return strings.TrimSpace(b.String())
+	if len(out) > max {
+		out = append(out[:max-3], '.', '.', '.')
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // Action is what to do about an escalated leaf.

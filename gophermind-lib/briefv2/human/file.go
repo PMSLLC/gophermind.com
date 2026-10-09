@@ -207,15 +207,15 @@ func (f *File) Escalate(ctx context.Context, e Escalation) (Resolution, error) {
 	}
 	if !found {
 		var b strings.Builder
-		fmt.Fprintf(&b, "# Escalation: %s\n\nEvery model failed this leaf: %s\n\n", e.NodeID, e.Reason)
+		fmt.Fprintf(&b, "# Escalation: %s\n\nEvery model failed this leaf: %s\n\n", e.NodeID, gateLine(e.Reason, maxGateRunes))
 		for _, h := range e.History {
-			fmt.Fprintf(&b, "- %s\n", h)
+			fmt.Fprintf(&b, "- %s\n", gateLine(h, maxGateRunes))
 		}
 		if e.Revisions > 0 {
 			fmt.Fprintf(&b, "\nThe planner rewrote this node %d time(s) before this.\n", e.Revisions)
 		}
 		if e.Proposal != "" {
-			fmt.Fprintf(&b, "\nThe planner says: %s\n", proposalLine(e.Proposal))
+			fmt.Fprintf(&b, "\nThe planner says: %s\n", gateLine(e.Proposal, maxGateRunes))
 		}
 		b.WriteString("\nWrite `retry`, `skip`, or `stop` in the block, optionally followed by a note, then run `gophermind brief resume`.\n")
 		b.WriteString("\n```resolution\n\n```\n")

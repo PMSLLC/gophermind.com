@@ -135,15 +135,15 @@ func (t *Terminal) Confirm(ctx context.Context, u Understanding) (Decision, erro
 }
 
 func (t *Terminal) Escalate(ctx context.Context, e Escalation) (Resolution, error) {
-	fmt.Fprintf(t.out, "\nEvery model failed %s: %s\n", e.NodeID, e.Reason)
+	fmt.Fprintf(t.out, "\nEvery model failed %s: %s\n", e.NodeID, gateLine(e.Reason, maxGateRunes))
 	for _, h := range e.History {
-		fmt.Fprintf(t.out, "  - %s\n", h)
+		fmt.Fprintf(t.out, "  - %s\n", gateLine(h, maxGateRunes))
 	}
 	if e.Revisions > 0 {
 		fmt.Fprintf(t.out, "  The planner rewrote this node %d time(s) before this.\n", e.Revisions)
 	}
 	if e.Proposal != "" {
-		fmt.Fprintf(t.out, "  The planner says: %s\n", proposalLine(e.Proposal))
+		fmt.Fprintf(t.out, "  The planner says: %s\n", gateLine(e.Proposal, maxGateRunes))
 	}
 	for {
 		fmt.Fprint(t.out, "retry, skip, or stop (add a note after it if you like): ")

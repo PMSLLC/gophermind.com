@@ -771,3 +771,50 @@ func TestGateTextOneLinesAndBoundsTheProposal(t *testing.T) {
 		t.Fatalf("a hostile proposal changed the resolution block: %v", err)
 	}
 }
+
+// hostile holds the characters a gate line must never carry through.
+var hostileRunes = []string{"\u202e", "\u2066", "\u2069", "\u202a", "\u200b", "\u200d", "\u2060", "\ufeff", "\u2028", "\u2029", "\u0085", "\x1b", "\x00", "\n", "`"}
+
+func TestGateLinesNeutralizeBidiZeroWidthAndControls(t *testing.T) {
+	ctx := context.Background()
+	for _, r := range hostileRunes {
+		bad := "ab" + r + "cd"
+		e := human.Escalation{NodeID: "fn-a", Reason: "re" + r + "ason", History: []string{"hi" + r + "st"}, Revisions: 1, Proposal: "pro" + r + "posal"}
+		out := &bytes.Buffer{}
+		if _, err := human.NewTerminal(strings.NewReader("stop\n"), out).Escalate(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+		dir := t.TempDir()
+		if _, err := human.NewFile(dir).Escalate(ctx, e); !errors.Is(err, human.ErrWaiting) {
+			t.Fatalf("file gate: %v", err)
+		}
+		raw, _ := os.ReadFile(filepath.Join(dir, "ESCALATION-fn-a.md"))
+		for name, text := range map[string]string{"terminal": out.String(), "file": string(raw)} {
+			if r != "`" && r != "\n" && strings.Contains(text, r) {
+				t.Errorf("%s keeps %q (%q)", name, r, bad)
+			}
+			for _, w := range []string{"re ason", "hi st", "pro posal"} {
+				if !strings.Contains(text, w) && !strings.Contains(text, strings.Replace(w, " ", "'", 1)) {
+					t.Errorf("%s lacks %q for %q:\n%s", name, w, r, text)
+				}
+			}
+		}
+	}
+}
+
+func TestGateLineCapIsExactlySixHundredRunes(t *testing.T) {
+	out := &bytes.Buffer{}
+	e := human.Escalation{NodeID: "fn-a", Reason: "r", Revisions: 1, Proposal: strings.Repeat("x", 5000)}
+	if _, err := human.NewTerminal(strings.NewReader("stop\n"), out).Escalate(context.Background(), e); err != nil {
+		t.Fatal(err)
+	}
+	for _, ln := range strings.Split(out.String(), "\n") {
+		if i := strings.Index(ln, "The planner says: "); i >= 0 {
+			if n := len([]rune(ln[i+len("The planner says: "):])); n != 600 {
+				t.Fatalf("proposal is %d runes, want 600", n)
+			}
+			return
+		}
+	}
+	t.Fatal("no proposal line")
+}
