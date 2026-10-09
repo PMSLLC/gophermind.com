@@ -80,7 +80,7 @@ func CheckRevisePatch(orig map[string]any, reply string, contractsJSON []byte, e
 	if err != nil {
 		return nil, nil, err
 	}
-	rep, err := parseReviseReply(reply)
+	rep, err := parseReviseReplyScanned(reply, env.Secrets)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -109,4 +109,26 @@ func ReviseErrClass(err error) string {
 		return re.class
 	}
 	return ""
+}
+
+// ParseReviseReplyScanned exposes parseReviseReplyScanned (kind, paragraph, error).
+func ParseReviseReplyScanned(text string, secrets []string) (kind, paragraph string, err error) {
+	rep, err := parseReviseReplyScanned(text, secrets)
+	if err != nil {
+		return "", "", err
+	}
+	return [...]string{"patch", "contract_change", "split"}[rep.kind], rep.paragraph, nil
+}
+
+// CheckMergedDoc runs checkMerged on a hand-built merged document with an
+// empty patch, so the checks are reached without going through mergePatch.
+func CheckMergedDoc(orig, merged map[string]any, env ReviseCheckEnv) ([]string, error) {
+	ge := groupEnv{Secrets: map[string]bool{}, Decisions: map[string]bool{}}
+	for _, n := range env.SecretNames {
+		ge.Secrets[n] = true
+	}
+	for _, id := range env.DecisionIDs {
+		ge.Decisions[id] = true
+	}
+	return checkMerged(orig, merged, revisePatch{}, mergeEnv{Class: env.Class, Env: ge, Secrets: env.Secrets, N: env.N, TestsRewrite: env.TestsRewrite})
 }

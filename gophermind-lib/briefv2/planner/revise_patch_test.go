@@ -158,27 +158,202 @@ func TestCheckRevisePatchNoopAndSecret(t *testing.T) {
 	}
 }
 
+// cloneDoc deep-copies a node document.
+func cloneDoc(t *testing.T, m map[string]any) map[string]any {
+	t.Helper()
+	b, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
 func TestCheckRevisePatchInputCheckRunsOnlyWhenInputsAreSet(t *testing.T) {
-	node, contracts, _ := plannedGreetNode(t)
-	// A description-only patch is fine even if the inputs do not list every
-	// parameter (planning only requires an input per named parameter).
-	if _, _, err := planner.CheckRevisePatch(node, `{"description":"Greet a name; surrounding white space of any kind is trimmed."}`, contracts, envFor(node)); err != nil {
-		t.Fatalf("a description-only patch: %v", err)
+	greet, contracts, _ := plannedGreetNode(t)
+	// A node whose inputs omit the signature's parameter: planning only
+	// requires an input per named parameter, so this is a valid node.
+	node := cloneDoc(t, greet)
+	node["contract"].(map[string]any)["inputs"] = []any{}
+	env := envFor(node)
+	if _, _, err := planner.CheckRevisePatch(node, `{"description":"Greet a name; surrounding white space of any kind is trimmed."}`, contracts, env); err != nil {
+		t.Fatalf("a description-only patch on a node with fewer inputs: %v", err)
 	}
-	ct := node["contract"].(map[string]any)
-	var ins []any
-	for _, in := range ct["inputs"].([]any) {
-		m := in.(map[string]any)
-		ins = append(ins, map[string]any{"name": m["name"], "type": m["type"], "description": "the name to greet, revised"})
+	_, _, err := planner.CheckRevisePatch(node, `{"contract":{"inputs":[{"name":"who","type":"string"}]}}`, contracts, env)
+	if planner.ReviseErrClass(err) != planner.ClassContractFlagged {
+		t.Fatalf("mismatching names: err = %v", err)
 	}
-	b, _ := json.Marshal(map[string]any{"contract": map[string]any{"inputs": ins}})
-	if _, _, err := planner.CheckRevisePatch(node, string(b), contracts, envFor(node)); err != nil {
-		t.Fatalf("inputs with the signature's names: %v", err)
+	if _, _, err := planner.CheckRevisePatch(node, `{"contract":{"inputs":[{"name":"name","type":"string"}]}}`, contracts, env); err != nil {
+		t.Fatalf("matching names: %v", err)
 	}
-	dup := append(append([]any{}, ins...), ins...)
-	b, _ = json.Marshal(map[string]any{"contract": map[string]any{"inputs": dup}})
-	if _, _, err := planner.CheckRevisePatch(node, string(b), contracts, envFor(node)); planner.ReviseErrClass(err) != planner.ClassContractFlagged {
-		t.Fatalf("duplicate inputs: err = %v", err)
+	_, _, err = planner.CheckRevisePatch(node, `{"contract":{"inputs":[{"name":"name","type":"string"},{"name":"name","type":"string"}]}}`, contracts, env)
+	if planner.ReviseErrClass(err) != planner.ClassContractFlagged {
+		t.Fatalf("duplicate names: err = %v", err)
+	}
+}
+
+func TestCheckMergedFrozenFields(t *testing.T) {
+	node, _, _ := plannedGreetNode(t)
+	env := envFor(node)
+	mut := map[string]func(m map[string]any){
+		"depends_on": func(m map[string]any) { m["depends_on"] = []any{"fn-other"} },
+		"signature": func(m map[string]any) {
+			m["contract"].(map[string]any)["signature"] = "func Greet(who string) (string, error)"
+		},
+		"package":      func(m map[string]any) { m["contract"].(map[string]any)["package"] = "other" },
+		"file":         func(m map[string]any) { m["contract"].(map[string]any)["file"] = "other.go" },
+		"id":           func(m map[string]any) { m["id"] = "fn-evil" },
+		"wave":         func(m map[string]any) { m["wave"] = 99 },
+		"model_tier":   func(m map[string]any) { m["model_tier"] = "frontier" },
+		"rationale":    func(m map[string]any) { m["rationale"] = "changed" },
+		"node_class":   func(m map[string]any) { m["node_class"] = "changed" },
+		"secrets":      func(m map[string]any) { m["secrets"] = []any{"X"} },
+		"decision_ids": func(m map[string]any) { m["decision_ids"] = []any{"changed"} },
+	}
+	for name, f := range mut {
+		merged := cloneDoc(t, node)
+		f(merged)
+		_, err := planner.CheckMergedDoc(node, merged, env)
+		if planner.ReviseErrClass(err) != planner.ClassReviseInvalid {
+			t.Errorf("%s: err = %v, want %s", name, err, planner.ClassReviseInvalid)
+		}
+	}
+	// An allowed change passes the same entry point.
+	merged := cloneDoc(t, node)
+	merged["description"] = "A new description."
+	if _, err := planner.CheckMergedDoc(node, merged, env); err != nil {
+		t.Fatalf("a description change: %v", err)
+	}
+}
+
+func TestCheckMergedAssumptionsAreAPrefix(t *testing.T) {
+	greet, _, _ := plannedGreetNode(t)
+	node := cloneDoc(t, greet)
+	node["assumptions"] = []any{"first", "second", "third"}
+	env := envFor(node)
+	old := node["assumptions"].([]any)
+	cases := map[string][]any{
+		"rewritten": append([]any{"rewritten"}, old[1:]...),
+		"shortened": old[:len(old)-1],
+		"reordered": append([]any{old[1], old[0]}, old[2:]...),
+		"emptied":   {},
+	}
+	for name, as := range cases {
+		merged := cloneDoc(t, node)
+		merged["description"] = "changed so the no-op check is not the reason"
+		merged["assumptions"] = as
+		_, err := planner.CheckMergedDoc(node, merged, env)
+		if planner.ReviseErrClass(err) != planner.ClassReviseInvalid {
+			t.Errorf("%s: err = %v, want %s", name, err, planner.ClassReviseInvalid)
+		}
+	}
+	merged := cloneDoc(t, node)
+	merged["description"] = "changed"
+	merged["assumptions"] = append(append([]any{}, old...), "appended by the model")
+	if _, err := planner.CheckMergedDoc(node, merged, env); err != nil {
+		t.Fatalf("a legit append: %v", err)
+	}
+}
+
+func TestParseReviseReplyBounds(t *testing.T) {
+	huge := strings.Repeat("a", 5000000)
+	bad := map[string]string{
+		"5 MB notes entry":  `{"context":{"notes":["` + huge + `"]}}`,
+		"5 MB description":  `{"description":"` + huge + `"}`,
+		"5 MB paragraph":    "SPLIT_REQUIRED\n" + huge,
+		"long note":         `{"context":{"notes":["` + strings.Repeat("a", 501) + `"]}}`,
+		"long constraint":   `{"context":{"constraints":["` + strings.Repeat("a", 501) + `"]}}`,
+		"long side effect":  `{"contract":{"side_effects":["` + strings.Repeat("a", 501) + `"]}}`,
+		"long item field":   `{"contract":{"inputs":[{"name":"` + strings.Repeat("a", 501) + `","type":"string"}]}}`,
+		"long error field":  `{"contract":{"errors":[{"when":"` + strings.Repeat("a", 501) + `","returns":"r","kind":"sentinel"}]}}`,
+		"many notes":        `{"context":{"notes":[` + strings.Repeat(`"n",`, 20) + `"n"]}}`,
+		"many constraints":  `{"context":{"constraints":[` + strings.Repeat(`"n",`, 20) + `"n"]}}`,
+		"many side effects": `{"contract":{"side_effects":[` + strings.Repeat(`"n",`, 20) + `"n"]}}`,
+		"many inputs":       `{"contract":{"inputs":[` + strings.Repeat(`{"name":"a","type":"t"},`, 20) + `{"name":"a","type":"t"}]}}`,
+		"many errors":       `{"contract":{"errors":[` + strings.Repeat(`{"when":"w","returns":"r","kind":"sentinel"},`, 20) + `{"when":"w","returns":"r","kind":"sentinel"}]}}`,
+		"too deep":          `{"groups":{"security":` + strings.Repeat(`[`, 100) + strings.Repeat(`]`, 100) + `}}`,
+	}
+	for name, reply := range bad {
+		_, _, err := planner.ParseReviseReply(reply)
+		if planner.ReviseErrClass(err) != planner.ClassReviseInvalid {
+			t.Errorf("%s: err = %v, want %s", name, err, planner.ClassReviseInvalid)
+			continue
+		}
+		if len(err.Error()) > 200 || strings.Contains(err.Error(), "aaaa") {
+			t.Errorf("%s: the message quotes or is long: %.100q", name, err.Error())
+		}
+	}
+	if _, _, err := planner.ParseReviseReply(`{"context":{"notes":["` + strings.Repeat("a", 500) + `"]}}`); err != nil {
+		t.Errorf("a note at the cap: %v", err)
+	}
+}
+
+func TestParseReviseReplyDuplicateKeys(t *testing.T) {
+	for name, reply := range map[string]string{
+		"top level":      `{"description":"a","description":"b"}`,
+		"nested item":    `{"contract":{"inputs":[{"name":"a","name":"b","type":"t"}]}}`,
+		"contract":       `{"contract":{"side_effects":[],"side_effects":["x"]}}`,
+		"inside a group": `{"groups":{"security":{"x":1,"x":2}}}`,
+	} {
+		_, _, err := planner.ParseReviseReply(reply)
+		if planner.ReviseErrClass(err) != planner.ClassReviseInvalid || !strings.Contains(err.Error(), "duplicate") {
+			t.Errorf("%s: err = %v", name, err)
+		}
+	}
+	// A duplicate key that is not in the allow-list is never quoted.
+	_, _, err := planner.ParseReviseReply(`{"groups":{"security":{"SECRETWORD":1,"SECRETWORD":2}}}`)
+	if err == nil || strings.Contains(err.Error(), "SECRETWORD") {
+		t.Errorf("a reply key is quoted: %v", err)
+	}
+}
+
+func TestParseReviseReplyNullIsInvalid(t *testing.T) {
+	for name, reply := range map[string]string{
+		"description": `{"description":null}`,
+		"contract":    `{"contract":null,"description":"x"}`,
+		"inputs":      `{"contract":{"inputs":null}}`,
+		"context":     `{"context":null,"description":"x"}`,
+		"notes":       `{"context":{"notes":null}}`,
+		"groups":      `{"groups":null,"description":"x"}`,
+		"assumptions": `{"description":"x","assumptions":null}`,
+		"rewrite":     `{"description":"x","rewrite_tests":null}`,
+		"a group":     `{"groups":{"security":null}}`,
+	} {
+		_, _, err := planner.ParseReviseReply(reply)
+		if planner.ReviseErrClass(err) != planner.ClassReviseInvalid {
+			t.Errorf("%s: err = %v", name, err)
+		}
+	}
+}
+
+func TestParseReviseReplyDuplicateAssumptions(t *testing.T) {
+	_, _, err := planner.ParseReviseReply(`{"description":"x","assumptions":["same"," same "]}`)
+	if planner.ReviseErrClass(err) != planner.ClassReviseInvalid {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestReviseReplySecretScanCoversParagraphs(t *testing.T) {
+	secrets := []string{"CANARY-SECRET-VALUE"}
+	for name, reply := range map[string]string{
+		"split":           "SPLIT_REQUIRED\nIt must split because CANARY-SECRET-VALUE is used.",
+		"contract change": "CONTRACT_CHANGE_REQUIRED\nThe signature leaks CANARY-SECRET-VALUE.",
+		"patch note":      `{"context":{"notes":["CANARY-SECRET-VALUE"]}}`,
+	} {
+		_, _, err := planner.ParseReviseReplyScanned(reply, secrets)
+		if planner.ReviseErrClass(err) != planner.ClassSecretInReply {
+			t.Errorf("%s: err = %v, want %s", name, err, planner.ClassSecretInReply)
+			continue
+		}
+		if strings.Contains(err.Error(), "CANARY") {
+			t.Errorf("%s: the message quotes the secret", name)
+		}
+	}
+	if _, _, err := planner.ParseReviseReplyScanned("SPLIT_REQUIRED\nnothing secret", secrets); err != nil {
+		t.Fatal(err)
 	}
 }
 

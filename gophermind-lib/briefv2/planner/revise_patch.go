@@ -48,6 +48,10 @@ const (
 	maxParagraph     = 600
 	maxAssumptions   = 5
 	maxAssumptionLen = 300
+	maxReplyBytes    = 256 << 10 // the whole reply, checked before any decoding
+	maxEntryLen      = 500       // one string of notes, constraints, side_effects or an item field
+	maxListItems     = 20        // entries of one list in the patch (assumptions have their own cap)
+	maxJSONDepth     = 32        // nesting of the reply, checked before decoding
 )
 
 // revisePatch is the JSON reply of the revise model: optional keys, none else.
@@ -112,6 +116,9 @@ func paragraphReply(kind reviseKind, rest string) (reviseReply, error) {
 // two keyword lines with a paragraph. CONTRACT_PROBLEM is the implement
 // model's answer and is malformed here.
 func parseReviseReply(text string) (reviseReply, error) {
+	if len(text) > maxReplyBytes {
+		return reviseReply{}, invalid("the reply is longer than %d bytes", maxReplyBytes)
+	}
 	t := strings.TrimSpace(text)
 	first, rest, _ := strings.Cut(t, "\n")
 	switch strings.TrimSpace(first) {
@@ -123,7 +130,11 @@ func parseReviseReply(text string) (reviseReply, error) {
 	if strings.HasPrefix(t, "CONTRACT_PROBLEM") {
 		return reviseReply{}, invalid("the reply is a contract problem line, which the revise stage does not accept")
 	}
-	dec := json.NewDecoder(strings.NewReader(StripReply(t)))
+	body := StripReply(t)
+	if err := scanReplyJSON(body); err != nil {
+		return reviseReply{}, err
+	}
+	dec := json.NewDecoder(strings.NewReader(body))
 	dec.DisallowUnknownFields()
 	var p revisePatch
 	if err := dec.Decode(&p); err != nil {
@@ -138,6 +149,111 @@ func parseReviseReply(text string) (reviseReply, error) {
 	return reviseReply{kind: kindPatch, patch: p}, nil
 }
 
+// parseReviseReplyScanned is parseReviseReply behind the secret scan of the RAW
+// reply: the keyword paragraphs and every free text of a patch are covered. Task
+// 4 must call this (or scan the raw reply itself) BEFORE the reply is saved to
+// a record, a decision, a report or a prompt, never after.
+func parseReviseReplyScanned(text string, secrets []string) (reviseReply, error) {
+	if len(text) > maxReplyBytes {
+		return reviseReply{}, invalid("the reply is longer than %d bytes", maxReplyBytes)
+	}
+	if packer.HasSecret(text, secrets) {
+		return reviseReply{}, &reviseErr{ClassSecretInReply, "the reply holds a secret value"}
+	}
+	return parseReviseReply(text)
+}
+
+// replyKeys are the keys a reply may name; only these are ever quoted in a message.
+var replyKeys = append([]string{"description", "contract", "context", "groups", "rewrite_tests", "assumptions",
+	"inputs", "outputs", "errors", "side_effects", "constraints", "notes",
+	"name", "type", "when", "returns", "kind"}, reviseGroupKeys...)
+
+// scanReplyJSON walks the reply's tokens before it is decoded: nesting is
+// bounded, a key may not repeat in one object (Go would keep the last), and a
+// key of the patch, contract or context may not be null.
+func scanReplyJSON(body string) error {
+	dec := json.NewDecoder(strings.NewReader(body))
+	tok, err := dec.Token()
+	if err != nil {
+		return invalid("the reply is not a JSON patch (%s)", jsonErr(err))
+	}
+	return scanTok(dec, tok, 0, "top")
+}
+
+func scanTok(dec *json.Decoder, tok json.Token, depth int, ctx string) error {
+	d, ok := tok.(json.Delim)
+	if !ok {
+		return nil
+	}
+	if depth >= maxJSONDepth {
+		return invalid("the reply is nested deeper than %d levels", maxJSONDepth)
+	}
+	if d == '[' {
+		for dec.More() {
+			t, err := dec.Token()
+			if err != nil {
+				return invalid("the reply is not a JSON patch (%s)", jsonErr(err))
+			}
+			if err := scanTok(dec, t, depth+1, "other"); err != nil {
+				return err
+			}
+		}
+		_, err := dec.Token()
+		if err != nil {
+			return invalid("the reply is not a JSON patch (%s)", jsonErr(err))
+		}
+		return nil
+	}
+	seen := map[string]bool{}
+	for dec.More() {
+		kt, err := dec.Token()
+		if err != nil {
+			return invalid("the reply is not a JSON patch (%s)", jsonErr(err))
+		}
+		key, _ := kt.(string)
+		if seen[key] {
+			if contains(replyKeys, key) {
+				return invalid("duplicate key %s at depth %d", key, depth+1)
+			}
+			return invalid("duplicate key at depth %d", depth+1)
+		}
+		seen[key] = true
+		vt, err := dec.Token()
+		if err != nil {
+			return invalid("the reply is not a JSON patch (%s)", jsonErr(err))
+		}
+		if vt == nil && ctx != "other" {
+			if contains(replyKeys, key) {
+				return invalid("%s may not be null", key)
+			}
+			return invalid("a key at depth %d may not be null", depth+1)
+		}
+		child := "other"
+		if ctx == "top" && (key == "contract" || key == "context") {
+			child = key
+		}
+		if err := scanTok(dec, vt, depth+1, child); err != nil {
+			return err
+		}
+	}
+	if _, err := dec.Token(); err != nil {
+		return invalid("the reply is not a JSON patch (%s)", jsonErr(err))
+	}
+	return nil
+}
+
+func checkStrings(field string, ss []string) error {
+	if len(ss) > maxListItems {
+		return invalid("%s has more than %d entries", field, maxListItems)
+	}
+	for _, x := range ss {
+		if len(x) > maxEntryLen {
+			return invalid("an entry of %s is longer than %d bytes", field, maxEntryLen)
+		}
+	}
+	return nil
+}
+
 func checkPatchShape(p revisePatch) error {
 	if p.Description != nil && (len(*p.Description) < 1 || len(*p.Description) > maxDescription) {
 		return invalid("description must be 1 to %d bytes", maxDescription)
@@ -145,9 +261,31 @@ func checkPatchShape(p revisePatch) error {
 	if len(p.Assumptions) > maxAssumptions {
 		return invalid("at most %d assumptions", maxAssumptions)
 	}
+	seenA := map[string]bool{}
 	for _, a := range p.Assumptions {
 		if strings.TrimSpace(a) == "" || len(a) > maxAssumptionLen {
 			return invalid("each assumption must be 1 to %d bytes", maxAssumptionLen)
+		}
+		if seenA[strings.TrimSpace(a)] {
+			return invalid("assumptions may not repeat")
+		}
+		seenA[strings.TrimSpace(a)] = true
+	}
+	if p.Context != nil {
+		if p.Context.Notes != nil {
+			if err := checkStrings("context.notes", *p.Context.Notes); err != nil {
+				return err
+			}
+		}
+		if p.Context.Constraints != nil {
+			if err := checkStrings("context.constraints", *p.Context.Constraints); err != nil {
+				return err
+			}
+		}
+	}
+	if p.Contract != nil && p.Contract.SideEffects != nil {
+		if err := checkStrings("contract.side_effects", *p.Contract.SideEffects); err != nil {
+			return err
 		}
 	}
 	for k, raw := range p.Groups {
@@ -188,10 +326,33 @@ func checkItems(items *[]map[string]any, field string, allowed ...string) error 
 	if items == nil {
 		return nil
 	}
+	if len(*items) > maxListItems {
+		return invalid("contract.%s has more than %d items", field, maxListItems)
+	}
 	for _, it := range *items {
-		for k := range it {
+		for k, v := range it {
 			if !contains(allowed, k) {
 				return invalid("an item of contract.%s has a key that is not allowed", field)
+			}
+			switch x := v.(type) {
+			case string:
+				if len(x) > maxEntryLen {
+					return invalid("a field of an item of contract.%s is longer than %d bytes", field, maxEntryLen)
+				}
+			case []any:
+				var ss []string
+				for _, e := range x {
+					str, ok := e.(string)
+					if !ok {
+						return invalid("a field of an item of contract.%s holds a value that is not text", field)
+					}
+					ss = append(ss, str)
+				}
+				if err := checkStrings("a field of an item of contract."+field, ss); err != nil {
+					return err
+				}
+			default:
+				return invalid("a field of an item of contract.%s holds a value that is not text", field)
 			}
 		}
 	}
