@@ -48,7 +48,7 @@ var closingTagRE = regexp.MustCompile(`</([a-z_]+)>`)
 // (packer.sectionTagRE). Planner text can reach those prompts through the
 // plan, so they are broken here too.
 var packerSectionTags = []string{"file", "signature", "contract", "dependency_signatures", "constraints",
-	"guidance", "revision_notes", "tests", "previous_failure", "attempts"}
+	"guidance", "behaviour", "revision_notes", "tests", "previous_failure", "attempts"}
 
 // promptDataTags lists, sorted, every tag name closed in a prompt file.
 func promptDataTags() []string {

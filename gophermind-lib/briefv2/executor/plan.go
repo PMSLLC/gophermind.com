@@ -9,8 +9,10 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
+	"sync"
 
 	"gophermind/gophermind-lib/briefv2/acceptcheck"
 	"gophermind/gophermind-lib/briefv2/brief"
@@ -18,6 +20,7 @@ import (
 	"gophermind/gophermind-lib/briefv2/packer"
 	"gophermind/gophermind-lib/briefv2/pathsafe"
 	"gophermind/gophermind-lib/briefv2/planner"
+	"gophermind/gophermind-lib/briefv2/revlog"
 	"gophermind/gophermind-lib/briefv2/tree"
 )
 
@@ -38,6 +41,22 @@ type Plan struct {
 	Deps                []planner.Dependency
 	Classes             map[string]string
 	Hashes              map[string]string // "contracts.json", "tree/<path>" -> hex sha256, taken at load
+	// Revised maps a node id to the tip of its revision chain (sub-project E).
+	// Plan.Hashes holds revision 0 for such a node; planIntact compares the node
+	// file to this tip. Guarded by revMu.
+	Revised map[string]RevisedTip
+	keys    map[string]string // node id -> "tree/<path>"
+	rootNet []NetHost
+	fns     map[string]contract.Function
+	revMu   sync.Mutex
+}
+
+// RevisedTip is where the revision chain of one node stands.
+type RevisedTip struct {
+	Key                    string // "tree/<path>"
+	N                      int    // last committed revision, 0 when only an intent exists
+	BodySHA256, TestSHA256 string
+	Open                   *revlog.Record // an intent not yet committed or refused
 }
 
 // Leaf is one function node.
@@ -55,6 +74,9 @@ type Leaf struct {
 	MaxRevisions                                     int // -1 = settings default
 	Network                                          []NetHost
 	Guidance                                         []packer.Guidance
+	Revision                                         int
+	Description                                      string
+	Behaviour                                        []string
 }
 
 // NetHost is one host of a leaf's network block.
@@ -66,17 +88,24 @@ type NetHost struct {
 // leafDoc is the part of a function node the executor reads. tree.Node keeps
 // the decoded document private, so the node is marshalled and decoded again.
 type leafDoc struct {
-	Title     string `json:"title"`
-	ModelTier string `json:"model_tier"`
-	Contract  struct {
-		ID        string `json:"id"` // not written by the planner today; the node id is the function id
-		File      string `json:"file"`
-		Signature string `json:"signature"`
-		Package   string `json:"package"`
+	Title       string `json:"title"`
+	ModelTier   string `json:"model_tier"`
+	Description string `json:"description"`
+	Revision    int    `json:"revision"`
+	Contract    struct {
+		ID          string                                     `json:"id"` // not written by the planner today; the node id is the function id
+		File        string                                     `json:"file"`
+		Signature   string                                     `json:"signature"`
+		Package     string                                     `json:"package"`
+		Inputs      []struct{ Name, Type, Description string } `json:"inputs"`
+		Outputs     []struct{ Name, Type, Description string } `json:"outputs"`
+		Errors      []struct{ When, Returns string }           `json:"errors"`
+		SideEffects []string                                   `json:"side_effects"`
 	} `json:"contract"`
 	Context struct {
 		DependencySignatures []string `json:"dependency_signatures"`
 		Constraints          []string `json:"constraints"`
+		Notes                []string `json:"notes"`
 	} `json:"context"`
 	Budget struct {
 		MaxContextTokens int  `json:"max_context_tokens"`
@@ -147,6 +176,10 @@ func LoadPlan(runDir, repo string) (*Plan, error) {
 	if err != nil {
 		return nil, fmt.Errorf("executor: _state/leaf_tests.json is not readable (%s)", planner.JSONErr(err))
 	}
+	revised, err := verifyRevisions(runDir, repo, tr, hashes, tests)
+	if err != nil {
+		return nil, err
+	}
 	classes, err := planner.ReadClasses(runDir)
 	if err != nil {
 		return nil, fmt.Errorf("executor: _state/classes.json is not readable (%s)", planner.JSONErr(err))
@@ -169,22 +202,23 @@ func LoadPlan(runDir, repo string) (*Plan, error) {
 		return nil, fmt.Errorf("executor: _state/acceptance_tests.json is not readable (%s)", planner.JSONErr(err))
 	}
 
+	fns := map[string]contract.Function{}
+	for _, f := range c.Functions {
+		fns[f.ID] = f
+	}
+	rootNet, err := rootNetwork(tr, c.BriefID)
+	if err != nil {
+		return nil, err
+	}
+
 	p := &Plan{
 		RunID: c.BriefID, RunDir: runDir, Repo: repo,
 		Brief: b, BriefRepo: b.Front.Repo, Contracts: c,
 		byID: map[string]*Leaf{}, Requirements: reqs, Coverage: cov, Deps: deps, Classes: classes, Hashes: hashes,
 		Serve: cov.Serve, AcceptTests: accept,
+		Revised: revised, keys: map[string]string{}, rootNet: rootNet, fns: fns,
 	}
 	if err := p.checkAcceptTests(repo); err != nil {
-		return nil, err
-	}
-	fns := map[string]contract.Function{}
-	for _, f := range c.Functions {
-		fns[f.ID] = f
-	}
-
-	rootNet, err := rootNetwork(tr, c.BriefID)
-	if err != nil {
 		return nil, err
 	}
 	for _, n := range tr.Nodes {
@@ -197,6 +231,7 @@ func LoadPlan(runDir, repo string) (*Plan, error) {
 		}
 		p.Leaves = append(p.Leaves, l)
 		p.byID[l.ID] = l
+		p.keys[l.ID] = "tree/" + n.Path()
 	}
 	sort.Slice(p.Leaves, func(i, j int) bool {
 		a, b := p.Leaves[i], p.Leaves[j]
@@ -270,7 +305,10 @@ func (p *Plan) leaf(n tree.Node, rootNet []NetHost, fns map[string]contract.Func
 		TestFile: lt.TestFile, TestFunc: lt.TestFunc, TestSHA256: lt.SHA256,
 		Constraints: d.Context.Constraints, DepSignatures: d.Context.DependencySignatures,
 		MaxContextTokens: d.Budget.MaxContextTokens, MaxRevisions: -1,
-		Guidance: guidance,
+		Guidance: guidance, Revision: d.Revision,
+	}
+	if l.Revision >= 1 {
+		l.Description, l.Behaviour = d.Description, behaviourFrom(d)
 	}
 	if n.Wave != nil {
 		l.Wave = *n.Wave
@@ -301,7 +339,7 @@ func (p *Plan) View(l *Leaf, testSource string) packer.NodeView {
 		ID: l.ID, FuncID: l.FuncID, Package: l.Package, File: l.File, Signature: l.Signature,
 		DependencySignatures: l.DepSignatures, Constraints: l.Constraints,
 		TestFile: l.TestFile, TestSource: testSource, MaxContextTokens: l.MaxContextTokens,
-		Guidance: l.Guidance,
+		Guidance: l.Guidance, Description: l.Description, Behaviour: l.Behaviour,
 	}
 }
 
@@ -445,4 +483,156 @@ func (p *Plan) acceptTestFiles() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// behaviourFrom is the detail lines of a revised node's contract text.
+func behaviourFrom(d leafDoc) []string {
+	var out []string
+	for _, in := range d.Contract.Inputs {
+		out = append(out, fmt.Sprintf("Input %s (%s): %s", in.Name, in.Type, in.Description))
+	}
+	for _, o := range d.Contract.Outputs {
+		out = append(out, fmt.Sprintf("Output %s (%s): %s", o.Name, o.Type, o.Description))
+	}
+	for _, e := range d.Contract.Errors {
+		out = append(out, fmt.Sprintf("Error when %s: returns %s", e.When, e.Returns))
+	}
+	for _, s := range d.Contract.SideEffects {
+		out = append(out, "Side effect: "+s)
+	}
+	for _, n := range d.Context.Notes {
+		out = append(out, "Note: "+n)
+	}
+	return out
+}
+
+// errPlanChanged is the stop for any plan file, chain or record that is not
+// what the run was started with.
+func errPlanChanged() *stopError {
+	return &stopError{Status: "failed", Reason: "plan_changed", Message: "executor: a plan file changed while the run was in progress"}
+}
+
+func (p *Plan) nodeKey(id string) string { return p.keys[id] }
+
+func (p *Plan) tip(id string) (RevisedTip, bool) {
+	p.revMu.Lock()
+	defer p.revMu.Unlock()
+	t, ok := p.Revised[id]
+	return t, ok
+}
+
+func (p *Plan) setTip(id string, t RevisedTip) {
+	p.revMu.Lock()
+	defer p.revMu.Unlock()
+	if p.Revised == nil {
+		p.Revised = map[string]RevisedTip{}
+	}
+	p.Revised[id] = t
+}
+
+// expected is Plan.Hashes with every revised node at its chain tip: what planIntact holds the files to.
+func (p *Plan) expected() map[string]string {
+	p.revMu.Lock()
+	defer p.revMu.Unlock()
+	out := make(map[string]string, len(p.Hashes))
+	for k, v := range p.Hashes {
+		out[k] = v
+	}
+	for _, t := range p.Revised {
+		out[t.Key] = t.BodySHA256
+	}
+	return out
+}
+
+// nodeDisk reads what is on disk now for one function node: the node file, its
+// entry in leaf_tests.json (given) and its test file.
+func nodeDisk(runDir, repo, rel string, lt planner.LeafTest) (revlog.Disk, error) {
+	node, err := readPlanFile(runDir, rel)
+	if err != nil {
+		return revlog.Disk{}, err
+	}
+	abs, err := pathsafe.ResolveTest(repo, lt.TestFile)
+	if err != nil {
+		return revlog.Disk{}, errPlanChanged()
+	}
+	test, err := readNoFollow(abs)
+	if err != nil {
+		return revlog.Disk{}, errPlanChanged()
+	}
+	return revlog.Disk{NodeSHA256: revlog.Hash(node), LeafTestSHA256: lt.SHA256, TestFileSHA256: revlog.Hash(test)}, nil
+}
+
+// verifyRevisions proves the revision chain of every function node that has a
+// folder in _state/revisions, and points Hashes at revision 0 for it. A node
+// with no folder is unrevised. It never writes.
+func verifyRevisions(runDir, repo string, tr *tree.Tree, hashes map[string]string, tests map[string]planner.LeafTest) (map[string]RevisedTip, error) {
+	out := map[string]RevisedTip{}
+	for _, n := range tr.Nodes {
+		if n.Kind != tree.KindFunction {
+			continue
+		}
+		dir, err := revlog.NodeDir(runDir, n.ID)
+		if err != nil {
+			return nil, errPlanChanged()
+		}
+		if fi, err := os.Lstat(dir); err != nil || !fi.IsDir() {
+			continue
+		}
+		lt, ok := tests[n.ID]
+		if !ok {
+			return nil, errPlanChanged()
+		}
+		key := "tree/" + n.Path()
+		disk, err := nodeDisk(runDir, repo, n.Path(), lt)
+		if err != nil {
+			return nil, errPlanChanged()
+		}
+		tip, err := revlog.Verify(dir, disk)
+		if err != nil {
+			return nil, errPlanChanged()
+		}
+		if tip.N == 0 && tip.Open == nil {
+			continue
+		}
+		body0, _, err := revlog.ReadStaged(dir, 0)
+		if err != nil {
+			return nil, errPlanChanged()
+		}
+		hashes[key] = revlog.Hash(body0)
+		out[n.ID] = RevisedTip{Key: key, N: tip.N, BodySHA256: tip.BodySHA256, TestSHA256: tip.TestSHA256, Open: tip.Open}
+	}
+	return out, nil
+}
+
+// ReloadLeaf re-reads the node file and leaf_tests.json of one leaf and updates
+// the Leaf in place: the pointer every holder has stays valid. Only the parts
+// a revision may change are copied; a changed frozen part is refused.
+func (p *Plan) ReloadLeaf(id string) error {
+	old := p.byID[id]
+	if old == nil || p.keys[id] == "" {
+		return fmt.Errorf("executor: leaf %s is not in the plan", id)
+	}
+	raw, err := readPlanFile(p.RunDir, strings.TrimPrefix(p.keys[id], "tree/"))
+	if err != nil {
+		return err
+	}
+	n, err := tree.ParseNode(raw)
+	if err != nil {
+		return errPlanChanged()
+	}
+	tests, err := planner.ReadLeafTests(p.RunDir)
+	if err != nil {
+		return fmt.Errorf("executor: _state/leaf_tests.json is not readable (%s)", planner.JSONErr(err))
+	}
+	fresh, err := p.leaf(n, p.rootNet, p.fns, tests, p.Repo)
+	if err != nil {
+		return err
+	}
+	if fresh.Package != old.Package || fresh.File != old.File || fresh.Signature != old.Signature || fresh.Tier != old.Tier ||
+		fresh.Wave != old.Wave || fresh.TestFile != old.TestFile || fresh.TestFunc != old.TestFunc || !reflect.DeepEqual(fresh.DependsOn, old.DependsOn) {
+		return errPlanChanged()
+	}
+	old.Revision, old.Description, old.Behaviour = fresh.Revision, fresh.Description, fresh.Behaviour
+	old.Constraints, old.TestSHA256, old.Guidance = fresh.Constraints, fresh.TestSHA256, fresh.Guidance
+	return nil
 }

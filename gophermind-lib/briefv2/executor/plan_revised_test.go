@@ -1,0 +1,205 @@
+package executor
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"gophermind/gophermind-lib/briefv2/planner"
+	"gophermind/gophermind-lib/briefv2/revlog"
+	"gophermind/gophermind-lib/briefv2/tree"
+)
+
+func readFile(t *testing.T, path string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+// forgeRevision writes a valid committed chain for the node by hand: the way
+// the revise stage leaves a run folder after one rewrite of the description.
+// It returns the staged revision 0 and 1 bodies.
+func forgeRevision(t *testing.T, g *rig, id, description string) (body0, body1 []byte) {
+	t.Helper()
+	key := g.plan.nodeKey(id)
+	nodePath := filepath.Join(g.runDir, filepath.FromSlash(strings.TrimPrefix(key, "tree/")))
+	body0 = readFile(t, nodePath)
+	var doc map[string]any
+	if err := json.Unmarshal(body0, &doc); err != nil {
+		t.Fatal(err)
+	}
+	doc["description"], doc["revision"] = description, 1
+	doc["assumptions"] = append(doc["assumptions"].([]any), "revision 1: forged by the test")
+	raw, _ := json.Marshal(doc)
+	n, err := tree.ParseNode(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := n.Marshal()
+	body1 = append(b, '\n')
+	test := readFile(t, filepath.Join(g.repo, filepath.FromSlash(g.plan.Leaf(id).TestFile)))
+	dir, err := revlog.NodeDir(g.runDir, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k, body := range [][]byte{body0, body1} {
+		if err := revlog.Stage(dir, k, body, test); err != nil {
+			t.Fatal(err)
+		}
+	}
+	in := revlog.Record{Kind: revlog.KindIntent, N: 1, Trigger: "ladder_exhausted", BaseSHA256: revlog.Hash(body0), BodySHA256: revlog.Hash(body1),
+		TestSHA256Before: revlog.Hash(test), TestSHA256After: revlog.Hash(test), Changed: []string{"description"}, At: "2026-10-09T00:00:00Z"}
+	cm := in
+	cm.Kind = revlog.KindCommit
+	for _, r := range []revlog.Record{in, cm} {
+		if err := revlog.Append(dir, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tree.NewStore(g.runDir).Write(n); err != nil {
+		t.Fatal(err)
+	}
+	return body0, body1
+}
+
+func TestLoadPlanAcceptsARevisedNodeAndTheApprovalStillHolds(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	_, h0, err := planner.RenderPlan(g.runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body0, body1 := forgeRevision(t, g, leafID, "REVISED-SENTENCE for the greeting.")
+	p, err := LoadPlan(g.runDir, g.repo)
+	if err != nil {
+		t.Fatalf("LoadPlan: %v", err)
+	}
+	key := p.nodeKey(leafID)
+	if p.Hashes[key] != revlog.Hash(body0) {
+		t.Fatalf("Hashes[%s] = %s, want the hash of body-0", key, p.Hashes[key])
+	}
+	if tip := p.Revised[leafID]; tip.N != 1 || tip.BodySHA256 != revlog.Hash(body1) || tip.Open != nil {
+		t.Fatalf("tip = %+v", tip)
+	}
+	l := p.Leaf(leafID)
+	if l.Revision != 1 || l.Description != "REVISED-SENTENCE for the greeting." || len(l.Behaviour) == 0 {
+		t.Fatalf("leaf = revision %d description %q behaviour %v", l.Revision, l.Description, l.Behaviour)
+	}
+	if v := p.View(l, "src"); v.Description != l.Description || len(v.Behaviour) != len(l.Behaviour) {
+		t.Fatal("View does not carry the revised text to the packer")
+	}
+	// The approval is untouched: same plan hash, VerifyApproval passes.
+	if _, h1, err := planner.RenderPlan(g.runDir); err != nil || h1 != h0 {
+		t.Fatalf("plan hash before %s after %s (%v)", h0, h1, err)
+	}
+	if err := planner.VerifyApproval(g.runDir); err != nil {
+		t.Fatalf("VerifyApproval: %v", err)
+	}
+	// An unrevised leaf of the same plan is untouched.
+	if other := p.Leaf("fn-farewell"); other != nil && (other.Revision != 0 || other.Description != "" || other.Behaviour != nil) {
+		t.Fatal("an unrevised leaf carries revised text")
+	}
+}
+
+func TestLoadPlanRefusesATamperedChain(t *testing.T) {
+	t.Parallel()
+	cases := map[string]func(t *testing.T, g *rig, dir string, key string){
+		"the revised node edited by hand": func(t *testing.T, g *rig, dir, key string) {
+			p := filepath.Join(g.runDir, filepath.FromSlash(strings.TrimPrefix(key, "tree/")))
+			os.WriteFile(p, []byte(strings.Replace(string(readFile(t, p)), "REVISED-SENTENCE", "SNEAKY-SENTENCE", 1)), 0o600)
+		},
+		"body-0 edited": func(t *testing.T, g *rig, dir, key string) {
+			p := filepath.Join(dir, revlog.BodyFile(0))
+			os.WriteFile(p, append(readFile(t, p), ' '), 0o600)
+		},
+		"a log line deleted": func(t *testing.T, g *rig, dir, key string) {
+			p := filepath.Join(dir, "log.jsonl")
+			lines := strings.Split(strings.TrimSpace(string(readFile(t, p))), "\n")
+			os.WriteFile(p, []byte(lines[1]+"\n"), 0o600)
+		},
+		"the log lines swapped": func(t *testing.T, g *rig, dir, key string) {
+			p := filepath.Join(dir, "log.jsonl")
+			lines := strings.Split(strings.TrimSpace(string(readFile(t, p))), "\n")
+			os.WriteFile(p, []byte(lines[1]+"\n"+lines[0]+"\n"), 0o600)
+		},
+		"leaf_tests.json changed": func(t *testing.T, g *rig, dir, key string) {
+			p := filepath.Join(g.runDir, "_state", "leaf_tests.json")
+			var m map[string]planner.LeafTest
+			json.Unmarshal(readFile(t, p), &m)
+			lt := m[leafID]
+			lt.SHA256 = strings.Repeat("0", 64)
+			m[leafID] = lt
+			raw, _ := json.Marshal(m)
+			os.WriteFile(p, raw, 0o600)
+		},
+		"the test file edited": func(t *testing.T, g *rig, dir, key string) {
+			p := filepath.Join(g.repo, filepath.FromSlash(g.plan.Leaf(leafID).TestFile))
+			os.WriteFile(p, append(readFile(t, p), []byte("\n// sneaky\n")...), 0o644)
+		},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			g := newRig(t)
+			forgeRevision(t, g, leafID, "REVISED-SENTENCE for the greeting.")
+			dir, _ := revlog.NodeDir(g.runDir, leafID)
+			mutate(t, g, dir, g.plan.nodeKey(leafID))
+			_, err := LoadPlan(g.runDir, g.repo)
+			asStop(t, err, "failed", "plan_changed")
+		})
+	}
+}
+
+func TestPlanIntactComparesARevisedNodeToItsTip(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	forgeRevision(t, g, leafID, "REVISED-SENTENCE for the greeting.")
+	p, err := LoadPlan(g.runDir, g.repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rc := &runCtx{o: Options{RunDir: g.runDir}, plan: p}
+	if se := rc.planIntact(); se != nil {
+		t.Fatalf("planIntact on a valid chain: %+v", se)
+	}
+	// A hand edit of the revised node, or of an unrevised one, stops the run.
+	for _, id := range []string{leafID, "fn-farewell"} {
+		path := filepath.Join(g.runDir, filepath.FromSlash(strings.TrimPrefix(p.nodeKey(id), "tree/")))
+		orig := readFile(t, path)
+		os.WriteFile(path, append(append([]byte{}, orig...), ' '), 0o600)
+		if se := rc.planIntact(); se == nil || se.Reason != "plan_changed" {
+			t.Errorf("a hand edit of %s was not caught: %+v", id, se)
+		}
+		os.WriteFile(path, orig, 0o600)
+	}
+	if se := rc.planIntact(); se != nil {
+		t.Fatalf("restored files: %+v", se)
+	}
+}
+
+func TestReloadLeafUpdatesTheLeafInPlaceAndRefusesAFrozenChange(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	l := g.plan.Leaf(leafID)
+	if l.Revision != 0 {
+		t.Fatal("setup")
+	}
+	forgeRevision(t, g, leafID, "REVISED-SENTENCE for the greeting.")
+	if err := g.plan.ReloadLeaf(leafID); err != nil {
+		t.Fatal(err)
+	}
+	if g.plan.Leaf(leafID) != l || l.Revision != 1 || l.Description != "REVISED-SENTENCE for the greeting." {
+		t.Fatalf("leaf after reload = %+v", l)
+	}
+	// A node file whose signature moved is refused.
+	path := filepath.Join(g.runDir, filepath.FromSlash(strings.TrimPrefix(g.plan.nodeKey(leafID), "tree/")))
+	raw := readFile(t, path)
+	os.WriteFile(path, []byte(strings.Replace(string(raw), l.Signature, "func Greet(who string) (string, error)", 1)), 0o600)
+	if err := g.plan.ReloadLeaf(leafID); err == nil {
+		t.Fatal("ReloadLeaf accepted a changed signature")
+	}
+}

@@ -162,11 +162,11 @@ func (rc *runCtx) baseBranch() string {
 // was going stops the run failed with reason plan_changed; the check runs
 // before every commit and at the end.
 func (rc *runCtx) planIntact() *stopError {
-	bad := &stopError{Status: "failed", Reason: "plan_changed", Message: "executor: a plan file changed while the run was in progress"}
+	bad := errPlanChanged()
 	if err := planner.VerifyApproval(rc.o.RunDir); err != nil {
 		return bad
 	}
-	for key, want := range rc.plan.Hashes {
+	for key, want := range rc.plan.expected() {
 		rel := strings.TrimPrefix(key, "tree/")
 		raw, err := readPlanFile(rc.o.RunDir, rel)
 		if err != nil || hashHex(raw) != want {

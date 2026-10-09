@@ -47,6 +47,12 @@ type NodeView struct {
 	TestSource           string
 	MaxContextTokens     int // node budget; 0 when unset
 	Guidance             []Guidance
+	// Description and Behaviour are set only for a node the planner rewrote
+	// (revision 1 or more): the current description, and one line each for the
+	// inputs, outputs, errors, side effects and notes of the contract. An
+	// unrevised node leaves both empty and its prompt does not change.
+	Description string
+	Behaviour   []string
 }
 
 // Guidance is one section of build guidance for a leaf: how to construct it,
@@ -81,6 +87,25 @@ func guidanceText(gs []Guidance) string {
 		}
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// behaviourText is the body of the behaviour section: the description line,
+// then one bullet per detail line. Empty when the node has neither.
+func behaviourText(desc string, lines []string) string {
+	if desc == "" && len(lines) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	if desc != "" {
+		b.WriteString("Description: " + desc)
+	}
+	for _, l := range lines {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString("- " + l)
+	}
+	return b.String()
 }
 
 // dropGuidance removes a whole section and names the drop.
@@ -415,16 +440,18 @@ func renderTemplate(name string, data any) (string, error) {
 
 // state is the mutable part of a prompt while sections are being cut.
 type state struct {
-	n        NodeView
-	contract string
-	deps     []string
-	notes    []string
-	guidance []Guidance
-	fail     Failure
-	testSrc  string
+	n         NodeView
+	contract  string
+	deps      []string
+	notes     []string
+	guidance  []Guidance
+	desc      string
+	behaviour []string
+	fail      Failure
+	testSrc   string
 }
 
-var sectionTagRE = regexp.MustCompile(`(?i)<\s*(file|signature|contract|dependency_signatures|constraints|guidance|revision_notes|tests|previous_failure|attempts)\s*>`)
+var sectionTagRE = regexp.MustCompile(`(?i)<\s*(file|signature|contract|dependency_signatures|constraints|guidance|behaviour|revision_notes|tests|previous_failure|attempts)\s*>`)
 
 // esc makes untrusted text unable to close or open a section: every "</"
 // becomes `<\/` and a bare section tag gets a backslash after the "<".
@@ -469,7 +496,7 @@ func (s *state) render() (string, error) {
 	}
 	return renderTemplate("implement", escAll(map[string]string{
 		"File": s.n.File, "Package": s.n.Package, "Signature": s.n.Signature,
-		"Contract": s.contract, "Deps": deps, "Constraints": cons, "Notes": notes, "Guidance": guidanceText(s.guidance),
+		"Contract": s.contract, "Deps": deps, "Constraints": cons, "Notes": notes, "Guidance": guidanceText(s.guidance), "Behaviour": behaviourText(s.desc, s.behaviour),
 		"TestFile": s.n.TestFile, "TestSource": strings.TrimRight(s.testSrc, "\n"), "Failure": failure,
 	}))
 }
@@ -495,8 +522,9 @@ func Pack(n NodeView, c *contract.Contracts, in Inputs) (Packed, error) {
 		n: n, contract: strings.Join(slice, "\n\n"), deps: append([]string(nil), n.DependencySignatures...),
 		notes:    sc.scrub(in.Notes),
 		guidance: copyGuidance(n.Guidance),
-		fail:     Failure{Names: scrubNames(in.Failure.Names, sc), Lines: sc.scrub(in.Failure.Lines)},
-		testSrc:  n.TestSource,
+		desc:     n.Description, behaviour: append([]string(nil), n.Behaviour...),
+		fail:    Failure{Names: scrubNames(in.Failure.Names, sc), Lines: sc.scrub(in.Failure.Lines)},
+		testSrc: n.TestSource,
 	}
 	text, err := s.render()
 	if err != nil {
@@ -539,6 +567,13 @@ func Pack(n NodeView, c *contract.Contracts, in Inputs) (Packed, error) {
 			}
 			s.notes = nil
 			return "notes", true
+		},
+		func() (string, bool) {
+			if len(s.behaviour) == 0 {
+				return "", false
+			}
+			s.behaviour = nil
+			return "behaviour:details", true
 		},
 		func() (string, bool) { return s.dropGuidance("performance") },
 		func() (string, bool) { return s.dropGuidance("portability") },
