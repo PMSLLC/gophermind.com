@@ -483,6 +483,23 @@ func checkMerged(orig, merged map[string]any, p revisePatch, env mergeEnv) ([]st
 		}
 		return nil, invalid("a frozen field changed")
 	}
+	// 1b. go_type is code's: every input and output carries the type the merged
+	// signature gives it (CheckFrozen lets inputs and outputs change as wholes).
+	ct0, _ := merged["contract"].(map[string]any)
+	sig0, _ := ct0["signature"].(string)
+	if gt, gerr := deriveGoTypes(sig0, nil); gerr == nil {
+		for _, in := range objects(ct0["inputs"]) {
+			name, _ := in["name"].(string)
+			if want, ok := gt.ParamByName[name]; ok && in["go_type"] != want {
+				return nil, invalid("go_type of an input is missing or differs from the signature")
+			}
+		}
+		for i, o := range objects(ct0["outputs"]) {
+			if i < len(gt.Results) && o["go_type"] != gt.Results[i] {
+				return nil, invalid("go_type of an output is missing or differs from the signature")
+			}
+		}
+	}
 	// 2. The input names are the signature's parameters. Planning only requires
 	// an input per named parameter, so this runs only when the patch sets the inputs.
 	ct, _ := merged["contract"].(map[string]any)

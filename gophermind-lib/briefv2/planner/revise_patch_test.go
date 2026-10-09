@@ -374,3 +374,35 @@ func TestCheckRevisePatchAssumptionsAreAppendOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckMergedGoTypesAreDerivedFromTheSignature(t *testing.T) {
+	node, _, _ := plannedGreetNode(t)
+	env := envFor(node)
+	first := func(m map[string]any, field string) map[string]any {
+		items, _ := m["contract"].(map[string]any)[field].([]any)
+		if len(items) == 0 {
+			t.Fatalf("the greeter node has no %s", field)
+		}
+		return items[0].(map[string]any)
+	}
+	mut := map[string]func(m map[string]any){
+		"input edited":   func(m map[string]any) { first(m, "inputs")["go_type"] = "int" },
+		"input missing":  func(m map[string]any) { delete(first(m, "inputs"), "go_type") },
+		"output edited":  func(m map[string]any) { first(m, "outputs")["go_type"] = "int" },
+		"output missing": func(m map[string]any) { delete(first(m, "outputs"), "go_type") },
+	}
+	for name, f := range mut {
+		merged := cloneDoc(t, node)
+		merged["description"] = "changed so the no-op check is not the reason"
+		f(merged)
+		_, err := planner.CheckMergedDoc(node, merged, env)
+		if planner.ReviseErrClass(err) != planner.ClassReviseInvalid || !strings.Contains(err.Error(), "go_type") {
+			t.Errorf("%s: err = %v, want %s naming go_type", name, err, planner.ClassReviseInvalid)
+		}
+	}
+	merged := cloneDoc(t, node)
+	merged["description"] = "changed"
+	if _, err := planner.CheckMergedDoc(node, merged, env); err != nil {
+		t.Fatalf("a legit merged document: %v", err)
+	}
+}
