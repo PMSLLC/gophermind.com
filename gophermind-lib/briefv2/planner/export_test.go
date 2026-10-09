@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+
+	"gophermind/gophermind-lib/briefv2/contract"
 )
 
 // SetBeforeTestWrite installs a hook run after a reply is parsed and before
@@ -49,4 +51,62 @@ func ApproveStage(p *Planner, runID string) error {
 		return err
 	}
 	return p.approve(ctx, r)
+}
+
+// ReviseCheckEnv is the part of mergeEnv the tests set.
+type ReviseCheckEnv struct {
+	Class        string
+	SecretNames  []string // declared secret names of the brief
+	DecisionIDs  []string // settled question ids
+	Secrets      []string // secret values, for the reply scan
+	N            int
+	TestsRewrite bool
+}
+
+// ParseReviseReply exposes parseReviseReply: the reply kind ("patch", "contract_change",
+// "split"), the paragraph for the last two, and the error.
+func ParseReviseReply(text string) (kind, paragraph string, err error) {
+	rep, err := parseReviseReply(text)
+	if err != nil {
+		return "", "", err
+	}
+	return [...]string{"patch", "contract_change", "split"}[rep.kind], rep.paragraph, nil
+}
+
+// CheckRevisePatch runs parse, merge and checks 1 to 7 of the spec on orig.
+// The error is a revise error: ReviseErrClass reads its class.
+func CheckRevisePatch(orig map[string]any, reply string, contractsJSON []byte, env ReviseCheckEnv) (merged map[string]any, changed []string, err error) {
+	c, err := contract.Load(contractsJSON)
+	if err != nil {
+		return nil, nil, err
+	}
+	rep, err := parseReviseReply(reply)
+	if err != nil {
+		return nil, nil, err
+	}
+	if rep.kind != kindPatch {
+		return nil, nil, errors.New("not a patch")
+	}
+	merged, err = mergePatch(orig, rep.patch, c)
+	if err != nil {
+		return nil, nil, err
+	}
+	ge := groupEnv{Secrets: map[string]bool{}, Decisions: map[string]bool{}}
+	for _, n := range env.SecretNames {
+		ge.Secrets[n] = true
+	}
+	for _, id := range env.DecisionIDs {
+		ge.Decisions[id] = true
+	}
+	changed, err = checkMerged(orig, merged, rep.patch, mergeEnv{Class: env.Class, Env: ge, Secrets: env.Secrets, N: env.N, TestsRewrite: env.TestsRewrite})
+	return merged, changed, err
+}
+
+// ReviseErrClass is the class of an error returned by the revise checks, "" for any other error.
+func ReviseErrClass(err error) string {
+	var re *reviseErr
+	if errors.As(err, &re) {
+		return re.class
+	}
+	return ""
 }
