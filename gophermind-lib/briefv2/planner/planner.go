@@ -201,40 +201,56 @@ type callSpec struct {
 	maxGrown int
 	// tier is the model tier chain; empty means strong.
 	tier router.Tier
+	// revision is the definition revision the call is made at; it goes to the ledger row.
+	revision int
+	// skipSave, when set, is asked about each reply before it is saved or dumped:
+	// true keeps the reply out of _state/replies (a reply that holds a secret).
+	skipSave func(text string) bool
 }
 
 // call makes one model call through the router. parse receives the raw reply
 // text; an error from it marks the reply malformed and takes the retry path.
 func (p *Planner) call(ctx context.Context, r *run, cs callSpec, prompt string, parse func(text string) error) error {
+	_, err := p.callRes(ctx, r, cs, prompt, parse)
+	return err
+}
+
+// callRes is call that also returns the router's result (which model answered).
+func (p *Planner) callRes(ctx context.Context, r *run, cs callSpec, prompt string, parse func(text string) error) (router.Result, error) {
 	tier := cs.tier
 	if tier == "" {
 		tier = router.TierStrong
 	}
 	info := router.CallInfo{RunID: r.id, Stage: cs.stage, NodeID: cs.nodeID, Tier: tier, Scope: cs.scope,
-		TaskType: cs.taskType, NodeClass: cs.nodeClass}
+		TaskType: cs.taskType, NodeClass: cs.nodeClass, Revision: cs.revision}
 	req := request(cs.stage, prompt, cs.maxTokens)
 	req.MaxGrownTokens = cs.maxGrown
+	keep := func(text string) bool { return cs.skipSave == nil || !cs.skipSave(text) }
 	if p.dumpDir(r) != "" {
 		inner := parse
 		parse = func(text string) error {
-			p.dumpReply(r, cs.stage, req, text)
+			if keep(text) {
+				p.dumpReply(r, cs.stage, req, text)
+			}
 			return inner(text)
 		}
 	}
 	{
 		inner := parse
 		parse = func(text string) error {
-			p.saveReply(r, cs.stage, text)
+			if keep(text) {
+				p.saveReply(r, cs.stage, text)
+			}
 			return inner(text)
 		}
 	}
-	_, err := p.d.Caller.CallParsed(ctx, info, req, parse)
+	res, err := p.d.Caller.CallParsed(ctx, info, req, parse)
 	var ce *router.ChainExhausted
 	if errors.As(err, &ce) && ce.OnlyPrivacy() {
-		return fmt.Errorf("%w; this call carries %s scope and every model in the %s tier is a public provider: "+
+		return res, fmt.Errorf("%w; this call carries %s scope and every model in the %s tier is a public provider: "+
 			"add a private provider to that tier in gophermind.yaml, or start the run with --allow-public", err, cs.scope, ce.Tier)
 	}
-	return err
+	return res, err
 }
 
 const maxQuestionsPerCall = 3
