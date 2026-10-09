@@ -96,3 +96,16 @@ func TestUnattendedGateRefusesEmptyPlanHash(t *testing.T) {
 		t.Fatalf("%+v %v", d, err)
 	}
 }
+
+func TestUnattendedGateStopsOnAProposal(t *testing.T) {
+	g := gateFor(t, nil, nil, false)
+	for _, e := range []human.Escalation{
+		{NodeID: "fn-a", Reason: "contract_flagged", Revisions: 1, Proposal: "change the signature"},
+		{NodeID: "fn-a", Reason: "split", Proposal: "split this node"},
+	} {
+		res, err := g.Escalate(context.Background(), e)
+		if err != nil || res.Action != human.ActionStop {
+			t.Fatalf("%s: %+v %v, want a stop", e.Reason, res, err)
+		}
+	}
+}

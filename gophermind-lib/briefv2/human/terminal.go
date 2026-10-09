@@ -91,6 +91,9 @@ func (t *Terminal) Ask(ctx context.Context, qs []Question) ([]Answer, error) {
 
 func (t *Terminal) Approve(ctx context.Context, plan PlanSummary) (Decision, error) {
 	fmt.Fprintf(t.out, "\n%s\n\nPlan hash: %s\n", plan.Markdown, plan.Hash)
+	if plan.Notice != "" {
+		fmt.Fprintf(t.out, "\n%s\n", plan.Notice)
+	}
 	for {
 		fmt.Fprint(t.out, "Approve this plan? [y/N] ")
 		line, err := t.readLine(ctx)
@@ -135,6 +138,12 @@ func (t *Terminal) Escalate(ctx context.Context, e Escalation) (Resolution, erro
 	fmt.Fprintf(t.out, "\nEvery model failed %s: %s\n", e.NodeID, e.Reason)
 	for _, h := range e.History {
 		fmt.Fprintf(t.out, "  - %s\n", h)
+	}
+	if e.Revisions > 0 {
+		fmt.Fprintf(t.out, "  The planner rewrote this node %d time(s) before this.\n", e.Revisions)
+	}
+	if e.Proposal != "" {
+		fmt.Fprintf(t.out, "  The planner says: %s\n", proposalLine(e.Proposal))
 	}
 	for {
 		fmt.Fprint(t.out, "retry, skip, or stop (add a note after it if you like): ")

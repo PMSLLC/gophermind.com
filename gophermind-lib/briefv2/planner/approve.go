@@ -12,6 +12,7 @@ import (
 
 	"gophermind/gophermind-lib/briefv2/brief"
 	"gophermind/gophermind-lib/briefv2/human"
+	"gophermind/gophermind-lib/briefv2/settings"
 )
 
 // approval is approval.json. PlanHash binds it to one exact plan.
@@ -64,7 +65,7 @@ func (p *Planner) approve(ctx context.Context, r *run) error {
 		if p.d.Gate == nil {
 			return errors.New("the plan needs approval and no human gate is configured; pass --yes to approve it unseen")
 		}
-		d, err := p.d.Gate.Approve(ctx, human.PlanSummary{Markdown: md, Hash: hash})
+		d, err := p.d.Gate.Approve(ctx, human.PlanSummary{Markdown: md, Hash: hash, Notice: p.reviseNotice()})
 		if err != nil {
 			return err
 		}
@@ -351,4 +352,14 @@ func (p *Planner) refreshDecisions(r *run) error {
 		}
 	}
 	return nil
+}
+
+// reviseNotice tells the approver what the build may do to a failing leaf. It
+// is shown beside the plan and is not part of RenderPlan, so no approval
+// written before it existed is invalidated.
+func (p *Planner) reviseNotice() string {
+	if p.d.Settings.Revise.Mode != settings.ReviseModeRewrite {
+		return ""
+	}
+	return "Revisions: while the build runs, a leaf that fails every model may have its description, contract text, tests and groups rewritten by the planner, at most max_revisions times per leaf, and the build goes on from the rewrite. A signature, package, file or dependency is never rewritten: that goes to you. Every rewrite is recorded under _state/revisions and listed in the report."
 }

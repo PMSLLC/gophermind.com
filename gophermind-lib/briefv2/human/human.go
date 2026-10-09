@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 // ErrWaiting means a question or approval was written out and nobody has
@@ -53,10 +54,11 @@ type Understanding struct {
 }
 
 // PlanSummary is the plan as shown for approval. Hash binds an approval to
-// this exact plan.
+// this exact plan. Notice is shown beside the plan and is not part of the hash.
 type PlanSummary struct {
 	Markdown string
 	Hash     string
+	Notice   string
 }
 
 // Decision is the answer to Approve.
@@ -67,10 +69,48 @@ type Decision struct {
 }
 
 // Escalation is a leaf that every model failed, handed to a person.
+// Revisions is how many times the planner rewrote the node before this
+// escalation, and Proposal is the scrubbed paragraph the revise stage gave when
+// it asked for a contract change or a split; both are empty when there is none.
+// Proposal is model text: a gate shows it through proposalLine.
 type Escalation struct {
-	NodeID  string
-	Reason  string
-	History []string // one line per failed attempt
+	NodeID    string
+	Reason    string
+	History   []string // one line per failed attempt
+	Revisions int
+	Proposal  string
+}
+
+// maxProposalRunes bounds the proposal line a gate prints.
+const maxProposalRunes = 600
+
+// proposalLine makes the model's proposal safe to print on one line: control
+// characters and line breaks become spaces, runs of spaces collapse, a backtick
+// becomes an apostrophe (so it cannot open a fenced block in a gate file), and
+// the text is cut to maxProposalRunes.
+func proposalLine(s string) string {
+	var b strings.Builder
+	space := true
+	n := 0
+	for _, r := range s {
+		switch {
+		case r == '`':
+			r = '\''
+		case unicode.IsControl(r) || unicode.IsSpace(r):
+			r = ' '
+		}
+		if r == ' ' && space {
+			continue
+		}
+		space = r == ' '
+		if n == maxProposalRunes {
+			b.WriteString("...")
+			break
+		}
+		b.WriteRune(r)
+		n++
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // Action is what to do about an escalated leaf.

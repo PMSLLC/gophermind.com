@@ -156,8 +156,12 @@ func (f *File) Approve(ctx context.Context, plan PlanSummary) (Decision, error) 
 		}
 		// The plan changed since the file was written: an old answer must not approve a new plan.
 	}
+	notice := ""
+	if plan.Notice != "" {
+		notice = plan.Notice + "\n\n"
+	}
 	body := fmt.Sprintf("# Approval\n\nRead the plan, then write `approve` or `reject: <reason>` in the decision block and run `gophermind brief resume`.\n\n"+
-		"Plan hash: %s\n\n---\n\n%s\n\n---\n\n```decision\n\n```\n", plan.Hash, plan.Markdown)
+		"Plan hash: %s\n\n%s---\n\n%s\n\n---\n\n```decision\n\n```\n", plan.Hash, notice, plan.Markdown)
 	if err := f.write(name, body); err != nil {
 		return Decision{}, err
 	}
@@ -206,6 +210,12 @@ func (f *File) Escalate(ctx context.Context, e Escalation) (Resolution, error) {
 		fmt.Fprintf(&b, "# Escalation: %s\n\nEvery model failed this leaf: %s\n\n", e.NodeID, e.Reason)
 		for _, h := range e.History {
 			fmt.Fprintf(&b, "- %s\n", h)
+		}
+		if e.Revisions > 0 {
+			fmt.Fprintf(&b, "\nThe planner rewrote this node %d time(s) before this.\n", e.Revisions)
+		}
+		if e.Proposal != "" {
+			fmt.Fprintf(&b, "\nThe planner says: %s\n", proposalLine(e.Proposal))
 		}
 		b.WriteString("\nWrite `retry`, `skip`, or `stop` in the block, optionally followed by a note, then run `gophermind brief resume`.\n")
 		b.WriteString("\n```resolution\n\n```\n")

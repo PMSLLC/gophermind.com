@@ -9,6 +9,7 @@ import (
 	"gophermind/gophermind-lib/briefv2/blackboard"
 	"gophermind/gophermind-lib/briefv2/human"
 	"gophermind/gophermind-lib/briefv2/report"
+	"gophermind/gophermind-lib/briefv2/settings"
 )
 
 // reasonSkipped is the reason of a leaf a person chose to skip.
@@ -78,7 +79,15 @@ func (rc *runCtx) lastModel(ctx context.Context, id string) string {
 	return a.Provider + "/" + a.Model
 }
 
-// escalate is rung 7: the leaf leaves status from (in_progress for the ladder,
+// escalateExtra is what a caller adds to the gate text beyond the reason.
+type escalateExtra struct{ Proposal string }
+
+// escalate is escalateWith with nothing extra.
+func (rc *runCtx) escalate(ctx context.Context, l *Leaf, from blackboard.Status, reason string, history []string) (human.Resolution, error) {
+	return rc.escalateWith(ctx, l, from, reason, history, escalateExtra{})
+}
+
+// escalateWith is rung 7: the leaf leaves status from (in_progress for the ladder,
 // verified for an integration failure, escalated when a resumed run asks
 // again) for needs_revision and escalated, the person is asked, and the answer
 // is applied to the blackboard:
@@ -92,7 +101,7 @@ func (rc *runCtx) lastModel(ctx context.Context, id string) string {
 // gate waits comes back as the context's error, the leaf stays escalated. The
 // gate is given the id, the reason class and one line per attempt: never a
 // reply, command output or a secret value.
-func (rc *runCtx) escalate(ctx context.Context, l *Leaf, from blackboard.Status, reason string, history []string) (human.Resolution, error) {
+func (rc *runCtx) escalateWith(ctx context.Context, l *Leaf, from blackboard.Status, reason string, history []string, ex escalateExtra) (human.Resolution, error) {
 	runID, wc := rc.plan.RunID, context.WithoutCancel(ctx)
 	if from != blackboard.StatusEscalated {
 		if from != blackboard.StatusNeedsRevision {
@@ -119,7 +128,14 @@ func (rc *runCtx) escalate(ctx context.Context, l *Leaf, from blackboard.Status,
 	if rc.o.Gate == nil {
 		return human.Resolution{}, humanStop(l.ID)
 	}
-	res, err := rc.o.Gate.Escalate(ctx, human.Escalation{NodeID: l.ID, Reason: reason, History: rc.scrubHistory(history)})
+	// Revisions is the node revision (how often the planner rewrote the node),
+	// not the row counter, which reopen and the notes rung also raise.
+	revisions := 0
+	if rc.cfg.Revise.Mode == settings.ReviseModeRewrite {
+		revisions = l.Revision
+	}
+	res, err := rc.o.Gate.Escalate(ctx, human.Escalation{NodeID: l.ID, Reason: reason, History: rc.scrubHistory(history),
+		Revisions: revisions, Proposal: rc.scrubText(ex.Proposal)})
 	if err == nil {
 		by := res.AnsweredBy
 		if !human.ValidAnsweredBy(by) {
