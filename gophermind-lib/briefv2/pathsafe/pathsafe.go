@@ -143,7 +143,19 @@ func osReason(err error) string {
 // directory, fsync, then rename over the destination. It refuses a destination
 // that is a symbolic link or a directory and leaves no temp file behind.
 func Replace(repo, rel string, data []byte) (err error) {
-	abs, err := ResolveSource(repo, rel)
+	return replaceFile(repo, rel, data, ResolveSource)
+}
+
+// ReplaceTest is Replace for a test file: the path must pass ResolveTest (a
+// name that ends in _test.go). The revise stage uses it to put a rewritten test
+// over the one Wave 0 committed. It refuses a link or a directory as the
+// destination and leaves no temp file behind.
+func ReplaceTest(repo, rel string, data []byte) (err error) {
+	return replaceFile(repo, rel, data, ResolveTest)
+}
+
+func replaceFile(repo, rel string, data []byte, resolveFn func(repo, rel string) (string, error)) (err error) {
+	abs, err := resolveFn(repo, rel)
 	if err != nil {
 		return err
 	}
@@ -154,7 +166,7 @@ func Replace(repo, rel string, data []byte) (err error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("creating the folder for %s: %s", path.Base(rel), osReason(err))
 	}
-	if _, err := ResolveSource(repo, rel); err != nil {
+	if _, err := resolveFn(repo, rel); err != nil {
 		return err
 	}
 	if fi, lerr := os.Lstat(abs); lerr == nil && (fi.Mode()&os.ModeSymlink != 0 || fi.IsDir()) {

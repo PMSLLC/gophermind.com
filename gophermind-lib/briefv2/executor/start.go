@@ -74,7 +74,8 @@ type runCtx struct {
 	art       *artifacts.Writer // saves the scrubbed reply and check output of each attempt (settings executor.artifacts)
 	// afterFunc is the run's wall clock: it calls f once after d and returns the
 	// function that cancels it. Nil means time.AfterFunc; tests inject a manual one.
-	afterFunc func(d time.Duration, f func()) (stop func())
+	afterFunc    func(d time.Duration, f func()) (stop func())
+	afterRevStep func(step int) error // tests only: called after each step of a revision; an error stops it as a kill would
 }
 
 // runReport holds the counters that become report.Input.

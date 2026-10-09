@@ -93,9 +93,10 @@ type Filter struct {
 type EventKind string
 
 const (
-	EventStatus  EventKind = "status"
-	EventAttempt EventKind = "attempt"
-	EventResult  EventKind = "result"
+	EventStatus   EventKind = "status"
+	EventAttempt  EventKind = "attempt"
+	EventResult   EventKind = "result"
+	EventRevision EventKind = "revision"
 )
 
 type Event struct {

@@ -575,3 +575,22 @@ func TestFSListOfAMissingRunFolder(t *testing.T) {
 		t.Fatalf("List = %d rows, %v; want none and no error", len(rows), err)
 	}
 }
+func TestSetRevisionEmitsARevisionEvent(t *testing.T) {
+	dir := t.TempDir()
+	b := NewFS(runfs.Fixed(dir), WithFlatLayout())
+	ctx := context.Background()
+	initReady(t, b, "r", "n")
+	if err := b.SetRevision(ctx, "r", "n", 1); err != nil {
+		t.Fatal(err)
+	}
+	lines, _, err := runfs.ReadLines(filepath.Join(dir, "_state", "events.jsonl"), 0)
+	if err != nil || len(lines) != 2 { // ready, revision
+		t.Fatalf("lines = %d, %v", len(lines), err)
+	}
+	var e struct {
+		Kind string `json:"kind"`
+	}
+	if err := json.Unmarshal(lines[1], &e); err != nil || e.Kind != "revision" {
+		t.Fatalf("last event = %s (%v)", lines[1], err)
+	}
+}

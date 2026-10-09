@@ -1171,3 +1171,33 @@ func TestForeignCommitsAndCanFastForward(t *testing.T) {
 		t.Fatalf("CanFastForward after main moved = %v, %v; want false", ok, err)
 	}
 }
+func TestCommitRevisionSubjectTrailersAndLeafCommitLookup(t *testing.T) {
+	c := newRepo(t)
+	if err := c.Start("main", "gm/x", nil); err != nil {
+		t.Fatal(err)
+	}
+	put(t, c, "f_test.go", "package x\n")
+	if _, err := c.CommitRevision("fn-a", 1, []string{"f_test.go"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := gx(t, c, "log", "-1", "--format=%s"); got != "gm(revise): fn-a test, revision 1" {
+		t.Fatal(got)
+	}
+	if got := gx(t, c, "log", "-1", "--format=%(trailers:key=GopherMind-Revision,valueonly)"); strings.TrimSpace(got) != "1" {
+		t.Fatalf("revision trailer = %q", got)
+	}
+	if _, ok, _ := c.LeafCommit("fn-a"); ok {
+		t.Fatal("a revision commit was taken for the leaf commit")
+	}
+	if n, err := c.ForeignCommits(""); err != nil || n != 0 {
+		t.Fatalf("ForeignCommits = %d, %v: a revision commit is this run's own", n, err)
+	}
+	for _, bad := range []struct {
+		id string
+		n  int
+	}{{"../x", 1}, {"fn-a", 0}} {
+		if _, err := c.CommitRevision(bad.id, bad.n, []string{"f_test.go"}); err == nil {
+			t.Errorf("CommitRevision(%q, %d) accepted", bad.id, bad.n)
+		}
+	}
+}

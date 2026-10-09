@@ -19,6 +19,9 @@ type Repo interface {
 	CommitWave0(paths []string) (string, error)
 	CommitLeaf(nodeID, title string, add, remove []string) (string, error)
 	CommitRepair(nodeID string, round int, add []string) (string, error)
+	// CommitRevision commits the rewritten test file of a revised node: subject "gm(revise): <node> test, revision <n>",
+	// trailers GopherMind-Node, GopherMind-Revision and the run trailer. Never taken for the leaf commit (LeafCommit).
+	CommitRevision(nodeID string, revision int, add []string) (string, error)
 	// Finish makes the empty final commit on the work branch, then fast-forwards base to it.
 	Finish(msg string) (string, error)
 	// Dirty lists sorted repo-relative paths: tracked changes and untracked files.

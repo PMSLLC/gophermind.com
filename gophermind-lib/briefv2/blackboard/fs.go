@@ -410,7 +410,7 @@ func (f *FS) SetStatus(ctx context.Context, runID, nodeID string, from, to Statu
 func (f *FS) SetRevision(ctx context.Context, runID, nodeID string, revision int) error {
 	return f.mutate(ctx, runID, nodeID, func(d *fsDoc) (bool, EventKind, error) {
 		d.Revision = revision
-		return true, "", nil
+		return true, EventRevision, nil
 	})
 }
 

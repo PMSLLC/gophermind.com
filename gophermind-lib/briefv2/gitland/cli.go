@@ -554,6 +554,17 @@ func (c *CLI) CommitRepair(nodeID string, round int, add []string) (string, erro
 	return c.commitPaths(add, nil, subject, []string{"GopherMind-Node: " + nodeID, fmt.Sprintf("GopherMind-Repair: %d", round), c.runTrailer()})
 }
 
+func (c *CLI) CommitRevision(nodeID string, revision int, add []string) (string, error) {
+	if !idRe.MatchString(nodeID) {
+		return "", errors.New("gitland: invalid node id")
+	}
+	if revision < 1 {
+		return "", errors.New("gitland: invalid revision")
+	}
+	subject := fmt.Sprintf("gm(revise): %s test, revision %d", nodeID, revision)
+	return c.commitPaths(add, nil, subject, []string{"GopherMind-Node: " + nodeID, fmt.Sprintf("GopherMind-Revision: %d", revision), c.runTrailer()})
+}
+
 func (c *CLI) Finish(msg string) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

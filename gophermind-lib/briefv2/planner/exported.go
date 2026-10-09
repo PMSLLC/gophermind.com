@@ -191,3 +191,24 @@ func ReadQuestionCounts(runDir string) (QuestionCounts, error) {
 	}
 	return c, nil
 }
+
+// SetLeafTestSHA records the new hash of a function node's test file in
+// _state/leaf_tests.json after a revision rewrote it. Only that entry's sha256
+// changes; the file keeps its format and mode 0600. An unknown node is an error.
+func SetLeafTestSHA(runDir, nodeID, sha string) error {
+	r := &run{dir: runDir}
+	m := map[string]LeafTest{}
+	if _, err := readJSON(r.path(stateLeafTests), &m); err != nil {
+		return err
+	}
+	lt, ok := m[nodeID]
+	if !ok {
+		return errors.New("planner: the node has no recorded test")
+	}
+	if lt.SHA256 == sha {
+		return nil
+	}
+	lt.SHA256 = sha
+	m[nodeID] = lt
+	return writeJSON(r.path(stateLeafTests), m)
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gophermind/gophermind-lib/briefv2/planner"
@@ -90,5 +91,37 @@ func TestReadAccessors(t *testing.T) {
 	}
 	if planner.JSONErr(os.ErrNotExist) == "" || planner.SyntaxErr(os.ErrNotExist) == "" {
 		t.Error("JSONErr or SyntaxErr returned nothing")
+	}
+}
+
+func TestSetLeafTestSHA(t *testing.T) {
+	g := newRig(t, approving())
+	g.mustPlan(planner.Options{})
+	before, err := planner.ReadLeafTests(g.runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sha := strings.Repeat("a", 64)
+	if err := planner.SetLeafTestSHA(g.runDir, "fn-greet", sha); err != nil {
+		t.Fatal(err)
+	}
+	after, err := planner.ReadLeafTests(g.runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after["fn-greet"].SHA256 != sha {
+		t.Fatalf("sha = %s", after["fn-greet"].SHA256)
+	}
+	for id, v := range before {
+		if id != "fn-greet" && after[id] != v {
+			t.Errorf("%s changed: %+v -> %+v", id, v, after[id])
+		}
+	}
+	fi, err := os.Stat(filepath.Join(g.runDir, "_state", "leaf_tests.json"))
+	if err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("mode = %v, %v", fi, err)
+	}
+	if err := planner.SetLeafTestSHA(g.runDir, "fn-nope", sha); err == nil {
+		t.Fatal("an unknown node was accepted")
 	}
 }
