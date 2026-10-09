@@ -1201,3 +1201,59 @@ func TestCommitRevisionSubjectTrailersAndLeafCommitLookup(t *testing.T) {
 		}
 	}
 }
+
+func TestLeafCommitIgnoresRevisionCommitsEvenForANodeNamedRevise(t *testing.T) {
+	for _, id := range []string{"revise", "fn-a"} {
+		t.Run(id, func(t *testing.T) {
+			c := newRepo(t)
+			if err := c.Start("main", "gm/x", nil); err != nil {
+				t.Fatal(err)
+			}
+			put(t, c, "f_test.go", "package x\n")
+			// Only a revision commit: the node has no leaf commit.
+			if _, err := c.CommitRevision(id, 1, []string{"f_test.go"}); err != nil {
+				t.Fatal(err)
+			}
+			if h, ok, _ := c.LeafCommit(id); ok {
+				t.Fatalf("a revision commit %s was taken for the leaf commit", h)
+			}
+			put(t, c, "real.go", "package x\n")
+			leaf, err := c.CommitLeaf(id, "Greet", []string{"real.go"}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			put(t, c, "f_test.go", "package x\n// two\n")
+			if _, err := c.CommitRevision(id, 2, []string{"f_test.go"}); err != nil {
+				t.Fatal(err)
+			}
+			got, ok, err := c.LeafCommit(id)
+			if err != nil || !ok || got != leaf {
+				t.Fatalf("LeafCommit = %q %v %v, want %q", got, ok, err, leaf)
+			}
+		})
+	}
+}
+
+func TestCommitRevisionRefusesAForeignStagedPathAndStaysRecoverable(t *testing.T) {
+	c := newRepo(t)
+	if err := c.Start("main", "gm/x", nil); err != nil {
+		t.Fatal(err)
+	}
+	put(t, c, "other.txt", "o\n")
+	gx(t, c, "add", "--", "other.txt")
+	put(t, c, "f_test.go", "package x\n")
+	if _, err := c.CommitRevision("fn-a", 1, []string{"f_test.go"}); !errors.Is(err, ErrIndexNotClean) {
+		t.Fatalf("err %v", err)
+	}
+	if got := gx(t, c, "diff", "--cached", "--name-only"); got != "other.txt" {
+		t.Fatalf("index %q", got)
+	}
+	if !strings.Contains(gx(t, c, "status", "--porcelain"), "?? f_test.go") {
+		t.Fatal("the test file was left staged")
+	}
+	// Once the stray path is out of the index the same call succeeds.
+	gx(t, c, "restore", "--staged", "--", "other.txt")
+	if _, err := c.CommitRevision("fn-a", 1, []string{"f_test.go"}); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+}

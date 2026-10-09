@@ -118,13 +118,18 @@ func (rc *runCtx) applyRevision(ctx context.Context, l *Leaf, prop planner.Revis
 // openTip records the open intent on the in-memory chain tip of the node, as
 // LoadPlan does for an intent it finds, so Plan.accepts allows the staged body.
 func (rc *runCtx) openTip(l *Leaf, in revlog.Record) {
-	t, ok := rc.plan.tip(l.ID)
+	rc.plan.revMu.Lock() // read and write in one critical section: no other writer can slip between them
+	defer rc.plan.revMu.Unlock()
+	t, ok := rc.plan.Revised[l.ID]
 	if !ok {
 		t = RevisedTip{Key: rc.plan.nodeKey(l.ID), BodySHA256: in.BaseSHA256, TestSHA256: in.TestSHA256Before}
 	}
 	rec := in
 	t.Open = &rec
-	rc.plan.setTip(l.ID, t)
+	if rc.plan.Revised == nil {
+		rc.plan.Revised = map[string]RevisedTip{}
+	}
+	rc.plan.Revised[l.ID] = t
 }
 
 // closeTip undoes openTip when the intent is refused.
@@ -256,6 +261,15 @@ func (rc *runCtx) rollForward(ctx context.Context, l *Leaf, dir string, in revlo
 // the old test file goes back, a refused record closes the intent and the staged
 // files of that revision are removed.
 func (rc *runCtx) abortRevision(l *Leaf, dir string, in revlog.Record, oldTest []byte, class string) (string, error) {
+	// The in-memory open intent is cleared on every way out once the refused
+	// record is on disk. If that record could not be written the intent is still
+	// open on disk, so the memory keeps agreeing with the disk and the tip stays open.
+	closed := false
+	defer func() {
+		if closed {
+			rc.closeTip(l)
+		}
+	}()
 	testAbs, err := pathsafe.ResolveTest(rc.o.Repo, l.TestFile)
 	if err != nil {
 		return "", fmt.Errorf("executor: leaf %s: its test path is not allowed", l.ID)
@@ -268,10 +282,10 @@ func (rc *runCtx) abortRevision(l *Leaf, dir string, in revlog.Record, oldTest [
 	if err := revlog.Append(dir, revlog.Record{Kind: revlog.KindRefused, N: in.N, Class: class, Trigger: in.Trigger, At: rc.stamp()}); err != nil {
 		return "", err
 	}
+	closed = true
 	if err := revlog.RemoveStaged(dir, in.N); err != nil {
 		return "", err
 	}
-	rc.closeTip(l)
 	rc.emit("revise_refused", l.ID, class)
 	return class, nil
 }

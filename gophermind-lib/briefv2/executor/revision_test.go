@@ -387,3 +387,97 @@ func TestApplyRevisionOpenWindowAcceptsTheOpenBodyForItsOwnNodeOnly(t *testing.T
 	}
 	os.WriteFile(p, orig, 0o600)
 }
+
+// R8: finishCommitted sets the chain tip BEFORE planIntact. The state here is
+// what a restart or a stale tip leaves: the commit record is written, the node
+// file holds the new body, and the in-memory tip is still the previous
+// committed hash with no open intent. planIntact passes only if setTip ran first.
+func TestFinishCommittedSetsTheTipBeforePlanIntact(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	rc, fc := g.leafRC(t, Script{}, true)
+	l := rc.plan.Leaf(leafID)
+	fc.LeafScript[leafID] = []runner.Verdict{failVerdict("test_fail", "x", "TestGreet")}
+	prop := g.proposal(t, leafID, "REVISED-SENTENCE for the greeting.", greetTest)
+	rc.afterRevStep = func(n int) error {
+		if n == 6 {
+			return errRevisionKilled
+		}
+		return nil
+	}
+	if _, err := rc.applyRevision(context.Background(), l, prop, planner.TriggerLadderExhausted); err != errRevisionKilled {
+		t.Fatalf("applyRevision = %v", err)
+	}
+	rc.afterRevStep = nil
+	dir, _ := revlog.NodeDir(g.runDir, leafID)
+	recs, _ := revlog.Read(dir)
+	commit := recs[0]
+	commit.Kind = revlog.KindCommit
+	if err := revlog.Append(dir, commit); err != nil {
+		t.Fatal(err)
+	}
+	// Forget the open intent: the tip is the previous committed state.
+	rc.plan.revMu.Lock()
+	delete(rc.plan.Revised, leafID)
+	rc.plan.revMu.Unlock()
+	if se := rc.planIntact(); se == nil {
+		t.Fatal("precondition: planIntact must reject the new body while the tip is stale")
+	}
+	if err := rc.finishCommitted(context.Background(), l, commit, false); err != nil {
+		t.Fatalf("finishCommitted from a stale tip: %v", err)
+	}
+	if tip, ok := rc.plan.tip(leafID); !ok || tip.N != 1 || tip.Open != nil {
+		t.Fatalf("tip = %+v %v", tip, ok)
+	}
+	if se := rc.planIntact(); se != nil {
+		t.Fatalf("planIntact after finishCommitted: %+v", se)
+	}
+}
+
+// A refusal closes the in-memory intent: the refused body is no longer
+// accepted for the node file.
+func TestAbortRevisionClearsTheOpenIntentSoTheRefusedBodyIsRejected(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	rc, fc := g.leafRC(t, Script{}, true)
+	l := rc.plan.Leaf(leafID)
+	fc.LeafScript[leafID] = []runner.Verdict{passVerdict()}
+	prop := g.proposal(t, leafID, "X", greetTest)
+	if refusal, err := rc.applyRevision(context.Background(), l, prop, planner.TriggerLadderExhausted); err != nil || refusal != planner.ClassVacuousTest {
+		t.Fatalf("applyRevision = %q, %v", refusal, err)
+	}
+	if tip, ok := rc.plan.tip(leafID); ok {
+		t.Fatalf("a tip is left after a refusal: %+v", tip)
+	}
+	orig := readFile(t, g.nodeFile(leafID))
+	os.WriteFile(g.nodeFile(leafID), prop.Body, 0o600)
+	if se := rc.planIntact(); se == nil {
+		t.Fatal("the refused body passed planIntact")
+	}
+	os.WriteFile(g.nodeFile(leafID), orig, 0o600)
+	if se := rc.planIntact(); se != nil {
+		t.Fatalf("planIntact on the original: %+v", se)
+	}
+}
+
+// If the refused record cannot be written the intent is still open on disk, so
+// the in-memory intent stays open too and the error comes back.
+func TestAbortRevisionKeepsTheIntentOpenWhenTheRefusedRecordFails(t *testing.T) {
+	g := newRig(t)
+	rc, fc := g.leafRC(t, Script{}, true)
+	l := rc.plan.Leaf(leafID)
+	dir, _ := revlog.NodeDir(g.runDir, leafID)
+	fc.LeafScript[leafID] = []runner.Verdict{passVerdict()}
+	fc.Hook = func(string) { os.Chmod(filepath.Join(dir, "log.jsonl"), 0o400) }
+	defer os.Chmod(filepath.Join(dir, "log.jsonl"), 0o600)
+	if os.Geteuid() == 0 {
+		t.Skip("file modes do not bind root")
+	}
+	_, err := rc.applyRevision(context.Background(), l, g.proposal(t, leafID, "X", greetTest), planner.TriggerLadderExhausted)
+	if err == nil {
+		t.Fatal("a failed refused-record append was not reported")
+	}
+	if tip, ok := rc.plan.tip(leafID); !ok || tip.Open == nil {
+		t.Fatalf("the open intent was cleared although it is open on disk: %+v %v", tip, ok)
+	}
+}

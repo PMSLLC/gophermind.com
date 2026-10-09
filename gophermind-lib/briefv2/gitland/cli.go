@@ -700,17 +700,17 @@ func (c *CLI) LeafCommit(nodeID string) (string, bool, error) {
 	if !idRe.MatchString(nodeID) {
 		return "", false, nil
 	}
-	const f = "%H%x1f%s%x1f%(trailers:key=GopherMind-Node,valueonly,unfold)%x1f%(trailers:key=GopherMind-Repair,valueonly,unfold)%x1e"
+	const f = "%H%x1f%s%x1f%(trailers:key=GopherMind-Node,valueonly,unfold)%x1f%(trailers:key=GopherMind-Repair,valueonly,unfold)%x1f%(trailers:key=GopherMind-Revision,valueonly,unfold)%x1e"
 	out, err := c.run("log", "--format="+f)
 	if err != nil {
 		return "", false, err
 	}
 	for _, rec := range strings.Split(string(out), "\x1e") {
 		parts := strings.Split(strings.TrimLeft(rec, "\n"), "\x1f")
-		if len(parts) != 4 {
+		if len(parts) != 5 {
 			continue
 		}
-		if strings.HasPrefix(parts[1], "gm("+nodeID+"): ") && strings.TrimSpace(parts[2]) == nodeID && strings.TrimSpace(parts[3]) == "" {
+		if strings.HasPrefix(parts[1], "gm("+nodeID+"): ") && strings.TrimSpace(parts[2]) == nodeID && strings.TrimSpace(parts[3]) == "" && strings.TrimSpace(parts[4]) == "" {
 			h, err := c.short(strings.TrimSpace(parts[0]))
 			return h, err == nil, err
 		}

@@ -143,18 +143,18 @@ func osReason(err error) string {
 // directory, fsync, then rename over the destination. It refuses a destination
 // that is a symbolic link or a directory and leaves no temp file behind.
 func Replace(repo, rel string, data []byte) (err error) {
-	return replaceFile(repo, rel, data, ResolveSource)
+	return replaceFile(repo, rel, data, ResolveSource, false)
 }
 
 // ReplaceTest is Replace for a test file: the path must pass ResolveTest (a
 // name that ends in _test.go). The revise stage uses it to put a rewritten test
 // over the one Wave 0 committed. It refuses a link or a directory as the
-// destination and leaves no temp file behind.
+// destination and leaves no temp file behind. The file keeps its permission bits.
 func ReplaceTest(repo, rel string, data []byte) (err error) {
-	return replaceFile(repo, rel, data, ResolveTest)
+	return replaceFile(repo, rel, data, ResolveTest, true)
 }
 
-func replaceFile(repo, rel string, data []byte, resolveFn func(repo, rel string) (string, error)) (err error) {
+func replaceFile(repo, rel string, data []byte, resolveFn func(repo, rel string) (string, error), keepPerm bool) (err error) {
 	abs, err := resolveFn(repo, rel)
 	if err != nil {
 		return err
@@ -169,8 +169,14 @@ func replaceFile(repo, rel string, data []byte, resolveFn func(repo, rel string)
 	if _, err := resolveFn(repo, rel); err != nil {
 		return err
 	}
-	if fi, lerr := os.Lstat(abs); lerr == nil && (fi.Mode()&os.ModeSymlink != 0 || fi.IsDir()) {
-		return fmt.Errorf("source file path (%d bytes) is a symbolic link or a directory", len(rel))
+	perm := os.FileMode(0o644)
+	if fi, lerr := os.Lstat(abs); lerr == nil {
+		if fi.Mode()&os.ModeSymlink != 0 || fi.IsDir() {
+			return fmt.Errorf("source file path (%d bytes) is a symbolic link or a directory", len(rel))
+		}
+		if keepPerm {
+			perm = fi.Mode().Perm() // a replaced test file keeps the bits it had
+		}
 	}
 	realDir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -181,7 +187,7 @@ func replaceFile(repo, rel string, data []byte, resolveFn func(repo, rel string)
 		return errors.New("no random source for a temp file name")
 	}
 	tmp := filepath.Join(dir, "."+filepath.Base(abs)+".tmp"+hex.EncodeToString(suffix[:]))
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL|NoFollow, 0o644)
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL|NoFollow, perm)
 	if err != nil {
 		return fmt.Errorf("writing %s: %s", path.Base(rel), osReason(err))
 	}
@@ -194,7 +200,7 @@ func replaceFile(repo, rel string, data []byte, resolveFn func(repo, rel string)
 	if err = InsideRepo(repo, dir); err != nil {
 		return err
 	}
-	if err = f.Chmod(0o644); err != nil {
+	if err = f.Chmod(perm); err != nil {
 		return fmt.Errorf("writing %s: %s", path.Base(rel), osReason(err))
 	}
 	if _, err = f.Write(data); err != nil {

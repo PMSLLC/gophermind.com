@@ -54,3 +54,27 @@ func TestReplaceTestRefusesWhatIsNotAPlainTestFile(t *testing.T) {
 		t.Error("ReplaceTest followed a linked directory")
 	}
 }
+
+func TestReplaceTestKeepsThePermissionBitsOfTheFileItReplaces(t *testing.T) {
+	for _, mode := range []os.FileMode{0o755, 0o600, 0o644} {
+		repo, _ := filepath.EvalSymlinks(t.TempDir())
+		dest := filepath.Join(repo, "x_test.go")
+		os.WriteFile(dest, []byte("old"), 0o644)
+		os.Chmod(dest, mode)
+		if err := pathsafe.ReplaceTest(repo, "x_test.go", []byte("package x\n")); err != nil {
+			t.Fatal(err)
+		}
+		fi, err := os.Stat(dest)
+		if err != nil || fi.Mode().Perm() != mode {
+			t.Errorf("mode = %v, want %v (%v)", fi.Mode().Perm(), mode, err)
+		}
+	}
+	// A new file still gets 0644.
+	repo, _ := filepath.EvalSymlinks(t.TempDir())
+	if err := pathsafe.ReplaceTest(repo, "n_test.go", []byte("package x\n")); err != nil {
+		t.Fatal(err)
+	}
+	if fi, _ := os.Stat(filepath.Join(repo, "n_test.go")); fi.Mode().Perm() != 0o644 {
+		t.Errorf("new file mode = %v", fi.Mode().Perm())
+	}
+}
