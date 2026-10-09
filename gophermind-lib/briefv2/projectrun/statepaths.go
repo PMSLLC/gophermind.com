@@ -32,6 +32,9 @@ func StatePaths(o Options, b *brief.Brief, env Env) ([]StatePath, error) {
 	if repo == "" {
 		return nil, fmt.Errorf("projectrun: no repo: the brief names none and --repo is not set")
 	}
+	if strings.HasPrefix(repo, "~") && repo != "~" && !strings.HasPrefix(repo, "~/") {
+		return nil, fmt.Errorf("projectrun: repo path uses the ~user form, which is not supported: give an absolute path or ~/...")
+	}
 	repo, err := planner.ExpandRepo(repo)
 	if err != nil {
 		return nil, fmt.Errorf("projectrun: repo path: %w", err)

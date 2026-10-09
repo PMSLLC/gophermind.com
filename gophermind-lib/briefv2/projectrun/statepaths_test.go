@@ -257,3 +257,11 @@ func TestStatePathsExpandTildeAndRelativeRepo(t *testing.T) {
 		}
 	}
 }
+
+func TestStatePathsRefusesTildeUser(t *testing.T) {
+	r := newRig(t)
+	r.o.Repo = "~bob/x"
+	if _, err := StatePaths(r.o, r.b, r.env); err == nil || !strings.Contains(err.Error(), "~user") {
+		t.Fatalf("err = %v, want a refusal naming the ~user form", err)
+	}
+}

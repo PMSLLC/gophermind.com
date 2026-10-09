@@ -33,7 +33,8 @@ func clearGit(t *testing.T, dir string, args ...string) string {
 }
 
 // clearRepo builds a repo on main with a goal-baseline tag, then a second
-// commit, an untracked file, a work branch, a run folder and a run record.
+// commit, an untracked file, a work branch, a run folder, another run folder
+// and a run record.
 func clearRepo(t *testing.T, workBranch string) (repo, cfg string) {
 	t.Helper()
 	skipIfNoGit(t)
@@ -56,19 +57,59 @@ func clearRepo(t *testing.T, workBranch string) (repo, cfg string) {
 	run := filepath.Join(repo, ".gophermind", clearID)
 	os.MkdirAll(filepath.Join(run, "_state"), 0o755)
 	os.WriteFile(filepath.Join(run, "_state", "calls.jsonl"), []byte("{}\n"), 0o644)
+	other := filepath.Join(repo, ".gophermind", "gm-2026-01-01-001")
+	os.MkdirAll(other, 0o755)
+	os.WriteFile(filepath.Join(other, "report.json"), []byte("{}"), 0o644)
 	os.MkdirAll(filepath.Join(repo, ".gophermind", clearID+"-scratch"), 0o755)
 	os.MkdirAll(filepath.Join(cfg, "runs"), 0o755)
 	os.WriteFile(filepath.Join(cfg, "runs", clearID+".json"), []byte("{}"), 0o644)
 	return repo, cfg
 }
 
-func runClear(t *testing.T, cwd, cfg string, args ...string) (string, error) {
+type clearRun struct {
+	script string // path of the script to run
+	cwd    string
+	cfg    string
+	home   string
+	env    []string // extra NAME=value
+	args   []string
+}
+
+// do runs the script under a git stub that logs every invocation and returns
+// stderr and stdout, the exit error and the lines the stub logged.
+func (c clearRun) do(t *testing.T) (out string, err error, gitCalls []string) {
 	t.Helper()
-	cmd := exec.Command("bash", append([]string{clearScript(t)}, args...)...)
-	cmd.Dir = cwd
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir(), "GOPHERMIND_CONFIG_DIR=" + cfg}
-	out, err := cmd.CombinedOutput()
-	return string(out), err
+	stub := t.TempDir()
+	logf := filepath.Join(t.TempDir(), "git.log")
+	// the stub must exec a real git binary: PATH may hold a wrapper that looks
+	// up "git" on PATH again and would find the stub (a loop)
+	real := ""
+	for _, cand := range []string{"/usr/bin/git", "/opt/homebrew/bin/git", "/usr/local/bin/git"} {
+		if fi, serr := os.Stat(cand); serr == nil && !fi.IsDir() {
+			real = cand
+			break
+		}
+	}
+	if real == "" {
+		t.Skip("no real git binary found")
+	}
+	body := "#!/bin/sh\necho \"$*\" >> \"$GM_GIT_LOG\"\nexec \"$GM_REAL_GIT\" \"$@\"\n"
+	if werr := os.WriteFile(filepath.Join(stub, "git"), []byte(body), 0o755); werr != nil {
+		t.Fatal(werr)
+	}
+	script := c.script
+	if script == "" {
+		script = clearScript(t)
+	}
+	cmd := exec.Command("bash", append([]string{script}, c.args...)...)
+	cmd.Dir = c.cwd
+	cmd.Env = append([]string{"PATH=" + stub + string(os.PathListSeparator) + os.Getenv("PATH"), "HOME=" + c.home,
+		"GOPHERMIND_CONFIG_DIR=" + c.cfg, "GM_GIT_LOG=" + logf, "GM_REAL_GIT=" + real}, c.env...)
+	b, err := cmd.CombinedOutput()
+	if raw, rerr := os.ReadFile(logf); rerr == nil {
+		gitCalls = strings.Split(strings.TrimSpace(string(raw)), "\n")
+	}
+	return string(b), err, gitCalls
 }
 
 func TestClearScriptClears(t *testing.T) {
@@ -76,8 +117,12 @@ func TestClearScriptClears(t *testing.T) {
 		t.Run(branch, func(t *testing.T) {
 			repo, cfg := clearRepo(t, branch)
 			arch := t.TempDir()
-			if out, err := runClear(t, repo, cfg, repo, clearID, branch, arch); err != nil {
+			out, err, calls := clearRun{cwd: repo, cfg: cfg, home: t.TempDir(), args: []string{repo, clearID, branch, arch}}.do(t)
+			if err != nil {
 				t.Fatalf("%v\n%s", err, out)
+			}
+			if len(calls) == 0 {
+				t.Fatal("the happy path ran no git")
 			}
 			if head := strings.TrimSpace(clearGit(t, repo, "rev-parse", "HEAD")); head != strings.TrimSpace(clearGit(t, repo, "rev-parse", "goal-baseline^{commit}")) {
 				t.Errorf("HEAD %s is not goal-baseline", head)
@@ -93,47 +138,125 @@ func TestClearScriptClears(t *testing.T) {
 					t.Errorf("%s survives", p)
 				}
 			}
-			if _, err := os.Stat(filepath.Join(arch, "attempt-"+clearID+".tar.gz")); err != nil {
-				t.Errorf("no archive: %v", err)
+			tgz := filepath.Join(arch, "attempt-"+clearID+".tar.gz")
+			list, lerr := exec.Command("tar", "-tzf", tgz).Output()
+			if lerr != nil {
+				t.Fatalf("no archive: %v", lerr)
+			}
+			for _, want := range []string{clearID + "/_state/calls.jsonl", "gm-2026-01-01-001/report.json"} {
+				if !strings.Contains(string(list), want) {
+					t.Errorf("archive lacks %s (the whole .gophermind folder is archived):\n%s", want, list)
+				}
 			}
 		})
 	}
 }
 
-func TestClearScriptRefusesBadArguments(t *testing.T) {
-	repo, cfg := clearRepo(t, "gm/"+clearID)
-	arch := t.TempDir()
-	before := treeSnap(t, repo)
-	headBefore := clearGit(t, repo, "rev-parse", "HEAD")
-	branches := clearGit(t, repo, "branch", "--list")
-	home := t.TempDir()
-	cases := map[string][]string{
-		"empty repo":     {"", clearID, "gm/" + clearID, arch},
-		"relative repo":  {".", clearID, "gm/" + clearID, arch},
-		"root":           {"/", clearID, "gm/" + clearID, arch},
-		"no .git":        {home, clearID, "gm/" + clearID, arch},
-		"bad id":         {repo, "gm-1", "gm/" + clearID, arch},
-		"empty id":       {repo, "", "gm/" + clearID, arch},
-		"empty branch":   {repo, clearID, "", arch},
-		"dash branch":    {repo, clearID, "-D", arch},
-		"base branch":    {repo, clearID, "main", arch},
-		"relative arch":  {repo, clearID, "gm/" + clearID, "x"},
-		"missing arch":   {repo, clearID, "gm/" + clearID, filepath.Join(arch, "nope")},
-		"too few args":   {repo},
-		"no args at all": {},
+type refusal struct {
+	name string
+	tag  string // the guard: the line of the script carrying "# guard:<tag>"
+	msg  string // the exact stderr text
+	// build returns the repo, the HOME for the run, the arguments and extra env
+	build func(t *testing.T, repo, arch string) (home string, args []string, env []string)
+}
+
+func refusals() []refusal {
+	br := "gm/" + clearID
+	std := func(mod func(a []string)) func(t *testing.T, repo, arch string) (string, []string, []string) {
+		return func(t *testing.T, repo, arch string) (string, []string, []string) {
+			a := []string{repo, clearID, br, arch}
+			mod(a)
+			return t.TempDir(), a, nil
+		}
 	}
-	for name, args := range cases {
-		t.Run(name, func(t *testing.T) {
-			// cwd is the real temp repo: a script that fell back to "." would wreck it
-			if out, err := runClear(t, repo, cfg, args...); err == nil {
+	// homeIsRepo runs with HOME set to the repo itself, the dangerous case.
+	homeIsRepo := func(spell func(t *testing.T, repo string) string) func(t *testing.T, repo, arch string) (string, []string, []string) {
+		return func(t *testing.T, repo, arch string) (string, []string, []string) {
+			return repo, []string{spell(t, repo), clearID, br, arch}, nil
+		}
+	}
+	return []refusal{
+		{"empty repo", "empty-repo", "repo is empty", std(func(a []string) { a[0] = "" })},
+		{"relative repo", "abs", "repo must be an absolute path", std(func(a []string) { a[0] = "." })},
+		{"dotdot", "dotdot", "repo must not contain a .. component", std(func(a []string) { a[0] = a[0] + "/sub/.." })},
+		{"root", "root", "repo must not be /", std(func(a []string) { a[0] = "/" })},
+		{"double slash", "root", "repo must not be /", std(func(a []string) { a[0] = "//" })},
+		{"slash dot", "root", "repo must not be /", std(func(a []string) { a[0] = "/." })},
+		{"home exact", "home", "repo must not be $HOME", homeIsRepo(func(t *testing.T, r string) string { return r })},
+		{"home trailing slash", "home", "repo must not be $HOME", homeIsRepo(func(t *testing.T, r string) string { return r + "/" })},
+		{"home double slash", "home", "repo must not be $HOME", homeIsRepo(func(t *testing.T, r string) string { return r + "//" })},
+		{"home slash dot", "home", "repo must not be $HOME", homeIsRepo(func(t *testing.T, r string) string { return r + "/." })},
+		{"home symlink", "home", "repo must not be $HOME", homeIsRepo(func(t *testing.T, r string) string {
+			l := filepath.Join(t.TempDir(), "link")
+			if err := os.Symlink(r, l); err != nil {
+				t.Fatal(err)
+			}
+			return l
+		})},
+		{"ancestor of home", "ancestor", "repo must not contain $HOME", func(t *testing.T, repo, arch string) (string, []string, []string) {
+			sub := filepath.Join(repo, "sub")
+			os.MkdirAll(sub, 0o755)
+			return sub, []string{repo, clearID, br, arch}, nil
+		}},
+		{"not a directory", "canon", "repo does not resolve to a directory", std(func(a []string) { a[0] = a[0] + "/nope" })},
+		{"no .git", "nogit", "repo has no .git directory", func(t *testing.T, repo, arch string) (string, []string, []string) {
+			return t.TempDir(), []string{t.TempDir(), clearID, br, arch}, nil
+		}},
+		{"bad id", "id", "id is not gm-YYYY-MM-DD-NNN", std(func(a []string) { a[1] = "gm-1" })},
+		{"empty id", "id", "id is not gm-YYYY-MM-DD-NNN", std(func(a []string) { a[1] = "" })},
+		{"empty branch", "branch-empty", "work branch is empty", std(func(a []string) { a[2] = "" })},
+		{"dash branch", "branch-form", "work branch is not a valid branch name", std(func(a []string) { a[2] = "-D" })},
+		{"dotdot branch", "branch-form", "work branch is not a valid branch name", std(func(a []string) { a[2] = "a..b" })},
+		{"glob branch", "branch-form", "work branch is not a valid branch name", std(func(a []string) { a[2] = "a*b" })},
+		{"base branch", "branch-base", "work branch equals the base branch", std(func(a []string) { a[2] = "main" })},
+		{"dash BASE_BRANCH", "base-form", "BASE_BRANCH is not a valid branch name", func(t *testing.T, repo, arch string) (string, []string, []string) {
+			return t.TempDir(), []string{repo, clearID, br, arch}, []string{"BASE_BRANCH=-x"}
+		}},
+		{"dash BASELINE", "baseline-form", "BASELINE is not a valid revision name", func(t *testing.T, repo, arch string) (string, []string, []string) {
+			return t.TempDir(), []string{repo, clearID, br, arch}, []string{"BASELINE=-x"}
+		}},
+		{"relative archive", "archive-abs", "archive dir must be an absolute path", std(func(a []string) { a[3] = "x" })},
+		{"missing archive", "archive-exists", "archive dir does not exist", std(func(a []string) { a[3] = a[3] + "/nope" })},
+		{"archive inside repo", "archive-inside", "archive dir must be outside the repo", std(func(a []string) {
+			os.MkdirAll(a[0]+"/arch", 0o755)
+			a[3] = a[0] + "/arch"
+		})},
+		{"too few args", "args", "usage: clear-project-state.sh", func(t *testing.T, repo, arch string) (string, []string, []string) {
+			return t.TempDir(), []string{repo}, nil
+		}},
+	}
+}
+
+// runRefusal builds a fresh repo, runs the script (or a mutated copy) and
+// returns the output, the error, the git calls, and the repo for inspection.
+func runRefusal(t *testing.T, r refusal, script string) (out string, err error, calls []string, repo, cfg string) {
+	t.Helper()
+	repo, cfg = clearRepo(t, "gm/"+clearID)
+	arch := t.TempDir()
+	home, args, env := r.build(t, repo, arch)
+	out, err, calls = clearRun{script: script, cwd: repo, cfg: cfg, home: home, env: env, args: args}.do(t)
+	return
+}
+
+func TestClearScriptRefusesAndRunsNoGit(t *testing.T) {
+	for _, r := range refusals() {
+		t.Run(r.name, func(t *testing.T) {
+			out, err, calls, repo, cfg := runRefusal(t, r, "")
+			// the build may have created extra directories; compare against a fresh snapshot of git state
+			if err == nil {
 				t.Fatalf("not refused:\n%s", out)
 			}
-			if clearGit(t, repo, "rev-parse", "HEAD") != headBefore || clearGit(t, repo, "branch", "--list") != branches {
-				t.Fatal("git state changed")
+			if !strings.Contains(out, "clear-project-state: "+r.msg) {
+				t.Fatalf("stderr lacks %q:\n%s", r.msg, out)
 			}
-			after := treeSnap(t, repo)
-			if len(after) != len(before) {
-				t.Fatalf("tree changed: %d entries before, %d after", len(before), len(after))
+			if len(calls) != 0 {
+				t.Fatalf("git ran before the refusal: %v", calls)
+			}
+			if _, err := os.Stat(filepath.Join(repo, "junk.txt")); err != nil {
+				t.Fatal("repo was cleaned")
+			}
+			if got := strings.TrimSpace(clearGit(t, repo, "symbolic-ref", "--short", "HEAD")); got != "gm/"+clearID {
+				t.Fatalf("HEAD moved to %q", got)
 			}
 			if _, err := os.Stat(filepath.Join(cfg, "runs", clearID+".json")); err != nil {
 				t.Fatal("run record deleted")
@@ -142,15 +265,35 @@ func TestClearScriptRefusesBadArguments(t *testing.T) {
 	}
 }
 
-func TestClearScriptRefusesHome(t *testing.T) {
-	repo, cfg := clearRepo(t, "gm/"+clearID)
-	cmd := exec.Command("bash", clearScript(t), repo, clearID, "gm/"+clearID, t.TempDir())
-	cmd.Dir = repo
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + repo, "GOPHERMIND_CONFIG_DIR=" + cfg}
-	if out, err := cmd.CombinedOutput(); err == nil {
-		t.Fatalf("a repo equal to $HOME was not refused:\n%s", out)
+// Removing a guard from a copy of the script must make its case fail: the
+// refusal message disappears.
+func TestClearScriptEveryGuardIsLoadBearing(t *testing.T) {
+	src, err := os.ReadFile(clearScript(t))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(repo, "junk.txt")); err != nil {
-		t.Fatal("repo was cleaned")
+	for _, r := range refusals() {
+		t.Run(r.name, func(t *testing.T) {
+			var kept []string
+			removed := 0
+			for _, l := range strings.Split(string(src), "\n") {
+				if strings.Contains(l, "# guard:"+r.tag) {
+					removed++
+					continue
+				}
+				kept = append(kept, l)
+			}
+			if removed == 0 {
+				t.Fatalf("no line is tagged guard:%s", r.tag)
+			}
+			mut := filepath.Join(t.TempDir(), "mutant.sh")
+			if err := os.WriteFile(mut, []byte(strings.Join(kept, "\n")), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			out, _, _, _, _ := runRefusal(t, r, mut)
+			if strings.Contains(out, "clear-project-state: "+r.msg) {
+				t.Fatalf("the refusal survives without its guard %s:\n%s", r.tag, out)
+			}
+		})
 	}
 }
