@@ -247,14 +247,14 @@ func (rc *runCtx) rollForward(ctx context.Context, l *Leaf, dir string, in revlo
 	if err := revlog.Append(dir, commit); err != nil {
 		return "", err
 	}
+	if err := rc.revStep(7); err != nil { // 7a: the commit record is on disk
+		return "", err
+	}
+	// 7b (the repository commit, hook 8) and the reload are part of finishCommitted.
 	if err := rc.finishCommitted(ctx, l, commit, true); err != nil {
 		return "", err
 	}
-	if err := rc.revStep(7); err != nil {
-		return "", err
-	}
-	// Step 8 (the reload) is part of finishCommitted; the hook marks its end.
-	return "", rc.revStep(8)
+	return "", nil
 }
 
 // abortRevision undoes the part of a transaction that a rejected test touched:
@@ -337,6 +337,9 @@ func (rc *runCtx) finishCommitted(ctx context.Context, l *Leaf, in revlog.Record
 			}
 			break
 		}
+	}
+	if err := rc.revStep(8); err != nil { // 7b: the repository commit is made
+		return err
 	}
 	if err := AppendEscalation(rc.o.RunDir, report.Escalation{Kind: "revision", TaskType: "revise", Model: in.Model, NodeID: l.ID, Revision: in.N - 1, Round: rc.round(l.ID)}); err != nil {
 		return err

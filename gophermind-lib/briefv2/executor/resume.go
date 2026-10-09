@@ -174,6 +174,12 @@ func (rc *runCtx) resume(ctx context.Context) error {
 			Message: fmt.Sprintf("executor: the working tree holds %d path(s) that belong to no released leaf, so nothing was changed: %s", len(foreign), strings.Join(shown, ", "))}
 	}
 
+	if err := rc.recoverRevisions(ctx); err != nil {
+		return err
+	}
+	if err := rc.checkRuntimeRevisions(ctx); err != nil {
+		return err
+	}
 	if past && !rc.state.Resumed {
 		rc.state.Resumed = true
 		return rc.state.Save(rc.o.RunDir)
@@ -185,6 +191,7 @@ func (rc *runCtx) resume(ctx context.Context) error {
 // contract file, not its stub) and, while Wave 0 is not done, not one of Wave
 // 0's paths. With diff_only nothing is ever committed, so the declared files
 // of every leaf and Wave 0's own are the result and are never foreign. The
+// The test file of a revision whose intent is open is not foreign. The
 // result is sorted; nothing is stashed, reset or discarded by this check.
 func (rc *runCtx) foreignDirt(dirty []string, released []string) []string {
 	own := map[string]bool{}
@@ -206,6 +213,9 @@ func (rc *runCtx) foreignDirt(dirty []string, released []string) []string {
 		for _, p := range rc.wave0Paths() {
 			own[p] = true
 		}
+	}
+	for _, p := range rc.openRevisionPaths() {
+		own[p] = true
 	}
 	var out []string
 	for _, p := range dirty {

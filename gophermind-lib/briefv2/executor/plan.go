@@ -640,7 +640,7 @@ func verifyRevisions(runDir, repo string, tr *tree.Tree, hashes map[string]strin
 			// no record at all is a deleted or emptied log, not an unrevised node.
 			recs, err := revlog.Read(dir)
 			entries, err2 := os.ReadDir(dir)
-			if err != nil || err2 != nil || (len(recs) == 0 && len(entries) > 0) || nodeRev != 0 {
+			if err != nil || err2 != nil || (len(recs) == 0 && len(entries) > 0 && !stagedOnly(dir, entries, disk)) || nodeRev != 0 {
 				return nil, errPlanChanged()
 			}
 			continue
@@ -689,4 +689,22 @@ func (p *Plan) ReloadLeaf(id string) error {
 	old.Revision, old.Description, old.Behaviour = fresh.Revision, fresh.Description, fresh.Behaviour
 	old.Constraints, old.TestSHA256, old.Guidance = fresh.Constraints, fresh.TestSHA256, fresh.Guidance
 	return nil
+}
+
+// stagedOnly says a folder with no log line is the residue of a kill between
+// staging (step 2) and the intent record (step 3): it holds only the staged
+// files of revisions 0 and 1, and the node and its test are still what
+// revision 0 staged. Anything else with no record is a deleted or emptied log.
+func stagedOnly(dir string, entries []os.DirEntry, d revlog.Disk) bool {
+	allowed := map[string]bool{revlog.BodyFile(0): true, revlog.TestFile(0): true, revlog.BodyFile(1): true, revlog.TestFile(1): true}
+	for _, e := range entries {
+		if !allowed[e.Name()] || !e.Type().IsRegular() {
+			return false
+		}
+	}
+	body0, test0, err := revlog.ReadStaged(dir, 0)
+	if err != nil {
+		return false
+	}
+	return d.NodeSHA256 == revlog.Hash(body0) && d.LeafTestSHA256 == revlog.Hash(test0) && d.TestFileSHA256 == revlog.Hash(test0)
 }
