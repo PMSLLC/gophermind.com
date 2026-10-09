@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"unicode/utf8"
 
@@ -59,7 +60,12 @@ func (lr *leafRun) logRevise(r revlog.Record) error {
 // restarts at rung 2 from the revised node with no memory of the old failures.
 // The names the package declares are read again: the new test may add helpers
 // that a reply must not redeclare.
-func (lr *leafRun) afterRewrite() error {
+func (lr *leafRun) afterRewrite(ctx context.Context) error {
+	row, err := lr.rc.o.Board.Get(ctx, lr.rc.plan.RunID, lr.l.ID)
+	if err != nil {
+		return fmt.Errorf("executor: reading the row of %s failed", lr.l.ID)
+	}
+	lr.cut = len(row.Attempts) // the row counter may be ahead of the node, so revision numbers cannot tell old attempts from new
 	declared, err := declaredNames(lr.rc.o.Repo, lr.l)
 	if err != nil {
 		return err
@@ -68,6 +74,7 @@ func (lr *leafRun) afterRewrite() error {
 	lr.rev = lr.l.Revision
 	lr.cp = map[int]int{}
 	lr.lastSHA = map[string]string{}
+	lr.tooLong = map[string]bool{}
 	lr.prev = packer.Failure{}
 	lr.problem = ""
 	lr.charged = 0
@@ -114,7 +121,7 @@ func (lr *leafRun) rewrite(ctx context.Context, trigger string) error {
 				return aerr
 			}
 			if class == "" {
-				return lr.afterRewrite()
+				return lr.afterRewrite(ctx)
 			}
 			refusal = class // applyRevision wrote the refused record and told the sink
 		case planner.OutcomeFlagged:

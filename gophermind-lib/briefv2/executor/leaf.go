@@ -105,6 +105,7 @@ type leafRun struct {
 	history     []string          // historyLine of every attempt, for the revise prompt (Task 11b)
 	prev        packer.Failure    // the previous failure text, memory only
 	problem     string            // the last CONTRACT_PROBLEM sentence, memory only, never persisted
+	cut         int               // attempts on the blackboard before the last rewrite: previousSHA ignores them
 	refusals    []string          // classes of the refused rewrites of the current revision
 	proposal    string            // the planner's paragraph for the gate, memory only
 	charged     int               // VerdictFail attempts of the current revision
@@ -824,7 +825,7 @@ func (lr *leafRun) previousSHA(ctx context.Context, e ladderEntry) (string, erro
 	sha := ""
 	for i := len(row.Attempts) - 1; i >= 0; i-- {
 		a := row.Attempts[i]
-		if lr.rewriteMode() && a.Revision != lr.rev {
+		if lr.rewriteMode() && (i < lr.cut || a.Revision != lr.rev) {
 			continue
 		}
 		if a.Provider == prov && a.Model == model && a.ReplySHA256 != "" {

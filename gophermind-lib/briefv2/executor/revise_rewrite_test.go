@@ -322,3 +322,113 @@ func TestAReopenedLeafUsesNotesAndARewriteStartsWithNoOldRefusals(t *testing.T) 
 		t.Fatalf("proposal = %q", lr.proposal)
 	}
 }
+
+// seedRowCounter puts the row's revision counter ahead of the node's, as the
+// notes rung or a repair round does.
+func seedRowCounter(t *testing.T, g *rig, id string, n int) {
+	t.Helper()
+	if err := g.board.SetRevision(context.Background(), g.id, id, n); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTheRequestCarriesTheNodeRevisionNotTheRowCounter(t *testing.T) {
+	t.Parallel()
+	g := newRig(t, reviseRewrite(2), func(o *rigOpts) {
+		prev := o.Settings
+		o.Settings = func(cfg *settings.Config) { prev(cfg); cfg.Revise.MaxRefusals = 1 }
+	})
+	id := leafID
+	rc, fc := g.leafRC(t, Script{"implement:" + id: distinct(id, 2)}, true)
+	seedRowCounter(t, g, id, 1) // the node is at revision 0
+	failing(fc, id, 2)
+	fr := &fakeReviser{steps: []func(planner.ReviseRequest) (planner.ReviseProposal, error){unusable(planner.ClassReviseInvalid)}}
+	rc.rev = fr
+	_, err := rc.runLeaf(context.Background(), rc.plan.Leaf(id), leafIn{})
+	asStop(t, err, "escalated", "human_stop")
+	reqs := fr.calls()
+	if len(reqs) != 1 || reqs[0].Revision != 0 || reqs[0].Remaining != 2 {
+		t.Fatalf("requests = %+v, want Revision 0 and Remaining 2 (the node's, not the row counter's)", reqs)
+	}
+	dir, _ := revlog.NodeDir(g.runDir, id)
+	recs, _ := revlog.Read(dir)
+	if len(recs) != 1 || recs[0].Kind != revlog.KindRefused || recs[0].N != 1 {
+		t.Fatalf("log = %+v, want one refused record numbered 1", recs)
+	}
+}
+
+func TestAProposalAndRefusalsDoNotSurviveARetry(t *testing.T) {
+	t.Parallel()
+	g := newRig(t, reviseRewrite(2))
+	id := leafID
+	rc, _ := g.leafRC(t, Script{}, true)
+	ctx := context.Background()
+	if ok, err := g.board.Claim(ctx, g.id, id, "executor:"+id); err != nil || !ok {
+		t.Fatalf("claim: %v %v", ok, err)
+	}
+	if err := g.board.SetStatus(ctx, g.id, id, blackboard.StatusClaimed, blackboard.StatusInProgress); err != nil {
+		t.Fatal(err)
+	}
+	lr, err := rc.newLeafRun(ctx, rc.plan.Leaf(id), leafIn{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lr.worker = "executor:" + id
+	rc.rev = &fakeReviser{steps: []func(planner.ReviseRequest) (planner.ReviseProposal, error){
+		answer(planner.ReviseProposal{Outcome: planner.OutcomeFlagged, Class: planner.ClassContractFlagged, Paragraph: "the old paragraph"}),
+	}}
+	var rs *reviseStop
+	if err := lr.rewrite(ctx, planner.TriggerLadderExhausted); !errors.As(err, &rs) {
+		t.Fatalf("rewrite = %v, want a stop", err)
+	}
+	lr.refusals = []string{planner.ClassReviseInvalid}
+	g.gate.queue = []human.Resolution{{Action: human.ActionRetry}, {Action: human.ActionStop}}
+	if _, done, err := lr.toHuman(ctx, rs.Reason); done || err != nil {
+		t.Fatalf("toHuman (retry) done=%v err=%v", done, err)
+	}
+	if len(lr.refusals) != 0 {
+		t.Fatalf("refusals = %v after a retry: the budget must be fresh", lr.refusals)
+	}
+	// the next escalation does not pass through rewrite (a contract problem after the allowance)
+	_, _, _ = lr.toHuman(ctx, ClassContractProblem)
+	seen := g.gate.Escalations()
+	if len(seen) != 2 || seen[0].Proposal != "the old paragraph" || seen[1].Reason != ClassContractProblem || seen[1].Proposal != "" {
+		t.Fatalf("gate saw %+v: the second escalation must not carry the first one's paragraph", seen)
+	}
+}
+
+func TestAnOldReplyAfterARewriteIsAcceptedWhenTheRowCounterWasAhead(t *testing.T) {
+	t.Parallel()
+	g := newRig(t, reviseRewrite(5))
+	id := leafID
+	last := variant(bad(id, 1), 8)
+	rc, fc := g.leafRC(t, Script{"implement:" + id: {reply(variant(bad(id, 1), 7)), reply(last), reply(last), reply(good(id))}}, true)
+	seedRowCounter(t, g, id, 1) // attempts are recorded at revision 1, the revised node will be at 1 too
+	rc.rev = &fakeReviser{steps: []func(planner.ReviseRequest) (planner.ReviseProposal, error){
+		answer(g.proposal(t, id, "REVISED-SENTENCE for the greeting.", greetTest)),
+	}}
+	fc.LeafScript[id] = []runner.Verdict{failVerdict("test_fail", "x", "TestGreet"), failVerdict("test_fail", "x", "TestGreet"), failVerdict("test_fail", "x", "TestGreet"), failVerdict("test_fail", "x", "TestGreet"), passVerdict()}
+	if out := runOne(t, rc, id); out.Status != blackboard.StatusVerified {
+		t.Fatalf("outcome = %+v: the repeat of a pre-rewrite reply was refused as identical", out)
+	}
+	if got := verdictsOf(t, g.board, id); got != "fail,fail,fail,pass" {
+		t.Fatalf("verdicts = %s", got)
+	}
+}
+
+func TestARewriteForgetsWhichEntriesWereTooLong(t *testing.T) {
+	t.Parallel()
+	g := newRig(t, reviseRewrite(2))
+	rc, _ := g.leafRC(t, Script{}, true)
+	lr, err := rc.newLeafRun(context.Background(), rc.plan.Leaf(leafID), leafIn{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lr.tooLong["a/m1"] = true
+	if err := lr.afterRewrite(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(lr.tooLong) != 0 {
+		t.Fatalf("tooLong = %v: the revised node may fit now", lr.tooLong)
+	}
+}
