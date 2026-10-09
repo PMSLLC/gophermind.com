@@ -5,20 +5,44 @@ import (
 	"sort"
 
 	"gophermind/gophermind-lib/briefv2/blackboard"
+	"gophermind/gophermind-lib/briefv2/pathsafe"
 	"gophermind/gophermind-lib/briefv2/revlog"
 )
 
-// openRevisionPaths are the test files of every node that has a revision chain
-// (ruling R1). A kill after the commit record and before the repository commit
-// leaves the revised test dirty with no open intent, so an open intent alone is
-// not enough: during a resume such a file is this run's own dirt.
+// openRevisionPaths are the test files of nodes with a revision chain whose
+// content is exactly what the chain says this run wrote: the committed tip's
+// test hash, or the after hash of an open intent (ruling R1). A kill after the
+// commit record and before the repository commit leaves such a file dirty. A
+// file with any other content (a person's edit) is not listed, so the
+// foreign-dirt check stops before recovery runs.
 func (rc *runCtx) openRevisionPaths() []string {
 	rc.plan.revMu.Lock()
-	defer rc.plan.revMu.Unlock()
+	type own struct{ file, committed, open string }
+	var list []own
+	for id, t := range rc.plan.Revised {
+		l := rc.plan.byID[id]
+		if l == nil {
+			continue
+		}
+		o := own{file: l.TestFile, committed: t.TestSHA256}
+		if t.Open != nil {
+			o.open = t.Open.TestSHA256After
+		}
+		list = append(list, o)
+	}
+	rc.plan.revMu.Unlock()
 	var out []string
-	for id := range rc.plan.Revised {
-		if l := rc.plan.byID[id]; l != nil {
-			out = append(out, l.TestFile)
+	for _, o := range list {
+		abs, err := pathsafe.ResolveTest(rc.o.Repo, o.file)
+		if err != nil {
+			continue
+		}
+		cur, err := readNoFollow(abs)
+		if err != nil {
+			continue
+		}
+		if h := revlog.Hash(cur); h == o.committed || (o.open != "" && h == o.open) {
+			out = append(out, o.file)
 		}
 	}
 	sort.Strings(out)

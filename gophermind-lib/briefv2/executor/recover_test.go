@@ -267,3 +267,143 @@ func TestResumeFailsWhenTheRuntimeRevisionStaysBehindItsChain(t *testing.T) {
 	}
 	asStop(t, rc2.checkRuntimeRevisions(context.Background()), "failed", "plan_changed")
 }
+
+// killedRun applies the revision in a first process, killed after step k,
+// and returns the folder, the proposal and the run folder's rig for tampering.
+func killedRun(t *testing.T, k int) (string, *rig, planner.ReviseProposal, *Leaf) {
+	t.Helper()
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	g1 := newRigIn(t, dir, Script{})
+	prop := g1.proposal(t, leafID, "REVISED-SENTENCE for the greeting.", greetTest)
+	rc1, err := startRun(context.Background(), g1.options())
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := rc1.plan.Leaf(leafID)
+	rc1.afterRevStep = killAt(k)
+	_, err = rc1.applyRevision(context.Background(), l, prop, planner.TriggerLadderExhausted)
+	if k > 0 && !errors.Is(err, errRevisionKilled) {
+		t.Fatalf("applyRevision: %v", err)
+	}
+	rc1.close()
+	g1.close()
+	return dir, g1, prop, l
+}
+
+func TestResumeStopsOnAHumanEditOfARevisedTestFile(t *testing.T) {
+	t.Parallel()
+	edit := func(t *testing.T, g *rig, l *Leaf) {
+		p := testPath(g, l)
+		if err := os.WriteFile(p, append(readFile(t, p), []byte("// a person's edit\n")...), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, k := range map[string]int{"committed revision": 8, "open intent": 3} {
+		k := k
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			dir, g1, _, l := killedRun(t, k)
+			if k == 8 {
+				// finish the whole transaction first, then edit
+				g2 := newRigIn(t, dir, Script{})
+				rc2, err := startRun(context.Background(), g2.options())
+				if err != nil {
+					t.Fatal(err)
+				}
+				rc2.close()
+				g2.close()
+			}
+			edit(t, g1, l)
+			// LoadPlan proves the chain against the test file before resume's
+			// foreign-dirt check can run, so a person's edit stops there, with
+			// nothing modified and no recovery.
+			_, err := LoadPlan(g1.runDir, g1.repo)
+			asStop(t, err, "failed", "plan_changed")
+		})
+	}
+}
+
+func TestOpenRevisionPathsListsATestFileOnlyWithTheRecordedContent(t *testing.T) {
+	t.Parallel()
+	dir, g1, prop, _ := killedRun(t, 7) // the commit record is written, the repository commit is not
+	_ = g1
+	g2 := newRigIn(t, dir, Script{})
+	plan, err := LoadPlan(g2.runDir, g2.repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rc := &runCtx{plan: plan, o: g2.options()}
+	l := plan.Leaf(leafID)
+	if got := rc.openRevisionPaths(); len(got) != 1 || got[0] != l.TestFile {
+		t.Fatalf("recorded content: %v", got)
+	}
+	if revlog.Hash(readFile(t, testPath(g2, l))) != prop.TestSHA256 {
+		t.Fatal("setup: the file is not the proposed test")
+	}
+	os.WriteFile(testPath(g2, l), []byte(greetTest+"// a person's edit\n"), 0o644)
+	if got := rc.openRevisionPaths(); len(got) != 0 {
+		t.Fatalf("an edited file is listed as the run's own: %v", got)
+	}
+}
+
+func TestLoadPlanRefusesAStagedOnlyFolderThatIsNotAKillBeforeTheIntent(t *testing.T) {
+	t.Parallel()
+	cases := map[string]func(t *testing.T, g *rig, dir string){
+		"a staged body-1 changes a frozen field": func(t *testing.T, g *rig, dir string) {
+			p := filepath.Join(dir, revlog.BodyFile(1))
+			raw := string(readFile(t, p))
+			if !strings.Contains(raw, `"kind": "function"`) {
+				t.Fatal("setup: no kind field")
+			}
+			os.WriteFile(p, []byte(strings.Replace(raw, `"kind": "function"`, `"kind": "package"`, 1)), 0o600)
+		},
+		"the node file differs from the staged body-0": func(t *testing.T, g *rig, dir string) {
+			p := g.nodeFile(leafID)
+			os.WriteFile(p, append(readFile(t, p), ' '), 0o600)
+		},
+		"an unknown file in the folder": func(t *testing.T, g *rig, dir string) {
+			os.WriteFile(filepath.Join(dir, revlog.BodyFile(2)), []byte("{}"), 0o600)
+		},
+		"the log removed after a commit": func(t *testing.T, g *rig, dir string) {
+			os.Remove(filepath.Join(dir, "log.jsonl"))
+		},
+	}
+	for name, mutate := range cases {
+		name, mutate := name, mutate
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			k := 2
+			if strings.HasPrefix(name, "the log removed") {
+				k = 0 // not killed: applyRevision runs to the end
+			}
+			_, g, _, _ := killedRun(t, k)
+			dir, _ := revlog.NodeDir(g.runDir, leafID)
+			if k == 2 {
+				if _, err := LoadPlan(g.runDir, g.repo); err != nil {
+					t.Fatalf("setup: a kill before the intent must load: %v", err)
+				}
+			}
+			mutate(t, g, dir)
+			_, err := LoadPlan(g.runDir, g.repo)
+			asStop(t, err, "failed", "plan_changed")
+		})
+	}
+}
+
+// noRevisionBoard drops SetRevision, as a board that lost the write would.
+type noRevisionBoard struct{ blackboard.Blackboard }
+
+func (noRevisionBoard) SetRevision(context.Context, string, string, int) error { return nil }
+
+func TestResumeFaultsWhenRecoveryLeavesTheRuntimeRevisionBehindItsChain(t *testing.T) {
+	t.Parallel()
+	dir, g1, _, _ := killedRun(t, 0)
+	if err := g1.board.SetRevision(context.Background(), g1.id, leafID, 0); err != nil {
+		t.Fatal(err)
+	}
+	g2 := newRigIn(t, dir, Script{})
+	o := g2.options()
+	o.Board = noRevisionBoard{g2.board}
+	_, err := startRun(context.Background(), o)
+	asStop(t, err, "failed", "plan_changed")
+}

@@ -694,7 +694,11 @@ func (p *Plan) ReloadLeaf(id string) error {
 // stagedOnly says a folder with no log line is the residue of a kill between
 // staging (step 2) and the intent record (step 3): it holds only the staged
 // files of revisions 0 and 1, and the node and its test are still what
-// revision 0 staged. Anything else with no record is a deleted or emptied log.
+// revision 0 staged, and a staged revision 1 changes no frozen field. Anything
+// else with no record is a deleted or emptied log. It compares with the STAGED
+// revision 0, not with the approved hash (LoadPlan has no run state): a
+// rewritten node-and-body-0 pair is caught downstream, where resume compares
+// State.PlanHashes with Plan.Hashes and the approval is verified.
 func stagedOnly(dir string, entries []os.DirEntry, d revlog.Disk) bool {
 	allowed := map[string]bool{revlog.BodyFile(0): true, revlog.TestFile(0): true, revlog.BodyFile(1): true, revlog.TestFile(1): true}
 	for _, e := range entries {
@@ -704,6 +708,9 @@ func stagedOnly(dir string, entries []os.DirEntry, d revlog.Disk) bool {
 	}
 	body0, test0, err := revlog.ReadStaged(dir, 0)
 	if err != nil {
+		return false
+	}
+	if body1, rerr := os.ReadFile(filepath.Join(dir, revlog.BodyFile(1))); rerr == nil && revlog.CheckFrozen(body0, body1) != nil {
 		return false
 	}
 	return d.NodeSHA256 == revlog.Hash(body0) && d.LeafTestSHA256 == revlog.Hash(test0) && d.TestFileSHA256 == revlog.Hash(test0)

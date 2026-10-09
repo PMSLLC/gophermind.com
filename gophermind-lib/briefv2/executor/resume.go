@@ -191,8 +191,10 @@ func (rc *runCtx) resume(ctx context.Context) error {
 // contract file, not its stub) and, while Wave 0 is not done, not one of Wave
 // 0's paths. With diff_only nothing is ever committed, so the declared files
 // of every leaf and Wave 0's own are the result and are never foreign. The
-// The test file of a revision whose intent is open is not foreign. The
-// result is sorted; nothing is stashed, reset or discarded by this check.
+// test file of a revised node is not foreign only while its content is the
+// one the chain recorded (the tip's, or an open intent's after hash); any
+// other content is. The result is sorted; nothing is stashed, reset or
+// discarded by this check.
 func (rc *runCtx) foreignDirt(dirty []string, released []string) []string {
 	own := map[string]bool{}
 	mine := func(l *Leaf) {
