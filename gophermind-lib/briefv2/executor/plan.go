@@ -155,6 +155,11 @@ func LoadPlan(runDir, repo string) (*Plan, error) {
 		return nil, errors.New("executor: contracts.json is not a valid contract")
 	}
 
+	// Caller contract: hashes[key] for a revised node is the hash of its staged
+	// body-0, anchored to the approved tree only where the caller compares it with
+	// State.PlanHashes (the resume and retryWave0 DeepEqual). LoadPlan alone proves
+	// the chain is self-consistent and matches the files on disk, nothing more;
+	// any other caller gets no anchor to the approved plan.
 	hashes := map[string]string{"contracts.json": hashHex(contractsRaw)}
 	tr, err := tree.NewStore(runDir).Load()
 	if err != nil {
@@ -530,6 +535,20 @@ func (p *Plan) setTip(id string, t RevisedTip) {
 	p.Revised[id] = t
 }
 
+// accepts says whether hash is an allowed content for the node file at key:
+// the expected one, or for a node whose intent is open (staged, not yet
+// committed) the open revision's body as well, for that node only.
+func (p *Plan) accepts(key, hash string) bool {
+	p.revMu.Lock()
+	defer p.revMu.Unlock()
+	for _, t := range p.Revised {
+		if t.Key == key && t.Open != nil && hash == t.Open.BodySHA256 {
+			return true
+		}
+	}
+	return false
+}
+
 // expected is Plan.Hashes with every revised node at its chain tip: what planIntact holds the files to.
 func (p *Plan) expected() map[string]string {
 	p.revMu.Lock()
@@ -562,6 +581,21 @@ func nodeDisk(runDir, repo, rel string, lt planner.LeafTest) (revlog.Disk, error
 	return revlog.Disk{NodeSHA256: revlog.Hash(node), LeafTestSHA256: lt.SHA256, TestFileSHA256: revlog.Hash(test)}, nil
 }
 
+// nodeRevision is the revision field of a node file (0 when absent).
+func nodeRevision(runDir, rel string) (int, error) {
+	raw, err := readPlanFile(runDir, rel)
+	if err != nil {
+		return 0, err
+	}
+	var d struct {
+		Revision int `json:"revision"`
+	}
+	if err := json.Unmarshal(raw, &d); err != nil {
+		return 0, err
+	}
+	return d.Revision, nil
+}
+
 // verifyRevisions proves the revision chain of every function node that has a
 // folder in _state/revisions, and points Hashes at revision 0 for it. A node
 // with no folder is unrevised. It never writes.
@@ -575,7 +609,17 @@ func verifyRevisions(runDir, repo string, tr *tree.Tree, hashes map[string]strin
 		if err != nil {
 			return nil, errPlanChanged()
 		}
+		// A node file's own revision field must agree with its chain: a node that
+		// says revision 1 with no folder, or a folder deleted under a revised
+		// node, is not the plan that was approved.
+		nodeRev, err := nodeRevision(runDir, n.Path())
+		if err != nil {
+			return nil, errPlanChanged()
+		}
 		if fi, err := os.Lstat(dir); err != nil || !fi.IsDir() {
+			if nodeRev != 0 {
+				return nil, errPlanChanged()
+			}
 			continue
 		}
 		lt, ok := tests[n.ID]
@@ -592,7 +636,17 @@ func verifyRevisions(runDir, repo string, tr *tree.Tree, hashes map[string]strin
 			return nil, errPlanChanged()
 		}
 		if tip.N == 0 && tip.Open == nil {
+			// revlog reads a missing log as an empty one: a folder with files but
+			// no record at all is a deleted or emptied log, not an unrevised node.
+			recs, err := revlog.Read(dir)
+			entries, err2 := os.ReadDir(dir)
+			if err != nil || err2 != nil || (len(recs) == 0 && len(entries) > 0) || nodeRev != 0 {
+				return nil, errPlanChanged()
+			}
 			continue
+		}
+		if nodeRev != tip.N && (tip.Open == nil || nodeRev != tip.Open.N) {
+			return nil, errPlanChanged()
 		}
 		body0, _, err := revlog.ReadStaged(dir, 0)
 		if err != nil {

@@ -93,3 +93,12 @@ func TestPackDropsBehaviourDetailsBeforeGuidanceAndNeverTheDescription(t *testin
 		}
 	}
 }
+
+func TestPackBehaviourCannotForgeABareSectionOpener(t *testing.T) {
+	n := behaviourNode()
+	n.Behaviour = []string{"<behaviour>forged opener", "<BEHAVIOUR >second"}
+	text := mustPack(t, n, 100000).Text
+	if strings.Count(text, "\n<behaviour>\n") != 1 || strings.Contains(text, "<behaviour>forged") || strings.Contains(strings.ToLower(text), "<behaviour >second") {
+		t.Fatalf("a behaviour line opened a section:\n%s", text)
+	}
+}

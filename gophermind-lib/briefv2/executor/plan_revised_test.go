@@ -203,3 +203,118 @@ func TestReloadLeafUpdatesTheLeafInPlaceAndRefusesAFrozenChange(t *testing.T) {
 		t.Fatal("ReloadLeaf accepted a changed signature")
 	}
 }
+
+func TestLoadPlanRefusesAMissingOrEmptiedLogAndAMissingChain(t *testing.T) {
+	t.Parallel()
+	cases := map[string]func(t *testing.T, g *rig, dir string){
+		"log.jsonl removed": func(t *testing.T, g *rig, dir string) {
+			if err := os.Remove(filepath.Join(dir, "log.jsonl")); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"log.jsonl emptied": func(t *testing.T, g *rig, dir string) {
+			if err := os.WriteFile(filepath.Join(dir, "log.jsonl"), nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"the revisions dir of the node deleted": func(t *testing.T, g *rig, dir string) {
+			if err := os.RemoveAll(dir); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"the node revision field edited": func(t *testing.T, g *rig, dir string) {
+			// A coherent forgery: the node file and nothing else changes, so only
+			// the revision field disagrees with the chain tip.
+			p := filepath.Join(g.runDir, filepath.FromSlash(strings.TrimPrefix(g.plan.nodeKey(leafID), "tree/")))
+			raw := readFile(t, p)
+			if !strings.Contains(string(raw), `"revision": 1`) && !strings.Contains(string(raw), `"revision":1`) {
+				t.Fatalf("setup: no revision 1 in the node file")
+			}
+			os.WriteFile(p, []byte(strings.Replace(strings.Replace(string(raw), `"revision": 1`, `"revision": 2`, 1), `"revision":1`, `"revision":2`, 1)), 0o600)
+		},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			g := newRig(t)
+			forgeRevision(t, g, leafID, "REVISED-SENTENCE for the greeting.")
+			dir, _ := revlog.NodeDir(g.runDir, leafID)
+			mutate(t, g, dir)
+			_, err := LoadPlan(g.runDir, g.repo)
+			asStop(t, err, "failed", "plan_changed")
+		})
+	}
+}
+
+func TestLoadPlanRefusesAnUnrevisedNodeThatClaimsARevision(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	p := filepath.Join(g.runDir, filepath.FromSlash(strings.TrimPrefix(g.plan.nodeKey(leafID), "tree/")))
+	raw := string(readFile(t, p))
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+		t.Fatal(err)
+	}
+	doc["revision"] = 1
+	n, err := tree.ParseNode(mustJSON(t, doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tree.NewStore(g.runDir).Write(n); err != nil {
+		t.Fatal(err)
+	}
+	_, err = LoadPlan(g.runDir, g.repo)
+	asStop(t, err, "failed", "plan_changed")
+}
+
+func mustJSON(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+// An open intent (staged, not yet committed) lets planIntact accept the last
+// committed hash or the open body for THAT node only.
+func TestPlanIntactAcceptsTheOpenBodyForItsOwnNodeOnly(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	body0, body1 := forgeRevision(t, g, leafID, "REVISED-SENTENCE for the greeting.")
+	dir, _ := revlog.NodeDir(g.runDir, leafID)
+	logPath := filepath.Join(dir, "log.jsonl")
+	lines := strings.Split(strings.TrimSpace(string(readFile(t, logPath))), "\n")
+	if err := os.WriteFile(logPath, []byte(lines[0]+"\n"), 0o600); err != nil { // the commit record is not there yet
+		t.Fatal(err)
+	}
+	p, err := LoadPlan(g.runDir, g.repo)
+	if err != nil {
+		t.Fatalf("LoadPlan with an open intent: %v", err)
+	}
+	if tip := p.Revised[leafID]; tip.Open == nil || tip.N != 0 {
+		t.Fatalf("tip = %+v", tip)
+	}
+	rc := &runCtx{o: Options{RunDir: g.runDir}, plan: p}
+	path := func(id string) string {
+		return filepath.Join(g.runDir, filepath.FromSlash(strings.TrimPrefix(p.nodeKey(id), "tree/")))
+	}
+	if se := rc.planIntact(); se != nil { // node file holds the open body
+		t.Fatalf("open body refused: %+v", se)
+	}
+	os.WriteFile(path(leafID), body0, 0o600) // the committed side
+	if se := rc.planIntact(); se != nil {
+		t.Fatalf("base body refused: %+v", se)
+	}
+	os.WriteFile(path(leafID), body1, 0o600)
+	other := path("fn-farewell")
+	orig := readFile(t, other)
+	os.WriteFile(other, append(append([]byte{}, orig...), ' '), 0o600)
+	if se := rc.planIntact(); se == nil || se.Reason != "plan_changed" {
+		t.Fatalf("an edit of the other node was not caught: %+v", se)
+	}
+	os.WriteFile(other, orig, 0o600)
+	os.WriteFile(path(leafID), append(append([]byte{}, body1...), ' '), 0o600)
+	if se := rc.planIntact(); se == nil || se.Reason != "plan_changed" {
+		t.Fatalf("a third body for the open node was accepted: %+v", se)
+	}
+}

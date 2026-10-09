@@ -169,7 +169,7 @@ func (rc *runCtx) planIntact() *stopError {
 	for key, want := range rc.plan.expected() {
 		rel := strings.TrimPrefix(key, "tree/")
 		raw, err := readPlanFile(rc.o.RunDir, rel)
-		if err != nil || hashHex(raw) != want {
+		if err != nil || (hashHex(raw) != want && !rc.plan.accepts(key, hashHex(raw))) {
 			return bad
 		}
 	}
