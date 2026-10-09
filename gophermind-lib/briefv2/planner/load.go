@@ -171,8 +171,11 @@ func resolveRepo(repo string) (string, error) {
 }
 
 // ExpandRepo expands a leading ~ and makes the path absolute. It touches no
-// file: the path need not exist.
+// file: the path need not exist. An empty path stays empty.
 func ExpandRepo(repo string) (string, error) {
+	if repo == "" {
+		return "", nil
+	}
 	if repo == "~" || strings.HasPrefix(repo, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {

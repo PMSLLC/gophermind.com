@@ -132,17 +132,25 @@ path, so nothing is guessed. Per project (keyed by the brief id):
 | vault, `gophermind.yaml`, `gomodcache/` | `~/.gophermind/` | keep |
 | the two databases | external | drop and recreate |
 
-Clear with `scripts/clear-project-state.sh`. It checks every argument before
-the first git command: the repo must be an absolute path, not `/` and not
-`$HOME`, and hold a `.git` directory; the id must match `gm-YYYY-MM-DD-NNN`; the
-work branch must be a valid branch name that does not start with a dash and is
-not the base branch; the archive directory must exist. Any failure exits 1 and
-touches nothing. Then it archives the whole run folder, puts HEAD on the base
-branch (`BASE_BRANCH`, default `main`), deletes the work branch, runs
-`git reset --hard goal-baseline` (`BASELINE` overrides) and
-`git clean -fdx -e .remember`, and removes what clean left behind: the run
-folder, the scratch folder and `$GOPHERMIND_CONFIG_DIR/runs/<id>.json`
-(default `~/.gophermind/runs/<id>.json`), each by its exact path.
+Clear with `scripts/clear-project-state.sh <repo> <id> <work-branch> <archive-dir>`.
+It checks every argument before the first git command and exits 1, touching
+nothing, on any failure. The repo must be an absolute path with no `..`
+component; it is resolved through symlinks first, and the resolved path must not
+be `/`, must not be `$HOME` and must not contain `$HOME`, and must hold a `.git`
+directory. The id must match `gm-YYYY-MM-DD-NNN`. The work branch, `BASE_BRANCH`
+(default `main`) and `BASELINE` (default `goal-baseline`) must be plain ref
+names (letters, digits, `/ _ . -`; no leading dash; no `..`). The work branch
+must not be the base branch. The archive directory must exist and be outside
+the repo.
+
+Then it archives the WHOLE `<repo>/.gophermind` folder (every run id, not only
+this one) into the archive directory, because `git clean -fdx` removes
+untracked files, including the run folders of other ids. After the archive it
+puts HEAD on the base branch, deletes the work branch, runs
+`git reset --hard goal-baseline` and `git clean -fdx -e .remember`, and removes
+what clean left behind by exact path: the run folder, the scratch folder and
+`$GOPHERMIND_CONFIG_DIR/runs/<id>.json` (default `~/.gophermind/runs/<id>.json`).
+Every git call after validation is `git -C <repo>`.
 
 ```bash
 BRIEF=gophermind-lib/briefv2/testdata/ai-venture-studio-server-brief.md
@@ -176,7 +184,7 @@ Read first, then archive.
 - `gophermind brief status <id>`: each stage and what the run waits for.
 - `gophermind brief calls <id>`: the model call ledger.
 
-Archive the whole run folder, which holds the ledger `_state/calls.jsonl`, the
+Archive the run folder (the clear script archives the whole `.gophermind` folder for you), which holds the ledger `_state/calls.jsonl`, the
 events `_state/events.jsonl` and `attempts/` (the saved attempts), with the
 `tar` line in section 4, and write the attempt record from it.
 
