@@ -339,6 +339,6 @@ func (rc *runCtx) buildReport(ctx context.Context, fin finishResult, started tim
 		WeakTests: weak, Repairs: repairs, LedgerErrors: ledgerErrors,
 		Failures: failures, Landing: fin.Landing,
 		IgnoredDuplicates: ignored, IgnoredDuplicatesTotal: ignoredTotal, IgnoredDuplicatesTruncated: ignoredCut,
-		PlanLeaves: leafIDs, LeafDeps: deps,
+		PlanLeaves: leafIDs, LeafDeps: deps, Revised: rc.revisedLeaves(),
 	})
 }

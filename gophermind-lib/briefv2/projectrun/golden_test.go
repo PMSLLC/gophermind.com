@@ -111,6 +111,14 @@ executor.requirements_covered
 executor.requirements_covered.covered
 executor.requirements_covered.total
 executor.resumed
+executor.revised_leaves
+executor.revised_leaves[].changed
+executor.revised_leaves[].flag
+executor.revised_leaves[].node_id
+executor.revised_leaves[].refusals
+executor.revised_leaves[].revisions
+executor.revised_leaves[].tests_rewritten
+executor.rewritten_leaves
 executor.run_id
 executor.sandbox
 executor.schema_version

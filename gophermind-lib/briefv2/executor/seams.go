@@ -37,6 +37,8 @@ type Caller interface {
 // validated proposal. *planner.Reviser satisfies it; tests use a fake.
 type Reviser interface {
 	Revise(ctx context.Context, req planner.ReviseRequest) (planner.ReviseProposal, error)
+	// RecordDecision stores a person's answer about a leaf the stage touched.
+	RecordDecision(d planner.RevisionDecision) (string, error)
 }
 
 // Secrets is the part of *vault.Vault the executor needs.

@@ -46,6 +46,13 @@ func (r Report) Summary() string {
 			e.ModelEscalations, e.RevisionEscalations, e.HumanEscalations, e.PromptTokens, e.CompletionTokens)
 	}
 	line("Weak tests: %d  Repairs: %d", r.WeakTests, r.Repairs)
+	if len(r.Revised) > 0 {
+		line("Rewritten leaves: %d", r.Rewritten)
+		for _, v := range r.Revised {
+			line("  %s: revisions %d, changed %s, tests rewritten %t, flag %s, refusals %s",
+				esc(v.NodeID), v.Revisions, joinOrNone(v.Changed, " "), v.TestsRewritten, joinOrNone([]string{v.Flag}, ""), joinOrNone(v.Refusals, ", "))
+		}
+	}
 	line("Constraints checked: %d of %d", r.Constraints.Passed, r.Constraints.Total)
 	if len(r.Failures) > 0 {
 		line("Failures:")
@@ -68,4 +75,18 @@ func (r Report) Summary() string {
 	line("Requirements covered: %d of %d", r.Requirements.Covered, r.Requirements.Total)
 	line("Acceptance passed: %d of %d", r.Acceptance.Passed, r.Acceptance.Total)
 	return b.String()
+}
+
+// joinOrNone prints a list for the summary, "none" when it has no non-empty item.
+func joinOrNone(list []string, sep string) string {
+	var keep []string
+	for _, s := range list {
+		if s != "" {
+			keep = append(keep, esc(s))
+		}
+	}
+	if len(keep) == 0 {
+		return "none"
+	}
+	return strings.Join(keep, sep)
 }

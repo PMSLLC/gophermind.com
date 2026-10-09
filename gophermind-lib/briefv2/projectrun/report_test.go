@@ -15,11 +15,13 @@ import (
 
 func sampleExecutor() *report.Report {
 	return &report.Report{
-		SchemaVersion: 2, RunID: "r1", Status: "complete", Sandbox: "off",
+		SchemaVersion: report.SchemaVersion, RunID: "r1", Status: "complete", Sandbox: "off",
 		Requirements: report.Coverage{Covered: 7, Total: 7},
 		Acceptance:   report.Passed{Passed: 2, Total: 2},
 		Waves:        3,
 		Nodes:        report.NodeCounts{Total: 5, Verified: 5},
+		Rewritten:    1,
+		Revised:      []report.RevisedLeaf{{NodeID: "fn-greet", Revisions: 1, Changed: []string{"description"}, TestsRewritten: true, Flag: "contract_flagged", Refusals: []string{"revise_noop"}}},
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 
 	"gophermind/gophermind-lib/briefv2/blackboard"
 	"gophermind/gophermind-lib/briefv2/human"
+	"gophermind/gophermind-lib/briefv2/planner"
 	"gophermind/gophermind-lib/briefv2/report"
 	"gophermind/gophermind-lib/briefv2/settings"
 )
@@ -66,6 +67,16 @@ func (rc *runCtx) round(id string) int {
 	stateMu.Lock()
 	defer stateMu.Unlock()
 	return rc.state.ExtraRevisions[id]
+}
+
+// isRevisionReason says an escalation is about the revise stage: a flag, a
+// locked test, a secret in a reply, or a refusal class.
+func isRevisionReason(reason string) bool {
+	switch reason {
+	case planner.ClassContractFlagged, planner.ClassSplitRequired, planner.ClassTestsLocked, planner.ClassSecretInReply:
+		return true
+	}
+	return strings.HasPrefix(reason, "revise_")
 }
 
 // lastModel is the provider/model of the last attempt of the leaf, "" when it
@@ -145,6 +156,17 @@ func (rc *runCtx) escalateWith(ctx context.Context, l *Leaf, from blackboard.Sta
 		rec.AnsweredBy = by
 		if aerr := AppendEscalation(rc.o.RunDir, rec); aerr != nil {
 			return human.Resolution{}, aerr
+		}
+		if rc.rev != nil && (isRevisionReason(reason) || revisions > 0) {
+			// The decision store, not the question store: answers.json is inside
+			// the plan hash. Revision is the node revision (R4). The call comes
+			// before the retry branch raises ExtraRevisions, so Round is the
+			// number of retries granted before this answer.
+			note := rc.scrubText(strings.TrimSpace(res.Note))
+			if _, derr := rc.rev.RecordDecision(planner.RevisionDecision{RunDir: rc.o.RunDir, NodeID: l.ID, Revision: l.Revision,
+				Class: reason, Action: string(res.Action), Note: note, AnsweredBy: by, Round: rc.round(l.ID)}); derr != nil {
+				return human.Resolution{}, derr
+			}
 		}
 	}
 	switch {

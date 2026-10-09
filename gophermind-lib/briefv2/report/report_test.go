@@ -125,7 +125,7 @@ func TestReportHandCount(t *testing.T) {
 	if r.Requirements != (report.Coverage{Covered: 3, Total: 3}) || r.Acceptance != (report.Passed{Passed: 2, Total: 2}) || r.Constraints != (report.Passed{Passed: 1, Total: 1}) {
 		t.Fatalf("proof %+v %+v %+v", r.Requirements, r.Acceptance, r.Constraints)
 	}
-	if r.ExitCode != 4 || r.Status != "escalated" || r.SchemaVersion != 2 {
+	if r.ExitCode != 4 || r.Status != "escalated" || r.SchemaVersion != 3 {
 		t.Fatalf("status %+v", r)
 	}
 	if r.StartedAt != "2026-09-30T01:00:00Z" {

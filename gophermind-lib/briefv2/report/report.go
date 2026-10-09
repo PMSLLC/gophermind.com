@@ -31,9 +31,11 @@ import (
 const (
 	FileName = "report.json"
 	// SchemaVersion is bumped on any change to the JSON shape.
-	SchemaVersion = 2
+	SchemaVersion = 3
 	// minSchemaVersion is the oldest report Read still accepts. Version 2 added
-	// human_escalation_log (a new optional key); version 1 files read unchanged.
+	// human_escalation_log and version 3 added revised_leaves and
+	// rewritten_leaves (new optional keys); older files read unchanged, and an
+	// older binary refuses a newer report because Read rejects unknown fields.
 	minSchemaVersion = 1
 	maxReadBytes     = 8 << 20
 )
@@ -105,6 +107,17 @@ type Escalation struct {
 	Answers int `json:"answers,omitempty"`
 }
 
+// RevisedLeaf is what the report says about a leaf the planner's revise stage
+// rewrote, flagged or refused: ids, counts, field names and classes only.
+type RevisedLeaf struct {
+	NodeID         string   `json:"node_id"`
+	Revisions      int      `json:"revisions"`
+	Changed        []string `json:"changed,omitempty"`
+	TestsRewritten bool     `json:"tests_rewritten,omitempty"`
+	Flag           string   `json:"flag,omitempty"`
+	Refusals       []string `json:"refusals,omitempty"`
+}
+
 type Report struct {
 	SchemaVersion int    `json:"schema_version"`
 	RunID         string `json:"run_id"`
@@ -130,9 +143,13 @@ type Report struct {
 	Leaves       []LeafModel `json:"leaves"`
 	WeakTests    int         `json:"weak_tests"`
 	Repairs      int         `json:"repairs"`
-	Incomplete   bool        `json:"incomplete,omitempty"`
-	Failures     []string    `json:"failures,omitempty"`
-	Landing      *Landing    `json:"landing,omitempty"`
+	// Revised lists the leaves the planner's revise stage rewrote, flagged or
+	// refused; Rewritten counts those rewritten at least once.
+	Revised    []RevisedLeaf `json:"revised_leaves,omitempty"`
+	Rewritten  int           `json:"rewritten_leaves,omitempty"`
+	Incomplete bool          `json:"incomplete,omitempty"`
+	Failures   []string      `json:"failures,omitempty"`
+	Landing    *Landing      `json:"landing,omitempty"`
 	// PlannerWarnings lists the duplicate ids the planner dropped (first
 	// emission kept), one line per id and a total line; ids and counts only.
 	PlannerWarnings []string `json:"planner_warnings,omitempty"`
@@ -167,6 +184,7 @@ type Input struct {
 	LedgerErrors          int
 	Failures              []string
 	Landing               *Landing
+	Revised               []RevisedLeaf
 	// IgnoredDuplicates, Total and Truncated are what
 	// planner.IgnoredDuplicates(runDir) returns. An entry that is not
 	// "<component|type|function> <id or <n bytes>>" is dropped.
@@ -258,6 +276,22 @@ func Build(in Input) (Report, error) {
 			return Report{}, fmt.Errorf("report: unknown escalation kind (%d bytes)", len(es.Kind))
 		}
 	}
+	for _, v := range in.Revised {
+		v.NodeID, v.Flag = cleanLine(v.NodeID, 64), cleanLine(v.Flag, 40)
+		v.Changed = append([]string(nil), v.Changed...)
+		for i := range v.Changed {
+			v.Changed[i] = cleanLine(v.Changed[i], 48)
+		}
+		v.Refusals = append([]string(nil), v.Refusals...)
+		for i := range v.Refusals {
+			v.Refusals[i] = cleanLine(v.Refusals[i], 40)
+		}
+		if v.Revisions > 0 {
+			r.Rewritten++
+		}
+		r.Revised = append(r.Revised, v)
+	}
+	sort.Slice(r.Revised, func(i, j int) bool { return r.Revised[i].NodeID < r.Revised[j].NodeID })
 	r.Failures = completeFailures(in)
 	r.PlannerWarnings = plannerWarnings(in)
 

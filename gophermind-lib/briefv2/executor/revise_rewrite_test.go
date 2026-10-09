@@ -34,6 +34,11 @@ func (f *fakeReviser) Revise(_ context.Context, req planner.ReviseRequest) (plan
 	return st(req)
 }
 
+// RecordDecision is the real decision store: it does no model call.
+func (f *fakeReviser) RecordDecision(d planner.RevisionDecision) (string, error) {
+	return planner.NewReviser(planner.Deps{}).RecordDecision(d)
+}
+
 func (f *fakeReviser) calls() []planner.ReviseRequest {
 	f.mu.Lock()
 	defer f.mu.Unlock()
