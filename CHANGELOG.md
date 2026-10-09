@@ -6,6 +6,14 @@ All notable changes to GopherMind are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`/project` now runs the v2 planner and executor in one command.** `gophermind project <brief>` (and `/project <brief>` in the TUI) runs the preflight, plans the brief and builds it. Unattended runs take Clarify recommendations and confirm the understanding by rule, recording `confirmed_by: unattended` and its hash. A failed preflight exits 6 with a numbered list of what a human must provide. `--graded` marks a single graded attempt. The project report carries a node-class table. `scripts/build-dev-binary.sh` builds the version-stamped dev binary.
+
+### Changed
+
+- The v1 planner is now `/plan-v1` (and `/plan-v1-execute`); it is deprecated and will be removed after the AI Venture Studio release.
+
 ## [0.9.0] - 2026-09-29
 
 ### Added

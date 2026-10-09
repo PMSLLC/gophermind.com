@@ -6,6 +6,9 @@ directory documents the foundations (brief loading, the secret vault, the node
 tree with waves, contract slicing, the run directory), the planner, which takes
 a brief as far as an approved plan with its tests written, and the executor,
 which builds that plan, proves it and commits it (`gophermind brief run`).
+`brief plan` and `brief run` are the stepwise commands; `/project` (and
+`gophermind project`) chains them into one command that needs no human step
+(see "One command: /project").
 
 ## Commands
 
@@ -72,6 +75,106 @@ a component in the tree. An empty or wrong directory fails with exit 1. Two
 nodes that would be written to the same file are rejected when the tree is
 built. Readiness of a component or the root looks at its children only and
 ignores its own `depends_on` (D2).
+
+## One command: /project
+
+`/project <brief-path> [flags]` in the TUI and `gophermind project <brief-path>
+[flags]` on the command line take a brief from nothing to a built, proved and
+committed result in one process. It runs the preflight, writes any generated
+secrets, plans the brief (Load, Clarify, Confirm, Contract, Decompose, Enrich,
+Coverage, Approve, Test-writer), runs the executor, writes
+`<run folder>/_state/project.json` and prints the final report. The planner and
+the executor share one router, one blackboard and one ledger over the same run
+folder. A planner stage that fails stops the run with `stop_reason:
+plan:<stage>`; the report is still written and the executor is not called. The
+brief path is the only positional argument. The old form `/project <name>
+<brief>` is refused. Flags may come before or after the path, each flag may be
+given once (`--generate` may repeat), and flags take two dashes.
+
+The v1 planner is now `/plan-v1` (with `/plan-v1-execute`). Both print a
+deprecation line and will be removed after the AI Venture Studio release.
+`gophermind brief plan` and `brief run` are unchanged.
+
+Flags:
+
+```text
+--repo <path>                 target repo; default the brief's repo field
+--generate NAME=KIND          make a value for a declared secret the vault lacks;
+                              KIND is hex32 or placeholder; repeatable
+--require-private             preflight fails unless privacy.mode is private_only
+                              and every tier provider is private
+--expect-head <rev>           preflight fails unless HEAD is <rev>; implies --graded
+--graded                      graded attempt (needs --expect-head): one invocation,
+                              no --resume, no --attended, no leftover state
+--expect-binary-commit <sha>  preflight fails unless this binary was stamped with
+                              that commit
+--resume                      continue an unfinished run of this brief; without it
+                              leftover state is refused
+--attended                    CLI only: a terminal gate for questions, the
+                              understanding, approval and escalations
+--preflight-only              run the preflight, print it, exit 0 or 6
+--print-state-paths           print every path a clear must touch, exit 0
+```
+
+`--preflight-only` and `--print-state-paths` cannot be combined.
+`--print-state-paths` prints one tab separated line per path
+(`action`, `scope`, `path`), needs no network and no vault, and writes
+nothing. `/project` is unattended by default; there is no `--yes`.
+
+Exit codes:
+
+| Code | Meaning |
+|---|---|
+| 0 | verified |
+| 1 | failed (includes every planner stage failure) and usage errors |
+| 2 | invalid brief |
+| 3 | waiting on a human (the unattended gate never produces it) |
+| 4 | an escalated leaf or a human stop |
+| 5 | interrupted by a signal or `max_run_minutes`, resumable |
+| 6 | the preflight failed; nothing was planned or built and it is not an attempt |
+| 7 | a harness fault (repository cannot be opened, sandbox refused, settings invalid, plan changed, a leaf held by a live worker) |
+
+The unattended policy. Every Clarify question is settled by its recommendation
+in every round, and the report records that nobody was asked. The planner
+confirms the understanding by a stated rule (the question store is complete
+with nothing unsettled), records `confirmed_by: unattended` and the hash of
+`UNDERSTANDING.md` in `_state/understanding.json`, and never routes this
+through the gate: an unattended `Gate.Confirm` returns an error instead of
+confirming. Secrets come from the vault's harness scope, or are generated when
+the command line says `--generate NAME=KIND`; a vault value beats a generated
+one, and nothing else makes a value. The plan is approved by hash: the approval
+is `unattended`, is given only when every requirement is covered in
+`coverage.json`, and `approval.json` binds the plan hash and the understanding
+hash. A brief that declares `milestone_approvals` gets one report line saying
+the plan approval covers it. A run stops on a failed preflight (6), an invalid
+brief (2), a planner stage failure (1), an escalated leaf (4), a failing
+acceptance bullet (1), a harness fault (7) or an interruption (5).
+
+The report. The printed report carries ids, counts and names only, never a
+question, an answer, a secret or model text. Its last two lines are
+`Requirements covered: N of N` and `Acceptance passed: N of N`. A graded run
+says `graded: yes`; `_state/project.json` carries `graded`,
+`graded_valid` and `graded_invalid_reason` (a graded run that resumed prints
+`graded: INVALID (the run resumed)`), `coverage_error` (set when
+`coverage.json` or `requirements.json` cannot be read), `progress_dropped` (progress
+lines the sink dropped rather than block the run) and `by_node_class`. The
+node-class table has one row per class, in this order: pure, validation,
+handler, client, storage, concurrency, wiring, other, unclassified. Each row
+gives leaves, verified, failed, escalated, not run, attempts, passes, first try
+wins, first pass rate, calls and tokens; the printed form shows leaves,
+verified, first try and attempts. When the executor did not run, the report
+says `node classes: executor did not run`.
+
+A run planned before the question model is covered in "Runs planned before the
+question model". To change a settled answer, use `gophermind brief answer
+<run-id> <question-id> <new answer...>`. `/project` itself refuses leftover
+state from any earlier attempt (the `stale state` preflight item) unless
+`--resume` is given.
+
+A graded attempt needs a version-stamped binary. `scripts/build-dev-binary.sh`
+builds `$HOME/.gophermind/bin/gophermind-dev` (override with `GM_DEV_BIN`),
+refuses a dirty tree or an unpushed HEAD, and takes `--dry-run`. The runbook is
+`docs/briefv2/project-runbook.md`.
 
 ## Running a plan
 
