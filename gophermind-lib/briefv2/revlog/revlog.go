@@ -91,27 +91,117 @@ func TestFile(k int) string { return fmt.Sprintf("test-%d.txt", k) }
 
 const logName = "log.jsonl"
 
-// Append writes one record. The folder is made 0700 and the file 0600.
+// Bounds on what a record may hold, so a log line stays small and a model
+// sentence cannot be smuggled into it.
+const (
+	maxHashLen       = 64   // a hex SHA-256
+	maxTokenLen      = 128  // model, class, trigger, a changed field name
+	maxAssumptionLen = 1024 // one "revision n: ..." assumption
+	maxListLen       = 64   // entries in Changed or Assumptions
+)
+
+var errTooLong = errors.New("revlog: a record field is over its length bound")
+
+func checkBounds(r Record) error {
+	for _, v := range []string{r.BaseSHA256, r.BodySHA256, r.TestSHA256Before, r.TestSHA256After} {
+		if len(v) > maxHashLen {
+			return errTooLong
+		}
+	}
+	for _, v := range []string{r.Trigger, r.Model, r.Class, r.At} {
+		if len(v) > maxTokenLen {
+			return errTooLong
+		}
+	}
+	if len(r.Changed) > maxListLen || len(r.Assumptions) > maxListLen {
+		return errTooLong
+	}
+	for _, v := range r.Changed {
+		if len(v) > maxTokenLen {
+			return errTooLong
+		}
+	}
+	for _, v := range r.Assumptions {
+		if len(v) > maxAssumptionLen {
+			return errTooLong
+		}
+	}
+	return nil
+}
+
+// plainDir refuses a path that exists and is a link or not a directory.
+func plainDir(dir string) error {
+	if fi, err := os.Lstat(dir); err == nil && (fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir()) {
+		return errors.New("revlog: a revision folder is not a plain directory")
+	}
+	return nil
+}
+
+// plainFile refuses a path that exists and is not a regular file (a link, say).
+func plainFile(path string) error {
+	if fi, err := os.Lstat(path); err == nil && !fi.Mode().IsRegular() {
+		return errors.New("revlog: a revision file is not a regular file")
+	}
+	return nil
+}
+
+// Append writes one record. The folder is made 0700 and the file 0600. A log
+// that ends in a torn line (no newline) is first cut back to its last complete
+// line: Read never returned that stub, so the append it was part of never
+// happened, and the new record must not be glued onto it.
 func Append(dir string, r Record) error {
 	switch r.Kind {
 	case KindIntent, KindCommit, KindFlag, KindRefused:
 	default:
 		return errors.New("revlog: unknown record kind")
 	}
+	if err := checkBounds(r); err != nil {
+		return err
+	}
 	line, err := json.Marshal(r)
 	if err != nil {
 		return errors.New("revlog: encoding a record failed")
 	}
+	if err := plainDir(dir); err != nil {
+		return err
+	}
+	path := filepath.Join(dir, logName)
+	if err := plainFile(path); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return errors.New("revlog: creating the revision folder failed")
 	}
-	return runfs.AppendLine(filepath.Join(dir, logName), line)
+	if err := cutTornTail(path); err != nil {
+		return err
+	}
+	return runfs.AppendLine(path, line)
+}
+
+func cutTornTail(path string) error {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) || (err == nil && (len(data) == 0 || data[len(data)-1] == '\n')) {
+		return nil
+	}
+	if err != nil {
+		return errors.New("revlog: the log is not readable")
+	}
+	if err := os.Truncate(path, int64(bytes.LastIndexByte(data, '\n')+1)); err != nil {
+		return errors.New("revlog: repairing the log tail failed")
+	}
+	return nil
 }
 
 // Read returns the records in order. A record with an unknown field, or a line
 // that is not JSON, is an error. A last line without its newline (a torn append)
 // is not returned: an append is one write, so it never happened.
 func Read(dir string) ([]Record, error) {
+	if err := plainDir(dir); err != nil {
+		return nil, err
+	}
+	if err := plainFile(filepath.Join(dir, logName)); err != nil {
+		return nil, err
+	}
 	lines, _, err := runfs.ReadLines(filepath.Join(dir, logName), 0)
 	if err != nil {
 		return nil, errors.New("revlog: the log is not readable")
@@ -132,9 +222,23 @@ func Read(dir string) ([]Record, error) {
 	return out, nil
 }
 
-// Stage writes body-k.json and test-k.txt atomically (0600). It replaces what
-// is there; the caller never stages k while an intent for k is open.
+// Stage writes body-k.json and test-k.txt atomically (0600). For k >= 1 it
+// replaces what is there; the caller never stages k while an intent for k is
+// open. Revision 0 is the approved plan and is create-only. A link in the way
+// is refused.
 func Stage(dir string, k int, body, test []byte) error {
+	if err := plainDir(dir); err != nil {
+		return err
+	}
+	for _, n := range []string{BodyFile(k), TestFile(k)} {
+		path := filepath.Join(dir, n)
+		if err := plainFile(path); err != nil {
+			return err
+		}
+		if _, err := os.Lstat(path); k == 0 && err == nil {
+			return errors.New("revlog: revision 0 is already staged")
+		}
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return errors.New("revlog: creating the revision folder failed")
 	}
@@ -216,7 +320,7 @@ func Verify(dir string, d Disk) (Tip, error) {
 			if open != nil || r.N != tip.N+1 {
 				return Tip{}, chainErr("an intent is out of order")
 			}
-			if r.BaseSHA256 != tip.BodySHA256 {
+			if r.BaseSHA256 != tip.BodySHA256 || r.TestSHA256Before != tip.TestSHA256 {
 				return Tip{}, chainErr("an intent does not extend the chain")
 			}
 			open = &recs[i]
@@ -356,8 +460,15 @@ func CheckFrozen(base, now []byte) error {
 			if k == "context" {
 				allow = mayChangeContext
 			}
-			ma, _ := a[k].(map[string]any)
-			mb, _ := b[k].(map[string]any)
+			ma, okA := a[k].(map[string]any)
+			mb, okB := b[k].(map[string]any)
+			if !okA || !okB {
+				// Not an object on one side: nothing inside to allow, so the whole value is frozen.
+				if !sameJSON(a[k], b[k]) {
+					return &FrozenError{Field: name("", k)}
+				}
+				continue
+			}
 			subs := map[string]bool{}
 			for s := range ma {
 				subs[s] = true

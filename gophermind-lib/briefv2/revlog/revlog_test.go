@@ -318,3 +318,243 @@ func TestVerifyReachesCheckFrozenWithAValidHashChain(t *testing.T) {
 		t.Fatalf("open intent with a frozen change = %v, want ErrChain naming the frozen field", err)
 	}
 }
+
+// buildChain stages revisions 0..revs of richNode (description d<k>) and logs
+// intent/commit pairs. forgeBefore[k] replaces the test_sha256_before of the
+// intent (and commit) for revision k. With openLast the last revision has an
+// intent and no commit; the returned Disk is then the base state of that
+// revision, with the on-disk test hash equal to the intent's (possibly forged) Before.
+func buildChain(t *testing.T, revs int, forgeBefore map[int]string, openLast bool) (string, revlog.Disk) {
+	t.Helper()
+	h := revlog.Hash
+	dir := filepath.Join(t.TempDir(), "fn-a")
+	bodies := [][]byte{[]byte(richNode)}
+	tests := [][]byte{[]byte("package p // t0\n")}
+	if err := revlog.Stage(dir, 0, bodies[0], tests[0]); err != nil {
+		t.Fatal(err)
+	}
+	var disk revlog.Disk
+	for k := 1; k <= revs; k++ {
+		bodies = append(bodies, setField(t, "description", "d"+string(rune('0'+k))))
+		tests = append(tests, []byte("package p // t"+string(rune('0'+k))+"\n"))
+		if err := revlog.Stage(dir, k, bodies[k], tests[k]); err != nil {
+			t.Fatal(err)
+		}
+		before := h(tests[k-1])
+		if f, ok := forgeBefore[k]; ok {
+			before = f
+		}
+		in := revlog.Record{Kind: revlog.KindIntent, N: k, Trigger: "ladder_exhausted", BaseSHA256: h(bodies[k-1]), BodySHA256: h(bodies[k]),
+			TestSHA256Before: before, TestSHA256After: h(tests[k]), Changed: []string{"description"}, At: "t"}
+		if err := revlog.Append(dir, in); err != nil {
+			t.Fatal(err)
+		}
+		if openLast && k == revs {
+			return dir, revlog.Disk{NodeSHA256: h(bodies[k-1]), LeafTestSHA256: before, TestFileSHA256: before}
+		}
+		in.Kind = revlog.KindCommit
+		if err := revlog.Append(dir, in); err != nil {
+			t.Fatal(err)
+		}
+		disk = revlog.Disk{NodeSHA256: h(bodies[k]), LeafTestSHA256: h(tests[k]), TestFileSHA256: h(tests[k])}
+	}
+	return dir, disk
+}
+
+func TestVerifyLinksIntentBeforeToThePreviousTip(t *testing.T) {
+	forged := revlog.Hash([]byte("an arbitrary test file"))
+	for _, c := range []struct {
+		name string
+		revs int
+		open bool
+	}{{"n=1 open", 1, true}, {"n=2 open", 2, true}, {"n=1 committed", 1, false}, {"n=2 committed", 2, false}} {
+		t.Run(c.name, func(t *testing.T) {
+			if dir, disk := buildChain(t, c.revs, nil, c.open); true {
+				if _, err := revlog.Verify(dir, disk); err != nil {
+					t.Fatalf("control (unforged): %v", err)
+				}
+			}
+			dir, disk := buildChain(t, c.revs, map[int]string{c.revs: forged}, c.open)
+			if _, err := revlog.Verify(dir, disk); !errors.Is(err, revlog.ErrChain) {
+				t.Fatalf("forged Before = %v, want ErrChain", err)
+			}
+		})
+	}
+}
+
+func TestVerifyTwoCommittedRevisions(t *testing.T) {
+	h := revlog.Hash
+	dir, disk := buildChain(t, 2, nil, false)
+	b1, _, err := revlog.ReadStaged(dir, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b2, _, _ := revlog.ReadStaged(dir, 2)
+	tip, err := revlog.Verify(dir, disk)
+	if err != nil || tip.N != 2 || tip.BodySHA256 != h(b2) || tip.Open != nil {
+		t.Fatalf("0 -> 1 -> 2: %+v, %v", tip, err)
+	}
+	recs, _ := revlog.Read(dir)
+	if len(recs) != 4 || recs[2].Kind != revlog.KindIntent || recs[2].N != 2 || recs[2].BaseSHA256 != h(b1) {
+		t.Fatalf("the n=2 intent must extend revision 1's body: %+v", recs)
+	}
+	// The tip must be revision 2: the disk at revision 1 no longer verifies.
+	d1 := revlog.Disk{NodeSHA256: h(b1), LeafTestSHA256: h([]byte("package p // t1\n")), TestFileSHA256: h([]byte("package p // t1\n"))}
+	if _, err := revlog.Verify(dir, d1); !errors.Is(err, revlog.ErrChain) {
+		t.Fatalf("disk at revision 1 after commit 2 = %v, want ErrChain", err)
+	}
+	// Tamper body-1 after commit 2.
+	p1 := filepath.Join(dir, revlog.BodyFile(1))
+	if err := os.WriteFile(p1, []byte(strings.Replace(string(b1), "d1", "dX", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := revlog.Verify(dir, disk); !errors.Is(err, revlog.ErrChain) {
+		t.Fatalf("body-1 tampered after commit 2 = %v, want ErrChain", err)
+	}
+	// Tamper the n=1 record after n=2 exists.
+	var lp string
+	var raw []byte
+	var lines []string
+	dir, disk = buildChain(t, 2, nil, false)
+	lp = filepath.Join(dir, "log.jsonl")
+	raw, _ = os.ReadFile(lp)
+	lines = strings.Split(strings.TrimSpace(string(raw)), "\n")
+	var r1 revlog.Record
+	_ = json.Unmarshal([]byte(lines[0]), &r1)
+	r1.BodySHA256 = h([]byte("other"))
+	forged, _ := json.Marshal(r1)
+	lines[0] = string(forged)
+	os.WriteFile(lp, []byte(strings.Join(lines, "\n")+"\n"), 0o600)
+	if _, err := revlog.Verify(dir, disk); !errors.Is(err, revlog.ErrChain) {
+		t.Fatalf("n=1 record body hash forged after n=2 = %v, want ErrChain", err)
+	}
+}
+
+func TestLogAndStagedFilesRefuseLinks(t *testing.T) {
+	f := newFx(t)
+	elsewhere := filepath.Join(t.TempDir(), "elsewhere.jsonl")
+	raw, _ := os.ReadFile(filepath.Join(f.dir, "log.jsonl"))
+	os.WriteFile(elsewhere, raw, 0o600)
+	lp := filepath.Join(f.dir, "log.jsonl")
+	os.Remove(lp)
+	if err := os.Symlink(elsewhere, lp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := revlog.Read(f.dir); err == nil {
+		t.Error("Read followed a linked log.jsonl")
+	}
+	if err := revlog.Append(f.dir, revlog.Record{Kind: revlog.KindFlag, Class: "contract_flagged", At: "t"}); err == nil {
+		t.Error("Append followed a linked log.jsonl")
+	}
+	after, _ := os.ReadFile(elsewhere)
+	if string(after) != string(raw) {
+		t.Error("a write went through the link")
+	}
+	if _, err := revlog.Verify(f.dir, f.disk); err == nil {
+		t.Error("Verify accepted a linked log")
+	}
+
+	g := newFx(t)
+	bp := filepath.Join(g.dir, revlog.BodyFile(1))
+	target := filepath.Join(t.TempDir(), "body")
+	os.WriteFile(target, []byte(node1), 0o600)
+	os.Remove(bp)
+	os.Symlink(target, bp)
+	if _, _, err := revlog.ReadStaged(g.dir, 1); err == nil {
+		t.Error("ReadStaged followed a linked body")
+	}
+	if err := revlog.Stage(g.dir, 1, []byte(node1), []byte("package p // t1\n")); err == nil {
+		t.Error("Stage wrote over a linked body")
+	}
+}
+
+func TestStageZeroIsCreateOnly(t *testing.T) {
+	f := newFx(t)
+	if err := revlog.Stage(f.dir, 0, []byte("other"), []byte("other")); err == nil {
+		t.Fatal("Stage(0) overwrote body-0")
+	}
+	if b, _, err := revlog.ReadStaged(f.dir, 0); err != nil || string(b) != node0 {
+		t.Fatalf("body-0 changed: %v", err)
+	}
+	if err := revlog.Stage(f.dir, 5, []byte("a"), []byte("a")); err != nil {
+		t.Fatal(err)
+	}
+	if err := revlog.Stage(f.dir, 5, []byte("b"), []byte("b")); err != nil {
+		t.Fatalf("Stage(k>=1) must overwrite atomically: %v", err)
+	}
+	if b, _, _ := revlog.ReadStaged(f.dir, 5); string(b) != "b" {
+		t.Fatal("overwrite did not take effect")
+	}
+}
+
+func TestAppendAfterATornTail(t *testing.T) {
+	f := newFx(t)
+	lp := filepath.Join(f.dir, "log.jsonl")
+	fh, err := os.OpenFile(lp, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fh.WriteString(`{"kind":"fl`)
+	fh.Close()
+	if recs, err := revlog.Read(f.dir); err != nil || len(recs) != 2 {
+		t.Fatalf("a torn last line must be ignored: %d, %v", len(recs), err)
+	}
+	if err := revlog.Append(f.dir, revlog.Record{Kind: revlog.KindFlag, Class: "contract_flagged", At: "t"}); err != nil {
+		t.Fatal(err)
+	}
+	recs, err := revlog.Read(f.dir)
+	if err != nil || len(recs) != 3 || recs[2].Kind != revlog.KindFlag {
+		t.Fatalf("after Append: %d records, %v", len(recs), err)
+	}
+	if _, err := revlog.Verify(f.dir, f.disk); err != nil {
+		t.Fatalf("Verify after a torn tail and an Append: %v", err)
+	}
+}
+
+func TestAppendBoundsFieldLengths(t *testing.T) {
+	long := strings.Repeat("x", 5000)
+	many := make([]string, 200)
+	for i := range many {
+		many[i] = "f"
+	}
+	for name, r := range map[string]revlog.Record{
+		"model":       {Kind: revlog.KindFlag, Model: long, At: "t"},
+		"class":       {Kind: revlog.KindFlag, Class: long, At: "t"},
+		"assumption":  {Kind: revlog.KindFlag, Assumptions: []string{long}, At: "t"},
+		"assumptions": {Kind: revlog.KindFlag, Assumptions: many, At: "t"},
+		"changed":     {Kind: revlog.KindFlag, Changed: many, At: "t"},
+		"changed one": {Kind: revlog.KindFlag, Changed: []string{long}, At: "t"},
+		"hash":        {Kind: revlog.KindFlag, BodySHA256: long, At: "t"},
+	} {
+		dir := filepath.Join(t.TempDir(), "fn-a")
+		err := revlog.Append(dir, r)
+		if err == nil || strings.Contains(err.Error(), "xxxx") {
+			t.Errorf("%s: err = %v, want a fixed refusal", name, err)
+		}
+		if _, serr := os.Stat(filepath.Join(dir, "log.jsonl")); serr == nil {
+			t.Errorf("%s: a refused record was written", name)
+		}
+	}
+	if err := revlog.Append(filepath.Join(t.TempDir(), "fn-a"), revlog.Record{Kind: revlog.KindFlag, Model: "m", Assumptions: []string{"revision 1: ok"}, At: "t"}); err != nil {
+		t.Fatalf("a normal record: %v", err)
+	}
+}
+
+func TestCheckFrozenNonObjectContractAndContext(t *testing.T) {
+	var fe *revlog.FrozenError
+	for _, k := range []string{"contract", "context"} {
+		mk := func(v string) []byte { return []byte(`{"id":"a","` + k + `":` + v + `}`) }
+		if err := revlog.CheckFrozen(mk(`"x"`), mk(`"y"`)); !errors.As(err, &fe) || fe.Field != k {
+			t.Errorf("%s: differing strings = %v", k, err)
+		}
+		if err := revlog.CheckFrozen(mk(`{"a":1}`), mk(`"y"`)); !errors.As(err, &fe) || fe.Field != k {
+			t.Errorf("%s: object vs string = %v", k, err)
+		}
+		if err := revlog.CheckFrozen(mk(`[1]`), mk(`null`)); !errors.As(err, &fe) || fe.Field != k {
+			t.Errorf("%s: array vs null = %v", k, err)
+		}
+		if err := revlog.CheckFrozen(mk(`"x"`), mk(`"x"`)); err != nil {
+			t.Errorf("%s: equal strings = %v", k, err)
+		}
+	}
+}
