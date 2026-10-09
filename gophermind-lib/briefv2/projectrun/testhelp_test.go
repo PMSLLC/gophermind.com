@@ -349,6 +349,7 @@ func newProjectRig(t *testing.T, opts ...rigOpt) *projectRig {
 		t.Skip("go is not on PATH")
 	}
 	cfg := settings.Default()
+	cfg.Revise.Mode = settings.ReviseModeNotes // the combo provider answers a revise stage with hints
 	cfg.Providers = []settings.ProviderConfig{{
 		Name: "a", BaseURL: "http://a.invalid/v1", Visibility: settings.Private, MaxConcurrent: 1,
 		Models: []settings.ModelEntry{{ID: "m1", ContextTokens: 1 << 20}},

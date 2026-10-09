@@ -298,6 +298,7 @@ func useRun(t *testing.T, fn func(context.Context, string, int) (string, error))
 	t.Cleanup(func() { makeWritable(filepath.Dir(mod)) })
 	runHook = func() (*settings.Config, map[string]provider.Provider, error) {
 		cfg := planner.FixtureSettings()
+		cfg.Revise.Mode = settings.ReviseModeNotes // the staged provider answers a revise stage with its leaf reply, not a planner proposal
 		cfg.Executor.GoModCache = mod
 		cfg.Toolchain = map[string]string{"PATH": filepath.Dir(goBin) + ":/usr/bin:/bin"}
 		if err := sandbox.Preflight(context.Background()); err != nil {

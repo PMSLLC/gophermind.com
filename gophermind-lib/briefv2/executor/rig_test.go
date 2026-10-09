@@ -211,6 +211,7 @@ func buildRig(t *testing.T, ro rigOpts, repo, modBase, briefDir string, plan boo
 	g.cfg.Privacy.Mode = "need_to_know"
 	g.cfg.Executor.Sandbox = "off"
 	g.cfg.Executor.Workers = 1
+	g.cfg.Revise.Mode = settings.ReviseModeNotes // spec R14: the existing tests script revise hints; new tests opt in with reviseRewrite
 	// The module cache is a temp directory (never the real ~/.gophermind), and the
 	// toolchain PATH holds the go this test run uses.
 	t.Cleanup(func() { makeTreeWritable(modBase) }) // the go tool makes cached modules read-only

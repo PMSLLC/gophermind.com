@@ -394,3 +394,16 @@ func TestPackFloorOverBudgetNoCall(t *testing.T) {
 		t.Fatalf("gate escalations = %+v", escs)
 	}
 }
+
+// reviseRewrite is one entry, one fix (two attempts per revision), rev rewrites
+// and the planner's revise stage instead of hints.
+func reviseRewrite(rev int) func(*rigOpts) {
+	return func(o *rigOpts) {
+		o.Settings = func(c *settings.Config) {
+			c.Executor.FixAttempts = 1
+			c.Defaults.MaxRevisions = rev
+			c.Models = map[string][]string{"strong": {"a/m1"}, "standard": {"a/m1"}, "any": {"a/m1"}}
+			c.Revise.Mode = settings.ReviseModeRewrite
+		}
+	}
+}

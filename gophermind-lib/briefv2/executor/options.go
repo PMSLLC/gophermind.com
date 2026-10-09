@@ -27,6 +27,7 @@ type Options struct {
 	Gate         human.Gate  // nil means every escalation is a stop
 	Sink         events.Sink // nil means events.Nop
 	Settings     *settings.Config
+	Reviser      Reviser      // nil: planner.NewReviser over Caller, Settings, Sink and Now
 	Secrets      Secrets      // nil when the brief declares none
 	Git          gitland.Repo // nil means startRun makes gitland.NewCLI(Repo, runID) and closes it on exit
 	Proxy        *proxy.Proxy // nil means the executor starts its own

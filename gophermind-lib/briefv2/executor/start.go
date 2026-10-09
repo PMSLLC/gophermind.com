@@ -51,6 +51,7 @@ type runCtx struct {
 	plan       *Plan
 	state      State
 	chk        Checker // *runner.Runner in production
+	rev        Reviser // the planner revise stage, used in rewrite mode
 	git        gitland.Repo
 	closers    []func() error // the CLI, the executor's own proxy; Run closes them
 	prox       *proxy.Proxy
@@ -148,6 +149,10 @@ func newRunCtx(ctx context.Context, o Options) (*runCtx, error) {
 		policy: plan.Policy(), diffOnly: plan.Brief.Front.Landing == "diff_only",
 		streak: &proxy.Streak{},
 		rep:    &runReport{blocked: map[string]string{}, reasons: map[string]string{}},
+	}
+	rc.rev = o.Reviser
+	if rc.rev == nil {
+		rc.rev = planner.NewReviser(planner.Deps{Caller: o.Caller, Settings: o.Settings, Sink: o.Sink, Now: o.Now})
 	}
 	rc.art = artifacts.New(o.RunDir, rc.cfg.Executor.Artifacts == "on", rc.cfg.Executor.ArtifactMaxBytes, rc.scrubText)
 	if err := rc.loadReasons(); err != nil {

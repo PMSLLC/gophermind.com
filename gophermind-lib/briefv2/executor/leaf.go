@@ -18,6 +18,7 @@ import (
 	"gophermind/gophermind-lib/briefv2/blackboard"
 	"gophermind/gophermind-lib/briefv2/human"
 	"gophermind/gophermind-lib/briefv2/packer"
+	"gophermind/gophermind-lib/briefv2/planner"
 	"gophermind/gophermind-lib/briefv2/provider"
 	"gophermind/gophermind-lib/briefv2/proxy"
 	"gophermind/gophermind-lib/briefv2/report"
@@ -104,6 +105,8 @@ type leafRun struct {
 	history     []string          // historyLine of every attempt, for the revise prompt (Task 11b)
 	prev        packer.Failure    // the previous failure text, memory only
 	problem     string            // the last CONTRACT_PROBLEM sentence, memory only, never persisted
+	refusals    []string          // classes of the refused rewrites of the current revision
+	proposal    string            // the planner's paragraph for the gate, memory only
 	charged     int               // VerdictFail attempts of the current revision
 	unavailable string            // why a revision ended Interrupted with nothing charged: provider_unavailable or a configuration class
 	permClass   string            // the first permanent provider-level class seen
@@ -486,7 +489,17 @@ func (lr *leafRun) afterRevision(ctx context.Context, res revResult) (out leafOu
 		}
 	}
 	if doRevise {
-		cp, rerr := lr.revise(ctx)
+		var cp bool
+		var rerr error
+		if lr.rewriteMode() {
+			trigger := planner.TriggerLadderExhausted
+			if res == revContractProblem {
+				trigger = planner.TriggerContractProblem
+			}
+			rerr = lr.rewrite(ctx, trigger)
+		} else {
+			cp, rerr = lr.revise(ctx)
+		}
 		var rs *reviseStop
 		switch {
 		case errors.As(rerr, &rs) && rs.Interrupted:
@@ -523,7 +536,7 @@ func (lr *leafRun) lastClass(ctx context.Context) string {
 // stop and a missing or waiting gate end the run with the leaf escalated.
 func (lr *leafRun) toHuman(ctx context.Context, reason string) (leafOutcome, bool, error) {
 	rc, l := lr.rc, lr.l
-	res, err := rc.escalate(ctx, l, blackboard.StatusInProgress, reason, lr.history)
+	res, err := rc.escalateWith(ctx, l, blackboard.StatusInProgress, reason, lr.history, escalateExtra{Proposal: lr.proposal})
 	if err != nil {
 		var se *stopError
 		switch {
@@ -542,6 +555,7 @@ func (lr *leafRun) toHuman(ctx context.Context, reason string) (leafOutcome, boo
 		return leafOutcome{Status: blackboard.StatusFailed, Reason: reasonSkipped}, true, nil
 	case human.ActionRetry:
 		lr.cp[lr.rev] = 0
+		lr.refusals, lr.proposal = nil, ""
 		ok, cerr := rc.o.Board.Claim(ctx, rc.plan.RunID, l.ID, lr.worker)
 		if ctx.Err() != nil {
 			// A claim that was taken is released by the deferred release (final stays
@@ -810,6 +824,9 @@ func (lr *leafRun) previousSHA(ctx context.Context, e ladderEntry) (string, erro
 	sha := ""
 	for i := len(row.Attempts) - 1; i >= 0; i-- {
 		a := row.Attempts[i]
+		if lr.rewriteMode() && a.Revision != lr.rev {
+			continue
+		}
 		if a.Provider == prov && a.Model == model && a.ReplySHA256 != "" {
 			sha = a.ReplySHA256
 			break

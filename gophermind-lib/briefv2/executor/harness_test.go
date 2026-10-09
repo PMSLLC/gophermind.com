@@ -19,6 +19,7 @@ import (
 	"gophermind/gophermind-lib/briefv2/ledger"
 	"gophermind/gophermind-lib/briefv2/packer"
 	"gophermind/gophermind-lib/briefv2/pathsafe"
+	"gophermind/gophermind-lib/briefv2/planner"
 	"gophermind/gophermind-lib/briefv2/provider"
 	"gophermind/gophermind-lib/briefv2/router"
 	"gophermind/gophermind-lib/briefv2/runner"
@@ -247,14 +248,16 @@ func newScriptedProvider(s Script, fail func(format string, args ...any)) *scrip
 	return &scriptedProvider{script: cp, used: map[string]int{}, fail: fail}
 }
 
-// stageOf is the stage of a request, "" when its system message has none.
+// stageOf is the stage of a request, "" when its system message has none. The
+// executor's prefix names implement and revise (notes) stages, the planner's names
+// revise (rewrite) and testwrite stages.
 func stageOf(req provider.Request) string {
 	for _, m := range req.Messages {
 		if m.Role == provider.RoleSystem && strings.HasPrefix(m.Content, packer.SystemPrefix) {
 			return strings.TrimPrefix(m.Content, packer.SystemPrefix)
 		}
 	}
-	return ""
+	return planner.StageOf(req)
 }
 
 func (sp *scriptedProvider) next(req provider.Request) (step, error) {
@@ -428,7 +431,7 @@ func (g *rig) options() Options {
 func (g *rig) leafCalls(id string) []provider.Request {
 	var out []provider.Request
 	for _, r := range g.fake.Requests() {
-		if strings.HasSuffix(stageOf(r), ":"+id) {
+		if st := stageOf(r); strings.HasSuffix(st, ":"+id) || strings.HasPrefix(st, "testwrite:"+id+"-r") {
 			out = append(out, r)
 		}
 	}

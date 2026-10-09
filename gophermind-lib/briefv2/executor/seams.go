@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"gophermind/gophermind-lib/briefv2/gitland"
+	"gophermind/gophermind-lib/briefv2/planner"
 	"gophermind/gophermind-lib/briefv2/provider"
 	"gophermind/gophermind-lib/briefv2/router"
 	"gophermind/gophermind-lib/briefv2/runner"
@@ -31,6 +32,13 @@ type Caller interface {
 	CallParsed(ctx context.Context, info router.CallInfo, req provider.Request, parse func(text string) error) (router.Result, error)
 }
 
+// Reviser is the planner's revise stage as the executor uses it: it makes the
+// revise call (and the Test-writer call when tests must change) and returns a
+// validated proposal. *planner.Reviser satisfies it; tests use a fake.
+type Reviser interface {
+	Revise(ctx context.Context, req planner.ReviseRequest) (planner.ReviseProposal, error)
+}
+
 // Secrets is the part of *vault.Vault the executor needs.
 type Secrets interface {
 	Env(scope string, names []string) ([]string, error)
@@ -41,6 +49,7 @@ var (
 	_ Checker      = (*runner.Runner)(nil)
 	_ Caller       = (*router.Router)(nil)
 	_ Secrets      = (*vault.Vault)(nil)
+	_ Reviser      = (*planner.Reviser)(nil)
 	_ gitland.Repo = (*gitland.CLI)(nil)
 
 	// Options.LedgerErrors is (*router.Router).LedgerErrors.
