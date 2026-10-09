@@ -48,8 +48,10 @@ func TestParseArgsTable(t *testing.T) {
 		{name: "none", args: nil, wantErr: "usage"},
 		{name: "unknown flag", args: []string{"b.md", "--bogus=hunter2"}, wantErr: "--bogus"},
 		{name: "missing value", args: []string{"b.md", "--repo"}, wantErr: "--repo"},
-		{name: "binary commit", args: []string{"b.md", "--expect-binary-commit", "abc"}, check: func(t *testing.T, o Options) {
-			if o.ExpectBinaryCommit != "abc" {
+		{name: "binary commit too short", args: []string{"b.md", "--expect-binary-commit", "abc12"}, wantErr: "--expect-binary-commit"},
+		{name: "binary commit not hex", args: []string{"b.md", "--expect-binary-commit", "zzzzzzzz"}, wantErr: "--expect-binary-commit"},
+		{name: "binary commit", args: []string{"b.md", "--expect-binary-commit", "abc1234"}, check: func(t *testing.T, o Options) {
+			if o.ExpectBinaryCommit != "abc1234" {
 				t.Fatal(o.ExpectBinaryCommit)
 			}
 		}},

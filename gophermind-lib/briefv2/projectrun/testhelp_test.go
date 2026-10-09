@@ -37,12 +37,12 @@ const (
 	e2ePass   = "e2e-passphrase"
 )
 
-// sharedGoCache and sharedCfgDir are made by TestMain under os.TempDir().
-var sharedGoCache, sharedCfgDir string
+// sharedCfgDir is made by TestMain under os.TempDir().
+var sharedCfgDir string
 
 // TestMain unsets every GIT_* variable (a git hook exports them and they would
 // point every git a test spawns at the real repository) and gives the process
-// one GOCACHE and one config directory, both removed at exit by removeTestDir.
+// one config directory, removed at exit by removeTestDir.
 func TestMain(m *testing.M) {
 	for _, kv := range os.Environ() {
 		if name, _, _ := strings.Cut(kv, "="); strings.HasPrefix(name, "GIT_") {
@@ -50,18 +50,12 @@ func TestMain(m *testing.M) {
 		}
 	}
 	var err error
-	if sharedGoCache, err = os.MkdirTemp("", "gm-projtest-cache-"); err != nil {
-		fmt.Fprintln(os.Stderr, "TestMain: no cache directory")
-		os.Exit(2)
-	}
 	if sharedCfgDir, err = os.MkdirTemp("", "gm-projtest-cfg-"); err != nil {
-		removeTestDir(sharedGoCache)
 		fmt.Fprintln(os.Stderr, "TestMain: no config directory")
 		os.Exit(2)
 	}
 	os.Setenv("GOPHERMIND_CONFIG_DIR", sharedCfgDir)
 	code := m.Run()
-	removeTestDir(sharedGoCache)
 	removeTestDir(sharedCfgDir)
 	os.Exit(code)
 }

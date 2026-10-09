@@ -127,3 +127,21 @@ func ProvisionGenerated(store SecretStore, b *brief.Brief, gen map[string]string
 	}
 	return out, nil
 }
+
+// markPrompted relabels the secrets that ProvisionGenerated found missing but
+// an attended run's prompt stored in the run scope afterwards.
+func markPrompted(in []Provisioned, store SecretStore, runID string) []Provisioned {
+	if store == nil {
+		return in
+	}
+	out := append([]Provisioned(nil), in...)
+	for i, s := range out {
+		if s.Source != SourceMissing {
+			continue
+		}
+		if _, ok := store.Get(vault.RunScope(runID), s.Name); ok {
+			out[i].Source = SourcePrompt
+		}
+	}
+	return out
+}

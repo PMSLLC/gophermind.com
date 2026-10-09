@@ -315,3 +315,19 @@ func TestProjectJSONFieldsAreCapped(t *testing.T) {
 		t.Error("printed title unbounded")
 	}
 }
+
+func TestEarlyStopPrintsNoBlankUnderstandingOrApproval(t *testing.T) {
+	p := sampleReport()
+	p.Executor, p.ByNodeClass = nil, nil
+	p.Understanding, p.Approval = UnderstandingInfo{}, ApprovalInfo{}
+	p.Status, p.StopReason, p.ExitCode = "failed", "plan:clarify", 1
+	out := p.Text()
+	for _, bad := range []string{"confirmed by ,", "approval: ,"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("blank field printed (%q):\n%s", bad, out)
+		}
+	}
+	if !strings.Contains(out, "understanding: not reached") || !strings.Contains(out, "approval: not reached") {
+		t.Errorf("want 'not reached' lines:\n%s", out)
+	}
+}

@@ -233,3 +233,26 @@ func TestPreflightLanding(t *testing.T) {
 		t.Errorf("detail %q does not name the field", got.Detail)
 	}
 }
+
+func TestPreflightWorkBranch(t *testing.T) {
+	r := newRig(t)
+	res := r.run()
+	for _, c := range res.Checks {
+		if c.Name == "work branch" {
+			t.Fatal("a good work branch must not add a check line")
+		}
+	}
+	for _, bad := range []string{"-x", "main"} {
+		r.b.Front.WorkBranch = bad
+		got := wantFail(t, r.run(), "work branch")
+		if !strings.Contains(got.Fix, "work_branch") {
+			t.Errorf("fix %q does not name the field", got.Fix)
+		}
+	}
+	r.b.Front.WorkBranch = "feature/venture"
+	for _, c := range r.run().Checks {
+		if c.Name == "work branch" {
+			t.Fatal("a custom work branch is allowed")
+		}
+	}
+}

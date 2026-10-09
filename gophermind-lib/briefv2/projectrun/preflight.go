@@ -112,6 +112,7 @@ func Preflight(ctx context.Context, o Options, env Env, b *brief.Brief) Prefligh
 	add(repoChecks...)
 	add(stale)
 	add(p.landing())
+	add(p.workBranch()...)
 	if o.Graded {
 		add(p.graded(leftovers))
 	}

@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+var commitRE = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)
+
 var secretNameRE = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 
 const usage = "usage: project <brief-path> [--repo <path>] [--generate NAME=KIND] [--require-private] [--expect-head <rev>] [--graded] [--expect-binary-commit <sha>] [--resume] [--attended] [--preflight-only] [--print-state-paths]"
@@ -83,6 +85,9 @@ func ParseArgs(args []string, allowAttended bool) (Options, error) {
 				o.ExpectHead = val
 				o.Graded = true
 			case "expect-binary-commit":
+				if !commitRE.MatchString(val) {
+					return o, errors.New("flag --expect-binary-commit needs at least 7 hex characters")
+				}
 				o.ExpectBinaryCommit = val
 			case "generate":
 				genN++
