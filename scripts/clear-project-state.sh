@@ -45,7 +45,7 @@ R="$(cd -- "$R_ARG" 2>/dev/null && pwd -P)" || die "repo does not resolve to a d
 HOME_DIR="$(cd -- "${HOME:-/nonexistent}" 2>/dev/null && pwd -P)" || die "\$HOME does not resolve to a directory"
 case "$R" in *[!/]*) ;; *) die "repo must not be /" ;; esac # guard:root
 [ "$R" != "$HOME_DIR" ] || die "repo must not be \$HOME" # guard:home
-case "$HOME_DIR/" in "$R"/*) die "repo must not contain \$HOME" ;; esac # guard:ancestor
+case "$HOME_DIR/" in "$R"/?*) die "repo must not contain \$HOME" ;; esac # guard:ancestor
 [ -d "$R/.git" ] || die "repo has no .git directory" # guard:nogit
 [[ "$ID" =~ ^gm-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3}$ ]] || die "id is not gm-YYYY-MM-DD-NNN" # guard:id
 [ -n "$BR" ] || die "work branch is empty" # guard:branch-empty
@@ -58,15 +58,24 @@ case "$ARCHIVE" in /*) ;; *) die "archive dir must be an absolute path" ;; esac 
 ARCHIVE="$(cd -- "$ARCHIVE" && pwd -P)"
 case "$ARCHIVE/" in "$R"/*) die "archive dir must be outside the repo" ;; esac # guard:archive-inside
 case "$CFG" in /*) ;; *) die "config dir must be an absolute path" ;; esac
+[ ! -L "$R/.gophermind" ] || die "repo .gophermind must not be a symlink" # guard:gm-symlink
+git -C "$R" rev-parse --verify --quiet "$BASELINE^{commit}" >/dev/null || die "BASELINE does not name a commit" # guard:baseline-exists
+git -C "$R" rev-parse --verify --quiet "refs/heads/$BASE_BRANCH" >/dev/null || die "BASE_BRANCH does not name a branch" # guard:base-exists
 
 run_dir="$R/.gophermind/$ID"
 scratch_dir="$R/.gophermind/$ID-scratch"
 record="$CFG/runs/$ID.json"
 
-# 0. archive the whole .gophermind folder (every run id) first: git clean -fdx
-# removes untracked files, and clearing destroys the ledger, the events and the attempts
+# 0. archive first, before any destructive step. The whole .gophermind folder
+# (every run id) goes into a tar.gz, because git clean -fdx removes untracked
+# files. It is skipped when the folder does not exist.
 if [ -d "$R/.gophermind" ]; then
   tar -C "$R" -czf "$ARCHIVE/attempt-$ID.tar.gz" .gophermind
+fi
+# the work branch commits survive in a bundle, and its tip is recorded
+if git -C "$R" rev-parse --verify --quiet "refs/heads/$BR" >/dev/null; then
+  git -C "$R" rev-parse "refs/heads/$BR" >"$ARCHIVE/work-branch-tip.txt"
+  git -C "$R" bundle create "$ARCHIVE/work-branch.bundle" "refs/heads/$BR"
 fi
 
 git -C "$R" symbolic-ref HEAD "refs/heads/$BASE_BRANCH"
@@ -74,11 +83,17 @@ if git -C "$R" branch --list "$BR" | grep -q .; then
   git -C "$R" branch -D "$BR"
 fi
 git -C "$R" reset --hard "$BASELINE"
+# git clean -fdx removes untracked AND ignored files (.env, build output); only
+# .remember is kept. The names it will remove are recorded first (names only).
+git -C "$R" clean -ndx -e .remember >"$ARCHIVE/removed-files.txt"
 git -C "$R" clean -fdx -e .remember
 
 # what clean left behind (git may not be resetting this repo), each exact path
+[ ! -L "$R/.gophermind" ] || die "repo .gophermind became a symlink" # guard:gm-symlink-late
 for target in "$run_dir" "$scratch_dir"; do
+  [ ! -L "$target" ] || die "$target is a symlink" # guard:rm-target
   if [ -d "$target" ]; then
+    [ "$(cd -- "$(dirname -- "$target")" && pwd -P)" = "$R/.gophermind" ] || die "$target is not inside the repo .gophermind" # guard:rm-parent
     rm -rf -- "${target:?}"
   fi
 done

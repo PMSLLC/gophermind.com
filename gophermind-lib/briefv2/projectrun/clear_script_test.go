@@ -1,12 +1,15 @@
 package projectrun
 
 import (
+	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 const clearID = "gm-2026-09-30-777"
@@ -76,7 +79,7 @@ type clearRun struct {
 }
 
 // do runs the script under a git stub that logs every invocation and returns
-// stderr and stdout, the exit error and the lines the stub logged.
+// stderr, the exit error and the lines the stub logged.
 func (c clearRun) do(t *testing.T) (out string, err error, gitCalls []string) {
 	t.Helper()
 	stub := t.TempDir()
@@ -101,11 +104,16 @@ func (c clearRun) do(t *testing.T) (out string, err error, gitCalls []string) {
 	if script == "" {
 		script = clearScript(t)
 	}
-	cmd := exec.Command("bash", append([]string{script}, c.args...)...)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "bash", append([]string{script}, c.args...)...)
 	cmd.Dir = c.cwd
 	cmd.Env = append([]string{"PATH=" + stub + string(os.PathListSeparator) + os.Getenv("PATH"), "HOME=" + c.home,
 		"GOPHERMIND_CONFIG_DIR=" + c.cfg, "GM_GIT_LOG=" + logf, "GM_REAL_GIT=" + real}, c.env...)
-	b, err := cmd.CombinedOutput()
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	_, err = cmd.Output()
+	b := stderr.Bytes()
 	if raw, rerr := os.ReadFile(logf); rerr == nil {
 		gitCalls = strings.Split(strings.TrimSpace(string(raw)), "\n")
 	}
@@ -138,6 +146,16 @@ func TestClearScriptClears(t *testing.T) {
 					t.Errorf("%s survives", p)
 				}
 			}
+			bundle := filepath.Join(arch, "work-branch.bundle")
+			if vout, verr := exec.Command("git", "-C", repo, "bundle", "verify", bundle).CombinedOutput(); verr != nil {
+				t.Errorf("bundle does not verify: %v\n%s", verr, vout)
+			}
+			if tip, terr := os.ReadFile(filepath.Join(arch, "work-branch-tip.txt")); terr != nil || len(strings.TrimSpace(string(tip))) < 40 {
+				t.Errorf("work-branch-tip.txt: %q, %v", tip, terr)
+			}
+			if rm, rerr := os.ReadFile(filepath.Join(arch, "removed-files.txt")); rerr != nil || !strings.Contains(string(rm), "junk.txt") || strings.Contains(string(rm), "junk\n") {
+				t.Errorf("removed-files.txt should list names (junk.txt) and no contents: %q, %v", rm, rerr)
+			}
 			tgz := filepath.Join(arch, "attempt-"+clearID+".tar.gz")
 			list, lerr := exec.Command("tar", "-tzf", tgz).Output()
 			if lerr != nil {
@@ -158,6 +176,39 @@ type refusal struct {
 	msg  string // the exact stderr text
 	// build returns the repo, the HOME for the run, the arguments and extra env
 	build func(t *testing.T, repo, arch string) (home string, args []string, env []string)
+}
+
+// soleGuard: no other guard covers these cases, so without its guard the run
+// proceeds (exit 0) instead of being refused by a neighbour.
+func (r refusal) soleGuard() bool { return r.tag == "home" }
+
+// readOnlyGit: the script verifies BASELINE and BASE_BRANCH with read-only git
+// calls before these refusals; no destructive git call may precede any refusal.
+func (r refusal) readOnlyGit() bool { return r.tag == "baseline-exists" || r.tag == "base-exists" }
+
+var destructiveGit = []string{"symbolic-ref", "branch -D", "reset", "clean -f", "clean -d", "bundle create", "checkout", "tag -d"}
+
+func destructiveCalls(calls []string) []string {
+	var bad []string
+	for _, c := range calls {
+		for _, d := range destructiveGit {
+			if strings.Contains(c, d) && !strings.Contains(c, "clean -ndx") {
+				bad = append(bad, c)
+			}
+		}
+	}
+	return bad
+}
+
+// repoState is the observable git state of a directory: HEAD, branches and the
+// commit HEAD names. A directory that is not a repo yields "".
+func repoState(dir string) string {
+	var b strings.Builder
+	for _, a := range [][]string{{"symbolic-ref", "-q", "HEAD"}, {"rev-parse", "-q", "--verify", "HEAD"}, {"branch", "--list"}, {"tag", "--list"}} {
+		out, _ := exec.Command("git", append([]string{"-C", dir}, a...)...).CombinedOutput()
+		b.Write(out)
+	}
+	return b.String()
 }
 
 func refusals() []refusal {
@@ -215,13 +266,42 @@ func refusals() []refusal {
 		{"dash BASELINE", "baseline-form", "BASELINE is not a valid revision name", func(t *testing.T, repo, arch string) (string, []string, []string) {
 			return t.TempDir(), []string{repo, clearID, br, arch}, []string{"BASELINE=-x"}
 		}},
+		{"no baseline tag", "baseline-exists", "BASELINE does not name a commit", func(t *testing.T, repo, arch string) (string, []string, []string) {
+			clearGit(t, repo, "tag", "-d", "goal-baseline")
+			return t.TempDir(), []string{repo, clearID, br, arch}, nil
+		}},
+		{"BASELINE nope", "baseline-exists", "BASELINE does not name a commit", func(t *testing.T, repo, arch string) (string, []string, []string) {
+			return t.TempDir(), []string{repo, clearID, br, arch}, []string{"BASELINE=nope"}
+		}},
+		{"repo with no commits", "baseline-exists", "BASELINE does not name a commit", func(t *testing.T, repo, arch string) (string, []string, []string) {
+			empty := t.TempDir()
+			clearGit(t, empty, "init", "-q", "-b", "main")
+			return t.TempDir(), []string{empty, clearID, br, arch}, nil
+		}},
+		{"detached HEAD without tag", "baseline-exists", "BASELINE does not name a commit", func(t *testing.T, repo, arch string) (string, []string, []string) {
+			clearGit(t, repo, "tag", "-d", "goal-baseline")
+			clearGit(t, repo, "checkout", "-q", "--detach")
+			return t.TempDir(), []string{repo, clearID, br, arch}, nil
+		}},
+		{"BASE_BRANCH missing", "base-exists", "BASE_BRANCH does not name a branch", func(t *testing.T, repo, arch string) (string, []string, []string) {
+			return t.TempDir(), []string{repo, clearID, br, arch}, []string{"BASE_BRANCH=nope"}
+		}},
+		{"gophermind is a symlink", "gm-symlink", "repo .gophermind must not be a symlink", func(t *testing.T, repo, arch string) (string, []string, []string) {
+			out := t.TempDir()
+			os.MkdirAll(filepath.Join(out, clearID), 0o755)
+			os.RemoveAll(filepath.Join(repo, ".gophermind"))
+			if err := os.Symlink(out, filepath.Join(repo, ".gophermind")); err != nil {
+				t.Fatal(err)
+			}
+			return t.TempDir(), []string{repo, clearID, br, arch}, nil
+		}},
 		{"relative archive", "archive-abs", "archive dir must be an absolute path", std(func(a []string) { a[3] = "x" })},
 		{"missing archive", "archive-exists", "archive dir does not exist", std(func(a []string) { a[3] = a[3] + "/nope" })},
 		{"archive inside repo", "archive-inside", "archive dir must be outside the repo", std(func(a []string) {
 			os.MkdirAll(a[0]+"/arch", 0o755)
 			a[3] = a[0] + "/arch"
 		})},
-		{"too few args", "args", "usage: clear-project-state.sh", func(t *testing.T, repo, arch string) (string, []string, []string) {
+		{"too few args", "args", "usage: clear-project-state.sh <repo> <id> <work-branch> <archive-dir>", func(t *testing.T, repo, arch string) (string, []string, []string) {
 			return t.TempDir(), []string{repo}, nil
 		}},
 	}
@@ -241,25 +321,39 @@ func runRefusal(t *testing.T, r refusal, script string) (out string, err error, 
 func TestClearScriptRefusesAndRunsNoGit(t *testing.T) {
 	for _, r := range refusals() {
 		t.Run(r.name, func(t *testing.T) {
-			out, err, calls, repo, cfg := runRefusal(t, r, "")
-			// the build may have created extra directories; compare against a fresh snapshot of git state
+			repo, cfg := clearRepo(t, "gm/"+clearID)
+			arch := t.TempDir()
+			home, args, env := r.build(t, repo, arch)
+			before := repoState(repo)
+			var beforeTarget string
+			if len(args) > 0 {
+				beforeTarget = repoState(args[0])
+			}
+			out, err, calls := clearRun{cwd: repo, cfg: cfg, home: home, env: env, args: args}.do(t)
 			if err == nil {
 				t.Fatalf("not refused:\n%s", out)
 			}
-			if !strings.Contains(out, "clear-project-state: "+r.msg) {
-				t.Fatalf("stderr lacks %q:\n%s", r.msg, out)
+			if got, want := strings.TrimRight(out, "\n"), "clear-project-state: "+r.msg; got != want {
+				t.Fatalf("stderr = %q, want exactly %q", got, want)
 			}
-			if len(calls) != 0 {
+			if r.readOnlyGit() {
+				if bad := destructiveCalls(calls); len(bad) != 0 {
+					t.Fatalf("destructive git ran before the refusal: %v", bad)
+				}
+			} else if len(calls) != 0 {
 				t.Fatalf("git ran before the refusal: %v", calls)
+			}
+			if repoState(repo) != before || (len(args) > 0 && repoState(args[0]) != beforeTarget) {
+				t.Fatal("git state changed (HEAD, branches or tags)")
 			}
 			if _, err := os.Stat(filepath.Join(repo, "junk.txt")); err != nil {
 				t.Fatal("repo was cleaned")
 			}
-			if got := strings.TrimSpace(clearGit(t, repo, "symbolic-ref", "--short", "HEAD")); got != "gm/"+clearID {
-				t.Fatalf("HEAD moved to %q", got)
-			}
 			if _, err := os.Stat(filepath.Join(cfg, "runs", clearID+".json")); err != nil {
 				t.Fatal("run record deleted")
+			}
+			if entries, _ := os.ReadDir(arch); len(entries) != 0 && r.readOnlyGit() {
+				t.Fatalf("archive written before the refusal: %v", entries)
 			}
 		})
 	}
@@ -290,10 +384,77 @@ func TestClearScriptEveryGuardIsLoadBearing(t *testing.T) {
 			if err := os.WriteFile(mut, []byte(strings.Join(kept, "\n")), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			out, _, _, _, _ := runRefusal(t, r, mut)
-			if strings.Contains(out, "clear-project-state: "+r.msg) {
+			if o, serr := exec.Command("bash", "-n", mut).CombinedOutput(); serr != nil {
+				t.Fatalf("the mutant does not parse, so the case would pass vacuously: %s", o)
+			}
+			out, merr, _, _, _ := runRefusal(t, r, mut)
+			if strings.TrimRight(out, "\n") == "clear-project-state: "+r.msg {
 				t.Fatalf("the refusal survives without its guard %s:\n%s", r.tag, out)
 			}
+			if r.soleGuard() && merr != nil {
+				t.Fatalf("guard %s is masked: without it the run is still refused:\n%s", r.tag, out)
+			}
 		})
+	}
+}
+
+// A tracked .gophermind symlink is restored by reset --hard; the script must
+// notice before it deletes through the link.
+func lateSymlinkRepo(t *testing.T) (repo, cfg, outside string) {
+	t.Helper()
+	skipIfNoGit(t)
+	repo, cfg, outside = t.TempDir(), t.TempDir(), t.TempDir()
+	if r, err := filepath.EvalSymlinks(repo); err == nil {
+		repo = r
+	}
+	os.MkdirAll(filepath.Join(outside, clearID), 0o755)
+	os.WriteFile(filepath.Join(outside, clearID, "keep.txt"), []byte("keep"), 0o644)
+	clearGit(t, repo, "init", "-q", "-b", "main")
+	if err := os.Symlink(outside, filepath.Join(repo, ".gophermind")); err != nil {
+		t.Fatal(err)
+	}
+	clearGit(t, repo, "add", ".gophermind")
+	clearGit(t, repo, "commit", "-q", "-m", "one")
+	clearGit(t, repo, "tag", "goal-baseline")
+	clearGit(t, repo, "rm", "-q", ".gophermind")
+	clearGit(t, repo, "commit", "-q", "-m", "two")
+	os.MkdirAll(filepath.Join(repo, ".gophermind", clearID), 0o755)
+	clearGit(t, repo, "branch", "gm/"+clearID)
+	return repo, cfg, outside
+}
+
+func TestClearScriptRefusesSymlinkRestoredByReset(t *testing.T) {
+	repo, cfg, outside := lateSymlinkRepo(t)
+	out, err, _ := clearRun{cwd: repo, cfg: cfg, home: t.TempDir(), args: []string{repo, clearID, "gm/" + clearID, t.TempDir()}}.do(t)
+	if err == nil || !strings.Contains(out, "clear-project-state: repo .gophermind became a symlink") {
+		t.Fatalf("want the late symlink refusal, got err=%v\n%s", err, out)
+	}
+	if _, serr := os.Stat(filepath.Join(outside, clearID, "keep.txt")); serr != nil {
+		t.Fatal("a file outside the repo was deleted")
+	}
+}
+
+func TestClearScriptLateSymlinkGuardIsLoadBearing(t *testing.T) {
+	src, err := os.ReadFile(clearScript(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kept []string
+	for _, l := range strings.Split(string(src), "\n") {
+		if !strings.Contains(l, "# guard:gm-symlink-late") && !strings.Contains(l, "# guard:rm-target") && !strings.Contains(l, "# guard:rm-parent") {
+			kept = append(kept, l)
+		}
+	}
+	mut := filepath.Join(t.TempDir(), "mutant.sh")
+	if err := os.WriteFile(mut, []byte(strings.Join(kept, "\n")), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if o, serr := exec.Command("bash", "-n", mut).CombinedOutput(); serr != nil {
+		t.Fatalf("the mutant does not parse: %s", o)
+	}
+	repo, cfg, outside := lateSymlinkRepo(t)
+	clearRun{script: mut, cwd: repo, cfg: cfg, home: t.TempDir(), args: []string{repo, clearID, "gm/" + clearID, t.TempDir()}}.do(t)
+	if _, serr := os.Stat(filepath.Join(outside, clearID, "keep.txt")); serr == nil {
+		t.Fatal("without the late guards nothing outside the repo was deleted: the scenario does not exercise them")
 	}
 }
