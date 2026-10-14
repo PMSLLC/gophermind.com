@@ -558,3 +558,36 @@ func TestCheckFrozenNonObjectContractAndContext(t *testing.T) {
 		}
 	}
 }
+
+// A kill or a full disk between the two writes of Stage(0) leaves body-0 alone.
+// With no intent in the log nothing depends on it, so staging again replaces it.
+func TestStageZeroReplacesAHalfStagedPairOnlyWhileNoIntentDependsOnIt(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "fn-a")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, revlog.BodyFile(0)), []byte("half"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := revlog.Stage(dir, 0, []byte(node0), []byte("package p // t0\n")); err != nil {
+		t.Fatalf("Stage(0) over a half-staged pair with no log: %v", err)
+	}
+	if b, tst, err := revlog.ReadStaged(dir, 0); err != nil || string(b) != node0 || string(tst) != "package p // t0\n" {
+		t.Fatalf("the pair was not staged: %v", err)
+	}
+	if err := revlog.Stage(dir, 0, []byte("other"), []byte("other")); err == nil {
+		t.Fatal("Stage(0) replaced a complete pair")
+	}
+
+	// The same half pair under an intent is refused: the intent depends on revision 0.
+	g := newFx(t)
+	if err := os.Remove(filepath.Join(g.dir, revlog.TestFile(0))); err != nil {
+		t.Fatal(err)
+	}
+	if err := revlog.Stage(g.dir, 0, []byte("other"), []byte("other")); err == nil {
+		t.Fatal("Stage(0) replaced a file an intent depends on")
+	}
+	if b, err := os.ReadFile(filepath.Join(g.dir, revlog.BodyFile(0))); err != nil || string(b) != node0 {
+		t.Fatalf("body-0 under an intent changed: %v", err)
+	}
+}

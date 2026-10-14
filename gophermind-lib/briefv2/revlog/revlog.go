@@ -48,7 +48,11 @@ type Record struct {
 	Assumptions      []string `json:"assumptions,omitempty"`
 	Model            string   `json:"model,omitempty"`
 	Class            string   `json:"class,omitempty"`
-	At               string   `json:"at"`
+	// Round is set on a commit record: the leaf's human-retry round when the
+	// revision was committed. With the node id and N it keys the one revision
+	// escalation a committed rewrite counts, so a replay never adds another.
+	Round int    `json:"round,omitempty"`
+	At    string `json:"at"`
 }
 
 // ErrChain is wrapped by every Verify failure. The text names a rule, never content.
@@ -224,19 +228,36 @@ func Read(dir string) ([]Record, error) {
 
 // Stage writes body-k.json and test-k.txt atomically (0600). For k >= 1 it
 // replaces what is there; the caller never stages k while an intent for k is
-// open. Revision 0 is the approved plan and is create-only. A link in the way
-// is refused.
+// open. Revision 0 is the approved plan and is create-only: a complete pair is
+// never replaced. A half pair (a kill or a full disk between the two writes)
+// is replaced only while the log holds no intent, since every intent depends
+// on revision 0. A link in the way is refused.
 func Stage(dir string, k int, body, test []byte) error {
 	if err := plainDir(dir); err != nil {
 		return err
 	}
+	present := 0
 	for _, n := range []string{BodyFile(k), TestFile(k)} {
 		path := filepath.Join(dir, n)
 		if err := plainFile(path); err != nil {
 			return err
 		}
-		if _, err := os.Lstat(path); k == 0 && err == nil {
-			return errors.New("revlog: revision 0 is already staged")
+		if _, err := os.Lstat(path); err == nil {
+			present++
+		}
+	}
+	if k == 0 && present == 2 {
+		return errors.New("revlog: revision 0 is already staged")
+	}
+	if k == 0 && present == 1 {
+		recs, err := Read(dir)
+		if err != nil {
+			return err
+		}
+		for _, r := range recs {
+			if r.Kind == KindIntent {
+				return errors.New("revlog: revision 0 is already staged")
+			}
 		}
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {

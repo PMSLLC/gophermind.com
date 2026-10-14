@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -406,4 +407,122 @@ func TestResumeFaultsWhenRecoveryLeavesTheRuntimeRevisionBehindItsChain(t *testi
 	o.Board = noRevisionBoard{g2.board}
 	_, err := startRun(context.Background(), o)
 	asStop(t, err, "failed", "plan_changed")
+}
+
+// TestRecoveryAfterAHumanRetryDoesNotCountACommittedRewriteTwice is spec R15:
+// one committed rewrite is one revision escalation, also when a person granted
+// a retry (raising the round) before the run was resumed.
+func TestRecoveryAfterAHumanRetryDoesNotCountACommittedRewriteTwice(t *testing.T) {
+	t.Parallel()
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	g1 := newRigIn(t, dir, Script{})
+	prop := g1.proposal(t, leafID, "REVISED-SENTENCE for the greeting.", greetTest)
+	rc1, err := startRun(context.Background(), g1.options())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refusal, err := rc1.applyRevision(context.Background(), rc1.plan.Leaf(leafID), prop, planner.TriggerLadderExhausted); err != nil || refusal != "" {
+		t.Fatalf("applyRevision = %q, %v", refusal, err)
+	}
+	// A person retries the leaf: the round goes up and is saved.
+	stateMu.Lock()
+	rc1.state.ExtraRevisions[leafID]++
+	serr := rc1.state.Save(g1.runDir)
+	stateMu.Unlock()
+	if serr != nil {
+		t.Fatal(serr)
+	}
+	rc1.close()
+	g1.close()
+
+	g2 := newRigIn(t, dir, Script{})
+	rc2, err := startRun(context.Background(), g2.options())
+	if err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	defer rc2.close()
+	escs, _ := LoadEscalations(g2.runDir)
+	n := 0
+	for _, e := range escs {
+		if e.Kind == "revision" && e.NodeID == leafID {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("revision escalations = %d after one committed rewrite and a retry, want 1", n)
+	}
+}
+
+// halfStaged leaves the folder as a kill between the two writes of Stage(0)
+// would: body-0.json alone, no test-0.txt, no revision 1, no log.
+func halfStaged(t *testing.T) (string, *rig, planner.ReviseProposal) {
+	t.Helper()
+	dir, g, prop, _ := killedRun(t, 2)
+	d, _ := revlog.NodeDir(g.runDir, leafID)
+	for _, n := range []string{revlog.TestFile(0), revlog.BodyFile(1), revlog.TestFile(1)} {
+		if err := os.Remove(filepath.Join(d, n)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir, g, prop
+}
+
+func TestAHalfStagedRevisionZeroIsStagedAgainOnTheNextRevision(t *testing.T) {
+	t.Parallel()
+	dir, _, prop := halfStaged(t)
+	g2 := newRigIn(t, dir, Script{})
+	rc2, err := startRun(context.Background(), g2.options())
+	if err != nil {
+		t.Fatalf("resume over a half-staged revision 0: %v", err)
+	}
+	defer rc2.close()
+	if refusal, err := rc2.applyRevision(context.Background(), rc2.plan.Leaf(leafID), prop, planner.TriggerLadderExhausted); err != nil || refusal != "" {
+		t.Fatalf("applyRevision over a half-staged revision 0 = %q, %v", refusal, err)
+	}
+	revisionDone(t, g2, rc2, prop)
+}
+
+func TestAHalfStagedRevisionZeroThatIsNotTheNodeFileIsPlanChanged(t *testing.T) {
+	t.Parallel()
+	_, g, _ := halfStaged(t)
+	d, _ := revlog.NodeDir(g.runDir, leafID)
+	p := filepath.Join(d, revlog.BodyFile(0))
+	if err := os.WriteFile(p, append(readFile(t, p), ' '), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadPlan(g.runDir, g.repo)
+	asStop(t, err, "failed", "plan_changed")
+}
+
+// TestResumeRemovesAStrayReplaceTempOnlyUnderAnOpenIntent: a kill inside
+// pathsafe.ReplaceTest leaves its temp file beside the test file. With the
+// node's intent open it is this run's own residue and the resume removes it;
+// with no open intent the same file is a person's and the resume stops.
+func TestResumeRemovesAStrayReplaceTempOnlyUnderAnOpenIntent(t *testing.T) {
+	t.Parallel()
+	for name, k := range map[string]int{"open intent": 3, "no open intent": 0} {
+		name, k := name, k
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			dir, g1, prop, l := killedRun(t, k)
+			stray := filepath.Join(g1.repo, filepath.FromSlash(path.Dir(l.TestFile)), ".gm-replace-"+path.Base(l.TestFile)+".0123456789abcdef")
+			if err := os.WriteFile(stray, []byte(greetTest), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			g2 := newRigIn(t, dir, Script{})
+			rc2, err := startRun(context.Background(), g2.options())
+			if k == 0 {
+				asStop(t, err, "failed", "foreign_dirt")
+				return
+			}
+			if err != nil {
+				t.Fatalf("resume with a stray temp file under an open intent: %v", err)
+			}
+			defer rc2.close()
+			if _, serr := os.Lstat(stray); !os.IsNotExist(serr) {
+				t.Fatalf("the stray temp file is still there: %v", serr)
+			}
+			revisionDone(t, g2, rc2, prop)
+		})
+	}
 }

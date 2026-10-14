@@ -4,12 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
 	"time"
 
 	"gophermind/gophermind-lib/briefv2/blackboard"
+	"gophermind/gophermind-lib/briefv2/pathsafe"
 )
 
 // resumeMovedMessage is the fixed text of a resume refused because the work
@@ -173,6 +177,9 @@ func (rc *runCtx) resume(ctx context.Context) error {
 		return &stopError{Status: "failed", Reason: "foreign_dirt",
 			Message: fmt.Sprintf("executor: the working tree holds %d path(s) that belong to no released leaf, so nothing was changed: %s", len(foreign), strings.Join(shown, ", "))}
 	}
+	if err := rc.removeStrayReplaceTemps(dirty); err != nil {
+		return err
+	}
 
 	if err := rc.recoverRevisions(ctx); err != nil {
 		return err
@@ -193,8 +200,9 @@ func (rc *runCtx) resume(ctx context.Context) error {
 // of every leaf and Wave 0's own are the result and are never foreign. The
 // test file of a revised node is not foreign only while its content is the
 // one the chain recorded (the tip's, or an open intent's after hash); any
-// other content is. The result is sorted; nothing is stashed, reset or
-// discarded by this check.
+// other content is. A temp file of pathsafe.ReplaceTest beside the test of a
+// node whose intent is open is not foreign either (resume then removes it).
+// The result is sorted; nothing is stashed, reset or discarded by this check.
 func (rc *runCtx) foreignDirt(dirty []string, released []string) []string {
 	own := map[string]bool{}
 	mine := func(l *Leaf) {
@@ -219,6 +227,9 @@ func (rc *runCtx) foreignDirt(dirty []string, released []string) []string {
 	for _, p := range rc.openRevisionPaths() {
 		own[p] = true
 	}
+	for p := range rc.strayReplaceTemps(dirty) {
+		own[p] = true
+	}
 	var out []string
 	for _, p := range dirty {
 		if !own[p] {
@@ -227,4 +238,48 @@ func (rc *runCtx) foreignDirt(dirty []string, released []string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// strayReplaceTemps are the dirty paths that are a temp file of
+// pathsafe.ReplaceTest beside the test file of a node whose revision intent is
+// open: what a kill inside step 4, or inside the undo of a refused test, leaves.
+// The same name with no open intent is not this run's and stays foreign.
+// The result maps each such path to its test file.
+func (rc *runCtx) strayReplaceTemps(dirty []string) map[string]string {
+	rc.plan.revMu.Lock()
+	var tests []string
+	for id, t := range rc.plan.Revised {
+		if l := rc.plan.byID[id]; l != nil && t.Open != nil {
+			tests = append(tests, l.TestFile)
+		}
+	}
+	rc.plan.revMu.Unlock()
+	out := map[string]string{}
+	for _, p := range dirty {
+		for _, tf := range tests {
+			if pathsafe.IsReplaceTestTemp(p, tf) {
+				out[p] = tf
+				break
+			}
+		}
+	}
+	return out
+}
+
+// removeStrayReplaceTemps deletes the strayReplaceTemps, found beside a test
+// path pathsafe.ResolveTest accepts; anything but a regular file is left alone.
+func (rc *runCtx) removeStrayReplaceTemps(dirty []string) error {
+	for p, tf := range rc.strayReplaceTemps(dirty) {
+		abs, err := pathsafe.ResolveTest(rc.o.Repo, tf)
+		if err != nil {
+			return errors.New("executor: a temp file of a revised test could not be removed")
+		}
+		stray := filepath.Join(filepath.Dir(abs), path.Base(p))
+		if fi, err := os.Lstat(stray); err == nil && fi.Mode().IsRegular() {
+			if err := os.Remove(stray); err != nil {
+				return errors.New("executor: a temp file of a revised test could not be removed")
+			}
+		}
+	}
+	return nil
 }

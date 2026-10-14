@@ -160,10 +160,15 @@ func (rc *runCtx) baseBranch() string {
 // planIntact compares the plan files with what was hashed at load, and the
 // approval with the plan as it stands. A plan file that changed while the run
 // was going stops the run failed with reason plan_changed; the check runs
-// before every commit and at the end.
+// before every commit and at the end. The revision chains are proved again as
+// LoadPlan proves them, so an edit of body-0.json, a log line or
+// leaf_tests.json during the run is plan_changed too (spec R3).
 func (rc *runCtx) planIntact() *stopError {
 	bad := errPlanChanged()
 	if err := planner.VerifyApproval(rc.o.RunDir); err != nil {
+		return bad
+	}
+	if !rc.plan.chainsIntact() {
 		return bad
 	}
 	for key, want := range rc.plan.expected() {

@@ -49,6 +49,10 @@ type Plan struct {
 	rootNet []NetHost
 	fns     map[string]contract.Function
 	revMu   sync.Mutex
+	// chainMu orders the writes of a revision transaction (each one under the
+	// write lock) against planIntact's re-proof of the chains (the read lock),
+	// so the re-proof always sees the files between two writes.
+	chainMu sync.RWMutex
 }
 
 // RevisedTip is where the revision chain of one node stands.
@@ -181,7 +185,7 @@ func LoadPlan(runDir, repo string) (*Plan, error) {
 	if err != nil {
 		return nil, fmt.Errorf("executor: _state/leaf_tests.json is not readable (%s)", planner.JSONErr(err))
 	}
-	revised, err := verifyRevisions(runDir, repo, tr, hashes, tests)
+	revised, err := verifyRevisions(runDir, repo, functionPaths(tr), hashes, tests)
 	if err != nil {
 		return nil, err
 	}
@@ -596,23 +600,85 @@ func nodeRevision(runDir, rel string) (int, error) {
 	return d.Revision, nil
 }
 
-// verifyRevisions proves the revision chain of every function node that has a
-// folder in _state/revisions, and points Hashes at revision 0 for it. A node
-// with no folder is unrevised. It never writes.
-func verifyRevisions(runDir, repo string, tr *tree.Tree, hashes map[string]string, tests map[string]planner.LeafTest) (map[string]RevisedTip, error) {
-	out := map[string]RevisedTip{}
+// functionPaths maps every function node id of the tree to its node file path.
+func functionPaths(tr *tree.Tree) map[string]string {
+	out := map[string]string{}
 	for _, n := range tr.Nodes {
-		if n.Kind != tree.KindFunction {
-			continue
+		if n.Kind == tree.KindFunction {
+			out[n.ID] = n.Path()
 		}
-		dir, err := revlog.NodeDir(runDir, n.ID)
+	}
+	return out
+}
+
+// chainWrite runs one write of a revision transaction under the chain lock.
+func (p *Plan) chainWrite(f func() error) error {
+	p.chainMu.Lock()
+	defer p.chainMu.Unlock()
+	return f()
+}
+
+// chainsIntact proves every revision chain again with verifyRevisions, as
+// LoadPlan does (hashes and the frozen-field check, no test run): body-0 must
+// still be the revision 0 the plan was loaded with, and each chain's committed
+// revision must be the one this run holds, or the open intent's (a commit
+// record written, the tip not yet moved). The memory is read before the files,
+// so it can lag the files and never lead them.
+func (p *Plan) chainsIntact() bool {
+	p.revMu.Lock()
+	mem := make(map[string]RevisedTip, len(p.Revised))
+	for id, t := range p.Revised {
+		mem[id] = t
+	}
+	p.revMu.Unlock()
+	paths := make(map[string]string, len(p.keys))
+	for id, key := range p.keys {
+		paths[id] = strings.TrimPrefix(key, "tree/")
+	}
+	p.chainMu.RLock()
+	defer p.chainMu.RUnlock()
+	tests, err := planner.ReadLeafTests(p.RunDir)
+	if err != nil {
+		return false
+	}
+	base := map[string]string{}
+	disk, err := verifyRevisions(p.RunDir, p.Repo, paths, base, tests)
+	if err != nil {
+		return false
+	}
+	for key, h := range base {
+		if p.Hashes[key] != h {
+			return false
+		}
+	}
+	for id, d := range disk {
+		m := mem[id]
+		if d.N != m.N && (m.Open == nil || m.Open.N != d.N) {
+			return false
+		}
+	}
+	for id, m := range mem {
+		if _, ok := disk[id]; !ok && m.N > 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// verifyRevisions proves the revision chain of every function node (id to node
+// file path) that has a folder in _state/revisions, and points hashes at
+// revision 0 for it. A node with no folder is unrevised. It never writes.
+func verifyRevisions(runDir, repo string, fnPaths map[string]string, hashes map[string]string, tests map[string]planner.LeafTest) (map[string]RevisedTip, error) {
+	out := map[string]RevisedTip{}
+	for id, path := range fnPaths {
+		dir, err := revlog.NodeDir(runDir, id)
 		if err != nil {
 			return nil, errPlanChanged()
 		}
 		// A node file's own revision field must agree with its chain: a node that
 		// says revision 1 with no folder, or a folder deleted under a revised
 		// node, is not the plan that was approved.
-		nodeRev, err := nodeRevision(runDir, n.Path())
+		nodeRev, err := nodeRevision(runDir, path)
 		if err != nil {
 			return nil, errPlanChanged()
 		}
@@ -622,12 +688,12 @@ func verifyRevisions(runDir, repo string, tr *tree.Tree, hashes map[string]strin
 			}
 			continue
 		}
-		lt, ok := tests[n.ID]
+		lt, ok := tests[id]
 		if !ok {
 			return nil, errPlanChanged()
 		}
-		key := "tree/" + n.Path()
-		disk, err := nodeDisk(runDir, repo, n.Path(), lt)
+		key := "tree/" + path
+		disk, err := nodeDisk(runDir, repo, path, lt)
 		if err != nil {
 			return nil, errPlanChanged()
 		}
@@ -653,7 +719,7 @@ func verifyRevisions(runDir, repo string, tr *tree.Tree, hashes map[string]strin
 			return nil, errPlanChanged()
 		}
 		hashes[key] = revlog.Hash(body0)
-		out[n.ID] = RevisedTip{Key: key, N: tip.N, BodySHA256: tip.BodySHA256, TestSHA256: tip.TestSHA256, Open: tip.Open}
+		out[id] = RevisedTip{Key: key, N: tip.N, BodySHA256: tip.BodySHA256, TestSHA256: tip.TestSHA256, Open: tip.Open}
 	}
 	return out, nil
 }
@@ -698,13 +764,20 @@ func (p *Plan) ReloadLeaf(id string) error {
 // else with no record is a deleted or emptied log. It compares with the STAGED
 // revision 0, not with the approved hash (LoadPlan has no run state): a
 // rewritten node-and-body-0 pair is caught downstream, where resume compares
-// State.PlanHashes with Plan.Hashes and the approval is verified.
+// State.PlanHashes with Plan.Hashes and the approval is verified. A lone
+// body-0.json (a kill between the two writes of staging revision 0) is not yet
+// staged when it still equals the node file and the test is as planned; the
+// next revision stages the pair again (revlog.Stage).
 func stagedOnly(dir string, entries []os.DirEntry, d revlog.Disk) bool {
 	allowed := map[string]bool{revlog.BodyFile(0): true, revlog.TestFile(0): true, revlog.BodyFile(1): true, revlog.TestFile(1): true}
 	for _, e := range entries {
 		if !allowed[e.Name()] || !e.Type().IsRegular() {
 			return false
 		}
+	}
+	if len(entries) == 1 && entries[0].Name() == revlog.BodyFile(0) {
+		body0, err := os.ReadFile(filepath.Join(dir, revlog.BodyFile(0)))
+		return err == nil && d.NodeSHA256 == revlog.Hash(body0) && d.LeafTestSHA256 == d.TestFileSHA256
 	}
 	body0, test0, err := revlog.ReadStaged(dir, 0)
 	if err != nil {

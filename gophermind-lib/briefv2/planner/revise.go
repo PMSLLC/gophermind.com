@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/scanner"
+	"go/token"
 	"os"
 	"path"
 	"path/filepath"
@@ -308,7 +310,7 @@ func (v *Reviser) Revise(ctx context.Context, req ReviseRequest) (ReviseProposal
 
 	next := req.Revision + 1
 	secrets := req.Secrets
-	heldSecret := func(text string) bool { return packer.HasSecret(text, secrets) }
+	heldSecret := func(text string) bool { return replyHoldsSecret(text, secrets) }
 	scope := router.ScopeNode
 	if cfg.Context == "component" {
 		scope = router.ScopeComponent
@@ -322,6 +324,12 @@ func (v *Reviser) Revise(ctx context.Context, req ReviseRequest) (ReviseProposal
 		scope: scope, maxTokens: cfg.MaxTokens, tier: router.Tier(cfg.ModelTier), revision: req.Revision, skipSave: heldSecret}
 	res, err := p.callRes(ctx, r, cs, prompt, func(text string) error {
 		got = parsedRevise{}
+		if heldSecret(text) {
+			// No error back to the router: its repair request would send the
+			// rejected reply, secret included, to the provider again.
+			got.secret = true
+			return nil
+		}
 		rep, perr := parseReviseReplyScanned(text, secrets)
 		if perr != nil {
 			if classOf(perr, "") == ClassSecretInReply {
@@ -347,6 +355,10 @@ func (v *Reviser) Revise(ctx context.Context, req ReviseRequest) (ReviseProposal
 		var re *reviseErr
 		if errors.As(perr, &re) && re.class == ClassContractFlagged {
 			got.flag = re
+			return nil
+		}
+		if classOf(perr, "") == ClassSecretInReply {
+			got.secret = true // as above: never handed to the router's repair
 			return nil
 		}
 		if perr != nil {
@@ -441,9 +453,9 @@ func (p *Planner) reviseTests(ctx context.Context, r *run, c *contract.Contracts
 	secret := false
 	cs := callSpec{stage: fmt.Sprintf("testwrite:%s-r%d", id, n), taskType: "testwrite", nodeID: id, nodeClass: class,
 		tier: p.tierFor(strField(merged, "model_tier")), scope: router.ScopeNode, maxTokens: maxTokensTestwrite, revision: req.Revision,
-		skipSave: func(text string) bool { return packer.HasSecret(text, req.Secrets) }}
+		skipSave: func(text string) bool { return replyHoldsSecret(text, req.Secrets) }}
 	err = p.call(ctx, r, cs, prompt, func(text string) error {
-		if packer.HasSecret(text, req.Secrets) {
+		if replyHoldsSecret(text, req.Secrets) {
 			// Not an error: the router's repair request would send this reply back.
 			secret = true
 			return nil
@@ -471,4 +483,61 @@ func (p *Planner) reviseTests(ctx context.Context, r *run, c *contract.Contracts
 	}
 	merged["tests"] = anyObjects(tests)
 	return src, "", nil
+}
+
+// replyHoldsSecret is the secret scan of a revise or Test-writer reply: the
+// reply as sent, every string of its JSON once decoded (an escaped secret is
+// still a secret), and the value of every Go string or rune literal inside
+// those strings (a test source may spell a secret with Go escapes). It runs
+// before the reply is saved, parsed or handed to the router's repair.
+func replyHoldsSecret(text string, secrets []string) bool {
+	if packer.HasSecret(text, secrets) {
+		return true
+	}
+	var v any
+	if json.Unmarshal([]byte(StripReply(strings.TrimSpace(text))), &v) != nil {
+		return false
+	}
+	var parts []string
+	var walk func(any)
+	walk = func(x any) {
+		switch t := x.(type) {
+		case string:
+			parts = append(parts, t)
+			parts = append(parts, goLiterals(t)...)
+		case []any:
+			for _, e := range t {
+				walk(e)
+			}
+		case map[string]any:
+			for k, e := range t {
+				parts = append(parts, k)
+				walk(e)
+			}
+		}
+	}
+	walk(v)
+	return packer.HasSecret(strings.Join(parts, "\n"), secrets)
+}
+
+// goLiterals is the unquoted value of every string and rune literal in src,
+// read as Go tokens; text that is not Go yields what the scanner finds.
+func goLiterals(src string) []string {
+	fset := token.NewFileSet()
+	f := fset.AddFile("", fset.Base(), len(src))
+	var sc scanner.Scanner
+	sc.Init(f, []byte(src), func(token.Position, string) {}, 0)
+	var out []string
+	for {
+		_, tok, lit := sc.Scan()
+		if tok == token.EOF {
+			break
+		}
+		if tok == token.STRING || tok == token.CHAR {
+			if v, err := strconv.Unquote(lit); err == nil {
+				out = append(out, v)
+			}
+		}
+	}
+	return out
 }

@@ -78,3 +78,33 @@ func TestReplaceTestKeepsThePermissionBitsOfTheFileItReplaces(t *testing.T) {
 		t.Errorf("new file mode = %v", fi.Mode().Perm())
 	}
 }
+
+// A kill between the temp file and the rename leaves the temp file in the
+// repository. Its name says what it is, so a resume can tell it apart from a
+// person's file (pathsafe.IsReplaceTestTemp).
+func TestReplaceTestNamesItsTempFileRecognizably(t *testing.T) {
+	repo, _ := filepath.EvalSymlinks(t.TempDir())
+	dest := filepath.Join(repo, "pkg", "x_test.go")
+	os.MkdirAll(filepath.Dir(dest), 0o755)
+	os.WriteFile(dest, []byte("old"), 0o644)
+	var seen []string
+	defer pathsafe.SetBeforeRename(func() {
+		entries, _ := os.ReadDir(filepath.Dir(dest))
+		for _, e := range entries {
+			if e.Name() != "x_test.go" {
+				seen = append(seen, "pkg/"+e.Name())
+			}
+		}
+	})()
+	if err := pathsafe.ReplaceTest(repo, "pkg/x_test.go", []byte("package pkg\n")); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 1 || !pathsafe.IsReplaceTestTemp(seen[0], "pkg/x_test.go") {
+		t.Fatalf("temp files = %v, want one the resume can recognize", seen)
+	}
+	for _, other := range []string{"pkg/x_test.go", "pkg/.x_test.go.tmp0011", "other/" + strings.TrimPrefix(seen[0], "pkg/"), "pkg/.gm-replace-y_test.go.00"} {
+		if pathsafe.IsReplaceTestTemp(other, "pkg/x_test.go") {
+			t.Errorf("%s was taken for a temp file of pkg/x_test.go", other)
+		}
+	}
+}

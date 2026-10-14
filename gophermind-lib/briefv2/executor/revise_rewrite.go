@@ -53,7 +53,7 @@ func (lr *leafRun) logRevise(r revlog.Record) error {
 		return errPlanChanged()
 	}
 	r.At = runfs.TS(lr.rc.o.Now())
-	return revlog.Append(dir, r)
+	return lr.rc.plan.chainWrite(func() error { return revlog.Append(dir, r) })
 }
 
 // afterRewrite resets the per-revision state of the leaf run: the ladder

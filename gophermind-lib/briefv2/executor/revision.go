@@ -87,14 +87,14 @@ func (rc *runCtx) applyRevision(ctx context.Context, l *Leaf, prop planner.Revis
 		b0, t0, rerr := revlog.ReadStaged(dir, 0)
 		switch {
 		case rerr != nil:
-			if err := revlog.Stage(dir, 0, curBody, curTest); err != nil {
+			if err := rc.plan.chainWrite(func() error { return revlog.Stage(dir, 0, curBody, curTest) }); err != nil {
 				return "", err
 			}
 		case revlog.Hash(b0) != revlog.Hash(curBody) || revlog.Hash(t0) != revlog.Hash(curTest):
 			return "", errPlanChanged()
 		}
 	}
-	if err := revlog.Stage(dir, n, prop.Body, newTest); err != nil {
+	if err := rc.plan.chainWrite(func() error { return revlog.Stage(dir, n, prop.Body, newTest) }); err != nil {
 		return "", err
 	}
 	if err := rc.revStep(2); err != nil {
@@ -103,7 +103,7 @@ func (rc *runCtx) applyRevision(ctx context.Context, l *Leaf, prop planner.Revis
 	in := revlog.Record{Kind: revlog.KindIntent, N: n, Trigger: trigger, BaseSHA256: revlog.Hash(curBody), BodySHA256: prop.BodySHA256,
 		TestSHA256Before: l.TestSHA256, TestSHA256After: prop.TestSHA256, Changed: prop.Changed, Assumptions: rc.scrubAll(prop.Assumptions),
 		Model: prop.Model, At: rc.stamp()}
-	if err := revlog.Append(dir, in); err != nil {
+	if err := rc.plan.chainWrite(func() error { return revlog.Append(dir, in) }); err != nil {
 		return "", err
 	}
 	// The intent is open from here: planIntact must accept this node's staged
@@ -188,7 +188,7 @@ func (rc *runCtx) rollForward(ctx context.Context, l *Leaf, dir string, in revlo
 		switch revlog.Hash(cur) {
 		case in.TestSHA256After:
 		case in.TestSHA256Before:
-			if perr := pathsafe.ReplaceTest(rc.o.Repo, l.TestFile, test); perr != nil {
+			if perr := rc.plan.chainWrite(func() error { return pathsafe.ReplaceTest(rc.o.Repo, l.TestFile, test) }); perr != nil {
 				return "", fmt.Errorf("executor: the revised test of leaf %s could not be written", l.ID)
 			}
 		default:
@@ -208,7 +208,7 @@ func (rc *runCtx) rollForward(ctx context.Context, l *Leaf, dir string, in revlo
 	}
 
 	// Step 5: leaf_tests.json.
-	if err := planner.SetLeafTestSHA(rc.o.RunDir, l.ID, in.TestSHA256After); err != nil {
+	if err := rc.plan.chainWrite(func() error { return planner.SetLeafTestSHA(rc.o.RunDir, l.ID, in.TestSHA256After) }); err != nil {
 		return "", fmt.Errorf("executor: leaf_tests.json could not be updated for %s", l.ID)
 	}
 	if err := rc.revStep(5); err != nil {
@@ -228,7 +228,7 @@ func (rc *runCtx) rollForward(ctx context.Context, l *Leaf, dir string, in revlo
 		if perr != nil {
 			return "", errPlanChanged()
 		}
-		if werr := tree.NewStore(rc.o.RunDir).Write(node); werr != nil {
+		if werr := rc.plan.chainWrite(func() error { return tree.NewStore(rc.o.RunDir).Write(node) }); werr != nil {
 			return "", fmt.Errorf("executor: the revised node %s could not be written", l.ID)
 		}
 		if written, rerr := readPlanFile(rc.o.RunDir, rel); rerr != nil || revlog.Hash(written) != in.BodySHA256 {
@@ -243,8 +243,8 @@ func (rc *runCtx) rollForward(ctx context.Context, l *Leaf, dir string, in revlo
 
 	// Step 7: the commit record, the runtime revision, the repository commit.
 	commit := in
-	commit.Kind, commit.At = revlog.KindCommit, rc.stamp()
-	if err := revlog.Append(dir, commit); err != nil {
+	commit.Kind, commit.At, commit.Round = revlog.KindCommit, rc.stamp(), rc.round(l.ID)
+	if err := rc.plan.chainWrite(func() error { return revlog.Append(dir, commit) }); err != nil {
 		return "", err
 	}
 	if err := rc.revStep(7); err != nil { // 7a: the commit record is on disk
@@ -275,15 +275,16 @@ func (rc *runCtx) abortRevision(l *Leaf, dir string, in revlog.Record, oldTest [
 		return "", fmt.Errorf("executor: leaf %s: its test path is not allowed", l.ID)
 	}
 	if cur, rerr := readNoFollow(testAbs); rerr != nil || revlog.Hash(cur) != in.TestSHA256Before {
-		if perr := pathsafe.ReplaceTest(rc.o.Repo, l.TestFile, oldTest); perr != nil {
+		if perr := rc.plan.chainWrite(func() error { return pathsafe.ReplaceTest(rc.o.Repo, l.TestFile, oldTest) }); perr != nil {
 			return "", fmt.Errorf("executor: the test file of leaf %s could not be restored", l.ID)
 		}
 	}
-	if err := revlog.Append(dir, revlog.Record{Kind: revlog.KindRefused, N: in.N, Class: class, Trigger: in.Trigger, At: rc.stamp()}); err != nil {
+	refused := revlog.Record{Kind: revlog.KindRefused, N: in.N, Class: class, Trigger: in.Trigger, At: rc.stamp()}
+	if err := rc.plan.chainWrite(func() error { return revlog.Append(dir, refused) }); err != nil {
 		return "", err
 	}
 	closed = true
-	if err := revlog.RemoveStaged(dir, in.N); err != nil {
+	if err := rc.plan.chainWrite(func() error { return revlog.RemoveStaged(dir, in.N) }); err != nil {
 		return "", err
 	}
 	rc.emit("revise_refused", l.ID, class)
@@ -295,7 +296,9 @@ func (rc *runCtx) abortRevision(l *Leaf, dir string, in revlog.Record, oldTest [
 // planIntact (the spec requires it before every commit), then the runtime
 // revision, the repository commit of a rewritten test, the escalation count and
 // the reloaded leaf. The revision numbers here are the node's (in.N), never the
-// row counter, which the notes rung and a repair round also raise.
+// row counter, which the notes rung and a repair round also raise. The
+// escalation is keyed by the commit record (its N and Round), never by the
+// current round, so a recovery after a human retry does not count it again.
 func (rc *runCtx) finishCommitted(ctx context.Context, l *Leaf, in revlog.Record, announce bool) error {
 	wc := context.WithoutCancel(ctx)
 	rc.plan.setTip(l.ID, RevisedTip{Key: rc.plan.nodeKey(l.ID), N: in.N, BodySHA256: in.BodySHA256, TestSHA256: in.TestSHA256After})
@@ -341,7 +344,7 @@ func (rc *runCtx) finishCommitted(ctx context.Context, l *Leaf, in revlog.Record
 	if err := rc.revStep(8); err != nil { // 7b: the repository commit is made
 		return err
 	}
-	if err := AppendEscalation(rc.o.RunDir, report.Escalation{Kind: "revision", TaskType: "revise", Model: in.Model, NodeID: l.ID, Revision: in.N - 1, Round: rc.round(l.ID)}); err != nil {
+	if err := AppendEscalation(rc.o.RunDir, report.Escalation{Kind: "revision", TaskType: "revise", Model: in.Model, NodeID: l.ID, Revision: in.N - 1, Round: in.Round}); err != nil {
 		return err
 	}
 	if err := rc.plan.ReloadLeaf(l.ID); err != nil {

@@ -573,3 +573,55 @@ func TestReviseComponentVariantIsRefusedOnAPublicOnlyChain(t *testing.T) {
 		t.Fatalf("node scope on a public provider: %+v, %v", prop, err)
 	}
 }
+
+// TestReviseRefusesASecretThatOnlyDecodingReveals: a secret spelled with JSON
+// \u escapes in a patch, or with Go escapes in a Test-writer test source, is
+// refused as secret_in_reply like a plain one: the reply is not saved and no
+// repair request carries it back to the provider.
+func TestReviseRefusesASecretThatOnlyDecodingReveals(t *testing.T) {
+	// Built at run time: the escape is spelled with a backslash byte, never written literally here.
+	jsonEscaped := strings.Replace(runSecret, "C", string(rune(92))+"u0043", 1)
+	goEscaped := `\x43ANARY-SECRET-VALUE`
+	cases := map[string]struct {
+		files   map[string]string
+		escaped string
+		calls   int
+	}{
+		"json escapes in the patch": {map[string]string{
+			"revise.fn-greet.txt": `{"description":"use ` + jsonEscaped + ` as the name","assumptions":["x"]}`,
+		}, jsonEscaped, 1},
+		"go escapes in the test source": {map[string]string{
+			"revise.fn-greet.txt":       descriptionPatch,
+			"testwrite.fn-greet-r1.txt": testwriteReply(t, strings.Replace(revisedGreetTest, `"Hello, Ada!", false},`, `"Hello, `+goEscaped+`!", false},`, 1)),
+		}, goEscaped, 2},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			g := planned(t, nil)
+			g.wire(variant(t, c.files))
+			before := len(g.stagesCalled())
+			nreq := len(g.fake.Requests())
+			prop, err := planner.NewReviser(g.deps).Revise(context.Background(), reviseReq(t, g))
+			if err != nil || prop.Outcome != planner.OutcomeUnusable || prop.Class != planner.ClassSecretInReply {
+				t.Fatalf("proposal = %+v, %v; want unusable %s", prop, err, planner.ClassSecretInReply)
+			}
+			if got := g.stagesCalled()[before:]; len(got) != c.calls {
+				t.Fatalf("stages = %v, want %d (no repair call)", got, c.calls)
+			}
+			for _, msgs := range requestsSince(g, nreq) {
+				for _, m := range msgs {
+					if strings.Contains(m.Content, runSecret) || strings.Contains(m.Content, c.escaped) || strings.Contains(m.Content, strings.ReplaceAll(c.escaped, `\`, `\\`)) {
+						t.Fatal("a request carries the secret reply back to the provider")
+					}
+				}
+			}
+			entries, _ := os.ReadDir(filepath.Join(g.runDir, "_state", "replies"))
+			for _, e := range entries {
+				body, _ := os.ReadFile(filepath.Join(g.runDir, "_state", "replies", e.Name()))
+				if strings.Contains(string(body), runSecret) || strings.Contains(string(body), c.escaped) || strings.Contains(string(body), strings.ReplaceAll(c.escaped, `\`, `\\`)) {
+					t.Errorf("%s holds the escaped secret", e.Name())
+				}
+			}
+		})
+	}
+}

@@ -150,8 +150,28 @@ func Replace(repo, rel string, data []byte) (err error) {
 // name that ends in _test.go). The revise stage uses it to put a rewritten test
 // over the one Wave 0 committed. It refuses a link or a directory as the
 // destination and leaves no temp file behind. The file keeps its permission bits.
+// Only a kill between the temp file and the rename leaves the temp file, named
+// ReplaceTestTempPrefix+<base>+"."+<hex> beside the test (IsReplaceTestTemp).
 func ReplaceTest(repo, rel string, data []byte) (err error) {
 	return replaceFile(repo, rel, data, ResolveTest, true)
+}
+
+// ReplaceTestTempPrefix starts the name of the temp file of ReplaceTest.
+const ReplaceTestTempPrefix = ".gm-replace-"
+
+// IsReplaceTestTemp says the slash path p, relative to the repository, is a
+// temp file ReplaceTest makes for the test file testRel: same directory, name
+// ReplaceTestTempPrefix + the test's base name + "." + hex digits.
+func IsReplaceTestTemp(p, testRel string) bool {
+	if path.Dir(p) != path.Dir(testRel) {
+		return false
+	}
+	rest, ok := strings.CutPrefix(path.Base(p), ReplaceTestTempPrefix+path.Base(testRel)+".")
+	if !ok || rest == "" {
+		return false
+	}
+	_, err := hex.DecodeString(rest)
+	return err == nil
 }
 
 func replaceFile(repo, rel string, data []byte, resolveFn func(repo, rel string) (string, error), keepPerm bool) (err error) {
@@ -187,6 +207,9 @@ func replaceFile(repo, rel string, data []byte, resolveFn func(repo, rel string)
 		return errors.New("no random source for a temp file name")
 	}
 	tmp := filepath.Join(dir, "."+filepath.Base(abs)+".tmp"+hex.EncodeToString(suffix[:]))
+	if keepPerm { // ReplaceTest: a name a resume can recognize
+		tmp = filepath.Join(dir, ReplaceTestTempPrefix+filepath.Base(abs)+"."+hex.EncodeToString(suffix[:]))
+	}
 	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL|NoFollow, perm)
 	if err != nil {
 		return fmt.Errorf("writing %s: %s", path.Base(rel), osReason(err))

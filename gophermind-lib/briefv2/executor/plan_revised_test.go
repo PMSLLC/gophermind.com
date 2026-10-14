@@ -318,3 +318,57 @@ func TestPlanIntactAcceptsTheOpenBodyForItsOwnNodeOnly(t *testing.T) {
 		t.Fatalf("a third body for the open node was accepted: %+v", se)
 	}
 }
+
+// TestPlanIntactReprovesTheRevisionChain is spec R3 during a run: an edit of
+// body-0.json, of a log line, or of leaf_tests.json after the plan was loaded is
+// plan_changed at planIntact, as it is at LoadPlan.
+func TestPlanIntactReprovesTheRevisionChain(t *testing.T) {
+	t.Parallel()
+	cases := map[string]func(t *testing.T, g *rig, dir string){
+		"body-0.json edited": func(t *testing.T, g *rig, dir string) {
+			p := filepath.Join(dir, revlog.BodyFile(0))
+			os.WriteFile(p, append(readFile(t, p), ' '), 0o600)
+		},
+		"the commit line deleted": func(t *testing.T, g *rig, dir string) {
+			p := filepath.Join(dir, "log.jsonl")
+			lines := strings.SplitAfter(string(readFile(t, p)), "\n")
+			os.WriteFile(p, []byte(lines[0]), 0o600)
+		},
+		"a log line edited": func(t *testing.T, g *rig, dir string) {
+			p := filepath.Join(dir, "log.jsonl")
+			raw := string(readFile(t, p))
+			i := strings.LastIndex(raw, `"body_sha256":"`) + len(`"body_sha256":"`)
+			c := byte('0')
+			if raw[i] == '0' {
+				c = '1'
+			}
+			os.WriteFile(p, []byte(raw[:i]+string(c)+raw[i+1:]), 0o600)
+		},
+		"leaf_tests.json edited": func(t *testing.T, g *rig, dir string) {
+			if err := planner.SetLeafTestSHA(g.runDir, leafID, strings.Repeat("ab", 32)); err != nil {
+				t.Fatal(err)
+			}
+		},
+	}
+	for name, mutate := range cases {
+		name, mutate := name, mutate
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			g := newRig(t)
+			forgeRevision(t, g, leafID, "REVISED-SENTENCE for the greeting.")
+			p, err := LoadPlan(g.runDir, g.repo)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rc := &runCtx{o: Options{RunDir: g.runDir, Repo: g.repo}, plan: p}
+			if se := rc.planIntact(); se != nil {
+				t.Fatalf("planIntact on a valid chain: %+v", se)
+			}
+			dir, _ := revlog.NodeDir(g.runDir, leafID)
+			mutate(t, g, dir)
+			if se := rc.planIntact(); se == nil || se.Reason != "plan_changed" {
+				t.Fatalf("%s mid-run was not caught by planIntact: %+v", name, se)
+			}
+		})
+	}
+}
