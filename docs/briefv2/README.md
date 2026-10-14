@@ -379,7 +379,7 @@ revise:
 What a rewrite may change: the description, the inputs, outputs, errors and side effects of the
 contract (an input keeps its name: the names must stay the parameters of the signature), the
 constraints and notes, the groups (construction, security, observability, performance,
-portability, profile hooks) and the tests. The tests are never written by the revise model: the
+portability, profile_hooks) and the tests. The tests are never written by the revise model: the
 Test-writer writes them again from the revised contract alone, and the new test must fail
 against the stub. What a rewrite may never change: the signature, package, file, `depends_on`,
 wave, model tier or anything else. If one of those is wrong, the leaf goes to the gate with
@@ -400,7 +400,7 @@ equal revision 0; a hand edit, a deleted or reordered log line, or a changed tes
 Your answers about a flagged or rewritten leaf are kept in `_state/revisions/decisions.json` and
 `decisions/rv-<node>-<m>.md`, apart from the question store. The report lists, per leaf, the
 revisions, the changed field names, the flag class and the refusal classes, and prints
-`Rewritten leaves: N`; it never prints a prompt, a reply or a node body.
+`Rewritten leaves: N` when at least one leaf was rewritten, flagged or refused; it never prints a prompt, a reply or a node body.
 
 ## Files the executor writes
 
@@ -414,8 +414,11 @@ in the blackboard: only ids, counts, sizes, hashes and fixed class words.
 
 ## Known limits
 
-- There is no revise stage: a leaf the ladder cannot build is escalated to a person,
-  and a bad test or a wrong contract is fixed by hand and the run continued.
+- A rewrite never changes a signature, package, file, `depends_on` or wave: those are
+  `contract_flagged` and go to a person. `SPLIT_REQUIRED` makes no new nodes, it goes
+  to a person as `split_required`. `revise.max_revisions` bounds the rewrites of a leaf
+  (the node's `budget.max_revisions`, else `defaults.max_revisions`); after that the leaf
+  goes to the gate with the class of its last attempt.
 - `landing: pull_request` and anything that pushes are not supported.
 - The sandbox exists on macOS only; elsewhere the run needs `executor.sandbox: off`.
 - Leaves are built one at a time (`workers` is 1).

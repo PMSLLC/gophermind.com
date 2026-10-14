@@ -210,7 +210,10 @@ func TestLeafNeverVerifiesEscalatesAfterMaxRevisions(t *testing.T) {
 	if se := rc.planIntact(); se != nil {
 		t.Fatalf("planIntact after two rewrites: %+v", se)
 	}
-	// No third rewrite is made even if the gate asks again later: the budget is spent.
+	// The budget is spent: the gate's escalation did not make a third revise request.
+	if n := requestsFor(g, "revise:"+id); n != 2 {
+		t.Fatalf("revise requests after the gate's answer = %d, want still 2", n)
+	}
 	if rc.maxRevisions(rc.plan.Leaf(id)) != 2 || rc.plan.Leaf(id).Revision != 2 {
 		t.Fatal("the budget or the revision is not what the test set up")
 	}
@@ -249,7 +252,7 @@ func TestRevisePromptCarriesNoReasoningAndNoSecret(t *testing.T) {
 
 	rc, fc := g.leafRC(t, Script{
 		"implement:" + id: {reply(variant(bad(id, 1), 1)), reply(variant(bad(id, 1), 2)), reply(good(id))},
-		// The first reply holds the secret: it is refused, never saved, and the router's repair call gets the second.
+		// The first reply holds the secret: it is refused without a router repair call and never saved; the next revise call (the second refusal round) gets the second.
 		"revise:" + id: {reply(`{"description":"Greet a name using ` + canarySecret + `."}`), reply(`{"description":"Greet a name. Tabs and newlines are trimmed too."}`)},
 	}, true)
 	leakyNames := "TestGreet" + canarySecret
@@ -288,7 +291,7 @@ func TestRevisePromptCarriesNoReasoningAndNoSecret(t *testing.T) {
 		t.Fatalf("saved revise replies = %d, want 1 (the reply with the secret is never saved)", saved)
 	}
 	if hasCanary(t, g, canarySecret) {
-		t.Fatal("the secret reached a store: reply, log, decision record, report, ledger, event or commit")
+		t.Fatal("the secret reached a store: an event, a file in the run folder, the ledger, the blackboard or a commit message")
 	}
 }
 
@@ -317,6 +320,21 @@ func TestAPatchCannotNameAPath(t *testing.T) {
 		if _, err := os.Stat(p); err == nil {
 			t.Fatalf("%s exists", p)
 		}
+	}
+	// Two revise calls (max_refusals 2), each the reply plus the router's one repair request.
+	if n := requestsFor(g, "revise:"+id); n != 4 {
+		t.Fatalf("revise requests = %d, want 4 (2 calls, each with a router repair)", n)
+	}
+	dir, _ := revlog.NodeDir(g.runDir, id)
+	recs, _ := revlog.Read(dir)
+	refused := 0
+	for _, r := range recs {
+		if r.Kind == revlog.KindRefused {
+			refused++
+		}
+	}
+	if refused != 2 {
+		t.Fatalf("refused records = %d, want 2", refused)
 	}
 	if se := rc.planIntact(); se != nil {
 		t.Fatalf("planIntact: %+v", se)
