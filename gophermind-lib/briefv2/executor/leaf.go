@@ -55,6 +55,8 @@ func noteImports(p packer.ImportPolicy) string {
 type leafIn struct {
 	Previous packer.Failure // seeds the previous-failure text (repair rounds pass integration failure lines, Task 12b)
 	Repair   int            // 0 for a normal run; n >= 1 for repair round n (Swap.Reopen, PassRepair)
+	Tree     *workTree      // where the leaf works; nil is the main tree (sub-project F)
+	Turn     *turn          // the leaf's place in the landing order of a parallel level; nil when serial
 }
 
 // leafOutcome is how one leaf ended.
@@ -97,6 +99,11 @@ type leafRun struct {
 	in     leafIn
 	expect packer.Expect
 	worker string
+	wt     *workTree  // the tree the leaf reads and writes: the main tree, or its private copy
+	stub   []byte     // the stub source, for a new swap when the leaf moves to the main tree
+	turn   *turn      // nil when the level is serial
+	cand   *candidate // a private pass waiting for its turn
+	commit string     // the short hash finishPass committed, "" in diff_only
 
 	rev         int
 	cp          map[int]int       // contract problems per revision
@@ -231,22 +238,27 @@ func (rc *runCtx) newLeafRun(ctx context.Context, l *Leaf, in leafIn) (*leafRun,
 		return nil, &stopError{Status: "failed", Reason: "contract_signature",
 			Message: fmt.Sprintf("executor: leaf %s: the contract signature does not parse as a function", l.ID)}
 	}
-	if exp.Declared, err = declaredNames(rc.o.Repo, l); err != nil {
+	wt := in.Tree
+	if wt == nil {
+		wt = rc.mainTree()
+	}
+	if exp.Declared, err = declaredNames(wt.Repo, l); err != nil {
 		return nil, err
 	}
 	stub, err := stubFor(rc.plan.Contracts, rc.policy, l)
 	if err != nil {
 		return nil, err
 	}
-	swap := NewSwap(rc.o.Repo, l, rc.git, stub)
-	if rc.diffOnly {
-		swap.NoCommit(rc.o.RunDir)
+	swap := NewSwap(wt.Repo, l, wt.Git, stub)
+	if rc.diffOnly || wt.Private {
+		swap.NoCommit(rc.o.RunDir) // a private tree commits nothing (spec section 6)
 	}
 	if in.Repair > 0 {
 		swap.Reopen()
 	}
 	lr := &leafRun{
 		rc: rc, l: l, swap: swap, in: in, expect: exp, worker: "executor:" + l.ID,
+		wt: wt, stub: stub, turn: in.Turn,
 		cp: map[int]int{}, lastSHA: map[string]string{}, tooLong: map[string]bool{}, prev: in.Previous,
 	}
 	row, err := rc.o.Board.Get(ctx, rc.plan.RunID, l.ID)
@@ -332,7 +344,7 @@ func (rc *runCtx) runLeaf(ctx context.Context, l *Leaf, in leafIn) (out leafOutc
 	}
 	lr = built
 
-	if in.Repair == 0 {
+	if in.Repair == 0 && !lr.wt.Private {
 		done, o, aerr := lr.adoptOnDisk(ctx)
 		if aerr != nil {
 			return lr.exit(ctx, leafOutcome{}, aerr)
@@ -414,6 +426,11 @@ func (lr *leafRun) exit(ctx context.Context, out leafOutcome, err error) (leafOu
 func (lr *leafRun) inProgress(ctx context.Context) bool {
 	row, err := lr.rc.o.Board.Get(ctx, lr.rc.plan.RunID, lr.l.ID)
 	return err == nil && row.Status == blackboard.StatusInProgress
+}
+
+// checkLeaf is runner.LeafCheck on the leaf's real file in its work tree.
+func (lr *leafRun) checkLeaf(ctx context.Context) runner.Verdict {
+	return lr.rc.leafCheckIn(ctx, lr.wt, lr.l, []string{lr.l.File})
 }
 
 // fail sets the leaf failed with a reason: status, recorded reason, event.
@@ -596,7 +613,7 @@ func (lr *leafRun) adoptOnDisk(ctx context.Context) (done bool, out leafOutcome,
 	if st != SwapRealOnly {
 		return false, out, nil
 	}
-	dirty, err := rc.git.Dirty()
+	dirty, err := lr.wt.Git.Dirty()
 	if err != nil {
 		return false, out, errors.New("executor: the repository state could not be read")
 	}
@@ -617,7 +634,7 @@ func (lr *leafRun) adoptOnDisk(ctx context.Context) (done bool, out leafOutcome,
 			committed, hash = found, h
 		}
 	}
-	src, err := readNoFollow(filepath.Join(rc.o.Repo, filepath.FromSlash(l.File)))
+	src, err := readNoFollow(filepath.Join(lr.wt.Repo, filepath.FromSlash(l.File)))
 	if err != nil {
 		return false, out, fmt.Errorf("executor: the file of leaf %s is not readable", l.ID)
 	}
@@ -643,12 +660,12 @@ func (lr *leafRun) adoptOnDisk(ctx context.Context) (done bool, out leafOutcome,
 		}
 		return false, out, nil
 	}
-	snap, err := TakeSnapshot(rc.o.Repo, rc.git)
+	snap, err := TakeSnapshot(lr.wt.Repo, lr.wt.Git)
 	if err != nil {
 		return false, out, err
 	}
 	start := time.Now()
-	v := settle(rc.checkLeaf(ctx, l))
+	v := settle(lr.checkLeaf(ctx))
 	stray, err := lr.cleanStray(snap)
 	if err != nil {
 		return false, out, err
@@ -717,13 +734,13 @@ func failureText(s string) packer.Failure { return packer.Failure{Lines: []strin
 // file or stub (ignored files included) and returns what it removed. The
 // declared files are the only ones a leaf may change.
 func (lr *leafRun) cleanStray(snap Snapshot) ([]string, error) {
-	rc, l := lr.rc, lr.l
-	stray, err := snap.Stray(rc.o.Repo, rc.git, l.File, l.StubFile)
+	l := lr.l
+	stray, err := snap.Stray(lr.wt.Repo, lr.wt.Git, l.File, l.StubFile)
 	if err != nil {
 		return nil, err
 	}
 	if len(stray) > 0 {
-		if err := Revert(rc.git, stray); err != nil {
+		if err := Revert(lr.wt.Git, stray); err != nil {
 			return nil, fmt.Errorf("executor: removing the files a check wrote outside leaf %s failed", l.ID)
 		}
 	}
@@ -1141,8 +1158,8 @@ func (lr *leafRun) pack(e ladderEntry) (p packer.Packed, tooLong bool, err error
 // testSource reads the leaf's test file and proves it is the file the planner
 // recorded: a test edited between planning and running stops the run.
 func (lr *leafRun) testSource() (string, error) {
-	rc, l := lr.rc, lr.l
-	raw, err := readNoFollow(filepath.Join(rc.o.Repo, filepath.FromSlash(l.TestFile)))
+	l := lr.l
+	raw, err := readNoFollow(filepath.Join(lr.wt.Repo, filepath.FromSlash(l.TestFile)))
 	if err != nil {
 		return "", fmt.Errorf("executor: the test file of leaf %s is not readable", l.ID)
 	}
@@ -1217,7 +1234,7 @@ func failedClass(detail string) string {
 // else puts the stub back and feeds the failure to the next attempt.
 func (lr *leafRun) check(ctx context.Context, e ladderEntry, started time.Time, reply packer.Reply) (entryEnd, bool, error) {
 	rc, l := lr.rc, lr.l
-	snap, err := TakeSnapshot(rc.o.Repo, rc.git)
+	snap, err := TakeSnapshot(lr.wt.Repo, lr.wt.Git)
 	if err != nil {
 		return endFailed, true, err
 	}
@@ -1225,7 +1242,7 @@ func (lr *leafRun) check(ctx context.Context, e ladderEntry, started time.Time, 
 	if err := lr.swap.Enter(reply.Source); err != nil {
 		return endFailed, true, fmt.Errorf("executor: writing the file of leaf %s failed", l.ID)
 	}
-	v := settle(rc.checkLeaf(ctx, l))
+	v := settle(lr.checkLeaf(ctx))
 	lr.art.out = v.Out.WholeLines()
 	stray, err := lr.cleanStray(snap)
 	if err != nil {

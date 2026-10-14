@@ -120,11 +120,6 @@ func (rc *runCtx) leafCheck(ctx context.Context, l *Leaf, files []string) runner
 	return rc.leafCheckIn(ctx, rc.mainTree(), l, files)
 }
 
-// checkLeaf is runner.LeafCheck on the leaf's real file.
-func (rc *runCtx) checkLeaf(ctx context.Context, l *Leaf) runner.Verdict {
-	return rc.leafCheck(ctx, l, []string{l.File})
-}
-
 // secretValues is every declared secret's value, for stripping from text.
 // The values are never logged.
 func (rc *runCtx) secretValues() []string {
