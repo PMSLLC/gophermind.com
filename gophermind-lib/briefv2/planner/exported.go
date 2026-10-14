@@ -15,6 +15,10 @@ type LeafTest struct {
 	SHA256   string `json:"sha256"`
 }
 
+// HashedFiles is a copy of the run folder files (slash paths) whose bytes are
+// part of the plan hash (RenderPlan), for a caller that must prove they did not move.
+func HashedFiles() []string { return append([]string(nil), hashedFiles...) }
+
 // VerifyApproval is the check the Test-writer makes: approval.json exists and
 // binds the plan as it stands now.
 func VerifyApproval(runDir string) error {

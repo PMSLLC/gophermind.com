@@ -16,27 +16,47 @@ import (
 	"gophermind/gophermind-lib/briefv2/planner"
 	"gophermind/gophermind-lib/briefv2/revlog"
 	"gophermind/gophermind-lib/briefv2/runner"
+	"gophermind/gophermind-lib/briefv2/settings"
 	"gophermind/gophermind-lib/briefv2/tree"
 )
 
 // acceptPatch fixes the contradiction the planned test hid: tabs and newlines.
 const acceptPatch = `{"description":"Greet a name. Leading and trailing spaces, tabs and newlines are trimmed first. An empty result is a *NameError.","rewrite_tests":true,"assumptions":["the planned test only used spaces"]}`
 
-// hashedPlanFiles are the files the plan hash covers (planner.hashedFiles).
-var hashedPlanFiles = []string{"contracts.json", "_state/decomposed.json", "_state/classes.json", "coverage.json", "answers.json", "dependencies.json", "_state/understanding.json", "_state/enriched.json"}
-
+// planFileHashes hashes every file the plan hash covers (planner.HashedFiles).
+// A missing file is "missing", never the hash of empty bytes, so a file that
+// appears empty or disappears is a change.
 func planFileHashes(t *testing.T, g *rig) map[string]string {
 	t.Helper()
 	out := map[string]string{}
-	for _, rel := range hashedPlanFiles {
+	for _, rel := range planner.HashedFiles() {
 		raw, err := os.ReadFile(filepath.Join(g.runDir, filepath.FromSlash(rel)))
-		if err != nil && !os.IsNotExist(err) {
+		switch {
+		case os.IsNotExist(err):
+			out[rel] = "missing"
+			continue
+		case err != nil:
 			t.Fatal(err)
 		}
 		sum := sha256.Sum256(raw)
 		out[rel] = hex.EncodeToString(sum[:])
 	}
 	return out
+}
+
+func TestPlanFileHashesTellsAMissingFileFromAnEmptyOne(t *testing.T) {
+	t.Parallel()
+	g := &rig{runDir: t.TempDir()}
+	before := planFileHashes(t, g)
+	if len(before) != len(planner.HashedFiles()) || before["answers.json"] != "missing" {
+		t.Fatalf("hashes of an empty folder = %v", before)
+	}
+	if err := os.WriteFile(filepath.Join(g.runDir, "answers.json"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if planFileHashes(t, g)["answers.json"] == before["answers.json"] {
+		t.Fatal("an empty file hashes like a missing one")
+	}
 }
 
 // promptsOf is the prompt of every request for the stage, oldest first.
@@ -219,13 +239,67 @@ func TestLeafNeverVerifiesEscalatesAfterMaxRevisions(t *testing.T) {
 	}
 }
 
+// briefCanarySentence is planted in the Architecture section of the brief: the
+// section fn-greet's brief_ref points at (its component, greet, is not a
+// feature of the greeter brief).
+const briefCanarySentence = "BRIEF-SECTION-CANARY: messages are built without I/O."
+
+const archLines = "- `internal/greet`: pure functions that build messages. No I/O.\n- `cmd/greeter`: the HTTP handlers and the server. `main.go` is given."
+
+func briefCanary(o *rigOpts) {
+	o.BriefEdit = func(text string) string {
+		return strings.Replace(text, archLines, archLines+"\n\n"+briefCanarySentence, 1)
+	}
+}
+
+// TestComponentScopeReviseCarriesExactlyTheBriefSection is the component
+// variant of the privacy rule: the prompt holds the brief section of the node's
+// component, canary included, inside <brief_section>, and no other section.
+func TestComponentScopeReviseCarriesExactlyTheBriefSection(t *testing.T) {
+	t.Parallel()
+	g := newRig(t, reviseRewrite(1), briefCanary, func(o *rigOpts) {
+		prev := o.Settings
+		o.Settings = func(c *settings.Config) { prev(c); c.Revise.Context = "component" }
+	})
+	id := leafID
+	rc, fc := g.leafRC(t, Script{
+		"implement:" + id: {reply(variant(bad(id, 1), 1)), reply(variant(bad(id, 1), 2)), reply(good(id))},
+		"revise:" + id:    {reply(`{"description":"Greet a name. Tabs and newlines are trimmed too."}`)},
+	}, true)
+	fc.LeafScript[id] = []runner.Verdict{failVerdict("test_fail", "x", "TestGreet"), failVerdict("test_fail", "x", "TestGreet"), passVerdict()}
+	if out := runOne(t, rc, id); out.Status != blackboard.StatusVerified {
+		t.Fatalf("outcome = %+v", out)
+	}
+	prompts := promptsOf(g, "revise:"+id)
+	if len(prompts) != 1 {
+		t.Fatalf("revise requests = %d, want 1", len(prompts))
+	}
+	p := prompts[0]
+	open, end := strings.Index(p, "<brief_section>"), strings.Index(p, "</brief_section>")
+	if open < 0 || end < open {
+		t.Fatal("the component-scope prompt has no brief section")
+	}
+	section := strings.TrimSpace(p[open+len("<brief_section>") : end])
+	if ref := g.plan.Leaf(id); ref == nil || !strings.Contains(string(readFile(t, g.nodeFile(id))), `"brief_ref": "#architecture"`) {
+		t.Fatal("setup: fn-greet's brief_ref is not the Architecture section")
+	}
+	if want := archLines + "\n\n" + briefCanarySentence; section != want {
+		t.Fatalf("brief section = %q, want exactly %q", section, want)
+	}
+	for _, other := range []string{"Goodbye", "### Greeting", "## Overview", "Localisation", "A tiny HTTP server"} {
+		if strings.Contains(p, other) {
+			t.Errorf("the component-scope prompt carries %q from another brief section", other)
+		}
+	}
+}
+
 // TestRevisePromptCarriesNoReasoningAndNoSecret is spec R10 and R11 end to end
 // on the executor side: node scope, canaries in every reasoning group, a secret
 // in the failing test names and the failure text, and a secret in the first
 // reply of the model.
 func TestRevisePromptCarriesNoReasoningAndNoSecret(t *testing.T) {
 	t.Parallel()
-	g := newRig(t, reviseRewrite(1))
+	g := newRig(t, reviseRewrite(1), briefCanary)
 	id := leafID
 	// Canaries in every group a node-scope call must not see, written before the run loads the plan.
 	store := tree.NewStore(g.runDir)
@@ -271,7 +345,8 @@ func TestRevisePromptCarriesNoReasoningAndNoSecret(t *testing.T) {
 		t.Fatalf("revise requests = %d, want the refused reply and the repair", len(prompts))
 	}
 	for _, p := range prompts {
-		for _, banned := range []string{"RATIONALE-CANARY", "ALT-CANARY", "REFACTOR-CANARY", "ASSUME-CANARY", "DECISION-CANARY", "brief_ref", "decision_ids", "open_questions", canarySecret} {
+		for _, banned := range []string{"RATIONALE-CANARY", "ALT-CANARY", "REFACTOR-CANARY", "ASSUME-CANARY", "DECISION-CANARY", "brief_ref", "decision_ids", "open_questions", canarySecret,
+			briefCanarySentence, "<brief_section>"} {
 			if strings.Contains(p, banned) {
 				t.Errorf("a node-scope revise prompt carries %q", banned)
 			}

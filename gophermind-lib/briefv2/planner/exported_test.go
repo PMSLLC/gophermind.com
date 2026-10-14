@@ -125,3 +125,14 @@ func TestSetLeafTestSHA(t *testing.T) {
 		t.Fatal("an unknown node was accepted")
 	}
 }
+
+func TestHashedFilesIsACopyOfThePlanHashList(t *testing.T) {
+	a := planner.HashedFiles()
+	if len(a) == 0 || a[0] != "contracts.json" {
+		t.Fatalf("HashedFiles = %v", a)
+	}
+	a[0] = "changed"
+	if planner.HashedFiles()[0] != "contracts.json" {
+		t.Fatal("HashedFiles returned the package's own slice")
+	}
+}

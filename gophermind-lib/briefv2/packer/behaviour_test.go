@@ -19,9 +19,6 @@ func baselinePack(t *testing.T) Packed {
 
 func TestPackUnrevisedPromptIsByteIdentical(t *testing.T) {
 	p := baselinePack(t)
-	if baselineSHA == "REPLACE-WITH-THE-PRINTED-VALUE" {
-		t.Fatalf("record the baseline: baselineSHA = %q", p.SHA256)
-	}
 	if p.SHA256 != baselineSHA {
 		t.Fatalf("an unrevised prompt changed: sha256 %s, want %s", p.SHA256, baselineSHA)
 	}

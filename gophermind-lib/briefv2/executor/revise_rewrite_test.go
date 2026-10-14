@@ -437,3 +437,86 @@ func TestARewriteForgetsWhichEntriesWereTooLong(t *testing.T) {
 		t.Fatalf("tooLong = %v: the revised node may fit now", lr.tooLong)
 	}
 }
+
+// TestAContractProblemTriggersARewriteWithTheProblemClippedAndScrubbed is the
+// contract_problem path of rewrite mode: the request names that trigger and
+// carries the model's sentence within the 300-byte bound, and never a secret
+// value. The reply parser already refuses a longer sentence, so the longest one
+// that reaches the request is 300 bytes and arrives whole.
+func TestAContractProblemTriggersARewriteWithTheProblemClippedAndScrubbed(t *testing.T) {
+	t.Parallel()
+	long := "the signature cannot report " + strings.Repeat("x", maxProblemBytes)
+	long = long[:maxProblemBytes]
+	for name, c := range map[string]struct{ problem, want string }{
+		"longest": {long, long},
+		"secret":  {"the token " + canarySecret + " cannot be returned", redacted},
+	} {
+		name, c := name, c
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			g := newRig(t, reviseRewrite(2))
+			id := leafID
+			rc, _ := g.leafRC(t, Script{"implement:" + id: {reply("CONTRACT_PROBLEM: " + c.problem)}}, true)
+			fr := &fakeReviser{steps: []func(planner.ReviseRequest) (planner.ReviseProposal, error){
+				unusable(planner.ClassReviseInvalid), unusable(planner.ClassReviseInvalid),
+			}}
+			rc.rev = fr
+			_, _ = rc.runLeaf(context.Background(), rc.plan.Leaf(id), leafIn{}) // the gate has no answer: it stops
+			reqs := fr.calls()
+			if len(reqs) == 0 {
+				t.Fatal("the reviser was not called")
+			}
+			r := reqs[0]
+			if r.Trigger != planner.TriggerContractProblem {
+				t.Fatalf("trigger = %q, want %q", r.Trigger, planner.TriggerContractProblem)
+			}
+			if r.Problem != c.want {
+				t.Fatalf("problem = %q (%d bytes), want %q", r.Problem, len(r.Problem), c.want)
+			}
+			if strings.Contains(r.Problem, canarySecret) {
+				t.Fatal("the problem carries the secret")
+			}
+		})
+	}
+}
+
+// TestARedCheckRefusalRepeatsTheCallThenEscalatesWithTheLastClass is the
+// refusal of a valid proposal by applyRevision (its new test passes the stub,
+// then the next one does not build): each is a refusal of this revision, the
+// reviser is called again with the class added, max_refusals bounds the loop
+// and the leaf escalates with the class of the last refusal.
+func TestARedCheckRefusalRepeatsTheCallThenEscalatesWithTheLastClass(t *testing.T) {
+	t.Parallel()
+	g := newRig(t, reviseRewrite(2))
+	id := leafID
+	rc, fc := g.leafRC(t, Script{"implement:" + id: distinct(id, 2)}, true)
+	failing(fc, id, 2)
+	// The two red checks: the first new test passes the stub, the second does not build.
+	fc.LeafScript[id] = append(fc.LeafScript[id], passVerdict(), failVerdict(runner.ClassBuild, "x"))
+	prop := g.proposal(t, id, "REVISED-SENTENCE for the greeting.", greetTest)
+	fr := &fakeReviser{steps: []func(planner.ReviseRequest) (planner.ReviseProposal, error){answer(prop), answer(prop), answer(prop)}}
+	rc.rev = fr
+	origNode := readFile(t, g.nodeFile(id))
+	_, err := rc.runLeaf(context.Background(), rc.plan.Leaf(id), leafIn{})
+	asStop(t, err, "escalated", "human_stop")
+	reqs := fr.calls()
+	if len(reqs) != 2 {
+		t.Fatalf("Revise calls = %d, want 2 (max_refusals)", len(reqs))
+	}
+	if len(reqs[0].Refused) != 0 || strings.Join(reqs[1].Refused, ",") != planner.ClassVacuousTest {
+		t.Fatalf("refused lists = %v then %v, want none then %s", reqs[0].Refused, reqs[1].Refused, planner.ClassVacuousTest)
+	}
+	if seen := g.gate.Escalations(); len(seen) != 1 || seen[0].Reason != planner.ClassRedBuild {
+		t.Fatalf("gate saw %+v, want reason %s", seen, planner.ClassRedBuild)
+	}
+	want := "intent:,refused:" + planner.ClassVacuousTest + ",intent:,refused:" + planner.ClassRedBuild
+	if got := strings.Join(logKinds(t, g), ","); got != want {
+		t.Fatalf("log = %s, want %s", got, want)
+	}
+	if row := g.row(t, id); row.Revision != 0 || rc.plan.Leaf(id).Revision != 0 {
+		t.Fatalf("a refusal consumed a revision (%d)", row.Revision)
+	}
+	if string(readFile(t, g.nodeFile(id))) != string(origNode) {
+		t.Fatal("a refused proposal changed the node")
+	}
+}
