@@ -342,7 +342,7 @@ func CopyFile(srcRoot, dstRoot, rel string) error {
 			return fmt.Errorf("copying %d bytes of path: %s", len(rel), osReason(err))
 		}
 		joined := path.Clean(path.Join(path.Dir(rel), filepath.ToSlash(target)))
-		if filepath.IsAbs(target) || joined == ".." || strings.HasPrefix(joined, "../") || hasGitName(strings.Split(joined, "/")) {
+		if filepath.IsAbs(target) || dotDotAfterSegment(target) || joined == ".." || strings.HasPrefix(joined, "../") || hasGitName(strings.Split(joined, "/")) {
 			return fmt.Errorf("a symbolic link (%d bytes of path) points outside the tree", len(rel))
 		}
 		if err := os.Symlink(target, dst); err != nil {
@@ -365,15 +365,37 @@ func CopyFile(srcRoot, dstRoot, rel string) error {
 		}
 		if _, err := io.Copy(out, in); err != nil {
 			out.Close()
+			os.Remove(dst)
 			return fmt.Errorf("copying %d bytes of path: %s", len(rel), osReason(err))
 		}
 		if err := out.Chmod(perm); err != nil {
 			out.Close()
+			os.Remove(dst)
 			return fmt.Errorf("copying %d bytes of path: %s", len(rel), osReason(err))
 		}
 		return out.Close()
 	}
 	return fmt.Errorf("copied path (%d bytes) is not a regular file or a link", len(rel))
+}
+
+// dotDotAfterSegment reports a link target with a .. component after a named
+// segment. The lexical check cannot see where such a target lands when the
+// segment is itself a link (a/b -> . with a/c -> b/../../z), so it is refused.
+// Leading .. components stay allowed: they walk real directories.
+func dotDotAfterSegment(target string) bool {
+	seen := false
+	for _, part := range strings.Split(filepath.ToSlash(target), "/") {
+		switch part {
+		case "", ".":
+		case "..":
+			if seen {
+				return true
+			}
+		default:
+			seen = true
+		}
+	}
+	return false
 }
 
 // noLinkedParent refuses rel when an existing directory on its way under root

@@ -112,3 +112,35 @@ func TestCopyFileRefusesUnsafeNamesAndDirectories(t *testing.T) {
 		}
 	}
 }
+
+func TestCopyFileRefusesAChainOfLinksThatEscapesTheTree(t *testing.T) {
+	src, dst := t.TempDir(), t.TempDir()
+	if err := os.MkdirAll(filepath.Join(src, "a"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// a/b -> . is harmless alone; a/c -> b/../../z passes through it and
+	// lands outside the tree although it looks inside lexically.
+	if err := os.Symlink(".", filepath.Join(src, "a", "b")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("b/../../z", filepath.Join(src, "a", "c")); err != nil {
+		t.Fatal(err)
+	}
+	if err := pathsafe.CopyFile(src, dst, "a/b"); err != nil {
+		t.Fatalf("a link to the folder it sits in was refused: %v", err)
+	}
+	if err := pathsafe.CopyFile(src, dst, "a/c"); err == nil {
+		t.Error("a link with .. after a path segment was copied")
+	}
+	if _, err := os.Lstat(filepath.Join(dst, "a", "c")); err == nil {
+		t.Error("the refused link is in the destination tree")
+	}
+	// A plain relative target in the tree, and a leading ../, stay allowed.
+	writeFileMode(t, filepath.Join(src, "x.go"), "package x\n", 0o644)
+	if err := os.Symlink("../x.go", filepath.Join(src, "a", "up.go")); err != nil {
+		t.Fatal(err)
+	}
+	if err := pathsafe.CopyFile(src, dst, "a/up.go"); err != nil {
+		t.Errorf("a plain relative link was refused: %v", err)
+	}
+}

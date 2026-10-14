@@ -3,10 +3,13 @@ package gitland
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"gophermind/gophermind-lib/briefv2/pathsafe"
 )
 
 func TestFilesListsTrackedAndUntrackedButNotIgnored(t *testing.T) {
@@ -111,5 +114,40 @@ func TestNewScratchInsideARepositoryIsItsOwnRepository(t *testing.T) {
 	}
 	if n := gx(t, outer, "rev-list", "--count", "HEAD"); n != "1" {
 		t.Fatalf("the outer repository has %s commits, want 1", n)
+	}
+}
+
+// A nested repository or submodule shows in ls-files as a directory path, and
+// CopyFile refuses a directory, so the whole copy fails cleanly. This names that
+// behavior; skipping such a directory would be a decision for the caller.
+func TestFilesListsANestedRepoAsADirectoryAndCopyFileRefusesIt(t *testing.T) {
+	c := newRepo(t)
+	put(t, c, "pkg/new.go", "package pkg\n")
+	nested := filepath.Join(c.dir, "vendor", "inner")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("git", "init", "-q")
+	cmd.Dir = nested
+	cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	got, err := c.Files()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dst := t.TempDir()
+	var failed bool
+	for _, f := range got {
+		if err := pathsafe.CopyFile(c.dir, dst, f); err != nil {
+			failed = true
+			if strings.Contains(err.Error(), "inner") {
+				t.Errorf("the error names the path: %v", err)
+			}
+		}
+	}
+	if !failed {
+		t.Fatalf("a nested repository copied without error: %q", got)
 	}
 }
