@@ -622,9 +622,13 @@ func (p *Plan) chainWrite(f func() error) error {
 // LoadPlan does (hashes and the frozen-field check, no test run): body-0 must
 // still be the revision 0 the plan was loaded with, and each chain's committed
 // revision must be the one this run holds, or the open intent's (a commit
-// record written, the tip not yet moved). The memory is read before the files,
-// so it can lag the files and never lead them.
+// record written, the tip not yet moved). The read lock is taken before the
+// memory is copied: a writer writes the files under the write lock and moves
+// the memory after, so under the read lock the memory can lag the files and
+// never lead them. Lock order: chainMu, then revMu.
 func (p *Plan) chainsIntact() bool {
+	p.chainMu.RLock()
+	defer p.chainMu.RUnlock()
 	p.revMu.Lock()
 	mem := make(map[string]RevisedTip, len(p.Revised))
 	for id, t := range p.Revised {
@@ -635,8 +639,6 @@ func (p *Plan) chainsIntact() bool {
 	for id, key := range p.keys {
 		paths[id] = strings.TrimPrefix(key, "tree/")
 	}
-	p.chainMu.RLock()
-	defer p.chainMu.RUnlock()
 	tests, err := planner.ReadLeafTests(p.RunDir)
 	if err != nil {
 		return false
