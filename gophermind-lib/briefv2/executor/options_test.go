@@ -106,11 +106,16 @@ func TestOptionsValidate(t *testing.T) {
 		}
 	})
 
-	t.Run("more than one worker is refused", func(t *testing.T) {
+	t.Run("workers above 8 are refused, 3 is accepted", func(t *testing.T) {
 		o := validOptions(t)
-		o.Settings.Executor.Workers = 2
-		if err := o.validate(); err == nil || !strings.Contains(err.Error(), "executor.workers must be 1 until leaf-isolated trees exist") {
-			t.Errorf("workers 2: %v", err)
+		o.Settings.Executor.Workers = 9
+		if err := o.validate(); err == nil || !strings.Contains(err.Error(), "executor.workers must be between 1 and 8") {
+			t.Errorf("workers 9: %v", err)
+		}
+		o = validOptions(t)
+		o.Settings.Executor.Workers = 3
+		if err := o.validate(); err != nil {
+			t.Errorf("workers 3: %v", err)
 		}
 	})
 
@@ -164,22 +169,17 @@ func TestOptionsNeverPrintSecrets(t *testing.T) {
 	}
 }
 
-// The CLI's --workers is refused unless it is 1, with the same words as the
-// executor.workers setting.
+// The CLI checks a --workers value it was given against the setting's range.
 func TestCheckWorkers(t *testing.T) {
 	t.Parallel()
-	for _, n := range []int{0, -1, 2, 8, 1000} {
-		err := CheckWorkers(n)
-		if err == nil || err.Error() != "--workers must be 1 until leaf-isolated trees exist" {
-			t.Errorf("CheckWorkers(%d) = %v, want the fixed refusal", n, err)
+	for _, n := range []int{0, -1, 9, 1000} {
+		if err := CheckWorkers(n); err == nil || err.Error() != "--workers must be between 1 and 8" {
+			t.Errorf("CheckWorkers(%d) = %v, want the range refusal", n, err)
 		}
 	}
-	if err := CheckWorkers(1); err != nil {
-		t.Errorf("CheckWorkers(1) = %v, want nil", err)
-	}
-	c := settings.Default()
-	c.Executor.Workers = 2
-	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "must be 1 until leaf-isolated trees exist") {
-		t.Errorf("settings refuse workers 2 with %v: the wording must stay shared with the flag", err)
+	for _, n := range []int{1, 3, 8} {
+		if err := CheckWorkers(n); err != nil {
+			t.Errorf("CheckWorkers(%d) = %v, want nil", n, err)
+		}
 	}
 }

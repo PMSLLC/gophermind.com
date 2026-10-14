@@ -432,12 +432,12 @@ func TestBriefRunExitCodes(t *testing.T) {
 			t.Error("a report was written for a run that never started")
 		}
 	})
-	for _, n := range []string{"0", "2"} {
+	for _, n := range []string{"9", "-1"} {
 		t.Run("--workers "+n+" is 1 with no model call", func(t *testing.T) {
 			id, _ := plannedGreeter(t)
 			sp := useRun(t, goodReplies(t, ""))
 			code, _, errs := runBriefCmd(t, "", "run", id, "--workers", n)
-			if code != 1 || !strings.Contains(errs, "error: --workers must be 1 until leaf-isolated trees exist") || sp.Calls() != 0 {
+			if code != 1 || !strings.Contains(errs, "error: --workers must be between 1 and 8") || sp.Calls() != 0 {
 				t.Errorf("code=%d err=%q calls=%d", code, errs, sp.Calls())
 			}
 		})
@@ -604,6 +604,26 @@ func TestBriefRunRepoOverride(t *testing.T) {
 		if code != 1 || !strings.Contains(errs, "--repo") || strings.Contains(errs, bad) {
 			t.Errorf("--repo %q: code=%d err=%q", bad, code, errs)
 		}
+	}
+}
+
+// --workers n sets executor.workers for this run only; 0 and no flag keep the setting.
+func TestBriefRunWorkersFlagOverridesTheSettingForThisRun(t *testing.T) {
+	id, _ := plannedGreeter(t)
+	useRun(t, goodReplies(t, ""))
+	var got executor.Options
+	stubExecutor(t, func(_ context.Context, o executor.Options) (executor.Report, error) {
+		got = o
+		return summaryReport(id, "verified", ""), nil
+	})
+	if code, _, errs := runBriefCmd(t, "", "run", id, "--workers", "3"); code != 0 || got.Settings.Executor.Workers != 3 {
+		t.Fatalf("--workers 3: code=%d err=%q workers=%d", code, errs, got.Settings.Executor.Workers)
+	}
+	if code, _, errs := runBriefCmd(t, "", "run", id, "--workers", "0"); code != 0 || got.Settings.Executor.Workers != 1 {
+		t.Fatalf("--workers 0: code=%d err=%q workers=%d, want the setting (1)", code, errs, got.Settings.Executor.Workers)
+	}
+	if code, _, errs := runBriefCmd(t, "", "run", id); code != 0 || got.Settings.Executor.Workers != 1 {
+		t.Fatalf("no flag: code=%d err=%q workers=%d, want the setting (1)", code, errs, got.Settings.Executor.Workers)
 	}
 }
 

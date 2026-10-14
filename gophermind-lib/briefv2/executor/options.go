@@ -84,12 +84,12 @@ func (o *Options) validate() error {
 	return nil
 }
 
-// CheckWorkers is the check the CLI makes on --workers before it builds Options:
-// leaves share one working tree, so only 1 is accepted. The wording matches
-// settings.Validate's refusal of executor.workers.
+// CheckWorkers is the check the CLI makes on a --workers value it was given
+// (the flag's 0 means "use executor.workers" and is not passed here). The
+// range is the setting's.
 func CheckWorkers(n int) error {
-	if n != 1 {
-		return errors.New("--workers must be 1 until leaf-isolated trees exist")
+	if n < 1 || n > settings.MaxWorkers {
+		return fmt.Errorf("--workers must be between 1 and %d", settings.MaxWorkers)
 	}
 	return nil
 }

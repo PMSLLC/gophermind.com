@@ -90,21 +90,23 @@ func runPassphrase(in *os.File, errw io.Writer) (string, error) {
 // and `gophermind brief run <id> --check-env`.
 func briefRun(args []string, in *os.File, out, errw io.Writer) int {
 	var gateMode, repoFlag string
-	workers := 1
+	workers := 0
 	var checkEnv bool
 	id, ok := parseRunArgs("run", args, func(fs *flag.FlagSet) {
 		fs.StringVar(&gateMode, "gate", "", "terminal or file")
 		fs.StringVar(&repoFlag, "repo", "", "run against this clone instead of the brief's repo")
-		fs.IntVar(&workers, "workers", 1, "must be 1")
+		fs.IntVar(&workers, "workers", 0, "leaves run at once (default from settings, 1)")
 		fs.BoolVar(&checkEnv, "check-env", false, "check the environment without a model call")
 	})
 	if !ok {
 		fmt.Fprintln(errw, briefUsage)
 		return exitError
 	}
-	if err := executor.CheckWorkers(workers); err != nil {
-		fmt.Fprintf(errw, "error: %v\n", err)
-		return exitError
+	if workers != 0 {
+		if err := executor.CheckWorkers(workers); err != nil {
+			fmt.Fprintf(errw, "error: %v\n", err)
+			return exitError
+		}
 	}
 	rec, err := planner.LookupRun(id)
 	if err != nil {
@@ -198,7 +200,9 @@ func briefRun(args []string, in *os.File, out, errw io.Writer) int {
 		}
 	}
 	runCfg := *cfg
-	runCfg.Executor.Workers = workers
+	if workers != 0 {
+		runCfg.Executor.Workers = workers // this run only: the settings file is not touched
+	}
 
 	mode := gateMode
 	if mode == "" {

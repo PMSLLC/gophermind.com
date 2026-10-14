@@ -89,6 +89,10 @@ func (c *Config) applyExecutorDefaults() {
 	}
 }
 
+// MaxWorkers is the largest executor.workers: leaves of one level run at once,
+// each in a private copy of the repository (sub-project F).
+const MaxWorkers = 8
+
 // validate checks the section. Messages name the key only, never its value.
 func (e ExecutorConfig) validate() error {
 	for _, f := range []struct {
@@ -96,7 +100,7 @@ func (e ExecutorConfig) validate() error {
 		v   int
 		max int
 	}{
-		{"workers", e.Workers, 64},
+		{"workers", e.Workers, MaxWorkers},
 		{"fix_attempts", e.FixAttempts, 20},
 		{"repair_rounds", e.RepairRounds, 20},
 		{"acceptance_repair_rounds", e.AcceptanceRepairRounds, 20},
@@ -111,12 +115,6 @@ func (e ExecutorConfig) validate() error {
 		if f.v < 1 || f.v > f.max {
 			return fmt.Errorf("executor.%s must be between 1 and %d", f.key, f.max)
 		}
-	}
-	// Leaf model loops share one working tree (stray-file check, stub swap) and
-	// the mini serves one model call at a time: workers stays 1 until leaves
-	// get isolated trees.
-	if e.Workers != 1 {
-		return fmt.Errorf("executor.workers must be 1 until leaf-isolated trees exist")
 	}
 	if e.GoModCache == "" {
 		return fmt.Errorf("executor.go_mod_cache is required")

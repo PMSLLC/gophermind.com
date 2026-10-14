@@ -271,20 +271,29 @@ func TestExecutorProxyLogSeparators(t *testing.T) {
 	}
 }
 
-// Leaf model loops are serialised (ruling): any worker count but 1 is refused
-// with one fixed message naming the key.
-func TestExecutorWorkersMustBeOne(t *testing.T) {
-	const want = "executor.workers must be 1 until leaf-isolated trees exist"
-	for _, n := range []int{2, 3, 64} {
+// executor.workers is 1 to MaxWorkers (8). A bad value names the key and the
+// range, never the value; the default stays 1.
+func TestExecutorWorkersRange(t *testing.T) {
+	if settings.MaxWorkers != 8 {
+		t.Fatalf("MaxWorkers = %d, want 8", settings.MaxWorkers)
+	}
+	for _, n := range []int{1, 2, 8} {
 		c := settings.Default()
 		c.Executor.Workers = n
-		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), want) {
-			t.Errorf("workers %d: %v, want %q", n, err, want)
+		if err := c.Validate(); err != nil {
+			t.Errorf("workers %d refused: %v", n, err)
 		}
 	}
-	c := settings.Default()
-	if c.Executor.Workers != 1 || c.Validate() != nil {
-		t.Errorf("the default must be 1 and valid, got %d", c.Executor.Workers)
+	for _, n := range []int{0, 9, 64, -1} {
+		c := settings.Default()
+		c.Executor.Workers = n
+		err := c.Validate()
+		if err == nil || !strings.Contains(err.Error(), "executor.workers must be between 1 and 8") {
+			t.Errorf("workers %d: %v, want the key and the range", n, err)
+		}
+	}
+	if c := settings.Default(); c.Executor.Workers != 1 {
+		t.Errorf("the default is %d, want 1", c.Executor.Workers)
 	}
 }
 
