@@ -43,6 +43,23 @@ func TestCandidateRoundTripAndGuards(t *testing.T) {
 	if fileExists(filepath.Join(dir, "_state", candidatePrefix+"fn-greet")) {
 		t.Fatal("the garbage file was kept")
 	}
+	// A candidate that cannot be a saved pass (no reply hash, no ladder position,
+	// a negative revision) is removed and read as absent too.
+	for _, bad := range []candidate{
+		{Revision: 0, Entry: "a/m1", Tier: "standard", Pos: 1, SHA256: "", Source: "package greet\n"},
+		{Revision: 0, Entry: "a/m1", Tier: "standard", Pos: 0, SHA256: "abc", Source: "package greet\n"},
+		{Revision: -1, Entry: "a/m1", Tier: "standard", Pos: 1, SHA256: "abc", Source: "package greet\n"},
+	} {
+		if err := saveCandidate(dir, "fn-greet", bad); err != nil {
+			t.Fatal(err)
+		}
+		if _, found, err := readCandidate(dir, "fn-greet"); found || err != nil {
+			t.Fatalf("candidate %+v read as %v %v", bad, found, err)
+		}
+		if fileExists(filepath.Join(dir, "_state", candidatePrefix+"fn-greet")) {
+			t.Fatalf("candidate %+v was kept", bad)
+		}
+	}
 	for _, id := range []string{"../x", "Fn", ""} {
 		if err := saveCandidate(dir, id, c); err == nil {
 			t.Errorf("saveCandidate(%q) accepted", id)

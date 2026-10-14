@@ -87,6 +87,7 @@ type runReport struct {
 	blocked       map[string]string // leaf id -> id of the dependency that blocks it
 	reasons       map[string]string // leaf id -> final reason of a failed or escalated leaf
 	sandboxExec   string            // "available" or "missing": stated with the sandbox setting in the report environment
+	conflicts     int               // landing conflicts (sub-project F), under repMu
 }
 
 // sandboxLabel is the sandbox setting as the report states it: "on" or "off".

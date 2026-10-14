@@ -75,6 +75,7 @@ const (
 	revContractProblem           // the model answered CONTRACT_PROBLEM
 	revTooLong                   // every entry was too small for the prompt floor
 	revInterrupted               // the context ended, or every entry was cooling or failing with nothing charged
+	revCandidate                 // a private pass was saved: the leaf waits for its turn and lands (sub-project F)
 )
 
 // entryEnd is how one entry of the ladder ended within a revision.
@@ -93,17 +94,19 @@ const (
 
 // leafRun is the state of one leaf from claim to a terminal status.
 type leafRun struct {
-	rc     *runCtx
-	l      *Leaf
-	swap   *Swap
-	in     leafIn
-	expect packer.Expect
-	worker string
-	wt     *workTree  // the tree the leaf reads and writes: the main tree, or its private copy
-	stub   []byte     // the stub source, for a new swap when the leaf moves to the main tree
-	turn   *turn      // nil when the level is serial
-	cand   *candidate // a private pass waiting for its turn
-	commit string     // the short hash finishPass committed, "" in diff_only
+	rc        *runCtx
+	l         *Leaf
+	swap      *Swap
+	in        leafIn
+	expect    packer.Expect
+	worker    string
+	wt        *workTree  // the tree the leaf reads and writes: the main tree, or its private copy
+	stub      []byte     // the stub source, for a new swap when the leaf moves to the main tree
+	turn      *turn      // nil when the level is serial
+	cand      *candidate // a private pass waiting for its turn
+	commit    string     // the short hash finishPass committed, "" in diff_only
+	landing   bool       // the check in progress replays a candidate: finishPass says leaf_landed
+	failClass string     // the class of the last failed attempt record saved (the land_conflict message)
 
 	rev         int
 	cp          map[int]int       // contract problems per revision
@@ -355,6 +358,9 @@ func (rc *runCtx) runLeaf(ctx context.Context, l *Leaf, in leafIn) (out leafOutc
 		if ctx.Err() != nil {
 			return leafOutcome{Interrupted: true}, nil
 		}
+		if o, done, cerr := lr.resumeCandidate(ctx); cerr != nil || done {
+			return lr.exit(ctx, o, cerr)
+		}
 	}
 
 	for {
@@ -367,6 +373,12 @@ func (rc *runCtx) runLeaf(ctx context.Context, l *Leaf, in leafIn) (out leafOutc
 			return leafOutcome{Status: blackboard.StatusVerified}, nil
 		case revInterrupted:
 			return leafOutcome{Interrupted: true, Reason: lr.unavailable}, nil
+		case revCandidate:
+			o, done, lerr := lr.landCandidate(ctx)
+			if lerr != nil || done {
+				return lr.exit(ctx, o, lerr)
+			}
+			continue // no candidate to land, or a landing conflict: the ladder goes on in the main tree
 		}
 		o, done, aerr := lr.afterRevision(ctx, res)
 		if aerr != nil || done {
@@ -507,6 +519,14 @@ func (lr *leafRun) afterRevision(ctx context.Context, res revResult) (out leafOu
 		}
 	}
 	if doRevise {
+		// The revise rung edits plan files, the test file and the work branch,
+		// which only the turn holder may touch (ruling 6).
+		if err := lr.toMain(ctx); err != nil {
+			if ctx.Err() != nil || errors.Is(err, errLandingFault) {
+				return leafOutcome{Interrupted: true}, true, nil
+			}
+			return leafOutcome{}, true, err
+		}
 		var cp bool
 		var rerr error
 		if lr.rewriteMode() {
@@ -772,6 +792,10 @@ func (rc *runCtx) criticalSince(id string, t time.Time) []string {
 // restored, so passed is set before anything that can still fail.
 func (lr *leafRun) finishPass(ctx context.Context, committed bool, hash string, record func() error) error {
 	rc, l := lr.rc, lr.l
+	if lr.wt.Private {
+		// A private tree commits nothing (spec section 6): its pass is a candidate.
+		return fmt.Errorf("executor: leaf %s: a pass in a private tree must be saved as a candidate", l.ID)
+	}
 	if !committed {
 		var err error
 		// The plan must be what was approved when it is committed.
@@ -797,8 +821,19 @@ func (lr *leafRun) finishPass(ctx context.Context, committed bool, hash string, 
 			return fmt.Errorf("executor: committing leaf %s failed", l.ID)
 		}
 	}
+	lr.commit = hash
 	lr.passed = true
+	if lr.landing {
+		msg := hash
+		if msg == "" {
+			msg = "uncommitted"
+		}
+		rc.emit("leaf_landed", l.ID, msg)
+	}
 	if err := removeReopenMarker(rc.o.RunDir, l.ID); err != nil { // a repair that was committed before a kill
+		return err
+	}
+	if err := removeCandidate(rc.o.RunDir, l.ID); err != nil { // ruling 11
 		return err
 	}
 	wc := context.WithoutCancel(ctx)
@@ -907,11 +942,16 @@ func (lr *leafRun) oneRevision(ctx context.Context) (revResult, error) {
 			if lr.passed {
 				return revVerified, nil
 			}
+			if lr.cand != nil {
+				return revCandidate, nil
+			}
 		}
 	}
 	switch {
 	case lr.passed:
 		return revVerified, nil
+	case lr.cand != nil:
+		return revCandidate, nil
 	case lr.charged > 0:
 		return revExhausted, nil
 	case len(entries) > 0 && tooLong == len(entries):
@@ -985,6 +1025,7 @@ func (lr *leafRun) record(ctx context.Context, e ladderEntry, started time.Time,
 	}
 	if verdict == blackboard.VerdictFail {
 		lr.charged++
+		lr.failClass = class
 	}
 	rc.emit("attempt", lr.l.ID, fmt.Sprintf("entry %s %s %s", e.Name, verdict, class))
 	return nil
@@ -1278,6 +1319,9 @@ func (lr *leafRun) check(ctx context.Context, e ladderEntry, started time.Time, 
 		class, next = v.Class, failureOf(v, rc.secretValues())
 		reason = v.Reason()
 	default:
+		if lr.wt.Private {
+			return lr.privatePass(ctx, e, reply)
+		}
 		recordPass := func() error {
 			return lr.record(ctx, e, started, blackboard.VerdictPass, "pass", "", &v, reply.SHA256)
 		}

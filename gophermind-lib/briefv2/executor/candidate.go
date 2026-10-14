@@ -45,7 +45,8 @@ func saveCandidate(runDir, id string, c candidate) error {
 }
 
 // readCandidate returns the saved candidate of the leaf. A file that does not
-// parse is removed and read as absent: it is derived data (ruling 10).
+// parse, or does not hold what a saved pass holds, is removed and read as
+// absent: it is derived data (ruling 10).
 func readCandidate(runDir, id string) (candidate, bool, error) {
 	if !treeIDRe.MatchString(id) {
 		return candidate{}, false, errors.New("executor: refusing a candidate for an unsafe leaf id")
@@ -55,7 +56,11 @@ func readCandidate(runDir, id string) (candidate, bool, error) {
 		return candidate{}, false, err
 	}
 	var c candidate
-	if json.Unmarshal(raw, &c) != nil || c.Source == "" || c.Entry == "" {
+	// A pass always has a reply hash, a ladder position from 1 and a row
+	// revision from 0 (rows start at 0). The hash is of the raw reply, not of
+	// Source, so it cannot be checked against Source; the gate at landing is
+	// what judges the source.
+	if json.Unmarshal(raw, &c) != nil || c.Source == "" || c.Entry == "" || c.SHA256 == "" || c.Pos < 1 || c.Revision < 0 {
 		return candidate{}, false, removeCandidate(runDir, id)
 	}
 	return c, true, nil
