@@ -502,10 +502,13 @@ func (s *state) render() (string, error) {
 }
 
 // Pack builds the prompt for one leaf and cuts it to the budget in a fixed
-// order: failure lines to 10, failure lines to none, revision notes, test
-// comments, then dependency signatures the contract slice does not name (last
-// to first). The signature, contract slice, constraints and the test's
-// assertions are never cut. If the rest does not fit, ErrFloorOverBudget.
+// order: failure lines to 10, failure lines to none, revision notes, the
+// detail lines of a revised node's behaviour ("behaviour:details"), the
+// performance, portability and observability guidance, the construction steps
+// (the approach stays), test comments, then dependency signatures the contract
+// slice does not name (last to first). The signature, contract slice,
+// constraints, the revised description and the test's assertions are never cut
+// (the floor). If the floor does not fit, ErrFloorOverBudget.
 func Pack(n NodeView, c *contract.Contracts, in Inputs) (Packed, error) {
 	if in.Budget <= 0 {
 		return Packed{}, errors.New("packer: budget must be positive")

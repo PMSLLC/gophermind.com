@@ -249,7 +249,7 @@ prints `report: <path>` to stderr and the summary to stdout. `waiting: answer in
 waiting. When the sandbox is off, `sandbox: off` is printed once, at the start.
 
 `gophermind brief report <run-id>` prints the summary of `report.json` (readable
-for schema versions 1 and 2). `--json` prints the file unchanged. With no report
+for schema versions 1 to 3). `--json` prints the file unchanged. With no report
 yet it says so and exits 1. `gophermind brief status <run-id>` gains, once the
 executor has started, `executor: <status>` (`in progress` until a report exists),
 the last stop reason, `waves done: <w> of <n>`, `leaves: verified <v> of <t>` with
@@ -392,11 +392,11 @@ A leaf in an integration repair round keeps the hint rung.
 The approval keeps binding the plan you approved. Each rewrite is recorded in
 `_state/revisions/<node>/`: `body-<k>.json` and `test-<k>.txt` (the node and its test at revision
 k; 0 is as approved) and `log.jsonl` (`intent`, `commit`, `flag` and `refused` records with
-hashes, field names and fixed classes, never a prompt, a reply or a secret). At load, the
-executor proves for every revised node that its file is the last committed body of that chain,
+hashes, field names and fixed classes, never a prompt, a reply or a secret). At load, and
+again before every commit and at the end of the run, the executor proves for every revised node that its file is the last committed body of that chain,
 that `leaf_tests.json` and the test file are the matching test, and that the frozen fields
-equal revision 0; a hand edit, a deleted or reordered log line, or a changed test stops the run
-`plan_changed`. A run killed in the middle of a rewrite finishes it on resume, with no model call.
+equal revision 0; a hand edit of the node or of `body-0.json`, a deleted, edited or reordered
+log line, or a changed test or `leaf_tests.json` entry stops the run `plan_changed`. A run killed in the middle of a rewrite finishes it on resume, with no model call.
 Your answers about a flagged or rewritten leaf are kept in `_state/revisions/decisions.json` and
 `decisions/rv-<node>-<m>.md`, apart from the question store. The report lists, per leaf, the
 revisions, the changed field names, the flag class and the refusal classes, and prints
@@ -416,8 +416,8 @@ in the blackboard: only ids, counts, sizes, hashes and fixed class words.
 
 - A rewrite never changes a signature, package, file, `depends_on` or wave: those are
   `contract_flagged` and go to a person. `SPLIT_REQUIRED` makes no new nodes, it goes
-  to a person as `split_required`. `revise.max_revisions` bounds the rewrites of a leaf
-  (the node's `budget.max_revisions`, else `defaults.max_revisions`); after that the leaf
+  to a person as `split_required`. `max_revisions` (the node's `budget.max_revisions`,
+  else `defaults.max_revisions`) bounds the rewrites of a leaf; after that the leaf
   goes to the gate with the class of its last attempt.
 - `landing: pull_request` and anything that pushes are not supported.
 - The sandbox exists on macOS only; elsewhere the run needs `executor.sandbox: off`.
@@ -448,17 +448,24 @@ database.
 .gophermind/<run>/
   brief.md  contracts.json  approval.json  coverage.json   unchanged
   <component>/component.json                               plan, unchanged
-  <component>/<fn-id>.json                                 plan, unchanged
+  <component>/<fn-id>.json                                 plan body, rewritten in place at each revision ("revision": n)
   <component>/<fn-id>.runtime.json                         node_id, run_id, status, revision, wave, claim (worker, claimed_at), heartbeat_at, attempts, result, updated_at
   root.runtime.json, <component>/component.runtime.json    the same, for non-function nodes
   _state/events.jsonl                                      one JSON object per line, append only
   _state/calls.jsonl                                       one JSON object per line, append only (the call ledger)
   _state/replies/<stage>-<n>.txt                          planner replies, saved when artifacts are on
+  _state/replies/revise_<fn-id>-<n>.txt                    revise replies; testwrite_<fn-id>-r<k>-<n>.txt for a revision's tests
+  _state/revisions/<fn-id>/                                body-<k>.json, test-<k>.txt (revision k, 0 = as approved), log.jsonl
+  _state/revisions/decisions.json                          your decisions about rewritten or flagged leaves
+  decisions/rv-<fn-id>-<m>.md                              the same decisions, one browsable file each
   attempts/<node-id>/<n>/                                  reply.go, reply.txt, check-output.txt, attempt.json (scrubbed)
 ```
 
 Run state is never written into plan node files: the executor hashes the plan
-files and refuses to resume when they changed. A worker's claim lives inside the
+files and refuses to resume when they changed. The one exception is a function
+node the revise stage rewrote: its file is checked against its revision chain
+in `_state/revisions/<fn-id>/` (the last committed body, or the base or body of
+an open revision) instead of the hash taken at approval. A worker's claim lives inside the
 node's `.runtime.json`; a transient `<node>.runtime.json.lock` file (exclusive
 create) makes each read-modify-write atomic and is gone when the write finishes.
 
