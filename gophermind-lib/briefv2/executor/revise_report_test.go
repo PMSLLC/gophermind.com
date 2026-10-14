@@ -3,11 +3,13 @@ package executor
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"gophermind/gophermind-lib/briefv2/blackboard"
 	"gophermind/gophermind-lib/briefv2/human"
 	"gophermind/gophermind-lib/briefv2/planner"
 	"gophermind/gophermind-lib/briefv2/runner"
@@ -140,5 +142,57 @@ func TestReportNamesAFlaggedLeaf(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("failures = %v: the leaf's reason class must be named", rep.Failures)
+	}
+}
+
+func TestAHumanNoteWithASecretSplitByInvisibleCharactersIsNotRecorded(t *testing.T) {
+	t.Parallel()
+	for name, split := range map[string]string{"nul": "\x00", "zwsp": "​", "bidi": "‮", "zwj": "‍"} {
+		split := split
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			g := newRig(t, reviseRewrite(2))
+			id := leafID
+			rc, fc := g.leafRC(t, Script{"implement:" + id: distinct(id, 2)}, true)
+			failing(fc, id, 2)
+			g.gate.queue = []human.Resolution{{Action: human.ActionSkip, Note: "key " + canarySecret[:7] + split + canarySecret[7:]}}
+			rc.rev = &fakeReviser{steps: []func(planner.ReviseRequest) (planner.ReviseProposal, error){flaggedStep(planner.ClassContractFlagged)}}
+			_, _ = rc.runLeaf(context.Background(), rc.plan.Leaf(id), leafIn{})
+			store := string(readFile(t, filepath.Join(g.runDir, "_state", "revisions", "decisions.json")))
+			md := string(readFile(t, filepath.Join(g.runDir, "decisions", "rv-fn-greet-1.md")))
+			for _, s := range []string{store, md} {
+				if strings.Contains(s, canarySecret) || strings.Contains(s, "CANARY") {
+					t.Fatalf("the secret reached a decision record:\n%s", s)
+				}
+			}
+		})
+	}
+}
+
+func TestNoReviserMeansNoDecisionIsRecordedAndTheEscalationGoesOn(t *testing.T) {
+	t.Parallel()
+	g := newRig(t, reviseRewrite(2))
+	id := leafID
+	rc, fc := g.leafRC(t, Script{"implement:" + id: distinct(id, 2)}, true)
+	failing(fc, id, 2)
+	rc.rev = nil
+	g.gate.queue = []human.Resolution{{Action: human.ActionStop}}
+	l := rc.plan.Leaf(id)
+	ctx := context.Background()
+	if ok, cerr := g.board.Claim(ctx, g.id, id, "executor:"+id); cerr != nil || !ok {
+		t.Fatalf("claim: %v %v", ok, cerr)
+	}
+	if err := g.board.SetStatus(ctx, g.id, id, blackboard.StatusClaimed, blackboard.StatusInProgress); err != nil {
+		t.Fatal(err)
+	}
+	_, err := rc.escalate(context.Background(), l, blackboard.StatusInProgress, planner.ClassContractFlagged, nil)
+	asStop(t, err, "escalated", "human_stop")
+	if len(g.gate.Escalations()) != 1 {
+		t.Fatal("the gate was not asked")
+	}
+	for _, rel := range []string{"_state/revisions/decisions.json", "decisions"} {
+		if _, serr := os.Stat(filepath.Join(g.runDir, rel)); serr == nil {
+			t.Errorf("%s exists: with no reviser nothing is recorded", rel)
+		}
 	}
 }

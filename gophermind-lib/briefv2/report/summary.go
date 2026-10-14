@@ -6,6 +6,10 @@ import (
 	"unicode"
 )
 
+// MaxRevisedListed caps the per-leaf lines under "Rewritten leaves:" in the
+// summary; report.json keeps every leaf.
+const MaxRevisedListed = 20
+
 // esc makes text that derives from an id or a caller string safe to print:
 // control and other non-printing runes are shown as \xNN or \uNNNN.
 func esc(s string) string {
@@ -48,7 +52,11 @@ func (r Report) Summary() string {
 	line("Weak tests: %d  Repairs: %d", r.WeakTests, r.Repairs)
 	if len(r.Revised) > 0 {
 		line("Rewritten leaves: %d", r.Rewritten)
-		for _, v := range r.Revised {
+		for i, v := range r.Revised {
+			if i == MaxRevisedListed {
+				line("  ... %d more", len(r.Revised)-MaxRevisedListed)
+				break
+			}
 			line("  %s: revisions %d, changed %s, tests rewritten %t, flag %s, refusals %s",
 				esc(v.NodeID), v.Revisions, joinOrNone(v.Changed, " "), v.TestsRewritten, joinOrNone([]string{v.Flag}, ""), joinOrNone(v.Refusals, ", "))
 		}

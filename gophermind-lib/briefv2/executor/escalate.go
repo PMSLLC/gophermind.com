@@ -157,14 +157,18 @@ func (rc *runCtx) escalateWith(ctx context.Context, l *Leaf, from blackboard.Sta
 		if aerr := AppendEscalation(rc.o.RunDir, rec); aerr != nil {
 			return human.Resolution{}, aerr
 		}
+		// A decision about a revise-stage leaf is recorded before the answer is
+		// applied. An error here aborts the escalation: a decision must never
+		// be lost silently. With no reviser (notes mode, or none wired) nothing
+		// is recorded and the escalation goes on. The note is cleaned and
+		// scrubbed inside RecordDecision, in that order.
 		if rc.rev != nil && (isRevisionReason(reason) || revisions > 0) {
-			// The decision store, not the question store: answers.json is inside
-			// the plan hash. Revision is the node revision (R4). The call comes
-			// before the retry branch raises ExtraRevisions, so Round is the
-			// number of retries granted before this answer.
-			note := rc.scrubText(strings.TrimSpace(res.Note))
+			// Revision is the node revision (R4). The call comes before the
+			// retry branch raises ExtraRevisions, so Round is the number of
+			// retries granted before this answer.
 			if _, derr := rc.rev.RecordDecision(planner.RevisionDecision{RunDir: rc.o.RunDir, NodeID: l.ID, Revision: l.Revision,
-				Class: reason, Action: string(res.Action), Note: note, AnsweredBy: by, Round: rc.round(l.ID)}); derr != nil {
+				Class: reason, Action: string(res.Action), Note: strings.TrimSpace(res.Note), AnsweredBy: by, Round: rc.round(l.ID),
+				Scrub: rc.scrubText}); derr != nil {
 				return human.Resolution{}, derr
 			}
 		}

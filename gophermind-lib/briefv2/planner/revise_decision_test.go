@@ -126,3 +126,78 @@ func TestRecordDecisionRefusesWhatItCannotRecordSafely(t *testing.T) {
 		t.Error("an unusable class was written into the record")
 	}
 }
+
+func redactSecret(secret string) func(string) string {
+	return func(s string) string { return strings.ReplaceAll(s, secret, "(redacted)") }
+}
+
+func TestRecordDecisionRepeatRecreatesAMissingMarkdownByteForByte(t *testing.T) {
+	g := planned(t, nil)
+	rv := planner.NewReviser(g.deps)
+	d := planner.RevisionDecision{RunDir: g.runDir, NodeID: "fn-greet", Revision: 1, Class: planner.ClassContractFlagged,
+		Action: "retry", Note: "use runes", AnsweredBy: human.AnsweredByHuman, Round: 1}
+	id, err := rv.RecordDecision(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mdPath := filepath.Join(g.runDir, "decisions", id+".md")
+	was := fileBytes(t, g, "decisions/"+id+".md")
+	if err := os.Remove(mdPath); err != nil {
+		t.Fatal(err)
+	}
+	again, err := rv.RecordDecision(d)
+	if err != nil || again != id {
+		t.Fatalf("repeat = %q, %v; want %q", again, err, id)
+	}
+	if got := fileBytes(t, g, "decisions/"+id+".md"); string(got) != string(was) {
+		t.Errorf("recreated record differs:\n%s\nwas:\n%s", got, was)
+	}
+	if fi, err := os.Stat(mdPath); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Errorf("recreated record: %v %v, want 0600", fi, err)
+	}
+}
+
+func TestRecordDecisionACrashBetweenTheTwoWritesLosesNothing(t *testing.T) {
+	g := planned(t, nil)
+	rv := planner.NewReviser(g.deps)
+	d := planner.RevisionDecision{RunDir: g.runDir, NodeID: "fn-greet", Revision: 1, Class: "test_fail",
+		Action: "skip", AnsweredBy: human.AnsweredByHuman}
+	id, err := rv.RecordDecision(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wasMD := fileBytes(t, g, "decisions/"+id+".md")
+	// The crash: the record file was written, the store was not.
+	if err := os.Remove(filepath.Join(g.runDir, "_state", "revisions", "decisions.json")); err != nil {
+		t.Fatal(err)
+	}
+	again, err := rv.RecordDecision(d)
+	if err != nil || again != id {
+		t.Fatalf("after the crash = %q, %v; want %q", again, err, id)
+	}
+	if strings.Count(string(fileBytes(t, g, "_state/revisions/decisions.json")), `"id": "`+id+`"`) != 1 {
+		t.Error("the store lacks the record after the repeat")
+	}
+	if string(fileBytes(t, g, "decisions/"+id+".md")) != string(wasMD) {
+		t.Error("the record file changed")
+	}
+}
+
+func TestRecordDecisionNeverStoresASecretSplitByInvisibleCharacters(t *testing.T) {
+	const secret = "CANARY-SECRET-VALUE"
+	g := planned(t, nil)
+	rv := planner.NewReviser(g.deps)
+	for i, split := range []string{"\x00", "\u200b", "\u202e", "\u200d"} {
+		note := "key " + secret[:7] + split + secret[7:] + " end"
+		id, err := rv.RecordDecision(planner.RevisionDecision{RunDir: g.runDir, NodeID: "fn-greet", Revision: 1, Class: "test_fail",
+			Action: "retry", Note: note, AnsweredBy: human.AnsweredByHuman, Round: i, Scrub: redactSecret(secret)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range []string{string(fileBytes(t, g, "_state/revisions/decisions.json")), string(fileBytes(t, g, "decisions/"+id+".md"))} {
+			if strings.Contains(s, secret) || strings.Contains(s, "CANARY") {
+				t.Errorf("split %q: the secret reached a record:\n%s", split, s)
+			}
+		}
+	}
+}

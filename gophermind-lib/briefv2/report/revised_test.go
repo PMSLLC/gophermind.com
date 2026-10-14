@@ -2,6 +2,7 @@ package report_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -81,5 +82,24 @@ func TestReportWithRevisionsRoundTripsAtSchemaThree(t *testing.T) {
 	back, err := report.Read(dir)
 	if err != nil || back.SchemaVersion != 3 || back.Rewritten != 1 || len(back.Revised) != 1 {
 		t.Fatalf("read back = %+v, %v", back, err)
+	}
+}
+
+func TestReportCapsTheRewrittenLeavesList(t *testing.T) {
+	in := fixture()
+	for i := 0; i < report.MaxRevisedListed+5; i++ {
+		in.Revised = append(in.Revised, report.RevisedLeaf{NodeID: fmt.Sprintf("n%03d", i), Revisions: 1})
+	}
+	r, err := report.Build(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := r.Summary()
+	if !strings.Contains(sum, fmt.Sprintf("Rewritten leaves: %d", report.MaxRevisedListed+5)) || !strings.Contains(sum, "  ... 5 more") ||
+		strings.Contains(sum, fmt.Sprintf("n%03d:", report.MaxRevisedListed)) || !strings.Contains(sum, "n000:") {
+		t.Errorf("summary:\n%s", sum)
+	}
+	if len(r.Revised) != report.MaxRevisedListed+5 {
+		t.Errorf("the JSON list was cut to %d: only the summary is capped", len(r.Revised))
 	}
 }
