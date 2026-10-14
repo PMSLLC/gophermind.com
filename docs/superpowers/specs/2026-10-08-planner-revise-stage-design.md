@@ -138,7 +138,7 @@ Run folder additions (A's layout otherwise unchanged; node files and runtime fil
   _state/replies/revise_<fn>-<n>.txt       the revise reply (saveReply; the Test-writer reply saves as testwrite_<fn>_r<n>-<n>.txt)
 ```
 
-`log.jsonl` line kinds: `intent` and `commit` (both carry `n`, `trigger`, `base_sha256`, `body_sha256`, `test_sha256_before`, `test_sha256_after`, `changed` as a list of field names, `assumptions`, `model`, `at`), `flag` (`class`, `at`; no body change and no revision), `refused` (`class`, `at`; a rejected reply or test, so the report can count them). `trigger` is `ladder_exhausted` or `contract_problem`; the CONTRACT_PROBLEM sentence is not written.
+`log.jsonl` line kinds: `intent` and `commit` (both carry `n`, `round` (the executor retry round, so recovery keys the escalation record per round; absent reads as 0), `trigger`, `base_sha256`, `body_sha256`, `test_sha256_before`, `test_sha256_after`, `changed` as a list of field names, `assumptions`, `model`, `at`), `flag` (`class`, `at`; no body change and no revision), `refused` (`class`, `at`; a rejected reply or test, so the report can count them). `trigger` is `ladder_exhausted` or `contract_problem`; the CONTRACT_PROBLEM sentence is not written.
 
 The node's `revision` counter is the same number in three places: the node file's `revision` (definition revision, schema field), the runtime file's `revision` (`blackboard.Row.Revision`), and the `n` of the last `commit` record. The invariant in `rewrite` mode is that all three are equal after the stage finishes; the order of writes (section 10) makes the record the authority, and recovery raises the other two to it. In `notes` mode the runtime counter alone moves, as today.
 
