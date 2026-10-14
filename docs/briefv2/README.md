@@ -360,12 +360,55 @@ restart can be told apart. A resume refuses to go on when the plan files changed
 when commits that are not this run's sit on the work branch, or when the base
 branch moved away from it.
 
+## Revising a leaf
+
+When a leaf has tried every model of its ladder, or its model answers `CONTRACT_PROBLEM`, the
+planner rewrites the node and the build goes on from the rewrite. This is the `revise:` section
+of `gophermind.yaml`; an absent section gets the defaults:
+
+```yaml
+revise:
+  mode: rewrite          # rewrite | notes (notes is the old hint-only rung)
+  model_tier: strong     # strong | standard
+  context: node          # node | component (component adds the brief section, rationale, assumptions and decisions)
+  rewrite_tests: on      # on | off (off: a change that needs new tests goes to you as tests_locked)
+  max_tokens: 4096       # 256 to 32768
+  max_refusals: 2        # 1 to 5 revise calls per revision before the leaf goes to you
+```
+
+What a rewrite may change: the description, the inputs, outputs, errors and side effects of the
+contract (an input keeps its name: the names must stay the parameters of the signature), the
+constraints and notes, the groups (construction, security, observability, performance,
+portability, profile hooks) and the tests. The tests are never written by the revise model: the
+Test-writer writes them again from the revised contract alone, and the new test must fail
+against the stub. What a rewrite may never change: the signature, package, file, `depends_on`,
+wave, model tier or anything else. If one of those is wrong, the leaf goes to the gate with
+the planner's paragraph (`contract_flagged`, or `split_required` for a function that is too
+big). A flag or a refused reply does not use up a revision. Each leaf may be rewritten
+`max_revisions` times (the node's `budget.max_revisions`, else `defaults.max_revisions`,
+plus the retries you grant), then it goes to the gate with the class of its last attempt.
+A leaf in an integration repair round keeps the hint rung.
+
+The approval keeps binding the plan you approved. Each rewrite is recorded in
+`_state/revisions/<node>/`: `body-<k>.json` and `test-<k>.txt` (the node and its test at revision
+k; 0 is as approved) and `log.jsonl` (`intent`, `commit`, `flag` and `refused` records with
+hashes, field names and fixed classes, never a prompt, a reply or a secret). At load, the
+executor proves for every revised node that its file is the last committed body of that chain,
+that `leaf_tests.json` and the test file are the matching test, and that the frozen fields
+equal revision 0; a hand edit, a deleted or reordered log line, or a changed test stops the run
+`plan_changed`. A run killed in the middle of a rewrite finishes it on resume, with no model call.
+Your answers about a flagged or rewritten leaf are kept in `_state/revisions/decisions.json` and
+`decisions/rv-<node>-<m>.md`, apart from the question store. The report lists, per leaf, the
+revisions, the changed field names, the flag class and the refusal classes, and prints
+`Rewritten leaves: N`; it never prints a prompt, a reply or a node body.
+
 ## Files the executor writes
 
 In the run folder: `report.json`, `acceptance.json` (the proof of N of N: for each
 requirement the command, exit code, output size and SHA-256), `changes.patch`
 (`diff_only` only), `proxy.log`, `_state/executor.json` (the run's state), and
-`_state/notes.json` (hints a person added on a retry). Prompt text, reply text,
+`_state/notes.json` (hints a person added on a retry), `_state/revisions/` (the rewrites of
+revised nodes and your decisions about them) and `decisions/rv-*.md`. Prompt text, reply text,
 command output and secret values are never stored, in these files, in the ledger or
 in the blackboard: only ids, counts, sizes, hashes and fixed class words.
 

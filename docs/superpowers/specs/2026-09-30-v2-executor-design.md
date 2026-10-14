@@ -383,7 +383,7 @@ Small, listed so the plan can order them first:
 
 ## 17. Not in scope
 
-- The planner's revise stage (rewriting a node, `SPLIT_REQUIRED`, `CONTRACT_CHANGE_REQUIRED`, rewriting a bad test). The executor only adds hint notes and escalates.
+- Splitting a node into several (`SPLIT_REQUIRED` is a flag to a person) and changing `contracts.json`. The planner revise stage (`docs/superpowers/specs/2026-10-08-planner-revise-stage-design.md`) rewrites a node inside fixed rules; the executor only reads the rewrite through the hash chain of R21.
 - `landing: pull_request`, any push, any forge call, Gitea.
 - Component roll-up as its own stage (BUILD_PLAN 14's per-component integration run); the per-wave checks cover it.
 - The live view and Gantt (item 15), the run service in `gophermind-server`, the app screens.
@@ -468,7 +468,7 @@ Under `gophermind brief`: `run <id> [--gate terminal|file] [--repo <path>] [--wo
 | X3 | go-git for landing | The `git` CLI behind `gitland.Repo`; no new dependency, exact staging, same behavior John sees |
 | X4 | Wave 0 commit is tests only; rebase leaves onto the work branch | Tests plus stubs, so every commit builds; ff-only merge, never a rebase |
 | X5 | Fixed proxy port 8480 | Loopback port chosen at start; the URL is passed to commands |
-| X6 | Revise via `06-revise.md` may split or change a contract | Notes and escalation only until the planner's revise stage exists |
+| X6 | Revise via `06-revise.md` may split or change a contract | The planner revise stage rewrites description, contract text, tests and groups; a signature, package, file or `depends_on` change, and a split, are flagged to a person |
 | X7 | `landing: pull_request` supported | Refused with a message |
 | X8 | Component tests then root tests as a roll-up stage | Per-wave repo checks and one acceptance run; a separate component stage is item 14 |
 | X9 | Provider errors count as attempts in the log | An `error` verdict never consumes a fix attempt or a revision |
@@ -499,7 +499,8 @@ Under `gophermind brief`: `run <id> [--gate terminal|file] [--repo <path>] [--wo
 | R18 | Types and stubs written by the harness at run start, committed in Wave 0; stub swapped out and restored around every attempt | A wrong type declaration is a plan defect that stops the run before any model call rather than being patched by a leaf |
 | R19 | `max_run_minutes` (default 720) ends the run cleanly, resumable, exit 5 | Too low interrupts a legitimate long run (resume continues it); too high lets a stuck run occupy the mini |
 | R20 | Context overflow: fixed drop order, then next chain entry, escalate only after all entries fail | A leaf whose floor never fits escalates instead of being split; splitting needs the planner's revise stage |
-| R16 | Node files and `contracts.json` are immutable during a run; revision hints live in `_state/notes.json` | Notes cannot fix a wrong contract; that needs the planner's revise stage |
+| R21 | A rewritten node body is bound by a per-node hash chain in `_state/revisions/<node>/` (revision 0, then one `intent` and `commit` per rewrite), verified at load and before every commit; `approval.json` and the plan hash do not change | Putting `tree/` into the plan hash would need a person for every rewrite and an unattended run could never revise; trusting a rewritable `Plan.Hashes` would accept a hand edit as a revision |
+| R16 | Node files and `contracts.json` are immutable during a run, except that the planner revise stage may rewrite a function node inside the rules of R21; revision hints (mode `notes`) live in `_state/notes.json` | A hint cannot fix a test that contradicts its contract; a recorded, bounded, rule-checked rewrite can |
 
 ## 22. Open questions resolved
 
@@ -511,7 +512,7 @@ Under `gophermind brief`: `run <id> [--gate terminal|file] [--repo <path>] [--wo
 | How is a new third-party dependency declared and vetted? | `dependencies.json`, pinned, in the approval hash (R8) |
 | Commit per wave or per leaf? | Per leaf, plus Wave 0 and a final empty commit (R13) |
 | Is there a remote? | No; nothing calls one |
-| Who rewrites a bad leaf definition? | Nobody yet; hints and escalation (R16, section 17) |
+| Who rewrites a bad leaf definition? | The planner revise stage, bounded by `max_revisions`, recorded in `_state/revisions` (R16, R21) |
 | Does the packer see test files? | Yes, the leaf's own (R3) |
 | What ends a run? | Section 7.1's list; no other path returns success |
 | What about a leaf whose tests pass on a stub? | Warning event and report count (R9) |
