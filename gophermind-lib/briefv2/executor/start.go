@@ -77,6 +77,8 @@ type runCtx struct {
 	// function that cancels it. Nil means time.AfterFunc; tests inject a manual one.
 	afterFunc    func(d time.Duration, f func()) (stop func())
 	afterRevStep func(step int) error // tests only: called after each step of a revision; an error stops it as a kill would
+	profile      *sandbox.Profile     // the run's sandbox profile, nil when the sandbox is off; private trees copy it
+	baseFiles    []string             // the file list of the current parallel level's base copy (written in a serial phase)
 }
 
 // runReport holds the counters that become report.Input.
@@ -378,6 +380,7 @@ func (rc *runCtx) preflight(ctx context.Context) error {
 		}
 	}
 	rc.chk = runner.New(runner.Config{Sandbox: profile, OutputCap: cfg.Executor.OutputCapBytes, Grace: 2 * time.Second})
+	rc.profile = profile
 	return nil
 }
 
@@ -566,6 +569,9 @@ func (rc *runCtx) begin(ctx context.Context) error {
 	}
 	if err := rc.o.Board.InitRun(ctx, rc.plan.RunID, ids, waves); err != nil {
 		return errors.New("executor: the blackboard could not be initialised")
+	}
+	if err := rc.cleanTrees(); err != nil {
+		return err
 	}
 	hashes := map[string]string{}
 	for k, v := range rc.plan.Hashes {

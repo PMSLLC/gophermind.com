@@ -32,6 +32,14 @@ const goCmdTimeout = 10 * time.Minute
 // brief's environment nor its secrets: it runs no code of the plan's and needs
 // neither.
 func (rc *runCtx) env(nodeID string, mode envMode) ([]string, error) {
+	return rc.envAt(rc.scratch, nodeID, mode)
+}
+
+// envAt is env with HOME, TMPDIR and GOPATH under scratch: rc.scratch for the
+// main tree, <scratch>/w/<id> for a private tree. GOCACHE and GOMODCACHE stay
+// the run's (the build cache is safe for concurrent builds; the module cache is
+// read-only outside the deps step).
+func (rc *runCtx) envAt(scratch, nodeID string, mode envMode) ([]string, error) {
 	tc := map[string]string{}
 	for k, v := range rc.cfg.Toolchain {
 		tc[k] = v
@@ -39,11 +47,11 @@ func (rc *runCtx) env(nodeID string, mode envMode) ([]string, error) {
 	if mode == envAcceptance {
 		tc["PATH"] = rc.binDir + string(filepath.ListSeparator) + tc["PATH"]
 	}
-	tc["HOME"] = rc.scratch
-	tc["TMPDIR"] = rc.scratch
+	tc["HOME"] = scratch
+	tc["TMPDIR"] = scratch
 	tc["GOCACHE"] = rc.goCache
 	tc["GOMODCACHE"] = rc.modCache
-	tc["GOPATH"] = filepath.Join(rc.scratch, "gopath")
+	tc["GOPATH"] = filepath.Join(scratch, "gopath")
 	tc["CGO_ENABLED"] = "0" // decision E13
 
 	goEnv := map[string]string{"GOTOOLCHAIN": "local", "GOPRIVATE": "off"}
@@ -107,15 +115,9 @@ func (rc *runCtx) testTimeout() time.Duration {
 	return time.Duration(rc.cfg.Executor.TestTimeoutSeconds) * time.Second
 }
 
-// leafCheck is runner.LeafCheck over the named files of the leaf.
+// leafCheck is runner.LeafCheck over the named files of the leaf in the main tree.
 func (rc *runCtx) leafCheck(ctx context.Context, l *Leaf, files []string) runner.Verdict {
-	env, err := rc.env(l.ID, envLeaf)
-	if err != nil {
-		return runner.Verdict{Class: runner.ClassHarness, Err: err}
-	}
-	return rc.chk.CheckLeaf(ctx, runner.LeafCheck{
-		Repo: rc.o.Repo, Dir: l.Dir, TestFunc: l.TestFunc, Files: files, Env: env, TestTimeout: rc.testTimeout(),
-	})
+	return rc.leafCheckIn(ctx, rc.mainTree(), l, files)
 }
 
 // checkLeaf is runner.LeafCheck on the leaf's real file.
