@@ -101,6 +101,64 @@ func NewCLI(dir, runID string) (*CLI, error) {
 	return c, nil
 }
 
+// NewScratch makes dir a throwaway repository for one leaf's private tree
+// (sub-project F): git init, git add -A, one commit "gm(baseline)". dir must be
+// a directory that holds no .git; the files in it are the copy the executor
+// made. The CLI has NewCLI's guard, environment, identity and private HOME, so
+// Dirty, Ignored and Restore work in the tree as in the repository. Nothing in
+// a scratch repository is ever pushed or merged: the executor deletes dir and
+// calls Close.
+func NewScratch(dir, runID string) (*CLI, error) {
+	if !idRe.MatchString(runID) {
+		return nil, errors.New("gitland: invalid run id")
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, errors.New("gitland: invalid scratch directory")
+	}
+	if real, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = real
+	}
+	if st, err := os.Lstat(abs); err != nil || !st.IsDir() {
+		return nil, errors.New("gitland: scratch directory is not a directory")
+	}
+	if _, err := os.Lstat(filepath.Join(abs, ".git")); err == nil {
+		return nil, errors.New("gitland: the scratch directory already holds a repository")
+	}
+	bin := testGit
+	if bin == "" {
+		if bin, err = exec.LookPath("git"); err != nil {
+			return nil, errors.New("gitland: git binary not found")
+		}
+	}
+	home, err := os.MkdirTemp("", homePrefix)
+	if err != nil {
+		return nil, errors.New("gitland: cannot make private home")
+	}
+	c := &CLI{dir: abs, git: bin, runID: runID, home: home}
+	fail := func(err error) (*CLI, error) {
+		_ = c.Close()
+		return nil, err
+	}
+	if _, err := c.run("init", "-q"); err != nil {
+		return fail(err)
+	}
+	if _, err := c.run("add", "-A"); err != nil {
+		return fail(err)
+	}
+	if _, err := c.run("commit", "--no-verify", "--allow-empty", "-q", "-m", "gm(baseline)", "-m", c.runTrailer()); err != nil {
+		return fail(err)
+	}
+	out, err := c.run("rev-parse", "--show-toplevel")
+	if err != nil {
+		return fail(ErrNotRepoRoot)
+	}
+	if top, err := filepath.EvalSymlinks(strings.TrimRight(string(out), "\n")); err != nil || top != abs {
+		return fail(ErrNotRepoRoot)
+	}
+	return c, nil
+}
+
 // Close removes the private HOME made by NewCLI, only when it still looks like ours.
 func (c *CLI) Close() error {
 	home := c.home
@@ -456,6 +514,32 @@ func (c *CLI) Ignored() ([]string, error) {
 			continue
 		}
 		res = append(res, p)
+	}
+	sort.Strings(res)
+	return res, nil
+}
+
+// Files is the file list a private tree copies (sub-project F): ls-files of the
+// index and of the untracked files that are not ignored, NUL-separated so odd
+// names are exact, minus .gophermind/ and minus tracked files deleted from disk.
+func (c *CLI) Files() ([]string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out, err := c.run("ls-files", "-z", "--cached", "--others", "--exclude-standard")
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	var res []string
+	for _, f := range splitNul(out) {
+		if f == ".gophermind" || strings.HasPrefix(f, ".gophermind/") || seen[f] {
+			continue
+		}
+		if _, err := os.Lstat(filepath.Join(c.dir, filepath.FromSlash(f))); err != nil {
+			continue // deleted in the working tree: nothing to copy
+		}
+		seen[f] = true
+		res = append(res, f)
 	}
 	sort.Strings(res)
 	return res, nil

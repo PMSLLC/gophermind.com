@@ -29,6 +29,10 @@ type Repo interface {
 	// Ignored lists sorted repo-relative paths of files git ignores, one per file. The harness's own
 	// .gophermind/ run folder is never listed. The executor counts an ignored file it did not declare as stray.
 	Ignored() ([]string, error)
+	// Files lists sorted repo-relative paths of the working tree's files that git
+	// knows or would add: tracked files still on disk and untracked files that are
+	// not ignored. .gophermind/ is never listed. It changes nothing.
+	Files() ([]string, error)
 	// Diff is the working tree against base, including new files, for diff_only.
 	Diff(base string) ([]byte, error)
 	// Restore puts tracked paths back to HEAD (index and tree) and removes untracked files.

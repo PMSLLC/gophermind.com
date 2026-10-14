@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -297,6 +298,100 @@ func Remove(repo, rel string) error {
 	}
 	if err := os.Remove(abs); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("removing %s: %s", path.Base(rel), osReason(err))
+	}
+	return nil
+}
+
+// CopyFile copies rel from the directory srcRoot to the same place under
+// dstRoot, for a private tree (sub-project F). rel is a clean relative slash
+// path with no .git or .gophermind component. A regular file is copied with
+// its executable bits (mode 0644 or 0755), opened without following a link. A
+// symbolic link is copied as a link with the same target text, only when the
+// target is relative and stays inside the tree; it is never followed. Anything
+// else, a parent directory that is a link in either tree, or an existing
+// destination is refused. Errors name the path by its length only.
+func CopyFile(srcRoot, dstRoot, rel string) error {
+	if rel == "" || path.IsAbs(rel) || strings.Contains(rel, `\`) || path.Clean(rel) != rel || rel == ".." || strings.HasPrefix(rel, "../") {
+		return fmt.Errorf("copied path (%d bytes) is not a clean path inside the tree", len(rel))
+	}
+	if hasGitName(strings.Split(rel, "/")) {
+		return fmt.Errorf("copied path (%d bytes) is under .git or .gophermind", len(rel))
+	}
+	if err := noLinkedParent(srcRoot, rel); err != nil {
+		return err
+	}
+	src := filepath.Join(srcRoot, filepath.FromSlash(rel))
+	dst := filepath.Join(dstRoot, filepath.FromSlash(rel))
+	fi, err := os.Lstat(src)
+	if err != nil {
+		return fmt.Errorf("copying %d bytes of path: %s", len(rel), osReason(err))
+	}
+	if err := noLinkedParent(dstRoot, rel); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return fmt.Errorf("copying %d bytes of path: %s", len(rel), osReason(err))
+	}
+	if err := noLinkedParent(dstRoot, rel); err != nil {
+		return err
+	}
+	switch {
+	case fi.Mode()&os.ModeSymlink != 0:
+		target, err := os.Readlink(src)
+		if err != nil {
+			return fmt.Errorf("copying %d bytes of path: %s", len(rel), osReason(err))
+		}
+		joined := path.Clean(path.Join(path.Dir(rel), filepath.ToSlash(target)))
+		if filepath.IsAbs(target) || joined == ".." || strings.HasPrefix(joined, "../") || hasGitName(strings.Split(joined, "/")) {
+			return fmt.Errorf("a symbolic link (%d bytes of path) points outside the tree", len(rel))
+		}
+		if err := os.Symlink(target, dst); err != nil {
+			return fmt.Errorf("copying %d bytes of path: %s", len(rel), osReason(err))
+		}
+		return nil
+	case fi.Mode().IsRegular():
+		perm := os.FileMode(0o644)
+		if fi.Mode().Perm()&0o111 != 0 {
+			perm = 0o755
+		}
+		in, err := os.OpenFile(src, os.O_RDONLY|NoFollow, 0)
+		if err != nil {
+			return fmt.Errorf("copying %d bytes of path: %s", len(rel), osReason(err))
+		}
+		defer in.Close()
+		out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL|NoFollow, perm)
+		if err != nil {
+			return fmt.Errorf("copying %d bytes of path: %s", len(rel), osReason(err))
+		}
+		if _, err := io.Copy(out, in); err != nil {
+			out.Close()
+			return fmt.Errorf("copying %d bytes of path: %s", len(rel), osReason(err))
+		}
+		if err := out.Chmod(perm); err != nil {
+			out.Close()
+			return fmt.Errorf("copying %d bytes of path: %s", len(rel), osReason(err))
+		}
+		return out.Close()
+	}
+	return fmt.Errorf("copied path (%d bytes) is not a regular file or a link", len(rel))
+}
+
+// noLinkedParent refuses rel when an existing directory on its way under root
+// is a symbolic link.
+func noLinkedParent(root, rel string) error {
+	cur := root
+	for _, part := range strings.Split(path.Dir(rel), "/") {
+		if part == "." {
+			continue
+		}
+		cur = filepath.Join(cur, part)
+		fi, err := os.Lstat(cur)
+		if err != nil {
+			return nil // not there yet
+		}
+		if fi.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("copied path (%d bytes) passes through a symbolic link", len(rel))
+		}
 	}
 	return nil
 }
