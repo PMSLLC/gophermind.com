@@ -3,7 +3,7 @@
 Status: draft for review. Date: 2026-10-08.
 Scope: sub-project E of `2026-10-07-planner-phaseflow-unification-design.md` (GOAL-UNIFICATION task 5). When a leaf has used its ladder or its model reports a contract problem, the planner rewrites the node (description, contract text, tests, groups) inside fixed rules, the executor builds from the rewritten node, and every rewrite is recorded and checkable. Code paths are in the worktree `/Users/jbrahy/OtherProjects/PMSLLC/gophermind-planner-core` (branch `feat/briefv2-planner-core`), under `gophermind-lib/briefv2/`.
 Builds on: A (`2026-10-07-filesystem-run-state.md`: runtime files, `events.jsonl`, `attempts/`), B (`2026-10-07-node-widening-and-question-model-design.md`: widened nodes, `groupDefects`, decisions in the tree), the executor spec (`2026-09-30-v2-executor-design.md`, section 7.3 and R16) and the prompt `docs/briefv2/handoff/prompts/06-revise.md`.
-Sequencing: written, not started. Built after A, B and C (GOAL-UNIFICATION task 5). Section 12 lists what in A, B and G this spec touches.
+Sequencing: built on the branch after A, B and C (GOAL-UNIFICATION task 5), by `docs/superpowers/plans/2026-10-09-planner-revise-stage.md`. Section 12 lists what in A, B and G this spec touches.
 
 ## 1. Why this exists
 

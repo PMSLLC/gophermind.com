@@ -50,7 +50,7 @@ Each item gets its own plan and its own build. All code work happens on `feat/br
 | B | Node widening and the question model | A (decision records, attempts) | `docs/superpowers/specs/2026-10-07-node-widening-and-question-model-design.md` (sections 5 and 6 of this document are the summary); plan written 2026-10-08: `docs/superpowers/plans/2026-10-08-node-widening-and-question-model.md` (13 tasks, not started) |
 | C | `/project` plans and builds through v2 | A, B | the existing `2026-09-30-project-single-entry-design.md` and plan (14 tasks, not built), amended by section 7 |
 | D | The run view: `runview` and the pipeline endpoints over the run folder (no `.planning/` files are generated) | A, B | section 8 and the G spec |
-| E | Planner revise stage: rewrite a node after a failure | B | its own spec; neither v1 nor v2 does this today |
+| E | Planner revise stage: rewrite a node after a failure | B | `docs/superpowers/specs/2026-10-08-planner-revise-stage-design.md`; built on the branch (plan `docs/superpowers/plans/2026-10-09-planner-revise-stage.md`, 11 tasks) |
 | F | Parallel waves | A | its own spec; the executor runs one worker today |
 | G | Retire v1 and `/phase`, upgrade the server and the desktop app, drop the version names | C, D | `docs/superpowers/specs/2026-10-08-retire-v1-and-upgrade-consumers-design.md`; runs after the graded release |
 

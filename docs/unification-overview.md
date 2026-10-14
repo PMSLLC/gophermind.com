@@ -37,7 +37,7 @@ John asked for the planner to be tightly integrated with PhaseFlow. Reading both
 | B | Node widening (every group on every node) and the question model (rounds, fact probe, confirm gate, decisions, questions and answers recorded in the tree) | B spec; plan B | plan written |
 | C | `/project` plans and builds through v2 | already specified and planned on the branch (project-single-entry, 14 tasks) | not built |
 | D | The run view: `runview` library and the pipeline endpoints under one new node-based contract (no `.planning/` files are generated) | G spec | specified |
-| E | A planner revise stage that rewrites a node after a failure (neither v1 nor v2 does this) | none yet | not specified |
+| E | A planner revise stage that rewrites a node after a failure (neither v1 nor v2 does this) | E spec; plan E (11 tasks) | built on the branch |
 | F | Parallel waves in the executor | none yet | not specified |
 | G | Retire v1 and `/phase`, upgrade the server and the desktop app, drop the version names | G spec | specified; after the graded release |
 
