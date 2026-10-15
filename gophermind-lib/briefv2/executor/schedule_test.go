@@ -408,22 +408,36 @@ func TestEscalatedLeafAskedAgainOnRestart(t *testing.T) {
 	}
 }
 
-// Leaf model loops are serialised: however the setting got there, workerCount is 1.
-func TestWorkerCountIsAlwaysOne(t *testing.T) {
+// workerCount is executor.workers capped by the jobs that may run in a private
+// tree: main-tree, blocked and finished jobs do not count.
+func TestWorkerCountIsTheSettingCappedByPrivateJobs(t *testing.T) {
 	t.Parallel()
 	g := newRig(t)
 	rc, _ := g.schedRC(t, Script{})
-	for _, n := range []int{0, 1, 2, 8} {
-		rc.cfg.Executor.Workers = n
-		if got := rc.workerCount(g.leaves("fn-greet", "fn-farewell")); got != 1 {
-			t.Fatalf("workers setting %d gave %d, want 1", n, got)
+	l := g.plan.Leaf("fn-greet")
+	mk := func(n int, main bool) []*job {
+		var out []*job
+		for i := 0; i < n; i++ {
+			out = append(out, &job{l: l, status: blackboard.StatusPending, main: main})
 		}
+		return out
+	}
+	for _, c := range []struct{ setting, jobs, want int }{{1, 5, 1}, {3, 5, 3}, {3, 2, 2}, {8, 1, 1}, {2, 0, 0}} {
+		rc.cfg.Executor.Workers = c.setting
+		if got := rc.workerCount(mk(c.jobs, false)); got != c.want {
+			t.Errorf("workers %d, %d jobs: %d, want %d", c.setting, c.jobs, got, c.want)
+		}
+	}
+	rc.cfg.Executor.Workers = 4
+	jobs := append(mk(2, false), mk(3, true)...)
+	jobs = append(jobs, &job{l: l, status: blackboard.StatusVerified}, &job{l: l, status: blackboard.StatusPending, blocker: "fn-x"})
+	if got := rc.workerCount(jobs); got != 2 {
+		t.Fatalf("workerCount = %d, want 2 (only private, runnable jobs count)", got)
 	}
 }
 
-// Two runLeaf bodies never overlap, even when the setting (bypassing Validate)
-// asks for more workers.
-func TestNeverTwoLeafBodiesAtOnce(t *testing.T) {
+// With workers 1 two leaf bodies never overlap and no tree is made.
+func TestASerialLevelNeverOverlaps(t *testing.T) {
 	t.Parallel()
 	g := newRig(t)
 	rc, fc := g.schedRC(t, Script{
@@ -432,9 +446,12 @@ func TestNeverTwoLeafBodiesAtOnce(t *testing.T) {
 	})
 	fc.LeafScript["fn-farewell"] = []runner.Verdict{passVerdict()}
 	fc.LeafScript["fn-greet"] = []runner.Verdict{passVerdict()}
-	rc.cfg.Executor.Workers = 4
+	rc.cfg.Executor.Workers = 1
 	var cur, max int32
-	fc.Hook = func(string) {
+	fc.Hook = func(repo string) {
+		if repo != g.repo {
+			t.Errorf("a serial level checked in %s", repo)
+		}
 		n := atomic.AddInt32(&cur, 1)
 		for {
 			m := atomic.LoadInt32(&max)
@@ -451,5 +468,8 @@ func TestNeverTwoLeafBodiesAtOnce(t *testing.T) {
 	}
 	if m := atomic.LoadInt32(&max); m != 1 {
 		t.Fatalf("%d leaf checks overlapped, want strictly one at a time", m)
+	}
+	if len(g.sink.OfKind("level_parallel"))+len(g.sink.OfKind("tree_ready")) != 0 {
+		t.Fatal("a serial level made trees")
 	}
 }

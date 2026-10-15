@@ -79,15 +79,17 @@ type runCtx struct {
 	afterRevStep func(step int) error // tests only: called after each step of a revision; an error stops it as a kill would
 	profile      *sandbox.Profile     // the run's sandbox profile, nil when the sandbox is off; private trees copy it
 	baseFiles    []string             // the file list of the current parallel level's base copy (written in a serial phase)
+	afterTree    func(id string)      // tests only: called once a private tree is ready, before the leaf runs
 }
 
 // runReport holds the counters that become report.Input.
 type runReport struct {
-	weak, repairs int
-	blocked       map[string]string // leaf id -> id of the dependency that blocks it
-	reasons       map[string]string // leaf id -> final reason of a failed or escalated leaf
-	sandboxExec   string            // "available" or "missing": stated with the sandbox setting in the report environment
-	conflicts     int               // landing conflicts (sub-project F), under repMu
+	weak, repairs  int
+	blocked        map[string]string // leaf id -> id of the dependency that blocks it
+	reasons        map[string]string // leaf id -> final reason of a failed or escalated leaf
+	sandboxExec    string            // "available" or "missing": stated with the sandbox setting in the report environment
+	conflicts      int               // landing conflicts (sub-project F), under repMu
+	parallelLevels int               // levels that ran in parallel (sub-project F), under repMu
 }
 
 // sandboxLabel is the sandbox setting as the report states it: "on" or "off".

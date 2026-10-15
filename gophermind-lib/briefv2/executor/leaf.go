@@ -787,6 +787,12 @@ func (rc *runCtx) criticalSince(id string, t time.Time) []string {
 	return hosts
 }
 
+// commitError is a pass whose commit in the main tree failed: a harness fault.
+// In a parallel level it stops the leaves behind it from landing (ruling C5).
+type commitError struct{ id string }
+
+func (e *commitError) Error() string { return "executor: committing leaf " + e.id + " failed" }
+
 // finishPass is the done definition met: commit (unless adopted), record the
 // result and set verified. Once the commit exists the stub must never be
 // restored, so passed is set before anything that can still fail.
@@ -818,7 +824,7 @@ func (lr *leafRun) finishPass(ctx context.Context, committed bool, hash string, 
 			hash, err = lr.swap.Pass(l.Title)
 		}
 		if err != nil {
-			return fmt.Errorf("executor: committing leaf %s failed", l.ID)
+			return &commitError{id: l.ID}
 		}
 	}
 	lr.commit = hash

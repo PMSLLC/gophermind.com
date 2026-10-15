@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gophermind/gophermind-lib/briefv2/blackboard"
@@ -36,7 +38,7 @@ type waveResult struct {
 type schedState struct {
 	mu         sync.Mutex
 	interrupts map[string]int
-	body       sync.Mutex // held for the whole of one leaf body: two never run at once
+	body       sync.Mutex // held for the whole of one leaf body in a serial level, and by the turn holder of a parallel level
 }
 
 func (s *schedState) interrupted(id string) int {
@@ -69,17 +71,140 @@ type job struct {
 	l       *Leaf
 	status  blackboard.Status // the row when the level began
 	blocker string            // the dependency that blocks the leaf
+	main    bool              // a parallel level runs it in the main tree in its turn (needsMain)
 	ran     bool
 	out     leafOutcome
 	err     error
 }
 
-// workerCount is the number of leaves run at once: always 1. The leaf loops
-// share one working tree (the stray-file check and the stub swap look at it
-// whole) and the spec allows one model call at a time, so executor.workers is
-// refused above 1 by settings validation and ignored here. The job structure
-// stays for the day leaves get isolated trees.
-func (rc *runCtx) workerCount(leaves []*Leaf) int { return 1 }
+// runnable says the job is to run: not blocked, not already finished.
+func runnable(j *job) bool {
+	return j.blocker == "" && j.status != blackboard.StatusVerified && j.status != blackboard.StatusFailed
+}
+
+// workerCount is how many leaves a level runs at once: executor.workers capped
+// by the jobs that may run in a private tree. Below 2 the level runs as before,
+// one leaf after the other in the main tree, with no copy.
+func (rc *runCtx) workerCount(jobs []*job) int {
+	n := 0
+	for _, j := range jobs {
+		if runnable(j) && !j.main {
+			n++
+		}
+	}
+	return min(rc.cfg.Executor.Workers, n)
+}
+
+// splitOverlaps puts leaves of a level whose File, StubFile or TestFile is the
+// same path into different sub-levels, the higher id later (spec section 4):
+// they cannot be isolated from each other. First fit, id order kept inside
+// each sub-level. Used only when executor.workers > 1 (ruling 12).
+func splitOverlaps(level []*Leaf) [][]*Leaf {
+	var subs [][]*Leaf
+	var used []map[string]bool
+	for _, l := range level {
+		paths := []string{l.File, l.StubFile, l.TestFile}
+		placed := false
+		for i := range subs {
+			clash := false
+			for _, p := range paths {
+				clash = clash || used[i][p]
+			}
+			if !clash {
+				subs[i] = append(subs[i], l)
+				for _, p := range paths {
+					used[i][p] = true
+				}
+				placed = true
+				break
+			}
+		}
+		if !placed {
+			m := map[string]bool{}
+			for _, p := range paths {
+				m[p] = true
+			}
+			subs = append(subs, []*Leaf{l})
+			used = append(used, m)
+		}
+	}
+	return subs
+}
+
+// needsMain says a leaf of a parallel level must run in the main tree in its
+// turn (ruling 5): the gate is to be asked again, a real file is on disk to
+// adopt, a repair left a reopen marker, or a candidate waits to land
+// (resumeCandidate runs only in the main tree). The candidate is read as
+// resumeCandidate reads it: a file readCandidate would drop does not count.
+func (rc *runCtx) needsMain(l *Leaf, status blackboard.Status) (bool, error) {
+	if status == blackboard.StatusEscalated || status == blackboard.StatusNeedsRevision {
+		return true, nil
+	}
+	if _, found, err := readCandidate(rc.o.RunDir, l.ID); err != nil || found {
+		return true, err
+	}
+	if _, marked, err := readReopenMarker(rc.o.RunDir, l.ID); err != nil || marked {
+		return true, err
+	}
+	st, err := NewSwap(rc.o.Repo, l, rc.git, nil).State()
+	if err != nil {
+		return false, err
+	}
+	return st != SwapStubOnly, nil
+}
+
+// levelWorkers decides how a level runs. With executor.workers above 1 it marks
+// the jobs that need the main tree; when at least two may run in private trees
+// it copies the level's base and emits level_parallel, which counts every
+// runnable job of the level, main jobs included (ruling C16). A base that
+// cannot be made (over 256 MiB, a link out of the tree, a full disk) makes the
+// level serial with a warning: nothing is lost (ruling 4, the base copy only).
+func (rc *runCtx) levelWorkers(jobs []*job, wave, level int) (int, error) {
+	if rc.cfg.Executor.Workers <= 1 {
+		return 1, nil
+	}
+	for _, j := range jobs {
+		if !runnable(j) {
+			continue
+		}
+		m, err := rc.needsMain(j.l, j.status)
+		if err != nil {
+			return 0, err
+		}
+		j.main = m
+	}
+	serial := func() (int, error) {
+		for _, j := range jobs {
+			j.main = false
+		}
+		return 1, nil
+	}
+	n := rc.workerCount(jobs)
+	if n < 2 {
+		return serial()
+	}
+	if err := rc.snapshotLevel(); err != nil {
+		rc.emit("warning", "", "this level runs one leaf at a time: "+strings.TrimPrefix(err.Error(), "executor: "))
+		rc.endLevel()
+		return serial()
+	}
+	leaves := 0
+	for _, j := range jobs {
+		if runnable(j) {
+			leaves++
+		}
+	}
+	rc.emit("level_parallel", "", fmt.Sprintf("wave %d level %d: %d leaves, %d workers", wave, level, leaves, n))
+	rc.noteParallel()
+	return n, nil
+}
+
+// noteParallel counts one parallel level for the report.
+func (rc *runCtx) noteParallel() {
+	repMu.Lock()
+	rc.rep.parallelLevels++
+	repMu.Unlock()
+}
 
 // levels orders the leaves: by dependency among themselves first, then by id.
 // Leaves of one wave have no dependency on each other, so a wave is one level.
@@ -166,21 +291,35 @@ func (rc *runCtx) scheduleLeaves(ctx context.Context, leaves []*Leaf) (waveResul
 		rc.emit("warning", id, "a claim with no heartbeat was released")
 	}
 
-	workers := rc.workerCount(leaves)
 	var firstErr error
+	level := 0
 	for _, lv := range levels(leaves) {
-		if wr.Stop != nil || firstErr != nil {
-			break
+		subs := [][]*Leaf{lv}
+		if rc.cfg.Executor.Workers > 1 {
+			subs = splitOverlaps(lv)
 		}
-		jobs, err := rc.classify(ctx, lv, &wr)
-		if err != nil {
-			return wr, err
-		}
-		var stop bool
-		rc.runJobs(ctx, jobs, workers, &wr, &stop)
-		for _, j := range jobs {
-			if err := rc.merge(ctx, j, &wr); err != nil && firstErr == nil {
-				firstErr = err
+		for _, sub := range subs {
+			if wr.Stop != nil || firstErr != nil {
+				break
+			}
+			level++
+			jobs, err := rc.classify(ctx, sub, &wr)
+			if err != nil {
+				return wr, err
+			}
+			workers, err := rc.levelWorkers(jobs, sub[0].Wave, level)
+			if err != nil {
+				return wr, err
+			}
+			var stop bool
+			rc.runJobs(ctx, jobs, workers, &wr, &stop)
+			if workers > 1 {
+				rc.endLevel()
+			}
+			for _, j := range jobs {
+				if err := rc.merge(ctx, j, &wr); err != nil && firstErr == nil {
+					firstErr = err
+				}
 			}
 		}
 	}
@@ -218,10 +357,15 @@ func (rc *runCtx) classify(ctx context.Context, level []*Leaf, wr *waveResult) (
 }
 
 // runJobs runs the jobs that are to run. With one worker it runs them one
-// after the other in order; with more it starts them in order, at most
-// `workers` at a time.
+// after the other in the main tree. With more it starts them in id order, at
+// most `workers` at a time, each with a turn that follows the previous job's:
+// private jobs work in their own tree and land in their turn; main jobs wait
+// for their turn first. A landing commit that fails sets the level's fault
+// flag, and every job behind it ends interrupted with its candidate kept
+// (ruling C5, spec section 7.3); any other harness fault only stops claiming.
 func (rc *runCtx) runJobs(ctx context.Context, jobs []*job, workers int, wr *waveResult, stop *bool) {
 	var mu sync.Mutex
+	var fault atomic.Bool // a landing commit of this level failed
 	stopped := func() bool { mu.Lock(); defer mu.Unlock(); return *stop }
 	halt := func(st *stopError) {
 		mu.Lock()
@@ -233,8 +377,9 @@ func (rc *runCtx) runJobs(ctx context.Context, jobs []*job, workers int, wr *wav
 	}
 	sem := make(chan struct{}, workers)
 	var wg sync.WaitGroup
+	var prev <-chan struct{} // done of the previous job that ran (parallel levels)
 	for _, j := range jobs {
-		if j.blocker != "" || j.status == blackboard.StatusVerified || j.status == blackboard.StatusFailed {
+		if !runnable(j) {
 			continue
 		}
 		sem <- struct{}{}
@@ -270,20 +415,31 @@ func (rc *runCtx) runJobs(ctx context.Context, jobs []*job, workers int, wr *wav
 			}
 		}
 		j.ran = true
+		var tn *turn
+		if workers > 1 {
+			tn = newTurn(prev, &rc.sched.body)
+			tn.fault = &fault
+			prev = tn.done
+		}
 		run := func() {
 			defer func() { <-sem }()
-			rc.sched.body.Lock()
-			defer rc.sched.body.Unlock()
-			if j.status == blackboard.StatusEscalated || j.status == blackboard.StatusNeedsRevision {
-				j.out, j.err = rc.resumeEscalated(ctx, j.l, j.status)
+			if tn == nil {
+				rc.sched.body.Lock()
+				defer rc.sched.body.Unlock()
+				j.out, j.err = rc.runJob(ctx, j)
 			} else {
-				j.out, j.err = rc.runLeaf(ctx, j.l, leafIn{})
+				defer tn.release()
+				j.out, j.err = rc.runParallelJob(ctx, j, tn)
 			}
 			var se *stopError
+			var ce *commitError
 			switch {
 			case errors.As(j.err, &se):
 				halt(se)
 			case j.err != nil:
+				if errors.As(j.err, &ce) {
+					fault.Store(true) // before the deferred release lets the next job go
+				}
 				halt(nil)
 			case j.out.Interrupted:
 				rc.sched.markInterrupted(j.l.ID)
@@ -299,6 +455,49 @@ func (rc *runCtx) runJobs(ctx context.Context, jobs []*job, workers int, wr *wav
 		}
 	}
 	wg.Wait()
+}
+
+// runJob is one leaf in the main tree: the gate again for a leaf an earlier
+// run left escalated, else the leaf.
+func (rc *runCtx) runJob(ctx context.Context, j *job) (leafOutcome, error) {
+	if j.status == blackboard.StatusEscalated || j.status == blackboard.StatusNeedsRevision {
+		return rc.resumeEscalated(ctx, j.l, j.status)
+	}
+	return rc.runLeaf(ctx, j.l, leafIn{})
+}
+
+// runParallelJob is one leaf of a parallel level. A main job waits for its
+// turn and holds it for the whole leaf, as runJob runs it (ruling 5: toMain
+// does nothing in the main tree, so the turn is taken here). Any other gets a
+// private tree, removed when the leaf ends, and lands in its turn. A wait that
+// ends with the context, or behind a failed landing (errLandingFault), ends the
+// job interrupted and unclaimed, its candidate kept. A makeTree failure or a
+// panic outside the leaf body (tree setup, landing glue) is a harness fault of
+// this job only (spec section 10): the tree is removed, the caller releases
+// the turn, and the process lives.
+func (rc *runCtx) runParallelJob(ctx context.Context, j *job, tn *turn) (out leafOutcome, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			rc.emit("warning", j.l.ID, "a panic ended the job outside the leaf")
+			out, err = leafOutcome{}, fmt.Errorf("executor: the job of leaf %s panicked", j.l.ID)
+		}
+	}()
+	if j.main {
+		if werr := tn.wait(ctx); werr != nil {
+			return leafOutcome{Interrupted: true}, nil
+		}
+		return rc.runJob(ctx, j)
+	}
+	wt, terr := rc.makeTree(j.l.ID)
+	if terr != nil {
+		return leafOutcome{}, terr // never claimed: the leaf stays ready
+	}
+	defer rc.dropTree(wt)
+	rc.emit("tree_ready", j.l.ID, "private tree ready")
+	if rc.afterTree != nil {
+		rc.afterTree(j.l.ID)
+	}
+	return rc.runLeaf(ctx, j.l, leafIn{Tree: wt, Turn: tn})
 }
 
 // merge puts one job's result in the wave result. Called in id order.
