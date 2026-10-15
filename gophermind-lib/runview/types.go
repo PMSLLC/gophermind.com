@@ -195,11 +195,14 @@ type Event struct {
 	Data json.RawMessage
 }
 
-// NodeStatusData is the payload of node-status.
+// NodeStatusData is the payload of node-status. A status line and a revision
+// line of the event log both map to it: Status and Revision are the node's
+// values as they are now.
 type NodeStatusData struct {
-	ID     string `json:"id"`
-	Status string `json:"status"`
-	Wave   int    `json:"wave"`
+	ID       string `json:"id"`
+	Status   string `json:"status"`
+	Wave     int    `json:"wave"`
+	Revision int    `json:"revision"`
 }
 
 // NodeAttemptData is the payload of node-attempt.
