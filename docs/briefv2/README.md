@@ -404,6 +404,9 @@ Limits of parallel leaves:
   parallel leaves.
 - In rewrite mode, a cancel arriving right after a revise reply can end the run as a harness
   fault instead of an interrupt (backlog).
+- A harness fault in a leaf's landing check (not a failed commit) does not stop leaves
+  already waiting behind it, so a higher leaf id can land before the faulted lower one. The
+  faulted leaf lands on resume.
 
 ## Revising a leaf
 

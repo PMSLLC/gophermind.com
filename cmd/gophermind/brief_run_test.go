@@ -433,7 +433,7 @@ func TestBriefRunExitCodes(t *testing.T) {
 		}
 	})
 	for _, n := range []string{"9", "-1"} {
-		t.Run("--workers "+n+" is 1 with no model call", func(t *testing.T) {
+		t.Run("--workers "+n+" is rejected as out of range 1 to 8 before any model call", func(t *testing.T) {
 			id, _ := plannedGreeter(t)
 			sp := useRun(t, goodReplies(t, ""))
 			code, _, errs := runBriefCmd(t, "", "run", id, "--workers", n)
@@ -611,6 +611,14 @@ func TestBriefRunRepoOverride(t *testing.T) {
 func TestBriefRunWorkersFlagOverridesTheSettingForThisRun(t *testing.T) {
 	id, _ := plannedGreeter(t)
 	useRun(t, goodReplies(t, ""))
+	base := runHook
+	runHook = func() (*settings.Config, map[string]provider.Provider, error) {
+		cfg, ps, err := base()
+		if cfg != nil {
+			cfg.Executor.Workers = 4 // the setting the run reads; distinct from 1 and from the flag
+		}
+		return cfg, ps, err
+	}
 	var got executor.Options
 	stubExecutor(t, func(_ context.Context, o executor.Options) (executor.Report, error) {
 		got = o
@@ -619,11 +627,11 @@ func TestBriefRunWorkersFlagOverridesTheSettingForThisRun(t *testing.T) {
 	if code, _, errs := runBriefCmd(t, "", "run", id, "--workers", "3"); code != 0 || got.Settings.Executor.Workers != 3 {
 		t.Fatalf("--workers 3: code=%d err=%q workers=%d", code, errs, got.Settings.Executor.Workers)
 	}
-	if code, _, errs := runBriefCmd(t, "", "run", id, "--workers", "0"); code != 0 || got.Settings.Executor.Workers != 1 {
-		t.Fatalf("--workers 0: code=%d err=%q workers=%d, want the setting (1)", code, errs, got.Settings.Executor.Workers)
+	if code, _, errs := runBriefCmd(t, "", "run", id, "--workers", "0"); code != 0 || got.Settings.Executor.Workers != 4 {
+		t.Fatalf("--workers 0: code=%d err=%q workers=%d, want the setting (4)", code, errs, got.Settings.Executor.Workers)
 	}
-	if code, _, errs := runBriefCmd(t, "", "run", id); code != 0 || got.Settings.Executor.Workers != 1 {
-		t.Fatalf("no flag: code=%d err=%q workers=%d, want the setting (1)", code, errs, got.Settings.Executor.Workers)
+	if code, _, errs := runBriefCmd(t, "", "run", id); code != 0 || got.Settings.Executor.Workers != 4 {
+		t.Fatalf("no flag: code=%d err=%q workers=%d, want the setting (4)", code, errs, got.Settings.Executor.Workers)
 	}
 }
 
