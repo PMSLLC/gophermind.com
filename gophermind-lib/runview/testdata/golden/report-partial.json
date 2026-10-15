@@ -1,0 +1,59 @@
+{
+  "schema_version": 3,
+  "run_id": "gm-2026-10-08-001",
+  "started_at": "2026-10-08T12:02:00Z",
+  "finished_at": "2026-10-08T13:00:00Z",
+  "status": "building",
+  "resumed": false,
+  "sandbox": "",
+  "stop_reason": "",
+  "exit_code": 1,
+  "requirements_covered": {
+    "covered": 1,
+    "total": 1
+  },
+  "acceptance": {
+    "passed": 0,
+    "total": 0
+  },
+  "constraints_checked": {
+    "passed": 0,
+    "total": 0
+  },
+  "waves": 2,
+  "nodes": {
+    "total": 3,
+    "verified": 1,
+    "failed": 0,
+    "escalated": 0,
+    "blocked": 0
+  },
+  "by_task_type": [
+    {
+      "task_type": "implement",
+      "model": "mini/qwen3.6",
+      "calls": 2,
+      "ok": 2,
+      "malformed": 0,
+      "retries": 2,
+      "model_escalations": 0,
+      "revision_escalations": 0,
+      "human_escalations": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "avg_duration_ms": 900
+    }
+  ],
+  "leaves": [
+    {
+      "model": "mini/qwen3.6",
+      "attempts": 3,
+      "passes": 1,
+      "pass_rate": 0.3333,
+      "first_try_wins": 0
+    }
+  ],
+  "weak_tests": 0,
+  "repairs": 0,
+  "complete": false
+}

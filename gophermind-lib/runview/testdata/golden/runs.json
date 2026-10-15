@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "runs": [
+    {
+      "run_id": "gm-2026-10-08-001",
+      "title": "Greeter",
+      "repo_name": "repo",
+      "status": "building",
+      "stop_reason": "",
+      "planned_at": "2026-10-08T12:00:00.000000000Z",
+      "started_at": "2026-10-08T12:02:00.000000000Z",
+      "updated_at": "",
+      "waves": 2,
+      "counts": {
+        "nodes": 3,
+        "by_status": {
+          "in_progress": 1,
+          "pending": 1,
+          "verified": 1
+        }
+      },
+      "coverage": {
+        "covered": 1,
+        "total": 1
+      }
+    }
+  ]
+}

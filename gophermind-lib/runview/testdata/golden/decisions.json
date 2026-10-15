@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "decisions": [
+    {
+      "answer": "memory",
+      "answered_by": "accepted",
+      "id": "q1",
+      "kind": "decision",
+      "options": [
+        "memory",
+        "postgres"
+      ],
+      "question": "Which store?",
+      "raised_by": "clarify",
+      "recommended": "memory",
+      "round": 1,
+      "settled_at": "2026-10-08T00:00:00Z"
+    },
+    {
+      "answer": "retry: try once more",
+      "answered_by": "human",
+      "id": "rv-fn-bye-1",
+      "kind": "decision",
+      "question": "Leaf fn-bye ended with test after 1 revision(s). What should the build do?",
+      "raised_by": "revise:fn-bye",
+      "round": 1,
+      "settled_at": "2026-10-08T12:05:00Z"
+    }
+  ]
+}
