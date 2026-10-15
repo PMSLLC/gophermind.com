@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gophermind/gophermind-lib/briefv2/runfs"
@@ -28,6 +29,11 @@ type FS struct {
 	resolve RunDirFunc
 	wait    time.Duration
 	stale   time.Duration
+	// mu queues this process's writers before the file lock. The file lock
+	// polls with no fairness, so eight writers of one process starved one of
+	// them for seconds (spec 17.5 makes a 1 s wait a failure); sync.Mutex
+	// hands the lock over in order once a waiter has waited 1 ms.
+	mu sync.Mutex
 }
 
 var _ Ledger = (*FS)(nil)
@@ -150,6 +156,8 @@ func (f *FS) Record(ctx context.Context, c *Call) error {
 	if err != nil {
 		return err
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	unlock, err := runfs.Lock(filepath.Join(dir, "calls.lock"), f.wait, f.stale)
 	if err != nil {
 		return fmt.Errorf("ledger: %w", err)
@@ -175,6 +183,8 @@ func (f *FS) Amend(ctx context.Context, runID string, id int64, o Outcome, error
 	if err != nil {
 		return err
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	unlock, err := runfs.Lock(filepath.Join(dir, "calls.lock"), f.wait, f.stale)
 	if err != nil {
 		return fmt.Errorf("ledger: %w", err)

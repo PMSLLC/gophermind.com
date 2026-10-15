@@ -93,6 +93,15 @@ func (rc *runCtx) lastModel(ctx context.Context, id string) string {
 // escalateExtra is what a caller adds to the gate text beyond the reason.
 type escalateExtra struct{ Proposal string }
 
+// askGate puts one question to the gate, one at a time (decision F11). The
+// unlock is deferred: a gate that panics must not leave every later escalating
+// leaf waiting for the mutex.
+func (rc *runCtx) askGate(ctx context.Context, e human.Escalation) (human.Resolution, error) {
+	rc.gateMu.Lock()
+	defer rc.gateMu.Unlock()
+	return rc.o.Gate.Escalate(ctx, e)
+}
+
 // escalate is escalateWith with nothing extra.
 func (rc *runCtx) escalate(ctx context.Context, l *Leaf, from blackboard.Status, reason string, history []string) (human.Resolution, error) {
 	return rc.escalateWith(ctx, l, from, reason, history, escalateExtra{})
@@ -145,10 +154,8 @@ func (rc *runCtx) escalateWith(ctx context.Context, l *Leaf, from blackboard.Sta
 	if rc.cfg.Revise.Mode == settings.ReviseModeRewrite {
 		revisions = l.Revision
 	}
-	rc.gateMu.Lock()
-	res, err := rc.o.Gate.Escalate(ctx, human.Escalation{NodeID: l.ID, Reason: reason, History: rc.scrubHistory(history),
+	res, err := rc.askGate(ctx, human.Escalation{NodeID: l.ID, Reason: reason, History: rc.scrubHistory(history),
 		Revisions: revisions, Proposal: rc.scrubText(ex.Proposal)})
-	rc.gateMu.Unlock()
 	if err == nil {
 		by := res.AnsweredBy
 		if !human.ValidAnsweredBy(by) {

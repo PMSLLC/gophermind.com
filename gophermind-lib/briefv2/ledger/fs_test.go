@@ -2,6 +2,7 @@ package ledger_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -287,6 +288,81 @@ func TestFSConcurrentRecordsGetDistinctIDs(t *testing.T) {
 	rows, err := l.List(ctx, "r", ledger.Filter{})
 	if err != nil || len(rows) != 50 {
 		t.Fatalf("List = %d rows, %v; want 50", len(rows), err)
+	}
+}
+
+// Spec 15.11 and open item 5: eight writers recording 200 calls each get unique
+// ids, calls.seq ends at the largest id, every line parses, and no Record
+// waits a second or more for the lock. The 1 s bound holds only without -race
+// (ruling C18): the race detector slows the polling lock and the O(n) id read
+// enough to starve one writer, so under -race the longest wait is only logged.
+func TestFSEightWritersKeepIDsUniqueAndTheSeqExact(t *testing.T) {
+	dir := t.TempDir()
+	l := ledger.NewFS(runfs.Fixed(dir))
+	ctx := context.Background()
+	const writers, each = 8, 200
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var maxWait time.Duration
+	ids := make(chan int64, writers*each)
+	for w := 0; w < writers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < each; i++ {
+				c := &ledger.Call{RunID: "r", Stage: fmt.Sprintf("implement:fn-%d", w), Provider: "p", Outcome: ledger.OutcomeOK}
+				start := time.Now()
+				if err := l.Record(ctx, c); err != nil {
+					t.Error(err)
+					return
+				}
+				d := time.Since(start)
+				mu.Lock()
+				if d > maxWait {
+					maxWait = d
+				}
+				mu.Unlock()
+				ids <- c.ID
+			}
+		}()
+	}
+	wg.Wait()
+	close(ids)
+	seen := map[int64]bool{}
+	var max int64
+	for id := range ids {
+		if seen[id] {
+			t.Fatalf("id %d handed out twice", id)
+		}
+		seen[id] = true
+		if id > max {
+			max = id
+		}
+	}
+	if len(seen) != writers*each {
+		t.Fatalf("%d ids, want %d", len(seen), writers*each)
+	}
+	seq, err := os.ReadFile(filepath.Join(dir, "_state", "calls.seq"))
+	if err != nil || strings.TrimSpace(string(seq)) != fmt.Sprint(max) {
+		t.Fatalf("calls.seq = %q, want %d (%v)", seq, max, err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "_state", "calls.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
+	if len(lines) != writers*each {
+		t.Fatalf("calls.jsonl has %d lines", len(lines))
+	}
+	for i, ln := range lines {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(ln), &m); err != nil {
+			t.Fatalf("line %d does not parse: %v", i+1, err)
+		}
+	}
+	t.Logf("longest Record: %s (race detector %v)", maxWait, raceEnabled)
+	if !raceEnabled && maxWait >= time.Second {
+		t.Fatalf("a Record waited %s for the lock; the plan makes 1 s a failure", maxWait)
 	}
 }
 

@@ -328,7 +328,7 @@ func (rc *runCtx) preflight(ctx context.Context) error {
 	if err := checkChains(cfg); err != nil {
 		return err
 	}
-	if w, m := cfg.Executor.Workers, modelConcurrency(cfg); w > 1 && w > m {
+	if w, m := cfg.Executor.Workers, modelConcurrency(cfg, rc.plan.Leaves); w > 1 && w > m {
 		rc.emit("warning", "", fmt.Sprintf("workers %d exceeds model concurrency %d; extra workers only overlap checks", w, m))
 	}
 
@@ -449,12 +449,20 @@ func (rc *runCtx) startProxy() error {
 	return nil
 }
 
-// modelConcurrency is the largest max_concurrent among the providers the model
-// chains name (decision F8, ruling 17).
-func modelConcurrency(cfg *settings.Config) int {
+// modelConcurrency is the largest max_concurrent among the providers the
+// executor chains name (decision F8, ruling 17, spec 8.4): standard and strong
+// (checkChains, the revise stage) and the tier of every leaf (ladderEntries).
+// A chain no leaf uses, such as any in most plans, does not count.
+func modelConcurrency(cfg *settings.Config, leaves []*Leaf) int {
+	tiers := map[string]bool{"standard": true, "strong": true}
+	for _, l := range leaves {
+		if l.Tier != "" {
+			tiers[l.Tier] = true
+		}
+	}
 	named := map[string]bool{}
-	for _, chain := range cfg.Models {
-		for _, e := range chain {
+	for tier := range tiers {
+		for _, e := range cfg.Models[tier] {
 			p, _, _ := settings.SplitEntry(e)
 			named[p] = true
 		}
