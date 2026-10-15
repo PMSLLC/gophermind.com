@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -69,7 +70,7 @@ func Open(root, runID string, opts ...Option) (*View, error) {
 func runStamp(dir string) time.Time {
 	var newest time.Time
 	for _, rel := range updateFiles {
-		if fi, err := os.Stat(filepath.Join(dir, filepath.FromSlash(rel))); err == nil && fi.ModTime().After(newest) {
+		if fi, err := os.Lstat(filepath.Join(dir, filepath.FromSlash(rel))); err == nil && fi.Mode().IsRegular() && fi.ModTime().After(newest) {
 			newest = fi.ModTime()
 		}
 	}
@@ -90,7 +91,10 @@ func stampedRuns(root string) ([]stamped, error) {
 	}
 	ents, err := os.ReadDir(base)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, ErrNotFound
+		}
+		return nil, errors.New("runview: the run folder cannot be read")
 	}
 	var out []stamped
 	for _, e := range ents {
@@ -341,13 +345,16 @@ func (v *View) status() (status, reason string) {
 		return rep.Status, rep.StopReason
 	}
 	// A /project run that stopped before the executor wrote only this file.
-	// Decode just its two keys: it also holds run_dir and secret names.
-	var pj struct {
-		Status     string `json:"status"`
-		StopReason string `json:"stop_reason"`
-	}
-	if v.readJSON("_state/project.json", &pj) && pj.Status != "" {
-		return pj.Status, pj.StopReason
+	// Decode just its two keys: it also holds run_dir and secret names. Once
+	// the executor has started (a resumed run), it no longer applies.
+	if !v.exists("_state/executor.json") {
+		var pj struct {
+			Status     string `json:"status"`
+			StopReason string `json:"stop_reason"`
+		}
+		if v.readJSON("_state/project.json", &pj) && pj.Status != "" {
+			return pj.Status, pj.StopReason
+		}
 	}
 	if v.exists("_state/executor.json") {
 		return StatusBuilding, ""
@@ -388,7 +395,7 @@ func (v *View) repoName() string {
 	return filepath.Base(abs)
 }
 
-var updateFiles = []string{"brief.md", "approval.json", "report.json", "_state/events.jsonl", "_state/status.json", "_state/executor.json"}
+var updateFiles = []string{"brief.md", "approval.json", "report.json", "_state/events.jsonl", "_state/status.json", "_state/executor.json", "_state/project.json"}
 
 func (v *View) updatedAt() string { return ts(runStamp(v.dir)) }
 

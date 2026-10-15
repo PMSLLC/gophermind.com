@@ -198,7 +198,7 @@ func TestUnreadableReportIsFailedNotAPanic(t *testing.T) {
 
 func TestStateAndRunsNeverWrite(t *testing.T) {
 	root := t.TempDir()
-	f := runviewtest.Build(t, root, runviewtest.Building)
+	runviewtest.Build(t, root, runviewtest.Building)
 	before := runviewtest.Digest(t, root)
 	if _, err := runview.Runs(root); err != nil {
 		t.Fatal(err)
@@ -210,7 +210,6 @@ func TestStateAndRunsNeverWrite(t *testing.T) {
 	if runviewtest.Digest(t, root) != before {
 		t.Fatal("a reader changed the run folder")
 	}
-	_ = f
 }
 
 func TestOpenRefusesBadIDs(t *testing.T) {
@@ -306,5 +305,82 @@ func TestGroupStatusAllVerifiedAndWorstChild(t *testing.T) {
 				t.Errorf("stage %d: %s status %q, want %q", c.stage, n.ID, n.Status, c.want)
 			}
 		}
+	}
+}
+
+func TestResumedRunIgnoresStalePlanFailure(t *testing.T) {
+	root := t.TempDir()
+	runviewtest.Build(t, root, runviewtest.PlanFailed)
+	p := filepath.Join(root, ".gophermind", runviewtest.RunID, "_state", "executor.json")
+	if err := os.WriteFile(p, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	v, err := runview.Open(root, runviewtest.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := v.Summary(); s.Status == "failed" || s.StopReason == "plan:coverage" {
+		t.Errorf("summary = %q %q, want the stale planning failure ignored", s.Status, s.StopReason)
+	}
+}
+
+func TestStampIgnoresSymlinkedFiles(t *testing.T) {
+	root := t.TempDir()
+	runviewtest.Build(t, root, runviewtest.Planned)
+	touchRun(t, root, runviewtest.RunID, runviewtest.T0)
+	target := filepath.Join(t.TempDir(), "elsewhere.json")
+	if err := os.WriteFile(target, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	future := runviewtest.T0.Add(48 * time.Hour)
+	if err := os.Chtimes(target, future, future); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(root, ".gophermind", runviewtest.RunID, "report.json")); err != nil {
+		t.Fatal(err)
+	}
+	v, err := runview.Open(root, runviewtest.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := v.Summary().UpdatedAt; strings.Contains(got, future.Format("2006-01-02")) {
+		t.Errorf("updated_at = %s, leaked the symlink target mtime", got)
+	}
+}
+
+func TestPlanFailedStampsProjectJSON(t *testing.T) {
+	root := t.TempDir()
+	runviewtest.Build(t, root, runviewtest.PlanFailed)
+	touchRun(t, root, runviewtest.RunID, runviewtest.T0)
+	later := runviewtest.T0.Add(time.Hour)
+	p := filepath.Join(root, ".gophermind", runviewtest.RunID, "_state", "project.json")
+	if err := os.Chtimes(p, later, later); err != nil {
+		t.Fatal(err)
+	}
+	v, _ := runview.Open(root, runviewtest.RunID)
+	if got, want := v.Summary().UpdatedAt, later.UTC().Format(time.RFC3339); !strings.HasPrefix(got, want[:16]) {
+		t.Errorf("updated_at = %s, want about %s", got, want)
+	}
+}
+
+func TestRunsErrorHasNoPath(t *testing.T) {
+	root := t.TempDir()
+	base := filepath.Join(root, ".gophermind")
+	if err := os.Mkdir(base, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(base, 0); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(base, 0o700)
+	if _, err := os.ReadDir(base); err == nil {
+		t.Skip("directory permissions are not enforced here")
+	}
+	_, err := runview.Runs(root)
+	if err == nil {
+		t.Fatal("want an error for an unreadable run folder")
+	}
+	if strings.Contains(err.Error(), root) {
+		t.Errorf("error leaks a path: %v", err)
 	}
 }
