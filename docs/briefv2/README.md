@@ -374,7 +374,8 @@ leaves run one after the other in the repository. Above 1:
 - A leaf that passes in its copy saves the reply to `_state/candidate-<leaf>` and waits for
   its turn. Turns go in leaf id order: the leaf replays its reply in the repository with
   the full check and commits it there exactly as a serial run does. The work branch stays
-  linear and its commits are in the order `workers: 1` gives. `leaf_verified` comes at
+  linear and its commits are in the order `workers: 1` gives, except when leaves share a
+  file path (see the limits below). `leaf_verified` comes at
   landing.
 - A reply that passed alone but fails next to the leaves that landed before it (two leaves
   of one package that both declare a helper `clean`) is a landing conflict
@@ -393,10 +394,11 @@ one leaf with the model call of another, and the run says so in a warning. Each 
 raising it on the mini. The report's `parallel` object (workers, parallel levels, landing
 conflicts) and a `Parallel:` summary line appear only when a level ran in parallel.
 
-Known limits:
+Limits of parallel leaves:
 
 - Leaves that share a file path are split into later sub-levels by first fit, so a higher
-  leaf id can land before a lower one in that case. That is a plan defect.
+  leaf id can land before a lower one in that case. Two leaves in one level that own the
+  same path is a plan defect; landing is then first fit, not id order.
 - A kill in the middle of a file write can leave a stray temp file in the main tree, and
   resume stops with `foreign_dirt` naming it. Remove the file by hand and resume, as before
   parallel leaves.
