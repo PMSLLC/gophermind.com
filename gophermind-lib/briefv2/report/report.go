@@ -107,6 +107,14 @@ type Escalation struct {
 	Answers int `json:"answers,omitempty"`
 }
 
+// Parallel is what the executor's parallel levels did (sub-project F). It is
+// present only when at least one level ran in parallel.
+type Parallel struct {
+	Workers          int `json:"workers"`
+	ParallelLevels   int `json:"parallel_levels"`
+	LandingConflicts int `json:"landing_conflicts"`
+}
+
 // RevisedLeaf is what the report says about a leaf the planner's revise stage
 // rewrote, flagged or refused: ids, counts, field names and classes only.
 type RevisedLeaf struct {
@@ -147,6 +155,7 @@ type Report struct {
 	// refused; Rewritten counts those rewritten at least once.
 	Revised    []RevisedLeaf `json:"revised_leaves,omitempty"`
 	Rewritten  int           `json:"rewritten_leaves,omitempty"`
+	Parallel   *Parallel     `json:"parallel,omitempty"`
 	Incomplete bool          `json:"incomplete,omitempty"`
 	Failures   []string      `json:"failures,omitempty"`
 	Landing    *Landing      `json:"landing,omitempty"`
@@ -185,6 +194,7 @@ type Input struct {
 	Failures              []string
 	Landing               *Landing
 	Revised               []RevisedLeaf
+	Parallel              *Parallel
 	// IgnoredDuplicates, Total and Truncated are what
 	// planner.IgnoredDuplicates(runDir) returns. An entry that is not
 	// "<component|type|function> <id or <n bytes>>" is dropped.
@@ -292,6 +302,10 @@ func Build(in Input) (Report, error) {
 		r.Revised = append(r.Revised, v)
 	}
 	sort.Slice(r.Revised, func(i, j int) bool { return r.Revised[i].NodeID < r.Revised[j].NodeID })
+	if in.Parallel != nil && in.Parallel.ParallelLevels > 0 {
+		p := *in.Parallel
+		r.Parallel = &p
+	}
 	r.Failures = completeFailures(in)
 	r.PlannerWarnings = plannerWarnings(in)
 

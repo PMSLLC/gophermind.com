@@ -50,6 +50,9 @@ func (r Report) Summary() string {
 			e.ModelEscalations, e.RevisionEscalations, e.HumanEscalations, e.PromptTokens, e.CompletionTokens)
 	}
 	line("Weak tests: %d  Repairs: %d", r.WeakTests, r.Repairs)
+	if r.Parallel != nil {
+		line("Parallel: workers %d, levels %d, landing conflicts %d", r.Parallel.Workers, r.Parallel.ParallelLevels, r.Parallel.LandingConflicts)
+	}
 	if len(r.Revised) > 0 {
 		line("Rewritten leaves: %d", r.Rewritten)
 		for i, v := range r.Revised {

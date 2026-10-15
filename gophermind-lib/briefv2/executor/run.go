@@ -278,6 +278,17 @@ func (rc *runCtx) environment() []string {
 	}, rc.o.EnvNotes...)
 }
 
+// parallelReport is the report's parallel object, nil when no level ran in
+// parallel in this invocation (ruling 23).
+func (rc *runCtx) parallelReport() *report.Parallel {
+	repMu.Lock()
+	defer repMu.Unlock()
+	if rc.rep.parallelLevels == 0 {
+		return nil
+	}
+	return &report.Parallel{Workers: rc.cfg.Executor.Workers, ParallelLevels: rc.rep.parallelLevels, LandingConflicts: rc.rep.conflicts}
+}
+
 // buildReport is the one place a Report is made. It reads the ledger, the
 // blackboard and the executor's own state files, never a reply, a prompt or
 // command output. A run that says verified while a leaf is not verified is
@@ -345,5 +356,6 @@ func (rc *runCtx) buildReport(ctx context.Context, fin finishResult, started tim
 		Failures: failures, Landing: fin.Landing,
 		IgnoredDuplicates: ignored, IgnoredDuplicatesTotal: ignoredTotal, IgnoredDuplicatesTruncated: ignoredCut,
 		PlanLeaves: leafIDs, LeafDeps: deps, Revised: rc.revisedLeaves(),
+		Parallel: rc.parallelReport(),
 	})
 }

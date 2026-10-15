@@ -199,11 +199,23 @@ func (rc *runCtx) levelWorkers(jobs []*job, wave, level int) (int, error) {
 	return n, nil
 }
 
-// noteParallel counts one parallel level for the report.
+// noteParallel counts one parallel level for the report and records the
+// workers value in the run state (spec section 11: the report only).
 func (rc *runCtx) noteParallel() {
 	repMu.Lock()
 	rc.rep.parallelLevels++
 	repMu.Unlock()
+	stateMu.Lock()
+	defer stateMu.Unlock()
+	if rc.state.Workers == rc.cfg.Executor.Workers {
+		return
+	}
+	prev := rc.state.Workers
+	rc.state.Workers = rc.cfg.Executor.Workers
+	if err := rc.state.Save(rc.o.RunDir); err != nil {
+		rc.state.Workers = prev
+		rc.emit("warning", "", "the workers value could not be recorded in the run state")
+	}
 }
 
 // levels orders the leaves: by dependency among themselves first, then by id.

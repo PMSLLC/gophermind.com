@@ -40,7 +40,8 @@ type State struct {
 	ExtraRevisions map[string]int    `json:"extra_revisions"`
 	CriticalStreak map[string]int    `json:"critical_streak"` // S10
 	RedChecked     map[string]bool   `json:"red_checked"`
-	ExtraRepair    map[string]int    `json:"extra_repair"` // wave number as a string -> extra repair rounds granted by a human
+	ExtraRepair    map[string]int    `json:"extra_repair"`      // wave number as a string -> extra repair rounds granted by a human
+	Workers        int               `json:"workers,omitempty"` // executor.workers of the last invocation that ran a parallel level (the report only)
 }
 
 func (s *State) initMaps() {

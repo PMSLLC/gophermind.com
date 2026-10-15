@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"gophermind/gophermind-lib/briefv2/artifacts"
@@ -46,6 +47,7 @@ func (e *stopError) Error() string { return e.Message }
 
 // runCtx is everything one run shares (called rc everywhere).
 type runCtx struct {
+	gateMu     sync.Mutex // one question to the gate at a time (decision F11)
 	o          Options
 	cfg        *settings.Config
 	plan       *Plan
@@ -326,6 +328,9 @@ func (rc *runCtx) preflight(ctx context.Context) error {
 	if err := checkChains(cfg); err != nil {
 		return err
 	}
+	if w, m := cfg.Executor.Workers, modelConcurrency(cfg); w > 1 && w > m {
+		rc.emit("warning", "", fmt.Sprintf("workers %d exceeds model concurrency %d; extra workers only overlap checks", w, m))
+	}
 
 	realHome, err := os.UserHomeDir()
 	if err != nil || realHome == "" {
@@ -442,6 +447,25 @@ func (rc *runCtx) startProxy() error {
 	rc.prox = p
 	rc.closers = append(rc.closers, p.Close)
 	return nil
+}
+
+// modelConcurrency is the largest max_concurrent among the providers the model
+// chains name (decision F8, ruling 17).
+func modelConcurrency(cfg *settings.Config) int {
+	named := map[string]bool{}
+	for _, chain := range cfg.Models {
+		for _, e := range chain {
+			p, _, _ := settings.SplitEntry(e)
+			named[p] = true
+		}
+	}
+	m := 0
+	for _, p := range cfg.Providers {
+		if named[p.Name] && p.MaxConcurrent > m {
+			m = p.MaxConcurrent
+		}
+	}
+	return m
 }
 
 // checkChains is spec 7.5: for standard and strong (the tiers the executor

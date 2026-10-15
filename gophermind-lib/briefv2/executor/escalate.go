@@ -145,8 +145,10 @@ func (rc *runCtx) escalateWith(ctx context.Context, l *Leaf, from blackboard.Sta
 	if rc.cfg.Revise.Mode == settings.ReviseModeRewrite {
 		revisions = l.Revision
 	}
+	rc.gateMu.Lock()
 	res, err := rc.o.Gate.Escalate(ctx, human.Escalation{NodeID: l.ID, Reason: reason, History: rc.scrubHistory(history),
 		Revisions: revisions, Proposal: rc.scrubText(ex.Proposal)})
+	rc.gateMu.Unlock()
 	if err == nil {
 		by := res.AnsweredBy
 		if !human.ValidAnsweredBy(by) {

@@ -123,7 +123,10 @@ func (rc *runCtx) resume(ctx context.Context) error {
 			}
 		}
 		rc.emit("resume_blocked", "", fmt.Sprintf("claims held by a live heartbeat: %s; wait up to %d s for them to go stale", strings.Join(live, ", "), int(wait.Seconds())+1))
-		return fmt.Errorf("executor: node %s is held by a live worker", live[0])
+		if len(live) == 1 {
+			return fmt.Errorf("executor: node %s is held by a live worker", live[0])
+		}
+		return fmt.Errorf("executor: nodes %s are held by live workers", strings.Join(live, ", "))
 	}
 	if err := rc.cleanTrees(); err != nil { // a killed run's private trees; no live worker holds one
 		return err
