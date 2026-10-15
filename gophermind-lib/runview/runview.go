@@ -169,13 +169,13 @@ func (v *View) Warnings() []string {
 	return append([]string(nil), v.warnings...)
 }
 
-// EventSeq is the number of lines in _state/events.jsonl.
+// EventSeq is the number of lines in _state/events.jsonl, counted by the
+// same rule Follow numbers them with (eventScanner).
 func (v *View) EventSeq() int64 {
-	lines, _, err := runfs.ReadLines(v.eventsPath(), 0)
-	if err != nil {
-		return 0
-	}
-	return int64(len(lines))
+	var n int64
+	var s eventScanner
+	s.scan(v.eventsPath(), func([]byte, bool) bool { n++; return true })
+	return n
 }
 
 type loaded struct {

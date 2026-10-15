@@ -1,6 +1,7 @@
 package runview
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -52,7 +53,9 @@ type follower struct {
 	ch    chan<- Event
 	since int64
 
-	off, seq int64
+	sc       eventScanner
+	shrank   bool // the events file shrank below sc.off: node events stopped
+	seq      int64
 	attempts map[string]int // attempt lines seen per node, replayed ones included
 	waves    map[string]int
 
@@ -93,73 +96,104 @@ func (f *follower) emit(typ string, data any) bool {
 	return f.send(Event{Seq: f.seq, Type: typ, Data: b})
 }
 
-// readChunk returns the complete lines of the events file after byte offset
-// off, reading at most maxEventChunk bytes, and the offset after the last one.
-func (f *follower) readChunk() ([][]byte, bool) {
-	p := f.v.eventsPath()
-	if !realFile(p) {
-		return nil, false
+// eventScanner splits _state/events.jsonl into lines by the one rule that
+// Follow and EventSeq share, so their line numbers cannot drift: a line ends at
+// '\n', a partial last line is not a line yet, and a line longer than
+// maxEventChunk counts once while the rest of its bytes are skipped unread
+// into memory, across as many reads and polls as it takes.
+type eventScanner struct {
+	off      int64 // bytes consumed
+	skipping bool  // inside an over-long line that was already counted
+}
+
+// scan calls fn for each whole line after off (ln nil and oversized true for
+// an over-long line), reading at most maxEventChunk bytes at a time, until fn
+// returns false or no whole line is left. shrank reports that the file is now
+// shorter than what was already read.
+func (s *eventScanner) scan(path string, fn func(ln []byte, oversized bool) bool) (shrank bool) {
+	if !realFile(path) {
+		return false
 	}
-	fh, err := os.Open(p)
+	fh, err := os.Open(path)
 	if err != nil {
-		return nil, false
+		return false
 	}
 	defer fh.Close()
-	if _, err := fh.Seek(f.off, io.SeekStart); err != nil {
-		return nil, false
+	if fi, err := fh.Stat(); err != nil || fi.Size() < s.off {
+		return err == nil
 	}
-	data, err := io.ReadAll(io.LimitReader(fh, maxEventChunk))
-	if err != nil {
-		return nil, false
-	}
-	var lines [][]byte
-	pos := 0
-	for pos < len(data) {
-		i := indexNL(data[pos:])
-		if i < 0 {
-			if len(data) == maxEventChunk && pos == 0 {
-				// One line longer than the chunk: count it, skip its head.
-				lines = append(lines, nil)
-				pos = len(data)
-			}
-			break
-		}
-		lines = append(lines, data[pos:pos+i])
-		pos += i + 1
-	}
-	f.off += int64(pos)
-	return lines, true
-}
-
-func indexNL(b []byte) int {
-	for i, c := range b {
-		if c == '\n' {
-			return i
-		}
-	}
-	return -1
-}
-
-// step reads the new lines, emits their events, then the derived ones.
-func (f *follower) step() bool {
-	progressed := false
 	for {
-		lines, ok := f.readChunk()
-		if !ok || len(lines) == 0 {
-			break
+		data, err := io.ReadAll(io.NewSectionReader(fh, s.off, maxEventChunk))
+		if err != nil || len(data) == 0 {
+			return false
 		}
-		for _, ln := range lines {
-			f.seq++
-			progressed = true
-			if !f.line(ln) {
+		base, pos := s.off, 0
+		if s.skipping {
+			i := bytes.IndexByte(data, '\n')
+			if i < 0 {
+				s.off += int64(len(data))
+				continue
+			}
+			pos = i + 1
+			s.skipping = false
+			s.off = base + int64(pos)
+		}
+		for pos < len(data) {
+			i := bytes.IndexByte(data[pos:], '\n')
+			if i < 0 {
+				if pos == 0 && len(data) == maxEventChunk {
+					s.off = base + int64(len(data))
+					s.skipping = true
+					if !fn(nil, true) {
+						return false
+					}
+				}
+				break
+			}
+			ln := data[pos : pos+i]
+			pos += i + 1
+			s.off = base + int64(pos)
+			if !fn(ln, false) {
 				return false
 			}
+		}
+		if s.off == base {
+			return false
+		}
+	}
+}
+
+// step reads the new lines, emits their events, then the derived ones. Once
+// the events file shrinks below what was read (truncated or replaced), node
+// events stop: the line numbers already sent no longer name the same lines.
+func (f *follower) step() bool {
+	progressed, alive := false, true
+	if !f.shrank {
+		shrank := f.sc.scan(f.v.eventsPath(), func(ln []byte, oversized bool) bool {
+			f.seq++
+			progressed = true
+			if oversized {
+				f.v.warn(fmt.Sprintf("events.jsonl line %d: it is longer than %d bytes", f.seq, maxEventChunk))
+				return true
+			}
+			alive = f.line(ln)
+			return alive
+		})
+		if !alive {
+			return false
+		}
+		if shrank {
+			f.shrank = true
+			f.v.warn(fmt.Sprintf("events.jsonl line %d: the file shrank below this line; node events stopped", f.seq))
 		}
 	}
 	return f.derived(progressed)
 }
 
 func (f *follower) line(ln []byte) bool {
+	if len(bytes.TrimSpace(ln)) == 0 {
+		return true
+	}
 	var l logLine
 	if json.Unmarshal(ln, &l) != nil || !ValidNodeID(l.NodeID) {
 		f.v.warn(fmt.Sprintf("events.jsonl line %d: it is not an event", f.seq))

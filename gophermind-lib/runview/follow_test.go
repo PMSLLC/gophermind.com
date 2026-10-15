@@ -3,6 +3,7 @@ package runview_test
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -358,5 +359,116 @@ func TestFollowLeaksNoGoroutines(t *testing.T) {
 	}
 	if n := runtime.NumGoroutine(); n > base {
 		t.Errorf("goroutines %d after cancel, %d before", n, base)
+	}
+}
+
+// appendRaw appends parts to the run's events file, pausing between them so
+// the follower polls in between and sees a line arrive in pieces.
+func appendRaw(t *testing.T, f runviewtest.Fixture, parts ...[]byte) {
+	t.Helper()
+	for i, p := range parts {
+		if i > 0 {
+			time.Sleep(40 * time.Millisecond)
+		}
+		fh, err := os.OpenFile(filepath.Join(f.Dir, "_state", "events.jsonl"), os.O_APPEND|os.O_WRONLY, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fh.Write(p); err != nil {
+			t.Fatal(err)
+		}
+		if err := fh.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestFollowCountsAnOversizedLineOnce(t *testing.T) {
+	big := runview.MaxEventChunkForTest
+	cases := []struct {
+		name  string
+		parts [][]byte
+	}{
+		{"chunk plus ten", [][]byte{[]byte(strings.Repeat("x", big+10) + "\n")}},
+		{"two and a half chunks in pieces", [][]byte{
+			[]byte(strings.Repeat("x", big*3/2)),
+			[]byte(strings.Repeat("x", big) + "\n"),
+		}},
+		{"exactly a chunk, newline later", [][]byte{
+			[]byte(strings.Repeat("x", big)),
+			[]byte("\n"),
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			v, f, ch, _ := follow(t, runviewtest.Building, func(v *runview.View) int64 { return v.EventSeq() })
+			long := v.EventSeq() + 1
+			appendRaw(t, f, tc.parts...)
+			time.Sleep(40 * time.Millisecond)
+			if err := f.BB.SetStatus(context.Background(), f.RunID, "fn-bye", "in_progress", "verified"); err != nil {
+				t.Fatal(err)
+			}
+			e := next(t, ch)
+			if e.Type != runview.EventNodeStatus || e.Seq != long+1 {
+				t.Fatalf("event = %s seq %d, want node-status seq %d", e.Type, e.Seq, long+1)
+			}
+			if n := v.EventSeq(); n != e.Seq {
+				t.Errorf("EventSeq = %d, the last event's seq = %d", n, e.Seq)
+			}
+			noEvent(t, ch)
+			w := v.Warnings()
+			if len(w) != 1 || !strings.Contains(w[0], "line "+itoa(long)) {
+				t.Errorf("warnings = %q, want one for line %d", w, long)
+			}
+			// A fresh replay numbers the lines the same way.
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			rch, _ := v.Follow(ctx, 0)
+			var last runview.Event
+			for i := int64(0); i < e.Seq-1; i++ { // the long line emits nothing
+				last = next(t, rch)
+			}
+			if last.Seq != e.Seq {
+				t.Errorf("replay ends at seq %d, want %d", last.Seq, e.Seq)
+			}
+		})
+	}
+}
+
+func TestFollowSkipsBlankLinesSilently(t *testing.T) {
+	v, f, ch, _ := follow(t, runviewtest.Building, func(v *runview.View) int64 { return v.EventSeq() })
+	first := v.EventSeq() + 1
+	appendRaw(t, f, []byte("\n   \t\n"))
+	if err := f.BB.SetStatus(context.Background(), f.RunID, "fn-bye", "in_progress", "verified"); err != nil {
+		t.Fatal(err)
+	}
+	e := next(t, ch)
+	if e.Type != runview.EventNodeStatus || e.Seq != first+2 {
+		t.Fatalf("event = %s seq %d, want node-status seq %d (blank lines still count)", e.Type, e.Seq, first+2)
+	}
+	if w := v.Warnings(); len(w) != 0 {
+		t.Errorf("warnings = %q, want none for blank lines", w)
+	}
+}
+
+func TestFollowStopsNodeEventsWhenTheLogShrinks(t *testing.T) {
+	v, f, ch, _ := follow(t, runviewtest.Building, func(v *runview.View) int64 { return v.EventSeq() })
+	ctx := context.Background()
+	// Wait for one live event, so the follower has read the whole log.
+	if err := f.BB.SetStatus(ctx, f.RunID, "fn-bye", "in_progress", "verified"); err != nil {
+		t.Fatal(err)
+	}
+	n := next(t, ch).Seq
+	path := filepath.Join(f.Dir, "_state", "events.jsonl")
+	if err := os.Truncate(path, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.BB.SetRevision(ctx, f.RunID, "fn-late", 1); err != nil {
+		t.Fatal(err)
+	}
+	noEvent(t, ch)
+	w := v.Warnings()
+	if len(w) != 1 || !strings.Contains(w[0], "line "+itoa(n)) || strings.Contains(w[0], f.Dir) {
+		t.Errorf("warnings = %q, want one naming line %d and no path", w, n)
 	}
 }
