@@ -114,6 +114,9 @@ func (rc *runCtx) makeTree(id string) (*workTree, error) {
 			return fail()
 		}
 	}
+	if rc.treeFault != nil && rc.treeFault(id) {
+		return fail()
+	}
 	cli, err := gitland.NewScratch(repo, rc.plan.RunID)
 	if err != nil {
 		return fail()
@@ -152,7 +155,8 @@ func (rc *runCtx) cleanTrees() error {
 // anything is deleted: rc.scratch must be absolute, end in -scratch and sit in
 // a .gophermind directory; kind must be trees, w or base; id empty or a leaf
 // id; the target strictly inside rc.scratch. It is emitted (relative path) and
-// only then removed. A link in its place is removed itself, never followed.
+// only then removed. A link in its place is removed itself, never followed;
+// a link (or a file) in place of <scratch>/<kind> refuses the removal of an id.
 func (rc *runCtx) removeScratch(kind, id string) error {
 	if !filepath.IsAbs(rc.scratch) || !strings.HasSuffix(rc.scratch, "-scratch") || filepath.Base(filepath.Dir(rc.scratch)) != ".gophermind" {
 		return errors.New("executor: refusing to delete under a directory that is not the run's scratch directory")
@@ -170,6 +174,9 @@ func (rc *runCtx) removeScratch(kind, id string) error {
 	target := filepath.Join(rc.scratch, filepath.FromSlash(rel))
 	if target == "/" || target == rc.home || !strings.HasPrefix(target, rc.scratch+string(filepath.Separator)) {
 		return errors.New("executor: refusing to delete a path outside the scratch directory")
+	}
+	if kd, err := os.Lstat(filepath.Join(rc.scratch, kind)); id != "" && err == nil && (kd.Mode()&os.ModeSymlink != 0 || !kd.IsDir()) {
+		return errors.New("executor: refusing to delete under a scratch directory that is a link") // Lstat below would follow it
 	}
 	fi, err := os.Lstat(target)
 	if errors.Is(err, os.ErrNotExist) {

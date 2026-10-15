@@ -82,6 +82,7 @@ type runCtx struct {
 	profile      *sandbox.Profile     // the run's sandbox profile, nil when the sandbox is off; private trees copy it
 	baseFiles    []string             // the file list of the current parallel level's base copy (written in a serial phase)
 	afterTree    func(id string)      // tests only: called once a private tree is ready, before the leaf runs
+	treeFault    func(id string) bool // tests only: true fails makeTree of that leaf after its files are copied
 }
 
 // runReport holds the counters that become report.Input.

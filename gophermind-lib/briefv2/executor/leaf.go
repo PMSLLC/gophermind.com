@@ -343,6 +343,9 @@ func (rc *runCtx) runLeaf(ctx context.Context, l *Leaf, in leafIn) (out leafOutc
 
 	built, berr := rc.newLeafRun(ctx, l, in)
 	if berr != nil {
+		if ctx.Err() != nil {
+			return leafOutcome{Interrupted: true}, nil // the row could not be read because the run was cancelled
+		}
 		return lr.exit(ctx, leafOutcome{}, berr)
 	}
 	lr = built

@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -214,5 +215,87 @@ func TestTwoTreesAreMadeAtOnce(t *testing.T) {
 	}
 	if trees[0].Repo == trees[1].Repo || trees[0].Scratch == trees[1].Scratch {
 		t.Fatal("two leaves share a tree")
+	}
+}
+
+// Ruling C6: a resume refused by a live claim leaves the trees, the HOMEs and
+// the base copy of the live run in place; once the claim is stale, the
+// accepted resume removes them.
+func TestARefusedResumeLeavesTheTreesOfTheLiveRun(t *testing.T) {
+	t.Parallel()
+	g := newRig(t, staleOne)
+	g.started(t)
+	g.plantDead(t, "fn-greet", true)
+	scratch := filepath.Join(g.repo, ".gophermind", g.id+"-scratch")
+	planted := []string{
+		filepath.Join(scratch, "trees", "fn-greet", "go.mod"),
+		filepath.Join(scratch, "w", "fn-greet", "gopath", "x"),
+		filepath.Join(scratch, "base", "go.mod"),
+	}
+	for _, p := range planted {
+		write(t, p, "x\n")
+	}
+	rc, err := startRun(context.Background(), g.options())
+	if rc != nil {
+		rc.close()
+	}
+	if err == nil || !strings.Contains(err.Error(), "held by a live worker") {
+		t.Fatalf("the resume was not refused: %v", err)
+	}
+	for _, p := range planted {
+		if !fileExists(p) {
+			t.Errorf("the refused resume removed %s", strings.TrimPrefix(p, scratch))
+		}
+	}
+	age()
+	rc, err = startRun(context.Background(), g.options())
+	if rc != nil {
+		rc.close()
+	}
+	if err != nil {
+		t.Fatalf("the resume after the claim went stale: %v", err)
+	}
+	for _, d := range []string{"trees", "w", "base"} {
+		if _, err := os.Lstat(filepath.Join(scratch, d)); !os.IsNotExist(err) {
+			t.Errorf("%s is still there after the accepted resume: %v", d, err)
+		}
+	}
+}
+
+// Task 4 review: when <scratch>/trees is itself a link, removing one tree must
+// not follow it. removeScratch refuses, makeTree fails, and the start-of-run
+// cleanup removes the link alone.
+func TestRemoveScratchRefusesAKindDirectoryThatIsALink(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	rc, _ := g.leafRC(t, Script{}, true)
+	outside := t.TempDir()
+	keep := filepath.Join(outside, "fn-greet", "keep.txt")
+	write(t, keep, "keep\n")
+	link := filepath.Join(rc.scratch, "trees")
+	if err := rc.removeScratch("trees", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(rc.scratch, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := rc.removeScratch("trees", "fn-greet"); err == nil {
+		t.Error("removeScratch went through a link at trees/")
+	}
+	if wt, err := rc.makeTree("fn-greet"); err == nil {
+		rc.dropTree(wt)
+		t.Error("makeTree made a tree under a link at trees/")
+	}
+	if !fileExists(keep) {
+		t.Fatal("the removal followed the link")
+	}
+	if err := rc.cleanTrees(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(link); !os.IsNotExist(err) || !fileExists(keep) {
+		t.Fatalf("cleanTrees: link %v, target kept %v", err, fileExists(keep))
 	}
 }
