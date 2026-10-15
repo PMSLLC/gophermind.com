@@ -51,7 +51,7 @@ Each item gets its own plan and its own build. All code work happens on `feat/br
 | C | `/project` plans and builds through v2 | A, B | the existing `2026-09-30-project-single-entry-design.md` and plan (14 tasks, not built), amended by section 7 |
 | D | The run view: `runview` and the pipeline endpoints over the run folder (no `.planning/` files are generated) | A, B | section 8 and the G spec |
 | E | Planner revise stage: rewrite a node after a failure | B | `docs/superpowers/specs/2026-10-08-planner-revise-stage-design.md`; built on the branch (plan `docs/superpowers/plans/2026-10-09-planner-revise-stage.md`, 11 tasks) |
-| F | Parallel waves | A | its own spec; the executor runs one worker today |
+| F | Parallel waves | A | `docs/superpowers/specs/2026-10-08-parallel-waves-design.md`; built on the branch (plan `docs/superpowers/plans/2026-10-13-parallel-waves.md`, 12 tasks) |
 | G | Retire v1 and `/phase`, upgrade the server and the desktop app, drop the version names | C, D | `docs/superpowers/specs/2026-10-08-retire-v1-and-upgrade-consumers-design.md`; runs after the graded release |
 
 ## 4. Sub-project A: filesystem run state

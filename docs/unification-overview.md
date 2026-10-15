@@ -38,7 +38,7 @@ John asked for the planner to be tightly integrated with PhaseFlow. Reading both
 | C | `/project` plans and builds through v2 | already specified and planned on the branch (project-single-entry, 14 tasks) | not built |
 | D | The run view: `runview` library and the pipeline endpoints under one new node-based contract (no `.planning/` files are generated) | G spec | specified |
 | E | A planner revise stage that rewrites a node after a failure (neither v1 nor v2 does this) | E spec; plan E (11 tasks) | built on the branch |
-| F | Parallel waves in the executor | none yet | not specified |
+| F | Parallel waves in the executor | F spec; plan F (12 tasks) | built on the branch |
 | G | Retire v1 and `/phase`, upgrade the server and the desktop app, drop the version names | G spec | specified; after the graded release |
 
 Decision 11 was reversed on 2026-10-08: the unification runs first (`docs/GOAL-UNIFICATION.md`), and the GOAL.md graded run is its task 11.2.
