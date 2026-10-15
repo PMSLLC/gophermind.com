@@ -88,14 +88,14 @@ func TestParallelSixIndependentLeaves(t *testing.T) {
 		byFunc[l.TestFunc] = l.ID
 	}
 	scratch := filepath.Join(g.repo, ".gophermind", g.id+"-scratch")
-	trees, landed := map[string]string{}, 0
+	trees, landed := map[string]string{}, map[string]int{}
 	for _, c := range rec.calls {
 		id := byFunc[c.TestFunc]
 		if !inList(sixIDs, id) {
 			continue
 		}
 		if c.Repo == g.repo {
-			landed++
+			landed[id]++
 			continue
 		}
 		if want := filepath.Join(scratch, "trees", id); c.Repo != want {
@@ -103,8 +103,13 @@ func TestParallelSixIndependentLeaves(t *testing.T) {
 		}
 		trees[id] = c.Repo
 	}
-	if len(trees) != 6 || landed != 6 || rec.met != 2 {
-		t.Fatalf("private trees %d, landings %d, met %d: want 6, 6, 2", len(trees), landed, rec.met)
+	for _, id := range sixIDs {
+		if landed[id] != 1 {
+			t.Errorf("%s has %d landing checks, want 1", id, landed[id])
+		}
+	}
+	if len(trees) != 6 || len(landed) != 6 || rec.met != 2 {
+		t.Fatalf("private trees %d, leaves landed %d, met %d: want 6, 6, 2", len(trees), len(landed), rec.met)
 	}
 	if ev := g.sink.OfKind("level_parallel"); len(ev) == 0 || !strings.Contains(ev[0].Message, "6 leaves, 3 workers") {
 		t.Fatalf("level_parallel = %+v", ev)
@@ -117,6 +122,21 @@ func TestParallelSixIndependentLeaves(t *testing.T) {
 	}
 	if !reflect.DeepEqual(ver, sixIDs) {
 		t.Fatalf("leaf_verified order = %v", ver)
+	}
+	// Ruling 18: the second wave's package is verified and landed too.
+	verified := map[string]bool{}
+	for _, e := range g.sink.OfKind("leaf_verified") {
+		verified[e.NodeID] = true
+	}
+	subjects := subjectIDs(g.leafSubjects())
+	for _, id := range []string{"fn-bye", "fn-hello"} {
+		l := g.plan.Leaf(id)
+		if l == nil || l.Package != "main" || l.Wave <= g.plan.Leaf("fn-greet").Wave {
+			t.Errorf("%s is not a later-wave main leaf: %+v", id, l)
+		}
+		if !verified[id] || !inList(subjects, id) {
+			t.Errorf("%s verified %v, landed %v", id, verified[id], inList(subjects, id))
+		}
 	}
 	if rep.Parallel == nil || rep.Parallel.Workers != 3 || rep.Parallel.ParallelLevels < 1 {
 		t.Fatalf("report parallel = %+v", rep.Parallel)
@@ -227,28 +247,48 @@ func TestMoreLeavesThanWorkersNeverHoldMoreTrees(t *testing.T) {
 // turn while the others run in private trees; no model call for it.
 func TestAnAdoptedLeafOfAParallelLevelLandsInItsTurn(t *testing.T) {
 	t.Parallel()
-	g := newRig(t, sixpack(t, 2))
+	const adopted = "fn-greet" // third by id, workers 3: landing out of turn breaks the order
+	g := newRig(t, sixpack(t, 3))
 	rc, _ := g.schedRC(t, sixScript(g))
-	g.plantReal(t, "fn-cheer", sixGood("fn-cheer"))
+	g.plantReal(t, adopted, sixGood(adopted))
 	rec := &recChecker{Checker: g.sixChecker(), main: g.repo}
 	rc.chk = rec
 	wr, err := rc.scheduleLeaves(context.Background(), g.leaves(sixIDs...))
 	if err != nil || !reflect.DeepEqual(wr.Verified, sixIDs) {
 		t.Fatalf("wave = %+v, %v", wr, err)
 	}
-	if n := len(g.leafCalls("fn-cheer")); n != 0 {
+	if n := len(g.leafCalls(adopted)); n != 0 {
 		t.Fatalf("the adopted leaf made %d model calls", n)
 	}
-	cheer := 0
+	byFunc := map[string]string{}
+	for _, l := range g.plan.Leaves {
+		byFunc[l.TestFunc] = l.ID
+	}
+	scratch := filepath.Join(g.repo, ".gophermind", g.id+"-scratch")
+	inMain, private := map[string]int{}, map[string]string{}
 	for _, c := range rec.calls {
-		if c.TestFunc == "TestCheer" {
-			cheer++
-			if c.Repo != g.repo {
-				t.Fatalf("the adopted leaf was checked in %s", c.Repo)
-			}
+		id := byFunc[c.TestFunc]
+		if c.Repo == g.repo {
+			inMain[id]++
+		} else {
+			private[id] = c.Repo
 		}
 	}
-	if cheer != 1 || !reflect.DeepEqual(subjectIDs(g.leafSubjects()), sixIDs) {
-		t.Fatalf("cheer checks %d, order %v", cheer, g.leafSubjects())
+	if _, ok := private[adopted]; ok || inMain[adopted] != 1 {
+		t.Fatalf("the adopted leaf: main checks %d, private %q: want 1 main check, none private", inMain[adopted], private[adopted])
+	}
+	for _, id := range sixIDs {
+		if id == adopted {
+			continue
+		}
+		if want := filepath.Join(scratch, "trees", id); private[id] != want {
+			t.Errorf("%s was checked in %q, want its own tree %s", id, private[id], want)
+		}
+	}
+	if ev := g.sink.OfKind("level_parallel"); len(ev) != 1 || !strings.HasSuffix(ev[0].Message, "6 leaves, 3 workers") {
+		t.Fatalf("level_parallel = %+v", ev)
+	}
+	if !reflect.DeepEqual(subjectIDs(g.leafSubjects()), sixIDs) {
+		t.Fatalf("order %v", g.leafSubjects())
 	}
 }
