@@ -34,8 +34,10 @@ const (
 	SchemaVersion = 3
 	// minSchemaVersion is the oldest report Read still accepts. Version 2 added
 	// human_escalation_log and version 3 added revised_leaves and
-	// rewritten_leaves (new optional keys); older files read unchanged, and an
-	// older binary refuses a newer report because Read rejects unknown fields.
+	// rewritten_leaves (new optional keys). The optional parallel key (workers,
+	// parallel levels, landing conflicts) was added without a bump. Older files
+	// read unchanged, and an older binary refuses a newer report because Read
+	// rejects unknown fields.
 	minSchemaVersion = 1
 	maxReadBytes     = 8 << 20
 )

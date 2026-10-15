@@ -191,7 +191,7 @@ escalated leaf comes through it, and no answer means the run stops (exit 4 at a
 terminal that ends its input, exit 3 with the file gate, which writes an
 `ESCALATION-<node>.md` file into the run folder and waits). `--repo` runs against
 another clone of the repository than the one the run record names (it must hold a
-`.git`). `--workers` must be 1: leaves share one working tree.
+`.git`). `--workers n` (1 to 8) sets `executor.workers` for this run; without it the setting is used (see "Parallel leaves").
 
 The vault passphrase comes from `GOPHERMIND_VAULT_PASSPHRASE`, or from a prompt
 only when a terminal is attached. A run that needs the vault (the brief declares a
@@ -323,7 +323,7 @@ The `executor` section of `gophermind.yaml` and its defaults:
 
 ```yaml
 executor:
-  workers: 1                    # must be 1
+  workers: 1                    # 1 to 8: leaves of one level run at once in private copies
   fix_attempts: 2
   repair_rounds: 2
   acceptance_repair_rounds: 2
@@ -359,6 +359,49 @@ ever resumed says `resumed: true`, so a run that was meant to go through without
 restart can be told apart. A resume refuses to go on when the plan files changed,
 when commits that are not this run's sit on the work branch, or when the base
 branch moved away from it.
+
+## Parallel leaves
+
+`executor.workers` (1 to 8, default 1) is how many leaves of one level run at once. A level
+is the leaves of a wave that do not depend on each other. With 1 nothing changes: the
+leaves run one after the other in the repository. Above 1:
+
+- Before the level starts, the repository's files (tracked, and untracked but not ignored;
+  never `.git`, `.gophermind/` or ignored files) are copied once to
+  `.gophermind/<id>-scratch/base`. Each leaf gets its own copy of that under `trees/<leaf>`,
+  with a throwaway git repository, its own HOME and TMPDIR under `w/<leaf>` and its own
+  sandbox profile. Its checks, its stray-file check and its stub swap all run in its copy.
+- A leaf that passes in its copy saves the reply to `_state/candidate-<leaf>` and waits for
+  its turn. Turns go in leaf id order: the leaf replays its reply in the repository with
+  the full check and commits it there exactly as a serial run does. The work branch stays
+  linear and its commits are in the order `workers: 1` gives. `leaf_verified` comes at
+  landing.
+- A reply that passed alone but fails next to the leaves that landed before it (two leaves
+  of one package that both declare a helper `clean`) is a landing conflict
+  (`land_conflict`). It counts as a failed attempt, and the leaf goes on with its ladder in
+  the repository.
+- A level whose copy would be over 256 MiB, or whose files cannot be copied (a symbolic
+  link that points outside the repository, a submodule), runs one leaf at a time with a
+  `warning`.
+- A killed run resumes with any `workers` value. Saved candidates land with no model call,
+  and copies left behind are deleted when the next run starts.
+
+`workers` does not change how many model calls run at once: that is each provider's
+`max_concurrent`. On the mini (`max_concurrent: 1`) extra workers only overlap the checks of
+one leaf with the model call of another, and the run says so in a warning. Each worker runs
+`go build`, `go vet` and `go test`: check `memory_pressure` and `sysctl vm.swapusage` before
+raising it on the mini. The report's `parallel` object (workers, parallel levels, landing
+conflicts) and a `Parallel:` summary line appear only when a level ran in parallel.
+
+Known limits:
+
+- Leaves that share a file path are split into later sub-levels by first fit, so a higher
+  leaf id can land before a lower one in that case. That is a plan defect.
+- A kill in the middle of a file write can leave a stray temp file in the main tree, and
+  resume stops with `foreign_dirt` naming it. Remove the file by hand and resume, as before
+  parallel leaves.
+- In rewrite mode, a cancel arriving right after a revise reply can end the run as a harness
+  fault instead of an interrupt (backlog).
 
 ## Revising a leaf
 
@@ -421,7 +464,7 @@ in the blackboard: only ids, counts, sizes, hashes and fixed class words.
   goes to the gate with the class of its last attempt.
 - `landing: pull_request` and anything that pushes are not supported.
 - The sandbox exists on macOS only; elsewhere the run needs `executor.sandbox: off`.
-- Leaves are built one at a time (`workers` is 1).
+- Repairs, the revise rung, acceptance and wave checks run one at a time whatever `workers` says; only the first pass over a level's leaves is parallel.
 - Adding a dependency after approval needs a new approval.
 
 ## Vault
