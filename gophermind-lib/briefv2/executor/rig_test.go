@@ -142,7 +142,7 @@ func newRigIn(t *testing.T, dir string, script Script, mods ...func(*rigOpts)) *
 	for _, m := range mods {
 		m(&extra)
 	}
-	g := buildRig(t, rigOpts{BriefEdit: extra.BriefEdit, Settings: func(c *settings.Config) {
+	g := buildRig(t, rigOpts{BriefEdit: extra.BriefEdit, PlannerDirs: extra.PlannerDirs, Settings: func(c *settings.Config) {
 		c.Executor.StaleClaimSeconds = 1
 		if extra.Settings != nil {
 			extra.Settings(c)
