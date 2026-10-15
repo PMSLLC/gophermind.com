@@ -1,6 +1,7 @@
 package runview
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -70,9 +71,12 @@ func (v *View) Node(id string) (NodeBody, error) {
 // servable files each holds. Links are not listed.
 func (v *View) ArtifactNames(id string) []ArtifactEntry {
 	out := []ArtifactEntry{}
+	if !ValidNodeID(id) {
+		return out
+	}
 	attempts := filepath.Join(v.dir, "attempts")
 	base := filepath.Join(attempts, id)
-	if !ValidNodeID(id) || !realDir(attempts) || !realDir(base) {
+	if !realDir(attempts) || !realDir(base) {
 		return out
 	}
 	ents, err := os.ReadDir(base)
@@ -113,8 +117,11 @@ func (v *View) Artifact(id string, attempt int, file string) (string, error) {
 		return "", ErrNotFound
 	}
 	data, cut, err := readLimited(filepath.Join(dir, file), maxReadBytes)
-	if err != nil {
+	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrBadID) {
 		return "", err
+	}
+	if err != nil {
+		return "", errors.New("runview: the artifact cannot be read")
 	}
 	if cut {
 		data = append(data, []byte("\n[truncated by the server]\n")...)
@@ -172,13 +179,32 @@ func (v *View) Decisions() (DecisionsBody, error) {
 // the call log and the runtime files with "complete": false.
 func (v *View) Report() ([]byte, error) {
 	if v.exists(report.FileName) {
-		if _, err := report.Read(v.dir); err != nil {
+		data, cut, err := readLimited(filepath.Join(v.dir, report.FileName), maxReadBytes)
+		if err != nil || cut || !validReport(data) {
 			return nil, errors.New("runview: report.json cannot be read")
 		}
-		data, _, err := readLimited(filepath.Join(v.dir, report.FileName), maxReadBytes)
-		return data, err
+		return data, nil
 	}
 	return v.partialReport()
+}
+
+// validReport applies the checks report.Read makes (schema version, known
+// fields, exit code against status) to bytes already read, so the bytes served
+// are the bytes validated.
+func validReport(data []byte) bool {
+	var v struct {
+		SchemaVersion int `json:"schema_version"`
+	}
+	if json.Unmarshal(data, &v) != nil || v.SchemaVersion < 1 || v.SchemaVersion > report.SchemaVersion {
+		return false
+	}
+	var r report.Report
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if dec.Decode(&r) != nil {
+		return false
+	}
+	return r.ExitCode == report.ExitCode(r.Status, r.StopReason)
 }
 
 // partialReport builds the report of a run still going. Revision and parallel

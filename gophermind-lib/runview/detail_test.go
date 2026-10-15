@@ -134,6 +134,38 @@ func TestArtifact(t *testing.T) {
 			}
 		}
 	}
+	// Symlinked directories are refused too.
+	elsewhere := t.TempDir()
+	if err := os.WriteFile(filepath.Join(elsewhere, "reply.txt"), []byte("do not serve"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(elsewhere, "1"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(elsewhere, "1", "reply.txt"), []byte("do not serve"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, filepath.Join(f.Dir, "attempts", "fn-link")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := v.Artifact("fn-link", 1, "reply.txt"); !errors.Is(err, runview.ErrNotFound) {
+		t.Errorf("symlinked node dir = %v, want ErrNotFound", err)
+	}
+	if err := os.Symlink(filepath.Join(elsewhere, "1"), filepath.Join(f.Dir, "attempts", "fn-bye", "7")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := v.Artifact("fn-bye", 7, "reply.txt"); !errors.Is(err, runview.ErrNotFound) {
+		t.Errorf("symlinked attempt dir = %v, want ErrNotFound", err)
+	}
+	// A file over the size cap is cut and says so.
+	huge := bytes.Repeat([]byte("a"), 9<<20)
+	if err := os.WriteFile(filepath.Join(f.Dir, "attempts", "fn-bye", "1", "reply.txt"), huge, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	txt, err = v.Artifact("fn-bye", 1, "reply.txt")
+	if err != nil || !strings.HasSuffix(txt, "\n[truncated by the server]\n") || len(txt) >= len(huge) {
+		t.Errorf("oversize artifact: err %v, len %d", err, len(txt))
+	}
 }
 
 func TestDecisionsAreTheRootRecordsThenTheRevisionDecisions(t *testing.T) {
@@ -183,10 +215,29 @@ func TestReportFinalIsVerbatimAndRunningIsPartial(t *testing.T) {
 		t.Errorf("revision and parallel totals must pass through: %+v", fin)
 	}
 
+	var finKeys map[string]any
+	if err := json.Unmarshal(got, &finKeys); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"revised_leaves", "rewritten_leaves", "parallel"} {
+		if _, ok := finKeys[k]; !ok {
+			t.Errorf("final report lacks key %q", k)
+		}
+	}
+
 	v2, _ := open(t, runviewtest.Building)
 	part, err := v2.Report()
 	if err != nil {
 		t.Fatal(err)
+	}
+	var partKeys map[string]any
+	if err := json.Unmarshal(part, &partKeys); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"revised_leaves", "rewritten_leaves", "parallel"} {
+		if _, ok := partKeys[k]; ok {
+			t.Errorf("partial report must not carry key %q", k)
+		}
 	}
 	var pr runview.ReportBody
 	if err := json.Unmarshal(part, &pr); err != nil {
@@ -204,6 +255,18 @@ func TestReportWithAnUnreadableFileIsAnErrorNotAGuess(t *testing.T) {
 	}
 	if _, err := v.Report(); err == nil || errors.Is(err, runview.ErrNotFound) {
 		t.Errorf("Report = %v, want a plain error", err)
+	}
+}
+
+func TestReportOverTheSizeCapIsAnErrorNotTruncatedJSON(t *testing.T) {
+	v, f := open(t, runviewtest.Verified)
+	big := append([]byte(`{"schema_version":1,"pad":"`), bytes.Repeat([]byte("a"), 9<<20)...)
+	big = append(big, []byte(`"}`)...)
+	if err := os.WriteFile(filepath.Join(f.Dir, "report.json"), big, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := v.Report(); err == nil || got != nil {
+		t.Errorf("Report = %d bytes, %v; want an error", len(got), err)
 	}
 }
 
