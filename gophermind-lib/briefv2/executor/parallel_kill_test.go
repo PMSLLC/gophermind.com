@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -251,8 +252,13 @@ func TestParallelKillAndResume(t *testing.T) {
 	}
 }
 
-// TestParallelChildProcess is the process TestParallelSIGKILLAndResume kills:
-// it blocks at the third saved candidate.
+// TestParallelChildProcess is the process TestParallelSIGKILLAndResume kills.
+// It parks itself at a safe point: the lowest id (fn-cheer, the first to land)
+// waits forever in its private check, so no landing write has begun and the
+// main tree is quiet. Of the other leaves only the first two pass their check;
+// any further one waits in its check too, before it writes a candidate. Once
+// the second candidate is saved the child names the point and waits to be
+// killed, so no worker is mid-write in the main tree or the state directory.
 func TestParallelChildProcess(t *testing.T) {
 	if os.Getenv("GM_PAR_CHILD") != "1" {
 		return
@@ -262,6 +268,22 @@ func TestParallelChildProcess(t *testing.T) {
 	g.wire(sixScript(g))
 	fc := g.sixChecker()
 	var mu sync.Mutex
+	allowed := map[string]bool{}
+	fc.Hook = func(repo string) {
+		if repo == g.repo {
+			return
+		}
+		id := filepath.Base(repo)
+		mu.Lock()
+		ok := id != "fn-cheer" && (allowed[id] || len(allowed) < 2)
+		if ok {
+			allowed[id] = true
+		}
+		mu.Unlock()
+		if !ok {
+			select {} // parked until the parent kills the process
+		}
+	}
 	n := 0
 	hook := func(rc *runCtx) {
 		rc.chk = fc
@@ -273,7 +295,7 @@ func TestParallelChildProcess(t *testing.T) {
 			n++
 			k := n
 			mu.Unlock()
-			if k == 3 {
+			if k == 2 {
 				blockHere(dir)
 			}
 		}}
@@ -284,6 +306,12 @@ func TestParallelChildProcess(t *testing.T) {
 
 // Spec 15.4, SIGKILL: a process killed mid-level leaves stale claims and
 // candidates; the next run (workers 2) lands the candidates with no model call.
+// The kill is the parent's SIGKILL, sent only once the child reports it is
+// parked at the safe point of TestParallelChildProcess. A kill at a random
+// instant can land inside a file write and leave a `.name.go.tmp...` file or a
+// git lock behind; the executor then stops with foreign_dirt, which is the
+// conservative behavior of the serial swap code and is covered by
+// TestKillMidWriteLeavesForeignDirtAndResumeStopsCleanly, not by this test.
 func TestParallelSIGKILLAndResume(t *testing.T) {
 	t.Parallel()
 	if goCacheOverride == "" {
@@ -319,7 +347,7 @@ wait:
 			}
 		}
 	}
-	_ = cmd.Process.Kill()
+	_ = cmd.Process.Signal(syscall.SIGKILL)
 	<-exited
 	runDir := filepath.Join(dir, "repo", ".gophermind", greeterID)
 	had := map[string]bool{}
@@ -391,6 +419,47 @@ wait:
 	}
 	for _, id := range sixIDs {
 		if c := g.leafCommits(id); c != 1 {
+			t.Errorf("%s committed %d times", id, c)
+		}
+	}
+}
+
+// A kill in the middle of a file write leaves the writer's temp file in the
+// main tree. The resume treats it as foreign dirt: it stops, names the file,
+// changes nothing and calls no model. That is the serial swap code's
+// conservative behavior, pinned here so the parallel level does not change it.
+func TestKillMidWriteLeavesForeignDirtAndResumeStopsCleanly(t *testing.T) {
+	t.Parallel()
+	g := newRig(t, sixpack(t, 3))
+	g.started(t)
+	l := g.plan.Leaf("fn-cheer")
+	stray := filepath.Join(g.repo, filepath.Dir(filepath.FromSlash(l.File)), ".cheer.go.tmp123")
+	write(t, stray, "package greet\n// half a file")
+	spy := &spyGit{Repo: g.git}
+	g.wire(sixScript(g))
+	o := g.options()
+	o.Git = spy
+	rep, err := run(context.Background(), o, runFlags{skipAcceptance: true, afterStart: useChecker(g.sixChecker())})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if rep.Status != "failed" || rep.StopReason != "foreign_dirt" || rep.ExitCode != 1 {
+		t.Fatalf("report = %s (%s) exit %d", rep.Status, rep.StopReason, rep.ExitCode)
+	}
+	if !strings.Contains(strings.Join(rep.Failures, "\n"), ".cheer.go.tmp123") {
+		t.Errorf("failures %q do not name the temp file", rep.Failures)
+	}
+	if n := len(g.fake.Requests()); n != 0 {
+		t.Errorf("provider calls = %d, want 0", n)
+	}
+	if raw, err := os.ReadFile(stray); err != nil || string(raw) != "package greet\n// half a file" {
+		t.Errorf("the temp file = %q, %v; want it untouched", raw, err)
+	}
+	if len(spy.calls) != 0 {
+		t.Errorf("git calls %v, want none that discard work", spy.calls)
+	}
+	for _, id := range sixIDs {
+		if c := g.leafCommits(id); c != 0 {
 			t.Errorf("%s committed %d times", id, c)
 		}
 	}
