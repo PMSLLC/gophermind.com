@@ -265,3 +265,18 @@ func TestCancelAsALeafStartsIsAnInterrupt(t *testing.T) {
 		t.Fatalf("fn-farewell = %s claim %v, want ready and released", r.Status, r.Claim)
 	}
 }
+
+// A cancel that lands right after a model reply must not turn into a harness
+// fault when the leaf then reads its earlier attempts (previousSHA).
+func TestCancelRightAfterTheReplyIsAnInterrupt(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	rc, _ := g.schedRC(t, Script{"implement:fn-farewell": {reply(good("fn-farewell"))}})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	g.fake.Before = func(string) { cancel() }
+	wr, err := rc.scheduleLeaves(ctx, g.leaves("fn-farewell"))
+	if err != nil || wr.Stop == nil || wr.Stop.Status != "interrupted" {
+		t.Fatalf("wave = %+v, %v", wr, err)
+	}
+}

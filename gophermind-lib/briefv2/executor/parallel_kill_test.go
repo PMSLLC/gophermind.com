@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"gophermind/gophermind-lib/briefv2/blackboard"
 	"gophermind/gophermind-lib/briefv2/events"
 	"gophermind/gophermind-lib/briefv2/human"
 	"gophermind/gophermind-lib/briefv2/runner"
@@ -330,12 +331,49 @@ wait:
 	if len(had) == 0 {
 		t.Fatalf("the kill left no candidate:\n%s", out.String())
 	}
+	scratch := filepath.Join(dir, "repo", ".gophermind", greeterID+"-scratch")
+	killedTrees := dirEntries(filepath.Join(scratch, "trees")) + dirEntries(filepath.Join(scratch, "w"))
 	time.Sleep(1500 * time.Millisecond) // stale_claim_seconds is 1 in newRigIn
 	g := newRigIn(t, dir, Script{}, sixpack(t, 2))
 	g.wire(sixScript(g))
-	rep, err := run(context.Background(), g.options(), runFlags{skipAcceptance: true, afterStart: useChecker(g.sixChecker())})
+	// Spec 15.4: when the resume announces itself, the killed run's trees are
+	// gone and its stale claims are swept.
+	var atResume struct {
+		seen          bool
+		trees, claims []string
+	}
+	opts := g.options()
+	opts.Sink = hookSink{next: opts.Sink, on: func(e events.Event) {
+		if e.Kind != "resume" || atResume.seen {
+			return
+		}
+		atResume.seen = true
+		for _, d := range []string{"trees", "w", "base"} {
+			if fileExists(filepath.Join(scratch, d)) && (d == "base" || dirEntries(filepath.Join(scratch, d)) > 0) {
+				atResume.trees = append(atResume.trees, d)
+			}
+		}
+		for _, id := range sixIDs {
+			if r := g.row(t, id); r.Status == blackboard.StatusClaimed || r.Status == blackboard.StatusInProgress || r.Claim != nil {
+				atResume.claims = append(atResume.claims, id+":"+string(r.Status))
+			}
+		}
+	}}
+	rep, err := run(context.Background(), opts, runFlags{skipAcceptance: true, afterStart: useChecker(g.sixChecker())})
 	if err != nil || rep.Status != "verified" {
 		t.Fatalf("resumed run = %s (%s) %v: %v", rep.Status, rep.StopReason, rep.Failures, err)
+	}
+	if !atResume.seen {
+		t.Fatal("the resume event was never emitted")
+	}
+	if killedTrees == 0 {
+		t.Error("the kill left no private tree to clean, the check below proves nothing")
+	}
+	if len(atResume.trees) != 0 {
+		t.Errorf("at the resume, trees/w/base were left: %v", atResume.trees)
+	}
+	if len(atResume.claims) != 0 {
+		t.Errorf("at the resume, stale claims were not swept: %v", atResume.claims)
 	}
 	for id := range had {
 		if n := len(g.leafCalls(id)); n != 0 {
@@ -431,4 +469,10 @@ func TestParallelDiffOnlyMatchesSerial(t *testing.T) {
 	if s, p := diff(1), diff(3); !bytes.Equal(s, p) {
 		t.Fatalf("diff_only diffs differ:\nserial %d bytes, parallel %d bytes", len(s), len(p))
 	}
+}
+
+// dirEntries counts the entries of a directory, 0 when it is missing.
+func dirEntries(p string) int {
+	e, _ := os.ReadDir(p)
+	return len(e)
 }

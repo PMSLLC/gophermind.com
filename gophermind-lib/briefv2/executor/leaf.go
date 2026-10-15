@@ -266,6 +266,9 @@ func (rc *runCtx) newLeafRun(ctx context.Context, l *Leaf, in leafIn) (*leafRun,
 	}
 	row, err := rc.o.Board.Get(ctx, rc.plan.RunID, l.ID)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, errCancelled
+		}
 		return nil, fmt.Errorf("executor: reading the row of %s failed", l.ID)
 	}
 	lr.rev = row.Revision
@@ -343,7 +346,7 @@ func (rc *runCtx) runLeaf(ctx context.Context, l *Leaf, in leafIn) (out leafOutc
 
 	built, berr := rc.newLeafRun(ctx, l, in)
 	if berr != nil {
-		if ctx.Err() != nil {
+		if errors.Is(berr, errCancelled) {
 			return leafOutcome{Interrupted: true}, nil // the row could not be read because the run was cancelled
 		}
 		return lr.exit(ctx, leafOutcome{}, berr)
@@ -870,6 +873,10 @@ func (lr *leafRun) finishPass(ctx context.Context, committed bool, hash string, 
 	return nil
 }
 
+// errCancelled is a blackboard read that failed because the run was cancelled:
+// an interrupt, not a harness fault. Callers turn it into an interrupted end.
+var errCancelled = errors.New("executor: the run was cancelled")
+
 // previousSHA is the hash of the last reply of this leaf on the entry: from
 // memory, else from the blackboard's last attempt of the same provider and
 // model that has one. Empty when there is none. A blackboard that cannot be
@@ -881,6 +888,9 @@ func (lr *leafRun) previousSHA(ctx context.Context, e ladderEntry) (string, erro
 	prov, model, _ := settings.SplitEntry(e.Name)
 	row, err := lr.rc.o.Board.Get(ctx, lr.rc.plan.RunID, lr.l.ID)
 	if err != nil {
+		if ctx.Err() != nil {
+			return "", errCancelled
+		}
 		return "", fmt.Errorf("executor: reading the attempts of %s failed", lr.l.ID)
 	}
 	sha := ""
@@ -1123,6 +1133,9 @@ func (lr *leafRun) attempt(ctx context.Context, e ladderEntry, k int) (end entry
 	// of it, is identical: hashed first so a refused reply cannot burn every fix.
 	if reply.ContractProblem == "" {
 		if same, err := lr.identical(ctx, e, started, reply.SHA256); err != nil || same {
+			if errors.Is(err, errCancelled) {
+				return endInterrupted, true, nil
+			}
 			return endIdentical, true, err
 		}
 	}
@@ -1235,6 +1248,9 @@ func (lr *leafRun) providerError(ctx context.Context, e ladderEntry, started tim
 		// Every reply of the entry was unusable. The last one is hashed; one
 		// that repeats the entry's previous reply is an identical reply.
 		if same, err := lr.identical(ctx, e, started, lastSHA); err != nil || same {
+			if errors.Is(err, errCancelled) {
+				return endInterrupted, true, nil
+			}
 			return endIdentical, true, err
 		}
 		class, end = runner.ClassMalformed, endMalformed
