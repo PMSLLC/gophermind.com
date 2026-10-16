@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"embed"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -116,6 +115,12 @@ func (a *pipelineAPI) events(w http.ResponseWriter, r *http.Request) {
 		pipelineError(w, err)
 		return
 	}
+	// A resume id past the end of this run's log belongs to another run (a
+	// client that reconnects after a newer run became the default): replay
+	// from the start rather than skip this run's events.
+	if since > v.EventSeq() {
+		since = 0
+	}
 	ctx := r.Context()
 	ch, err := v.Follow(ctx, since)
 	if err != nil {
@@ -126,12 +131,22 @@ func (a *pipelineAPI) events(w http.ResponseWriter, r *http.Request) {
 	h.Set("Content-Type", "text/event-stream")
 	h.Set("Cache-Control", "no-cache")
 	h.Set("Connection", "keep-alive")
-	flusher, _ := w.(http.Flusher)
+	rc := http.NewResponseController(w)
+	// send writes one chunk under a fresh write deadline, so a client that
+	// stops reading cannot hold its stream slot: the write fails and the
+	// handler returns. A writer without deadline support just has none.
+	send := func(b []byte) bool {
+		_ = rc.SetWriteDeadline(time.Now().Add(2 * pipelineKeepalive))
+		if _, err := w.Write(b); err != nil {
+			return false
+		}
+		return rc.Flush() == nil
+	}
 	// Headers go out before the first event so a client whose Do blocks until a
 	// response arrives is connected at once.
 	w.WriteHeader(http.StatusOK)
-	if flusher != nil {
-		flusher.Flush()
+	if !send(nil) {
+		return
 	}
 	ka := time.NewTicker(pipelineKeepalive)
 	defer ka.Stop()
@@ -146,11 +161,14 @@ func (a *pipelineAPI) events(w http.ResponseWriter, r *http.Request) {
 			if json.Compact(&compact, e.Data) == nil {
 				data = compact.String()
 			}
-			writeSSEFrame(w, flusher, e.Seq, e.Type, data)
+			var frame bytes.Buffer
+			writeSSEFrame(&frame, nil, e.Seq, e.Type, data)
+			if !send(frame.Bytes()) {
+				return
+			}
 		case <-ka.C:
-			fmt.Fprint(w, ": keepalive\n\n")
-			if flusher != nil {
-				flusher.Flush()
+			if !send([]byte(": keepalive\n\n")) {
+				return
 			}
 		case <-ctx.Done():
 			return

@@ -2,10 +2,15 @@ package serve
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -189,4 +194,88 @@ func TestPipelineMaxStreamsFromEnv(t *testing.T) {
 			t.Errorf("%q -> %d, want %d", v, got, want)
 		}
 	}
+}
+
+func TestEventsResumeIDPastTheLogReplaysFromTheStart(t *testing.T) {
+	root := t.TempDir()
+	runviewtest.Build(t, root, runviewtest.Building)
+	srv := apiServer(t, root)
+	v, _ := runview.Open(root, runviewtest.RunID)
+	n := v.EventSeq()
+	_, br := openStream(t, srv, "/pipeline/events?since="+strconv.FormatInt(n+50, 10), nil)
+	for i := int64(1); i <= n; i++ {
+		if f := readFrame(t, br); f.id != strconv.FormatInt(i, 10) {
+			t.Fatalf("frame %d has id %s, want a replay from the start", i, f.id)
+		}
+	}
+}
+
+func TestEventsStalledClientReleasesItsSlot(t *testing.T) {
+	oldKA, oldPoll := pipelineKeepalive, pipelinePoll
+	pipelineKeepalive, pipelinePoll = 100*time.Millisecond, 10*time.Millisecond
+	t.Cleanup(func() { pipelineKeepalive, pipelinePoll = oldKA, oldPoll })
+	root := t.TempDir()
+	f := runviewtest.Build(t, root, runviewtest.Building)
+	// Enough events to overflow the socket buffers of a client that never reads.
+	line := []byte(`{"node_id":"fn-bye","kind":"status"}` + "\n")
+	fh, err := os.OpenFile(filepath.Join(f.Dir, "_state", "events.jsonl"), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fh.Write(bytes.Repeat(line, 200000)); err != nil {
+		t.Fatal(err)
+	}
+	fh.Close()
+
+	t.Setenv("GOPHERMIND_SERVE_TOKEN", "t")
+	mux, err := NewMux(Deps{Pipeline: &PipelineDeps{Root: root, MaxStreams: 1}}, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	conn, err := net.Dial("tcp", strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	if tc, ok := conn.(*net.TCPConn); ok {
+		_ = tc.SetReadBuffer(4096)
+	}
+	fmt.Fprintf(conn, "GET /pipeline/events?since=0 HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer t\r\n\r\n")
+	status, err := bufio.NewReaderSize(conn, 64).ReadString('\n')
+	if err != nil || !strings.Contains(status, "200") {
+		t.Fatalf("status line %q, %v", status, err)
+	}
+	// From here the client never reads again.
+
+	probe := func() int {
+		resp, err := http.DefaultClient.Do(mustReq(t, srv.URL+"/pipeline/events"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if code := probe(); code != http.StatusServiceUnavailable {
+		t.Fatalf("probe while the stalled client is connected: %d, want 503", code)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for probe() != 200 {
+		if time.Now().After(deadline) {
+			t.Fatal("a client that stopped reading still holds its stream slot")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func mustReq(t *testing.T, url string) *http.Request {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer t")
+	return req
 }
