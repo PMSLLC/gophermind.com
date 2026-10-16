@@ -416,10 +416,6 @@ func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 		// It carries no task data of its own - its JS fetches the data
 		// routes with the token entered in the page - so serving it
 		// unauthenticated discloses nothing.
-		hub := d.Pipeline.Hub
-		if hub == nil {
-			hub = NewPipelineHub()
-		}
 		api := newPipelineAPI(*d.Pipeline)
 		mux.Handle("GET /pipeline", withPipelineSchema(pipelineDashboardHandler()))
 		pipeWrap := func(h http.Handler) http.Handler { return withPipelineSchema(limited(sessionAuth(token, h))) }
@@ -428,7 +424,7 @@ func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 		mux.Handle("GET /pipeline/node", pipeWrap(http.HandlerFunc(api.node)))
 		mux.Handle("GET /pipeline/artifact", pipeWrap(http.HandlerFunc(api.artifact)))
 		mux.Handle("GET /pipeline/decisions", pipeWrap(http.HandlerFunc(api.decisions)))
-		mux.Handle("GET /pipeline/events", pipeWrap(pipelineEventsHandler(hub)))
+		mux.Handle("GET /pipeline/events", pipeWrap(http.HandlerFunc(api.events)))
 		mux.Handle("GET /pipeline/report", pipeWrap(http.HandlerFunc(api.report)))
 	}
 	return mux, nil

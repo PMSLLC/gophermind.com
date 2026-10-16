@@ -1258,15 +1258,14 @@ func run() error {
 			defer cancel()
 			return client.ListModels(ctx)
 		}
-		pipelineHub := serve.NewPipelineHub()
 		mux, err := serve.NewMux(serve.Deps{
 			Run: run, Stream: stream, Metrics: metrics,
 			SessionTurn: sessionTurn, Approvals: approvals, Devices: devStore,
 			SessionMessages: loadMessages, ListModels: listModels,
-			// Pipeline piece 5: live dashboard + run summary at GET
-			// /pipeline, backed by cfg.RootDir's .planning/assignments.json
-			// - the same project state every other command reads.
-			Pipeline: &serve.PipelineDeps{Root: cfg.RootDir, Hub: pipelineHub},
+			// The pipeline routes read cfg.RootDir/.gophermind/<run>/ through
+			// gophermind-lib/runview: runs, state, node, artifact, decisions,
+			// report and a followed event stream.
+			Pipeline: &serve.PipelineDeps{Root: cfg.RootDir, MaxStreams: serve.PipelineMaxStreamsFromEnv()},
 			Skills:   &serve.SkillsDeps{Root: cfg.RootDir, ConfigDir: skillCfgDir},
 		}, serve.Options{})
 		if err != nil {
@@ -1296,13 +1295,6 @@ func run() error {
 		// saved. Every other long-running command here already does this.
 		serveCtx, stopServe := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stopServe()
-		// Feed the hub. A run executes in a different process (the TUI's
-		// /project-execute, or `gophermind phase execute`), so nothing in it
-		// can call this hub directly; watching the assignments file is the
-		// only channel between them, and it is the same file /pipeline/state
-		// serves. Without this the dashboard's event stream stayed silent
-		// and the page showed whatever state existed when it loaded.
-		serve.StartPipelineWatcher(serveCtx, cfg.RootDir, pipelineHub)
 		return serve.Serve(serveCtx, ln, mux)
 	case "queue":
 		if task == "" {
@@ -2357,8 +2349,9 @@ Usage:
                                 session/mobile: POST /session, POST /session/{id}/stream (SSE),
                                 GET /session, DELETE /session/{id}, POST /session/{id}/approve,
                                 POST /devices — see docs/mobile-serve.md
-                                pipeline: GET /pipeline (dashboard), GET /pipeline/state,
-                                GET /pipeline/events (SSE), GET /pipeline/report`)
+                                pipeline: GET /pipeline (dashboard), GET /pipeline/runs,
+                                /pipeline/state, /pipeline/node, /pipeline/artifact,
+                                /pipeline/decisions, /pipeline/report, GET /pipeline/events (SSE)`)
 	fmt.Fprintln(os.Stderr, projectUsage)
 	fmt.Fprintln(os.Stderr, `
 On first interactive launch with nothing configured, a short setup wizard runs
