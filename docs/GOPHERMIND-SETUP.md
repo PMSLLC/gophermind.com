@@ -84,8 +84,6 @@ Quick navigation reference:
 
 **Use**: When gophermind approaches a task, it uses this to find the right files and understand patterns before coding.
 
-**Use**: When working on multi-step projects (like the "Go Pher It" logo), gophermind uses this to understand phase workflow commands and state.
-
 ## Registering with gophermind Server
 
 See **docs/SERVER-SETUP.md** for complete server setup including:

@@ -32,6 +32,43 @@ gophermind (go 1.25.0)
 │   │   ├── view.go                # Charm-based rendering
 │   │   ├── prompt.go              # Prompt input with history
 │   │   └── *_test.go
+│   ├── prompt/                    # Prompt registry and rendering
+│   │   ├── registry.go            # Named prompts, personas
+│   │   ├── render.go              # Template expansion, context injection
+│   │   ├── art.go                 # ASCII art (gopher, tagline)
+│   │   └── *_test.go
+│   ├── models/                    # Model provider abstraction
+│   │   ├── provider.go            # OpenAI-compatible API
+│   │   ├── endpoints.go           # Named profiles, auto-discovery
+│   │   ├── stream.go              # Streaming response parsing
+│   │   └── *_test.go
+│   ├── config/                    # Configuration loading
+│   │   ├── load.go                # .env, env vars, flags
+│   │   ├── profiles.go            # Named provider profiles
+│   │   └── *_test.go
+│   └── ... (other subsystems)
+├── design/                        # Design assets, specs, rationale
+│   ├── gopher-it-logo*.svg        # Wordmark (light/dark)
+│   ├── gopher-it-1024.png         # iOS icon master
+│   └── README.md                  # Design system
+├── docs/                          # Documentation
+│   ├── ARCHITECTURE-INDEX.md      # This file
+│   ├── DEPLOYMENT.md              # Serve mode setup
+│   ├── RELEASING.md               # Release checklist
+│   ├── REMOTE-SESSIONS.md         # Desktop client config
+│   ├── SKILLS.md                  # Skill packs
+│   ├── mobile-serve.md            # iOS client setup
+│   └── superpowers/               # Execution plans
+├── scripts/                       # Build/deploy tooling
+│   ├── render-logo.sh             # SVG → PNG rasterizer
+│   ├── release.sh                 # Signed release build
+│   └── ...
+├── .gophermind/                   # Project-local skills and config
+│   ├── skills/
+│   │   ├── diagnosing-bugs.md     # Debug workflow
+│   │   ├── tdd.md                 # Test-driven development
+│   │   ├── code-review.md         # Code review checklist
+│   │   └── README.md              # Skill documentation
 │   └── ...
 ├── .remember/                     # Session memory (gitignored)
 ├── .github/                       # CI/CD workflows
