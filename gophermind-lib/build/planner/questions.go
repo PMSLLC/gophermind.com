@@ -304,7 +304,11 @@ func parseQuestionList(text string, have qstore, o qparseOpts) ([]qrec, error) {
 			return nil, fmt.Errorf("clarify reply: question %d has a recommendation that is too long", n)
 		}
 		if len(opts) > 0 && rec != "" && !contains(opts, rec) {
-			return nil, fmt.Errorf("clarify reply: the recommended answer of question %d must be one of its options", n)
+			full, ok := resolveRecommended(rec, opts)
+			if !ok {
+				return nil, fmt.Errorf("clarify reply: the recommended answer of question %d must be one of its options", n)
+			}
+			rec = full
 		}
 		if o.RequireRecommended && rec == "" {
 			return nil, fmt.Errorf("clarify reply: question %d needs a recommended answer", n)
@@ -317,6 +321,30 @@ func parseQuestionList(text string, have qstore, o qparseOpts) ([]qrec, error) {
 		})
 	}
 	return out, nil
+}
+
+// resolveRecommended maps a recommendation that is not byte-equal to an option
+// onto the option it plainly means: the same text ignoring case, or a prefix of
+// exactly one option. Zero or several candidates resolve to nothing.
+func resolveRecommended(rec string, opts []string) (string, bool) {
+	rec = strings.ToLower(strings.TrimSpace(rec))
+	if rec == "" {
+		return "", false
+	}
+	found := ""
+	for _, op := range opts {
+		low := strings.ToLower(strings.TrimSpace(op))
+		if low == rec {
+			return op, true
+		}
+		if strings.HasPrefix(low, rec) {
+			if found != "" {
+				return "", false
+			}
+			found = op
+		}
+	}
+	return found, found != ""
 }
 
 // answersView is answers.json as the store derives it: every settled question

@@ -346,3 +346,32 @@ func TestEmbeddedCopiesAreIndependent(t *testing.T) {
 		t.Error("the store changed")
 	}
 }
+
+func TestParseQuestionListResolvesAShortenedRecommendation(t *testing.T) {
+	opts := `["Case-sensitive (only the listed strings are bool)","Case-insensitive (any variation of true/false is bool)"]`
+	for name, tc := range map[string]struct{ rec, want string }{
+		"prefix":                 {"Case-sensitive", "Case-sensitive (only the listed strings are bool)"},
+		"padded prefix":          {"  case-sensitive ", "Case-sensitive (only the listed strings are bool)"},
+		"case-insensitive exact": {"CASE-INSENSITIVE (ANY VARIATION OF TRUE/FALSE IS BOOL)", "Case-insensitive (any variation of true/false is bool)"},
+		"exact":                  {"Case-insensitive (any variation of true/false is bool)", "Case-insensitive (any variation of true/false is bool)"},
+	} {
+		text := `[{"id":"q1","question":"Bool match?","options":` + opts + `,"recommended":"` + tc.rec + `"}]`
+		got, err := parseQuestionList(text, qstore{}, qparseOpts{MaxTotal: 30, RequireRecommended: true, RaisedBy: "clarify"})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got[0].Recommended != tc.want {
+			t.Fatalf("%s: stored recommendation %q, want %q", name, got[0].Recommended, tc.want)
+		}
+	}
+}
+
+func TestParseQuestionListRejectsAnAmbiguousOrUnmatchedRecommendation(t *testing.T) {
+	for name, rec := range map[string]string{"ambiguous prefix": "Case", "no match": "Neither"} {
+		text := `[{"id":"q1","question":"Bool match?","options":["Case-sensitive","Case-insensitive"],"recommended":"` + rec + `"}]`
+		_, err := parseQuestionList(text, qstore{}, qparseOpts{MaxTotal: 30, RaisedBy: "clarify"})
+		if err == nil || !strings.Contains(err.Error(), "the recommended answer of question 1 must be one of its options") {
+			t.Fatalf("%s: err = %v", name, err)
+		}
+	}
+}
