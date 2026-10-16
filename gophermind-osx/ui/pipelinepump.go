@@ -59,16 +59,30 @@ func (p *PipelinePump) Run(ctx context.Context, stream *client.EventStream) erro
 // for a frame it could not decode: the line was consumed, and a reconnect must
 // not replay it forever.
 func (p *PipelinePump) apply(ev client.Event) {
+	// Node frames at or below the snapshot's event_seq are already in the nodes
+	// (a reconnect replays from an older position than the refetched snapshot).
+	// Wave, run-status and run-report frames are derived, share the latest
+	// line's id and are absolute sets, so they are always applied.
+	replayed := ev.ID <= p.State.SnapSeq()
 	switch ev.Type {
 	case runview.EventNodeStatus:
+		if replayed {
+			break
+		}
 		if e, err := ev.NodeStatus(); err == nil {
 			p.State.ApplyNodeStatus(e.ID, e.Status, e.Wave, e.Revision)
 		}
 	case runview.EventNodeAttempt:
+		if replayed {
+			break
+		}
 		if e, err := ev.NodeAttempt(); err == nil {
 			p.State.ApplyNodeAttempt(e.ID, e.Attempt)
 		}
 	case runview.EventNodeResult:
+		if replayed {
+			break
+		}
 		if e, err := ev.NodeResult(); err == nil {
 			p.State.ApplyNodeResult(e.ID, e.Result)
 		}

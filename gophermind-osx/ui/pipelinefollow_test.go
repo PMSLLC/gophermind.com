@@ -101,7 +101,8 @@ func TestPipelineFollower_RetriesAfterAnOpenError(t *testing.T) {
 		return c.PipelineEvents(ctx, run, since)
 	}}
 	ctx, cancel := context.WithCancel(context.Background())
-	go f.Run(ctx)
+	runDone := make(chan struct{})
+	go func() { defer close(runDone); f.Run(ctx) }()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		mu.Lock()
@@ -111,11 +112,14 @@ func TestPipelineFollower_RetriesAfterAnOpenError(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
+			cancel()
+			<-runDone
 			t.Fatal("no retry")
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
 	cancel()
+	<-runDone
 }
 
 func TestPipelineFollower_ASchemaMismatchStopsAndSetsTheMessage(t *testing.T) {
@@ -249,7 +253,13 @@ func TestPipelineFollower_StopsOnCancelWithoutLeakingGoroutines(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- f.Run(ctx) }()
+	openDeadline := time.Now().Add(5 * time.Second)
 	for atomic.LoadInt32(&opened) == 0 {
+		if time.Now().After(openDeadline) {
+			cancel()
+			<-done
+			t.Fatal("the follower never opened the stream")
+		}
 		time.Sleep(2 * time.Millisecond)
 	}
 	cancel()
@@ -269,5 +279,67 @@ func TestPipelineFollower_StopsOnCancelWithoutLeakingGoroutines(t *testing.T) {
 			t.Fatalf("goroutines %d, was %d before: the follower leaked", runtime.NumGoroutine(), before)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestPipelineFollower_ARunChangeOnRefetchDropsTheOldStreamAndReconnectsForTheNewRun(t *testing.T) {
+	var mu sync.Mutex
+	var reqs []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		reqs = append(reqs, r.URL.Query().Get("since")+"/"+r.URL.Query().Get("run"))
+		mu.Unlock()
+		w.Header().Set("X-Gophermind-Pipeline-Schema", "1")
+		w.Header().Set("Content-Type", "text/event-stream")
+		if r.URL.Query().Get("run") == "run-a" {
+			io.WriteString(w, "id: 99\nevent: node-status\ndata: {\"id\":\"fn-a\",\"status\":\"done\",\"wave\":0}\n\n")
+			return
+		}
+		w.WriteHeader(200)
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+	c := client.New(client.Config{BaseURL: srv.URL, Token: "t"})
+	state := NewPipelineState()
+	state.SetState(sampleState("run-a", 5))
+	var onOpens int32
+	f := &PipelineFollower{State: state, Wait: func(int) time.Duration { return time.Hour }, Open: openerFor(c), OnOpen: func(context.Context) {
+		if atomic.AddInt32(&onOpens, 1) == 1 {
+			state.SetState(sampleState("run-b", 20))
+		}
+	}}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- f.Run(ctx) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		mu.Lock()
+		got := len(reqs)
+		mu.Unlock()
+		if got >= 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			cancel()
+			<-done
+			t.Fatal("the follower did not reconnect for the new run")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	mu.Lock()
+	defer mu.Unlock()
+	if reqs[0] != "5/run-a" || reqs[1] != "20/run-b" {
+		t.Errorf("requests = %v, want 5/run-a then 20/run-b", reqs)
+	}
+	if state.LastSeq() != 20 {
+		t.Errorf("LastSeq = %d, want 20: the old run's line numbers leaked in", state.LastSeq())
+	}
+	for _, n := range state.Nodes() {
+		if n.ID == "fn-a" && n.Status == "done" {
+			t.Error("the old run's frame was applied to the new run")
+		}
 	}
 }

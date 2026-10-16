@@ -2,11 +2,13 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"gophermind/gophermind-lib/runview"
 	"gophermind/gophermind-osx/client"
 )
 
@@ -80,5 +82,31 @@ func TestPipelinePump_AnUndecodableFrameStillAdvancesTheSeq(t *testing.T) {
 	}
 	if state.LastSeq() != 9 {
 		t.Errorf("LastSeq = %d, want 9: the line was consumed, so a reconnect must not replay it", state.LastSeq())
+	}
+}
+
+func TestPipelinePump_ReplayAtOrBelowTheSnapshotSeqIsNotAppliedTwice(t *testing.T) {
+	att := func(id int, started string) string {
+		return fmt.Sprintf("id: %d\nevent: node-attempt\ndata: {\"id\":\"fn-a\",\"attempt\":{\"model\":\"strong\",\"verdict\":\"pass\",\"started_at\":%q}}\n\n", id, started)
+	}
+	srv := eventsServer(t, att(11, "t11")+att(12, "t12")+att(13, "t13"))
+	c := client.New(client.Config{BaseURL: srv.URL, Token: "t"})
+	state := NewPipelineState()
+	state.SetState(sampleState("run-a", 10))
+	stream, _ := c.PipelineEvents(context.Background(), "run-a", 10)
+	// The OnOpen refetch: the snapshot is at 12 and already holds attempt t12.
+	snap := sampleState("run-a", 12)
+	snap.Nodes[1].AttemptCount = 2
+	snap.Nodes[1].LastAttempt = &runview.Attempt{Model: "strong", Verdict: "pass", StartedAt: "t12"}
+	state.SetState(snap)
+	if err := (&PipelinePump{State: state}).Run(context.Background(), stream); err != nil {
+		t.Fatal(err)
+	}
+	n := state.Nodes()[1]
+	if n.AttemptCount != 3 || n.LastAttempt.StartedAt != "t13" {
+		t.Errorf("attempts %d last %q, want 3 and t13: 11 and 12 skipped, 13 applied", n.AttemptCount, n.LastAttempt.StartedAt)
+	}
+	if state.LastSeq() != 13 {
+		t.Errorf("LastSeq = %d, want 13", state.LastSeq())
 	}
 }

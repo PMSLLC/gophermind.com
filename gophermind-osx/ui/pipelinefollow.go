@@ -84,7 +84,8 @@ func (f *PipelineFollower) Run(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		stream, err := f.Open(ctx, f.State.RunID(), f.State.LastSeq())
+		run := f.State.RunID()
+		stream, err := f.Open(ctx, run, f.State.LastSeq())
 		if err != nil {
 			if f.fatal(err) {
 				return err
@@ -92,6 +93,13 @@ func (f *PipelineFollower) Run(ctx context.Context) error {
 		} else {
 			if f.OnOpen != nil {
 				f.OnOpen(ctx)
+			}
+			if f.State.RunID() != run {
+				// The refetch moved to another run: this stream is the old run's.
+				// Drop it unread and reconnect at once for the new run.
+				stream.Close()
+				n = -1
+				continue
 			}
 			before := f.State.LastSeq()
 			perr := pump.Run(ctx, stream)

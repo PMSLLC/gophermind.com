@@ -19,6 +19,7 @@ type PipelineState struct {
 	nodes       []runview.NodeSummary
 	generatedAt string
 	lastSeq     int64
+	snapSeq     int64
 	wave        int
 	waveState   string
 	report      *runview.ReportBody
@@ -61,11 +62,20 @@ func (p *PipelineState) SetState(b runview.StateBody) {
 	}
 	p.nodes = append([]runview.NodeSummary(nil), b.Nodes...)
 	p.generatedAt = b.GeneratedAt
+	p.snapSeq = b.EventSeq
 	if !sameRun || b.EventSeq > p.lastSeq {
 		p.lastSeq = b.EventSeq
 	}
 	p.mu.Unlock()
 	p.notify()
+}
+
+// SnapSeq is the event_seq of the last SetState snapshot. Node events at or
+// below it are already reflected in the nodes, so a replay must not apply them.
+func (p *PipelineState) SnapSeq() int64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.snapSeq
 }
 
 // Run returns a copy of the current run summary, or nil.
@@ -209,7 +219,9 @@ func (p *PipelineState) SetReport(r runview.ReportBody) {
 	p.notify()
 }
 
-// Report returns the current report, or nil if none has arrived.
+// Report returns the current report, or nil if none has arrived. The returned
+// value is read-only: it is shared, and SetReport replaces it rather than
+// mutating it.
 func (p *PipelineState) Report() *runview.ReportBody {
 	p.mu.Lock()
 	defer p.mu.Unlock()
