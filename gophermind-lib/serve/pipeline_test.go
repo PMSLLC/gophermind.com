@@ -294,6 +294,50 @@ const scenarios = {
     assert(env.get('nodes[0].attempt_count') === 7, 'nodes not overwritten by the stale response');
     await p2;
   },
+  async framesDuringStateLoadAreQueued(){
+    const env = makeEnv();
+    env.get('runId = "r1"');
+    const p = env.get('loadState()');
+    // frame 9 is already in the snapshot below (attempt_count 1); frame 11 is not.
+    env.get('handleFrame')('node-attempt', '9', JSON.stringify({ id: 'n1', attempt: { started_at: 'a9' } }));
+    env.get('handleFrame')('node-attempt', '11', JSON.stringify({ id: 'n1', attempt: { started_at: 'a11' } }));
+    assert(env.get('queuedFrames.length') === 2, 'frames queued while the state request is in flight');
+    assert(env.get('lastSeq') === 11, 'queued frames still advance lastSeq');
+    env.take('/pipeline/state').resolve(state(10, 'building', 1));
+    await flush();
+    env.take('/pipeline/node').resolve(nodeBody);
+    await p;
+    assert(env.get('stateSeq') === 10, 'stateSeq from the snapshot');
+    assert(env.get('nodes[0].attempt_count') === 2, 'frame 11 applied once, frame 9 not twice; got ' + env.get('nodes[0].attempt_count'));
+    assert(env.get('nodes[0].last_attempt.started_at') === 'a11', 'frame 11 is the last attempt');
+    assert(env.get('queuedFrames.length') === 0 && env.get('stateLoading') === false, 'queue cleared');
+    env.get('handleFrame')('node-status', '12', JSON.stringify({ id: 'n1', status: 'verified', wave: 1, revision: 0 }));
+    assert(env.get('nodes[0].status') === 'verified', 'frames after the load apply directly');
+  },
+  async staleStateKeepsQueueFailedStateFlushesIt(){
+    const env = makeEnv();
+    env.get('runId = "r1"');
+    const p0 = env.get('loadState()');
+    env.take('/pipeline/state').resolve(state(5));
+    await flush();
+    env.take('/pipeline/node').resolve(nodeBody);
+    await p0;
+    const p1 = env.get('loadState()');
+    const p2 = env.get('loadState()');
+    const first = env.take('/pipeline/state'), second = env.take('/pipeline/state');
+    env.get('handleFrame')('node-attempt', '11', JSON.stringify({ id: 'n1', attempt: { started_at: 'a11' } }));
+    first.resolve(state(20, 'building', 5));
+    assert((await p1) === null, 'stale response reports null');
+    assert(env.get('queuedFrames.length') === 1, 'a stale response leaves the queue to the newer request');
+    assert(env.get('nodes[0].attempt_count') === 0, 'a stale response applies nothing');
+    second.reject(new Error('down'));
+    let failed = false;
+    try{ await p2; } catch(e){ failed = true; }
+    assert(failed, 'the newest request failed');
+    assert(env.get('queuedFrames.length') === 0 && env.get('stateLoading') === false, 'queue flushed after failure');
+    assert(env.get('stateSeq') === 5, 'stateSeq unchanged by the failure');
+    assert(env.get('nodes[0].attempt_count') === 1, 'the queued frame was applied to the old state');
+  },
   async runSwitchAbortsOldStream(){
     const env = makeEnv();
     env.els.tokenInput = mkEl('input'); env.els.tokenInput.value = 'tok';
@@ -351,7 +395,7 @@ func TestPipelineDashboardBehavior(t *testing.T) {
 	if err := os.WriteFile(harness, []byte(pipelineHarness), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"skipsFramesAtOrBelowStateSeq", "staleLoadStateIsDiscarded", "runSwitchAbortsOldStream"} {
+	for _, name := range []string{"skipsFramesAtOrBelowStateSeq", "staleLoadStateIsDiscarded", "framesDuringStateLoadAreQueued", "staleStateKeepsQueueFailedStateFlushesIt", "runSwitchAbortsOldStream"} {
 		t.Run(name, func(t *testing.T) {
 			out, err := exec.Command(node, harness, script, name).CombinedOutput()
 			if err != nil || !strings.Contains(string(out), "ok "+name) {

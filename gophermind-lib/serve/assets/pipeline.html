@@ -419,6 +419,8 @@ let lastLogNode = '';
 let eventsAbort = null;
 let eventsGen = 0;
 let finalReport = null; // the report of a finished run, kept from resync
+let stateLoading = false; // a state request is in flight: node frames wait in queuedFrames
+let queuedFrames = [];    // { event, num, data } node frames received during a state load
 
 const $ = id => document.getElementById(id);
 const wavesEl = $('waves'), logEl = $('log'), titleEl = $('detailTitle'), tagEl = $('detailTag');
@@ -609,14 +611,27 @@ async function loadRuns(){
 
 // loadState returns the body it applied, or null when a newer request or a run
 // switch made its response stale (a stale response must not overwrite newer data).
+// Node frames that arrive while the request is in flight are queued, not
+// applied to the old nodes (the snapshot would replace them and the stream
+// never resends them); the newest response replays the queued frames newer
+// than its event_seq. A stale response leaves the queue to the newer request,
+// and a failed newest request applies the queue to the old state.
 async function loadState(){
   const req = ++stateReq;
   const run = runId;
-  const body = await getJSON('/pipeline/state', { run: run });
+  stateLoading = true;
+  let body;
+  try{
+    body = await getJSON('/pipeline/state', { run: run });
+  } catch(err){
+    if(req === stateReq && run === runId && flushQueuedFrames()) renderTree();
+    throw err;
+  }
   if(req !== stateReq || run !== runId) return null;
   nodes = body.nodes || [];
   stateSeq = Number.isFinite(body.event_seq) ? body.event_seq : 0;
   lastSeq = Math.max(lastSeq, stateSeq);
+  flushQueuedFrames();
   updatedAtEl.textContent = new Date(body.generated_at).toLocaleTimeString();
   renderHeader(body.run);
   if(!current){
@@ -733,23 +748,46 @@ async function showDecisions(){
   reportOverlay.hidden = false;
 }
 
-function applyEvent(event, data){
+// applyNodeFrame changes the nodes array for one node frame and renders
+// nothing; the callers render.
+function applyNodeFrame(event, data){
+  const n = findNode(data.id);
+  if(!n) return;
   if(event === 'node-status'){
-    const n = findNode(data.id);
-    if(n){ n.status = data.status; n.wave = data.wave; n.revision = data.revision; }
-    renderTree();
-    if(current === data.id) loadNode(data.id);
+    n.status = data.status; n.wave = data.wave; n.revision = data.revision;
   } else if(event === 'node-attempt'){
-    const n = findNode(data.id);
-    if(n && !(n.last_attempt && n.last_attempt.started_at === data.attempt.started_at)){
+    if(!(n.last_attempt && n.last_attempt.started_at === data.attempt.started_at)){
       n.last_attempt = data.attempt;
       n.attempt_count = (n.attempt_count || 0) + 1;
     }
+  } else if(event === 'node-result'){
+    n.result = data.result;
+  }
+}
+
+// flushQueuedFrames ends a state load: it applies the node frames that arrived
+// while the request was in flight and are newer than stateSeq, in order, and
+// empties the queue. It returns whether any frame was applied.
+function flushQueuedFrames(){
+  const q = queuedFrames;
+  queuedFrames = [];
+  stateLoading = false;
+  let applied = false;
+  q.forEach(f => {
+    if(f.num <= stateSeq) return;
+    applyNodeFrame(f.event, f.data);
+    applied = true;
+  });
+  return applied;
+}
+
+function applyEvent(event, data){
+  if(event === 'node-status' || event === 'node-attempt'){
+    applyNodeFrame(event, data);
     renderTree();
     if(current === data.id) loadNode(data.id);
   } else if(event === 'node-result'){
-    const n = findNode(data.id);
-    if(n) n.result = data.result;
+    applyNodeFrame(event, data);
   } else if(event === 'wave-changed'){
     hintEl.textContent = 'wave ' + data.wave + ' ' + data.state;
   } else if(event === 'run-status'){
@@ -778,7 +816,12 @@ function handleFrame(event, id, data){
   if(Number.isFinite(num)) lastSeq = Math.max(lastSeq, num);
   let parsed;
   try{ parsed = JSON.parse(data); } catch(e){ return; }
-  if(parsed && typeof parsed === 'object') applyEvent(event, parsed);
+  if(!parsed || typeof parsed !== 'object') return;
+  if(stateLoading && NODE_EVENTS.indexOf(event) !== -1){
+    queuedFrames.push({ event: event, num: num, data: parsed });
+    return;
+  }
+  applyEvent(event, parsed);
 }
 
 // parseSSEStream reads a fetch Response body as an SSE stream and calls
@@ -884,6 +927,8 @@ function switchRun(id){
   lastSeq = 0;
   stateSeq = 0;
   stateReq++;
+  stateLoading = false;
+  queuedFrames = [];
   nodeReq++;
   artReq++;
   openArtifact = null;
