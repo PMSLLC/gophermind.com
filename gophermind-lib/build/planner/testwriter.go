@@ -299,16 +299,26 @@ var stdTopLevel = func() map[string]bool {
 	return m
 }()
 
+// PackageClause is the Go package clause of a contract package. The contract
+// gives a directory path ("internal/stats"), so the clause is its last
+// element; the module root and a directory under cmd/ hold package main. A
+// plain name ("greet") is its own clause.
+func PackageClause(pkg string) string {
+	if first, _, _ := strings.Cut(pkg, "/"); path.Clean(pkg) == "." || first == "cmd" {
+		return "main"
+	}
+	return path.Base(pkg)
+}
+
 // packageClauseNames are the package clauses a test file for contract package
-// pkg may carry. pkg is a directory path ("internal/stats"), so the clause is
-// its last element, plain or with the _test suffix. The module root and a
-// directory under cmd/ may hold package main.
+// pkg may carry, plain or with the _test suffix. A directory under cmd/ may
+// also keep its last element as the clause.
 func packageClauseNames(pkg string) []string {
 	var names []string
 	if base := path.Base(pkg); base != "." && base != "/" {
 		names = append(names, base, base+"_test")
 	}
-	if first, _, _ := strings.Cut(pkg, "/"); path.Clean(pkg) == "." || first == "cmd" {
+	if c := PackageClause(pkg); c == "main" && path.Base(pkg) != "main" {
 		names = append(names, "main", "main_test")
 	}
 	return names

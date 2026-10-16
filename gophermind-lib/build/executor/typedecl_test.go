@@ -242,3 +242,32 @@ func TestCheckAssembledRefusals(t *testing.T) {
 // The resolver treats a package qualifier as the standard package it names even
 // when the declaration shadows it with a local of the same name; such a file
 // fails to compile in the build step, which is the only consequence.
+
+func TestContractPackageDirectoryGivesClause(t *testing.T) {
+	repo := t.TempDir()
+	c := &contract.Contracts{Module: "example.com/m",
+		Types: []contract.Type{
+			{ID: "t-user", Package: "internal/model", File: "internal/model/user.go", Decl: "type User struct{}"},
+			{ID: "t-top", Package: "greet", File: "greet/e.go", Decl: "type E int"},
+			{ID: "t-cmd", Package: "cmd/csvstat", File: "cmd/csvstat/t.go", Decl: "type T int"},
+		},
+		Functions: []contract.Function{{ID: "fn-x", Package: "internal/svc", File: "internal/svc/x.go", Signature: "func Load() (*model.User, error)"}}}
+	pol := packer.ImportPolicy{Module: "example.com/m"}
+	if got := packageImports(c); got["model"] != "example.com/m/internal/model" || got["svc"] != "example.com/m/internal/svc" || got["main"] != "example.com/m/cmd/csvstat" || got["greet"] != "example.com/m/greet" {
+		t.Fatalf("packageImports = %v", got)
+	}
+	if _, err := WriteTypes(repo, c, pol); err != nil {
+		t.Fatal(err)
+	}
+	for file, want := range map[string]string{"internal/model/user.go": "package model\n", "greet/e.go": "package greet\n", "cmd/csvstat/t.go": "package main\n"} {
+		raw, _ := os.ReadFile(filepath.Join(repo, file))
+		if !strings.HasPrefix(string(raw), want) {
+			t.Errorf("%s:\n%s", file, raw)
+		}
+	}
+	l := &Leaf{ID: "fn-x", Package: "svc", File: "internal/svc/x.go", Signature: c.Functions[0].Signature, Dir: "internal/svc"}
+	src, err := stubFor(c, pol, l)
+	if err != nil || !strings.HasPrefix(string(src), "package svc\n") || !strings.Contains(string(src), `"example.com/m/internal/model"`) {
+		t.Fatalf("stub = %s, %v", src, err)
+	}
+}

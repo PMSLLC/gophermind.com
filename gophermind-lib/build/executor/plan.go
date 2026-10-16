@@ -308,7 +308,7 @@ func (p *Plan) leaf(n tree.Node, rootNet []NetHost, fns map[string]contract.Func
 	}
 	l := &Leaf{
 		ID: n.ID, Title: d.Title, Class: p.Classes[n.ID], Tier: d.ModelTier,
-		Package: d.Contract.Package, File: d.Contract.File, Signature: d.Contract.Signature,
+		Package: planner.PackageClause(d.Contract.Package), File: d.Contract.File, Signature: d.Contract.Signature,
 		FuncID: funcID, DependsOn: append([]string{}, n.DependsOn...),
 		Dir:      path.Dir(d.Contract.File),
 		TestFile: lt.TestFile, TestFunc: lt.TestFunc, TestSHA256: lt.SHA256,

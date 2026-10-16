@@ -224,3 +224,15 @@ func TestCheckTestSourcePackageClause(t *testing.T) {
 		}
 	}
 }
+
+func TestPackageClause(t *testing.T) {
+	for pkg, want := range map[string]string{
+		"internal/stats": "stats", "internal/render": "render", "greet": "greet",
+		"cmd/csvstat": "main", "cmd": "main", ".": "main", "": "main", "./": "main",
+		"cmd/csvstat/sub": "main", "pkg/cmdx": "cmdx",
+	} {
+		if got := PackageClause(pkg); got != want {
+			t.Errorf("PackageClause(%q) = %q, want %q", pkg, got, want)
+		}
+	}
+}

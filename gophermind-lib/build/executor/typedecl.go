@@ -17,6 +17,7 @@ import (
 	"gophermind/gophermind-lib/build/contract"
 	"gophermind/gophermind-lib/build/packer"
 	"gophermind/gophermind-lib/build/pathsafe"
+	"gophermind/gophermind-lib/build/planner"
 )
 
 // stdQualifiers maps the package qualifier a signature or type declaration
@@ -39,8 +40,9 @@ var stdQualifiers = map[string]string{
 
 var versionElemRE = regexp.MustCompile(`^v[0-9]+$`)
 
-// packageImports maps each contract package name to its import path, the
-// module path plus the directory of its file. The first declaration in
+// packageImports maps each contract package clause (the last element of a
+// directory-valued package) to its import path, the module path plus the
+// directory of its file. The first declaration in
 // contract order wins when two directories share a package name.
 func packageImports(c *contract.Contracts) map[string]string {
 	out := map[string]string{}
@@ -48,6 +50,7 @@ func packageImports(c *contract.Contracts) map[string]string {
 		if pkg == "" {
 			return
 		}
+		pkg = planner.PackageClause(pkg)
 		if _, ok := out[pkg]; ok {
 			return
 		}
@@ -321,7 +324,8 @@ func WriteTypes(repo string, c *contract.Contracts, pol packer.ImportPolicy) ([]
 		if _, err := pathsafe.ResolveSource(repo, t.File); err != nil {
 			return nil, fmt.Errorf("type %s: %w", t.ID, err)
 		}
-		if !validPackageName(t.Package) {
+		pkg := planner.PackageClause(t.Package)
+		if !validPackageName(pkg) {
 			return nil, fmt.Errorf("type %s: the package name is not a valid identifier", t.ID)
 		}
 		imps, err := deriveImports(t.ID, t.Decl, siblings, pol)
@@ -333,11 +337,11 @@ func WriteTypes(repo string, c *contract.Contracts, pol packer.ImportPolicy) ([]
 		}
 		tf := files[t.File]
 		if tf == nil {
-			tf = &typeFile{pkg: t.Package, first: t.ID, imports: map[string]bool{}}
+			tf = &typeFile{pkg: pkg, first: t.ID, imports: map[string]bool{}}
 			files[t.File] = tf
 			order = append(order, t.File)
 		}
-		if tf.pkg != t.Package {
+		if tf.pkg != pkg {
 			return nil, fmt.Errorf("type %s: its package differs from the other types of its file", t.ID)
 		}
 		tf.decls = append(tf.decls, t.Decl)
