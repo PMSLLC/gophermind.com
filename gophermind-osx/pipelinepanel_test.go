@@ -231,3 +231,75 @@ func TestPipelinePanel_ReportClearsWhenTheRunChanges(t *testing.T) {
 		}
 	})
 }
+
+// After stop (a disconnect) nothing used to start the follower again, so a
+// later connect left the panel dead. restart refetches the state and starts a
+// new follower.
+func TestPipelinePanel_RestartAfterStopRefetchesAndFollows(t *testing.T) {
+	runOnUIThread(t, func() {
+		app, err := NewApp(DefaultTitle, DefaultWidth, DefaultHeight)
+		if err != nil {
+			t.Fatalf("NewApp: %v", err)
+		}
+		defer app.Close()
+
+		state := appui.NewPipelineState()
+		pp := newTestPipelinePanel(t, app, state)
+		fetched := make(chan struct{}, 8)
+		pp.fetchPipeline = func(context.Context) (runview.StateBody, error) {
+			select {
+			case fetched <- struct{}{}:
+			default:
+			}
+			return runview.StateBody{Run: &runview.RunSummary{RunID: "r1", Status: "building"}}, nil
+		}
+		ctxs := make(chan context.Context, 8)
+		pp.openEvents = func(ctx context.Context, run string, since int64) (*client.EventStream, error) {
+			select {
+			case ctxs <- ctx:
+			default:
+			}
+			return nil, errors.New("down")
+		}
+		wait := func(what string) {
+			select {
+			case <-fetched:
+			case <-time.After(5 * time.Second):
+				t.Fatalf("%s: state never fetched", what)
+			}
+		}
+		follower := func(what string) context.Context {
+			select {
+			case c := <-ctxs:
+				return c
+			case <-time.After(5 * time.Second):
+				t.Fatalf("%s: follower never opened the stream", what)
+			}
+			return nil
+		}
+
+		pp.seed()
+		wait("seed")
+		first := follower("seed")
+		pp.stop()
+		select {
+		case <-first.Done():
+		case <-time.After(5 * time.Second):
+			t.Fatal("stop did not cancel the follower")
+		}
+
+		pp.restart()
+		wait("restart")
+		second := follower("restart")
+		if second.Err() != nil {
+			t.Error("the restarted follower is already cancelled")
+		}
+		pp.followMu.Lock()
+		running := pp.followCancel != nil
+		pp.followMu.Unlock()
+		if !running {
+			t.Error("no follower registered after restart")
+		}
+		pp.stop()
+	})
+}

@@ -214,11 +214,23 @@ func main() {
 				ServerBinaryPath: binPath,
 			}
 		}
-		return connMgr.Connect(ctx, cfg)
+		if err := connMgr.Connect(ctx, cfg); err != nil {
+			return err
+		}
+		// A backend is live now, so the pipeline panel can follow it. Without
+		// this, a disconnect (which stops the follower) or a launch with no
+		// reachable backend left the panel empty until relaunch. restart does
+		// not block; queueMain only puts it on the UI thread.
+		queueMain(chat.pipelineUI.restart)
+		return nil
 	}
 	chat.settingsUI.disconnectFunc = func(name string) {
 		chat.pipelineUI.stop()
 		connMgr.Disconnect(name)
+		// Another backend may still be connected: follow that one instead.
+		if _, err := liveClient(connMgr); err == nil {
+			queueMain(chat.pipelineUI.restart)
+		}
 	}
 
 	// Connect on startup. If the local binary isn't found, don't show an

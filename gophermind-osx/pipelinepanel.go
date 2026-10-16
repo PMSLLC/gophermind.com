@@ -129,6 +129,7 @@ type pipelinePanel struct {
 
 	followMu     sync.Mutex
 	followCancel context.CancelFunc
+	followGen    uint64 // bumped by stop: a seed begun before it must not start a follower after it
 }
 
 var (
@@ -225,12 +226,30 @@ func (pp *pipelinePanel) seed() {
 	if fetch == nil {
 		return
 	}
+	gen := pp.generation()
 	go func() {
 		if !pp.reload(context.Background()) {
 			return
 		}
-		pp.follow()
+		pp.followAt(gen)
 	}()
+}
+
+// restart replaces the follower after the connection changed: it stops the
+// old one and seeds again (state, report, then a new follower). Disconnect
+// stops the follower and nothing else restarts it, and a launch with no
+// reachable backend never starts one, so main.go calls this after a connect
+// succeeds. It does not block: the fetches run on a goroutine.
+func (pp *pipelinePanel) restart() {
+	pp.stop()
+	pp.seed()
+}
+
+// generation returns the current follower generation (see followGen).
+func (pp *pipelinePanel) generation() uint64 {
+	pp.followMu.Lock()
+	defer pp.followMu.Unlock()
+	return pp.followGen
 }
 
 // reload fetches the newest run's state and, best effort, its report into
@@ -266,6 +285,7 @@ func (pp *pipelinePanel) reload(ctx context.Context) bool {
 func (pp *pipelinePanel) stop() {
 	pp.followMu.Lock()
 	defer pp.followMu.Unlock()
+	pp.followGen++
 	if pp.followCancel != nil {
 		pp.followCancel()
 		pp.followCancel = nil
@@ -277,9 +297,15 @@ func (pp *pipelinePanel) stop() {
 // last event id after a drop and refetches the state on every (re)connect,
 // because wave, run-status and report events are never replayed.
 func (pp *pipelinePanel) follow() {
+	pp.followAt(pp.generation())
+}
+
+// followAt is follow for a seed that began at generation gen: when stop ran
+// since then, the connection the seed fetched from is gone and it does nothing.
+func (pp *pipelinePanel) followAt(gen uint64) {
 	pp.followMu.Lock()
 	defer pp.followMu.Unlock()
-	if pp.openEvents == nil || pp.state.RunID() == "" {
+	if gen != pp.followGen || pp.openEvents == nil || pp.state.RunID() == "" {
 		return
 	}
 	if pp.followCancel != nil {
