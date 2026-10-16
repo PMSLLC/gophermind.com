@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -12,6 +13,16 @@ import (
 	"gophermind/gophermind-lib/runview"
 	"gophermind/gophermind-lib/serve"
 )
+
+// maxSSELine is the longest single SSE line Next accepts. The run-report event
+// carries the whole final report as one compacted data: line, which can pass
+// the scanner's 64 KB default.
+const maxSSELine = 8 << 20
+
+// ErrSSELineTooLong is returned by Next when one line of the stream is longer
+// than 8 MiB. The stream cannot be read past it, so a caller should close it
+// rather than call Next again.
+var ErrSSELineTooLong = errors.New("client: an event stream line is over 8 MiB")
 
 // Event is one parsed SSE frame: the "event:" line's value and the
 // "data:" line(s)' payload (multiple data: lines are joined with "\n",
@@ -180,6 +191,9 @@ func (s *EventStream) Next() (Event, error) {
 		// treated as an error, per the SSE spec's forward-compatibility rule.
 	}
 	if err := s.scanner.Err(); err != nil {
+		if errors.Is(err, bufio.ErrTooLong) {
+			return Event{}, ErrSSELineTooLong
+		}
 		return Event{}, err
 	}
 	// A trailing frame with no terminating blank line (the connection just
@@ -226,5 +240,7 @@ func (c *Client) openSSE(ctx context.Context, method, path string, body io.Reade
 		resp.Body.Close()
 		return nil, &StatusError{StatusCode: resp.StatusCode, Body: string(b)}
 	}
-	return &EventStream{body: resp.Body, scanner: bufio.NewScanner(resp.Body), header: resp.Header}, nil
+	sc := bufio.NewScanner(resp.Body)
+	sc.Buffer(make([]byte, 64<<10), maxSSELine)
+	return &EventStream{body: resp.Body, scanner: sc, header: resp.Header}, nil
 }

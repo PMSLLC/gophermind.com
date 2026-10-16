@@ -22,6 +22,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -150,6 +151,14 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) ([]by
 	return b, err
 }
 
+// maxResponseBytes is the largest response body the client reads. The server
+// already cuts an artifact at its own limit and appends a marker, so a body
+// over this one is an error for every endpoint, never a silent truncation.
+const maxResponseBytes = 4 << 20
+
+// ErrResponseTooLarge is returned when a response body is over 4 MiB.
+var ErrResponseTooLarge = errors.New("client: response too large")
+
 func (c *Client) doH(ctx context.Context, method, path string, body []byte) ([]byte, http.Header, error) {
 	var lastErr error
 	for attempt := 1; attempt <= c.retry.MaxAttempts; attempt++ {
@@ -172,6 +181,9 @@ func (c *Client) doH(ctx context.Context, method, path string, body []byte) ([]b
 			lastErr = &StatusError{StatusCode: status, Body: string(respBody)}
 		} else {
 			lastErr = err
+			if errors.Is(err, ErrResponseTooLarge) {
+				return nil, nil, err // a retry would get the same body
+			}
 			if ctx.Err() != nil {
 				return nil, nil, lastErr // context cancelled/deadline: don't keep retrying
 			}
@@ -202,9 +214,12 @@ func (c *Client) attempt(ctx context.Context, method, path string, body []byte) 
 		return nil, 0, nil, err
 	}
 	defer resp.Body.Close()
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return nil, 0, nil, err
+	}
+	if len(respBody) > maxResponseBytes {
+		return nil, 0, nil, ErrResponseTooLarge
 	}
 	return respBody, resp.StatusCode, resp.Header, nil
 }
