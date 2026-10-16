@@ -508,3 +508,7 @@ func wireAttempt(a blackboard.Attempt) Attempt {
 func wireResult(r *blackboard.Result) NodeResult {
 	return NodeResult{Commit: r.Commit, FilesChanged: nonNil(r.FilesChanged)}
 }
+
+// NewestRunID is the most recently updated run under root, or "" when there
+// is none. It builds no summary, so the server can pick the default run cheaply.
+func NewestRunID(root string) string { return newestRunID(root) }

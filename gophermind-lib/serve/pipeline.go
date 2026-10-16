@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"sync"
-	"time"
 
 	"gophermind/gophermind-lib/phaseflow"
 )
@@ -57,14 +56,14 @@ func pipelineDashboardHandler() http.HandlerFunc {
 // whatever is driving a run (see FallbackRunner.OnAttempt in fallback.go,
 // which piece 3 added for exactly this purpose).
 
-// PipelineDeps configures the pipeline routes. Root is the project root
-// whose .planning/assignments.json backs GET /pipeline/state and GET
-// /pipeline/report. Hub, when nil, is replaced with a fresh empty
-// PipelineHub, so GET /pipeline/events always serves a valid stream even
-// when nothing is currently publishing to it.
+// PipelineDeps configures the pipeline routes. Root is the repo root whose
+// .gophermind/<run>/ folders the routes read. Hub still feeds
+// GET /pipeline/events until the stream is rewritten to follow the run folder
+// itself. MaxStreams caps concurrent event streams; zero means 16.
 type PipelineDeps struct {
-	Root string
-	Hub  *PipelineHub
+	Root       string
+	Hub        *PipelineHub
+	MaxStreams int
 }
 
 // pipelineEvent is one frame queued to a PipelineHub subscriber: an SSE
@@ -162,59 +161,6 @@ func (h *PipelineHub) WaveChanged(wave int, state string) {
 func (h *PipelineHub) RunReport(r phaseflow.RunReport) {
 	b, _ := json.Marshal(r)
 	h.publish("run-report", string(b))
-}
-
-// pipelineStateResponse is the JSON body of GET /pipeline/state.
-type pipelineStateResponse struct {
-	Tasks       []phaseflow.Task `json:"tasks"`
-	GeneratedAt time.Time        `json:"generated_at"`
-}
-
-// pipelineStateHandler handles GET /pipeline/state: every task in root's
-// assignments.json, with its wave, status and attempt history, read fresh
-// on every request. A project with no plan yet (no assignments.json) is not
-// an error - it returns an empty task list, matching LoadAssignments' own
-// "not found" contract.
-func pipelineStateHandler(root string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "use GET", http.StatusMethodNotAllowed)
-			return
-		}
-		a, _, err := phaseflow.LoadAssignments(root)
-		if err != nil {
-			http.Error(w, "load assignments", http.StatusInternalServerError)
-			return
-		}
-		tasks := a.Tasks
-		if tasks == nil {
-			tasks = []phaseflow.Task{}
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(pipelineStateResponse{Tasks: tasks, GeneratedAt: time.Now()})
-	}
-}
-
-// pipelineReportHandler handles GET /pipeline/report: the run report
-// aggregated from root's current assignments.json via
-// phaseflow.BuildRunReport. The report is a pure derived view over
-// Attempts, so it is well defined at any point in a run; callers that want
-// the final report simply call it after the run ends.
-func pipelineReportHandler(root string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "use GET", http.StatusMethodNotAllowed)
-			return
-		}
-		a, _, err := phaseflow.LoadAssignments(root)
-		if err != nil {
-			http.Error(w, "load assignments", http.StatusInternalServerError)
-			return
-		}
-		report := phaseflow.BuildRunReport(a.Tasks, time.Now())
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(report)
-	}
 }
 
 // pipelineEventsHandler handles GET /pipeline/events: an SSE stream of
