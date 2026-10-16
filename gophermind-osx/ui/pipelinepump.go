@@ -5,27 +5,24 @@ import (
 	"errors"
 	"io"
 
-	"gophermind/gophermind-lib/phaseflow"
+	"gophermind/gophermind-lib/runview"
 	"gophermind/gophermind-osx/client"
 )
 
 // PipelinePump reads a live client.EventStream from client.Client.
 // PipelineEvents and applies each frame to a PipelineState -- the pipeline
-// counterpart to StreamPump (stream.go), same shape: Run blocks and is
-// meant to be called in its own goroutine, and always closes stream
-// before returning. Unlike a chat/run stream, gophermind-server's pipeline
-// events stream has no "done" event and no natural end while the server is
-// up; Run still returns nil on a clean EOF (the connection closing) for
-// symmetry with StreamPump, and the caller (the cgo widget layer) decides
-// whether to reconnect.
+// counterpart to StreamPump (stream.go), same shape: Run blocks and is meant
+// to be called in its own goroutine, and always closes stream before
+// returning. The pipeline stream has no "done" event and no natural end while
+// the server is up; Run returns nil on a clean EOF (the connection closing)
+// and the caller (PipelineFollower) reconnects from State.LastSeq().
 type PipelinePump struct {
 	State *PipelineState
 }
 
 // Run reads events from stream until it ends (io.EOF) or ctx is done,
-// applying each to State. See StreamPump.Run's doc comment for why each
-// Next() call runs in its own goroutine raced against ctx.Done() -- the
-// same blocked-I/O cancellation problem applies here.
+// applying each to State. See StreamPump.Run's doc comment for why each Next()
+// call runs in its own goroutine raced against ctx.Done().
 func (p *PipelinePump) Run(ctx context.Context, stream *client.EventStream) error {
 	defer stream.Close()
 
@@ -58,32 +55,35 @@ func (p *PipelinePump) Run(ctx context.Context, stream *client.EventStream) erro
 	}
 }
 
+// apply decodes one frame into State and then advances the stream position, even
+// for a frame it could not decode: the line was consumed, and a reconnect must
+// not replay it forever.
 func (p *PipelinePump) apply(ev client.Event) {
 	switch ev.Type {
-	case "task-status":
-		if e, err := ev.TaskStatus(); err == nil {
-			p.State.ApplyTaskStatus(e.ID, e.Status, e.Wave)
+	case runview.EventNodeStatus:
+		if e, err := ev.NodeStatus(); err == nil {
+			p.State.ApplyNodeStatus(e.ID, e.Status, e.Wave, e.Revision)
 		}
-	case "task-attempt":
-		if e, err := ev.TaskAttempt(); err == nil {
-			// StartedAt isn't part of TaskAttemptEvent's wire shape (see
-			// gophermind-lib/serve/events.go); zero value is fine here,
-			// the attempt history's own Duration/Verdict/Reason are what
-			// 04-06's acceptance criteria actually display.
-			p.State.ApplyTaskAttempt(e.TaskID, phaseflow.Attempt{
-				Model:    e.Model,
-				Duration: e.Duration,
-				Verdict:  e.Verdict,
-				Reason:   e.Reason,
-			})
+	case runview.EventNodeAttempt:
+		if e, err := ev.NodeAttempt(); err == nil {
+			p.State.ApplyNodeAttempt(e.ID, e.Attempt)
 		}
-	case "wave-changed":
+	case runview.EventNodeResult:
+		if e, err := ev.NodeResult(); err == nil {
+			p.State.ApplyNodeResult(e.ID, e.Result)
+		}
+	case runview.EventWaveChanged:
 		if e, err := ev.WaveChanged(); err == nil {
 			p.State.ApplyWaveChanged(e.Wave, e.State)
 		}
-	case "run-report":
+	case runview.EventRunStatus:
+		if e, err := ev.RunStatus(); err == nil {
+			p.State.ApplyRunStatus(e.Status, e.StopReason)
+		}
+	case runview.EventRunReport:
 		if r, err := ev.RunReport(); err == nil {
 			p.State.SetReport(r)
 		}
 	}
+	p.State.SetLastSeq(ev.ID)
 }

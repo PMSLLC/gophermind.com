@@ -1,116 +1,99 @@
 package ui
 
 import (
+	"sync/atomic"
 	"testing"
-	"time"
 
-	"gophermind/gophermind-lib/phaseflow"
+	"gophermind/gophermind-lib/runview"
 )
 
-func TestPipelineState_SetTasksStoresSnapshot(t *testing.T) {
-	p := NewPipelineState()
-	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	tasks := []phaseflow.Task{{ID: "01-01", Status: phaseflow.StatusDone}}
-
-	p.SetTasks(tasks, now)
-
-	got := p.Tasks()
-	if len(got) != 1 || got[0].ID != "01-01" {
-		t.Errorf("Tasks() = %+v", got)
-	}
-	if !p.GeneratedAt().Equal(now) {
-		t.Errorf("GeneratedAt() = %v, want %v", p.GeneratedAt(), now)
+func sampleState(run string, seq int64) runview.StateBody {
+	return runview.StateBody{
+		SchemaVersion: 1, GeneratedAt: "2026-10-08T13:00:00Z", EventSeq: seq,
+		Run: &runview.RunSummary{RunID: run, Status: "building"},
+		Nodes: []runview.NodeSummary{
+			{ID: "greeting", Kind: "component", Title: "Greeting", Status: "pending"},
+			{ID: "fn-a", Kind: "function", Parent: "greeting", Status: "pending", Wave: 0},
+			{ID: "fn-b", Kind: "function", Parent: "greeting", Status: "in_progress", Wave: 1},
+		},
 	}
 }
 
-func TestPipelineState_ApplyTaskStatusUpdatesExistingTask(t *testing.T) {
+func TestPipelineState_SetStateStoresRunNodesAndSeq(t *testing.T) {
 	p := NewPipelineState()
-	p.SetTasks([]phaseflow.Task{{ID: "01-01", Status: phaseflow.StatusPending, Wave: 1}}, time.Time{})
-
-	p.ApplyTaskStatus("01-01", phaseflow.StatusRunning, 1)
-
-	got := p.Tasks()
-	if got[0].Status != phaseflow.StatusRunning {
-		t.Errorf("Status = %q, want %q", got[0].Status, phaseflow.StatusRunning)
+	var changes int32
+	p.OnChange(func() { atomic.AddInt32(&changes, 1) })
+	p.SetState(sampleState("gm-2026-10-08-001", 12))
+	if p.RunID() != "gm-2026-10-08-001" || len(p.Nodes()) != 3 || p.LastSeq() != 12 || p.GeneratedAt() == "" {
+		t.Errorf("state = %q %d nodes seq %d", p.RunID(), len(p.Nodes()), p.LastSeq())
+	}
+	if atomic.LoadInt32(&changes) != 1 {
+		t.Errorf("OnChange fired %d times, want 1", changes)
+	}
+	// The returned slices are copies.
+	p.Nodes()[0].Status = "x"
+	if p.Nodes()[0].Status == "x" {
+		t.Error("Nodes() must return a copy")
 	}
 }
 
-// TestPipelineState_ApplyTaskStatusUnknownIDIsIgnored covers an event for a
-// task this state hasn't seen yet (e.g. SSE connected after /pipeline/state
-// was fetched but before the first status snapshot) -- ignoring it rather
-// than fabricating a new task avoids inventing rows with missing fields.
-func TestPipelineState_ApplyTaskStatusUnknownIDIsIgnored(t *testing.T) {
+func TestPipelineState_RefetchKeepsTheSeqOfTheSameRunAndResetsOnANewRun(t *testing.T) {
 	p := NewPipelineState()
-	p.ApplyTaskStatus("never-seen", phaseflow.StatusRunning, 1)
-	if len(p.Tasks()) != 0 {
-		t.Errorf("Tasks() = %+v, want empty", p.Tasks())
+	p.SetState(sampleState("gm-2026-10-08-001", 10))
+	p.SetLastSeq(25) // the stream has moved on
+	p.SetState(sampleState("gm-2026-10-08-001", 20))
+	if p.LastSeq() != 25 {
+		t.Errorf("LastSeq = %d, want 25 (an older snapshot must not rewind the stream)", p.LastSeq())
+	}
+	p.SetState(sampleState("gm-2026-10-08-001", 40))
+	if p.LastSeq() != 40 {
+		t.Errorf("LastSeq = %d, want 40", p.LastSeq())
+	}
+	p.SetState(sampleState("gm-2026-10-09-001", 3))
+	if p.LastSeq() != 3 {
+		t.Errorf("LastSeq = %d, want 3 after a different run", p.LastSeq())
+	}
+	p.SetLastSeq(1)
+	if p.LastSeq() != 3 {
+		t.Error("SetLastSeq must never move backwards")
 	}
 }
 
-func TestPipelineState_ApplyTaskAttemptAppendsToTask(t *testing.T) {
+func TestPipelineState_ApplyNodeEvents(t *testing.T) {
 	p := NewPipelineState()
-	p.SetTasks([]phaseflow.Task{{ID: "01-01"}}, time.Time{})
+	p.SetState(sampleState("gm-2026-10-08-001", 1))
 
-	p.ApplyTaskAttempt("01-01", phaseflow.Attempt{Model: "strong", Duration: "3m", Verdict: "pass"})
-
-	got := p.Tasks()
-	if len(got[0].Attempts) != 1 || got[0].Attempts[0].Model != "strong" {
-		t.Errorf("Attempts = %+v", got[0].Attempts)
+	p.ApplyNodeStatus("fn-a", "verified", 0, 2)
+	p.ApplyNodeStatus("nope", "verified", 0, 0) // unknown id: ignored
+	a1 := runview.Attempt{Model: "m", Verdict: "fail", StartedAt: "t1"}
+	p.ApplyNodeAttempt("fn-a", a1)
+	p.ApplyNodeAttempt("fn-a", a1) // the same attempt twice (a replay): counted once
+	p.ApplyNodeAttempt("fn-a", runview.Attempt{Model: "m", Verdict: "pass", StartedAt: "t2"})
+	p.ApplyNodeResult("fn-a", runview.NodeResult{Commit: "abc"})
+	n := p.Nodes()[1]
+	if n.Status != "verified" || n.Revision != 2 || n.AttemptCount != 2 || n.LastAttempt == nil || n.LastAttempt.Verdict != "pass" || n.Result == nil || n.Result.Commit != "abc" {
+		t.Errorf("fn-a = %+v", n)
 	}
-}
-
-func TestPipelineState_ApplyWaveChangedTracksCurrentWave(t *testing.T) {
-	p := NewPipelineState()
-	p.ApplyWaveChanged(2, "started")
-
-	wave, state := p.CurrentWave()
-	if wave != 2 || state != "started" {
-		t.Errorf("CurrentWave() = (%d, %q), want (2, \"started\")", wave, state)
-	}
-}
-
-func TestPipelineState_SetReportStoresReport(t *testing.T) {
-	p := NewPipelineState()
-	if p.Report() != nil {
-		t.Fatal("Report() should start nil")
-	}
-
-	r := phaseflow.RunReport{Models: []phaseflow.ModelStat{{Model: "strong"}}}
-	p.SetReport(r)
-
-	got := p.Report()
-	if got == nil || len(got.Models) != 1 || got.Models[0].Model != "strong" {
-		t.Errorf("Report() = %+v", got)
-	}
-}
-
-func TestPipelineState_OnChangeFiresOnEveryMutation(t *testing.T) {
-	p := NewPipelineState()
-	calls := 0
-	p.OnChange(func() { calls++ })
-
-	p.SetTasks([]phaseflow.Task{{ID: "01-01"}}, time.Time{})
-	p.ApplyTaskStatus("01-01", phaseflow.StatusRunning, 1)
-	p.ApplyTaskAttempt("01-01", phaseflow.Attempt{Model: "strong"})
 	p.ApplyWaveChanged(1, "started")
-	p.SetReport(phaseflow.RunReport{})
-
-	if calls != 5 {
-		t.Errorf("OnChange called %d times, want 5", calls)
+	if w, s := p.CurrentWave(); w != 1 || s != "started" {
+		t.Errorf("wave = %d %q", w, s)
+	}
+	p.ApplyRunStatus("verified", "")
+	if p.Run().Status != "verified" {
+		t.Errorf("run status = %q", p.Run().Status)
 	}
 }
 
-// TestPipelineState_ApplyTaskStatusOnUnknownIDDoesNotFireOnChange covers the
-// no-op path: an ignored event is not a state change, so it shouldn't
-// trigger a redraw either.
-func TestPipelineState_ApplyTaskStatusOnUnknownIDDoesNotFireOnChange(t *testing.T) {
+func TestPipelineState_ReportAndMessage(t *testing.T) {
 	p := NewPipelineState()
-	calls := 0
-	p.OnChange(func() { calls++ })
-
-	p.ApplyTaskStatus("never-seen", phaseflow.StatusRunning, 1)
-
-	if calls != 0 {
-		t.Errorf("OnChange called %d times, want 0 for an unknown task id", calls)
+	if p.Report() != nil || p.Message() != "" {
+		t.Fatal("a new state has no report and no message")
+	}
+	var r runview.ReportBody
+	r.Status = "verified"
+	p.SetReport(r)
+	p.SetMessage("this server and this app disagree")
+	if p.Report() == nil || p.Report().Status != "verified" || p.Message() == "" {
+		t.Errorf("report %+v message %q", p.Report(), p.Message())
 	}
 }

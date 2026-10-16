@@ -6,78 +6,79 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
-	"gophermind/gophermind-lib/phaseflow"
 	"gophermind/gophermind-osx/client"
 )
 
-// fakePipelineEventsServer serves one task-status, one task-attempt, one
-// wave-changed, and one run-report frame, matching the SSE shape
-// the server's /pipeline/events route writes.
-func fakePipelineEventsServer(t *testing.T) *httptest.Server {
+func eventsServer(t *testing.T, body string) *httptest.Server {
 	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Gophermind-Pipeline-Schema", "1")
 		w.Header().Set("Content-Type", "text/event-stream")
-		io.WriteString(w, "event: task-status\ndata: {\"id\":\"01-01\",\"status\":\"running\",\"wave\":1}\n\n")
-		io.WriteString(w, "event: task-attempt\ndata: {\"task_id\":\"01-01\",\"model\":\"strong\",\"duration\":\"1m\",\"verdict\":\"pass\"}\n\n")
-		io.WriteString(w, "event: wave-changed\ndata: {\"wave\":1,\"state\":\"finished\"}\n\n")
-		io.WriteString(w, "event: run-report\ndata: {\"Models\":[{\"Model\":\"strong\"}]}\n\n")
+		io.WriteString(w, body)
 	}))
+	t.Cleanup(srv.Close)
+	return srv
 }
 
-func TestPipelinePump_RunAppliesEveryEventType(t *testing.T) {
-	srv := fakePipelineEventsServer(t)
-	t.Cleanup(srv.Close)
-
+func TestPipelinePump_RunAppliesEveryEventTypeAndTracksTheLastID(t *testing.T) {
+	srv := eventsServer(t,
+		"id: 5\nevent: node-status\ndata: {\"id\":\"fn-a\",\"status\":\"in_progress\",\"wave\":0,\"revision\":3}\n\n"+
+			"id: 6\nevent: node-attempt\ndata: {\"id\":\"fn-a\",\"attempt\":{\"model\":\"strong\",\"verdict\":\"pass\",\"started_at\":\"t\"}}\n\n"+
+			"id: 7\nevent: node-result\ndata: {\"id\":\"fn-a\",\"result\":{\"commit\":\"abc\",\"files_changed\":[]}}\n\n"+
+			"id: 8\nevent: wave-changed\ndata: {\"wave\":0,\"state\":\"finished\"}\n\n"+
+			"id: 8\nevent: run-status\ndata: {\"status\":\"verified\",\"stop_reason\":\"\"}\n\n"+
+			"id: 8\nevent: run-report\ndata: {\"schema_version\":2,\"run_id\":\"r\",\"status\":\"verified\"}\n\n")
 	c := client.New(client.Config{BaseURL: srv.URL, Token: "t"})
-	stream, err := c.PipelineEvents(context.Background())
+	stream, err := c.PipelineEvents(context.Background(), "", -1)
 	if err != nil {
-		t.Fatalf("PipelineEvents: %v", err)
+		t.Fatal(err)
 	}
-
 	state := NewPipelineState()
-	// Seed task "01-01" first: ApplyTaskStatus/ApplyTaskAttempt ignore an
-	// id PipelineState hasn't seen yet (see pipeline.go's documented
-	// contract), and this test wants to observe both applied.
-	state.SetTasks([]phaseflow.Task{{ID: "01-01", Status: phaseflow.StatusPending}}, time.Time{})
+	state.SetState(sampleState("gm-2026-10-08-001", 4))
 
-	pump := &PipelinePump{State: state}
-	if err := pump.Run(context.Background(), stream); err != nil {
+	if err := (&PipelinePump{State: state}).Run(context.Background(), stream); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-
-	tasks := state.Tasks()
-	if len(tasks) != 1 || tasks[0].Status != phaseflow.StatusRunning {
-		t.Errorf("Tasks() = %+v, want 01-01 running", tasks)
+	n := state.Nodes()[1]
+	if n.Status != "in_progress" || n.Revision != 3 || n.AttemptCount != 1 || n.LastAttempt == nil || n.LastAttempt.Model != "strong" || n.Result == nil {
+		t.Errorf("fn-a = %+v", n)
 	}
-	if len(tasks[0].Attempts) != 1 || tasks[0].Attempts[0].Model != "strong" {
-		t.Errorf("Attempts = %+v", tasks[0].Attempts)
+	if w, s := state.CurrentWave(); w != 0 || s != "finished" {
+		t.Errorf("wave = %d %q", w, s)
 	}
-	wave, waveState := state.CurrentWave()
-	if wave != 1 || waveState != "finished" {
-		t.Errorf("CurrentWave() = (%d, %q), want (1, \"finished\")", wave, waveState)
+	if state.Run().Status != "verified" {
+		t.Errorf("run status = %q", state.Run().Status)
 	}
-	report := state.Report()
-	if report == nil || len(report.Models) != 1 || report.Models[0].Model != "strong" {
-		t.Errorf("Report() = %+v", report)
+	if r := state.Report(); r == nil || r.RunID != "r" {
+		t.Errorf("report = %+v", r)
+	}
+	if state.LastSeq() != 8 {
+		t.Errorf("LastSeq = %d, want 8", state.LastSeq())
 	}
 }
 
 func TestPipelinePump_RunReturnsNilOnCleanEOF(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-	}))
-	t.Cleanup(srv.Close)
-
+	srv := eventsServer(t, "")
 	c := client.New(client.Config{BaseURL: srv.URL, Token: "t"})
-	stream, err := c.PipelineEvents(context.Background())
+	stream, err := c.PipelineEvents(context.Background(), "", -1)
 	if err != nil {
-		t.Fatalf("PipelineEvents: %v", err)
+		t.Fatal(err)
 	}
-
-	pump := &PipelinePump{State: NewPipelineState()}
-	if err := pump.Run(context.Background(), stream); err != nil {
+	if err := (&PipelinePump{State: NewPipelineState()}).Run(context.Background(), stream); err != nil {
 		t.Errorf("Run: %v, want nil for a clean stream end", err)
+	}
+}
+
+func TestPipelinePump_AnUndecodableFrameStillAdvancesTheSeq(t *testing.T) {
+	srv := eventsServer(t, "id: 9\nevent: node-status\ndata: {broken\n\n")
+	c := client.New(client.Config{BaseURL: srv.URL, Token: "t"})
+	stream, _ := c.PipelineEvents(context.Background(), "", -1)
+	state := NewPipelineState()
+	if err := (&PipelinePump{State: state}).Run(context.Background(), stream); err != nil {
+		t.Fatal(err)
+	}
+	if state.LastSeq() != 9 {
+		t.Errorf("LastSeq = %d, want 9: the line was consumed, so a reconnect must not replay it", state.LastSeq())
 	}
 }
