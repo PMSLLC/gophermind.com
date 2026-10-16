@@ -410,6 +410,12 @@ let current = null;    // selected node id
 let runId = '';
 let authToken = '';
 let lastSeq = 0;       // last event id seen; sent as since= on every (re)connect
+let stateSeq = 0;      // event_seq of the last applied state; frames at or below it are already in that state
+let stateReq = 0;      // request counters: only the newest response of each kind may render
+let nodeReq = 0;
+let artReq = 0;
+let openArtifact = null; // { key, nodeId, pre }: the one open saved-output block
+let lastLogNode = '';
 let eventsAbort = null;
 let eventsGen = 0;
 let finalReport = null; // the report of a finished run, kept from resync
@@ -510,14 +516,38 @@ function groupSummary(doc){
   return parts.join(' | ') || '(no groups)';
 }
 
-async function showArtifact(after, id, attempt, file){
-  const resp = await fetch(withQuery('/pipeline/artifact', { run: runId, id: id, attempt: attempt, file: file }), { headers: authHeaders() });
-  const pre = el('pre', 'check-output');
-  pre.textContent = resp.ok ? await resp.text() : 'GET artifact failed: ' + resp.status;
-  after.insertAdjacentElement('afterend', pre);
+function artifactKey(id, attempt, file){ return id + '|' + attempt + '|' + file; }
+
+// placeArtifact puts the open artifact block back under its link after the log
+// was rebuilt. The block itself is never recreated by a re-render.
+function placeArtifact(){
+  if(!openArtifact) return;
+  const key = openArtifact.key;
+  const link = Array.from(logEl.children).find(c => c.dataset && c.dataset.key === key);
+  if(link) link.insertAdjacentElement('afterend', openArtifact.pre);
 }
 
-function renderLog(body){
+async function showArtifact(id, attempt, file){
+  const req = ++artReq;
+  const run = runId;
+  let text;
+  try{
+    const resp = await fetch(withQuery('/pipeline/artifact', { run: run, id: id, attempt: attempt, file: file }), { headers: authHeaders() });
+    text = resp.ok ? await resp.text() : 'GET artifact failed: ' + resp.status;
+  } catch(err){
+    text = 'artifact load failed: ' + (err && err.message ? err.message : 'error');
+  }
+  if(req !== artReq || run !== runId || current !== id) return;
+  if(openArtifact) openArtifact.pre.remove();
+  const pre = el('pre', 'check-output', text);
+  openArtifact = { key: artifactKey(id, attempt, file), nodeId: id, pre: pre };
+  placeArtifact();
+}
+
+function renderLog(body, id){
+  const atBottom = lastLogNode !== id || logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight <= 8;
+  lastLogNode = id;
+  if(openArtifact && openArtifact.nodeId !== id) openArtifact = null;
   logEl.replaceChildren();
   const attempts = (body.runtime && body.runtime.attempts) || [];
   if(!attempts.length){
@@ -531,24 +561,28 @@ function renderLog(body){
     (art.files || []).filter(f => f === 'check-output.txt' || f === 'reply.txt').forEach(f => {
       const link = el('div', 'log-line artifact-link', 'saved attempt ' + art.attempt + ': ' + f);
       link.style.gridTemplateColumns = '1fr';
-      link.addEventListener('click', () => showArtifact(link, body.node.id, art.attempt, f));
+      link.dataset.key = artifactKey(id, art.attempt, f);
+      link.addEventListener('click', () => showArtifact(id, art.attempt, f));
       logEl.appendChild(link);
     });
   });
-  logEl.scrollTop = logEl.scrollHeight;
+  placeArtifact();
+  if(atBottom) logEl.scrollTop = logEl.scrollHeight;
 }
 
 async function loadNode(id){
   current = id;
   renderTree();
+  const req = ++nodeReq;
+  const run = runId;
   let body;
   try{
-    body = await getJSON('/pipeline/node', { run: runId, id: id });
+    body = await getJSON('/pipeline/node', { run: run, id: id });
   } catch(err){
-    hintEl.textContent = err.message;
+    if(req === nodeReq) hintEl.textContent = err.message;
     return;
   }
-  if(current !== id) return;
+  if(req !== nodeReq || current !== id || run !== runId) return;
   const doc = body.node || {};
   const summary = findNode(id) || {};
   tagEl.textContent = 'WAVE ' + (summary.wave || 0) + ' / ' + String(doc.kind || '').toUpperCase() +
@@ -560,7 +594,7 @@ async function loadNode(id){
   testEl.textContent = tests.length ? tests.join('; ') : '(no tests)';
   groupsEl.textContent = groupSummary(doc);
   decEl.textContent = (doc.decisions || []).map(d => d.question + ' -> ' + d.answer).join('; ') || '(none)';
-  renderLog(body);
+  renderLog(body, id);
 }
 
 async function loadRuns(){
@@ -573,10 +607,16 @@ async function loadRuns(){
   runSelect.value = runId;
 }
 
+// loadState returns the body it applied, or null when a newer request or a run
+// switch made its response stale (a stale response must not overwrite newer data).
 async function loadState(){
-  const body = await getJSON('/pipeline/state', { run: runId });
+  const req = ++stateReq;
+  const run = runId;
+  const body = await getJSON('/pipeline/state', { run: run });
+  if(req !== stateReq || run !== runId) return null;
   nodes = body.nodes || [];
-  lastSeq = Math.max(lastSeq, body.event_seq || 0);
+  stateSeq = Number.isFinite(body.event_seq) ? body.event_seq : 0;
+  lastSeq = Math.max(lastSeq, stateSeq);
   updatedAtEl.textContent = new Date(body.generated_at).toLocaleTimeString();
   renderHeader(body.run);
   if(!current){
@@ -591,16 +631,24 @@ async function loadState(){
 // resync runs after every successful (re)connect of the event stream. The
 // server never replays derived events (run-status, run-report), so a run that
 // ended while this page was away would stay "building" with no report. It
-// refetches the state and, when the run is over, the final report.
+// refetches the state and, when the run is over, the final report. It returns
+// false when the fetch failed, so the caller reconnects instead of streaming
+// into an empty page.
 async function resync(){
+  const run = runId;
   try{
     const body = await loadState();
-    if(body.run && TERMINAL.indexOf(body.run.status) !== -1){
-      finalReport = await getJSON('/pipeline/report', { run: runId });
-      reportBtn.textContent = 'run report (final)';
+    if(body && body.run && TERMINAL.indexOf(body.run.status) !== -1){
+      const rep = await getJSON('/pipeline/report', { run: run });
+      if(run === runId){
+        finalReport = rep;
+        setReportLabel(rep);
+      }
     }
+    return true;
   } catch(err){
     hintEl.textContent = err.message;
+    return false;
   }
 }
 
@@ -619,23 +667,31 @@ function table(headers, rows){
   return t;
 }
 
+// cnt shows a count the server may have left out as a dash, never "undefined".
+function cnt(v){ return v == null ? '-' : v; }
+
+function setReportLabel(r){
+  reportBtn.textContent = r && r.complete === false ? 'run report' : 'run report (final)';
+}
+
+// renderReport fills the panel only; opening it is the user's click.
 function renderReport(r){
   const n = r.nodes || {}, cov = r.requirements_covered || {};
   reportBody.replaceChildren();
-  reportBody.appendChild(el('div', 'rpt-line', r.status + (r.complete === false ? ' (running)' : '') +
-    ' | nodes ' + n.verified + '/' + n.total + ' verified, ' + n.failed + ' failed, ' + n.escalated + ' escalated | requirements ' + cov.covered + '/' + cov.total));
+  reportBody.appendChild(el('div', 'rpt-line', (r.status || '-') + (r.complete === false ? ' (running)' : '') +
+    ' | nodes ' + cnt(n.verified) + '/' + cnt(n.total) + ' verified, ' + cnt(n.failed) + ' failed, ' + cnt(n.escalated) + ' escalated | requirements ' + cnt(cov.covered) + '/' + cnt(cov.total)));
   if(r.parallel){
-    reportBody.appendChild(el('div', 'rpt-line rpt-note', 'parallel: workers ' + r.parallel.workers + ', levels ' + r.parallel.parallel_levels + ', landing conflicts ' + r.parallel.landing_conflicts));
+    reportBody.appendChild(el('div', 'rpt-line rpt-note', 'parallel: workers ' + cnt(r.parallel.workers) + ', levels ' + cnt(r.parallel.parallel_levels) + ', landing conflicts ' + cnt(r.parallel.landing_conflicts)));
   }
   reportBody.appendChild(table(['task', 'model', 'calls', 'ok', 'malformed', 'retries', 'model esc.', 'avg ms'],
-    (r.by_task_type || []).map(m => [m.task_type, m.model, m.calls, m.ok, m.malformed, m.retries, m.model_escalations, m.avg_duration_ms])));
+    (r.by_task_type || []).map(m => [m.task_type, m.model, m.calls, m.ok, m.malformed, m.retries, m.model_escalations, m.avg_duration_ms].map(cnt))));
   reportBody.appendChild(table(['leaf model', 'attempts', 'passes', 'pass rate', 'first try'],
-    (r.leaves || []).map(m => [m.model, m.attempts, m.passes, ((m.pass_rate || 0) * 100).toFixed(0) + '%', m.first_try_wins])));
+    (r.leaves || []).map(m => [m.model, m.attempts, m.passes, ((m.pass_rate || 0) * 100).toFixed(0) + '%', m.first_try_wins].map(cnt))));
   const revised = r.revised_leaves || [];
   if(revised.length){
     reportBody.appendChild(el('div', 'k', 'REVISED LEAVES'));
     reportBody.appendChild(table(['node', 'revisions', 'flag', 'tests rewritten'],
-      revised.map(x => [x.node_id, x.revisions, x.flag || '', x.tests_rewritten ? 'yes' : ''])));
+      revised.map(x => [x.node_id, x.revisions, x.flag || '', x.tests_rewritten ? 'yes' : ''].map(cnt))));
   }
   const fails = r.failures || [];
   if(fails.length){
@@ -643,17 +699,17 @@ function renderReport(r){
     fails.forEach(f => reportBody.appendChild(el('div', '', f)));
   }
   overlayTitle.textContent = 'Run Report';
-  reportOverlay.hidden = false;
 }
 
 async function showReport(){
   try{
-    renderReport(await getJSON('/pipeline/report', { run: runId }));
+    const r = finalReport && finalReport.complete !== false ? finalReport : await getJSON('/pipeline/report', { run: runId });
+    renderReport(r);
   } catch(err){
     overlayTitle.textContent = 'Run Report';
     reportBody.textContent = err.message;
-    reportOverlay.hidden = false;
   }
+  reportOverlay.hidden = false;
 }
 
 async function showDecisions(){
@@ -701,8 +757,23 @@ function applyEvent(event, data){
     loadState().catch(() => {});
   } else if(event === 'run-report'){
     finalReport = data;
-    renderReport(data);
+    setReportLabel(data);
   }
+}
+
+// handleFrame applies one SSE frame. Frames whose id is at or below stateSeq
+// are already part of the loaded state (a resync replays them), so applying
+// them again would double attempt counts and regress statuses. A frame with no
+// numeric id (derived events) is applied and never touches lastSeq.
+function handleFrame(event, id, data){
+  const num = id === '' || id == null ? NaN : Number(id);
+  if(Number.isFinite(num)){
+    if(num <= stateSeq) return;
+    lastSeq = Math.max(lastSeq, num);
+  }
+  let parsed;
+  try{ parsed = JSON.parse(data); } catch(e){ return; }
+  if(parsed && typeof parsed === 'object') applyEvent(event, parsed);
 }
 
 // parseSSEStream reads a fetch Response body as an SSE stream and calls
@@ -737,50 +808,85 @@ async function parseSSEStream(resp, onFrame){
 // connectEvents keeps one stream open for the selected run and reconnects
 // after a drop, resuming at the last id it saw (since=). After every
 // successful connect it resyncs, because derived events are not replayed.
+// 401, 403 and 404 stop the retries (the token or the run is wrong, and
+// asking again every 2 s fixes neither); other errors back off up to 30 s.
 async function connectEvents(){
   if(eventsAbort) eventsAbort.abort();
   const gen = ++eventsGen;
   eventsAbort = new AbortController();
   const signal = eventsAbort.signal;
+  let fails = 0;
   while(gen === eventsGen){
     connStateEl.textContent = 'connecting';
     connStateEl.className = 'connstate off';
     try{
       const resp = await fetch(withQuery('/pipeline/events', { run: runId, since: String(lastSeq) }), { headers: authHeaders(), signal: signal });
+      if(gen !== eventsGen) return;
       if(resp.headers.get('X-Gophermind-Pipeline-Schema') !== '1' || !resp.ok){
         connStateEl.textContent = 'error ' + resp.status;
         connStateEl.className = 'connstate err';
+        if(resp.status === 401 || resp.status === 403 || resp.status === 404){
+          hintEl.textContent = 'the event stream was refused (' + resp.status + '); check the token and the run, then click connect';
+          return;
+        }
+        fails++;
       } else {
         connStateEl.textContent = 'live';
         connStateEl.className = 'connstate live';
-        await resync();
+        if(!(await resync())) throw new Error('resync failed');
+        if(gen !== eventsGen) return;
+        fails = 0;
         await parseSSEStream(resp, (event, id, data) => {
-          if(id) lastSeq = Math.max(lastSeq, Number(id));
-          let parsed;
-          try{ parsed = JSON.parse(data); } catch(e){ return; }
-          applyEvent(event, parsed);
+          if(gen !== eventsGen) return;
+          handleFrame(event, id, data);
         });
       }
     } catch(err){
-      if(signal.aborted) return;
+      if(signal.aborted || gen !== eventsGen) return;
       connStateEl.textContent = 'error';
       connStateEl.className = 'connstate err';
+      fails++;
     }
     if(gen !== eventsGen) return;
-    await new Promise(r => setTimeout(r, 2000));
+    const delay = Math.min(30000, 2000 * Math.pow(2, Math.max(0, fails - 1)));
+    await new Promise(r => setTimeout(r, delay));
   }
 }
 
+// connect loads the run list and opens the stream; the stream's own resync
+// loads the state, so state is fetched once and not twice.
 async function connect(){
   authToken = tokenInput.value.trim();
   hintEl.textContent = 'click a node on the left to inspect it';
   try{
     await loadRuns();
-    await loadState();
   } catch(err){
     hintEl.textContent = 'failed to load the pipeline: ' + err.message;
     return;
   }
+  connectEvents();
+}
+
+// switchRun drops everything that belongs to the old run (its stream first, so
+// none of its frame ids can raise the new run's counters) and reconnects. The
+// reconnect loads the state itself and keeps retrying if that fails.
+function switchRun(id){
+  eventsGen++;
+  if(eventsAbort){ eventsAbort.abort(); eventsAbort = null; }
+  runId = id;
+  current = null;
+  nodes = [];
+  lastSeq = 0;
+  stateSeq = 0;
+  stateReq++;
+  nodeReq++;
+  artReq++;
+  openArtifact = null;
+  lastLogNode = '';
+  finalReport = null;
+  reportBtn.textContent = 'run report';
+  renderHeader(null);
+  renderTree();
   connectEvents();
 }
 
@@ -789,15 +895,7 @@ tokenInput.addEventListener('keydown', e => { if(e.key === 'Enter') connect(); }
 reportBtn.addEventListener('click', showReport);
 decisionsBtn.addEventListener('click', showDecisions);
 closeReportBtn.addEventListener('click', () => { reportOverlay.hidden = true; });
-runSelect.addEventListener('change', async () => {
-  runId = runSelect.value;
-  current = null;
-  lastSeq = 0;
-  finalReport = null;
-  reportBtn.textContent = 'run report';
-  try{ await loadState(); } catch(err){ hintEl.textContent = err.message; return; }
-  connectEvents();
-});
+runSelect.addEventListener('change', () => switchRun(runSelect.value));
 
 // Convenience: a token passed in the URL fragment (#token=...) auto-connects.
 // The fragment, unlike the query string, is never sent to the server, never

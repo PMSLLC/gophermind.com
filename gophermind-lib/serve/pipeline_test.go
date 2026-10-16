@@ -178,34 +178,177 @@ func TestPipelineDashboardUsesTheNodeContract(t *testing.T) {
 	}
 }
 
-// TestPipelineDashboardResyncsOnEveryConnect pins that connectEvents refetches
-// state (and the report when the run is over) after each successful connect:
-// derived events are never replayed, so a run that ended while the page was
-// away would otherwise stay "building".
-func TestPipelineDashboardResyncsOnEveryConnect(t *testing.T) {
+// pipelineHarness loads the page's script into a node vm with a minimal stub
+// DOM, fetch and AbortController, then runs one named scenario against it.
+const pipelineHarness = `
+const vm = require('vm');
+const fs = require('fs');
+const src = fs.readFileSync(process.argv[2], 'utf8');
+const scenario = process.argv[3];
+const flush = async () => { for (let i = 0; i < 30; i++) await new Promise(r => setImmediate(r)); };
+function assert(c, m){ if(!c){ console.error('ASSERT FAILED: ' + m); process.exit(1); } }
+
+function mkEl(tag){
+  const e = { tag, textContent: '', className: '', children: [], parent: null, dataset: {}, style: {},
+    value: '', hidden: false, scrollTop: 0, scrollHeight: 100, clientHeight: 100, listeners: {} };
+  e.classList = { add(){}, remove(){} };
+  e.appendChild = c => { c.parent = e; e.children.push(c); return c; };
+  e.replaceChildren = (...cs) => { e.children.forEach(c => { c.parent = null; }); e.children = []; cs.forEach(e.appendChild); };
+  e.remove = () => { if(e.parent){ e.parent.children = e.parent.children.filter(c => c !== e); e.parent = null; } };
+  e.insertAdjacentElement = (where, c) => {
+    c.remove();
+    const i = e.parent.children.indexOf(e);
+    e.parent.children.splice(i + 1, 0, c);
+    c.parent = e.parent;
+    return c;
+  };
+  e.addEventListener = (n, f) => { e.listeners[n] = f; };
+  return e;
+}
+
+// deferred fetch: the test resolves each pending request by hand.
+function makeEnv(){
+  const els = {};
+  const pending = [];   // { path, params, resolve, reject, signal }
+  const eventCalls = [];
+  const document = {
+    getElementById: id => els[id] || (els[id] = mkEl('#' + id)),
+    createElement: mkEl,
+    createTextNode: t => ({ textContent: t }),
+  };
+  function resp(body, status){
+    return { ok: (status || 200) < 400, status: status || 200,
+      headers: { get: () => '1' }, json: async () => body, text: async () => String(body) };
+  }
+  const fetchStub = (url, opts) => new Promise((resolve, reject) => {
+    const u = new URL(url, 'http://x');
+    const call = { path: u.pathname, params: Object.fromEntries(u.searchParams), resolve: b => resolve(resp(b)), reject, signal: opts && opts.signal };
+    if(u.pathname === '/pipeline/events'){
+      eventCalls.push(call);
+      const r = resp('');
+      r.body = { getReader: () => ({ read: () => new Promise((_, rej) => {
+        call.signal.addEventListener('abort', () => rej(new Error('aborted')));
+      }) }) };
+      resolve(r);
+      return;
+    }
+    pending.push(call);
+  });
+  const ctx = vm.createContext({ document, fetch: fetchStub, URLSearchParams, AbortController, TextDecoder,
+    setTimeout, console, Number, Date, Math, Array, Set, JSON, Promise,
+    location: { hash: '', pathname: '/pipeline' }, history: { replaceState(){} } });
+  vm.runInContext(src, ctx);
+  const get = e => vm.runInContext(e, ctx);
+  const take = path => { const i = pending.findIndex(p => p.path === path); assert(i >= 0, 'no pending ' + path); return pending.splice(i, 1)[0]; };
+  return { ctx, get, els, pending, eventCalls, take };
+}
+const state = (seq, status, att) => ({ event_seq: seq, generated_at: '2026-01-01T00:00:00Z',
+  run: { status: status || 'building', coverage: { covered: 0, total: 1 } },
+  nodes: [{ id: 'n1', kind: 'function', status: 'pending', wave: 1, attempt_count: att || 0, revision: 0, parent: 'c' }] });
+const nodeBody = { node: { id: 'n1', kind: 'function' }, runtime: { attempts: [] }, artifacts: [] };
+
+const scenarios = {
+  async skipsFramesAtOrBelowStateSeq(){
+    const env = makeEnv();
+    env.get('runId = "r1"');
+    const p = env.get('loadState()');
+    env.take('/pipeline/state').resolve(state(10));
+    await flush();
+    env.take('/pipeline/node').resolve(nodeBody);
+    await p;
+    assert(env.get('stateSeq') === 10, 'stateSeq 10');
+    const att = JSON.stringify({ id: 'n1', attempt: { started_at: 'a' } });
+    env.get('handleFrame')('node-attempt', '10', att);
+    env.get('handleFrame')('node-attempt', '3', att);
+    assert(env.get('nodes[0].attempt_count') === 0, 'old frames must be skipped');
+    assert(env.get('lastSeq') === 10, 'old frames must not move lastSeq');
+    env.get('handleFrame')('node-attempt', '11', att);
+    assert(env.get('nodes[0].attempt_count') === 1, 'new frame applied once');
+    assert(env.get('lastSeq') === 11, 'lastSeq 11');
+    env.get('handleFrame')('node-attempt', 'abc', JSON.stringify({ id: 'n1', attempt: { started_at: 'b' } }));
+    assert(env.get('lastSeq') === 11, 'non-numeric id leaves lastSeq alone');
+  },
+  async staleLoadStateIsDiscarded(){
+    const env = makeEnv();
+    env.get('runId = "r1"');
+    const p1 = env.get('loadState()');
+    const p2 = env.get('loadState()');
+    const first = env.take('/pipeline/state'), second = env.take('/pipeline/state');
+    second.resolve(state(10, 'building', 7));
+    await flush();
+    first.resolve(state(5, 'building', 1));
+    await flush();
+    while(env.pending.length) env.pending.shift().resolve(nodeBody);
+    await flush();
+    assert((await p1) === null, 'stale response reports null');
+    assert(env.get('stateSeq') === 10, 'stateSeq kept at 10, got ' + env.get('stateSeq'));
+    assert(env.get('nodes[0].attempt_count') === 7, 'nodes not overwritten by the stale response');
+    await p2;
+  },
+  async runSwitchAbortsOldStream(){
+    const env = makeEnv();
+    env.els.tokenInput = mkEl('input'); env.els.tokenInput.value = 'tok';
+    const c = env.get('connect()');
+    env.take('/pipeline/runs').resolve({ runs: [{ run_id: 'r1', status: 'building' }, { run_id: 'r2', status: 'building' }] });
+    await c; await flush();
+    assert(env.eventCalls.length === 1, 'one stream open');
+    const old = env.eventCalls[0];
+    assert(old.params.run === 'r1', 'old stream is for r1');
+    env.take('/pipeline/state').resolve(state(40));
+    await flush();
+    env.take('/pipeline/node').resolve(nodeBody);
+    await flush();
+    assert(env.get('lastSeq') === 40, 'lastSeq from state');
+    env.get('switchRun')('r2');
+    assert(old.signal.aborted, 'old stream aborted');
+    assert(env.get('lastSeq') === 0 && env.get('stateSeq') === 0, 'counters reset');
+    await flush();
+    assert(env.eventCalls.length === 2 && env.eventCalls[1].params.run === 'r2' && env.eventCalls[1].params.since === '0', 'new stream for r2 from 0');
+    // an old stream frame arriving late must not raise the new run's counters
+    env.take('/pipeline/state').resolve(state(3));
+    await flush();
+    assert(env.get('lastSeq') === 3, 'new run lastSeq from its own state');
+  },
+};
+let done = false;
+process.on('exit', () => { if(!done){ console.error('scenario ' + scenario + ' never finished (a promise hung)'); process.exitCode = 1; } });
+scenarios[scenario]().then(() => { done = true; console.log('ok ' + scenario); process.exit(0); },
+  e => { console.error(e && e.stack || e); process.exit(1); });
+`
+
+// TestPipelineDashboardBehavior runs the page's script in node against a
+// stubbed DOM and fetch: replayed frames are skipped, a stale state response
+// loses to a newer one, and a run switch aborts the old stream.
+func TestPipelineDashboardBehavior(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not installed")
+	}
 	page, err := os.ReadFile(filepath.Join("assets", "pipeline.html"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := string(page)
-	i := strings.Index(s, "async function connectEvents()")
-	if i < 0 {
-		t.Fatal("no connectEvents")
+	i, j := strings.Index(s, "<script>"), strings.LastIndex(s, "</script>")
+	if i < 0 || j < i {
+		t.Fatal("no script block")
 	}
-	j := strings.Index(s[i:], "\nasync function connect()")
-	if j < 0 {
-		t.Fatal("cannot find the end of connectEvents")
+	dir := t.TempDir()
+	script := filepath.Join(dir, "pipeline.js")
+	harness := filepath.Join(dir, "harness.js")
+	if err := os.WriteFile(script, []byte(s[i+len("<script>"):j]), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(s[i:i+j], "await resync()") {
-		t.Error("connectEvents does not call resync() after a successful connect")
+	if err := os.WriteFile(harness, []byte(pipelineHarness), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	k := strings.Index(s, "async function resync()")
-	if k < 0 {
-		t.Fatal("no resync")
-	}
-	body := s[k : k+600]
-	if !strings.Contains(body, "loadState()") || !strings.Contains(body, "'/pipeline/report'") {
-		t.Error("resync does not refetch state and the report")
+	for _, name := range []string{"skipsFramesAtOrBelowStateSeq", "staleLoadStateIsDiscarded", "runSwitchAbortsOldStream"} {
+		t.Run(name, func(t *testing.T) {
+			out, err := exec.Command(node, harness, script, name).CombinedOutput()
+			if err != nil || !strings.Contains(string(out), "ok "+name) {
+				t.Fatalf("%v\n%s", err, out)
+			}
+		})
 	}
 }
 
