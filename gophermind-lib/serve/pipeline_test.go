@@ -4,6 +4,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -137,5 +140,96 @@ func TestPipelineDashboardSkippedWhenPipelineNil(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("GET /pipeline with Pipeline unset: got %d, want 404", resp.StatusCode)
+	}
+}
+
+// TestPipelineDashboardUsesTheNodeContract pins that the page talks to the new
+// routes and no longer speaks the old task vocabulary.
+func TestPipelineDashboardUsesTheNodeContract(t *testing.T) {
+	t.Setenv("GOPHERMIND_SERVE_TOKEN", "t")
+	mux, err := NewMux(Deps{Pipeline: &PipelineDeps{Root: t.TempDir()}}, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/pipeline")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.Header.Get(PipelineSchemaHeader) != "1" {
+		t.Errorf("the page response needs %s: 1", PipelineSchemaHeader)
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	body := string(raw)
+	for _, want := range []string{
+		"/pipeline/runs", "/pipeline/state", "/pipeline/node", "/pipeline/artifact", "/pipeline/decisions",
+		"/pipeline/report", "/pipeline/events", "since", "X-Gophermind-Pipeline-Schema", "node-status", "run-status",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the page does not mention %q", want)
+		}
+	}
+	for _, gone := range []string{"task-status", "task-attempt", "acceptance_criteria", "revision_rounds", "contract_flagged"} {
+		if strings.Contains(body, gone) {
+			t.Errorf("the page still uses the old vocabulary %q", gone)
+		}
+	}
+}
+
+// TestPipelineDashboardResyncsOnEveryConnect pins that connectEvents refetches
+// state (and the report when the run is over) after each successful connect:
+// derived events are never replayed, so a run that ended while the page was
+// away would otherwise stay "building".
+func TestPipelineDashboardResyncsOnEveryConnect(t *testing.T) {
+	page, err := os.ReadFile(filepath.Join("assets", "pipeline.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(page)
+	i := strings.Index(s, "async function connectEvents()")
+	if i < 0 {
+		t.Fatal("no connectEvents")
+	}
+	j := strings.Index(s[i:], "\nasync function connect()")
+	if j < 0 {
+		t.Fatal("cannot find the end of connectEvents")
+	}
+	if !strings.Contains(s[i:i+j], "await resync()") {
+		t.Error("connectEvents does not call resync() after a successful connect")
+	}
+	k := strings.Index(s, "async function resync()")
+	if k < 0 {
+		t.Fatal("no resync")
+	}
+	body := s[k : k+600]
+	if !strings.Contains(body, "loadState()") || !strings.Contains(body, "'/pipeline/report'") {
+		t.Error("resync does not refetch state and the report")
+	}
+}
+
+// TestPipelineDashboardScriptParses runs `node --check` on the page's script
+// when node is installed, so a syntax slip is a red test and not a blank page.
+func TestPipelineDashboardScriptParses(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not installed")
+	}
+	page, err := os.ReadFile(filepath.Join("assets", "pipeline.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(page)
+	i, j := strings.Index(s, "<script>"), strings.LastIndex(s, "</script>")
+	if i < 0 || j < i {
+		t.Fatal("no script block")
+	}
+	file := filepath.Join(t.TempDir(), "pipeline.js")
+	if err := os.WriteFile(file, []byte(s[i+len("<script>"):j]), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command(node, "--check", file).CombinedOutput(); err != nil {
+		t.Fatalf("node --check failed: %v\n%s", err, out)
 	}
 }
