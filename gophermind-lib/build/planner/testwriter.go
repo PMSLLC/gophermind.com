@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -298,14 +299,29 @@ var stdTopLevel = func() map[string]bool {
 	return m
 }()
 
+// packageClauseNames are the package clauses a test file for contract package
+// pkg may carry. pkg is a directory path ("internal/stats"), so the clause is
+// its last element, plain or with the _test suffix. The module root and a
+// directory under cmd/ may hold package main.
+func packageClauseNames(pkg string) []string {
+	var names []string
+	if base := path.Base(pkg); base != "." && base != "/" {
+		names = append(names, base, base+"_test")
+	}
+	if first, _, _ := strings.Cut(pkg, "/"); path.Clean(pkg) == "." || first == "cmd" {
+		names = append(names, "main", "main_test")
+	}
+	return names
+}
+
 // checkTestSource refuses a test file that is not the one asked for.
 func checkTestSource(src, pkg, funcName, module string) error {
 	f, err := parser.ParseFile(token.NewFileSet(), "", src, parser.SkipObjectResolution)
 	if err != nil {
 		return fmt.Errorf("test file (%d bytes) is not valid Go: %s", len(src), syntaxErr(err))
 	}
-	if f.Name.Name != pkg && f.Name.Name != pkg+"_test" {
-		return fmt.Errorf("test file is not in package %s or %s_test", pkg, pkg)
+	if names := packageClauseNames(pkg); !slices.Contains(names, f.Name.Name) {
+		return fmt.Errorf("test file is not in package %s", strings.Join(names, " or "))
 	}
 	for _, imp := range f.Imports {
 		p, err := strconv.Unquote(imp.Path.Value)

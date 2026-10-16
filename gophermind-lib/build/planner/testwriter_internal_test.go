@@ -192,3 +192,35 @@ func TestCheckTestSourceImportsAreStdOrOwnModule(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckTestSourcePackageClause(t *testing.T) {
+	const mod = "example.com/greeter"
+	cases := []struct {
+		pkg, clause string
+		ok          bool
+	}{
+		{"internal/stats", "stats", true},
+		{"internal/stats", "stats_test", true},
+		{"internal/stats", "other", false},
+		{"greet", "greet", true},
+		{"greet", "greet_test", true},
+		{"greet", "other", false},
+		{"cmd/csvstat", "main", true},
+		{"cmd/csvstat", "main_test", true},
+		{"cmd/csvstat", "csvstat", true},
+		{".", "main", true},
+		{"", "main", true},
+		{"internal/stats", "main", false},
+		{"greet", "main", false},
+	}
+	for _, c := range cases {
+		src := strings.Replace(okTestSource, "package greet\n", "package "+c.clause+"\n", 1)
+		err := checkTestSource(src, c.pkg, "TestGreet", mod)
+		if c.ok && err != nil {
+			t.Errorf("package %q, clause %q was refused: %v", c.pkg, c.clause, err)
+		}
+		if !c.ok && (err == nil || !strings.Contains(err.Error(), "is not in package")) {
+			t.Errorf("package %q, clause %q: err = %v, want a package refusal", c.pkg, c.clause, err)
+		}
+	}
+}
