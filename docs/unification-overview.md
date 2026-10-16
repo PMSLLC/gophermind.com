@@ -98,3 +98,16 @@ This is why the unification work waits: every change to the planner, the executo
 2. Read `docs/goals/unification/` for the run's progress and report (the goal runs the graded run last).
 3. Spot-check the review's section 8 claims.
 4. Execute plan A, then plan B, subagent-driven (John's standing rule), on the branch, one writer at a time.
+
+## 10. Rename map (G7, done on the branch)
+
+The version names are gone. Folders and import paths:
+
+| Old | New |
+|---|---|
+| `gophermind-lib/briefv2/` | `gophermind-lib/build/` |
+| `docs/briefv2/` | `docs/build/` |
+| `gophermind/gophermind-lib/briefv2/<pkg>` | `gophermind/gophermind-lib/build/<pkg>` |
+| `gophermind-lib/briefv2/testdata/ai-venture-studio-server-brief.md` (named in `docs/GOAL.md`, the graded run's brief) | `gophermind-lib/build/testdata/ai-venture-studio-server-brief.md` |
+
+The command names (`gophermind brief ...`, `/project`) do not change. Dated records keep the old name. Identifiers such as `project_v2.go`, `projectV2*` and `handleProjectV2Command` keep their names in this commit (names only, no code churn).

@@ -6,7 +6,7 @@ Update 2026-10-08: John ordered `docs/GOAL-UNIFICATION.md` to run first. Its tas
 
 ## Inputs
 
-- Brief: `gophermind-lib/briefv2/testdata/ai-venture-studio-server-brief.md` (tracked, 750 lines). `~/Downloads/ai-venture-studio-server-brief.md` is an older copy without the `env` block; the bodies are identical.
+- Brief: `gophermind-lib/build/testdata/ai-venture-studio-server-brief.md` (tracked, 750 lines). `~/Downloads/ai-venture-studio-server-brief.md` is an older copy without the `env` block; the bodies are identical.
 - Target repo: `~/OtherProjects/AIVentureStudio` (git, branch `main`). This file is the only copy of the goal; the target repo holds none. Its empty starting state is the tag `goal-baseline` (`a919593`). It has no remote.
 - GopherMind source: this repo.
 - Spec: `docs/superpowers/specs/2026-09-29-v2-planner-core-design.md`.
