@@ -13,8 +13,8 @@ import (
 )
 
 // fakePipelineEventsServer serves one task-status, one task-attempt, one
-// wave-changed, and one run-report frame, matching the exact SSE shape
-// gophermind-lib/serve's pipelineEventsHandler writes.
+// wave-changed, and one run-report frame, matching the SSE shape
+// the server's /pipeline/events route writes.
 func fakePipelineEventsServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
