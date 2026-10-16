@@ -63,6 +63,10 @@ func (p *PipelineState) SetState(b runview.StateBody) {
 	p.nodes = append([]runview.NodeSummary(nil), b.Nodes...)
 	p.generatedAt = b.GeneratedAt
 	p.snapSeq = b.EventSeq
+	if !sameRun {
+		// A report belongs to one run; never show the previous run's.
+		p.report = nil
+	}
 	if !sameRun || b.EventSeq > p.lastSeq {
 		p.lastSeq = b.EventSeq
 	}

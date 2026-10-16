@@ -12,7 +12,12 @@ package main
 // for a human, not something a test can safely drive.
 
 import (
+	"context"
+	"errors"
 	"testing"
+	"time"
+
+	"gophermind/gophermind-osx/client"
 
 	"gophermind/gophermind-lib/runview"
 	appui "gophermind/gophermind-osx/ui"
@@ -108,6 +113,121 @@ func TestPipelinePanel_ShowNodeWithoutALiveConnectionDoesNotPanic(t *testing.T) 
 		pp.doShow() // no run, no node source: say so, do not panic
 		if said == "" {
 			t.Error("doShow with nothing to show must tell the user why")
+		}
+	})
+}
+
+func newTestPipelinePanel(t *testing.T, app *App, state *appui.PipelineState) *pipelinePanel {
+	t.Helper()
+	pp := newPipelinePanel(state, app.window, nil, nil, nil)
+	attachControlForTest(app.window, pp.Control())
+	return pp
+}
+
+func TestPipelinePanel_StopCancelsTheFollower(t *testing.T) {
+	runOnUIThread(t, func() {
+		app, err := NewApp(DefaultTitle, DefaultWidth, DefaultHeight)
+		if err != nil {
+			t.Fatalf("NewApp: %v", err)
+		}
+		defer app.Close()
+
+		state := appui.NewPipelineState()
+		state.SetState(runview.StateBody{Run: &runview.RunSummary{RunID: "r1", Status: "building"}})
+		pp := newTestPipelinePanel(t, app, state)
+		ctxs := make(chan context.Context, 8)
+		pp.openEvents = func(ctx context.Context, run string, since int64) (*client.EventStream, error) {
+			select {
+			case ctxs <- ctx:
+			default:
+			}
+			return nil, errors.New("down")
+		}
+
+		pp.follow()
+		var first context.Context
+		select {
+		case first = <-ctxs:
+		case <-time.After(5 * time.Second):
+			t.Fatal("follower never opened the stream")
+		}
+		pp.stop()
+		select {
+		case <-first.Done():
+		case <-time.After(5 * time.Second):
+			t.Fatal("stop did not cancel the follower context")
+		}
+		pp.followMu.Lock()
+		cancel := pp.followCancel
+		pp.followMu.Unlock()
+		if cancel != nil {
+			t.Error("followCancel not nil after stop")
+		}
+
+		// A second follow replaces the first.
+		pp.follow()
+		var second context.Context
+		select {
+		case second = <-ctxs:
+		case <-time.After(5 * time.Second):
+			t.Fatal("second follower never opened the stream")
+		}
+		pp.follow()
+		select {
+		case <-second.Done():
+		case <-time.After(5 * time.Second):
+			t.Fatal("second follow did not cancel the previous follower")
+		}
+		pp.stop()
+	})
+}
+
+func TestPipelinePanel_ReloadWithEmptyBodyKeepsTheShownRun(t *testing.T) {
+	runOnUIThread(t, func() {
+		app, err := NewApp(DefaultTitle, DefaultWidth, DefaultHeight)
+		if err != nil {
+			t.Fatalf("NewApp: %v", err)
+		}
+		defer app.Close()
+
+		state := appui.NewPipelineState()
+		state.SetState(runview.StateBody{
+			Run:   &runview.RunSummary{RunID: "r1", Status: "building"},
+			Nodes: []runview.NodeSummary{{ID: "fn-a", Kind: "function"}},
+		})
+		pp := newTestPipelinePanel(t, app, state)
+		pp.fetchPipeline = func(context.Context) (runview.StateBody, error) { return runview.StateBody{}, nil }
+		if !pp.reload(context.Background()) {
+			t.Fatal("reload reported failure")
+		}
+		if state.RunID() != "r1" || len(state.Nodes()) != 1 {
+			t.Errorf("run %q nodes %d after empty reload, want r1 and 1", state.RunID(), len(state.Nodes()))
+		}
+	})
+}
+
+func TestPipelinePanel_ReportClearsWhenTheRunChanges(t *testing.T) {
+	runOnUIThread(t, func() {
+		app, err := NewApp(DefaultTitle, DefaultWidth, DefaultHeight)
+		if err != nil {
+			t.Fatalf("NewApp: %v", err)
+		}
+		defer app.Close()
+
+		state := appui.NewPipelineState()
+		pp := newTestPipelinePanel(t, app, state)
+		state.SetState(runview.StateBody{Run: &runview.RunSummary{RunID: "r1", Status: "done"}})
+		var rb runview.ReportBody
+		rb.Status = "verified"
+		state.SetReport(rb)
+		pp.refresh()
+		if pp.reportTextForTest() == "" {
+			t.Fatal("report box empty after SetReport")
+		}
+		state.SetState(runview.StateBody{Run: &runview.RunSummary{RunID: "r2", Status: "building"}})
+		pp.refresh()
+		if got := pp.reportTextForTest(); got != "" {
+			t.Errorf("report box = %q after the run changed, want empty", got)
 		}
 	})
 }

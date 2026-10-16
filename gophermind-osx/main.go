@@ -217,6 +217,7 @@ func main() {
 		return connMgr.Connect(ctx, cfg)
 	}
 	chat.settingsUI.disconnectFunc = func(name string) {
+		chat.pipelineUI.stop()
 		connMgr.Disconnect(name)
 	}
 
@@ -465,7 +466,9 @@ func main() {
 	}
 	app.Run()
 
-	// Cleanup: disconnect all backends (kills the server subprocess).
+	// Cleanup: stop the pipeline follower, then disconnect all backends
+	// (kills the server subprocess).
+	chat.pipelineUI.stop()
 	connMgr.DisconnectAll()
 
 	w, h := app.ContentSize()

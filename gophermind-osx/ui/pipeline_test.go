@@ -97,3 +97,19 @@ func TestPipelineState_ReportAndMessage(t *testing.T) {
 		t.Errorf("report %+v message %q", p.Report(), p.Message())
 	}
 }
+
+func TestPipelineState_ReportClearsOnRunChangeNotSameRun(t *testing.T) {
+	p := NewPipelineState()
+	p.SetState(runview.StateBody{Run: &runview.RunSummary{RunID: "r1"}})
+	var rb runview.ReportBody
+	rb.Status = "verified"
+	p.SetReport(rb)
+	p.SetState(runview.StateBody{Run: &runview.RunSummary{RunID: "r1"}})
+	if p.Report() == nil {
+		t.Error("report cleared on a same-run snapshot")
+	}
+	p.SetState(runview.StateBody{Run: &runview.RunSummary{RunID: "r2"}})
+	if p.Report() != nil {
+		t.Error("report kept after the run changed")
+	}
+}

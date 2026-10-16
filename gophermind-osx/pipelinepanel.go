@@ -203,7 +203,9 @@ func newPipelinePanel(state *appui.PipelineState, window *C.uiWindow, notify fun
 // and seeds the panel from the newest run, as the constructor does when it is
 // handed a fetch up front. The panel is built in chatinput.go before any
 // connection exists, so Start Breakdown stays inert until this runs (main.go,
-// once the connection manager is up).
+// once the connection manager is up). It is call-once: the fields are written
+// without a lock and read by the seed and follower goroutines, so calling it a
+// second time while those run is a data race.
 func (pp *pipelinePanel) setLiveFuncs(l PipelineLive) {
 	pp.startBreakdown = l.Start
 	pp.fetchPipeline = l.Fetch
@@ -245,6 +247,11 @@ func (pp *pipelinePanel) reload(ctx context.Context) bool {
 		return false
 	}
 	pp.state.SetMessage("")
+	if body.Run == nil && pp.state.Run() != nil {
+		// "No backend yet" (empty body, nil error): keep what is shown
+		// rather than wiping the run and nodes.
+		return true
+	}
 	pp.state.SetState(body)
 	if pp.fetchReport != nil && body.Run != nil {
 		if r, err := pp.fetchReport(ctx, body.Run.RunID); err == nil {
@@ -254,15 +261,29 @@ func (pp *pipelinePanel) reload(ctx context.Context) bool {
 	return true
 }
 
-// follow starts one PipelineFollower for the current run, unless one is
-// already running or there is no run to follow. The follower reconnects at the
+// stop cancels the running follower, if any. Call it when the connection it
+// reads from goes away (disconnect, app quit).
+func (pp *pipelinePanel) stop() {
+	pp.followMu.Lock()
+	defer pp.followMu.Unlock()
+	if pp.followCancel != nil {
+		pp.followCancel()
+		pp.followCancel = nil
+	}
+}
+
+// follow starts one PipelineFollower for the current run, unless there is no
+// run to follow. A follower already running is cancelled and replaced. The follower reconnects at the
 // last event id after a drop and refetches the state on every (re)connect,
 // because wave, run-status and report events are never replayed.
 func (pp *pipelinePanel) follow() {
 	pp.followMu.Lock()
 	defer pp.followMu.Unlock()
-	if pp.openEvents == nil || pp.state.RunID() == "" || pp.followCancel != nil {
+	if pp.openEvents == nil || pp.state.RunID() == "" {
 		return
+	}
+	if pp.followCancel != nil {
+		pp.followCancel()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	pp.followCancel = cancel
@@ -278,7 +299,9 @@ func (pp *pipelinePanel) follow() {
 	go func() {
 		_ = f.Run(ctx)
 		pp.followMu.Lock()
-		pp.followCancel = nil
+		if ctx.Err() == nil { // not superseded or stopped: nobody else owns the slot
+			pp.followCancel = nil
+		}
 		pp.followMu.Unlock()
 	}()
 }
@@ -323,7 +346,18 @@ func (pp *pipelinePanel) refresh() {
 		cs := C.CString(appui.FormatReport(*r))
 		C.uiMultilineEntrySetText(pp.reportEntry, cs)
 		C.free(unsafe.Pointer(cs))
+	} else {
+		empty := C.CString("")
+		C.uiMultilineEntrySetText(pp.reportEntry, empty)
+		C.free(unsafe.Pointer(empty))
 	}
+}
+
+// reportTextForTest returns the report box's current text.
+func (pp *pipelinePanel) reportTextForTest() string {
+	c := C.uiMultilineEntryText(pp.reportEntry)
+	defer C.uiFreeText(c)
+	return C.GoString(c)
 }
 
 // setLabel sets a label's text and frees the C copy (libui copies it).
