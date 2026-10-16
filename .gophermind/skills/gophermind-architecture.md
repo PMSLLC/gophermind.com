@@ -11,13 +11,13 @@ checkout before relying on a path, symbol, interface signature, or execution mod
 | Agent loop | `gophermind-lib/agent/` | Execution, tool dispatch, task graph, verification, streaming |
 | Tools | `gophermind-lib/tools/` | Actual tool interface, registration, validation, permissions |
 | TUI | `gophermind-lib/tui/` | State, update/view flow, slash commands |
-| Workflow | `gophermind-lib/phaseflow/` | State schema, transitions, gates, persistence |
+| Workflow | `gophermind-lib/briefv2/` | Brief planner, blackboard state, executor |
 | Prompts | `gophermind-lib/prompt/` | Registry, personas, rendering, skill loading |
 | Skills | `gophermind-lib/skills/` | Repo-local pack loading, fetched-skill catalogue |
 | Models | `gophermind-lib/llm/` | Provider interface, capability resolution, adapters, streaming |
 | CLI/config | `cmd/gophermind/`, `gophermind-lib/config/` | Entry points, flags, provider selection |
 
-Reported state locations: `.planning/<PROJECT>/` for PhaseFlow, `.remember/` for
+Reported state locations: `.remember/` for
 sessions, and `workspace/` for projects. Verify root resolution and project selection.
 Find symbols before reading entire files; inspect relevant callers and tests.
 
@@ -30,7 +30,7 @@ runtime requires it; do not invent signatures or duplicate registrations.
 For TUI/slash-command changes, trace input handling through dispatch and state
 updates to rendering. For agent/provider changes, trace context, request, streaming,
 result/error handling, and cleanup. For personas, verify selection and rendering.
-For workflow changes, use `gophermind-phaseflow` and inspect transition tests.
+For workflow changes, inspect the transition tests of the blackboard and the executor (`gophermind-lib/briefv2/blackboard`, `executor`).
 
 ## Boundaries to verify
 

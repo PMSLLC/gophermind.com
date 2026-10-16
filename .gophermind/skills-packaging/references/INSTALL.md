@@ -9,13 +9,12 @@ The replacement files are in `../packs/`:
 - `diagnosing-bugs.md`
 - `gophermind-architecture.md`
 - `gophermind-build-test.md`
-- `gophermind-phaseflow.md`
 - `tdd.md`
 
 Locate the actual directory read by `Skills()` in your checkout. Its filesystem
 path was not included in the supplied files, so this bundle does not guess it.
 Back up that directory outside the loader's scan tree, inspect the replacement
-diff, and copy these seven files into it. Replace the existing README rather than
+diff, and copy these six files into it. Replace the existing README rather than
 adding the timestamped upload filename alongside it.
 
 Keep `SKILL.md`, `agents/`, `references/`, `scripts/`, this installation document,
@@ -24,7 +23,7 @@ may undo the prompt-size savings or become unintended instructions. Preserve
 applicable upstream license notices elsewhere in the repository, including the
 bundled `mattpocock-skills-MIT.txt` for the three locally adapted upstream packs.
 
-No YAML frontmatter has been added to the seven GopherMind files. No loader code
+No YAML frontmatter has been added to the six GopherMind files. No loader code
 change is required by their format. Compatibility is based on the uploaded README's
 description, not a runtime test. Determine whether skills are read live or embedded
 at build time before deciding whether to reload or rebuild GopherMind.

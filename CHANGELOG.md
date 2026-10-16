@@ -12,7 +12,13 @@ All notable changes to GopherMind are documented here. The format follows
 
 ### Changed
 
-- The v1 planner is now `/plan-v1` (and `/plan-v1-execute`); it is deprecated and will be removed after the AI Venture Studio release.
+- **Breaking: the pipeline contract.** The server's `/pipeline/state`, `/pipeline/events` and `/pipeline/report` and the desktop app's pipeline panel now read the run folder (nodes, runtime files, event log, report) instead of `.planning/assignments.json`. Every body carries `schema_version` 1 and every response the header `X-Gophermind-Pipeline-Schema: 1`. New routes: `/pipeline/runs`, `/pipeline/node`, `/pipeline/artifact`, `/pipeline/decisions`. Event streams carry ids, resume with `since` or `Last-Event-ID`, and are capped at 16 (`GOPHERMIND_PIPELINE_MAX_STREAMS`). The server and the desktop app must be updated together; a pair that disagrees shows a message in the panel and chat keeps working.
+- The `briefv2` package folder is now `gophermind-lib/build` and `docs/briefv2` is `docs/build` (import path change only, no behavior change).
+
+### Removed
+
+- **`gophermind phase` and `/phase` are removed**, with PhaseFlow's roadmap workflow, its embedded prompts and its `.planning/` files (`ROADMAP.md`, `STATE.md`, `assignments.json`). There is no replacement for the roadmap loop. `gophermind phase ...` and `/phase` now print a notice and the CLI exits 2; plan and build a brief with `gophermind brief plan` and `gophermind brief run`, or with `/project`. Existing `.planning/` folders are not read. The notice stub is removed in the release after this one.
+- **The v1 planner and runner are removed**: the `plantree` and `orchestrate` packages, `/plan-v1`, `/plan-v1-execute`, `/project-execute` and `/questions`.
 
 ## [0.9.0] - 2026-09-29
 

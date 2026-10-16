@@ -12,7 +12,6 @@ work, not token loading.
 | Implement or change tested behavior | `tdd` |
 | Locate code or assess architecture | `gophermind-architecture` |
 | Build or verify changes | `gophermind-build-test` |
-| Operate an explicitly requested PhaseFlow project | `gophermind-phaseflow` |
 
 ## Shared rules
 

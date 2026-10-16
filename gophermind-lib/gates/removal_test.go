@@ -70,12 +70,14 @@ func eachGoFile(t *testing.T, fn func(rel string, imports []string)) {
 var removedImports = []string{
 	"gophermind/gophermind-lib/plantree",
 	"gophermind/gophermind-lib/orchestrate",
+	"gophermind/gophermind-lib/phaseflow",
 }
 
 // removedDirs are the folders that must not exist.
 var removedDirs = []string{
 	"gophermind-lib/plantree",
 	"gophermind-lib/orchestrate",
+	"gophermind-lib/phaseflow",
 }
 
 func TestNoPackageImportsARemovedPackage(t *testing.T) {

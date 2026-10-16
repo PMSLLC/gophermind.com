@@ -49,7 +49,7 @@ Comprehensive reference for:
 ### Architecture-Adjacent Docs
 
 Also indexed for context:
-- `PROJECT.md` — conventions, secrets, PhaseFlow
+- `PROJECT.md` — conventions, secrets
 - `docs/DEPLOYMENT.md` — serve mode, monitoring
 - `docs/SKILLS.md` — custom skill packs
 - `docs/RELEASING.md` — release process
@@ -83,16 +83,6 @@ Quick navigation reference:
 - Quick grep references
 
 **Use**: When gophermind approaches a task, it uses this to find the right files and understand patterns before coding.
-
-### `gophermind-phaseflow.md`
-
-Reference for:
-- PhaseFlow concepts and commands
-- State machine and JSON schema
-- Agent execution in phases
-- Phase spec structure
-- Creating new phase projects
-- Archiving and cleanup
 
 **Use**: When working on multi-step projects (like the "Go Pher It" logo), gophermind uses this to understand phase workflow commands and state.
 
@@ -143,7 +133,6 @@ With this setup, gophermind can:
 - **Build and test** — knows exact commands, test patterns, verification gates
 - **Work on features** — can read architecture, understand patterns, make surgical changes
 - **Work on bugs** — has debugging skills + ability to find relevant code
-- **Work on PhaseFlow projects** — can execute multi-step tasks with state tracking
 - **Review code** — has code-review skill + architectural understanding
 - **Release** — knows release process (from PROJECT.md, RELEASING.md)
 

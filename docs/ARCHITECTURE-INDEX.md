@@ -32,52 +32,7 @@ gophermind (go 1.25.0)
 │   │   ├── view.go                # Charm-based rendering
 │   │   ├── prompt.go              # Prompt input with history
 │   │   └── *_test.go
-│   ├── phaseflow/                 # Spec-driven workflow (ported from metaphaseflow)
-│   │   ├── phase.go               # Phase CLI subcommand
-│   │   ├── state.go               # Deterministic state (done/next/status/archive)
-│   │   ├── spec.go                # Phase spec parsing
-│   │   ├── execute.go             # Agent-driven phase steps
-│   │   ├── assets/                # Vendored spec templates
-│   │   └── *_test.go
-│   ├── prompt/                    # Prompt registry and rendering
-│   │   ├── registry.go            # Named prompts, personas
-│   │   ├── render.go              # Template expansion, context injection
-│   │   ├── art.go                 # ASCII art (gopher, tagline)
-│   │   └── *_test.go
-│   ├── models/                    # Model provider abstraction
-│   │   ├── provider.go            # OpenAI-compatible API
-│   │   ├── endpoints.go           # Named profiles, auto-discovery
-│   │   ├── stream.go              # Streaming response parsing
-│   │   └── *_test.go
-│   ├── config/                    # Configuration loading
-│   │   ├── load.go                # .env, env vars, flags
-│   │   ├── profiles.go            # Named provider profiles
-│   │   └── *_test.go
-│   └── ... (other subsystems)
-├── design/                        # Design assets, specs, rationale
-│   ├── gopher-it-logo*.svg        # Wordmark (light/dark)
-│   ├── gopher-it-1024.png         # iOS icon master
-│   └── README.md                  # Design system
-├── docs/                          # Documentation
-│   ├── ARCHITECTURE-INDEX.md      # This file
-│   ├── DEPLOYMENT.md              # Serve mode setup
-│   ├── RELEASING.md               # Release checklist
-│   ├── REMOTE-SESSIONS.md         # Desktop client config
-│   ├── SKILLS.md                  # Skill packs
-│   ├── mobile-serve.md            # iOS client setup
-│   └── superpowers/               # Execution plans
-├── scripts/                       # Build/deploy tooling
-│   ├── render-logo.sh             # SVG → PNG rasterizer
-│   ├── release.sh                 # Signed release build
 │   └── ...
-├── .gophermind/                   # Project-local skills and config
-│   ├── skills/
-│   │   ├── diagnosing-bugs.md     # Debug workflow
-│   │   ├── tdd.md                 # Test-driven development
-│   │   ├── code-review.md         # Code review checklist
-│   │   └── README.md              # Skill documentation
-│   └── ...
-├── .planning/                     # PhaseFlow state (gitignored)
 ├── .remember/                     # Session memory (gitignored)
 ├── .github/                       # CI/CD workflows
 ├── GOPHERMIND.toml                # Project metadata for gophermind agents
@@ -124,26 +79,6 @@ Parse + validate against schema
 Run(ctx, args) → (result, error)
     ↓
 Stream result to TUI + collect for response synthesis
-```
-
-### PhaseFlow State Machine (internal/phaseflow/)
-
-```
-.planning/PROJECT_NAME/state.json
-    {
-      "status": "in-progress",  # in-progress | blocked | done
-      "current_phase": 3,
-      "phases": [
-        {"name": "plan", "status": "done", ...},
-        {"name": "execute", "status": "in-progress", ...},
-        ...
-      ]
-    }
-    ↓
-/phase status → read state
-/phase next → advance to next phase, run agent
-/phase done → mark complete
-/phase archive → move to done/
 ```
 
 ## Core Abstractions
@@ -224,7 +159,6 @@ Implementations: OpenAI, Ollama, vLLM, LM Studio, local endpoints.
 | Add a slash command | `internal/tui/commands.go` | Route to tool or agent action |
 | Add a persona | `internal/prompt/registry.go` | Define system + role prompts |
 | Change model provider | `internal/models/provider.go` | Update CLI in `cmd/gophermind/main.go` |
-| Add PhaseFlow step | `internal/phaseflow/execute.go` | Update state in `internal/phaseflow/state.go` |
 
 ## Testing Patterns
 
@@ -260,7 +194,6 @@ make ios-test   # Run iOS unit tests
 - **File containment** (internal/tools/read.go): Symlinks are resolved and checked against repo root. Paths outside the repo are denied.
 - **Shell deny-list** (internal/tools/shell.go): Commands like `rm -rf`, `dd`, network tools are blocked. No shell escaping; use args array.
 - **TUI streaming**: Results arrive incrementally; buffering them would defeat the purpose.
-- **PhaseFlow state**: State file is JSON on disk. Concurrent writes are not safe; sequence operations with locks in high-contention scenarios.
 - **Model switching**: Changing model mid-conversation loses context (no multi-model synthesis yet).
 - **Golden files**: Re-blessing with `GOLDEN_UPDATE=1` will bake in bugs if you don't visually inspect the output first.
 

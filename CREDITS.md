@@ -13,12 +13,10 @@ unmodified. Thank you, Brian.
 
 ## PhaseFlow
 
-GopherMind's native spec-driven workflow (`gophermind phase …` / `/phase`) is a
-port of **PhaseFlow** by **Lex Christopherson** —
-<https://github.com/jbrahy/metaphaseflow>. Its phase commands, subagent
-definitions, and workflow templates are vendored and embedded under
-`internal/phaseflow/assets/`, used under the **MIT License** (Copyright © 2025
-Lex Christopherson; see `internal/phaseflow/assets/LICENSE.upstream`). Thank you.
+GopherMind once had a native spec-driven workflow (`gophermind phase ...`, `/phase`) that was a
+port of **PhaseFlow** by **Lex Christopherson** (<https://github.com/jbrahy/metaphaseflow>), used
+under the **MIT License** (Copyright 2025 Lex Christopherson). That workflow and the vendored
+prompts were removed in 0.10.0, and no PhaseFlow code is part of GopherMind any more. Thank you.
 
 ## Free LLM provider registry
 
