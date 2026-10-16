@@ -45,6 +45,7 @@ type schemaIssue struct {
 	field   string // the failing property, empty for a node-level failure
 	kind    string // missing, invalid or node
 	pointer string // the JSON pointer, kept for failures that are not in a node
+	unknown string // for a node with a property the schema does not allow: the text saying so
 }
 
 func (i schemaIssue) what() string {
@@ -101,6 +102,9 @@ func (i schemaIssue) String() string {
 	case "invalid":
 		return who + " has an invalid " + i.field
 	}
+	if i.unknown != "" {
+		return who + i.unknown
+	}
 	return who + " is not valid"
 }
 
@@ -140,6 +144,8 @@ func issuesOf(ve *jsonschema.ValidationError, doc map[string]any) []schemaIssue 
 			text := pointer
 			if req, ok := e.ErrorKind.(*kind.Required); ok {
 				text += " is missing " + strings.Join(req.Missing, ", ")
+			} else if _, ok := e.ErrorKind.(*kind.AdditionalProperties); ok {
+				text += unknownPropText(e)
 			} else {
 				text += " is not valid"
 			}
@@ -159,6 +165,9 @@ func issuesOf(ve *jsonschema.ValidationError, doc map[string]any) []schemaIssue 
 			} else {
 				i := nodeIssue
 				i.kind = "node"
+				if _, ok := e.ErrorKind.(*kind.AdditionalProperties); ok {
+					i.unknown = unknownPropText(e)
+				}
 				add(i)
 			}
 		}

@@ -1,15 +1,20 @@
 package planner
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"go/scanner"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/santhosh-tekuri/jsonschema/v6/kind"
+
+	"gophermind/gophermind-lib/build/schema"
 )
 
 // Reply text must never reach an error that can be printed or recorded. The
@@ -46,7 +51,7 @@ func schemaErr(ve *jsonschema.ValidationError) string {
 			if req, ok := e.ErrorKind.(*kind.Required); ok {
 				loc += " is missing " + strings.Join(req.Missing, ", ")
 			} else if _, ok := e.ErrorKind.(*kind.AdditionalProperties); ok {
-				loc += " has additional properties"
+				loc += unknownPropText(e)
 			} else {
 				loc += " is not valid"
 			}
@@ -62,6 +67,88 @@ func schemaErr(ve *jsonschema.ValidationError) string {
 		parts = append(parts[:maxSchemaPointers], fmt.Sprintf("and %d more", len(parts)-maxSchemaPointers))
 	}
 	return "the contract fails its schema: " + strings.Join(parts, "; ")
+}
+
+// maxAllowedProps is how many allowed property names an unknown-property failure lists.
+const maxAllowedProps = 12
+
+// allowedProps lists the properties the schema allows for the object that e
+// failed, read from the embedded schema and never from the reply. It is nil
+// when the object cannot be found.
+func allowedProps(e *jsonschema.ValidationError) []string {
+	base, ptr, ok := strings.Cut(e.SchemaURL, "#")
+	if !ok {
+		return nil
+	}
+	for _, k := range []schema.Kind{schema.KindContract, schema.KindNode, schema.KindBrief} {
+		raw, err := schema.Raw(k)
+		if err != nil {
+			continue
+		}
+		var node any
+		if json.Unmarshal(raw, &node) != nil {
+			continue
+		}
+		if m, _ := node.(map[string]any); m["$id"] != base {
+			continue
+		}
+		for _, seg := range strings.Split(ptr, "/") {
+			if seg == "" {
+				continue
+			}
+			seg = strings.NewReplacer("~1", "/", "~0", "~").Replace(seg)
+			switch n := node.(type) {
+			case map[string]any:
+				node = n[seg]
+			case []any:
+				i, err := strconv.Atoi(seg)
+				if err != nil || i < 0 || i >= len(n) {
+					return nil
+				}
+				node = n[i]
+			default:
+				return nil
+			}
+		}
+		m, _ := node.(map[string]any)
+		props, _ := m["properties"].(map[string]any)
+		if len(props) == 0 {
+			return nil
+		}
+		names := make([]string, 0, len(props))
+		for n := range props {
+			names = append(names, n)
+		}
+		return orderByFile(names, raw)
+	}
+	return nil
+}
+
+// orderByFile sorts names by where their key first appears in raw, which is
+// the order the schema declares them in (a decoded map has lost it).
+func orderByFile(names []string, raw []byte) []string {
+	pos := map[string]int{}
+	for _, n := range names {
+		pos[n] = bytes.Index(raw, []byte(`"`+n+`":`))
+	}
+	sort.SliceStable(names, func(i, j int) bool { return pos[names[i]] < pos[names[j]] })
+	return names
+}
+
+// unknownPropText is the text for a failed additionalProperties: it says the
+// object has a property the schema does not allow and lists the allowed ones.
+// It never names the property the reply supplied.
+func unknownPropText(e *jsonschema.ValidationError) string {
+	names := allowedProps(e)
+	if len(names) == 0 {
+		return " has a property the schema does not allow"
+	}
+	extra := ""
+	if len(names) > maxAllowedProps {
+		extra = fmt.Sprintf(", and %d more", len(names)-maxAllowedProps)
+		names = names[:maxAllowedProps]
+	}
+	return " has a property the schema does not allow (allowed: " + strings.Join(names, ", ") + extra + ")"
 }
 
 var quotedRE = regexp.MustCompile(`"(?:[^"\\]|\\.)*"`)

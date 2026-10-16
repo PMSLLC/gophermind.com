@@ -1,8 +1,14 @@
 package planner
 
 import (
+	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
+
+	"github.com/santhosh-tekuri/jsonschema/v6"
+
+	"gophermind/gophermind-lib/build/schema"
 )
 
 const replyCanary = "CANARY-4c1d9e"
@@ -71,5 +77,63 @@ func TestParseQuestionListRejectsNull(t *testing.T) {
 	}
 	if qs, err := parseQuestionList("[]", qstore{}, qparseOpts{}); err != nil || qs == nil {
 		t.Errorf("[] = %v, %v", qs, err)
+	}
+}
+
+func contractVE(t *testing.T, doc string) *jsonschema.ValidationError {
+	t.Helper()
+	var ve *jsonschema.ValidationError
+	if err := schema.Validate(schema.KindContract, []byte(doc)); !errors.As(err, &ve) {
+		t.Fatalf("want a schema failure, got %v", err)
+	}
+	return ve
+}
+
+const extraKeyComponent = `{"components":[{"id":"summarize-file","package":"p","exports":[],"zzcanaryzz":"x"}]}`
+
+// An unknown property is reported with the properties the schema allows, and
+// never with the name or value the reply supplied.
+func TestSchemaErrListsAllowedPropertiesForAnUnknownOne(t *testing.T) {
+	ve := contractVE(t, extraKeyComponent)
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(extraKeyComponent), &doc); err != nil {
+		t.Fatal(err)
+	}
+	for name, got := range map[string]string{"schemaErr": schemaErr(ve), "nodeSchemaErr": nodeSchemaErr(ve, doc)} {
+		if !strings.Contains(got, "allowed: id, package, exports, integration_tests") {
+			t.Errorf("%s = %q, want the allowed list", name, got)
+		}
+		if strings.Contains(got, "zzcanaryzz") {
+			t.Errorf("%s = %q, names the reply's property", name, got)
+		}
+	}
+	if got := nodeSchemaErr(ve, doc); !strings.Contains(got, `component "summarize-file" has a property the schema does not allow`) {
+		t.Errorf("nodeSchemaErr = %q", got)
+	}
+}
+
+func TestSchemaErrAllowedListForANodeIsCapped(t *testing.T) {
+	var ve *jsonschema.ValidationError
+	err := schema.Validate(schema.KindNode, []byte(`{"zzcanaryzz": 1}`))
+	if !errors.As(err, &ve) {
+		t.Fatalf("want a schema failure, got %v", err)
+	}
+	got := schemaErr(ve)
+	if !strings.Contains(got, "does not allow (allowed: ") || !strings.Contains(got, "more)") {
+		t.Errorf("schemaErr = %q, want a capped allowed list", got)
+	}
+	if strings.Contains(got, "zzcanaryzz") {
+		t.Errorf("schemaErr = %q, names the reply's property", got)
+	}
+}
+
+func TestSchemaErrOtherKindsKeepTheirShape(t *testing.T) {
+	got := schemaErr(contractVE(t, `{"components":[{"id":"a","package":"p"}]}`))
+	if want := "/components/0 is missing exports"; !strings.Contains(got, want) {
+		t.Errorf("schemaErr = %q, want %q", got, want)
+	}
+	got = schemaErr(contractVE(t, `{"components":[{"id":"A b","package":"p","exports":[]}]}`))
+	if !strings.Contains(got, "/components/0/id is not valid") || strings.Contains(got, "allowed") {
+		t.Errorf("schemaErr = %q", got)
 	}
 }

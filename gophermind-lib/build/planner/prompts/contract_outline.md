@@ -5,7 +5,8 @@ Requirements:
 - Components map to the brief's ### Feature headings plus a `types` component for shared declarations. A component id is lower case letters, digits and dashes. A type id follows the same syntax: `intake-session`, never `IntakeSession` or `intake_session`; a function id is `fn-validate-email`. Never use `logs` or `outline` as an id (they name a folder and a stage of the run).
 - List the components in dependency order: a component comes after every component whose functions it calls.
 - Every type decl is complete Go source with a doc comment, exactly as it will appear in the file. `uses` lists the ids of other types the decl references.
-- Every `file` is a path relative to the repository root.
+- Every type's `file` is a path relative to the repository root.
+- A component has exactly these keys: `id`, `package`, `exports`, `integration_tests`. No other key is allowed, and a component has no `file`.
 - Leave each component's `exports` empty; the harness fills it.
 - `integration_tests` for a component describe behavior that needs more than one of its functions. Give `name`, `given`, `expect`, and a `command`.
 - Error handling follows one convention stated in `conventions.errors`.
