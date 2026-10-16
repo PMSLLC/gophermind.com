@@ -62,7 +62,7 @@ func (a *Agent) SendWithVerification(ctx context.Context, userInput string) (str
 	return a.VerifyResult(ctx, userInput, a.Send)
 }
 
-// Verify exposes the fresh verifier agent to callers (e.g. orchestrate.Runner)
+// Verify exposes the fresh verifier agent to callers (e.g. a task runner)
 // that need to drive their own verify + correction loop with re-verification
 // after the correction, rather than the single-shot, no-re-verify behavior of
 // VerifyResult/SendWithVerification. Returns (satisfied, feedback); like

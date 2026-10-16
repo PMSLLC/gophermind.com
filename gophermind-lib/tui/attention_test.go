@@ -8,7 +8,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
-	"gophermind/gophermind-lib/phaseflow"
 )
 
 // colorful forces a real color profile so styled spans actually emit SGR codes;
@@ -85,7 +84,6 @@ func TestTurnCompletionInvertsTheScreen(t *testing.T) {
 	}{
 		{"answer", doneMsg{answer: "done"}},
 		{"error", errMsg{err: errors.New("boom")}},
-		{"executor", execDoneMsg{summary: phaseflow.RunSummary{}}},
 	} {
 		m := sizedModel(t, 80, 24)
 		m.st = stateWorking
@@ -123,18 +121,5 @@ func TestStreamingDoesNotInvert(t *testing.T) {
 	u, _ := m.Update(tokenMsg("thinking"))
 	if inverted(u.(model)) {
 		t.Error("screen inverted mid-stream")
-	}
-}
-
-// TestPlanningProgressDoesNotInvert: a progress line from the planning run
-// is not the run asking for anything, so it must not call the user back.
-func TestPlanningProgressDoesNotInvert(t *testing.T) {
-	colorful(t)
-	m := sizedModel(t, 80, 24)
-	m.st = stateWorking
-	m.proj = projRunning
-	u, _ := m.Update(projectProgressMsg("specifying the steps"))
-	if inverted(u.(model)) {
-		t.Error("a planning progress line inverted the screen mid-flow")
 	}
 }

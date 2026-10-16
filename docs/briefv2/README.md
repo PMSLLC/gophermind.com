@@ -91,9 +91,9 @@ brief path is the only positional argument. The old form `/project <name>
 <brief>` is refused. Flags may come before or after the path, each flag may be
 given once (`--generate` may repeat), and flags take two dashes.
 
-The v1 planner is now `/plan-v1` (with `/plan-v1-execute`). Both print a
-deprecation line and will be removed after the AI Venture Studio release.
-`gophermind brief plan` and `brief run` are unchanged.
+The older planner commands `/plan-v1`, `/plan-v1-execute`, `/questions` and
+`/project-execute` were removed in 0.10.0; typing one prints a one-line notice
+that points here. `gophermind brief plan` and `brief run` are unchanged.
 
 Flags:
 

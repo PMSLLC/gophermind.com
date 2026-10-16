@@ -5,9 +5,6 @@ package tui
 // command takes an argument, e.g. "<name>"; it is "" for argument-less
 // commands. This registry is metadata only — dispatch logic in handleSubmit
 // is unaffected by it.
-//
-// "/phase" sub-commands have their own help string, phaseSlashHelp
-// (commands.go), which is not folded in here.
 type slashCommand struct {
 	Name string
 	Arg  string
@@ -18,10 +15,6 @@ var slashCommands = []slashCommand{
 	{Name: "/help", Arg: "", Desc: "show this help"},
 	{Name: "/clear", Arg: "", Desc: "clear the transcript and reset the session"},
 	{Name: "/project", Arg: "<brief> [flags]", Desc: "plan and build a v2 brief in one run, no second command"},
-	{Name: "/plan-v1", Arg: "<name> <brief>", Desc: "v1 planner: plan a brief into phases, tasks and steps (deprecated, use /project)"},
-	{Name: "/plan-v1-execute", Arg: "", Desc: "run every pending task in the approved plan autonomously"},
-	{Name: "/questions", Arg: "[change]", Desc: "answer the plan's open questions in one round (\"change\" revisits answered ones)"},
-	{Name: "/phase", Arg: "<cmd>", Desc: "run a PhaseFlow workflow command"},
 	{Name: "/config", Arg: "", Desc: "open the configuration wizard"},
 	{Name: "/index", Arg: "", Desc: "rebuild INDEX.md, the code symbol index"},
 	{Name: "/provider", Arg: "", Desc: "show who is serving the current model, its terms, and the odometer"},
@@ -58,6 +51,3 @@ func helpLine() string {
 	s += " · y/n/a to approve · Esc to interrupt"
 	return s
 }
-
-// planV1Deprecation is the first transcript line of the v1 planner commands.
-const planV1Deprecation = "deprecated: /plan-v1 and /plan-v1-execute are the v1 planner and will be removed after the AI Venture Studio release; /project runs the v2 planner and executor"

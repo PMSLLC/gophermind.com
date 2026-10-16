@@ -44,7 +44,7 @@ func TestParseArgsTable(t *testing.T) {
 				t.Fatal("not set")
 			}
 		}},
-		{name: "two positionals", args: []string{"name", "b.md"}, wantErr: `the v1 form "/project <name> <brief>" is gone: give the brief path only (the v1 planner is /plan-v1)`},
+		{name: "two positionals", args: []string{"name", "b.md"}, wantErr: `"/project <name> <brief>" is no longer accepted: give the brief path only`},
 		{name: "none", args: nil, wantErr: "usage"},
 		{name: "unknown flag", args: []string{"b.md", "--bogus=hunter2"}, wantErr: "--bogus"},
 		{name: "missing value", args: []string{"b.md", "--repo"}, wantErr: "--repo"},

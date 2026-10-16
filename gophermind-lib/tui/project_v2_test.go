@@ -87,7 +87,7 @@ func TestSlashProjectRejectsV1Form(t *testing.T) {
 	m := testModel(t)
 	m.input.SetValue("/project name brief.md")
 	m, _ = m.handleSubmit()
-	if m.projV2 || len(*seen) != 0 || !strings.Contains(m.content, "the v1 form") {
+	if m.projV2 || len(*seen) != 0 || !strings.Contains(m.content, "is no longer accepted") {
 		t.Errorf("projV2=%v calls=%d content=%q", m.projV2, len(*seen), m.content)
 	}
 }

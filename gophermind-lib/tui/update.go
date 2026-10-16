@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -17,8 +16,6 @@ import (
 	"github.com/jbrahy/bubblecomplete"
 	"gophermind/gophermind-lib/agent"
 	"gophermind/gophermind-lib/freellm"
-	"gophermind/gophermind-lib/orchestrate"
-	"gophermind/gophermind-lib/phaseflow"
 )
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -33,13 +30,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// so anything larger overflows the box and lipgloss wraps the remainder
 		// onto a spurious extra row.
 		m.input.SetWidth(msg.Width - 4)
-		if m.qphase == qAsking {
-			w := msg.Width - 4
-			if w < 1 {
-				w = 0
-			}
-			m.round.setWidth(w)
-		}
 		justReady := !m.ready
 		if !m.ready {
 			// Height is provisional here; applyInputHeight (below) recomputes
@@ -136,36 +126,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sync()
 		return m, tea.Batch(m.beginAttention(), waitFor(m.sub))
 
-	case execEventMsg:
-		m.appendLine(renderExecEvent(orchestrate.TaskEvent(msg)))
-		m.sync()
-		return m, waitFor(m.sub)
-
-	case execProgressMsg:
-		m.appendLine(renderExecOutcome(phaseflow.TaskOutcome(msg)))
-		m.execOutcomes = append(m.execOutcomes, phaseflow.TaskOutcome(msg))
-		m.sync()
-		return m, waitFor(m.sub)
-
-	case questionsProgressMsg, projectProgressMsg:
-		m.appendLine(fmt.Sprint(msg))
-		m.sync()
-		return m, waitFor(m.sub)
-
-	case questionsDoneMsg:
-		m.appendLine(renderQuestionsResult(msg.res))
-		m.endRound()
-		m.st = stateIdle
-		m.cancel = nil
-		// A round that left nothing but approval hands over to the same
-		// approval prompt /plan-v1 uses, rather than printing "next: approve"
-		// and making the owner find the command that does it.
-		nm := m.offerApproval(msg.actions)
-		return nm, tea.Batch(nm.beginAttention(), waitFor(m.sub))
-
-	case projectPassesDoneMsg:
-		return m.afterProjectPasses(msg)
-
 	case projectV2LineMsg:
 		m.appendLine(string(msg))
 		m.sync()
@@ -179,44 +139,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sync()
 		return m, tea.Batch(m.beginAttention(), waitFor(m.sub))
 
-	case execDoneMsg:
-		m.appendLine(renderExecSummary(msg.summary))
-		m.execOutcomes = nil
-		m.st = stateIdle
-		m.cancel = nil
-		m.sync()
-		return m, tea.Batch(m.beginAttention(), waitFor(m.sub))
-
 	case errMsg:
 		// A cancelled turn (Ctrl-C / Esc mid-stream) is a user action, not a
 		// fault: show a brief "cancelled" line and drop the partial stream rather
 		// than surfacing a raw "context canceled" error.
 		if errors.Is(msg.err, context.Canceled) {
-			if len(m.execOutcomes) > 0 {
-				// Cancelled mid /plan-v1-execute: whatever tasks already
-				// finished are real work done, not noise to discard along
-				// with the run.
-				m.appendLine(renderError("⨯ cancelled — " + renderExecCancelSummary(m.execOutcomes)))
-				m.execOutcomes = nil
-			} else {
-				m.appendLine(renderError("⨯ cancelled"))
-			}
+			m.appendLine(renderError("⨯ cancelled"))
 		} else {
 			m.appendLine(renderError("error: " + msg.err.Error()))
 		}
 		m.stream = ""
 		m.st = stateIdle
 		m.cancel = nil
-		// A cancelled or failed pass ends the round, and the /plan-v1 flow
-		// with it, so the session is not left in a phase whose keys nothing
-		// handles. Both resume from the tree, so nothing written is lost.
-		if m.qphase == qRunning {
-			m.endRound()
-		}
-		if m.proj == projRunning {
-			m.proj = projNone
-			m.appendLine("project: the planning run stopped; /plan-v1 " + m.projName + " resumes it from the tree")
-		}
 		m.sync()
 		return m, tea.Batch(m.beginAttention(), waitFor(m.sub))
 	}
@@ -263,13 +197,6 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case tea.KeyEsc:
-		// The question round takes Esc while it is showing: the first one
-		// leaves the note box, the second cancels the round. The cancel and
-		// interrupt behavior below is unchanged everywhere else, including
-		// while the round's pass is running.
-		if m.qphase == qAsking {
-			return m.handleRoundKey(msg)
-		}
 		// An active suggestion (ghost or menu) eats the first Esc — dismiss it
 		// instead of the cancel/interrupt behavior below. A second Esc (or Esc
 		// with nothing active) falls through to that behavior as before.
@@ -324,14 +251,6 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.st = stateWorking
 		}
 		return m, nil
-	}
-
-	// While the question round is showing it owns the keyboard. Ctrl-C, Esc
-	// and "/exit" are handled above, so none of them is taken over here; the
-	// round consumes everything else, which is why "/exit" cannot be typed
-	// until Esc has left the round.
-	if m.qphase == qAsking {
-		return m.handleRoundKey(msg)
 	}
 
 	// Predictive-text gets first refusal on keys while idle (Tab/→ accept a
@@ -417,17 +336,6 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		return m, nil
 	}
 
-	// While a /plan-v1 flow is active, its state machine consumes input. It
-	// declines a slash command, and the model it hands back has already left
-	// the flow, so the command below runs in a clean state.
-	if m.proj != projNone {
-		nm, cmd, handled := m.handleProjectInput(text)
-		if handled {
-			return nm, cmd
-		}
-		m = nm
-	}
-
 	// Commands taking an argument are matched by their first field so the value
 	// can follow (e.g. "/temp 0.7").
 	if cmd := strings.Fields(text)[0]; cmd == "/temp" || cmd == "/topp" {
@@ -480,18 +388,17 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		return m.handleSecAuditCommand(text), nil
 	}
 
-	// "/phase ..." runs the PhaseFlow workflow. State commands print to the
-	// transcript and return; a loop step yields a seeded prompt sent to the agent
-	// (the /phase line stays as the shown user prompt).
+	// "/phase" and the v1 planner commands were retired: print what replaced
+	// them and send nothing to the agent. The stubs last one release.
 	sendText := text
-	if strings.Fields(text)[0] == "/phase" {
-		reply, agentTask := m.handlePhaseCommand(text)
-		if agentTask == "" {
-			m.appendLine(reply)
-			m.sync()
-			return m, nil
-		}
-		sendText = agentTask
+	if first := strings.Fields(text)[0]; first == "/phase" {
+		m.appendLine(PhaseRemovedNotice())
+		m.sync()
+		return m, nil
+	} else if retiredCommands[first] {
+		m.appendLine(RetiredCommandNotice(first))
+		m.sync()
+		return m, nil
 	}
 
 	// "/config" launches the interactive configuration wizard, saves the result,
@@ -506,30 +413,10 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		return m.handleProjectV2Command(text)
 	}
 
-	// "/plan-v1 <name> <brief>" plans the brief into .planning/plan, asks its
-	// questions, then approves and exports. Subsequent input is consumed by
-	// the block above until the flow ends.
-	if strings.Fields(text)[0] == "/plan-v1" {
-		return m.handleProjectCommand(text)
-	}
-
-	// "/plan-v1-execute" runs every pending task in the approved plan
-	// autonomously, streaming per-task progress; see execute.go.
-	if strings.Fields(text)[0] == "/plan-v1-execute" {
-		return m.handleProjectExecuteCommand()
-	}
-
-	// "/questions" opens the question round over the plan tree in
-	// .planning/plan; see questions.go.
-	if strings.Fields(text)[0] == "/questions" {
-		return m.handleQuestionsCommand(text)
-	}
-
 	// A session goal (set via "/goal") is injected into every ordinary prompt
 	// as a steering preamble, so it reaches the model every turn regardless of
 	// backend. The transcript still shows the raw text; only sendText carries
-	// the preamble. Slash-command-derived sends (e.g. a "/phase" loop step)
-	// are excluded by the leading "/" check on text.
+	// the preamble. Slash commands are excluded by the leading "/" check on text.
 	if m.goal != "" && !strings.HasPrefix(text, "/") {
 		sendText = goalPreamble(m.goal, sendText)
 	}
@@ -539,8 +426,7 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 	m.st = stateWorking
 	m.sync()
 
-	// Record real prompts (not slash commands, e.g. "/phase ..." whose seeded
-	// agent task still starts with "/") in history so recall and markov
+	// Record real prompts (not slash commands) in history so recall and markov
 	// completion see them on the next Query.
 	if !strings.HasPrefix(text, "/") {
 		if m.hist != nil {

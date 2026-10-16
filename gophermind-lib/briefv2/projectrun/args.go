@@ -113,7 +113,7 @@ func ParseArgs(args []string, allowAttended bool) (Options, error) {
 	case 1:
 		o.BriefPath = pos[0]
 	default:
-		return o, errors.New(`the v1 form "/project <name> <brief>" is gone: give the brief path only (the v1 planner is /plan-v1)`)
+		return o, errors.New(`"/project <name> <brief>" is no longer accepted: give the brief path only`)
 	}
 	if o.Attended && !allowAttended {
 		return o, errors.New("attended runs need a terminal and are only available from the gophermind project command")
