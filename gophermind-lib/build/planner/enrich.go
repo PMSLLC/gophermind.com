@@ -24,6 +24,9 @@ var enrichFieldsAll = append(append([]string(nil), enrichGroups...), "error_kind
 const (
 	maxEnrichRepairs = 2
 	enrichFixStage   = "enrich:_fix"
+
+	maxEnrichNotes     = 6   // notes kept per node
+	maxEnrichNoteBytes = 300 // characters kept per note (messages are ASCII, so also bytes)
 )
 
 // tierFor is the model chain a stage that works on one node uses: the node's
@@ -72,7 +75,7 @@ type pendingEnrich struct {
 	ID        string         `json:"id"`
 	Raw       map[string]any `json:"raw,omitempty"`
 	Defects   []string       `json:"defects"`
-	Notes     []string       `json:"notes,omitempty"` // schema error text; it names JSON pointers, never quotes the reply
+	Notes     []string       `json:"notes,omitempty"` // each defect in plain words; built from group names and counts, never quotes the reply
 	Fields    []string       `json:"fields"`
 	Tries     int            `json:"tries,omitempty"`
 }
@@ -239,13 +242,21 @@ func schemaField(msg string) string {
 	return field
 }
 
-// notesOfGroup is the message of each schema defect, so a repair can say what
-// the schema refused.
+// notesOfGroup is the message of each defect, so a repair can say in plain
+// words what is wrong. The messages are built by code from group names, indices
+// and counts, never from text the model wrote (TestDefectsTextNeverQuotesTheReply
+// pins this). They are deduplicated and bounded.
 func notesOfGroup(ds []groupDefect) []string {
 	var out []string
 	for _, d := range ds {
-		if d.kind == grpSchema && d.msg != "" && !contains(out, d.msg) {
-			out = append(out, d.msg)
+		if len(out) == maxEnrichNotes {
+			break
+		}
+		if d.msg == "" {
+			continue
+		}
+		if n := cut(d.msg, maxEnrichNoteBytes); !contains(out, n) {
+			out = append(out, n)
 		}
 	}
 	return out
@@ -370,7 +381,7 @@ func defectsText(fix []pendingEnrich) string {
 	for _, pe := range fix {
 		fmt.Fprintf(&b, "%s: %s (groups: %s)\n", pe.ID, strings.Join(pe.Defects, ", "), strings.Join(pe.Fields, ", "))
 		for _, n := range pe.Notes {
-			fmt.Fprintf(&b, "  schema: %s\n", n)
+			fmt.Fprintf(&b, "  problem: %s\n", n)
 		}
 	}
 	b.WriteString("\n")

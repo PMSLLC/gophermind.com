@@ -2,6 +2,7 @@ package planner
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -216,7 +217,96 @@ func TestMergeEnrichmentEmptyProfileHooksNamesTheSchemaError(t *testing.T) {
 	if got.field != "profile_hooks" {
 		t.Errorf("field = %q, want profile_hooks", got.field)
 	}
-	if text := defectsText([]pendingEnrich{{ID: "fn-x", Defects: kindsOfGroup(ds), Notes: notesOfGroup(ds), Fields: fieldsOfGroup(ds)}}); !strings.Contains(text, "profile_hooks is not valid") {
+	if text := defectsText([]pendingEnrich{{ID: "fn-x", Defects: kindsOfGroup(ds), Notes: notesOfGroup(ds), Fields: fieldsOfGroup(ds)}}); !strings.Contains(text, "  problem: ") || !strings.Contains(text, "profile_hooks is not valid") {
 		t.Errorf("the repair prompt lacks the schema error:\n%s", text)
+	}
+}
+
+func repairText(ds []groupDefect) string {
+	return defectsText([]pendingEnrich{{ID: "fn-x", Defects: kindsOfGroup(ds), Notes: notesOfGroup(ds), Fields: fieldsOfGroup(ds)}})
+}
+
+func TestDefectsTextStatesTheThreatsRule(t *testing.T) {
+	_, ds, _ := mergeEnrichment(draftFixture(t), replyFixture(t, func(m map[string]any) {
+		sec := m["security"].(map[string]any)
+		sec["trust_boundary"] = "internal"
+		sec["threats"] = []any{}
+	}), contractFixtureForEnrich(), enrichEnvFixture())
+	if !hasKind(ds, grpThreats) {
+		t.Fatalf("kinds = %v, want %s", kindsOf(ds), grpThreats)
+	}
+	if text := repairText(ds); !strings.Contains(text, "a trust boundary other than none needs at least one threat with its mitigation") {
+		t.Errorf("the repair prompt lacks the rule:\n%s", text)
+	}
+}
+
+func TestDefectsTextCarriesEveryKindOnceAndBounded(t *testing.T) {
+	ds := []groupDefect{
+		{grpThreats, "security", "rule one"}, {grpGoMin, "portability", "rule two"}, {grpThreats, "security", "rule one"},
+	}
+	text := repairText(ds)
+	for _, want := range []string{"rule one", "rule two"} {
+		if strings.Count(text, want) != 1 {
+			t.Errorf("%q appears %d times, want 1:\n%s", want, strings.Count(text, want), text)
+		}
+	}
+	var many []groupDefect
+	for i := 0; i < 40; i++ {
+		many = append(many, groupDefect{grpEnum, "error_kinds", fmt.Sprintf("note %d %s", i, strings.Repeat("x", 2000))})
+	}
+	if n := len(notesOfGroup(many)); n > maxEnrichNotes {
+		t.Errorf("%d notes, want at most %d", n, maxEnrichNotes)
+	}
+	for _, n := range notesOfGroup(many) {
+		if len(n) > maxEnrichNoteBytes {
+			t.Errorf("a note has %d bytes, want at most %d", len(n), maxEnrichNoteBytes)
+		}
+	}
+}
+
+func TestDefectsTextNeverQuotesTheReply(t *testing.T) {
+	const canary = "CANARY-enrich-7731"
+	edits := map[string]func(m map[string]any){
+		"rationale":   func(m map[string]any) { m["rationale"] = canary },
+		"decision":    func(m map[string]any) { m["decision_ids"] = []any{canary} },
+		"error kinds": func(m map[string]any) { m["error_kinds"] = []any{canary} },
+		"secret":      func(m map[string]any) { m["security"].(map[string]any)["secret_use"] = []any{canary} },
+		"untrusted":   func(m map[string]any) { m["security"].(map[string]any)["untrusted_inputs"] = []any{canary} },
+		"boundary": func(m map[string]any) {
+			m["security"].(map[string]any)["trust_boundary"] = canary
+			m["security"].(map[string]any)["threats"] = []any{}
+		},
+		"go_min": func(m map[string]any) { m["portability"].(map[string]any)["go_min"] = canary },
+		"deps":   func(m map[string]any) { m["portability"].(map[string]any)["deps"] = []any{canary} },
+		"log msg": func(m map[string]any) {
+			m["observability"].(map[string]any)["log_events"] = []any{map[string]any{"level": "warn", "msg": canary + " %s"}}
+		},
+		"log field": func(m map[string]any) {
+			m["observability"].(map[string]any)["log_events"] = []any{map[string]any{"level": "warn", "msg": "m", "fields": []any{"crm_token"}}}
+		},
+		"na reason": func(m map[string]any) { m["alternatives"] = map[string]any{"not_applicable": canary} },
+		"na group": func(m map[string]any) {
+			m["security"] = map[string]any{"not_applicable": canary + " " + canary + " " + canary}
+		},
+		"construction": func(m map[string]any) {
+			m["construction"] = map[string]any{"approach_chosen": canary, "steps": []any{canary}}
+		},
+		"schema enum": func(m map[string]any) {
+			m["performance"] = map[string]any{"complexity": "O(1)", "concurrency": canary, "hot_path": false}
+		},
+		"schema type":   func(m map[string]any) { m["profile_hooks"] = canary },
+		"schema extra":  func(m map[string]any) { m["performance"].(map[string]any)[canary] = canary },
+		"schema nested": func(m map[string]any) { m["alternatives"] = []any{map[string]any{"approach": canary, canary: canary}} },
+	}
+	for name, edit := range edits {
+		t.Run(name, func(t *testing.T) {
+			_, ds, _ := mergeEnrichment(draftFixture(t), replyFixture(t, edit), contractFixtureForEnrich(), enrichEnvFixture())
+			if len(ds) == 0 {
+				t.Skip("this edit produced no defect")
+			}
+			if text := repairText(ds); strings.Contains(text, canary) {
+				t.Errorf("the repair prompt quotes the reply:\n%s", text)
+			}
+		})
 	}
 }
