@@ -84,8 +84,8 @@ committed result in one process. It runs the preflight, writes any generated
 secrets, plans the brief (Load, Clarify, Confirm, Contract, Decompose, Enrich,
 Coverage, Approve, Test-writer), runs the executor, writes
 `<run folder>/_state/project.json` and prints the final report. The planner and
-the executor share one router, one blackboard and one ledger over the same run
-folder. A planner stage that fails stops the run with `stop_reason:
+the executor share one router, one runtime-state store and one ledger over the same run
+folder (all of it files, see "Where a run keeps its state"). A planner stage that fails stops the run with `stop_reason:
 plan:<stage>`; the report is still written and the executor is not called. The
 brief path is the only positional argument. The old form `/project <name>
 <brief>` is refused. Flags may come before or after the path, each flag may be
@@ -254,8 +254,8 @@ yet it says so and exits 1. `gophermind brief status <run-id>` gains, once the
 executor has started, `executor: <status>` (`in progress` until a report exists),
 the last stop reason, `waves done: <w> of <n>`, `leaves: verified <v> of <t>` with
 the other counts, and one `blocked: <id> (waiting on <dep>)` line for each leaf
-that waits on a failed or escalated leaf. Status reads the run folder and the
-blackboard and takes no claim.
+that waits on a failed or escalated leaf. Status reads the run folder and
+takes no claim.
 
 An escalation that needs a person ends the run with exit 4 (or 3 with the file
 gate). A harness error that left no report (the plan changed since the run started,
@@ -458,7 +458,7 @@ requirement the command, exit code, output size and SHA-256), `changes.patch`
 `_state/notes.json` (hints a person added on a retry), `_state/revisions/` (the rewrites of
 revised nodes and your decisions about them) and `decisions/rv-*.md`. Prompt text, reply text,
 command output and secret values are never stored, in these files, in the ledger or
-in the blackboard: only ids, counts, sizes, hashes and fixed class words.
+in the runtime files: only ids, counts, sizes, hashes and fixed class words.
 
 ## Known limits
 
@@ -551,7 +551,7 @@ its output is already in the run folder.
 | Enrich | Writes the node groups (see "Node groups") of every function, then of every component and the root | `_state/enriched.json`, the drafts in `_state/` |
 | Coverage | Maps every requirement of the brief to the nodes and tests that satisfy it | `coverage.json`, acceptance tests on the root node |
 | Approve | Refuses while a node lists an open question or the understanding is not confirmed, shows the plan and waits for a decision | `approval.json` |
-| Test-writer | Writes the tests of every function from its contract alone, each with a polarity and a `covers` | test files in the target repository, the finished tree, blackboard rows |
+| Test-writer | Writes the tests of every function from its contract alone, each with a polarity and a `covers` | test files in the target repository, the finished tree, the nodes' runtime files |
 
 The stage names, in order, are `load`, `clarify`, `confirm`, `contract`,
 `decompose`, `enrich`, `coverage`, `approve` and `testwriter`.
@@ -1056,9 +1056,16 @@ gophermind-lib/build/
   tree/       nodes, cycle check, waves, readiness, file store
   contract/   load, Slice, Diff, Affected
   rundir/     .gophermind/<id>/ layout, kept out of git via .git/info/exclude
-  db/         the shared SQLite file and its migrations
-  blackboard/ runtime state of every node (rows, claims, attempts)
-  ledger/     one row per model call
+  runfs/      file primitives of the run state: atomic write, lock file, append-only lines
+  blackboard/ runtime state of every node, kept in the node's .runtime.json (status, claim, attempts)
+  ledger/     one line per model call (_state/calls.jsonl)
+  revlog/     the revision log of rewritten nodes
+  artifacts/  scrubbed attempt files
+  pathsafe/   path rules for every file written in the target repository
+  envcheck/   the environment preflight
+  execenv/    the exact environment of a node's commands
+  packer/     the prompt of one leaf and the check of its reply
+  projectrun/ the /project chain: preflight, planner, executor, final report
   events/     progress events and sinks
   provider/   the provider interface, the OpenAI-compatible client, a scripted fake
   settings/   gophermind.yaml
@@ -1076,7 +1083,8 @@ cmd/gophermind/brief.go        the `gophermind brief ...` command group
 cmd/gophermind/brief_plan.go   plan, resume, status, coverage, calls
 cmd/gophermind/brief_run.go    run, report, the executor status lines, base URL fallbacks
 cmd/gophermind/brief_preflight.go  run --check-env
-docs/build/handoff/     the original handoff, for reference (copied from the zip; the only edits are that
+docs/build/handoff/     the original handoff, for reference only (it describes a SQLite blackboard and
+                           the old folder names; the build keeps run state as files; copied from the zip, the only edits are that
                            interfaces/blackboard.go was gofmt'd and interfaces/ has a go.mod so the repo's
                            Go tooling skips it: it holds two packages, blackboard and provider, meant to be
                            copied into real packages later)
@@ -1104,5 +1112,5 @@ resolutions reproduce every value in the examples that can be checked.
 | D4 | "Every file under examples/tree validates", waves reproduced | The example tree is a partial excerpt: only 7 node files, while `depends_on` and `children` reference ~10 more | Per-file schema validation runs on all 7. Tree-level tests use the 6-node subset whose dependencies exist, plus synthetic trees. `Load` does not require `children` to resolve |
 | D5 | Secret scan regex `\b[A-Z][A-Z0-9_]{2,}\b` minus a stoplist | It flags 5 error codes in the example brief (`EMAIL_INVALID` etc.) | The handoff update resolved the scan noise. Venture-studio fixture: 2 warnings, ceiling 3. Warnings only, never blocking |
 | D6 | Config in `gophermind.yaml`, then TOML | `GOPHERMIND.toml` is not parsed by any Go code and there is no TOML library | Items 1 to 4 need no harness config. Vault path defaults to `<config.Dir()>/vault.age`. Config format is decided in the provider/router plan |
-| D7 | Blackboard: reuse the recursive agent system's | Not in this repo; John did not say where it lives | Assumption: build the SQLite backend in the blackboard plan (item 6). Not needed here |
+| D7 | Blackboard: reuse the recursive agent system's | Not in this repo; John did not say where it lives | Assumption: build the SQLite backend in the blackboard plan (item 6). Not needed here. Superseded: run state is now files in the run folder, no database |
 | D8 | Live view (item 15) is a wave board plus attempt log | John wants a Gantt chart | Item 15 becomes a Gantt view: one row per leaf grouped by component, bars from each attempt's `started_at` and `duration_ms`, one bar per model in the fallback chain, dependency arrows from `depends_on`, rate-limit waits as gaps, revision rounds as a new block. It reads the blackboard only and works live and after the fact (no forecast before a run, since durations are unknown). No change to items 1 to 4 or to the item 6 blackboard interface. |

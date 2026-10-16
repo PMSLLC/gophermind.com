@@ -20,10 +20,10 @@ func TestBreakdownSeedPrompt_NamesTheProject(t *testing.T) {
 }
 
 // TestBreakdownSeedPrompt_NamesThePlanFiles covers "seeds session with
-// structured prompt" -- the produced plan must land in the same three
-// files (.planning/SPEC.md, ROADMAP.md, assignments.json) the pipeline
-// endpoints (GET /pipeline/state, GET /pipeline/report) already read, or
-// the panel this task builds would have nothing to display.
+// structured prompt" -- the produced plan lands in the three files the
+// seed prompt names (.planning/SPEC.md, ROADMAP.md, assignments.json). The
+// pipeline endpoints no longer read them (they read the run folder); the
+// prompt keeps naming them because Start Breakdown stays.
 func TestBreakdownSeedPrompt_NamesThePlanFiles(t *testing.T) {
 	prompt := BreakdownSeedPrompt("my-project", "brief text")
 	for _, want := range []string{"SPEC.md", "ROADMAP.md", "assignments.json"} {

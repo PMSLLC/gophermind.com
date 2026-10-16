@@ -181,11 +181,11 @@ you ──▶ TUI ──▶ agent loop ──▶ OpenAI-compatible model
 The model requests tools by name; the harness runs them against your repo
 (inside the sandbox), feeds the results back, and repeats until it produces an
 answer or hits the iteration budget. That's the whole idea — see
-[`internal/agent`](internal/agent) and [`internal/tools`](internal/tools).
+[`gophermind-lib/agent`](gophermind-lib/agent) and [`gophermind-lib/tools`](gophermind-lib/tools).
 
 ## Plan and build from a brief
 
-`gophermind brief plan <brief.md>` plans a brief into a tree of nodes under `.gophermind/<run-id>/` in your repo, `gophermind brief run <run-id>` builds it, and `/project <brief>` in the TUI (or `gophermind project <brief>`) does both in one run. Everything a run does is a browsable file in that folder: the nodes, their runtime state, the event log, the call log, the saved attempts and the report. `gophermind serve` and the desktop app show a run live (`GET /pipeline`). See `docs/build/README.md`.
+`gophermind brief plan <brief.md>` plans a brief into a tree of nodes under `.gophermind/<run-id>/` in your repo, `gophermind brief run <run-id>` builds it, and `/project <brief>` in the TUI (or `gophermind project <brief>`) does both in one run. Everything a run does is a browsable file in that folder: the nodes, their runtime state, the event log, the call log, the saved attempts and the report. With `executor.workers` above 1 (or `gophermind brief run --workers n`) independent leaves build in parallel in private copies of the repo, and a leaf that has used its whole model ladder is rewritten by the planner's revise stage instead of failing the run. `gophermind serve` and the desktop app show a run live (`GET /pipeline`; the wire format is `docs/pipeline-contract.md`, and the server and the app must be released together). See `docs/build/README.md`.
 
 `gophermind phase` and `/phase` were removed in 0.10.0. PhaseFlow's roadmap workflow has no replacement; `.planning/` folders are not read.
 

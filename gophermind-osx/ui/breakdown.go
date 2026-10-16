@@ -6,23 +6,15 @@ import "fmt"
 // flow (.planning/tasks/04-06.json: "pick brief -> seed session ->
 // interview -> plan"): given the project name and a brief file's raw
 // content, it asks the agent to interview the user one question at a time
-// and then write the plan into the same three files gophermind-server's
-// pipeline endpoints already read (.planning/SPEC.md, ROADMAP.md,
-// assignments.json -- see gophermind-lib/serve/pipeline.go's
-// pipelineStateHandler and the phaseflow.Task/RunReport shapes this
-// panel's PipelineState renders).
+// and then write the plan into three files under .planning/ (SPEC.md,
+// ROADMAP.md, assignments.json). Since the unified pipeline the server's
+// pipeline endpoints no longer read these files: they show the run folder of
+// `gophermind brief` (docs/pipeline-contract.md). The seed is kept as the
+// "Start Breakdown" interview, and its output is a plain planning aid.
 //
-// This is deliberately a standalone prompt, not a call into
-// gophermind-lib/tui's interviewStepPrompt/generationPrompt: those are
-// unexported and built around the TUI's own multi-turn interviewTranscript
-// type, tightly coupled to that package's step-by-step interview loop.
-// Reusing them here would mean exporting and partially refactoring a
-// different feature's internals for one caller -- riskier than duplicating
-// the (small, stable) structural convention both need to agree on: the
-// three file names and the JSON shape of assignments.json. If that
-// convention ever changes, both places need updating; that's an accepted
-// cost of not entangling the TUI and the desktop app's session-seeding
-// paths.
+// This is a standalone prompt: the TUI's old interview prompts (the v1
+// planner's) were removed with that planner, so nothing is shared with the
+// TUI.
 func BreakdownSeedPrompt(projectName, briefContent string) string {
 	return fmt.Sprintf(`You are scoping a new software project called %q for a spec-driven workflow.
 

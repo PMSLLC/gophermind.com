@@ -8,7 +8,7 @@ longer ones to see what a complete brief looks like.
 A paragraph or two each. Pick one, click **Start Breakdown** in the Pipeline
 panel, and the model asks you questions to fill the gaps before it writes
 `SPEC.md`, `ROADMAP.md`, and `assignments.json` into a `.planning/` directory.
-These files have no special format: **Pick Brief...** reads any plain-text file.
+These files have no special format: **Pick Brief...** reads any plain-text file. The Pipeline panel's live view shows a `gophermind brief` run (`gophermind project <brief>`), not these planning files.
 
 - `01-cli-tool.md`: a small command-line utility
 - `02-rest-api.md`: a small backend service
