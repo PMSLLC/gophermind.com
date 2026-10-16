@@ -12,7 +12,7 @@ func TestPhaseRemovedNoticeText(t *testing.T) {
 			t.Errorf("notice lacks %q: %s", want, n)
 		}
 	}
-	if strings.ContainsRune(n, '—') {
+	if strings.ContainsRune(n, '\u2014') {
 		t.Error("the notice must not contain an em dash")
 	}
 }
