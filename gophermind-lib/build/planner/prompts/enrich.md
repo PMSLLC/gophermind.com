@@ -15,7 +15,7 @@ For each function produce one object with `id` (copy it exactly) and these group
 - `open_questions`: must be an empty array. If you cannot proceed without an owner decision, reply with a line containing only `QUESTION:` followed by the question on the next lines, and nothing else.
 - `decision_ids`: ids of the settled decisions below that shaped this function (an empty array if none).
 
-Not applicable is written {"not_applicable": "<a sentence of at least 20 characters saying why>"}. It is allowed for alternatives, portability, refactor_notes and profile_hooks; for security unless the function is a handler, client, storage or concurrency function; and for performance and observability only for a pure function. It is never allowed for rationale or construction.
+Not applicable is written {"not_applicable": "<a sentence of at least 20 characters saying why>"}. It is allowed for alternatives, portability, refactor_notes and profile_hooks; for security unless the function is a handler, client, storage or concurrency function; and for performance and observability only for a pure function. It is never allowed for rationale or construction. An empty list is never valid for any group: write the not-applicable object instead.
 
 {{.Defects}}Component:
 <component>

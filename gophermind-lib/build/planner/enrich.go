@@ -72,6 +72,7 @@ type pendingEnrich struct {
 	ID        string         `json:"id"`
 	Raw       map[string]any `json:"raw,omitempty"`
 	Defects   []string       `json:"defects"`
+	Notes     []string       `json:"notes,omitempty"` // schema error text; it names JSON pointers, never quotes the reply
 	Fields    []string       `json:"fields"`
 	Tries     int            `json:"tries,omitempty"`
 }
@@ -212,10 +213,42 @@ func mergeEnrichment(draft, reply map[string]any, c *contract.Contracts, env gro
 	defects = append(defects, groupDefects(merged, class, env)...)
 	if len(defects) == 0 {
 		if verr := validateDraft(merged); verr != nil {
-			defects = append(defects, groupDefect{grpSchema, "", "the groups do not match the node schema"})
+			defects = append(defects, groupDefect{grpSchema, schemaField(verr.Error()), "the groups do not match the node schema: " + verr.Error()})
 		}
 	}
 	return merged, defects, warnings
+}
+
+// schemaField is the one reply group a schema error names by JSON pointer
+// (like /profile_hooks), or "" when it names none or several.
+func schemaField(msg string) string {
+	field := ""
+	for _, w := range strings.FieldsFunc(msg, func(r rune) bool { return r == ' ' || r == ';' }) {
+		if !strings.HasPrefix(w, "/") {
+			continue
+		}
+		g := strings.SplitN(strings.TrimPrefix(w, "/"), "/", 2)[0]
+		if !contains(enrichGroups, g) {
+			continue
+		}
+		if field != "" && field != g {
+			return ""
+		}
+		field = g
+	}
+	return field
+}
+
+// notesOfGroup is the message of each schema defect, so a repair can say what
+// the schema refused.
+func notesOfGroup(ds []groupDefect) []string {
+	var out []string
+	for _, d := range ds {
+		if d.kind == grpSchema && d.msg != "" && !contains(out, d.msg) {
+			out = append(out, d.msg)
+		}
+	}
+	return out
 }
 
 func kindsOfGroup(ds []groupDefect) []string {
@@ -306,7 +339,7 @@ func splitEnrich(text string, batch []map[string]any, c *contract.Contracts, env
 		}
 		merged, ds, warns := mergeEnrichment(d, raw, c, env)
 		if len(ds) > 0 {
-			res.bad = append(res.bad, pendingEnrich{ID: id, Raw: raw, Defects: kindsOfGroup(ds), Fields: fieldsOfGroup(ds)})
+			res.bad = append(res.bad, pendingEnrich{ID: id, Raw: raw, Defects: kindsOfGroup(ds), Notes: notesOfGroup(ds), Fields: fieldsOfGroup(ds)})
 			continue
 		}
 		res.good = append(res.good, merged)
@@ -336,6 +369,9 @@ func defectsText(fix []pendingEnrich) string {
 	b.WriteString("This is a repair. Your earlier answer had these defects (the kinds are fixed words; nothing you wrote is quoted). Answer again for the functions below, with ONLY the groups wanted:\n")
 	for _, pe := range fix {
 		fmt.Fprintf(&b, "%s: %s (groups: %s)\n", pe.ID, strings.Join(pe.Defects, ", "), strings.Join(pe.Fields, ", "))
+		for _, n := range pe.Notes {
+			fmt.Fprintf(&b, "  schema: %s\n", n)
+		}
 	}
 	b.WriteString("\n")
 	return b.String()
