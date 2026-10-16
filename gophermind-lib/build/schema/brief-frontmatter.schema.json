@@ -31,7 +31,7 @@
     },
     "language": {
       "const": "go",
-      "description": "v2 supports Go only. The loader rejects any other value."
+      "description": "Only Go is supported. The loader rejects any other value."
     },
     "repo": {
       "type": "string",

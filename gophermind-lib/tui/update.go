@@ -407,7 +407,7 @@ func (m model) handleSubmit() (model, tea.Cmd) {
 		return m.handleConfigCommand()
 	}
 
-	// "/project <brief> [flags]" plans and builds a v2 brief in one run; see
+	// "/project <brief> [flags]" plans and builds a brief in one run; see
 	// project_v2.go.
 	if strings.Fields(text)[0] == "/project" {
 		return m.handleProjectV2Command(text)

@@ -126,6 +126,8 @@ func TestNoBriefv2Anywhere(t *testing.T) {
 	if err != nil {
 		t.Fatalf("git ls-files: %v", err)
 	}
+	files := splitTracked(out)
+	requireTracked(t, files)
 	hist := func(rel string) bool {
 		for _, p := range historicalPrefixes {
 			if rel == p || strings.HasPrefix(rel, p) {
@@ -135,8 +137,14 @@ func TestNoBriefv2Anywhere(t *testing.T) {
 		return false
 	}
 	const old = "briefv2"
-	for _, rel := range strings.Split(string(bytes.TrimRight(out, "\x00")), "\x00") {
-		if rel == "" || hist(rel) {
+	skipped := 0
+	defer func() {
+		if skipped > 0 {
+			t.Logf("skipped %d tracked files over 1 MiB", skipped)
+		}
+	}()
+	for _, rel := range files {
+		if hist(rel) {
 			continue
 		}
 		if strings.Contains(strings.ToLower(rel), old) {
@@ -144,7 +152,11 @@ func TestNoBriefv2Anywhere(t *testing.T) {
 		}
 		p := filepath.Join(root, filepath.FromSlash(rel))
 		fi, ierr := os.Lstat(p)
-		if ierr != nil || !fi.Mode().IsRegular() || fi.Size() > 1<<20 {
+		if ierr != nil || !fi.Mode().IsRegular() {
+			continue
+		}
+		if fi.Size() > 1<<20 {
+			skipped++
 			continue
 		}
 		b, rerr := os.ReadFile(p)
@@ -155,4 +167,41 @@ func TestNoBriefv2Anywhere(t *testing.T) {
 			t.Errorf("%s still mentions %s", rel, old)
 		}
 	}
+}
+
+// splitTracked turns `git ls-files -z` output into paths, dropping empties.
+func splitTracked(out []byte) []string {
+	var files []string
+	for _, rel := range strings.Split(string(bytes.TrimRight(out, "\x00")), "\x00") {
+		if rel != "" {
+			files = append(files, rel)
+		}
+	}
+	return files
+}
+
+// requireTracked fails unless the list proves the tracked files were read: it
+// must be non-empty and contain the go.work entry.
+func requireTracked(t *testing.T, files []string) {
+	t.Helper()
+	if len(files) == 0 {
+		t.Fatal("git ls-files returned no files")
+	}
+	for _, f := range files {
+		if f == "go.work" {
+			return
+		}
+	}
+	t.Fatal("git ls-files has no go.work entry")
+}
+
+func TestSplitTracked(t *testing.T) {
+	if got := splitTracked(nil); len(got) != 0 {
+		t.Fatalf("empty input gave %v", got)
+	}
+	got := splitTracked([]byte("go.work\x00a/b.go\x00"))
+	if len(got) != 2 {
+		t.Fatalf("got %v", got)
+	}
+	requireTracked(t, got)
 }

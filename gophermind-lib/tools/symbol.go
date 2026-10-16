@@ -19,7 +19,7 @@ var symbolNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // symbolIgnoreDirs are directories never worth scanning for definitions.
 var symbolIgnoreDirs = map[string]bool{
 	".git": true, "node_modules": true, "vendor": true, "dist": true,
-	"build": true, ".idea": true, ".vscode": true, "target": true,
+	".idea": true, ".vscode": true, "target": true,
 }
 
 // FindSymbol returns a tool that locates where a named symbol is *defined*
@@ -54,7 +54,7 @@ func FindSymbol(root string) Tool {
 					return nil // skip unreadable entries
 				}
 				if d.IsDir() {
-					if symbolIgnoreDirs[d.Name()] {
+					if symbolIgnoreDirs[d.Name()] || isRootBuild(root, path, d.Name()) {
 						return filepath.SkipDir
 					}
 					return nil

@@ -14,7 +14,7 @@ These files have no special format: **Pick Brief...** reads any plain-text file.
 - `02-rest-api.md`: a small backend service
 - `03-menu-bar-app.md`: a small native macOS utility
 
-## Complete briefs (04 to 08): the v2 brief format
+## Complete briefs (04 to 08): the brief format
 
 Each one starts with a YAML block that says how the run should behave, followed by
 seven required sections: Overview, Features, Architecture, Data, Constraints, Out of
@@ -26,7 +26,7 @@ gophermind brief validate 06-hookrelay.md
 
 An invalid brief exits with code 2 and names the field. All five here validate
 with no warnings. Every brief in this format is for a **Go** project (the only
-language v2 accepts today), and none uses a real account, key, or address.
+language the loader accepts today), and none uses a real account, key, or address.
 
 They are ordered by size, and between them they use every option the format has:
 
