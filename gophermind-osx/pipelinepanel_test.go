@@ -12,11 +12,9 @@ package main
 // for a human, not something a test can safely drive.
 
 import (
-	"strings"
 	"testing"
-	"time"
 
-	"gophermind/gophermind-lib/phaseflow"
+	"gophermind/gophermind-lib/runview"
 	appui "gophermind/gophermind-osx/ui"
 )
 
@@ -43,7 +41,7 @@ func TestNewChatWindow_BuildsPipelinePanelWithoutPanic(t *testing.T) {
 	}
 }
 
-func TestPipelinePanel_RefreshRebuildsTaskListOnStateChange(t *testing.T) {
+func TestPipelinePanel_RefreshRebuildsTheNodeListOnStateChange(t *testing.T) {
 	runOnUIThread(t, func() {
 		app, err := NewApp(DefaultTitle, DefaultWidth, DefaultHeight)
 		if err != nil {
@@ -55,21 +53,27 @@ func TestPipelinePanel_RefreshRebuildsTaskListOnStateChange(t *testing.T) {
 		pp := newPipelinePanel(state, app.window, nil, nil, nil)
 		attachControlForTest(app.window, pp.Control())
 
-		// state.OnChange dispatches pp.refresh via queueMain, which only
-		// actually runs once uiMain is pumping (see chatview_test.go's
-		// doc comment on the same limit) -- so this calls refresh()
-		// directly, the same thing queueMain would eventually run, rather
-		// than relying on the queue draining here.
-		state.SetTasks([]phaseflow.Task{{ID: "01-01", Status: phaseflow.StatusRunning}}, time.Time{})
+		// state.OnChange dispatches pp.refresh via queueMain, which only runs
+		// once uiMain is pumping (see chatview_test.go), so this calls
+		// refresh() directly, the same thing queueMain would eventually run.
+		comp := runview.NodeSummary{ID: "greeting", Kind: "component", Title: "Greeting"}
+		state.SetState(runview.StateBody{
+			Run:   &runview.RunSummary{RunID: "gm-2026-10-08-001", Status: "building"},
+			Nodes: []runview.NodeSummary{comp, {ID: "fn-a", Kind: "function", Parent: "greeting", Status: "in_progress"}},
+		})
 		pp.refresh()
-		if len(pp.taskLabels) != 1 {
-			t.Errorf("taskLabels after one task = %d, want 1", len(pp.taskLabels))
+		if len(pp.nodeLabels) != 2 { // the component row and one node row
+			t.Errorf("nodeLabels after one node = %d, want 2", len(pp.nodeLabels))
 		}
 
-		state.SetTasks([]phaseflow.Task{{ID: "01-01"}, {ID: "01-02"}}, time.Time{})
+		state.SetState(runview.StateBody{
+			Run: &runview.RunSummary{RunID: "gm-2026-10-08-001", Status: "building"},
+			Nodes: []runview.NodeSummary{comp,
+				{ID: "fn-a", Kind: "function", Parent: "greeting"}, {ID: "fn-b", Kind: "function", Parent: "greeting"}},
+		})
 		pp.refresh()
-		if len(pp.taskLabels) != 2 {
-			t.Errorf("taskLabels after two tasks = %d, want 2", len(pp.taskLabels))
+		if len(pp.nodeLabels) != 3 {
+			t.Errorf("nodeLabels after two nodes = %d, want 3", len(pp.nodeLabels))
 		}
 	})
 }
@@ -90,25 +94,20 @@ func TestPipelinePanel_StartClickedWithNilFuncDoesNotPanic(t *testing.T) {
 	})
 }
 
-func TestFormatTaskLine_IncludesStatusAndLatestAttempt(t *testing.T) {
-	task := phaseflow.Task{
-		ID: "01-01", Status: phaseflow.StatusFailed, Wave: 2,
-		Attempts: []phaseflow.Attempt{{Model: "strong", Duration: "2m", Verdict: "fail"}},
-	}
-	line := formatTaskLine(task)
-	for _, want := range []string{"failed", "01-01", "strong", "2m", "fail"} {
-		if !strings.Contains(line, want) {
-			t.Errorf("formatTaskLine(%+v) = %q, missing %q", task, line, want)
+func TestPipelinePanel_ShowNodeWithoutALiveConnectionDoesNotPanic(t *testing.T) {
+	runOnUIThread(t, func() {
+		app, err := NewApp(DefaultTitle, DefaultWidth, DefaultHeight)
+		if err != nil {
+			t.Fatalf("NewApp: %v", err)
 		}
-	}
-}
+		defer app.Close()
 
-func TestFormatRunReport_IncludesModelStats(t *testing.T) {
-	report := phaseflow.RunReport{
-		Models: []phaseflow.ModelStat{{Model: "strong", Passes: 3, Attempts: 4}},
-	}
-	text := formatRunReport(report)
-	if !strings.Contains(text, "strong") || !strings.Contains(text, "3/4") {
-		t.Errorf("formatRunReport = %q, missing model stats", text)
-	}
+		var said string
+		pp := newPipelinePanel(appui.NewPipelineState(), app.window, func(s string) { said = s }, nil, nil)
+		attachControlForTest(app.window, pp.Control())
+		pp.doShow() // no run, no node source: say so, do not panic
+		if said == "" {
+			t.Error("doShow with nothing to show must tell the user why")
+		}
+	})
 }

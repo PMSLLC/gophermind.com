@@ -6,20 +6,20 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
-	"gophermind/gophermind-lib/phaseflow"
+	"gophermind/gophermind-lib/briefv2/blackboard"
+	"gophermind/gophermind-lib/runview/runviewtest"
 	"gophermind/gophermind-osx/client"
 	"gophermind/gophermind-osx/connection"
 	appui "gophermind/gophermind-osx/ui"
 )
 
 // e2eConnectLocalWithRoot is e2eConnectLocal (e2e_local_test.go) but also
-// returns the workspace root: this test needs to write real phaseflow
-// assignments.json files into the same root the spawned gophermind-server's
-// pipeline watcher polls (serve.StartPipelineWatcher watches
-// phaseflow.AssignmentsPath(root) -- see gophermind-server/main.go).
+// returns the workspace root: the pipeline routes read root/.gophermind/<run>/
+// of the spawned gophermind-server.
 func e2eConnectLocalWithRoot(t *testing.T) (*connection.Connection, string) {
 	t.Helper()
 	bin := e2eBuildServerBinary(t)
@@ -32,10 +32,8 @@ func e2eConnectLocalWithRoot(t *testing.T) (*connection.Connection, string) {
 			ServerBinaryPath: bin,
 			Root:             root,
 			StartupTimeout:   15 * time.Second,
-			// A real breakdown turn can run several LLM round trips plus
-			// tool calls, easily exceeding client.DefaultTimeout (30s,
-			// which covers a streamed response's entire lifetime -- see
-			// net/http.Client.Timeout).
+			// A real breakdown turn can run several LLM round trips plus tool
+			// calls, easily exceeding client.DefaultTimeout (30s).
 			ClientTimeout: 3 * time.Minute,
 		},
 		HealthInterval: 500 * time.Millisecond,
@@ -53,40 +51,16 @@ func e2eConnectLocalWithRoot(t *testing.T) (*connection.Connection, string) {
 	return conn, root
 }
 
-// TestE2E_Pipeline_BreakdownSeedAndStateTransitions covers 05-03's
-// "Pipeline E2E: start breakdown -> monitor state -> verify task
-// transitions passes."
-//
-// This is split into two honestly-different pieces:
-//
-//  1. "Start breakdown": creating a session and sending
-//     appui.BreakdownSeedPrompt through a real Stream call is a real,
-//     asserted HTTP/SSE round trip against the real server (same shape as
-//     TestE2E_LocalMode_FullFlow's chat leg). Whether the model's response
-//     actually performs a correct multi-task phaseflow breakdown within
-//     this test's timeout is NOT asserted -- that is model behavior, not
-//     this app's plumbing, and asserting on it would make this test's
-//     pass/fail depend on LLM quality rather than on the code under test
-//     (the same caveat TestE2E_LocalMode_ApprovalFlow already documents
-//     for its own model-dependent step).
-//  2. "Monitor state -> verify task transitions" is tested for real against
-//     the actual phaseflow/pipeline mechanism, independent of whether any
-//     particular model run would produce these exact tasks: real
-//     phaseflow.Task/phaseflow.Assignments values are written via the real
-//     Assignments.Save into the same root the spawned server's pipeline
-//     watcher polls, then observed through the real client.PipelineState
-//     (poll) and client.PipelineEvents (SSE, decoded via the same
-//     ev.TaskStatus() helper gophermind-osx/ui/pipelinepump.go's
-//     production PipelinePump.apply uses) -- proving the live-state and
-//     SSE-event pipeline genuinely works end to end.
-func TestE2E_Pipeline_BreakdownSeedAndStateTransitions(t *testing.T) {
-	conn, root := e2eConnectLocalWithRoot(t)
+// TestE2E_Pipeline_BreakdownSeed is the "start breakdown" half of the old
+// pipeline e2e: create a session, send appui.BreakdownSeedPrompt through a real
+// Stream call and confirm the round trip completes. Whether the model's
+// answer is a good plan is model behavior and is not asserted.
+func TestE2E_Pipeline_BreakdownSeed(t *testing.T) {
+	conn, _ := e2eConnectLocalWithRoot(t)
 	cl := conn.Client()
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 
-	// 1. Start breakdown: create a session, seed it with the real prompt
-	// template pipelinepanel.go uses, and confirm the round trip completes.
 	sessionID, err := cl.CreateSession(ctx, client.CreateSessionOptions{})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
@@ -96,9 +70,9 @@ func TestE2E_Pipeline_BreakdownSeedAndStateTransitions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stream (breakdown seed): %v", err)
 	}
-	// A breakdown turn may include gated tool calls (e.g. writing plan
-	// files); auto-approve them the same way TestE2E_LocalMode_ApprovalFlow
-	// does, so an unresolved approval never stalls the stream.
+	// A breakdown turn may include gated tool calls; auto-approve them the way
+	// TestE2E_LocalMode_ApprovalFlow does, so an unresolved approval never
+	// stalls the stream.
 	tracker := appui.NewApprovalTracker(cl.Approve)
 	sawDone := false
 	deadline := time.After(2 * time.Minute)
@@ -131,125 +105,84 @@ readSeed:
 	if !sawDone {
 		t.Fatal("breakdown-seed stream never reached done")
 	}
-	t.Log("Breakdown seed prompt sent and streamed to completion")
+}
 
-	// 2. Monitor state -> verify task transitions, against real phaseflow
-	// data written directly into root (see doc comment above for why).
-	events, err := cl.PipelineEvents(ctx)
+type evResult struct {
+	ev  client.Event
+	err error
+}
+
+// nextEvent reads one event with a deadline; the read runs in its own
+// goroutine because Next blocks on the connection.
+func nextEvent(t *testing.T, s *client.EventStream, d time.Duration) client.Event {
+	t.Helper()
+	ch := make(chan evResult, 1)
+	go func() {
+		ev, err := s.Next()
+		ch <- evResult{ev, err}
+	}()
+	select {
+	case r := <-ch:
+		if r.err != nil {
+			t.Fatalf("Next: %v", r.err)
+		}
+		return r.ev
+	case <-time.After(d):
+		t.Fatal("timed out waiting for a pipeline event")
+	}
+	return client.Event{}
+}
+
+// TestE2E_Pipeline_RunFolder serves a real run folder from the spawned
+// server and reads every endpoint through the app's client, then watches a node
+// change arrive on the event stream. No model is involved.
+func TestE2E_Pipeline_RunFolder(t *testing.T) {
+	conn, root := e2eConnectLocalWithRoot(t)
+	cl := conn.Client()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	fx := runviewtest.Build(t, root, runviewtest.Building)
+
+	runs, err := cl.PipelineRuns(ctx)
+	if err != nil || len(runs) != 1 || runs[0].RunID != fx.RunID || runs[0].Status != "building" {
+		t.Fatalf("PipelineRuns = %+v, %v", runs, err)
+	}
+	st, err := cl.PipelineState(ctx, "")
+	if err != nil || st.Run == nil || st.Run.RunID != fx.RunID || len(st.Nodes) != 5 || st.EventSeq == 0 {
+		t.Fatalf("PipelineState = %+v, %v", st, err)
+	}
+
+	// The stream resumes exactly at the snapshot.
+	events, err := cl.PipelineEvents(ctx, "", st.EventSeq)
 	if err != nil {
 		t.Fatalf("PipelineEvents: %v", err)
 	}
 	defer events.Close()
 
-	writeAssignments := func(status string) {
-		a := phaseflow.Assignments{Tasks: []phaseflow.Task{{
-			ID:     "e2e-01",
-			Phase:  "e2e",
-			Title:  "E2E pipeline task",
-			Status: status,
-		}}}
-		if err := a.Save(root); err != nil {
-			t.Fatalf("Assignments.Save(%q): %v", status, err)
-		}
+	if err := fx.BB.SetStatus(ctx, fx.RunID, "fn-bye", blackboard.StatusInProgress, blackboard.StatusVerified); err != nil {
+		t.Fatal(err)
+	}
+	ev := nextEvent(t, events, 15*time.Second)
+	ns, err := ev.NodeStatus()
+	if ev.Type != "node-status" || err != nil || ns.ID != "fn-bye" || ns.Status != "verified" || ev.ID != st.EventSeq+1 {
+		t.Fatalf("event = %+v %+v %v; want node-status fn-bye verified with id %d", ev, ns, err, st.EventSeq+1)
 	}
 
-	// waitForStateStatus polls the real GET /pipeline/state endpoint (which
-	// reads root's assignments.json live, no caching -- see
-	// pipelineStateHandler) until task e2e-01 reports want, or times out.
-	waitForStateStatus := func(want string) {
-		t.Helper()
-		poll := time.NewTicker(200 * time.Millisecond)
-		defer poll.Stop()
-		deadline := time.Now().Add(15 * time.Second)
-		for time.Now().Before(deadline) {
-			tasks, _, err := cl.PipelineState(ctx)
-			if err != nil {
-				t.Fatalf("PipelineState polling for %q: %v", want, err)
-			}
-			for _, task := range tasks {
-				if task.ID == "e2e-01" && task.Status == want {
-					return
-				}
-			}
-			<-poll.C
-		}
-		t.Fatalf("timed out waiting for PipelineState to report e2e-01 as %q", want)
+	nb, err := cl.PipelineNode(ctx, "", "fn-bye")
+	if err != nil || nb.Runtime == nil || nb.Runtime.Status != "verified" {
+		t.Fatalf("PipelineNode = %+v, %v", nb, err)
 	}
-
-	// waitForEventStatus reads real SSE frames off events until one is a
-	// "task-status" event reporting e2e-01 at want, or times out -- proving
-	// the live push path (not just the polled snapshot) really works.
-	waitForEventStatus := func(want string) {
-		t.Helper()
-		type result struct {
-			ev  client.Event
-			err error
-		}
-		deadline := time.Now().Add(15 * time.Second)
-		for time.Now().Before(deadline) {
-			ch := make(chan result, 1)
-			go func() {
-				ev, err := events.Next()
-				ch <- result{ev, err}
-			}()
-			select {
-			case r := <-ch:
-				if r.err != nil {
-					t.Fatalf("PipelineEvents.Next waiting for %q: %v", want, r.err)
-				}
-				if r.ev.Type != "task-status" {
-					continue
-				}
-				e, err := r.ev.TaskStatus()
-				if err != nil {
-					t.Fatalf("decode task-status event: %v", err)
-				}
-				if e.ID == "e2e-01" && e.Status == want {
-					return
-				}
-			case <-time.After(time.Until(deadline)):
-			}
-		}
-		t.Fatalf("timed out waiting for a task-status SSE event reporting e2e-01 as %q", want)
+	txt, err := cl.PipelineArtifact(ctx, "", "fn-bye", 1, "check-output.txt")
+	if err != nil || !strings.Contains(txt, "want bye, got hello") {
+		t.Fatalf("PipelineArtifact = %q, %v", txt, err)
 	}
-
-	// The pending write establishes the watcher's baseline: watchPipeline
-	// (gophermind-lib/serve/pipeline_watch.go) deliberately publishes
-	// nothing on the first assignments.json it ever observes ("the first
-	// read after startup publishes nothing," so a client connecting after
-	// the fact isn't told about pre-existing tasks as if they just
-	// happened) -- so this step is checked via the polled state only, and
-	// the SSE assertion starts at the next transition, which the watcher
-	// does diff against this baseline.
-	writeAssignments(phaseflow.StatusPending)
-	waitForStateStatus(phaseflow.StatusPending)
-	t.Log("Observed task transition: pending (state)")
-	// Give the watcher at least one poll tick to read the pending baseline
-	// before it changes again, so the running transition below is a real
-	// diff against an observed previous state, not a race with the first
-	// "publishes nothing" read.
-	// gophermind-lib/serve's pipelineWatchInterval (unexported) is 750ms;
-	// two ticks is a comfortable margin without hardcoding a magic number
-	// with no context.
-	const pipelineWatchIntervalMargin = 2 * 750 * time.Millisecond
-	time.Sleep(pipelineWatchIntervalMargin)
-
-	writeAssignments(phaseflow.StatusRunning)
-	waitForStateStatus(phaseflow.StatusRunning)
-	waitForEventStatus(phaseflow.StatusRunning)
-	t.Log("Observed task transition: running (state + SSE event)")
-
-	writeAssignments(phaseflow.StatusDone)
-	waitForStateStatus(phaseflow.StatusDone)
-	waitForEventStatus(phaseflow.StatusDone)
-	t.Log("Observed task transition: done (state + SSE event)")
-
-	// 3. Verify PipelineReport reflects the final assignments too.
-	report, err := cl.PipelineReport(ctx)
-	if err != nil {
-		t.Fatalf("PipelineReport: %v", err)
+	db, err := cl.PipelineDecisions(ctx, "")
+	if err != nil || len(db.Decisions) != 2 { // the clarify decision and the Building fixture's revision decision
+		t.Fatalf("PipelineDecisions = %+v, %v", db, err)
 	}
-	t.Logf("Final pipeline report: %+v", report)
-
-	t.Log("Pipeline E2E: breakdown seed and task transitions passed")
+	rb, err := cl.PipelineReport(ctx, "")
+	if err != nil || rb.IsComplete() {
+		t.Fatalf("PipelineReport = %+v, %v (a running run gives a partial report)", rb, err)
+	}
 }

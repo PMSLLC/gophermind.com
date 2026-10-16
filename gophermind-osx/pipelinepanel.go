@@ -13,7 +13,7 @@
 // says as much), so every server call here is nil-safe until a real
 // connection exists to wire through.
 //
-// The task list is a plain rebuilt stack of labels (uiBoxAppend/uiBoxDelete
+// The node list is a plain rebuilt stack of labels (uiBoxAppend/uiBoxDelete
 // plus explicit uiControlDestroy -- uiBoxDelete does not destroy or free
 // the removed control, per the installed ui.h, so this file tracks and
 // destroys its own old labels on every rebuild rather than leaking them),
@@ -39,11 +39,18 @@ static inline void attachPickBriefClicked(uiButton *b, long long h) {
 static inline void attachStartClicked(uiButton *b, long long h) {
 	uiButtonOnClicked(b, (void (*)(uiButton *, void *))goPipelineStartClicked, (void *)h);
 }
+
+extern void goPipelineShowClicked(void *b, void *data);
+
+static inline void attachShowClicked(uiButton *b, long long h) {
+	uiButtonOnClicked(b, (void (*)(uiButton *, void *))goPipelineShowClicked, (void *)h);
+}
 */
 import "C"
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -51,7 +58,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"gophermind/gophermind-lib/phaseflow"
+	"gophermind/gophermind-lib/runview"
 	"gophermind/gophermind-osx/client"
 	appui "gophermind/gophermind-osx/ui"
 )
@@ -67,12 +74,31 @@ import (
 // else cannot open them.
 type StartBreakdownFunc func(ctx context.Context, briefPath, prompt string) (sessionID string, err error)
 
-// FetchPipelineFunc fetches the current task snapshot, normally
-// client.PipelineState.
-type FetchPipelineFunc func(ctx context.Context) ([]phaseflow.Task, error)
+// FetchPipelineFunc fetches the newest run's state, normally
+// client.PipelineState with an empty run id (the server picks the newest). A
+// zero body and nil error mean "no backend yet": the panel stays empty.
+type FetchPipelineFunc func(ctx context.Context) (runview.StateBody, error)
+
+// FetchReportFunc fetches a run's report, normally client.PipelineReport.
+type FetchReportFunc func(ctx context.Context, runID string) (runview.ReportBody, error)
+
+// FetchNodeFunc returns one node's detail text, normally appui.LoadNodeDetail
+// over the live client.
+type FetchNodeFunc func(ctx context.Context, runID, nodeID string) (string, error)
+
+// PipelineLive is what the panel needs from a live connection. The panel is
+// built before any connection exists (chatinput.go), so main.go supplies these
+// later through setLiveFuncs. Any field may be nil.
+type PipelineLive struct {
+	Start  StartBreakdownFunc
+	Fetch  FetchPipelineFunc
+	Report FetchReportFunc
+	Node   FetchNodeFunc
+	Open   appui.OpenEventsFunc
+}
 
 // pipelinePanel is the pipeline section's widgets: a file picker + Start
-// Breakdown button, a rebuilt stack of task-status labels, a wave label,
+// Breakdown button, a rebuilt stack of node labels, a wave label,
 // and a read-only report text box.
 type pipelinePanel struct {
 	state  *appui.PipelineState
@@ -85,12 +111,24 @@ type pipelinePanel struct {
 	box          *C.uiBox
 	briefLabel   *C.uiLabel
 	startButton  *C.uiButton
-	taskListBox  *C.uiBox
-	taskLabels   []*C.uiLabel
+	nodeListBox  *C.uiBox
+	nodeLabels   []*C.uiLabel
 	waveLabel    *C.uiLabel
 	reportEntry  *C.uiMultilineEntry
 	briefContent string
 	briefName    string
+
+	runLabel    *C.uiLabel
+	nodeEntry   *C.uiEntry
+	showButton  *C.uiButton
+	detailEntry *C.uiMultilineEntry
+
+	fetchReport FetchReportFunc
+	fetchNode   FetchNodeFunc
+	openEvents  appui.OpenEventsFunc
+
+	followMu     sync.Mutex
+	followCancel context.CancelFunc
 }
 
 var (
@@ -100,7 +138,7 @@ var (
 )
 
 // newPipelinePanel builds the pipeline section's widgets and wires them to
-// state: state.OnChange rebuilds the task list / wave label / report box
+// state: state.OnChange rebuilds the node list / wave label / report box
 // to match. window is the parent for the native file picker (uiOpenFile).
 func newPipelinePanel(state *appui.PipelineState, window *C.uiWindow, notify func(string), startBreakdown StartBreakdownFunc, fetchPipeline FetchPipelineFunc) *pipelinePanel {
 	box := C.uiNewVerticalBox()
@@ -115,21 +153,33 @@ func newPipelinePanel(state *appui.PipelineState, window *C.uiWindow, notify fun
 	startButton := C.uiNewButton(C.CString("Start Breakdown"))
 	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(startButton)), 0)
 
+	runLabel := C.uiNewLabel(C.CString("No run yet"))
+	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(runLabel)), 0)
+
 	waveLabel := C.uiNewLabel(C.CString("No wave in progress"))
 	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(waveLabel)), 0)
 
-	taskListBox := C.uiNewVerticalBox()
-	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(taskListBox)), 0)
+	nodeListBox := C.uiNewVerticalBox()
+	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(nodeListBox)), 0)
 
 	reportEntry := C.uiNewMultilineEntry()
 	C.uiMultilineEntrySetReadOnly(reportEntry, 1)
 	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(reportEntry)), 1)
 
+	nodeEntry := C.uiNewEntry()
+	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(nodeEntry)), 0)
+	showButton := C.uiNewButton(C.CString("Show Node"))
+	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(showButton)), 0)
+	detailEntry := C.uiNewMultilineEntry()
+	C.uiMultilineEntrySetReadOnly(detailEntry, 1)
+	C.uiBoxAppend(box, (*C.uiControl)(unsafe.Pointer(detailEntry)), 1)
+
 	pp := &pipelinePanel{
 		state: state, window: window, notify: notify,
 		startBreakdown: startBreakdown, fetchPipeline: fetchPipeline,
 		box: box, briefLabel: briefLabel, startButton: startButton,
-		taskListBox: taskListBox, waveLabel: waveLabel, reportEntry: reportEntry,
+		nodeListBox: nodeListBox, waveLabel: waveLabel, reportEntry: reportEntry,
+		runLabel: runLabel, nodeEntry: nodeEntry, showButton: showButton, detailEntry: detailEntry,
 	}
 
 	pipelinePanelMu.Lock()
@@ -139,56 +189,97 @@ func newPipelinePanel(state *appui.PipelineState, window *C.uiWindow, notify fun
 	pipelinePanelMu.Unlock()
 	C.attachPickBriefClicked(pickButton, h)
 	C.attachStartClicked(startButton, h)
+	C.attachShowClicked(showButton, h)
 
 	state.OnChange(func() { queueMain(pp.refresh) })
 	pp.refresh()
 
-	// Seed the initial task snapshot (GET /pipeline/state) in the
-	// background; PipelineState.SetTasks fires OnChange, which is already
-	// wired to queueMain above, so this is safe to call directly from this
-	// goroutine (same contract StreamPump's callers rely on for
-	// Transcript). nil fetchPipeline (no live connection yet, see this
-	// file's doc comment) leaves the panel starting empty.
-	if fetchPipeline != nil {
-		go func() {
-			tasks, err := fetchPipeline(context.Background())
-			if err != nil {
-				if notify != nil {
-					queueMain(func() { notify("error fetching pipeline state: " + err.Error()) })
-				}
-				return
-			}
-			pp.state.SetTasks(tasks, pp.state.GeneratedAt())
-		}()
-	}
+	pp.seed()
 
 	return pp
 }
 
-// setLiveFuncs supplies the two connection-dependent callbacks after
-// construction, and seeds the task snapshot the same way the constructor
-// does when it is handed them up front.
-//
-// The panel is built in chatinput.go before any connection exists, so both
-// arrive nil there and the Start Breakdown button is inert until this runs
-// (main.go, once the connection manager is up). Without the seed here, a
-// panel wired late would stay empty until the next breakdown, because the
-// constructor's one-shot fetch has already been skipped.
-func (pp *pipelinePanel) setLiveFuncs(start StartBreakdownFunc, fetch FetchPipelineFunc) {
-	pp.startBreakdown = start
-	pp.fetchPipeline = fetch
+// setLiveFuncs supplies the connection-dependent callbacks after construction
+// and seeds the panel from the newest run, as the constructor does when it is
+// handed a fetch up front. The panel is built in chatinput.go before any
+// connection exists, so Start Breakdown stays inert until this runs (main.go,
+// once the connection manager is up).
+func (pp *pipelinePanel) setLiveFuncs(l PipelineLive) {
+	pp.startBreakdown = l.Start
+	pp.fetchPipeline = l.Fetch
+	pp.fetchReport = l.Report
+	pp.fetchNode = l.Node
+	pp.openEvents = l.Open
+	pp.seed()
+}
+
+// seed fetches the newest run's state in the background. On success it also
+// fetches the report (best effort) and starts following the event stream. A
+// server speaking another contract version sets the panel message instead.
+// state.SetState fires OnChange, which is wired to queueMain, so this is safe
+// to call from a goroutine.
+func (pp *pipelinePanel) seed() {
+	fetch := pp.fetchPipeline
 	if fetch == nil {
 		return
 	}
 	go func() {
-		tasks, err := fetch(context.Background())
-		if err != nil {
-			if pp.notify != nil {
-				queueMain(func() { pp.notify("error fetching pipeline state: " + err.Error()) })
-			}
+		if !pp.reload(context.Background()) {
 			return
 		}
-		pp.state.SetTasks(tasks, pp.state.GeneratedAt())
+		pp.follow()
+	}()
+}
+
+// reload fetches the newest run's state and, best effort, its report into
+// pp.state. It reports whether the state fetch succeeded.
+func (pp *pipelinePanel) reload(ctx context.Context) bool {
+	body, err := pp.fetchPipeline(ctx)
+	if err != nil {
+		var mm *client.SchemaMismatchError
+		if errors.As(err, &mm) {
+			pp.state.SetMessage(client.SchemaMismatchMessage)
+		} else if pp.notify != nil {
+			queueMain(func() { pp.notify("error fetching pipeline state: " + err.Error()) })
+		}
+		return false
+	}
+	pp.state.SetMessage("")
+	pp.state.SetState(body)
+	if pp.fetchReport != nil && body.Run != nil {
+		if r, err := pp.fetchReport(ctx, body.Run.RunID); err == nil {
+			pp.state.SetReport(r)
+		}
+	}
+	return true
+}
+
+// follow starts one PipelineFollower for the current run, unless one is
+// already running or there is no run to follow. The follower reconnects at the
+// last event id after a drop and refetches the state on every (re)connect,
+// because wave, run-status and report events are never replayed.
+func (pp *pipelinePanel) follow() {
+	pp.followMu.Lock()
+	defer pp.followMu.Unlock()
+	if pp.openEvents == nil || pp.state.RunID() == "" || pp.followCancel != nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	pp.followCancel = cancel
+	f := &appui.PipelineFollower{
+		State: pp.state,
+		Open:  pp.openEvents,
+		OnOpen: func(ctx context.Context) {
+			if pp.fetchPipeline != nil {
+				pp.reload(ctx)
+			}
+		},
+	}
+	go func() {
+		_ = f.Run(ctx)
+		pp.followMu.Lock()
+		pp.followCancel = nil
+		pp.followMu.Unlock()
 	}()
 }
 
@@ -198,74 +289,86 @@ func (pp *pipelinePanel) Control() *C.uiControl {
 	return (*C.uiControl)(unsafe.Pointer(pp.box))
 }
 
-// WatchEvents pumps a live GET /pipeline/events stream (SSE) into pp's
-// state in a background goroutine, covering the live half of "live task
-// status display (GET /pipeline/state + SSE /pipeline/events)." The
-// caller owns ctx's lifetime; cancelling it stops the pump (see
-// appui.PipelinePump.Run).
-func (pp *pipelinePanel) WatchEvents(ctx context.Context, stream *client.EventStream) {
-	pump := &appui.PipelinePump{State: pp.state}
-	go pump.Run(ctx, stream)
-}
-
-// refresh rebuilds the task list and updates the wave/report labels to
+// refresh rebuilds the node list and updates the run, wave and report text to
 // match pp.state. Safe to call from state.OnChange (dispatched through
-// queueMain, since a pipeline event can arrive from the PipelinePump's own
-// goroutine, not just from a button click already on the UI thread).
+// queueMain, since an event can arrive from the follower's goroutine).
 func (pp *pipelinePanel) refresh() {
-	tasks := pp.state.Tasks()
+	for i := len(pp.nodeLabels) - 1; i >= 0; i-- {
+		C.uiBoxDelete(pp.nodeListBox, C.int(i))
+		C.uiControlDestroy((*C.uiControl)(unsafe.Pointer(pp.nodeLabels[i])))
+	}
+	pp.nodeLabels = pp.nodeLabels[:0]
+	for _, line := range appui.FormatNodeTree(pp.state.Nodes()) {
+		cs := C.CString(line)
+		label := C.uiNewLabel(cs)
+		C.free(unsafe.Pointer(cs))
+		C.uiBoxAppend(pp.nodeListBox, (*C.uiControl)(unsafe.Pointer(label)), 0)
+		pp.nodeLabels = append(pp.nodeLabels, label)
+	}
 
-	for i := len(pp.taskLabels) - 1; i >= 0; i-- {
-		C.uiBoxDelete(pp.taskListBox, C.int(i))
-		C.uiControlDestroy((*C.uiControl)(unsafe.Pointer(pp.taskLabels[i])))
+	head := pp.state.Message()
+	if head == "" {
+		head = appui.FormatRunHeader(pp.state.Run())
 	}
-	pp.taskLabels = pp.taskLabels[:0]
-	for _, t := range tasks {
-		label := C.uiNewLabel(C.CString(formatTaskLine(t)))
-		C.uiBoxAppend(pp.taskListBox, (*C.uiControl)(unsafe.Pointer(label)), 0)
-		pp.taskLabels = append(pp.taskLabels, label)
-	}
+	setLabel(pp.runLabel, head)
 
 	wave, waveState := pp.state.CurrentWave()
 	if waveState == "" {
-		C.uiLabelSetText(pp.waveLabel, C.CString("No wave in progress"))
+		setLabel(pp.waveLabel, "No wave in progress")
 	} else {
-		C.uiLabelSetText(pp.waveLabel, C.CString(fmt.Sprintf("Wave %d: %s", wave, waveState)))
+		setLabel(pp.waveLabel, fmt.Sprintf("Wave %d: %s", wave, waveState))
 	}
 
 	if r := pp.state.Report(); r != nil {
-		C.uiMultilineEntrySetText(pp.reportEntry, C.CString(formatRunReport(*r)))
+		cs := C.CString(appui.FormatReport(*r))
+		C.uiMultilineEntrySetText(pp.reportEntry, cs)
+		C.free(unsafe.Pointer(cs))
 	}
 }
 
-// formatTaskLine renders one task's status badge, wave, and latest
-// attempt (model, duration, verdict) as a single display line, covering
-// "tasks displayed with status badges" and "attempt history: model,
-// duration, verdict shown for each attempt."
-func formatTaskLine(t phaseflow.Task) string {
-	line := fmt.Sprintf("[%s] %s (wave %d)", t.Status, t.ID, t.Wave)
-	if n := len(t.Attempts); n > 0 {
-		a := t.Attempts[n-1]
-		line += fmt.Sprintf(" -- last attempt: %s, %s, %s", a.Model, a.Duration, a.Verdict)
-	}
-	return line
+// setLabel sets a label's text and frees the C copy (libui copies it).
+func setLabel(l *C.uiLabel, s string) {
+	cs := C.CString(s)
+	C.uiLabelSetText(l, cs)
+	C.free(unsafe.Pointer(cs))
 }
 
-// formatRunReport renders a phaseflow.RunReport as plain text for the
-// read-only report box, covering "run report: final report displayed when
-// pipeline completes."
-func formatRunReport(r phaseflow.RunReport) string {
-	out := fmt.Sprintf("Run report (generated %s)\n\n", r.GeneratedAt.Format("2006-01-02 15:04:05"))
-	for _, m := range r.Models {
-		out += fmt.Sprintf("%s: %d/%d passed\n", m.Model, m.Passes, m.Attempts)
-	}
-	if len(r.RevisedTasks) > 0 {
-		out += "\nRevised tasks:\n"
-		for _, rt := range r.RevisedTasks {
-			out += fmt.Sprintf("%s (%d rounds)\n", rt.ID, rt.Rounds)
+// doShow loads the node whose id is typed into the entry and shows its detail
+// (groups, decisions, attempts, saved check output) in the detail box.
+func (pp *pipelinePanel) doShow() {
+	cText := C.uiEntryText(pp.nodeEntry)
+	id := strings.TrimSpace(C.GoString(cText))
+	C.uiFreeText(cText)
+	run := pp.state.RunID()
+	if pp.fetchNode == nil || run == "" || id == "" {
+		if pp.notify != nil {
+			pp.notify("Connect to a backend with a run, then type a node id such as fn-greet and click Show Node.")
 		}
+		return
 	}
-	return out
+	go func() {
+		text, err := pp.fetchNode(context.Background(), run, id)
+		queueMain(func() {
+			if err != nil {
+				text = "error: " + err.Error()
+			}
+			cs := C.CString(text)
+			C.uiMultilineEntrySetText(pp.detailEntry, cs)
+			C.free(unsafe.Pointer(cs))
+		})
+	}()
+}
+
+//export goPipelineShowClicked
+func goPipelineShowClicked(b unsafe.Pointer, data unsafe.Pointer) {
+	h := C.longlong(uintptr(data))
+	pipelinePanelMu.Lock()
+	pp, ok := pipelinePanels[h]
+	pipelinePanelMu.Unlock()
+	if !ok {
+		return
+	}
+	pp.doShow()
 }
 
 // doPickBrief opens the native file picker and stages its content --
