@@ -1,6 +1,13 @@
 # Deploying gophermind-server
 
-## Target: jbrahy@<server-host> (Ubuntu 24.04, x86_64)
+## Target: the Fedora mini (baby-jesus), jbrahy@<server-host> (aarch64)
+
+The server runs on the Mac mini, which now runs Fedora Asahi Remix (aarch64) under
+systemd, not launchd and not the old Ubuntu x86_64 box. `gophermind.service` in this
+directory is the unit. Reach the host with `ssh home` and confirm the paths below on
+the host before relying on them. Nothing in this repo deploys: John pulls and
+restarts. After any deploy, restart the service (`sudo systemctl restart gophermind`)
+so it runs the new code.
 
 ### Layout
 
@@ -20,7 +27,7 @@
 ```bash
 # Cross-compile
 cd gophermind-server
-GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o /tmp/gophermind-server .
+GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o /tmp/gophermind-server .
 
 # Upload
 scp /tmp/gophermind-server jbrahy@<server-host>:/tmp/
