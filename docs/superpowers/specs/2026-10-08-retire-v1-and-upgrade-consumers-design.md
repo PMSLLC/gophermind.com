@@ -45,10 +45,10 @@ Every JSON body carries `"schema_version": 1`; every response carries the header
 | Endpoint | Returns |
 |---|---|
 | `GET /pipeline/runs` | `{runs: [RunSummary]}`, newest first |
-| `GET /pipeline/state?run=<id>` | `{generated_at, run: RunSummary, nodes: [NodeSummary]}`; `run` defaults to the newest |
+| `GET /pipeline/state?run=<id>` | `{generated_at, run: RunSummary, nodes: [NodeSummary]}`; `run` defaults to the newest, meaning the run most recently updated (newest modification time of its brief, approval, report, event log, status, executor and project files; run id descending breaks a tie), not the highest id |
 | `GET /pipeline/node?run=<id>&id=<node>` | `{node, runtime, artifacts}`: the full plan node (all groups and its embedded `decisions`), its runtime file, and the list of saved attempt artifacts |
 | `GET /pipeline/artifact?run=<id>&id=<node>&attempt=<n>&file=<name>` | the text of one saved artifact; `file` is one of `reply.go`, `reply.txt`, `check-output.txt`, `attempt.json` (already scrubbed by the executor) |
-| `GET /pipeline/decisions?run=<id>` | `{decisions: [record]}`: the root node's records, the whole conversation |
+| `GET /pipeline/decisions?run=<id>` | `{decisions: [record]}`: the root node's records followed by the build's revision decisions (`_state/revisions/decisions.json`), each source in stored order |
 | `GET /pipeline/report?run=<id>` | the executor's `report.json` verbatim; while a run is still going, a partial report built from the call log and the runtime files with `"complete": false` |
 | `GET /pipeline/events?run=<id>&since=<seq>` | an SSE stream, section 4.3 |
 | `GET /pipeline` | the dashboard page (HTML shell, no data), rewritten for nodes |
@@ -67,7 +67,7 @@ Each event is `id: <seq>`, `event: <type>`, `data: <json>`. `seq` is the 1-based
 
 | Event | Data |
 |---|---|
-| `node-status` | `{id, status, wave}` |
+| `node-status` | `{id, status, wave, revision}`; a `revision` line in the event log (the revise stage rewrote a leaf) maps to it too |
 | `node-attempt` | `{id, attempt}` where `attempt` is the `last_attempt` shape plus `order`, `revision`, `tests_passed`, `tests_total`, `failed_tests` |
 | `node-result` | `{id, result}` |
 | `wave-changed` | `{wave, state}` (`started`, `finished`) |
@@ -80,7 +80,7 @@ Comment lines (`: keepalive`) every 15 seconds, as today. The number of concurre
 
 New package `gophermind-lib/runview`, importable by the server and by the desktop app (which already depends on `gophermind-lib`). It owns the wire types of section 4 (`types.go`) and reads the run folder:
 
-- `Runs(root string) ([]RunSummary, error)`: scans `<root>/.gophermind/*/` for folders holding `brief.md`; derives `status` from the files (no `approval.json`: planning or waiting; approval and no executor state: planned; `_state/executor.json` and no `report.json`: building; `report.json`: its status and stop reason).
+- `Runs(root string) ([]RunSummary, error)`: scans `<root>/.gophermind/*/` for folders holding `brief.md`; derives `status` from the files (no `approval.json`: planning or waiting; approval and no executor state: planned; `_state/executor.json` and no `report.json`: building; `report.json`: its status and stop reason; with no `report.json` and no `_state/executor.json`, a `/project` run that stopped in preflight or planning reports the `status` and `stop_reason` of `_state/project.json`, and only those two keys are read). A component or root node has no runtime file: its status is derived from its children (verified when every child is verified, else the worst child by failed, escalated, needs_revision, in_progress or claimed, ready, pending).
 - `Open(root, runID string) (*View, error)` with `State()`, `Node(id)`, `Decisions()`, `Report()`, `ArtifactNames(id)`, `Artifact(id, attempt, file)`. It reads plan nodes through `tree.Store.Load`, runtime state through the file blackboard, and the report through the `report` package; it never writes.
 - `(*View).Follow(ctx, since int64) (<-chan Event, error)`: reads `_state/events.jsonl` from line `since`, turns each line into a wire event by reading the node's runtime file, then polls (250 ms) for more.
 - Path safety: run ids match the planner's run id pattern; node ids match `^[a-z0-9][a-z0-9-]*$`; `file` is checked against the four names; `attempt` is an integer; a folder that resolves outside `<root>/.gophermind` is refused.
