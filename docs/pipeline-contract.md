@@ -11,16 +11,17 @@ The wire types are in `gophermind-lib/runview/types.go`; the contract goldens in
 
 ## Auth and common rules
 
-- All routes except the dashboard page `GET /pipeline` need `Authorization: Bearer <token>`. The page itself carries no data.
-- All routes are GET. Every route accepts `?run=<run-id>`. Without it the run is the most recently updated one (newest file modification time in the run folder, run id descending as the tiebreak).
+- All routes except the dashboard page `GET /pipeline` need `Authorization: Bearer <token>`. The page itself carries no data. A wrong or missing token gets 401 with the plain-text body `unauthorized` (not JSON; the schema header is still set). When the server token is empty the check is skipped and every request is accepted.
+- The routes sit behind the server's per-key rate limiter, which runs before the token check. A request over the limit gets 429 with the plain-text body `rate limit exceeded`.
+- All routes are GET. Every route accepts `?run=<run-id>`. Without it the run is the most recently updated one: the newest modification time of the seven files `brief.md`, `approval.json`, `report.json`, `_state/events.jsonl`, `_state/status.json`, `_state/executor.json` and `_state/project.json` (not any file in the folder), run id descending as the tiebreak.
 - Ids are checked against patterns. A bad run id, node id, attempt number or artifact name gives 400. A missing run, node or file, or one reached through a symbolic link, gives 404.
-- Errors are JSON `{"schema_version": 1, "error": "<fixed message>"}`: 400 `invalid id or parameter`, 404 `not found`, 500 `internal error`. A message never echoes the request or a path.
+- Errors are JSON `{"schema_version": 1, "error": "<fixed message>"}`: 400 `invalid id or parameter`, 404 `not found`, 500 `internal error`. `GET /pipeline/report` answers 500 `internal error` when `report.json` exists but is invalid, unreadable or larger than 4 MiB. A message never echoes the request or a path.
 
 ## Routes
 
 ### GET /pipeline/runs
 
-`RunsBody`: `runs`, newest first (most recently updated first). Each entry is a `RunSummary`: `run_id`, `title`, `repo_name` (the folder name, never a path), `status`, `stop_reason`, `planned_at`, `started_at`, `updated_at`, `waves`, `counts` (`nodes`, `by_status`; function nodes only) and `coverage` (`covered`, `total` requirements). A repo with no run gives `"runs": []`.
+`RunsBody`: `runs`, newest first (most recently updated first, by the same seven-file rule). Each entry is a `RunSummary`: `run_id`, `title`, `repo_name` (the folder name, never a path), `status`, `stop_reason`, `planned_at`, `started_at`, `updated_at`, `waves`, `counts` (`nodes`, `by_status`; function nodes only) and `coverage` (`covered`, `total` requirements). A repo with no run gives `"runs": []`.
 
 ### GET /pipeline/state
 
@@ -47,7 +48,7 @@ A `NodeSummary` has `id`, `kind`, `parent`, `title`, `status`, `wave`, `model_ti
 
 ### GET /pipeline/artifact?id=<node-id>&attempt=<n>&file=<name>
 
-The text of one saved attempt file (for example `check-output.txt`), as `text/plain; charset=utf-8` with `X-Content-Type-Options: nosniff`. `attempt` is an integer of at least 1. The read is size-bounded.
+The text of one saved attempt file (for example `check-output.txt`), as `text/plain; charset=utf-8` with `X-Content-Type-Options: nosniff`. `attempt` is an integer of at least 1. `file` must be one of exactly four names: `reply.go`, `reply.txt`, `check-output.txt` or `attempt.json`; any other name is 400. A file larger than 4 MiB is cut at 4 MiB and ends with the line `[truncated by the server]`.
 
 ### GET /pipeline/decisions
 
@@ -91,7 +92,7 @@ Where the stream starts:
 4. A value that is not a non-negative integer is 400.
 5. A value larger than the log length replays from 0 (an id from another run, for a client that reconnects after a newer run became the default).
 
-Lines up to `since` are read only to keep attempt counters right; lines after it are sent. Corrupt lines are skipped and reported as warnings, not sent.
+Lines up to `since` are read only to keep attempt counters right; lines after it are sent. A corrupt line (not JSON, bad node id, unknown kind, no readable runtime file, or longer than the line limit) is skipped silently as far as a client can see: the stream's warnings belong to that one request and are never sent, and `GET /pipeline/state` builds its own view, so `state.warnings` does not list them. The skipped line still counts, so line numbers (and `id:` values) stay stable.
 
 Behavior of the connection:
 

@@ -24,15 +24,22 @@ so it runs the new code.
 
 ### Build & deploy
 
-```bash
-# Cross-compile
-cd gophermind-server
-GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o /tmp/gophermind-server .
+Deploy with git, never by copying a file. On the host, fetch and check out the ref,
+build there, and restart. The repo has no GitHub key on that host, so fetch over an
+agent-forwarded session (`ssh -A`).
 
-# Upload
-scp /tmp/gophermind-server jbrahy@<server-host>:/tmp/
-ssh jbrahy@<server-host> 'sudo cp /tmp/gophermind-server /opt/gophermind/ && sudo chmod 755 /opt/gophermind/gophermind-server && sudo systemctl restart gophermind'
+```bash
+ssh -A home
+cd <checkout>          # the repo checkout on the host; confirm its path first
+git fetch origin
+git checkout <ref>
+cd gophermind-server && go build -ldflags="-s -w" -o <binary-path> .
+sudo systemctl restart gophermind
+git -C <checkout> rev-parse HEAD   # confirm the commit the host runs
 ```
+
+The install layout and env paths in the rest of this README are unverified for the
+mini. Check them over ssh before use.
 
 ### .env
 

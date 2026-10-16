@@ -152,7 +152,8 @@ type NodeBody struct {
 	Artifacts     []ArtifactEntry `json:"artifacts"`
 }
 
-// DecisionsBody is GET /pipeline/decisions: the root node's records.
+// DecisionsBody is GET /pipeline/decisions: the root node's records followed
+// by the build's revision decisions.
 type DecisionsBody struct {
 	SchemaVersion int               `json:"schema_version"`
 	Decisions     []json.RawMessage `json:"decisions"`

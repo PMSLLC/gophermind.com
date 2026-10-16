@@ -422,7 +422,7 @@ func TestPipelineEndpointsAgainstARunFolder(t *testing.T) {
 		if err != nil {
 			t.Fatalf("event stream: %v", err)
 		}
-		sawID = sawID || strings.HasPrefix(line, "id: 1")
+		sawID = sawID || strings.TrimRight(line, "\r\n") == "id: 1"
 		sawEvent = sawEvent || strings.HasPrefix(line, "event: node-")
 	}
 	if !sawID || !sawEvent {
