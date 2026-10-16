@@ -29,6 +29,9 @@ const (
 	StatusEscalated    = "escalated"
 	StatusInterrupted  = "interrupted"
 	StatusHarnessFault = "harness_fault"
+	// StatusInvalidBrief comes only from _state/project.json: a /project run
+	// whose brief was rejected before or as the executor started.
+	StatusInvalidBrief = "invalid_brief"
 )
 
 // Event types on the stream (GET /pipeline/events).

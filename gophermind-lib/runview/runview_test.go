@@ -271,6 +271,29 @@ func TestProjectRunStoppedInPlanning(t *testing.T) {
 	}
 }
 
+// /project writes status invalid_brief to _state/project.json when it rejects
+// the brief; the view passes it through as the run status.
+func TestProjectRunInvalidBrief(t *testing.T) {
+	root := t.TempDir()
+	runviewtest.Build(t, root, runviewtest.PlanFailed)
+	p := filepath.Join(root, ".gophermind", runviewtest.RunID, "_state", "project.json")
+	body := `{"status":"invalid_brief","stop_reason":"invalid_brief","exit_code":2}`
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	v, err := runview.Open(root, runviewtest.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := v.Summary()
+	if s.Status != runview.StatusInvalidBrief || s.StopReason != "invalid_brief" {
+		t.Errorf("summary = %q %q, want invalid_brief invalid_brief", s.Status, s.StopReason)
+	}
+	if st := v.State(); st.Run == nil || st.Run.Status != runview.StatusInvalidBrief {
+		t.Errorf("state run = %+v, want status invalid_brief", st.Run)
+	}
+}
+
 func TestGroupNodeStatusIsDerivedFromChildren(t *testing.T) {
 	root := t.TempDir()
 	f := runviewtest.Build(t, root, runviewtest.Building)

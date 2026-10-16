@@ -392,7 +392,7 @@ const STATUS_META = {
   failed:         { dot: 'failed' },
   escalated:      { dot: 'escalated', pill: 'pill-escalated' },
 };
-const TERMINAL = ['verified', 'failed', 'escalated', 'interrupted', 'harness_fault'];
+const TERMINAL = ['verified', 'failed', 'escalated', 'interrupted', 'harness_fault', 'invalid_brief'];
 function statusMetaFor(status){
   return STATUS_META[status] || { dot: 'unknown' };
 }

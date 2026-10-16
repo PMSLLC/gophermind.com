@@ -38,7 +38,7 @@ Run status is derived from the files present:
 5. `_state/status.json` says it is waiting: `waiting`.
 6. Otherwise `planning`.
 
-Statuses: `planning`, `waiting`, `planned`, `building`, `verified`, `failed`, `escalated`, `interrupted`, `harness_fault`.
+Statuses: `planning`, `waiting`, `planned`, `building`, `verified`, `failed`, `escalated`, `interrupted`, `harness_fault`, `invalid_brief`. `invalid_brief` only comes from `_state/project.json` (rule 2), when `/project` rejected the brief. Every status `/project` writes there is in this list; `preflight_failed` is an exit status of `/project` that is never written to a run folder. The terminal statuses (a client fetches the report for these) are `verified`, `failed`, `escalated`, `interrupted`, `harness_fault` and `invalid_brief`.
 
 A `NodeSummary` has `id`, `kind`, `parent`, `title`, `status`, `wave`, `model_tier`, `node_class`, `depends_on`, `requirement_ids`, `revision`, `claimed_by`, `attempt_count`, `last_attempt`, `result` and `tests`. Component and root nodes have no runtime file: their status is derived (verified when every child is verified, otherwise the worst child) and the status stored in the plan file is ignored for them.
 

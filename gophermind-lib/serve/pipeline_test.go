@@ -338,6 +338,18 @@ const scenarios = {
     assert(env.get('stateSeq') === 5, 'stateSeq unchanged by the failure');
     assert(env.get('nodes[0].attempt_count') === 1, 'the queued frame was applied to the old state');
   },
+  async invalidBriefIsTerminal(){
+    const env = makeEnv();
+    env.get('runId = "r1"');
+    const p = env.get('resync()');
+    env.take('/pipeline/state').resolve(state(4, 'invalid_brief'));
+    await flush();
+    env.take('/pipeline/node').resolve(nodeBody);
+    await flush();
+    env.take('/pipeline/report').resolve({ status: 'invalid_brief', complete: true });
+    assert((await p) === true, 'resync succeeded');
+    assert(env.get('finalReport && finalReport.status') === 'invalid_brief', 'the report of an invalid_brief run is fetched');
+  },
   async runSwitchAbortsOldStream(){
     const env = makeEnv();
     env.els.tokenInput = mkEl('input'); env.els.tokenInput.value = 'tok';
@@ -395,7 +407,7 @@ func TestPipelineDashboardBehavior(t *testing.T) {
 	if err := os.WriteFile(harness, []byte(pipelineHarness), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"skipsFramesAtOrBelowStateSeq", "staleLoadStateIsDiscarded", "framesDuringStateLoadAreQueued", "staleStateKeepsQueueFailedStateFlushesIt", "runSwitchAbortsOldStream"} {
+	for _, name := range []string{"skipsFramesAtOrBelowStateSeq", "staleLoadStateIsDiscarded", "framesDuringStateLoadAreQueued", "staleStateKeepsQueueFailedStateFlushesIt", "invalidBriefIsTerminal", "runSwitchAbortsOldStream"} {
 		t.Run(name, func(t *testing.T) {
 			out, err := exec.Command(node, harness, script, name).CombinedOutput()
 			if err != nil || !strings.Contains(string(out), "ok "+name) {
