@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"gophermind/gophermind-lib/briefv2/provider"
-	"gophermind/gophermind-lib/briefv2/report"
-	"gophermind/gophermind-lib/briefv2/settings"
-	"gophermind/gophermind-lib/briefv2/vault"
+	"gophermind/gophermind-lib/build/provider"
+	"gophermind/gophermind-lib/build/report"
+	"gophermind/gophermind-lib/build/settings"
+	"gophermind/gophermind-lib/build/vault"
 )
 
 // useRunE2E is useRun with a claim that goes stale after one second (so a

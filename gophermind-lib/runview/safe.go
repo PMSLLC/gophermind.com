@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"gophermind/gophermind-lib/briefv2/planner"
+	"gophermind/gophermind-lib/build/planner"
 )
 
 // nodeIDRE is the node schema's id pattern.

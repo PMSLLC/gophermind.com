@@ -15,13 +15,13 @@ import (
 	"testing"
 	"time"
 
-	"gophermind/gophermind-lib/briefv2/artifacts"
-	"gophermind/gophermind-lib/briefv2/blackboard"
-	"gophermind/gophermind-lib/briefv2/ledger"
-	"gophermind/gophermind-lib/briefv2/planner"
-	"gophermind/gophermind-lib/briefv2/report"
-	"gophermind/gophermind-lib/briefv2/runfs"
-	"gophermind/gophermind-lib/briefv2/tree"
+	"gophermind/gophermind-lib/build/artifacts"
+	"gophermind/gophermind-lib/build/blackboard"
+	"gophermind/gophermind-lib/build/ledger"
+	"gophermind/gophermind-lib/build/planner"
+	"gophermind/gophermind-lib/build/report"
+	"gophermind/gophermind-lib/build/runfs"
+	"gophermind/gophermind-lib/build/tree"
 )
 
 // RunID is the id of every fixture run unless BuildID is used.

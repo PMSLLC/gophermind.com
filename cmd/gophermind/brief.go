@@ -7,9 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"gophermind/gophermind-lib/briefv2/brief"
-	"gophermind/gophermind-lib/briefv2/tree"
-	"gophermind/gophermind-lib/briefv2/vault"
+	"gophermind/gophermind-lib/build/brief"
+	"gophermind/gophermind-lib/build/tree"
+	"gophermind/gophermind-lib/build/vault"
 	"gophermind/gophermind-lib/config"
 )
 

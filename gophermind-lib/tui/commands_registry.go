@@ -14,7 +14,7 @@ type slashCommand struct {
 var slashCommands = []slashCommand{
 	{Name: "/help", Arg: "", Desc: "show this help"},
 	{Name: "/clear", Arg: "", Desc: "clear the transcript and reset the session"},
-	{Name: "/project", Arg: "<brief> [flags]", Desc: "plan and build a v2 brief in one run, no second command"},
+	{Name: "/project", Arg: "<brief> [flags]", Desc: "plan and build a brief in one run, no second command"},
 	{Name: "/config", Arg: "", Desc: "open the configuration wizard"},
 	{Name: "/index", Arg: "", Desc: "rebuild INDEX.md, the code symbol index"},
 	{Name: "/provider", Arg: "", Desc: "show who is serving the current model, its terms, and the odometer"},

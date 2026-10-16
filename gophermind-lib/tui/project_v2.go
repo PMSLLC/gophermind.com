@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"gophermind/gophermind-lib/briefv2/projectrun"
+	"gophermind/gophermind-lib/build/projectrun"
 )
 
 // This file implements the slash form of "/project <brief> [flags]": the same

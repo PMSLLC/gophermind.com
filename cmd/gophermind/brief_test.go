@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"gophermind/gophermind-lib/briefv2/vault"
+	"gophermind/gophermind-lib/build/vault"
 )
 
-const exampleDir = "../../gophermind-lib/briefv2/testdata/example"
+const exampleDir = "../../gophermind-lib/build/testdata/example"
 
 func runBriefCmd(t *testing.T, stdin string, args ...string) (int, string, string) {
 	t.Helper()
@@ -37,7 +37,7 @@ func TestBriefValidate(t *testing.T) {
 }
 
 func TestBriefValidateVentureStudioBriefWithinWarningCeiling(t *testing.T) {
-	code, out, errs := runBriefCmd(t, "", "validate", "../../gophermind-lib/briefv2/testdata/ai-venture-studio-server-brief.md")
+	code, out, errs := runBriefCmd(t, "", "validate", "../../gophermind-lib/build/testdata/ai-venture-studio-server-brief.md")
 	if code != 0 || !strings.Contains(out, "gm-2026-09-29-002") {
 		t.Fatalf("code=%d out=%q err=%q", code, out, errs)
 	}
@@ -203,7 +203,7 @@ func TestBriefValidateDuplicateAndReservedExitTwo(t *testing.T) {
 }
 
 func TestBriefValidateWarningWording(t *testing.T) {
-	src, err := os.ReadFile("../../gophermind-lib/briefv2/testdata/ai-venture-studio-server-brief.md")
+	src, err := os.ReadFile("../../gophermind-lib/build/testdata/ai-venture-studio-server-brief.md")
 	if err != nil {
 		t.Fatal(err)
 	}

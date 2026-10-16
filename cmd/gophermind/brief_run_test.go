@@ -21,16 +21,16 @@ import (
 	"testing"
 	"time"
 
-	"gophermind/gophermind-lib/briefv2/events"
-	"gophermind/gophermind-lib/briefv2/executor"
-	"gophermind/gophermind-lib/briefv2/packer"
-	"gophermind/gophermind-lib/briefv2/planner"
-	"gophermind/gophermind-lib/briefv2/provider"
-	"gophermind/gophermind-lib/briefv2/report"
-	"gophermind/gophermind-lib/briefv2/sandbox"
-	"gophermind/gophermind-lib/briefv2/settings"
-	"gophermind/gophermind-lib/briefv2/tree"
-	"gophermind/gophermind-lib/briefv2/vault"
+	"gophermind/gophermind-lib/build/events"
+	"gophermind/gophermind-lib/build/executor"
+	"gophermind/gophermind-lib/build/packer"
+	"gophermind/gophermind-lib/build/planner"
+	"gophermind/gophermind-lib/build/provider"
+	"gophermind/gophermind-lib/build/report"
+	"gophermind/gophermind-lib/build/sandbox"
+	"gophermind/gophermind-lib/build/settings"
+	"gophermind/gophermind-lib/build/tree"
+	"gophermind/gophermind-lib/build/vault"
 	"gophermind/gophermind-lib/gitenv"
 )
 
@@ -38,7 +38,7 @@ const cliCanary = "CANARY-CLI-SECRET"
 
 var greeterExecDir = func() string {
 	_, f, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(f), "..", "..", "gophermind-lib", "briefv2", "executor", "testdata", "greeter")
+	return filepath.Join(filepath.Dir(f), "..", "..", "gophermind-lib", "build", "executor", "testdata", "greeter")
 }()
 
 const execGreeterID = "gm-2026-09-30-901"

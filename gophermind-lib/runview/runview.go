@@ -12,11 +12,11 @@ import (
 	"sync"
 	"time"
 
-	"gophermind/gophermind-lib/briefv2/blackboard"
-	"gophermind/gophermind-lib/briefv2/planner"
-	"gophermind/gophermind-lib/briefv2/report"
-	"gophermind/gophermind-lib/briefv2/runfs"
-	"gophermind/gophermind-lib/briefv2/tree"
+	"gophermind/gophermind-lib/build/blackboard"
+	"gophermind/gophermind-lib/build/planner"
+	"gophermind/gophermind-lib/build/report"
+	"gophermind/gophermind-lib/build/runfs"
+	"gophermind/gophermind-lib/build/tree"
 )
 
 const maxWarnings = 20

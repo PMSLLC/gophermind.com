@@ -11,7 +11,7 @@ checkout before relying on a path, symbol, interface signature, or execution mod
 | Agent loop | `gophermind-lib/agent/` | Execution, tool dispatch, task graph, verification, streaming |
 | Tools | `gophermind-lib/tools/` | Actual tool interface, registration, validation, permissions |
 | TUI | `gophermind-lib/tui/` | State, update/view flow, slash commands |
-| Workflow | `gophermind-lib/briefv2/` | Brief planner, blackboard state, executor |
+| Workflow | `gophermind-lib/build/` | Brief planner, blackboard state, executor |
 | Prompts | `gophermind-lib/prompt/` | Registry, personas, rendering, skill loading |
 | Skills | `gophermind-lib/skills/` | Repo-local pack loading, fetched-skill catalogue |
 | Models | `gophermind-lib/llm/` | Provider interface, capability resolution, adapters, streaming |
@@ -30,7 +30,7 @@ runtime requires it; do not invent signatures or duplicate registrations.
 For TUI/slash-command changes, trace input handling through dispatch and state
 updates to rendering. For agent/provider changes, trace context, request, streaming,
 result/error handling, and cleanup. For personas, verify selection and rendering.
-For workflow changes, inspect the transition tests of the blackboard and the executor (`gophermind-lib/briefv2/blackboard`, `executor`).
+For workflow changes, inspect the transition tests of the blackboard and the executor (`gophermind-lib/build/blackboard`, `executor`).
 
 ## Boundaries to verify
 

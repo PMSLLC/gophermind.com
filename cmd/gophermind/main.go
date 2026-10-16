@@ -610,13 +610,13 @@ func run() error {
 		os.Exit(runFree(args[1:], os.Stdout))
 	}
 
-	// `gophermind brief ...` (v2 brief loader, vault, tree tools) runs before
+	// `gophermind brief ...` (brief loader, vault, tree tools) runs before
 	// Validate for the same reason as `free`: it needs no configured endpoint.
 	if cmd == "brief" {
 		os.Exit(runBrief(args[1:], os.Stdin, os.Stdout, os.Stderr))
 	}
 
-	// `gophermind project ...` plans and builds a v2 brief in one run. Like
+	// `gophermind project ...` plans and builds a brief in one run. Like
 	// `brief`, it needs no chat endpoint, so it runs before Validate.
 	if cmd == "project" {
 		os.Exit(runProject(args[1:], os.Stdin, os.Stdout, os.Stderr))

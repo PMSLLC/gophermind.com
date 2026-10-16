@@ -4,13 +4,17 @@
 package gates
 
 import (
+	"bytes"
 	"go/parser"
 	"go/token"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gophermind/gophermind-lib/gitenv"
 )
 
 // repoRoot is the folder holding go.work, two levels above this package.
@@ -97,6 +101,58 @@ func TestRemovedPackageDirectoriesAreGone(t *testing.T) {
 	for _, d := range removedDirs {
 		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(d))); err == nil {
 			t.Errorf("%s still exists", d)
+		}
+	}
+}
+
+// historicalPrefixes are dated records that keep the old names. Keep this list
+// equal to the exclusions of the rename command in the task brief.
+var historicalPrefixes = []string{
+	"docs/superpowers/", "docs/reviews/", "docs/goals/", "docs/GOAL.md", "docs/GOAL-UNIFICATION.md",
+	"docs/unification-overview.md", "CHANGELOG.md", ".planning/", ".gophermind/skills-packaging/references/",
+	"PLAN.md", "todo.md", "todo-2.md", "todo-3.md", "todo-4.md", "BUILD_AUDIT_LOG.md", "BUILD_AUDIT_REPORT.md",
+	"DEPLOY_QUEUE.md", "CONTEXT.md", "gophermind-lib/gates/",
+}
+
+// TestNoBriefv2Anywhere: no tracked path, import path or live text names the
+// old version-named folder. It reads the tracked files only (git ls-files), so
+// git-ignored scratch such as .superpowers/ is never read.
+func TestNoBriefv2Anywhere(t *testing.T) {
+	root := repoRoot(t)
+	cmd := exec.Command("git", "ls-files", "-z")
+	cmd.Dir = root
+	cmd.Env = gitenv.SanitizedEnv()
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git ls-files: %v", err)
+	}
+	hist := func(rel string) bool {
+		for _, p := range historicalPrefixes {
+			if rel == p || strings.HasPrefix(rel, p) {
+				return true
+			}
+		}
+		return false
+	}
+	const old = "briefv2"
+	for _, rel := range strings.Split(string(bytes.TrimRight(out, "\x00")), "\x00") {
+		if rel == "" || hist(rel) {
+			continue
+		}
+		if strings.Contains(strings.ToLower(rel), old) {
+			t.Errorf("path %s still names %s", rel, old)
+		}
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		fi, ierr := os.Lstat(p)
+		if ierr != nil || !fi.Mode().IsRegular() || fi.Size() > 1<<20 {
+			continue
+		}
+		b, rerr := os.ReadFile(p)
+		if rerr != nil || bytes.IndexByte(b, 0) >= 0 {
+			continue
+		}
+		if strings.Contains(strings.ToLower(string(b)), old) {
+			t.Errorf("%s still mentions %s", rel, old)
 		}
 	}
 }

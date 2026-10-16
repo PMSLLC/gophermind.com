@@ -49,5 +49,5 @@ What the options mean, in the order they appear in the block:
 - `network`: the hosts the build may reach; `critical: true` fails the task when a request fails, and `*.example.com` matches a whole domain.
 - `budget`: the largest prompt for one task, and how many rewrite rounds a failed task gets.
 
-A test (`gophermind-lib/briefv2/brief/examples_test.go`) parses every complete
+A test (`gophermind-lib/build/brief/examples_test.go`) parses every complete
 brief here and fails if one stops validating or if the set stops covering an option.

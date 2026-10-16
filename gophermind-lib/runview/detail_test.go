@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"gophermind/gophermind-lib/briefv2/report"
+	"gophermind/gophermind-lib/build/report"
 	"gophermind/gophermind-lib/runview"
 	"gophermind/gophermind-lib/runview/runviewtest"
 )

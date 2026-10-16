@@ -9,9 +9,9 @@ import (
 	"os"
 	"time"
 
-	"gophermind/gophermind-lib/briefv2/blackboard"
-	"gophermind/gophermind-lib/briefv2/report"
-	"gophermind/gophermind-lib/briefv2/tree"
+	"gophermind/gophermind-lib/build/blackboard"
+	"gophermind/gophermind-lib/build/report"
+	"gophermind/gophermind-lib/build/tree"
 )
 
 // maxEventChunk bounds how many bytes of _state/events.jsonl one poll reads.

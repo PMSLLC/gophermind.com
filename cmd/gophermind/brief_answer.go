@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"gophermind/gophermind-lib/briefv2/planner"
+	"gophermind/gophermind-lib/build/planner"
 )
 
 // briefAnswer implements `gophermind brief answer <run-id> <question-id> <new answer...>`.

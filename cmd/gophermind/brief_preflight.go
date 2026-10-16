@@ -12,13 +12,13 @@ import (
 
 	"golang.org/x/term"
 
-	"gophermind/gophermind-lib/briefv2/brief"
-	"gophermind/gophermind-lib/briefv2/envcheck"
-	"gophermind/gophermind-lib/briefv2/executor"
-	"gophermind/gophermind-lib/briefv2/planner"
-	"gophermind/gophermind-lib/briefv2/sandbox"
-	"gophermind/gophermind-lib/briefv2/settings"
-	"gophermind/gophermind-lib/briefv2/vault"
+	"gophermind/gophermind-lib/build/brief"
+	"gophermind/gophermind-lib/build/envcheck"
+	"gophermind/gophermind-lib/build/executor"
+	"gophermind/gophermind-lib/build/planner"
+	"gophermind/gophermind-lib/build/sandbox"
+	"gophermind/gophermind-lib/build/settings"
+	"gophermind/gophermind-lib/build/vault"
 )
 
 // minFreeBytes is the free space the module cache's file system must have.

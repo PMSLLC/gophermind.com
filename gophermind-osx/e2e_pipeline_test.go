@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"gophermind/gophermind-lib/briefv2/blackboard"
+	"gophermind/gophermind-lib/build/blackboard"
 	"gophermind/gophermind-lib/runview/runviewtest"
 	"gophermind/gophermind-osx/client"
 	"gophermind/gophermind-osx/connection"

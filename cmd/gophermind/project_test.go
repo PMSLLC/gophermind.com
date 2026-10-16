@@ -18,15 +18,15 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"gophermind/gophermind-lib/briefv2/blackboard"
-	"gophermind/gophermind-lib/briefv2/brief"
-	"gophermind/gophermind-lib/briefv2/executor"
-	"gophermind/gophermind-lib/briefv2/ledger"
-	"gophermind/gophermind-lib/briefv2/planner"
-	"gophermind/gophermind-lib/briefv2/projectrun"
-	"gophermind/gophermind-lib/briefv2/provider"
-	"gophermind/gophermind-lib/briefv2/settings"
-	"gophermind/gophermind-lib/briefv2/vault"
+	"gophermind/gophermind-lib/build/blackboard"
+	"gophermind/gophermind-lib/build/brief"
+	"gophermind/gophermind-lib/build/executor"
+	"gophermind/gophermind-lib/build/ledger"
+	"gophermind/gophermind-lib/build/planner"
+	"gophermind/gophermind-lib/build/projectrun"
+	"gophermind/gophermind-lib/build/provider"
+	"gophermind/gophermind-lib/build/settings"
+	"gophermind/gophermind-lib/build/vault"
 )
 
 const projGreeterID = "gm-2026-09-29-900"
@@ -67,7 +67,7 @@ func projTestdata(t *testing.T) string {
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
-	return filepath.Join(filepath.Dir(file), "..", "..", "gophermind-lib", "briefv2", "planner", "testdata", "greeter")
+	return filepath.Join(filepath.Dir(file), "..", "..", "gophermind-lib", "build", "planner", "testdata", "greeter")
 }
 
 func newProjRig(t *testing.T) *projRig {

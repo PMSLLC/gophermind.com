@@ -13,16 +13,16 @@ import (
 	"sync"
 	"text/tabwriter"
 
-	"gophermind/gophermind-lib/briefv2/brief"
-	"gophermind/gophermind-lib/briefv2/events"
-	"gophermind/gophermind-lib/briefv2/human"
-	"gophermind/gophermind-lib/briefv2/ledger"
-	"gophermind/gophermind-lib/briefv2/planner"
-	"gophermind/gophermind-lib/briefv2/provider"
-	"gophermind/gophermind-lib/briefv2/report"
-	"gophermind/gophermind-lib/briefv2/router"
-	"gophermind/gophermind-lib/briefv2/settings"
-	"gophermind/gophermind-lib/briefv2/vault"
+	"gophermind/gophermind-lib/build/brief"
+	"gophermind/gophermind-lib/build/events"
+	"gophermind/gophermind-lib/build/human"
+	"gophermind/gophermind-lib/build/ledger"
+	"gophermind/gophermind-lib/build/planner"
+	"gophermind/gophermind-lib/build/provider"
+	"gophermind/gophermind-lib/build/report"
+	"gophermind/gophermind-lib/build/router"
+	"gophermind/gophermind-lib/build/settings"
+	"gophermind/gophermind-lib/build/vault"
 )
 
 // Exit codes of `gophermind brief plan` and `resume`.

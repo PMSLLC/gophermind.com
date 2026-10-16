@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"gophermind/gophermind-lib/briefv2/tree"
+	"gophermind/gophermind-lib/build/tree"
 )
 
 func TestBuildProducesLoadablePlansAtEveryStage(t *testing.T) {

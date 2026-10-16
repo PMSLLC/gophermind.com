@@ -1,9 +1,9 @@
 package main
 
 import (
-	"gophermind/gophermind-lib/briefv2/blackboard"
-	"gophermind/gophermind-lib/briefv2/ledger"
-	"gophermind/gophermind-lib/briefv2/planner"
+	"gophermind/gophermind-lib/build/blackboard"
+	"gophermind/gophermind-lib/build/ledger"
+	"gophermind/gophermind-lib/build/planner"
 )
 
 // runDirOf finds a run's folder through the run record the planner writes at

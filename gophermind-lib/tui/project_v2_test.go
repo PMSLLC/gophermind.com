@@ -8,7 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"gophermind/gophermind-lib/briefv2/projectrun"
+	"gophermind/gophermind-lib/build/projectrun"
 )
 
 // fakeProject swaps projectRunFn for fn and records the Options it saw.
@@ -154,7 +154,7 @@ func TestSlashProjectRegistry(t *testing.T) {
 	for _, c := range slashCommands {
 		if c.Name == "/project" {
 			found = true
-			if c.Arg != "<brief> [flags]" || c.Desc != "plan and build a v2 brief in one run, no second command" {
+			if c.Arg != "<brief> [flags]" || c.Desc != "plan and build a brief in one run, no second command" {
 				t.Errorf("entry = %+v", c)
 			}
 		}

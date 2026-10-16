@@ -185,7 +185,7 @@ answer or hits the iteration budget. That's the whole idea — see
 
 ## Plan and build from a brief
 
-`gophermind brief plan <brief.md>` plans a brief into a tree of nodes under `.gophermind/<run-id>/` in your repo, `gophermind brief run <run-id>` builds it, and `/project <brief>` in the TUI (or `gophermind project <brief>`) does both in one run. Everything a run does is a browsable file in that folder: the nodes, their runtime state, the event log, the call log, the saved attempts and the report. `gophermind serve` and the desktop app show a run live (`GET /pipeline`). See `docs/briefv2/README.md`.
+`gophermind brief plan <brief.md>` plans a brief into a tree of nodes under `.gophermind/<run-id>/` in your repo, `gophermind brief run <run-id>` builds it, and `/project <brief>` in the TUI (or `gophermind project <brief>`) does both in one run. Everything a run does is a browsable file in that folder: the nodes, their runtime state, the event log, the call log, the saved attempts and the report. `gophermind serve` and the desktop app show a run live (`GET /pipeline`). See `docs/build/README.md`.
 
 `gophermind phase` and `/phase` were removed in 0.10.0. PhaseFlow's roadmap workflow has no replacement; `.planning/` folders are not read.
 

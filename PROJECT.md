@@ -8,13 +8,13 @@ session start alongside CONTEXT.md.
 `gophermind` is a Go coding-agent CLI (a Claude-Code-style tool) that talks to
 any OpenAI-compatible model endpoint. It has its own agent loop, tool set, TUI,
 sessions, personas, prompt registry, and a brief-to-build planner and executor
-(`gophermind-lib/briefv2`).
+(`gophermind-lib/build`).
 
 - Module: `gophermind` (see `go.mod`, `go 1.25.0`; local toolchain go1.26.4)
 - Entrypoint: `cmd/gophermind/main.go`
 - Core packages: `internal/agent` (loop, taskgraph, verify, reflection),
   `internal/tools` (read/search/edit/shell/sql/http/…), `internal/tui`,
-  `gophermind-lib/briefv2` (brief planner and executor).
+  `gophermind-lib/build` (brief planner and executor).
 
 ## Build / test / format
 

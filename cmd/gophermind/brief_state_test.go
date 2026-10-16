@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"gophermind/gophermind-lib/briefv2/blackboard"
-	"gophermind/gophermind-lib/briefv2/tree"
+	"gophermind/gophermind-lib/build/blackboard"
+	"gophermind/gophermind-lib/build/tree"
 )
 
 func TestBriefStatusReadsTheRunFolderAndCreatesNoDatabase(t *testing.T) {

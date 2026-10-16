@@ -10,7 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"gophermind/gophermind-lib/briefv2/report"
+	"gophermind/gophermind-lib/build/report"
 )
 
 // SchemaVersion is the pipeline contract version. Every JSON body carries it

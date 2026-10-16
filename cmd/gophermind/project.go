@@ -8,13 +8,13 @@ import (
 	"os/signal"
 	"syscall"
 
-	"gophermind/gophermind-lib/briefv2/projectrun"
+	"gophermind/gophermind-lib/build/projectrun"
 )
 
 const projectUsage = `  gophermind project <brief.md> [--repo <path>] [--generate NAME=hex32|placeholder]... [--require-private]
                       [--expect-head <rev>] [--graded] [--expect-binary-commit <sha>] [--resume] [--attended]
                       [--preflight-only] [--print-state-paths]
-                                plan and build a v2 brief in one run (same as /project in the TUI)`
+                                plan and build a brief in one run (same as /project in the TUI)`
 
 // projectEnv is nil in production; a test replaces it with an Env of fakes.
 var projectEnv func() projectrun.Env

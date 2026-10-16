@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"gophermind/gophermind-lib/briefv2/blackboard"
-	"gophermind/gophermind-lib/briefv2/report"
-	"gophermind/gophermind-lib/briefv2/runfs"
+	"gophermind/gophermind-lib/build/blackboard"
+	"gophermind/gophermind-lib/build/report"
+	"gophermind/gophermind-lib/build/runfs"
 	"gophermind/gophermind-lib/runview"
 	"gophermind/gophermind-lib/runview/runviewtest"
 )

@@ -65,8 +65,8 @@ tmp/
 # cover for any path.
 !/desktop/build/
 /desktop/build/bin/
-# gophermind-lib/build is the planner and executor (renamed from briefv2) and
-# docs/build is their documentation; the generic build/ rule above must not
+# gophermind-lib/build is the planner and executor (renamed from the old version-named folder)
+# and docs/build is their documentation; the generic build/ rule above must not
 # swallow either.
 !/gophermind-lib/build/
 !/docs/build/

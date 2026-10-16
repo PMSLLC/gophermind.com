@@ -29,76 +29,76 @@ after every completed task. Non-test Go declarations only.
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `GoTest` | type | gophermind-lib/briefv2/acceptcheck/gotest.go:12 | GoTest is a root test command that is one plain go test invocation: the executor runs those through go test -json and holds them to the test runner's pass rule (a test ran, none failed, every named test passed) instead of trusting the exit code alone. |
-| `goTagsRE` | var | gophermind-lib/briefv2/acceptcheck/gotest.go:23 |  |
-| `goRunNameRE` | var | gophermind-lib/briefv2/acceptcheck/gotest.go:24 |  |
-| `identRE` | var | gophermind-lib/briefv2/acceptcheck/gotest.go:25 |  |
-| `acceptPkgRE` | var | gophermind-lib/briefv2/acceptcheck/gotest.go:26 |  |
-| `goTestValueFlags` | var | gophermind-lib/briefv2/acceptcheck/gotest.go:30 | goTestValueFlags take a separate value word. |
-| `ParseGoTest` | func | gophermind-lib/briefv2/acceptcheck/gotest.go:36 | ParseGoTest recognises `[unset NAME...;] [NAME=value] go test FLAGS PKG`: one package, the flags -tags -run -count -timeout -p -parallel -v -race -short. |
-| `ServerExercising` | func | gophermind-lib/briefv2/acceptcheck/gotest.go:134 | ServerExercising says a command exercises the built server (or the built binaries): it runs a built binary, curl, a go test of the acceptance package, or hands a command the acceptance address or a loopback address. |
-| `exercises` | func | gophermind-lib/briefv2/acceptcheck/gotest.go:138 |  |
-| `Finding` | type | gophermind-lib/briefv2/acceptcheck/quality.go:18 | Finding is one fixed-vocabulary defect of an acceptance root test command. |
-| `FindMasked` | const | gophermind-lib/briefv2/acceptcheck/quality.go:23 | FindMasked: the exit status is thrown away (\|\| true, \|\| echo, ; true, exit 0, set +e, 2>/dev/null \|\|, a trailing echo after a semicolon). |
-| `FindSuccessEcho` | const | gophermind-lib/briefv2/acceptcheck/quality.go:25 | FindSuccessEcho: a trailing "&& echo OK" is the only thing that "asserts". |
-| `FindPlaceholder` | const | gophermind-lib/briefv2/acceptcheck/quality.go:27 | FindPlaceholder: {id}, <id>, ..., TODO or (simulate ...) left in the command. |
-| `FindUndefinedVar` | const | gophermind-lib/briefv2/acceptcheck/quality.go:30 | FindUndefinedVar: a $VARIABLE no earlier statement sets and the harness does not provide. |
-| `FindCurlUnasserted` | const | gophermind-lib/briefv2/acceptcheck/quality.go:32 | FindCurlUnasserted: curl without -f whose output is not checked. |
-| `FindJqUnasserted` | const | gophermind-lib/briefv2/acceptcheck/quality.go:34 | FindJqUnasserted: jq without -e whose output is not checked. |
-| `FindPrintOnly` | const | gophermind-lib/briefv2/acceptcheck/quality.go:36 | FindPrintOnly: nothing in the command can fail (echo, cat, ls, find, head). |
-| `FindingNames` | func | gophermind-lib/briefv2/acceptcheck/quality.go:40 | FindingNames are the findings as strings, in the order given. |
-| `Options` | type | gophermind-lib/briefv2/acceptcheck/quality.go:49 | Options names what the checker may treat as defined. |
-| `printOnly` | var | gophermind-lib/briefv2/acceptcheck/quality.go:54 |  |
-| `neutral` | var | gophermind-lib/briefv2/acceptcheck/quality.go:61 | neutral commands change the shell, not the verdict. |
-| `testCmds` | var | gophermind-lib/briefv2/acceptcheck/quality.go:68 | testCmds compare a value: a command substitution handed to one is asserted. |
-| `successWordRE` | var | gophermind-lib/briefv2/acceptcheck/quality.go:71 |  |
-| `braceHolderRE` | var | gophermind-lib/briefv2/acceptcheck/quality.go:72 |  |
-| `angleHolderRE` | var | gophermind-lib/briefv2/acceptcheck/quality.go:73 |  |
-| `simulateRE` | var | gophermind-lib/briefv2/acceptcheck/quality.go:74 |  |
-| `todoRE` | var | gophermind-lib/briefv2/acceptcheck/quality.go:75 |  |
-| `varUseRE` | var | gophermind-lib/briefv2/acceptcheck/quality.go:76 |  |
-| `varDefRE` | var | gophermind-lib/briefv2/acceptcheck/quality.go:77 |  |
-| `varLoopRE` | var | gophermind-lib/briefv2/acceptcheck/quality.go:78 |  |
-| `wellKnownNames` | var | gophermind-lib/briefv2/acceptcheck/quality.go:79 |  |
-| `Quality` | func | gophermind-lib/briefv2/acceptcheck/quality.go:86 | Quality returns the quality findings of one root test command, sorted and unique; none means the command can fail for the right reason. |
-| `baseOf` | func | gophermind-lib/briefv2/acceptcheck/quality.go:124 |  |
-| `strip` | func | gophermind-lib/briefv2/acceptcheck/quality.go:133 | strip removes single-quoted text and comments, returning the rest and the comment text. |
-| `qualityPlaceholders` | func | gophermind-lib/briefv2/acceptcheck/quality.go:172 | qualityPlaceholders finds placeholders and variables nothing defines. |
-| `qual` | type | gophermind-lib/briefv2/acceptcheck/quality.go:253 | qual reads the statements of a script and notes findings in set. |
-| `pipeline` | type | gophermind-lib/briefv2/acceptcheck/quality.go:255 |  |
-| `(*qual).script` | method | gophermind-lib/briefv2/acceptcheck/quality.go:257 |  |
-| `groupDepth` | func | gophermind-lib/briefv2/acceptcheck/quality.go:457 |  |
-| `curlFail` | func | gophermind-lib/briefv2/acceptcheck/quality.go:471 | curlFail: curl exits non-zero on an HTTP error status. |
-| `jqExit` | func | gophermind-lib/briefv2/acceptcheck/quality.go:485 | jqExit: jq sets its exit status from the last output (-e, --exit-status). |
-| `extractSubs` | func | gophermind-lib/briefv2/acceptcheck/quality.go:499 | extractSubs are the scripts of the $( ) and backtick substitutions in a word. |
-| `noopCommands` | var | gophermind-lib/briefv2/acceptcheck/vacuous.go:14 | noopCommands are shell words whose whole effect is nothing the server can be blamed for. |
-| `shellKeywords` | var | gophermind-lib/briefv2/acceptcheck/vacuous.go:19 |  |
-| `wrappers` | var | gophermind-lib/briefv2/acceptcheck/vacuous.go:24 |  |
-| `assignRE` | var | gophermind-lib/briefv2/acceptcheck/vacuous.go:27 |  |
-| `systemDir` | var | gophermind-lib/briefv2/acceptcheck/vacuous.go:28 |  |
-| `binDirRef` | var | gophermind-lib/briefv2/acceptcheck/vacuous.go:29 |  |
-| `goRefuseRE` | var | gophermind-lib/briefv2/acceptcheck/vacuous.go:30 |  |
-| `binDirOpRE` | var | gophermind-lib/briefv2/acceptcheck/vacuous.go:31 |  |
-| `mutators` | var | gophermind-lib/briefv2/acceptcheck/vacuous.go:32 |  |
-| `shells` | var | gophermind-lib/briefv2/acceptcheck/vacuous.go:33 |  |
-| `loopbackRE` | var | gophermind-lib/briefv2/acceptcheck/vacuous.go:39 | loopbackRE: a loopback host:port, a loopback URL, localhost followed by a slash, or a bare 127.x.x.x or ::1 word. |
-| `goFlagValue` | var | gophermind-lib/briefv2/acceptcheck/vacuous.go:46 | goFlagValue are go build, vet and test flags that take a separate value. |
-| `goPkgArgRE` | var | gophermind-lib/briefv2/acceptcheck/vacuous.go:55 |  |
-| `goPackageArg` | func | gophermind-lib/briefv2/acceptcheck/vacuous.go:60 | goPackageArg reports a package argument after go build, vet or test: ".", "./...", "./path", "./path/...", or an import path, with the flags and their values skipped. |
-| `word` | type | gophermind-lib/briefv2/acceptcheck/vacuous.go:77 | word is one shell word: its text with the quotes taken off. |
-| `stmt` | type | gophermind-lib/briefv2/acceptcheck/vacuous.go:81 | stmt is a run of words between operators; op is the operator before it ("" for the first, ";" also stands for a newline). |
-| `shellParse` | func | gophermind-lib/briefv2/acceptcheck/vacuous.go:88 | shellParse reads cmd into statements and the scripts hidden in $( ) and backticks. |
-| `commandIndex` | func | gophermind-lib/briefv2/acceptcheck/vacuous.go:282 | commandIndex is the index of the command word: assignments, keywords and wrappers (env and its options, nohup, timeout and its duration) skipped. |
-| `block` | type | gophermind-lib/briefv2/acceptcheck/vacuous.go:308 |  |
-| `(block).dead` | method | gophermind-lib/briefv2/acceptcheck/vacuous.go:314 |  |
-| `known` | func | gophermind-lib/briefv2/acceptcheck/vacuous.go:328 |  |
-| `verdict` | type | gophermind-lib/briefv2/acceptcheck/vacuous.go:338 |  |
-| `(*verdict).merge` | method | gophermind-lib/briefv2/acceptcheck/vacuous.go:340 |  |
-| `hasPrefixAny` | func | gophermind-lib/briefv2/acceptcheck/vacuous.go:345 |  |
-| `analyze` | func | gophermind-lib/briefv2/acceptcheck/vacuous.go:363 | Known limits: the reader does not expand variables or follow function calls, so `c=true; $c \|\| curl x` (a variable holding true) and a function that is defined and never called are accepted when a probe sits in them. |
-| `Vacuous` | func | gophermind-lib/briefv2/acceptcheck/vacuous.go:512 | Vacuous says that an acceptance root test cannot prove anything: no statement that will run is a probe (go build, vet or test with a package pattern; curl; a built binary; a command given the acceptance address or a loopback address), or something forbidden runs (go run, install, get or generate anywhere in the text, a binary by a path outside the bin directory, or rm, mv, cp, chmod or ln on the bin directory). |
-| `unsetRE` | var | gophermind-lib/briefv2/acceptcheck/vacuous.go:520 |  |
-| `UnsetNames` | func | gophermind-lib/briefv2/acceptcheck/vacuous.go:525 | UnsetNames are the names in declared that a bullet's text says it runs without, by the exact phrase "with NAME unset" (case sensitive), in the order they appear. |
+| `GoTest` | type | gophermind-lib/build/acceptcheck/gotest.go:12 | GoTest is a root test command that is one plain go test invocation: the executor runs those through go test -json and holds them to the test runner's pass rule (a test ran, none failed, every named test passed) instead of trusting the exit code alone. |
+| `goTagsRE` | var | gophermind-lib/build/acceptcheck/gotest.go:23 |  |
+| `goRunNameRE` | var | gophermind-lib/build/acceptcheck/gotest.go:24 |  |
+| `identRE` | var | gophermind-lib/build/acceptcheck/gotest.go:25 |  |
+| `acceptPkgRE` | var | gophermind-lib/build/acceptcheck/gotest.go:26 |  |
+| `goTestValueFlags` | var | gophermind-lib/build/acceptcheck/gotest.go:30 | goTestValueFlags take a separate value word. |
+| `ParseGoTest` | func | gophermind-lib/build/acceptcheck/gotest.go:36 | ParseGoTest recognises `[unset NAME...;] [NAME=value] go test FLAGS PKG`: one package, the flags -tags -run -count -timeout -p -parallel -v -race -short. |
+| `ServerExercising` | func | gophermind-lib/build/acceptcheck/gotest.go:134 | ServerExercising says a command exercises the built server (or the built binaries): it runs a built binary, curl, a go test of the acceptance package, or hands a command the acceptance address or a loopback address. |
+| `exercises` | func | gophermind-lib/build/acceptcheck/gotest.go:138 |  |
+| `Finding` | type | gophermind-lib/build/acceptcheck/quality.go:18 | Finding is one fixed-vocabulary defect of an acceptance root test command. |
+| `FindMasked` | const | gophermind-lib/build/acceptcheck/quality.go:23 | FindMasked: the exit status is thrown away (\|\| true, \|\| echo, ; true, exit 0, set +e, 2>/dev/null \|\|, a trailing echo after a semicolon). |
+| `FindSuccessEcho` | const | gophermind-lib/build/acceptcheck/quality.go:25 | FindSuccessEcho: a trailing "&& echo OK" is the only thing that "asserts". |
+| `FindPlaceholder` | const | gophermind-lib/build/acceptcheck/quality.go:27 | FindPlaceholder: {id}, <id>, ..., TODO or (simulate ...) left in the command. |
+| `FindUndefinedVar` | const | gophermind-lib/build/acceptcheck/quality.go:30 | FindUndefinedVar: a $VARIABLE no earlier statement sets and the harness does not provide. |
+| `FindCurlUnasserted` | const | gophermind-lib/build/acceptcheck/quality.go:32 | FindCurlUnasserted: curl without -f whose output is not checked. |
+| `FindJqUnasserted` | const | gophermind-lib/build/acceptcheck/quality.go:34 | FindJqUnasserted: jq without -e whose output is not checked. |
+| `FindPrintOnly` | const | gophermind-lib/build/acceptcheck/quality.go:36 | FindPrintOnly: nothing in the command can fail (echo, cat, ls, find, head). |
+| `FindingNames` | func | gophermind-lib/build/acceptcheck/quality.go:40 | FindingNames are the findings as strings, in the order given. |
+| `Options` | type | gophermind-lib/build/acceptcheck/quality.go:49 | Options names what the checker may treat as defined. |
+| `printOnly` | var | gophermind-lib/build/acceptcheck/quality.go:54 |  |
+| `neutral` | var | gophermind-lib/build/acceptcheck/quality.go:61 | neutral commands change the shell, not the verdict. |
+| `testCmds` | var | gophermind-lib/build/acceptcheck/quality.go:68 | testCmds compare a value: a command substitution handed to one is asserted. |
+| `successWordRE` | var | gophermind-lib/build/acceptcheck/quality.go:71 |  |
+| `braceHolderRE` | var | gophermind-lib/build/acceptcheck/quality.go:72 |  |
+| `angleHolderRE` | var | gophermind-lib/build/acceptcheck/quality.go:73 |  |
+| `simulateRE` | var | gophermind-lib/build/acceptcheck/quality.go:74 |  |
+| `todoRE` | var | gophermind-lib/build/acceptcheck/quality.go:75 |  |
+| `varUseRE` | var | gophermind-lib/build/acceptcheck/quality.go:76 |  |
+| `varDefRE` | var | gophermind-lib/build/acceptcheck/quality.go:77 |  |
+| `varLoopRE` | var | gophermind-lib/build/acceptcheck/quality.go:78 |  |
+| `wellKnownNames` | var | gophermind-lib/build/acceptcheck/quality.go:79 |  |
+| `Quality` | func | gophermind-lib/build/acceptcheck/quality.go:86 | Quality returns the quality findings of one root test command, sorted and unique; none means the command can fail for the right reason. |
+| `baseOf` | func | gophermind-lib/build/acceptcheck/quality.go:124 |  |
+| `strip` | func | gophermind-lib/build/acceptcheck/quality.go:133 | strip removes single-quoted text and comments, returning the rest and the comment text. |
+| `qualityPlaceholders` | func | gophermind-lib/build/acceptcheck/quality.go:172 | qualityPlaceholders finds placeholders and variables nothing defines. |
+| `qual` | type | gophermind-lib/build/acceptcheck/quality.go:253 | qual reads the statements of a script and notes findings in set. |
+| `pipeline` | type | gophermind-lib/build/acceptcheck/quality.go:255 |  |
+| `(*qual).script` | method | gophermind-lib/build/acceptcheck/quality.go:257 |  |
+| `groupDepth` | func | gophermind-lib/build/acceptcheck/quality.go:457 |  |
+| `curlFail` | func | gophermind-lib/build/acceptcheck/quality.go:471 | curlFail: curl exits non-zero on an HTTP error status. |
+| `jqExit` | func | gophermind-lib/build/acceptcheck/quality.go:485 | jqExit: jq sets its exit status from the last output (-e, --exit-status). |
+| `extractSubs` | func | gophermind-lib/build/acceptcheck/quality.go:499 | extractSubs are the scripts of the $( ) and backtick substitutions in a word. |
+| `noopCommands` | var | gophermind-lib/build/acceptcheck/vacuous.go:14 | noopCommands are shell words whose whole effect is nothing the server can be blamed for. |
+| `shellKeywords` | var | gophermind-lib/build/acceptcheck/vacuous.go:19 |  |
+| `wrappers` | var | gophermind-lib/build/acceptcheck/vacuous.go:24 |  |
+| `assignRE` | var | gophermind-lib/build/acceptcheck/vacuous.go:27 |  |
+| `systemDir` | var | gophermind-lib/build/acceptcheck/vacuous.go:28 |  |
+| `binDirRef` | var | gophermind-lib/build/acceptcheck/vacuous.go:29 |  |
+| `goRefuseRE` | var | gophermind-lib/build/acceptcheck/vacuous.go:30 |  |
+| `binDirOpRE` | var | gophermind-lib/build/acceptcheck/vacuous.go:31 |  |
+| `mutators` | var | gophermind-lib/build/acceptcheck/vacuous.go:32 |  |
+| `shells` | var | gophermind-lib/build/acceptcheck/vacuous.go:33 |  |
+| `loopbackRE` | var | gophermind-lib/build/acceptcheck/vacuous.go:39 | loopbackRE: a loopback host:port, a loopback URL, localhost followed by a slash, or a bare 127.x.x.x or ::1 word. |
+| `goFlagValue` | var | gophermind-lib/build/acceptcheck/vacuous.go:46 | goFlagValue are go build, vet and test flags that take a separate value. |
+| `goPkgArgRE` | var | gophermind-lib/build/acceptcheck/vacuous.go:55 |  |
+| `goPackageArg` | func | gophermind-lib/build/acceptcheck/vacuous.go:60 | goPackageArg reports a package argument after go build, vet or test: ".", "./...", "./path", "./path/...", or an import path, with the flags and their values skipped. |
+| `word` | type | gophermind-lib/build/acceptcheck/vacuous.go:77 | word is one shell word: its text with the quotes taken off. |
+| `stmt` | type | gophermind-lib/build/acceptcheck/vacuous.go:81 | stmt is a run of words between operators; op is the operator before it ("" for the first, ";" also stands for a newline). |
+| `shellParse` | func | gophermind-lib/build/acceptcheck/vacuous.go:88 | shellParse reads cmd into statements and the scripts hidden in $( ) and backticks. |
+| `commandIndex` | func | gophermind-lib/build/acceptcheck/vacuous.go:282 | commandIndex is the index of the command word: assignments, keywords and wrappers (env and its options, nohup, timeout and its duration) skipped. |
+| `block` | type | gophermind-lib/build/acceptcheck/vacuous.go:308 |  |
+| `(block).dead` | method | gophermind-lib/build/acceptcheck/vacuous.go:314 |  |
+| `known` | func | gophermind-lib/build/acceptcheck/vacuous.go:328 |  |
+| `verdict` | type | gophermind-lib/build/acceptcheck/vacuous.go:338 |  |
+| `(*verdict).merge` | method | gophermind-lib/build/acceptcheck/vacuous.go:340 |  |
+| `hasPrefixAny` | func | gophermind-lib/build/acceptcheck/vacuous.go:345 |  |
+| `analyze` | func | gophermind-lib/build/acceptcheck/vacuous.go:363 | Known limits: the reader does not expand variables or follow function calls, so `c=true; $c \|\| curl x` (a variable holding true) and a function that is defined and never called are accepted when a probe sits in them. |
+| `Vacuous` | func | gophermind-lib/build/acceptcheck/vacuous.go:512 | Vacuous says that an acceptance root test cannot prove anything: no statement that will run is a probe (go build, vet or test with a package pattern; curl; a built binary; a command given the acceptance address or a loopback address), or something forbidden runs (go run, install, get or generate anywhere in the text, a binary by a path outside the bin directory, or rm, mv, cp, chmod or ln on the bin directory). |
+| `unsetRE` | var | gophermind-lib/build/acceptcheck/vacuous.go:520 |  |
+| `UnsetNames` | func | gophermind-lib/build/acceptcheck/vacuous.go:525 | UnsetNames are the names in declared that a bullet's text says it runs without, by the exact phrase "with NAME unset" (case sensitive), in the order they appear. |
 
 ## package agent
 
@@ -273,14 +273,14 @@ after every completed task. Non-test Go declarations only.
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `Meta` | type | gophermind-lib/briefv2/artifacts/artifacts.go:24 | Meta describes one attempt. |
-| `Files` | type | gophermind-lib/briefv2/artifacts/artifacts.go:38 | Files is what to save. |
-| `Writer` | type | gophermind-lib/briefv2/artifacts/artifacts.go:45 | Writer saves attempts for one run. |
-| `New` | func | gophermind-lib/briefv2/artifacts/artifacts.go:55 | New returns a writer for the run folder runDir. |
-| `nodeIDRE` | var | gophermind-lib/briefv2/artifacts/artifacts.go:59 |  |
-| `(*Writer).Save` | method | gophermind-lib/briefv2/artifacts/artifacts.go:62 | Save writes one attempt of nodeID and returns its folder. |
-| `(*Writer).prepare` | method | gophermind-lib/briefv2/artifacts/artifacts.go:98 | prepare scrubs the whole text first (a secret may straddle the cut), then caps it. |
-| `nextNumber` | func | gophermind-lib/briefv2/artifacts/artifacts.go:113 | nextNumber is one more than the highest numbered attempt folder of the node. |
+| `Meta` | type | gophermind-lib/build/artifacts/artifacts.go:24 | Meta describes one attempt. |
+| `Files` | type | gophermind-lib/build/artifacts/artifacts.go:38 | Files is what to save. |
+| `Writer` | type | gophermind-lib/build/artifacts/artifacts.go:45 | Writer saves attempts for one run. |
+| `New` | func | gophermind-lib/build/artifacts/artifacts.go:55 | New returns a writer for the run folder runDir. |
+| `nodeIDRE` | var | gophermind-lib/build/artifacts/artifacts.go:59 |  |
+| `(*Writer).Save` | method | gophermind-lib/build/artifacts/artifacts.go:62 | Save writes one attempt of nodeID and returns its folder. |
+| `(*Writer).prepare` | method | gophermind-lib/build/artifacts/artifacts.go:98 | prepare scrubs the whole text first (a secret may straddle the cut), then caps it. |
+| `nextNumber` | func | gophermind-lib/build/artifacts/artifacts.go:113 | nextNumber is one more than the highest numbered attempt folder of the node. |
 
 ## package auth
 
@@ -328,132 +328,132 @@ after every completed task. Non-test Go declarations only.
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `Status` | type | docs/briefv2/handoff/interfaces/blackboard.go:19 | Status is the runtime state of a node. |
-| `StatusPending` | const | docs/briefv2/handoff/interfaces/blackboard.go:22 |  |
-| `StatusReady` | const | docs/briefv2/handoff/interfaces/blackboard.go:23 |  |
-| `StatusClaimed` | const | docs/briefv2/handoff/interfaces/blackboard.go:24 |  |
-| `StatusInProgress` | const | docs/briefv2/handoff/interfaces/blackboard.go:25 |  |
-| `StatusVerified` | const | docs/briefv2/handoff/interfaces/blackboard.go:26 |  |
-| `StatusFailed` | const | docs/briefv2/handoff/interfaces/blackboard.go:27 |  |
-| `StatusNeedsRevision` | const | docs/briefv2/handoff/interfaces/blackboard.go:28 |  |
-| `StatusEscalated` | const | docs/briefv2/handoff/interfaces/blackboard.go:29 |  |
-| `Verdict` | type | docs/briefv2/handoff/interfaces/blackboard.go:43 |  |
-| `VerdictPass` | const | docs/briefv2/handoff/interfaces/blackboard.go:46 |  |
-| `VerdictFail` | const | docs/briefv2/handoff/interfaces/blackboard.go:47 |  |
-| `VerdictError` | const | docs/briefv2/handoff/interfaces/blackboard.go:48 |  |
-| `Claim` | type | docs/briefv2/handoff/interfaces/blackboard.go:51 |  |
-| `Attempt` | type | docs/briefv2/handoff/interfaces/blackboard.go:56 |  |
-| `Result` | type | docs/briefv2/handoff/interfaces/blackboard.go:70 |  |
-| `Row` | type | docs/briefv2/handoff/interfaces/blackboard.go:76 | Row is the full runtime record for one node. |
-| `Filter` | type | docs/briefv2/handoff/interfaces/blackboard.go:88 |  |
-| `EventKind` | type | docs/briefv2/handoff/interfaces/blackboard.go:93 |  |
-| `EventStatus` | const | docs/briefv2/handoff/interfaces/blackboard.go:96 |  |
-| `EventAttempt` | const | docs/briefv2/handoff/interfaces/blackboard.go:97 |  |
-| `EventResult` | const | docs/briefv2/handoff/interfaces/blackboard.go:98 |  |
-| `Event` | type | docs/briefv2/handoff/interfaces/blackboard.go:101 |  |
-| `Blackboard` | interface | docs/briefv2/handoff/interfaces/blackboard.go:109 | Blackboard is the coordination store. |
-| `ErrNotFound` | var | docs/briefv2/handoff/interfaces/blackboard.go:150 |  |
-| `ErrBadTransition` | var | docs/briefv2/handoff/interfaces/blackboard.go:151 |  |
-| `ErrNotOwner` | var | docs/briefv2/handoff/interfaces/blackboard.go:152 |  |
-| `Err` | type | docs/briefv2/handoff/interfaces/blackboard.go:155 |  |
-| `(Err).Error` | method | docs/briefv2/handoff/interfaces/blackboard.go:157 |  |
-| `Status` | type | gophermind-lib/briefv2/blackboard/blackboard.go:18 | Status is the runtime state of a node. |
-| `StatusPending` | const | gophermind-lib/briefv2/blackboard/blackboard.go:21 |  |
-| `StatusReady` | const | gophermind-lib/briefv2/blackboard/blackboard.go:22 |  |
-| `StatusClaimed` | const | gophermind-lib/briefv2/blackboard/blackboard.go:23 |  |
-| `StatusInProgress` | const | gophermind-lib/briefv2/blackboard/blackboard.go:24 |  |
-| `StatusVerified` | const | gophermind-lib/briefv2/blackboard/blackboard.go:25 |  |
-| `StatusFailed` | const | gophermind-lib/briefv2/blackboard/blackboard.go:26 |  |
-| `StatusNeedsRevision` | const | gophermind-lib/briefv2/blackboard/blackboard.go:27 |  |
-| `StatusEscalated` | const | gophermind-lib/briefv2/blackboard/blackboard.go:28 |  |
-| `Verdict` | type | gophermind-lib/briefv2/blackboard/blackboard.go:42 |  |
-| `VerdictPass` | const | gophermind-lib/briefv2/blackboard/blackboard.go:45 |  |
-| `VerdictFail` | const | gophermind-lib/briefv2/blackboard/blackboard.go:46 |  |
-| `VerdictError` | const | gophermind-lib/briefv2/blackboard/blackboard.go:47 |  |
-| `Claim` | type | gophermind-lib/briefv2/blackboard/blackboard.go:50 |  |
-| `Attempt` | type | gophermind-lib/briefv2/blackboard/blackboard.go:55 |  |
-| `Result` | type | gophermind-lib/briefv2/blackboard/blackboard.go:70 |  |
-| `Row` | type | gophermind-lib/briefv2/blackboard/blackboard.go:76 | Row is the full runtime record for one node. |
-| `Filter` | type | gophermind-lib/briefv2/blackboard/blackboard.go:88 |  |
-| `EventKind` | type | gophermind-lib/briefv2/blackboard/blackboard.go:93 |  |
-| `EventStatus` | const | gophermind-lib/briefv2/blackboard/blackboard.go:96 |  |
-| `EventAttempt` | const | gophermind-lib/briefv2/blackboard/blackboard.go:97 |  |
-| `EventResult` | const | gophermind-lib/briefv2/blackboard/blackboard.go:98 |  |
-| `EventRevision` | const | gophermind-lib/briefv2/blackboard/blackboard.go:99 |  |
-| `Event` | type | gophermind-lib/briefv2/blackboard/blackboard.go:102 |  |
-| `Blackboard` | interface | gophermind-lib/briefv2/blackboard/blackboard.go:110 | Blackboard is the coordination store. |
-| `ErrNotFound` | var | gophermind-lib/briefv2/blackboard/blackboard.go:151 |  |
-| `ErrBadTransition` | var | gophermind-lib/briefv2/blackboard/blackboard.go:152 |  |
-| `ErrNotOwner` | var | gophermind-lib/briefv2/blackboard/blackboard.go:153 |  |
-| `Err` | type | gophermind-lib/briefv2/blackboard/blackboard.go:156 |  |
-| `(Err).Error` | method | gophermind-lib/briefv2/blackboard/blackboard.go:158 |  |
-| `RunDirFunc` | type | gophermind-lib/briefv2/blackboard/fs.go:22 | RunDirFunc maps a run id to the run's folder. |
-| `FS` | type | gophermind-lib/briefv2/blackboard/fs.go:30 | FS is the blackboard over files in the run folder. |
-| `_` | var | gophermind-lib/briefv2/blackboard/fs.go:42 |  |
-| `FSOption` | type | gophermind-lib/briefv2/blackboard/fs.go:45 | FSOption configures NewFS. |
-| `WithFlatLayout` | func | gophermind-lib/briefv2/blackboard/fs.go:50 | WithFlatLayout keeps every runtime file under <run>/nodes/<id>.runtime.json instead of beside the plan file. |
-| `NewFS` | func | gophermind-lib/briefv2/blackboard/fs.go:53 | NewFS returns the filesystem blackboard. |
-| `nodeIDRE` | var | gophermind-lib/briefv2/blackboard/fs.go:68 |  |
-| `fsClaim` | type | gophermind-lib/briefv2/blackboard/fs.go:71 | The wire types use snake_case names, matching docs/briefv2/handoff/examples/runtime. |
-| `fsAttempt` | type | gophermind-lib/briefv2/blackboard/fs.go:76 |  |
-| `fsResult` | type | gophermind-lib/briefv2/blackboard/fs.go:91 |  |
-| `fsDoc` | type | gophermind-lib/briefv2/blackboard/fs.go:96 |  |
-| `(fsDoc).row` | method | gophermind-lib/briefv2/blackboard/fs.go:109 |  |
-| `wireAttempt` | func | gophermind-lib/briefv2/blackboard/fs.go:131 |  |
-| `readDoc` | func | gophermind-lib/briefv2/blackboard/fs.go:139 |  |
-| `writeDoc` | func | gophermind-lib/briefv2/blackboard/fs.go:154 |  |
-| `(*FS).runtimePath` | method | gophermind-lib/briefv2/blackboard/fs.go:165 | runtimePath finds the run folder and the node's runtime file. |
-| `(*FS).mutate` | method | gophermind-lib/briefv2/blackboard/fs.go:198 | mutate runs fn on the node's document under the node's lock. |
-| `eventLine` | type | gophermind-lib/briefv2/blackboard/fs.go:229 |  |
-| `(*FS).emit` | method | gophermind-lib/briefv2/blackboard/fs.go:237 | emit records a change. |
-| `(*FS).InitRun` | method | gophermind-lib/briefv2/blackboard/fs.go:245 |  |
-| `(*FS).Get` | method | gophermind-lib/briefv2/blackboard/fs.go:274 |  |
-| `(*FS).List` | method | gophermind-lib/briefv2/blackboard/fs.go:289 |  |
-| `(*FS).Claim` | method | gophermind-lib/briefv2/blackboard/fs.go:351 |  |
-| `owns` | func | gophermind-lib/briefv2/blackboard/fs.go:370 |  |
-| `(*FS).Heartbeat` | method | gophermind-lib/briefv2/blackboard/fs.go:374 |  |
-| `(*FS).Release` | method | gophermind-lib/briefv2/blackboard/fs.go:384 |  |
-| `(*FS).SetStatus` | method | gophermind-lib/briefv2/blackboard/fs.go:394 |  |
-| `(*FS).SetRevision` | method | gophermind-lib/briefv2/blackboard/fs.go:410 |  |
-| `(*FS).AppendAttempt` | method | gophermind-lib/briefv2/blackboard/fs.go:417 |  |
-| `(*FS).SetResult` | method | gophermind-lib/briefv2/blackboard/fs.go:424 |  |
-| `(*FS).ReleaseStale` | method | gophermind-lib/briefv2/blackboard/fs.go:431 |  |
-| `(*FS).Watch` | method | gophermind-lib/briefv2/blackboard/fs.go:462 |  |
-| `(*FS).Close` | method | gophermind-lib/briefv2/blackboard/fs.go:506 |  |
-| `allowed` | var | gophermind-lib/briefv2/blackboard/transitions.go:3 |  |
-| `transitionAllowed` | func | gophermind-lib/briefv2/blackboard/transitions.go:13 |  |
+| `Status` | type | docs/build/handoff/interfaces/blackboard.go:19 | Status is the runtime state of a node. |
+| `StatusPending` | const | docs/build/handoff/interfaces/blackboard.go:22 |  |
+| `StatusReady` | const | docs/build/handoff/interfaces/blackboard.go:23 |  |
+| `StatusClaimed` | const | docs/build/handoff/interfaces/blackboard.go:24 |  |
+| `StatusInProgress` | const | docs/build/handoff/interfaces/blackboard.go:25 |  |
+| `StatusVerified` | const | docs/build/handoff/interfaces/blackboard.go:26 |  |
+| `StatusFailed` | const | docs/build/handoff/interfaces/blackboard.go:27 |  |
+| `StatusNeedsRevision` | const | docs/build/handoff/interfaces/blackboard.go:28 |  |
+| `StatusEscalated` | const | docs/build/handoff/interfaces/blackboard.go:29 |  |
+| `Verdict` | type | docs/build/handoff/interfaces/blackboard.go:43 |  |
+| `VerdictPass` | const | docs/build/handoff/interfaces/blackboard.go:46 |  |
+| `VerdictFail` | const | docs/build/handoff/interfaces/blackboard.go:47 |  |
+| `VerdictError` | const | docs/build/handoff/interfaces/blackboard.go:48 |  |
+| `Claim` | type | docs/build/handoff/interfaces/blackboard.go:51 |  |
+| `Attempt` | type | docs/build/handoff/interfaces/blackboard.go:56 |  |
+| `Result` | type | docs/build/handoff/interfaces/blackboard.go:70 |  |
+| `Row` | type | docs/build/handoff/interfaces/blackboard.go:76 | Row is the full runtime record for one node. |
+| `Filter` | type | docs/build/handoff/interfaces/blackboard.go:88 |  |
+| `EventKind` | type | docs/build/handoff/interfaces/blackboard.go:93 |  |
+| `EventStatus` | const | docs/build/handoff/interfaces/blackboard.go:96 |  |
+| `EventAttempt` | const | docs/build/handoff/interfaces/blackboard.go:97 |  |
+| `EventResult` | const | docs/build/handoff/interfaces/blackboard.go:98 |  |
+| `Event` | type | docs/build/handoff/interfaces/blackboard.go:101 |  |
+| `Blackboard` | interface | docs/build/handoff/interfaces/blackboard.go:109 | Blackboard is the coordination store. |
+| `ErrNotFound` | var | docs/build/handoff/interfaces/blackboard.go:150 |  |
+| `ErrBadTransition` | var | docs/build/handoff/interfaces/blackboard.go:151 |  |
+| `ErrNotOwner` | var | docs/build/handoff/interfaces/blackboard.go:152 |  |
+| `Err` | type | docs/build/handoff/interfaces/blackboard.go:155 |  |
+| `(Err).Error` | method | docs/build/handoff/interfaces/blackboard.go:157 |  |
+| `Status` | type | gophermind-lib/build/blackboard/blackboard.go:18 | Status is the runtime state of a node. |
+| `StatusPending` | const | gophermind-lib/build/blackboard/blackboard.go:21 |  |
+| `StatusReady` | const | gophermind-lib/build/blackboard/blackboard.go:22 |  |
+| `StatusClaimed` | const | gophermind-lib/build/blackboard/blackboard.go:23 |  |
+| `StatusInProgress` | const | gophermind-lib/build/blackboard/blackboard.go:24 |  |
+| `StatusVerified` | const | gophermind-lib/build/blackboard/blackboard.go:25 |  |
+| `StatusFailed` | const | gophermind-lib/build/blackboard/blackboard.go:26 |  |
+| `StatusNeedsRevision` | const | gophermind-lib/build/blackboard/blackboard.go:27 |  |
+| `StatusEscalated` | const | gophermind-lib/build/blackboard/blackboard.go:28 |  |
+| `Verdict` | type | gophermind-lib/build/blackboard/blackboard.go:42 |  |
+| `VerdictPass` | const | gophermind-lib/build/blackboard/blackboard.go:45 |  |
+| `VerdictFail` | const | gophermind-lib/build/blackboard/blackboard.go:46 |  |
+| `VerdictError` | const | gophermind-lib/build/blackboard/blackboard.go:47 |  |
+| `Claim` | type | gophermind-lib/build/blackboard/blackboard.go:50 |  |
+| `Attempt` | type | gophermind-lib/build/blackboard/blackboard.go:55 |  |
+| `Result` | type | gophermind-lib/build/blackboard/blackboard.go:70 |  |
+| `Row` | type | gophermind-lib/build/blackboard/blackboard.go:76 | Row is the full runtime record for one node. |
+| `Filter` | type | gophermind-lib/build/blackboard/blackboard.go:88 |  |
+| `EventKind` | type | gophermind-lib/build/blackboard/blackboard.go:93 |  |
+| `EventStatus` | const | gophermind-lib/build/blackboard/blackboard.go:96 |  |
+| `EventAttempt` | const | gophermind-lib/build/blackboard/blackboard.go:97 |  |
+| `EventResult` | const | gophermind-lib/build/blackboard/blackboard.go:98 |  |
+| `EventRevision` | const | gophermind-lib/build/blackboard/blackboard.go:99 |  |
+| `Event` | type | gophermind-lib/build/blackboard/blackboard.go:102 |  |
+| `Blackboard` | interface | gophermind-lib/build/blackboard/blackboard.go:110 | Blackboard is the coordination store. |
+| `ErrNotFound` | var | gophermind-lib/build/blackboard/blackboard.go:151 |  |
+| `ErrBadTransition` | var | gophermind-lib/build/blackboard/blackboard.go:152 |  |
+| `ErrNotOwner` | var | gophermind-lib/build/blackboard/blackboard.go:153 |  |
+| `Err` | type | gophermind-lib/build/blackboard/blackboard.go:156 |  |
+| `(Err).Error` | method | gophermind-lib/build/blackboard/blackboard.go:158 |  |
+| `RunDirFunc` | type | gophermind-lib/build/blackboard/fs.go:22 | RunDirFunc maps a run id to the run's folder. |
+| `FS` | type | gophermind-lib/build/blackboard/fs.go:30 | FS is the blackboard over files in the run folder. |
+| `_` | var | gophermind-lib/build/blackboard/fs.go:42 |  |
+| `FSOption` | type | gophermind-lib/build/blackboard/fs.go:45 | FSOption configures NewFS. |
+| `WithFlatLayout` | func | gophermind-lib/build/blackboard/fs.go:50 | WithFlatLayout keeps every runtime file under <run>/nodes/<id>.runtime.json instead of beside the plan file. |
+| `NewFS` | func | gophermind-lib/build/blackboard/fs.go:53 | NewFS returns the filesystem blackboard. |
+| `nodeIDRE` | var | gophermind-lib/build/blackboard/fs.go:68 |  |
+| `fsClaim` | type | gophermind-lib/build/blackboard/fs.go:71 | The wire types use snake_case names, matching docs/build/handoff/examples/runtime. |
+| `fsAttempt` | type | gophermind-lib/build/blackboard/fs.go:76 |  |
+| `fsResult` | type | gophermind-lib/build/blackboard/fs.go:91 |  |
+| `fsDoc` | type | gophermind-lib/build/blackboard/fs.go:96 |  |
+| `(fsDoc).row` | method | gophermind-lib/build/blackboard/fs.go:109 |  |
+| `wireAttempt` | func | gophermind-lib/build/blackboard/fs.go:131 |  |
+| `readDoc` | func | gophermind-lib/build/blackboard/fs.go:139 |  |
+| `writeDoc` | func | gophermind-lib/build/blackboard/fs.go:154 |  |
+| `(*FS).runtimePath` | method | gophermind-lib/build/blackboard/fs.go:165 | runtimePath finds the run folder and the node's runtime file. |
+| `(*FS).mutate` | method | gophermind-lib/build/blackboard/fs.go:198 | mutate runs fn on the node's document under the node's lock. |
+| `eventLine` | type | gophermind-lib/build/blackboard/fs.go:229 |  |
+| `(*FS).emit` | method | gophermind-lib/build/blackboard/fs.go:237 | emit records a change. |
+| `(*FS).InitRun` | method | gophermind-lib/build/blackboard/fs.go:245 |  |
+| `(*FS).Get` | method | gophermind-lib/build/blackboard/fs.go:274 |  |
+| `(*FS).List` | method | gophermind-lib/build/blackboard/fs.go:289 |  |
+| `(*FS).Claim` | method | gophermind-lib/build/blackboard/fs.go:351 |  |
+| `owns` | func | gophermind-lib/build/blackboard/fs.go:370 |  |
+| `(*FS).Heartbeat` | method | gophermind-lib/build/blackboard/fs.go:374 |  |
+| `(*FS).Release` | method | gophermind-lib/build/blackboard/fs.go:384 |  |
+| `(*FS).SetStatus` | method | gophermind-lib/build/blackboard/fs.go:394 |  |
+| `(*FS).SetRevision` | method | gophermind-lib/build/blackboard/fs.go:410 |  |
+| `(*FS).AppendAttempt` | method | gophermind-lib/build/blackboard/fs.go:417 |  |
+| `(*FS).SetResult` | method | gophermind-lib/build/blackboard/fs.go:424 |  |
+| `(*FS).ReleaseStale` | method | gophermind-lib/build/blackboard/fs.go:431 |  |
+| `(*FS).Watch` | method | gophermind-lib/build/blackboard/fs.go:462 |  |
+| `(*FS).Close` | method | gophermind-lib/build/blackboard/fs.go:506 |  |
+| `allowed` | var | gophermind-lib/build/blackboard/transitions.go:3 |  |
+| `transitionAllowed` | func | gophermind-lib/build/blackboard/transitions.go:13 |  |
 
 ## package brief
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `InvalidError` | type | gophermind-lib/briefv2/brief/brief.go:19 | InvalidError means the brief itself is wrong (the CLI exits 2), as opposed to an I/O failure. |
-| `(*InvalidError).Error` | method | gophermind-lib/briefv2/brief/brief.go:21 |  |
-| `invalid` | func | gophermind-lib/briefv2/brief/brief.go:23 |  |
-| `Secret` | type | gophermind-lib/briefv2/brief/brief.go:27 |  |
-| `EnvVar` | type | gophermind-lib/briefv2/brief/brief.go:32 |  |
-| `Network` | type | gophermind-lib/briefv2/brief/brief.go:38 |  |
-| `Budget` | type | gophermind-lib/briefv2/brief/brief.go:44 |  |
-| `Frontmatter` | type | gophermind-lib/briefv2/brief/brief.go:49 |  |
-| `(Frontmatter).WorkBranchName` | method | gophermind-lib/briefv2/brief/brief.go:67 | WorkBranchName is work_branch, or gm/<id> when unset. |
-| `Feature` | type | gophermind-lib/briefv2/brief/brief.go:74 |  |
-| `Brief` | type | gophermind-lib/briefv2/brief/brief.go:79 |  |
-| `reservedNames` | var | gophermind-lib/briefv2/brief/brief.go:88 |  |
-| `IsReservedName` | func | gophermind-lib/briefv2/brief/brief.go:97 | IsReservedName reports whether a brief may not declare name as a secret or env variable because the harness owns it. |
-| `requiredSections` | var | gophermind-lib/briefv2/brief/brief.go:99 |  |
-| `Parse` | func | gophermind-lib/briefv2/brief/brief.go:103 | Parse splits, validates, and sections a brief. |
-| `parseSections` | func | gophermind-lib/briefv2/brief/brief.go:194 |  |
-| `Warning` | type | gophermind-lib/briefv2/brief/brief.go:247 | Warning is an undeclared secret-looking token and its 1-based file line. |
-| `tokenRE` | var | gophermind-lib/briefv2/brief/brief.go:253 |  |
-| `secretSuffixes` | var | gophermind-lib/briefv2/brief/brief.go:254 |  |
-| `secretWords` | var | gophermind-lib/briefv2/brief/brief.go:255 |  |
-| `httpMethods` | var | gophermind-lib/briefv2/brief/brief.go:256 |  |
-| `statusTokenRE` | var | gophermind-lib/briefv2/brief/brief.go:257 |  |
-| `hasSecretSuffix` | func | gophermind-lib/briefv2/brief/brief.go:260 |  |
-| `(*Brief).UndeclaredSecrets` | method | gophermind-lib/briefv2/brief/brief.go:274 | UndeclaredSecrets scans the body for tokens that look like secret names but are declared under neither secrets nor env. |
-| `bulletRE` | var | gophermind-lib/briefv2/brief/brief.go:313 |  |
-| `BulletText` | func | gophermind-lib/briefv2/brief/brief.go:317 | BulletText reports whether line, taken at column 0, opens a list bullet ("- ", "* ", "+ ", "1. |
-| `checkBody` | func | gophermind-lib/briefv2/brief/brief.go:330 | checkBody rejects a body that would silently lose requirements: a code fence that never closes (it hides every later bullet), and, under Constraints and Acceptance, a non-blank line that is not a bullet, an indented continuation, a heading, a comment or part of a fence. |
+| `InvalidError` | type | gophermind-lib/build/brief/brief.go:19 | InvalidError means the brief itself is wrong (the CLI exits 2), as opposed to an I/O failure. |
+| `(*InvalidError).Error` | method | gophermind-lib/build/brief/brief.go:21 |  |
+| `invalid` | func | gophermind-lib/build/brief/brief.go:23 |  |
+| `Secret` | type | gophermind-lib/build/brief/brief.go:27 |  |
+| `EnvVar` | type | gophermind-lib/build/brief/brief.go:32 |  |
+| `Network` | type | gophermind-lib/build/brief/brief.go:38 |  |
+| `Budget` | type | gophermind-lib/build/brief/brief.go:44 |  |
+| `Frontmatter` | type | gophermind-lib/build/brief/brief.go:49 |  |
+| `(Frontmatter).WorkBranchName` | method | gophermind-lib/build/brief/brief.go:67 | WorkBranchName is work_branch, or gm/<id> when unset. |
+| `Feature` | type | gophermind-lib/build/brief/brief.go:74 |  |
+| `Brief` | type | gophermind-lib/build/brief/brief.go:79 |  |
+| `reservedNames` | var | gophermind-lib/build/brief/brief.go:88 |  |
+| `IsReservedName` | func | gophermind-lib/build/brief/brief.go:97 | IsReservedName reports whether a brief may not declare name as a secret or env variable because the harness owns it. |
+| `requiredSections` | var | gophermind-lib/build/brief/brief.go:99 |  |
+| `Parse` | func | gophermind-lib/build/brief/brief.go:103 | Parse splits, validates, and sections a brief. |
+| `parseSections` | func | gophermind-lib/build/brief/brief.go:194 |  |
+| `Warning` | type | gophermind-lib/build/brief/brief.go:247 | Warning is an undeclared secret-looking token and its 1-based file line. |
+| `tokenRE` | var | gophermind-lib/build/brief/brief.go:253 |  |
+| `secretSuffixes` | var | gophermind-lib/build/brief/brief.go:254 |  |
+| `secretWords` | var | gophermind-lib/build/brief/brief.go:255 |  |
+| `httpMethods` | var | gophermind-lib/build/brief/brief.go:256 |  |
+| `statusTokenRE` | var | gophermind-lib/build/brief/brief.go:257 |  |
+| `hasSecretSuffix` | func | gophermind-lib/build/brief/brief.go:260 |  |
+| `(*Brief).UndeclaredSecrets` | method | gophermind-lib/build/brief/brief.go:274 | UndeclaredSecrets scans the body for tokens that look like secret names but are declared under neither secrets nor env. |
+| `bulletRE` | var | gophermind-lib/build/brief/brief.go:313 |  |
+| `BulletText` | func | gophermind-lib/build/brief/brief.go:317 | BulletText reports whether line, taken at column 0, opens a list bullet ("- ", "* ", "+ ", "1. |
+| `checkBody` | func | gophermind-lib/build/brief/brief.go:330 | checkBody rejects a body that would silently lose requirements: a code fence that never closes (it hides every later bullet), and, under Constraints and Acceptance, a non-blank line that is not a bullet, an indented continuation, a heading, a comment or part of a fence. |
 
 ## package bubblecomplete
 
@@ -700,20 +700,20 @@ after every completed task. Non-test Go declarations only.
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `Type` | type | gophermind-lib/briefv2/contract/contract.go:15 |  |
-| `Function` | type | gophermind-lib/briefv2/contract/contract.go:23 |  |
-| `Component` | type | gophermind-lib/briefv2/contract/contract.go:33 |  |
-| `Contracts` | type | gophermind-lib/briefv2/contract/contract.go:39 |  |
-| `Load` | func | gophermind-lib/briefv2/contract/contract.go:54 | Load validates raw against the contract schema and checks that every uses and exports entry resolves to a declared type or function. |
-| `(*Contracts).declared` | method | gophermind-lib/briefv2/contract/contract.go:105 |  |
-| `(*Contracts).uses` | method | gophermind-lib/briefv2/contract/contract.go:111 |  |
-| `(*Contracts).walk` | method | gophermind-lib/briefv2/contract/contract.go:124 | walk collects every declared type and function ID reachable from dependsOn through uses. |
-| `(*Contracts).Closure` | method | gophermind-lib/briefv2/contract/contract.go:151 | Closure returns every type and function ID reachable from dependsOn through uses, including the dependsOn entries themselves. |
-| `(*Contracts).Slice` | method | gophermind-lib/briefv2/contract/contract.go:161 | Slice returns the dependency_signatures for a node with the given depends_on. |
-| `docComment` | func | gophermind-lib/briefv2/contract/contract.go:197 |  |
-| `order` | func | gophermind-lib/briefv2/contract/contract.go:212 | order sorts ids (given in contracts.json order) so a decl follows the members of ids it uses. |
-| `Diff` | func | gophermind-lib/briefv2/contract/contract.go:252 | Diff lists IDs whose declaration changed, was added, or was removed. |
-| `(*Contracts).Affected` | method | gophermind-lib/briefv2/contract/contract.go:288 | Affected returns the node IDs (keys of deps, mapping node ID to its depends_on) whose closure includes any changed ID. |
+| `Type` | type | gophermind-lib/build/contract/contract.go:15 |  |
+| `Function` | type | gophermind-lib/build/contract/contract.go:23 |  |
+| `Component` | type | gophermind-lib/build/contract/contract.go:33 |  |
+| `Contracts` | type | gophermind-lib/build/contract/contract.go:39 |  |
+| `Load` | func | gophermind-lib/build/contract/contract.go:54 | Load validates raw against the contract schema and checks that every uses and exports entry resolves to a declared type or function. |
+| `(*Contracts).declared` | method | gophermind-lib/build/contract/contract.go:105 |  |
+| `(*Contracts).uses` | method | gophermind-lib/build/contract/contract.go:111 |  |
+| `(*Contracts).walk` | method | gophermind-lib/build/contract/contract.go:124 | walk collects every declared type and function ID reachable from dependsOn through uses. |
+| `(*Contracts).Closure` | method | gophermind-lib/build/contract/contract.go:151 | Closure returns every type and function ID reachable from dependsOn through uses, including the dependsOn entries themselves. |
+| `(*Contracts).Slice` | method | gophermind-lib/build/contract/contract.go:161 | Slice returns the dependency_signatures for a node with the given depends_on. |
+| `docComment` | func | gophermind-lib/build/contract/contract.go:197 |  |
+| `order` | func | gophermind-lib/build/contract/contract.go:212 | order sorts ids (given in contracts.json order) so a decl follows the members of ids it uses. |
+| `Diff` | func | gophermind-lib/build/contract/contract.go:252 | Diff lists IDs whose declaration changed, was added, or was removed. |
+| `(*Contracts).Affected` | method | gophermind-lib/build/contract/contract.go:288 | Affected returns the node IDs (keys of deps, mapping node ID to its depends_on) whose closure includes any changed ID. |
 
 ## package doctor
 
@@ -766,588 +766,588 @@ after every completed task. Non-test Go declarations only.
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `freeBytes` | func | gophermind-lib/briefv2/envcheck/diskfree_unix.go:9 | freeBytes is the space available to an unprivileged user on the file system that holds path. |
-| `freeBytes` | func | gophermind-lib/briefv2/envcheck/diskfree_windows.go:7 |  |
-| `DefaultProbeTimeout` | const | gophermind-lib/briefv2/envcheck/envcheck.go:25 | DefaultProbeTimeout bounds one reachability probe of a provider base URL. |
-| `DefaultMinFreeBytes` | const | gophermind-lib/briefv2/envcheck/envcheck.go:28 | DefaultMinFreeBytes is the free space the module cache's file system must have. |
-| `ProbeResult` | type | gophermind-lib/briefv2/envcheck/envcheck.go:31 | ProbeResult is what ResolveBaseURLs found for one provider of the tier chains. |
-| `ResolveBaseURLs` | func | gophermind-lib/briefv2/envcheck/envcheck.go:46 | ResolveBaseURLs probes every provider the tier chains use: base_url first, then base_url_fallbacks in order. |
-| `ProbeBaseURL` | func | gophermind-lib/briefv2/envcheck/envcheck.go:90 | ProbeBaseURL says whether base answers, within timeout in all: GET /api/version on its origin answers with 200, or GET <base>/models answers 2xx, or 401 or 403 (a server that wants a key is there). |
-| `EnvNotes` | func | gophermind-lib/briefv2/envcheck/envcheck.go:131 | EnvNotes is what the report's environment section says about the providers: the host that answered, host only. |
-| `SafeLine` | func | gophermind-lib/briefv2/envcheck/envcheck.go:142 | SafeLine keeps the first line of s, printable ASCII only, at most 160 bytes. |
-| `LookInPath` | func | gophermind-lib/briefv2/envcheck/envcheck.go:159 |  |
-| `DirtyOutsideTests` | func | gophermind-lib/briefv2/envcheck/envcheck.go:175 | DirtyOutsideTests counts changed paths that are neither the test files the planner placed (_state/test_files.json) nor under .gophermind/. |
-| `LoopbackAddr` | func | gophermind-lib/briefv2/envcheck/envcheck.go:211 | LoopbackAddr returns host:port when val is a URL whose host is loopback. |
-| `ModuleCacheFree` | func | gophermind-lib/briefv2/envcheck/envcheck.go:232 | ModuleCacheFree is the free space on the file system that holds the module cache (or its nearest existing parent). |
+| `freeBytes` | func | gophermind-lib/build/envcheck/diskfree_unix.go:9 | freeBytes is the space available to an unprivileged user on the file system that holds path. |
+| `freeBytes` | func | gophermind-lib/build/envcheck/diskfree_windows.go:7 |  |
+| `DefaultProbeTimeout` | const | gophermind-lib/build/envcheck/envcheck.go:25 | DefaultProbeTimeout bounds one reachability probe of a provider base URL. |
+| `DefaultMinFreeBytes` | const | gophermind-lib/build/envcheck/envcheck.go:28 | DefaultMinFreeBytes is the free space the module cache's file system must have. |
+| `ProbeResult` | type | gophermind-lib/build/envcheck/envcheck.go:31 | ProbeResult is what ResolveBaseURLs found for one provider of the tier chains. |
+| `ResolveBaseURLs` | func | gophermind-lib/build/envcheck/envcheck.go:46 | ResolveBaseURLs probes every provider the tier chains use: base_url first, then base_url_fallbacks in order. |
+| `ProbeBaseURL` | func | gophermind-lib/build/envcheck/envcheck.go:90 | ProbeBaseURL says whether base answers, within timeout in all: GET /api/version on its origin answers with 200, or GET <base>/models answers 2xx, or 401 or 403 (a server that wants a key is there). |
+| `EnvNotes` | func | gophermind-lib/build/envcheck/envcheck.go:131 | EnvNotes is what the report's environment section says about the providers: the host that answered, host only. |
+| `SafeLine` | func | gophermind-lib/build/envcheck/envcheck.go:142 | SafeLine keeps the first line of s, printable ASCII only, at most 160 bytes. |
+| `LookInPath` | func | gophermind-lib/build/envcheck/envcheck.go:159 |  |
+| `DirtyOutsideTests` | func | gophermind-lib/build/envcheck/envcheck.go:175 | DirtyOutsideTests counts changed paths that are neither the test files the planner placed (_state/test_files.json) nor under .gophermind/. |
+| `LoopbackAddr` | func | gophermind-lib/build/envcheck/envcheck.go:211 | LoopbackAddr returns host:port when val is a URL whose host is loopback. |
+| `ModuleCacheFree` | func | gophermind-lib/build/envcheck/envcheck.go:232 | ModuleCacheFree is the free space on the file system that holds the module cache (or its nearest existing parent). |
 
 ## package events
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `KindStageStarted` | const | gophermind-lib/briefv2/events/events.go:15 | Event kinds. |
-| `KindStageFinished` | const | gophermind-lib/briefv2/events/events.go:16 | Event kinds. |
-| `KindWaitingOnHuman` | const | gophermind-lib/briefv2/events/events.go:17 | Event kinds. |
-| `KindCall` | const | gophermind-lib/briefv2/events/events.go:18 | Event kinds. |
-| `KindLedgerError` | const | gophermind-lib/briefv2/events/events.go:19 | Event kinds. |
-| `KindWarning` | const | gophermind-lib/briefv2/events/events.go:20 | Event kinds. |
-| `KindCoverageGap` | const | gophermind-lib/briefv2/events/events.go:21 | Event kinds. |
-| `Event` | type | gophermind-lib/briefv2/events/events.go:26 | Event is one progress report. |
-| `Sink` | interface | gophermind-lib/briefv2/events/events.go:36 | Sink receives events. |
-| `nop` | type | gophermind-lib/briefv2/events/events.go:38 |  |
-| `(nop).Emit` | method | gophermind-lib/briefv2/events/events.go:40 |  |
-| `Nop` | var | gophermind-lib/briefv2/events/events.go:43 | Nop discards every event. |
-| `Collector` | type | gophermind-lib/briefv2/events/events.go:46 | Collector keeps every event in memory, for tests and for the status command. |
-| `NewCollector` | func | gophermind-lib/briefv2/events/events.go:51 |  |
-| `(*Collector).Emit` | method | gophermind-lib/briefv2/events/events.go:54 | Emit stamps the event with the current time when At is zero and stores it. |
-| `(*Collector).Events` | method | gophermind-lib/briefv2/events/events.go:64 | Events returns a copy of everything collected so far, oldest first. |
-| `(*Collector).OfKind` | method | gophermind-lib/briefv2/events/events.go:71 | OfKind returns the collected events of one kind, oldest first. |
+| `KindStageStarted` | const | gophermind-lib/build/events/events.go:15 | Event kinds. |
+| `KindStageFinished` | const | gophermind-lib/build/events/events.go:16 | Event kinds. |
+| `KindWaitingOnHuman` | const | gophermind-lib/build/events/events.go:17 | Event kinds. |
+| `KindCall` | const | gophermind-lib/build/events/events.go:18 | Event kinds. |
+| `KindLedgerError` | const | gophermind-lib/build/events/events.go:19 | Event kinds. |
+| `KindWarning` | const | gophermind-lib/build/events/events.go:20 | Event kinds. |
+| `KindCoverageGap` | const | gophermind-lib/build/events/events.go:21 | Event kinds. |
+| `Event` | type | gophermind-lib/build/events/events.go:26 | Event is one progress report. |
+| `Sink` | interface | gophermind-lib/build/events/events.go:36 | Sink receives events. |
+| `nop` | type | gophermind-lib/build/events/events.go:38 |  |
+| `(nop).Emit` | method | gophermind-lib/build/events/events.go:40 |  |
+| `Nop` | var | gophermind-lib/build/events/events.go:43 | Nop discards every event. |
+| `Collector` | type | gophermind-lib/build/events/events.go:46 | Collector keeps every event in memory, for tests and for the status command. |
+| `NewCollector` | func | gophermind-lib/build/events/events.go:51 |  |
+| `(*Collector).Emit` | method | gophermind-lib/build/events/events.go:54 | Emit stamps the event with the current time when At is zero and stores it. |
+| `(*Collector).Events` | method | gophermind-lib/build/events/events.go:64 | Events returns a copy of everything collected so far, oldest first. |
+| `(*Collector).OfKind` | method | gophermind-lib/build/events/events.go:71 | OfKind returns the collected events of one kind, oldest first. |
 
 ## package execenv
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `idRE` | var | gophermind-lib/briefv2/execenv/execenv.go:19 |  |
-| `nameRE` | var | gophermind-lib/briefv2/execenv/execenv.go:20 |  |
-| `toolchainNames` | var | gophermind-lib/briefv2/execenv/execenv.go:22 |  |
-| `goEnvNames` | var | gophermind-lib/briefv2/execenv/execenv.go:24 |  |
-| `Inputs` | type | gophermind-lib/briefv2/execenv/execenv.go:27 |  |
-| `goFlagsUnsafe` | func | gophermind-lib/briefv2/execenv/execenv.go:56 | goFlagsUnsafe reports whether a GOFLAGS value carries -toolexec or -overlay as a token, with one or two leading dashes and an optional =value. |
-| `Build` | func | gophermind-lib/briefv2/execenv/execenv.go:67 | Build returns the sorted NAME=value environment for exec.Cmd.Env. |
+| `idRE` | var | gophermind-lib/build/execenv/execenv.go:19 |  |
+| `nameRE` | var | gophermind-lib/build/execenv/execenv.go:20 |  |
+| `toolchainNames` | var | gophermind-lib/build/execenv/execenv.go:22 |  |
+| `goEnvNames` | var | gophermind-lib/build/execenv/execenv.go:24 |  |
+| `Inputs` | type | gophermind-lib/build/execenv/execenv.go:27 |  |
+| `goFlagsUnsafe` | func | gophermind-lib/build/execenv/execenv.go:56 | goFlagsUnsafe reports whether a GOFLAGS value carries -toolexec or -overlay as a token, with one or two leading dashes and an optional =value. |
+| `Build` | func | gophermind-lib/build/execenv/execenv.go:67 | Build returns the sorted NAME=value environment for exec.Cmd.Env. |
 
 ## package executor
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `fileAcceptance` | const | gophermind-lib/briefv2/executor/acceptance.go:38 | fileAcceptance is the proof file in the run folder. |
-| `Counts` | type | gophermind-lib/briefv2/executor/acceptance.go:41 | Counts is "N of M". |
-| `CommandProof` | type | gophermind-lib/briefv2/executor/acceptance.go:47 | CommandProof is the proof of one root test command. |
-| `BulletProof` | type | gophermind-lib/briefv2/executor/acceptance.go:60 | BulletProof is one requirement (acceptance bullet or checked constraint). |
-| `BinaryProof` | type | gophermind-lib/briefv2/executor/acceptance.go:68 | BinaryProof is the SHA-256 of one built binary, taken before the first command. |
-| `acceptanceSchema` | const | gophermind-lib/briefv2/executor/acceptance.go:75 | acceptanceSchema is the version of acceptance.json; 2 added schema_version, complete, binaries and command_sha256 (all additive). |
-| `AcceptanceFile` | type | gophermind-lib/briefv2/executor/acceptance.go:80 | AcceptanceFile is <run>/acceptance.json. |
-| `acceptPlan` | type | gophermind-lib/briefv2/executor/acceptance.go:94 | acceptPlan is what code, not the planner's file alone, says must be proven. |
-| `planBullet` | type | gophermind-lib/briefv2/executor/acceptance.go:99 |  |
-| `mapAcceptance` | func | gophermind-lib/briefv2/executor/acceptance.go:109 | mapAcceptance computes N and the tests from requirements.json (reqs) and coverage.json (cov). |
-| `checkCoverageTotal` | func | gophermind-lib/briefv2/executor/acceptance.go:155 | checkCoverageTotal is the other half of the spec 9 tripwire: coverage.json covers every requirement of the plan exactly once, names no requirement the plan does not have, and the entry of an acceptance bullet names a root test. |
-| `binNameRE` | var | gophermind-lib/briefv2/executor/acceptance.go:185 |  |
-| `(*runCtx).buildBinaries` | method | gophermind-lib/briefv2/executor/acceptance.go:190 | buildBinaries builds every main package under cmd/ to <bin>/<dirname> with go build -o, through rc.goCmd in envLeaf mode (sandboxed, offline). |
-| `(*runCtx).removeBinaries` | method | gophermind-lib/briefv2/executor/acceptance.go:236 | removeBinaries deletes the binaries of the last build, each a regular file directly inside the bin directory under a name this run recorded. |
-| `fileSHA` | func | gophermind-lib/briefv2/executor/acceptance.go:249 | fileSHA is the SHA-256 of a regular file, refusing a link. |
-| `(*runCtx).binNames` | method | gophermind-lib/briefv2/executor/acceptance.go:262 |  |
-| `(*runCtx).binaryProofs` | method | gophermind-lib/briefv2/executor/acceptance.go:272 | binaryProofs is the recorded hashes, in name order. |
-| `(*runCtx).checkBinaries` | method | gophermind-lib/briefv2/executor/acceptance.go:282 | checkBinaries fails the run when a built binary is no longer the one that was built: a command of the acceptance run could write to the scratch directory. |
-| `(*runCtx).acceptPidFile` | method | gophermind-lib/briefv2/executor/acceptance.go:295 | acceptPidFile is where a command may record the pid of a server it starts (GM_ACCEPTANCE_PIDFILE), so that one that escaped the process group is found. |
-| `freeAddr` | func | gophermind-lib/briefv2/executor/acceptance.go:298 | freeAddr is a free loopback address for one command. |
-| `portRE` | var | gophermind-lib/briefv2/executor/acceptance.go:307 |  |
-| `literalPorts` | func | gophermind-lib/briefv2/executor/acceptance.go:311 | literalPorts are the loopback ports a command names (localhost:N, 127.0.0.1:N, [::1]:N), sorted and unique, as numbers in text. |
-| `accepting` | func | gophermind-lib/briefv2/executor/acceptance.go:329 |  |
-| `(*runCtx).afterCommand` | method | gophermind-lib/briefv2/executor/acceptance.go:344 | afterCommand is what the harness checks once a command is over and its process group was killed: the binaries are intact, nothing listens on the command's address and the pid the command recorded is gone. |
-| `ctxErrOr` | func | gophermind-lib/briefv2/executor/acceptance.go:391 |  |
-| `(*runCtx).runRootTest` | method | gophermind-lib/briefv2/executor/acceptance.go:406 | runRootTest runs one root test command with sh -c from the repo root through rc.chk.Run, on a fresh loopback address it is given through GM_ACCEPTANCE_ADDR and GM_ACCEPTANCE_URL (and the built binaries' directory through GM_ACCEPTANCE_BIN). |
-| `(*runCtx).runRootTestFull` | method | gophermind-lib/briefv2/executor/acceptance.go:411 | runRootTestFull is runRootTest with the command's time limit given. |
-| `(*runCtx).goTestArgv` | method | gophermind-lib/briefv2/executor/acceptance.go:483 | goTestArgv is go test -json for a recognised plain go test command: the flags the command named (-tags, -race, -short, -run as an anchored list) and its package. |
-| `goTestPassed` | func | gophermind-lib/briefv2/executor/acceptance.go:508 | goTestPassed is the runner's pass rule for a go test acceptance command: it exited 0 in time, at least one test ran and passed, none failed, the build held, and every test its -run named passed (a skipped test is not a pass). |
-| `plainTestOutput` | func | gophermind-lib/briefv2/executor/acceptance.go:537 | plainTestOutput turns a go test -json stream into the text the test printed, for the capped failure lines a repair round shows a leaf: JSON event lines become their Output field, any other line stays. |
-| `failedBullet` | type | gophermind-lib/briefv2/executor/acceptance.go:551 |  |
-| `firstLine` | func | gophermind-lib/briefv2/executor/acceptance.go:560 |  |
-| `(*runCtx).runBullet` | method | gophermind-lib/briefv2/executor/acceptance.go:568 |  |
-| `(*runCtx).acceptanceRun` | method | gophermind-lib/briefv2/executor/acceptance.go:604 | acceptanceRun runs every bullet once, in requirement order, one command at a time, writes acceptance.json, and returns the failing bullets by requirement id. |
-| `(*runCtx).writeAcceptance` | method | gophermind-lib/briefv2/executor/acceptance.go:681 |  |
-| `counts` | func | gophermind-lib/briefv2/executor/acceptance.go:689 |  |
-| `(*runCtx).failedIDs` | method | gophermind-lib/briefv2/executor/acceptance.go:696 | failedIDs is the failing requirement ids: acceptance bullets first, then constraints, each in requirement order. |
-| `(*runCtx).acceptance` | method | gophermind-lib/briefv2/executor/acceptance.go:714 | acceptance runs acceptanceRun with the repair rounds and returns the counts or the stop. |
-| `(*runCtx).acceptStop` | method | gophermind-lib/briefv2/executor/acceptance.go:760 | acceptStop is the stop after the repair rounds are used up: ids and text of the first failing bullet and its exit code, then the other ids. |
-| `(*runCtx).attribute` | method | gophermind-lib/briefv2/executor/acceptance.go:780 | attribute is the leaves that own a failing bullet: the leaf nodes the coverage file lists for it (spec 9). |
-| `(*runCtx).acceptRepair` | method | gophermind-lib/briefv2/executor/acceptance.go:794 | acceptRepair is one acceptance repair round (spec 9 Failure): every leaf that owns a failing bullet is reopened and rebuilt with only its own bullets' capped output as the previous failure, then the last wave is checked again. |
-| `(*runCtx).acceptanceTimeout` | method | gophermind-lib/briefv2/executor/acceptance.go:855 |  |
-| `accResult` | type | gophermind-lib/briefv2/executor/acceptance.go:860 | accResult is what the acceptance stage proved. |
-| `finishResult` | type | gophermind-lib/briefv2/executor/acceptance.go:865 | finishResult is how the run ended once every wave was done: the final status, a reason class, the acceptance counts, extra failure lines (acceptance bullets, never output text) and the landing. |
-| `(*runCtx).checkEnvironment` | method | gophermind-lib/briefv2/executor/acceptance.go:876 | checkEnvironment is the harness's own connectivity check before acceptance: every declared secret whose value is a URL with a loopback host is dialled (2 seconds). |
-| `(*runCtx).needsSecret` | method | gophermind-lib/briefv2/executor/acceptance.go:916 | needsSecret says that some bullet runs with the variable: its text or one of its commands names it and the bullet does not say "with NAME unset". |
-| `(*runCtx).treeClean` | method | gophermind-lib/briefv2/executor/acceptance.go:943 | treeClean requires that only declared files differ from the landed state: nothing in commit mode; in diff_only the plan's own files. |
-| `(*runCtx).decide` | method | gophermind-lib/briefv2/executor/acceptance.go:974 | decide is the first test of the final status: verified only when every leaf row is verified. |
-| `(*runCtx).finish` | method | gophermind-lib/briefv2/executor/acceptance.go:1013 | finish is the only place a run's final status is decided (spec 7.1). |
-| `stopFailure` | func | gophermind-lib/briefv2/executor/acceptance.go:1094 | stopFailure is the stop's message as a report failure line, for the acceptance family of stops (the messages hold ids, requirement text and exit codes, never output). |
-| `(*runCtx).finishFromError` | method | gophermind-lib/briefv2/executor/acceptance.go:1105 | finishFromError turns the error of a finishing step into a result when it is a stop or a cancelled context, and leaves a fault as an error. |
-| `(*runCtx).land` | method | gophermind-lib/briefv2/executor/acceptance.go:1120 | land ends a verified run. |
-| `maxRedTimeout` | const | gophermind-lib/briefv2/executor/acceptance_red.go:19 | maxRedTimeout caps one red check command: a command that is still running then did not pass quickly against a stub, which counts as red. |
-| `(*runCtx).redTimeout` | method | gophermind-lib/briefv2/executor/acceptance_red.go:21 |  |
-| `notRedError` | type | gophermind-lib/briefv2/executor/acceptance_red.go:34 | notRedError names the bullets whose server-exercising root tests all pass against the stubs. |
-| `(*notRedError).Error` | method | gophermind-lib/briefv2/executor/acceptance_red.go:36 |  |
-| `(*runCtx).redCheckAcceptance` | method | gophermind-lib/briefv2/executor/acceptance_red.go:44 | redCheckAcceptance runs the server-exercising root tests of every acceptance bullet and checked constraint against the Wave 0 stubs. |
-| `vacuousError` | type | gophermind-lib/briefv2/executor/acceptcheck.go:12 | vacuousError is the tripwire for acceptance root tests that cannot prove the server: it names bullet ids only, never a command. |
-| `(*vacuousError).Error` | method | gophermind-lib/briefv2/executor/acceptcheck.go:14 |  |
-| `vacuousCommand` | func | gophermind-lib/briefv2/executor/acceptcheck.go:20 | vacuousCommand is acceptcheck.Vacuous: the shell-aware check lives in the shared package the planner also uses. |
-| `vacuousBullets` | func | gophermind-lib/briefv2/executor/acceptcheck.go:23 | vacuousBullets is the ids of the acceptance bullets that have a vacuous root test. |
-| `(*runCtx).unsetNames` | method | gophermind-lib/briefv2/executor/acceptcheck.go:38 | unsetNames are the declared secret and env names a bullet's text says it runs without, by the exact phrase "with NAME unset" (case sensitive). |
-| `maxAttributionLines` | const | gophermind-lib/briefv2/executor/attribute.go:12 | maxAttributionLines caps the lines one node is handed for its next prompt. |
-| `Attribution` | type | gophermind-lib/briefv2/executor/attribute.go:16 | Attribution is what an integration failure is pinned on. |
-| `(*Plan).Attribute` | method | gophermind-lib/briefv2/executor/attribute.go:37 | Attribute maps every failure of res to the leaves that own the files and tests it names:    - a build or vet record maps by the file of its location to the leaf whose     contract file, stub file or test file it is;   - a test record maps by (package dir, top-level test name) to the leaf that     owns that test, and only when no owner is found by the file of its     locations;   - anything no rule resolves is unattributable, including a failure that     names neither a test nor a file: guessing would burn the repair budget on     the wrong leaf. |
-| `noLocation` | func | gophermind-lib/briefv2/executor/attribute.go:121 |  |
-| `candidatePrefix` | const | gophermind-lib/briefv2/executor/candidate.go:15 | candidatePrefix names the saved private pass of a leaf: _state/candidate-<id> (decision F10). |
-| `candidate` | type | gophermind-lib/briefv2/executor/candidate.go:22 | candidate is a reply that passed its leaf check in a private tree, saved before the leaf waits for its turn, so a kill between the pass and the landing costs no model call. |
-| `(candidate).entry` | method | gophermind-lib/briefv2/executor/candidate.go:32 | entry is the ladder entry the pass attempt is recorded against at landing. |
-| `saveCandidate` | func | gophermind-lib/briefv2/executor/candidate.go:36 |  |
-| `readCandidate` | func | gophermind-lib/briefv2/executor/candidate.go:50 | readCandidate returns the saved candidate of the leaf. |
-| `removeCandidate` | func | gophermind-lib/briefv2/executor/candidate.go:71 | removeCandidate deletes _state/candidate-<id>. |
-| `depsHooks` | type | gophermind-lib/briefv2/executor/deps.go:16 | depsHooks are package level test hooks; the defaults are the real values. |
-| `testHooks` | var | gophermind-lib/briefv2/executor/deps.go:24 |  |
-| `depModulePath` | var | gophermind-lib/briefv2/executor/deps.go:28 | A dotted host first, so a standard library path or a local path is refused. |
-| `depVersion` | var | gophermind-lib/briefv2/executor/deps.go:30 | A tagged release, a pre-release or a pseudo-version. |
-| `vetDeps` | func | gophermind-lib/briefv2/executor/deps.go:36 | vetDeps checks every dependency before any go command runs. |
-| `hasDotElement` | func | gophermind-lib/briefv2/executor/deps.go:57 |  |
-| `unreachableText` | var | gophermind-lib/briefv2/executor/deps.go:69 | unreachableText are fragments of a go command's output that mean the module proxy could not be reached (as opposed to a module or version it does not have). |
-| `unreachable` | func | gophermind-lib/briefv2/executor/deps.go:75 |  |
-| `depsStop` | func | gophermind-lib/briefv2/executor/deps.go:90 | depsStop is the stop for a failed deps command. |
-| `(*runCtx).runDeps` | method | gophermind-lib/briefv2/executor/deps.go:107 | runDeps is spec 14 steps 2 to 4 (step 1 and 5 are in wave0): for each dependency go get module@version, then go mod download, with the proxy and the checksum database allowed. |
-| `(*runCtx).verifyModules` | method | gophermind-lib/briefv2/executor/deps.go:139 | verifyModules is go mod verify, offline. |
-| `envMode` | type | gophermind-lib/briefv2/executor/env.go:15 | envMode says which Go policy an environment carries. |
-| `envLeaf` | const | gophermind-lib/briefv2/executor/env.go:19 | envLeaf: offline. |
-| `envDeps` | const | gophermind-lib/briefv2/executor/env.go:22 | envDeps: the one step that may fetch, through the harness proxy. |
-| `envAcceptance` | const | gophermind-lib/briefv2/executor/env.go:24 | envAcceptance: envLeaf with <run>/bin first on PATH. |
-| `goCmdTimeout` | const | gophermind-lib/briefv2/executor/env.go:28 | goCmdTimeout bounds one Go command run through goCmd. |
-| `(*runCtx).env` | method | gophermind-lib/briefv2/executor/env.go:34 | env builds the exact environment of one command of node nodeID. |
-| `(*runCtx).envAt` | method | gophermind-lib/briefv2/executor/env.go:42 | envAt is env with HOME, TMPDIR and GOPATH under scratch: rc.scratch for the main tree, <scratch>/w/<id> for a private tree. |
-| `(*runCtx).goCmd` | method | gophermind-lib/briefv2/executor/env.go:103 | goCmd runs one go command in the repository. |
-| `(*runCtx).testTimeout` | method | gophermind-lib/briefv2/executor/env.go:114 |  |
-| `(*runCtx).leafCheck` | method | gophermind-lib/briefv2/executor/env.go:119 | leafCheck is runner.LeafCheck over the named files of the leaf in the main tree. |
-| `(*runCtx).secretValues` | method | gophermind-lib/briefv2/executor/env.go:125 | secretValues is every declared secret's value, for stripping from text. |
-| `reasonSkipped` | const | gophermind-lib/briefv2/executor/escalate.go:17 | reasonSkipped is the reason of a leaf a person chose to skip. |
-| `reasonPanic` | const | gophermind-lib/briefv2/executor/escalate.go:20 | reasonPanic is the terminal reason of a leaf whose run panicked. |
-| `humanStop` | func | gophermind-lib/briefv2/executor/escalate.go:24 | humanStop is the run ending at the human gate: a stop answer, no gate, or a gate that failed. |
-| `waitingOnHuman` | func | gophermind-lib/briefv2/executor/escalate.go:31 | waitingOnHuman is the run ending because the gate has no answer yet (the file gate, ruling S8): exit 3, the leaf stays escalated and the next run asks again. |
-| `(*runCtx).scrubHistory` | method | gophermind-lib/briefv2/executor/escalate.go:38 | scrubHistory drops the history lines that hold a secret value: the gate is shown ids, a class and class-and-name lines, and never a secret. |
-| `(*runCtx).rowRevision` | method | gophermind-lib/briefv2/executor/escalate.go:57 | rowRevision is the revision of the leaf's row, 0 when it cannot be read. |
-| `(*runCtx).round` | method | gophermind-lib/briefv2/executor/escalate.go:66 | round is how many retries a person has granted the leaf so far. |
-| `isRevisionReason` | func | gophermind-lib/briefv2/executor/escalate.go:74 | isRevisionReason says an escalation is about the revise stage: a flag, a locked test, a secret in a reply, or a refusal class. |
-| `(*runCtx).lastModel` | method | gophermind-lib/briefv2/executor/escalate.go:84 | lastModel is the provider/model of the last attempt of the leaf, "" when it has none. |
-| `escalateExtra` | type | gophermind-lib/briefv2/executor/escalate.go:94 | escalateExtra is what a caller adds to the gate text beyond the reason. |
-| `(*runCtx).askGate` | method | gophermind-lib/briefv2/executor/escalate.go:99 | askGate puts one question to the gate, one at a time (decision F11). |
-| `(*runCtx).escalate` | method | gophermind-lib/briefv2/executor/escalate.go:106 | escalate is escalateWith with nothing extra. |
-| `(*runCtx).escalateWith` | method | gophermind-lib/briefv2/executor/escalate.go:124 | escalateWith is rung 7: the leaf leaves status from (in_progress for the ladder, verified for an integration failure, escalated when a resumed run asks again) for needs_revision and escalated, the person is asked, and the answer is applied to the blackboard:  	retry  note saved, revision allowance raised by one, escalated -> ready 	skip   escalated -> failed, reason "skipped by human" 	stop   a *stopError (human_stop), also for a nil gate or a gate that fails  A gate with no answer yet (human.ErrWaiting) is a *stopError with reason waiting_on_human and the leaf stays escalated. |
-| `ClassRateLimited` | const | gophermind-lib/briefv2/executor/failure.go:21 | Failure classes (spec 7.2). |
-| `ClassTimeout` | const | gophermind-lib/briefv2/executor/failure.go:22 | Failure classes (spec 7.2). |
-| `ClassContextTooLong` | const | gophermind-lib/briefv2/executor/failure.go:23 | Failure classes (spec 7.2). |
-| `ClassImportNotAllowed` | const | gophermind-lib/briefv2/executor/failure.go:24 | Failure classes (spec 7.2). |
-| `ClassForbiddenWrite` | const | gophermind-lib/briefv2/executor/failure.go:25 | Failure classes (spec 7.2). |
-| `ClassContractProblem` | const | gophermind-lib/briefv2/executor/failure.go:26 | Failure classes (spec 7.2). |
-| `ClassNetworkCritical` | const | gophermind-lib/briefv2/executor/failure.go:27 | Failure classes (spec 7.2). |
-| `ClassIdentical` | const | gophermind-lib/briefv2/executor/failure.go:28 | Failure classes (spec 7.2). |
-| `maxReasonNames` | const | gophermind-lib/briefv2/executor/failure.go:32 |  |
-| `maxNameBytes` | const | gophermind-lib/briefv2/executor/failure.go:33 |  |
-| `cleanName` | func | gophermind-lib/briefv2/executor/failure.go:38 | cleanName makes one name safe for a one-line reason: control characters and white space become "_" and the name is clipped. |
-| `failureReason` | func | gophermind-lib/briefv2/executor/failure.go:53 | failureReason is "<class>" or "<class>: <name>, <name>": names sorted, at most 8 and then "(+n more)", one line. |
-| `isLeafFailure` | func | gophermind-lib/briefv2/executor/failure.go:79 | isLeafFailure reports that a verdict counts against the leaf. |
-| `settle` | func | gophermind-lib/briefv2/executor/failure.go:84 | settle applies the definition of done to a verdict: a pass with no test event ran nothing and is no_tests_ran (spec R4). |
-| `failureOf` | func | gophermind-lib/briefv2/executor/failure.go:94 | failureOf is the previous failure a verdict gives the next prompt: the failed test names and the runner's output, redacted and capped by the packer. |
-| `mergeFailures` | func | gophermind-lib/briefv2/executor/failure.go:101 | mergeFailures joins failures: names are the union in first-seen order (at most 8), lines are concatenated, and the packer's caps of 30 lines and 2 KB apply again to the whole. |
-| `historyLine` | func | gophermind-lib/briefv2/executor/failure.go:118 | historyLine is one line of the history the revise prompt receives: "attempt 3 mini/qwen fail test_fail: TestX/a". |
-| `guidanceFrom` | func | gophermind-lib/briefv2/executor/guidance.go:21 | guidanceFrom turns the build groups of a function node into the guidance the implement prompt carries. |
-| `decodeGroup` | func | gophermind-lib/briefv2/executor/guidance.go:151 | decodeGroup decodes a raw group into v. |
-| `ladderEntry` | type | gophermind-lib/briefv2/executor/ladder.go:9 | ladderEntry is one model of a leaf's ladder. |
-| `(*runCtx).ladderEntries` | method | gophermind-lib/briefv2/executor/ladder.go:21 | ladderEntries is the chain of the leaf's tier (standard when unset) in order, then the entries of the strong chain not already present. |
-| `fixTemperature` | func | gophermind-lib/briefv2/executor/ladder.go:51 | fixTemperature is the sampling temperature of attempt k of an entry: the first try and the first fix at 0, every later fix at 0.3 (ruling S7). |
-| `landResult` | type | gophermind-lib/briefv2/executor/land.go:13 | landResult is how a landing attempt ended. |
-| `landPassed` | const | gophermind-lib/briefv2/executor/land.go:16 |  |
-| `landConflict` | const | gophermind-lib/briefv2/executor/land.go:17 |  |
-| `landInterrupted` | const | gophermind-lib/briefv2/executor/land.go:18 |  |
-| `(*leafRun).privatePass` | method | gophermind-lib/briefv2/executor/land.go:24 | privatePass is a pass in a private tree (spec section 6): the reply is saved as the leaf's candidate, the stub is put back in the tree, and the ladder stops. |
-| `(*leafRun).toMain` | method | gophermind-lib/briefv2/executor/land.go:43 | toMain moves a leaf from its private tree to the main tree once its turn came: the swap, the checker and the declared names are the main tree's from here on (the names now include what earlier leaves of the level landed). |
-| `(*leafRun).land` | method | gophermind-lib/briefv2/executor/land.go:75 | land replays a saved candidate in the main tree (spec section 7.2): the reply gate again (ruling 9), then the same check a model reply gets (ruling C4): the stub swap, gofmt, build, vet, the named test, the stray-file check and the critical-host streak. |
-| `(*leafRun).landCandidate` | method | gophermind-lib/briefv2/executor/land.go:122 | landCandidate is the leaf's turn: take the main tree, read the saved candidate again (it may have changed while the leaf waited, ruling C2) and replay it. |
-| `(*leafRun).resumeCandidate` | method | gophermind-lib/briefv2/executor/land.go:157 | resumeCandidate lands a candidate an earlier process saved (spec section 11 step 3), with no model call. |
-| `(*runCtx).noteConflict` | method | gophermind-lib/briefv2/executor/land.go:162 | noteConflict counts one landing conflict for the report. |
-| `noteSecretInSource` | const | gophermind-lib/briefv2/executor/leaf.go:34 | The previous-failure sentences the model gets when the failure has no runner output to show. |
-| `noteForbidden` | const | gophermind-lib/briefv2/executor/leaf.go:35 | The previous-failure sentences the model gets when the failure has no runner output to show. |
-| `noteMalformed` | const | gophermind-lib/briefv2/executor/leaf.go:36 | The previous-failure sentences the model gets when the failure has no runner output to show. |
-| `noteStray` | const | gophermind-lib/briefv2/executor/leaf.go:37 | The previous-failure sentences the model gets when the failure has no runner output to show. |
-| `noteCritical` | const | gophermind-lib/briefv2/executor/leaf.go:38 | The previous-failure sentences the model gets when the failure has no runner output to show. |
-| `noteImports` | func | gophermind-lib/briefv2/executor/leaf.go:43 | noteImports is the sentence for a reply that imports a package the policy does not allow. |
-| `leafIn` | type | gophermind-lib/briefv2/executor/leaf.go:55 | leafIn is what a caller hands runLeaf. |
-| `leafOutcome` | type | gophermind-lib/briefv2/executor/leaf.go:63 | leafOutcome is how one leaf ended. |
-| `revResult` | type | gophermind-lib/briefv2/executor/leaf.go:70 | revResult is how one revision of the ladder ended. |
-| `revVerified` | const | gophermind-lib/briefv2/executor/leaf.go:73 |  |
-| `revExhausted` | const | gophermind-lib/briefv2/executor/leaf.go:74 |  |
-| `revContractProblem` | const | gophermind-lib/briefv2/executor/leaf.go:75 |  |
-| `revTooLong` | const | gophermind-lib/briefv2/executor/leaf.go:76 |  |
-| `revInterrupted` | const | gophermind-lib/briefv2/executor/leaf.go:77 |  |
-| `revCandidate` | const | gophermind-lib/briefv2/executor/leaf.go:78 |  |
-| `entryEnd` | type | gophermind-lib/briefv2/executor/leaf.go:82 | entryEnd is how one entry of the ladder ended within a revision. |
-| `endFailed` | const | gophermind-lib/briefv2/executor/leaf.go:85 |  |
-| `endIdentical` | const | gophermind-lib/briefv2/executor/leaf.go:86 |  |
-| `endContract` | const | gophermind-lib/briefv2/executor/leaf.go:87 |  |
-| `endTooLong` | const | gophermind-lib/briefv2/executor/leaf.go:88 |  |
-| `endProvider` | const | gophermind-lib/briefv2/executor/leaf.go:89 |  |
-| `endMalformed` | const | gophermind-lib/briefv2/executor/leaf.go:90 |  |
-| `endPermanent` | const | gophermind-lib/briefv2/executor/leaf.go:91 |  |
-| `endInterrupted` | const | gophermind-lib/briefv2/executor/leaf.go:92 |  |
-| `leafRun` | type | gophermind-lib/briefv2/executor/leaf.go:96 | leafRun is the state of one leaf from claim to a terminal status. |
-| `repMu` | var | gophermind-lib/briefv2/executor/leaf.go:134 |  |
-| `stateMu` | var | gophermind-lib/briefv2/executor/leaf.go:135 |  |
-| `(*runCtx).maxRevisions` | method | gophermind-lib/briefv2/executor/leaf.go:140 | maxRevisions is the node's budget, else the settings default, plus the revisions a human granted. |
-| `(*runCtx).contextBudget` | method | gophermind-lib/briefv2/executor/leaf.go:152 | contextBudget is the prompt budget of a leaf: the node's, else the brief's, else the settings default. |
-| `(*runCtx).heartbeatEvery` | method | gophermind-lib/briefv2/executor/leaf.go:162 |  |
-| `declaredNames` | func | gophermind-lib/briefv2/executor/leaf.go:174 | declaredNames is every package-level name the other files of the leaf's package declare: the contract types, the stubs of the other leaves, the leaf tests and whatever the other leaves already committed. |
-| `path0` | func | gophermind-lib/briefv2/executor/leaf.go:227 | path0 is the last element of a slash path. |
-| `(*runCtx).newLeafRun` | method | gophermind-lib/briefv2/executor/leaf.go:238 | newLeafRun builds the per-leaf state: the reply expectation (with the names the package already declares), the swap over the leaf's files and the history of attempts already on the blackboard. |
-| `(*runCtx).runLeaf` | method | gophermind-lib/briefv2/executor/leaf.go:289 | runLeaf takes a ready leaf to a terminal status. |
-| `(*runCtx).startHeartbeat` | method | gophermind-lib/briefv2/executor/leaf.go:398 | startHeartbeat refreshes the claim every interval until the returned function is called, which also waits for the goroutine to end. |
-| `(*leafRun).exit` | method | gophermind-lib/briefv2/executor/leaf.go:422 | exit turns what ended the loop into runLeaf's result. |
-| `(*leafRun).inProgress` | method | gophermind-lib/briefv2/executor/leaf.go:444 | inProgress reports that the row still says in_progress. |
-| `(*leafRun).checkLeaf` | method | gophermind-lib/briefv2/executor/leaf.go:450 | checkLeaf is runner.LeafCheck on the leaf's real file in its work tree. |
-| `(*leafRun).fail` | method | gophermind-lib/briefv2/executor/leaf.go:455 | fail sets the leaf failed with a reason: status, recorded reason, event. |
-| `(*leafRun).escalate` | method | gophermind-lib/briefv2/executor/leaf.go:476 | escalate makes sure an escalated leaf is escalated on the blackboard. |
-| `(*leafRun).afterRevision` | method | gophermind-lib/briefv2/executor/leaf.go:505 | afterRevision decides what follows a revision that did not verify (rungs 5 to 7). |
-| `(*leafRun).lastClass` | method | gophermind-lib/briefv2/executor/leaf.go:566 | lastClass is the class of the last attempt of the leaf: the text of its failure reason before the first colon. |
-| `(*leafRun).toHuman` | method | gophermind-lib/briefv2/executor/leaf.go:581 | toHuman is rung 7 for a leaf in progress: escalate, then act on the answer. |
-| `(*leafRun).adoptOnDisk` | method | gophermind-lib/briefv2/executor/leaf.go:630 | adoptOnDisk is spec 7.2 and 10 step 5: a real file already on disk is checked before any model call. |
-| `(*leafRun).gate` | method | gophermind-lib/briefv2/executor/leaf.go:729 | gate runs on a file's bytes what a reply passes before it is written: the reply gate (parse, package, signature, declarations, process control), the import policy and the source scan. |
-| `inList` | func | gophermind-lib/briefv2/executor/leaf.go:747 |  |
-| `failureText` | func | gophermind-lib/briefv2/executor/leaf.go:757 | failureText is a previous failure that is one fixed sentence. |
-| `(*leafRun).cleanStray` | method | gophermind-lib/briefv2/executor/leaf.go:762 | cleanStray removes every file the check wrote that is not the leaf's own file or stub (ignored files included) and returns what it removed. |
-| `(*runCtx).criticalSince` | method | gophermind-lib/briefv2/executor/leaf.go:780 | criticalSince is the hosts of critical-host failures of the leaf since t. |
-| `commitError` | type | gophermind-lib/briefv2/executor/leaf.go:798 | commitError is a pass whose commit in the main tree failed: a harness fault. |
-| `(*commitError).Error` | method | gophermind-lib/briefv2/executor/leaf.go:800 |  |
-| `(*leafRun).finishPass` | method | gophermind-lib/briefv2/executor/leaf.go:805 | finishPass is the done definition met: commit (unless adopted), record the result and set verified. |
-| `errCancelled` | var | gophermind-lib/briefv2/executor/leaf.go:878 | errCancelled is a blackboard read that failed because the run was cancelled: an interrupt, not a harness fault. |
-| `(*leafRun).previousSHA` | method | gophermind-lib/briefv2/executor/leaf.go:884 | previousSHA is the hash of the last reply of this leaf on the entry: from memory, else from the blackboard's last attempt of the same provider and model that has one. |
-| `(*leafRun).noteEscalation` | method | gophermind-lib/briefv2/executor/leaf.go:914 | noteEscalation records the move to a later model of the ladder, when the model is about to be called: once per model per leaf, however many revisions follow, and never for a model that was skipped. |
-| `(*leafRun).oneRevision` | method | gophermind-lib/briefv2/executor/leaf.go:934 | oneRevision is rungs 1 to 4 for revision lr.rev: for each entry in order the initial attempt and then up to executor.fix_attempts fixes, each with the previous failure; then the next model; then, past the leaf's own tier, the strong chain. |
-| `(*leafRun).runEntry` | method | gophermind-lib/briefv2/executor/leaf.go:993 | runEntry is the initial attempt and the fix attempts of one entry. |
-| `attemptArt` | type | gophermind-lib/briefv2/executor/leaf.go:1011 | attemptArt is what the current attempt produced and record will save. |
-| `(*leafRun).record` | method | gophermind-lib/briefv2/executor/leaf.go:1019 | record appends one attempt to the blackboard. |
-| `(*runCtx).saveArtifacts` | method | gophermind-lib/briefv2/executor/leaf.go:1057 | saveArtifacts writes the reply and the check output of the attempt just recorded. |
-| `(*leafRun).tooLongEnd` | method | gophermind-lib/briefv2/executor/leaf.go:1071 | tooLongEnd records an entry that cannot hold the prompt: no provider call, an error attempt, and the entry is skipped for the rest of the leaf. |
-| `(*leafRun).attempt` | method | gophermind-lib/briefv2/executor/leaf.go:1083 | attempt is one model call and everything that follows from its reply. |
-| `(*leafRun).identical` | method | gophermind-lib/briefv2/executor/leaf.go:1167 | identical reports whether sha repeats the last reply of this leaf on the entry. |
-| `(*leafRun).refused` | method | gophermind-lib/briefv2/executor/leaf.go:1181 | refused records an attempt whose reply was refused before being written. |
-| `(*leafRun).pack` | method | gophermind-lib/briefv2/executor/leaf.go:1191 | pack builds the prompt of one attempt. |
-| `(*leafRun).testSource` | method | gophermind-lib/briefv2/executor/leaf.go:1223 | testSource reads the leaf's test file and proves it is the file the planner recorded: a test edited between planning and running stops the run. |
-| `(*leafRun).providerError` | method | gophermind-lib/briefv2/executor/leaf.go:1237 | providerError is what a failed router call means for the entry. |
-| `failedClass` | func | gophermind-lib/briefv2/executor/leaf.go:1286 | failedClass names why the router's "failed" entry failed, from the fixed detail text the router gives it. |
-| `(*leafRun).check` | method | gophermind-lib/briefv2/executor/leaf.go:1301 | check writes the reply, runs the leaf check, looks for strays and critical network failures, and decides the attempt: a pass is committed, anything else puts the stub back and feeds the failure to the next attempt. |
-| `(*runCtx).warningsSince` | method | gophermind-lib/briefv2/executor/leaf.go:1373 | warningsSince is one line per failed request to a non-critical host. |
-| `(*runCtx).warningLine` | method | gophermind-lib/briefv2/executor/leaf.go:1386 | warningLine is one failed request as a line for the events: a host built from data can hold a secret, and then the line is the redaction mark. |
-| `(*runCtx).observeCritical` | method | gophermind-lib/briefv2/executor/leaf.go:1393 | observeCritical counts one checked attempt toward the critical streak of the node (S10) and saves it. |
-| `(*runCtx).scrubReason` | method | gophermind-lib/briefv2/executor/leaf.go:1411 | scrubReason keeps a failure reason out of the stores when it holds a secret value in any form the packer scrubs (a test name can be built from data): only its class is kept, and a reason with no class to keep becomes empty. |
-| `(*runCtx).scrubNames` | method | gophermind-lib/briefv2/executor/leaf.go:1423 | scrubNames drops the test names that hold a secret value. |
-| `errRunLimit` | var | gophermind-lib/briefv2/executor/limits.go:16 | The two causes runContext records on the context it returns; any other end (the caller's context) is "cancelled". |
-| `errRunSignal` | var | gophermind-lib/briefv2/executor/limits.go:17 | The two causes runContext records on the context it returns; any other end (the caller's context) is "cancelled". |
-| `(*runCtx).runLimit` | method | gophermind-lib/briefv2/executor/limits.go:22 | runLimit is how long this invocation may work: the test override rc.limit, else executor.max_run_minutes. |
-| `(*runCtx).runContext` | method | gophermind-lib/briefv2/executor/limits.go:36 | runContext returns the run's context, a function naming why it ended (empty while it has not: "max_run_minutes", "signal", or "cancelled" when the parent ended), and its release function. |
-| `Options` | type | gophermind-lib/briefv2/executor/options.go:21 | Options is everything one executor run talks to. |
-| `Report` | type | gophermind-lib/briefv2/executor/options.go:45 | Report is the run report the executor returns. |
-| `(*Options).validate` | method | gophermind-lib/briefv2/executor/options.go:50 | validate checks the required fields and fills the defaults for a nil Sink and Now. |
-| `CheckWorkers` | func | gophermind-lib/briefv2/executor/options.go:90 | CheckWorkers is the check the CLI makes on a --workers value it was given (the flag's 0 means "use executor.workers" and is not passed here). |
-| `(Options).String` | method | gophermind-lib/briefv2/executor/options.go:100 | String names the run folder, the repository and which collaborators are set. |
-| `(Options).GoString` | method | gophermind-lib/briefv2/executor/options.go:112 | GoString is String, so %#v is as quiet as %v. |
-| `Plan` | type | gophermind-lib/briefv2/executor/plan.go:30 | Plan is an approved plan as the executor reads it. |
-| `RevisedTip` | type | gophermind-lib/briefv2/executor/plan.go:59 | RevisedTip is where the revision chain of one node stands. |
-| `Leaf` | type | gophermind-lib/briefv2/executor/plan.go:67 | Leaf is one function node. |
-| `NetHost` | type | gophermind-lib/briefv2/executor/plan.go:87 | NetHost is one host of a leaf's network block. |
-| `leafDoc` | type | gophermind-lib/briefv2/executor/plan.go:94 | leafDoc is the part of a function node the executor reads. |
-| `hashHex` | func | gophermind-lib/briefv2/executor/plan.go:132 |  |
-| `LoadPlan` | func | gophermind-lib/briefv2/executor/plan.go:140 | LoadPlan reads the plan in runDir. |
-| `(*Plan).leaf` | method | gophermind-lib/briefv2/executor/plan.go:270 | leaf builds one Leaf from a function node, its recorded test and the contract, refusing any disagreement between them. |
-| `(*Plan).Leaf` | method | gophermind-lib/briefv2/executor/plan.go:342 | Leaf returns the leaf with that node id, or nil. |
-| `(*Plan).View` | method | gophermind-lib/briefv2/executor/plan.go:346 | View is what the packer may know about a leaf. |
-| `(*Plan).Policy` | method | gophermind-lib/briefv2/executor/plan.go:357 | Policy is the import policy of every reply: the target module and the modules of dependencies.json. |
-| `readPlanFile` | func | gophermind-lib/briefv2/executor/plan.go:367 | readPlanFile reads one file of the run folder. |
-| `hashNodes` | func | gophermind-lib/briefv2/executor/plan.go:379 | hashNodes records the SHA-256 of every node file under "tree/<path>". |
-| `rootNetwork` | func | gophermind-lib/briefv2/executor/plan.go:401 | rootNetwork is the network block of the root node (the brief's block). |
-| `(*Plan).binNames` | method | gophermind-lib/briefv2/executor/plan.go:428 | binNames are the directory names of the main packages under cmd/ that the plan's leaves write: the binaries the acceptance run will build. |
-| `(*Plan).checkAcceptTests` | method | gophermind-lib/briefv2/executor/plan.go:453 | checkAcceptTests holds the Go acceptance tests the planner wrote to the same rules as a leaf's test: a path the sandbox allows, a regular file in the repository, a recorded hash, and every acceptance package root test names only tests of the manifest. |
-| `isAcceptancePkg` | func | gophermind-lib/briefv2/executor/plan.go:483 | isAcceptancePkg says a go test package argument is the acceptance package. |
-| `(*Plan).acceptTestFiles` | method | gophermind-lib/briefv2/executor/plan.go:488 | acceptTestFiles is the repo-relative path of every acceptance test, sorted. |
-| `behaviourFrom` | func | gophermind-lib/briefv2/executor/plan.go:498 | behaviourFrom is the detail lines of a revised node's contract text. |
-| `errPlanChanged` | func | gophermind-lib/briefv2/executor/plan.go:520 | errPlanChanged is the stop for any plan file, chain or record that is not what the run was started with. |
-| `(*Plan).nodeKey` | method | gophermind-lib/briefv2/executor/plan.go:524 |  |
-| `(*Plan).tip` | method | gophermind-lib/briefv2/executor/plan.go:526 |  |
-| `(*Plan).setTip` | method | gophermind-lib/briefv2/executor/plan.go:533 |  |
-| `(*Plan).accepts` | method | gophermind-lib/briefv2/executor/plan.go:545 | accepts says whether hash is an allowed content for the node file at key: the expected one, or for a node whose intent is open (staged, not yet committed) the open revision's body as well, for that node only. |
-| `(*Plan).expected` | method | gophermind-lib/briefv2/executor/plan.go:557 | expected is Plan.Hashes with every revised node at its chain tip: what planIntact holds the files to. |
-| `nodeDisk` | func | gophermind-lib/briefv2/executor/plan.go:572 | nodeDisk reads what is on disk now for one function node: the node file, its entry in leaf_tests.json (given) and its test file. |
-| `nodeRevision` | func | gophermind-lib/briefv2/executor/plan.go:589 | nodeRevision is the revision field of a node file (0 when absent). |
-| `functionPaths` | func | gophermind-lib/briefv2/executor/plan.go:604 | functionPaths maps every function node id of the tree to its node file path. |
-| `(*Plan).chainWrite` | method | gophermind-lib/briefv2/executor/plan.go:615 | chainWrite runs one write of a revision transaction under the chain lock. |
-| `(*Plan).chainsIntact` | method | gophermind-lib/briefv2/executor/plan.go:629 | chainsIntact proves every revision chain again with verifyRevisions, as LoadPlan does (hashes and the frozen-field check, no test run): body-0 must still be the revision 0 the plan was loaded with, and each chain's committed revision must be the one this run holds, or the open intent's (a commit record written, the tip not yet moved). |
-| `verifyRevisions` | func | gophermind-lib/briefv2/executor/plan.go:673 | verifyRevisions proves the revision chain of every function node (id to node file path) that has a folder in _state/revisions, and points hashes at revision 0 for it. |
-| `(*Plan).ReloadLeaf` | method | gophermind-lib/briefv2/executor/plan.go:732 | ReloadLeaf re-reads the node file and leaf_tests.json of one leaf and updates the Leaf in place: the pointer every holder has stays valid. |
-| `stagedOnly` | func | gophermind-lib/briefv2/executor/plan.go:773 | stagedOnly says a folder with no log line is the residue of a kill between staging (step 2) and the intent record (step 3): it holds only the staged files of revisions 0 and 1, and the node and its test are still what revision 0 staged, and a staged revision 1 changes no frozen field. |
-| `(*runCtx).openRevisionPaths` | method | gophermind-lib/briefv2/executor/recover.go:18 | openRevisionPaths are the test files of nodes with a revision chain whose content is exactly what the chain says this run wrote: the committed tip's test hash, or the after hash of an open intent (ruling R1). |
-| `lastCommit` | func | gophermind-lib/briefv2/executor/recover.go:53 | lastCommit is the commit record of revision n. |
-| `(*runCtx).recoverRevisions` | method | gophermind-lib/briefv2/executor/recover.go:67 | recoverRevisions finishes what a kill left half done (spec section 10). |
-| `(*runCtx).checkRuntimeRevisions` | method | gophermind-lib/briefv2/executor/recover.go:114 | checkRuntimeRevisions is the runtime cross-check, run after recovery. |
-| `(*runCtx).runtimeRevisionsOK` | method | gophermind-lib/briefv2/executor/recover.go:122 |  |
-| `integrationKind` | func | gophermind-lib/briefv2/executor/repair.go:18 | integrationKind is the word of the escalation reason for a failing check: build, vet or test. |
-| `(*runCtx).reopen` | method | gophermind-lib/briefv2/executor/repair.go:36 | reopen is the explicit act that puts a verified leaf back to work after an integration failure named it: verified -> needs_revision -> ready, the row's revision plus one, and the leaf's revision allowance plus one, so a repair never spends the allowance the leaf started with. |
-| `repairStop` | func | gophermind-lib/briefv2/executor/repair.go:75 | repairStop is a stop of the repair loop that names the leaf. |
-| `(*runCtx).repairWave` | method | gophermind-lib/briefv2/executor/repair.go:91 | repairWave is the repair loop of spec 8.3. |
-| `(*runCtx).revisedLeaves` | method | gophermind-lib/briefv2/executor/report_revise.go:13 | revisedLeaves reads the revision log of every leaf and summarizes it for the report. |
-| `stateLeafResults` | const | gophermind-lib/briefv2/executor/results.go:10 | stateLeafResults is where the terminal status and reason of every leaf that ended are kept. |
-| `LeafResult` | type | gophermind-lib/briefv2/executor/results.go:14 | LeafResult is one leaf's terminal status (verified, failed or escalated) and its reason: a class from a fixed vocabulary, never text. |
-| `LoadLeafResults` | func | gophermind-lib/briefv2/executor/results.go:21 | LoadLeafResults reads _state/leaf-results.json: node id to its result. |
-| `(*runCtx).setResult` | method | gophermind-lib/briefv2/executor/results.go:35 | setResult records the terminal status and reason of a leaf: in the state file (atomically, so a restart finds it) and in the report's memory. |
-| `(*runCtx).loadReasons` | method | gophermind-lib/briefv2/executor/results.go:56 | loadReasons fills the report's reasons from the state file, so a run rebuilt from disk reports why each failed or escalated leaf ended. |
-| `resumeMovedMessage` | const | gophermind-lib/briefv2/executor/resume.go:21 | resumeMovedMessage is the fixed text of a resume refused because the work branch is no longer where this run left it. |
-| `resumeBaseMovedMessage` | const | gophermind-lib/briefv2/executor/resume.go:25 | resumeBaseMovedMessage is the fixed text of a resume refused early because landing could no longer be a fast-forward. |
-| `maxDirtShown` | const | gophermind-lib/briefv2/executor/resume.go:28 | maxDirtShown is how many foreign paths a stop names. |
-| `(*runCtx).tipNow` | method | gophermind-lib/briefv2/executor/resume.go:32 | tipNow is the work branch tip, or "" when there is none to record (diff_only makes no branch and no commit). |
-| `(*runCtx).recordTip` | method | gophermind-lib/briefv2/executor/resume.go:48 | recordTip saves the work branch tip in the state file. |
-| `(*runCtx).resume` | method | gophermind-lib/briefv2/executor/resume.go:74 | resume is spec 10 steps 1 to 4 for a run whose _state/executor.json exists and whose Wave 0 is done (a run that stopped inside Wave 0 is re-entered by retryWave0). |
-| `(*runCtx).foreignDirt` | method | gophermind-lib/briefv2/executor/resume.go:212 | foreignDirt returns the dirty paths that belong to no released leaf (not its contract file, not its stub) and, while Wave 0 is not done, not one of Wave 0's paths. |
-| `(*runCtx).strayReplaceTemps` | method | gophermind-lib/briefv2/executor/resume.go:254 | strayReplaceTemps are the dirty paths that are a temp file of pathsafe.ReplaceTest beside the test file of a node whose revision intent is open: what a kill inside step 4, or inside the undo of a refused test, leaves. |
-| `(*runCtx).removeStrayReplaceTemps` | method | gophermind-lib/briefv2/executor/resume.go:277 | removeStrayReplaceTemps deletes the strayReplaceTemps, found beside a test path pathsafe.ResolveTest accepts; anything but a regular file is left alone. |
-| `reviseMaxTokens` | const | gophermind-lib/briefv2/executor/revise.go:17 | reviseMaxTokens caps the reply of a revise call: at most 5 notes of 200 bytes as JSON. |
-| `reviseStop` | type | gophermind-lib/briefv2/executor/revise.go:23 | reviseStop is how the revise rung ends without hints and without a contract problem: the ladder cannot continue. |
-| `(*reviseStop).Error` | method | gophermind-lib/briefv2/executor/revise.go:28 |  |
-| `(*leafRun).revise` | method | gophermind-lib/briefv2/executor/revise.go:39 | revise is rung 5: one strong-tier call that reads the contract slice, the test file and the attempt history (classes and test names only) and answers with up to 5 hints, or CONTRACT_PROBLEM. |
-| `(*leafRun).reviseFailure` | method | gophermind-lib/briefv2/executor/revise.go:99 | reviseFailure says what a failed revise call means for the leaf. |
-| `maxProblemBytes` | const | gophermind-lib/briefv2/executor/revise_rewrite.go:17 |  |
-| `maxHistoryLines` | const | gophermind-lib/briefv2/executor/revise_rewrite.go:18 |  |
-| `(*leafRun).rewriteMode` | method | gophermind-lib/briefv2/executor/revise_rewrite.go:25 | rewriteMode says this leaf uses the planner's revise stage. |
-| `clip` | func | gophermind-lib/briefv2/executor/revise_rewrite.go:29 |  |
-| `failureLines` | func | gophermind-lib/briefv2/executor/revise_rewrite.go:41 | failureLines renders a failure as the implement prompt does: the failing names, then the condensed output lines. |
-| `(*leafRun).logRevise` | method | gophermind-lib/briefv2/executor/revise_rewrite.go:50 | logRevise appends a flag or refused record to the node's revision log. |
-| `(*leafRun).afterRewrite` | method | gophermind-lib/briefv2/executor/revise_rewrite.go:63 | afterRewrite resets the per-revision state of the leaf run: the ladder restarts at rung 2 from the revised node with no memory of the old failures. |
-| `(*leafRun).rewrite` | method | gophermind-lib/briefv2/executor/revise_rewrite.go:90 | rewrite is rung 5 in rewrite mode (spec section 4). |
-| `errRevisionKilled` | var | gophermind-lib/briefv2/executor/revision.go:20 | errRevisionKilled is what a test hook returns to stop a revision between two steps. |
-| `(*runCtx).revStep` | method | gophermind-lib/briefv2/executor/revision.go:22 |  |
-| `(*runCtx).stamp` | method | gophermind-lib/briefv2/executor/revision.go:29 |  |
-| `(*runCtx).scrubAll` | method | gophermind-lib/briefv2/executor/revision.go:31 |  |
-| `(*runCtx).applyRevision` | method | gophermind-lib/briefv2/executor/revision.go:43 | applyRevision is spec section 10 for a rewritten proposal. |
-| `(*runCtx).openTip` | method | gophermind-lib/briefv2/executor/revision.go:120 | openTip records the open intent on the in-memory chain tip of the node, as LoadPlan does for an intent it finds, so Plan.accepts allows the staged body. |
-| `(*runCtx).closeTip` | method | gophermind-lib/briefv2/executor/revision.go:136 | closeTip undoes openTip when the intent is refused. |
-| `(*runCtx).redCheckRevision` | method | gophermind-lib/briefv2/executor/revision.go:152 | redCheckRevision runs the new test against the stub, as the Wave 0 red check does, and says why it is not red: a pass is a vacuous test, a build or vet failure a broken one. |
-| `(*runCtx).rollForward` | method | gophermind-lib/briefv2/executor/revision.go:168 | rollForward is steps 4 to 8 of an open intent. |
-| `(*runCtx).abortRevision` | method | gophermind-lib/briefv2/executor/revision.go:263 | abortRevision undoes the part of a transaction that a rejected test touched: the old test file goes back, a refused record closes the intent and the staged files of that revision are removed. |
-| `(*runCtx).finishCommitted` | method | gophermind-lib/briefv2/executor/revision.go:302 | finishCommitted does everything that follows a commit record and is safe to repeat. |
-| `runFlags` | type | gophermind-lib/briefv2/executor/run.go:25 | runFlags are set only by the package tests, through run. |
-| `Run` | func | gophermind-lib/briefv2/executor/run.go:36 | Run is the executor: it builds the approved plan and returns the run Report. |
-| `run` | func | gophermind-lib/briefv2/executor/run.go:38 |  |
-| `(*runCtx).runWaves` | method | gophermind-lib/briefv2/executor/run.go:127 | runWaves builds every wave in order. |
-| `(*runCtx).baseBranch` | method | gophermind-lib/briefv2/executor/run.go:153 | baseBranch is the branch the run lands on. |
-| `(*runCtx).planIntact` | method | gophermind-lib/briefv2/executor/run.go:166 | planIntact compares the plan files with what was hashed at load, and the approval with the plan as it stands. |
-| `(*runCtx).unfinished` | method | gophermind-lib/briefv2/executor/run.go:192 | unfinished names every leaf that is not verified (spec goal 1: no unfinished leaf goes unnamed). |
-| `touched` | func | gophermind-lib/briefv2/executor/run.go:247 | touched reports that work on a leaf began: it was claimed, is being revised, or was reopened (a ready row with attempts or a raised revision). |
-| `safeVersion` | var | gophermind-lib/briefv2/executor/run.go:257 |  |
-| `(*runCtx).environment` | method | gophermind-lib/briefv2/executor/run.go:262 | environment is what the run ran on, as the report states it: the sandbox setting and whether sandbox-exec was found (recorded in preflight), the binary's version and commit, the Go runtime. |
-| `(*runCtx).parallelReport` | method | gophermind-lib/briefv2/executor/run.go:283 | parallelReport is the report's parallel object, nil when no level ran in parallel in this invocation (ruling 23). |
-| `(*runCtx).buildReport` | method | gophermind-lib/briefv2/executor/run.go:296 | buildReport is the one place a Report is made. |
-| `Finding` | type | gophermind-lib/briefv2/executor/scan.go:37 | Finding is one forbidden construct. |
-| `ParseError` | type | gophermind-lib/briefv2/executor/scan.go:45 | ParseError is a source file that does not parse. |
-| `(*ParseError).Error` | method | gophermind-lib/briefv2/executor/scan.go:50 |  |
-| `maxScanBytes` | const | gophermind-lib/briefv2/executor/scan.go:54 |  |
-| `modForbidden` | var | gophermind-lib/briefv2/executor/scan.go:56 |  |
-| `modBlockDirective` | var | gophermind-lib/briefv2/executor/scan.go:58 |  |
-| `ScanGoMod` | func | gophermind-lib/briefv2/executor/scan.go:64 | ScanGoMod rejects replace, toolchain, godebug and exclude directives in every form: one line, block, and a block opened with the parenthesis glued to the keyword. |
-| `ScanGoFlags` | func | gophermind-lib/briefv2/executor/scan.go:102 | ScanGoFlags rejects -toolexec and -overlay tokens, with one or two leading dashes and an optional =value. |
-| `exitFuncs` | var | gophermind-lib/briefv2/executor/scan.go:115 | exitFuncs are the package level functions that end the process, end the goroutine, or turn a log line into an exit. |
-| `loggerMethods` | var | gophermind-lib/briefv2/executor/scan.go:122 |  |
-| `flagExit` | var | gophermind-lib/briefv2/executor/scan.go:124 |  |
-| `importName` | func | gophermind-lib/briefv2/executor/scan.go:128 | importName is the name an import binds: its alias, else the last element of the path (skipping a major version suffix). |
-| `ScanGoSource` | func | gophermind-lib/briefv2/executor/scan.go:143 | ScanGoSource scans one Go file. |
-| `cleanRel` | func | gophermind-lib/briefv2/executor/scan.go:263 |  |
-| `ScanFiles` | func | gophermind-lib/briefv2/executor/scan.go:271 | ScanFiles scans the named repo relative files: go.mod files and .go files. |
-| `readNoFollow` | func | gophermind-lib/briefv2/executor/scan.go:327 |  |
-| `skipDir` | func | gophermind-lib/briefv2/executor/scan.go:337 | skipDir: the tool ignores these too (testdata, names that start with . |
-| `ScanRepo` | func | gophermind-lib/briefv2/executor/scan.go:343 | ScanRepo is go.mod plus every .go file of the repository, skipping .git, .gophermind and the directories the go tool ignores. |
-| `describeFindings` | func | gophermind-lib/briefv2/executor/scan.go:379 | describeFindings is the fixed-text message of a scan failure. |
-| `maxLeafInterrupts` | const | gophermind-lib/briefv2/executor/schedule.go:22 | maxLeafInterrupts is how many times one run may find a leaf interrupted (context ended, or no provider could answer) before the scheduler refuses to claim it again. |
-| `staleHeartbeats` | const | gophermind-lib/briefv2/executor/schedule.go:26 | staleHeartbeats is how many heartbeat intervals a claim may go without a heartbeat before the sweep at the start of a wave releases it. |
-| `waveResult` | type | gophermind-lib/briefv2/executor/schedule.go:31 | waveResult is what scheduleLeaves did with one wave. |
-| `schedState` | type | gophermind-lib/briefv2/executor/schedule.go:38 | schedState is the scheduler's memory for one run. |
-| `(*schedState).interrupted` | method | gophermind-lib/briefv2/executor/schedule.go:44 |  |
-| `(*schedState).markInterrupted` | method | gophermind-lib/briefv2/executor/schedule.go:50 |  |
-| `interruptStop` | func | gophermind-lib/briefv2/executor/schedule.go:61 | interruptStop is the stop for an interrupted leaf. |
-| `job` | type | gophermind-lib/briefv2/executor/schedule.go:70 | job is one leaf of a level and what became of it. |
-| `runnable` | func | gophermind-lib/briefv2/executor/schedule.go:81 | runnable says the job is to run: not blocked, not already finished. |
-| `(*runCtx).workerCount` | method | gophermind-lib/briefv2/executor/schedule.go:88 | workerCount is how many leaves a level runs at once: executor.workers capped by the jobs that may run in a private tree. |
-| `splitOverlaps` | func | gophermind-lib/briefv2/executor/schedule.go:102 | splitOverlaps puts leaves of a level whose File, StubFile or TestFile is the same path into different sub-levels, the higher id later (spec section 4): they cannot be isolated from each other. |
-| `(*runCtx).needsMain` | method | gophermind-lib/briefv2/executor/schedule.go:139 | needsMain says a leaf of a parallel level must run in the main tree in its turn (ruling 5): the gate is to be asked again, a real file is on disk to adopt, a repair left a reopen marker, or a candidate waits to land (resumeCandidate runs only in the main tree). |
-| `(*runCtx).levelWorkers` | method | gophermind-lib/briefv2/executor/schedule.go:162 | levelWorkers decides how a level runs. |
-| `(*runCtx).noteParallel` | method | gophermind-lib/briefv2/executor/schedule.go:204 | noteParallel counts one parallel level for the report and records the workers value in the run state (spec section 11: the report only). |
-| `levels` | func | gophermind-lib/briefv2/executor/schedule.go:223 | levels orders the leaves: by dependency among themselves first, then by id. |
-| `(*runCtx).scheduleLeaves` | method | gophermind-lib/briefv2/executor/schedule.go:280 | scheduleLeaves runs the leaves of one wave to a terminal status, in dependency order and then id order, and says what became of each:    - a leaf with a dependency that is not verified is not claimed, stays     pending, is named in Blocked and in one blocked event;   - a leaf the blackboard already holds verified or failed is counted as such     (a resumed run), an escalated one asks the gate again (spec S8);   - every other leaf is made ready and run (runLeaf), at most     executor.workers at a time, claims taken in id order, results merged in     id order;   - the context is checked before every claim;   - a stop error, an interrupted leaf or a claim still held by another worker     stops claiming, lets in-flight leaves finish and is returned in Stop. |
-| `(*runCtx).classify` | method | gophermind-lib/briefv2/executor/schedule.go:343 | classify reads every leaf of a level and decides what it is: blocked, already terminal, held by another worker, or to run. |
-| `(*runCtx).runJobs` | method | gophermind-lib/briefv2/executor/schedule.go:378 | runJobs runs the jobs that are to run. |
-| `(*runCtx).runJob` | method | gophermind-lib/briefv2/executor/schedule.go:474 | runJob is one leaf in the main tree: the gate again for a leaf an earlier run left escalated, else the leaf. |
-| `(*runCtx).runParallelJob` | method | gophermind-lib/briefv2/executor/schedule.go:490 | runParallelJob is one leaf of a parallel level. |
-| `(*runCtx).merge` | method | gophermind-lib/briefv2/executor/schedule.go:516 | merge puts one job's result in the wave result. |
-| `(*runCtx).keepReason` | method | gophermind-lib/briefv2/executor/schedule.go:561 | keepReason makes sure the report has the reason of a leaf that ended failed or escalated. |
-| `(*runCtx).resumeEscalated` | method | gophermind-lib/briefv2/executor/schedule.go:574 | resumeEscalated asks the gate again about a leaf an earlier run left escalated (ruling S8): the same question, with the attempts on the blackboard as its history. |
-| `Checker` | interface | gophermind-lib/briefv2/executor/seams.go:22 | Checker is the part of *runner.Runner the executor calls. |
-| `Caller` | interface | gophermind-lib/briefv2/executor/seams.go:31 | Caller is the router method the executor uses; *router.Router satisfies it (same shape as planner.Caller). |
-| `Reviser` | interface | gophermind-lib/briefv2/executor/seams.go:38 | Reviser is the planner's revise stage as the executor uses it: it makes the revise call (and the Test-writer call when tests must change) and returns a validated proposal. |
-| `Secrets` | interface | gophermind-lib/briefv2/executor/seams.go:45 | Secrets is the part of *vault.Vault the executor needs. |
-| `_` | var | gophermind-lib/briefv2/executor/seams.go:51 |  |
-| `_` | var | gophermind-lib/briefv2/executor/seams.go:52 |  |
-| `_` | var | gophermind-lib/briefv2/executor/seams.go:53 |  |
-| `_` | var | gophermind-lib/briefv2/executor/seams.go:54 |  |
-| `_` | var | gophermind-lib/briefv2/executor/seams.go:55 |  |
-| `_` | var | gophermind-lib/briefv2/executor/seams.go:58 | Options.LedgerErrors is (*router.Router).LedgerErrors. |
-| `maxServeReady` | const | gophermind-lib/briefv2/executor/serve.go:24 | maxServeReady caps how long a server may take to answer its ready path. |
-| `serveProc` | type | gophermind-lib/briefv2/executor/serve.go:26 |  |
-| `serveStop` | func | gophermind-lib/briefv2/executor/serve.go:33 |  |
-| `(*runCtx).needsServe` | method | gophermind-lib/briefv2/executor/serve.go:39 | needsServe says the plan declares a server and some root test runs the acceptance package. |
-| `(*runCtx).startServe` | method | gophermind-lib/briefv2/executor/serve.go:57 | startServe starts the declared server and waits for it. |
-| `(*runCtx).dropServe` | method | gophermind-lib/briefv2/executor/serve.go:126 | dropServe kills the server's process group and waits for it. |
-| `(*runCtx).stopServe` | method | gophermind-lib/briefv2/executor/serve.go:137 | stopServe ends the server and runs the leak check on its address. |
-| `(*runCtx).checkAcceptTests` | method | gophermind-lib/briefv2/executor/serve.go:144 | checkAcceptTests proves every Go acceptance test is still the file the planner recorded: nothing between planning and the run may edit a test. |
-| `sortStrings` | func | gophermind-lib/briefv2/executor/serve.go:161 |  |
-| `joinRepo` | func | gophermind-lib/briefv2/executor/serve.go:169 |  |
-| `goCacheOverride` | var | gophermind-lib/briefv2/executor/start.go:35 | goCacheOverride is set only by the test binary's TestMain: one shared GOCACHE for every test of the process, so a package compiled once is not compiled again by each test. |
-| `hostOS` | var | gophermind-lib/briefv2/executor/start.go:38 | hostOS is runtime.GOOS; tests replace it to reach the off-darwin rule. |
-| `stopError` | type | gophermind-lib/briefv2/executor/start.go:44 | stopError is how a stage ends the run with a status instead of a fault. |
-| `(*stopError).Error` | method | gophermind-lib/briefv2/executor/start.go:46 |  |
-| `runCtx` | type | gophermind-lib/briefv2/executor/start.go:49 | runCtx is everything one run shares (called rc everywhere). |
-| `runReport` | type | gophermind-lib/briefv2/executor/start.go:89 | runReport holds the counters that become report.Input. |
-| `(*runCtx).sandboxLabel` | method | gophermind-lib/briefv2/executor/start.go:99 | sandboxLabel is the sandbox setting as the report states it: "on" or "off". |
-| `(*runCtx).emit` | method | gophermind-lib/briefv2/executor/start.go:106 |  |
-| `(*runCtx).close` | method | gophermind-lib/briefv2/executor/start.go:111 | close runs the closers, last first. |
-| `startRun` | func | gophermind-lib/briefv2/executor/start.go:121 | startRun is preflight through the Wave 0 commit. |
-| `newRunCtx` | func | gophermind-lib/briefv2/executor/start.go:134 | newRunCtx is the part of startRun before git: validation, the plan, the landing check and preflight (spec steps 1 to 7). |
-| `retryPlanOnWorkBranch` | func | gophermind-lib/briefv2/executor/start.go:197 | retryPlanOnWorkBranch checks out the work branch recorded in the state and loads the plan again; it returns first when that is not the situation. |
-| `(*runCtx).openGit` | method | gophermind-lib/briefv2/executor/start.go:232 |  |
-| `pathEntries` | func | gophermind-lib/briefv2/executor/start.go:246 |  |
-| `lookIn` | func | gophermind-lib/briefv2/executor/start.go:257 | lookIn finds name in the directories of a PATH value. |
-| `sandboxExecAvailable` | func | gophermind-lib/briefv2/executor/start.go:267 |  |
-| `ensureDir` | func | gophermind-lib/briefv2/executor/start.go:277 | ensureDir makes a directory the harness owns. |
-| `within` | func | gophermind-lib/briefv2/executor/start.go:293 |  |
-| `(*runCtx).preflight` | method | gophermind-lib/briefv2/executor/start.go:300 | preflight is spec steps 2 to 7: tools, sandbox, model chains, directories, proxy and runner. |
-| `(*runCtx).goroot` | method | gophermind-lib/briefv2/executor/start.go:397 | goroot runs go env GOROOT once with an explicit minimal environment. |
-| `(*runCtx).startProxy` | method | gophermind-lib/briefv2/executor/start.go:416 | startProxy uses Options.Proxy or starts the executor's own, closed through rc.closers. |
-| `modelConcurrency` | func | gophermind-lib/briefv2/executor/start.go:457 | modelConcurrency is the largest max_concurrent among the providers the executor chains name (decision F8, ruling 17, spec 8.4): standard and strong (checkChains, the revise stage) and the tier of every leaf (ladderEntries). |
-| `checkChains` | func | gophermind-lib/briefv2/executor/start.go:483 | checkChains is spec 7.5: for standard and strong (the tiers the executor uses) the chain must hold an entry whose provider exists and may see a node's text: a private provider, or a public one when privacy.mode is need_to_know. |
-| `allowlist` | func | gophermind-lib/briefv2/executor/start.go:507 | allowlist is the hosts the harness proxy allows: every leaf's network hosts (critical ones also in critical), the host of each provider base_url, and the Go module hosts. |
-| `(*runCtx).allowDirty` | method | gophermind-lib/briefv2/executor/start.go:537 | allowDirty is every leaf's test file and every Go acceptance test: the Test-writer leaves them uncommitted, and Wave 0 commits them. |
-| `(*runCtx).begin` | method | gophermind-lib/briefv2/executor/start.go:558 | begin is spec steps 8 to 10: git, the board and state, then Wave 0 on a fresh run. |
-| `(*runCtx).wave0Paths` | method | gophermind-lib/briefv2/executor/start.go:627 | wave0Paths is every file Wave 0 may leave dirty or commit: the tests, the contract type files, the stubs, go.mod and go.sum. |
-| `(*runCtx).retryWave0` | method | gophermind-lib/briefv2/executor/start.go:644 | retryWave0 re-enters Wave 0 for a run that started and stopped before its Wave 0 commit (a plan defect, a forbidden go.mod, an unreachable proxy). |
-| `(*runCtx).wave0` | method | gophermind-lib/briefv2/executor/start.go:682 | wave0 is spec 14 in order: types and stubs, go.mod, the deps step, the scan, the build check, the red check, the commit. |
-| `(*runCtx).cleanCheckOutput` | method | gophermind-lib/briefv2/executor/start.go:791 | cleanCheckOutput removes the files the Wave 0 checks created (for example the binary of go build on one main package) and stops the run when a check changed a file that was already there. |
-| `firstThree` | func | gophermind-lib/briefv2/executor/start.go:817 |  |
-| `(*runCtx).onlyDeclaredDirt` | method | gophermind-lib/briefv2/executor/start.go:827 | onlyDeclaredDirt refuses to commit Wave 0 when anything outside the declared files changed: a go command or a stray write must not slip into the commit or stay behind it. |
-| `uniqueSorted` | func | gophermind-lib/briefv2/executor/start.go:853 |  |
-| `locations` | func | gophermind-lib/briefv2/executor/start.go:867 | locations is " at file:line, file:line" (at most 5), or "". |
-| `faultOf` | func | gophermind-lib/briefv2/executor/start.go:883 | faultOf is a harness fault or a cancellation of a check, as an error. |
-| `(*runCtx).wave0Checks` | method | gophermind-lib/briefv2/executor/start.go:891 | wave0Checks is the build check of everything, then the red check. |
-| `(*runCtx).redCheck` | method | gophermind-lib/briefv2/executor/start.go:912 | redCheck runs each leaf's test against its stub, once, before its first model call. |
-| `stateExecutor` | const | gophermind-lib/briefv2/executor/state.go:25 | The executor's own files in the run folder. |
-| `stateNotes` | const | gophermind-lib/briefv2/executor/state.go:26 | The executor's own files in the run folder. |
-| `stateEscalations` | const | gophermind-lib/briefv2/executor/state.go:27 | The executor's own files in the run folder. |
-| `maxNotesPerNode` | const | gophermind-lib/briefv2/executor/state.go:29 | The executor's own files in the run folder. |
-| `State` | type | gophermind-lib/briefv2/executor/state.go:33 | State is _state/executor.json. |
-| `(*State).initMaps` | method | gophermind-lib/briefv2/executor/state.go:47 |  |
-| `LoadState` | func | gophermind-lib/briefv2/executor/state.go:67 | LoadState reads _state/executor.json. |
-| `(State).Save` | method | gophermind-lib/briefv2/executor/state.go:77 | Save writes the state atomically, mode 0600. |
-| `notesMu` | var | gophermind-lib/briefv2/executor/state.go:83 | notesMu serialises the read-modify-write of the two append-only files. |
-| `LoadNotes` | func | gophermind-lib/briefv2/executor/state.go:87 | LoadNotes reads _state/notes.json: node id to its human hints. |
-| `AddNote` | func | gophermind-lib/briefv2/executor/state.go:99 | AddNote appends a note to a node and keeps only the last 5 for it. |
-| `LoadEscalations` | func | gophermind-lib/briefv2/executor/state.go:115 | LoadEscalations reads _state/escalations.json. |
-| `AppendEscalation` | func | gophermind-lib/briefv2/executor/state.go:133 | AppendEscalation records one escalation, in order. |
-| `stateDir` | func | gophermind-lib/briefv2/executor/state.go:168 | stateDir returns <runDir>/_state after checking it is a real directory, not a symbolic link. |
-| `readStateJSON` | func | gophermind-lib/briefv2/executor/state.go:201 | readStateJSON decodes one of the executor's files. |
-| `writeStateJSON` | func | gophermind-lib/briefv2/executor/state.go:236 | writeStateJSON stores v as indented JSON: a new temp file in the same folder (O_EXCL, O_NOFOLLOW, 0600), flushed, renamed over the target, and the folder flushed, so a reader never sees half a file. |
-| `writeStateBytes` | func | gophermind-lib/briefv2/executor/state.go:245 | writeStateBytes is the atomic, no-follow, mode 0600 writer under _state/. |
-| `tempPrefix` | const | gophermind-lib/briefv2/executor/state.go:290 |  |
-| `removeOwnTemp` | func | gophermind-lib/briefv2/executor/state.go:297 | removeOwnTemp deletes a temp file this package just made. |
-| `readStateBytes` | func | gophermind-lib/briefv2/executor/state.go:306 | readStateBytes reads a raw file of _state (never through a link). |
-| `priorPrefix` | const | gophermind-lib/briefv2/executor/state.go:333 | priorPrefix names the files that hold a leaf's verified source while a diff_only repair is in flight. |
-| `removeStatePrior` | func | gophermind-lib/briefv2/executor/state.go:337 | removeStatePrior deletes _state/prior-<id>. |
-| `restorePriors` | func | gophermind-lib/briefv2/executor/state.go:363 | restorePriors is the resume step of a diff_only repair: a leaf whose saved verified source is still in _state was cut off mid-repair, so its file is put back (atomically) and the saved copy removed. |
-| `reopenPrefix` | const | gophermind-lib/briefv2/executor/state.go:384 | reopenPrefix names the markers of a repair in flight: _state/reopen-<id>. |
-| `reopenMarker` | type | gophermind-lib/briefv2/executor/state.go:390 | reopenMarker says that a committed leaf is being repaired: it is written before the first candidate of a repair reaches the disk, so a resume that finds the committed file dirty knows it holds a candidate, not a first build. |
-| `writeReopenMarker` | func | gophermind-lib/briefv2/executor/state.go:396 |  |
-| `readReopenMarker` | func | gophermind-lib/briefv2/executor/state.go:400 |  |
-| `removeReopenMarker` | func | gophermind-lib/briefv2/executor/state.go:411 | removeReopenMarker deletes _state/reopen-<id>. |
-| `Snapshot` | type | gophermind-lib/briefv2/executor/stray.go:19 | Snapshot maps a dirty or ignored path to the SHA-256 of its bytes: "" for a file that is deleted, "unreadable" for one that cannot be read, "dir" for a directory and "link:" plus the hash of the target text for a symbolic link (the link is never followed). |
-| `TakeSnapshot` | func | gophermind-lib/briefv2/executor/stray.go:25 | TakeSnapshot records every path git reports as dirty (tracked changes and untracked files, found one by one inside new directories). |
-| `sumHex` | func | gophermind-lib/briefv2/executor/stray.go:41 |  |
-| `hashPath` | func | gophermind-lib/briefv2/executor/stray.go:47 | hashPath hashes one repo-relative path without following a link. |
-| `(Snapshot).Stray` | method | gophermind-lib/briefv2/executor/stray.go:87 | Stray returns the paths dirty now that are not in before, or whose content hash changed since before, excluding allowed. |
-| `Revert` | func | gophermind-lib/briefv2/executor/stray.go:111 | Revert puts tracked paths back to HEAD and removes untracked ones. |
-| `StubSource` | func | gophermind-lib/briefv2/executor/stubs.go:22 | StubSource is a leaf's stub file: the package clause, the imports it is given, the signature, and a body that is exactly panic("gm: not implemented"). |
-| `StubPath` | func | gophermind-lib/briefv2/executor/stubs.go:72 | StubPath is the repo-relative (slash) path of a leaf's stub file. |
-| `stubFor` | func | gophermind-lib/briefv2/executor/stubs.go:75 | stubFor derives the imports a leaf's signature needs and builds its stub. |
-| `SwapState` | type | gophermind-lib/briefv2/executor/swap.go:14 | SwapState is what the disk holds for one leaf. |
-| `SwapStubOnly` | const | gophermind-lib/briefv2/executor/swap.go:17 |  |
-| `SwapRealOnly` | const | gophermind-lib/briefv2/executor/swap.go:18 |  |
-| `SwapBoth` | const | gophermind-lib/briefv2/executor/swap.go:19 |  |
-| `SwapNeither` | const | gophermind-lib/briefv2/executor/swap.go:20 |  |
-| `(SwapState).String` | method | gophermind-lib/briefv2/executor/swap.go:23 |  |
-| `Swap` | type | gophermind-lib/briefv2/executor/swap.go:40 | Swap is the stub/real file swap of spec 8.1 for one leaf's attempt sequence. |
-| `NewSwap` | func | gophermind-lib/briefv2/executor/swap.go:67 |  |
-| `(*Swap).Enter` | method | gophermind-lib/briefv2/executor/swap.go:73 | Enter removes the stub, then writes the real file. |
-| `(*Swap).Fail` | method | gophermind-lib/briefv2/executor/swap.go:122 | Fail removes the real file and puts the stub back; both steps run even when the first fails, and it is idempotent. |
-| `(*Swap).NoCommit` | method | gophermind-lib/briefv2/executor/swap.go:156 | NoCommit is diff_only mode: nothing is committed, and a failed repair puts back the content the file had when the repair began. |
-| `(*Swap).PassNoCommit` | method | gophermind-lib/briefv2/executor/swap.go:160 | PassNoCommit is Pass for diff_only: the real file stays on disk, the stub is gone, and no commit is made. |
-| `(*Swap).Track` | method | gophermind-lib/briefv2/executor/swap.go:173 | Track makes a repair leave a marker in <runDir>/_state while a candidate may be on disk (round and revision are what it records). |
-| `(*Swap).Reopen` | method | gophermind-lib/briefv2/executor/swap.go:179 | Reopen is repair mode: the stub is never restored and Fail restores File from git. |
-| `(*Swap).ready` | method | gophermind-lib/briefv2/executor/swap.go:182 | ready refuses a commit unless the real file is on disk and the stub is not. |
-| `(*Swap).Pass` | method | gophermind-lib/briefv2/executor/swap.go:196 | Pass commits the leaf: the real file added and the stub removed in one commit. |
-| `(*Swap).PassRepair` | method | gophermind-lib/briefv2/executor/swap.go:209 | PassRepair commits a repair of an already committed leaf (repair mode). |
-| `(*Swap).kind` | method | gophermind-lib/briefv2/executor/swap.go:226 | kind reports whether rel exists. |
-| `(*Swap).State` | method | gophermind-lib/briefv2/executor/swap.go:245 | State reports what the disk holds. |
-| `(*Swap).Normalize` | method | gophermind-lib/briefv2/executor/swap.go:267 | Normalize is the resume step of spec 8.1: a leaf with both files has its stub removed, one with neither gets the stub, one with only one is left alone. |
-| `errLandingFault` | var | gophermind-lib/briefv2/executor/turn.go:13 | errLandingFault is what wait returns to a job behind a landing that failed with a harness fault (ruling C5, spec section 7.3): the job does not land, its candidate stays, and it ends interrupted. |
-| `turn` | type | gophermind-lib/briefv2/executor/turn.go:23 | turn is one job's place in the landing order of a parallel level (spec section 7.1). |
-| `newTurn` | func | gophermind-lib/briefv2/executor/turn.go:32 |  |
-| `(*turn).wait` | method | gophermind-lib/briefv2/executor/turn.go:40 | wait blocks until the previous job ended, then takes the main tree. |
-| `(*turn).release` | method | gophermind-lib/briefv2/executor/turn.go:67 | release gives the main tree back and lets the next job go. |
-| `stdQualifiers` | var | gophermind-lib/briefv2/executor/typedecl.go:28 | stdQualifiers maps the package qualifier a signature or type declaration commonly uses to its import path. |
-| `versionElemRE` | var | gophermind-lib/briefv2/executor/typedecl.go:40 |  |
-| `packageImports` | func | gophermind-lib/briefv2/executor/typedecl.go:45 | packageImports maps each contract package name to its import path, the module path plus the directory of its file. |
-| `parseErrAt` | func | gophermind-lib/briefv2/executor/typedecl.go:73 | parseErrAt is the kind of parse failure as "line:col", never the message, which can quote source text. |
-| `resolveQualifier` | func | gophermind-lib/briefv2/executor/typedecl.go:98 | resolveQualifier finds the import path of a package qualifier: contract packages first, then the modules of dependencies.json, then the standard library table. |
-| `deriveImports` | func | gophermind-lib/briefv2/executor/typedecl.go:130 | deriveImports finds the import paths a declaration or signature needs. |
-| `validPackageName` | func | gophermind-lib/briefv2/executor/typedecl.go:175 | validPackageName is a plain identifier that is not a keyword and not "_". |
-| `directivePrefixes` | var | gophermind-lib/briefv2/executor/typedecl.go:177 |  |
-| `processControl` | var | gophermind-lib/briefv2/executor/typedecl.go:181 | processControl lists the calls that end or fake the end of a program. |
-| `hasDirective` | func | gophermind-lib/briefv2/executor/typedecl.go:188 |  |
-| `checkAssembled` | func | gophermind-lib/briefv2/executor/typedecl.go:206 | checkAssembled re-parses a file the harness put together (a stub or a type file) and refuses it, with a fixed kind, unless it is only a package clause, allowed imports, type declarations and functions with bodies: no directive, no init, no var or const, no process-control call, no recover. |
-| `validateDecl` | func | gophermind-lib/briefv2/executor/typedecl.go:273 | validateDecl accepts a contract type Decl only when it is one or more type declarations plus methods, with no directive and no import. |
-| `typeFile` | type | gophermind-lib/briefv2/executor/typedecl.go:305 |  |
-| `WriteTypes` | func | gophermind-lib/briefv2/executor/typedecl.go:316 | WriteTypes writes each contract Type's file. |
-| `checkFailure` | type | gophermind-lib/briefv2/executor/wave.go:20 | checkFailure is one failing step of the integration checks. |
-| `checkResult` | type | gophermind-lib/briefv2/executor/wave.go:28 | checkResult is the outcome of the integration checks of one wave. |
-| `(checkResult).Pass` | method | gophermind-lib/briefv2/executor/wave.go:31 | Pass reports that no step failed. |
-| `redacted` | const | gophermind-lib/briefv2/executor/wave.go:34 | redacted stands in for a package, a file or a name that held a secret. |
-| `(*runCtx).waves` | method | gophermind-lib/briefv2/executor/wave.go:37 | waves is the sorted distinct wave numbers that hold a leaf. |
-| `(*runCtx).verifiedTests` | method | gophermind-lib/briefv2/executor/wave.go:52 | verifiedTests is leaf Dir -> the sorted test functions of every leaf that is verified now. |
-| `(*runCtx).verifiedTestsCtx` | method | gophermind-lib/briefv2/executor/wave.go:57 |  |
-| `(*runCtx).unverified` | method | gophermind-lib/briefv2/executor/wave.go:78 | unverified is the leaves of the wave that are not verified, in id order. |
-| `stopOf` | func | gophermind-lib/briefv2/executor/wave.go:96 | stopOf returns the *stopError inside err, if there is one. |
-| `(*runCtx).runWave` | method | gophermind-lib/briefv2/executor/wave.go:114 | runWave builds wave w (spec 8.2) and then checks it (8.3). |
-| `(*runCtx).faultOrStop` | method | gophermind-lib/briefv2/executor/wave.go:161 | faultOrStop turns an error from a step into a stop when it is one, into the interrupted stop when the context ended, and otherwise into a harness fault. |
-| `(*runCtx).allVerified` | method | gophermind-lib/briefv2/executor/wave.go:168 |  |
-| `(*runCtx).notVerifiedStop` | method | gophermind-lib/briefv2/executor/wave.go:175 | notVerifiedStop names every leaf that is not verified when the last wave ends. |
-| `blockedStop` | func | gophermind-lib/briefv2/executor/wave.go:187 | blockedStop is the stop of a wave with blocked leaves: each named with the dependency that blocks it. |
-| `unattributableStop` | func | gophermind-lib/briefv2/executor/wave.go:203 | unattributableStop is R10: the failing locations are listed, never guessed onto a leaf. |
-| `(*runCtx).waveChecks` | method | gophermind-lib/briefv2/executor/wave.go:218 | waveChecks is spec 8.3 with no model: go build and go vet over ./..., then one race test run per package that holds a verified leaf (Funcs restricted to those leaves, so a later leaf's stub is never run), or, when final, one run of ./... |
-| `(*runCtx).runChecks` | method | gophermind-lib/briefv2/executor/wave.go:260 |  |
-| `pkgPattern` | func | gophermind-lib/briefv2/executor/wave.go:319 | pkgPattern is the go package argument of a repo-relative directory. |
-| `(*runCtx).failureOf` | method | gophermind-lib/briefv2/executor/wave.go:329 | failureOf turns a failing verdict into a checkFailure, or says why it is not one: a cancelled check is an interruption and any harness class is a fault, neither attributable to a leaf. |
-| `qnameTestRE` | var | gophermind-lib/briefv2/executor/wave.go:342 |  |
-| `(*runCtx).splitQName` | method | gophermind-lib/briefv2/executor/wave.go:347 | splitQName splits a package-qualified test name at a ".Test" style boundary. |
-| `(*runCtx).moduleFailures` | method | gophermind-lib/briefv2/executor/wave.go:374 | moduleFailures splits the failure of a ./... |
-| `(*runCtx).dirOfPackage` | method | gophermind-lib/briefv2/executor/wave.go:419 | dirOfPackage maps an import path to a repo-relative directory. |
-| `(*runCtx).scrubText` | method | gophermind-lib/briefv2/executor/wave.go:440 | scrubText is s, or the redaction mark when it holds a secret value. |
-| `(*runCtx).scrubFailure` | method | gophermind-lib/briefv2/executor/wave.go:449 | scrubFailure replaces every secret-bearing package, test name and file of f (in the packer's forms) so none reaches an event, a store or a prompt. |
-| `workTree` | type | gophermind-lib/briefv2/executor/worktree.go:22 | workTree is where one leaf reads and writes the repository: the main tree, or a private copy of it (sub-project F, spec section 5). |
-| `maxTreeBytes` | const | gophermind-lib/briefv2/executor/worktree.go:34 | maxTreeBytes is the copy limit of decision F12: a level whose files are larger runs one leaf at a time. |
-| `treeIDRe` | var | gophermind-lib/briefv2/executor/worktree.go:37 | treeIDRe is the shape of a leaf id that may name a scratch directory. |
-| `(*runCtx).mainTree` | method | gophermind-lib/briefv2/executor/worktree.go:41 | mainTree is the repository itself. |
-| `(*runCtx).snapshotLevel` | method | gophermind-lib/briefv2/executor/worktree.go:49 | snapshotLevel copies the main tree once, before a parallel level starts, into <scratch>/base, and keeps the file list for makeTree (ruling 2). |
-| `(*runCtx).endLevel` | method | gophermind-lib/briefv2/executor/worktree.go:82 | endLevel removes the level's base copy. |
-| `(*runCtx).makeTree` | method | gophermind-lib/briefv2/executor/worktree.go:92 | makeTree makes the private tree of one leaf from the level's base copy: the files, a throwaway repository with one baseline commit, the leaf's HOME and TMPDIR with a GOPATH, and the checker of the tree. |
-| `(*runCtx).dropTree` | method | gophermind-lib/briefv2/executor/worktree.go:128 | dropTree closes a private tree's git layer and removes the tree and its HOME. |
-| `(*runCtx).cleanTrees` | method | gophermind-lib/briefv2/executor/worktree.go:144 | cleanTrees removes what a killed run left of its private trees and base copy: derived data only (a candidate lives in _state, decision F10). |
-| `(*runCtx).removeScratch` | method | gophermind-lib/briefv2/executor/worktree.go:160 | removeScratch deletes <scratch>/<kind> or <scratch>/<kind>/<id>, the only directories parallel levels make. |
-| `makeWritable` | func | gophermind-lib/briefv2/executor/worktree.go:204 | makeWritable gives the owner write access to every directory under root (a tool may leave read-only ones), never through a link. |
-| `(*runCtx).treeProfile` | method | gophermind-lib/briefv2/executor/worktree.go:217 | treeProfile is the run's sandbox profile with the tree as the repository and the leaf's directory as HOME and TMPDIR; nil when the sandbox is off. |
-| `(*runCtx).checkerFor` | method | gophermind-lib/briefv2/executor/worktree.go:231 | checkerFor is the Checker of a private tree: a runner with the tree's profile when the sandbox is on (cheap: no process), else rc.chk, which takes the directory from each call; a test's fake Checker therefore stays in place. |
-| `(*runCtx).leafCheckIn` | method | gophermind-lib/briefv2/executor/worktree.go:240 | leafCheckIn is runner.LeafCheck of the named files of the leaf in a work tree. |
+| `fileAcceptance` | const | gophermind-lib/build/executor/acceptance.go:38 | fileAcceptance is the proof file in the run folder. |
+| `Counts` | type | gophermind-lib/build/executor/acceptance.go:41 | Counts is "N of M". |
+| `CommandProof` | type | gophermind-lib/build/executor/acceptance.go:47 | CommandProof is the proof of one root test command. |
+| `BulletProof` | type | gophermind-lib/build/executor/acceptance.go:60 | BulletProof is one requirement (acceptance bullet or checked constraint). |
+| `BinaryProof` | type | gophermind-lib/build/executor/acceptance.go:68 | BinaryProof is the SHA-256 of one built binary, taken before the first command. |
+| `acceptanceSchema` | const | gophermind-lib/build/executor/acceptance.go:75 | acceptanceSchema is the version of acceptance.json; 2 added schema_version, complete, binaries and command_sha256 (all additive). |
+| `AcceptanceFile` | type | gophermind-lib/build/executor/acceptance.go:80 | AcceptanceFile is <run>/acceptance.json. |
+| `acceptPlan` | type | gophermind-lib/build/executor/acceptance.go:94 | acceptPlan is what code, not the planner's file alone, says must be proven. |
+| `planBullet` | type | gophermind-lib/build/executor/acceptance.go:99 |  |
+| `mapAcceptance` | func | gophermind-lib/build/executor/acceptance.go:109 | mapAcceptance computes N and the tests from requirements.json (reqs) and coverage.json (cov). |
+| `checkCoverageTotal` | func | gophermind-lib/build/executor/acceptance.go:155 | checkCoverageTotal is the other half of the spec 9 tripwire: coverage.json covers every requirement of the plan exactly once, names no requirement the plan does not have, and the entry of an acceptance bullet names a root test. |
+| `binNameRE` | var | gophermind-lib/build/executor/acceptance.go:185 |  |
+| `(*runCtx).buildBinaries` | method | gophermind-lib/build/executor/acceptance.go:190 | buildBinaries builds every main package under cmd/ to <bin>/<dirname> with go build -o, through rc.goCmd in envLeaf mode (sandboxed, offline). |
+| `(*runCtx).removeBinaries` | method | gophermind-lib/build/executor/acceptance.go:236 | removeBinaries deletes the binaries of the last build, each a regular file directly inside the bin directory under a name this run recorded. |
+| `fileSHA` | func | gophermind-lib/build/executor/acceptance.go:249 | fileSHA is the SHA-256 of a regular file, refusing a link. |
+| `(*runCtx).binNames` | method | gophermind-lib/build/executor/acceptance.go:262 |  |
+| `(*runCtx).binaryProofs` | method | gophermind-lib/build/executor/acceptance.go:272 | binaryProofs is the recorded hashes, in name order. |
+| `(*runCtx).checkBinaries` | method | gophermind-lib/build/executor/acceptance.go:282 | checkBinaries fails the run when a built binary is no longer the one that was built: a command of the acceptance run could write to the scratch directory. |
+| `(*runCtx).acceptPidFile` | method | gophermind-lib/build/executor/acceptance.go:295 | acceptPidFile is where a command may record the pid of a server it starts (GM_ACCEPTANCE_PIDFILE), so that one that escaped the process group is found. |
+| `freeAddr` | func | gophermind-lib/build/executor/acceptance.go:298 | freeAddr is a free loopback address for one command. |
+| `portRE` | var | gophermind-lib/build/executor/acceptance.go:307 |  |
+| `literalPorts` | func | gophermind-lib/build/executor/acceptance.go:311 | literalPorts are the loopback ports a command names (localhost:N, 127.0.0.1:N, [::1]:N), sorted and unique, as numbers in text. |
+| `accepting` | func | gophermind-lib/build/executor/acceptance.go:329 |  |
+| `(*runCtx).afterCommand` | method | gophermind-lib/build/executor/acceptance.go:344 | afterCommand is what the harness checks once a command is over and its process group was killed: the binaries are intact, nothing listens on the command's address and the pid the command recorded is gone. |
+| `ctxErrOr` | func | gophermind-lib/build/executor/acceptance.go:391 |  |
+| `(*runCtx).runRootTest` | method | gophermind-lib/build/executor/acceptance.go:406 | runRootTest runs one root test command with sh -c from the repo root through rc.chk.Run, on a fresh loopback address it is given through GM_ACCEPTANCE_ADDR and GM_ACCEPTANCE_URL (and the built binaries' directory through GM_ACCEPTANCE_BIN). |
+| `(*runCtx).runRootTestFull` | method | gophermind-lib/build/executor/acceptance.go:411 | runRootTestFull is runRootTest with the command's time limit given. |
+| `(*runCtx).goTestArgv` | method | gophermind-lib/build/executor/acceptance.go:483 | goTestArgv is go test -json for a recognised plain go test command: the flags the command named (-tags, -race, -short, -run as an anchored list) and its package. |
+| `goTestPassed` | func | gophermind-lib/build/executor/acceptance.go:508 | goTestPassed is the runner's pass rule for a go test acceptance command: it exited 0 in time, at least one test ran and passed, none failed, the build held, and every test its -run named passed (a skipped test is not a pass). |
+| `plainTestOutput` | func | gophermind-lib/build/executor/acceptance.go:537 | plainTestOutput turns a go test -json stream into the text the test printed, for the capped failure lines a repair round shows a leaf: JSON event lines become their Output field, any other line stays. |
+| `failedBullet` | type | gophermind-lib/build/executor/acceptance.go:551 |  |
+| `firstLine` | func | gophermind-lib/build/executor/acceptance.go:560 |  |
+| `(*runCtx).runBullet` | method | gophermind-lib/build/executor/acceptance.go:568 |  |
+| `(*runCtx).acceptanceRun` | method | gophermind-lib/build/executor/acceptance.go:604 | acceptanceRun runs every bullet once, in requirement order, one command at a time, writes acceptance.json, and returns the failing bullets by requirement id. |
+| `(*runCtx).writeAcceptance` | method | gophermind-lib/build/executor/acceptance.go:681 |  |
+| `counts` | func | gophermind-lib/build/executor/acceptance.go:689 |  |
+| `(*runCtx).failedIDs` | method | gophermind-lib/build/executor/acceptance.go:696 | failedIDs is the failing requirement ids: acceptance bullets first, then constraints, each in requirement order. |
+| `(*runCtx).acceptance` | method | gophermind-lib/build/executor/acceptance.go:714 | acceptance runs acceptanceRun with the repair rounds and returns the counts or the stop. |
+| `(*runCtx).acceptStop` | method | gophermind-lib/build/executor/acceptance.go:760 | acceptStop is the stop after the repair rounds are used up: ids and text of the first failing bullet and its exit code, then the other ids. |
+| `(*runCtx).attribute` | method | gophermind-lib/build/executor/acceptance.go:780 | attribute is the leaves that own a failing bullet: the leaf nodes the coverage file lists for it (spec 9). |
+| `(*runCtx).acceptRepair` | method | gophermind-lib/build/executor/acceptance.go:794 | acceptRepair is one acceptance repair round (spec 9 Failure): every leaf that owns a failing bullet is reopened and rebuilt with only its own bullets' capped output as the previous failure, then the last wave is checked again. |
+| `(*runCtx).acceptanceTimeout` | method | gophermind-lib/build/executor/acceptance.go:855 |  |
+| `accResult` | type | gophermind-lib/build/executor/acceptance.go:860 | accResult is what the acceptance stage proved. |
+| `finishResult` | type | gophermind-lib/build/executor/acceptance.go:865 | finishResult is how the run ended once every wave was done: the final status, a reason class, the acceptance counts, extra failure lines (acceptance bullets, never output text) and the landing. |
+| `(*runCtx).checkEnvironment` | method | gophermind-lib/build/executor/acceptance.go:876 | checkEnvironment is the harness's own connectivity check before acceptance: every declared secret whose value is a URL with a loopback host is dialled (2 seconds). |
+| `(*runCtx).needsSecret` | method | gophermind-lib/build/executor/acceptance.go:916 | needsSecret says that some bullet runs with the variable: its text or one of its commands names it and the bullet does not say "with NAME unset". |
+| `(*runCtx).treeClean` | method | gophermind-lib/build/executor/acceptance.go:943 | treeClean requires that only declared files differ from the landed state: nothing in commit mode; in diff_only the plan's own files. |
+| `(*runCtx).decide` | method | gophermind-lib/build/executor/acceptance.go:974 | decide is the first test of the final status: verified only when every leaf row is verified. |
+| `(*runCtx).finish` | method | gophermind-lib/build/executor/acceptance.go:1013 | finish is the only place a run's final status is decided (spec 7.1). |
+| `stopFailure` | func | gophermind-lib/build/executor/acceptance.go:1094 | stopFailure is the stop's message as a report failure line, for the acceptance family of stops (the messages hold ids, requirement text and exit codes, never output). |
+| `(*runCtx).finishFromError` | method | gophermind-lib/build/executor/acceptance.go:1105 | finishFromError turns the error of a finishing step into a result when it is a stop or a cancelled context, and leaves a fault as an error. |
+| `(*runCtx).land` | method | gophermind-lib/build/executor/acceptance.go:1120 | land ends a verified run. |
+| `maxRedTimeout` | const | gophermind-lib/build/executor/acceptance_red.go:19 | maxRedTimeout caps one red check command: a command that is still running then did not pass quickly against a stub, which counts as red. |
+| `(*runCtx).redTimeout` | method | gophermind-lib/build/executor/acceptance_red.go:21 |  |
+| `notRedError` | type | gophermind-lib/build/executor/acceptance_red.go:34 | notRedError names the bullets whose server-exercising root tests all pass against the stubs. |
+| `(*notRedError).Error` | method | gophermind-lib/build/executor/acceptance_red.go:36 |  |
+| `(*runCtx).redCheckAcceptance` | method | gophermind-lib/build/executor/acceptance_red.go:44 | redCheckAcceptance runs the server-exercising root tests of every acceptance bullet and checked constraint against the Wave 0 stubs. |
+| `vacuousError` | type | gophermind-lib/build/executor/acceptcheck.go:12 | vacuousError is the tripwire for acceptance root tests that cannot prove the server: it names bullet ids only, never a command. |
+| `(*vacuousError).Error` | method | gophermind-lib/build/executor/acceptcheck.go:14 |  |
+| `vacuousCommand` | func | gophermind-lib/build/executor/acceptcheck.go:20 | vacuousCommand is acceptcheck.Vacuous: the shell-aware check lives in the shared package the planner also uses. |
+| `vacuousBullets` | func | gophermind-lib/build/executor/acceptcheck.go:23 | vacuousBullets is the ids of the acceptance bullets that have a vacuous root test. |
+| `(*runCtx).unsetNames` | method | gophermind-lib/build/executor/acceptcheck.go:38 | unsetNames are the declared secret and env names a bullet's text says it runs without, by the exact phrase "with NAME unset" (case sensitive). |
+| `maxAttributionLines` | const | gophermind-lib/build/executor/attribute.go:12 | maxAttributionLines caps the lines one node is handed for its next prompt. |
+| `Attribution` | type | gophermind-lib/build/executor/attribute.go:16 | Attribution is what an integration failure is pinned on. |
+| `(*Plan).Attribute` | method | gophermind-lib/build/executor/attribute.go:37 | Attribute maps every failure of res to the leaves that own the files and tests it names:    - a build or vet record maps by the file of its location to the leaf whose     contract file, stub file or test file it is;   - a test record maps by (package dir, top-level test name) to the leaf that     owns that test, and only when no owner is found by the file of its     locations;   - anything no rule resolves is unattributable, including a failure that     names neither a test nor a file: guessing would burn the repair budget on     the wrong leaf. |
+| `noLocation` | func | gophermind-lib/build/executor/attribute.go:121 |  |
+| `candidatePrefix` | const | gophermind-lib/build/executor/candidate.go:15 | candidatePrefix names the saved private pass of a leaf: _state/candidate-<id> (decision F10). |
+| `candidate` | type | gophermind-lib/build/executor/candidate.go:22 | candidate is a reply that passed its leaf check in a private tree, saved before the leaf waits for its turn, so a kill between the pass and the landing costs no model call. |
+| `(candidate).entry` | method | gophermind-lib/build/executor/candidate.go:32 | entry is the ladder entry the pass attempt is recorded against at landing. |
+| `saveCandidate` | func | gophermind-lib/build/executor/candidate.go:36 |  |
+| `readCandidate` | func | gophermind-lib/build/executor/candidate.go:50 | readCandidate returns the saved candidate of the leaf. |
+| `removeCandidate` | func | gophermind-lib/build/executor/candidate.go:71 | removeCandidate deletes _state/candidate-<id>. |
+| `depsHooks` | type | gophermind-lib/build/executor/deps.go:16 | depsHooks are package level test hooks; the defaults are the real values. |
+| `testHooks` | var | gophermind-lib/build/executor/deps.go:24 |  |
+| `depModulePath` | var | gophermind-lib/build/executor/deps.go:28 | A dotted host first, so a standard library path or a local path is refused. |
+| `depVersion` | var | gophermind-lib/build/executor/deps.go:30 | A tagged release, a pre-release or a pseudo-version. |
+| `vetDeps` | func | gophermind-lib/build/executor/deps.go:36 | vetDeps checks every dependency before any go command runs. |
+| `hasDotElement` | func | gophermind-lib/build/executor/deps.go:57 |  |
+| `unreachableText` | var | gophermind-lib/build/executor/deps.go:69 | unreachableText are fragments of a go command's output that mean the module proxy could not be reached (as opposed to a module or version it does not have). |
+| `unreachable` | func | gophermind-lib/build/executor/deps.go:75 |  |
+| `depsStop` | func | gophermind-lib/build/executor/deps.go:90 | depsStop is the stop for a failed deps command. |
+| `(*runCtx).runDeps` | method | gophermind-lib/build/executor/deps.go:107 | runDeps is spec 14 steps 2 to 4 (step 1 and 5 are in wave0): for each dependency go get module@version, then go mod download, with the proxy and the checksum database allowed. |
+| `(*runCtx).verifyModules` | method | gophermind-lib/build/executor/deps.go:139 | verifyModules is go mod verify, offline. |
+| `envMode` | type | gophermind-lib/build/executor/env.go:15 | envMode says which Go policy an environment carries. |
+| `envLeaf` | const | gophermind-lib/build/executor/env.go:19 | envLeaf: offline. |
+| `envDeps` | const | gophermind-lib/build/executor/env.go:22 | envDeps: the one step that may fetch, through the harness proxy. |
+| `envAcceptance` | const | gophermind-lib/build/executor/env.go:24 | envAcceptance: envLeaf with <run>/bin first on PATH. |
+| `goCmdTimeout` | const | gophermind-lib/build/executor/env.go:28 | goCmdTimeout bounds one Go command run through goCmd. |
+| `(*runCtx).env` | method | gophermind-lib/build/executor/env.go:34 | env builds the exact environment of one command of node nodeID. |
+| `(*runCtx).envAt` | method | gophermind-lib/build/executor/env.go:42 | envAt is env with HOME, TMPDIR and GOPATH under scratch: rc.scratch for the main tree, <scratch>/w/<id> for a private tree. |
+| `(*runCtx).goCmd` | method | gophermind-lib/build/executor/env.go:103 | goCmd runs one go command in the repository. |
+| `(*runCtx).testTimeout` | method | gophermind-lib/build/executor/env.go:114 |  |
+| `(*runCtx).leafCheck` | method | gophermind-lib/build/executor/env.go:119 | leafCheck is runner.LeafCheck over the named files of the leaf in the main tree. |
+| `(*runCtx).secretValues` | method | gophermind-lib/build/executor/env.go:125 | secretValues is every declared secret's value, for stripping from text. |
+| `reasonSkipped` | const | gophermind-lib/build/executor/escalate.go:17 | reasonSkipped is the reason of a leaf a person chose to skip. |
+| `reasonPanic` | const | gophermind-lib/build/executor/escalate.go:20 | reasonPanic is the terminal reason of a leaf whose run panicked. |
+| `humanStop` | func | gophermind-lib/build/executor/escalate.go:24 | humanStop is the run ending at the human gate: a stop answer, no gate, or a gate that failed. |
+| `waitingOnHuman` | func | gophermind-lib/build/executor/escalate.go:31 | waitingOnHuman is the run ending because the gate has no answer yet (the file gate, ruling S8): exit 3, the leaf stays escalated and the next run asks again. |
+| `(*runCtx).scrubHistory` | method | gophermind-lib/build/executor/escalate.go:38 | scrubHistory drops the history lines that hold a secret value: the gate is shown ids, a class and class-and-name lines, and never a secret. |
+| `(*runCtx).rowRevision` | method | gophermind-lib/build/executor/escalate.go:57 | rowRevision is the revision of the leaf's row, 0 when it cannot be read. |
+| `(*runCtx).round` | method | gophermind-lib/build/executor/escalate.go:66 | round is how many retries a person has granted the leaf so far. |
+| `isRevisionReason` | func | gophermind-lib/build/executor/escalate.go:74 | isRevisionReason says an escalation is about the revise stage: a flag, a locked test, a secret in a reply, or a refusal class. |
+| `(*runCtx).lastModel` | method | gophermind-lib/build/executor/escalate.go:84 | lastModel is the provider/model of the last attempt of the leaf, "" when it has none. |
+| `escalateExtra` | type | gophermind-lib/build/executor/escalate.go:94 | escalateExtra is what a caller adds to the gate text beyond the reason. |
+| `(*runCtx).askGate` | method | gophermind-lib/build/executor/escalate.go:99 | askGate puts one question to the gate, one at a time (decision F11). |
+| `(*runCtx).escalate` | method | gophermind-lib/build/executor/escalate.go:106 | escalate is escalateWith with nothing extra. |
+| `(*runCtx).escalateWith` | method | gophermind-lib/build/executor/escalate.go:124 | escalateWith is rung 7: the leaf leaves status from (in_progress for the ladder, verified for an integration failure, escalated when a resumed run asks again) for needs_revision and escalated, the person is asked, and the answer is applied to the blackboard:  	retry  note saved, revision allowance raised by one, escalated -> ready 	skip   escalated -> failed, reason "skipped by human" 	stop   a *stopError (human_stop), also for a nil gate or a gate that fails  A gate with no answer yet (human.ErrWaiting) is a *stopError with reason waiting_on_human and the leaf stays escalated. |
+| `ClassRateLimited` | const | gophermind-lib/build/executor/failure.go:21 | Failure classes (spec 7.2). |
+| `ClassTimeout` | const | gophermind-lib/build/executor/failure.go:22 | Failure classes (spec 7.2). |
+| `ClassContextTooLong` | const | gophermind-lib/build/executor/failure.go:23 | Failure classes (spec 7.2). |
+| `ClassImportNotAllowed` | const | gophermind-lib/build/executor/failure.go:24 | Failure classes (spec 7.2). |
+| `ClassForbiddenWrite` | const | gophermind-lib/build/executor/failure.go:25 | Failure classes (spec 7.2). |
+| `ClassContractProblem` | const | gophermind-lib/build/executor/failure.go:26 | Failure classes (spec 7.2). |
+| `ClassNetworkCritical` | const | gophermind-lib/build/executor/failure.go:27 | Failure classes (spec 7.2). |
+| `ClassIdentical` | const | gophermind-lib/build/executor/failure.go:28 | Failure classes (spec 7.2). |
+| `maxReasonNames` | const | gophermind-lib/build/executor/failure.go:32 |  |
+| `maxNameBytes` | const | gophermind-lib/build/executor/failure.go:33 |  |
+| `cleanName` | func | gophermind-lib/build/executor/failure.go:38 | cleanName makes one name safe for a one-line reason: control characters and white space become "_" and the name is clipped. |
+| `failureReason` | func | gophermind-lib/build/executor/failure.go:53 | failureReason is "<class>" or "<class>: <name>, <name>": names sorted, at most 8 and then "(+n more)", one line. |
+| `isLeafFailure` | func | gophermind-lib/build/executor/failure.go:79 | isLeafFailure reports that a verdict counts against the leaf. |
+| `settle` | func | gophermind-lib/build/executor/failure.go:84 | settle applies the definition of done to a verdict: a pass with no test event ran nothing and is no_tests_ran (spec R4). |
+| `failureOf` | func | gophermind-lib/build/executor/failure.go:94 | failureOf is the previous failure a verdict gives the next prompt: the failed test names and the runner's output, redacted and capped by the packer. |
+| `mergeFailures` | func | gophermind-lib/build/executor/failure.go:101 | mergeFailures joins failures: names are the union in first-seen order (at most 8), lines are concatenated, and the packer's caps of 30 lines and 2 KB apply again to the whole. |
+| `historyLine` | func | gophermind-lib/build/executor/failure.go:118 | historyLine is one line of the history the revise prompt receives: "attempt 3 mini/qwen fail test_fail: TestX/a". |
+| `guidanceFrom` | func | gophermind-lib/build/executor/guidance.go:21 | guidanceFrom turns the build groups of a function node into the guidance the implement prompt carries. |
+| `decodeGroup` | func | gophermind-lib/build/executor/guidance.go:151 | decodeGroup decodes a raw group into v. |
+| `ladderEntry` | type | gophermind-lib/build/executor/ladder.go:9 | ladderEntry is one model of a leaf's ladder. |
+| `(*runCtx).ladderEntries` | method | gophermind-lib/build/executor/ladder.go:21 | ladderEntries is the chain of the leaf's tier (standard when unset) in order, then the entries of the strong chain not already present. |
+| `fixTemperature` | func | gophermind-lib/build/executor/ladder.go:51 | fixTemperature is the sampling temperature of attempt k of an entry: the first try and the first fix at 0, every later fix at 0.3 (ruling S7). |
+| `landResult` | type | gophermind-lib/build/executor/land.go:13 | landResult is how a landing attempt ended. |
+| `landPassed` | const | gophermind-lib/build/executor/land.go:16 |  |
+| `landConflict` | const | gophermind-lib/build/executor/land.go:17 |  |
+| `landInterrupted` | const | gophermind-lib/build/executor/land.go:18 |  |
+| `(*leafRun).privatePass` | method | gophermind-lib/build/executor/land.go:24 | privatePass is a pass in a private tree (spec section 6): the reply is saved as the leaf's candidate, the stub is put back in the tree, and the ladder stops. |
+| `(*leafRun).toMain` | method | gophermind-lib/build/executor/land.go:43 | toMain moves a leaf from its private tree to the main tree once its turn came: the swap, the checker and the declared names are the main tree's from here on (the names now include what earlier leaves of the level landed). |
+| `(*leafRun).land` | method | gophermind-lib/build/executor/land.go:75 | land replays a saved candidate in the main tree (spec section 7.2): the reply gate again (ruling 9), then the same check a model reply gets (ruling C4): the stub swap, gofmt, build, vet, the named test, the stray-file check and the critical-host streak. |
+| `(*leafRun).landCandidate` | method | gophermind-lib/build/executor/land.go:122 | landCandidate is the leaf's turn: take the main tree, read the saved candidate again (it may have changed while the leaf waited, ruling C2) and replay it. |
+| `(*leafRun).resumeCandidate` | method | gophermind-lib/build/executor/land.go:157 | resumeCandidate lands a candidate an earlier process saved (spec section 11 step 3), with no model call. |
+| `(*runCtx).noteConflict` | method | gophermind-lib/build/executor/land.go:162 | noteConflict counts one landing conflict for the report. |
+| `noteSecretInSource` | const | gophermind-lib/build/executor/leaf.go:34 | The previous-failure sentences the model gets when the failure has no runner output to show. |
+| `noteForbidden` | const | gophermind-lib/build/executor/leaf.go:35 | The previous-failure sentences the model gets when the failure has no runner output to show. |
+| `noteMalformed` | const | gophermind-lib/build/executor/leaf.go:36 | The previous-failure sentences the model gets when the failure has no runner output to show. |
+| `noteStray` | const | gophermind-lib/build/executor/leaf.go:37 | The previous-failure sentences the model gets when the failure has no runner output to show. |
+| `noteCritical` | const | gophermind-lib/build/executor/leaf.go:38 | The previous-failure sentences the model gets when the failure has no runner output to show. |
+| `noteImports` | func | gophermind-lib/build/executor/leaf.go:43 | noteImports is the sentence for a reply that imports a package the policy does not allow. |
+| `leafIn` | type | gophermind-lib/build/executor/leaf.go:55 | leafIn is what a caller hands runLeaf. |
+| `leafOutcome` | type | gophermind-lib/build/executor/leaf.go:63 | leafOutcome is how one leaf ended. |
+| `revResult` | type | gophermind-lib/build/executor/leaf.go:70 | revResult is how one revision of the ladder ended. |
+| `revVerified` | const | gophermind-lib/build/executor/leaf.go:73 |  |
+| `revExhausted` | const | gophermind-lib/build/executor/leaf.go:74 |  |
+| `revContractProblem` | const | gophermind-lib/build/executor/leaf.go:75 |  |
+| `revTooLong` | const | gophermind-lib/build/executor/leaf.go:76 |  |
+| `revInterrupted` | const | gophermind-lib/build/executor/leaf.go:77 |  |
+| `revCandidate` | const | gophermind-lib/build/executor/leaf.go:78 |  |
+| `entryEnd` | type | gophermind-lib/build/executor/leaf.go:82 | entryEnd is how one entry of the ladder ended within a revision. |
+| `endFailed` | const | gophermind-lib/build/executor/leaf.go:85 |  |
+| `endIdentical` | const | gophermind-lib/build/executor/leaf.go:86 |  |
+| `endContract` | const | gophermind-lib/build/executor/leaf.go:87 |  |
+| `endTooLong` | const | gophermind-lib/build/executor/leaf.go:88 |  |
+| `endProvider` | const | gophermind-lib/build/executor/leaf.go:89 |  |
+| `endMalformed` | const | gophermind-lib/build/executor/leaf.go:90 |  |
+| `endPermanent` | const | gophermind-lib/build/executor/leaf.go:91 |  |
+| `endInterrupted` | const | gophermind-lib/build/executor/leaf.go:92 |  |
+| `leafRun` | type | gophermind-lib/build/executor/leaf.go:96 | leafRun is the state of one leaf from claim to a terminal status. |
+| `repMu` | var | gophermind-lib/build/executor/leaf.go:134 |  |
+| `stateMu` | var | gophermind-lib/build/executor/leaf.go:135 |  |
+| `(*runCtx).maxRevisions` | method | gophermind-lib/build/executor/leaf.go:140 | maxRevisions is the node's budget, else the settings default, plus the revisions a human granted. |
+| `(*runCtx).contextBudget` | method | gophermind-lib/build/executor/leaf.go:152 | contextBudget is the prompt budget of a leaf: the node's, else the brief's, else the settings default. |
+| `(*runCtx).heartbeatEvery` | method | gophermind-lib/build/executor/leaf.go:162 |  |
+| `declaredNames` | func | gophermind-lib/build/executor/leaf.go:174 | declaredNames is every package-level name the other files of the leaf's package declare: the contract types, the stubs of the other leaves, the leaf tests and whatever the other leaves already committed. |
+| `path0` | func | gophermind-lib/build/executor/leaf.go:227 | path0 is the last element of a slash path. |
+| `(*runCtx).newLeafRun` | method | gophermind-lib/build/executor/leaf.go:238 | newLeafRun builds the per-leaf state: the reply expectation (with the names the package already declares), the swap over the leaf's files and the history of attempts already on the blackboard. |
+| `(*runCtx).runLeaf` | method | gophermind-lib/build/executor/leaf.go:289 | runLeaf takes a ready leaf to a terminal status. |
+| `(*runCtx).startHeartbeat` | method | gophermind-lib/build/executor/leaf.go:398 | startHeartbeat refreshes the claim every interval until the returned function is called, which also waits for the goroutine to end. |
+| `(*leafRun).exit` | method | gophermind-lib/build/executor/leaf.go:422 | exit turns what ended the loop into runLeaf's result. |
+| `(*leafRun).inProgress` | method | gophermind-lib/build/executor/leaf.go:444 | inProgress reports that the row still says in_progress. |
+| `(*leafRun).checkLeaf` | method | gophermind-lib/build/executor/leaf.go:450 | checkLeaf is runner.LeafCheck on the leaf's real file in its work tree. |
+| `(*leafRun).fail` | method | gophermind-lib/build/executor/leaf.go:455 | fail sets the leaf failed with a reason: status, recorded reason, event. |
+| `(*leafRun).escalate` | method | gophermind-lib/build/executor/leaf.go:476 | escalate makes sure an escalated leaf is escalated on the blackboard. |
+| `(*leafRun).afterRevision` | method | gophermind-lib/build/executor/leaf.go:505 | afterRevision decides what follows a revision that did not verify (rungs 5 to 7). |
+| `(*leafRun).lastClass` | method | gophermind-lib/build/executor/leaf.go:566 | lastClass is the class of the last attempt of the leaf: the text of its failure reason before the first colon. |
+| `(*leafRun).toHuman` | method | gophermind-lib/build/executor/leaf.go:581 | toHuman is rung 7 for a leaf in progress: escalate, then act on the answer. |
+| `(*leafRun).adoptOnDisk` | method | gophermind-lib/build/executor/leaf.go:630 | adoptOnDisk is spec 7.2 and 10 step 5: a real file already on disk is checked before any model call. |
+| `(*leafRun).gate` | method | gophermind-lib/build/executor/leaf.go:729 | gate runs on a file's bytes what a reply passes before it is written: the reply gate (parse, package, signature, declarations, process control), the import policy and the source scan. |
+| `inList` | func | gophermind-lib/build/executor/leaf.go:747 |  |
+| `failureText` | func | gophermind-lib/build/executor/leaf.go:757 | failureText is a previous failure that is one fixed sentence. |
+| `(*leafRun).cleanStray` | method | gophermind-lib/build/executor/leaf.go:762 | cleanStray removes every file the check wrote that is not the leaf's own file or stub (ignored files included) and returns what it removed. |
+| `(*runCtx).criticalSince` | method | gophermind-lib/build/executor/leaf.go:780 | criticalSince is the hosts of critical-host failures of the leaf since t. |
+| `commitError` | type | gophermind-lib/build/executor/leaf.go:798 | commitError is a pass whose commit in the main tree failed: a harness fault. |
+| `(*commitError).Error` | method | gophermind-lib/build/executor/leaf.go:800 |  |
+| `(*leafRun).finishPass` | method | gophermind-lib/build/executor/leaf.go:805 | finishPass is the done definition met: commit (unless adopted), record the result and set verified. |
+| `errCancelled` | var | gophermind-lib/build/executor/leaf.go:878 | errCancelled is a blackboard read that failed because the run was cancelled: an interrupt, not a harness fault. |
+| `(*leafRun).previousSHA` | method | gophermind-lib/build/executor/leaf.go:884 | previousSHA is the hash of the last reply of this leaf on the entry: from memory, else from the blackboard's last attempt of the same provider and model that has one. |
+| `(*leafRun).noteEscalation` | method | gophermind-lib/build/executor/leaf.go:914 | noteEscalation records the move to a later model of the ladder, when the model is about to be called: once per model per leaf, however many revisions follow, and never for a model that was skipped. |
+| `(*leafRun).oneRevision` | method | gophermind-lib/build/executor/leaf.go:934 | oneRevision is rungs 1 to 4 for revision lr.rev: for each entry in order the initial attempt and then up to executor.fix_attempts fixes, each with the previous failure; then the next model; then, past the leaf's own tier, the strong chain. |
+| `(*leafRun).runEntry` | method | gophermind-lib/build/executor/leaf.go:993 | runEntry is the initial attempt and the fix attempts of one entry. |
+| `attemptArt` | type | gophermind-lib/build/executor/leaf.go:1011 | attemptArt is what the current attempt produced and record will save. |
+| `(*leafRun).record` | method | gophermind-lib/build/executor/leaf.go:1019 | record appends one attempt to the blackboard. |
+| `(*runCtx).saveArtifacts` | method | gophermind-lib/build/executor/leaf.go:1057 | saveArtifacts writes the reply and the check output of the attempt just recorded. |
+| `(*leafRun).tooLongEnd` | method | gophermind-lib/build/executor/leaf.go:1071 | tooLongEnd records an entry that cannot hold the prompt: no provider call, an error attempt, and the entry is skipped for the rest of the leaf. |
+| `(*leafRun).attempt` | method | gophermind-lib/build/executor/leaf.go:1083 | attempt is one model call and everything that follows from its reply. |
+| `(*leafRun).identical` | method | gophermind-lib/build/executor/leaf.go:1167 | identical reports whether sha repeats the last reply of this leaf on the entry. |
+| `(*leafRun).refused` | method | gophermind-lib/build/executor/leaf.go:1181 | refused records an attempt whose reply was refused before being written. |
+| `(*leafRun).pack` | method | gophermind-lib/build/executor/leaf.go:1191 | pack builds the prompt of one attempt. |
+| `(*leafRun).testSource` | method | gophermind-lib/build/executor/leaf.go:1223 | testSource reads the leaf's test file and proves it is the file the planner recorded: a test edited between planning and running stops the run. |
+| `(*leafRun).providerError` | method | gophermind-lib/build/executor/leaf.go:1237 | providerError is what a failed router call means for the entry. |
+| `failedClass` | func | gophermind-lib/build/executor/leaf.go:1286 | failedClass names why the router's "failed" entry failed, from the fixed detail text the router gives it. |
+| `(*leafRun).check` | method | gophermind-lib/build/executor/leaf.go:1301 | check writes the reply, runs the leaf check, looks for strays and critical network failures, and decides the attempt: a pass is committed, anything else puts the stub back and feeds the failure to the next attempt. |
+| `(*runCtx).warningsSince` | method | gophermind-lib/build/executor/leaf.go:1373 | warningsSince is one line per failed request to a non-critical host. |
+| `(*runCtx).warningLine` | method | gophermind-lib/build/executor/leaf.go:1386 | warningLine is one failed request as a line for the events: a host built from data can hold a secret, and then the line is the redaction mark. |
+| `(*runCtx).observeCritical` | method | gophermind-lib/build/executor/leaf.go:1393 | observeCritical counts one checked attempt toward the critical streak of the node (S10) and saves it. |
+| `(*runCtx).scrubReason` | method | gophermind-lib/build/executor/leaf.go:1411 | scrubReason keeps a failure reason out of the stores when it holds a secret value in any form the packer scrubs (a test name can be built from data): only its class is kept, and a reason with no class to keep becomes empty. |
+| `(*runCtx).scrubNames` | method | gophermind-lib/build/executor/leaf.go:1423 | scrubNames drops the test names that hold a secret value. |
+| `errRunLimit` | var | gophermind-lib/build/executor/limits.go:16 | The two causes runContext records on the context it returns; any other end (the caller's context) is "cancelled". |
+| `errRunSignal` | var | gophermind-lib/build/executor/limits.go:17 | The two causes runContext records on the context it returns; any other end (the caller's context) is "cancelled". |
+| `(*runCtx).runLimit` | method | gophermind-lib/build/executor/limits.go:22 | runLimit is how long this invocation may work: the test override rc.limit, else executor.max_run_minutes. |
+| `(*runCtx).runContext` | method | gophermind-lib/build/executor/limits.go:36 | runContext returns the run's context, a function naming why it ended (empty while it has not: "max_run_minutes", "signal", or "cancelled" when the parent ended), and its release function. |
+| `Options` | type | gophermind-lib/build/executor/options.go:21 | Options is everything one executor run talks to. |
+| `Report` | type | gophermind-lib/build/executor/options.go:45 | Report is the run report the executor returns. |
+| `(*Options).validate` | method | gophermind-lib/build/executor/options.go:50 | validate checks the required fields and fills the defaults for a nil Sink and Now. |
+| `CheckWorkers` | func | gophermind-lib/build/executor/options.go:90 | CheckWorkers is the check the CLI makes on a --workers value it was given (the flag's 0 means "use executor.workers" and is not passed here). |
+| `(Options).String` | method | gophermind-lib/build/executor/options.go:100 | String names the run folder, the repository and which collaborators are set. |
+| `(Options).GoString` | method | gophermind-lib/build/executor/options.go:112 | GoString is String, so %#v is as quiet as %v. |
+| `Plan` | type | gophermind-lib/build/executor/plan.go:30 | Plan is an approved plan as the executor reads it. |
+| `RevisedTip` | type | gophermind-lib/build/executor/plan.go:59 | RevisedTip is where the revision chain of one node stands. |
+| `Leaf` | type | gophermind-lib/build/executor/plan.go:67 | Leaf is one function node. |
+| `NetHost` | type | gophermind-lib/build/executor/plan.go:87 | NetHost is one host of a leaf's network block. |
+| `leafDoc` | type | gophermind-lib/build/executor/plan.go:94 | leafDoc is the part of a function node the executor reads. |
+| `hashHex` | func | gophermind-lib/build/executor/plan.go:132 |  |
+| `LoadPlan` | func | gophermind-lib/build/executor/plan.go:140 | LoadPlan reads the plan in runDir. |
+| `(*Plan).leaf` | method | gophermind-lib/build/executor/plan.go:270 | leaf builds one Leaf from a function node, its recorded test and the contract, refusing any disagreement between them. |
+| `(*Plan).Leaf` | method | gophermind-lib/build/executor/plan.go:342 | Leaf returns the leaf with that node id, or nil. |
+| `(*Plan).View` | method | gophermind-lib/build/executor/plan.go:346 | View is what the packer may know about a leaf. |
+| `(*Plan).Policy` | method | gophermind-lib/build/executor/plan.go:357 | Policy is the import policy of every reply: the target module and the modules of dependencies.json. |
+| `readPlanFile` | func | gophermind-lib/build/executor/plan.go:367 | readPlanFile reads one file of the run folder. |
+| `hashNodes` | func | gophermind-lib/build/executor/plan.go:379 | hashNodes records the SHA-256 of every node file under "tree/<path>". |
+| `rootNetwork` | func | gophermind-lib/build/executor/plan.go:401 | rootNetwork is the network block of the root node (the brief's block). |
+| `(*Plan).binNames` | method | gophermind-lib/build/executor/plan.go:428 | binNames are the directory names of the main packages under cmd/ that the plan's leaves write: the binaries the acceptance run will build. |
+| `(*Plan).checkAcceptTests` | method | gophermind-lib/build/executor/plan.go:453 | checkAcceptTests holds the Go acceptance tests the planner wrote to the same rules as a leaf's test: a path the sandbox allows, a regular file in the repository, a recorded hash, and every acceptance package root test names only tests of the manifest. |
+| `isAcceptancePkg` | func | gophermind-lib/build/executor/plan.go:483 | isAcceptancePkg says a go test package argument is the acceptance package. |
+| `(*Plan).acceptTestFiles` | method | gophermind-lib/build/executor/plan.go:488 | acceptTestFiles is the repo-relative path of every acceptance test, sorted. |
+| `behaviourFrom` | func | gophermind-lib/build/executor/plan.go:498 | behaviourFrom is the detail lines of a revised node's contract text. |
+| `errPlanChanged` | func | gophermind-lib/build/executor/plan.go:520 | errPlanChanged is the stop for any plan file, chain or record that is not what the run was started with. |
+| `(*Plan).nodeKey` | method | gophermind-lib/build/executor/plan.go:524 |  |
+| `(*Plan).tip` | method | gophermind-lib/build/executor/plan.go:526 |  |
+| `(*Plan).setTip` | method | gophermind-lib/build/executor/plan.go:533 |  |
+| `(*Plan).accepts` | method | gophermind-lib/build/executor/plan.go:545 | accepts says whether hash is an allowed content for the node file at key: the expected one, or for a node whose intent is open (staged, not yet committed) the open revision's body as well, for that node only. |
+| `(*Plan).expected` | method | gophermind-lib/build/executor/plan.go:557 | expected is Plan.Hashes with every revised node at its chain tip: what planIntact holds the files to. |
+| `nodeDisk` | func | gophermind-lib/build/executor/plan.go:572 | nodeDisk reads what is on disk now for one function node: the node file, its entry in leaf_tests.json (given) and its test file. |
+| `nodeRevision` | func | gophermind-lib/build/executor/plan.go:589 | nodeRevision is the revision field of a node file (0 when absent). |
+| `functionPaths` | func | gophermind-lib/build/executor/plan.go:604 | functionPaths maps every function node id of the tree to its node file path. |
+| `(*Plan).chainWrite` | method | gophermind-lib/build/executor/plan.go:615 | chainWrite runs one write of a revision transaction under the chain lock. |
+| `(*Plan).chainsIntact` | method | gophermind-lib/build/executor/plan.go:629 | chainsIntact proves every revision chain again with verifyRevisions, as LoadPlan does (hashes and the frozen-field check, no test run): body-0 must still be the revision 0 the plan was loaded with, and each chain's committed revision must be the one this run holds, or the open intent's (a commit record written, the tip not yet moved). |
+| `verifyRevisions` | func | gophermind-lib/build/executor/plan.go:673 | verifyRevisions proves the revision chain of every function node (id to node file path) that has a folder in _state/revisions, and points hashes at revision 0 for it. |
+| `(*Plan).ReloadLeaf` | method | gophermind-lib/build/executor/plan.go:732 | ReloadLeaf re-reads the node file and leaf_tests.json of one leaf and updates the Leaf in place: the pointer every holder has stays valid. |
+| `stagedOnly` | func | gophermind-lib/build/executor/plan.go:773 | stagedOnly says a folder with no log line is the residue of a kill between staging (step 2) and the intent record (step 3): it holds only the staged files of revisions 0 and 1, and the node and its test are still what revision 0 staged, and a staged revision 1 changes no frozen field. |
+| `(*runCtx).openRevisionPaths` | method | gophermind-lib/build/executor/recover.go:18 | openRevisionPaths are the test files of nodes with a revision chain whose content is exactly what the chain says this run wrote: the committed tip's test hash, or the after hash of an open intent (ruling R1). |
+| `lastCommit` | func | gophermind-lib/build/executor/recover.go:53 | lastCommit is the commit record of revision n. |
+| `(*runCtx).recoverRevisions` | method | gophermind-lib/build/executor/recover.go:67 | recoverRevisions finishes what a kill left half done (spec section 10). |
+| `(*runCtx).checkRuntimeRevisions` | method | gophermind-lib/build/executor/recover.go:114 | checkRuntimeRevisions is the runtime cross-check, run after recovery. |
+| `(*runCtx).runtimeRevisionsOK` | method | gophermind-lib/build/executor/recover.go:122 |  |
+| `integrationKind` | func | gophermind-lib/build/executor/repair.go:18 | integrationKind is the word of the escalation reason for a failing check: build, vet or test. |
+| `(*runCtx).reopen` | method | gophermind-lib/build/executor/repair.go:36 | reopen is the explicit act that puts a verified leaf back to work after an integration failure named it: verified -> needs_revision -> ready, the row's revision plus one, and the leaf's revision allowance plus one, so a repair never spends the allowance the leaf started with. |
+| `repairStop` | func | gophermind-lib/build/executor/repair.go:75 | repairStop is a stop of the repair loop that names the leaf. |
+| `(*runCtx).repairWave` | method | gophermind-lib/build/executor/repair.go:91 | repairWave is the repair loop of spec 8.3. |
+| `(*runCtx).revisedLeaves` | method | gophermind-lib/build/executor/report_revise.go:13 | revisedLeaves reads the revision log of every leaf and summarizes it for the report. |
+| `stateLeafResults` | const | gophermind-lib/build/executor/results.go:10 | stateLeafResults is where the terminal status and reason of every leaf that ended are kept. |
+| `LeafResult` | type | gophermind-lib/build/executor/results.go:14 | LeafResult is one leaf's terminal status (verified, failed or escalated) and its reason: a class from a fixed vocabulary, never text. |
+| `LoadLeafResults` | func | gophermind-lib/build/executor/results.go:21 | LoadLeafResults reads _state/leaf-results.json: node id to its result. |
+| `(*runCtx).setResult` | method | gophermind-lib/build/executor/results.go:35 | setResult records the terminal status and reason of a leaf: in the state file (atomically, so a restart finds it) and in the report's memory. |
+| `(*runCtx).loadReasons` | method | gophermind-lib/build/executor/results.go:56 | loadReasons fills the report's reasons from the state file, so a run rebuilt from disk reports why each failed or escalated leaf ended. |
+| `resumeMovedMessage` | const | gophermind-lib/build/executor/resume.go:21 | resumeMovedMessage is the fixed text of a resume refused because the work branch is no longer where this run left it. |
+| `resumeBaseMovedMessage` | const | gophermind-lib/build/executor/resume.go:25 | resumeBaseMovedMessage is the fixed text of a resume refused early because landing could no longer be a fast-forward. |
+| `maxDirtShown` | const | gophermind-lib/build/executor/resume.go:28 | maxDirtShown is how many foreign paths a stop names. |
+| `(*runCtx).tipNow` | method | gophermind-lib/build/executor/resume.go:32 | tipNow is the work branch tip, or "" when there is none to record (diff_only makes no branch and no commit). |
+| `(*runCtx).recordTip` | method | gophermind-lib/build/executor/resume.go:48 | recordTip saves the work branch tip in the state file. |
+| `(*runCtx).resume` | method | gophermind-lib/build/executor/resume.go:74 | resume is spec 10 steps 1 to 4 for a run whose _state/executor.json exists and whose Wave 0 is done (a run that stopped inside Wave 0 is re-entered by retryWave0). |
+| `(*runCtx).foreignDirt` | method | gophermind-lib/build/executor/resume.go:212 | foreignDirt returns the dirty paths that belong to no released leaf (not its contract file, not its stub) and, while Wave 0 is not done, not one of Wave 0's paths. |
+| `(*runCtx).strayReplaceTemps` | method | gophermind-lib/build/executor/resume.go:254 | strayReplaceTemps are the dirty paths that are a temp file of pathsafe.ReplaceTest beside the test file of a node whose revision intent is open: what a kill inside step 4, or inside the undo of a refused test, leaves. |
+| `(*runCtx).removeStrayReplaceTemps` | method | gophermind-lib/build/executor/resume.go:277 | removeStrayReplaceTemps deletes the strayReplaceTemps, found beside a test path pathsafe.ResolveTest accepts; anything but a regular file is left alone. |
+| `reviseMaxTokens` | const | gophermind-lib/build/executor/revise.go:17 | reviseMaxTokens caps the reply of a revise call: at most 5 notes of 200 bytes as JSON. |
+| `reviseStop` | type | gophermind-lib/build/executor/revise.go:23 | reviseStop is how the revise rung ends without hints and without a contract problem: the ladder cannot continue. |
+| `(*reviseStop).Error` | method | gophermind-lib/build/executor/revise.go:28 |  |
+| `(*leafRun).revise` | method | gophermind-lib/build/executor/revise.go:39 | revise is rung 5: one strong-tier call that reads the contract slice, the test file and the attempt history (classes and test names only) and answers with up to 5 hints, or CONTRACT_PROBLEM. |
+| `(*leafRun).reviseFailure` | method | gophermind-lib/build/executor/revise.go:99 | reviseFailure says what a failed revise call means for the leaf. |
+| `maxProblemBytes` | const | gophermind-lib/build/executor/revise_rewrite.go:17 |  |
+| `maxHistoryLines` | const | gophermind-lib/build/executor/revise_rewrite.go:18 |  |
+| `(*leafRun).rewriteMode` | method | gophermind-lib/build/executor/revise_rewrite.go:25 | rewriteMode says this leaf uses the planner's revise stage. |
+| `clip` | func | gophermind-lib/build/executor/revise_rewrite.go:29 |  |
+| `failureLines` | func | gophermind-lib/build/executor/revise_rewrite.go:41 | failureLines renders a failure as the implement prompt does: the failing names, then the condensed output lines. |
+| `(*leafRun).logRevise` | method | gophermind-lib/build/executor/revise_rewrite.go:50 | logRevise appends a flag or refused record to the node's revision log. |
+| `(*leafRun).afterRewrite` | method | gophermind-lib/build/executor/revise_rewrite.go:63 | afterRewrite resets the per-revision state of the leaf run: the ladder restarts at rung 2 from the revised node with no memory of the old failures. |
+| `(*leafRun).rewrite` | method | gophermind-lib/build/executor/revise_rewrite.go:90 | rewrite is rung 5 in rewrite mode (spec section 4). |
+| `errRevisionKilled` | var | gophermind-lib/build/executor/revision.go:20 | errRevisionKilled is what a test hook returns to stop a revision between two steps. |
+| `(*runCtx).revStep` | method | gophermind-lib/build/executor/revision.go:22 |  |
+| `(*runCtx).stamp` | method | gophermind-lib/build/executor/revision.go:29 |  |
+| `(*runCtx).scrubAll` | method | gophermind-lib/build/executor/revision.go:31 |  |
+| `(*runCtx).applyRevision` | method | gophermind-lib/build/executor/revision.go:43 | applyRevision is spec section 10 for a rewritten proposal. |
+| `(*runCtx).openTip` | method | gophermind-lib/build/executor/revision.go:120 | openTip records the open intent on the in-memory chain tip of the node, as LoadPlan does for an intent it finds, so Plan.accepts allows the staged body. |
+| `(*runCtx).closeTip` | method | gophermind-lib/build/executor/revision.go:136 | closeTip undoes openTip when the intent is refused. |
+| `(*runCtx).redCheckRevision` | method | gophermind-lib/build/executor/revision.go:152 | redCheckRevision runs the new test against the stub, as the Wave 0 red check does, and says why it is not red: a pass is a vacuous test, a build or vet failure a broken one. |
+| `(*runCtx).rollForward` | method | gophermind-lib/build/executor/revision.go:168 | rollForward is steps 4 to 8 of an open intent. |
+| `(*runCtx).abortRevision` | method | gophermind-lib/build/executor/revision.go:263 | abortRevision undoes the part of a transaction that a rejected test touched: the old test file goes back, a refused record closes the intent and the staged files of that revision are removed. |
+| `(*runCtx).finishCommitted` | method | gophermind-lib/build/executor/revision.go:302 | finishCommitted does everything that follows a commit record and is safe to repeat. |
+| `runFlags` | type | gophermind-lib/build/executor/run.go:25 | runFlags are set only by the package tests, through run. |
+| `Run` | func | gophermind-lib/build/executor/run.go:36 | Run is the executor: it builds the approved plan and returns the run Report. |
+| `run` | func | gophermind-lib/build/executor/run.go:38 |  |
+| `(*runCtx).runWaves` | method | gophermind-lib/build/executor/run.go:127 | runWaves builds every wave in order. |
+| `(*runCtx).baseBranch` | method | gophermind-lib/build/executor/run.go:153 | baseBranch is the branch the run lands on. |
+| `(*runCtx).planIntact` | method | gophermind-lib/build/executor/run.go:166 | planIntact compares the plan files with what was hashed at load, and the approval with the plan as it stands. |
+| `(*runCtx).unfinished` | method | gophermind-lib/build/executor/run.go:192 | unfinished names every leaf that is not verified (spec goal 1: no unfinished leaf goes unnamed). |
+| `touched` | func | gophermind-lib/build/executor/run.go:247 | touched reports that work on a leaf began: it was claimed, is being revised, or was reopened (a ready row with attempts or a raised revision). |
+| `safeVersion` | var | gophermind-lib/build/executor/run.go:257 |  |
+| `(*runCtx).environment` | method | gophermind-lib/build/executor/run.go:262 | environment is what the run ran on, as the report states it: the sandbox setting and whether sandbox-exec was found (recorded in preflight), the binary's version and commit, the Go runtime. |
+| `(*runCtx).parallelReport` | method | gophermind-lib/build/executor/run.go:283 | parallelReport is the report's parallel object, nil when no level ran in parallel in this invocation (ruling 23). |
+| `(*runCtx).buildReport` | method | gophermind-lib/build/executor/run.go:296 | buildReport is the one place a Report is made. |
+| `Finding` | type | gophermind-lib/build/executor/scan.go:37 | Finding is one forbidden construct. |
+| `ParseError` | type | gophermind-lib/build/executor/scan.go:45 | ParseError is a source file that does not parse. |
+| `(*ParseError).Error` | method | gophermind-lib/build/executor/scan.go:50 |  |
+| `maxScanBytes` | const | gophermind-lib/build/executor/scan.go:54 |  |
+| `modForbidden` | var | gophermind-lib/build/executor/scan.go:56 |  |
+| `modBlockDirective` | var | gophermind-lib/build/executor/scan.go:58 |  |
+| `ScanGoMod` | func | gophermind-lib/build/executor/scan.go:64 | ScanGoMod rejects replace, toolchain, godebug and exclude directives in every form: one line, block, and a block opened with the parenthesis glued to the keyword. |
+| `ScanGoFlags` | func | gophermind-lib/build/executor/scan.go:102 | ScanGoFlags rejects -toolexec and -overlay tokens, with one or two leading dashes and an optional =value. |
+| `exitFuncs` | var | gophermind-lib/build/executor/scan.go:115 | exitFuncs are the package level functions that end the process, end the goroutine, or turn a log line into an exit. |
+| `loggerMethods` | var | gophermind-lib/build/executor/scan.go:122 |  |
+| `flagExit` | var | gophermind-lib/build/executor/scan.go:124 |  |
+| `importName` | func | gophermind-lib/build/executor/scan.go:128 | importName is the name an import binds: its alias, else the last element of the path (skipping a major version suffix). |
+| `ScanGoSource` | func | gophermind-lib/build/executor/scan.go:143 | ScanGoSource scans one Go file. |
+| `cleanRel` | func | gophermind-lib/build/executor/scan.go:263 |  |
+| `ScanFiles` | func | gophermind-lib/build/executor/scan.go:271 | ScanFiles scans the named repo relative files: go.mod files and .go files. |
+| `readNoFollow` | func | gophermind-lib/build/executor/scan.go:327 |  |
+| `skipDir` | func | gophermind-lib/build/executor/scan.go:337 | skipDir: the tool ignores these too (testdata, names that start with . |
+| `ScanRepo` | func | gophermind-lib/build/executor/scan.go:343 | ScanRepo is go.mod plus every .go file of the repository, skipping .git, .gophermind and the directories the go tool ignores. |
+| `describeFindings` | func | gophermind-lib/build/executor/scan.go:379 | describeFindings is the fixed-text message of a scan failure. |
+| `maxLeafInterrupts` | const | gophermind-lib/build/executor/schedule.go:22 | maxLeafInterrupts is how many times one run may find a leaf interrupted (context ended, or no provider could answer) before the scheduler refuses to claim it again. |
+| `staleHeartbeats` | const | gophermind-lib/build/executor/schedule.go:26 | staleHeartbeats is how many heartbeat intervals a claim may go without a heartbeat before the sweep at the start of a wave releases it. |
+| `waveResult` | type | gophermind-lib/build/executor/schedule.go:31 | waveResult is what scheduleLeaves did with one wave. |
+| `schedState` | type | gophermind-lib/build/executor/schedule.go:38 | schedState is the scheduler's memory for one run. |
+| `(*schedState).interrupted` | method | gophermind-lib/build/executor/schedule.go:44 |  |
+| `(*schedState).markInterrupted` | method | gophermind-lib/build/executor/schedule.go:50 |  |
+| `interruptStop` | func | gophermind-lib/build/executor/schedule.go:61 | interruptStop is the stop for an interrupted leaf. |
+| `job` | type | gophermind-lib/build/executor/schedule.go:70 | job is one leaf of a level and what became of it. |
+| `runnable` | func | gophermind-lib/build/executor/schedule.go:81 | runnable says the job is to run: not blocked, not already finished. |
+| `(*runCtx).workerCount` | method | gophermind-lib/build/executor/schedule.go:88 | workerCount is how many leaves a level runs at once: executor.workers capped by the jobs that may run in a private tree. |
+| `splitOverlaps` | func | gophermind-lib/build/executor/schedule.go:102 | splitOverlaps puts leaves of a level whose File, StubFile or TestFile is the same path into different sub-levels, the higher id later (spec section 4): they cannot be isolated from each other. |
+| `(*runCtx).needsMain` | method | gophermind-lib/build/executor/schedule.go:139 | needsMain says a leaf of a parallel level must run in the main tree in its turn (ruling 5): the gate is to be asked again, a real file is on disk to adopt, a repair left a reopen marker, or a candidate waits to land (resumeCandidate runs only in the main tree). |
+| `(*runCtx).levelWorkers` | method | gophermind-lib/build/executor/schedule.go:162 | levelWorkers decides how a level runs. |
+| `(*runCtx).noteParallel` | method | gophermind-lib/build/executor/schedule.go:204 | noteParallel counts one parallel level for the report and records the workers value in the run state (spec section 11: the report only). |
+| `levels` | func | gophermind-lib/build/executor/schedule.go:223 | levels orders the leaves: by dependency among themselves first, then by id. |
+| `(*runCtx).scheduleLeaves` | method | gophermind-lib/build/executor/schedule.go:280 | scheduleLeaves runs the leaves of one wave to a terminal status, in dependency order and then id order, and says what became of each:    - a leaf with a dependency that is not verified is not claimed, stays     pending, is named in Blocked and in one blocked event;   - a leaf the blackboard already holds verified or failed is counted as such     (a resumed run), an escalated one asks the gate again (spec S8);   - every other leaf is made ready and run (runLeaf), at most     executor.workers at a time, claims taken in id order, results merged in     id order;   - the context is checked before every claim;   - a stop error, an interrupted leaf or a claim still held by another worker     stops claiming, lets in-flight leaves finish and is returned in Stop. |
+| `(*runCtx).classify` | method | gophermind-lib/build/executor/schedule.go:343 | classify reads every leaf of a level and decides what it is: blocked, already terminal, held by another worker, or to run. |
+| `(*runCtx).runJobs` | method | gophermind-lib/build/executor/schedule.go:378 | runJobs runs the jobs that are to run. |
+| `(*runCtx).runJob` | method | gophermind-lib/build/executor/schedule.go:474 | runJob is one leaf in the main tree: the gate again for a leaf an earlier run left escalated, else the leaf. |
+| `(*runCtx).runParallelJob` | method | gophermind-lib/build/executor/schedule.go:490 | runParallelJob is one leaf of a parallel level. |
+| `(*runCtx).merge` | method | gophermind-lib/build/executor/schedule.go:516 | merge puts one job's result in the wave result. |
+| `(*runCtx).keepReason` | method | gophermind-lib/build/executor/schedule.go:561 | keepReason makes sure the report has the reason of a leaf that ended failed or escalated. |
+| `(*runCtx).resumeEscalated` | method | gophermind-lib/build/executor/schedule.go:574 | resumeEscalated asks the gate again about a leaf an earlier run left escalated (ruling S8): the same question, with the attempts on the blackboard as its history. |
+| `Checker` | interface | gophermind-lib/build/executor/seams.go:22 | Checker is the part of *runner.Runner the executor calls. |
+| `Caller` | interface | gophermind-lib/build/executor/seams.go:31 | Caller is the router method the executor uses; *router.Router satisfies it (same shape as planner.Caller). |
+| `Reviser` | interface | gophermind-lib/build/executor/seams.go:38 | Reviser is the planner's revise stage as the executor uses it: it makes the revise call (and the Test-writer call when tests must change) and returns a validated proposal. |
+| `Secrets` | interface | gophermind-lib/build/executor/seams.go:45 | Secrets is the part of *vault.Vault the executor needs. |
+| `_` | var | gophermind-lib/build/executor/seams.go:51 |  |
+| `_` | var | gophermind-lib/build/executor/seams.go:52 |  |
+| `_` | var | gophermind-lib/build/executor/seams.go:53 |  |
+| `_` | var | gophermind-lib/build/executor/seams.go:54 |  |
+| `_` | var | gophermind-lib/build/executor/seams.go:55 |  |
+| `_` | var | gophermind-lib/build/executor/seams.go:58 | Options.LedgerErrors is (*router.Router).LedgerErrors. |
+| `maxServeReady` | const | gophermind-lib/build/executor/serve.go:24 | maxServeReady caps how long a server may take to answer its ready path. |
+| `serveProc` | type | gophermind-lib/build/executor/serve.go:26 |  |
+| `serveStop` | func | gophermind-lib/build/executor/serve.go:33 |  |
+| `(*runCtx).needsServe` | method | gophermind-lib/build/executor/serve.go:39 | needsServe says the plan declares a server and some root test runs the acceptance package. |
+| `(*runCtx).startServe` | method | gophermind-lib/build/executor/serve.go:57 | startServe starts the declared server and waits for it. |
+| `(*runCtx).dropServe` | method | gophermind-lib/build/executor/serve.go:126 | dropServe kills the server's process group and waits for it. |
+| `(*runCtx).stopServe` | method | gophermind-lib/build/executor/serve.go:137 | stopServe ends the server and runs the leak check on its address. |
+| `(*runCtx).checkAcceptTests` | method | gophermind-lib/build/executor/serve.go:144 | checkAcceptTests proves every Go acceptance test is still the file the planner recorded: nothing between planning and the run may edit a test. |
+| `sortStrings` | func | gophermind-lib/build/executor/serve.go:161 |  |
+| `joinRepo` | func | gophermind-lib/build/executor/serve.go:169 |  |
+| `goCacheOverride` | var | gophermind-lib/build/executor/start.go:35 | goCacheOverride is set only by the test binary's TestMain: one shared GOCACHE for every test of the process, so a package compiled once is not compiled again by each test. |
+| `hostOS` | var | gophermind-lib/build/executor/start.go:38 | hostOS is runtime.GOOS; tests replace it to reach the off-darwin rule. |
+| `stopError` | type | gophermind-lib/build/executor/start.go:44 | stopError is how a stage ends the run with a status instead of a fault. |
+| `(*stopError).Error` | method | gophermind-lib/build/executor/start.go:46 |  |
+| `runCtx` | type | gophermind-lib/build/executor/start.go:49 | runCtx is everything one run shares (called rc everywhere). |
+| `runReport` | type | gophermind-lib/build/executor/start.go:89 | runReport holds the counters that become report.Input. |
+| `(*runCtx).sandboxLabel` | method | gophermind-lib/build/executor/start.go:99 | sandboxLabel is the sandbox setting as the report states it: "on" or "off". |
+| `(*runCtx).emit` | method | gophermind-lib/build/executor/start.go:106 |  |
+| `(*runCtx).close` | method | gophermind-lib/build/executor/start.go:111 | close runs the closers, last first. |
+| `startRun` | func | gophermind-lib/build/executor/start.go:121 | startRun is preflight through the Wave 0 commit. |
+| `newRunCtx` | func | gophermind-lib/build/executor/start.go:134 | newRunCtx is the part of startRun before git: validation, the plan, the landing check and preflight (spec steps 1 to 7). |
+| `retryPlanOnWorkBranch` | func | gophermind-lib/build/executor/start.go:197 | retryPlanOnWorkBranch checks out the work branch recorded in the state and loads the plan again; it returns first when that is not the situation. |
+| `(*runCtx).openGit` | method | gophermind-lib/build/executor/start.go:232 |  |
+| `pathEntries` | func | gophermind-lib/build/executor/start.go:246 |  |
+| `lookIn` | func | gophermind-lib/build/executor/start.go:257 | lookIn finds name in the directories of a PATH value. |
+| `sandboxExecAvailable` | func | gophermind-lib/build/executor/start.go:267 |  |
+| `ensureDir` | func | gophermind-lib/build/executor/start.go:277 | ensureDir makes a directory the harness owns. |
+| `within` | func | gophermind-lib/build/executor/start.go:293 |  |
+| `(*runCtx).preflight` | method | gophermind-lib/build/executor/start.go:300 | preflight is spec steps 2 to 7: tools, sandbox, model chains, directories, proxy and runner. |
+| `(*runCtx).goroot` | method | gophermind-lib/build/executor/start.go:397 | goroot runs go env GOROOT once with an explicit minimal environment. |
+| `(*runCtx).startProxy` | method | gophermind-lib/build/executor/start.go:416 | startProxy uses Options.Proxy or starts the executor's own, closed through rc.closers. |
+| `modelConcurrency` | func | gophermind-lib/build/executor/start.go:457 | modelConcurrency is the largest max_concurrent among the providers the executor chains name (decision F8, ruling 17, spec 8.4): standard and strong (checkChains, the revise stage) and the tier of every leaf (ladderEntries). |
+| `checkChains` | func | gophermind-lib/build/executor/start.go:483 | checkChains is spec 7.5: for standard and strong (the tiers the executor uses) the chain must hold an entry whose provider exists and may see a node's text: a private provider, or a public one when privacy.mode is need_to_know. |
+| `allowlist` | func | gophermind-lib/build/executor/start.go:507 | allowlist is the hosts the harness proxy allows: every leaf's network hosts (critical ones also in critical), the host of each provider base_url, and the Go module hosts. |
+| `(*runCtx).allowDirty` | method | gophermind-lib/build/executor/start.go:537 | allowDirty is every leaf's test file and every Go acceptance test: the Test-writer leaves them uncommitted, and Wave 0 commits them. |
+| `(*runCtx).begin` | method | gophermind-lib/build/executor/start.go:558 | begin is spec steps 8 to 10: git, the board and state, then Wave 0 on a fresh run. |
+| `(*runCtx).wave0Paths` | method | gophermind-lib/build/executor/start.go:627 | wave0Paths is every file Wave 0 may leave dirty or commit: the tests, the contract type files, the stubs, go.mod and go.sum. |
+| `(*runCtx).retryWave0` | method | gophermind-lib/build/executor/start.go:644 | retryWave0 re-enters Wave 0 for a run that started and stopped before its Wave 0 commit (a plan defect, a forbidden go.mod, an unreachable proxy). |
+| `(*runCtx).wave0` | method | gophermind-lib/build/executor/start.go:682 | wave0 is spec 14 in order: types and stubs, go.mod, the deps step, the scan, the build check, the red check, the commit. |
+| `(*runCtx).cleanCheckOutput` | method | gophermind-lib/build/executor/start.go:791 | cleanCheckOutput removes the files the Wave 0 checks created (for example the binary of go build on one main package) and stops the run when a check changed a file that was already there. |
+| `firstThree` | func | gophermind-lib/build/executor/start.go:817 |  |
+| `(*runCtx).onlyDeclaredDirt` | method | gophermind-lib/build/executor/start.go:827 | onlyDeclaredDirt refuses to commit Wave 0 when anything outside the declared files changed: a go command or a stray write must not slip into the commit or stay behind it. |
+| `uniqueSorted` | func | gophermind-lib/build/executor/start.go:853 |  |
+| `locations` | func | gophermind-lib/build/executor/start.go:867 | locations is " at file:line, file:line" (at most 5), or "". |
+| `faultOf` | func | gophermind-lib/build/executor/start.go:883 | faultOf is a harness fault or a cancellation of a check, as an error. |
+| `(*runCtx).wave0Checks` | method | gophermind-lib/build/executor/start.go:891 | wave0Checks is the build check of everything, then the red check. |
+| `(*runCtx).redCheck` | method | gophermind-lib/build/executor/start.go:912 | redCheck runs each leaf's test against its stub, once, before its first model call. |
+| `stateExecutor` | const | gophermind-lib/build/executor/state.go:25 | The executor's own files in the run folder. |
+| `stateNotes` | const | gophermind-lib/build/executor/state.go:26 | The executor's own files in the run folder. |
+| `stateEscalations` | const | gophermind-lib/build/executor/state.go:27 | The executor's own files in the run folder. |
+| `maxNotesPerNode` | const | gophermind-lib/build/executor/state.go:29 | The executor's own files in the run folder. |
+| `State` | type | gophermind-lib/build/executor/state.go:33 | State is _state/executor.json. |
+| `(*State).initMaps` | method | gophermind-lib/build/executor/state.go:47 |  |
+| `LoadState` | func | gophermind-lib/build/executor/state.go:67 | LoadState reads _state/executor.json. |
+| `(State).Save` | method | gophermind-lib/build/executor/state.go:77 | Save writes the state atomically, mode 0600. |
+| `notesMu` | var | gophermind-lib/build/executor/state.go:83 | notesMu serialises the read-modify-write of the two append-only files. |
+| `LoadNotes` | func | gophermind-lib/build/executor/state.go:87 | LoadNotes reads _state/notes.json: node id to its human hints. |
+| `AddNote` | func | gophermind-lib/build/executor/state.go:99 | AddNote appends a note to a node and keeps only the last 5 for it. |
+| `LoadEscalations` | func | gophermind-lib/build/executor/state.go:115 | LoadEscalations reads _state/escalations.json. |
+| `AppendEscalation` | func | gophermind-lib/build/executor/state.go:133 | AppendEscalation records one escalation, in order. |
+| `stateDir` | func | gophermind-lib/build/executor/state.go:168 | stateDir returns <runDir>/_state after checking it is a real directory, not a symbolic link. |
+| `readStateJSON` | func | gophermind-lib/build/executor/state.go:201 | readStateJSON decodes one of the executor's files. |
+| `writeStateJSON` | func | gophermind-lib/build/executor/state.go:236 | writeStateJSON stores v as indented JSON: a new temp file in the same folder (O_EXCL, O_NOFOLLOW, 0600), flushed, renamed over the target, and the folder flushed, so a reader never sees half a file. |
+| `writeStateBytes` | func | gophermind-lib/build/executor/state.go:245 | writeStateBytes is the atomic, no-follow, mode 0600 writer under _state/. |
+| `tempPrefix` | const | gophermind-lib/build/executor/state.go:290 |  |
+| `removeOwnTemp` | func | gophermind-lib/build/executor/state.go:297 | removeOwnTemp deletes a temp file this package just made. |
+| `readStateBytes` | func | gophermind-lib/build/executor/state.go:306 | readStateBytes reads a raw file of _state (never through a link). |
+| `priorPrefix` | const | gophermind-lib/build/executor/state.go:333 | priorPrefix names the files that hold a leaf's verified source while a diff_only repair is in flight. |
+| `removeStatePrior` | func | gophermind-lib/build/executor/state.go:337 | removeStatePrior deletes _state/prior-<id>. |
+| `restorePriors` | func | gophermind-lib/build/executor/state.go:363 | restorePriors is the resume step of a diff_only repair: a leaf whose saved verified source is still in _state was cut off mid-repair, so its file is put back (atomically) and the saved copy removed. |
+| `reopenPrefix` | const | gophermind-lib/build/executor/state.go:384 | reopenPrefix names the markers of a repair in flight: _state/reopen-<id>. |
+| `reopenMarker` | type | gophermind-lib/build/executor/state.go:390 | reopenMarker says that a committed leaf is being repaired: it is written before the first candidate of a repair reaches the disk, so a resume that finds the committed file dirty knows it holds a candidate, not a first build. |
+| `writeReopenMarker` | func | gophermind-lib/build/executor/state.go:396 |  |
+| `readReopenMarker` | func | gophermind-lib/build/executor/state.go:400 |  |
+| `removeReopenMarker` | func | gophermind-lib/build/executor/state.go:411 | removeReopenMarker deletes _state/reopen-<id>. |
+| `Snapshot` | type | gophermind-lib/build/executor/stray.go:19 | Snapshot maps a dirty or ignored path to the SHA-256 of its bytes: "" for a file that is deleted, "unreadable" for one that cannot be read, "dir" for a directory and "link:" plus the hash of the target text for a symbolic link (the link is never followed). |
+| `TakeSnapshot` | func | gophermind-lib/build/executor/stray.go:25 | TakeSnapshot records every path git reports as dirty (tracked changes and untracked files, found one by one inside new directories). |
+| `sumHex` | func | gophermind-lib/build/executor/stray.go:41 |  |
+| `hashPath` | func | gophermind-lib/build/executor/stray.go:47 | hashPath hashes one repo-relative path without following a link. |
+| `(Snapshot).Stray` | method | gophermind-lib/build/executor/stray.go:87 | Stray returns the paths dirty now that are not in before, or whose content hash changed since before, excluding allowed. |
+| `Revert` | func | gophermind-lib/build/executor/stray.go:111 | Revert puts tracked paths back to HEAD and removes untracked ones. |
+| `StubSource` | func | gophermind-lib/build/executor/stubs.go:22 | StubSource is a leaf's stub file: the package clause, the imports it is given, the signature, and a body that is exactly panic("gm: not implemented"). |
+| `StubPath` | func | gophermind-lib/build/executor/stubs.go:72 | StubPath is the repo-relative (slash) path of a leaf's stub file. |
+| `stubFor` | func | gophermind-lib/build/executor/stubs.go:75 | stubFor derives the imports a leaf's signature needs and builds its stub. |
+| `SwapState` | type | gophermind-lib/build/executor/swap.go:14 | SwapState is what the disk holds for one leaf. |
+| `SwapStubOnly` | const | gophermind-lib/build/executor/swap.go:17 |  |
+| `SwapRealOnly` | const | gophermind-lib/build/executor/swap.go:18 |  |
+| `SwapBoth` | const | gophermind-lib/build/executor/swap.go:19 |  |
+| `SwapNeither` | const | gophermind-lib/build/executor/swap.go:20 |  |
+| `(SwapState).String` | method | gophermind-lib/build/executor/swap.go:23 |  |
+| `Swap` | type | gophermind-lib/build/executor/swap.go:40 | Swap is the stub/real file swap of spec 8.1 for one leaf's attempt sequence. |
+| `NewSwap` | func | gophermind-lib/build/executor/swap.go:67 |  |
+| `(*Swap).Enter` | method | gophermind-lib/build/executor/swap.go:73 | Enter removes the stub, then writes the real file. |
+| `(*Swap).Fail` | method | gophermind-lib/build/executor/swap.go:122 | Fail removes the real file and puts the stub back; both steps run even when the first fails, and it is idempotent. |
+| `(*Swap).NoCommit` | method | gophermind-lib/build/executor/swap.go:156 | NoCommit is diff_only mode: nothing is committed, and a failed repair puts back the content the file had when the repair began. |
+| `(*Swap).PassNoCommit` | method | gophermind-lib/build/executor/swap.go:160 | PassNoCommit is Pass for diff_only: the real file stays on disk, the stub is gone, and no commit is made. |
+| `(*Swap).Track` | method | gophermind-lib/build/executor/swap.go:173 | Track makes a repair leave a marker in <runDir>/_state while a candidate may be on disk (round and revision are what it records). |
+| `(*Swap).Reopen` | method | gophermind-lib/build/executor/swap.go:179 | Reopen is repair mode: the stub is never restored and Fail restores File from git. |
+| `(*Swap).ready` | method | gophermind-lib/build/executor/swap.go:182 | ready refuses a commit unless the real file is on disk and the stub is not. |
+| `(*Swap).Pass` | method | gophermind-lib/build/executor/swap.go:196 | Pass commits the leaf: the real file added and the stub removed in one commit. |
+| `(*Swap).PassRepair` | method | gophermind-lib/build/executor/swap.go:209 | PassRepair commits a repair of an already committed leaf (repair mode). |
+| `(*Swap).kind` | method | gophermind-lib/build/executor/swap.go:226 | kind reports whether rel exists. |
+| `(*Swap).State` | method | gophermind-lib/build/executor/swap.go:245 | State reports what the disk holds. |
+| `(*Swap).Normalize` | method | gophermind-lib/build/executor/swap.go:267 | Normalize is the resume step of spec 8.1: a leaf with both files has its stub removed, one with neither gets the stub, one with only one is left alone. |
+| `errLandingFault` | var | gophermind-lib/build/executor/turn.go:13 | errLandingFault is what wait returns to a job behind a landing that failed with a harness fault (ruling C5, spec section 7.3): the job does not land, its candidate stays, and it ends interrupted. |
+| `turn` | type | gophermind-lib/build/executor/turn.go:23 | turn is one job's place in the landing order of a parallel level (spec section 7.1). |
+| `newTurn` | func | gophermind-lib/build/executor/turn.go:32 |  |
+| `(*turn).wait` | method | gophermind-lib/build/executor/turn.go:40 | wait blocks until the previous job ended, then takes the main tree. |
+| `(*turn).release` | method | gophermind-lib/build/executor/turn.go:67 | release gives the main tree back and lets the next job go. |
+| `stdQualifiers` | var | gophermind-lib/build/executor/typedecl.go:28 | stdQualifiers maps the package qualifier a signature or type declaration commonly uses to its import path. |
+| `versionElemRE` | var | gophermind-lib/build/executor/typedecl.go:40 |  |
+| `packageImports` | func | gophermind-lib/build/executor/typedecl.go:45 | packageImports maps each contract package name to its import path, the module path plus the directory of its file. |
+| `parseErrAt` | func | gophermind-lib/build/executor/typedecl.go:73 | parseErrAt is the kind of parse failure as "line:col", never the message, which can quote source text. |
+| `resolveQualifier` | func | gophermind-lib/build/executor/typedecl.go:98 | resolveQualifier finds the import path of a package qualifier: contract packages first, then the modules of dependencies.json, then the standard library table. |
+| `deriveImports` | func | gophermind-lib/build/executor/typedecl.go:130 | deriveImports finds the import paths a declaration or signature needs. |
+| `validPackageName` | func | gophermind-lib/build/executor/typedecl.go:175 | validPackageName is a plain identifier that is not a keyword and not "_". |
+| `directivePrefixes` | var | gophermind-lib/build/executor/typedecl.go:177 |  |
+| `processControl` | var | gophermind-lib/build/executor/typedecl.go:181 | processControl lists the calls that end or fake the end of a program. |
+| `hasDirective` | func | gophermind-lib/build/executor/typedecl.go:188 |  |
+| `checkAssembled` | func | gophermind-lib/build/executor/typedecl.go:206 | checkAssembled re-parses a file the harness put together (a stub or a type file) and refuses it, with a fixed kind, unless it is only a package clause, allowed imports, type declarations and functions with bodies: no directive, no init, no var or const, no process-control call, no recover. |
+| `validateDecl` | func | gophermind-lib/build/executor/typedecl.go:273 | validateDecl accepts a contract type Decl only when it is one or more type declarations plus methods, with no directive and no import. |
+| `typeFile` | type | gophermind-lib/build/executor/typedecl.go:305 |  |
+| `WriteTypes` | func | gophermind-lib/build/executor/typedecl.go:316 | WriteTypes writes each contract Type's file. |
+| `checkFailure` | type | gophermind-lib/build/executor/wave.go:20 | checkFailure is one failing step of the integration checks. |
+| `checkResult` | type | gophermind-lib/build/executor/wave.go:28 | checkResult is the outcome of the integration checks of one wave. |
+| `(checkResult).Pass` | method | gophermind-lib/build/executor/wave.go:31 | Pass reports that no step failed. |
+| `redacted` | const | gophermind-lib/build/executor/wave.go:34 | redacted stands in for a package, a file or a name that held a secret. |
+| `(*runCtx).waves` | method | gophermind-lib/build/executor/wave.go:37 | waves is the sorted distinct wave numbers that hold a leaf. |
+| `(*runCtx).verifiedTests` | method | gophermind-lib/build/executor/wave.go:52 | verifiedTests is leaf Dir -> the sorted test functions of every leaf that is verified now. |
+| `(*runCtx).verifiedTestsCtx` | method | gophermind-lib/build/executor/wave.go:57 |  |
+| `(*runCtx).unverified` | method | gophermind-lib/build/executor/wave.go:78 | unverified is the leaves of the wave that are not verified, in id order. |
+| `stopOf` | func | gophermind-lib/build/executor/wave.go:96 | stopOf returns the *stopError inside err, if there is one. |
+| `(*runCtx).runWave` | method | gophermind-lib/build/executor/wave.go:114 | runWave builds wave w (spec 8.2) and then checks it (8.3). |
+| `(*runCtx).faultOrStop` | method | gophermind-lib/build/executor/wave.go:161 | faultOrStop turns an error from a step into a stop when it is one, into the interrupted stop when the context ended, and otherwise into a harness fault. |
+| `(*runCtx).allVerified` | method | gophermind-lib/build/executor/wave.go:168 |  |
+| `(*runCtx).notVerifiedStop` | method | gophermind-lib/build/executor/wave.go:175 | notVerifiedStop names every leaf that is not verified when the last wave ends. |
+| `blockedStop` | func | gophermind-lib/build/executor/wave.go:187 | blockedStop is the stop of a wave with blocked leaves: each named with the dependency that blocks it. |
+| `unattributableStop` | func | gophermind-lib/build/executor/wave.go:203 | unattributableStop is R10: the failing locations are listed, never guessed onto a leaf. |
+| `(*runCtx).waveChecks` | method | gophermind-lib/build/executor/wave.go:218 | waveChecks is spec 8.3 with no model: go build and go vet over ./..., then one race test run per package that holds a verified leaf (Funcs restricted to those leaves, so a later leaf's stub is never run), or, when final, one run of ./... |
+| `(*runCtx).runChecks` | method | gophermind-lib/build/executor/wave.go:260 |  |
+| `pkgPattern` | func | gophermind-lib/build/executor/wave.go:319 | pkgPattern is the go package argument of a repo-relative directory. |
+| `(*runCtx).failureOf` | method | gophermind-lib/build/executor/wave.go:329 | failureOf turns a failing verdict into a checkFailure, or says why it is not one: a cancelled check is an interruption and any harness class is a fault, neither attributable to a leaf. |
+| `qnameTestRE` | var | gophermind-lib/build/executor/wave.go:342 |  |
+| `(*runCtx).splitQName` | method | gophermind-lib/build/executor/wave.go:347 | splitQName splits a package-qualified test name at a ".Test" style boundary. |
+| `(*runCtx).moduleFailures` | method | gophermind-lib/build/executor/wave.go:374 | moduleFailures splits the failure of a ./... |
+| `(*runCtx).dirOfPackage` | method | gophermind-lib/build/executor/wave.go:419 | dirOfPackage maps an import path to a repo-relative directory. |
+| `(*runCtx).scrubText` | method | gophermind-lib/build/executor/wave.go:440 | scrubText is s, or the redaction mark when it holds a secret value. |
+| `(*runCtx).scrubFailure` | method | gophermind-lib/build/executor/wave.go:449 | scrubFailure replaces every secret-bearing package, test name and file of f (in the packer's forms) so none reaches an event, a store or a prompt. |
+| `workTree` | type | gophermind-lib/build/executor/worktree.go:22 | workTree is where one leaf reads and writes the repository: the main tree, or a private copy of it (sub-project F, spec section 5). |
+| `maxTreeBytes` | const | gophermind-lib/build/executor/worktree.go:34 | maxTreeBytes is the copy limit of decision F12: a level whose files are larger runs one leaf at a time. |
+| `treeIDRe` | var | gophermind-lib/build/executor/worktree.go:37 | treeIDRe is the shape of a leaf id that may name a scratch directory. |
+| `(*runCtx).mainTree` | method | gophermind-lib/build/executor/worktree.go:41 | mainTree is the repository itself. |
+| `(*runCtx).snapshotLevel` | method | gophermind-lib/build/executor/worktree.go:49 | snapshotLevel copies the main tree once, before a parallel level starts, into <scratch>/base, and keeps the file list for makeTree (ruling 2). |
+| `(*runCtx).endLevel` | method | gophermind-lib/build/executor/worktree.go:82 | endLevel removes the level's base copy. |
+| `(*runCtx).makeTree` | method | gophermind-lib/build/executor/worktree.go:92 | makeTree makes the private tree of one leaf from the level's base copy: the files, a throwaway repository with one baseline commit, the leaf's HOME and TMPDIR with a GOPATH, and the checker of the tree. |
+| `(*runCtx).dropTree` | method | gophermind-lib/build/executor/worktree.go:128 | dropTree closes a private tree's git layer and removes the tree and its HOME. |
+| `(*runCtx).cleanTrees` | method | gophermind-lib/build/executor/worktree.go:144 | cleanTrees removes what a killed run left of its private trees and base copy: derived data only (a candidate lives in _state, decision F10). |
+| `(*runCtx).removeScratch` | method | gophermind-lib/build/executor/worktree.go:160 | removeScratch deletes <scratch>/<kind> or <scratch>/<kind>/<id>, the only directories parallel levels make. |
+| `makeWritable` | func | gophermind-lib/build/executor/worktree.go:204 | makeWritable gives the owner write access to every directory under root (a tool may leave read-only ones), never through a link. |
+| `(*runCtx).treeProfile` | method | gophermind-lib/build/executor/worktree.go:217 | treeProfile is the run's sandbox profile with the tree as the repository and the leaf's directory as HOME and TMPDIR; nil when the sandbox is off. |
+| `(*runCtx).checkerFor` | method | gophermind-lib/build/executor/worktree.go:231 | checkerFor is the Checker of a private tree: a runner with the tree's profile when the sandbox is on (cheap: no process), else rc.chk, which takes the directory from each call; a test's fake Checker therefore stays in place. |
+| `(*runCtx).leafCheckIn` | method | gophermind-lib/build/executor/worktree.go:240 | leafCheckIn is runner.LeafCheck of the named files of the leaf in a work tree. |
 
 ## package fewshot
 
@@ -1463,65 +1463,65 @@ after every completed task. Non-test Go declarations only.
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `homePrefix` | const | gophermind-lib/briefv2/gitland/cli.go:20 |  |
-| `subjectLimit` | const | gophermind-lib/briefv2/gitland/cli.go:21 |  |
-| `gitTimeout` | const | gophermind-lib/briefv2/gitland/cli.go:22 |  |
-| `testGit` | var | gophermind-lib/briefv2/gitland/cli.go:27 | testGit redirects the git binary. |
-| `branchRe` | var | gophermind-lib/briefv2/gitland/cli.go:30 |  |
-| `idRe` | var | gophermind-lib/briefv2/gitland/cli.go:31 |  |
-| `fixedPrefix` | var | gophermind-lib/briefv2/gitland/cli.go:35 | fixedPrefix starts every git command so nothing in the target repo's configuration can run. |
-| `forbiddenSubs` | var | gophermind-lib/briefv2/gitland/cli.go:44 |  |
-| `CLI` | type | gophermind-lib/briefv2/gitland/cli.go:50 | CLI runs the git binary with fixed argument vectors, never a shell. |
-| `_` | var | gophermind-lib/briefv2/gitland/cli.go:60 |  |
-| `NewCLI` | func | gophermind-lib/briefv2/gitland/cli.go:63 | NewCLI prepares a CLI for the repo at dir. |
-| `NewScratch` | func | gophermind-lib/briefv2/gitland/cli.go:111 | NewScratch makes dir a throwaway repository for one leaf's private tree (sub-project F): git init, git add -A, one commit "gm(baseline)". |
-| `(*CLI).Close` | method | gophermind-lib/briefv2/gitland/cli.go:163 | Close removes the private HOME made by NewCLI, only when it still looks like ours. |
-| `(*CLI).env` | method | gophermind-lib/briefv2/gitland/cli.go:188 | env is built from scratch: no inherited GIT_* variable reaches git. |
-| `gitErr` | type | gophermind-lib/briefv2/gitland/cli.go:209 |  |
-| `(*gitErr).Error` | method | gophermind-lib/briefv2/gitland/cli.go:214 |  |
-| `guard` | func | gophermind-lib/briefv2/gitland/cli.go:219 | guard applies the denylist to the part of args before any "--". |
-| `(*CLI).runCode` | method | gophermind-lib/briefv2/gitland/cli.go:275 | runCode is the single place git is spawned. |
-| `(*CLI).runIn` | method | gophermind-lib/briefv2/gitland/cli.go:278 | runIn is runCode with data on stdin. |
-| `(*CLI).run` | method | gophermind-lib/briefv2/gitland/cli.go:305 |  |
-| `(*CLI).runStdin` | method | gophermind-lib/briefv2/gitland/cli.go:307 |  |
-| `validBranch` | func | gophermind-lib/briefv2/gitland/cli.go:319 |  |
-| `validPath` | func | gophermind-lib/briefv2/gitland/cli.go:323 |  |
-| `validPaths` | func | gophermind-lib/briefv2/gitland/cli.go:338 |  |
-| `(*CLI).Start` | method | gophermind-lib/briefv2/gitland/cli.go:347 |  |
-| `(*CLI).checkDirty` | method | gophermind-lib/briefv2/gitland/cli.go:376 | checkDirty requires every dirty path to be one of allowDirty. |
-| `(*CLI).Reenter` | method | gophermind-lib/briefv2/gitland/cli.go:410 | Reenter is Start for a run that began and stopped before its Wave 0 commit. |
-| `(*CLI).short` | method | gophermind-lib/briefv2/gitland/cli.go:444 |  |
-| `(*CLI).Head` | method | gophermind-lib/briefv2/gitland/cli.go:452 |  |
-| `(*CLI).Branch` | method | gophermind-lib/briefv2/gitland/cli.go:454 |  |
-| `splitNul` | func | gophermind-lib/briefv2/gitland/cli.go:462 |  |
-| `(*CLI).Dirty` | method | gophermind-lib/briefv2/gitland/cli.go:472 |  |
-| `(*CLI).Ignored` | method | gophermind-lib/briefv2/gitland/cli.go:502 | Ignored lists the ignored files (NUL-separated status, so quoted and odd names are exact), except the .gophermind/ run folder. |
-| `(*CLI).Files` | method | gophermind-lib/briefv2/gitland/cli.go:525 | Files is the file list a private tree copies (sub-project F): ls-files of the index and of the untracked files that are not ignored, NUL-separated so odd names are exact, minus .gophermind/ and minus tracked files deleted from disk. |
-| `cleanText` | func | gophermind-lib/briefv2/gitland/cli.go:548 |  |
-| `(*CLI).commitPaths` | method | gophermind-lib/briefv2/gitland/cli.go:571 | commitPaths stages exactly the named paths, proves the index holds nothing else, and commits. |
-| `(*CLI).runTrailer` | method | gophermind-lib/briefv2/gitland/cli.go:619 |  |
-| `(*CLI).CommitWave0` | method | gophermind-lib/briefv2/gitland/cli.go:621 |  |
-| `(*CLI).CommitLeaf` | method | gophermind-lib/briefv2/gitland/cli.go:625 |  |
-| `(*CLI).CommitRepair` | method | gophermind-lib/briefv2/gitland/cli.go:633 |  |
-| `(*CLI).CommitRevision` | method | gophermind-lib/briefv2/gitland/cli.go:641 |  |
-| `(*CLI).Finish` | method | gophermind-lib/briefv2/gitland/cli.go:652 |  |
-| `(*CLI).Restore` | method | gophermind-lib/briefv2/gitland/cli.go:703 |  |
-| `(*CLI).Diff` | method | gophermind-lib/briefv2/gitland/cli.go:753 |  |
-| `(*CLI).LeafCommit` | method | gophermind-lib/briefv2/gitland/cli.go:783 |  |
-| `revRe` | var | gophermind-lib/briefv2/gitland/cli.go:805 |  |
-| `(*CLI).IsAncestor` | method | gophermind-lib/briefv2/gitland/cli.go:807 |  |
-| `(*CLI).finalCommitExists` | method | gophermind-lib/briefv2/gitland/cli.go:826 | finalCommitExists reports that the tip of the current branch is this run's own final commit: a Finish that was cut off after making it must not make a second one. |
-| `(*CLI).ForeignCommits` | method | gophermind-lib/briefv2/gitland/cli.go:835 |  |
-| `(*CLI).CanFastForward` | method | gophermind-lib/briefv2/gitland/cli.go:864 |  |
-| `Repo` | interface | gophermind-lib/briefv2/gitland/gitland.go:11 | Repo is the whole surface the executor may use. |
-| `ErrLandingBlocked` | var | gophermind-lib/briefv2/gitland/gitland.go:55 |  |
-| `ErrDirtyTree` | var | gophermind-lib/briefv2/gitland/gitland.go:56 |  |
-| `ErrWorkBranchMoved` | var | gophermind-lib/briefv2/gitland/gitland.go:57 |  |
-| `ErrNothingToCommit` | var | gophermind-lib/briefv2/gitland/gitland.go:58 |  |
-| `ErrIndexNotClean` | var | gophermind-lib/briefv2/gitland/gitland.go:59 |  |
-| `ErrNotRepoRoot` | var | gophermind-lib/briefv2/gitland/gitland.go:60 |  |
-| `ErrForbiddenGitArgs` | var | gophermind-lib/briefv2/gitland/gitland.go:61 |  |
-| `ValidateLanding` | func | gophermind-lib/briefv2/gitland/gitland.go:65 | ValidateLanding is called by the executor before Start. |
+| `homePrefix` | const | gophermind-lib/build/gitland/cli.go:20 |  |
+| `subjectLimit` | const | gophermind-lib/build/gitland/cli.go:21 |  |
+| `gitTimeout` | const | gophermind-lib/build/gitland/cli.go:22 |  |
+| `testGit` | var | gophermind-lib/build/gitland/cli.go:27 | testGit redirects the git binary. |
+| `branchRe` | var | gophermind-lib/build/gitland/cli.go:30 |  |
+| `idRe` | var | gophermind-lib/build/gitland/cli.go:31 |  |
+| `fixedPrefix` | var | gophermind-lib/build/gitland/cli.go:35 | fixedPrefix starts every git command so nothing in the target repo's configuration can run. |
+| `forbiddenSubs` | var | gophermind-lib/build/gitland/cli.go:44 |  |
+| `CLI` | type | gophermind-lib/build/gitland/cli.go:50 | CLI runs the git binary with fixed argument vectors, never a shell. |
+| `_` | var | gophermind-lib/build/gitland/cli.go:60 |  |
+| `NewCLI` | func | gophermind-lib/build/gitland/cli.go:63 | NewCLI prepares a CLI for the repo at dir. |
+| `NewScratch` | func | gophermind-lib/build/gitland/cli.go:111 | NewScratch makes dir a throwaway repository for one leaf's private tree (sub-project F): git init, git add -A, one commit "gm(baseline)". |
+| `(*CLI).Close` | method | gophermind-lib/build/gitland/cli.go:163 | Close removes the private HOME made by NewCLI, only when it still looks like ours. |
+| `(*CLI).env` | method | gophermind-lib/build/gitland/cli.go:188 | env is built from scratch: no inherited GIT_* variable reaches git. |
+| `gitErr` | type | gophermind-lib/build/gitland/cli.go:209 |  |
+| `(*gitErr).Error` | method | gophermind-lib/build/gitland/cli.go:214 |  |
+| `guard` | func | gophermind-lib/build/gitland/cli.go:219 | guard applies the denylist to the part of args before any "--". |
+| `(*CLI).runCode` | method | gophermind-lib/build/gitland/cli.go:275 | runCode is the single place git is spawned. |
+| `(*CLI).runIn` | method | gophermind-lib/build/gitland/cli.go:278 | runIn is runCode with data on stdin. |
+| `(*CLI).run` | method | gophermind-lib/build/gitland/cli.go:305 |  |
+| `(*CLI).runStdin` | method | gophermind-lib/build/gitland/cli.go:307 |  |
+| `validBranch` | func | gophermind-lib/build/gitland/cli.go:319 |  |
+| `validPath` | func | gophermind-lib/build/gitland/cli.go:323 |  |
+| `validPaths` | func | gophermind-lib/build/gitland/cli.go:338 |  |
+| `(*CLI).Start` | method | gophermind-lib/build/gitland/cli.go:347 |  |
+| `(*CLI).checkDirty` | method | gophermind-lib/build/gitland/cli.go:376 | checkDirty requires every dirty path to be one of allowDirty. |
+| `(*CLI).Reenter` | method | gophermind-lib/build/gitland/cli.go:410 | Reenter is Start for a run that began and stopped before its Wave 0 commit. |
+| `(*CLI).short` | method | gophermind-lib/build/gitland/cli.go:444 |  |
+| `(*CLI).Head` | method | gophermind-lib/build/gitland/cli.go:452 |  |
+| `(*CLI).Branch` | method | gophermind-lib/build/gitland/cli.go:454 |  |
+| `splitNul` | func | gophermind-lib/build/gitland/cli.go:462 |  |
+| `(*CLI).Dirty` | method | gophermind-lib/build/gitland/cli.go:472 |  |
+| `(*CLI).Ignored` | method | gophermind-lib/build/gitland/cli.go:502 | Ignored lists the ignored files (NUL-separated status, so quoted and odd names are exact), except the .gophermind/ run folder. |
+| `(*CLI).Files` | method | gophermind-lib/build/gitland/cli.go:525 | Files is the file list a private tree copies (sub-project F): ls-files of the index and of the untracked files that are not ignored, NUL-separated so odd names are exact, minus .gophermind/ and minus tracked files deleted from disk. |
+| `cleanText` | func | gophermind-lib/build/gitland/cli.go:548 |  |
+| `(*CLI).commitPaths` | method | gophermind-lib/build/gitland/cli.go:571 | commitPaths stages exactly the named paths, proves the index holds nothing else, and commits. |
+| `(*CLI).runTrailer` | method | gophermind-lib/build/gitland/cli.go:619 |  |
+| `(*CLI).CommitWave0` | method | gophermind-lib/build/gitland/cli.go:621 |  |
+| `(*CLI).CommitLeaf` | method | gophermind-lib/build/gitland/cli.go:625 |  |
+| `(*CLI).CommitRepair` | method | gophermind-lib/build/gitland/cli.go:633 |  |
+| `(*CLI).CommitRevision` | method | gophermind-lib/build/gitland/cli.go:641 |  |
+| `(*CLI).Finish` | method | gophermind-lib/build/gitland/cli.go:652 |  |
+| `(*CLI).Restore` | method | gophermind-lib/build/gitland/cli.go:703 |  |
+| `(*CLI).Diff` | method | gophermind-lib/build/gitland/cli.go:753 |  |
+| `(*CLI).LeafCommit` | method | gophermind-lib/build/gitland/cli.go:783 |  |
+| `revRe` | var | gophermind-lib/build/gitland/cli.go:805 |  |
+| `(*CLI).IsAncestor` | method | gophermind-lib/build/gitland/cli.go:807 |  |
+| `(*CLI).finalCommitExists` | method | gophermind-lib/build/gitland/cli.go:826 | finalCommitExists reports that the tip of the current branch is this run's own final commit: a Finish that was cut off after making it must not make a second one. |
+| `(*CLI).ForeignCommits` | method | gophermind-lib/build/gitland/cli.go:835 |  |
+| `(*CLI).CanFastForward` | method | gophermind-lib/build/gitland/cli.go:864 |  |
+| `Repo` | interface | gophermind-lib/build/gitland/gitland.go:11 | Repo is the whole surface the executor may use. |
+| `ErrLandingBlocked` | var | gophermind-lib/build/gitland/gitland.go:55 |  |
+| `ErrDirtyTree` | var | gophermind-lib/build/gitland/gitland.go:56 |  |
+| `ErrWorkBranchMoved` | var | gophermind-lib/build/gitland/gitland.go:57 |  |
+| `ErrNothingToCommit` | var | gophermind-lib/build/gitland/gitland.go:58 |  |
+| `ErrIndexNotClean` | var | gophermind-lib/build/gitland/gitland.go:59 |  |
+| `ErrNotRepoRoot` | var | gophermind-lib/build/gitland/gitland.go:60 |  |
+| `ErrForbiddenGitArgs` | var | gophermind-lib/build/gitland/gitland.go:61 |  |
+| `ValidateLanding` | func | gophermind-lib/build/gitland/gitland.go:65 | ValidateLanding is called by the executor before Start. |
 
 ## package golden
 
@@ -1539,75 +1539,75 @@ after every completed task. Non-test Go declarations only.
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `File` | type | gophermind-lib/briefv2/human/file.go:19 | File is the gate for runs nobody is watching. |
-| `_` | var | gophermind-lib/briefv2/human/file.go:21 |  |
-| `NewFile` | func | gophermind-lib/briefv2/human/file.go:23 |  |
-| `blockRE` | var | gophermind-lib/briefv2/human/file.go:26 |  |
-| `hashRE` | var | gophermind-lib/briefv2/human/file.go:27 |  |
-| `understandingHashRE` | var | gophermind-lib/briefv2/human/file.go:28 |  |
-| `unsafeR` | var | gophermind-lib/briefv2/human/file.go:29 |  |
-| `block` | type | gophermind-lib/briefv2/human/file.go:32 |  |
-| `parseBlocks` | func | gophermind-lib/briefv2/human/file.go:36 | parseBlocks returns the fenced blocks of the given kind ("answer", "decision", "resolution") in file order. |
-| `(*File).write` | method | gophermind-lib/briefv2/human/file.go:46 |  |
-| `(*File).read` | method | gophermind-lib/briefv2/human/file.go:56 |  |
-| `(*File).archive` | method | gophermind-lib/briefv2/human/file.go:69 | archive moves an answered file aside so the next call with the same file name starts a fresh conversation. |
-| `(*File).Ask` | method | gophermind-lib/briefv2/human/file.go:74 |  |
-| `(*File).Approve` | method | gophermind-lib/briefv2/human/file.go:136 |  |
-| `(*File).Confirm` | method | gophermind-lib/briefv2/human/file.go:171 |  |
-| `(*File).Escalate` | method | gophermind-lib/briefv2/human/file.go:202 |  |
-| `ErrWaiting` | var | gophermind-lib/briefv2/human/human.go:17 | ErrWaiting means a question or approval was written out and nobody has answered it yet. |
-| `Question` | type | gophermind-lib/briefv2/human/human.go:20 | Question is one thing the planner needs to know. |
-| `Answer` | type | gophermind-lib/briefv2/human/human.go:41 | Answer answers the question with the same ID. |
-| `Understanding` | type | gophermind-lib/briefv2/human/human.go:51 | Understanding is what a person confirms before the planner builds anything: the decisions made, the assumptions taken, and the facts established. |
-| `PlanSummary` | type | gophermind-lib/briefv2/human/human.go:58 | PlanSummary is the plan as shown for approval. |
-| `Decision` | type | gophermind-lib/briefv2/human/human.go:65 | Decision is the answer to Approve. |
-| `Escalation` | type | gophermind-lib/briefv2/human/human.go:76 | Escalation is a leaf that every model failed, handed to a person. |
-| `maxGateRunes` | const | gophermind-lib/briefv2/human/human.go:85 | maxGateRunes bounds one model-derived line a gate prints, ellipsis included. |
-| `gateLine` | func | gophermind-lib/briefv2/human/human.go:93 | gateLine makes model-derived text safe to print on one line: control characters, line and paragraph separators, spaces and every format character (bidi overrides and isolates, zero-width characters, the byte order mark) become single spaces, a backtick becomes an apostrophe (so it cannot open a fenced block in a gate file), and the text is cut to max runes with a trailing "..." counted in that bound. |
-| `Action` | type | gophermind-lib/briefv2/human/human.go:117 | Action is what to do about an escalated leaf. |
-| `ActionRetry` | const | gophermind-lib/briefv2/human/human.go:120 |  |
-| `ActionSkip` | const | gophermind-lib/briefv2/human/human.go:121 |  |
-| `ActionStop` | const | gophermind-lib/briefv2/human/human.go:122 |  |
-| `Resolution` | type | gophermind-lib/briefv2/human/human.go:126 | Resolution is the answer to Escalate. |
-| `AnsweredByHuman` | const | gophermind-lib/briefv2/human/human.go:136 | Who answered an escalation. |
-| `AnsweredByProgrammatic` | const | gophermind-lib/briefv2/human/human.go:137 | Who answered an escalation. |
-| `AnsweredByUnattended` | const | gophermind-lib/briefv2/human/human.go:138 | Who answered an escalation. |
-| `AnsweredByGateAbsent` | const | gophermind-lib/briefv2/human/human.go:139 | Who answered an escalation. |
-| `ValidAnsweredBy` | func | gophermind-lib/briefv2/human/human.go:143 | ValidAnsweredBy reports whether s is one of the AnsweredBy constants. |
-| `Gate` | interface | gophermind-lib/briefv2/human/human.go:152 | Gate is the whole conversation with a person. |
-| `validateAnswers` | func | gophermind-lib/briefv2/human/human.go:164 | validateAnswers checks that as answers qs one for one, in order, with text. |
-| `parseDecision` | func | gophermind-lib/briefv2/human/human.go:181 | parseDecision reads "approve", "yes", "reject: why", "no" and so on. |
-| `parseAction` | func | gophermind-lib/briefv2/human/human.go:193 | parseAction reads "retry check the test", "skip", "stop". |
-| `splitWord` | func | gophermind-lib/briefv2/human/human.go:204 | splitWord returns the lower-cased first word (trailing colon removed) and the trimmed remainder. |
-| `Kind` | type | gophermind-lib/briefv2/human/programmatic.go:9 | Kind says which call a Request is. |
-| `KindAsk` | const | gophermind-lib/briefv2/human/programmatic.go:12 |  |
-| `KindApprove` | const | gophermind-lib/briefv2/human/programmatic.go:13 |  |
-| `KindEscalate` | const | gophermind-lib/briefv2/human/programmatic.go:14 |  |
-| `KindConfirm` | const | gophermind-lib/briefv2/human/programmatic.go:15 |  |
-| `reply` | type | gophermind-lib/briefv2/human/programmatic.go:18 |  |
-| `Request` | type | gophermind-lib/briefv2/human/programmatic.go:28 | Request is one pending question for a person, published on Programmatic.Requests. |
-| `(*Request).send` | method | gophermind-lib/briefv2/human/programmatic.go:37 |  |
-| `(*Request).Answer` | method | gophermind-lib/briefv2/human/programmatic.go:44 |  |
-| `(*Request).Decide` | method | gophermind-lib/briefv2/human/programmatic.go:45 |  |
-| `(*Request).Resolve` | method | gophermind-lib/briefv2/human/programmatic.go:46 |  |
-| `(*Request).Fail` | method | gophermind-lib/briefv2/human/programmatic.go:47 |  |
-| `Programmatic` | type | gophermind-lib/briefv2/human/programmatic.go:51 | Programmatic is the gate the run service and the desktop app use: requests are published as values and answered by calling methods on them. |
-| `_` | var | gophermind-lib/briefv2/human/programmatic.go:53 |  |
-| `NewProgrammatic` | func | gophermind-lib/briefv2/human/programmatic.go:55 |  |
-| `(*Programmatic).Requests` | method | gophermind-lib/briefv2/human/programmatic.go:58 | Requests delivers each pending request, oldest first. |
-| `(*Programmatic).roundTrip` | method | gophermind-lib/briefv2/human/programmatic.go:60 |  |
-| `(*Programmatic).Ask` | method | gophermind-lib/briefv2/human/programmatic.go:75 |  |
-| `(*Programmatic).Approve` | method | gophermind-lib/briefv2/human/programmatic.go:86 |  |
-| `(*Programmatic).Confirm` | method | gophermind-lib/briefv2/human/programmatic.go:97 |  |
-| `(*Programmatic).Escalate` | method | gophermind-lib/briefv2/human/programmatic.go:108 |  |
-| `Terminal` | type | gophermind-lib/briefv2/human/terminal.go:15 | Terminal asks on out and reads answers from in (stderr and stdin in the real command). |
-| `_` | var | gophermind-lib/briefv2/human/terminal.go:20 |  |
-| `NewTerminal` | func | gophermind-lib/briefv2/human/terminal.go:22 |  |
-| `(*Terminal).readLine` | method | gophermind-lib/briefv2/human/terminal.go:28 | readLine returns the next line without its newline. |
-| `(*Terminal).Ask` | method | gophermind-lib/briefv2/human/terminal.go:39 |  |
-| `(*Terminal).Approve` | method | gophermind-lib/briefv2/human/terminal.go:92 |  |
-| `(*Terminal).Confirm` | method | gophermind-lib/briefv2/human/terminal.go:116 |  |
-| `(*Terminal).Escalate` | method | gophermind-lib/briefv2/human/terminal.go:137 |  |
+| `File` | type | gophermind-lib/build/human/file.go:19 | File is the gate for runs nobody is watching. |
+| `_` | var | gophermind-lib/build/human/file.go:21 |  |
+| `NewFile` | func | gophermind-lib/build/human/file.go:23 |  |
+| `blockRE` | var | gophermind-lib/build/human/file.go:26 |  |
+| `hashRE` | var | gophermind-lib/build/human/file.go:27 |  |
+| `understandingHashRE` | var | gophermind-lib/build/human/file.go:28 |  |
+| `unsafeR` | var | gophermind-lib/build/human/file.go:29 |  |
+| `block` | type | gophermind-lib/build/human/file.go:32 |  |
+| `parseBlocks` | func | gophermind-lib/build/human/file.go:36 | parseBlocks returns the fenced blocks of the given kind ("answer", "decision", "resolution") in file order. |
+| `(*File).write` | method | gophermind-lib/build/human/file.go:46 |  |
+| `(*File).read` | method | gophermind-lib/build/human/file.go:56 |  |
+| `(*File).archive` | method | gophermind-lib/build/human/file.go:69 | archive moves an answered file aside so the next call with the same file name starts a fresh conversation. |
+| `(*File).Ask` | method | gophermind-lib/build/human/file.go:74 |  |
+| `(*File).Approve` | method | gophermind-lib/build/human/file.go:136 |  |
+| `(*File).Confirm` | method | gophermind-lib/build/human/file.go:171 |  |
+| `(*File).Escalate` | method | gophermind-lib/build/human/file.go:202 |  |
+| `ErrWaiting` | var | gophermind-lib/build/human/human.go:17 | ErrWaiting means a question or approval was written out and nobody has answered it yet. |
+| `Question` | type | gophermind-lib/build/human/human.go:20 | Question is one thing the planner needs to know. |
+| `Answer` | type | gophermind-lib/build/human/human.go:41 | Answer answers the question with the same ID. |
+| `Understanding` | type | gophermind-lib/build/human/human.go:51 | Understanding is what a person confirms before the planner builds anything: the decisions made, the assumptions taken, and the facts established. |
+| `PlanSummary` | type | gophermind-lib/build/human/human.go:58 | PlanSummary is the plan as shown for approval. |
+| `Decision` | type | gophermind-lib/build/human/human.go:65 | Decision is the answer to Approve. |
+| `Escalation` | type | gophermind-lib/build/human/human.go:76 | Escalation is a leaf that every model failed, handed to a person. |
+| `maxGateRunes` | const | gophermind-lib/build/human/human.go:85 | maxGateRunes bounds one model-derived line a gate prints, ellipsis included. |
+| `gateLine` | func | gophermind-lib/build/human/human.go:93 | gateLine makes model-derived text safe to print on one line: control characters, line and paragraph separators, spaces and every format character (bidi overrides and isolates, zero-width characters, the byte order mark) become single spaces, a backtick becomes an apostrophe (so it cannot open a fenced block in a gate file), and the text is cut to max runes with a trailing "..." counted in that bound. |
+| `Action` | type | gophermind-lib/build/human/human.go:117 | Action is what to do about an escalated leaf. |
+| `ActionRetry` | const | gophermind-lib/build/human/human.go:120 |  |
+| `ActionSkip` | const | gophermind-lib/build/human/human.go:121 |  |
+| `ActionStop` | const | gophermind-lib/build/human/human.go:122 |  |
+| `Resolution` | type | gophermind-lib/build/human/human.go:126 | Resolution is the answer to Escalate. |
+| `AnsweredByHuman` | const | gophermind-lib/build/human/human.go:136 | Who answered an escalation. |
+| `AnsweredByProgrammatic` | const | gophermind-lib/build/human/human.go:137 | Who answered an escalation. |
+| `AnsweredByUnattended` | const | gophermind-lib/build/human/human.go:138 | Who answered an escalation. |
+| `AnsweredByGateAbsent` | const | gophermind-lib/build/human/human.go:139 | Who answered an escalation. |
+| `ValidAnsweredBy` | func | gophermind-lib/build/human/human.go:143 | ValidAnsweredBy reports whether s is one of the AnsweredBy constants. |
+| `Gate` | interface | gophermind-lib/build/human/human.go:152 | Gate is the whole conversation with a person. |
+| `validateAnswers` | func | gophermind-lib/build/human/human.go:164 | validateAnswers checks that as answers qs one for one, in order, with text. |
+| `parseDecision` | func | gophermind-lib/build/human/human.go:181 | parseDecision reads "approve", "yes", "reject: why", "no" and so on. |
+| `parseAction` | func | gophermind-lib/build/human/human.go:193 | parseAction reads "retry check the test", "skip", "stop". |
+| `splitWord` | func | gophermind-lib/build/human/human.go:204 | splitWord returns the lower-cased first word (trailing colon removed) and the trimmed remainder. |
+| `Kind` | type | gophermind-lib/build/human/programmatic.go:9 | Kind says which call a Request is. |
+| `KindAsk` | const | gophermind-lib/build/human/programmatic.go:12 |  |
+| `KindApprove` | const | gophermind-lib/build/human/programmatic.go:13 |  |
+| `KindEscalate` | const | gophermind-lib/build/human/programmatic.go:14 |  |
+| `KindConfirm` | const | gophermind-lib/build/human/programmatic.go:15 |  |
+| `reply` | type | gophermind-lib/build/human/programmatic.go:18 |  |
+| `Request` | type | gophermind-lib/build/human/programmatic.go:28 | Request is one pending question for a person, published on Programmatic.Requests. |
+| `(*Request).send` | method | gophermind-lib/build/human/programmatic.go:37 |  |
+| `(*Request).Answer` | method | gophermind-lib/build/human/programmatic.go:44 |  |
+| `(*Request).Decide` | method | gophermind-lib/build/human/programmatic.go:45 |  |
+| `(*Request).Resolve` | method | gophermind-lib/build/human/programmatic.go:46 |  |
+| `(*Request).Fail` | method | gophermind-lib/build/human/programmatic.go:47 |  |
+| `Programmatic` | type | gophermind-lib/build/human/programmatic.go:51 | Programmatic is the gate the run service and the desktop app use: requests are published as values and answered by calling methods on them. |
+| `_` | var | gophermind-lib/build/human/programmatic.go:53 |  |
+| `NewProgrammatic` | func | gophermind-lib/build/human/programmatic.go:55 |  |
+| `(*Programmatic).Requests` | method | gophermind-lib/build/human/programmatic.go:58 | Requests delivers each pending request, oldest first. |
+| `(*Programmatic).roundTrip` | method | gophermind-lib/build/human/programmatic.go:60 |  |
+| `(*Programmatic).Ask` | method | gophermind-lib/build/human/programmatic.go:75 |  |
+| `(*Programmatic).Approve` | method | gophermind-lib/build/human/programmatic.go:86 |  |
+| `(*Programmatic).Confirm` | method | gophermind-lib/build/human/programmatic.go:97 |  |
+| `(*Programmatic).Escalate` | method | gophermind-lib/build/human/programmatic.go:108 |  |
+| `Terminal` | type | gophermind-lib/build/human/terminal.go:15 | Terminal asks on out and reads answers from in (stderr and stdin in the real command). |
+| `_` | var | gophermind-lib/build/human/terminal.go:20 |  |
+| `NewTerminal` | func | gophermind-lib/build/human/terminal.go:22 |  |
+| `(*Terminal).readLine` | method | gophermind-lib/build/human/terminal.go:28 | readLine returns the next line without its newline. |
+| `(*Terminal).Ask` | method | gophermind-lib/build/human/terminal.go:39 |  |
+| `(*Terminal).Approve` | method | gophermind-lib/build/human/terminal.go:92 |  |
+| `(*Terminal).Confirm` | method | gophermind-lib/build/human/terminal.go:116 |  |
+| `(*Terminal).Escalate` | method | gophermind-lib/build/human/terminal.go:137 |  |
 
 ## package intro
 
@@ -1670,35 +1670,35 @@ after every completed task. Non-test Go declarations only.
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `RunDirFunc` | type | gophermind-lib/briefv2/ledger/fs.go:21 | RunDirFunc maps a run id to the run's folder. |
-| `FS` | type | gophermind-lib/briefv2/ledger/fs.go:28 | FS is the ledger over append-only files in the run folder: _state/calls.jsonl holds one JSON line per call and one per amend (an amend changes the outcome of an earlier call by id and is folded in when the file is read, so no line is ever rewritten); _state/calls.seq holds the last id handed out; _state/calls.lock serialises id assignment across processes. |
-| `_` | var | gophermind-lib/briefv2/ledger/fs.go:39 |  |
-| `NewFS` | func | gophermind-lib/briefv2/ledger/fs.go:42 | NewFS returns the filesystem ledger. |
-| `wire` | type | gophermind-lib/briefv2/ledger/fs.go:48 | wire is one line of calls.jsonl. |
-| `toWire` | func | gophermind-lib/briefv2/ledger/fs.go:76 |  |
-| `(wire).call` | method | gophermind-lib/briefv2/ledger/fs.go:86 |  |
-| `(*FS).stateDir` | method | gophermind-lib/briefv2/ledger/fs.go:97 |  |
-| `nextID` | func | gophermind-lib/briefv2/ledger/fs.go:108 | nextID reads, bumps and stores the sequence. |
-| `maxLoggedID` | func | gophermind-lib/briefv2/ledger/fs.go:131 | maxLoggedID returns the largest id on any line of calls.jsonl, or 0. |
-| `(*FS).Record` | method | gophermind-lib/briefv2/ledger/fs.go:148 |  |
-| `(*FS).Amend` | method | gophermind-lib/briefv2/ledger/fs.go:181 |  |
-| `(*FS).readAll` | method | gophermind-lib/briefv2/ledger/fs.go:217 | readAll returns every call of the run with its amends folded in, in file order. |
-| `(*FS).List` | method | gophermind-lib/briefv2/ledger/fs.go:245 |  |
-| `(*FS).Summary` | method | gophermind-lib/briefv2/ledger/fs.go:275 |  |
-| `Outcome` | type | gophermind-lib/briefv2/ledger/ledger.go:13 |  |
-| `OutcomeOK` | const | gophermind-lib/briefv2/ledger/ledger.go:16 |  |
-| `OutcomeRateLimited` | const | gophermind-lib/briefv2/ledger/ledger.go:17 |  |
-| `OutcomeTimeout` | const | gophermind-lib/briefv2/ledger/ledger.go:18 |  |
-| `OutcomeMalformed` | const | gophermind-lib/briefv2/ledger/ledger.go:19 |  |
-| `OutcomeAuth` | const | gophermind-lib/briefv2/ledger/ledger.go:20 |  |
-| `OutcomeTooLong` | const | gophermind-lib/briefv2/ledger/ledger.go:21 |  |
-| `OutcomeModelMissing` | const | gophermind-lib/briefv2/ledger/ledger.go:22 |  |
-| `OutcomeError` | const | gophermind-lib/briefv2/ledger/ledger.go:23 |  |
-| `Call` | type | gophermind-lib/briefv2/ledger/ledger.go:27 | Call is one model attempt. |
-| `Filter` | type | gophermind-lib/briefv2/ledger/ledger.go:63 |  |
-| `ModelSummary` | type | gophermind-lib/briefv2/ledger/ledger.go:73 | ModelSummary aggregates a run's calls per task type, node class, provider and model served. |
-| `Ledger` | interface | gophermind-lib/briefv2/ledger/ledger.go:85 |  |
-| `Digest` | func | gophermind-lib/briefv2/ledger/ledger.go:96 | Digest returns the byte length and hex SHA-256 of b. |
+| `RunDirFunc` | type | gophermind-lib/build/ledger/fs.go:21 | RunDirFunc maps a run id to the run's folder. |
+| `FS` | type | gophermind-lib/build/ledger/fs.go:28 | FS is the ledger over append-only files in the run folder: _state/calls.jsonl holds one JSON line per call and one per amend (an amend changes the outcome of an earlier call by id and is folded in when the file is read, so no line is ever rewritten); _state/calls.seq holds the last id handed out; _state/calls.lock serialises id assignment across processes. |
+| `_` | var | gophermind-lib/build/ledger/fs.go:39 |  |
+| `NewFS` | func | gophermind-lib/build/ledger/fs.go:42 | NewFS returns the filesystem ledger. |
+| `wire` | type | gophermind-lib/build/ledger/fs.go:48 | wire is one line of calls.jsonl. |
+| `toWire` | func | gophermind-lib/build/ledger/fs.go:76 |  |
+| `(wire).call` | method | gophermind-lib/build/ledger/fs.go:86 |  |
+| `(*FS).stateDir` | method | gophermind-lib/build/ledger/fs.go:97 |  |
+| `nextID` | func | gophermind-lib/build/ledger/fs.go:108 | nextID reads, bumps and stores the sequence. |
+| `maxLoggedID` | func | gophermind-lib/build/ledger/fs.go:131 | maxLoggedID returns the largest id on any line of calls.jsonl, or 0. |
+| `(*FS).Record` | method | gophermind-lib/build/ledger/fs.go:148 |  |
+| `(*FS).Amend` | method | gophermind-lib/build/ledger/fs.go:181 |  |
+| `(*FS).readAll` | method | gophermind-lib/build/ledger/fs.go:217 | readAll returns every call of the run with its amends folded in, in file order. |
+| `(*FS).List` | method | gophermind-lib/build/ledger/fs.go:245 |  |
+| `(*FS).Summary` | method | gophermind-lib/build/ledger/fs.go:275 |  |
+| `Outcome` | type | gophermind-lib/build/ledger/ledger.go:13 |  |
+| `OutcomeOK` | const | gophermind-lib/build/ledger/ledger.go:16 |  |
+| `OutcomeRateLimited` | const | gophermind-lib/build/ledger/ledger.go:17 |  |
+| `OutcomeTimeout` | const | gophermind-lib/build/ledger/ledger.go:18 |  |
+| `OutcomeMalformed` | const | gophermind-lib/build/ledger/ledger.go:19 |  |
+| `OutcomeAuth` | const | gophermind-lib/build/ledger/ledger.go:20 |  |
+| `OutcomeTooLong` | const | gophermind-lib/build/ledger/ledger.go:21 |  |
+| `OutcomeModelMissing` | const | gophermind-lib/build/ledger/ledger.go:22 |  |
+| `OutcomeError` | const | gophermind-lib/build/ledger/ledger.go:23 |  |
+| `Call` | type | gophermind-lib/build/ledger/ledger.go:27 | Call is one model attempt. |
+| `Filter` | type | gophermind-lib/build/ledger/ledger.go:63 |  |
+| `ModelSummary` | type | gophermind-lib/build/ledger/ledger.go:73 | ModelSummary aggregates a run's calls per task type, node class, provider and model served. |
+| `Ledger` | interface | gophermind-lib/build/ledger/ledger.go:85 |  |
+| `Digest` | func | gophermind-lib/build/ledger/ledger.go:96 | Digest returns the byte length and hex SHA-256 of b. |
 
 ## package llm
 
@@ -2557,126 +2557,126 @@ after every completed task. Non-test Go declarations only.
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `ImportPolicy` | type | gophermind-lib/briefv2/packer/imports.go:14 | ImportPolicy is the one statement of which imports leaf code may use. |
-| `stdListText` | var | gophermind-lib/briefv2/packer/imports.go:20 |  |
-| `stdPackages` | var | gophermind-lib/briefv2/packer/imports.go:24 | stdPackages is every standard library import path, from `go list std` with internal and vendor packages left out. |
-| `pathSyntaxRE` | var | gophermind-lib/briefv2/packer/imports.go:32 |  |
-| `validPathSyntax` | func | gophermind-lib/briefv2/packer/imports.go:36 | validPathSyntax refuses anything that is not a plain slash-separated import path: odd characters, empty, "." or ".." segments, leading or trailing slash. |
-| `hasElem` | func | gophermind-lib/briefv2/packer/imports.go:48 |  |
-| `deniedStd` | var | gophermind-lib/briefv2/packer/imports.go:59 | deniedStd are standard packages leaf code may not import. |
-| `within` | func | gophermind-lib/briefv2/packer/imports.go:61 |  |
-| `(ImportPolicy).allowed` | method | gophermind-lib/briefv2/packer/imports.go:65 |  |
-| `(ImportPolicy).Check` | method | gophermind-lib/briefv2/packer/imports.go:91 | Check returns the disallowed import paths, sorted and deduplicated. |
-| `(ImportPolicy).AllowedList` | method | gophermind-lib/briefv2/packer/imports.go:106 | AllowedList renders the allowed sets for a failure message. |
-| `(ImportPolicy).Describe` | method | gophermind-lib/briefv2/packer/imports.go:120 | Describe returns "" when every import is allowed, otherwise a fixed-kind sentence with a count and the index of the first offending import. |
-| `stdNames` | var | gophermind-lib/briefv2/packer/imports.go:138 | stdNames holds the last path element of every standard library package: the name a qualified identifier such as http.Request uses. |
-| `IsStdPackageName` | func | gophermind-lib/briefv2/packer/imports.go:147 | IsStdPackageName reports whether name is the name of a standard library package. |
-| `promptFS` | var | gophermind-lib/briefv2/packer/packer.go:31 |  |
-| `SystemPrefix` | const | gophermind-lib/briefv2/packer/packer.go:34 | SystemPrefix starts the system message of every executor call; the stage follows, e.g. |
-| `NodeView` | type | gophermind-lib/briefv2/packer/packer.go:38 | NodeView is everything the packer may know about one leaf. |
-| `Guidance` | type | gophermind-lib/briefv2/packer/packer.go:65 | Guidance is one section of build guidance for a leaf: how to construct it, what to defend against, what to log, and its performance and portability limits. |
-| `copyGuidance` | func | gophermind-lib/briefv2/packer/packer.go:70 |  |
-| `guidanceText` | func | gophermind-lib/briefv2/packer/packer.go:78 |  |
-| `behaviourText` | func | gophermind-lib/briefv2/packer/packer.go:94 | behaviourText is the body of the behaviour section: the description line, then one bullet per detail line. |
-| `(*state).dropGuidance` | method | gophermind-lib/briefv2/packer/packer.go:112 | dropGuidance removes a whole section and names the drop. |
-| `maxFailureNames` | const | gophermind-lib/briefv2/packer/packer.go:123 |  |
-| `maxFailureKeep` | const | gophermind-lib/briefv2/packer/packer.go:124 |  |
-| `maxFailureBytes` | const | gophermind-lib/briefv2/packer/packer.go:125 |  |
-| `maxLineBytes` | const | gophermind-lib/briefv2/packer/packer.go:126 |  |
-| `condenseKeep` | const | gophermind-lib/briefv2/packer/packer.go:127 |  |
-| `Failure` | type | gophermind-lib/briefv2/packer/packer.go:131 | Failure is the only thing carried from one attempt to the next, in memory only. |
-| `NewFailure` | func | gophermind-lib/briefv2/packer/packer.go:143 | NewFailure keeps at most 8 names and the failure text: the first and last lines of the output (up to 15 at each end), a line `[N lines omitted]` between them when lines were cut, and at most 2048 bytes in total. |
-| `(Failure).Empty` | method | gophermind-lib/briefv2/packer/packer.go:175 | Empty reports whether there is nothing to feed back. |
-| `omittedRE` | var | gophermind-lib/briefv2/packer/packer.go:177 |  |
-| `clipLine` | func | gophermind-lib/briefv2/packer/packer.go:179 |  |
-| `condense` | func | gophermind-lib/briefv2/packer/packer.go:197 | condense keeps the first k and last k lines and puts `[N lines omitted]` between them; N counts real lines (an earlier marker adds its own count). |
-| `fitLines` | func | gophermind-lib/briefv2/packer/packer.go:215 |  |
-| `minSecretLen` | const | gophermind-lib/briefv2/packer/packer.go:236 | minSecretLen is the shortest secret value that is scanned for. |
-| `scan` | type | gophermind-lib/briefv2/packer/packer.go:241 | scan finds secret values. |
-| `stripWS` | func | gophermind-lib/briefv2/packer/packer.go:246 |  |
-| `newScan` | func | gophermind-lib/briefv2/packer/packer.go:255 |  |
-| `HasSecret` | func | gophermind-lib/briefv2/packer/packer.go:291 | HasSecret reports whether s holds any of the secret values in one of the forms the packer scrubs (raw, %q, JSON, URL and base64, and the raw secret with whitespace removed, matched against s with its whitespace removed, each for secrets of minSecretLen bytes or more). |
-| `(*scan).has` | method | gophermind-lib/briefv2/packer/packer.go:308 |  |
-| `(*scan).scrub` | method | gophermind-lib/briefv2/packer/packer.go:319 | scrub drops every line that contains a secret, and every line that takes part in a secret spelled across lines (whitespace removed), until none is left. |
-| `Inputs` | type | gophermind-lib/briefv2/packer/packer.go:364 | Inputs is what the caller adds to a NodeView for one attempt. |
-| `Packed` | type | gophermind-lib/briefv2/packer/packer.go:373 | Packed carries the prompt text for the request and, for everything else, only sizes and a hash. |
-| `(Packed).String` | method | gophermind-lib/briefv2/packer/packer.go:381 |  |
-| `(Packed).GoString` | method | gophermind-lib/briefv2/packer/packer.go:385 |  |
-| `(Packed).Format` | method | gophermind-lib/briefv2/packer/packer.go:388 | Format prints the same size-and-hash form for every verb. |
-| `(Packed).MarshalJSON` | method | gophermind-lib/briefv2/packer/packer.go:390 |  |
-| `newPacked` | func | gophermind-lib/briefv2/packer/packer.go:392 |  |
-| `EstimateTokens` | func | gophermind-lib/briefv2/packer/packer.go:400 | EstimateTokens is ceil(ceil(bytes/4) * 1.1) in integer arithmetic. |
-| `ErrFloorOverBudget` | type | gophermind-lib/briefv2/packer/packer.go:406 | ErrFloorOverBudget means the required sections alone exceed the budget. |
-| `(*ErrFloorOverBudget).Error` | method | gophermind-lib/briefv2/packer/packer.go:408 |  |
-| `MaxTokens` | func | gophermind-lib/briefv2/packer/packer.go:414 | MaxTokens is min(4096, contextTokens - promptTokens); ok is false below 512. |
-| `renderTemplate` | func | gophermind-lib/briefv2/packer/packer.go:425 |  |
-| `state` | type | gophermind-lib/briefv2/packer/packer.go:442 | state is the mutable part of a prompt while sections are being cut. |
-| `sectionTagRE` | var | gophermind-lib/briefv2/packer/packer.go:454 |  |
-| `esc` | func | gophermind-lib/briefv2/packer/packer.go:458 | esc makes untrusted text unable to close or open a section: every "</" becomes `<\/` and a bare section tag gets a backslash after the "<". |
-| `escAll` | func | gophermind-lib/briefv2/packer/packer.go:463 |  |
-| `(*state).render` | method | gophermind-lib/briefv2/packer/packer.go:470 |  |
-| `Pack` | func | gophermind-lib/briefv2/packer/packer.go:512 | Pack builds the prompt for one leaf and cuts it to the budget in a fixed order: failure lines to 10, failure lines to none, revision notes, the detail lines of a revised node's behaviour ("behaviour:details"), the performance, portability and observability guidance, the construction steps (the approach stays), test comments, then dependency signatures the contract slice does not name (last to first). |
-| `scrubNames` | func | gophermind-lib/briefv2/packer/packer.go:636 |  |
-| `removeAt` | func | gophermind-lib/briefv2/packer/packer.go:646 |  |
-| `declFuncRE` | var | gophermind-lib/briefv2/packer/packer.go:653 |  |
-| `declTypeRE` | var | gophermind-lib/briefv2/packer/packer.go:654 |  |
-| `groupOpenRE` | var | gophermind-lib/briefv2/packer/packer.go:655 |  |
-| `memberRE` | var | gophermind-lib/briefv2/packer/packer.go:656 |  |
-| `wordRE` | var | gophermind-lib/briefv2/packer/packer.go:657 |  |
-| `declaredNames` | func | gophermind-lib/briefv2/packer/packer.go:663 | declaredNames lists the identifiers one dependency block declares: function and method names, receiver types, types, vars, consts and the members of a grouped var, const or type block (only inside the parentheses). |
-| `unnamedDeps` | func | gophermind-lib/briefv2/packer/packer.go:689 | unnamedDeps returns the indexes (ascending) of dependency blocks that declare no identifier the contract slice mentions. |
-| `stripTestComments` | func | gophermind-lib/briefv2/packer/packer.go:714 | stripTestComments returns the source without comments and blank lines. |
-| `dropBlank` | func | gophermind-lib/briefv2/packer/packer.go:732 | dropBlank removes blank lines and the lines extra accepts, except inside a raw string (an odd number of backticks opens or closes one). |
-| `Expect` | type | gophermind-lib/briefv2/packer/reply.go:31 | Expect is what a reply is checked against. |
-| `MaxReplyBytes` | const | gophermind-lib/briefv2/packer/reply.go:46 | Size caps on a reply, checked before anything is parsed. |
-| `MaxReplyLines` | const | gophermind-lib/briefv2/packer/reply.go:47 | Size caps on a reply, checked before anything is parsed. |
-| `canonical` | func | gophermind-lib/briefv2/packer/reply.go:52 | canonical renders a function head without body, doc, comments or layout. |
-| `recvBase` | func | gophermind-lib/briefv2/packer/reply.go:78 | recvBase names the receiver's base type ("" for a plain function). |
-| `NewExpect` | func | gophermind-lib/briefv2/packer/reply.go:103 | NewExpect parses the contract's signature. |
-| `Reply` | type | gophermind-lib/briefv2/packer/reply.go:119 | Reply is the checked outcome of a model reply. |
-| `fileHeaderRE` | var | gophermind-lib/briefv2/packer/reply.go:129 |  |
-| `diffHeaderRE` | var | gophermind-lib/briefv2/packer/reply.go:130 |  |
-| `problemPrefix` | const | gophermind-lib/briefv2/packer/reply.go:133 |  |
-| `malformed` | func | gophermind-lib/briefv2/packer/reply.go:135 |  |
-| `ParseReply` | func | gophermind-lib/briefv2/packer/reply.go:139 | ParseReply returns a non-nil error only for a malformed reply. |
-| `forbiddenDirectives` | var | gophermind-lib/briefv2/packer/reply.go:254 |  |
-| `processControl` | var | gophermind-lib/briefv2/packer/reply.go:257 | processControl lists the calls that could end or fake the end of a test run. |
-| `exitMethods` | var | gophermind-lib/briefv2/packer/reply.go:268 | exitMethods are the method and function names the final source scan of the executor (scan.go) refuses on any receiver: a logger reached through a variable, a parameter or an interface can end the process. |
-| `gate` | func | gophermind-lib/briefv2/packer/reply.go:273 | gate enforces, on every reply, what leaf code may do. |
-| `maxReviseNotes` | const | gophermind-lib/briefv2/packer/revise.go:14 |  |
-| `maxReviseNoteSize` | const | gophermind-lib/briefv2/packer/revise.go:15 |  |
-| `PackRevise` | func | gophermind-lib/briefv2/packer/revise.go:26 | PackRevise builds the revise prompt: the contract entry and slice, the test file, and one line per attempt (class and names only, never reply text or command output). |
-| `reviseErr` | func | gophermind-lib/briefv2/packer/revise.go:86 |  |
-| `ParseRevise` | func | gophermind-lib/briefv2/packer/revise.go:91 | ParseRevise reads the revise reply: JSON {"notes":[...]} with 1 to 5 notes of at most 200 bytes (fenced or not), or a CONTRACT_PROBLEM line. |
+| `ImportPolicy` | type | gophermind-lib/build/packer/imports.go:14 | ImportPolicy is the one statement of which imports leaf code may use. |
+| `stdListText` | var | gophermind-lib/build/packer/imports.go:20 |  |
+| `stdPackages` | var | gophermind-lib/build/packer/imports.go:24 | stdPackages is every standard library import path, from `go list std` with internal and vendor packages left out. |
+| `pathSyntaxRE` | var | gophermind-lib/build/packer/imports.go:32 |  |
+| `validPathSyntax` | func | gophermind-lib/build/packer/imports.go:36 | validPathSyntax refuses anything that is not a plain slash-separated import path: odd characters, empty, "." or ".." segments, leading or trailing slash. |
+| `hasElem` | func | gophermind-lib/build/packer/imports.go:48 |  |
+| `deniedStd` | var | gophermind-lib/build/packer/imports.go:59 | deniedStd are standard packages leaf code may not import. |
+| `within` | func | gophermind-lib/build/packer/imports.go:61 |  |
+| `(ImportPolicy).allowed` | method | gophermind-lib/build/packer/imports.go:65 |  |
+| `(ImportPolicy).Check` | method | gophermind-lib/build/packer/imports.go:91 | Check returns the disallowed import paths, sorted and deduplicated. |
+| `(ImportPolicy).AllowedList` | method | gophermind-lib/build/packer/imports.go:106 | AllowedList renders the allowed sets for a failure message. |
+| `(ImportPolicy).Describe` | method | gophermind-lib/build/packer/imports.go:120 | Describe returns "" when every import is allowed, otherwise a fixed-kind sentence with a count and the index of the first offending import. |
+| `stdNames` | var | gophermind-lib/build/packer/imports.go:138 | stdNames holds the last path element of every standard library package: the name a qualified identifier such as http.Request uses. |
+| `IsStdPackageName` | func | gophermind-lib/build/packer/imports.go:147 | IsStdPackageName reports whether name is the name of a standard library package. |
+| `promptFS` | var | gophermind-lib/build/packer/packer.go:31 |  |
+| `SystemPrefix` | const | gophermind-lib/build/packer/packer.go:34 | SystemPrefix starts the system message of every executor call; the stage follows, e.g. |
+| `NodeView` | type | gophermind-lib/build/packer/packer.go:38 | NodeView is everything the packer may know about one leaf. |
+| `Guidance` | type | gophermind-lib/build/packer/packer.go:65 | Guidance is one section of build guidance for a leaf: how to construct it, what to defend against, what to log, and its performance and portability limits. |
+| `copyGuidance` | func | gophermind-lib/build/packer/packer.go:70 |  |
+| `guidanceText` | func | gophermind-lib/build/packer/packer.go:78 |  |
+| `behaviourText` | func | gophermind-lib/build/packer/packer.go:94 | behaviourText is the body of the behaviour section: the description line, then one bullet per detail line. |
+| `(*state).dropGuidance` | method | gophermind-lib/build/packer/packer.go:112 | dropGuidance removes a whole section and names the drop. |
+| `maxFailureNames` | const | gophermind-lib/build/packer/packer.go:123 |  |
+| `maxFailureKeep` | const | gophermind-lib/build/packer/packer.go:124 |  |
+| `maxFailureBytes` | const | gophermind-lib/build/packer/packer.go:125 |  |
+| `maxLineBytes` | const | gophermind-lib/build/packer/packer.go:126 |  |
+| `condenseKeep` | const | gophermind-lib/build/packer/packer.go:127 |  |
+| `Failure` | type | gophermind-lib/build/packer/packer.go:131 | Failure is the only thing carried from one attempt to the next, in memory only. |
+| `NewFailure` | func | gophermind-lib/build/packer/packer.go:143 | NewFailure keeps at most 8 names and the failure text: the first and last lines of the output (up to 15 at each end), a line `[N lines omitted]` between them when lines were cut, and at most 2048 bytes in total. |
+| `(Failure).Empty` | method | gophermind-lib/build/packer/packer.go:175 | Empty reports whether there is nothing to feed back. |
+| `omittedRE` | var | gophermind-lib/build/packer/packer.go:177 |  |
+| `clipLine` | func | gophermind-lib/build/packer/packer.go:179 |  |
+| `condense` | func | gophermind-lib/build/packer/packer.go:197 | condense keeps the first k and last k lines and puts `[N lines omitted]` between them; N counts real lines (an earlier marker adds its own count). |
+| `fitLines` | func | gophermind-lib/build/packer/packer.go:215 |  |
+| `minSecretLen` | const | gophermind-lib/build/packer/packer.go:236 | minSecretLen is the shortest secret value that is scanned for. |
+| `scan` | type | gophermind-lib/build/packer/packer.go:241 | scan finds secret values. |
+| `stripWS` | func | gophermind-lib/build/packer/packer.go:246 |  |
+| `newScan` | func | gophermind-lib/build/packer/packer.go:255 |  |
+| `HasSecret` | func | gophermind-lib/build/packer/packer.go:291 | HasSecret reports whether s holds any of the secret values in one of the forms the packer scrubs (raw, %q, JSON, URL and base64, and the raw secret with whitespace removed, matched against s with its whitespace removed, each for secrets of minSecretLen bytes or more). |
+| `(*scan).has` | method | gophermind-lib/build/packer/packer.go:308 |  |
+| `(*scan).scrub` | method | gophermind-lib/build/packer/packer.go:319 | scrub drops every line that contains a secret, and every line that takes part in a secret spelled across lines (whitespace removed), until none is left. |
+| `Inputs` | type | gophermind-lib/build/packer/packer.go:364 | Inputs is what the caller adds to a NodeView for one attempt. |
+| `Packed` | type | gophermind-lib/build/packer/packer.go:373 | Packed carries the prompt text for the request and, for everything else, only sizes and a hash. |
+| `(Packed).String` | method | gophermind-lib/build/packer/packer.go:381 |  |
+| `(Packed).GoString` | method | gophermind-lib/build/packer/packer.go:385 |  |
+| `(Packed).Format` | method | gophermind-lib/build/packer/packer.go:388 | Format prints the same size-and-hash form for every verb. |
+| `(Packed).MarshalJSON` | method | gophermind-lib/build/packer/packer.go:390 |  |
+| `newPacked` | func | gophermind-lib/build/packer/packer.go:392 |  |
+| `EstimateTokens` | func | gophermind-lib/build/packer/packer.go:400 | EstimateTokens is ceil(ceil(bytes/4) * 1.1) in integer arithmetic. |
+| `ErrFloorOverBudget` | type | gophermind-lib/build/packer/packer.go:406 | ErrFloorOverBudget means the required sections alone exceed the budget. |
+| `(*ErrFloorOverBudget).Error` | method | gophermind-lib/build/packer/packer.go:408 |  |
+| `MaxTokens` | func | gophermind-lib/build/packer/packer.go:414 | MaxTokens is min(4096, contextTokens - promptTokens); ok is false below 512. |
+| `renderTemplate` | func | gophermind-lib/build/packer/packer.go:425 |  |
+| `state` | type | gophermind-lib/build/packer/packer.go:442 | state is the mutable part of a prompt while sections are being cut. |
+| `sectionTagRE` | var | gophermind-lib/build/packer/packer.go:454 |  |
+| `esc` | func | gophermind-lib/build/packer/packer.go:458 | esc makes untrusted text unable to close or open a section: every "</" becomes `<\/` and a bare section tag gets a backslash after the "<". |
+| `escAll` | func | gophermind-lib/build/packer/packer.go:463 |  |
+| `(*state).render` | method | gophermind-lib/build/packer/packer.go:470 |  |
+| `Pack` | func | gophermind-lib/build/packer/packer.go:512 | Pack builds the prompt for one leaf and cuts it to the budget in a fixed order: failure lines to 10, failure lines to none, revision notes, the detail lines of a revised node's behaviour ("behaviour:details"), the performance, portability and observability guidance, the construction steps (the approach stays), test comments, then dependency signatures the contract slice does not name (last to first). |
+| `scrubNames` | func | gophermind-lib/build/packer/packer.go:636 |  |
+| `removeAt` | func | gophermind-lib/build/packer/packer.go:646 |  |
+| `declFuncRE` | var | gophermind-lib/build/packer/packer.go:653 |  |
+| `declTypeRE` | var | gophermind-lib/build/packer/packer.go:654 |  |
+| `groupOpenRE` | var | gophermind-lib/build/packer/packer.go:655 |  |
+| `memberRE` | var | gophermind-lib/build/packer/packer.go:656 |  |
+| `wordRE` | var | gophermind-lib/build/packer/packer.go:657 |  |
+| `declaredNames` | func | gophermind-lib/build/packer/packer.go:663 | declaredNames lists the identifiers one dependency block declares: function and method names, receiver types, types, vars, consts and the members of a grouped var, const or type block (only inside the parentheses). |
+| `unnamedDeps` | func | gophermind-lib/build/packer/packer.go:689 | unnamedDeps returns the indexes (ascending) of dependency blocks that declare no identifier the contract slice mentions. |
+| `stripTestComments` | func | gophermind-lib/build/packer/packer.go:714 | stripTestComments returns the source without comments and blank lines. |
+| `dropBlank` | func | gophermind-lib/build/packer/packer.go:732 | dropBlank removes blank lines and the lines extra accepts, except inside a raw string (an odd number of backticks opens or closes one). |
+| `Expect` | type | gophermind-lib/build/packer/reply.go:31 | Expect is what a reply is checked against. |
+| `MaxReplyBytes` | const | gophermind-lib/build/packer/reply.go:46 | Size caps on a reply, checked before anything is parsed. |
+| `MaxReplyLines` | const | gophermind-lib/build/packer/reply.go:47 | Size caps on a reply, checked before anything is parsed. |
+| `canonical` | func | gophermind-lib/build/packer/reply.go:52 | canonical renders a function head without body, doc, comments or layout. |
+| `recvBase` | func | gophermind-lib/build/packer/reply.go:78 | recvBase names the receiver's base type ("" for a plain function). |
+| `NewExpect` | func | gophermind-lib/build/packer/reply.go:103 | NewExpect parses the contract's signature. |
+| `Reply` | type | gophermind-lib/build/packer/reply.go:119 | Reply is the checked outcome of a model reply. |
+| `fileHeaderRE` | var | gophermind-lib/build/packer/reply.go:129 |  |
+| `diffHeaderRE` | var | gophermind-lib/build/packer/reply.go:130 |  |
+| `problemPrefix` | const | gophermind-lib/build/packer/reply.go:133 |  |
+| `malformed` | func | gophermind-lib/build/packer/reply.go:135 |  |
+| `ParseReply` | func | gophermind-lib/build/packer/reply.go:139 | ParseReply returns a non-nil error only for a malformed reply. |
+| `forbiddenDirectives` | var | gophermind-lib/build/packer/reply.go:254 |  |
+| `processControl` | var | gophermind-lib/build/packer/reply.go:257 | processControl lists the calls that could end or fake the end of a test run. |
+| `exitMethods` | var | gophermind-lib/build/packer/reply.go:268 | exitMethods are the method and function names the final source scan of the executor (scan.go) refuses on any receiver: a logger reached through a variable, a parameter or an interface can end the process. |
+| `gate` | func | gophermind-lib/build/packer/reply.go:273 | gate enforces, on every reply, what leaf code may do. |
+| `maxReviseNotes` | const | gophermind-lib/build/packer/revise.go:14 |  |
+| `maxReviseNoteSize` | const | gophermind-lib/build/packer/revise.go:15 |  |
+| `PackRevise` | func | gophermind-lib/build/packer/revise.go:26 | PackRevise builds the revise prompt: the contract entry and slice, the test file, and one line per attempt (class and names only, never reply text or command output). |
+| `reviseErr` | func | gophermind-lib/build/packer/revise.go:86 |  |
+| `ParseRevise` | func | gophermind-lib/build/packer/revise.go:91 | ParseRevise reads the revise reply: JSON {"notes":[...]} with 1 to 5 notes of at most 200 bytes (fenced or not), or a CONTRACT_PROBLEM line. |
 
 ## package pathsafe
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `NoFollow` | const | gophermind-lib/briefv2/pathsafe/nofollow_unix.go:8 | NoFollow makes the final path component of an open refuse a symbolic link. |
-| `NoFollow` | const | gophermind-lib/briefv2/pathsafe/nofollow_windows.go:6 | NoFollow has no effect on windows. |
-| `protectedName` | func | gophermind-lib/briefv2/pathsafe/pathsafe.go:22 | protectedName reports whether a path component is .git or .gophermind, in any case and with trailing dots or spaces, which some file systems ignore. |
-| `hasGitName` | func | gophermind-lib/briefv2/pathsafe/pathsafe.go:27 |  |
-| `maxBase` | const | gophermind-lib/briefv2/pathsafe/pathsafe.go:37 | maxBase keeps the base name plus the temp file suffix under 255 bytes. |
-| `sourceName` | var | gophermind-lib/briefv2/pathsafe/pathsafe.go:39 |  |
-| `exists` | func | gophermind-lib/briefv2/pathsafe/pathsafe.go:41 |  |
-| `ResolveTest` | func | gophermind-lib/briefv2/pathsafe/pathsafe.go:49 | ResolveTest returns where rel lands inside repo, refusing anything that is not a test file strictly inside the repository, including a path that would pass through a symbolic link pointing out of it. |
-| `ResolveSource` | func | gophermind-lib/briefv2/pathsafe/pathsafe.go:60 | ResolveSource is for non-test Go files the harness or a leaf writes. |
-| `resolve` | func | gophermind-lib/briefv2/pathsafe/pathsafe.go:79 | resolve checks that rel really lands inside repo. |
-| `InsideRepo` | func | gophermind-lib/briefv2/pathsafe/pathsafe.go:122 | InsideRepo refuses a directory whose real location is outside the repository. |
-| `osReason` | func | gophermind-lib/briefv2/pathsafe/pathsafe.go:135 | osReason is the reason of a file system error without the path it names. |
-| `Replace` | func | gophermind-lib/briefv2/pathsafe/pathsafe.go:146 | Replace writes data to rel atomically: a temp file in the destination's directory, fsync, then rename over the destination. |
-| `ReplaceTest` | func | gophermind-lib/briefv2/pathsafe/pathsafe.go:156 | ReplaceTest is Replace for a test file: the path must pass ResolveTest (a name that ends in _test.go). |
-| `ReplaceTestTempPrefix` | const | gophermind-lib/briefv2/pathsafe/pathsafe.go:161 | ReplaceTestTempPrefix starts the name of the temp file of ReplaceTest. |
-| `IsReplaceTestTemp` | func | gophermind-lib/briefv2/pathsafe/pathsafe.go:166 | IsReplaceTestTemp says the slash path p, relative to the repository, is a temp file ReplaceTest makes for the test file testRel: same directory, name ReplaceTestTempPrefix + the test's base name + "." + hex digits. |
-| `replaceFile` | func | gophermind-lib/briefv2/pathsafe/pathsafe.go:178 |  |
-| `checkParents` | func | gophermind-lib/briefv2/pathsafe/pathsafe.go:262 | checkParents refuses a path whose existing directory components are symbolic links or protected names, checked one component at a time. |
-| `Remove` | func | gophermind-lib/briefv2/pathsafe/pathsafe.go:284 | Remove deletes rel. |
-| `CopyFile` | func | gophermind-lib/briefv2/pathsafe/pathsafe.go:313 | CopyFile copies rel from the directory srcRoot to the same place under dstRoot, for a private tree (sub-project F). |
-| `dotDotAfterSegment` | func | gophermind-lib/briefv2/pathsafe/pathsafe.go:385 | dotDotAfterSegment reports a link target with a .. |
-| `noLinkedParent` | func | gophermind-lib/briefv2/pathsafe/pathsafe.go:403 | noLinkedParent refuses rel when an existing directory on its way under root is a symbolic link. |
-| `beforeRename` | var | gophermind-lib/briefv2/pathsafe/pathsafe.go:421 |  |
-| `afterRename` | var | gophermind-lib/briefv2/pathsafe/pathsafe.go:422 |  |
+| `NoFollow` | const | gophermind-lib/build/pathsafe/nofollow_unix.go:8 | NoFollow makes the final path component of an open refuse a symbolic link. |
+| `NoFollow` | const | gophermind-lib/build/pathsafe/nofollow_windows.go:6 | NoFollow has no effect on windows. |
+| `protectedName` | func | gophermind-lib/build/pathsafe/pathsafe.go:22 | protectedName reports whether a path component is .git or .gophermind, in any case and with trailing dots or spaces, which some file systems ignore. |
+| `hasGitName` | func | gophermind-lib/build/pathsafe/pathsafe.go:27 |  |
+| `maxBase` | const | gophermind-lib/build/pathsafe/pathsafe.go:37 | maxBase keeps the base name plus the temp file suffix under 255 bytes. |
+| `sourceName` | var | gophermind-lib/build/pathsafe/pathsafe.go:39 |  |
+| `exists` | func | gophermind-lib/build/pathsafe/pathsafe.go:41 |  |
+| `ResolveTest` | func | gophermind-lib/build/pathsafe/pathsafe.go:49 | ResolveTest returns where rel lands inside repo, refusing anything that is not a test file strictly inside the repository, including a path that would pass through a symbolic link pointing out of it. |
+| `ResolveSource` | func | gophermind-lib/build/pathsafe/pathsafe.go:60 | ResolveSource is for non-test Go files the harness or a leaf writes. |
+| `resolve` | func | gophermind-lib/build/pathsafe/pathsafe.go:79 | resolve checks that rel really lands inside repo. |
+| `InsideRepo` | func | gophermind-lib/build/pathsafe/pathsafe.go:122 | InsideRepo refuses a directory whose real location is outside the repository. |
+| `osReason` | func | gophermind-lib/build/pathsafe/pathsafe.go:135 | osReason is the reason of a file system error without the path it names. |
+| `Replace` | func | gophermind-lib/build/pathsafe/pathsafe.go:146 | Replace writes data to rel atomically: a temp file in the destination's directory, fsync, then rename over the destination. |
+| `ReplaceTest` | func | gophermind-lib/build/pathsafe/pathsafe.go:156 | ReplaceTest is Replace for a test file: the path must pass ResolveTest (a name that ends in _test.go). |
+| `ReplaceTestTempPrefix` | const | gophermind-lib/build/pathsafe/pathsafe.go:161 | ReplaceTestTempPrefix starts the name of the temp file of ReplaceTest. |
+| `IsReplaceTestTemp` | func | gophermind-lib/build/pathsafe/pathsafe.go:166 | IsReplaceTestTemp says the slash path p, relative to the repository, is a temp file ReplaceTest makes for the test file testRel: same directory, name ReplaceTestTempPrefix + the test's base name + "." + hex digits. |
+| `replaceFile` | func | gophermind-lib/build/pathsafe/pathsafe.go:178 |  |
+| `checkParents` | func | gophermind-lib/build/pathsafe/pathsafe.go:262 | checkParents refuses a path whose existing directory components are symbolic links or protected names, checked one component at a time. |
+| `Remove` | func | gophermind-lib/build/pathsafe/pathsafe.go:284 | Remove deletes rel. |
+| `CopyFile` | func | gophermind-lib/build/pathsafe/pathsafe.go:313 | CopyFile copies rel from the directory srcRoot to the same place under dstRoot, for a private tree (sub-project F). |
+| `dotDotAfterSegment` | func | gophermind-lib/build/pathsafe/pathsafe.go:385 | dotDotAfterSegment reports a link target with a .. |
+| `noLinkedParent` | func | gophermind-lib/build/pathsafe/pathsafe.go:403 | noLinkedParent refuses rel when an existing directory on its way under root is a symbolic link. |
+| `beforeRename` | var | gophermind-lib/build/pathsafe/pathsafe.go:421 |  |
+| `afterRename` | var | gophermind-lib/build/pathsafe/pathsafe.go:422 |  |
 
 ## package persona
 
@@ -2697,686 +2697,686 @@ after every completed task. Non-test Go declarations only.
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `Serve` | type | gophermind-lib/briefv2/planner/acceptance_go.go:21 | Serve is how the executor starts the built server once for the Go acceptance tests. |
-| `(*Serve).check` | method | gophermind-lib/briefv2/planner/acceptance_go.go:28 | check refuses a Serve that is not one line of command and a path. |
-| `isNarrative` | func | gophermind-lib/briefv2/planner/acceptance_go.go:40 | isNarrative says an acceptance bullet is prose: it does not begin with a command in backticks. |
-| `goBullet` | type | gophermind-lib/briefv2/planner/acceptance_go.go:45 | goBullet is one narrative acceptance bullet proven by a Go test. |
-| `AcceptanceDir` | const | gophermind-lib/briefv2/planner/acceptance_go.go:55 | AcceptanceDir is the package of the Go acceptance tests, and AcceptanceTag the build tag that keeps them out of the plain go test ./... |
-| `AcceptanceTag` | const | gophermind-lib/briefv2/planner/acceptance_go.go:56 | AcceptanceDir is the package of the Go acceptance tests, and AcceptanceTag the build tag that keeps them out of the plain go test ./... |
-| `goBullets` | func | gophermind-lib/briefv2/planner/acceptance_go.go:61 | goBullets are the narrative acceptance bullets, in brief order, when the plan declares a server; without one the bullets keep their shell commands. |
-| `GoAcceptanceCommand` | func | gophermind-lib/briefv2/planner/acceptance_go.go:81 | GoAcceptanceCommand is the root test command of a Go acceptance test. |
-| `(CoverageReply).withGoAcceptance` | method | gophermind-lib/briefv2/planner/acceptance_go.go:88 | withGoAcceptance fixes the root test of every Go acceptance bullet: the command is the harness's, whatever the model wrote, and a bullet the reply gave no root test gets one. |
-| `maxAcceptanceSource` | const | gophermind-lib/briefv2/planner/acceptance_testwriter.go:21 | maxAcceptanceSource caps one acceptance test file. |
-| `acceptKey` | func | gophermind-lib/briefv2/planner/acceptance_testwriter.go:25 | acceptKey is the testwriterState key of a Go acceptance test; node ids never contain a colon. |
-| `forbiddenAcceptImports` | var | gophermind-lib/briefv2/planner/acceptance_testwriter.go:29 | forbiddenAcceptImports start processes, load code or run servers: an acceptance test only talks to the server the harness started. |
-| `(*Planner).writeAcceptanceTests` | method | gophermind-lib/briefv2/planner/acceptance_testwriter.go:37 | writeAcceptanceTests writes acceptance/<id>_test.go for every Go acceptance bullet of the plan, each from one model call, under the same rules as the leaf test files. |
-| `(*Planner).writeAcceptanceTest` | method | gophermind-lib/briefv2/planner/acceptance_testwriter.go:60 |  |
-| `checkAcceptanceSource` | func | gophermind-lib/briefv2/planner/acceptance_testwriter.go:128 | checkAcceptanceSource checks a model-written acceptance test and returns the file to write: the build line is the harness's (a model-written one is dropped), the package is acceptance, only the standard library is imported and nothing that starts a process or a server, there is exactly one test function (named for the bullet) that reads GM_ACCEPTANCE_URL and calls t.Fatal, nothing skips, and every other top-level name carries the bullet's prefix. |
-| `isTestSignature` | func | gophermind-lib/briefv2/planner/acceptance_testwriter.go:247 | isTestSignature reports func Name(t *testing.T). |
-| `answer` | type | gophermind-lib/briefv2/planner/answers.go:12 | answer is one entry of answers.json: a question a model asked and what the owner said, or what was assumed when nobody was asked. |
-| `answersFile` | type | gophermind-lib/briefv2/planner/answers.go:20 |  |
-| `loadAnswers` | func | gophermind-lib/briefv2/planner/answers.go:24 |  |
-| `answersText` | func | gophermind-lib/briefv2/planner/answers.go:31 | answersText is how earlier answers are shown to a model. |
-| `removeFile` | func | gophermind-lib/briefv2/planner/answers.go:46 |  |
-| `approval` | type | gophermind-lib/briefv2/planner/approve.go:19 | approval is approval.json. |
-| `approveDone` | func | gophermind-lib/briefv2/planner/approve.go:27 |  |
-| `(*Planner).approve` | method | gophermind-lib/briefv2/planner/approve.go:31 | approve shows the plan to a person and records the decision. |
-| `RenderPlan` | func | gophermind-lib/briefv2/planner/approve.go:91 | RenderPlan is the plan as a person approves it, and its SHA-256. |
-| `hashedFiles` | var | gophermind-lib/briefv2/planner/approve.go:268 | hashedFiles are the run folder files whose bytes are part of the plan hash. |
-| `orNone` | func | gophermind-lib/briefv2/planner/approve.go:270 |  |
-| `cell` | func | gophermind-lib/briefv2/planner/approve.go:278 | cell makes text safe inside a markdown table cell. |
-| `openQuestionNodes` | func | gophermind-lib/briefv2/planner/approve.go:281 | openQuestionNodes lists the function nodes that still list an open question. |
-| `citedByFunctions` | func | gophermind-lib/briefv2/planner/approve.go:297 | citedByFunctions maps a question id to the function nodes whose decision_ids name it. |
-| `citedByAll` | func | gophermind-lib/briefv2/planner/approve.go:315 | citedByAll maps a question id to every node (function, component or "root") whose decision_ids name it. |
-| `(*Planner).refreshDecisions` | method | gophermind-lib/briefv2/planner/approve.go:338 | refreshDecisions rewrites every decision record so it lists the nodes that cite it. |
-| `(*Planner).reviseNotice` | method | gophermind-lib/briefv2/planner/approve.go:360 | reviseNotice tells the approver what the build may do to a failing leaf. |
-| `maxAnswerBytes` | const | gophermind-lib/briefv2/planner/change.go:12 |  |
-| `ChangeReport` | type | gophermind-lib/briefv2/planner/change.go:16 | ChangeReport says what ChangeAnswer undid: the point the planner restarts from and the run-folder files it removed. |
-| `ChangeAnswer` | func | gophermind-lib/briefv2/planner/change.go:28 | ChangeAnswer changes the answer to a settled question and undoes the work that used it. |
-| `changeAnswerIn` | func | gophermind-lib/briefv2/planner/change.go:36 |  |
-| `citedByOf` | func | gophermind-lib/briefv2/planner/change.go:117 | citedByOf lists the nodes (functions, components, the root) whose decision_ids name the question. |
-| `componentOfStage` | func | gophermind-lib/briefv2/planner/change.go:128 | componentOfStage is the component a stage name refers to (decompose:<comp>, enrich:<comp>, enrich_comp:<comp>), or "" when the stage is not about one component (a repair stage, Contract, the root, Coverage). |
-| `resetFromContract` | func | gophermind-lib/briefv2/planner/change.go:142 | resetFromContract removes everything the Contract stage and the stages after it wrote, keeping the brief, the requirements, the questions and the answers. |
-| `resetComponent` | func | gophermind-lib/briefv2/planner/change.go:170 | resetComponent forgets one component's function drafts, classes and enrichment, so the planner decomposes and enriches it again, and removes the coverage and the approval, which depend on the plan. |
-| `resetEnrich` | func | gophermind-lib/briefv2/planner/change.go:224 | resetEnrich forgets the Enrich output of one component (its function groups and its own groups), or of the root when comp is "", and removes the coverage and the approval. |
-| `(*run).takesRecommendations` | method | gophermind-lib/briefv2/planner/clarify.go:17 | takesRecommendations is true when no human is available, because the brief says so or the caller runs unattended: every question takes its recommended answer, marked assumed. |
-| `clarifyDone` | func | gophermind-lib/briefv2/planner/clarify.go:21 |  |
-| `(*Planner).clarify` | method | gophermind-lib/briefv2/planner/clarify.go:33 | clarify is the Clarify stage: the questions whose answers would change the code, asked as a dependency tree in rounds. |
-| `(*Planner).clarifyCall` | method | gophermind-lib/briefv2/planner/clarify.go:75 | clarifyCall asks the model for questions: the first call from the brief and the facts, later calls from what the settled answers unblocked. |
-| `(*Planner).clarifyRound` | method | gophermind-lib/briefv2/planner/clarify.go:112 | clarifyRound settles one round: facts the probe can answer, then the frontier, put to the owner or answered by recommendation. |
-| `settledText` | func | gophermind-lib/briefv2/planner/clarify.go:205 | settledText shows the settled decisions to the model, bounded. |
-| `openText` | func | gophermind-lib/briefv2/planner/clarify.go:219 | openText lists the questions still open, bounded. |
-| `errNotConfirmed` | var | gophermind-lib/briefv2/planner/clarify.go:232 |  |
-| `understandingRec` | type | gophermind-lib/briefv2/planner/confirm.go:14 | understandingRec is _state/understanding.json: what was confirmed, by whom, and the hash of the text that was confirmed. |
-| `readUnderstanding` | func | gophermind-lib/briefv2/planner/confirm.go:20 |  |
-| `understandingMarkdown` | func | gophermind-lib/briefv2/planner/confirm.go:30 | understandingMarkdown renders the understanding from the store and the facts. |
-| `neutralize` | func | gophermind-lib/briefv2/planner/confirm.go:78 | neutralize makes the text safe to embed in the file gate's UNDERSTANDING.md: no code fence (which could open or close a decision block) and no line that starts "Understanding hash:" (which the gate reads as the hash). |
-| `currentUnderstanding` | func | gophermind-lib/briefv2/planner/confirm.go:91 | currentUnderstanding renders the understanding as it stands and its hash. |
-| `confirmDone` | func | gophermind-lib/briefv2/planner/confirm.go:107 | confirmDone is true when the understanding was confirmed and nothing it shows has changed since: the text, and answers.json against the store (an edit to either puts the understanding to the owner again). |
-| `(*Planner).confirm` | method | gophermind-lib/briefv2/planner/confirm.go:127 | confirm is the confirm stage: the owner confirms the shared understanding before Contract starts. |
-| `contractState` | type | gophermind-lib/briefv2/planner/contract_stage.go:27 | contractState is _state/contract.json: the contract as far as it has been written, and which components are finished. |
-| `maxIgnoredRecorded` | const | gophermind-lib/briefv2/planner/contract_stage.go:69 |  |
-| `(*Planner).noteIgnored` | method | gophermind-lib/briefv2/planner/contract_stage.go:74 | noteIgnored records dropped duplicate emissions in the state and reports them as one warning: ids that pass the id syntax (at most 64 bytes, at most 10 named) and the count, never content. |
-| `failedAttempt` | func | gophermind-lib/briefv2/planner/contract_stage.go:100 | failedAttempt is true for a model call that failed because of the model: the router ran out of models after replies the parser rejected. |
-| `truncatedAttempt` | func | gophermind-lib/briefv2/planner/contract_stage.go:110 | truncatedAttempt reports whether the call failed because the model's reply was cut off at the token limit, which a smaller request can avoid. |
-| `outlineBatchSize` | const | gophermind-lib/briefv2/planner/contract_stage.go:117 | outlineBatchSize is how many of the brief's features one outline pass covers. |
-| `outlineBatches` | func | gophermind-lib/briefv2/planner/contract_stage.go:120 | outlineBatches splits the feature names, in brief order, into batches. |
-| `outlinePassIsFinal` | func | gophermind-lib/briefv2/planner/contract_stage.go:135 | outlinePassIsFinal says whether a pass ends the outline, so the whole outline is validated: a repair pass, the last batch, or the shared pass when there is no batch at all. |
-| `maxComponentPasses` | const | gophermind-lib/briefv2/planner/contract_stage.go:147 | maxComponentPasses caps the passes one component may take: a model that adds a function every time and never says it is done is stopped. |
-| `outlinePassStage` | func | gophermind-lib/briefv2/planner/contract_stage.go:151 | outlinePassStage is the stage of outline pass n: 1 is the shared pass, 2 the first batch. |
-| `outlineRepairStage` | const | gophermind-lib/briefv2/planner/contract_stage.go:155 | outlineRepairStage is the stage of the passes that ask for types the outline uses but never declared. |
-| `maxOutlineRepairs` | const | gophermind-lib/briefv2/planner/contract_stage.go:159 | maxOutlineRepairs bounds the passes that ask the model to write the ids a finished outline uses but never declared. |
-| `repairStage` | const | gophermind-lib/briefv2/planner/contract_stage.go:164 | repairStage is the stage of the passes that ask for ids the written components use but never declared. |
-| `maxUnresolvedInPrompt` | const | gophermind-lib/briefv2/planner/contract_stage.go:167 |  |
-| `maxUnresolvedInError` | const | gophermind-lib/briefv2/planner/contract_stage.go:168 |  |
-| `contractDone` | func | gophermind-lib/briefv2/planner/contract_stage.go:171 |  |
-| `(*Planner).contract` | method | gophermind-lib/briefv2/planner/contract_stage.go:178 | contract is the Contract stage (Wave 0), built in passes so that a large brief makes more calls rather than a coarser contract: a shared outline pass, one outline pass per batch of features (the harness knows which remain, the model never says more), then one call per component, repeated while the model says more remains for that component. |
-| `mergeOutline` | func | gophermind-lib/briefv2/planner/contract_stage.go:487 | mergeOutline adds one outline pass to a copy of doc (nil for the first pass) and checks the merged outline; a rejected reply leaves doc as it was. |
-| `idSyntaxRE` | var | gophermind-lib/briefv2/planner/contract_stage.go:551 |  |
-| `maxBoundedID` | var | gophermind-lib/briefv2/planner/contract_stage.go:554 | An id is named in an error or a prompt only when it has the syntax of an id, cut to this length; anything else is reported by its length. |
-| `boundedID` | func | gophermind-lib/briefv2/planner/contract_stage.go:560 | boundedID is how a model-supplied id may appear in an error: quoted when it has the syntax of an id and at most 64 bytes, otherwise only its length (a cut prefix would read like a real id). |
-| `boundedModule` | func | gophermind-lib/briefv2/planner/contract_stage.go:568 | boundedModule is boundedID for a module path. |
-| `unresolvedUses` | func | gophermind-lib/briefv2/planner/contract_stage.go:578 | unresolvedUses lists, in order of first use, the ids a declaration's uses names that no type or function declares. |
-| `unresolvedFinal` | func | gophermind-lib/briefv2/planner/contract_stage.go:582 | unresolvedFinal is unresolvedUses for a contract whose components are all written: a function's pending reference counts too, named by its type form. |
-| `unresolved` | func | gophermind-lib/briefv2/planner/contract_stage.go:584 |  |
-| `unresolvedPromptText` | func | gophermind-lib/briefv2/planner/contract_stage.go:612 | unresolvedPromptText lists up to 50 of the ids that pass the id syntax, one per line, and says how many more are not shown. |
-| `unresolvedErr` | func | gophermind-lib/briefv2/planner/contract_stage.go:630 | unresolvedErr is the error after the repair passes are spent. |
-| `mergeByID` | func | gophermind-lib/briefv2/planner/contract_stage.go:650 | mergeByID appends the new objects to list. |
-| `mergeList` | func | gophermind-lib/briefv2/planner/contract_stage.go:692 | mergeList is mergeByID for the list doc[key] ("components", "types" or "functions"): the ids of the other two lists are the others, and the merged list is stored back in doc. |
-| `outlineFixedText` | func | gophermind-lib/briefv2/planner/contract_stage.go:711 | outlineFixedText is the module and conventions the first pass fixed, for the continuation prompt. |
-| `maxSharedIDs` | const | gophermind-lib/briefv2/planner/contract_stage.go:719 |  |
-| `maxEmittedRecent` | const | gophermind-lib/briefv2/planner/contract_stage.go:720 |  |
-| `maxEmittedSummaries` | const | gophermind-lib/briefv2/planner/contract_stage.go:721 |  |
-| `emittedSummaryBytes` | const | gophermind-lib/briefv2/planner/contract_stage.go:722 |  |
-| `maxEmittedTextBytes` | const | gophermind-lib/briefv2/planner/contract_stage.go:723 |  |
-| `pick` | func | gophermind-lib/briefv2/planner/contract_stage.go:726 |  |
-| `outlineIDs` | func | gophermind-lib/briefv2/planner/contract_stage.go:734 | outlineIDs lists the component then the type ids of doc, at most max. |
-| `idShown` | func | gophermind-lib/briefv2/planner/contract_stage.go:747 | idShown is an id as it appears in a prompt: as is, or its length when it is long. |
-| `cutBytes` | func | gophermind-lib/briefv2/planner/contract_stage.go:754 |  |
-| `outlineEmittedText` | func | gophermind-lib/briefv2/planner/contract_stage.go:766 | outlineEmittedText lists the component and type ids earlier passes wrote. |
-| `outlineEmittedTextAt` | func | gophermind-lib/briefv2/planner/contract_stage.go:772 | outlineEmittedTextAt is the list for a prompt level: from level 2 fewer ids are listed in full and no summaries. |
-| `outlineEmittedTextLimits` | func | gophermind-lib/briefv2/planner/contract_stage.go:782 |  |
-| `dropSharedExtras` | func | gophermind-lib/briefv2/planner/contract_stage.go:861 | dropSharedExtras removes from the shared pass's reply every component other than "types": the feature components are written by the batches. |
-| `mergePass` | func | gophermind-lib/briefv2/planner/contract_stage.go:901 | mergePass adds one component pass to a copy of doc and checks the merged contract locally (references wait until every component is written). |
-| `componentIDRE` | var | gophermind-lib/briefv2/planner/contract_stage.go:928 |  |
-| `validateContractDoc` | func | gophermind-lib/briefv2/planner/contract_stage.go:934 | validateContractDoc runs the schema and reference checks of contract.Load and then the ones only the planner knows: ids that would collide in the tree or with a stage name, files that leave the repository, signatures that are not Go. |
-| `validateOutlineShape` | func | gophermind-lib/briefv2/planner/contract_stage.go:947 | validateOutlineShape is validateContractDoc without the reference checks. |
-| `typeIDs` | func | gophermind-lib/briefv2/planner/contract_stage.go:969 |  |
-| `fnIDs` | func | gophermind-lib/briefv2/planner/contract_stage.go:977 |  |
-| `localChecks` | func | gophermind-lib/briefv2/planner/contract_stage.go:988 | localChecks are the checks only the planner knows, and that do not need the complete contract: ids that would collide in the tree or with a stage name, files that leave the repository, signatures that are not Go. |
-| `cleanGoFile` | func | gophermind-lib/briefv2/planner/contract_stage.go:1030 | cleanGoFile accepts a Go file path that stays inside the repository: relative, already clean, no parent steps. |
-| `parseSignature` | func | gophermind-lib/briefv2/planner/contract_stage.go:1045 | parseSignature parses one Go function signature line. |
-| `contractItemSchemas` | func | gophermind-lib/briefv2/planner/contract_stage.go:1062 | contractItemSchemas returns the item definitions of the named contract arrays ("types", "functions") as JSON, for the prompts. |
-| `copyDoc` | func | gophermind-lib/briefv2/planner/contract_stage.go:1083 |  |
-| `mustJSON` | func | gophermind-lib/briefv2/planner/contract_stage.go:1093 |  |
-| `objects` | func | gophermind-lib/briefv2/planner/contract_stage.go:1102 | objects returns the JSON objects of a decoded array. |
-| `strList` | func | gophermind-lib/briefv2/planner/contract_stage.go:1114 | strList returns the strings of a decoded array. |
-| `declaredText` | func | gophermind-lib/briefv2/planner/contract_stage.go:1130 | declaredText lists every declaration written so far, id first, the way a component pass needs to see them. |
-| `writtenText` | func | gophermind-lib/briefv2/planner/contract_stage.go:1144 |  |
-| `nonSlug` | var | gophermind-lib/briefv2/planner/contract_stage.go:1157 |  |
-| `slug` | func | gophermind-lib/briefv2/planner/contract_stage.go:1160 | slug turns a feature heading into the id its component is expected to have. |
-| `briefSection` | func | gophermind-lib/briefv2/planner/contract_stage.go:1166 | briefSection is the part of the brief a component came from: the feature whose slug is the component id, or the Architecture section. |
-| `mergeRepair` | func | gophermind-lib/briefv2/planner/contract_stage.go:1178 | mergeRepair adds a repair reply to a copy of doc. |
-| `unresolvedOwnerComponents` | func | gophermind-lib/briefv2/planner/contract_stage.go:1214 | unresolvedOwnerComponents lists the components whose functions use an id in ids, in document order. |
-| `unresolvedOwnersText` | func | gophermind-lib/briefv2/planner/contract_stage.go:1238 | unresolvedOwnersText lists up to 50 unresolved ids that pass the id syntax, each with the declarations that use it and their components. |
-| `CoverageFile` | type | gophermind-lib/briefv2/planner/coverage.go:16 | CoverageFile is coverage.json: what covers every requirement of the brief. |
-| `ErrNoCoverage` | var | gophermind-lib/briefv2/planner/coverage.go:28 | ErrNoCoverage is wrapped by ReadCoverage when coverage.json does not exist, so a caller can tell a plan that has not been covered yet from a corrupt file. |
-| `ReadCoverage` | func | gophermind-lib/briefv2/planner/coverage.go:31 | ReadCoverage reads a run folder's coverage.json. |
-| `CoverageError` | type | gophermind-lib/briefv2/planner/coverage.go:46 | CoverageError stops a run whose plan leaves requirements of the brief uncovered after every fill round. |
-| `(*CoverageError).Error` | method | gophermind-lib/briefv2/planner/coverage.go:48 |  |
-| `gapLine` | func | gophermind-lib/briefv2/planner/coverage.go:57 |  |
-| `oneLine` | func | gophermind-lib/briefv2/planner/coverage.go:62 | oneLine puts text on one line and cuts it to n characters. |
-| `coverageDone` | func | gophermind-lib/briefv2/planner/coverage.go:66 |  |
-| `(*Planner).coverage` | method | gophermind-lib/briefv2/planner/coverage.go:72 | coverage is the Coverage stage: the model proposes what covers each requirement, code checks it, gaps and root tests that fail the quality gate go back for up to max_coverage_rounds fill rounds, and a plan with a gap or a weak root test left never reaches approval. |
-| `(*Planner).coverageFill` | method | gophermind-lib/briefv2/planner/coverage.go:151 | coverageFill asks the model to close the gaps. |
-| `parseCoverageFill` | func | gophermind-lib/briefv2/planner/coverage.go:205 | parseCoverageFill decodes a fill reply. |
-| `(*Planner).refreshPlan` | method | gophermind-lib/briefv2/planner/coverage.go:243 | refreshPlan brings the drafts and the skeleton in line with contracts.json: it decomposes every function that has no draft and rewrites the root and component nodes. |
-| `(*Planner).rewriteSkeleton` | method | gophermind-lib/briefv2/planner/coverage.go:273 | rewriteSkeleton writes the root and component nodes again, the root with the given acceptance tests. |
-| `requirementsText` | func | gophermind-lib/briefv2/planner/coverage.go:287 | requirementsText lists the requirements for the coverage prompt, one per line. |
-| `nodesText` | func | gophermind-lib/briefv2/planner/coverage.go:299 |  |
-| `PlanNode` | type | gophermind-lib/briefv2/planner/coverage_check.go:13 | PlanNode is what the coverage check needs to know about one node of a plan. |
-| `MapEntry` | type | gophermind-lib/briefv2/planner/coverage_check.go:22 | MapEntry names the nodes whose code satisfies one requirement. |
-| `RootTest` | type | gophermind-lib/briefv2/planner/coverage_check.go:28 | RootTest is an acceptance test for the root node, proving one requirement. |
-| `CoverageReply` | type | gophermind-lib/briefv2/planner/coverage_check.go:37 | CoverageReply is the model's proposed mapping from requirements to the plan. |
-| `Gap` | type | gophermind-lib/briefv2/planner/coverage_check.go:46 | Gap is a requirement nothing in the plan covers, and why. |
-| `Covered` | type | gophermind-lib/briefv2/planner/coverage_check.go:54 | Covered is a requirement with what covers it. |
-| `ParseCoverageReply` | func | gophermind-lib/briefv2/planner/coverage_check.go:64 | ParseCoverageReply decodes a reply that has already had fences and prose stripped. |
-| `(CoverageReply).Merge` | method | gophermind-lib/briefv2/planner/coverage_check.go:100 | Merge returns r with other's entries added. |
-| `contains` | func | gophermind-lib/briefv2/planner/coverage_check.go:136 |  |
-| `CheckCoverage` | func | gophermind-lib/briefv2/planner/coverage_check.go:151 | CheckCoverage decides, without a model, which requirements the plan covers. |
-| `backtickRE` | var | gophermind-lib/briefv2/planner/coverage_check.go:224 |  |
-| `pathRE` | var | gophermind-lib/briefv2/planner/coverage_check.go:225 |  |
-| `PathWarnings` | func | gophermind-lib/briefv2/planner/coverage_check.go:231 | PathWarnings lists each backticked cmd/ or internal/ path in the brief that no function node's file sits under. |
-| `CommandWarnings` | func | gophermind-lib/briefv2/planner/coverage_check.go:258 | CommandWarnings lists each acceptance requirement that begins with a backticked command none of its root tests runs. |
-| `StrayCommandWarnings` | func | gophermind-lib/briefv2/planner/coverage_check.go:288 | StrayCommandWarnings lists each cmd/<name> directory that holds plan files although the brief never names it. |
-| `maxQualityNamed` | const | gophermind-lib/briefv2/planner/coverage_quality.go:12 | maxQualityNamed is how many requirement ids a quality stop names. |
-| `QualityItem` | type | gophermind-lib/briefv2/planner/coverage_quality.go:16 | QualityItem is one requirement whose root test fails the quality gate, with the fixed-vocabulary finding names (internal/acceptcheck), never the command. |
-| `QualityError` | type | gophermind-lib/briefv2/planner/coverage_quality.go:24 | QualityError stops a run whose root tests are still weak after every fill round: a command that cannot fail, or that hides its failure, proves nothing. |
-| `(*QualityError).Error` | method | gophermind-lib/briefv2/planner/coverage_quality.go:26 |  |
-| `qualityOptions` | func | gophermind-lib/briefv2/planner/coverage_quality.go:42 | qualityOptions are the names a root test command may use as variables. |
-| `rootTestDefects` | func | gophermind-lib/briefv2/planner/coverage_quality.go:56 | rootTestDefects is the requirements, in brief order, with a root test that fails the quality level of the shared command checker. |
-| `sortStrings` | func | gophermind-lib/briefv2/planner/coverage_quality.go:82 |  |
-| `mergeFill` | func | gophermind-lib/briefv2/planner/coverage_quality.go:94 | mergeFill adds a fill reply to the reply so far. |
-| `weakText` | func | gophermind-lib/briefv2/planner/coverage_quality.go:115 | weakText is the fill prompt's list of weak root tests: ids and finding names. |
-| `qualityCell` | func | gophermind-lib/briefv2/planner/coverage_quality.go:131 | qualityCell is the quality column of the approval summary. |
-| `DebugDumpEnv` | const | gophermind-lib/briefv2/planner/debugdump.go:22 | DebugDumpEnv names a directory that receives the raw prompt and the raw reply of every planner model call. |
-| `debugOut` | var | gophermind-lib/briefv2/planner/debugdump.go:25 | debugOut is where the notices about the dump go. |
-| `dumpState` | type | gophermind-lib/briefv2/planner/debugdump.go:27 |  |
-| `(*Planner).dumpDir` | method | gophermind-lib/briefv2/planner/debugdump.go:37 | dumpDir resolves the dump directory once per Planner: "" when the variable is unset, names no existing directory, or points somewhere it must not. |
-| `realDir` | func | gophermind-lib/briefv2/planner/debugdump.go:68 |  |
-| `within` | func | gophermind-lib/briefv2/planner/debugdump.go:85 | within reports whether path is dir or below it. |
-| `dumpNameRE` | var | gophermind-lib/briefv2/planner/debugdump.go:90 |  |
-| `(*Planner).dumpReply` | method | gophermind-lib/briefv2/planner/debugdump.go:94 | dumpReply writes the request and the reply of one parse attempt of a stage. |
-| `decomposeBatch` | const | gophermind-lib/briefv2/planner/decompose.go:25 | decomposeBatch is how many functions one Decompose call writes nodes for. |
-| `decomposed` | type | gophermind-lib/briefv2/planner/decompose.go:29 | decomposed is _state/decomposed.json: every function node as far as it can be written before its tests exist, by component, in the order written. |
-| `loadDecomposed` | func | gophermind-lib/briefv2/planner/decompose.go:37 |  |
-| `loadClasses` | func | gophermind-lib/briefv2/planner/decompose.go:46 |  |
-| `loadContracts` | func | gophermind-lib/briefv2/planner/decompose.go:52 |  |
-| `decomposeDone` | func | gophermind-lib/briefv2/planner/decompose.go:60 |  |
-| `(*Planner).decompose` | method | gophermind-lib/briefv2/planner/decompose.go:68 | decompose is the Decompose stage: one function node draft per contract function, then the root and component nodes. |
-| `(*Planner).decomposeMissing` | method | gophermind-lib/briefv2/planner/decompose.go:94 | decomposeMissing writes a draft for every contract function that has none yet, component by component, at most decomposeBatch functions per call. |
-| `breakDependencyCycles` | func | gophermind-lib/briefv2/planner/decompose.go:159 | breakDependencyCycles removes, deterministically, the back edges of the function dependency graph. |
-| `(*Planner).decomposeCall` | method | gophermind-lib/briefv2/planner/decompose.go:207 | decomposeCall asks for the nodes of one batch of one component's functions. |
-| `nodeClasses` | var | gophermind-lib/briefv2/planner/decompose.go:245 | nodeClasses is the closed list a draft's node_class must come from. |
-| `defMissingNode` | const | gophermind-lib/briefv2/planner/decompose.go:250 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
-| `defNodeClass` | const | gophermind-lib/briefv2/planner/decompose.go:251 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
-| `defTitle` | const | gophermind-lib/briefv2/planner/decompose.go:252 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
-| `defDescription` | const | gophermind-lib/briefv2/planner/decompose.go:253 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
-| `defContract` | const | gophermind-lib/briefv2/planner/decompose.go:254 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
-| `defInputsMissing` | const | gophermind-lib/briefv2/planner/decompose.go:255 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
-| `defInputType` | const | gophermind-lib/briefv2/planner/decompose.go:256 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
-| `defOutputsCount` | const | gophermind-lib/briefv2/planner/decompose.go:257 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
-| `defOutputType` | const | gophermind-lib/briefv2/planner/decompose.go:258 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
-| `defErrorsMissing` | const | gophermind-lib/briefv2/planner/decompose.go:259 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
-| `defErrorsPartial` | const | gophermind-lib/briefv2/planner/decompose.go:260 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
-| `defDepends` | const | gophermind-lib/briefv2/planner/decompose.go:261 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
-| `defSchema` | const | gophermind-lib/briefv2/planner/decompose.go:262 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
-| `nodeEnv` | type | gophermind-lib/briefv2/planner/decompose.go:266 | nodeEnv is what normalising one node needs besides the node. |
-| `newNodeEnv` | func | gophermind-lib/briefv2/planner/decompose.go:279 |  |
-| `(*nodeEnv).normalizeNode` | method | gophermind-lib/briefv2/planner/decompose.go:306 | normalizeNode turns one node of a reply into a draft: every field the harness owns is set or overwritten by code and every leaf check applied. |
-| `draftResult` | type | gophermind-lib/briefv2/planner/decompose.go:432 | draftResult is what a Decompose reply held: the nodes that passed, the nodes that did not (to be asked for again), and the noise that was ignored. |
-| `splitDrafts` | func | gophermind-lib/briefv2/planner/decompose.go:445 | splitDrafts reads a Decompose reply for the functions asked for. |
-| `leafDefect` | type | gophermind-lib/briefv2/planner/decompose.go:496 | leafDefect is one thing wrong with a leaf's contract, with its kind. |
-| `checkLeaf` | func | gophermind-lib/briefv2/planner/decompose.go:501 | checkLeaf is what every leaf must carry before it may enter the plan: an input for every parameter, an output for every result, and an error entry when the function can fail. |
-| `leafDefects` | func | gophermind-lib/briefv2/planner/decompose.go:509 | leafDefects lists every leaf check that fails, in the order of checkLeaf. |
-| `inputLabel` | func | gophermind-lib/briefv2/planner/decompose.go:578 | inputLabel names an input in an error: by name when it is a parameter the contract's signature declares, otherwise by position, so that text from the reply is never quoted. |
-| `hasInput` | func | gophermind-lib/briefv2/planner/decompose.go:587 | hasInput reports whether inputs describes the parameter: an entry named exactly like it, or one naming a part of it (r.Body for r). |
-| `draftSchemaFailure` | func | gophermind-lib/briefv2/planner/decompose.go:601 | draftSchemaFailure validates a draft against the node schema and returns the failure, or nil. |
-| `validateDraft` | func | gophermind-lib/briefv2/planner/decompose.go:620 | validateDraft checks a draft against the node schema (see draftSchemaFailure). |
-| `waves` | func | gophermind-lib/briefv2/planner/decompose.go:642 | waves computes wave(n) = 0 with no dependencies, else 1 + the highest wave among them, the same rule as tree.ComputeWaves. |
-| `planWaves` | func | gophermind-lib/briefv2/planner/decompose.go:683 | planWaves is waves over the whole plan: the root and the components have no dependencies of their own, a function depends on other functions. |
-| `writeSkeleton` | func | gophermind-lib/briefv2/planner/decompose.go:698 | writeSkeleton writes root.json and every <component>/component.json. |
-| `buildSkeleton` | func | gophermind-lib/briefv2/planner/decompose.go:722 | buildSkeleton makes the root and component node documents. |
-| `featureFor` | func | gophermind-lib/briefv2/planner/decompose.go:844 |  |
-| `cut` | func | gophermind-lib/briefv2/planner/decompose.go:853 |  |
-| `firstParagraph` | func | gophermind-lib/briefv2/planner/decompose.go:861 | firstParagraph is the text up to the first blank line, on one line. |
-| `PlanNodes` | func | gophermind-lib/briefv2/planner/decompose.go:869 | PlanNodes lists the plan's nodes the way the coverage check and the approval summary need them: the root, every component, and every function draft, read from the run folder. |
-| `decomposeFixStage` | const | gophermind-lib/briefv2/planner/decompose_fix.go:23 |  |
-| `maxDecomposeRepairs` | const | gophermind-lib/briefv2/planner/decompose_fix.go:24 |  |
-| `maxDecomposeRepairBatch` | const | gophermind-lib/briefv2/planner/decompose_fix.go:25 |  |
-| `pendingDraft` | type | gophermind-lib/briefv2/planner/decompose_fix.go:30 | pendingDraft is a node waiting for its repair, kept in _state/decomposed.json so a resume neither asks again for what passed nor forgets the passes spent. |
-| `defectFields` | func | gophermind-lib/briefv2/planner/decompose_fix.go:42 | defectFields are the fields to ask for again for a defect: top-level names, or "contract.<field>" for a field of the node's contract. |
-| `structural` | var | gophermind-lib/briefv2/planner/decompose_fix.go:80 | structural defects can be repaired by code from the contract's signature. |
-| `allStructural` | func | gophermind-lib/briefv2/planner/decompose_fix.go:83 |  |
-| `cloneMap` | func | gophermind-lib/briefv2/planner/decompose_fix.go:92 |  |
-| `(*Planner).repairDrafts` | method | gophermind-lib/briefv2/planner/decompose_fix.go:106 | repairDrafts repairs the pending nodes: up to maxDecomposeRepairs passes over them, at most maxDecomposeRepairBatch per call, then the structural fallback. |
-| `parseFixReply` | func | gophermind-lib/briefv2/planner/decompose_fix.go:290 | parseFixReply reads a repair reply: a JSON array of objects, keyed by id. |
-| `mergeNodeFix` | func | gophermind-lib/briefv2/planner/decompose_fix.go:306 | mergeNodeFix takes from a reply, for one node, only the fields its defects name and only a value of the right JSON type; everything else stays as it was. |
-| `fixNodeText` | func | gophermind-lib/briefv2/planner/decompose_fix.go:345 | fixNodeText is one node of a repair prompt: its id, the defects as words, the contract entry of the function and the node as it stands. |
-| `defaultLeaf` | func | gophermind-lib/briefv2/planner/decompose_fix.go:382 | defaultLeaf derives the structural fields of a node from its function's signature: an input per parameter, an output per result, an errors entry when the function returns error. |
-| `(*Planner).noteLeafNormalized` | method | gophermind-lib/briefv2/planner/decompose_fix.go:474 | noteLeafNormalized reports the shape changes made to nodes before the checks as one warning: a count and at most 10 examples (function id, field, kind). |
-| `Dependency` | type | gophermind-lib/briefv2/planner/dependencies.go:10 | Dependency is one third-party Go module the planned code needs. |
-| `fileDependencies` | const | gophermind-lib/briefv2/planner/dependencies.go:18 | fileDependencies is dependencies.json, written by the contract stage and covered by the approval hash. |
-| `depModuleRE` | var | gophermind-lib/briefv2/planner/dependencies.go:23 | A dotted host first, so a standard library path (fmt) or an internal path (internal/x) is refused. |
-| `depVersionRE` | var | gophermind-lib/briefv2/planner/dependencies.go:24 |  |
-| `ParseDependencies` | func | gophermind-lib/briefv2/planner/dependencies.go:30 | ParseDependencies validates the dependencies of an outline reply and returns them sorted by module. |
-| `enrichGroups` | var | gophermind-lib/briefv2/planner/enrich.go:18 | enrichGroups are the groups a model writes for a function node. |
-| `enrichFieldsAll` | var | gophermind-lib/briefv2/planner/enrich.go:22 | enrichFieldsAll is every field a reply may carry, for a node that must be asked for again from scratch. |
-| `maxEnrichRepairs` | const | gophermind-lib/briefv2/planner/enrich.go:25 |  |
-| `enrichFixStage` | const | gophermind-lib/briefv2/planner/enrich.go:26 |  |
-| `(*Planner).tierFor` | method | gophermind-lib/briefv2/planner/enrich.go:31 | tierFor is the model chain a stage that works on one node uses: the node's own model_tier, or strong when routing by tier is off or the tier is unknown. |
-| `tierRank` | var | gophermind-lib/briefv2/planner/enrich.go:42 |  |
-| `(*Planner).batchTier` | method | gophermind-lib/briefv2/planner/enrich.go:46 | batchTier is the strongest tier among the drafts: no node gets a weaker chain than it asked for. |
-| `nextBatchSize` | func | gophermind-lib/briefv2/planner/enrich.go:61 | nextBatchSize halves a batch after a reply that could not be used, down to one. |
-| `pendingEnrich` | type | gophermind-lib/briefv2/planner/enrich.go:70 | pendingEnrich is a node whose enrichment failed a check, kept with what the model sent so far, the defect kinds, and the groups to ask for again. |
-| `enrichedState` | type | gophermind-lib/briefv2/planner/enrich.go:82 | enrichedState is _state/enriched.json. |
-| `loadEnriched` | func | gophermind-lib/briefv2/planner/enrich.go:90 |  |
-| `(enrichedState).save` | method | gophermind-lib/briefv2/planner/enrich.go:101 |  |
-| `enrichDone` | func | gophermind-lib/briefv2/planner/enrich.go:103 |  |
-| `EnrichError` | type | gophermind-lib/briefv2/planner/enrich.go:110 | EnrichError is returned when some nodes still fail the group checks after their repairs. |
-| `(*EnrichError).Error` | method | gophermind-lib/briefv2/planner/enrich.go:112 |  |
-| `(*Planner).groupEnvFor` | method | gophermind-lib/briefv2/planner/enrich.go:121 | groupEnvFor gathers what the group checks need that is the same for every node. |
-| `paramNames` | func | gophermind-lib/briefv2/planner/enrich.go:152 | paramNames is the set of parameter names in a signature. |
-| `mergeEnrichment` | func | gophermind-lib/briefv2/planner/enrich.go:170 | mergeEnrichment puts a model's groups onto a draft and checks the result. |
-| `kindsOfGroup` | func | gophermind-lib/briefv2/planner/enrich.go:221 |  |
-| `fieldsOfGroup` | func | gophermind-lib/briefv2/planner/enrich.go:233 | fieldsOfGroup is the reply fields to ask for again for a set of defects. |
-| `enrichResult` | type | gophermind-lib/briefv2/planner/enrich.go:253 | enrichResult is what an Enrich reply held. |
-| `enrichView` | func | gophermind-lib/briefv2/planner/enrich.go:260 | enrichView is a draft as the Enrich prompt shows it. |
-| `splitEnrich` | func | gophermind-lib/briefv2/planner/enrich.go:272 | splitEnrich reads an Enrich reply for the drafts asked for. |
-| `decisionsText` | func | gophermind-lib/briefv2/planner/enrich.go:318 |  |
-| `defectsText` | func | gophermind-lib/briefv2/planner/enrich.go:331 |  |
-| `(*Planner).enrichCall` | method | gophermind-lib/briefv2/planner/enrich.go:346 | enrichCall asks for the groups of one batch of one component's function drafts. |
-| `draftIndex` | func | gophermind-lib/briefv2/planner/enrich.go:415 | draftIndex finds a function draft by id. |
-| `(*Planner).enrichMissing` | method | gophermind-lib/briefv2/planner/enrich.go:430 | enrichMissing writes the groups of every function draft that has none, then the component and root groups. |
-| `(*Planner).applyEnrichment` | method | gophermind-lib/briefv2/planner/enrich.go:490 | applyEnrichment stores the nodes that passed in their drafts and the ones that did not in the pending list. |
-| `(*Planner).repairEnrichment` | method | gophermind-lib/briefv2/planner/enrich.go:528 | repairEnrichment asks again, alone and for the defective groups only, for each node that failed a check, up to maxEnrichRepairs passes. |
-| `(*Planner).enrichStructure` | method | gophermind-lib/briefv2/planner/enrich.go:619 | enrichStructure writes the rationale, assumptions, open questions and decision ids of every component and of the root: one small call each. |
-| `(*Planner).structureCall` | method | gophermind-lib/briefv2/planner/enrich.go:668 | structureCall asks for the groups of a component or the root. |
-| `(*Planner).enrich` | method | gophermind-lib/briefv2/planner/enrich.go:704 | enrich is the Enrich stage. |
-| `openQuestionStructures` | func | gophermind-lib/briefv2/planner/enrich.go:721 | openQuestionStructures lists the components and the root that still list an open question. |
-| `LeafTest` | type | gophermind-lib/briefv2/planner/exported.go:12 | LeafTest is where a function node's test lives, and the hash of the file as the planner wrote it. |
-| `HashedFiles` | func | gophermind-lib/briefv2/planner/exported.go:20 | HashedFiles is a copy of the run folder files (slash paths) whose bytes are part of the plan hash (RenderPlan), for a caller that must prove they did not move. |
-| `VerifyApproval` | func | gophermind-lib/briefv2/planner/exported.go:24 | VerifyApproval is the check the Test-writer makes: approval.json exists and binds the plan as it stands now. |
-| `ReadDependencies` | func | gophermind-lib/briefv2/planner/exported.go:44 | ReadDependencies reads dependencies.json; an absent file is an empty list. |
-| `ReadLeafTests` | func | gophermind-lib/briefv2/planner/exported.go:56 | ReadLeafTests reads _state/leaf_tests.json: function node id to its test. |
-| `ReadAcceptanceTests` | func | gophermind-lib/briefv2/planner/exported.go:67 | ReadAcceptanceTests reads _state/acceptance_tests.json: acceptance requirement id to the Go test the Test-writer wrote for it (the file as the planner wrote it, its test function and its hash). |
-| `ReadClasses` | func | gophermind-lib/briefv2/planner/exported.go:76 | ReadClasses reads _state/classes.json: node id to node class. |
-| `ReadRequirements` | func | gophermind-lib/briefv2/planner/exported.go:81 | ReadRequirements reads requirements.json. |
-| `JSONErr` | func | gophermind-lib/briefv2/planner/exported.go:94 | JSONErr describes a JSON decode failure without quoting the input. |
-| `SyntaxErr` | func | gophermind-lib/briefv2/planner/exported.go:97 | SyntaxErr describes a Go parse failure by position only. |
-| `IgnoredDuplicates` | func | gophermind-lib/briefv2/planner/exported.go:102 | IgnoredDuplicates reads the duplicate emissions the Contract stage dropped (_state/contract.json): the stored entries (ids only, at most 200), the exact total, and whether the stored list was cut. |
-| `ResolveRepo` | func | gophermind-lib/briefv2/planner/exported.go:120 | ResolveRepo turns a repo path (a leading ~ is expanded) into an absolute path to an existing directory. |
-| `Answer` | type | gophermind-lib/briefv2/planner/exported.go:123 | Answer is one settled answer of answers.json. |
-| `ReadAnswers` | func | gophermind-lib/briefv2/planner/exported.go:129 | ReadAnswers reads answers.json; an absent file is an empty list. |
-| `ApprovalInfo` | type | gophermind-lib/briefv2/planner/exported.go:142 | ApprovalInfo is what approval.json records. |
-| `ReadApproval` | func | gophermind-lib/briefv2/planner/exported.go:145 | ReadApproval reads approval.json; false when it is absent. |
-| `UnderstandingInfo` | type | gophermind-lib/briefv2/planner/exported.go:155 | UnderstandingInfo is what _state/understanding.json records. |
-| `ReadUnderstanding` | func | gophermind-lib/briefv2/planner/exported.go:158 | ReadUnderstanding reads _state/understanding.json; false when it is absent. |
-| `QuestionCounts` | type | gophermind-lib/briefv2/planner/exported.go:168 | QuestionCounts summarises the question store. |
-| `ReadQuestionCounts` | func | gophermind-lib/briefv2/planner/exported.go:177 | ReadQuestionCounts reads _state/clarify/questions.json; the zero value when the store is absent. |
-| `SetLeafTestSHA` | func | gophermind-lib/briefv2/planner/exported.go:202 | SetLeafTestSHA records the new hash of a function node's test file in _state/leaf_tests.json after a revision rewrote it. |
-| `factPackage` | type | gophermind-lib/briefv2/planner/factprobe.go:22 | factPackage is a package directory of the target repo and the names it exports. |
-| `factsFile` | type | gophermind-lib/briefv2/planner/factprobe.go:31 | factsFile is _state/clarify/facts.json: what the harness established about the run before asking anything. |
-| `probeMaxFileSize` | const | gophermind-lib/briefv2/planner/factprobe.go:44 |  |
-| `probeMaxFiles` | var | gophermind-lib/briefv2/planner/factprobe.go:48 | Limits on the walk. |
-| `probeMaxEntries` | var | gophermind-lib/briefv2/planner/factprobe.go:49 | Limits on the walk. |
-| `probeMaxPackages` | var | gophermind-lib/briefv2/planner/factprobe.go:50 | Limits on the walk. |
-| `probeMaxExports` | var | gophermind-lib/briefv2/planner/factprobe.go:51 | Limits on the walk. |
-| `probeSkipDirs` | var | gophermind-lib/briefv2/planner/factprobe.go:54 |  |
-| `marshalIndent` | func | gophermind-lib/briefv2/planner/factprobe.go:56 |  |
-| `probeFacts` | func | gophermind-lib/briefv2/planner/factprobe.go:60 | probeFacts establishes the facts. |
-| `exportedNames` | func | gophermind-lib/briefv2/planner/factprobe.go:158 | exportedNames lists the exported top-level names of a file and its exported methods on exported types (Type.Method). |
-| `recvTypeName` | func | gophermind-lib/briefv2/planner/factprobe.go:193 |  |
-| `readGoMod` | func | gophermind-lib/briefv2/planner/factprobe.go:209 | readGoMod returns the module path and the go version of a go.mod, or empty strings. |
-| `factText` | func | gophermind-lib/briefv2/planner/factprobe.go:239 | factText answers a fact question from its key. |
-| `factsPrompt` | func | gophermind-lib/briefv2/planner/factprobe.go:282 | factsPrompt renders the facts for a prompt and for UNDERSTANDING.md. |
-| `(*qstore).answerFacts` | method | gophermind-lib/briefv2/planner/factprobe.go:318 | answerFacts settles every open fact question the facts can answer and whose prerequisites are settled. |
-| `loadFacts` | func | gophermind-lib/briefv2/planner/factprobe.go:349 |  |
-| `(*Planner).ensureFacts` | method | gophermind-lib/briefv2/planner/factprobe.go:357 | ensureFacts reads facts.json, or probes and writes it. |
-| `requirementIDsFor` | func | gophermind-lib/briefv2/planner/finish.go:17 | requirementIDsFor is the requirements a function serves: the ones whose coverage names the function, else the ones whose coverage names its component. |
-| `allRequirementIDs` | func | gophermind-lib/briefv2/planner/finish.go:37 | allRequirementIDs is every requirement id in the coverage, sorted. |
-| `hookList` | func | gophermind-lib/briefv2/planner/finish.go:48 | hookList returns profile_hooks when it is a real list; a not-applicable answer is no hooks. |
-| `testwriterView` | func | gophermind-lib/briefv2/planner/finish.go:59 | testwriterView is the part of a node the Test-writer sees. |
-| `polarities` | var | gophermind-lib/briefv2/planner/finish.go:73 |  |
-| `coversRE` | var | gophermind-lib/briefv2/planner/finish.go:74 |  |
-| `checkPolarity` | func | gophermind-lib/briefv2/planner/finish.go:81 | checkPolarity applies the coverage rules to a Test-writer reply: every test has a polarity and a covers; there is a success test for the happy path; and each error condition has a negative test that covers it. |
-| `hasBenchmark` | func | gophermind-lib/briefv2/planner/finish.go:120 | hasBenchmark reports whether src defines Benchmark<Name> for the test function funcName (TestRegister gives BenchmarkRegister). |
-| `linkErrorTests` | func | gophermind-lib/briefv2/planner/finish.go:136 | linkErrorTests writes, into each error of the contract, the name of the test that covers it. |
-| `finishGroupDefects` | func | gophermind-lib/briefv2/planner/finish.go:159 | finishGroupDefects checks the finished tree documents: the decisions embedded in the root and in every other node must match the question store. |
-| `toAnySlice` | func | gophermind-lib/briefv2/planner/finish.go:176 |  |
-| `sortedKeys` | func | gophermind-lib/briefv2/planner/finish.go:184 |  |
-| `StageOf` | func | gophermind-lib/briefv2/planner/fixture.go:17 | StageOf returns the stage a planner request was made for, read from its system message, or "" for a request the planner did not build. |
-| `FixtureProvider` | func | gophermind-lib/briefv2/planner/fixture.go:33 | FixtureProvider is the offline model: it answers every planner call with a canned reply from a directory. |
-| `FixtureSettings` | func | gophermind-lib/briefv2/planner/fixture.go:94 | FixtureSettings is the configuration that goes with FixtureProvider: one private provider named fake, in every tier. |
-| `goTypes` | type | gophermind-lib/briefv2/planner/gotypes.go:20 | goTypes is what a signature says about its parameter and result types, read by code: Params and Results are the types as written, in order (one entry per name in a grouped parameter), and Unresolved lists the identifiers that are neither a Go builtin, a type parameter of the function, a standard library package, a package of this plan, nor a type the contract declares. |
-| `deriveGoTypes` | func | gophermind-lib/briefv2/planner/gotypes.go:27 | deriveGoTypes reads sig. |
-| `unresolvedTypeNames` | func | gophermind-lib/briefv2/planner/gotypes.go:73 | unresolvedTypeNames walks a type expression and returns the names that resolve to nothing. |
-| `contractTypeNames` | func | gophermind-lib/briefv2/planner/gotypes.go:99 | contractTypeNames is the set of Go type names the contract declares. |
-| `planPackageNames` | func | gophermind-lib/briefv2/planner/gotypes.go:124 | planPackageNames is the set of package names the plan itself defines: a qualified identifier such as store.User is resolved when store is one. |
-| `grpMissing` | const | gophermind-lib/briefv2/planner/groups.go:14 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
-| `grpNAForbid` | const | gophermind-lib/briefv2/planner/groups.go:15 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
-| `grpNAReason` | const | gophermind-lib/briefv2/planner/groups.go:16 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
-| `grpEnum` | const | gophermind-lib/briefv2/planner/groups.go:17 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
-| `grpConstruct` | const | gophermind-lib/briefv2/planner/groups.go:18 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
-| `grpTypeRes` | const | gophermind-lib/briefv2/planner/groups.go:19 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
-| `grpSecret` | const | gophermind-lib/briefv2/planner/groups.go:20 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
-| `grpThreats` | const | gophermind-lib/briefv2/planner/groups.go:21 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
-| `grpGoMin` | const | gophermind-lib/briefv2/planner/groups.go:22 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
-| `grpDeps` | const | gophermind-lib/briefv2/planner/groups.go:23 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
-| `grpObsFields` | const | gophermind-lib/briefv2/planner/groups.go:24 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
-| `grpDecision` | const | gophermind-lib/briefv2/planner/groups.go:25 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
-| `grpOpenQ` | const | gophermind-lib/briefv2/planner/groups.go:26 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
-| `grpHookBench` | const | gophermind-lib/briefv2/planner/groups.go:27 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
-| `grpErrTest` | const | gophermind-lib/briefv2/planner/groups.go:28 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
-| `grpPolarity` | const | gophermind-lib/briefv2/planner/groups.go:29 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
-| `grpSchema` | const | gophermind-lib/briefv2/planner/groups.go:30 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
-| `grpDecisionsEmbed` | const | gophermind-lib/briefv2/planner/groups.go:31 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
-| `groupDefect` | type | gophermind-lib/briefv2/planner/groups.go:36 | groupDefect is one thing wrong with a node's groups. |
-| `groupEnv` | type | gophermind-lib/briefv2/planner/groups.go:39 | groupEnv is what the group checks need besides the node. |
-| `naGroups` | var | gophermind-lib/briefv2/planner/groups.go:49 | naGroups are the groups that may be answered "not applicable" (where naAllowed permits it for the node's class). |
-| `naAllowed` | func | gophermind-lib/briefv2/planner/groups.go:55 | naAllowed says where a group may be answered not applicable. |
-| `notApplicable` | func | gophermind-lib/briefv2/planner/groups.go:72 | notApplicable reports whether v is a not-applicable answer and its reason. |
-| `naReasonOK` | func | gophermind-lib/briefv2/planner/groups.go:89 | naReasonOK is true when a not-applicable reason is a sentence and not a non-answer: at least 20 characters and 4 words, and at least 3 words are left after the stock non-answers (none, n/a, no, nothing, not applicable, pure function) are removed. |
-| `logVerbRE` | var | gophermind-lib/briefv2/planner/groups.go:118 |  |
-| `strField` | func | gophermind-lib/briefv2/planner/groups.go:120 |  |
-| `groupDefects` | func | gophermind-lib/briefv2/planner/groups.go:127 | groupDefects lists every group check that fails for a function node, in a stable order. |
-| `openQuestionDefects` | func | gophermind-lib/briefv2/planner/groups.go:231 | openQuestionDefects is the check made at approval: no node may still list an open question. |
-| `secretLike` | func | gophermind-lib/briefv2/planner/groups.go:238 |  |
-| `depAllowed` | func | gophermind-lib/briefv2/planner/groups.go:247 |  |
-| `goVersionParts` | func | gophermind-lib/briefv2/planner/groups.go:260 |  |
-| `goVersionLess` | func | gophermind-lib/briefv2/planner/groups.go:270 | goVersionLess reports whether Go version a is older than b. |
-| `trustBoundaries` | var | gophermind-lib/briefv2/planner/groupsummary.go:11 |  |
-| `summaryMax` | const | gophermind-lib/briefv2/planner/groupsummary.go:14 | summaryMax bounds every model-written value the approval summary prints. |
-| `writeGroupSummary` | func | gophermind-lib/briefv2/planner/groupsummary.go:22 | writeGroupSummary adds the "Node groups" section to the plan a person approves: how many function nodes answered "not applicable" for each group (so a person can sample the reasons), the trust boundaries per component, the nodes no requirement names, the warnings Enrich raised, the component and root assumptions, and the open questions. |
-| `checksSkipped` | func | gophermind-lib/briefv2/planner/groupsummary.go:117 | checksSkipped names the group checks that could not run because the repository has no go.mod (or none that states a Go version). |
-| `isTrustBoundary` | func | gophermind-lib/briefv2/planner/groupsummary.go:127 |  |
-| `firstN` | func | gophermind-lib/briefv2/planner/groupsummary.go:136 |  |
-| `typeIDRE` | var | gophermind-lib/briefv2/planner/idnorm.go:22 |  |
-| `fnIDRE` | var | gophermind-lib/briefv2/planner/idnorm.go:23 |  |
-| `maxIDExamples` | const | gophermind-lib/briefv2/planner/idnorm.go:27 | maxIDExamples bounds the examples named in the warning. |
-| `replyKind` | type | gophermind-lib/briefv2/planner/idnorm.go:29 |  |
-| `replyOutline` | const | gophermind-lib/briefv2/planner/idnorm.go:32 |  |
-| `replyComponent` | const | gophermind-lib/briefv2/planner/idnorm.go:33 |  |
-| `replyRepair` | const | gophermind-lib/briefv2/planner/idnorm.go:34 |  |
-| `idNotes` | type | gophermind-lib/briefv2/planner/idnorm.go:40 | idNotes is what normalising one reply did: how many ids and references were rewritten, a few bounded examples, and the objects dropped because two different raw ids became the same id (the first emission wins). |
-| `isUpper` | func | gophermind-lib/briefv2/planner/idnorm.go:46 |  |
-| `isLower` | func | gophermind-lib/briefv2/planner/idnorm.go:47 |  |
-| `isDigit` | func | gophermind-lib/briefv2/planner/idnorm.go:48 |  |
-| `normalizeID` | func | gophermind-lib/briefv2/planner/idnorm.go:55 | normalizeID returns raw in the id syntax: case boundaries split, lower case, every run of other characters one dash, no leading or trailing dash. |
-| `exampleOf` | func | gophermind-lib/briefv2/planner/idnorm.go:99 | exampleOf is one "old -> new" example for the warning. |
-| `normalizeReply` | func | gophermind-lib/briefv2/planner/idnorm.go:120 | normalizeReply rewrites the ids of a contract reply. |
-| `(*Planner).noteNormalized` | method | gophermind-lib/briefv2/planner/idnorm.go:279 | noteNormalized records the rewritten ids in the state and reports them as one warning: a count and at most 10 bounded examples, never other reply text. |
-| `pendingSep` | const | gophermind-lib/briefv2/planner/idnorm.go:291 | pendingSep joins the two candidate forms of a reference that named nothing declared: "validate-email\|fn-validate-email". |
-| `pendingRE` | var | gophermind-lib/briefv2/planner/idnorm.go:293 |  |
-| `pendingRef` | func | gophermind-lib/briefv2/planner/idnorm.go:296 | pendingRef splits a pending reference into its type form and function form. |
-| `declaredIDs` | func | gophermind-lib/briefv2/planner/idnorm.go:304 |  |
-| `resolveRefs` | func | gophermind-lib/briefv2/planner/idnorm.go:321 | resolveRefs returns a copy of doc in which every pending reference is the form that is declared. |
-| `schemaNamesOnce` | var | gophermind-lib/briefv2/planner/leafnorm.go:24 |  |
-| `nodeTopProps` | var | gophermind-lib/briefv2/planner/leafnorm.go:25 |  |
-| `nodeContractKey` | var | gophermind-lib/briefv2/planner/leafnorm.go:26 |  |
-| `nodeAllNames` | var | gophermind-lib/briefv2/planner/leafnorm.go:27 |  |
-| `nodeTierEnum` | var | gophermind-lib/briefv2/planner/leafnorm.go:28 |  |
-| `loadSchemaNames` | func | gophermind-lib/briefv2/planner/leafnorm.go:31 |  |
-| `sideEffectText` | func | gophermind-lib/briefv2/planner/leafnorm.go:80 | sideEffectText is a side effect that arrived as an object, as one sentence. |
-| `asArray` | func | gophermind-lib/briefv2/planner/leafnorm.go:102 | asArray returns v as an array for a field that wants one: null is empty, a single value is wrapped. |
-| `camelBoundary` | var | gophermind-lib/briefv2/planner/leafnorm.go:112 |  |
-| `titleFromName` | func | gophermind-lib/briefv2/planner/leafnorm.go:115 | titleFromName is "Validate task assignee" from ValidateTaskAssignee. |
-| `normalizeShape` | func | gophermind-lib/briefv2/planner/leafnorm.go:127 | normalizeShape reshapes the benign deviations of one node in place. |
-| `hasKey` | func | gophermind-lib/briefv2/planner/leafnorm.go:198 |  |
-| `orEmpty` | func | gophermind-lib/briefv2/planner/leafnorm.go:200 |  |
-| `schemaDetails` | func | gophermind-lib/briefv2/planner/leafnorm.go:210 | schemaDetails names, in a fixed vocabulary, where a node fails its schema: "field:<path> keyword:<schema keyword>". |
-| `runIDRE` | var | gophermind-lib/briefv2/planner/load.go:18 |  |
-| `ValidRunID` | func | gophermind-lib/briefv2/planner/load.go:21 | ValidRunID reports whether s has the shape of a run id (gm-YYYY-MM-DD-NNN). |
-| `(*Planner).load` | method | gophermind-lib/briefv2/planner/load.go:26 | load is the Load stage. |
-| `(*Planner).loadExisting` | method | gophermind-lib/briefv2/planner/load.go:106 |  |
-| `(*Planner).notePublic` | method | gophermind-lib/briefv2/planner/load.go:149 | notePublic records that a run was allowed to show the brief to public providers. |
-| `resolveRepo` | func | gophermind-lib/briefv2/planner/load.go:159 | resolveRepo turns the brief's repo into an absolute path to an existing directory. |
-| `ExpandRepo` | func | gophermind-lib/briefv2/planner/load.go:175 | ExpandRepo expands a leading ~ and makes the path absolute. |
-| `(*Planner).storeSecrets` | method | gophermind-lib/briefv2/planner/load.go:194 | storeSecrets makes sure every secret the brief declares is in the vault under this run's scope. |
-| `untouchedRunDir` | func | gophermind-lib/briefv2/planner/load.go:235 | untouchedRunDir reports whether a run folder holds only what Load writes: the brief, the requirements, an empty logs folder, a status file and the ledger, event and reply files a first stage leaves in _state. |
-| `StripReply` | func | gophermind-lib/briefv2/planner/parse.go:12 | StripReply removes what models wrap around the JSON they were asked for: a markdown fence, a sentence before it, a sentence after it. |
-| `fencedBlocks` | func | gophermind-lib/briefv2/planner/parse.go:42 | fencedBlocks returns the trimmed content of every ``` block, in order. |
-| `Question` | func | gophermind-lib/briefv2/planner/parse.go:67 | Question finds the pause-and-ask marker: a line that is exactly QUESTION: with the question on the lines after it. |
-| `Caller` | interface | gophermind-lib/briefv2/planner/planner.go:21 | Caller is the one router method the planner uses. |
-| `Secrets` | interface | gophermind-lib/briefv2/planner/planner.go:26 | Secrets is the part of the vault the Load stage needs. |
-| `Deps` | type | gophermind-lib/briefv2/planner/planner.go:33 | Deps is everything the planner talks to. |
-| `Options` | type | gophermind-lib/briefv2/planner/planner.go:52 | Options says what one Run call does. |
-| `Outcome` | type | gophermind-lib/briefv2/planner/planner.go:68 |  |
-| `Done` | const | gophermind-lib/briefv2/planner/planner.go:71 |  |
-| `Waiting` | const | gophermind-lib/briefv2/planner/planner.go:72 |  |
-| `Planner` | type | gophermind-lib/briefv2/planner/planner.go:75 |  |
-| `New` | func | gophermind-lib/briefv2/planner/planner.go:80 |  |
-| `run` | type | gophermind-lib/briefv2/planner/planner.go:94 | run is one brief being planned. |
-| `(*run).path` | method | gophermind-lib/briefv2/planner/planner.go:105 |  |
-| `(*run).saveStatus` | method | gophermind-lib/briefv2/planner/planner.go:107 |  |
-| `stage` | type | gophermind-lib/briefv2/planner/planner.go:111 | stage is one step of the pipeline. |
-| `stages` | var | gophermind-lib/briefv2/planner/planner.go:118 | stages after Load, in order. |
-| `(*Planner).Run` | method | gophermind-lib/briefv2/planner/planner.go:131 | Run plans a brief, or continues a run, until every stage is done, a person has to answer (Waiting), or something fails. |
-| `(*Planner).emit` | method | gophermind-lib/briefv2/planner/planner.go:177 |  |
-| `(*Planner).noteLedgerErrors` | method | gophermind-lib/briefv2/planner/planner.go:181 |  |
-| `callSpec` | type | gophermind-lib/briefv2/planner/planner.go:192 | callSpec says what one model call carries, for the router and the ledger. |
-| `(*Planner).call` | method | gophermind-lib/briefv2/planner/planner.go:213 | call makes one model call through the router. |
-| `(*Planner).callRes` | method | gophermind-lib/briefv2/planner/planner.go:219 | callRes is call that also returns the router's result (which model answered). |
-| `maxQuestionsPerCall` | const | gophermind-lib/briefv2/planner/planner.go:256 |  |
-| `pendingQuestion` | type | gophermind-lib/briefv2/planner/planner.go:261 | pendingQuestion is _state/question.json: a question a model asked that no person has answered yet. |
-| `(*Planner).callAsking` | method | gophermind-lib/briefv2/planner/planner.go:270 | callAsking is call plus the pause-and-ask protocol: a reply that is a QUESTION: goes to the human gate (or, when the brief says assume and document, back to the model with that instruction) and the call is made again with the answer added. |
-| `(*Planner).ask` | method | gophermind-lib/briefv2/planner/planner.go:339 | ask puts questions to the human gate. |
-| `answerNote` | func | gophermind-lib/briefv2/planner/planner.go:346 |  |
-| `answerBy` | func | gophermind-lib/briefv2/planner/planner.go:351 | answerBy says who an answer came from, for the question store. |
-| `(*Planner).recordAnswer` | method | gophermind-lib/briefv2/planner/planner.go:363 | recordAnswer settles a question a stage raised in the store, rewrites the answers.json view and the decision record, and returns the view. |
-| `KindPromptSize` | const | gophermind-lib/briefv2/planner/promptbudget.go:25 | KindPromptSize is the event kind of a prompt size report (sizes only). |
-| `promptHeadroomTokens` | const | gophermind-lib/briefv2/planner/promptbudget.go:28 | promptHeadroomTokens is the margin kept beyond the estimate and the reserved reply, because the estimate is rough. |
-| `maxPromptLevel` | const | gophermind-lib/briefv2/planner/promptbudget.go:29 | Contract prompts are sized to the smallest context window in the tier's chain. |
-| `estimateTokens` | func | gophermind-lib/briefv2/planner/promptbudget.go:34 | estimateTokens is the router's own estimate (bytes/4 plus a tenth), so the planner and the router agree on what fits. |
-| `(*Planner).contextWindow` | method | gophermind-lib/briefv2/planner/promptbudget.go:39 | contextWindow is the smallest context among the models of the strong tier that the settings know; 0 when none is known (nothing is then trimmed ahead of time, the router's answer decides). |
-| `(*Planner).callSized` | method | gophermind-lib/briefv2/planner/promptbudget.go:53 | callSized makes a contract call whose prompt is built for a level of optional context. |
-| `tooLongErr` | func | gophermind-lib/briefv2/planner/promptbudget.go:81 |  |
-| `excerptCaps` | type | gophermind-lib/briefv2/planner/promptbudget.go:87 | excerptCaps are the byte caps of a brief excerpt at a level. |
-| `excerptCapsAt` | func | gophermind-lib/briefv2/planner/promptbudget.go:93 |  |
-| `capText` | func | gophermind-lib/briefv2/planner/promptbudget.go:104 | capText cuts s to at most n bytes (on a character boundary) and says so. |
-| `briefExcerpt` | func | gophermind-lib/briefv2/planner/promptbudget.go:117 | briefExcerpt is the part of the brief a pass needs: the main sections and the named features (in brief order), each capped so the excerpt is bounded however large the brief is. |
-| `allFeatureNames` | func | gophermind-lib/briefv2/planner/promptbudget.go:149 |  |
-| `featuresOfComponents` | func | gophermind-lib/briefv2/planner/promptbudget.go:158 | featuresOfComponents maps component ids to the features they came from. |
-| `repairExcerptLevel` | func | gophermind-lib/briefv2/planner/promptbudget.go:173 | repairExcerptLevel is the excerpt level of a repair pass: repair prompts never carry the whole brief, so level 0 already uses an excerpt. |
-| `outlineJSONAt` | func | gophermind-lib/briefv2/planner/promptbudget.go:182 | outlineJSONAt is the outline (module, conventions, components) for a prompt: complete up to level 1, component ids only after that. |
-| `declaredTextAt` | func | gophermind-lib/briefv2/planner/promptbudget.go:196 | declaredTextAt lists what is declared: in full up to level 1; from level 2 type ids and function signatures; at level 3 ids only. |
-| `briefSectionAt` | func | gophermind-lib/briefv2/planner/promptbudget.go:218 | briefSectionAt is a component's feature section, capped from level 1. |
-| `promptFS` | var | gophermind-lib/briefv2/planner/prompts.go:14 |  |
-| `render` | func | gophermind-lib/briefv2/planner/prompts.go:18 | render fills prompts/<name>.md. |
-| `closingTagRE` | var | gophermind-lib/briefv2/planner/prompts.go:45 | closingTagRE finds the closing tags the prompt files use. |
-| `packerSectionTags` | var | gophermind-lib/briefv2/planner/prompts.go:50 | packerSectionTags are the section tags of the executor's node prompts (packer.sectionTagRE). |
-| `promptDataTags` | func | gophermind-lib/briefv2/planner/prompts.go:54 | promptDataTags lists, sorted, every tag name closed in a prompt file. |
-| `dataTagRE` | var | gophermind-lib/briefv2/planner/prompts.go:77 |  |
-| `neutralizePrompt` | func | gophermind-lib/briefv2/planner/prompts.go:83 | neutralizePrompt breaks every data-section tag in untrusted text so that a brief, an answer or a model-written node cannot close the section it sits in and speak as the prompt. |
-| `trustedPromptKeys` | var | gophermind-lib/briefv2/planner/prompts.go:88 | trustedPromptKeys are the data keys the planner itself builds: fixed text, numbers and lists of names, never the brief, an answer, a fact, a defect message or a model reply. |
-| `harnessContract` | func | gophermind-lib/briefv2/planner/prompts.go:95 | harnessContract is the shared description of how root test commands are run (prompts/harness.md), put into every prompt that asks for one. |
-| `request` | func | gophermind-lib/briefv2/planner/prompts.go:105 | request is the shape of every planner call: a system line naming the stage (the offline fixture provider keys its canned replies on it) and the prompt. |
-| `maxTokensClarify` | const | gophermind-lib/briefv2/planner/prompts.go:119 | Output budgets per stage, in tokens. |
-| `maxTokensContract` | const | gophermind-lib/briefv2/planner/prompts.go:120 | Output budgets per stage, in tokens. |
-| `maxTokensOutline` | const | gophermind-lib/briefv2/planner/prompts.go:123 | The outline lists every component and type of a large brief in one reply, so it gets a larger budget, and a larger cap when the router grows it. |
-| `maxGrownOutline` | const | gophermind-lib/briefv2/planner/prompts.go:124 | Output budgets per stage, in tokens. |
-| `maxTokensDecompose` | const | gophermind-lib/briefv2/planner/prompts.go:125 | Output budgets per stage, in tokens. |
-| `maxTokensCoverage` | const | gophermind-lib/briefv2/planner/prompts.go:126 | Output budgets per stage, in tokens. |
-| `maxTokensFill` | const | gophermind-lib/briefv2/planner/prompts.go:127 | Output budgets per stage, in tokens. |
-| `maxTokensTestwrite` | const | gophermind-lib/briefv2/planner/prompts.go:128 | Output budgets per stage, in tokens. |
-| `maxTokensEnrich` | const | gophermind-lib/briefv2/planner/prompts.go:130 | Output budgets per stage, in tokens. |
-| `maxTokensEnrichStructure` | const | gophermind-lib/briefv2/planner/prompts.go:131 | Output budgets per stage, in tokens. |
-| `qOpen` | const | gophermind-lib/briefv2/planner/questions.go:21 | Question status and who answered. |
-| `qSettled` | const | gophermind-lib/briefv2/planner/questions.go:22 | Question status and who answered. |
-| `byHuman` | const | gophermind-lib/briefv2/planner/questions.go:24 | Question status and who answered. |
-| `byAccepted` | const | gophermind-lib/briefv2/planner/questions.go:25 | Question status and who answered. |
-| `byUnattended` | const | gophermind-lib/briefv2/planner/questions.go:26 | Question status and who answered. |
-| `byProbe` | const | gophermind-lib/briefv2/planner/questions.go:27 | Question status and who answered. |
-| `factKeys` | var | gophermind-lib/briefv2/planner/questions.go:32 | factKeys is the closed list of facts the probe can answer. |
-| `maxQuestionBytes` | const | gophermind-lib/briefv2/planner/questions.go:35 |  |
-| `maxRecommendBytes` | const | gophermind-lib/briefv2/planner/questions.go:36 |  |
-| `maxOptionBytes` | const | gophermind-lib/briefv2/planner/questions.go:37 |  |
-| `maxHistory` | const | gophermind-lib/briefv2/planner/questions.go:38 |  |
-| `qidRE` | var | gophermind-lib/briefv2/planner/questions.go:42 |  |
-| `decisionIDRE` | var | gophermind-lib/briefv2/planner/questions.go:43 |  |
-| `qhistory` | type | gophermind-lib/briefv2/planner/questions.go:47 | qhistory is an earlier answer, kept when an answer is changed. |
-| `qrec` | type | gophermind-lib/briefv2/planner/questions.go:54 | qrec is one question and, once settled, its answer. |
-| `qstore` | type | gophermind-lib/briefv2/planner/questions.go:74 | qstore is _state/clarify/questions.json. |
-| `loadQStore` | func | gophermind-lib/briefv2/planner/questions.go:84 | loadQStore reads the question store. |
-| `(qstore).save` | method | gophermind-lib/briefv2/planner/questions.go:118 |  |
-| `stamp` | func | gophermind-lib/briefv2/planner/questions.go:130 | stamp is the time format of the planner's state files. |
-| `(*qstore).get` | method | gophermind-lib/briefv2/planner/questions.go:132 |  |
-| `(*qstore).settle` | method | gophermind-lib/briefv2/planner/questions.go:143 | settle records the answer of an open question. |
-| `(qstore).unsettled` | method | gophermind-lib/briefv2/planner/questions.go:153 | unsettled lists the open questions in order. |
-| `(qstore).frontier` | method | gophermind-lib/briefv2/planner/questions.go:165 | frontier lists the open questions whose prerequisites are all settled: the ones that can be asked now without guessing at an answer not yet heard. |
-| `(qstore).nextNumber` | method | gophermind-lib/briefv2/planner/questions.go:192 | nextNumber is one more than the highest q<N> id in the store. |
-| `qparseOpts` | type | gophermind-lib/briefv2/planner/questions.go:205 | qparseOpts says how strictly a Clarify reply is read. |
-| `parseQuestionList` | func | gophermind-lib/briefv2/planner/questions.go:215 | parseQuestionList reads a Clarify reply. |
-| `answersView` | func | gophermind-lib/briefv2/planner/questions.go:325 | answersView is answers.json as the store derives it: every settled question in order. |
-| `writeAnswersView` | func | gophermind-lib/briefv2/planner/questions.go:337 | writeAnswersView rewrites answers.json from the store. |
-| `decisionMarkdown` | func | gophermind-lib/briefv2/planner/questions.go:345 | decisionMarkdown is the browsable record of one settled question. |
-| `writeDecision` | func | gophermind-lib/briefv2/planner/questions.go:387 | writeDecision writes decisions/<id>.md. |
-| `recordOf` | func | gophermind-lib/briefv2/planner/questions.go:396 | recordOf is a settled question as it is written into a node: every field a reader needs, none that is empty. |
-| `embedDecisions` | func | gophermind-lib/briefv2/planner/questions.go:438 | embedDecisions records the questions and answers in the tree: the root gets every settled record, in order; a component or function gets copies of the records its decision_ids name, in store order (an empty list when it cites none). |
-| `checkEmbedded` | func | gophermind-lib/briefv2/planner/questions.go:471 | checkEmbedded compares the decisions embedded in the tree with what embedDecisions would write now. |
-| `sameJSON` | func | gophermind-lib/briefv2/planner/questions.go:491 |  |
-| `(*Planner).saveReply` | method | gophermind-lib/briefv2/planner/replies.go:18 | saveReply keeps the text of each stage reply under _state/replies/ so a bad plan can be inspected afterwards. |
-| `ReqKind` | type | gophermind-lib/briefv2/planner/requirements.go:14 | ReqKind says which part of the brief a requirement came from. |
-| `ReqConstraint` | const | gophermind-lib/briefv2/planner/requirements.go:17 |  |
-| `ReqAcceptance` | const | gophermind-lib/briefv2/planner/requirements.go:18 |  |
-| `ReqFeature` | const | gophermind-lib/briefv2/planner/requirements.go:19 |  |
-| `Requirement` | type | gophermind-lib/briefv2/planner/requirements.go:24 | Requirement is one obligation the brief states. |
-| `ParseRequirements` | func | gophermind-lib/briefv2/planner/requirements.go:36 | ParseRequirements scans a brief file: every top-level bullet under "## Constraints" and "## Acceptance", and every "### " heading under "## Features", is one requirement. |
-| `isBullet` | func | gophermind-lib/briefv2/planner/requirements.go:119 |  |
-| `ReviseRequest` | type | gophermind-lib/briefv2/planner/revise.go:28 | ReviseRequest is everything the executor hands the revise stage. |
-| `ReviseOutcome` | type | gophermind-lib/briefv2/planner/revise.go:41 | ReviseOutcome is what a revise call came to. |
-| `OutcomeRewritten` | const | gophermind-lib/briefv2/planner/revise.go:44 |  |
-| `OutcomeFlagged` | const | gophermind-lib/briefv2/planner/revise.go:45 |  |
-| `OutcomeUnusable` | const | gophermind-lib/briefv2/planner/revise.go:46 |  |
-| `ReviseProposal` | type | gophermind-lib/briefv2/planner/revise.go:51 | ReviseProposal is the result of Revise. |
-| `Reviser` | type | gophermind-lib/briefv2/planner/revise.go:67 | Reviser is the planner's revise stage. |
-| `NewReviser` | func | gophermind-lib/briefv2/planner/revise.go:70 | NewReviser returns a Reviser over the same dependencies the planner has. |
-| `maxReviseInput` | const | gophermind-lib/briefv2/planner/revise.go:73 |  |
-| `maxReviseTestSource` | const | gophermind-lib/briefv2/planner/revise.go:74 |  |
-| `removedLine` | const | gophermind-lib/briefv2/planner/revise.go:75 |  |
-| `scrubInput` | func | gophermind-lib/briefv2/planner/revise.go:83 | scrubInput is the stage's own defense in depth for a text input: the caller scrubs too, but a caller bug must not send a secret value to a provider. |
-| `reviseIDRE` | var | gophermind-lib/briefv2/planner/revise.go:106 |  |
-| `openReviseRun` | func | gophermind-lib/briefv2/planner/revise.go:109 | openReviseRun is the run view the planner helpers need, read from the folder. |
-| `reviseView` | func | gophermind-lib/briefv2/planner/revise.go:129 | reviseView is the node as the revise model sees it: no reasoning group ever; the component variant adds rationale and assumptions only. |
-| `decisionsNamedBy` | func | gophermind-lib/briefv2/planner/revise.go:167 | decisionsNamedBy is the settled decisions the node cites, as decisionsText prints them. |
-| `bulletList` | func | gophermind-lib/briefv2/planner/revise.go:181 |  |
-| `touchesContractShape` | func | gophermind-lib/briefv2/planner/revise.go:188 |  |
-| `(*Planner).revisePrompt` | method | gophermind-lib/briefv2/planner/revise.go:198 | revisePrompt builds the revise prompt from the node and the request. |
-| `parsedRevise` | type | gophermind-lib/briefv2/planner/revise.go:226 | parsedRevise is what the revise parse closure keeps of the last reply it saw. |
-| `classOf` | func | gophermind-lib/briefv2/planner/revise.go:235 |  |
-| `(*Reviser).Revise` | method | gophermind-lib/briefv2/planner/revise.go:246 | Revise makes the revise call and, when the tests must follow, the Test-writer call, and validates both. |
-| `(*Planner).reviseTests` | method | gophermind-lib/briefv2/planner/revise.go:439 | reviseTests is the Test-writer call for a revised node: the same prompt and the same parser as planning, on the revised contract alone. |
-| `replyHoldsSecret` | func | gophermind-lib/briefv2/planner/revise.go:493 | replyHoldsSecret is the secret scan of a revise or Test-writer reply: the reply as sent, every string of its JSON once decoded (an escaped secret is still a secret), and the value of every Go string or rune literal inside those strings (a test source may spell a secret with Go escapes). |
-| `goLiterals` | func | gophermind-lib/briefv2/planner/revise.go:525 | goLiterals is the unquoted value of every string and rune literal in src, read as Go tokens; text that is not Go yields what the scanner finds. |
-| `fileRevisionDecisions` | const | gophermind-lib/briefv2/planner/revise_decision.go:19 |  |
-| `decisionClassRE` | var | gophermind-lib/briefv2/planner/revise_decision.go:21 |  |
-| `decisionMu` | var | gophermind-lib/briefv2/planner/revise_decision.go:27 | decisionMu serializes the read-modify-write of the decision store across every Reviser in the process. |
-| `RevisionDecision` | type | gophermind-lib/briefv2/planner/revise_decision.go:30 | RevisionDecision is a person's answer about a leaf the revise stage touched. |
-| `revisionDecisions` | type | gophermind-lib/briefv2/planner/revise_decision.go:43 |  |
-| `decisionNote` | func | gophermind-lib/briefv2/planner/revise_decision.go:50 | decisionNote puts a note on one line, drops control and format characters (escape sequences, bidi marks, zero-width characters), applies scrub to the cleaned text and then bounds it. |
-| `qrecOfRecord` | func | gophermind-lib/briefv2/planner/revise_decision.go:69 | qrecOfRecord rebuilds the settled question a stored decision record came from, so its markdown can be rendered again byte for byte. |
-| `writeDecisionMarkdown` | func | gophermind-lib/briefv2/planner/revise_decision.go:76 |  |
-| `(*Reviser).RecordDecision` | method | gophermind-lib/briefv2/planner/revise_decision.go:88 | RecordDecision appends the answer to _state/revisions/decisions.json, in the shape of recordOf, and writes decisions/rv-<node>-<m>.md. |
-| `TriggerLadderExhausted` | const | gophermind-lib/briefv2/planner/revise_patch.go:20 | Triggers of a revision, as the executor reports them. |
-| `TriggerContractProblem` | const | gophermind-lib/briefv2/planner/revise_patch.go:21 | Triggers of a revision, as the executor reports them. |
-| `ClassReviseInvalid` | const | gophermind-lib/briefv2/planner/revise_patch.go:26 | Classes of the revise stage: every refusal, flag and escalation reason uses one. |
-| `ClassReviseNoop` | const | gophermind-lib/briefv2/planner/revise_patch.go:27 | Classes of the revise stage: every refusal, flag and escalation reason uses one. |
-| `ClassSecretInReply` | const | gophermind-lib/briefv2/planner/revise_patch.go:28 | Classes of the revise stage: every refusal, flag and escalation reason uses one. |
-| `ClassContractFlagged` | const | gophermind-lib/briefv2/planner/revise_patch.go:29 | Classes of the revise stage: every refusal, flag and escalation reason uses one. |
-| `ClassSplitRequired` | const | gophermind-lib/briefv2/planner/revise_patch.go:30 | Classes of the revise stage: every refusal, flag and escalation reason uses one. |
-| `ClassTestsLocked` | const | gophermind-lib/briefv2/planner/revise_patch.go:31 | Classes of the revise stage: every refusal, flag and escalation reason uses one. |
-| `ClassVacuousTest` | const | gophermind-lib/briefv2/planner/revise_patch.go:32 | Classes of the revise stage: every refusal, flag and escalation reason uses one. |
-| `ClassRedBuild` | const | gophermind-lib/briefv2/planner/revise_patch.go:33 | Classes of the revise stage: every refusal, flag and escalation reason uses one. |
-| `reviseErr` | type | gophermind-lib/briefv2/planner/revise_patch.go:38 | reviseErr is a refusal or a flag with its class. |
-| `(*reviseErr).Error` | method | gophermind-lib/briefv2/planner/revise_patch.go:40 |  |
-| `invalid` | func | gophermind-lib/briefv2/planner/revise_patch.go:42 |  |
-| `maxDescription` | const | gophermind-lib/briefv2/planner/revise_patch.go:47 |  |
-| `maxParagraph` | const | gophermind-lib/briefv2/planner/revise_patch.go:48 |  |
-| `maxAssumptions` | const | gophermind-lib/briefv2/planner/revise_patch.go:49 |  |
-| `maxAssumptionLen` | const | gophermind-lib/briefv2/planner/revise_patch.go:50 |  |
-| `maxReplyBytes` | const | gophermind-lib/briefv2/planner/revise_patch.go:51 |  |
-| `maxEntryLen` | const | gophermind-lib/briefv2/planner/revise_patch.go:52 |  |
-| `maxListItems` | const | gophermind-lib/briefv2/planner/revise_patch.go:53 |  |
-| `maxJSONDepth` | const | gophermind-lib/briefv2/planner/revise_patch.go:54 |  |
-| `revisePatch` | type | gophermind-lib/briefv2/planner/revise_patch.go:58 | revisePatch is the JSON reply of the revise model: optional keys, none else. |
-| `reviseContract` | type | gophermind-lib/briefv2/planner/revise_patch.go:67 |  |
-| `reviseContext` | type | gophermind-lib/briefv2/planner/revise_patch.go:74 |  |
-| `reviseKind` | type | gophermind-lib/briefv2/planner/revise_patch.go:79 |  |
-| `kindPatch` | const | gophermind-lib/briefv2/planner/revise_patch.go:82 |  |
-| `kindContractChange` | const | gophermind-lib/briefv2/planner/revise_patch.go:83 |  |
-| `kindSplit` | const | gophermind-lib/briefv2/planner/revise_patch.go:84 |  |
-| `reviseReply` | type | gophermind-lib/briefv2/planner/revise_patch.go:87 |  |
-| `reviseGroupKeys` | var | gophermind-lib/briefv2/planner/revise_patch.go:93 |  |
-| `cleanParagraph` | func | gophermind-lib/briefv2/planner/revise_patch.go:97 | cleanParagraph keeps a one-paragraph answer printable: control characters (terminal escapes included) become spaces, runs of white space collapse. |
-| `paragraphReply` | func | gophermind-lib/briefv2/planner/revise_patch.go:107 |  |
-| `parseReviseReply` | func | gophermind-lib/briefv2/planner/revise_patch.go:118 | parseReviseReply reads the reply of spec section 6: a JSON patch, or one of two keyword lines with a paragraph. |
-| `parseReviseReplyScanned` | func | gophermind-lib/briefv2/planner/revise_patch.go:156 | parseReviseReplyScanned is parseReviseReply behind the secret scan of the RAW reply: the keyword paragraphs and every free text of a patch are covered. |
-| `replyKeys` | var | gophermind-lib/briefv2/planner/revise_patch.go:167 | replyKeys are the keys a reply may name; only these are ever quoted in a message. |
-| `scanReplyJSON` | func | gophermind-lib/briefv2/planner/revise_patch.go:174 | scanReplyJSON walks the reply's tokens before it is decoded: nesting is bounded, a key may not repeat in one object (Go would keep the last), and a key of the patch, contract or context may not be null. |
-| `scanTok` | func | gophermind-lib/briefv2/planner/revise_patch.go:183 |  |
-| `checkStrings` | func | gophermind-lib/briefv2/planner/revise_patch.go:245 |  |
-| `checkPatchShape` | func | gophermind-lib/briefv2/planner/revise_patch.go:257 |  |
-| `checkItems` | func | gophermind-lib/briefv2/planner/revise_patch.go:325 | checkItems allows only the listed keys in each item: go_type and test links are written by code, never by the model. |
-| `anyObjects` | func | gophermind-lib/briefv2/planner/revise_patch.go:362 |  |
-| `anyStrings` | func | gophermind-lib/briefv2/planner/revise_patch.go:370 |  |
-| `mergePatch` | func | gophermind-lib/briefv2/planner/revise_patch.go:374 | mergePatch applies p to a copy of orig. |
-| `mergeEnv` | type | gophermind-lib/briefv2/planner/revise_patch.go:439 | mergeEnv is what the checks need besides the documents. |
-| `revisedFields` | var | gophermind-lib/briefv2/planner/revise_patch.go:448 | revisedFields are the paths compared to say what a patch changed. |
-| `fieldAt` | func | gophermind-lib/briefv2/planner/revise_patch.go:451 |  |
-| `changedFields` | func | gophermind-lib/briefv2/planner/revise_patch.go:461 | changedFields names the revisable fields whose value differs. |
-| `checkMerged` | func | gophermind-lib/briefv2/planner/revise_patch.go:475 | checkMerged runs the checks of spec section 6 in order and stops at the first failure. |
-| `toAnySliceKeep` | func | gophermind-lib/briefv2/planner/revise_patch.go:568 | toAnySliceKeep returns the elements of a JSON array as a new []any. |
-| `jsonErr` | func | gophermind-lib/briefv2/planner/safeerr.go:21 | jsonErr describes a decode failure without quoting the input. |
-| `maxSchemaPointers` | const | gophermind-lib/briefv2/planner/safeerr.go:38 | schemaErr describes a schema failure by the location of each failing value and, for a missing property, the property's name (which the schema, not the reply, supplies). |
-| `schemaErr` | func | gophermind-lib/briefv2/planner/safeerr.go:40 |  |
-| `quotedRE` | var | gophermind-lib/briefv2/planner/safeerr.go:67 |  |
-| `loadErr` | func | gophermind-lib/briefv2/planner/safeerr.go:72 | loadErr rewrites an error from contract.Load. |
-| `syntaxErr` | func | gophermind-lib/briefv2/planner/safeerr.go:95 | syntaxErr describes a Go parse failure by position only. |
-| `schemaRepairStage` | const | gophermind-lib/briefv2/planner/schemafix.go:25 | schemaRepairStage is the stage of the passes that ask for missing fields of named nodes. |
-| `maxSchemaRepairs` | const | gophermind-lib/briefv2/planner/schemafix.go:28 |  |
-| `maxSchemaRepairBatch` | const | gophermind-lib/briefv2/planner/schemafix.go:29 |  |
-| `maxDefaultedIDsShown` | const | gophermind-lib/briefv2/planner/schemafix.go:30 |  |
-| `repairableFields` | var | gophermind-lib/briefv2/planner/schemafix.go:35 | repairableFields are the required fields of a node the model can be asked for again. |
-| `schemaIssue` | type | gophermind-lib/briefv2/planner/schemafix.go:41 | schemaIssue is one failing value of the contract schema, located by node. |
-| `(schemaIssue).what` | method | gophermind-lib/briefv2/planner/schemafix.go:50 |  |
-| `(schemaIssue).idOK` | method | gophermind-lib/briefv2/planner/schemafix.go:64 | idOK is true when the node's id has the schema's syntax and is short enough to name: an id that fails the schema is never echoed. |
-| `(schemaIssue).repairable` | method | gophermind-lib/briefv2/planner/schemafix.go:76 | repairable is true for a missing or invalid field the model can write again for a node it can be asked about by name. |
-| `(schemaIssue).String` | method | gophermind-lib/briefv2/planner/schemafix.go:90 | String names the node (bounded) and the field, never a bare pointer for a node; a failure outside the nodes keeps its pointer. |
-| `issuesOf` | func | gophermind-lib/briefv2/planner/schemafix.go:108 | issuesOf turns a schema failure into located issues, in document order. |
-| `schemaIssues` | func | gophermind-lib/briefv2/planner/schemafix.go:172 | schemaIssues validates doc against the contract schema and lists what fails; nil when the schema passes. |
-| `nodeSchemaErr` | func | gophermind-lib/briefv2/planner/schemafix.go:187 | nodeSchemaErr is the error text of a schema failure: at most maxSchemaPointers issues, each naming its node and field, and a count of the rest. |
-| `issuesText` | func | gophermind-lib/briefv2/planner/schemafix.go:191 |  |
-| `defaultDocs` | func | gophermind-lib/briefv2/planner/schemafix.go:207 | defaultDocs gives a function whose doc is still missing a fixed text built from its signature's name and its component. |
-| `gapNode` | type | gophermind-lib/briefv2/planner/schemafix.go:231 | gapNode is one node to ask about: its list, id and the fields it lacks. |
-| `gapNodes` | func | gophermind-lib/briefv2/planner/schemafix.go:236 |  |
-| `mergeFieldRepair` | func | gophermind-lib/briefv2/planner/schemafix.go:256 | mergeFieldRepair takes from a reply, for each asked node, only the fields it lacked, and only a value of the right kind. |
-| `gapNodesText` | func | gophermind-lib/briefv2/planner/schemafix.go:300 | gapNodesText lists the nodes to fix: id, the fields missing (the schema's own names) and the node as it stands. |
-| `(*Planner).repairSchema` | method | gophermind-lib/briefv2/planner/schemafix.go:320 | repairSchema checks the merged contract against the schema and asks for the fields it lacks, node by node, in up to maxSchemaRepairs passes. |
-| `trimNode` | func | gophermind-lib/briefv2/planner/schemafix.go:406 | trimNode is a node for a prompt: complete up to level 2; at level 3 only its identity, signature and doc, with a declaration cut short. |
-| `nodeOwners` | func | gophermind-lib/briefv2/planner/schemafix.go:423 | nodeOwners lists the components that own the function nodes in nodes. |
-| `componentsByID` | func | gophermind-lib/briefv2/planner/schemafix.go:443 | componentsByID is the component objects with these ids. |
-| `fileBrief` | const | gophermind-lib/briefv2/planner/state.go:15 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `fileRequirements` | const | gophermind-lib/briefv2/planner/state.go:16 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `fileAnswers` | const | gophermind-lib/briefv2/planner/state.go:17 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `fileContracts` | const | gophermind-lib/briefv2/planner/state.go:18 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `fileCoverage` | const | gophermind-lib/briefv2/planner/state.go:19 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `fileApproval` | const | gophermind-lib/briefv2/planner/state.go:20 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `stateDir` | const | gophermind-lib/briefv2/planner/state.go:22 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `stateStatus` | const | gophermind-lib/briefv2/planner/state.go:23 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `stateClarify` | const | gophermind-lib/briefv2/planner/state.go:24 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `stateQuestion` | const | gophermind-lib/briefv2/planner/state.go:25 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `stateContract` | const | gophermind-lib/briefv2/planner/state.go:26 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `stateDecomposed` | const | gophermind-lib/briefv2/planner/state.go:27 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `stateClasses` | const | gophermind-lib/briefv2/planner/state.go:28 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `stateTestwriter` | const | gophermind-lib/briefv2/planner/state.go:29 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `stateTestFiles` | const | gophermind-lib/briefv2/planner/state.go:30 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `stateLeafTests` | const | gophermind-lib/briefv2/planner/state.go:31 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `stateAcceptTests` | const | gophermind-lib/briefv2/planner/state.go:32 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `stagePrefixSystem` | const | gophermind-lib/briefv2/planner/state.go:33 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `fileQuestions` | const | gophermind-lib/briefv2/planner/state.go:35 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `fileFacts` | const | gophermind-lib/briefv2/planner/state.go:36 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `fileRounds` | const | gophermind-lib/briefv2/planner/state.go:37 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `stateUnderstanding` | const | gophermind-lib/briefv2/planner/state.go:38 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `stateEnriched` | const | gophermind-lib/briefv2/planner/state.go:39 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `fileUnderstanding` | const | gophermind-lib/briefv2/planner/state.go:40 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `dirDecisions` | const | gophermind-lib/briefv2/planner/state.go:41 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
-| `RunRecord` | type | gophermind-lib/briefv2/planner/state.go:47 | RunRecord is how `resume`, `status` and `calls` find a run from its id alone: the run folder lives inside the target repo, and the id does not say where that is. |
-| `runRecordPath` | func | gophermind-lib/briefv2/planner/state.go:55 |  |
-| `LookupRun` | func | gophermind-lib/briefv2/planner/state.go:64 | LookupRun reads <config dir>/runs/<run-id>.json. |
-| `runStatus` | type | gophermind-lib/briefv2/planner/state.go:84 | runStatus is _state/status.json. |
-| `writeFileAtomic` | func | gophermind-lib/briefv2/planner/state.go:93 | writeFileAtomic writes data beside path and renames it into place, so a reader never sees half a file. |
-| `writeJSON` | func | gophermind-lib/briefv2/planner/state.go:105 | writeJSON stores v as indented JSON, mode 0600. |
-| `readJSON` | func | gophermind-lib/briefv2/planner/state.go:115 | readJSON decodes path into v. |
-| `exists` | func | gophermind-lib/briefv2/planner/state.go:129 |  |
-| `StageState` | type | gophermind-lib/briefv2/planner/status.go:6 | StageState is one line of `gophermind brief status`. |
-| `Status` | type | gophermind-lib/briefv2/planner/status.go:13 | Status is what `gophermind brief status` prints. |
-| `ReadStatus` | func | gophermind-lib/briefv2/planner/status.go:23 | ReadStatus reports how far a run has come. |
-| `testwriterState` | type | gophermind-lib/briefv2/planner/testwriter.go:30 | testwriterState is _state/testwriter.json: the tests of every node that is finished, and the hash of the test file written for it. |
-| `writtenTests` | type | gophermind-lib/briefv2/planner/testwriter.go:38 |  |
-| `testwriterDone` | func | gophermind-lib/briefv2/planner/testwriter.go:44 |  |
-| `testFuncName` | func | gophermind-lib/briefv2/planner/testwriter.go:48 | testFuncName is the test function a node's tests live in: fn-validate-email gives TestValidateEmail. |
-| `testFilePath` | func | gophermind-lib/briefv2/planner/testwriter.go:60 | testFilePath is where a node's test file goes: beside the function's file, named after the node so two functions in one file never share a test file. |
-| `testCommand` | func | gophermind-lib/briefv2/planner/testwriter.go:66 | testCommand is the command of every test of a node. |
-| `(*Planner).testwriter` | method | gophermind-lib/briefv2/planner/testwriter.go:78 | testwriter is the Test-writer stage: for every function node, tests written from its contract alone and a test file placed in the target repository, then the finished tree and the blackboard rows. |
-| `(*Planner).writeTests` | method | gophermind-lib/briefv2/planner/testwriter.go:141 | writeTests makes the model call for one node and writes its test file. |
-| `placeTestFile` | func | gophermind-lib/briefv2/planner/testwriter.go:197 | placeTestFile writes a test file the model produced, after checking the path again: the first check was made before a model call that can take minutes. |
-| `parseTestwrite` | func | gophermind-lib/briefv2/planner/testwriter.go:246 | parseTestwrite checks a Test-writer reply: enough tests, each described, and a Go test file that parses, holds the expected test function, and imports nothing outside the standard library and the module. |
-| `hashHex` | func | gophermind-lib/briefv2/planner/testwriter.go:285 |  |
-| `stdTopLevel` | var | gophermind-lib/briefv2/planner/testwriter.go:293 | stdTopLevel is the set of standard library top-level path elements. |
-| `checkTestSource` | func | gophermind-lib/briefv2/planner/testwriter.go:302 | checkTestSource refuses a test file that is not the one asked for. |
-| `(*Planner).finishTree` | method | gophermind-lib/briefv2/planner/testwriter.go:343 | finishTree writes the complete tree, checks it, records the test files the executor must never let an implementer edit, and creates the blackboard rows. |
-| `beforeTestWrite` | var | gophermind-lib/briefv2/planner/testwriter.go:491 | beforeTestWrite is a seam for tests: it runs between the model call and the last checks before the write. |
-| `osReason` | func | gophermind-lib/briefv2/planner/testwriter.go:495 | osReason is the reason of a file system error without the path it names, which may have come from a model. |
+| `Serve` | type | gophermind-lib/build/planner/acceptance_go.go:21 | Serve is how the executor starts the built server once for the Go acceptance tests. |
+| `(*Serve).check` | method | gophermind-lib/build/planner/acceptance_go.go:28 | check refuses a Serve that is not one line of command and a path. |
+| `isNarrative` | func | gophermind-lib/build/planner/acceptance_go.go:40 | isNarrative says an acceptance bullet is prose: it does not begin with a command in backticks. |
+| `goBullet` | type | gophermind-lib/build/planner/acceptance_go.go:45 | goBullet is one narrative acceptance bullet proven by a Go test. |
+| `AcceptanceDir` | const | gophermind-lib/build/planner/acceptance_go.go:55 | AcceptanceDir is the package of the Go acceptance tests, and AcceptanceTag the build tag that keeps them out of the plain go test ./... |
+| `AcceptanceTag` | const | gophermind-lib/build/planner/acceptance_go.go:56 | AcceptanceDir is the package of the Go acceptance tests, and AcceptanceTag the build tag that keeps them out of the plain go test ./... |
+| `goBullets` | func | gophermind-lib/build/planner/acceptance_go.go:61 | goBullets are the narrative acceptance bullets, in brief order, when the plan declares a server; without one the bullets keep their shell commands. |
+| `GoAcceptanceCommand` | func | gophermind-lib/build/planner/acceptance_go.go:81 | GoAcceptanceCommand is the root test command of a Go acceptance test. |
+| `(CoverageReply).withGoAcceptance` | method | gophermind-lib/build/planner/acceptance_go.go:88 | withGoAcceptance fixes the root test of every Go acceptance bullet: the command is the harness's, whatever the model wrote, and a bullet the reply gave no root test gets one. |
+| `maxAcceptanceSource` | const | gophermind-lib/build/planner/acceptance_testwriter.go:21 | maxAcceptanceSource caps one acceptance test file. |
+| `acceptKey` | func | gophermind-lib/build/planner/acceptance_testwriter.go:25 | acceptKey is the testwriterState key of a Go acceptance test; node ids never contain a colon. |
+| `forbiddenAcceptImports` | var | gophermind-lib/build/planner/acceptance_testwriter.go:29 | forbiddenAcceptImports start processes, load code or run servers: an acceptance test only talks to the server the harness started. |
+| `(*Planner).writeAcceptanceTests` | method | gophermind-lib/build/planner/acceptance_testwriter.go:37 | writeAcceptanceTests writes acceptance/<id>_test.go for every Go acceptance bullet of the plan, each from one model call, under the same rules as the leaf test files. |
+| `(*Planner).writeAcceptanceTest` | method | gophermind-lib/build/planner/acceptance_testwriter.go:60 |  |
+| `checkAcceptanceSource` | func | gophermind-lib/build/planner/acceptance_testwriter.go:128 | checkAcceptanceSource checks a model-written acceptance test and returns the file to write: the build line is the harness's (a model-written one is dropped), the package is acceptance, only the standard library is imported and nothing that starts a process or a server, there is exactly one test function (named for the bullet) that reads GM_ACCEPTANCE_URL and calls t.Fatal, nothing skips, and every other top-level name carries the bullet's prefix. |
+| `isTestSignature` | func | gophermind-lib/build/planner/acceptance_testwriter.go:247 | isTestSignature reports func Name(t *testing.T). |
+| `answer` | type | gophermind-lib/build/planner/answers.go:12 | answer is one entry of answers.json: a question a model asked and what the owner said, or what was assumed when nobody was asked. |
+| `answersFile` | type | gophermind-lib/build/planner/answers.go:20 |  |
+| `loadAnswers` | func | gophermind-lib/build/planner/answers.go:24 |  |
+| `answersText` | func | gophermind-lib/build/planner/answers.go:31 | answersText is how earlier answers are shown to a model. |
+| `removeFile` | func | gophermind-lib/build/planner/answers.go:46 |  |
+| `approval` | type | gophermind-lib/build/planner/approve.go:19 | approval is approval.json. |
+| `approveDone` | func | gophermind-lib/build/planner/approve.go:27 |  |
+| `(*Planner).approve` | method | gophermind-lib/build/planner/approve.go:31 | approve shows the plan to a person and records the decision. |
+| `RenderPlan` | func | gophermind-lib/build/planner/approve.go:91 | RenderPlan is the plan as a person approves it, and its SHA-256. |
+| `hashedFiles` | var | gophermind-lib/build/planner/approve.go:268 | hashedFiles are the run folder files whose bytes are part of the plan hash. |
+| `orNone` | func | gophermind-lib/build/planner/approve.go:270 |  |
+| `cell` | func | gophermind-lib/build/planner/approve.go:278 | cell makes text safe inside a markdown table cell. |
+| `openQuestionNodes` | func | gophermind-lib/build/planner/approve.go:281 | openQuestionNodes lists the function nodes that still list an open question. |
+| `citedByFunctions` | func | gophermind-lib/build/planner/approve.go:297 | citedByFunctions maps a question id to the function nodes whose decision_ids name it. |
+| `citedByAll` | func | gophermind-lib/build/planner/approve.go:315 | citedByAll maps a question id to every node (function, component or "root") whose decision_ids name it. |
+| `(*Planner).refreshDecisions` | method | gophermind-lib/build/planner/approve.go:338 | refreshDecisions rewrites every decision record so it lists the nodes that cite it. |
+| `(*Planner).reviseNotice` | method | gophermind-lib/build/planner/approve.go:360 | reviseNotice tells the approver what the build may do to a failing leaf. |
+| `maxAnswerBytes` | const | gophermind-lib/build/planner/change.go:12 |  |
+| `ChangeReport` | type | gophermind-lib/build/planner/change.go:16 | ChangeReport says what ChangeAnswer undid: the point the planner restarts from and the run-folder files it removed. |
+| `ChangeAnswer` | func | gophermind-lib/build/planner/change.go:28 | ChangeAnswer changes the answer to a settled question and undoes the work that used it. |
+| `changeAnswerIn` | func | gophermind-lib/build/planner/change.go:36 |  |
+| `citedByOf` | func | gophermind-lib/build/planner/change.go:117 | citedByOf lists the nodes (functions, components, the root) whose decision_ids name the question. |
+| `componentOfStage` | func | gophermind-lib/build/planner/change.go:128 | componentOfStage is the component a stage name refers to (decompose:<comp>, enrich:<comp>, enrich_comp:<comp>), or "" when the stage is not about one component (a repair stage, Contract, the root, Coverage). |
+| `resetFromContract` | func | gophermind-lib/build/planner/change.go:142 | resetFromContract removes everything the Contract stage and the stages after it wrote, keeping the brief, the requirements, the questions and the answers. |
+| `resetComponent` | func | gophermind-lib/build/planner/change.go:170 | resetComponent forgets one component's function drafts, classes and enrichment, so the planner decomposes and enriches it again, and removes the coverage and the approval, which depend on the plan. |
+| `resetEnrich` | func | gophermind-lib/build/planner/change.go:224 | resetEnrich forgets the Enrich output of one component (its function groups and its own groups), or of the root when comp is "", and removes the coverage and the approval. |
+| `(*run).takesRecommendations` | method | gophermind-lib/build/planner/clarify.go:17 | takesRecommendations is true when no human is available, because the brief says so or the caller runs unattended: every question takes its recommended answer, marked assumed. |
+| `clarifyDone` | func | gophermind-lib/build/planner/clarify.go:21 |  |
+| `(*Planner).clarify` | method | gophermind-lib/build/planner/clarify.go:33 | clarify is the Clarify stage: the questions whose answers would change the code, asked as a dependency tree in rounds. |
+| `(*Planner).clarifyCall` | method | gophermind-lib/build/planner/clarify.go:75 | clarifyCall asks the model for questions: the first call from the brief and the facts, later calls from what the settled answers unblocked. |
+| `(*Planner).clarifyRound` | method | gophermind-lib/build/planner/clarify.go:112 | clarifyRound settles one round: facts the probe can answer, then the frontier, put to the owner or answered by recommendation. |
+| `settledText` | func | gophermind-lib/build/planner/clarify.go:205 | settledText shows the settled decisions to the model, bounded. |
+| `openText` | func | gophermind-lib/build/planner/clarify.go:219 | openText lists the questions still open, bounded. |
+| `errNotConfirmed` | var | gophermind-lib/build/planner/clarify.go:232 |  |
+| `understandingRec` | type | gophermind-lib/build/planner/confirm.go:14 | understandingRec is _state/understanding.json: what was confirmed, by whom, and the hash of the text that was confirmed. |
+| `readUnderstanding` | func | gophermind-lib/build/planner/confirm.go:20 |  |
+| `understandingMarkdown` | func | gophermind-lib/build/planner/confirm.go:30 | understandingMarkdown renders the understanding from the store and the facts. |
+| `neutralize` | func | gophermind-lib/build/planner/confirm.go:78 | neutralize makes the text safe to embed in the file gate's UNDERSTANDING.md: no code fence (which could open or close a decision block) and no line that starts "Understanding hash:" (which the gate reads as the hash). |
+| `currentUnderstanding` | func | gophermind-lib/build/planner/confirm.go:91 | currentUnderstanding renders the understanding as it stands and its hash. |
+| `confirmDone` | func | gophermind-lib/build/planner/confirm.go:107 | confirmDone is true when the understanding was confirmed and nothing it shows has changed since: the text, and answers.json against the store (an edit to either puts the understanding to the owner again). |
+| `(*Planner).confirm` | method | gophermind-lib/build/planner/confirm.go:127 | confirm is the confirm stage: the owner confirms the shared understanding before Contract starts. |
+| `contractState` | type | gophermind-lib/build/planner/contract_stage.go:27 | contractState is _state/contract.json: the contract as far as it has been written, and which components are finished. |
+| `maxIgnoredRecorded` | const | gophermind-lib/build/planner/contract_stage.go:69 |  |
+| `(*Planner).noteIgnored` | method | gophermind-lib/build/planner/contract_stage.go:74 | noteIgnored records dropped duplicate emissions in the state and reports them as one warning: ids that pass the id syntax (at most 64 bytes, at most 10 named) and the count, never content. |
+| `failedAttempt` | func | gophermind-lib/build/planner/contract_stage.go:100 | failedAttempt is true for a model call that failed because of the model: the router ran out of models after replies the parser rejected. |
+| `truncatedAttempt` | func | gophermind-lib/build/planner/contract_stage.go:110 | truncatedAttempt reports whether the call failed because the model's reply was cut off at the token limit, which a smaller request can avoid. |
+| `outlineBatchSize` | const | gophermind-lib/build/planner/contract_stage.go:117 | outlineBatchSize is how many of the brief's features one outline pass covers. |
+| `outlineBatches` | func | gophermind-lib/build/planner/contract_stage.go:120 | outlineBatches splits the feature names, in brief order, into batches. |
+| `outlinePassIsFinal` | func | gophermind-lib/build/planner/contract_stage.go:135 | outlinePassIsFinal says whether a pass ends the outline, so the whole outline is validated: a repair pass, the last batch, or the shared pass when there is no batch at all. |
+| `maxComponentPasses` | const | gophermind-lib/build/planner/contract_stage.go:147 | maxComponentPasses caps the passes one component may take: a model that adds a function every time and never says it is done is stopped. |
+| `outlinePassStage` | func | gophermind-lib/build/planner/contract_stage.go:151 | outlinePassStage is the stage of outline pass n: 1 is the shared pass, 2 the first batch. |
+| `outlineRepairStage` | const | gophermind-lib/build/planner/contract_stage.go:155 | outlineRepairStage is the stage of the passes that ask for types the outline uses but never declared. |
+| `maxOutlineRepairs` | const | gophermind-lib/build/planner/contract_stage.go:159 | maxOutlineRepairs bounds the passes that ask the model to write the ids a finished outline uses but never declared. |
+| `repairStage` | const | gophermind-lib/build/planner/contract_stage.go:164 | repairStage is the stage of the passes that ask for ids the written components use but never declared. |
+| `maxUnresolvedInPrompt` | const | gophermind-lib/build/planner/contract_stage.go:167 |  |
+| `maxUnresolvedInError` | const | gophermind-lib/build/planner/contract_stage.go:168 |  |
+| `contractDone` | func | gophermind-lib/build/planner/contract_stage.go:171 |  |
+| `(*Planner).contract` | method | gophermind-lib/build/planner/contract_stage.go:178 | contract is the Contract stage (Wave 0), built in passes so that a large brief makes more calls rather than a coarser contract: a shared outline pass, one outline pass per batch of features (the harness knows which remain, the model never says more), then one call per component, repeated while the model says more remains for that component. |
+| `mergeOutline` | func | gophermind-lib/build/planner/contract_stage.go:487 | mergeOutline adds one outline pass to a copy of doc (nil for the first pass) and checks the merged outline; a rejected reply leaves doc as it was. |
+| `idSyntaxRE` | var | gophermind-lib/build/planner/contract_stage.go:551 |  |
+| `maxBoundedID` | var | gophermind-lib/build/planner/contract_stage.go:554 | An id is named in an error or a prompt only when it has the syntax of an id, cut to this length; anything else is reported by its length. |
+| `boundedID` | func | gophermind-lib/build/planner/contract_stage.go:560 | boundedID is how a model-supplied id may appear in an error: quoted when it has the syntax of an id and at most 64 bytes, otherwise only its length (a cut prefix would read like a real id). |
+| `boundedModule` | func | gophermind-lib/build/planner/contract_stage.go:568 | boundedModule is boundedID for a module path. |
+| `unresolvedUses` | func | gophermind-lib/build/planner/contract_stage.go:578 | unresolvedUses lists, in order of first use, the ids a declaration's uses names that no type or function declares. |
+| `unresolvedFinal` | func | gophermind-lib/build/planner/contract_stage.go:582 | unresolvedFinal is unresolvedUses for a contract whose components are all written: a function's pending reference counts too, named by its type form. |
+| `unresolved` | func | gophermind-lib/build/planner/contract_stage.go:584 |  |
+| `unresolvedPromptText` | func | gophermind-lib/build/planner/contract_stage.go:612 | unresolvedPromptText lists up to 50 of the ids that pass the id syntax, one per line, and says how many more are not shown. |
+| `unresolvedErr` | func | gophermind-lib/build/planner/contract_stage.go:630 | unresolvedErr is the error after the repair passes are spent. |
+| `mergeByID` | func | gophermind-lib/build/planner/contract_stage.go:650 | mergeByID appends the new objects to list. |
+| `mergeList` | func | gophermind-lib/build/planner/contract_stage.go:692 | mergeList is mergeByID for the list doc[key] ("components", "types" or "functions"): the ids of the other two lists are the others, and the merged list is stored back in doc. |
+| `outlineFixedText` | func | gophermind-lib/build/planner/contract_stage.go:711 | outlineFixedText is the module and conventions the first pass fixed, for the continuation prompt. |
+| `maxSharedIDs` | const | gophermind-lib/build/planner/contract_stage.go:719 |  |
+| `maxEmittedRecent` | const | gophermind-lib/build/planner/contract_stage.go:720 |  |
+| `maxEmittedSummaries` | const | gophermind-lib/build/planner/contract_stage.go:721 |  |
+| `emittedSummaryBytes` | const | gophermind-lib/build/planner/contract_stage.go:722 |  |
+| `maxEmittedTextBytes` | const | gophermind-lib/build/planner/contract_stage.go:723 |  |
+| `pick` | func | gophermind-lib/build/planner/contract_stage.go:726 |  |
+| `outlineIDs` | func | gophermind-lib/build/planner/contract_stage.go:734 | outlineIDs lists the component then the type ids of doc, at most max. |
+| `idShown` | func | gophermind-lib/build/planner/contract_stage.go:747 | idShown is an id as it appears in a prompt: as is, or its length when it is long. |
+| `cutBytes` | func | gophermind-lib/build/planner/contract_stage.go:754 |  |
+| `outlineEmittedText` | func | gophermind-lib/build/planner/contract_stage.go:766 | outlineEmittedText lists the component and type ids earlier passes wrote. |
+| `outlineEmittedTextAt` | func | gophermind-lib/build/planner/contract_stage.go:772 | outlineEmittedTextAt is the list for a prompt level: from level 2 fewer ids are listed in full and no summaries. |
+| `outlineEmittedTextLimits` | func | gophermind-lib/build/planner/contract_stage.go:782 |  |
+| `dropSharedExtras` | func | gophermind-lib/build/planner/contract_stage.go:861 | dropSharedExtras removes from the shared pass's reply every component other than "types": the feature components are written by the batches. |
+| `mergePass` | func | gophermind-lib/build/planner/contract_stage.go:901 | mergePass adds one component pass to a copy of doc and checks the merged contract locally (references wait until every component is written). |
+| `componentIDRE` | var | gophermind-lib/build/planner/contract_stage.go:928 |  |
+| `validateContractDoc` | func | gophermind-lib/build/planner/contract_stage.go:934 | validateContractDoc runs the schema and reference checks of contract.Load and then the ones only the planner knows: ids that would collide in the tree or with a stage name, files that leave the repository, signatures that are not Go. |
+| `validateOutlineShape` | func | gophermind-lib/build/planner/contract_stage.go:947 | validateOutlineShape is validateContractDoc without the reference checks. |
+| `typeIDs` | func | gophermind-lib/build/planner/contract_stage.go:969 |  |
+| `fnIDs` | func | gophermind-lib/build/planner/contract_stage.go:977 |  |
+| `localChecks` | func | gophermind-lib/build/planner/contract_stage.go:988 | localChecks are the checks only the planner knows, and that do not need the complete contract: ids that would collide in the tree or with a stage name, files that leave the repository, signatures that are not Go. |
+| `cleanGoFile` | func | gophermind-lib/build/planner/contract_stage.go:1030 | cleanGoFile accepts a Go file path that stays inside the repository: relative, already clean, no parent steps. |
+| `parseSignature` | func | gophermind-lib/build/planner/contract_stage.go:1045 | parseSignature parses one Go function signature line. |
+| `contractItemSchemas` | func | gophermind-lib/build/planner/contract_stage.go:1062 | contractItemSchemas returns the item definitions of the named contract arrays ("types", "functions") as JSON, for the prompts. |
+| `copyDoc` | func | gophermind-lib/build/planner/contract_stage.go:1083 |  |
+| `mustJSON` | func | gophermind-lib/build/planner/contract_stage.go:1093 |  |
+| `objects` | func | gophermind-lib/build/planner/contract_stage.go:1102 | objects returns the JSON objects of a decoded array. |
+| `strList` | func | gophermind-lib/build/planner/contract_stage.go:1114 | strList returns the strings of a decoded array. |
+| `declaredText` | func | gophermind-lib/build/planner/contract_stage.go:1130 | declaredText lists every declaration written so far, id first, the way a component pass needs to see them. |
+| `writtenText` | func | gophermind-lib/build/planner/contract_stage.go:1144 |  |
+| `nonSlug` | var | gophermind-lib/build/planner/contract_stage.go:1157 |  |
+| `slug` | func | gophermind-lib/build/planner/contract_stage.go:1160 | slug turns a feature heading into the id its component is expected to have. |
+| `briefSection` | func | gophermind-lib/build/planner/contract_stage.go:1166 | briefSection is the part of the brief a component came from: the feature whose slug is the component id, or the Architecture section. |
+| `mergeRepair` | func | gophermind-lib/build/planner/contract_stage.go:1178 | mergeRepair adds a repair reply to a copy of doc. |
+| `unresolvedOwnerComponents` | func | gophermind-lib/build/planner/contract_stage.go:1214 | unresolvedOwnerComponents lists the components whose functions use an id in ids, in document order. |
+| `unresolvedOwnersText` | func | gophermind-lib/build/planner/contract_stage.go:1238 | unresolvedOwnersText lists up to 50 unresolved ids that pass the id syntax, each with the declarations that use it and their components. |
+| `CoverageFile` | type | gophermind-lib/build/planner/coverage.go:16 | CoverageFile is coverage.json: what covers every requirement of the brief. |
+| `ErrNoCoverage` | var | gophermind-lib/build/planner/coverage.go:28 | ErrNoCoverage is wrapped by ReadCoverage when coverage.json does not exist, so a caller can tell a plan that has not been covered yet from a corrupt file. |
+| `ReadCoverage` | func | gophermind-lib/build/planner/coverage.go:31 | ReadCoverage reads a run folder's coverage.json. |
+| `CoverageError` | type | gophermind-lib/build/planner/coverage.go:46 | CoverageError stops a run whose plan leaves requirements of the brief uncovered after every fill round. |
+| `(*CoverageError).Error` | method | gophermind-lib/build/planner/coverage.go:48 |  |
+| `gapLine` | func | gophermind-lib/build/planner/coverage.go:57 |  |
+| `oneLine` | func | gophermind-lib/build/planner/coverage.go:62 | oneLine puts text on one line and cuts it to n characters. |
+| `coverageDone` | func | gophermind-lib/build/planner/coverage.go:66 |  |
+| `(*Planner).coverage` | method | gophermind-lib/build/planner/coverage.go:72 | coverage is the Coverage stage: the model proposes what covers each requirement, code checks it, gaps and root tests that fail the quality gate go back for up to max_coverage_rounds fill rounds, and a plan with a gap or a weak root test left never reaches approval. |
+| `(*Planner).coverageFill` | method | gophermind-lib/build/planner/coverage.go:151 | coverageFill asks the model to close the gaps. |
+| `parseCoverageFill` | func | gophermind-lib/build/planner/coverage.go:205 | parseCoverageFill decodes a fill reply. |
+| `(*Planner).refreshPlan` | method | gophermind-lib/build/planner/coverage.go:243 | refreshPlan brings the drafts and the skeleton in line with contracts.json: it decomposes every function that has no draft and rewrites the root and component nodes. |
+| `(*Planner).rewriteSkeleton` | method | gophermind-lib/build/planner/coverage.go:273 | rewriteSkeleton writes the root and component nodes again, the root with the given acceptance tests. |
+| `requirementsText` | func | gophermind-lib/build/planner/coverage.go:287 | requirementsText lists the requirements for the coverage prompt, one per line. |
+| `nodesText` | func | gophermind-lib/build/planner/coverage.go:299 |  |
+| `PlanNode` | type | gophermind-lib/build/planner/coverage_check.go:13 | PlanNode is what the coverage check needs to know about one node of a plan. |
+| `MapEntry` | type | gophermind-lib/build/planner/coverage_check.go:22 | MapEntry names the nodes whose code satisfies one requirement. |
+| `RootTest` | type | gophermind-lib/build/planner/coverage_check.go:28 | RootTest is an acceptance test for the root node, proving one requirement. |
+| `CoverageReply` | type | gophermind-lib/build/planner/coverage_check.go:37 | CoverageReply is the model's proposed mapping from requirements to the plan. |
+| `Gap` | type | gophermind-lib/build/planner/coverage_check.go:46 | Gap is a requirement nothing in the plan covers, and why. |
+| `Covered` | type | gophermind-lib/build/planner/coverage_check.go:54 | Covered is a requirement with what covers it. |
+| `ParseCoverageReply` | func | gophermind-lib/build/planner/coverage_check.go:64 | ParseCoverageReply decodes a reply that has already had fences and prose stripped. |
+| `(CoverageReply).Merge` | method | gophermind-lib/build/planner/coverage_check.go:100 | Merge returns r with other's entries added. |
+| `contains` | func | gophermind-lib/build/planner/coverage_check.go:136 |  |
+| `CheckCoverage` | func | gophermind-lib/build/planner/coverage_check.go:151 | CheckCoverage decides, without a model, which requirements the plan covers. |
+| `backtickRE` | var | gophermind-lib/build/planner/coverage_check.go:224 |  |
+| `pathRE` | var | gophermind-lib/build/planner/coverage_check.go:225 |  |
+| `PathWarnings` | func | gophermind-lib/build/planner/coverage_check.go:231 | PathWarnings lists each backticked cmd/ or internal/ path in the brief that no function node's file sits under. |
+| `CommandWarnings` | func | gophermind-lib/build/planner/coverage_check.go:258 | CommandWarnings lists each acceptance requirement that begins with a backticked command none of its root tests runs. |
+| `StrayCommandWarnings` | func | gophermind-lib/build/planner/coverage_check.go:288 | StrayCommandWarnings lists each cmd/<name> directory that holds plan files although the brief never names it. |
+| `maxQualityNamed` | const | gophermind-lib/build/planner/coverage_quality.go:12 | maxQualityNamed is how many requirement ids a quality stop names. |
+| `QualityItem` | type | gophermind-lib/build/planner/coverage_quality.go:16 | QualityItem is one requirement whose root test fails the quality gate, with the fixed-vocabulary finding names (internal/acceptcheck), never the command. |
+| `QualityError` | type | gophermind-lib/build/planner/coverage_quality.go:24 | QualityError stops a run whose root tests are still weak after every fill round: a command that cannot fail, or that hides its failure, proves nothing. |
+| `(*QualityError).Error` | method | gophermind-lib/build/planner/coverage_quality.go:26 |  |
+| `qualityOptions` | func | gophermind-lib/build/planner/coverage_quality.go:42 | qualityOptions are the names a root test command may use as variables. |
+| `rootTestDefects` | func | gophermind-lib/build/planner/coverage_quality.go:56 | rootTestDefects is the requirements, in brief order, with a root test that fails the quality level of the shared command checker. |
+| `sortStrings` | func | gophermind-lib/build/planner/coverage_quality.go:82 |  |
+| `mergeFill` | func | gophermind-lib/build/planner/coverage_quality.go:94 | mergeFill adds a fill reply to the reply so far. |
+| `weakText` | func | gophermind-lib/build/planner/coverage_quality.go:115 | weakText is the fill prompt's list of weak root tests: ids and finding names. |
+| `qualityCell` | func | gophermind-lib/build/planner/coverage_quality.go:131 | qualityCell is the quality column of the approval summary. |
+| `DebugDumpEnv` | const | gophermind-lib/build/planner/debugdump.go:22 | DebugDumpEnv names a directory that receives the raw prompt and the raw reply of every planner model call. |
+| `debugOut` | var | gophermind-lib/build/planner/debugdump.go:25 | debugOut is where the notices about the dump go. |
+| `dumpState` | type | gophermind-lib/build/planner/debugdump.go:27 |  |
+| `(*Planner).dumpDir` | method | gophermind-lib/build/planner/debugdump.go:37 | dumpDir resolves the dump directory once per Planner: "" when the variable is unset, names no existing directory, or points somewhere it must not. |
+| `realDir` | func | gophermind-lib/build/planner/debugdump.go:68 |  |
+| `within` | func | gophermind-lib/build/planner/debugdump.go:85 | within reports whether path is dir or below it. |
+| `dumpNameRE` | var | gophermind-lib/build/planner/debugdump.go:90 |  |
+| `(*Planner).dumpReply` | method | gophermind-lib/build/planner/debugdump.go:94 | dumpReply writes the request and the reply of one parse attempt of a stage. |
+| `decomposeBatch` | const | gophermind-lib/build/planner/decompose.go:25 | decomposeBatch is how many functions one Decompose call writes nodes for. |
+| `decomposed` | type | gophermind-lib/build/planner/decompose.go:29 | decomposed is _state/decomposed.json: every function node as far as it can be written before its tests exist, by component, in the order written. |
+| `loadDecomposed` | func | gophermind-lib/build/planner/decompose.go:37 |  |
+| `loadClasses` | func | gophermind-lib/build/planner/decompose.go:46 |  |
+| `loadContracts` | func | gophermind-lib/build/planner/decompose.go:52 |  |
+| `decomposeDone` | func | gophermind-lib/build/planner/decompose.go:60 |  |
+| `(*Planner).decompose` | method | gophermind-lib/build/planner/decompose.go:68 | decompose is the Decompose stage: one function node draft per contract function, then the root and component nodes. |
+| `(*Planner).decomposeMissing` | method | gophermind-lib/build/planner/decompose.go:94 | decomposeMissing writes a draft for every contract function that has none yet, component by component, at most decomposeBatch functions per call. |
+| `breakDependencyCycles` | func | gophermind-lib/build/planner/decompose.go:159 | breakDependencyCycles removes, deterministically, the back edges of the function dependency graph. |
+| `(*Planner).decomposeCall` | method | gophermind-lib/build/planner/decompose.go:207 | decomposeCall asks for the nodes of one batch of one component's functions. |
+| `nodeClasses` | var | gophermind-lib/build/planner/decompose.go:245 | nodeClasses is the closed list a draft's node_class must come from. |
+| `defMissingNode` | const | gophermind-lib/build/planner/decompose.go:250 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
+| `defNodeClass` | const | gophermind-lib/build/planner/decompose.go:251 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
+| `defTitle` | const | gophermind-lib/build/planner/decompose.go:252 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
+| `defDescription` | const | gophermind-lib/build/planner/decompose.go:253 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
+| `defContract` | const | gophermind-lib/build/planner/decompose.go:254 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
+| `defInputsMissing` | const | gophermind-lib/build/planner/decompose.go:255 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
+| `defInputType` | const | gophermind-lib/build/planner/decompose.go:256 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
+| `defOutputsCount` | const | gophermind-lib/build/planner/decompose.go:257 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
+| `defOutputType` | const | gophermind-lib/build/planner/decompose.go:258 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
+| `defErrorsMissing` | const | gophermind-lib/build/planner/decompose.go:259 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
+| `defErrorsPartial` | const | gophermind-lib/build/planner/decompose.go:260 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
+| `defDepends` | const | gophermind-lib/build/planner/decompose.go:261 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
+| `defSchema` | const | gophermind-lib/build/planner/decompose.go:262 | draftDefect kinds, a fixed vocabulary: they name what is wrong with a node without quoting the reply, and say which fields to ask for again. |
+| `nodeEnv` | type | gophermind-lib/build/planner/decompose.go:266 | nodeEnv is what normalising one node needs besides the node. |
+| `newNodeEnv` | func | gophermind-lib/build/planner/decompose.go:279 |  |
+| `(*nodeEnv).normalizeNode` | method | gophermind-lib/build/planner/decompose.go:306 | normalizeNode turns one node of a reply into a draft: every field the harness owns is set or overwritten by code and every leaf check applied. |
+| `draftResult` | type | gophermind-lib/build/planner/decompose.go:432 | draftResult is what a Decompose reply held: the nodes that passed, the nodes that did not (to be asked for again), and the noise that was ignored. |
+| `splitDrafts` | func | gophermind-lib/build/planner/decompose.go:445 | splitDrafts reads a Decompose reply for the functions asked for. |
+| `leafDefect` | type | gophermind-lib/build/planner/decompose.go:496 | leafDefect is one thing wrong with a leaf's contract, with its kind. |
+| `checkLeaf` | func | gophermind-lib/build/planner/decompose.go:501 | checkLeaf is what every leaf must carry before it may enter the plan: an input for every parameter, an output for every result, and an error entry when the function can fail. |
+| `leafDefects` | func | gophermind-lib/build/planner/decompose.go:509 | leafDefects lists every leaf check that fails, in the order of checkLeaf. |
+| `inputLabel` | func | gophermind-lib/build/planner/decompose.go:578 | inputLabel names an input in an error: by name when it is a parameter the contract's signature declares, otherwise by position, so that text from the reply is never quoted. |
+| `hasInput` | func | gophermind-lib/build/planner/decompose.go:587 | hasInput reports whether inputs describes the parameter: an entry named exactly like it, or one naming a part of it (r.Body for r). |
+| `draftSchemaFailure` | func | gophermind-lib/build/planner/decompose.go:601 | draftSchemaFailure validates a draft against the node schema and returns the failure, or nil. |
+| `validateDraft` | func | gophermind-lib/build/planner/decompose.go:620 | validateDraft checks a draft against the node schema (see draftSchemaFailure). |
+| `waves` | func | gophermind-lib/build/planner/decompose.go:642 | waves computes wave(n) = 0 with no dependencies, else 1 + the highest wave among them, the same rule as tree.ComputeWaves. |
+| `planWaves` | func | gophermind-lib/build/planner/decompose.go:683 | planWaves is waves over the whole plan: the root and the components have no dependencies of their own, a function depends on other functions. |
+| `writeSkeleton` | func | gophermind-lib/build/planner/decompose.go:698 | writeSkeleton writes root.json and every <component>/component.json. |
+| `buildSkeleton` | func | gophermind-lib/build/planner/decompose.go:722 | buildSkeleton makes the root and component node documents. |
+| `featureFor` | func | gophermind-lib/build/planner/decompose.go:844 |  |
+| `cut` | func | gophermind-lib/build/planner/decompose.go:853 |  |
+| `firstParagraph` | func | gophermind-lib/build/planner/decompose.go:861 | firstParagraph is the text up to the first blank line, on one line. |
+| `PlanNodes` | func | gophermind-lib/build/planner/decompose.go:869 | PlanNodes lists the plan's nodes the way the coverage check and the approval summary need them: the root, every component, and every function draft, read from the run folder. |
+| `decomposeFixStage` | const | gophermind-lib/build/planner/decompose_fix.go:23 |  |
+| `maxDecomposeRepairs` | const | gophermind-lib/build/planner/decompose_fix.go:24 |  |
+| `maxDecomposeRepairBatch` | const | gophermind-lib/build/planner/decompose_fix.go:25 |  |
+| `pendingDraft` | type | gophermind-lib/build/planner/decompose_fix.go:30 | pendingDraft is a node waiting for its repair, kept in _state/decomposed.json so a resume neither asks again for what passed nor forgets the passes spent. |
+| `defectFields` | func | gophermind-lib/build/planner/decompose_fix.go:42 | defectFields are the fields to ask for again for a defect: top-level names, or "contract.<field>" for a field of the node's contract. |
+| `structural` | var | gophermind-lib/build/planner/decompose_fix.go:80 | structural defects can be repaired by code from the contract's signature. |
+| `allStructural` | func | gophermind-lib/build/planner/decompose_fix.go:83 |  |
+| `cloneMap` | func | gophermind-lib/build/planner/decompose_fix.go:92 |  |
+| `(*Planner).repairDrafts` | method | gophermind-lib/build/planner/decompose_fix.go:106 | repairDrafts repairs the pending nodes: up to maxDecomposeRepairs passes over them, at most maxDecomposeRepairBatch per call, then the structural fallback. |
+| `parseFixReply` | func | gophermind-lib/build/planner/decompose_fix.go:290 | parseFixReply reads a repair reply: a JSON array of objects, keyed by id. |
+| `mergeNodeFix` | func | gophermind-lib/build/planner/decompose_fix.go:306 | mergeNodeFix takes from a reply, for one node, only the fields its defects name and only a value of the right JSON type; everything else stays as it was. |
+| `fixNodeText` | func | gophermind-lib/build/planner/decompose_fix.go:345 | fixNodeText is one node of a repair prompt: its id, the defects as words, the contract entry of the function and the node as it stands. |
+| `defaultLeaf` | func | gophermind-lib/build/planner/decompose_fix.go:382 | defaultLeaf derives the structural fields of a node from its function's signature: an input per parameter, an output per result, an errors entry when the function returns error. |
+| `(*Planner).noteLeafNormalized` | method | gophermind-lib/build/planner/decompose_fix.go:474 | noteLeafNormalized reports the shape changes made to nodes before the checks as one warning: a count and at most 10 examples (function id, field, kind). |
+| `Dependency` | type | gophermind-lib/build/planner/dependencies.go:10 | Dependency is one third-party Go module the planned code needs. |
+| `fileDependencies` | const | gophermind-lib/build/planner/dependencies.go:18 | fileDependencies is dependencies.json, written by the contract stage and covered by the approval hash. |
+| `depModuleRE` | var | gophermind-lib/build/planner/dependencies.go:23 | A dotted host first, so a standard library path (fmt) or an internal path (internal/x) is refused. |
+| `depVersionRE` | var | gophermind-lib/build/planner/dependencies.go:24 |  |
+| `ParseDependencies` | func | gophermind-lib/build/planner/dependencies.go:30 | ParseDependencies validates the dependencies of an outline reply and returns them sorted by module. |
+| `enrichGroups` | var | gophermind-lib/build/planner/enrich.go:18 | enrichGroups are the groups a model writes for a function node. |
+| `enrichFieldsAll` | var | gophermind-lib/build/planner/enrich.go:22 | enrichFieldsAll is every field a reply may carry, for a node that must be asked for again from scratch. |
+| `maxEnrichRepairs` | const | gophermind-lib/build/planner/enrich.go:25 |  |
+| `enrichFixStage` | const | gophermind-lib/build/planner/enrich.go:26 |  |
+| `(*Planner).tierFor` | method | gophermind-lib/build/planner/enrich.go:31 | tierFor is the model chain a stage that works on one node uses: the node's own model_tier, or strong when routing by tier is off or the tier is unknown. |
+| `tierRank` | var | gophermind-lib/build/planner/enrich.go:42 |  |
+| `(*Planner).batchTier` | method | gophermind-lib/build/planner/enrich.go:46 | batchTier is the strongest tier among the drafts: no node gets a weaker chain than it asked for. |
+| `nextBatchSize` | func | gophermind-lib/build/planner/enrich.go:61 | nextBatchSize halves a batch after a reply that could not be used, down to one. |
+| `pendingEnrich` | type | gophermind-lib/build/planner/enrich.go:70 | pendingEnrich is a node whose enrichment failed a check, kept with what the model sent so far, the defect kinds, and the groups to ask for again. |
+| `enrichedState` | type | gophermind-lib/build/planner/enrich.go:82 | enrichedState is _state/enriched.json. |
+| `loadEnriched` | func | gophermind-lib/build/planner/enrich.go:90 |  |
+| `(enrichedState).save` | method | gophermind-lib/build/planner/enrich.go:101 |  |
+| `enrichDone` | func | gophermind-lib/build/planner/enrich.go:103 |  |
+| `EnrichError` | type | gophermind-lib/build/planner/enrich.go:110 | EnrichError is returned when some nodes still fail the group checks after their repairs. |
+| `(*EnrichError).Error` | method | gophermind-lib/build/planner/enrich.go:112 |  |
+| `(*Planner).groupEnvFor` | method | gophermind-lib/build/planner/enrich.go:121 | groupEnvFor gathers what the group checks need that is the same for every node. |
+| `paramNames` | func | gophermind-lib/build/planner/enrich.go:152 | paramNames is the set of parameter names in a signature. |
+| `mergeEnrichment` | func | gophermind-lib/build/planner/enrich.go:170 | mergeEnrichment puts a model's groups onto a draft and checks the result. |
+| `kindsOfGroup` | func | gophermind-lib/build/planner/enrich.go:221 |  |
+| `fieldsOfGroup` | func | gophermind-lib/build/planner/enrich.go:233 | fieldsOfGroup is the reply fields to ask for again for a set of defects. |
+| `enrichResult` | type | gophermind-lib/build/planner/enrich.go:253 | enrichResult is what an Enrich reply held. |
+| `enrichView` | func | gophermind-lib/build/planner/enrich.go:260 | enrichView is a draft as the Enrich prompt shows it. |
+| `splitEnrich` | func | gophermind-lib/build/planner/enrich.go:272 | splitEnrich reads an Enrich reply for the drafts asked for. |
+| `decisionsText` | func | gophermind-lib/build/planner/enrich.go:318 |  |
+| `defectsText` | func | gophermind-lib/build/planner/enrich.go:331 |  |
+| `(*Planner).enrichCall` | method | gophermind-lib/build/planner/enrich.go:346 | enrichCall asks for the groups of one batch of one component's function drafts. |
+| `draftIndex` | func | gophermind-lib/build/planner/enrich.go:415 | draftIndex finds a function draft by id. |
+| `(*Planner).enrichMissing` | method | gophermind-lib/build/planner/enrich.go:430 | enrichMissing writes the groups of every function draft that has none, then the component and root groups. |
+| `(*Planner).applyEnrichment` | method | gophermind-lib/build/planner/enrich.go:490 | applyEnrichment stores the nodes that passed in their drafts and the ones that did not in the pending list. |
+| `(*Planner).repairEnrichment` | method | gophermind-lib/build/planner/enrich.go:528 | repairEnrichment asks again, alone and for the defective groups only, for each node that failed a check, up to maxEnrichRepairs passes. |
+| `(*Planner).enrichStructure` | method | gophermind-lib/build/planner/enrich.go:619 | enrichStructure writes the rationale, assumptions, open questions and decision ids of every component and of the root: one small call each. |
+| `(*Planner).structureCall` | method | gophermind-lib/build/planner/enrich.go:668 | structureCall asks for the groups of a component or the root. |
+| `(*Planner).enrich` | method | gophermind-lib/build/planner/enrich.go:704 | enrich is the Enrich stage. |
+| `openQuestionStructures` | func | gophermind-lib/build/planner/enrich.go:721 | openQuestionStructures lists the components and the root that still list an open question. |
+| `LeafTest` | type | gophermind-lib/build/planner/exported.go:12 | LeafTest is where a function node's test lives, and the hash of the file as the planner wrote it. |
+| `HashedFiles` | func | gophermind-lib/build/planner/exported.go:20 | HashedFiles is a copy of the run folder files (slash paths) whose bytes are part of the plan hash (RenderPlan), for a caller that must prove they did not move. |
+| `VerifyApproval` | func | gophermind-lib/build/planner/exported.go:24 | VerifyApproval is the check the Test-writer makes: approval.json exists and binds the plan as it stands now. |
+| `ReadDependencies` | func | gophermind-lib/build/planner/exported.go:44 | ReadDependencies reads dependencies.json; an absent file is an empty list. |
+| `ReadLeafTests` | func | gophermind-lib/build/planner/exported.go:56 | ReadLeafTests reads _state/leaf_tests.json: function node id to its test. |
+| `ReadAcceptanceTests` | func | gophermind-lib/build/planner/exported.go:67 | ReadAcceptanceTests reads _state/acceptance_tests.json: acceptance requirement id to the Go test the Test-writer wrote for it (the file as the planner wrote it, its test function and its hash). |
+| `ReadClasses` | func | gophermind-lib/build/planner/exported.go:76 | ReadClasses reads _state/classes.json: node id to node class. |
+| `ReadRequirements` | func | gophermind-lib/build/planner/exported.go:81 | ReadRequirements reads requirements.json. |
+| `JSONErr` | func | gophermind-lib/build/planner/exported.go:94 | JSONErr describes a JSON decode failure without quoting the input. |
+| `SyntaxErr` | func | gophermind-lib/build/planner/exported.go:97 | SyntaxErr describes a Go parse failure by position only. |
+| `IgnoredDuplicates` | func | gophermind-lib/build/planner/exported.go:102 | IgnoredDuplicates reads the duplicate emissions the Contract stage dropped (_state/contract.json): the stored entries (ids only, at most 200), the exact total, and whether the stored list was cut. |
+| `ResolveRepo` | func | gophermind-lib/build/planner/exported.go:120 | ResolveRepo turns a repo path (a leading ~ is expanded) into an absolute path to an existing directory. |
+| `Answer` | type | gophermind-lib/build/planner/exported.go:123 | Answer is one settled answer of answers.json. |
+| `ReadAnswers` | func | gophermind-lib/build/planner/exported.go:129 | ReadAnswers reads answers.json; an absent file is an empty list. |
+| `ApprovalInfo` | type | gophermind-lib/build/planner/exported.go:142 | ApprovalInfo is what approval.json records. |
+| `ReadApproval` | func | gophermind-lib/build/planner/exported.go:145 | ReadApproval reads approval.json; false when it is absent. |
+| `UnderstandingInfo` | type | gophermind-lib/build/planner/exported.go:155 | UnderstandingInfo is what _state/understanding.json records. |
+| `ReadUnderstanding` | func | gophermind-lib/build/planner/exported.go:158 | ReadUnderstanding reads _state/understanding.json; false when it is absent. |
+| `QuestionCounts` | type | gophermind-lib/build/planner/exported.go:168 | QuestionCounts summarises the question store. |
+| `ReadQuestionCounts` | func | gophermind-lib/build/planner/exported.go:177 | ReadQuestionCounts reads _state/clarify/questions.json; the zero value when the store is absent. |
+| `SetLeafTestSHA` | func | gophermind-lib/build/planner/exported.go:202 | SetLeafTestSHA records the new hash of a function node's test file in _state/leaf_tests.json after a revision rewrote it. |
+| `factPackage` | type | gophermind-lib/build/planner/factprobe.go:22 | factPackage is a package directory of the target repo and the names it exports. |
+| `factsFile` | type | gophermind-lib/build/planner/factprobe.go:31 | factsFile is _state/clarify/facts.json: what the harness established about the run before asking anything. |
+| `probeMaxFileSize` | const | gophermind-lib/build/planner/factprobe.go:44 |  |
+| `probeMaxFiles` | var | gophermind-lib/build/planner/factprobe.go:48 | Limits on the walk. |
+| `probeMaxEntries` | var | gophermind-lib/build/planner/factprobe.go:49 | Limits on the walk. |
+| `probeMaxPackages` | var | gophermind-lib/build/planner/factprobe.go:50 | Limits on the walk. |
+| `probeMaxExports` | var | gophermind-lib/build/planner/factprobe.go:51 | Limits on the walk. |
+| `probeSkipDirs` | var | gophermind-lib/build/planner/factprobe.go:54 |  |
+| `marshalIndent` | func | gophermind-lib/build/planner/factprobe.go:56 |  |
+| `probeFacts` | func | gophermind-lib/build/planner/factprobe.go:60 | probeFacts establishes the facts. |
+| `exportedNames` | func | gophermind-lib/build/planner/factprobe.go:158 | exportedNames lists the exported top-level names of a file and its exported methods on exported types (Type.Method). |
+| `recvTypeName` | func | gophermind-lib/build/planner/factprobe.go:193 |  |
+| `readGoMod` | func | gophermind-lib/build/planner/factprobe.go:209 | readGoMod returns the module path and the go version of a go.mod, or empty strings. |
+| `factText` | func | gophermind-lib/build/planner/factprobe.go:239 | factText answers a fact question from its key. |
+| `factsPrompt` | func | gophermind-lib/build/planner/factprobe.go:282 | factsPrompt renders the facts for a prompt and for UNDERSTANDING.md. |
+| `(*qstore).answerFacts` | method | gophermind-lib/build/planner/factprobe.go:318 | answerFacts settles every open fact question the facts can answer and whose prerequisites are settled. |
+| `loadFacts` | func | gophermind-lib/build/planner/factprobe.go:349 |  |
+| `(*Planner).ensureFacts` | method | gophermind-lib/build/planner/factprobe.go:357 | ensureFacts reads facts.json, or probes and writes it. |
+| `requirementIDsFor` | func | gophermind-lib/build/planner/finish.go:17 | requirementIDsFor is the requirements a function serves: the ones whose coverage names the function, else the ones whose coverage names its component. |
+| `allRequirementIDs` | func | gophermind-lib/build/planner/finish.go:37 | allRequirementIDs is every requirement id in the coverage, sorted. |
+| `hookList` | func | gophermind-lib/build/planner/finish.go:48 | hookList returns profile_hooks when it is a real list; a not-applicable answer is no hooks. |
+| `testwriterView` | func | gophermind-lib/build/planner/finish.go:59 | testwriterView is the part of a node the Test-writer sees. |
+| `polarities` | var | gophermind-lib/build/planner/finish.go:73 |  |
+| `coversRE` | var | gophermind-lib/build/planner/finish.go:74 |  |
+| `checkPolarity` | func | gophermind-lib/build/planner/finish.go:81 | checkPolarity applies the coverage rules to a Test-writer reply: every test has a polarity and a covers; there is a success test for the happy path; and each error condition has a negative test that covers it. |
+| `hasBenchmark` | func | gophermind-lib/build/planner/finish.go:120 | hasBenchmark reports whether src defines Benchmark<Name> for the test function funcName (TestRegister gives BenchmarkRegister). |
+| `linkErrorTests` | func | gophermind-lib/build/planner/finish.go:136 | linkErrorTests writes, into each error of the contract, the name of the test that covers it. |
+| `finishGroupDefects` | func | gophermind-lib/build/planner/finish.go:159 | finishGroupDefects checks the finished tree documents: the decisions embedded in the root and in every other node must match the question store. |
+| `toAnySlice` | func | gophermind-lib/build/planner/finish.go:176 |  |
+| `sortedKeys` | func | gophermind-lib/build/planner/finish.go:184 |  |
+| `StageOf` | func | gophermind-lib/build/planner/fixture.go:17 | StageOf returns the stage a planner request was made for, read from its system message, or "" for a request the planner did not build. |
+| `FixtureProvider` | func | gophermind-lib/build/planner/fixture.go:33 | FixtureProvider is the offline model: it answers every planner call with a canned reply from a directory. |
+| `FixtureSettings` | func | gophermind-lib/build/planner/fixture.go:94 | FixtureSettings is the configuration that goes with FixtureProvider: one private provider named fake, in every tier. |
+| `goTypes` | type | gophermind-lib/build/planner/gotypes.go:20 | goTypes is what a signature says about its parameter and result types, read by code: Params and Results are the types as written, in order (one entry per name in a grouped parameter), and Unresolved lists the identifiers that are neither a Go builtin, a type parameter of the function, a standard library package, a package of this plan, nor a type the contract declares. |
+| `deriveGoTypes` | func | gophermind-lib/build/planner/gotypes.go:27 | deriveGoTypes reads sig. |
+| `unresolvedTypeNames` | func | gophermind-lib/build/planner/gotypes.go:73 | unresolvedTypeNames walks a type expression and returns the names that resolve to nothing. |
+| `contractTypeNames` | func | gophermind-lib/build/planner/gotypes.go:99 | contractTypeNames is the set of Go type names the contract declares. |
+| `planPackageNames` | func | gophermind-lib/build/planner/gotypes.go:124 | planPackageNames is the set of package names the plan itself defines: a qualified identifier such as store.User is resolved when store is one. |
+| `grpMissing` | const | gophermind-lib/build/planner/groups.go:14 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
+| `grpNAForbid` | const | gophermind-lib/build/planner/groups.go:15 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
+| `grpNAReason` | const | gophermind-lib/build/planner/groups.go:16 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
+| `grpEnum` | const | gophermind-lib/build/planner/groups.go:17 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
+| `grpConstruct` | const | gophermind-lib/build/planner/groups.go:18 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
+| `grpTypeRes` | const | gophermind-lib/build/planner/groups.go:19 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
+| `grpSecret` | const | gophermind-lib/build/planner/groups.go:20 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
+| `grpThreats` | const | gophermind-lib/build/planner/groups.go:21 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
+| `grpGoMin` | const | gophermind-lib/build/planner/groups.go:22 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
+| `grpDeps` | const | gophermind-lib/build/planner/groups.go:23 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
+| `grpObsFields` | const | gophermind-lib/build/planner/groups.go:24 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
+| `grpDecision` | const | gophermind-lib/build/planner/groups.go:25 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
+| `grpOpenQ` | const | gophermind-lib/build/planner/groups.go:26 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
+| `grpHookBench` | const | gophermind-lib/build/planner/groups.go:27 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
+| `grpErrTest` | const | gophermind-lib/build/planner/groups.go:28 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
+| `grpPolarity` | const | gophermind-lib/build/planner/groups.go:29 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
+| `grpSchema` | const | gophermind-lib/build/planner/groups.go:30 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
+| `grpDecisionsEmbed` | const | gophermind-lib/build/planner/groups.go:31 | Group defect kinds, a fixed vocabulary like the Decompose defect kinds: they say what is wrong with a node's groups without quoting the reply. |
+| `groupDefect` | type | gophermind-lib/build/planner/groups.go:36 | groupDefect is one thing wrong with a node's groups. |
+| `groupEnv` | type | gophermind-lib/build/planner/groups.go:39 | groupEnv is what the group checks need besides the node. |
+| `naGroups` | var | gophermind-lib/build/planner/groups.go:49 | naGroups are the groups that may be answered "not applicable" (where naAllowed permits it for the node's class). |
+| `naAllowed` | func | gophermind-lib/build/planner/groups.go:55 | naAllowed says where a group may be answered not applicable. |
+| `notApplicable` | func | gophermind-lib/build/planner/groups.go:72 | notApplicable reports whether v is a not-applicable answer and its reason. |
+| `naReasonOK` | func | gophermind-lib/build/planner/groups.go:89 | naReasonOK is true when a not-applicable reason is a sentence and not a non-answer: at least 20 characters and 4 words, and at least 3 words are left after the stock non-answers (none, n/a, no, nothing, not applicable, pure function) are removed. |
+| `logVerbRE` | var | gophermind-lib/build/planner/groups.go:118 |  |
+| `strField` | func | gophermind-lib/build/planner/groups.go:120 |  |
+| `groupDefects` | func | gophermind-lib/build/planner/groups.go:127 | groupDefects lists every group check that fails for a function node, in a stable order. |
+| `openQuestionDefects` | func | gophermind-lib/build/planner/groups.go:231 | openQuestionDefects is the check made at approval: no node may still list an open question. |
+| `secretLike` | func | gophermind-lib/build/planner/groups.go:238 |  |
+| `depAllowed` | func | gophermind-lib/build/planner/groups.go:247 |  |
+| `goVersionParts` | func | gophermind-lib/build/planner/groups.go:260 |  |
+| `goVersionLess` | func | gophermind-lib/build/planner/groups.go:270 | goVersionLess reports whether Go version a is older than b. |
+| `trustBoundaries` | var | gophermind-lib/build/planner/groupsummary.go:11 |  |
+| `summaryMax` | const | gophermind-lib/build/planner/groupsummary.go:14 | summaryMax bounds every model-written value the approval summary prints. |
+| `writeGroupSummary` | func | gophermind-lib/build/planner/groupsummary.go:22 | writeGroupSummary adds the "Node groups" section to the plan a person approves: how many function nodes answered "not applicable" for each group (so a person can sample the reasons), the trust boundaries per component, the nodes no requirement names, the warnings Enrich raised, the component and root assumptions, and the open questions. |
+| `checksSkipped` | func | gophermind-lib/build/planner/groupsummary.go:117 | checksSkipped names the group checks that could not run because the repository has no go.mod (or none that states a Go version). |
+| `isTrustBoundary` | func | gophermind-lib/build/planner/groupsummary.go:127 |  |
+| `firstN` | func | gophermind-lib/build/planner/groupsummary.go:136 |  |
+| `typeIDRE` | var | gophermind-lib/build/planner/idnorm.go:22 |  |
+| `fnIDRE` | var | gophermind-lib/build/planner/idnorm.go:23 |  |
+| `maxIDExamples` | const | gophermind-lib/build/planner/idnorm.go:27 | maxIDExamples bounds the examples named in the warning. |
+| `replyKind` | type | gophermind-lib/build/planner/idnorm.go:29 |  |
+| `replyOutline` | const | gophermind-lib/build/planner/idnorm.go:32 |  |
+| `replyComponent` | const | gophermind-lib/build/planner/idnorm.go:33 |  |
+| `replyRepair` | const | gophermind-lib/build/planner/idnorm.go:34 |  |
+| `idNotes` | type | gophermind-lib/build/planner/idnorm.go:40 | idNotes is what normalising one reply did: how many ids and references were rewritten, a few bounded examples, and the objects dropped because two different raw ids became the same id (the first emission wins). |
+| `isUpper` | func | gophermind-lib/build/planner/idnorm.go:46 |  |
+| `isLower` | func | gophermind-lib/build/planner/idnorm.go:47 |  |
+| `isDigit` | func | gophermind-lib/build/planner/idnorm.go:48 |  |
+| `normalizeID` | func | gophermind-lib/build/planner/idnorm.go:55 | normalizeID returns raw in the id syntax: case boundaries split, lower case, every run of other characters one dash, no leading or trailing dash. |
+| `exampleOf` | func | gophermind-lib/build/planner/idnorm.go:99 | exampleOf is one "old -> new" example for the warning. |
+| `normalizeReply` | func | gophermind-lib/build/planner/idnorm.go:120 | normalizeReply rewrites the ids of a contract reply. |
+| `(*Planner).noteNormalized` | method | gophermind-lib/build/planner/idnorm.go:279 | noteNormalized records the rewritten ids in the state and reports them as one warning: a count and at most 10 bounded examples, never other reply text. |
+| `pendingSep` | const | gophermind-lib/build/planner/idnorm.go:291 | pendingSep joins the two candidate forms of a reference that named nothing declared: "validate-email\|fn-validate-email". |
+| `pendingRE` | var | gophermind-lib/build/planner/idnorm.go:293 |  |
+| `pendingRef` | func | gophermind-lib/build/planner/idnorm.go:296 | pendingRef splits a pending reference into its type form and function form. |
+| `declaredIDs` | func | gophermind-lib/build/planner/idnorm.go:304 |  |
+| `resolveRefs` | func | gophermind-lib/build/planner/idnorm.go:321 | resolveRefs returns a copy of doc in which every pending reference is the form that is declared. |
+| `schemaNamesOnce` | var | gophermind-lib/build/planner/leafnorm.go:24 |  |
+| `nodeTopProps` | var | gophermind-lib/build/planner/leafnorm.go:25 |  |
+| `nodeContractKey` | var | gophermind-lib/build/planner/leafnorm.go:26 |  |
+| `nodeAllNames` | var | gophermind-lib/build/planner/leafnorm.go:27 |  |
+| `nodeTierEnum` | var | gophermind-lib/build/planner/leafnorm.go:28 |  |
+| `loadSchemaNames` | func | gophermind-lib/build/planner/leafnorm.go:31 |  |
+| `sideEffectText` | func | gophermind-lib/build/planner/leafnorm.go:80 | sideEffectText is a side effect that arrived as an object, as one sentence. |
+| `asArray` | func | gophermind-lib/build/planner/leafnorm.go:102 | asArray returns v as an array for a field that wants one: null is empty, a single value is wrapped. |
+| `camelBoundary` | var | gophermind-lib/build/planner/leafnorm.go:112 |  |
+| `titleFromName` | func | gophermind-lib/build/planner/leafnorm.go:115 | titleFromName is "Validate task assignee" from ValidateTaskAssignee. |
+| `normalizeShape` | func | gophermind-lib/build/planner/leafnorm.go:127 | normalizeShape reshapes the benign deviations of one node in place. |
+| `hasKey` | func | gophermind-lib/build/planner/leafnorm.go:198 |  |
+| `orEmpty` | func | gophermind-lib/build/planner/leafnorm.go:200 |  |
+| `schemaDetails` | func | gophermind-lib/build/planner/leafnorm.go:210 | schemaDetails names, in a fixed vocabulary, where a node fails its schema: "field:<path> keyword:<schema keyword>". |
+| `runIDRE` | var | gophermind-lib/build/planner/load.go:18 |  |
+| `ValidRunID` | func | gophermind-lib/build/planner/load.go:21 | ValidRunID reports whether s has the shape of a run id (gm-YYYY-MM-DD-NNN). |
+| `(*Planner).load` | method | gophermind-lib/build/planner/load.go:26 | load is the Load stage. |
+| `(*Planner).loadExisting` | method | gophermind-lib/build/planner/load.go:106 |  |
+| `(*Planner).notePublic` | method | gophermind-lib/build/planner/load.go:149 | notePublic records that a run was allowed to show the brief to public providers. |
+| `resolveRepo` | func | gophermind-lib/build/planner/load.go:159 | resolveRepo turns the brief's repo into an absolute path to an existing directory. |
+| `ExpandRepo` | func | gophermind-lib/build/planner/load.go:175 | ExpandRepo expands a leading ~ and makes the path absolute. |
+| `(*Planner).storeSecrets` | method | gophermind-lib/build/planner/load.go:194 | storeSecrets makes sure every secret the brief declares is in the vault under this run's scope. |
+| `untouchedRunDir` | func | gophermind-lib/build/planner/load.go:235 | untouchedRunDir reports whether a run folder holds only what Load writes: the brief, the requirements, an empty logs folder, a status file and the ledger, event and reply files a first stage leaves in _state. |
+| `StripReply` | func | gophermind-lib/build/planner/parse.go:12 | StripReply removes what models wrap around the JSON they were asked for: a markdown fence, a sentence before it, a sentence after it. |
+| `fencedBlocks` | func | gophermind-lib/build/planner/parse.go:42 | fencedBlocks returns the trimmed content of every ``` block, in order. |
+| `Question` | func | gophermind-lib/build/planner/parse.go:67 | Question finds the pause-and-ask marker: a line that is exactly QUESTION: with the question on the lines after it. |
+| `Caller` | interface | gophermind-lib/build/planner/planner.go:21 | Caller is the one router method the planner uses. |
+| `Secrets` | interface | gophermind-lib/build/planner/planner.go:26 | Secrets is the part of the vault the Load stage needs. |
+| `Deps` | type | gophermind-lib/build/planner/planner.go:33 | Deps is everything the planner talks to. |
+| `Options` | type | gophermind-lib/build/planner/planner.go:52 | Options says what one Run call does. |
+| `Outcome` | type | gophermind-lib/build/planner/planner.go:68 |  |
+| `Done` | const | gophermind-lib/build/planner/planner.go:71 |  |
+| `Waiting` | const | gophermind-lib/build/planner/planner.go:72 |  |
+| `Planner` | type | gophermind-lib/build/planner/planner.go:75 |  |
+| `New` | func | gophermind-lib/build/planner/planner.go:80 |  |
+| `run` | type | gophermind-lib/build/planner/planner.go:94 | run is one brief being planned. |
+| `(*run).path` | method | gophermind-lib/build/planner/planner.go:105 |  |
+| `(*run).saveStatus` | method | gophermind-lib/build/planner/planner.go:107 |  |
+| `stage` | type | gophermind-lib/build/planner/planner.go:111 | stage is one step of the pipeline. |
+| `stages` | var | gophermind-lib/build/planner/planner.go:118 | stages after Load, in order. |
+| `(*Planner).Run` | method | gophermind-lib/build/planner/planner.go:131 | Run plans a brief, or continues a run, until every stage is done, a person has to answer (Waiting), or something fails. |
+| `(*Planner).emit` | method | gophermind-lib/build/planner/planner.go:177 |  |
+| `(*Planner).noteLedgerErrors` | method | gophermind-lib/build/planner/planner.go:181 |  |
+| `callSpec` | type | gophermind-lib/build/planner/planner.go:192 | callSpec says what one model call carries, for the router and the ledger. |
+| `(*Planner).call` | method | gophermind-lib/build/planner/planner.go:213 | call makes one model call through the router. |
+| `(*Planner).callRes` | method | gophermind-lib/build/planner/planner.go:219 | callRes is call that also returns the router's result (which model answered). |
+| `maxQuestionsPerCall` | const | gophermind-lib/build/planner/planner.go:256 |  |
+| `pendingQuestion` | type | gophermind-lib/build/planner/planner.go:261 | pendingQuestion is _state/question.json: a question a model asked that no person has answered yet. |
+| `(*Planner).callAsking` | method | gophermind-lib/build/planner/planner.go:270 | callAsking is call plus the pause-and-ask protocol: a reply that is a QUESTION: goes to the human gate (or, when the brief says assume and document, back to the model with that instruction) and the call is made again with the answer added. |
+| `(*Planner).ask` | method | gophermind-lib/build/planner/planner.go:339 | ask puts questions to the human gate. |
+| `answerNote` | func | gophermind-lib/build/planner/planner.go:346 |  |
+| `answerBy` | func | gophermind-lib/build/planner/planner.go:351 | answerBy says who an answer came from, for the question store. |
+| `(*Planner).recordAnswer` | method | gophermind-lib/build/planner/planner.go:363 | recordAnswer settles a question a stage raised in the store, rewrites the answers.json view and the decision record, and returns the view. |
+| `KindPromptSize` | const | gophermind-lib/build/planner/promptbudget.go:25 | KindPromptSize is the event kind of a prompt size report (sizes only). |
+| `promptHeadroomTokens` | const | gophermind-lib/build/planner/promptbudget.go:28 | promptHeadroomTokens is the margin kept beyond the estimate and the reserved reply, because the estimate is rough. |
+| `maxPromptLevel` | const | gophermind-lib/build/planner/promptbudget.go:29 | Contract prompts are sized to the smallest context window in the tier's chain. |
+| `estimateTokens` | func | gophermind-lib/build/planner/promptbudget.go:34 | estimateTokens is the router's own estimate (bytes/4 plus a tenth), so the planner and the router agree on what fits. |
+| `(*Planner).contextWindow` | method | gophermind-lib/build/planner/promptbudget.go:39 | contextWindow is the smallest context among the models of the strong tier that the settings know; 0 when none is known (nothing is then trimmed ahead of time, the router's answer decides). |
+| `(*Planner).callSized` | method | gophermind-lib/build/planner/promptbudget.go:53 | callSized makes a contract call whose prompt is built for a level of optional context. |
+| `tooLongErr` | func | gophermind-lib/build/planner/promptbudget.go:81 |  |
+| `excerptCaps` | type | gophermind-lib/build/planner/promptbudget.go:87 | excerptCaps are the byte caps of a brief excerpt at a level. |
+| `excerptCapsAt` | func | gophermind-lib/build/planner/promptbudget.go:93 |  |
+| `capText` | func | gophermind-lib/build/planner/promptbudget.go:104 | capText cuts s to at most n bytes (on a character boundary) and says so. |
+| `briefExcerpt` | func | gophermind-lib/build/planner/promptbudget.go:117 | briefExcerpt is the part of the brief a pass needs: the main sections and the named features (in brief order), each capped so the excerpt is bounded however large the brief is. |
+| `allFeatureNames` | func | gophermind-lib/build/planner/promptbudget.go:149 |  |
+| `featuresOfComponents` | func | gophermind-lib/build/planner/promptbudget.go:158 | featuresOfComponents maps component ids to the features they came from. |
+| `repairExcerptLevel` | func | gophermind-lib/build/planner/promptbudget.go:173 | repairExcerptLevel is the excerpt level of a repair pass: repair prompts never carry the whole brief, so level 0 already uses an excerpt. |
+| `outlineJSONAt` | func | gophermind-lib/build/planner/promptbudget.go:182 | outlineJSONAt is the outline (module, conventions, components) for a prompt: complete up to level 1, component ids only after that. |
+| `declaredTextAt` | func | gophermind-lib/build/planner/promptbudget.go:196 | declaredTextAt lists what is declared: in full up to level 1; from level 2 type ids and function signatures; at level 3 ids only. |
+| `briefSectionAt` | func | gophermind-lib/build/planner/promptbudget.go:218 | briefSectionAt is a component's feature section, capped from level 1. |
+| `promptFS` | var | gophermind-lib/build/planner/prompts.go:14 |  |
+| `render` | func | gophermind-lib/build/planner/prompts.go:18 | render fills prompts/<name>.md. |
+| `closingTagRE` | var | gophermind-lib/build/planner/prompts.go:45 | closingTagRE finds the closing tags the prompt files use. |
+| `packerSectionTags` | var | gophermind-lib/build/planner/prompts.go:50 | packerSectionTags are the section tags of the executor's node prompts (packer.sectionTagRE). |
+| `promptDataTags` | func | gophermind-lib/build/planner/prompts.go:54 | promptDataTags lists, sorted, every tag name closed in a prompt file. |
+| `dataTagRE` | var | gophermind-lib/build/planner/prompts.go:77 |  |
+| `neutralizePrompt` | func | gophermind-lib/build/planner/prompts.go:83 | neutralizePrompt breaks every data-section tag in untrusted text so that a brief, an answer or a model-written node cannot close the section it sits in and speak as the prompt. |
+| `trustedPromptKeys` | var | gophermind-lib/build/planner/prompts.go:88 | trustedPromptKeys are the data keys the planner itself builds: fixed text, numbers and lists of names, never the brief, an answer, a fact, a defect message or a model reply. |
+| `harnessContract` | func | gophermind-lib/build/planner/prompts.go:95 | harnessContract is the shared description of how root test commands are run (prompts/harness.md), put into every prompt that asks for one. |
+| `request` | func | gophermind-lib/build/planner/prompts.go:105 | request is the shape of every planner call: a system line naming the stage (the offline fixture provider keys its canned replies on it) and the prompt. |
+| `maxTokensClarify` | const | gophermind-lib/build/planner/prompts.go:119 | Output budgets per stage, in tokens. |
+| `maxTokensContract` | const | gophermind-lib/build/planner/prompts.go:120 | Output budgets per stage, in tokens. |
+| `maxTokensOutline` | const | gophermind-lib/build/planner/prompts.go:123 | The outline lists every component and type of a large brief in one reply, so it gets a larger budget, and a larger cap when the router grows it. |
+| `maxGrownOutline` | const | gophermind-lib/build/planner/prompts.go:124 | Output budgets per stage, in tokens. |
+| `maxTokensDecompose` | const | gophermind-lib/build/planner/prompts.go:125 | Output budgets per stage, in tokens. |
+| `maxTokensCoverage` | const | gophermind-lib/build/planner/prompts.go:126 | Output budgets per stage, in tokens. |
+| `maxTokensFill` | const | gophermind-lib/build/planner/prompts.go:127 | Output budgets per stage, in tokens. |
+| `maxTokensTestwrite` | const | gophermind-lib/build/planner/prompts.go:128 | Output budgets per stage, in tokens. |
+| `maxTokensEnrich` | const | gophermind-lib/build/planner/prompts.go:130 | Output budgets per stage, in tokens. |
+| `maxTokensEnrichStructure` | const | gophermind-lib/build/planner/prompts.go:131 | Output budgets per stage, in tokens. |
+| `qOpen` | const | gophermind-lib/build/planner/questions.go:21 | Question status and who answered. |
+| `qSettled` | const | gophermind-lib/build/planner/questions.go:22 | Question status and who answered. |
+| `byHuman` | const | gophermind-lib/build/planner/questions.go:24 | Question status and who answered. |
+| `byAccepted` | const | gophermind-lib/build/planner/questions.go:25 | Question status and who answered. |
+| `byUnattended` | const | gophermind-lib/build/planner/questions.go:26 | Question status and who answered. |
+| `byProbe` | const | gophermind-lib/build/planner/questions.go:27 | Question status and who answered. |
+| `factKeys` | var | gophermind-lib/build/planner/questions.go:32 | factKeys is the closed list of facts the probe can answer. |
+| `maxQuestionBytes` | const | gophermind-lib/build/planner/questions.go:35 |  |
+| `maxRecommendBytes` | const | gophermind-lib/build/planner/questions.go:36 |  |
+| `maxOptionBytes` | const | gophermind-lib/build/planner/questions.go:37 |  |
+| `maxHistory` | const | gophermind-lib/build/planner/questions.go:38 |  |
+| `qidRE` | var | gophermind-lib/build/planner/questions.go:42 |  |
+| `decisionIDRE` | var | gophermind-lib/build/planner/questions.go:43 |  |
+| `qhistory` | type | gophermind-lib/build/planner/questions.go:47 | qhistory is an earlier answer, kept when an answer is changed. |
+| `qrec` | type | gophermind-lib/build/planner/questions.go:54 | qrec is one question and, once settled, its answer. |
+| `qstore` | type | gophermind-lib/build/planner/questions.go:74 | qstore is _state/clarify/questions.json. |
+| `loadQStore` | func | gophermind-lib/build/planner/questions.go:84 | loadQStore reads the question store. |
+| `(qstore).save` | method | gophermind-lib/build/planner/questions.go:118 |  |
+| `stamp` | func | gophermind-lib/build/planner/questions.go:130 | stamp is the time format of the planner's state files. |
+| `(*qstore).get` | method | gophermind-lib/build/planner/questions.go:132 |  |
+| `(*qstore).settle` | method | gophermind-lib/build/planner/questions.go:143 | settle records the answer of an open question. |
+| `(qstore).unsettled` | method | gophermind-lib/build/planner/questions.go:153 | unsettled lists the open questions in order. |
+| `(qstore).frontier` | method | gophermind-lib/build/planner/questions.go:165 | frontier lists the open questions whose prerequisites are all settled: the ones that can be asked now without guessing at an answer not yet heard. |
+| `(qstore).nextNumber` | method | gophermind-lib/build/planner/questions.go:192 | nextNumber is one more than the highest q<N> id in the store. |
+| `qparseOpts` | type | gophermind-lib/build/planner/questions.go:205 | qparseOpts says how strictly a Clarify reply is read. |
+| `parseQuestionList` | func | gophermind-lib/build/planner/questions.go:215 | parseQuestionList reads a Clarify reply. |
+| `answersView` | func | gophermind-lib/build/planner/questions.go:325 | answersView is answers.json as the store derives it: every settled question in order. |
+| `writeAnswersView` | func | gophermind-lib/build/planner/questions.go:337 | writeAnswersView rewrites answers.json from the store. |
+| `decisionMarkdown` | func | gophermind-lib/build/planner/questions.go:345 | decisionMarkdown is the browsable record of one settled question. |
+| `writeDecision` | func | gophermind-lib/build/planner/questions.go:387 | writeDecision writes decisions/<id>.md. |
+| `recordOf` | func | gophermind-lib/build/planner/questions.go:396 | recordOf is a settled question as it is written into a node: every field a reader needs, none that is empty. |
+| `embedDecisions` | func | gophermind-lib/build/planner/questions.go:438 | embedDecisions records the questions and answers in the tree: the root gets every settled record, in order; a component or function gets copies of the records its decision_ids name, in store order (an empty list when it cites none). |
+| `checkEmbedded` | func | gophermind-lib/build/planner/questions.go:471 | checkEmbedded compares the decisions embedded in the tree with what embedDecisions would write now. |
+| `sameJSON` | func | gophermind-lib/build/planner/questions.go:491 |  |
+| `(*Planner).saveReply` | method | gophermind-lib/build/planner/replies.go:18 | saveReply keeps the text of each stage reply under _state/replies/ so a bad plan can be inspected afterwards. |
+| `ReqKind` | type | gophermind-lib/build/planner/requirements.go:14 | ReqKind says which part of the brief a requirement came from. |
+| `ReqConstraint` | const | gophermind-lib/build/planner/requirements.go:17 |  |
+| `ReqAcceptance` | const | gophermind-lib/build/planner/requirements.go:18 |  |
+| `ReqFeature` | const | gophermind-lib/build/planner/requirements.go:19 |  |
+| `Requirement` | type | gophermind-lib/build/planner/requirements.go:24 | Requirement is one obligation the brief states. |
+| `ParseRequirements` | func | gophermind-lib/build/planner/requirements.go:36 | ParseRequirements scans a brief file: every top-level bullet under "## Constraints" and "## Acceptance", and every "### " heading under "## Features", is one requirement. |
+| `isBullet` | func | gophermind-lib/build/planner/requirements.go:119 |  |
+| `ReviseRequest` | type | gophermind-lib/build/planner/revise.go:28 | ReviseRequest is everything the executor hands the revise stage. |
+| `ReviseOutcome` | type | gophermind-lib/build/planner/revise.go:41 | ReviseOutcome is what a revise call came to. |
+| `OutcomeRewritten` | const | gophermind-lib/build/planner/revise.go:44 |  |
+| `OutcomeFlagged` | const | gophermind-lib/build/planner/revise.go:45 |  |
+| `OutcomeUnusable` | const | gophermind-lib/build/planner/revise.go:46 |  |
+| `ReviseProposal` | type | gophermind-lib/build/planner/revise.go:51 | ReviseProposal is the result of Revise. |
+| `Reviser` | type | gophermind-lib/build/planner/revise.go:67 | Reviser is the planner's revise stage. |
+| `NewReviser` | func | gophermind-lib/build/planner/revise.go:70 | NewReviser returns a Reviser over the same dependencies the planner has. |
+| `maxReviseInput` | const | gophermind-lib/build/planner/revise.go:73 |  |
+| `maxReviseTestSource` | const | gophermind-lib/build/planner/revise.go:74 |  |
+| `removedLine` | const | gophermind-lib/build/planner/revise.go:75 |  |
+| `scrubInput` | func | gophermind-lib/build/planner/revise.go:83 | scrubInput is the stage's own defense in depth for a text input: the caller scrubs too, but a caller bug must not send a secret value to a provider. |
+| `reviseIDRE` | var | gophermind-lib/build/planner/revise.go:106 |  |
+| `openReviseRun` | func | gophermind-lib/build/planner/revise.go:109 | openReviseRun is the run view the planner helpers need, read from the folder. |
+| `reviseView` | func | gophermind-lib/build/planner/revise.go:129 | reviseView is the node as the revise model sees it: no reasoning group ever; the component variant adds rationale and assumptions only. |
+| `decisionsNamedBy` | func | gophermind-lib/build/planner/revise.go:167 | decisionsNamedBy is the settled decisions the node cites, as decisionsText prints them. |
+| `bulletList` | func | gophermind-lib/build/planner/revise.go:181 |  |
+| `touchesContractShape` | func | gophermind-lib/build/planner/revise.go:188 |  |
+| `(*Planner).revisePrompt` | method | gophermind-lib/build/planner/revise.go:198 | revisePrompt builds the revise prompt from the node and the request. |
+| `parsedRevise` | type | gophermind-lib/build/planner/revise.go:226 | parsedRevise is what the revise parse closure keeps of the last reply it saw. |
+| `classOf` | func | gophermind-lib/build/planner/revise.go:235 |  |
+| `(*Reviser).Revise` | method | gophermind-lib/build/planner/revise.go:246 | Revise makes the revise call and, when the tests must follow, the Test-writer call, and validates both. |
+| `(*Planner).reviseTests` | method | gophermind-lib/build/planner/revise.go:439 | reviseTests is the Test-writer call for a revised node: the same prompt and the same parser as planning, on the revised contract alone. |
+| `replyHoldsSecret` | func | gophermind-lib/build/planner/revise.go:493 | replyHoldsSecret is the secret scan of a revise or Test-writer reply: the reply as sent, every string of its JSON once decoded (an escaped secret is still a secret), and the value of every Go string or rune literal inside those strings (a test source may spell a secret with Go escapes). |
+| `goLiterals` | func | gophermind-lib/build/planner/revise.go:525 | goLiterals is the unquoted value of every string and rune literal in src, read as Go tokens; text that is not Go yields what the scanner finds. |
+| `fileRevisionDecisions` | const | gophermind-lib/build/planner/revise_decision.go:19 |  |
+| `decisionClassRE` | var | gophermind-lib/build/planner/revise_decision.go:21 |  |
+| `decisionMu` | var | gophermind-lib/build/planner/revise_decision.go:27 | decisionMu serializes the read-modify-write of the decision store across every Reviser in the process. |
+| `RevisionDecision` | type | gophermind-lib/build/planner/revise_decision.go:30 | RevisionDecision is a person's answer about a leaf the revise stage touched. |
+| `revisionDecisions` | type | gophermind-lib/build/planner/revise_decision.go:43 |  |
+| `decisionNote` | func | gophermind-lib/build/planner/revise_decision.go:50 | decisionNote puts a note on one line, drops control and format characters (escape sequences, bidi marks, zero-width characters), applies scrub to the cleaned text and then bounds it. |
+| `qrecOfRecord` | func | gophermind-lib/build/planner/revise_decision.go:69 | qrecOfRecord rebuilds the settled question a stored decision record came from, so its markdown can be rendered again byte for byte. |
+| `writeDecisionMarkdown` | func | gophermind-lib/build/planner/revise_decision.go:76 |  |
+| `(*Reviser).RecordDecision` | method | gophermind-lib/build/planner/revise_decision.go:88 | RecordDecision appends the answer to _state/revisions/decisions.json, in the shape of recordOf, and writes decisions/rv-<node>-<m>.md. |
+| `TriggerLadderExhausted` | const | gophermind-lib/build/planner/revise_patch.go:20 | Triggers of a revision, as the executor reports them. |
+| `TriggerContractProblem` | const | gophermind-lib/build/planner/revise_patch.go:21 | Triggers of a revision, as the executor reports them. |
+| `ClassReviseInvalid` | const | gophermind-lib/build/planner/revise_patch.go:26 | Classes of the revise stage: every refusal, flag and escalation reason uses one. |
+| `ClassReviseNoop` | const | gophermind-lib/build/planner/revise_patch.go:27 | Classes of the revise stage: every refusal, flag and escalation reason uses one. |
+| `ClassSecretInReply` | const | gophermind-lib/build/planner/revise_patch.go:28 | Classes of the revise stage: every refusal, flag and escalation reason uses one. |
+| `ClassContractFlagged` | const | gophermind-lib/build/planner/revise_patch.go:29 | Classes of the revise stage: every refusal, flag and escalation reason uses one. |
+| `ClassSplitRequired` | const | gophermind-lib/build/planner/revise_patch.go:30 | Classes of the revise stage: every refusal, flag and escalation reason uses one. |
+| `ClassTestsLocked` | const | gophermind-lib/build/planner/revise_patch.go:31 | Classes of the revise stage: every refusal, flag and escalation reason uses one. |
+| `ClassVacuousTest` | const | gophermind-lib/build/planner/revise_patch.go:32 | Classes of the revise stage: every refusal, flag and escalation reason uses one. |
+| `ClassRedBuild` | const | gophermind-lib/build/planner/revise_patch.go:33 | Classes of the revise stage: every refusal, flag and escalation reason uses one. |
+| `reviseErr` | type | gophermind-lib/build/planner/revise_patch.go:38 | reviseErr is a refusal or a flag with its class. |
+| `(*reviseErr).Error` | method | gophermind-lib/build/planner/revise_patch.go:40 |  |
+| `invalid` | func | gophermind-lib/build/planner/revise_patch.go:42 |  |
+| `maxDescription` | const | gophermind-lib/build/planner/revise_patch.go:47 |  |
+| `maxParagraph` | const | gophermind-lib/build/planner/revise_patch.go:48 |  |
+| `maxAssumptions` | const | gophermind-lib/build/planner/revise_patch.go:49 |  |
+| `maxAssumptionLen` | const | gophermind-lib/build/planner/revise_patch.go:50 |  |
+| `maxReplyBytes` | const | gophermind-lib/build/planner/revise_patch.go:51 |  |
+| `maxEntryLen` | const | gophermind-lib/build/planner/revise_patch.go:52 |  |
+| `maxListItems` | const | gophermind-lib/build/planner/revise_patch.go:53 |  |
+| `maxJSONDepth` | const | gophermind-lib/build/planner/revise_patch.go:54 |  |
+| `revisePatch` | type | gophermind-lib/build/planner/revise_patch.go:58 | revisePatch is the JSON reply of the revise model: optional keys, none else. |
+| `reviseContract` | type | gophermind-lib/build/planner/revise_patch.go:67 |  |
+| `reviseContext` | type | gophermind-lib/build/planner/revise_patch.go:74 |  |
+| `reviseKind` | type | gophermind-lib/build/planner/revise_patch.go:79 |  |
+| `kindPatch` | const | gophermind-lib/build/planner/revise_patch.go:82 |  |
+| `kindContractChange` | const | gophermind-lib/build/planner/revise_patch.go:83 |  |
+| `kindSplit` | const | gophermind-lib/build/planner/revise_patch.go:84 |  |
+| `reviseReply` | type | gophermind-lib/build/planner/revise_patch.go:87 |  |
+| `reviseGroupKeys` | var | gophermind-lib/build/planner/revise_patch.go:93 |  |
+| `cleanParagraph` | func | gophermind-lib/build/planner/revise_patch.go:97 | cleanParagraph keeps a one-paragraph answer printable: control characters (terminal escapes included) become spaces, runs of white space collapse. |
+| `paragraphReply` | func | gophermind-lib/build/planner/revise_patch.go:107 |  |
+| `parseReviseReply` | func | gophermind-lib/build/planner/revise_patch.go:118 | parseReviseReply reads the reply of spec section 6: a JSON patch, or one of two keyword lines with a paragraph. |
+| `parseReviseReplyScanned` | func | gophermind-lib/build/planner/revise_patch.go:156 | parseReviseReplyScanned is parseReviseReply behind the secret scan of the RAW reply: the keyword paragraphs and every free text of a patch are covered. |
+| `replyKeys` | var | gophermind-lib/build/planner/revise_patch.go:167 | replyKeys are the keys a reply may name; only these are ever quoted in a message. |
+| `scanReplyJSON` | func | gophermind-lib/build/planner/revise_patch.go:174 | scanReplyJSON walks the reply's tokens before it is decoded: nesting is bounded, a key may not repeat in one object (Go would keep the last), and a key of the patch, contract or context may not be null. |
+| `scanTok` | func | gophermind-lib/build/planner/revise_patch.go:183 |  |
+| `checkStrings` | func | gophermind-lib/build/planner/revise_patch.go:245 |  |
+| `checkPatchShape` | func | gophermind-lib/build/planner/revise_patch.go:257 |  |
+| `checkItems` | func | gophermind-lib/build/planner/revise_patch.go:325 | checkItems allows only the listed keys in each item: go_type and test links are written by code, never by the model. |
+| `anyObjects` | func | gophermind-lib/build/planner/revise_patch.go:362 |  |
+| `anyStrings` | func | gophermind-lib/build/planner/revise_patch.go:370 |  |
+| `mergePatch` | func | gophermind-lib/build/planner/revise_patch.go:374 | mergePatch applies p to a copy of orig. |
+| `mergeEnv` | type | gophermind-lib/build/planner/revise_patch.go:439 | mergeEnv is what the checks need besides the documents. |
+| `revisedFields` | var | gophermind-lib/build/planner/revise_patch.go:448 | revisedFields are the paths compared to say what a patch changed. |
+| `fieldAt` | func | gophermind-lib/build/planner/revise_patch.go:451 |  |
+| `changedFields` | func | gophermind-lib/build/planner/revise_patch.go:461 | changedFields names the revisable fields whose value differs. |
+| `checkMerged` | func | gophermind-lib/build/planner/revise_patch.go:475 | checkMerged runs the checks of spec section 6 in order and stops at the first failure. |
+| `toAnySliceKeep` | func | gophermind-lib/build/planner/revise_patch.go:568 | toAnySliceKeep returns the elements of a JSON array as a new []any. |
+| `jsonErr` | func | gophermind-lib/build/planner/safeerr.go:21 | jsonErr describes a decode failure without quoting the input. |
+| `maxSchemaPointers` | const | gophermind-lib/build/planner/safeerr.go:38 | schemaErr describes a schema failure by the location of each failing value and, for a missing property, the property's name (which the schema, not the reply, supplies). |
+| `schemaErr` | func | gophermind-lib/build/planner/safeerr.go:40 |  |
+| `quotedRE` | var | gophermind-lib/build/planner/safeerr.go:67 |  |
+| `loadErr` | func | gophermind-lib/build/planner/safeerr.go:72 | loadErr rewrites an error from contract.Load. |
+| `syntaxErr` | func | gophermind-lib/build/planner/safeerr.go:95 | syntaxErr describes a Go parse failure by position only. |
+| `schemaRepairStage` | const | gophermind-lib/build/planner/schemafix.go:25 | schemaRepairStage is the stage of the passes that ask for missing fields of named nodes. |
+| `maxSchemaRepairs` | const | gophermind-lib/build/planner/schemafix.go:28 |  |
+| `maxSchemaRepairBatch` | const | gophermind-lib/build/planner/schemafix.go:29 |  |
+| `maxDefaultedIDsShown` | const | gophermind-lib/build/planner/schemafix.go:30 |  |
+| `repairableFields` | var | gophermind-lib/build/planner/schemafix.go:35 | repairableFields are the required fields of a node the model can be asked for again. |
+| `schemaIssue` | type | gophermind-lib/build/planner/schemafix.go:41 | schemaIssue is one failing value of the contract schema, located by node. |
+| `(schemaIssue).what` | method | gophermind-lib/build/planner/schemafix.go:50 |  |
+| `(schemaIssue).idOK` | method | gophermind-lib/build/planner/schemafix.go:64 | idOK is true when the node's id has the schema's syntax and is short enough to name: an id that fails the schema is never echoed. |
+| `(schemaIssue).repairable` | method | gophermind-lib/build/planner/schemafix.go:76 | repairable is true for a missing or invalid field the model can write again for a node it can be asked about by name. |
+| `(schemaIssue).String` | method | gophermind-lib/build/planner/schemafix.go:90 | String names the node (bounded) and the field, never a bare pointer for a node; a failure outside the nodes keeps its pointer. |
+| `issuesOf` | func | gophermind-lib/build/planner/schemafix.go:108 | issuesOf turns a schema failure into located issues, in document order. |
+| `schemaIssues` | func | gophermind-lib/build/planner/schemafix.go:172 | schemaIssues validates doc against the contract schema and lists what fails; nil when the schema passes. |
+| `nodeSchemaErr` | func | gophermind-lib/build/planner/schemafix.go:187 | nodeSchemaErr is the error text of a schema failure: at most maxSchemaPointers issues, each naming its node and field, and a count of the rest. |
+| `issuesText` | func | gophermind-lib/build/planner/schemafix.go:191 |  |
+| `defaultDocs` | func | gophermind-lib/build/planner/schemafix.go:207 | defaultDocs gives a function whose doc is still missing a fixed text built from its signature's name and its component. |
+| `gapNode` | type | gophermind-lib/build/planner/schemafix.go:231 | gapNode is one node to ask about: its list, id and the fields it lacks. |
+| `gapNodes` | func | gophermind-lib/build/planner/schemafix.go:236 |  |
+| `mergeFieldRepair` | func | gophermind-lib/build/planner/schemafix.go:256 | mergeFieldRepair takes from a reply, for each asked node, only the fields it lacked, and only a value of the right kind. |
+| `gapNodesText` | func | gophermind-lib/build/planner/schemafix.go:300 | gapNodesText lists the nodes to fix: id, the fields missing (the schema's own names) and the node as it stands. |
+| `(*Planner).repairSchema` | method | gophermind-lib/build/planner/schemafix.go:320 | repairSchema checks the merged contract against the schema and asks for the fields it lacks, node by node, in up to maxSchemaRepairs passes. |
+| `trimNode` | func | gophermind-lib/build/planner/schemafix.go:406 | trimNode is a node for a prompt: complete up to level 2; at level 3 only its identity, signature and doc, with a declaration cut short. |
+| `nodeOwners` | func | gophermind-lib/build/planner/schemafix.go:423 | nodeOwners lists the components that own the function nodes in nodes. |
+| `componentsByID` | func | gophermind-lib/build/planner/schemafix.go:443 | componentsByID is the component objects with these ids. |
+| `fileBrief` | const | gophermind-lib/build/planner/state.go:15 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `fileRequirements` | const | gophermind-lib/build/planner/state.go:16 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `fileAnswers` | const | gophermind-lib/build/planner/state.go:17 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `fileContracts` | const | gophermind-lib/build/planner/state.go:18 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `fileCoverage` | const | gophermind-lib/build/planner/state.go:19 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `fileApproval` | const | gophermind-lib/build/planner/state.go:20 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `stateDir` | const | gophermind-lib/build/planner/state.go:22 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `stateStatus` | const | gophermind-lib/build/planner/state.go:23 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `stateClarify` | const | gophermind-lib/build/planner/state.go:24 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `stateQuestion` | const | gophermind-lib/build/planner/state.go:25 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `stateContract` | const | gophermind-lib/build/planner/state.go:26 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `stateDecomposed` | const | gophermind-lib/build/planner/state.go:27 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `stateClasses` | const | gophermind-lib/build/planner/state.go:28 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `stateTestwriter` | const | gophermind-lib/build/planner/state.go:29 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `stateTestFiles` | const | gophermind-lib/build/planner/state.go:30 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `stateLeafTests` | const | gophermind-lib/build/planner/state.go:31 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `stateAcceptTests` | const | gophermind-lib/build/planner/state.go:32 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `stagePrefixSystem` | const | gophermind-lib/build/planner/state.go:33 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `fileQuestions` | const | gophermind-lib/build/planner/state.go:35 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `fileFacts` | const | gophermind-lib/build/planner/state.go:36 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `fileRounds` | const | gophermind-lib/build/planner/state.go:37 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `stateUnderstanding` | const | gophermind-lib/build/planner/state.go:38 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `stateEnriched` | const | gophermind-lib/build/planner/state.go:39 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `fileUnderstanding` | const | gophermind-lib/build/planner/state.go:40 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `dirDecisions` | const | gophermind-lib/build/planner/state.go:41 | Files of a run folder (.gophermind/<brief-id>/ inside the target repo). |
+| `RunRecord` | type | gophermind-lib/build/planner/state.go:47 | RunRecord is how `resume`, `status` and `calls` find a run from its id alone: the run folder lives inside the target repo, and the id does not say where that is. |
+| `runRecordPath` | func | gophermind-lib/build/planner/state.go:55 |  |
+| `LookupRun` | func | gophermind-lib/build/planner/state.go:64 | LookupRun reads <config dir>/runs/<run-id>.json. |
+| `runStatus` | type | gophermind-lib/build/planner/state.go:84 | runStatus is _state/status.json. |
+| `writeFileAtomic` | func | gophermind-lib/build/planner/state.go:93 | writeFileAtomic writes data beside path and renames it into place, so a reader never sees half a file. |
+| `writeJSON` | func | gophermind-lib/build/planner/state.go:105 | writeJSON stores v as indented JSON, mode 0600. |
+| `readJSON` | func | gophermind-lib/build/planner/state.go:115 | readJSON decodes path into v. |
+| `exists` | func | gophermind-lib/build/planner/state.go:129 |  |
+| `StageState` | type | gophermind-lib/build/planner/status.go:6 | StageState is one line of `gophermind brief status`. |
+| `Status` | type | gophermind-lib/build/planner/status.go:13 | Status is what `gophermind brief status` prints. |
+| `ReadStatus` | func | gophermind-lib/build/planner/status.go:23 | ReadStatus reports how far a run has come. |
+| `testwriterState` | type | gophermind-lib/build/planner/testwriter.go:30 | testwriterState is _state/testwriter.json: the tests of every node that is finished, and the hash of the test file written for it. |
+| `writtenTests` | type | gophermind-lib/build/planner/testwriter.go:38 |  |
+| `testwriterDone` | func | gophermind-lib/build/planner/testwriter.go:44 |  |
+| `testFuncName` | func | gophermind-lib/build/planner/testwriter.go:48 | testFuncName is the test function a node's tests live in: fn-validate-email gives TestValidateEmail. |
+| `testFilePath` | func | gophermind-lib/build/planner/testwriter.go:60 | testFilePath is where a node's test file goes: beside the function's file, named after the node so two functions in one file never share a test file. |
+| `testCommand` | func | gophermind-lib/build/planner/testwriter.go:66 | testCommand is the command of every test of a node. |
+| `(*Planner).testwriter` | method | gophermind-lib/build/planner/testwriter.go:78 | testwriter is the Test-writer stage: for every function node, tests written from its contract alone and a test file placed in the target repository, then the finished tree and the blackboard rows. |
+| `(*Planner).writeTests` | method | gophermind-lib/build/planner/testwriter.go:141 | writeTests makes the model call for one node and writes its test file. |
+| `placeTestFile` | func | gophermind-lib/build/planner/testwriter.go:197 | placeTestFile writes a test file the model produced, after checking the path again: the first check was made before a model call that can take minutes. |
+| `parseTestwrite` | func | gophermind-lib/build/planner/testwriter.go:246 | parseTestwrite checks a Test-writer reply: enough tests, each described, and a Go test file that parses, holds the expected test function, and imports nothing outside the standard library and the module. |
+| `hashHex` | func | gophermind-lib/build/planner/testwriter.go:285 |  |
+| `stdTopLevel` | var | gophermind-lib/build/planner/testwriter.go:293 | stdTopLevel is the set of standard library top-level path elements. |
+| `checkTestSource` | func | gophermind-lib/build/planner/testwriter.go:302 | checkTestSource refuses a test file that is not the one asked for. |
+| `(*Planner).finishTree` | method | gophermind-lib/build/planner/testwriter.go:343 | finishTree writes the complete tree, checks it, records the test files the executor must never let an implementer edit, and creates the blackboard rows. |
+| `beforeTestWrite` | var | gophermind-lib/build/planner/testwriter.go:491 | beforeTestWrite is a seam for tests: it runs between the model call and the last checks before the write. |
+| `osReason` | func | gophermind-lib/build/planner/testwriter.go:495 | osReason is the reason of a file system error without the path it names, which may have come from a model. |
 
 ## package project
 
@@ -3418,131 +3418,131 @@ after every completed task. Non-test Go declarations only.
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `commitRE` | var | gophermind-lib/briefv2/projectrun/args.go:10 |  |
-| `secretNameRE` | var | gophermind-lib/briefv2/projectrun/args.go:12 |  |
-| `usage` | const | gophermind-lib/briefv2/projectrun/args.go:14 |  |
-| `boolFlags` | var | gophermind-lib/briefv2/projectrun/args.go:17 |  |
-| `valueFlags` | var | gophermind-lib/briefv2/projectrun/args.go:18 |  |
-| `ParseArgs` | func | gophermind-lib/briefv2/projectrun/args.go:24 | ParseArgs reads the arguments after "project". |
-| `classOrder` | var | gophermind-lib/briefv2/projectrun/classes.go:12 | classOrder is the fixed order of the node-class table. |
-| `ClassStat` | type | gophermind-lib/briefv2/projectrun/classes.go:16 | ClassStat is one row of the node-class table: how the leaves of one class fared. |
-| `ClassStats` | func | gophermind-lib/briefv2/projectrun/classes.go:38 | ClassStats groups the blackboard rows by node class. |
-| `VersionInfo` | type | gophermind-lib/briefv2/projectrun/env.go:32 | VersionInfo is the build stamp of the running binary. |
-| `Env` | type | gophermind-lib/briefv2/projectrun/env.go:36 | Env is everything /project touches outside its own process, so tests can replace each piece. |
-| `DefaultEnv` | func | gophermind-lib/briefv2/projectrun/env.go:60 | DefaultEnv is the real environment. |
-| `providerClient` | func | gophermind-lib/briefv2/projectrun/env.go:96 | providerClient is the no-redirect, no-proxy client the brief commands use. |
-| `runDirOf` | func | gophermind-lib/briefv2/projectrun/env.go:100 |  |
-| `vaultPath` | func | gophermind-lib/briefv2/projectrun/env.go:108 |  |
-| `gitAllowed` | func | gophermind-lib/briefv2/projectrun/env.go:121 | gitAllowed reports whether args is one of the few read-only git calls the preflight makes. |
-| `gitRun` | func | gophermind-lib/briefv2/projectrun/env.go:145 |  |
-| `ErrUnattended` | var | gophermind-lib/briefv2/projectrun/gate.go:14 | ErrUnattended is returned by the unattended gate for a question or a confirmation: with nobody to ask, reaching the gate is a defect. |
-| `unattendedGate` | type | gophermind-lib/briefv2/projectrun/gate.go:16 |  |
-| `newUnattendedGate` | func | gophermind-lib/briefv2/projectrun/gate.go:18 |  |
-| `(unattendedGate).Ask` | method | gophermind-lib/briefv2/projectrun/gate.go:20 |  |
-| `(unattendedGate).Confirm` | method | gophermind-lib/briefv2/projectrun/gate.go:26 | Confirm fails loudly. |
-| `(unattendedGate).Approve` | method | gophermind-lib/briefv2/projectrun/gate.go:32 | Approve approves a plan only when every requirement of the brief appears in coverage.json. |
-| `(unattendedGate).Escalate` | method | gophermind-lib/briefv2/projectrun/gate.go:71 |  |
-| `SecretStore` | interface | gophermind-lib/briefv2/projectrun/gensecrets.go:14 | SecretStore is the slice of the vault this file needs. |
-| `Source` | type | gophermind-lib/briefv2/projectrun/gensecrets.go:20 | Source says where a declared secret's value comes from. |
-| `SourceVault` | const | gophermind-lib/briefv2/projectrun/gensecrets.go:23 |  |
-| `SourceHex32` | const | gophermind-lib/briefv2/projectrun/gensecrets.go:24 |  |
-| `SourcePlaceholder` | const | gophermind-lib/briefv2/projectrun/gensecrets.go:25 |  |
-| `SourcePrompt` | const | gophermind-lib/briefv2/projectrun/gensecrets.go:26 |  |
-| `SourceMissing` | const | gophermind-lib/briefv2/projectrun/gensecrets.go:27 |  |
-| `Provisioned` | type | gophermind-lib/briefv2/projectrun/gensecrets.go:31 | Provisioned names a secret and its source. |
-| `Generate` | func | gophermind-lib/briefv2/projectrun/gensecrets.go:38 | Generate returns a fresh value of the given kind ("hex32" or "placeholder") read from rnd; a nil rnd means crypto/rand. |
-| `get` | func | gophermind-lib/briefv2/projectrun/gensecrets.go:59 |  |
-| `Sources` | func | gophermind-lib/briefv2/projectrun/gensecrets.go:67 | Sources is read only: where each declared secret's value would come from. |
-| `ProvisionGenerated` | func | gophermind-lib/briefv2/projectrun/gensecrets.go:86 | ProvisionGenerated writes generated values into the harness scope, before the planner runs. |
-| `markPrompted` | func | gophermind-lib/briefv2/projectrun/gensecrets.go:133 | markPrompted relabels the secrets that ProvisionGenerated found missing but an attended run's prompt stored in the run scope afterwards. |
-| `ExitVerified` | const | gophermind-lib/briefv2/projectrun/options.go:14 | Process exit codes of /project (spec section 6). |
-| `ExitFailed` | const | gophermind-lib/briefv2/projectrun/options.go:14 | Process exit codes of /project (spec section 6). |
-| `ExitInvalid` | const | gophermind-lib/briefv2/projectrun/options.go:14 | Process exit codes of /project (spec section 6). |
-| `ExitWaiting` | const | gophermind-lib/briefv2/projectrun/options.go:14 | Process exit codes of /project (spec section 6). |
-| `ExitEscalated` | const | gophermind-lib/briefv2/projectrun/options.go:14 | Process exit codes of /project (spec section 6). |
-| `ExitInterrupted` | const | gophermind-lib/briefv2/projectrun/options.go:14 | Process exit codes of /project (spec section 6). |
-| `ExitPreflight` | const | gophermind-lib/briefv2/projectrun/options.go:14 | Process exit codes of /project (spec section 6). |
-| `ExitFault` | const | gophermind-lib/briefv2/projectrun/options.go:14 | Process exit codes of /project (spec section 6). |
-| `ExitCode` | func | gophermind-lib/briefv2/projectrun/options.go:18 | ExitCode maps a final status and stop reason to a process exit code. |
-| `Options` | type | gophermind-lib/briefv2/projectrun/options.go:31 | Options is what one /project invocation was asked to do. |
-| `Result` | type | gophermind-lib/briefv2/projectrun/options.go:48 | Result is how a run ended. |
-| `Check` | type | gophermind-lib/briefv2/projectrun/preflight.go:15 | Check is one line of the pre-plan preflight. |
-| `PreflightResult` | type | gophermind-lib/briefv2/projectrun/preflight.go:23 | PreflightResult is what Preflight found and what later stages reuse. |
-| `Failed` | func | gophermind-lib/briefv2/projectrun/preflight.go:31 | Failed returns the checks that did not pass, in order. |
-| `oneLine` | func | gophermind-lib/briefv2/projectrun/preflight.go:43 | oneLine keeps the first line of s, printable ASCII only. |
-| `pass` | func | gophermind-lib/briefv2/projectrun/preflight.go:59 |  |
-| `fail` | func | gophermind-lib/briefv2/projectrun/preflight.go:63 |  |
-| `notChecked` | func | gophermind-lib/briefv2/projectrun/preflight.go:68 | notChecked is the failure of a check whose input did not load. |
-| `PrintPreflight` | func | gophermind-lib/briefv2/projectrun/preflight.go:72 | PrintPreflight writes the result: one line when everything passed, else the numbered list of what a human must provide. |
-| `Preflight` | func | gophermind-lib/briefv2/projectrun/preflight.go:103 | Preflight runs every pre-plan check, in a fixed order and with no early exit, so one call lists everything a human must provide. |
-| `pre` | type | gophermind-lib/briefv2/projectrun/preflight.go:144 |  |
-| `minFreeBytes` | var | gophermind-lib/briefv2/projectrun/preflight_env.go:17 | minFreeBytes is the free space the module cache's file system must have. |
-| `(*pre).loadSettings` | method | gophermind-lib/briefv2/projectrun/preflight_env.go:20 | loadSettings never creates the file: settings.Load would write defaults. |
-| `noSettings` | const | gophermind-lib/briefv2/projectrun/preflight_env.go:38 |  |
-| `settingsFirst` | const | gophermind-lib/briefv2/projectrun/preflight_env.go:39 |  |
-| `(*pre).toolChecks` | method | gophermind-lib/briefv2/projectrun/preflight_env.go:42 | toolChecks are sandbox, go toolchain, git and disk space, in that order. |
-| `(*pre).privacy` | method | gophermind-lib/briefv2/projectrun/preflight_env.go:100 | privacy: private_only, and every tier entry names a private provider. |
-| `(*pre).providerChecks` | method | gophermind-lib/briefv2/projectrun/preflight_env.go:136 |  |
-| `(*pre).binary` | method | gophermind-lib/briefv2/projectrun/preflight_env.go:152 |  |
-| `clearFix` | const | gophermind-lib/briefv2/projectrun/preflight_repo.go:15 |  |
-| `safeIDRE` | var | gophermind-lib/briefv2/projectrun/preflight_repo.go:17 |  |
-| `(*pre).repoArg` | method | gophermind-lib/briefv2/projectrun/preflight_repo.go:19 |  |
-| `(*pre).putOn` | method | gophermind-lib/briefv2/projectrun/preflight_repo.go:26 |  |
-| `sameDir` | func | gophermind-lib/briefv2/projectrun/preflight_repo.go:34 |  |
-| `(*pre).repoChecks` | method | gophermind-lib/briefv2/projectrun/preflight_repo.go:45 | repoChecks returns repo, then repo head (with ExpectHead) and clean tree (not with Resume). |
-| `short` | func | gophermind-lib/briefv2/projectrun/preflight_repo.go:116 |  |
-| `(*pre).staleState` | method | gophermind-lib/briefv2/projectrun/preflight_repo.go:126 | staleState tests only that the run folder, the scratch folder, the work branch and the run record exist; nothing inside the folders is read. |
-| `(*pre).landing` | method | gophermind-lib/briefv2/projectrun/preflight_repo.go:175 |  |
-| `(*pre).workBranch` | method | gophermind-lib/briefv2/projectrun/preflight_repo.go:184 | workBranch reports only a failure: a work_branch that starts with a dash would be read as a git option, and the base branch is not a work branch. |
-| `(*pre).graded` | method | gophermind-lib/briefv2/projectrun/preflight_repo.go:197 | graded: a graded attempt starts from a cleared state, at a known commit, with no --resume rescue. |
-| `vaultResult` | type | gophermind-lib/briefv2/projectrun/preflight_secrets.go:13 |  |
-| `passphraseFix` | const | gophermind-lib/briefv2/projectrun/preflight_secrets.go:20 |  |
-| `(*pre).vault` | method | gophermind-lib/briefv2/projectrun/preflight_secrets.go:25 | vault opens the vault when the brief declares a secret or a provider names an api_key_secret. |
-| `isLoopbackHost` | func | gophermind-lib/briefv2/projectrun/preflight_secrets.go:96 |  |
-| `(*pre).databaseChecks` | method | gophermind-lib/briefv2/projectrun/preflight_secrets.go:106 | databaseChecks covers every declared secret whose harness value is a postgres URL. |
-| `BinaryInfo` | type | gophermind-lib/briefv2/projectrun/report.go:16 | BinaryInfo stamps the report with the binary that produced it. |
-| `RepoInfo` | type | gophermind-lib/briefv2/projectrun/report.go:24 | RepoInfo is the repository the run built in. |
-| `ProviderInfo` | type | gophermind-lib/briefv2/projectrun/report.go:32 | ProviderInfo names a provider and the host that answered, host only. |
-| `ClarifyDefault` | type | gophermind-lib/briefv2/projectrun/report.go:40 | ClarifyDefault is a question settled by its recommendation. |
-| `AmbiguityInfo` | type | gophermind-lib/briefv2/projectrun/report.go:47 | AmbiguityInfo records how open questions were settled. |
-| `UnderstandingInfo` | type | gophermind-lib/briefv2/projectrun/report.go:59 | UnderstandingInfo is the confirmed understanding (planner.ReadUnderstanding). |
-| `ApprovalInfo` | type | gophermind-lib/briefv2/projectrun/report.go:65 | ApprovalInfo is the plan approval (planner.ReadApproval). |
-| `PlanInfo` | type | gophermind-lib/briefv2/projectrun/report.go:73 | PlanInfo sizes the plan. |
-| `StageInfo` | type | gophermind-lib/briefv2/projectrun/report.go:82 | StageInfo is one planner stage and how it ended. |
-| `ProjectReport` | type | gophermind-lib/briefv2/projectrun/report.go:88 | ProjectReport is the whole account of one /project run. |
-| `maxFieldRunes` | const | gophermind-lib/briefv2/projectrun/report.go:121 | maxFieldRunes bounds every free-text string written to project.json. |
-| `capText` | func | gophermind-lib/briefv2/projectrun/report.go:125 | capText keeps the first line of s, cut to maxFieldRunes runes without splitting a rune. |
-| `hostOnly` | func | gophermind-lib/briefv2/projectrun/report.go:137 | hostOnly reduces whatever a caller holds (a URL, host:port, a bare host) to the host name: no scheme, credentials, port, path or query. |
-| `hashPrefix` | func | gophermind-lib/briefv2/projectrun/report.go:148 |  |
-| `yn` | func | gophermind-lib/briefv2/projectrun/report.go:155 |  |
-| `(*ProjectReport).Text` | method | gophermind-lib/briefv2/projectrun/report.go:165 | Text is the printed report. |
-| `WriteReport` | func | gophermind-lib/briefv2/projectrun/report.go:255 | WriteReport writes <runDir>/_state/project.json, mode 0600, through a temporary file and a rename. |
-| `runPlanner` | var | gophermind-lib/briefv2/projectrun/run.go:31 | runPlanner is the one planner call of a run. |
-| `deps` | type | gophermind-lib/briefv2/projectrun/run.go:37 | deps is everything Run builds once the preflight has passed. |
-| `(Env).open` | method | gophermind-lib/briefv2/projectrun/run.go:49 | open builds the router and the stores. |
-| `progressWriter` | type | gophermind-lib/briefv2/projectrun/run.go:100 | progressWriter hands progress lines to a goroutine through a bounded queue. |
-| `progressQueue` | const | gophermind-lib/briefv2/projectrun/run.go:108 |  |
-| `newProgressWriter` | func | gophermind-lib/briefv2/projectrun/run.go:110 |  |
-| `(*progressWriter).Write` | method | gophermind-lib/briefv2/projectrun/run.go:121 |  |
-| `(*progressWriter).Close` | method | gophermind-lib/briefv2/projectrun/run.go:136 | Close stops accepting lines and waits briefly for the queue to drain; a writer that is still stuck after that is abandoned. |
-| `stageErrRE` | var | gophermind-lib/briefv2/projectrun/run.go:149 |  |
-| `planStages` | var | gophermind-lib/briefv2/projectrun/run.go:151 |  |
-| `planStopReason` | func | gophermind-lib/briefv2/projectrun/run.go:156 | planStopReason names the planner stage an error came from: the stage in the "planner: <stage>:" prefix, plan:load for an error with no stage prefix (Load runs before the stages), plan:unknown for a prefix naming no stage. |
-| `stamp` | func | gophermind-lib/briefv2/projectrun/run.go:167 |  |
-| `Run` | func | gophermind-lib/briefv2/projectrun/run.go:171 | Run plans a brief and builds it in one process: preflight, state, planner, approval, executor and report (spec sections 4 and 5). |
-| `nodeClassTable` | func | gophermind-lib/briefv2/projectrun/run.go:429 | nodeClassTable builds by_node_class from the blackboard rows of the leaves, the class map and the implement calls. |
-| `duplicatesIgnored` | func | gophermind-lib/briefv2/projectrun/run.go:466 |  |
-| `readPlanFacts` | func | gophermind-lib/briefv2/projectrun/run.go:478 | readPlanFacts fills the report from the files the planner left, as far as they exist. |
-| `Sink` | type | gophermind-lib/briefv2/projectrun/sink.go:15 | Sink prints progress lines and sums the planner's warning counts. |
-| `NewSink` | func | gophermind-lib/briefv2/projectrun/sink.go:22 | NewSink returns a Sink writing to w. |
-| `(*Sink).Counts` | method | gophermind-lib/briefv2/projectrun/sink.go:26 | Counts returns the warning counts summed so far. |
-| `(*Sink).Emit` | method | gophermind-lib/briefv2/projectrun/sink.go:35 | Emit implements events.Sink. |
-| `(*Sink).count` | method | gophermind-lib/briefv2/projectrun/sink.go:68 | count adds the integer after a planner warning prefix to its counter. |
-| `Counts` | type | gophermind-lib/briefv2/projectrun/sink.go:94 | Counts are the planner warning counts of a run. |
-| `StatePath` | type | gophermind-lib/briefv2/projectrun/statepaths.go:16 | StatePath is one thing a clean run must clear (or keep). |
-| `defaultModCache` | const | gophermind-lib/briefv2/projectrun/statepaths.go:18 |  |
-| `StatePaths` | func | gophermind-lib/briefv2/projectrun/statepaths.go:23 | StatePaths lists, in the order of spec section 9, everything a clean attempt must clear. |
-| `PrintStatePaths` | func | gophermind-lib/briefv2/projectrun/statepaths.go:96 | PrintStatePaths writes "<action>\t<scope>\t<path>" per line. |
+| `commitRE` | var | gophermind-lib/build/projectrun/args.go:10 |  |
+| `secretNameRE` | var | gophermind-lib/build/projectrun/args.go:12 |  |
+| `usage` | const | gophermind-lib/build/projectrun/args.go:14 |  |
+| `boolFlags` | var | gophermind-lib/build/projectrun/args.go:17 |  |
+| `valueFlags` | var | gophermind-lib/build/projectrun/args.go:18 |  |
+| `ParseArgs` | func | gophermind-lib/build/projectrun/args.go:24 | ParseArgs reads the arguments after "project". |
+| `classOrder` | var | gophermind-lib/build/projectrun/classes.go:12 | classOrder is the fixed order of the node-class table. |
+| `ClassStat` | type | gophermind-lib/build/projectrun/classes.go:16 | ClassStat is one row of the node-class table: how the leaves of one class fared. |
+| `ClassStats` | func | gophermind-lib/build/projectrun/classes.go:38 | ClassStats groups the blackboard rows by node class. |
+| `VersionInfo` | type | gophermind-lib/build/projectrun/env.go:32 | VersionInfo is the build stamp of the running binary. |
+| `Env` | type | gophermind-lib/build/projectrun/env.go:36 | Env is everything /project touches outside its own process, so tests can replace each piece. |
+| `DefaultEnv` | func | gophermind-lib/build/projectrun/env.go:60 | DefaultEnv is the real environment. |
+| `providerClient` | func | gophermind-lib/build/projectrun/env.go:96 | providerClient is the no-redirect, no-proxy client the brief commands use. |
+| `runDirOf` | func | gophermind-lib/build/projectrun/env.go:100 |  |
+| `vaultPath` | func | gophermind-lib/build/projectrun/env.go:108 |  |
+| `gitAllowed` | func | gophermind-lib/build/projectrun/env.go:121 | gitAllowed reports whether args is one of the few read-only git calls the preflight makes. |
+| `gitRun` | func | gophermind-lib/build/projectrun/env.go:145 |  |
+| `ErrUnattended` | var | gophermind-lib/build/projectrun/gate.go:14 | ErrUnattended is returned by the unattended gate for a question or a confirmation: with nobody to ask, reaching the gate is a defect. |
+| `unattendedGate` | type | gophermind-lib/build/projectrun/gate.go:16 |  |
+| `newUnattendedGate` | func | gophermind-lib/build/projectrun/gate.go:18 |  |
+| `(unattendedGate).Ask` | method | gophermind-lib/build/projectrun/gate.go:20 |  |
+| `(unattendedGate).Confirm` | method | gophermind-lib/build/projectrun/gate.go:26 | Confirm fails loudly. |
+| `(unattendedGate).Approve` | method | gophermind-lib/build/projectrun/gate.go:32 | Approve approves a plan only when every requirement of the brief appears in coverage.json. |
+| `(unattendedGate).Escalate` | method | gophermind-lib/build/projectrun/gate.go:71 |  |
+| `SecretStore` | interface | gophermind-lib/build/projectrun/gensecrets.go:14 | SecretStore is the slice of the vault this file needs. |
+| `Source` | type | gophermind-lib/build/projectrun/gensecrets.go:20 | Source says where a declared secret's value comes from. |
+| `SourceVault` | const | gophermind-lib/build/projectrun/gensecrets.go:23 |  |
+| `SourceHex32` | const | gophermind-lib/build/projectrun/gensecrets.go:24 |  |
+| `SourcePlaceholder` | const | gophermind-lib/build/projectrun/gensecrets.go:25 |  |
+| `SourcePrompt` | const | gophermind-lib/build/projectrun/gensecrets.go:26 |  |
+| `SourceMissing` | const | gophermind-lib/build/projectrun/gensecrets.go:27 |  |
+| `Provisioned` | type | gophermind-lib/build/projectrun/gensecrets.go:31 | Provisioned names a secret and its source. |
+| `Generate` | func | gophermind-lib/build/projectrun/gensecrets.go:38 | Generate returns a fresh value of the given kind ("hex32" or "placeholder") read from rnd; a nil rnd means crypto/rand. |
+| `get` | func | gophermind-lib/build/projectrun/gensecrets.go:59 |  |
+| `Sources` | func | gophermind-lib/build/projectrun/gensecrets.go:67 | Sources is read only: where each declared secret's value would come from. |
+| `ProvisionGenerated` | func | gophermind-lib/build/projectrun/gensecrets.go:86 | ProvisionGenerated writes generated values into the harness scope, before the planner runs. |
+| `markPrompted` | func | gophermind-lib/build/projectrun/gensecrets.go:133 | markPrompted relabels the secrets that ProvisionGenerated found missing but an attended run's prompt stored in the run scope afterwards. |
+| `ExitVerified` | const | gophermind-lib/build/projectrun/options.go:14 | Process exit codes of /project (spec section 6). |
+| `ExitFailed` | const | gophermind-lib/build/projectrun/options.go:14 | Process exit codes of /project (spec section 6). |
+| `ExitInvalid` | const | gophermind-lib/build/projectrun/options.go:14 | Process exit codes of /project (spec section 6). |
+| `ExitWaiting` | const | gophermind-lib/build/projectrun/options.go:14 | Process exit codes of /project (spec section 6). |
+| `ExitEscalated` | const | gophermind-lib/build/projectrun/options.go:14 | Process exit codes of /project (spec section 6). |
+| `ExitInterrupted` | const | gophermind-lib/build/projectrun/options.go:14 | Process exit codes of /project (spec section 6). |
+| `ExitPreflight` | const | gophermind-lib/build/projectrun/options.go:14 | Process exit codes of /project (spec section 6). |
+| `ExitFault` | const | gophermind-lib/build/projectrun/options.go:14 | Process exit codes of /project (spec section 6). |
+| `ExitCode` | func | gophermind-lib/build/projectrun/options.go:18 | ExitCode maps a final status and stop reason to a process exit code. |
+| `Options` | type | gophermind-lib/build/projectrun/options.go:31 | Options is what one /project invocation was asked to do. |
+| `Result` | type | gophermind-lib/build/projectrun/options.go:48 | Result is how a run ended. |
+| `Check` | type | gophermind-lib/build/projectrun/preflight.go:15 | Check is one line of the pre-plan preflight. |
+| `PreflightResult` | type | gophermind-lib/build/projectrun/preflight.go:23 | PreflightResult is what Preflight found and what later stages reuse. |
+| `Failed` | func | gophermind-lib/build/projectrun/preflight.go:31 | Failed returns the checks that did not pass, in order. |
+| `oneLine` | func | gophermind-lib/build/projectrun/preflight.go:43 | oneLine keeps the first line of s, printable ASCII only. |
+| `pass` | func | gophermind-lib/build/projectrun/preflight.go:59 |  |
+| `fail` | func | gophermind-lib/build/projectrun/preflight.go:63 |  |
+| `notChecked` | func | gophermind-lib/build/projectrun/preflight.go:68 | notChecked is the failure of a check whose input did not load. |
+| `PrintPreflight` | func | gophermind-lib/build/projectrun/preflight.go:72 | PrintPreflight writes the result: one line when everything passed, else the numbered list of what a human must provide. |
+| `Preflight` | func | gophermind-lib/build/projectrun/preflight.go:103 | Preflight runs every pre-plan check, in a fixed order and with no early exit, so one call lists everything a human must provide. |
+| `pre` | type | gophermind-lib/build/projectrun/preflight.go:144 |  |
+| `minFreeBytes` | var | gophermind-lib/build/projectrun/preflight_env.go:17 | minFreeBytes is the free space the module cache's file system must have. |
+| `(*pre).loadSettings` | method | gophermind-lib/build/projectrun/preflight_env.go:20 | loadSettings never creates the file: settings.Load would write defaults. |
+| `noSettings` | const | gophermind-lib/build/projectrun/preflight_env.go:38 |  |
+| `settingsFirst` | const | gophermind-lib/build/projectrun/preflight_env.go:39 |  |
+| `(*pre).toolChecks` | method | gophermind-lib/build/projectrun/preflight_env.go:42 | toolChecks are sandbox, go toolchain, git and disk space, in that order. |
+| `(*pre).privacy` | method | gophermind-lib/build/projectrun/preflight_env.go:100 | privacy: private_only, and every tier entry names a private provider. |
+| `(*pre).providerChecks` | method | gophermind-lib/build/projectrun/preflight_env.go:136 |  |
+| `(*pre).binary` | method | gophermind-lib/build/projectrun/preflight_env.go:152 |  |
+| `clearFix` | const | gophermind-lib/build/projectrun/preflight_repo.go:15 |  |
+| `safeIDRE` | var | gophermind-lib/build/projectrun/preflight_repo.go:17 |  |
+| `(*pre).repoArg` | method | gophermind-lib/build/projectrun/preflight_repo.go:19 |  |
+| `(*pre).putOn` | method | gophermind-lib/build/projectrun/preflight_repo.go:26 |  |
+| `sameDir` | func | gophermind-lib/build/projectrun/preflight_repo.go:34 |  |
+| `(*pre).repoChecks` | method | gophermind-lib/build/projectrun/preflight_repo.go:45 | repoChecks returns repo, then repo head (with ExpectHead) and clean tree (not with Resume). |
+| `short` | func | gophermind-lib/build/projectrun/preflight_repo.go:116 |  |
+| `(*pre).staleState` | method | gophermind-lib/build/projectrun/preflight_repo.go:126 | staleState tests only that the run folder, the scratch folder, the work branch and the run record exist; nothing inside the folders is read. |
+| `(*pre).landing` | method | gophermind-lib/build/projectrun/preflight_repo.go:175 |  |
+| `(*pre).workBranch` | method | gophermind-lib/build/projectrun/preflight_repo.go:184 | workBranch reports only a failure: a work_branch that starts with a dash would be read as a git option, and the base branch is not a work branch. |
+| `(*pre).graded` | method | gophermind-lib/build/projectrun/preflight_repo.go:197 | graded: a graded attempt starts from a cleared state, at a known commit, with no --resume rescue. |
+| `vaultResult` | type | gophermind-lib/build/projectrun/preflight_secrets.go:13 |  |
+| `passphraseFix` | const | gophermind-lib/build/projectrun/preflight_secrets.go:20 |  |
+| `(*pre).vault` | method | gophermind-lib/build/projectrun/preflight_secrets.go:25 | vault opens the vault when the brief declares a secret or a provider names an api_key_secret. |
+| `isLoopbackHost` | func | gophermind-lib/build/projectrun/preflight_secrets.go:96 |  |
+| `(*pre).databaseChecks` | method | gophermind-lib/build/projectrun/preflight_secrets.go:106 | databaseChecks covers every declared secret whose harness value is a postgres URL. |
+| `BinaryInfo` | type | gophermind-lib/build/projectrun/report.go:16 | BinaryInfo stamps the report with the binary that produced it. |
+| `RepoInfo` | type | gophermind-lib/build/projectrun/report.go:24 | RepoInfo is the repository the run built in. |
+| `ProviderInfo` | type | gophermind-lib/build/projectrun/report.go:32 | ProviderInfo names a provider and the host that answered, host only. |
+| `ClarifyDefault` | type | gophermind-lib/build/projectrun/report.go:40 | ClarifyDefault is a question settled by its recommendation. |
+| `AmbiguityInfo` | type | gophermind-lib/build/projectrun/report.go:47 | AmbiguityInfo records how open questions were settled. |
+| `UnderstandingInfo` | type | gophermind-lib/build/projectrun/report.go:59 | UnderstandingInfo is the confirmed understanding (planner.ReadUnderstanding). |
+| `ApprovalInfo` | type | gophermind-lib/build/projectrun/report.go:65 | ApprovalInfo is the plan approval (planner.ReadApproval). |
+| `PlanInfo` | type | gophermind-lib/build/projectrun/report.go:73 | PlanInfo sizes the plan. |
+| `StageInfo` | type | gophermind-lib/build/projectrun/report.go:82 | StageInfo is one planner stage and how it ended. |
+| `ProjectReport` | type | gophermind-lib/build/projectrun/report.go:88 | ProjectReport is the whole account of one /project run. |
+| `maxFieldRunes` | const | gophermind-lib/build/projectrun/report.go:121 | maxFieldRunes bounds every free-text string written to project.json. |
+| `capText` | func | gophermind-lib/build/projectrun/report.go:125 | capText keeps the first line of s, cut to maxFieldRunes runes without splitting a rune. |
+| `hostOnly` | func | gophermind-lib/build/projectrun/report.go:137 | hostOnly reduces whatever a caller holds (a URL, host:port, a bare host) to the host name: no scheme, credentials, port, path or query. |
+| `hashPrefix` | func | gophermind-lib/build/projectrun/report.go:148 |  |
+| `yn` | func | gophermind-lib/build/projectrun/report.go:155 |  |
+| `(*ProjectReport).Text` | method | gophermind-lib/build/projectrun/report.go:165 | Text is the printed report. |
+| `WriteReport` | func | gophermind-lib/build/projectrun/report.go:255 | WriteReport writes <runDir>/_state/project.json, mode 0600, through a temporary file and a rename. |
+| `runPlanner` | var | gophermind-lib/build/projectrun/run.go:31 | runPlanner is the one planner call of a run. |
+| `deps` | type | gophermind-lib/build/projectrun/run.go:37 | deps is everything Run builds once the preflight has passed. |
+| `(Env).open` | method | gophermind-lib/build/projectrun/run.go:49 | open builds the router and the stores. |
+| `progressWriter` | type | gophermind-lib/build/projectrun/run.go:100 | progressWriter hands progress lines to a goroutine through a bounded queue. |
+| `progressQueue` | const | gophermind-lib/build/projectrun/run.go:108 |  |
+| `newProgressWriter` | func | gophermind-lib/build/projectrun/run.go:110 |  |
+| `(*progressWriter).Write` | method | gophermind-lib/build/projectrun/run.go:121 |  |
+| `(*progressWriter).Close` | method | gophermind-lib/build/projectrun/run.go:136 | Close stops accepting lines and waits briefly for the queue to drain; a writer that is still stuck after that is abandoned. |
+| `stageErrRE` | var | gophermind-lib/build/projectrun/run.go:149 |  |
+| `planStages` | var | gophermind-lib/build/projectrun/run.go:151 |  |
+| `planStopReason` | func | gophermind-lib/build/projectrun/run.go:156 | planStopReason names the planner stage an error came from: the stage in the "planner: <stage>:" prefix, plan:load for an error with no stage prefix (Load runs before the stages), plan:unknown for a prefix naming no stage. |
+| `stamp` | func | gophermind-lib/build/projectrun/run.go:167 |  |
+| `Run` | func | gophermind-lib/build/projectrun/run.go:171 | Run plans a brief and builds it in one process: preflight, state, planner, approval, executor and report (spec sections 4 and 5). |
+| `nodeClassTable` | func | gophermind-lib/build/projectrun/run.go:429 | nodeClassTable builds by_node_class from the blackboard rows of the leaves, the class map and the implement calls. |
+| `duplicatesIgnored` | func | gophermind-lib/build/projectrun/run.go:466 |  |
+| `readPlanFacts` | func | gophermind-lib/build/projectrun/run.go:478 | readPlanFacts fills the report from the files the planner left, as far as they exist. |
+| `Sink` | type | gophermind-lib/build/projectrun/sink.go:15 | Sink prints progress lines and sums the planner's warning counts. |
+| `NewSink` | func | gophermind-lib/build/projectrun/sink.go:22 | NewSink returns a Sink writing to w. |
+| `(*Sink).Counts` | method | gophermind-lib/build/projectrun/sink.go:26 | Counts returns the warning counts summed so far. |
+| `(*Sink).Emit` | method | gophermind-lib/build/projectrun/sink.go:35 | Emit implements events.Sink. |
+| `(*Sink).count` | method | gophermind-lib/build/projectrun/sink.go:68 | count adds the integer after a planner warning prefix to its counter. |
+| `Counts` | type | gophermind-lib/build/projectrun/sink.go:94 | Counts are the planner warning counts of a run. |
+| `StatePath` | type | gophermind-lib/build/projectrun/statepaths.go:16 | StatePath is one thing a clean run must clear (or keep). |
+| `defaultModCache` | const | gophermind-lib/build/projectrun/statepaths.go:18 |  |
+| `StatePaths` | func | gophermind-lib/build/projectrun/statepaths.go:23 | StatePaths lists, in the order of spec section 9, everything a clean attempt must clear. |
+| `PrintStatePaths` | func | gophermind-lib/build/projectrun/statepaths.go:96 | PrintStatePaths writes "<action>\t<scope>\t<path>" per line. |
 
 ## package prompt
 
@@ -3601,187 +3601,187 @@ after every completed task. Non-test Go declarations only.
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `Role` | type | docs/briefv2/handoff/interfaces/provider.go:13 |  |
-| `RoleSystem` | const | docs/briefv2/handoff/interfaces/provider.go:16 |  |
-| `RoleUser` | const | docs/briefv2/handoff/interfaces/provider.go:17 |  |
-| `RoleAssistant` | const | docs/briefv2/handoff/interfaces/provider.go:18 |  |
-| `Message` | type | docs/briefv2/handoff/interfaces/provider.go:21 |  |
-| `Request` | type | docs/briefv2/handoff/interfaces/provider.go:26 |  |
-| `Usage` | type | docs/briefv2/handoff/interfaces/provider.go:35 |  |
-| `Response` | type | docs/briefv2/handoff/interfaces/provider.go:40 |  |
-| `Provider` | interface | docs/briefv2/handoff/interfaces/provider.go:48 | Provider is one LLM API. |
-| `ModelInfo` | type | docs/briefv2/handoff/interfaces/provider.go:55 |  |
-| `Config` | type | docs/briefv2/handoff/interfaces/provider.go:62 | Config is what the harness passes when constructing a provider from gophermind.yaml. |
-| `ErrRateLimited` | type | docs/briefv2/handoff/interfaces/provider.go:76 | ErrRateLimited: the router puts the provider in cooldown for RetryAfter (or the configured default) and moves to the next model. |
-| `(ErrRateLimited).Error` | method | docs/briefv2/handoff/interfaces/provider.go:78 |  |
-| `ErrContextTooLong` | type | docs/briefv2/handoff/interfaces/provider.go:83 | ErrContextTooLong: the prompt exceeds the model's window. |
-| `(ErrContextTooLong).Error` | method | docs/briefv2/handoff/interfaces/provider.go:85 |  |
-| `ErrAuth` | type | docs/briefv2/handoff/interfaces/provider.go:89 | ErrAuth: bad or missing API key. |
-| `(ErrAuth).Error` | method | docs/briefv2/handoff/interfaces/provider.go:91 |  |
-| `ErrTransient` | type | docs/briefv2/handoff/interfaces/provider.go:95 | ErrTransient: 5xx, connection reset, timeout. |
-| `(ErrTransient).Error` | method | docs/briefv2/handoff/interfaces/provider.go:97 |  |
-| `(ErrTransient).Unwrap` | method | docs/briefv2/handoff/interfaces/provider.go:98 |  |
-| `ErrModelNotFound` | type | gophermind-lib/briefv2/provider/errors.go:6 | ErrModelNotFound: the provider answered 404 "model not found" (the mini's Ollama did this on 2026-09-29 when a model was removed mid-run). |
-| `(ErrModelNotFound).Error` | method | gophermind-lib/briefv2/provider/errors.go:8 |  |
-| `ErrTruncated` | type | gophermind-lib/briefv2/provider/errors.go:14 | ErrTruncated: the reply ended with finish_reason "length", whether or not some text arrived: the model spent the whole token budget before finishing. |
-| `(ErrTruncated).Error` | method | gophermind-lib/briefv2/provider/errors.go:16 |  |
-| `ErrEmptyReply` | type | gophermind-lib/briefv2/provider/errors.go:22 | ErrEmptyReply: the reply had empty content for a reason other than the token limit. |
-| `(ErrEmptyReply).Error` | method | gophermind-lib/briefv2/provider/errors.go:24 |  |
-| `Fake` | type | gophermind-lib/briefv2/provider/fake.go:10 | Fake is a scripted provider for tests. |
-| `_` | var | gophermind-lib/briefv2/provider/fake.go:20 |  |
-| `NewFake` | func | gophermind-lib/briefv2/provider/fake.go:24 | NewFake builds a Fake. |
-| `(*Fake).Name` | method | gophermind-lib/briefv2/provider/fake.go:28 |  |
-| `(*Fake).Models` | method | gophermind-lib/briefv2/provider/fake.go:29 |  |
-| `(*Fake).Complete` | method | gophermind-lib/briefv2/provider/fake.go:31 |  |
-| `(*Fake).Calls` | method | gophermind-lib/briefv2/provider/fake.go:47 | Calls is how many times Complete reached the script. |
-| `(*Fake).Requests` | method | gophermind-lib/briefv2/provider/fake.go:54 | Requests returns a copy of every request received, oldest first. |
-| `maxReply` | const | gophermind-lib/briefv2/provider/openai.go:18 | maxReply bounds how much of a reply body is read. |
-| `OpenAI` | type | gophermind-lib/briefv2/provider/openai.go:22 | OpenAI talks to any server that speaks the OpenAI chat completions protocol: Ollama, Kilo Code's gateway, OVHcloud, and most cloud APIs. |
-| `_` | var | gophermind-lib/briefv2/provider/openai.go:24 |  |
-| `NewHTTPClient` | func | gophermind-lib/briefv2/provider/openai.go:30 | NewHTTPClient returns the client provider calls should use: it never follows a redirect (a 307 would re-POST the prompt to another host), ignores the proxy environment and gives up after timeout (0 means the caller's context alone bounds the call). |
-| `errRedirect` | var | gophermind-lib/briefv2/provider/openai.go:36 |  |
-| `refuseRedirect` | func | gophermind-lib/briefv2/provider/openai.go:38 |  |
-| `NewOpenAI` | func | gophermind-lib/briefv2/provider/openai.go:42 | NewOpenAI builds the client. |
-| `(*OpenAI).Name` | method | gophermind-lib/briefv2/provider/openai.go:44 |  |
-| `(*OpenAI).Models` | method | gophermind-lib/briefv2/provider/openai.go:45 |  |
-| `wireMessage` | type | gophermind-lib/briefv2/provider/openai.go:47 |  |
-| `wireRequest` | type | gophermind-lib/briefv2/provider/openai.go:52 |  |
-| `wireReply` | type | gophermind-lib/briefv2/provider/openai.go:62 |  |
-| `(*OpenAI).Complete` | method | gophermind-lib/briefv2/provider/openai.go:75 |  |
-| `(*OpenAI).statusError` | method | gophermind-lib/briefv2/provider/openai.go:161 | statusError maps a non-200 reply to a typed error. |
-| `looksLikeContextError` | func | gophermind-lib/briefv2/provider/openai.go:189 |  |
-| `Role` | type | gophermind-lib/briefv2/provider/provider.go:13 |  |
-| `RoleSystem` | const | gophermind-lib/briefv2/provider/provider.go:16 |  |
-| `RoleUser` | const | gophermind-lib/briefv2/provider/provider.go:17 |  |
-| `RoleAssistant` | const | gophermind-lib/briefv2/provider/provider.go:18 |  |
-| `Message` | type | gophermind-lib/briefv2/provider/provider.go:21 |  |
-| `Request` | type | gophermind-lib/briefv2/provider/provider.go:26 |  |
-| `Usage` | type | gophermind-lib/briefv2/provider/provider.go:38 |  |
-| `Response` | type | gophermind-lib/briefv2/provider/provider.go:43 |  |
-| `Provider` | interface | gophermind-lib/briefv2/provider/provider.go:51 | Provider is one LLM API. |
-| `ModelInfo` | type | gophermind-lib/briefv2/provider/provider.go:58 |  |
-| `Config` | type | gophermind-lib/briefv2/provider/provider.go:65 | Config is what the harness passes when constructing a provider from gophermind.yaml. |
-| `ErrRateLimited` | type | gophermind-lib/briefv2/provider/provider.go:83 | ErrRateLimited: the router puts the provider in cooldown for RetryAfter (or the configured default) and moves to the next model. |
-| `(ErrRateLimited).Error` | method | gophermind-lib/briefv2/provider/provider.go:85 |  |
-| `ErrContextTooLong` | type | gophermind-lib/briefv2/provider/provider.go:90 | ErrContextTooLong: the prompt exceeds the model's window. |
-| `(ErrContextTooLong).Error` | method | gophermind-lib/briefv2/provider/provider.go:92 |  |
-| `ErrAuth` | type | gophermind-lib/briefv2/provider/provider.go:96 | ErrAuth: bad or missing API key. |
-| `(ErrAuth).Error` | method | gophermind-lib/briefv2/provider/provider.go:98 |  |
-| `ErrTransient` | type | gophermind-lib/briefv2/provider/provider.go:102 | ErrTransient: 5xx, connection reset, timeout. |
-| `(ErrTransient).Error` | method | gophermind-lib/briefv2/provider/provider.go:104 |  |
-| `(ErrTransient).Unwrap` | method | gophermind-lib/briefv2/provider/provider.go:105 |  |
+| `Role` | type | docs/build/handoff/interfaces/provider.go:13 |  |
+| `RoleSystem` | const | docs/build/handoff/interfaces/provider.go:16 |  |
+| `RoleUser` | const | docs/build/handoff/interfaces/provider.go:17 |  |
+| `RoleAssistant` | const | docs/build/handoff/interfaces/provider.go:18 |  |
+| `Message` | type | docs/build/handoff/interfaces/provider.go:21 |  |
+| `Request` | type | docs/build/handoff/interfaces/provider.go:26 |  |
+| `Usage` | type | docs/build/handoff/interfaces/provider.go:35 |  |
+| `Response` | type | docs/build/handoff/interfaces/provider.go:40 |  |
+| `Provider` | interface | docs/build/handoff/interfaces/provider.go:48 | Provider is one LLM API. |
+| `ModelInfo` | type | docs/build/handoff/interfaces/provider.go:55 |  |
+| `Config` | type | docs/build/handoff/interfaces/provider.go:62 | Config is what the harness passes when constructing a provider from gophermind.yaml. |
+| `ErrRateLimited` | type | docs/build/handoff/interfaces/provider.go:76 | ErrRateLimited: the router puts the provider in cooldown for RetryAfter (or the configured default) and moves to the next model. |
+| `(ErrRateLimited).Error` | method | docs/build/handoff/interfaces/provider.go:78 |  |
+| `ErrContextTooLong` | type | docs/build/handoff/interfaces/provider.go:83 | ErrContextTooLong: the prompt exceeds the model's window. |
+| `(ErrContextTooLong).Error` | method | docs/build/handoff/interfaces/provider.go:85 |  |
+| `ErrAuth` | type | docs/build/handoff/interfaces/provider.go:89 | ErrAuth: bad or missing API key. |
+| `(ErrAuth).Error` | method | docs/build/handoff/interfaces/provider.go:91 |  |
+| `ErrTransient` | type | docs/build/handoff/interfaces/provider.go:95 | ErrTransient: 5xx, connection reset, timeout. |
+| `(ErrTransient).Error` | method | docs/build/handoff/interfaces/provider.go:97 |  |
+| `(ErrTransient).Unwrap` | method | docs/build/handoff/interfaces/provider.go:98 |  |
+| `ErrModelNotFound` | type | gophermind-lib/build/provider/errors.go:6 | ErrModelNotFound: the provider answered 404 "model not found" (the mini's Ollama did this on 2026-09-29 when a model was removed mid-run). |
+| `(ErrModelNotFound).Error` | method | gophermind-lib/build/provider/errors.go:8 |  |
+| `ErrTruncated` | type | gophermind-lib/build/provider/errors.go:14 | ErrTruncated: the reply ended with finish_reason "length", whether or not some text arrived: the model spent the whole token budget before finishing. |
+| `(ErrTruncated).Error` | method | gophermind-lib/build/provider/errors.go:16 |  |
+| `ErrEmptyReply` | type | gophermind-lib/build/provider/errors.go:22 | ErrEmptyReply: the reply had empty content for a reason other than the token limit. |
+| `(ErrEmptyReply).Error` | method | gophermind-lib/build/provider/errors.go:24 |  |
+| `Fake` | type | gophermind-lib/build/provider/fake.go:10 | Fake is a scripted provider for tests. |
+| `_` | var | gophermind-lib/build/provider/fake.go:20 |  |
+| `NewFake` | func | gophermind-lib/build/provider/fake.go:24 | NewFake builds a Fake. |
+| `(*Fake).Name` | method | gophermind-lib/build/provider/fake.go:28 |  |
+| `(*Fake).Models` | method | gophermind-lib/build/provider/fake.go:29 |  |
+| `(*Fake).Complete` | method | gophermind-lib/build/provider/fake.go:31 |  |
+| `(*Fake).Calls` | method | gophermind-lib/build/provider/fake.go:47 | Calls is how many times Complete reached the script. |
+| `(*Fake).Requests` | method | gophermind-lib/build/provider/fake.go:54 | Requests returns a copy of every request received, oldest first. |
+| `maxReply` | const | gophermind-lib/build/provider/openai.go:18 | maxReply bounds how much of a reply body is read. |
+| `OpenAI` | type | gophermind-lib/build/provider/openai.go:22 | OpenAI talks to any server that speaks the OpenAI chat completions protocol: Ollama, Kilo Code's gateway, OVHcloud, and most cloud APIs. |
+| `_` | var | gophermind-lib/build/provider/openai.go:24 |  |
+| `NewHTTPClient` | func | gophermind-lib/build/provider/openai.go:30 | NewHTTPClient returns the client provider calls should use: it never follows a redirect (a 307 would re-POST the prompt to another host), ignores the proxy environment and gives up after timeout (0 means the caller's context alone bounds the call). |
+| `errRedirect` | var | gophermind-lib/build/provider/openai.go:36 |  |
+| `refuseRedirect` | func | gophermind-lib/build/provider/openai.go:38 |  |
+| `NewOpenAI` | func | gophermind-lib/build/provider/openai.go:42 | NewOpenAI builds the client. |
+| `(*OpenAI).Name` | method | gophermind-lib/build/provider/openai.go:44 |  |
+| `(*OpenAI).Models` | method | gophermind-lib/build/provider/openai.go:45 |  |
+| `wireMessage` | type | gophermind-lib/build/provider/openai.go:47 |  |
+| `wireRequest` | type | gophermind-lib/build/provider/openai.go:52 |  |
+| `wireReply` | type | gophermind-lib/build/provider/openai.go:62 |  |
+| `(*OpenAI).Complete` | method | gophermind-lib/build/provider/openai.go:75 |  |
+| `(*OpenAI).statusError` | method | gophermind-lib/build/provider/openai.go:161 | statusError maps a non-200 reply to a typed error. |
+| `looksLikeContextError` | func | gophermind-lib/build/provider/openai.go:189 |  |
+| `Role` | type | gophermind-lib/build/provider/provider.go:13 |  |
+| `RoleSystem` | const | gophermind-lib/build/provider/provider.go:16 |  |
+| `RoleUser` | const | gophermind-lib/build/provider/provider.go:17 |  |
+| `RoleAssistant` | const | gophermind-lib/build/provider/provider.go:18 |  |
+| `Message` | type | gophermind-lib/build/provider/provider.go:21 |  |
+| `Request` | type | gophermind-lib/build/provider/provider.go:26 |  |
+| `Usage` | type | gophermind-lib/build/provider/provider.go:38 |  |
+| `Response` | type | gophermind-lib/build/provider/provider.go:43 |  |
+| `Provider` | interface | gophermind-lib/build/provider/provider.go:51 | Provider is one LLM API. |
+| `ModelInfo` | type | gophermind-lib/build/provider/provider.go:58 |  |
+| `Config` | type | gophermind-lib/build/provider/provider.go:65 | Config is what the harness passes when constructing a provider from gophermind.yaml. |
+| `ErrRateLimited` | type | gophermind-lib/build/provider/provider.go:83 | ErrRateLimited: the router puts the provider in cooldown for RetryAfter (or the configured default) and moves to the next model. |
+| `(ErrRateLimited).Error` | method | gophermind-lib/build/provider/provider.go:85 |  |
+| `ErrContextTooLong` | type | gophermind-lib/build/provider/provider.go:90 | ErrContextTooLong: the prompt exceeds the model's window. |
+| `(ErrContextTooLong).Error` | method | gophermind-lib/build/provider/provider.go:92 |  |
+| `ErrAuth` | type | gophermind-lib/build/provider/provider.go:96 | ErrAuth: bad or missing API key. |
+| `(ErrAuth).Error` | method | gophermind-lib/build/provider/provider.go:98 |  |
+| `ErrTransient` | type | gophermind-lib/build/provider/provider.go:102 | ErrTransient: 5xx, connection reset, timeout. |
+| `(ErrTransient).Error` | method | gophermind-lib/build/provider/provider.go:104 |  |
+| `(ErrTransient).Unwrap` | method | gophermind-lib/build/provider/provider.go:105 |  |
 
 ## package proxy
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `defaultDial` | const | gophermind-lib/briefv2/proxy/proxy.go:21 |  |
-| `defaultMaxReq` | const | gophermind-lib/briefv2/proxy/proxy.go:22 |  |
-| `defaultMaxResp` | const | gophermind-lib/briefv2/proxy/proxy.go:23 |  |
-| `maxRequestDuration` | const | gophermind-lib/briefv2/proxy/proxy.go:24 |  |
-| `defaultMaxTunnel` | const | gophermind-lib/briefv2/proxy/proxy.go:25 |  |
-| `defaultIdle` | const | gophermind-lib/briefv2/proxy/proxy.go:26 |  |
-| `maxTunnelDuration` | const | gophermind-lib/briefv2/proxy/proxy.go:27 |  |
-| `closeWait` | const | gophermind-lib/briefv2/proxy/proxy.go:28 |  |
-| `maxRecorded` | const | gophermind-lib/briefv2/proxy/proxy.go:29 |  |
-| `maxDialIPs` | const | gophermind-lib/briefv2/proxy/proxy.go:30 |  |
-| `Config` | type | gophermind-lib/briefv2/proxy/proxy.go:35 | Config configures a Proxy. |
-| `Failure` | type | gophermind-lib/briefv2/proxy/proxy.go:53 | Failure is one failed request to a rule host. |
-| `Proxy` | type | gophermind-lib/briefv2/proxy/proxy.go:61 | Proxy is the loopback forward proxy. |
-| `errDenied` | var | gophermind-lib/briefv2/proxy/proxy.go:86 |  |
-| `New` | func | gophermind-lib/briefv2/proxy/proxy.go:90 | New validates the config, opens the log and starts listening. |
-| `(*Proxy).Addr` | method | gophermind-lib/briefv2/proxy/proxy.go:197 | Addr is the real listen address, such as "127.0.0.1:41733". |
-| `(*Proxy).URL` | method | gophermind-lib/briefv2/proxy/proxy.go:201 | URL is the proxy URL carrying the node id as userinfo. |
-| `(*Proxy).Close` | method | gophermind-lib/briefv2/proxy/proxy.go:210 | Close stops accepting, closes open tunnels and the log, and waits up to 5s for handlers. |
-| `(*Proxy).Failures` | method | gophermind-lib/briefv2/proxy/proxy.go:248 | Failures are requests of node to critical hosts that failed, At >= since. |
-| `(*Proxy).Warnings` | method | gophermind-lib/briefv2/proxy/proxy.go:253 | Warnings are the same failures for non-critical hosts. |
-| `(*Proxy).recorded` | method | gophermind-lib/briefv2/proxy/proxy.go:257 |  |
-| `(*Proxy).record` | method | gophermind-lib/briefv2/proxy/proxy.go:269 |  |
-| `(*Proxy).enter` | method | gophermind-lib/briefv2/proxy/proxy.go:283 |  |
-| `(*Proxy).addTunnel` | method | gophermind-lib/briefv2/proxy/proxy.go:293 |  |
-| `(*Proxy).dropTunnel` | method | gophermind-lib/briefv2/proxy/proxy.go:305 |  |
-| `logLine` | type | gophermind-lib/briefv2/proxy/proxy.go:314 | logLine is the whole of what the log records. |
-| `reqInfo` | type | gophermind-lib/briefv2/proxy/proxy.go:326 |  |
-| `(*Proxy).logReq` | method | gophermind-lib/briefv2/proxy/proxy.go:334 |  |
-| `validNodeID` | func | gophermind-lib/briefv2/proxy/proxy.go:356 |  |
-| `nodeOf` | func | gophermind-lib/briefv2/proxy/proxy.go:369 |  |
-| `hopByHop` | var | gophermind-lib/briefv2/proxy/proxy.go:389 |  |
-| `stripHeaders` | func | gophermind-lib/briefv2/proxy/proxy.go:394 |  |
-| `deny` | func | gophermind-lib/briefv2/proxy/proxy.go:409 |  |
-| `loopbackPeer` | func | gophermind-lib/briefv2/proxy/proxy.go:414 |  |
-| `(*Proxy).handle` | method | gophermind-lib/briefv2/proxy/proxy.go:423 |  |
-| `(*Proxy).authorize` | method | gophermind-lib/briefv2/proxy/proxy.go:443 | target parses and authorizes host and port. |
-| `classify` | func | gophermind-lib/briefv2/proxy/proxy.go:471 |  |
-| `(*Proxy).failStatus` | method | gophermind-lib/briefv2/proxy/proxy.go:485 |  |
-| `(*Proxy).dialContext` | method | gophermind-lib/briefv2/proxy/proxy.go:511 | dialContext is the transport's dialer. |
-| `(*Proxy).dialHost` | method | gophermind-lib/briefv2/proxy/proxy.go:523 |  |
-| `(*Proxy).dialOne` | method | gophermind-lib/briefv2/proxy/proxy.go:559 |  |
-| `(*Proxy).forward` | method | gophermind-lib/briefv2/proxy/proxy.go:565 |  |
-| `(*Proxy).connect` | method | gophermind-lib/briefv2/proxy/proxy.go:641 |  |
-| `reasonCap` | const | gophermind-lib/briefv2/proxy/proxy.go:717 |  |
-| `reasonIdle` | const | gophermind-lib/briefv2/proxy/proxy.go:718 |  |
-| `reasonDuration` | const | gophermind-lib/briefv2/proxy/proxy.go:719 |  |
-| `tunnelState` | type | gophermind-lib/briefv2/proxy/proxy.go:724 | tunnelState is shared by both directions of one CONNECT tunnel: a total byte cap, and an idle timeout counted from the last byte in either direction. |
-| `(*tunnelState).pipe` | method | gophermind-lib/briefv2/proxy/proxy.go:734 |  |
-| `Rule` | type | gophermind-lib/briefv2/proxy/rules.go:28 | Rule allows one host. |
-| `errInvalidRuleHost` | var | gophermind-lib/briefv2/proxy/rules.go:36 | errInvalidRuleHost is the one error for a rule host that fails validation; it names nothing from the input. |
-| `goHosts` | var | gophermind-lib/briefv2/proxy/rules.go:38 |  |
-| `BuildRules` | func | gophermind-lib/briefv2/proxy/rules.go:44 | BuildRules is the allowlist: the brief's network entries (any port), the host of every provider base URL pinned to that URL's port (80 or 443 by scheme when it has none) and the Go module hosts unless noGoHosts. |
-| `normalizeRuleHost` | func | gophermind-lib/briefv2/proxy/rules.go:107 | normalizeRuleHost validates a rule host: an exact host or "*.suffix" where the suffix has at least two labels. |
-| `isIPLiteral` | func | gophermind-lib/briefv2/proxy/rules.go:119 |  |
-| `normalizeHost` | func | gophermind-lib/briefv2/proxy/rules.go:128 | normalizeHost lowercases a host (no port), drops one trailing dot and canonicalizes IP literals (IPv4-mapped IPv6 becomes IPv4). |
-| `forbiddenNets` | var | gophermind-lib/briefv2/proxy/rules.go:163 | forbiddenNets are destinations a hostname may never resolve to. |
-| `mustPrefixes` | func | gophermind-lib/briefv2/proxy/rules.go:171 |  |
-| `forbiddenIP` | func | gophermind-lib/briefv2/proxy/rules.go:182 | forbiddenIP reports whether ip is loopback, private, link-local (including cloud metadata), CGNAT, unspecified, multicast or reserved, after unmapping IPv4-mapped IPv6. |
-| `matchRules` | func | gophermind-lib/briefv2/proxy/rules.go:198 | matchRules reports whether host (already normalized) on port is allowed and whether the matching rule is critical. |
-| `criticalDenied` | func | gophermind-lib/briefv2/proxy/rules.go:225 | criticalDenied reports whether a denied request to host counts against a critical rule: the rule host, minus any "*." prefix, equals host or is a dot-suffix of it. |
-| `Streak` | type | gophermind-lib/briefv2/proxy/streak.go:6 | Streak counts consecutive attempts of one node that had a critical failure. |
-| `(*Streak).Observe` | method | gophermind-lib/briefv2/proxy/streak.go:13 | Observe records one attempt: failed increments, not failed resets. |
-| `(*Streak).Export` | method | gophermind-lib/briefv2/proxy/streak.go:28 | Export returns a copy of the counters. |
-| `(*Streak).Import` | method | gophermind-lib/briefv2/proxy/streak.go:39 | Import replaces the counters. |
+| `defaultDial` | const | gophermind-lib/build/proxy/proxy.go:21 |  |
+| `defaultMaxReq` | const | gophermind-lib/build/proxy/proxy.go:22 |  |
+| `defaultMaxResp` | const | gophermind-lib/build/proxy/proxy.go:23 |  |
+| `maxRequestDuration` | const | gophermind-lib/build/proxy/proxy.go:24 |  |
+| `defaultMaxTunnel` | const | gophermind-lib/build/proxy/proxy.go:25 |  |
+| `defaultIdle` | const | gophermind-lib/build/proxy/proxy.go:26 |  |
+| `maxTunnelDuration` | const | gophermind-lib/build/proxy/proxy.go:27 |  |
+| `closeWait` | const | gophermind-lib/build/proxy/proxy.go:28 |  |
+| `maxRecorded` | const | gophermind-lib/build/proxy/proxy.go:29 |  |
+| `maxDialIPs` | const | gophermind-lib/build/proxy/proxy.go:30 |  |
+| `Config` | type | gophermind-lib/build/proxy/proxy.go:35 | Config configures a Proxy. |
+| `Failure` | type | gophermind-lib/build/proxy/proxy.go:53 | Failure is one failed request to a rule host. |
+| `Proxy` | type | gophermind-lib/build/proxy/proxy.go:61 | Proxy is the loopback forward proxy. |
+| `errDenied` | var | gophermind-lib/build/proxy/proxy.go:86 |  |
+| `New` | func | gophermind-lib/build/proxy/proxy.go:90 | New validates the config, opens the log and starts listening. |
+| `(*Proxy).Addr` | method | gophermind-lib/build/proxy/proxy.go:197 | Addr is the real listen address, such as "127.0.0.1:41733". |
+| `(*Proxy).URL` | method | gophermind-lib/build/proxy/proxy.go:201 | URL is the proxy URL carrying the node id as userinfo. |
+| `(*Proxy).Close` | method | gophermind-lib/build/proxy/proxy.go:210 | Close stops accepting, closes open tunnels and the log, and waits up to 5s for handlers. |
+| `(*Proxy).Failures` | method | gophermind-lib/build/proxy/proxy.go:248 | Failures are requests of node to critical hosts that failed, At >= since. |
+| `(*Proxy).Warnings` | method | gophermind-lib/build/proxy/proxy.go:253 | Warnings are the same failures for non-critical hosts. |
+| `(*Proxy).recorded` | method | gophermind-lib/build/proxy/proxy.go:257 |  |
+| `(*Proxy).record` | method | gophermind-lib/build/proxy/proxy.go:269 |  |
+| `(*Proxy).enter` | method | gophermind-lib/build/proxy/proxy.go:283 |  |
+| `(*Proxy).addTunnel` | method | gophermind-lib/build/proxy/proxy.go:293 |  |
+| `(*Proxy).dropTunnel` | method | gophermind-lib/build/proxy/proxy.go:305 |  |
+| `logLine` | type | gophermind-lib/build/proxy/proxy.go:314 | logLine is the whole of what the log records. |
+| `reqInfo` | type | gophermind-lib/build/proxy/proxy.go:326 |  |
+| `(*Proxy).logReq` | method | gophermind-lib/build/proxy/proxy.go:334 |  |
+| `validNodeID` | func | gophermind-lib/build/proxy/proxy.go:356 |  |
+| `nodeOf` | func | gophermind-lib/build/proxy/proxy.go:369 |  |
+| `hopByHop` | var | gophermind-lib/build/proxy/proxy.go:389 |  |
+| `stripHeaders` | func | gophermind-lib/build/proxy/proxy.go:394 |  |
+| `deny` | func | gophermind-lib/build/proxy/proxy.go:409 |  |
+| `loopbackPeer` | func | gophermind-lib/build/proxy/proxy.go:414 |  |
+| `(*Proxy).handle` | method | gophermind-lib/build/proxy/proxy.go:423 |  |
+| `(*Proxy).authorize` | method | gophermind-lib/build/proxy/proxy.go:443 | target parses and authorizes host and port. |
+| `classify` | func | gophermind-lib/build/proxy/proxy.go:471 |  |
+| `(*Proxy).failStatus` | method | gophermind-lib/build/proxy/proxy.go:485 |  |
+| `(*Proxy).dialContext` | method | gophermind-lib/build/proxy/proxy.go:511 | dialContext is the transport's dialer. |
+| `(*Proxy).dialHost` | method | gophermind-lib/build/proxy/proxy.go:523 |  |
+| `(*Proxy).dialOne` | method | gophermind-lib/build/proxy/proxy.go:559 |  |
+| `(*Proxy).forward` | method | gophermind-lib/build/proxy/proxy.go:565 |  |
+| `(*Proxy).connect` | method | gophermind-lib/build/proxy/proxy.go:641 |  |
+| `reasonCap` | const | gophermind-lib/build/proxy/proxy.go:717 |  |
+| `reasonIdle` | const | gophermind-lib/build/proxy/proxy.go:718 |  |
+| `reasonDuration` | const | gophermind-lib/build/proxy/proxy.go:719 |  |
+| `tunnelState` | type | gophermind-lib/build/proxy/proxy.go:724 | tunnelState is shared by both directions of one CONNECT tunnel: a total byte cap, and an idle timeout counted from the last byte in either direction. |
+| `(*tunnelState).pipe` | method | gophermind-lib/build/proxy/proxy.go:734 |  |
+| `Rule` | type | gophermind-lib/build/proxy/rules.go:28 | Rule allows one host. |
+| `errInvalidRuleHost` | var | gophermind-lib/build/proxy/rules.go:36 | errInvalidRuleHost is the one error for a rule host that fails validation; it names nothing from the input. |
+| `goHosts` | var | gophermind-lib/build/proxy/rules.go:38 |  |
+| `BuildRules` | func | gophermind-lib/build/proxy/rules.go:44 | BuildRules is the allowlist: the brief's network entries (any port), the host of every provider base URL pinned to that URL's port (80 or 443 by scheme when it has none) and the Go module hosts unless noGoHosts. |
+| `normalizeRuleHost` | func | gophermind-lib/build/proxy/rules.go:107 | normalizeRuleHost validates a rule host: an exact host or "*.suffix" where the suffix has at least two labels. |
+| `isIPLiteral` | func | gophermind-lib/build/proxy/rules.go:119 |  |
+| `normalizeHost` | func | gophermind-lib/build/proxy/rules.go:128 | normalizeHost lowercases a host (no port), drops one trailing dot and canonicalizes IP literals (IPv4-mapped IPv6 becomes IPv4). |
+| `forbiddenNets` | var | gophermind-lib/build/proxy/rules.go:163 | forbiddenNets are destinations a hostname may never resolve to. |
+| `mustPrefixes` | func | gophermind-lib/build/proxy/rules.go:171 |  |
+| `forbiddenIP` | func | gophermind-lib/build/proxy/rules.go:182 | forbiddenIP reports whether ip is loopback, private, link-local (including cloud metadata), CGNAT, unspecified, multicast or reserved, after unmapping IPv4-mapped IPv6. |
+| `matchRules` | func | gophermind-lib/build/proxy/rules.go:198 | matchRules reports whether host (already normalized) on port is allowed and whether the matching rule is critical. |
+| `criticalDenied` | func | gophermind-lib/build/proxy/rules.go:225 | criticalDenied reports whether a denied request to host counts against a critical rule: the rule host, minus any "*." prefix, equals host or is a dot-suffix of it. |
+| `Streak` | type | gophermind-lib/build/proxy/streak.go:6 | Streak counts consecutive attempts of one node that had a critical failure. |
+| `(*Streak).Observe` | method | gophermind-lib/build/proxy/streak.go:13 | Observe records one attempt: failed increments, not failed resets. |
+| `(*Streak).Export` | method | gophermind-lib/build/proxy/streak.go:28 | Export returns a copy of the counters. |
+| `(*Streak).Import` | method | gophermind-lib/build/proxy/streak.go:39 | Import replaces the counters. |
 
 ## package report
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `FileName` | const | gophermind-lib/briefv2/report/report.go:32 |  |
-| `SchemaVersion` | const | gophermind-lib/briefv2/report/report.go:34 | SchemaVersion is bumped on any change to the JSON shape. |
-| `minSchemaVersion` | const | gophermind-lib/briefv2/report/report.go:41 | minSchemaVersion is the oldest report Read still accepts. |
-| `maxReadBytes` | const | gophermind-lib/briefv2/report/report.go:42 |  |
-| `Coverage` | type | gophermind-lib/briefv2/report/report.go:45 |  |
-| `Passed` | type | gophermind-lib/briefv2/report/report.go:50 |  |
-| `NodeCounts` | type | gophermind-lib/briefv2/report/report.go:55 |  |
-| `TaskModel` | type | gophermind-lib/briefv2/report/report.go:63 |  |
-| `LeafModel` | type | gophermind-lib/briefv2/report/report.go:78 |  |
-| `Landing` | type | gophermind-lib/briefv2/report/report.go:86 |  |
-| `Escalation` | type | gophermind-lib/briefv2/report/report.go:94 | Escalation is one recorded escalation. |
-| `Parallel` | type | gophermind-lib/briefv2/report/report.go:114 | Parallel is what the executor's parallel levels did (sub-project F). |
-| `RevisedLeaf` | type | gophermind-lib/briefv2/report/report.go:122 | RevisedLeaf is what the report says about a leaf the planner's revise stage rewrote, flagged or refused: ids, counts, field names and classes only. |
-| `Report` | type | gophermind-lib/briefv2/report/report.go:131 |  |
-| `Input` | type | gophermind-lib/briefv2/report/report.go:175 | Input is everything Build aggregates. |
-| `taskOrder` | var | gophermind-lib/briefv2/report/report.go:214 |  |
-| `rank` | func | gophermind-lib/briefv2/report/report.go:216 |  |
-| `ExitCode` | func | gophermind-lib/briefv2/report/report.go:224 | ExitCode maps a run status to the process exit code. |
-| `modelKey` | func | gophermind-lib/briefv2/report/report.go:244 |  |
-| `tmKey` | type | gophermind-lib/briefv2/report/report.go:251 |  |
-| `rowKey` | type | gophermind-lib/briefv2/report/report.go:253 |  |
-| `Build` | func | gophermind-lib/briefv2/report/report.go:261 | Build aggregates in into a Report. |
-| `cleanLine` | func | gophermind-lib/briefv2/report/report.go:465 | cleanLine drops control characters and cuts the line to max bytes. |
-| `ignoredEntryRE` | var | gophermind-lib/briefv2/report/report.go:478 |  |
-| `plannerWarnings` | func | gophermind-lib/briefv2/report/report.go:482 | plannerWarnings turns the planner's ignored duplicates into report lines. |
-| `completeFailures` | func | gophermind-lib/briefv2/report/report.go:506 | completeFailures returns the caller's failure lines plus one line for every plan leaf that is neither verified nor named, sorted. |
-| `stripCredentials` | func | gophermind-lib/briefv2/report/report.go:556 | stripCredentials reduces a repository reference to scheme, host and path. |
-| `validScheme` | func | gophermind-lib/briefv2/report/report.go:581 |  |
-| `WriteOptions` | type | gophermind-lib/briefv2/report/report.go:597 | Write stores r as indented JSON in runDir/report.json, mode 0600, by temp file and rename. |
-| `Write` | func | gophermind-lib/briefv2/report/report.go:603 |  |
-| `WriteFile` | func | gophermind-lib/briefv2/report/report.go:615 | WriteFile stores data as runDir/name (a plain file name), mode 0600, by temp file, fsync and rename, then syncs the folder. |
-| `checkRunDir` | func | gophermind-lib/briefv2/report/report.go:671 | checkRunDir requires runDir to be RepoRoot or a path below it in which every component below RepoRoot is a real directory, not a symbolic link. |
-| `jsonDepthOK` | func | gophermind-lib/briefv2/report/report.go:699 | jsonDepthOK reports whether raw nests no deeper than max, ignoring brackets inside strings. |
-| `Read` | func | gophermind-lib/briefv2/report/report.go:727 | Read loads runDir/report.json. |
-| `MaxRevisedListed` | const | gophermind-lib/briefv2/report/summary.go:11 | MaxRevisedListed caps the per-leaf lines under "Rewritten leaves:" in the summary; report.json keeps every leaf. |
-| `esc` | func | gophermind-lib/briefv2/report/summary.go:15 | esc makes text that derives from an id or a caller string safe to print: control and other non-printing runes are shown as \xNN or \uNNNN. |
-| `(Report).Summary` | method | gophermind-lib/briefv2/report/summary.go:32 | Summary is the printed summary. |
-| `joinOrNone` | func | gophermind-lib/briefv2/report/summary.go:92 | joinOrNone prints a list for the summary, "none" when it has no non-empty item. |
+| `FileName` | const | gophermind-lib/build/report/report.go:32 |  |
+| `SchemaVersion` | const | gophermind-lib/build/report/report.go:34 | SchemaVersion is bumped on any change to the JSON shape. |
+| `minSchemaVersion` | const | gophermind-lib/build/report/report.go:41 | minSchemaVersion is the oldest report Read still accepts. |
+| `maxReadBytes` | const | gophermind-lib/build/report/report.go:42 |  |
+| `Coverage` | type | gophermind-lib/build/report/report.go:45 |  |
+| `Passed` | type | gophermind-lib/build/report/report.go:50 |  |
+| `NodeCounts` | type | gophermind-lib/build/report/report.go:55 |  |
+| `TaskModel` | type | gophermind-lib/build/report/report.go:63 |  |
+| `LeafModel` | type | gophermind-lib/build/report/report.go:78 |  |
+| `Landing` | type | gophermind-lib/build/report/report.go:86 |  |
+| `Escalation` | type | gophermind-lib/build/report/report.go:94 | Escalation is one recorded escalation. |
+| `Parallel` | type | gophermind-lib/build/report/report.go:114 | Parallel is what the executor's parallel levels did (sub-project F). |
+| `RevisedLeaf` | type | gophermind-lib/build/report/report.go:122 | RevisedLeaf is what the report says about a leaf the planner's revise stage rewrote, flagged or refused: ids, counts, field names and classes only. |
+| `Report` | type | gophermind-lib/build/report/report.go:131 |  |
+| `Input` | type | gophermind-lib/build/report/report.go:175 | Input is everything Build aggregates. |
+| `taskOrder` | var | gophermind-lib/build/report/report.go:214 |  |
+| `rank` | func | gophermind-lib/build/report/report.go:216 |  |
+| `ExitCode` | func | gophermind-lib/build/report/report.go:224 | ExitCode maps a run status to the process exit code. |
+| `modelKey` | func | gophermind-lib/build/report/report.go:244 |  |
+| `tmKey` | type | gophermind-lib/build/report/report.go:251 |  |
+| `rowKey` | type | gophermind-lib/build/report/report.go:253 |  |
+| `Build` | func | gophermind-lib/build/report/report.go:261 | Build aggregates in into a Report. |
+| `cleanLine` | func | gophermind-lib/build/report/report.go:465 | cleanLine drops control characters and cuts the line to max bytes. |
+| `ignoredEntryRE` | var | gophermind-lib/build/report/report.go:478 |  |
+| `plannerWarnings` | func | gophermind-lib/build/report/report.go:482 | plannerWarnings turns the planner's ignored duplicates into report lines. |
+| `completeFailures` | func | gophermind-lib/build/report/report.go:506 | completeFailures returns the caller's failure lines plus one line for every plan leaf that is neither verified nor named, sorted. |
+| `stripCredentials` | func | gophermind-lib/build/report/report.go:556 | stripCredentials reduces a repository reference to scheme, host and path. |
+| `validScheme` | func | gophermind-lib/build/report/report.go:581 |  |
+| `WriteOptions` | type | gophermind-lib/build/report/report.go:597 | Write stores r as indented JSON in runDir/report.json, mode 0600, by temp file and rename. |
+| `Write` | func | gophermind-lib/build/report/report.go:603 |  |
+| `WriteFile` | func | gophermind-lib/build/report/report.go:615 | WriteFile stores data as runDir/name (a plain file name), mode 0600, by temp file, fsync and rename, then syncs the folder. |
+| `checkRunDir` | func | gophermind-lib/build/report/report.go:671 | checkRunDir requires runDir to be RepoRoot or a path below it in which every component below RepoRoot is a real directory, not a symbolic link. |
+| `jsonDepthOK` | func | gophermind-lib/build/report/report.go:699 | jsonDepthOK reports whether raw nests no deeper than max, ignoring brackets inside strings. |
+| `Read` | func | gophermind-lib/build/report/report.go:727 | Read loads runDir/report.json. |
+| `MaxRevisedListed` | const | gophermind-lib/build/report/summary.go:11 | MaxRevisedListed caps the per-leaf lines under "Rewritten leaves:" in the summary; report.json keeps every leaf. |
+| `esc` | func | gophermind-lib/build/report/summary.go:15 | esc makes text that derives from an id or a caller string safe to print: control and other non-printing runes are shown as \xNN or \uNNNN. |
+| `(Report).Summary` | method | gophermind-lib/build/report/summary.go:32 | Summary is the printed summary. |
+| `joinOrNone` | func | gophermind-lib/build/report/summary.go:92 | joinOrNone prints a list for the summary, "none" when it has no non-empty item. |
 | `Data` | type | gophermind-lib/report/report.go:13 | Data is the content of a run report. |
 | `HTML` | func | gophermind-lib/report/report.go:26 | HTML renders the report as a single self-contained HTML document (inline CSS, no external assets). |
 
@@ -3789,252 +3789,252 @@ after every completed task. Non-test Go declarations only.
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `DirName` | const | gophermind-lib/briefv2/revlog/revlog.go:26 | DirName is the folder below the run folder that holds one folder per revised node. |
-| `Kind` | type | gophermind-lib/briefv2/revlog/revlog.go:29 | Kind is the type of a log record. |
-| `KindIntent` | const | gophermind-lib/briefv2/revlog/revlog.go:32 |  |
-| `KindCommit` | const | gophermind-lib/briefv2/revlog/revlog.go:33 |  |
-| `KindFlag` | const | gophermind-lib/briefv2/revlog/revlog.go:34 |  |
-| `KindRefused` | const | gophermind-lib/briefv2/revlog/revlog.go:35 |  |
-| `Record` | type | gophermind-lib/briefv2/revlog/revlog.go:39 | Record is one line of log.jsonl. |
-| `ErrChain` | var | gophermind-lib/briefv2/revlog/revlog.go:59 | ErrChain is wrapped by every Verify failure. |
-| `chainErr` | func | gophermind-lib/briefv2/revlog/revlog.go:61 |  |
-| `Hash` | func | gophermind-lib/briefv2/revlog/revlog.go:67 | Hash is the SHA-256 of b in hex, the same function the planner and executor use. |
-| `idRE` | var | gophermind-lib/briefv2/revlog/revlog.go:72 |  |
-| `NodeDir` | func | gophermind-lib/briefv2/revlog/revlog.go:76 | NodeDir is the folder of one node's revisions. |
-| `BodyFile` | func | gophermind-lib/briefv2/revlog/revlog.go:93 | BodyFile and TestFile are the staged file names of revision k (0 = as approved). |
-| `TestFile` | func | gophermind-lib/briefv2/revlog/revlog.go:94 |  |
-| `logName` | const | gophermind-lib/briefv2/revlog/revlog.go:96 |  |
-| `maxHashLen` | const | gophermind-lib/briefv2/revlog/revlog.go:101 | Bounds on what a record may hold, so a log line stays small and a model sentence cannot be smuggled into it. |
-| `maxTokenLen` | const | gophermind-lib/briefv2/revlog/revlog.go:102 | Bounds on what a record may hold, so a log line stays small and a model sentence cannot be smuggled into it. |
-| `maxAssumptionLen` | const | gophermind-lib/briefv2/revlog/revlog.go:103 | Bounds on what a record may hold, so a log line stays small and a model sentence cannot be smuggled into it. |
-| `maxListLen` | const | gophermind-lib/briefv2/revlog/revlog.go:104 | Bounds on what a record may hold, so a log line stays small and a model sentence cannot be smuggled into it. |
-| `errTooLong` | var | gophermind-lib/briefv2/revlog/revlog.go:107 |  |
-| `checkBounds` | func | gophermind-lib/briefv2/revlog/revlog.go:109 |  |
-| `plainDir` | func | gophermind-lib/briefv2/revlog/revlog.go:137 | plainDir refuses a path that exists and is a link or not a directory. |
-| `plainFile` | func | gophermind-lib/briefv2/revlog/revlog.go:145 | plainFile refuses a path that exists and is not a regular file (a link, say). |
-| `Append` | func | gophermind-lib/briefv2/revlog/revlog.go:156 | Append writes one record. |
-| `cutTornTail` | func | gophermind-lib/briefv2/revlog/revlog.go:185 |  |
-| `Read` | func | gophermind-lib/briefv2/revlog/revlog.go:202 | Read returns the records in order. |
-| `Stage` | func | gophermind-lib/briefv2/revlog/revlog.go:235 | Stage writes body-k.json and test-k.txt atomically (0600). |
-| `readRegular` | func | gophermind-lib/briefv2/revlog/revlog.go:275 |  |
-| `ReadStaged` | func | gophermind-lib/briefv2/revlog/revlog.go:284 | ReadStaged returns the staged body and test of revision k. |
-| `RemoveStaged` | func | gophermind-lib/briefv2/revlog/revlog.go:295 | RemoveStaged deletes the staged files of revision k (a refused revision). |
-| `Disk` | type | gophermind-lib/briefv2/revlog/revlog.go:306 | Disk is what is on disk now: the hash of the node file, the sha256 field of the node's entry in _state/leaf_tests.json, and the hash of the test file. |
-| `Tip` | type | gophermind-lib/briefv2/revlog/revlog.go:310 | Tip is the state of the chain: the last committed revision (0 when none), its body and test hashes, and the intent that is open, if any. |
-| `Verify` | func | gophermind-lib/briefv2/revlog/revlog.go:319 | Verify proves the chain (spec section 8 point 3) against what is on disk. |
-| `openN` | func | gophermind-lib/briefv2/revlog/revlog.go:406 |  |
-| `checkStaged` | func | gophermind-lib/briefv2/revlog/revlog.go:414 | checkStaged proves the staged files of an intent are the ones it names. |
-| `FrozenError` | type | gophermind-lib/briefv2/revlog/revlog.go:426 | FrozenError says which part of a node changed that a revision may not change. |
-| `(*FrozenError).Error` | method | gophermind-lib/briefv2/revlog/revlog.go:428 |  |
-| `fieldRE` | var | gophermind-lib/briefv2/revlog/revlog.go:430 |  |
-| `mayChange` | var | gophermind-lib/briefv2/revlog/revlog.go:434 | What a revision may change (spec section 7). |
-| `mayChangeContext` | var | gophermind-lib/briefv2/revlog/revlog.go:435 | What a revision may change (spec section 7). |
-| `mayChangeContrct` | var | gophermind-lib/briefv2/revlog/revlog.go:436 | What a revision may change (spec section 7). |
-| `sameJSON` | func | gophermind-lib/briefv2/revlog/revlog.go:439 |  |
-| `CheckFrozen` | func | gophermind-lib/briefv2/revlog/revlog.go:450 | CheckFrozen compares two node documents and returns a *FrozenError for the first frozen field that differs. |
-| `Summary` | type | gophermind-lib/briefv2/revlog/revlog.go:520 | Summary is what the report says about one node's revisions. |
-| `Summarize` | func | gophermind-lib/briefv2/revlog/revlog.go:529 | Summarize reads records already returned by Read. |
+| `DirName` | const | gophermind-lib/build/revlog/revlog.go:26 | DirName is the folder below the run folder that holds one folder per revised node. |
+| `Kind` | type | gophermind-lib/build/revlog/revlog.go:29 | Kind is the type of a log record. |
+| `KindIntent` | const | gophermind-lib/build/revlog/revlog.go:32 |  |
+| `KindCommit` | const | gophermind-lib/build/revlog/revlog.go:33 |  |
+| `KindFlag` | const | gophermind-lib/build/revlog/revlog.go:34 |  |
+| `KindRefused` | const | gophermind-lib/build/revlog/revlog.go:35 |  |
+| `Record` | type | gophermind-lib/build/revlog/revlog.go:39 | Record is one line of log.jsonl. |
+| `ErrChain` | var | gophermind-lib/build/revlog/revlog.go:59 | ErrChain is wrapped by every Verify failure. |
+| `chainErr` | func | gophermind-lib/build/revlog/revlog.go:61 |  |
+| `Hash` | func | gophermind-lib/build/revlog/revlog.go:67 | Hash is the SHA-256 of b in hex, the same function the planner and executor use. |
+| `idRE` | var | gophermind-lib/build/revlog/revlog.go:72 |  |
+| `NodeDir` | func | gophermind-lib/build/revlog/revlog.go:76 | NodeDir is the folder of one node's revisions. |
+| `BodyFile` | func | gophermind-lib/build/revlog/revlog.go:93 | BodyFile and TestFile are the staged file names of revision k (0 = as approved). |
+| `TestFile` | func | gophermind-lib/build/revlog/revlog.go:94 |  |
+| `logName` | const | gophermind-lib/build/revlog/revlog.go:96 |  |
+| `maxHashLen` | const | gophermind-lib/build/revlog/revlog.go:101 | Bounds on what a record may hold, so a log line stays small and a model sentence cannot be smuggled into it. |
+| `maxTokenLen` | const | gophermind-lib/build/revlog/revlog.go:102 | Bounds on what a record may hold, so a log line stays small and a model sentence cannot be smuggled into it. |
+| `maxAssumptionLen` | const | gophermind-lib/build/revlog/revlog.go:103 | Bounds on what a record may hold, so a log line stays small and a model sentence cannot be smuggled into it. |
+| `maxListLen` | const | gophermind-lib/build/revlog/revlog.go:104 | Bounds on what a record may hold, so a log line stays small and a model sentence cannot be smuggled into it. |
+| `errTooLong` | var | gophermind-lib/build/revlog/revlog.go:107 |  |
+| `checkBounds` | func | gophermind-lib/build/revlog/revlog.go:109 |  |
+| `plainDir` | func | gophermind-lib/build/revlog/revlog.go:137 | plainDir refuses a path that exists and is a link or not a directory. |
+| `plainFile` | func | gophermind-lib/build/revlog/revlog.go:145 | plainFile refuses a path that exists and is not a regular file (a link, say). |
+| `Append` | func | gophermind-lib/build/revlog/revlog.go:156 | Append writes one record. |
+| `cutTornTail` | func | gophermind-lib/build/revlog/revlog.go:185 |  |
+| `Read` | func | gophermind-lib/build/revlog/revlog.go:202 | Read returns the records in order. |
+| `Stage` | func | gophermind-lib/build/revlog/revlog.go:235 | Stage writes body-k.json and test-k.txt atomically (0600). |
+| `readRegular` | func | gophermind-lib/build/revlog/revlog.go:275 |  |
+| `ReadStaged` | func | gophermind-lib/build/revlog/revlog.go:284 | ReadStaged returns the staged body and test of revision k. |
+| `RemoveStaged` | func | gophermind-lib/build/revlog/revlog.go:295 | RemoveStaged deletes the staged files of revision k (a refused revision). |
+| `Disk` | type | gophermind-lib/build/revlog/revlog.go:306 | Disk is what is on disk now: the hash of the node file, the sha256 field of the node's entry in _state/leaf_tests.json, and the hash of the test file. |
+| `Tip` | type | gophermind-lib/build/revlog/revlog.go:310 | Tip is the state of the chain: the last committed revision (0 when none), its body and test hashes, and the intent that is open, if any. |
+| `Verify` | func | gophermind-lib/build/revlog/revlog.go:319 | Verify proves the chain (spec section 8 point 3) against what is on disk. |
+| `openN` | func | gophermind-lib/build/revlog/revlog.go:406 |  |
+| `checkStaged` | func | gophermind-lib/build/revlog/revlog.go:414 | checkStaged proves the staged files of an intent are the ones it names. |
+| `FrozenError` | type | gophermind-lib/build/revlog/revlog.go:426 | FrozenError says which part of a node changed that a revision may not change. |
+| `(*FrozenError).Error` | method | gophermind-lib/build/revlog/revlog.go:428 |  |
+| `fieldRE` | var | gophermind-lib/build/revlog/revlog.go:430 |  |
+| `mayChange` | var | gophermind-lib/build/revlog/revlog.go:434 | What a revision may change (spec section 7). |
+| `mayChangeContext` | var | gophermind-lib/build/revlog/revlog.go:435 | What a revision may change (spec section 7). |
+| `mayChangeContrct` | var | gophermind-lib/build/revlog/revlog.go:436 | What a revision may change (spec section 7). |
+| `sameJSON` | func | gophermind-lib/build/revlog/revlog.go:439 |  |
+| `CheckFrozen` | func | gophermind-lib/build/revlog/revlog.go:450 | CheckFrozen compares two node documents and returns a *FrozenError for the first frozen field that differs. |
+| `Summary` | type | gophermind-lib/build/revlog/revlog.go:520 | Summary is what the report says about one node's revisions. |
+| `Summarize` | func | gophermind-lib/build/revlog/revlog.go:529 | Summarize reads records already returned by Read. |
 
 ## package router
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `(*Router).acquire` | method | gophermind-lib/briefv2/router/attempt.go:14 |  |
-| `(*Router).release` | method | gophermind-lib/briefv2/router/attempt.go:23 |  |
-| `(*Router).attempt` | method | gophermind-lib/briefv2/router/attempt.go:28 | attempt asks one chain entry, retrying transient failures with backoff. |
-| `maxGrownTokens` | const | gophermind-lib/briefv2/router/attempt.go:161 | maxGrownTokens caps the doubled budget after a truncated reply. |
-| `grownBudget` | func | gophermind-lib/briefv2/router/attempt.go:165 | grownBudget doubles a token budget once, capped at limit (the request's own cap when positive, else maxGrownTokens); an unset budget becomes 8192. |
-| `ReasonExcluded` | const | gophermind-lib/briefv2/router/errors.go:10 | Why one chain entry did not answer. |
-| `ReasonNoProvider` | const | gophermind-lib/briefv2/router/errors.go:11 | Why one chain entry did not answer. |
-| `ReasonModelMissing` | const | gophermind-lib/briefv2/router/errors.go:12 | Why one chain entry did not answer. |
-| `ReasonAuth` | const | gophermind-lib/briefv2/router/errors.go:13 | Why one chain entry did not answer. |
-| `ReasonPrivacy` | const | gophermind-lib/briefv2/router/errors.go:14 | Why one chain entry did not answer. |
-| `ReasonCooldown` | const | gophermind-lib/briefv2/router/errors.go:15 | Why one chain entry did not answer. |
-| `ReasonTooLong` | const | gophermind-lib/briefv2/router/errors.go:16 | Why one chain entry did not answer. |
-| `ReasonFailed` | const | gophermind-lib/briefv2/router/errors.go:17 | Why one chain entry did not answer. |
-| `TruncatedDetail` | const | gophermind-lib/briefv2/router/errors.go:22 | TruncatedDetail is the Detail of a ReasonFailed row whose reply was cut off at the token limit, even after one retry with a doubled budget. |
-| `EntryReason` | type | gophermind-lib/briefv2/router/errors.go:25 | EntryReason is one row of a ChainExhausted report. |
-| `ChainExhausted` | type | gophermind-lib/briefv2/router/errors.go:34 | ChainExhausted is returned when no entry of the tier's chain answered. |
-| `(*ChainExhausted).Error` | method | gophermind-lib/briefv2/router/errors.go:40 |  |
-| `(*ChainExhausted).Truncated` | method | gophermind-lib/briefv2/router/errors.go:58 | Truncated reports whether an entry failed because its reply was cut off at the token limit. |
-| `(*ChainExhausted).Unwrap` | method | gophermind-lib/briefv2/router/errors.go:67 |  |
-| `(*ChainExhausted).OnlyPrivacy` | method | gophermind-lib/briefv2/router/errors.go:72 | OnlyPrivacy reports whether every entry was skipped because a public provider may not see this scope. |
-| `(*ChainExhausted).OnlyTooLong` | method | gophermind-lib/briefv2/router/errors.go:87 | OnlyTooLong reports whether every entry was skipped or refused because the prompt does not fit its model, and no reply was ever seen. |
-| `(*Router).CallParsed` | method | gophermind-lib/briefv2/router/parsed.go:15 | CallParsed is Call plus the stage's parser. |
-| `(*Router).markMalformed` | method | gophermind-lib/briefv2/router/parsed.go:54 |  |
-| `withParseErr` | func | gophermind-lib/briefv2/router/parsed.go:64 |  |
-| `withParseError` | func | gophermind-lib/briefv2/router/parsed.go:72 |  |
-| `(*Router).eligible` | method | gophermind-lib/briefv2/router/privacy.go:12 | eligible applies the need-to-know rule (spec section 6). |
-| `Tier` | type | gophermind-lib/briefv2/router/router.go:21 |  |
-| `TierStrong` | const | gophermind-lib/briefv2/router/router.go:24 |  |
-| `TierStandard` | const | gophermind-lib/briefv2/router/router.go:25 |  |
-| `TierAny` | const | gophermind-lib/briefv2/router/router.go:26 |  |
-| `Scope` | type | gophermind-lib/briefv2/router/router.go:31 | Scope is the widest thing a call carries. |
-| `ScopeBrief` | const | gophermind-lib/briefv2/router/router.go:34 |  |
-| `ScopeComponent` | const | gophermind-lib/briefv2/router/router.go:35 |  |
-| `ScopeNode` | const | gophermind-lib/briefv2/router/router.go:36 |  |
-| `CallInfo` | type | gophermind-lib/briefv2/router/router.go:40 | CallInfo says who is asking and what the call carries. |
-| `Result` | type | gophermind-lib/briefv2/router/router.go:59 | Result is a successful reply plus where it came from. |
-| `Option` | type | gophermind-lib/briefv2/router/router.go:66 |  |
-| `WithAllowPublic` | func | gophermind-lib/briefv2/router/router.go:70 | WithAllowPublic lets public providers see brief and component scope calls under privacy.mode need_to_know. |
-| `WithSleep` | func | gophermind-lib/briefv2/router/router.go:74 | WithSleep replaces the waiting function (backoff and cooldown waits), so tests run instantly. |
-| `WithNow` | func | gophermind-lib/briefv2/router/router.go:79 | WithNow replaces the clock used for cooldowns and timestamps. |
-| `transientRetries` | const | gophermind-lib/briefv2/router/router.go:81 |  |
-| `Router` | type | gophermind-lib/briefv2/router/router.go:83 |  |
-| `New` | func | gophermind-lib/briefv2/router/router.go:101 | New builds a router over already-constructed providers. |
-| `sleepCtx` | func | gophermind-lib/briefv2/router/router.go:123 |  |
-| `(*Router).LedgerErrors` | method | gophermind-lib/briefv2/router/router.go:136 | LedgerErrors counts ledger writes that failed. |
-| `promptDigest` | type | gophermind-lib/briefv2/router/router.go:144 | promptDigest is the size and hash of the prompt text, the only things the ledger ever stores about it. |
-| `digestPrompt` | func | gophermind-lib/briefv2/router/router.go:150 |  |
-| `(*Router).Call` | method | gophermind-lib/briefv2/router/router.go:161 | Call walks the tier's chain until one entry answers. |
-| `(*Router).chainFor` | method | gophermind-lib/briefv2/router/router.go:218 | chainFor validates the call's tier, scope and identity and returns the chain. |
-| `(*Router).gate` | method | gophermind-lib/briefv2/router/router.go:235 | gate reports why an entry must not be tried right now, if it must not. |
-| `(*Router).shortestCooldown` | method | gophermind-lib/briefv2/router/router.go:263 | shortestCooldown returns how long until the first cooling provider in reasons is usable again. |
-| `(*Router).setCooldown` | method | gophermind-lib/briefv2/router/router.go:285 | setCooldown cools key down for d. |
-| `(*Router).cooldownUntil` | method | gophermind-lib/briefv2/router/router.go:293 | cooldownUntil is the later of an entry's own cooldown and its provider's. |
-| `(*Router).timeoutCooldown` | method | gophermind-lib/briefv2/router/router.go:302 | timeoutCooldown is how long an entry is skipped after its call timed out. |
-| `(*Router).defaultCooldown` | method | gophermind-lib/briefv2/router/router.go:310 |  |
-| `(*Router).emit` | method | gophermind-lib/briefv2/router/router.go:314 |  |
-| `(*Router).newRow` | method | gophermind-lib/briefv2/router/router.go:322 | newRow starts a ledger row for an attempt on one entry. |
-| `(*Router).record` | method | gophermind-lib/briefv2/router/router.go:339 | record writes a row. |
-| `(*Router).noteLedgerError` | method | gophermind-lib/briefv2/router/router.go:352 |  |
+| `(*Router).acquire` | method | gophermind-lib/build/router/attempt.go:14 |  |
+| `(*Router).release` | method | gophermind-lib/build/router/attempt.go:23 |  |
+| `(*Router).attempt` | method | gophermind-lib/build/router/attempt.go:28 | attempt asks one chain entry, retrying transient failures with backoff. |
+| `maxGrownTokens` | const | gophermind-lib/build/router/attempt.go:161 | maxGrownTokens caps the doubled budget after a truncated reply. |
+| `grownBudget` | func | gophermind-lib/build/router/attempt.go:165 | grownBudget doubles a token budget once, capped at limit (the request's own cap when positive, else maxGrownTokens); an unset budget becomes 8192. |
+| `ReasonExcluded` | const | gophermind-lib/build/router/errors.go:10 | Why one chain entry did not answer. |
+| `ReasonNoProvider` | const | gophermind-lib/build/router/errors.go:11 | Why one chain entry did not answer. |
+| `ReasonModelMissing` | const | gophermind-lib/build/router/errors.go:12 | Why one chain entry did not answer. |
+| `ReasonAuth` | const | gophermind-lib/build/router/errors.go:13 | Why one chain entry did not answer. |
+| `ReasonPrivacy` | const | gophermind-lib/build/router/errors.go:14 | Why one chain entry did not answer. |
+| `ReasonCooldown` | const | gophermind-lib/build/router/errors.go:15 | Why one chain entry did not answer. |
+| `ReasonTooLong` | const | gophermind-lib/build/router/errors.go:16 | Why one chain entry did not answer. |
+| `ReasonFailed` | const | gophermind-lib/build/router/errors.go:17 | Why one chain entry did not answer. |
+| `TruncatedDetail` | const | gophermind-lib/build/router/errors.go:22 | TruncatedDetail is the Detail of a ReasonFailed row whose reply was cut off at the token limit, even after one retry with a doubled budget. |
+| `EntryReason` | type | gophermind-lib/build/router/errors.go:25 | EntryReason is one row of a ChainExhausted report. |
+| `ChainExhausted` | type | gophermind-lib/build/router/errors.go:34 | ChainExhausted is returned when no entry of the tier's chain answered. |
+| `(*ChainExhausted).Error` | method | gophermind-lib/build/router/errors.go:40 |  |
+| `(*ChainExhausted).Truncated` | method | gophermind-lib/build/router/errors.go:58 | Truncated reports whether an entry failed because its reply was cut off at the token limit. |
+| `(*ChainExhausted).Unwrap` | method | gophermind-lib/build/router/errors.go:67 |  |
+| `(*ChainExhausted).OnlyPrivacy` | method | gophermind-lib/build/router/errors.go:72 | OnlyPrivacy reports whether every entry was skipped because a public provider may not see this scope. |
+| `(*ChainExhausted).OnlyTooLong` | method | gophermind-lib/build/router/errors.go:87 | OnlyTooLong reports whether every entry was skipped or refused because the prompt does not fit its model, and no reply was ever seen. |
+| `(*Router).CallParsed` | method | gophermind-lib/build/router/parsed.go:15 | CallParsed is Call plus the stage's parser. |
+| `(*Router).markMalformed` | method | gophermind-lib/build/router/parsed.go:54 |  |
+| `withParseErr` | func | gophermind-lib/build/router/parsed.go:64 |  |
+| `withParseError` | func | gophermind-lib/build/router/parsed.go:72 |  |
+| `(*Router).eligible` | method | gophermind-lib/build/router/privacy.go:12 | eligible applies the need-to-know rule (spec section 6). |
+| `Tier` | type | gophermind-lib/build/router/router.go:21 |  |
+| `TierStrong` | const | gophermind-lib/build/router/router.go:24 |  |
+| `TierStandard` | const | gophermind-lib/build/router/router.go:25 |  |
+| `TierAny` | const | gophermind-lib/build/router/router.go:26 |  |
+| `Scope` | type | gophermind-lib/build/router/router.go:31 | Scope is the widest thing a call carries. |
+| `ScopeBrief` | const | gophermind-lib/build/router/router.go:34 |  |
+| `ScopeComponent` | const | gophermind-lib/build/router/router.go:35 |  |
+| `ScopeNode` | const | gophermind-lib/build/router/router.go:36 |  |
+| `CallInfo` | type | gophermind-lib/build/router/router.go:40 | CallInfo says who is asking and what the call carries. |
+| `Result` | type | gophermind-lib/build/router/router.go:59 | Result is a successful reply plus where it came from. |
+| `Option` | type | gophermind-lib/build/router/router.go:66 |  |
+| `WithAllowPublic` | func | gophermind-lib/build/router/router.go:70 | WithAllowPublic lets public providers see brief and component scope calls under privacy.mode need_to_know. |
+| `WithSleep` | func | gophermind-lib/build/router/router.go:74 | WithSleep replaces the waiting function (backoff and cooldown waits), so tests run instantly. |
+| `WithNow` | func | gophermind-lib/build/router/router.go:79 | WithNow replaces the clock used for cooldowns and timestamps. |
+| `transientRetries` | const | gophermind-lib/build/router/router.go:81 |  |
+| `Router` | type | gophermind-lib/build/router/router.go:83 |  |
+| `New` | func | gophermind-lib/build/router/router.go:101 | New builds a router over already-constructed providers. |
+| `sleepCtx` | func | gophermind-lib/build/router/router.go:123 |  |
+| `(*Router).LedgerErrors` | method | gophermind-lib/build/router/router.go:136 | LedgerErrors counts ledger writes that failed. |
+| `promptDigest` | type | gophermind-lib/build/router/router.go:144 | promptDigest is the size and hash of the prompt text, the only things the ledger ever stores about it. |
+| `digestPrompt` | func | gophermind-lib/build/router/router.go:150 |  |
+| `(*Router).Call` | method | gophermind-lib/build/router/router.go:161 | Call walks the tier's chain until one entry answers. |
+| `(*Router).chainFor` | method | gophermind-lib/build/router/router.go:218 | chainFor validates the call's tier, scope and identity and returns the chain. |
+| `(*Router).gate` | method | gophermind-lib/build/router/router.go:235 | gate reports why an entry must not be tried right now, if it must not. |
+| `(*Router).shortestCooldown` | method | gophermind-lib/build/router/router.go:263 | shortestCooldown returns how long until the first cooling provider in reasons is usable again. |
+| `(*Router).setCooldown` | method | gophermind-lib/build/router/router.go:285 | setCooldown cools key down for d. |
+| `(*Router).cooldownUntil` | method | gophermind-lib/build/router/router.go:293 | cooldownUntil is the later of an entry's own cooldown and its provider's. |
+| `(*Router).timeoutCooldown` | method | gophermind-lib/build/router/router.go:302 | timeoutCooldown is how long an entry is skipped after its call timed out. |
+| `(*Router).defaultCooldown` | method | gophermind-lib/build/router/router.go:310 |  |
+| `(*Router).emit` | method | gophermind-lib/build/router/router.go:314 |  |
+| `(*Router).newRow` | method | gophermind-lib/build/router/router.go:322 | newRow starts a ledger row for an attempt on one entry. |
+| `(*Router).record` | method | gophermind-lib/build/router/router.go:339 | record writes a row. |
+| `(*Router).noteLedgerError` | method | gophermind-lib/build/router/router.go:352 |  |
 
 ## package rundir
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `ErrExists` | var | gophermind-lib/briefv2/rundir/rundir.go:16 |  |
-| `idRE` | var | gophermind-lib/briefv2/rundir/rundir.go:18 |  |
-| `Create` | func | gophermind-lib/briefv2/rundir/rundir.go:22 | Create makes <repoRoot>/.gophermind/<briefID>/ with logs/ and a copy of the brief. |
-| `excludeFile` | func | gophermind-lib/briefv2/rundir/rundir.go:52 | excludeFile resolves the info/exclude path for repoRoot, following a worktree's .git file to the common git dir. |
-| `exclude` | func | gophermind-lib/briefv2/rundir/rundir.go:92 |  |
+| `ErrExists` | var | gophermind-lib/build/rundir/rundir.go:16 |  |
+| `idRE` | var | gophermind-lib/build/rundir/rundir.go:18 |  |
+| `Create` | func | gophermind-lib/build/rundir/rundir.go:22 | Create makes <repoRoot>/.gophermind/<briefID>/ with logs/ and a copy of the brief. |
+| `excludeFile` | func | gophermind-lib/build/rundir/rundir.go:52 | excludeFile resolves the info/exclude path for repoRoot, following a worktree's .git file to the common git dir. |
+| `exclude` | func | gophermind-lib/build/rundir/rundir.go:92 |  |
 
 ## package runfs
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `TimeFormat` | const | gophermind-lib/briefv2/runfs/runfs.go:18 | TimeFormat is fixed width and always UTC, so timestamps compare correctly as text (RFC3339Nano trims trailing zeros and would not). |
-| `TS` | func | gophermind-lib/briefv2/runfs/runfs.go:21 | TS formats t for storage. |
-| `ParseTS` | func | gophermind-lib/briefv2/runfs/runfs.go:24 | ParseTS is the inverse of TS; the empty string is the zero time. |
-| `Fixed` | func | gophermind-lib/briefv2/runfs/runfs.go:33 | Fixed returns a resolver that maps every run id to dir. |
-| `WriteFileAtomic` | func | gophermind-lib/briefv2/runfs/runfs.go:40 | WriteFileAtomic writes data to path through a temporary file in the same folder and a rename, so a reader sees the old file or the new one and never half of either. |
-| `LockStaleAfter` | const | gophermind-lib/briefv2/runfs/runfs.go:82 | LockStaleAfter is the age after which a lock file belongs to a dead holder. |
-| `LockWait` | const | gophermind-lib/briefv2/runfs/runfs.go:83 | LockStaleAfter is the age after which a lock file belongs to a dead holder. |
-| `ErrLockTimeout` | var | gophermind-lib/briefv2/runfs/runfs.go:87 | ErrLockTimeout is returned by Lock when the lock stayed held for the whole wait. |
-| `Lock` | func | gophermind-lib/briefv2/runfs/runfs.go:94 | Lock takes an exclusive lock by creating path with O_EXCL and returns the function that releases it. |
-| `AppendLine` | func | gophermind-lib/briefv2/runfs/runfs.go:126 | AppendLine appends line and a newline to path with one write on a file opened O_APPEND, so concurrent appenders do not interleave. |
-| `ReadLines` | func | gophermind-lib/briefv2/runfs/runfs.go:149 | ReadLines returns the complete lines of path from byte offset off and the offset just after the last complete line. |
-| `Size` | func | gophermind-lib/briefv2/runfs/runfs.go:178 | Size is the byte length of path, 0 when it does not exist. |
+| `TimeFormat` | const | gophermind-lib/build/runfs/runfs.go:18 | TimeFormat is fixed width and always UTC, so timestamps compare correctly as text (RFC3339Nano trims trailing zeros and would not). |
+| `TS` | func | gophermind-lib/build/runfs/runfs.go:21 | TS formats t for storage. |
+| `ParseTS` | func | gophermind-lib/build/runfs/runfs.go:24 | ParseTS is the inverse of TS; the empty string is the zero time. |
+| `Fixed` | func | gophermind-lib/build/runfs/runfs.go:33 | Fixed returns a resolver that maps every run id to dir. |
+| `WriteFileAtomic` | func | gophermind-lib/build/runfs/runfs.go:40 | WriteFileAtomic writes data to path through a temporary file in the same folder and a rename, so a reader sees the old file or the new one and never half of either. |
+| `LockStaleAfter` | const | gophermind-lib/build/runfs/runfs.go:82 | LockStaleAfter is the age after which a lock file belongs to a dead holder. |
+| `LockWait` | const | gophermind-lib/build/runfs/runfs.go:83 | LockStaleAfter is the age after which a lock file belongs to a dead holder. |
+| `ErrLockTimeout` | var | gophermind-lib/build/runfs/runfs.go:87 | ErrLockTimeout is returned by Lock when the lock stayed held for the whole wait. |
+| `Lock` | func | gophermind-lib/build/runfs/runfs.go:94 | Lock takes an exclusive lock by creating path with O_EXCL and returns the function that releases it. |
+| `AppendLine` | func | gophermind-lib/build/runfs/runfs.go:126 | AppendLine appends line and a newline to path with one write on a file opened O_APPEND, so concurrent appenders do not interleave. |
+| `ReadLines` | func | gophermind-lib/build/runfs/runfs.go:149 | ReadLines returns the complete lines of path from byte offset off and the offset just after the last complete line. |
+| `Size` | func | gophermind-lib/build/runfs/runfs.go:178 | Size is the byte length of path, 0 when it does not exist. |
 
 ## package runner
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `ClassMalformed` | const | gophermind-lib/briefv2/runner/check.go:21 | Failure classes: the text before the first colon in blackboard failure_reason (spec 7.2). |
-| `ClassBuild` | const | gophermind-lib/briefv2/runner/check.go:22 | Failure classes: the text before the first colon in blackboard failure_reason (spec 7.2). |
-| `ClassVet` | const | gophermind-lib/briefv2/runner/check.go:23 | Failure classes: the text before the first colon in blackboard failure_reason (spec 7.2). |
-| `ClassTestFail` | const | gophermind-lib/briefv2/runner/check.go:24 | Failure classes: the text before the first colon in blackboard failure_reason (spec 7.2). |
-| `ClassTestPanic` | const | gophermind-lib/briefv2/runner/check.go:25 | Failure classes: the text before the first colon in blackboard failure_reason (spec 7.2). |
-| `ClassTestTimeout` | const | gophermind-lib/briefv2/runner/check.go:26 | Failure classes: the text before the first colon in blackboard failure_reason (spec 7.2). |
-| `ClassNoTestsRan` | const | gophermind-lib/briefv2/runner/check.go:27 | Failure classes: the text before the first colon in blackboard failure_reason (spec 7.2). |
-| `ClassHarness` | const | gophermind-lib/briefv2/runner/check.go:28 | Failure classes: the text before the first colon in blackboard failure_reason (spec 7.2). |
-| `ClassCancelled` | const | gophermind-lib/briefv2/runner/check.go:29 | Failure classes: the text before the first colon in blackboard failure_reason (spec 7.2). |
-| `ClassTimeout` | const | gophermind-lib/briefv2/runner/check.go:30 | Failure classes: the text before the first colon in blackboard failure_reason (spec 7.2). |
-| `maxVerdictNames` | const | gophermind-lib/briefv2/runner/check.go:33 |  |
-| `errCancelled` | var | gophermind-lib/briefv2/runner/check.go:35 |  |
-| `Verdict` | type | gophermind-lib/briefv2/runner/check.go:39 | Verdict is the outcome of a check. |
-| `(Verdict).Pass` | method | gophermind-lib/briefv2/runner/check.go:50 | Pass reports that no stage failed. |
-| `(Verdict).Faulted` | method | gophermind-lib/briefv2/runner/check.go:53 | Faulted reports a harness fault or a cancellation: neither a model failure nor a pass. |
-| `(Verdict).Reason` | method | gophermind-lib/briefv2/runner/check.go:56 | Reason is "test_fail: TestX/case_a, TestX/case_b" or just "build". |
-| `safeNames` | func | gophermind-lib/briefv2/runner/check.go:66 |  |
-| `capNames` | func | gophermind-lib/briefv2/runner/check.go:78 |  |
-| `testFuncRE` | var | gophermind-lib/briefv2/runner/check.go:86 |  |
-| `RunRegex` | func | gophermind-lib/briefv2/runner/check.go:89 | RunRegex returns "^(TestA\|TestB)$"; each name must match ^Test[A-Za-z0-9_]*$. |
-| `pkgRE` | var | gophermind-lib/briefv2/runner/check.go:101 |  |
-| `validPkg` | func | gophermind-lib/briefv2/runner/check.go:104 | validPkg accepts a package pattern the go tool cannot read as a flag or a path outside the repo. |
-| `validFile` | func | gophermind-lib/briefv2/runner/check.go:117 | validFile accepts a repo-relative file path that no tool can read as a flag. |
-| `harness` | func | gophermind-lib/briefv2/runner/check.go:129 |  |
-| `errInvalidInput` | var | gophermind-lib/briefv2/runner/check.go:131 |  |
-| `lookInEnv` | func | gophermind-lib/briefv2/runner/check.go:134 | lookInEnv finds name on the PATH given in env. |
-| `tool` | func | gophermind-lib/briefv2/runner/check.go:151 |  |
-| `fault` | func | gophermind-lib/briefv2/runner/check.go:160 | fault maps a Result that says the command did not really run to its verdict. |
-| `stageFail` | func | gophermind-lib/briefv2/runner/check.go:171 | stageFail builds the failing verdict for a non-test stage. |
-| `(*Runner).goStage` | method | gophermind-lib/briefv2/runner/check.go:183 | goStage runs one go build or vet stage. |
-| `vetTypeCheckFailed` | func | gophermind-lib/briefv2/runner/check.go:202 |  |
-| `(*Runner).BuildVet` | method | gophermind-lib/briefv2/runner/check.go:212 | BuildVet runs go build ./... |
-| `LeafCheck` | type | gophermind-lib/briefv2/runner/check.go:223 | LeafCheck is one leaf's verification: gofmt, build, vet, then its one test. |
-| `pkgArg` | func | gophermind-lib/briefv2/runner/check.go:231 |  |
-| `(*Runner).CheckLeaf` | method | gophermind-lib/briefv2/runner/check.go:241 | CheckLeaf runs gofmt, build, vet and test in that order; the first failure wins. |
-| `TestSet` | type | gophermind-lib/briefv2/runner/check.go:272 | TestSet is a go test run over a package or the whole module. |
-| `(*Runner).Test` | method | gophermind-lib/briefv2/runner/check.go:283 | Test runs go test -json and classifies it. |
-| `(*Runner).runTests` | method | gophermind-lib/briefv2/runner/check.go:313 | runTests runs go test with the given extra args (flags then package) and classifies the result from the structured stream, which a separate line parser reads as the child writes, independent of the capped Output. |
-| `classify` | func | gophermind-lib/briefv2/runner/check.go:345 | classify decides from the structure: exit code, per-test and per-package actions and the FailedBuild field. |
-| `Location` | type | gophermind-lib/briefv2/runner/locations.go:12 | Location is a file position; File is repo-relative with forward slashes. |
-| `diagRE` | var | gophermind-lib/briefv2/runner/locations.go:18 |  |
-| `stackRE` | var | gophermind-lib/briefv2/runner/locations.go:19 |  |
-| `ParseLocations` | func | gophermind-lib/briefv2/runner/locations.go:25 | ParseLocations extracts compiler, vet and panic-stack positions, deduplicated and in order. |
-| `relToRepo` | func | gophermind-lib/briefv2/runner/locations.go:57 |  |
-| `defaultOutputCap` | const | gophermind-lib/briefv2/runner/runner.go:48 |  |
-| `defaultGrace` | const | gophermind-lib/briefv2/runner/runner.go:49 |  |
-| `defaultStageTime` | const | gophermind-lib/briefv2/runner/runner.go:50 |  |
-| `Output` | type | gophermind-lib/briefv2/runner/runner.go:57 | Output is captured combined stdout and stderr. |
-| `(Output).Text` | method | gophermind-lib/briefv2/runner/runner.go:65 | Text is the first OutputCap bytes the process wrote. |
-| `(Output).WholeLines` | method | gophermind-lib/briefv2/runner/runner.go:70 | WholeLines is Text without a last line the cap cut short. |
-| `(Output).Size` | method | gophermind-lib/briefv2/runner/runner.go:79 | Size is the total bytes the process wrote, including any cut off. |
-| `(Output).Truncated` | method | gophermind-lib/briefv2/runner/runner.go:82 | Truncated reports that the process wrote more than was kept. |
-| `(Output).SHA256` | method | gophermind-lib/briefv2/runner/runner.go:85 | SHA256 is the hex hash of all bytes the process wrote, not only the kept ones. |
-| `(Output).Lines` | method | gophermind-lib/briefv2/runner/runner.go:88 | Lines returns the first n lines of Text with "\r" trimmed. |
-| `(Output).String` | method | gophermind-lib/briefv2/runner/runner.go:103 |  |
-| `(Output).GoString` | method | gophermind-lib/briefv2/runner/runner.go:111 | GoString is the %#v form. |
-| `(Output).Format` | method | gophermind-lib/briefv2/runner/runner.go:114 | Format implements fmt.Formatter so every verb prints the size form. |
-| `(Output).MarshalJSON` | method | gophermind-lib/briefv2/runner/runner.go:117 | MarshalJSON emits size, truncation and hash only. |
-| `cappedWriter` | type | gophermind-lib/briefv2/runner/runner.go:127 | cappedWriter counts and hashes every byte and keeps the first limit bytes. |
-| `newCappedWriter` | func | gophermind-lib/briefv2/runner/runner.go:136 |  |
-| `(*cappedWriter).Write` | method | gophermind-lib/briefv2/runner/runner.go:140 |  |
-| `(*cappedWriter).output` | method | gophermind-lib/briefv2/runner/runner.go:157 |  |
-| `Config` | type | gophermind-lib/briefv2/runner/runner.go:166 | Config is set once per Runner. |
-| `Runner` | type | gophermind-lib/briefv2/runner/runner.go:176 | Runner runs commands. |
-| `New` | func | gophermind-lib/briefv2/runner/runner.go:179 | New applies the defaults. |
-| `Spec` | type | gophermind-lib/briefv2/runner/runner.go:193 | Spec describes one command. |
-| `Shell` | func | gophermind-lib/briefv2/runner/runner.go:213 | Shell returns the argv for a shell command line. |
-| `Result` | type | gophermind-lib/briefv2/runner/runner.go:216 | Result is the outcome of one Run. |
-| `startErr` | func | gophermind-lib/briefv2/runner/runner.go:228 |  |
-| `envPortRE` | var | gophermind-lib/briefv2/runner/runner.go:238 |  |
-| `envPorts` | func | gophermind-lib/briefv2/runner/runner.go:241 | envPorts returns the loopback ports an environment names. |
-| `mergePorts` | func | gophermind-lib/briefv2/runner/runner.go:254 | mergePorts concatenates port lists into a new slice, so a caller's profile is never mutated. |
-| `killProc` | var | gophermind-lib/briefv2/runner/runner.go:263 | killProc kills one process; tests replace it. |
-| `(*Runner).Run` | method | gophermind-lib/briefv2/runner/runner.go:267 | Run runs s. |
-| `survivorWarning` | const | gophermind-lib/briefv2/runner/sweep.go:22 |  |
-| `psPath` | var | gophermind-lib/briefv2/runner/sweep.go:25 | psPath is the process lister; tests may replace it. |
-| `procInfo` | type | gophermind-lib/briefv2/runner/sweep.go:27 |  |
-| `listProcs` | func | gophermind-lib/briefv2/runner/sweep.go:34 | listProcs returns every process of the machine. |
-| `sweeper` | type | gophermind-lib/briefv2/runner/sweep.go:61 | sweeper tracks the descendants of one command's leader. |
-| `newSweeper` | func | gophermind-lib/briefv2/runner/sweep.go:67 |  |
-| `(*sweeper).snapshot` | method | gophermind-lib/briefv2/runner/sweep.go:70 | snapshot records every current descendant of the leader and returns them. |
-| `(*sweeper).poll` | method | gophermind-lib/briefv2/runner/sweep.go:102 | poll snapshots until stop is closed: every 500 ms at first, when daemonizing children appear, then every 2 s. |
-| `(*sweeper).killEscapees` | method | gophermind-lib/briefv2/runner/sweep.go:120 | killEscapees SIGKILLs every current descendant while the leader is alive, so ancestry is intact; it repeats so that children forked meanwhile are caught. |
-| `(*sweeper).finish` | method | gophermind-lib/briefv2/runner/sweep.go:135 | finish kills every remembered process that is still the same process, waits briefly, and returns how many remain. |
-| `maxJSONLine` | const | gophermind-lib/briefv2/runner/testjson.go:15 |  |
-| `maxTrackTests` | const | gophermind-lib/briefv2/runner/testjson.go:16 |  |
-| `TestReport` | type | gophermind-lib/briefv2/runner/testjson.go:25 | TestReport is what a go test -json stream says. |
-| `jsonEvent` | type | gophermind-lib/briefv2/runner/testjson.go:47 |  |
-| `safeNameRE` | var | gophermind-lib/briefv2/runner/testjson.go:55 |  |
-| `SafeName` | func | gophermind-lib/briefv2/runner/testjson.go:59 | SafeName returns name when it matches ^[A-Za-z0-9_./-]{1,80}$, else "(unnamed)". |
-| `SafeQualified` | func | gophermind-lib/briefv2/runner/testjson.go:68 | SafeQualified returns "pkg.test" for persistence. |
-| `testKey` | type | gophermind-lib/briefv2/runner/testjson.go:82 |  |
-| `testState` | type | gophermind-lib/briefv2/runner/testjson.go:84 |  |
-| `streamParser` | type | gophermind-lib/briefv2/runner/testjson.go:89 | streamParser reads a go test -json stream line by line as the child writes it. |
-| `newStreamParser` | func | gophermind-lib/briefv2/runner/testjson.go:104 |  |
-| `(*streamParser).Write` | method | gophermind-lib/briefv2/runner/testjson.go:114 |  |
-| `(*streamParser).push` | method | gophermind-lib/briefv2/runner/testjson.go:129 |  |
-| `(*streamParser).endLine` | method | gophermind-lib/briefv2/runner/testjson.go:142 |  |
-| `(*streamParser).addText` | method | gophermind-lib/briefv2/runner/testjson.go:152 |  |
-| `(*streamParser).marker` | method | gophermind-lib/briefv2/runner/testjson.go:163 |  |
-| `(*streamParser).state` | method | gophermind-lib/briefv2/runner/testjson.go:177 |  |
-| `(*streamParser).line` | method | gophermind-lib/briefv2/runner/testjson.go:190 |  |
-| `(*streamParser).finish` | method | gophermind-lib/briefv2/runner/testjson.go:240 |  |
-| `sortedKeys` | func | gophermind-lib/briefv2/runner/testjson.go:294 | sortedKeys returns the leaf keys named in failed, in that order. |
-| `ParseTestJSON` | func | gophermind-lib/briefv2/runner/testjson.go:308 | ParseTestJSON reads a go test -json stream and tolerates non-JSON lines. |
+| `ClassMalformed` | const | gophermind-lib/build/runner/check.go:21 | Failure classes: the text before the first colon in blackboard failure_reason (spec 7.2). |
+| `ClassBuild` | const | gophermind-lib/build/runner/check.go:22 | Failure classes: the text before the first colon in blackboard failure_reason (spec 7.2). |
+| `ClassVet` | const | gophermind-lib/build/runner/check.go:23 | Failure classes: the text before the first colon in blackboard failure_reason (spec 7.2). |
+| `ClassTestFail` | const | gophermind-lib/build/runner/check.go:24 | Failure classes: the text before the first colon in blackboard failure_reason (spec 7.2). |
+| `ClassTestPanic` | const | gophermind-lib/build/runner/check.go:25 | Failure classes: the text before the first colon in blackboard failure_reason (spec 7.2). |
+| `ClassTestTimeout` | const | gophermind-lib/build/runner/check.go:26 | Failure classes: the text before the first colon in blackboard failure_reason (spec 7.2). |
+| `ClassNoTestsRan` | const | gophermind-lib/build/runner/check.go:27 | Failure classes: the text before the first colon in blackboard failure_reason (spec 7.2). |
+| `ClassHarness` | const | gophermind-lib/build/runner/check.go:28 | Failure classes: the text before the first colon in blackboard failure_reason (spec 7.2). |
+| `ClassCancelled` | const | gophermind-lib/build/runner/check.go:29 | Failure classes: the text before the first colon in blackboard failure_reason (spec 7.2). |
+| `ClassTimeout` | const | gophermind-lib/build/runner/check.go:30 | Failure classes: the text before the first colon in blackboard failure_reason (spec 7.2). |
+| `maxVerdictNames` | const | gophermind-lib/build/runner/check.go:33 |  |
+| `errCancelled` | var | gophermind-lib/build/runner/check.go:35 |  |
+| `Verdict` | type | gophermind-lib/build/runner/check.go:39 | Verdict is the outcome of a check. |
+| `(Verdict).Pass` | method | gophermind-lib/build/runner/check.go:50 | Pass reports that no stage failed. |
+| `(Verdict).Faulted` | method | gophermind-lib/build/runner/check.go:53 | Faulted reports a harness fault or a cancellation: neither a model failure nor a pass. |
+| `(Verdict).Reason` | method | gophermind-lib/build/runner/check.go:56 | Reason is "test_fail: TestX/case_a, TestX/case_b" or just "build". |
+| `safeNames` | func | gophermind-lib/build/runner/check.go:66 |  |
+| `capNames` | func | gophermind-lib/build/runner/check.go:78 |  |
+| `testFuncRE` | var | gophermind-lib/build/runner/check.go:86 |  |
+| `RunRegex` | func | gophermind-lib/build/runner/check.go:89 | RunRegex returns "^(TestA\|TestB)$"; each name must match ^Test[A-Za-z0-9_]*$. |
+| `pkgRE` | var | gophermind-lib/build/runner/check.go:101 |  |
+| `validPkg` | func | gophermind-lib/build/runner/check.go:104 | validPkg accepts a package pattern the go tool cannot read as a flag or a path outside the repo. |
+| `validFile` | func | gophermind-lib/build/runner/check.go:117 | validFile accepts a repo-relative file path that no tool can read as a flag. |
+| `harness` | func | gophermind-lib/build/runner/check.go:129 |  |
+| `errInvalidInput` | var | gophermind-lib/build/runner/check.go:131 |  |
+| `lookInEnv` | func | gophermind-lib/build/runner/check.go:134 | lookInEnv finds name on the PATH given in env. |
+| `tool` | func | gophermind-lib/build/runner/check.go:151 |  |
+| `fault` | func | gophermind-lib/build/runner/check.go:160 | fault maps a Result that says the command did not really run to its verdict. |
+| `stageFail` | func | gophermind-lib/build/runner/check.go:171 | stageFail builds the failing verdict for a non-test stage. |
+| `(*Runner).goStage` | method | gophermind-lib/build/runner/check.go:183 | goStage runs one go build or vet stage. |
+| `vetTypeCheckFailed` | func | gophermind-lib/build/runner/check.go:202 |  |
+| `(*Runner).BuildVet` | method | gophermind-lib/build/runner/check.go:212 | BuildVet runs go build ./... |
+| `LeafCheck` | type | gophermind-lib/build/runner/check.go:223 | LeafCheck is one leaf's verification: gofmt, build, vet, then its one test. |
+| `pkgArg` | func | gophermind-lib/build/runner/check.go:231 |  |
+| `(*Runner).CheckLeaf` | method | gophermind-lib/build/runner/check.go:241 | CheckLeaf runs gofmt, build, vet and test in that order; the first failure wins. |
+| `TestSet` | type | gophermind-lib/build/runner/check.go:272 | TestSet is a go test run over a package or the whole module. |
+| `(*Runner).Test` | method | gophermind-lib/build/runner/check.go:283 | Test runs go test -json and classifies it. |
+| `(*Runner).runTests` | method | gophermind-lib/build/runner/check.go:313 | runTests runs go test with the given extra args (flags then package) and classifies the result from the structured stream, which a separate line parser reads as the child writes, independent of the capped Output. |
+| `classify` | func | gophermind-lib/build/runner/check.go:345 | classify decides from the structure: exit code, per-test and per-package actions and the FailedBuild field. |
+| `Location` | type | gophermind-lib/build/runner/locations.go:12 | Location is a file position; File is repo-relative with forward slashes. |
+| `diagRE` | var | gophermind-lib/build/runner/locations.go:18 |  |
+| `stackRE` | var | gophermind-lib/build/runner/locations.go:19 |  |
+| `ParseLocations` | func | gophermind-lib/build/runner/locations.go:25 | ParseLocations extracts compiler, vet and panic-stack positions, deduplicated and in order. |
+| `relToRepo` | func | gophermind-lib/build/runner/locations.go:57 |  |
+| `defaultOutputCap` | const | gophermind-lib/build/runner/runner.go:48 |  |
+| `defaultGrace` | const | gophermind-lib/build/runner/runner.go:49 |  |
+| `defaultStageTime` | const | gophermind-lib/build/runner/runner.go:50 |  |
+| `Output` | type | gophermind-lib/build/runner/runner.go:57 | Output is captured combined stdout and stderr. |
+| `(Output).Text` | method | gophermind-lib/build/runner/runner.go:65 | Text is the first OutputCap bytes the process wrote. |
+| `(Output).WholeLines` | method | gophermind-lib/build/runner/runner.go:70 | WholeLines is Text without a last line the cap cut short. |
+| `(Output).Size` | method | gophermind-lib/build/runner/runner.go:79 | Size is the total bytes the process wrote, including any cut off. |
+| `(Output).Truncated` | method | gophermind-lib/build/runner/runner.go:82 | Truncated reports that the process wrote more than was kept. |
+| `(Output).SHA256` | method | gophermind-lib/build/runner/runner.go:85 | SHA256 is the hex hash of all bytes the process wrote, not only the kept ones. |
+| `(Output).Lines` | method | gophermind-lib/build/runner/runner.go:88 | Lines returns the first n lines of Text with "\r" trimmed. |
+| `(Output).String` | method | gophermind-lib/build/runner/runner.go:103 |  |
+| `(Output).GoString` | method | gophermind-lib/build/runner/runner.go:111 | GoString is the %#v form. |
+| `(Output).Format` | method | gophermind-lib/build/runner/runner.go:114 | Format implements fmt.Formatter so every verb prints the size form. |
+| `(Output).MarshalJSON` | method | gophermind-lib/build/runner/runner.go:117 | MarshalJSON emits size, truncation and hash only. |
+| `cappedWriter` | type | gophermind-lib/build/runner/runner.go:127 | cappedWriter counts and hashes every byte and keeps the first limit bytes. |
+| `newCappedWriter` | func | gophermind-lib/build/runner/runner.go:136 |  |
+| `(*cappedWriter).Write` | method | gophermind-lib/build/runner/runner.go:140 |  |
+| `(*cappedWriter).output` | method | gophermind-lib/build/runner/runner.go:157 |  |
+| `Config` | type | gophermind-lib/build/runner/runner.go:166 | Config is set once per Runner. |
+| `Runner` | type | gophermind-lib/build/runner/runner.go:176 | Runner runs commands. |
+| `New` | func | gophermind-lib/build/runner/runner.go:179 | New applies the defaults. |
+| `Spec` | type | gophermind-lib/build/runner/runner.go:193 | Spec describes one command. |
+| `Shell` | func | gophermind-lib/build/runner/runner.go:213 | Shell returns the argv for a shell command line. |
+| `Result` | type | gophermind-lib/build/runner/runner.go:216 | Result is the outcome of one Run. |
+| `startErr` | func | gophermind-lib/build/runner/runner.go:228 |  |
+| `envPortRE` | var | gophermind-lib/build/runner/runner.go:238 |  |
+| `envPorts` | func | gophermind-lib/build/runner/runner.go:241 | envPorts returns the loopback ports an environment names. |
+| `mergePorts` | func | gophermind-lib/build/runner/runner.go:254 | mergePorts concatenates port lists into a new slice, so a caller's profile is never mutated. |
+| `killProc` | var | gophermind-lib/build/runner/runner.go:263 | killProc kills one process; tests replace it. |
+| `(*Runner).Run` | method | gophermind-lib/build/runner/runner.go:267 | Run runs s. |
+| `survivorWarning` | const | gophermind-lib/build/runner/sweep.go:22 |  |
+| `psPath` | var | gophermind-lib/build/runner/sweep.go:25 | psPath is the process lister; tests may replace it. |
+| `procInfo` | type | gophermind-lib/build/runner/sweep.go:27 |  |
+| `listProcs` | func | gophermind-lib/build/runner/sweep.go:34 | listProcs returns every process of the machine. |
+| `sweeper` | type | gophermind-lib/build/runner/sweep.go:61 | sweeper tracks the descendants of one command's leader. |
+| `newSweeper` | func | gophermind-lib/build/runner/sweep.go:67 |  |
+| `(*sweeper).snapshot` | method | gophermind-lib/build/runner/sweep.go:70 | snapshot records every current descendant of the leader and returns them. |
+| `(*sweeper).poll` | method | gophermind-lib/build/runner/sweep.go:102 | poll snapshots until stop is closed: every 500 ms at first, when daemonizing children appear, then every 2 s. |
+| `(*sweeper).killEscapees` | method | gophermind-lib/build/runner/sweep.go:120 | killEscapees SIGKILLs every current descendant while the leader is alive, so ancestry is intact; it repeats so that children forked meanwhile are caught. |
+| `(*sweeper).finish` | method | gophermind-lib/build/runner/sweep.go:135 | finish kills every remembered process that is still the same process, waits briefly, and returns how many remain. |
+| `maxJSONLine` | const | gophermind-lib/build/runner/testjson.go:15 |  |
+| `maxTrackTests` | const | gophermind-lib/build/runner/testjson.go:16 |  |
+| `TestReport` | type | gophermind-lib/build/runner/testjson.go:25 | TestReport is what a go test -json stream says. |
+| `jsonEvent` | type | gophermind-lib/build/runner/testjson.go:47 |  |
+| `safeNameRE` | var | gophermind-lib/build/runner/testjson.go:55 |  |
+| `SafeName` | func | gophermind-lib/build/runner/testjson.go:59 | SafeName returns name when it matches ^[A-Za-z0-9_./-]{1,80}$, else "(unnamed)". |
+| `SafeQualified` | func | gophermind-lib/build/runner/testjson.go:68 | SafeQualified returns "pkg.test" for persistence. |
+| `testKey` | type | gophermind-lib/build/runner/testjson.go:82 |  |
+| `testState` | type | gophermind-lib/build/runner/testjson.go:84 |  |
+| `streamParser` | type | gophermind-lib/build/runner/testjson.go:89 | streamParser reads a go test -json stream line by line as the child writes it. |
+| `newStreamParser` | func | gophermind-lib/build/runner/testjson.go:104 |  |
+| `(*streamParser).Write` | method | gophermind-lib/build/runner/testjson.go:114 |  |
+| `(*streamParser).push` | method | gophermind-lib/build/runner/testjson.go:129 |  |
+| `(*streamParser).endLine` | method | gophermind-lib/build/runner/testjson.go:142 |  |
+| `(*streamParser).addText` | method | gophermind-lib/build/runner/testjson.go:152 |  |
+| `(*streamParser).marker` | method | gophermind-lib/build/runner/testjson.go:163 |  |
+| `(*streamParser).state` | method | gophermind-lib/build/runner/testjson.go:177 |  |
+| `(*streamParser).line` | method | gophermind-lib/build/runner/testjson.go:190 |  |
+| `(*streamParser).finish` | method | gophermind-lib/build/runner/testjson.go:240 |  |
+| `sortedKeys` | func | gophermind-lib/build/runner/testjson.go:294 | sortedKeys returns the leaf keys named in failed, in that order. |
+| `ParseTestJSON` | func | gophermind-lib/build/runner/testjson.go:308 | ParseTestJSON reads a go test -json stream and tolerates non-JSON lines. |
 
 ## package runview
 
@@ -4248,39 +4248,39 @@ after every completed task. Non-test Go declarations only.
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `Profile` | type | gophermind-lib/briefv2/sandbox/sandbox.go:33 | Profile names the paths a sandboxed child may touch. |
-| `maxRangePorts` | const | gophermind-lib/briefv2/sandbox/sandbox.go:47 | maxRangePorts is the widest LoopbackRange the sandbox compiler accepts with margin. |
-| `deniedExec` | var | gophermind-lib/briefv2/sandbox/sandbox.go:50 | deniedExec lists binaries a child may not execute. |
-| `secretRegex` | var | gophermind-lib/briefv2/sandbox/sandbox.go:58 | secretRegex lists the file name patterns denied for reads inside the repo. |
-| `ErrSandboxRequired` | var | gophermind-lib/briefv2/sandbox/sandbox.go:67 | ErrSandboxRequired is returned when the platform has no sandbox and the settings did not explicitly turn it off. |
-| `lookPath` | var | gophermind-lib/briefv2/sandbox/sandbox.go:70 | lookPath locates sandbox-exec. |
-| `Required` | func | gophermind-lib/briefv2/sandbox/sandbox.go:83 | Required reports whether the sandbox is enabled. |
-| `pathOpts` | type | gophermind-lib/briefv2/sandbox/sandbox.go:94 | pathOpts tunes resolve per field. |
-| `validChars` | func | gophermind-lib/briefv2/sandbox/sandbox.go:101 |  |
-| `components` | func | gophermind-lib/briefv2/sandbox/sandbox.go:113 |  |
-| `resolve` | func | gophermind-lib/briefv2/sandbox/sandbox.go:123 | resolve validates one path and returns it with symlinks resolved. |
-| `subpaths` | func | gophermind-lib/briefv2/sandbox/sandbox.go:170 |  |
-| `(Profile).loopbackPorts` | method | gophermind-lib/briefv2/sandbox/sandbox.go:180 | loopbackPorts validates LoopbackPorts and LoopbackRange and returns the sorted, de-duplicated port list. |
-| `(Profile).Text` | method | gophermind-lib/briefv2/sandbox/sandbox.go:209 | Text returns the SBPL profile. |
-| `Wrap` | func | gophermind-lib/briefv2/sandbox/sandbox.go:327 | Wrap returns cmd rewritten to run under sandbox-exec. |
-| `Preflight` | func | gophermind-lib/briefv2/sandbox/sandbox.go:345 | Preflight verifies sandbox-exec exists and that a minimal profile loads and runs /usr/bin/true. |
+| `Profile` | type | gophermind-lib/build/sandbox/sandbox.go:33 | Profile names the paths a sandboxed child may touch. |
+| `maxRangePorts` | const | gophermind-lib/build/sandbox/sandbox.go:47 | maxRangePorts is the widest LoopbackRange the sandbox compiler accepts with margin. |
+| `deniedExec` | var | gophermind-lib/build/sandbox/sandbox.go:50 | deniedExec lists binaries a child may not execute. |
+| `secretRegex` | var | gophermind-lib/build/sandbox/sandbox.go:58 | secretRegex lists the file name patterns denied for reads inside the repo. |
+| `ErrSandboxRequired` | var | gophermind-lib/build/sandbox/sandbox.go:67 | ErrSandboxRequired is returned when the platform has no sandbox and the settings did not explicitly turn it off. |
+| `lookPath` | var | gophermind-lib/build/sandbox/sandbox.go:70 | lookPath locates sandbox-exec. |
+| `Required` | func | gophermind-lib/build/sandbox/sandbox.go:83 | Required reports whether the sandbox is enabled. |
+| `pathOpts` | type | gophermind-lib/build/sandbox/sandbox.go:94 | pathOpts tunes resolve per field. |
+| `validChars` | func | gophermind-lib/build/sandbox/sandbox.go:101 |  |
+| `components` | func | gophermind-lib/build/sandbox/sandbox.go:113 |  |
+| `resolve` | func | gophermind-lib/build/sandbox/sandbox.go:123 | resolve validates one path and returns it with symlinks resolved. |
+| `subpaths` | func | gophermind-lib/build/sandbox/sandbox.go:170 |  |
+| `(Profile).loopbackPorts` | method | gophermind-lib/build/sandbox/sandbox.go:180 | loopbackPorts validates LoopbackPorts and LoopbackRange and returns the sorted, de-duplicated port list. |
+| `(Profile).Text` | method | gophermind-lib/build/sandbox/sandbox.go:209 | Text returns the SBPL profile. |
+| `Wrap` | func | gophermind-lib/build/sandbox/sandbox.go:327 | Wrap returns cmd rewritten to run under sandbox-exec. |
+| `Preflight` | func | gophermind-lib/build/sandbox/sandbox.go:345 | Preflight verifies sandbox-exec exists and that a minimal profile loads and runs /usr/bin/true. |
 
 ## package schema
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `files` | var | gophermind-lib/briefv2/schema/schema.go:16 |  |
-| `Kind` | type | gophermind-lib/briefv2/schema/schema.go:19 | Kind selects which embedded schema Validate checks against. |
-| `KindBrief` | const | gophermind-lib/briefv2/schema/schema.go:22 |  |
-| `KindNode` | const | gophermind-lib/briefv2/schema/schema.go:23 |  |
-| `KindContract` | const | gophermind-lib/briefv2/schema/schema.go:24 |  |
-| `sources` | var | gophermind-lib/briefv2/schema/schema.go:27 |  |
-| `once` | var | gophermind-lib/briefv2/schema/schema.go:34 |  |
-| `compiled` | var | gophermind-lib/briefv2/schema/schema.go:35 |  |
-| `initErr` | var | gophermind-lib/briefv2/schema/schema.go:36 |  |
-| `compile` | func | gophermind-lib/briefv2/schema/schema.go:39 |  |
-| `Validate` | func | gophermind-lib/briefv2/schema/schema.go:71 | Validate checks the JSON document doc against the schema for kind. |
-| `Raw` | func | gophermind-lib/briefv2/schema/schema.go:90 | Raw returns the embedded schema file for kind, byte for byte. |
+| `files` | var | gophermind-lib/build/schema/schema.go:16 |  |
+| `Kind` | type | gophermind-lib/build/schema/schema.go:19 | Kind selects which embedded schema Validate checks against. |
+| `KindBrief` | const | gophermind-lib/build/schema/schema.go:22 |  |
+| `KindNode` | const | gophermind-lib/build/schema/schema.go:23 |  |
+| `KindContract` | const | gophermind-lib/build/schema/schema.go:24 |  |
+| `sources` | var | gophermind-lib/build/schema/schema.go:27 |  |
+| `once` | var | gophermind-lib/build/schema/schema.go:34 |  |
+| `compiled` | var | gophermind-lib/build/schema/schema.go:35 |  |
+| `initErr` | var | gophermind-lib/build/schema/schema.go:36 |  |
+| `compile` | func | gophermind-lib/build/schema/schema.go:39 |  |
+| `Validate` | func | gophermind-lib/build/schema/schema.go:71 | Validate checks the JSON document doc against the schema for kind. |
+| `Raw` | func | gophermind-lib/build/schema/schema.go:90 | Raw returns the embedded schema file for kind, byte for byte. |
 
 ## package schemas
 
@@ -4562,53 +4562,53 @@ after every completed task. Non-test Go declarations only.
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `ExecutorConfig` | type | gophermind-lib/briefv2/settings/executor.go:14 | ExecutorConfig is the executor: section of gophermind.yaml. |
-| `ExecutorProxy` | type | gophermind-lib/briefv2/settings/executor.go:33 | ExecutorProxy configures the harness module proxy. |
-| `DefaultToolchainPATH` | const | gophermind-lib/briefv2/settings/executor.go:40 | DefaultToolchainPATH is the only toolchain variable a settings file holds; the executor adds the per-run ones. |
-| `DefaultExecutor` | func | gophermind-lib/briefv2/settings/executor.go:43 | DefaultExecutor returns the defaults of the executor design, section 11. |
-| `(*Config).applyExecutorDefaults` | method | gophermind-lib/briefv2/settings/executor.go:55 | applyExecutorDefaults fills every zero value of the executor section and a nil toolchain. |
-| `MaxWorkers` | const | gophermind-lib/briefv2/settings/executor.go:94 | MaxWorkers is the largest executor.workers: leaves of one level run at once, each in a private copy of the repository (sub-project F). |
-| `(ExecutorConfig).validate` | method | gophermind-lib/briefv2/settings/executor.go:97 | validate checks the section. |
-| `loopbackHostPort` | func | gophermind-lib/briefv2/settings/executor.go:137 |  |
-| `validateToolchain` | func | gophermind-lib/briefv2/settings/executor.go:152 |  |
-| `checkExplicitZeroCounts` | func | gophermind-lib/briefv2/settings/executor.go:162 | checkExplicitZeroCounts refuses an explicit 0 for a retry, attempt or round count, so a leaf can never be abandoned by a typo. |
-| `(*Config).BuildProviders` | method | gophermind-lib/briefv2/settings/providers.go:15 | BuildProviders constructs one OpenAI-compatible provider per configured entry. |
-| `ReviseModeRewrite` | const | gophermind-lib/briefv2/settings/revise.go:10 | Values of revise.mode. |
-| `ReviseModeNotes` | const | gophermind-lib/briefv2/settings/revise.go:11 | Values of revise.mode. |
-| `ReviseConfig` | type | gophermind-lib/briefv2/settings/revise.go:16 | ReviseConfig is the revise: section of gophermind.yaml. |
-| `DefaultRevise` | func | gophermind-lib/briefv2/settings/revise.go:26 | DefaultRevise returns the defaults of the planner revise stage design, section 12. |
-| `(*Config).applyReviseDefaults` | method | gophermind-lib/briefv2/settings/revise.go:32 | applyReviseDefaults fills every zero value of the section. |
-| `(ReviseConfig).validate` | method | gophermind-lib/briefv2/settings/revise.go:54 |  |
-| `Visibility` | type | gophermind-lib/briefv2/settings/settings.go:26 | Visibility says whether a provider runs on John's hardware or somewhere else. |
-| `Private` | const | gophermind-lib/briefv2/settings/settings.go:29 |  |
-| `Public` | const | gophermind-lib/briefv2/settings/settings.go:30 |  |
-| `Tiers` | var | gophermind-lib/briefv2/settings/settings.go:34 | The three model tiers, in the order a config lists them. |
-| `ModelEntry` | type | gophermind-lib/briefv2/settings/settings.go:36 |  |
-| `ProviderConfig` | type | gophermind-lib/briefv2/settings/settings.go:41 |  |
-| `Privacy` | type | gophermind-lib/briefv2/settings/settings.go:59 |  |
-| `Defaults` | type | gophermind-lib/briefv2/settings/settings.go:63 |  |
-| `(Defaults).RouteByTier` | method | gophermind-lib/briefv2/settings/settings.go:77 | RouteByTier reports whether stages that work on one node use that node's model_tier. |
-| `RateLimits` | type | gophermind-lib/briefv2/settings/settings.go:79 |  |
-| `Human` | type | gophermind-lib/briefv2/settings/settings.go:89 |  |
-| `Vault` | type | gophermind-lib/briefv2/settings/settings.go:93 |  |
-| `Config` | type | gophermind-lib/briefv2/settings/settings.go:98 | Config is the whole gophermind.yaml. |
-| `Default` | func | gophermind-lib/briefv2/settings/settings.go:113 | Default is what a first run writes: the Mac mini plus two providers that need no key. |
-| `(*Config).applyPlannerDefaults` | method | gophermind-lib/briefv2/settings/settings.go:145 | applyPlannerDefaults fills the planner keys an older file lacks. |
-| `intPtr` | func | gophermind-lib/briefv2/settings/settings.go:161 |  |
-| `Path` | func | gophermind-lib/briefv2/settings/settings.go:164 | Path is ~/.gophermind/gophermind.yaml, or under GOPHERMIND_CONFIG_DIR. |
-| `header` | const | gophermind-lib/briefv2/settings/settings.go:172 |  |
-| `Load` | func | gophermind-lib/briefv2/settings/settings.go:178 | Load reads path. |
-| `writeDefaults` | func | gophermind-lib/briefv2/settings/settings.go:207 |  |
-| `SplitEntry` | func | gophermind-lib/briefv2/settings/settings.go:235 | SplitEntry splits a chain entry "provider/model" at the first slash, so "kilo/kilo-auto/free" is provider kilo, model kilo-auto/free. |
-| `(*Config).Validate` | method | gophermind-lib/briefv2/settings/settings.go:244 | Validate checks everything Load and the router rely on. |
-| `validBaseURL` | func | gophermind-lib/briefv2/settings/settings.go:381 | validBaseURL accepts an absolute http or https URL with a host and no user information. |
-| `(*Config).FallbackAllowed` | method | gophermind-lib/briefv2/settings/settings.go:392 | FallbackAllowed says whether raw may stand in for p's base_url without changing who sees the prompts and the provider's key. |
-| `cgnat` | var | gophermind-lib/briefv2/settings/settings.go:404 |  |
-| `privateHost` | func | gophermind-lib/briefv2/settings/settings.go:410 | privateHost: loopback, RFC 1918, the CGNAT/VPN range 100.64/10, link-local, IPv6 ULA, or a name ending in .local, .internal, .lan or .invalid (or localhost). |
-| `(*Config).Visibility` | method | gophermind-lib/briefv2/settings/settings.go:428 | Visibility reports a provider's visibility; ok is false for an unknown name. |
-| `(*Config).ModelInfo` | method | gophermind-lib/briefv2/settings/settings.go:438 | ModelInfo resolves a chain entry "provider/model" to the model's info. |
-| `(*Config).CallTimeoutFor` | method | gophermind-lib/briefv2/settings/settings.go:458 | CallTimeoutFor is the call timeout for a provider: its own override or defaults.call_timeout. |
-| `(*Config).MaxCallTimeout` | method | gophermind-lib/briefv2/settings/settings.go:468 | MaxCallTimeout is the longest call timeout any provider can have. |
+| `ExecutorConfig` | type | gophermind-lib/build/settings/executor.go:14 | ExecutorConfig is the executor: section of gophermind.yaml. |
+| `ExecutorProxy` | type | gophermind-lib/build/settings/executor.go:33 | ExecutorProxy configures the harness module proxy. |
+| `DefaultToolchainPATH` | const | gophermind-lib/build/settings/executor.go:40 | DefaultToolchainPATH is the only toolchain variable a settings file holds; the executor adds the per-run ones. |
+| `DefaultExecutor` | func | gophermind-lib/build/settings/executor.go:43 | DefaultExecutor returns the defaults of the executor design, section 11. |
+| `(*Config).applyExecutorDefaults` | method | gophermind-lib/build/settings/executor.go:55 | applyExecutorDefaults fills every zero value of the executor section and a nil toolchain. |
+| `MaxWorkers` | const | gophermind-lib/build/settings/executor.go:94 | MaxWorkers is the largest executor.workers: leaves of one level run at once, each in a private copy of the repository (sub-project F). |
+| `(ExecutorConfig).validate` | method | gophermind-lib/build/settings/executor.go:97 | validate checks the section. |
+| `loopbackHostPort` | func | gophermind-lib/build/settings/executor.go:137 |  |
+| `validateToolchain` | func | gophermind-lib/build/settings/executor.go:152 |  |
+| `checkExplicitZeroCounts` | func | gophermind-lib/build/settings/executor.go:162 | checkExplicitZeroCounts refuses an explicit 0 for a retry, attempt or round count, so a leaf can never be abandoned by a typo. |
+| `(*Config).BuildProviders` | method | gophermind-lib/build/settings/providers.go:15 | BuildProviders constructs one OpenAI-compatible provider per configured entry. |
+| `ReviseModeRewrite` | const | gophermind-lib/build/settings/revise.go:10 | Values of revise.mode. |
+| `ReviseModeNotes` | const | gophermind-lib/build/settings/revise.go:11 | Values of revise.mode. |
+| `ReviseConfig` | type | gophermind-lib/build/settings/revise.go:16 | ReviseConfig is the revise: section of gophermind.yaml. |
+| `DefaultRevise` | func | gophermind-lib/build/settings/revise.go:26 | DefaultRevise returns the defaults of the planner revise stage design, section 12. |
+| `(*Config).applyReviseDefaults` | method | gophermind-lib/build/settings/revise.go:32 | applyReviseDefaults fills every zero value of the section. |
+| `(ReviseConfig).validate` | method | gophermind-lib/build/settings/revise.go:54 |  |
+| `Visibility` | type | gophermind-lib/build/settings/settings.go:26 | Visibility says whether a provider runs on John's hardware or somewhere else. |
+| `Private` | const | gophermind-lib/build/settings/settings.go:29 |  |
+| `Public` | const | gophermind-lib/build/settings/settings.go:30 |  |
+| `Tiers` | var | gophermind-lib/build/settings/settings.go:34 | The three model tiers, in the order a config lists them. |
+| `ModelEntry` | type | gophermind-lib/build/settings/settings.go:36 |  |
+| `ProviderConfig` | type | gophermind-lib/build/settings/settings.go:41 |  |
+| `Privacy` | type | gophermind-lib/build/settings/settings.go:59 |  |
+| `Defaults` | type | gophermind-lib/build/settings/settings.go:63 |  |
+| `(Defaults).RouteByTier` | method | gophermind-lib/build/settings/settings.go:77 | RouteByTier reports whether stages that work on one node use that node's model_tier. |
+| `RateLimits` | type | gophermind-lib/build/settings/settings.go:79 |  |
+| `Human` | type | gophermind-lib/build/settings/settings.go:89 |  |
+| `Vault` | type | gophermind-lib/build/settings/settings.go:93 |  |
+| `Config` | type | gophermind-lib/build/settings/settings.go:98 | Config is the whole gophermind.yaml. |
+| `Default` | func | gophermind-lib/build/settings/settings.go:113 | Default is what a first run writes: the Mac mini plus two providers that need no key. |
+| `(*Config).applyPlannerDefaults` | method | gophermind-lib/build/settings/settings.go:145 | applyPlannerDefaults fills the planner keys an older file lacks. |
+| `intPtr` | func | gophermind-lib/build/settings/settings.go:161 |  |
+| `Path` | func | gophermind-lib/build/settings/settings.go:164 | Path is ~/.gophermind/gophermind.yaml, or under GOPHERMIND_CONFIG_DIR. |
+| `header` | const | gophermind-lib/build/settings/settings.go:172 |  |
+| `Load` | func | gophermind-lib/build/settings/settings.go:178 | Load reads path. |
+| `writeDefaults` | func | gophermind-lib/build/settings/settings.go:207 |  |
+| `SplitEntry` | func | gophermind-lib/build/settings/settings.go:235 | SplitEntry splits a chain entry "provider/model" at the first slash, so "kilo/kilo-auto/free" is provider kilo, model kilo-auto/free. |
+| `(*Config).Validate` | method | gophermind-lib/build/settings/settings.go:244 | Validate checks everything Load and the router rely on. |
+| `validBaseURL` | func | gophermind-lib/build/settings/settings.go:381 | validBaseURL accepts an absolute http or https URL with a host and no user information. |
+| `(*Config).FallbackAllowed` | method | gophermind-lib/build/settings/settings.go:392 | FallbackAllowed says whether raw may stand in for p's base_url without changing who sees the prompts and the provider's key. |
+| `cgnat` | var | gophermind-lib/build/settings/settings.go:404 |  |
+| `privateHost` | func | gophermind-lib/build/settings/settings.go:410 | privateHost: loopback, RFC 1918, the CGNAT/VPN range 100.64/10, link-local, IPv6 ULA, or a name ending in .local, .internal, .lan or .invalid (or localhost). |
+| `(*Config).Visibility` | method | gophermind-lib/build/settings/settings.go:428 | Visibility reports a provider's visibility; ok is false for an unknown name. |
+| `(*Config).ModelInfo` | method | gophermind-lib/build/settings/settings.go:438 | ModelInfo resolves a chain entry "provider/model" to the model's info. |
+| `(*Config).CallTimeoutFor` | method | gophermind-lib/build/settings/settings.go:458 | CallTimeoutFor is the call timeout for a provider: its own override or defaults.call_timeout. |
+| `(*Config).MaxCallTimeout` | method | gophermind-lib/build/settings/settings.go:468 | MaxCallTimeout is the longest call timeout any provider can have. |
 
 ## package setup
 
@@ -4933,35 +4933,35 @@ after every completed task. Non-test Go declarations only.
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `Kind` | type | gophermind-lib/briefv2/tree/node.go:13 |  |
-| `KindRoot` | const | gophermind-lib/briefv2/tree/node.go:16 |  |
-| `KindComponent` | const | gophermind-lib/briefv2/tree/node.go:17 |  |
-| `KindFunction` | const | gophermind-lib/briefv2/tree/node.go:18 |  |
-| `idPattern` | var | gophermind-lib/briefv2/tree/node.go:23 | idPattern is the schema's id pattern; parent, children and depends_on entries must match it too so a reference can never carry a path. |
-| `reservedComponentIDs` | var | gophermind-lib/briefv2/tree/node.go:29 | reservedComponentIDs are run-folder names that sit next to the component folders: logs/ (the run's logs), attempts/ (saved model attempts) and decisions/ (a later sub-project). |
-| `IsReservedComponentID` | func | gophermind-lib/briefv2/tree/node.go:33 | IsReservedComponentID reports whether id names a run folder and so cannot be a component id. |
-| `Node` | type | gophermind-lib/briefv2/tree/node.go:37 | Node exposes the fields the tree logic needs and keeps the full decoded document so nothing else is lost on a round trip. |
-| `ParseNode` | func | gophermind-lib/briefv2/tree/node.go:49 | ParseNode validates raw against the node schema and decodes it. |
-| `(Node).checkRefs` | method | gophermind-lib/briefv2/tree/node.go:74 |  |
-| `strList` | func | gophermind-lib/briefv2/tree/node.go:94 |  |
-| `(*Node).SetWave` | method | gophermind-lib/briefv2/tree/node.go:106 | SetWave records w on both the struct and the document. |
-| `(Node).Marshal` | method | gophermind-lib/briefv2/tree/node.go:112 | Marshal renders the document as indented JSON. |
-| `(Node).Path` | method | gophermind-lib/briefv2/tree/node.go:115 | Path is the node's slash-separated path relative to the run directory. |
-| `Store` | type | gophermind-lib/briefv2/tree/store.go:14 | Store keeps one JSON file per node under dir (a run directory). |
-| `NewStore` | func | gophermind-lib/briefv2/tree/store.go:16 |  |
-| `notNodes` | var | gophermind-lib/briefv2/tree/store.go:18 |  |
-| `(*Store).Write` | method | gophermind-lib/briefv2/tree/store.go:23 | Write validates n against the node schema and writes it atomically. |
-| `(*Store).WriteAll` | method | gophermind-lib/briefv2/tree/store.go:50 | WriteAll rejects cycles and malformed structure, recomputes waves, then writes every node. |
-| `(*Store).Load` | method | gophermind-lib/briefv2/tree/store.go:68 | Load reads every node file, skipping run artifacts, logs/ and the planner's _state/ working folder, and rejects a node that is stored somewhere other than its own Path(). |
-| `Tree` | type | gophermind-lib/briefv2/tree/tree.go:9 |  |
-| `NewTree` | func | gophermind-lib/briefv2/tree/tree.go:11 |  |
-| `(*Tree).CheckStructure` | method | gophermind-lib/briefv2/tree/tree.go:37 | CheckStructure verifies the shape a complete tree must have: exactly one root (with no parent), every component's parent is that root, and every function's parent is a component in the tree. |
-| `(*Tree).ids` | method | gophermind-lib/briefv2/tree/tree.go:68 |  |
-| `(*Tree).CycleCheck` | method | gophermind-lib/briefv2/tree/tree.go:79 | CycleCheck reports the first dependency cycle as "a -> b -> a". |
-| `(*Tree).ComputeWaves` | method | gophermind-lib/briefv2/tree/tree.go:128 | ComputeWaves returns wave(n) = 0 with no depends_on, else 1 + max over depends_on, for every node kind (deviation D2). |
-| `(*Tree).AssignWaves` | method | gophermind-lib/briefv2/tree/tree.go:163 | AssignWaves overwrites every node's wave with the computed value. |
-| `(*Tree).CheckWaves` | method | gophermind-lib/briefv2/tree/tree.go:177 | CheckWaves errors when a node's recorded wave disagrees with the computed one. |
-| `(*Tree).Ready` | method | gophermind-lib/briefv2/tree/tree.go:196 | Ready reports whether a node may start. |
+| `Kind` | type | gophermind-lib/build/tree/node.go:13 |  |
+| `KindRoot` | const | gophermind-lib/build/tree/node.go:16 |  |
+| `KindComponent` | const | gophermind-lib/build/tree/node.go:17 |  |
+| `KindFunction` | const | gophermind-lib/build/tree/node.go:18 |  |
+| `idPattern` | var | gophermind-lib/build/tree/node.go:23 | idPattern is the schema's id pattern; parent, children and depends_on entries must match it too so a reference can never carry a path. |
+| `reservedComponentIDs` | var | gophermind-lib/build/tree/node.go:29 | reservedComponentIDs are run-folder names that sit next to the component folders: logs/ (the run's logs), attempts/ (saved model attempts) and decisions/ (a later sub-project). |
+| `IsReservedComponentID` | func | gophermind-lib/build/tree/node.go:33 | IsReservedComponentID reports whether id names a run folder and so cannot be a component id. |
+| `Node` | type | gophermind-lib/build/tree/node.go:37 | Node exposes the fields the tree logic needs and keeps the full decoded document so nothing else is lost on a round trip. |
+| `ParseNode` | func | gophermind-lib/build/tree/node.go:49 | ParseNode validates raw against the node schema and decodes it. |
+| `(Node).checkRefs` | method | gophermind-lib/build/tree/node.go:74 |  |
+| `strList` | func | gophermind-lib/build/tree/node.go:94 |  |
+| `(*Node).SetWave` | method | gophermind-lib/build/tree/node.go:106 | SetWave records w on both the struct and the document. |
+| `(Node).Marshal` | method | gophermind-lib/build/tree/node.go:112 | Marshal renders the document as indented JSON. |
+| `(Node).Path` | method | gophermind-lib/build/tree/node.go:115 | Path is the node's slash-separated path relative to the run directory. |
+| `Store` | type | gophermind-lib/build/tree/store.go:14 | Store keeps one JSON file per node under dir (a run directory). |
+| `NewStore` | func | gophermind-lib/build/tree/store.go:16 |  |
+| `notNodes` | var | gophermind-lib/build/tree/store.go:18 |  |
+| `(*Store).Write` | method | gophermind-lib/build/tree/store.go:23 | Write validates n against the node schema and writes it atomically. |
+| `(*Store).WriteAll` | method | gophermind-lib/build/tree/store.go:50 | WriteAll rejects cycles and malformed structure, recomputes waves, then writes every node. |
+| `(*Store).Load` | method | gophermind-lib/build/tree/store.go:68 | Load reads every node file, skipping run artifacts, logs/ and the planner's _state/ working folder, and rejects a node that is stored somewhere other than its own Path(). |
+| `Tree` | type | gophermind-lib/build/tree/tree.go:9 |  |
+| `NewTree` | func | gophermind-lib/build/tree/tree.go:11 |  |
+| `(*Tree).CheckStructure` | method | gophermind-lib/build/tree/tree.go:37 | CheckStructure verifies the shape a complete tree must have: exactly one root (with no parent), every component's parent is that root, and every function's parent is a component in the tree. |
+| `(*Tree).ids` | method | gophermind-lib/build/tree/tree.go:68 |  |
+| `(*Tree).CycleCheck` | method | gophermind-lib/build/tree/tree.go:79 | CycleCheck reports the first dependency cycle as "a -> b -> a". |
+| `(*Tree).ComputeWaves` | method | gophermind-lib/build/tree/tree.go:128 | ComputeWaves returns wave(n) = 0 with no depends_on, else 1 + max over depends_on, for every node kind (deviation D2). |
+| `(*Tree).AssignWaves` | method | gophermind-lib/build/tree/tree.go:163 | AssignWaves overwrites every node's wave with the computed value. |
+| `(*Tree).CheckWaves` | method | gophermind-lib/build/tree/tree.go:177 | CheckWaves errors when a node's recorded wave disagrees with the computed one. |
+| `(*Tree).Ready` | method | gophermind-lib/build/tree/tree.go:196 | Ready reports whether a node may start. |
 
 ## package tui
 
@@ -5404,21 +5404,21 @@ after every completed task. Non-test Go declarations only.
 
 | Symbol | Kind | Location | Summary |
 |---|---|---|---|
-| `HarnessScope` | const | gophermind-lib/briefv2/vault/vault.go:26 |  |
-| `PassphraseEnv` | const | gophermind-lib/briefv2/vault/vault.go:27 |  |
-| `RunScope` | func | gophermind-lib/briefv2/vault/vault.go:31 | RunScope is the scope for a brief's declared secrets. |
-| `Options` | type | gophermind-lib/briefv2/vault/vault.go:35 | Options tunes the vault. |
-| `Vault` | type | gophermind-lib/briefv2/vault/vault.go:37 |  |
-| `nameRE` | var | gophermind-lib/briefv2/vault/vault.go:46 |  |
-| `Open` | func | gophermind-lib/briefv2/vault/vault.go:50 | Open decrypts the vault at path, or returns an empty one when the file does not exist yet. |
-| `(*Vault).Set` | method | gophermind-lib/briefv2/vault/vault.go:81 | Set stores value under scope/name and persists the whole vault. |
-| `(*Vault).Get` | method | gophermind-lib/briefv2/vault/vault.go:106 |  |
-| `(*Vault).Names` | method | gophermind-lib/briefv2/vault/vault.go:114 | Names lists secret names in scope, sorted. |
-| `(*Vault).Env` | method | gophermind-lib/briefv2/vault/vault.go:127 | Env returns NAME=value pairs for exactly the named secrets in scope, for use as exec.Cmd.Env entries. |
-| `(*Vault).save` | method | gophermind-lib/briefv2/vault/vault.go:142 | save must be called with v.mu held. |
-| `Passphrase` | func | gophermind-lib/briefv2/vault/vault.go:201 | Passphrase returns GOPHERMIND_VAULT_PASSPHRASE when set, otherwise reads one line from in (hidden on a terminal). |
-| `ReadLine` | func | gophermind-lib/briefv2/vault/vault.go:210 | ReadLine reads one line with echo off when in is a terminal, or the first line when in is a pipe. |
-| `ReadSecret` | func | gophermind-lib/briefv2/vault/vault.go:231 | ReadSecret reads one secret value. |
+| `HarnessScope` | const | gophermind-lib/build/vault/vault.go:26 |  |
+| `PassphraseEnv` | const | gophermind-lib/build/vault/vault.go:27 |  |
+| `RunScope` | func | gophermind-lib/build/vault/vault.go:31 | RunScope is the scope for a brief's declared secrets. |
+| `Options` | type | gophermind-lib/build/vault/vault.go:35 | Options tunes the vault. |
+| `Vault` | type | gophermind-lib/build/vault/vault.go:37 |  |
+| `nameRE` | var | gophermind-lib/build/vault/vault.go:46 |  |
+| `Open` | func | gophermind-lib/build/vault/vault.go:50 | Open decrypts the vault at path, or returns an empty one when the file does not exist yet. |
+| `(*Vault).Set` | method | gophermind-lib/build/vault/vault.go:81 | Set stores value under scope/name and persists the whole vault. |
+| `(*Vault).Get` | method | gophermind-lib/build/vault/vault.go:106 |  |
+| `(*Vault).Names` | method | gophermind-lib/build/vault/vault.go:114 | Names lists secret names in scope, sorted. |
+| `(*Vault).Env` | method | gophermind-lib/build/vault/vault.go:127 | Env returns NAME=value pairs for exactly the named secrets in scope, for use as exec.Cmd.Env entries. |
+| `(*Vault).save` | method | gophermind-lib/build/vault/vault.go:142 | save must be called with v.mu held. |
+| `Passphrase` | func | gophermind-lib/build/vault/vault.go:201 | Passphrase returns GOPHERMIND_VAULT_PASSPHRASE when set, otherwise reads one line from in (hidden on a terminal). |
+| `ReadLine` | func | gophermind-lib/build/vault/vault.go:210 | ReadLine reads one line with echo off when in is a terminal, or the first line when in is a pipe. |
+| `ReadSecret` | func | gophermind-lib/build/vault/vault.go:231 | ReadSecret reads one secret value. |
 
 ## package version
 

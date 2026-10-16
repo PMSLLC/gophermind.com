@@ -1,0 +1,222 @@
+package executor
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+
+	"gophermind/gophermind-lib/build/blackboard"
+	"gophermind/gophermind-lib/build/human"
+	"gophermind/gophermind-lib/build/planner"
+	"gophermind/gophermind-lib/build/report"
+	"gophermind/gophermind-lib/build/settings"
+)
+
+// reasonSkipped is the reason of a leaf a person chose to skip.
+const reasonSkipped = "skipped by human"
+
+// reasonPanic is the terminal reason of a leaf whose run panicked.
+const reasonPanic = "harness_panic"
+
+// humanStop is the run ending at the human gate: a stop answer, no gate, or a
+// gate that failed. Spec 7.4 and R14: no answer means stop.
+func humanStop(id string) *stopError {
+	return &stopError{Status: "escalated", Reason: "human_stop",
+		Message: fmt.Sprintf("executor: leaf %s is escalated and the run stopped at the human gate", id)}
+}
+
+// waitingOnHuman is the run ending because the gate has no answer yet (the
+// file gate, ruling S8): exit 3, the leaf stays escalated and the next run asks again.
+func waitingOnHuman(id string) *stopError {
+	return &stopError{Status: "escalated", Reason: "waiting_on_human",
+		Message: fmt.Sprintf("executor: leaf %s is escalated and waits for an answer at the human gate", id)}
+}
+
+// scrubHistory drops the history lines that hold a secret value: the gate is
+// shown ids, a class and class-and-name lines, and never a secret.
+func (rc *runCtx) scrubHistory(lines []string) []string {
+	secrets := rc.secretValues()
+	out := make([]string, 0, len(lines))
+	for _, ln := range lines {
+		clean := true
+		for _, s := range secrets {
+			if s != "" && strings.Contains(ln, s) {
+				clean = false
+				break
+			}
+		}
+		if clean {
+			out = append(out, ln)
+		}
+	}
+	return out
+}
+
+// rowRevision is the revision of the leaf's row, 0 when it cannot be read.
+func (rc *runCtx) rowRevision(ctx context.Context, id string) int {
+	row, err := rc.o.Board.Get(ctx, rc.plan.RunID, id)
+	if err != nil {
+		return 0
+	}
+	return row.Revision
+}
+
+// round is how many retries a person has granted the leaf so far.
+func (rc *runCtx) round(id string) int {
+	stateMu.Lock()
+	defer stateMu.Unlock()
+	return rc.state.ExtraRevisions[id]
+}
+
+// isRevisionReason says an escalation is about the revise stage: a flag, a
+// locked test, a secret in a reply, or a refusal class.
+func isRevisionReason(reason string) bool {
+	switch reason {
+	case planner.ClassContractFlagged, planner.ClassSplitRequired, planner.ClassTestsLocked, planner.ClassSecretInReply:
+		return true
+	}
+	return strings.HasPrefix(reason, "revise_")
+}
+
+// lastModel is the provider/model of the last attempt of the leaf, "" when it
+// has none.
+func (rc *runCtx) lastModel(ctx context.Context, id string) string {
+	row, err := rc.o.Board.Get(ctx, rc.plan.RunID, id)
+	if err != nil || len(row.Attempts) == 0 {
+		return ""
+	}
+	a := row.Attempts[len(row.Attempts)-1]
+	return a.Provider + "/" + a.Model
+}
+
+// escalateExtra is what a caller adds to the gate text beyond the reason.
+type escalateExtra struct{ Proposal string }
+
+// askGate puts one question to the gate, one at a time (decision F11). The
+// unlock is deferred: a gate that panics must not leave every later escalating
+// leaf waiting for the mutex.
+func (rc *runCtx) askGate(ctx context.Context, e human.Escalation) (human.Resolution, error) {
+	rc.gateMu.Lock()
+	defer rc.gateMu.Unlock()
+	return rc.o.Gate.Escalate(ctx, e)
+}
+
+// escalate is escalateWith with nothing extra.
+func (rc *runCtx) escalate(ctx context.Context, l *Leaf, from blackboard.Status, reason string, history []string) (human.Resolution, error) {
+	return rc.escalateWith(ctx, l, from, reason, history, escalateExtra{})
+}
+
+// escalateWith is rung 7: the leaf leaves status from (in_progress for the ladder,
+// verified for an integration failure, escalated when a resumed run asks
+// again) for needs_revision and escalated, the person is asked, and the answer
+// is applied to the blackboard:
+//
+//	retry  note saved, revision allowance raised by one, escalated -> ready
+//	skip   escalated -> failed, reason "skipped by human"
+//	stop   a *stopError (human_stop), also for a nil gate or a gate that fails
+//
+// A gate with no answer yet (human.ErrWaiting) is a *stopError with reason
+// waiting_on_human and the leaf stays escalated. A context that ends while the
+// gate waits comes back as the context's error, the leaf stays escalated. The
+// gate is given the id, the reason class and one line per attempt: never a
+// reply, command output or a secret value.
+func (rc *runCtx) escalateWith(ctx context.Context, l *Leaf, from blackboard.Status, reason string, history []string, ex escalateExtra) (human.Resolution, error) {
+	runID, wc := rc.plan.RunID, context.WithoutCancel(ctx)
+	if from != blackboard.StatusEscalated {
+		if from != blackboard.StatusNeedsRevision {
+			if err := rc.o.Board.SetStatus(wc, runID, l.ID, from, blackboard.StatusNeedsRevision); err != nil {
+				return human.Resolution{}, fmt.Errorf("executor: escalating %s did not work", l.ID)
+			}
+		}
+		if err := rc.o.Board.SetStatus(wc, runID, l.ID, blackboard.StatusNeedsRevision, blackboard.StatusEscalated); err != nil {
+			return human.Resolution{}, fmt.Errorf("executor: escalating %s did not work", l.ID)
+		}
+	}
+	rec := report.Escalation{Kind: "human", TaskType: "implement", Model: rc.lastModel(wc, l.ID), NodeID: l.ID, Revision: rc.rowRevision(wc, l.ID), Round: rc.round(l.ID)}
+	if rc.o.Gate == nil {
+		rec.AnsweredBy = human.AnsweredByGateAbsent
+	}
+	if err := AppendEscalation(rc.o.RunDir, rec); err != nil {
+		return human.Resolution{}, err
+	}
+	if err := rc.setResult(l.ID, blackboard.StatusEscalated, reason); err != nil {
+		return human.Resolution{}, err
+	}
+	rc.emit("escalated", l.ID, reason)
+
+	if rc.o.Gate == nil {
+		return human.Resolution{}, humanStop(l.ID)
+	}
+	// Revisions is the node revision (how often the planner rewrote the node),
+	// not the row counter, which reopen and the notes rung also raise.
+	revisions := 0
+	if rc.cfg.Revise.Mode == settings.ReviseModeRewrite {
+		revisions = l.Revision
+	}
+	res, err := rc.askGate(ctx, human.Escalation{NodeID: l.ID, Reason: reason, History: rc.scrubHistory(history),
+		Revisions: revisions, Proposal: rc.scrubText(ex.Proposal)})
+	if err == nil {
+		by := res.AnsweredBy
+		if !human.ValidAnsweredBy(by) {
+			by = human.AnsweredByProgrammatic // a gate that does not say is not a person
+		}
+		res.AnsweredBy = by
+		rec.AnsweredBy = by
+		if aerr := AppendEscalation(rc.o.RunDir, rec); aerr != nil {
+			return human.Resolution{}, aerr
+		}
+		// A decision about a revise-stage leaf is recorded before the answer is
+		// applied. An error here aborts the escalation: a decision must never
+		// be lost silently. With no reviser (notes mode, or none wired) nothing
+		// is recorded and the escalation goes on. The note is cleaned and
+		// scrubbed inside RecordDecision, in that order.
+		if rc.rev != nil && (isRevisionReason(reason) || revisions > 0) {
+			// Revision is the node revision (R4). The call comes before the
+			// retry branch raises ExtraRevisions, so Round is the number of
+			// retries granted before this answer.
+			if _, derr := rc.rev.RecordDecision(planner.RevisionDecision{RunDir: rc.o.RunDir, NodeID: l.ID, Revision: l.Revision,
+				Class: reason, Action: string(res.Action), Note: strings.TrimSpace(res.Note), AnsweredBy: by, Round: rc.round(l.ID),
+				Scrub: rc.scrubText}); derr != nil {
+				return human.Resolution{}, derr
+			}
+		}
+	}
+	switch {
+	case errors.Is(err, human.ErrWaiting):
+		return human.Resolution{}, waitingOnHuman(l.ID)
+	case err != nil && ctx.Err() != nil:
+		return human.Resolution{}, ctx.Err()
+	case err != nil:
+		return human.Resolution{}, humanStop(l.ID)
+	}
+
+	switch res.Action {
+	case human.ActionRetry:
+		if note := strings.TrimSpace(res.Note); note != "" {
+			if err := AddNote(rc.o.RunDir, l.ID, rc.scrubText(note)); err != nil {
+				return res, err
+			}
+		}
+		stateMu.Lock()
+		rc.state.ExtraRevisions[l.ID]++
+		err := rc.state.Save(rc.o.RunDir)
+		stateMu.Unlock()
+		if err != nil {
+			return res, err
+		}
+		if err := rc.o.Board.SetStatus(wc, runID, l.ID, blackboard.StatusEscalated, blackboard.StatusReady); err != nil {
+			return res, fmt.Errorf("executor: re-opening %s did not work", l.ID)
+		}
+		return res, nil
+	case human.ActionSkip:
+		if err := rc.o.Board.SetStatus(wc, runID, l.ID, blackboard.StatusEscalated, blackboard.StatusFailed); err != nil {
+			return res, fmt.Errorf("executor: skipping %s did not work", l.ID)
+		}
+		if err := rc.setResult(l.ID, blackboard.StatusFailed, reasonSkipped); err != nil {
+			return res, err
+		}
+		return res, nil
+	}
+	return human.Resolution{}, humanStop(l.ID)
+}

@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	greeterFixture = "../../gophermind-lib/briefv2/planner/testdata/greeter"
+	greeterFixture = "../../gophermind-lib/build/planner/testdata/greeter"
 	greeterRunID   = "gm-2026-09-29-900"
 )
 
@@ -170,7 +170,7 @@ func TestBriefPlanExitCodes(t *testing.T) {
 	}
 	noVersion := write(strings.Replace(string(raw), "spec_version: \"2.0\"\n", "", 1))
 	urlRepo := write(strings.Replace(string(raw), "repo: ", "repo: https://example.com/x.git #", 1))
-	stuck := "../../gophermind-lib/briefv2/planner/testdata/greeter-stuck"
+	stuck := "../../gophermind-lib/build/planner/testdata/greeter-stuck"
 
 	cases := []struct {
 		name string
