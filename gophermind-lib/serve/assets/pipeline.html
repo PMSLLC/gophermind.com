@@ -761,16 +761,21 @@ function applyEvent(event, data){
   }
 }
 
-// handleFrame applies one SSE frame. Frames whose id is at or below stateSeq
-// are already part of the loaded state (a resync replays them), so applying
-// them again would double attempt counts and regress statuses. A frame with no
-// numeric id (derived events) is applied and never touches lastSeq.
+// NODE_EVENTS are the frames that change one node incrementally; only these
+// can be replays of what a loaded state already holds.
+const NODE_EVENTS = ['node-status', 'node-attempt', 'node-result'];
+
+// handleFrame applies one SSE frame. Node frames whose id is at or below
+// stateSeq are already part of the loaded state (a resync replays them), so
+// applying them again would double attempt counts and regress statuses.
+// Derived frames (run-status, wave-changed, run-report) carry the id of the
+// latest event line, so their id can equal stateSeq; they are absolute sets
+// and are always applied. Every numeric id advances lastSeq; a frame without
+// one leaves it alone.
 function handleFrame(event, id, data){
   const num = id === '' || id == null ? NaN : Number(id);
-  if(Number.isFinite(num)){
-    if(num <= stateSeq) return;
-    lastSeq = Math.max(lastSeq, num);
-  }
+  if(NODE_EVENTS.indexOf(event) !== -1 && num <= stateSeq) return;
+  if(Number.isFinite(num)) lastSeq = Math.max(lastSeq, num);
   let parsed;
   try{ parsed = JSON.parse(data); } catch(e){ return; }
   if(parsed && typeof parsed === 'object') applyEvent(event, parsed);

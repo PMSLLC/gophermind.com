@@ -267,6 +267,15 @@ const scenarios = {
     assert(env.get('lastSeq') === 11, 'lastSeq 11');
     env.get('handleFrame')('node-attempt', 'abc', JSON.stringify({ id: 'n1', attempt: { started_at: 'b' } }));
     assert(env.get('lastSeq') === 11, 'non-numeric id leaves lastSeq alone');
+    // a derived frame shares the latest line's id, so an id equal to stateSeq
+    // is still applied: run-status refetches the state, run-report is kept.
+    const before = env.pending.length;
+    env.get('handleFrame')('run-status', '10', JSON.stringify({ status: 'verified' }));
+    await flush();
+    assert(env.pending.some(c => c.path === '/pipeline/state'), 'run-status at stateSeq must refetch the state');
+    assert(env.pending.length > before, 'run-status issued requests');
+    env.get('handleFrame')('run-report', '10', JSON.stringify({ status: 'verified', complete: true }));
+    assert(env.get('finalReport && finalReport.status') === 'verified', 'run-report at stateSeq must be kept');
   },
   async staleLoadStateIsDiscarded(){
     const env = makeEnv();
