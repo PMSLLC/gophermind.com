@@ -8,7 +8,6 @@ import (
 	"go/scanner"
 	"go/token"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -442,8 +441,7 @@ func (p *Planner) reviseTests(ctx context.Context, r *run, c *contract.Contracts
 	file, _ := ct["file"].(string)
 	pkg, _ := ct["package"].(string)
 	funcName := testFuncName(id)
-	prompt, err := render("testwriter", map[string]string{
-		"Node": scrubInput(mustJSON(testwriterView(merged)), req.Secrets, maxReviseTestSource), "PackageDir": path.Dir(file), "TestFuncName": funcName, "TestFile": testFile})
+	prompt, err := renderTestwriter(scrubInput(mustJSON(testwriterView(merged)), req.Secrets, maxReviseTestSource), c.Module, file, funcName, testFile)
 	if err != nil {
 		return "", "", err
 	}

@@ -138,6 +138,24 @@ func (p *Planner) testwriter(ctx context.Context, r *run) error {
 	return p.finishTree(ctx, r, c, dec, st, w)
 }
 
+// renderTestwriter renders the Test-writer prompt. It states the module path
+// and the import path of the package under test, so a test in package X_test
+// does not invent a module name checkTestSource would refuse. The import path
+// is the module plus the directory of the contract file ("." is the module).
+func renderTestwriter(node, module, file, funcName, testFile string) (string, error) {
+	dir := path.Dir(file)
+	importPath := ""
+	if module != "" {
+		importPath = module
+		if dir != "." {
+			importPath = module + "/" + dir
+		}
+	}
+	return render("testwriter", map[string]string{
+		"Node": node, "PackageDir": dir, "TestFuncName": funcName, "TestFile": testFile,
+		"Module": module, "ImportPath": importPath})
+}
+
 // writeTests makes the model call for one node and writes its test file.
 func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts, d map[string]any, class string, st *testwriterState) (writtenTests, error) {
 	id, _ := d["id"].(string)
@@ -159,8 +177,7 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 		}
 		return writtenTests{}, fmt.Errorf("test file %s already exists and this run did not write it; move it away, then resume", path.Base(rel))
 	}
-	prompt, err := render("testwriter", map[string]string{
-		"Node": mustJSON(testwriterView(d)), "PackageDir": path.Dir(file), "TestFuncName": funcName, "TestFile": rel})
+	prompt, err := renderTestwriter(mustJSON(testwriterView(d)), c.Module, file, funcName, rel)
 	if err != nil {
 		return writtenTests{}, err
 	}

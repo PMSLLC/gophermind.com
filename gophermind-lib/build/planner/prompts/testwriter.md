@@ -13,7 +13,9 @@ Cover:
 - every constraint on every input (empty, whitespace, boundary lengths, nil),
 - boundaries on both sides (the last valid value and the first invalid value).
 
-Do not:
+{{if .Module}}The Go module is `{{.Module}}`. The package under test is imported as `{{.ImportPath}}`. A test file in package `X_test` must import exactly that path to call the function; never use any other module name. A test file in the same package as the function needs no import of it. Standard library imports are fine.
+
+{{end}}Do not:
 - test private helpers or implementation details,
 - import any package outside the standard library and this module,
 - reference any function or type not present in `dependency_signatures` or the contract,
