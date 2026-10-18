@@ -241,3 +241,43 @@ func TestTrustBoundaryNoneNeedsNoThreats(t *testing.T) {
 		t.Fatalf("defects: %v", kindsOf(ds))
 	}
 }
+
+func TestUntrustedInputsAcceptProcessSources(t *testing.T) {
+	cases := []struct {
+		name   string
+		inputs []any
+		reject bool
+	}{
+		{"os.Args on a function with no parameters", []any{"os.Args"}, false},
+		{"all process sources, padded", []any{" os.Stdin ", "os.Environ", "os.Getenv", "flag.Args"}, false},
+		{"a parameter", []any{"r"}, false},
+		{"os.Open is not a process source", []any{"os.Open"}, true},
+		{"a near miss", []any{"os.args"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			env := testEnv()
+			if tc.name == "os.Args on a function with no parameters" {
+				env.Params = map[string]bool{}
+			}
+			ds := groupDefects(groupsDoc(t, func(m map[string]any) {
+				m["security"].(map[string]any)["untrusted_inputs"] = tc.inputs
+			}), "handler", env)
+			if got := hasKind(ds, grpSecret); got != tc.reject {
+				t.Fatalf("security_secret = %v, want %v (kinds %v)", got, tc.reject, kindsOf(ds))
+			}
+		})
+	}
+}
+
+func TestDefectTextForUntrustedInputsNamesProcessSources(t *testing.T) {
+	ds := groupDefects(groupsDoc(t, func(m map[string]any) {
+		m["security"].(map[string]any)["untrusted_inputs"] = []any{"os.Open"}
+	}), "handler", testEnv())
+	text := repairText(ds)
+	for _, want := range []string{"os.Args", "os.Stdin", "os.Environ", "os.Getenv", "flag.Args"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("repair text lacks %s:\n%s", want, text)
+		}
+	}
+}

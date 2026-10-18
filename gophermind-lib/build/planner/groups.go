@@ -124,6 +124,11 @@ func strField(m map[string]any, k string) string {
 
 // groupDefects lists every group check that fails for a function node, in a
 // stable order. d is the merged draft (Decompose fields plus Enrich groups).
+// processSources are the process-level inputs a function may name in
+// untrusted_inputs without receiving them as a parameter (main, or a run that
+// reads os.Stdin).
+var processSources = map[string]bool{"os.Args": true, "os.Stdin": true, "os.Environ": true, "os.Getenv": true, "flag.Args": true}
+
 func groupDefects(d map[string]any, class string, env groupEnv) []groupDefect {
 	var out []groupDefect
 	add := func(kind, field, format string, a ...any) {
@@ -173,8 +178,8 @@ func groupDefects(d map[string]any, class string, env groupEnv) []groupDefect {
 
 	if sec := real["security"]; sec != nil {
 		for i, n := range strList(sec["untrusted_inputs"]) {
-			if !env.Params[n] {
-				add(grpSecret, "security", "untrusted_inputs entry %d is not a parameter of the function", i+1)
+			if !env.Params[n] && !processSources[strings.TrimSpace(n)] {
+				add(grpSecret, "security", "untrusted_inputs entry %d must be a parameter name of the function or one of the process sources os.Args, os.Stdin, os.Environ, os.Getenv, flag.Args", i+1)
 			}
 		}
 		for i, n := range strList(sec["secret_use"]) {
