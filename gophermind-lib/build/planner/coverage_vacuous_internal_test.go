@@ -80,3 +80,42 @@ func TestVacuousRepairMessageNamesTheRule(t *testing.T) {
 		t.Fatal("the harness prompt must explain the acceptance_vacuous finding")
 	}
 }
+
+// A real contract gives file as a bare name and package as the directory.
+func realBareFileContract() *contract.Contracts {
+	return &contract.Contracts{Functions: []contract.Function{
+		{ID: "fn-main", Package: "cmd/csvstat", File: "main.go", Signature: "func main()"},
+	}}
+}
+
+func TestContractBinsWithBareFileNames(t *testing.T) {
+	if got, want := contractBins(realBareFileContract()), []string{"csvstat"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("bins = %v, want %v", got, want)
+	}
+}
+
+func TestRootTestDefectsWithBareFileContract(t *testing.T) {
+	o := acceptcheck.Options{Bins: contractBins(realBareFileContract())}
+	built := []RootTest{{Requirement: "A1", Name: "n", Command: "printf 'a,b\\n1,2\\n' | csvstat - | grep -q a"}}
+	if got := rootTestDefects(vacuousReqs(), built, o); len(got) != 0 {
+		t.Fatalf("built binary flagged: %+v", got)
+	}
+	run := []RootTest{{Requirement: "A1", Name: "n", Command: "go run . -"}}
+	if got := rootTestDefects(vacuousReqs(), run, o); len(got) != 1 {
+		t.Fatalf("go run . - = %+v, want one defect", got)
+	}
+}
+
+func TestFileDir(t *testing.T) {
+	for _, c := range []struct{ pkg, file, want string }{
+		{"cmd/csvstat", "main.go", "cmd/csvstat"},
+		{"cmd/csvstat", "cmd/csvstat/main.go", "cmd/csvstat"},
+		{".", "main.go", "."},
+		{"", "main.go", "."},
+		{"internal/stats", "stats.go", "internal/stats"},
+	} {
+		if got := FileDir(c.pkg, c.file); got != c.want {
+			t.Errorf("FileDir(%q, %q) = %q, want %q", c.pkg, c.file, got, c.want)
+		}
+	}
+}

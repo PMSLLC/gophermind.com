@@ -29,6 +29,20 @@ func BinName(clause, dir string) (string, bool) {
 	return name, name != ""
 }
 
+// FileDir is the slash directory a contract function's file lives in. A file
+// with a directory part ("cmd/x/main.go") names it; a bare file name
+// ("main.go") sits in the package directory, which is the contract package
+// path. The executor and the planner share this rule.
+func FileDir(pkg, file string) string {
+	if strings.Contains(file, "/") {
+		return path.Dir(file)
+	}
+	if pkg == "" {
+		return "."
+	}
+	return path.Clean(pkg)
+}
+
 // contractBins are the binary names the contract's functions build, sorted.
 func contractBins(c *contract.Contracts) []string {
 	if c == nil {
@@ -37,7 +51,7 @@ func contractBins(c *contract.Contracts) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, f := range c.Functions {
-		if name, ok := BinName(PackageClause(f.Package), path.Dir(f.File)); ok && !seen[name] {
+		if name, ok := BinName(PackageClause(f.Package), FileDir(f.Package, f.File)); ok && !seen[name] {
 			seen[name] = true
 			out = append(out, name)
 		}
