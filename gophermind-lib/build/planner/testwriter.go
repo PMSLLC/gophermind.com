@@ -259,7 +259,10 @@ func placeTestFile(r *run, abs, rel, source string) error {
 
 // scalarText is a decoded JSON string, boolean or number as plain text. A model
 // writing a test for a function that returns a bool or a number puts the bare
-// value there. Null, an object and an array are not text.
+// value there. A non-empty object or array (the argument values of a function
+// with several arguments) is kept as compact JSON text; the executable test is
+// test_file, so the list is only read by people. Null, an empty object or
+// array are not text.
 func scalarText(v any) (string, bool) {
 	switch x := v.(type) {
 	case string:
@@ -268,8 +271,24 @@ func scalarText(v any) (string, bool) {
 		return strconv.FormatBool(x), true
 	case json.Number:
 		return x.String(), true
+	case map[string]any:
+		if len(x) == 0 {
+			return "", false
+		}
+	case []any:
+		if len(x) == 0 {
+			return "", false
+		}
+	default:
+		return "", false
 	}
-	return "", false
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return "", false
+	}
+	return strings.TrimSuffix(b.String(), "\n"), true
 }
 
 // parseTestwrite checks a Test-writer reply: enough tests, each described,

@@ -239,7 +239,7 @@ func TestPackageClause(t *testing.T) {
 
 // A model writing a test for a function that returns a bool or a number puts
 // the bare value in given or expect. A boolean or number is kept as its text;
-// null, an object or an array is refused, naming the test and the field.
+// null, an empty object or array and blank text are refused; a non-empty object or array is kept as compact JSON text, naming the test and the field.
 func TestTestwriterAcceptsScalarGivenAndExpect(t *testing.T) {
 	ct := map[string]any{"file": "internal/greet/greet.go"}
 	src := strings.ReplaceAll(okTestSource, "\n\t\"example.com/greeter/internal/names\"\n", "")
@@ -256,6 +256,9 @@ func TestTestwriterAcceptsScalarGivenAndExpect(t *testing.T) {
 		{`1`, `"e"`, "1", "e"},
 		{`"g"`, `9007199254740993`, "g", "9007199254740993"},
 		{`"g"`, `"e"`, "g", "e"},
+		{`"g"`, `{"a": 1}`, "g", `{"a":1}`},
+		{`"g"`, `[true]`, "g", `[true]`},
+		{`{"b": 9007199254740993, "a": "x\ny"}`, `[1, 2.50]`, `{"a":"x\ny","b":9007199254740993}`, `[1,2.50]`},
 	}
 	for _, c := range accepted {
 		tests, _, err := parseTestwrite(reply(c.given, c.expect), ct, "greet", "TestGreet", "example.com/greeter", nil)
@@ -269,11 +272,11 @@ func TestTestwriterAcceptsScalarGivenAndExpect(t *testing.T) {
 	}
 	refused := []struct{ given, expect, want string }{
 		{`"g"`, `null`, "test 1: expect must be text"},
-		{`"g"`, `{"a": 1}`, "test 1: expect must be text"},
-		{`"g"`, `[true]`, "test 1: expect must be text"},
+		{`"g"`, `{}`, "test 1: expect must be text"},
+		{`"g"`, `[]`, "test 1: expect must be text"},
 		{`null`, `"e"`, "test 1: given must be text"},
-		{`{"a": 1}`, `"e"`, "test 1: given must be text"},
-		{`[1]`, `"e"`, "test 1: given must be text"},
+		{`{}`, `"e"`, "test 1: given must be text"},
+		{`[]`, `"e"`, "test 1: given must be text"},
 		{`"g"`, `""`, "test 1: expect must be text"},
 		{`"g"`, `"  "`, "test 1: expect must be text"},
 	}
@@ -286,5 +289,26 @@ func TestTestwriterAcceptsScalarGivenAndExpect(t *testing.T) {
 	noName := `{"tests": [{"name": " ", "given": "g", "expect": "e"}], "test_file": ` + quoted + `}`
 	if _, _, err := parseTestwrite(noName, ct, "greet", "TestGreet", "example.com/greeter", nil); err == nil || err.Error() != "test 1 needs a name" {
 		t.Errorf("blank name: err = %v", err)
+	}
+}
+
+// A function with several arguments: the model wrote given and expect as JSON
+// objects of argument values. The tests list is for people; test_file is the
+// executable test, so the objects are kept as compact JSON text.
+func TestTestwriterAcceptsObjectGivenAndExpect(t *testing.T) {
+	ct := map[string]any{"file": "internal/greet/greet.go"}
+	src := strings.ReplaceAll(okTestSource, "\n\t\"example.com/greeter/internal/names\"\n", "")
+	src = strings.Replace(src, "names.Default", `"x"`, 1)
+	quoted, _ := jsonString(src)
+	text := `{"tests": [{"name": "reads rows", "given": {"r": "name,age\nAlice,30", "maxRows": 0}, "expect": {"rows": [["Alice", "30"]], "err": null}, "polarity": "success", "covers": "happy"}], "test_file": ` + quoted + `}`
+	tests, _, err := parseTestwrite(text, ct, "greet", "TestGreet", "example.com/greeter", nil)
+	if err != nil {
+		t.Fatalf("object given and expect were refused: %v", err)
+	}
+	if want := `{"maxRows":0,"r":"name,age\nAlice,30"}`; tests[0]["given"] != want {
+		t.Errorf("given = %q, want %q", tests[0]["given"], want)
+	}
+	if want := `{"err":null,"rows":[["Alice","30"]]}`; tests[0]["expect"] != want {
+		t.Errorf("expect = %q, want %q", tests[0]["expect"], want)
 	}
 }
