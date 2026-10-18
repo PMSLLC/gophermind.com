@@ -28,6 +28,9 @@ func jsonErr(err error) string {
 	var typ *json.UnmarshalTypeError
 	switch {
 	case errors.As(err, &syn):
+		if strings.Contains(syn.Error(), "escape") {
+			return fmt.Sprintf("syntax error at byte offset %d; a backslash in a string must be written as two backslashes", syn.Offset)
+		}
 		return fmt.Sprintf("syntax error at byte offset %d", syn.Offset)
 	case errors.As(err, &typ):
 		return fmt.Sprintf("field %q has the wrong JSON type", typ.Field)
