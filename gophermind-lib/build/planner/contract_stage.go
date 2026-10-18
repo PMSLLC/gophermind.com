@@ -49,8 +49,11 @@ type contractState struct {
 	SchemaRepairs int `json:"schema_repairs,omitempty"`
 	// OutlineRepairs counts the repair passes stored; OutlineDone is set once
 	// the outline has no unresolved reference and dependencies.json is written.
-	OutlineRepairs int  `json:"outline_repairs,omitempty"`
-	OutlineDone    bool `json:"outline_done,omitempty"`
+	OutlineRepairs int `json:"outline_repairs,omitempty"`
+	// EntryRepairs counts the passes that asked for the entry point of a brief
+	// that describes something to be run (a component under cmd/).
+	EntryRepairs int  `json:"entry_repairs,omitempty"`
+	OutlineDone  bool `json:"outline_done,omitempty"`
 	// Repairs counts the stored repair passes that ask for ids the written
 	// components use but never declare.
 	Repairs int `json:"repairs,omitempty"`
@@ -154,6 +157,14 @@ func outlinePassStage(n int) string { return fmt.Sprintf("contract:outline:%d", 
 // uses but never declared.
 const outlineRepairStage = "contract:outline:repair"
 
+// outlineEntryStage is the stage of the pass that asks for the entry-point
+// component when the brief is run but the outline has no package under cmd/;
+// maxEntryRepairs bounds those passes.
+const (
+	outlineEntryStage = "contract:outline:entry"
+	maxEntryRepairs   = 2
+)
+
 // maxOutlineRepairs bounds the passes that ask the model to write the ids a
 // finished outline uses but never declared.
 const maxOutlineRepairs = 2
@@ -200,7 +211,11 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			featureNames = append(featureNames, f.Name)
 		}
 		allBatches := outlineBatches(featureNames)
-		ask := func(stage string, batch, unresolved []string) error {
+		binName, runnable := RunnableBinary(r.reqs, r.brief.Front,
+			r.brief.Sections["Overview"]+"\n"+r.brief.Sections["Architecture"])
+		// ask makes one outline call; entry (a binary name) makes it the pass
+		// that writes the entry-point component.
+		ask := func(stage string, batch, unresolved []string, entry string) error {
 			names := batch
 			if len(names) == 0 {
 				names = featureNames
@@ -210,7 +225,13 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 				if level > 0 {
 					brief = briefExcerpt(r, names, level)
 				}
+				// The last batch pass writes the entry point of a brief that is run.
+				entryName := entry
+				if entryName == "" && runnable && len(batch) > 0 && st.OutlineBatchNext == len(st.OutlineBatches)-1 {
+					entryName = binName
+				}
 				return render("contract_outline", map[string]string{
+					"EntryName": entryName, "Entry": entry,
 					"Brief": brief, "Answers": answersText(as), "TypeSchema": typeSchema,
 					"Fixed": outlineFixedText(st.Doc), "Emitted": outlineEmittedTextAt(st.Doc, st.OutlineSharedIDs, level),
 					"Batch":      strings.Join(batch, ", "),
@@ -235,7 +256,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 					}
 					extras = dropped
 				}
-				final := outlinePassIsFinal(first, pick(first, allBatches, st.OutlineBatches), st.OutlineBatchNext, len(unresolved) > 0)
+				final := outlinePassIsFinal(first, pick(first, allBatches, st.OutlineBatches), st.OutlineBatchNext, len(unresolved) > 0 || entry != "")
 				doc, ds, n, ign, err := mergeOutline(st.Doc, st.Deps, text, r.id, final)
 				if err != nil {
 					return err
@@ -243,8 +264,12 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 				st.Doc, st.Deps, added, ignored, notes = doc, ds, n, append(nt.Ignored, ign...), nt
 				return nil
 			}); err != nil {
-				if failedAttempt(ctx, err) && len(unresolved) > 0 {
-					st.OutlineRepairs++
+				if failedAttempt(ctx, err) && (len(unresolved) > 0 || entry != "") {
+					if entry != "" {
+						st.EntryRepairs++
+					} else {
+						st.OutlineRepairs++
+					}
 					if werr := writeJSON(r.path(stateContract), st); werr != nil {
 						return werr
 					}
@@ -252,6 +277,8 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 				return err
 			}
 			switch {
+			case entry != "":
+				st.EntryRepairs++
 			case len(unresolved) > 0:
 				st.OutlineRepairs++
 			case first:
@@ -288,17 +315,28 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			st.OutlineBatchesSet = true
 		}
 		if st.Doc == nil {
-			if err := ask(outlinePassStage(1), nil, nil); err != nil {
+			if err := ask(outlinePassStage(1), nil, nil, ""); err != nil {
 				return err
 			}
 		}
 		for st.OutlineBatchNext < len(st.OutlineBatches) {
-			if err := ask(outlinePassStage(st.OutlineBatchNext+2), st.OutlineBatches[st.OutlineBatchNext], nil); err != nil {
+			if err := ask(outlinePassStage(st.OutlineBatchNext+2), st.OutlineBatches[st.OutlineBatchNext], nil, ""); err != nil {
 				return err
 			}
 		}
 		if len(objects(st.Doc["components"])) == 0 {
 			return errors.New("contract outline lists no component")
+		}
+		// A brief that is run needs a main package under cmd/: a defect by kind,
+		// asked for again, and a warning if the model still leaves it out.
+		for runnable && !hasEntryPoint(st.Doc) && st.EntryRepairs < maxEntryRepairs {
+			if err := ask(outlineEntryStage, nil, nil, binName); err != nil {
+				return err
+			}
+		}
+		if runnable && !hasEntryPoint(st.Doc) {
+			p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
+				"outline_no_entry_point: the brief describes something to be run but the contract has no package under cmd/ (expected cmd/%s), so no acceptance test can run a binary", binName))
 		}
 		// The outline is complete as written; ids it uses but never declared are
 		// asked for, not treated as an unusable reply.
@@ -310,7 +348,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			if st.OutlineRepairs >= maxOutlineRepairs {
 				return unresolvedErr("contract:outline", un)
 			}
-			if err := ask(outlineRepairStage, nil, un); err != nil {
+			if err := ask(outlineRepairStage, nil, un, ""); err != nil {
 				return err
 			}
 		}

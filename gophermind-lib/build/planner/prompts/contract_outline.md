@@ -14,10 +14,12 @@ Requirements:
 - No secrets. Refer to secrets by environment variable name only.
 - There is no limit on the number of components or types. Do not merge features to keep the list short.
 - The outline is written in passes chosen by the harness; you never decide whether more remains, and a `more` field is ignored. A type comes before any type or component that uses it. Never repeat an id that is already declared: it keeps its first version, so a repeat changes nothing and only wastes the reply.
-{{if .Unresolved}}- This is a repair pass: see the end of this prompt.
+{{if .Entry}}- This is the entry-point pass: see the end of this prompt.
+{{else if .Unresolved}}- This is a repair pass: see the end of this prompt.
 {{else if .Batch}}- This is a batch pass. Write the components and types for THESE features only: {{.Batch}}
   Each feature's full text is under its `### <name>` heading in the brief. Write one component per feature, plus any type only these features need. Do not write components or types for other features. You may name the ids already declared below in `uses`.
 {{else}}- This is the shared pass. Write `module`, `conventions`, `dependencies`, the `types` component (id `types`, for shared declarations) and the shared domain types: the entities more than one feature uses. Write NO feature component here; each feature gets its own pass afterwards.
+{{end}}{{if .EntryName}}- The brief describes something that is run, so this pass also writes the entry point: one component with id `entry-point` and package `cmd/{{.EntryName}}`, listed after the feature components. A later pass gives it a `main` function and the functions that wire the feature functions into the program (flags, input, output, exit codes).
 {{end}}- The first pass writes `module`, `conventions` and `dependencies`. A later pass leaves `module` and `conventions` out and lists only the components, types and dependencies that are new.
 
 Module and conventions already fixed by earlier passes:
@@ -35,6 +37,8 @@ Repair: the outline above is complete, but {{.UnresolvedCount}} ids are listed i
 {{.Unresolved}}
 </unresolved>
 Reply in the same JSON shape with the missing types written in full (and a component only if one is really missing). An id that an earlier pass already wrote keeps its first version, so resending it changes nothing.
+{{end}}{{if .Entry}}
+Entry point: the brief describes something that is run, yet no component has a package under cmd/, so no binary can be built and no behavior of the program can be proven. Reply in the same JSON shape with one component: id `entry-point`, package `cmd/{{.EntryName}}`, `exports` empty. The binary is named {{.EntryName}}. Write no other component.
 {{end}}
 Brief:
 <brief>

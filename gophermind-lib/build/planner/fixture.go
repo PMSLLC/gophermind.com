@@ -71,7 +71,7 @@ func FixtureProvider(dirs ...string) (*provider.Fake, error) {
 		if !ok {
 			raw, ok = find(base + ".txt")
 		}
-		if !ok && strings.HasPrefix(stage, "contract:outline:") && stage != outlineRepairStage {
+		if !ok && strings.HasPrefix(stage, "contract:outline:") && stage != outlineRepairStage && stage != outlineEntryStage {
 			// A fixture set from before the outline was harness-driven: its one
 			// contract.outline.txt is the shared pass, later batches add nothing.
 			// The shared pass keeps only its types component; every batch then
