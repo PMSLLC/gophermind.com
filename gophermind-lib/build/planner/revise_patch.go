@@ -138,7 +138,7 @@ func parseReviseReply(text string) (reviseReply, error) {
 	dec.DisallowUnknownFields()
 	var p revisePatch
 	if err := dec.Decode(&p); err != nil {
-		return reviseReply{}, invalid("the reply is not a JSON patch (%s)", jsonErr(err))
+		return reviseReply{}, invalid("the reply is not a JSON patch (%s)", jsonErrIn(err, body))
 	}
 	if _, err := dec.Token(); err != io.EOF {
 		return reviseReply{}, invalid("the reply has text after the JSON")
@@ -175,12 +175,12 @@ func scanReplyJSON(body string) error {
 	dec := json.NewDecoder(strings.NewReader(body))
 	tok, err := dec.Token()
 	if err != nil {
-		return invalid("the reply is not a JSON patch (%s)", jsonErr(err))
+		return invalid("the reply is not a JSON patch (%s)", jsonErrIn(err, body))
 	}
-	return scanTok(dec, tok, 0, "top")
+	return scanTok(dec, body, tok, 0, "top")
 }
 
-func scanTok(dec *json.Decoder, tok json.Token, depth int, ctx string) error {
+func scanTok(dec *json.Decoder, body string, tok json.Token, depth int, ctx string) error {
 	d, ok := tok.(json.Delim)
 	if !ok {
 		return nil
@@ -192,15 +192,15 @@ func scanTok(dec *json.Decoder, tok json.Token, depth int, ctx string) error {
 		for dec.More() {
 			t, err := dec.Token()
 			if err != nil {
-				return invalid("the reply is not a JSON patch (%s)", jsonErr(err))
+				return invalid("the reply is not a JSON patch (%s)", jsonErrIn(err, body))
 			}
-			if err := scanTok(dec, t, depth+1, "other"); err != nil {
+			if err := scanTok(dec, body, t, depth+1, "other"); err != nil {
 				return err
 			}
 		}
 		_, err := dec.Token()
 		if err != nil {
-			return invalid("the reply is not a JSON patch (%s)", jsonErr(err))
+			return invalid("the reply is not a JSON patch (%s)", jsonErrIn(err, body))
 		}
 		return nil
 	}
@@ -208,7 +208,7 @@ func scanTok(dec *json.Decoder, tok json.Token, depth int, ctx string) error {
 	for dec.More() {
 		kt, err := dec.Token()
 		if err != nil {
-			return invalid("the reply is not a JSON patch (%s)", jsonErr(err))
+			return invalid("the reply is not a JSON patch (%s)", jsonErrIn(err, body))
 		}
 		key, _ := kt.(string)
 		if seen[key] {
@@ -220,7 +220,7 @@ func scanTok(dec *json.Decoder, tok json.Token, depth int, ctx string) error {
 		seen[key] = true
 		vt, err := dec.Token()
 		if err != nil {
-			return invalid("the reply is not a JSON patch (%s)", jsonErr(err))
+			return invalid("the reply is not a JSON patch (%s)", jsonErrIn(err, body))
 		}
 		if vt == nil && ctx != "other" {
 			if contains(replyKeys, key) {
@@ -232,12 +232,12 @@ func scanTok(dec *json.Decoder, tok json.Token, depth int, ctx string) error {
 		if ctx == "top" && (key == "contract" || key == "context") {
 			child = key
 		}
-		if err := scanTok(dec, vt, depth+1, child); err != nil {
+		if err := scanTok(dec, body, vt, depth+1, child); err != nil {
 			return err
 		}
 	}
 	if _, err := dec.Token(); err != nil {
-		return invalid("the reply is not a JSON patch (%s)", jsonErr(err))
+		return invalid("the reply is not a JSON patch (%s)", jsonErrIn(err, body))
 	}
 	return nil
 }
@@ -413,7 +413,7 @@ func mergePatch(orig map[string]any, p revisePatch, c *contract.Contracts) (map[
 	for k, raw := range p.Groups {
 		var v any
 		if err := json.Unmarshal(raw, &v); err != nil {
-			return nil, invalid("a group is not valid JSON (%s)", jsonErr(err))
+			return nil, invalid("a group is not valid JSON (%s)", jsonErrIn(err, string(raw)))
 		}
 		m[k] = v
 	}

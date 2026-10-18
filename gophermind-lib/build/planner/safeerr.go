@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"go/scanner"
+	"io"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/santhosh-tekuri/jsonschema/v6/kind"
@@ -37,6 +39,62 @@ func jsonErr(err error) string {
 	default:
 		return "not valid JSON"
 	}
+}
+
+// jsonErrIn is jsonErr for a failure whose input is at hand. A syntax error
+// is located by line and column and described in plain words, so a repair
+// prompt can say where the reply broke. It reads only positions and the
+// decoder's error kind from text, and never copies any of it into the result.
+func jsonErrIn(err error, text string) string {
+	var syn *json.SyntaxError
+	switch {
+	case errors.As(err, &syn):
+		// Offset counts the bytes read, the offending byte is the last one.
+		line, col := lineCol(text, int(syn.Offset)-1)
+		return fmt.Sprintf("syntax error at line %d, column %d (byte offset %d); %s",
+			line, col, syn.Offset, syntaxKind(syn.Error()))
+	case errors.Is(err, io.ErrUnexpectedEOF):
+		line, col := lineCol(text, len(text))
+		return fmt.Sprintf("syntax error at line %d, column %d; the reply ends before the JSON is complete: a string, array or object is still open (was the reply cut short?)", line, col)
+	}
+	return jsonErr(err)
+}
+
+// syntaxKind turns the decoder's message into advice. It matches on the
+// decoder's wording only and never returns any of it.
+func syntaxKind(msg string) string {
+	switch {
+	case strings.Contains(msg, "escape"):
+		return "a backslash in a string must be written as two backslashes"
+	case strings.Contains(msg, "in string"):
+		return `a string opened on this line is not closed; a quote inside a string must be written \" and the closing quote must be present before the line ends`
+	case strings.Contains(msg, "unexpected end"):
+		return "the reply ends before the JSON is complete"
+	case strings.Contains(msg, "after object key:value pair"), strings.Contains(msg, "after array element"):
+		return "a comma is missing between two values, or a closing bracket is wrong"
+	case strings.Contains(msg, "after object key"):
+		return "a colon is missing after a key"
+	case strings.Contains(msg, "looking for beginning of object key string"):
+		return "a key must be a quoted string (check for a trailing comma or a missing quote)"
+	case strings.Contains(msg, "looking for beginning of value"):
+		return "a value is expected here (check for a trailing comma or a missing value)"
+	case strings.Contains(msg, "after top-level value"):
+		return "extra text follows the complete JSON value"
+	}
+	return "the text here is not valid JSON"
+}
+
+// lineCol is the 1-based line and column (in characters) of byte index i.
+func lineCol(text string, i int) (int, int) {
+	if i < 0 {
+		i = 0
+	}
+	if i > len(text) {
+		i = len(text)
+	}
+	line := 1 + strings.Count(text[:i], "\n")
+	start := strings.LastIndex(text[:i], "\n") + 1
+	return line, utf8.RuneCountInString(text[start:i]) + 1
 }
 
 // schemaErr describes a schema failure by the location of each failing value

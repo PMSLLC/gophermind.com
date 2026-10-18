@@ -212,7 +212,7 @@ func parseCoverageFill(raw string, reqs []Requirement, doc map[string]any, brief
 		Functions []map[string]any `json:"functions"`
 	}
 	if err := json.Unmarshal([]byte(raw), &add); err != nil {
-		return CoverageReply{}, nil, fmt.Errorf("coverage fill reply is not usable (%s)", jsonErr(err))
+		return CoverageReply{}, nil, fmt.Errorf("coverage fill reply is not usable (%s)", jsonErrIn(err, raw))
 	}
 	if len(add.Types)+len(add.Functions) == 0 {
 		return cr, nil, nil

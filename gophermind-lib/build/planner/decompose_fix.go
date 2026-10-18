@@ -290,7 +290,7 @@ func (p *Planner) repairDrafts(ctx context.Context, r *run, c *contract.Contract
 func parseFixReply(text string) (map[string]map[string]any, error) {
 	var got []map[string]any
 	if err := json.Unmarshal([]byte(text), &got); err != nil {
-		return nil, fmt.Errorf("decompose repair reply is not a JSON array of nodes (%s)", jsonErr(err))
+		return nil, fmt.Errorf("decompose repair reply is not a JSON array of nodes (%s)", jsonErrIn(err, text))
 	}
 	out := map[string]map[string]any{}
 	for _, d := range got {

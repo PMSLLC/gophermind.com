@@ -445,7 +445,7 @@ type draftResult struct {
 func splitDrafts(text, component string, fns []contract.Function, c *contract.Contracts, r *run) (draftResult, error) {
 	var got []map[string]any
 	if err := json.Unmarshal([]byte(text), &got); err != nil {
-		return draftResult{}, fmt.Errorf("decompose reply is not a JSON array of nodes (%s)", jsonErr(err))
+		return draftResult{}, fmt.Errorf("decompose reply is not a JSON array of nodes (%s)", jsonErrIn(err, text))
 	}
 	res := draftResult{classes: map[string]string{}}
 	want := map[string]bool{}

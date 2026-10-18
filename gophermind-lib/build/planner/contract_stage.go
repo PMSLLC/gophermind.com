@@ -493,7 +493,7 @@ func mergeOutline(doc map[string]any, have []Dependency, text, briefID string, f
 		Deps        []map[string]any `json:"dependencies"`
 	}
 	if err := json.Unmarshal([]byte(text), &o); err != nil {
-		return nil, nil, 0, nil, fmt.Errorf("contract outline is not a JSON object (%s)", jsonErr(err))
+		return nil, nil, 0, nil, fmt.Errorf("contract outline is not a JSON object (%s)", jsonErrIn(err, text))
 	}
 	first := doc == nil
 	deps, err := ParseDependencies(o.Deps)
@@ -905,7 +905,7 @@ func mergePass(doc map[string]any, component, text, briefID string) (map[string]
 		More      bool             `json:"more"`
 	}
 	if err := json.Unmarshal([]byte(text), &pass); err != nil {
-		return nil, false, nil, fmt.Errorf("contract reply for %s is not a JSON object (%s)", component, jsonErr(err))
+		return nil, false, nil, fmt.Errorf("contract reply for %s is not a JSON object (%s)", component, jsonErrIn(err, text))
 	}
 	next, err := copyDoc(doc)
 	if err != nil {
@@ -1181,7 +1181,7 @@ func mergeRepair(doc map[string]any, text, briefID string) (map[string]any, []st
 		Functions []map[string]any `json:"functions"`
 	}
 	if err := json.Unmarshal([]byte(text), &pass); err != nil {
-		return nil, nil, fmt.Errorf("contract repair reply is not a JSON object (%s)", jsonErr(err))
+		return nil, nil, fmt.Errorf("contract repair reply is not a JSON object (%s)", jsonErrIn(err, text))
 	}
 	next, err := copyDoc(doc)
 	if err != nil {

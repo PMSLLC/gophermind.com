@@ -226,7 +226,7 @@ func parseQuestionList(text string, have qstore, o qparseOpts) ([]qrec, error) {
 		Default        string   `json:"default_if_unanswered"` // the field of the one-round Clarify; read as the recommendation
 	}
 	if err := json.Unmarshal([]byte(text), &raw); err != nil {
-		return nil, fmt.Errorf("clarify reply is not a JSON array of questions (%s)", jsonErr(err))
+		return nil, fmt.Errorf("clarify reply is not a JSON array of questions (%s)", jsonErrIn(err, text))
 	}
 	if raw == nil {
 		return nil, errors.New("clarify reply is null, want a JSON array of questions")

@@ -64,7 +64,7 @@ type Covered struct {
 func ParseCoverageReply(text string, reqs []Requirement) (CoverageReply, error) {
 	var r CoverageReply
 	if err := json.Unmarshal([]byte(text), &r); err != nil {
-		return CoverageReply{}, fmt.Errorf("coverage reply is not valid JSON (%s)", jsonErr(err))
+		return CoverageReply{}, fmt.Errorf("coverage reply is not valid JSON (%s)", jsonErrIn(err, text))
 	}
 	known := map[string]bool{}
 	for _, q := range reqs {

@@ -265,7 +265,7 @@ func gapNodes(issues []schemaIssue) []gapNode {
 func mergeFieldRepair(doc map[string]any, text string, asked []gapNode) (map[string]any, int, error) {
 	var reply map[string][]map[string]any
 	if err := json.Unmarshal([]byte(text), &reply); err != nil {
-		return nil, 0, fmt.Errorf("contract schema repair reply is not a JSON object (%s)", jsonErr(err))
+		return nil, 0, fmt.Errorf("contract schema repair reply is not a JSON object (%s)", jsonErrIn(err, text))
 	}
 	next, err := copyDoc(doc)
 	if err != nil {

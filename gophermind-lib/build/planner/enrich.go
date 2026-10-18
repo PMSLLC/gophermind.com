@@ -316,7 +316,7 @@ func enrichView(d map[string]any) map[string]any {
 func splitEnrich(text string, batch []map[string]any, c *contract.Contracts, env groupEnv, prev map[string]map[string]any) (enrichResult, error) {
 	var got []map[string]any
 	if err := json.Unmarshal([]byte(text), &got); err != nil {
-		return enrichResult{}, fmt.Errorf("enrich reply is not a JSON array of objects (%s)", jsonErr(err))
+		return enrichResult{}, fmt.Errorf("enrich reply is not a JSON array of objects (%s)", jsonErrIn(err, text))
 	}
 	want := map[string]bool{}
 	for _, d := range batch {
@@ -722,7 +722,7 @@ func (p *Planner) structureCall(ctx context.Context, r *run, stage, kind, subjec
 	err = p.call(ctx, r, cs, prompt, func(text string) error {
 		var x map[string]any
 		if err := json.Unmarshal([]byte(StripReply(text)), &x); err != nil {
-			return fmt.Errorf("enrich reply is not a JSON object (%s)", jsonErr(err))
+			return fmt.Errorf("enrich reply is not a JSON object (%s)", jsonErrIn(err, StripReply(text)))
 		}
 		rat, _ := x["rationale"].(string)
 		if n := len([]rune(strings.TrimSpace(rat))); n < 20 || n > 600 {

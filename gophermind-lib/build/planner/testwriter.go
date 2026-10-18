@@ -284,7 +284,7 @@ func parseTestwrite(text string, ct map[string]any, pkg, funcName, module string
 	dec := json.NewDecoder(strings.NewReader(text))
 	dec.UseNumber() // a number keeps the digits the model wrote
 	if err := dec.Decode(&reply); err != nil {
-		return nil, "", fmt.Errorf("test-writer reply is not a JSON object (%s)", jsonErr(err))
+		return nil, "", fmt.Errorf("test-writer reply is not a JSON object (%s)", jsonErrIn(err, text))
 	}
 	need := len(objects(ct["errors"])) + 1
 	if len(reply.Tests) < need {
