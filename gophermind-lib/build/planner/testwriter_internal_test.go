@@ -105,12 +105,12 @@ func TestTestwriterRepliesNeedATestPerErrorCondition(t *testing.T) {
 			t.Errorf("test %v = level %v, command %v", tc["name"], tc["level"], tc["command"])
 		}
 	}
-	for name, bad := range map[string]string{
-		"no name":   `{"name": " ", "given": "g", "expect": "e"}`,
-		"no given":  `{"name": "a", "expect": "e"}`,
-		"no expect": `{"name": "a", "given": "g", "expect": ""}`,
+	for name, bad := range map[string][2]string{
+		"no name":   {`{"name": " ", "given": "g", "expect": "e"}`, "test 3 needs a name"},
+		"no given":  {`{"name": "a", "expect": "e"}`, "test 3: given must be text"},
+		"no expect": {`{"name": "a", "given": "g", "expect": ""}`, "test 3: expect must be text"},
 	} {
-		if _, _, err := parseTestwrite(reply(test("a"), test("b"), bad), ct, "greet", "TestGreet", "example.com/greeter", nil); err == nil || !strings.Contains(err.Error(), "needs a name, a given and an expect") {
+		if _, _, err := parseTestwrite(reply(test("a"), test("b"), bad[0]), ct, "greet", "TestGreet", "example.com/greeter", nil); err == nil || err.Error() != bad[1] {
 			t.Errorf("%s: err = %v", name, err)
 		}
 	}
@@ -234,5 +234,57 @@ func TestPackageClause(t *testing.T) {
 		if got := PackageClause(pkg); got != want {
 			t.Errorf("PackageClause(%q) = %q, want %q", pkg, got, want)
 		}
+	}
+}
+
+// A model writing a test for a function that returns a bool or a number puts
+// the bare value in given or expect. A boolean or number is kept as its text;
+// null, an object or an array is refused, naming the test and the field.
+func TestTestwriterAcceptsScalarGivenAndExpect(t *testing.T) {
+	ct := map[string]any{"file": "internal/greet/greet.go"}
+	src := strings.ReplaceAll(okTestSource, "\n\t\"example.com/greeter/internal/names\"\n", "")
+	src = strings.Replace(src, "names.Default", `"x"`, 1)
+	quoted, _ := jsonString(src)
+	reply := func(given, expect string) string {
+		return `{"tests": [{"name": "a", "given": ` + given + `, "expect": ` + expect + `, "polarity": "success", "covers": "happy"}], "test_file": ` + quoted + `}`
+	}
+	accepted := []struct{ given, expect, wantGiven, wantExpect string }{
+		{`"g"`, `true`, "g", "true"},
+		{`"g"`, `false`, "g", "false"},
+		{`"g"`, `3`, "g", "3"},
+		{`"g"`, `2.5`, "g", "2.5"},
+		{`1`, `"e"`, "1", "e"},
+		{`"g"`, `9007199254740993`, "g", "9007199254740993"},
+		{`"g"`, `"e"`, "g", "e"},
+	}
+	for _, c := range accepted {
+		tests, _, err := parseTestwrite(reply(c.given, c.expect), ct, "greet", "TestGreet", "example.com/greeter", nil)
+		if err != nil {
+			t.Errorf("given %s expect %s: refused: %v", c.given, c.expect, err)
+			continue
+		}
+		if tests[0]["given"] != c.wantGiven || tests[0]["expect"] != c.wantExpect {
+			t.Errorf("given %s expect %s: stored %q and %q, want %q and %q", c.given, c.expect, tests[0]["given"], tests[0]["expect"], c.wantGiven, c.wantExpect)
+		}
+	}
+	refused := []struct{ given, expect, want string }{
+		{`"g"`, `null`, "test 1: expect must be text"},
+		{`"g"`, `{"a": 1}`, "test 1: expect must be text"},
+		{`"g"`, `[true]`, "test 1: expect must be text"},
+		{`null`, `"e"`, "test 1: given must be text"},
+		{`{"a": 1}`, `"e"`, "test 1: given must be text"},
+		{`[1]`, `"e"`, "test 1: given must be text"},
+		{`"g"`, `""`, "test 1: expect must be text"},
+		{`"g"`, `"  "`, "test 1: expect must be text"},
+	}
+	for _, c := range refused {
+		_, _, err := parseTestwrite(reply(c.given, c.expect), ct, "greet", "TestGreet", "example.com/greeter", nil)
+		if err == nil || err.Error() != c.want {
+			t.Errorf("given %s expect %s: err = %v, want %q", c.given, c.expect, err, c.want)
+		}
+	}
+	noName := `{"tests": [{"name": " ", "given": "g", "expect": "e"}], "test_file": ` + quoted + `}`
+	if _, _, err := parseTestwrite(noName, ct, "greet", "TestGreet", "example.com/greeter", nil); err == nil || err.Error() != "test 1 needs a name" {
+		t.Errorf("blank name: err = %v", err)
 	}
 }

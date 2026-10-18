@@ -257,6 +257,21 @@ func placeTestFile(r *run, abs, rel, source string) error {
 	return nil
 }
 
+// scalarText is a decoded JSON string, boolean or number as plain text. A model
+// writing a test for a function that returns a bool or a number puts the bare
+// value there. Null, an object and an array are not text.
+func scalarText(v any) (string, bool) {
+	switch x := v.(type) {
+	case string:
+		return x, true
+	case bool:
+		return strconv.FormatBool(x), true
+	case json.Number:
+		return x.String(), true
+	}
+	return "", false
+}
+
 // parseTestwrite checks a Test-writer reply: enough tests, each described,
 // and a Go test file that parses, holds the expected test function, and
 // imports nothing outside the standard library and the module. Level and
@@ -266,7 +281,9 @@ func parseTestwrite(text string, ct map[string]any, pkg, funcName, module string
 		Tests    []map[string]any `json:"tests"`
 		TestFile string           `json:"test_file"`
 	}
-	if err := json.Unmarshal([]byte(text), &reply); err != nil {
+	dec := json.NewDecoder(strings.NewReader(text))
+	dec.UseNumber() // a number keeps the digits the model wrote
+	if err := dec.Decode(&reply); err != nil {
 		return nil, "", fmt.Errorf("test-writer reply is not a JSON object (%s)", jsonErr(err))
 	}
 	need := len(objects(ct["errors"])) + 1
@@ -279,10 +296,16 @@ func parseTestwrite(text string, ct map[string]any, pkg, funcName, module string
 	tests := make([]map[string]any, 0, len(reply.Tests))
 	for i, t := range reply.Tests {
 		name, _ := t["name"].(string)
-		given, okGiven := t["given"].(string)
-		expect, okExpect := t["expect"].(string)
-		if strings.TrimSpace(name) == "" || !okGiven || !okExpect || strings.TrimSpace(expect) == "" {
-			return nil, "", fmt.Errorf("test %d needs a name, a given and an expect", i+1)
+		if strings.TrimSpace(name) == "" {
+			return nil, "", fmt.Errorf("test %d needs a name", i+1)
+		}
+		given, okGiven := scalarText(t["given"])
+		if !okGiven {
+			return nil, "", fmt.Errorf("test %d: given must be text", i+1)
+		}
+		expect, okExpect := scalarText(t["expect"])
+		if !okExpect || strings.TrimSpace(expect) == "" {
+			return nil, "", fmt.Errorf("test %d: expect must be text", i+1)
 		}
 		pol, _ := t["polarity"].(string)
 		cov, _ := t["covers"].(string)
