@@ -96,10 +96,21 @@ func (p *Planner) coverage(ctx context.Context, r *run) error {
 		return err
 	}
 
-	qo := qualityOptions(r.brief.Front)
+	// The binaries come from the contract as it stands: a fill round may add
+	// functions, so the options are read again each time.
+	quality := func(tests []RootTest) ([]QualityItem, error) {
+		c, err := loadContracts(r)
+		if err != nil {
+			return nil, err
+		}
+		return rootTestDefects(r.reqs, tests, qualityOptions(r.brief.Front, c)), nil
+	}
 	reply = reply.withGoAcceptance(r.reqs)
 	covered, gaps := CheckCoverage(r.reqs, nodes, reply)
-	weak := rootTestDefects(r.reqs, reply.RootTests, qo)
+	weak, err := quality(reply.RootTests)
+	if err != nil {
+		return err
+	}
 	rounds := 0
 	for (len(gaps) > 0 || len(weak) > 0) && rounds < p.d.Settings.Defaults.MaxCoverageRounds {
 		rounds++
@@ -118,7 +129,9 @@ func (p *Planner) coverage(ctx context.Context, r *run) error {
 			return err
 		}
 		covered, gaps = CheckCoverage(r.reqs, nodes, reply)
-		weak = rootTestDefects(r.reqs, reply.RootTests, qo)
+		if weak, err = quality(reply.RootTests); err != nil {
+			return err
+		}
 	}
 	if len(gaps) > 0 {
 		return &CoverageError{Gaps: gaps}

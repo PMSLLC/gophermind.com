@@ -2,11 +2,49 @@ package planner
 
 import (
 	"fmt"
+	"path"
 	"strings"
 
 	"gophermind/gophermind-lib/build/acceptcheck"
 	"gophermind/gophermind-lib/build/brief"
+	"gophermind/gophermind-lib/build/contract"
 )
+
+// FindVacuous is the finding of an acceptance root test the executor would
+// refuse with acceptance_vacuous: it never runs a binary the harness builds.
+const FindVacuous = "acceptance_vacuous"
+
+// BinName is the name of the binary the harness builds for a main package
+// whose package clause is clause and whose slash directory is dir: the first
+// directory under cmd/. The executor and the planner share this rule.
+func BinName(clause, dir string) (string, bool) {
+	if clause != "main" {
+		return "", false
+	}
+	rest, ok := strings.CutPrefix(dir, "cmd/")
+	if !ok {
+		return "", false
+	}
+	name := strings.SplitN(rest, "/", 2)[0]
+	return name, name != ""
+}
+
+// contractBins are the binary names the contract's functions build, sorted.
+func contractBins(c *contract.Contracts) []string {
+	if c == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, f := range c.Functions {
+		if name, ok := BinName(PackageClause(f.Package), path.Dir(f.File)); ok && !seen[name] {
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	sortStrings(out)
+	return out
+}
 
 // maxQualityNamed is how many requirement ids a quality stop names.
 const maxQualityNamed = 10
@@ -38,9 +76,10 @@ func (e *QualityError) Error() string {
 	return msg
 }
 
-// qualityOptions are the names a root test command may use as variables.
-func qualityOptions(f brief.Frontmatter) acceptcheck.Options {
-	var o acceptcheck.Options
+// qualityOptions are the names a root test command may use as variables and
+// the binaries the contract builds (c may be nil: no binary).
+func qualityOptions(f brief.Frontmatter, c *contract.Contracts) acceptcheck.Options {
+	o := acceptcheck.Options{Bins: contractBins(c)}
 	for _, s := range f.Secrets {
 		o.Env = append(o.Env, s.Name)
 	}
@@ -55,12 +94,23 @@ func qualityOptions(f brief.Frontmatter) acceptcheck.Options {
 // several root tests collects the findings of all of them.
 func rootTestDefects(reqs []Requirement, tests []RootTest, o acceptcheck.Options) []QualityItem {
 	by := map[string]map[string]bool{}
+	add := func(id, finding string) {
+		if by[id] == nil {
+			by[id] = map[string]bool{}
+		}
+		by[id][finding] = true
+	}
+	kind := map[string]ReqKind{}
+	for _, q := range reqs {
+		kind[q.ID] = q.Kind
+	}
 	for _, t := range tests {
 		for _, f := range acceptcheck.Quality(t.Command, o) {
-			if by[t.Requirement] == nil {
-				by[t.Requirement] = map[string]bool{}
-			}
-			by[t.Requirement][string(f)] = true
+			add(t.Requirement, string(f))
+		}
+		// Only an acceptance bullet is held to the executor's vacuity rule.
+		if kind[t.Requirement] == ReqAcceptance && acceptcheck.Vacuous(t.Command, o.Bins) {
+			add(t.Requirement, FindVacuous)
 		}
 	}
 	var out []QualityItem

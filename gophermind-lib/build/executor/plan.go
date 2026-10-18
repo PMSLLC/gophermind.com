@@ -429,15 +429,8 @@ func (p *Plan) binNames() []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, l := range p.Leaves {
-		if l.Package != "main" {
-			continue
-		}
-		rest, ok := strings.CutPrefix(l.Dir, "cmd/")
-		if !ok {
-			continue
-		}
-		name := strings.SplitN(rest, "/", 2)[0]
-		if name != "" && !seen[name] {
+		name, ok := planner.BinName(l.Package, l.Dir)
+		if ok && !seen[name] {
 			seen[name] = true
 			out = append(out, name)
 		}

@@ -35,7 +35,11 @@ func (p *Planner) approve(ctx context.Context, r *run) error {
 	if err != nil {
 		return err
 	}
-	if weak := rootTestDefects(r.reqs, cov.RootTests, qualityOptions(r.brief.Front)); len(weak) > 0 {
+	cs, err := loadContracts(r)
+	if err != nil {
+		return err
+	}
+	if weak := rootTestDefects(r.reqs, cov.RootTests, qualityOptions(r.brief.Front, cs)); len(weak) > 0 {
 		return &QualityError{Items: weak}
 	}
 	if !confirmDone(r) {
@@ -210,7 +214,7 @@ func RenderPlan(runDir string) (markdown, hash string, err error) {
 	fmt.Fprintf(&s, "- Secrets (names only): %s\n- Environment: %s\n- Hosts: %s\n", orNone(secrets), orNone(env), orNone(hosts))
 
 	quality := map[string][]string{}
-	for _, it := range rootTestDefects(reqs, cov.RootTests, qualityOptions(f)) {
+	for _, it := range rootTestDefects(reqs, cov.RootTests, qualityOptions(f, c)) {
 		quality[it.Requirement] = it.Findings
 	}
 	s.WriteString("\n## Coverage\n\n| Requirement | Text | Covered by | Root tests | Quality |\n|---|---|---|---|---|\n")

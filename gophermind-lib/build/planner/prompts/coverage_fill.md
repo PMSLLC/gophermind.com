@@ -25,6 +25,8 @@ For each gap do one of these:
 - Add a root test: a shell command, run from the repository root, that exits 0 only when the requirement holds. An acceptance requirement (ids starting with A) always needs one.
 - Declare the functions, and any types, that are missing from the plan. Give each function the `component` it belongs to (an id from the list), and map the requirement to the new function ids.
 
+A behavior of a command-line tool is proven by running the built binary by its name, for example `csvstat file.csv`; when the input comes from standard input, pipe it into the binary. Never `go run` it.
+
 A narrative acceptance requirement that describes a multi-step flow against a server is proven by a Go test, not a shell script: declare "serve" ({"command": "...", "ready": "/healthz"}, a built binary listening on GM_ACCEPTANCE_ADDR) and give the requirement a root test whose command is exactly `go test -tags acceptance ./acceptance -run '^TestA8$' -count=1 -v` with its own id in place of A8. Check a constraint with `test`, `grep -q` or `go vet` and a real assertion, never `|| echo`.
 
 {{.Harness}}

@@ -12,6 +12,7 @@ A root test must be able to fail. A reviewer rejects it, naming one of these fin
 - curl_unasserted: a curl has neither -f (or --fail) nor an assertion on its output (`grep -q`, `jq -e`, `test`, `[`, `diff`, `cmp`).
 - jq_unasserted: a jq has no -e and its output is not asserted.
 - print_only: it only prints (echo, printf, cat, ls, find, head, wc, awk without exit).
+- acceptance_vacuous: an acceptance command never runs a binary the harness builds, or runs something forbidden. Call the built binary by its name (`csvstat file.csv`; when the input is standard input, pipe it into the binary: `printf 'a,b\n1,2\n' | csvstat -`), and never use `go run`, `go install`, `go get` or `go generate`. `go build`, `go vet` and `go test` with a package pattern are fine.
 
 Good (each exits non-zero when the requirement does not hold):
 - `! grep -rqE 'gorm|entgo|sqlx' internal/`
