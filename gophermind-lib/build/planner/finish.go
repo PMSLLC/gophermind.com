@@ -74,6 +74,20 @@ var (
 	coversRE   = regexp.MustCompile(`^(happy|error:[0-9]+|input:[A-Za-z_][A-Za-z0-9_]*)$`)
 )
 
+// coversHelp states how many error conditions the contract lists and which
+// covers tags are valid for it. It is built from the count alone and quotes
+// nothing from the reply.
+func coversHelp(errors int) string {
+	if errors == 0 {
+		return "The contract lists 0 error conditions, so no test may use error:<n>. Valid covers: happy, or input:<param name> for a test of an odd input."
+	}
+	rng := "error:1"
+	if errors > 1 {
+		rng = fmt.Sprintf("error:1 to error:%d", errors)
+	}
+	return fmt.Sprintf("The contract lists %d error conditions. Valid covers: happy, input:<name> (a parameter name), or %s.", errors, rng)
+}
+
 // checkPolarity applies the coverage rules to a Test-writer reply: every test
 // has a polarity and a covers; there is a success test for the happy path; and
 // each error condition has a negative test that covers it. Every refusal starts
@@ -88,11 +102,11 @@ func checkPolarity(tests []map[string]any, errors int) error {
 			return fmt.Errorf("%s: test %d needs a polarity: success, negative, boundary or property", grpEnum, i+1)
 		}
 		if !coversRE.MatchString(cov) {
-			return fmt.Errorf("%s: test %d needs covers: happy, error:<n> or input:<name>", grpEnum, i+1)
+			return fmt.Errorf("%s: test %d has a covers that is not a valid tag. %s", grpEnum, i+1, coversHelp(errors))
 		}
 		var n int
 		if _, err := fmt.Sscanf(cov, "error:%d", &n); err == nil && (n < 1 || n > errors) {
-			return fmt.Errorf("%s: test %d covers an error condition the contract does not list", grpEnum, i+1)
+			return fmt.Errorf("%s: test %d covers an error condition the contract does not list. %s", grpEnum, i+1, coversHelp(errors))
 		}
 		if cov == "happy" && pol == "success" {
 			happy = true

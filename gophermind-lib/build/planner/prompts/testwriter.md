@@ -5,6 +5,7 @@ Write:
    - `polarity` is `success`, `negative`, `boundary` or `property`.
    - `covers` is `happy` for the happy path, `error:<n>` for the n-th entry of `contract.errors` (counting from 1), or `input:<name>` for a case about one parameter.
    - Exactly one rule you must meet: a `success` test with `covers` `happy`, and for EVERY entry of `contract.errors` a `negative` test with `covers` `error:<n>`.
+   - When the contract lists no errors, there is no `error:<n>` tag at all: never use one. A test of an odd or empty input uses `input:<parameter name>` (polarity `boundary` or `negative`), and the happy path uses `happy`.
 2. The Go test file `{{.TestFile}}` containing `func {{.TestFuncName}}(t *testing.T)` as a table-driven test whose case names match the `name` fields exactly (spaces become underscores in subtest names). If the node lists `bench` in `profile_hooks`, the file also contains a `Benchmark` function named like the test with `Benchmark` in place of `Test`.
 
 Cover:
