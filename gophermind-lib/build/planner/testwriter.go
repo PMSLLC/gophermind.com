@@ -291,6 +291,21 @@ func scalarText(v any) (string, bool) {
 	return strings.TrimSuffix(b.String(), "\n"), true
 }
 
+// testField reads the given or expect of test n. A key that is absent is
+// reported as missing; a present empty or blank string is kept as written (an
+// empty input or an empty expected output is a real test).
+func testField(t map[string]any, key string, n int) (string, error) {
+	v, present := t[key]
+	if !present {
+		return "", fmt.Errorf("test %d: %s is missing", n, key)
+	}
+	text, ok := scalarText(v)
+	if !ok {
+		return "", fmt.Errorf("test %d: %s must be text", n, key)
+	}
+	return text, nil
+}
+
 // parseTestwrite checks a Test-writer reply: enough tests, each described,
 // and a Go test file that parses, holds the expected test function, and
 // imports nothing outside the standard library and the module. Level and
@@ -318,13 +333,13 @@ func parseTestwrite(text string, ct map[string]any, pkg, funcName, module string
 		if strings.TrimSpace(name) == "" {
 			return nil, "", fmt.Errorf("test %d needs a name", i+1)
 		}
-		given, okGiven := scalarText(t["given"])
-		if !okGiven {
-			return nil, "", fmt.Errorf("test %d: given must be text", i+1)
+		given, err := testField(t, "given", i+1)
+		if err != nil {
+			return nil, "", err
 		}
-		expect, okExpect := scalarText(t["expect"])
-		if !okExpect || strings.TrimSpace(expect) == "" {
-			return nil, "", fmt.Errorf("test %d: expect must be text", i+1)
+		expect, err := testField(t, "expect", i+1)
+		if err != nil {
+			return nil, "", err
 		}
 		pol, _ := t["polarity"].(string)
 		cov, _ := t["covers"].(string)

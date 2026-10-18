@@ -107,8 +107,8 @@ func TestTestwriterRepliesNeedATestPerErrorCondition(t *testing.T) {
 	}
 	for name, bad := range map[string][2]string{
 		"no name":   {`{"name": " ", "given": "g", "expect": "e"}`, "test 3 needs a name"},
-		"no given":  {`{"name": "a", "expect": "e"}`, "test 3: given must be text"},
-		"no expect": {`{"name": "a", "given": "g", "expect": ""}`, "test 3: expect must be text"},
+		"no given":  {`{"name": "a", "expect": "e"}`, "test 3: given is missing"},
+		"no expect": {`{"name": "a", "given": "g"}`, "test 3: expect is missing"},
 	} {
 		if _, _, err := parseTestwrite(reply(test("a"), test("b"), bad[0]), ct, "greet", "TestGreet", "example.com/greeter", nil); err == nil || err.Error() != bad[1] {
 			t.Errorf("%s: err = %v", name, err)
@@ -239,7 +239,7 @@ func TestPackageClause(t *testing.T) {
 
 // A model writing a test for a function that returns a bool or a number puts
 // the bare value in given or expect. A boolean or number is kept as its text;
-// null, an empty object or array and blank text are refused; a non-empty object or array is kept as compact JSON text, naming the test and the field.
+// null and an empty object or array are refused, blank text is kept as written; a non-empty object or array is kept as compact JSON text, naming the test and the field.
 func TestTestwriterAcceptsScalarGivenAndExpect(t *testing.T) {
 	ct := map[string]any{"file": "internal/greet/greet.go"}
 	src := strings.ReplaceAll(okTestSource, "\n\t\"example.com/greeter/internal/names\"\n", "")
@@ -256,6 +256,10 @@ func TestTestwriterAcceptsScalarGivenAndExpect(t *testing.T) {
 		{`1`, `"e"`, "1", "e"},
 		{`"g"`, `9007199254740993`, "g", "9007199254740993"},
 		{`"g"`, `"e"`, "g", "e"},
+		{`"g"`, `""`, "g", ""},
+		{`"g"`, `"  "`, "g", "  "},
+		{`""`, `"e"`, "", "e"},
+		{`" "`, `""`, " ", ""},
 		{`"g"`, `{"a": 1}`, "g", `{"a":1}`},
 		{`"g"`, `[true]`, "g", `[true]`},
 		{`{"b": 9007199254740993, "a": "x\ny"}`, `[1, 2.50]`, `{"a":"x\ny","b":9007199254740993}`, `[1,2.50]`},
@@ -277,8 +281,6 @@ func TestTestwriterAcceptsScalarGivenAndExpect(t *testing.T) {
 		{`null`, `"e"`, "test 1: given must be text"},
 		{`{}`, `"e"`, "test 1: given must be text"},
 		{`[]`, `"e"`, "test 1: given must be text"},
-		{`"g"`, `""`, "test 1: expect must be text"},
-		{`"g"`, `"  "`, "test 1: expect must be text"},
 	}
 	for _, c := range refused {
 		_, _, err := parseTestwrite(reply(c.given, c.expect), ct, "greet", "TestGreet", "example.com/greeter", nil)
@@ -310,5 +312,23 @@ func TestTestwriterAcceptsObjectGivenAndExpect(t *testing.T) {
 	}
 	if want := `{"err":null,"rows":[["Alice","30"]]}`; tests[0]["expect"] != want {
 		t.Errorf("expect = %q, want %q", tests[0]["expect"], want)
+	}
+}
+
+// The real reply that excluded the only model: a boundary test of a render
+// function whose expected output is empty because nothing is printed.
+func TestTestwriterAcceptsEmptyExpectBoundaryTest(t *testing.T) {
+	ct := map[string]any{"file": "internal/greet/greet.go"}
+	src := strings.ReplaceAll(okTestSource, "\n\t\"example.com/greeter/internal/names\"\n", "")
+	src = strings.Replace(src, "names.Default", `"x"`, 1)
+	quoted, _ := jsonString(src)
+	text := `{"tests": [{"name":"happy","given":{"summaries":["a"]},"expect":"a","polarity":"success","covers":"happy"},{"name":"boundary_empty_slice","given":{"summaries":[]},"expect":"","polarity":"boundary","covers":"input:summaries"}], "test_file": ` + quoted + `}`
+	ct["errors"] = []any{}
+	tests, _, err := parseTestwrite(text, ct, "greet", "TestGreet", "example.com/greeter", nil)
+	if err != nil {
+		t.Fatalf("empty expect refused: %v", err)
+	}
+	if tests[1]["expect"] != "" || tests[1]["given"] != `{"summaries":[]}` {
+		t.Errorf("stored given %q expect %q", tests[1]["given"], tests[1]["expect"])
 	}
 }
