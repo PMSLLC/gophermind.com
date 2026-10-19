@@ -3,12 +3,14 @@ package planner
 import (
 	"errors"
 	"go/ast"
+	"go/format"
 	"go/parser"
 	"go/token"
 	"os"
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"gophermind/gophermind-lib/build/contract"
 )
@@ -89,6 +91,106 @@ func checkSharedNames(src string, tests, stubs []string) error {
 		return errSharedName
 	}
 	return nil
+}
+
+// isEntryPointName reports a name the go tool treats as a test entry point.
+func isEntryPointName(n string) bool {
+	for _, p := range []string{"Test", "Benchmark", "Example", "Fuzz"} {
+		if strings.HasPrefix(n, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// resolveSharedNames is checkSharedNames with a repair for the one collision a
+// model keeps repeating: a helper that another accepted test file already
+// declares. Such a helper is renamed to <FuncName><Helper> everywhere in src
+// (the first letter keeps the case of the original, so exported status does not
+// change) and the rewritten source is returned with renamed=true. A collision
+// with a contract declaration, a collided test entry point, a name that would
+// still collide, or a file that cannot be parsed or printed gives the same
+// refusal checkSharedNames gives. funcName is the node's function name (for
+// example renderText or RenderText). Identifiers are matched through the
+// parser's object resolution, so a local variable of the same name is left
+// alone.
+func resolveSharedNames(src, funcName string, tests, stubs []string) (out string, renamed bool, err error) {
+	err = checkSharedNames(src, tests, stubs)
+	if err != errSharedName {
+		return src, false, err
+	}
+	fset := token.NewFileSet()
+	f, perr := parser.ParseFile(fset, "", src, parser.ParseComments)
+	if perr != nil || f.Name == nil || f.Scope == nil || funcName == "" {
+		return src, false, errSharedName
+	}
+	clause, mine, _ := topLevelNames(src)
+	taken := map[string]bool{}
+	theirs := map[string]bool{}
+	for _, o := range append(append([]string{}, tests...), stubs...) {
+		oc, names, ok := topLevelNames(o)
+		if !ok || oc != clause {
+			continue
+		}
+		for n := range names {
+			taken[n] = true
+			theirs[n] = true
+		}
+	}
+	for n := range mine {
+		taken[n] = true
+	}
+	rename := map[string]string{}
+	for n := range mine {
+		if !theirs[n] {
+			continue
+		}
+		if isEntryPointName(n) {
+			return src, false, errSharedName
+		}
+		stem := funcName[:1]
+		if n[0] >= 'a' && n[0] <= 'z' {
+			stem = strings.ToLower(stem)
+		} else {
+			stem = strings.ToUpper(stem)
+		}
+		nn := stem + funcName[1:] + strings.ToUpper(n[:1]) + n[1:]
+		if taken[nn] || !token.IsIdentifier(nn) {
+			return src, false, errSharedName
+		}
+		taken[nn] = true
+		rename[n] = nn
+	}
+	if len(rename) == 0 {
+		return src, false, errSharedName
+	}
+	objs := map[*ast.Object]string{}
+	for n, nn := range rename {
+		if o := f.Scope.Lookup(n); o != nil {
+			objs[o] = nn
+		}
+	}
+	if len(objs) != len(rename) {
+		return src, false, errSharedName
+	}
+	ast.Inspect(f, func(node ast.Node) bool {
+		if id, ok := node.(*ast.Ident); ok && id.Obj != nil {
+			if nn, hit := objs[id.Obj]; hit {
+				id.Name = nn
+			}
+		}
+		return true
+	})
+	var buf strings.Builder
+	if format.Node(&buf, fset, f) != nil {
+		return src, false, errSharedName
+	}
+	res := buf.String()
+	// The result must still parse and no longer collide.
+	if checkSharedNames(res, tests, stubs) != nil {
+		return src, false, errSharedName
+	}
+	return res, true, nil
 }
 
 // stubSources is the contract's types and function signatures that live in

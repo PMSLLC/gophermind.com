@@ -254,28 +254,34 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	}
 	var tests []map[string]any
 	var source string
+	renamedHelpers := false
 	cs := callSpec{stage: "testwrite:" + id, taskType: "testwrite", nodeID: id, nodeClass: class, tier: p.tierFor(strField(d, "model_tier")), scope: router.ScopeNode, maxTokens: maxTokensTestwrite}
 	err = p.callAsking(ctx, r, cs, prompt, func(text string) error {
 		ts, src, err := parseTestwrite(StripReply(text), ct, pkg, funcName, c.Module, hookList(d))
 		if err != nil {
 			return err
 		}
-		if err := checkSharedNames(src, otherTestSources(r.repo, path.Dir(rel), id, st), stubSources(c, path.Dir(file))); err != nil {
+		others := otherTestSources(r.repo, path.Dir(rel), id, st)
+		src, renamed, err := resolveSharedNames(src, strings.TrimPrefix(funcName, "Test"), others, stubSources(c, path.Dir(file)))
+		if err != nil {
 			return err
 		}
-		if err := compileCheckTestFile(c, rel, src, otherTestSources(r.repo, path.Dir(rel), id, st)); err != nil {
+		if err := compileCheckTestFile(c, rel, src, others); err != nil {
 			if errors.Is(err, errNoGo) {
 				p.noGoWarn.Do(func() { p.emit(events.KindWarning, cs.stage, id, err.Error()) })
-				tests, source = ts, src
+				tests, source, renamedHelpers = ts, src, renamed
 				return nil
 			}
 			return err
 		}
-		tests, source = ts, src
+		tests, source, renamedHelpers = ts, src, renamed
 		return nil
 	})
 	if err != nil {
 		return writtenTests{}, err
+	}
+	if renamedHelpers {
+		p.emit(events.KindWarning, cs.stage, id, "test_helper_renamed: helpers in the test file of node "+id+" collided with another test file of the package and were renamed with the function name")
 	}
 	wt := writtenTests{Tests: tests, TestFile: rel, SHA256: hashHex([]byte(source))}
 	if st.Pending == nil {
