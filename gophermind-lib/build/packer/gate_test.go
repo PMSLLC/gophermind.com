@@ -74,7 +74,6 @@ func TestReplyGateRefusals(t *testing.T) {
 		"export":                 "//export Foo\nfunc Foo() {}",
 		"exported helper":        "func Helper() {}",
 		"exported type":          "type Thing int",
-		"collides":               "func helperTaken() {}",
 		"blank var":              "var _ = 1",
 		"method on foreign type": "func (s *Store) Extra() {}",
 		"os exit":                "import \"os\"\nfunc h() { os.Exit(0) }",

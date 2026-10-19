@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -34,9 +35,32 @@ const (
 	noteSecretInSource = "The previous reply was refused before anything was written: its source held a secret value. Never write a secret into source; read it from the environment."
 	noteForbidden      = "The previous reply was refused before anything was written: it used a file header, a diff, several code fences or another form that is not allowed. Reply with exactly one Go source file in one code fence."
 	noteMalformed      = "The previous file did not parse or does not satisfy the contract: the package, the exact signature and the allowed declarations. Reply with exactly one Go source file in one code fence."
+	noteDeclaration    = "Write only the function and, if you need them, lower-case helper functions and types with names no other part of the package uses. Types, constants and functions of the contract are already in the package: do not declare them again."
+	noteSignature      = "The function must have exactly the signature given in the contract."
+	noteNotFound       = "The file must declare the function named in the contract."
+	notePackage        = "The file must use exactly the package named in the contract."
+	noteSyntax         = "The previous file is not valid Go source. Reply with exactly one complete Go source file in one code fence."
 	noteStray          = "The previous reply was refused: something other than the target file was written while its tests ran. Write only the target file."
 	noteCritical       = "The previous reply was refused: a request to a critical network host failed while its tests ran."
 )
+
+// malformedNote is the fixed sentence for a reply the packer called malformed,
+// chosen by the packer's class. An error with no class keeps noteMalformed.
+func malformedNote(err error) string {
+	switch packer.ErrorClass(err) {
+	case packer.ClassDeclaration:
+		return noteDeclaration
+	case packer.ClassSignature:
+		return noteSignature
+	case packer.ClassNotFound:
+		return noteNotFound
+	case packer.ClassPackage:
+		return notePackage
+	case packer.ClassSyntax:
+		return noteSyntax
+	}
+	return noteMalformed
+}
 
 // noteImports is the sentence for a reply that imports a package the policy
 // does not allow. It lists what is allowed and never the offending import.
@@ -730,7 +754,11 @@ func (lr *leafRun) gate(src []byte) (class, note string) {
 	r, err := packer.ParseReply(string(src), lr.expect)
 	switch {
 	case err != nil:
-		return runner.ClassMalformed, noteMalformed
+		return runner.ClassMalformed, malformedNote(err)
+	case len(r.Stripped) > 0:
+		// A file taken from disk is not rewritten: what a reply would have
+		// stripped is a refusal here, as before the lenient parse.
+		return runner.ClassMalformed, noteDeclaration
 	case r.ContractProblem != "" || r.Forbidden != "":
 		return ClassForbiddenWrite, noteForbidden
 	case len(lr.rc.plan.Policy().Check(r.Imports)) > 0:
@@ -1115,17 +1143,22 @@ func (lr *leafRun) attempt(ctx context.Context, e ladderEntry, k int) (end entry
 	}
 	var reply packer.Reply
 	lastSHA := "" // hash of the last reply the parse saw, good or not
+	var lastParseErr error
 	parse := func(text string) error {
 		lr.art.raw = text
 		r, perr := packer.ParseReply(text, lr.expect)
 		reply, lastSHA = r, r.SHA256
+		lastParseErr = perr
 		return perr
 	}
 	if err := lr.noteEscalation(e); err != nil {
 		return endFailed, true, err
 	}
 	if _, cerr := rc.o.Caller.CallParsed(ctx, info, req, parse); cerr != nil {
-		return lr.providerError(ctx, e, started, cerr, lastSHA)
+		return lr.providerError(ctx, e, started, cerr, lastSHA, lastParseErr)
+	}
+	if n := len(reply.Stripped); n > 0 {
+		rc.emit("leaf_reply_stripped", l.ID, strconv.Itoa(n))
 	}
 	lr.art.source = reply.Source
 
@@ -1234,7 +1267,7 @@ func (lr *leafRun) testSource() (string, error) {
 }
 
 // providerError is what a failed router call means for the entry.
-func (lr *leafRun) providerError(ctx context.Context, e ladderEntry, started time.Time, cerr error, lastSHA string) (entryEnd, bool, error) {
+func (lr *leafRun) providerError(ctx context.Context, e ladderEntry, started time.Time, cerr error, lastSHA string, parseErr error) (entryEnd, bool, error) {
 	var ce *router.ChainExhausted
 	if ctx.Err() != nil || errors.Is(cerr, context.Canceled) {
 		return endInterrupted, true, nil
@@ -1254,6 +1287,9 @@ func (lr *leafRun) providerError(ctx context.Context, e ladderEntry, started tim
 			return endIdentical, true, err
 		}
 		class, end = runner.ClassMalformed, endMalformed
+		if parseErr != nil {
+			lr.prev = failureText(malformedNote(parseErr))
+		}
 	case len(ce.Reasons) > 0:
 		switch kind := ce.Reasons[0].Kind; kind {
 		case router.ReasonTooLong:

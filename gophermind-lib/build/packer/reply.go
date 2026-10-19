@@ -121,6 +121,7 @@ type Reply struct {
 	ContractProblem string   // the one sentence, when the model answered CONTRACT_PROBLEM
 	Forbidden       string   // "" or "file_header", "diff_header", "multiple_fences"
 	Imports         []string // unquoted import paths of Source
+	Stripped        []string // contract names removed from the reply before the gate (names only, never reply text)
 	SHA256          string   // hex SHA-256 of the raw reply text
 	Bytes           int
 }
@@ -132,7 +133,38 @@ var (
 
 const problemPrefix = "CONTRACT_PROBLEM:"
 
-func malformed(kind string) error { return errors.New("malformed reply: " + kind) }
+// Classes of a malformed reply, for the executor's next-prompt sentence. They
+// are fixed words; none carries reply text.
+const (
+	ClassDeclaration = "declaration"
+	ClassSignature   = "signature"
+	ClassNotFound    = "not_found"
+	ClassPackage     = "package"
+	ClassSyntax      = "syntax"
+)
+
+// MalformedError is a reply that cannot be used. Kind is a fixed sentence
+// (sizes and positions only, never reply text); Class is one of the Class
+// constants, or "" when the kind has no specific advice.
+type MalformedError struct {
+	Kind  string
+	Class string
+}
+
+func (e *MalformedError) Error() string { return "malformed reply: " + e.Kind }
+
+func malformed(kind string) error { return &MalformedError{Kind: kind} }
+
+func malformedC(class, kind string) error { return &MalformedError{Kind: kind, Class: class} }
+
+// ErrorClass returns the class of a ParseReply error, "" when it has none.
+func ErrorClass(err error) string {
+	var me *MalformedError
+	if errors.As(err, &me) {
+		return me.Class
+	}
+	return ""
+}
 
 // ParseReply returns a non-nil error only for a malformed reply. Forbidden and
 // ContractProblem replies return a Reply and a nil error.
@@ -198,15 +230,18 @@ func ParseReply(text string, e Expect) (Reply, error) {
 	if err != nil {
 		var list scanner.ErrorList
 		if errors.As(err, &list) && len(list) > 0 {
-			return r, malformed(fmt.Sprintf("syntax error at line %d col %d (%d bytes)", list[0].Pos.Line, list[0].Pos.Column, len(src)))
+			return r, malformedC(ClassSyntax, fmt.Sprintf("syntax error at line %d col %d (%d bytes)", list[0].Pos.Line, list[0].Pos.Column, len(src)))
 		}
-		return r, malformed("syntax error")
+		return r, malformedC(ClassSyntax, "syntax error")
 	}
 	switch {
 	case strings.HasSuffix(f.Name.Name, "_test"):
 		return r, malformed("test package")
 	case f.Name.Name != e.Package:
-		return r, malformed("package mismatch")
+		return r, malformedC(ClassPackage, "package mismatch")
+	}
+	if ns, nf, nsrc := stripContract(src, e); len(ns) > 0 {
+		f, src, r.Stripped = nf, nsrc, ns
 	}
 	var imports []string
 	for _, imp := range f.Imports {
@@ -227,14 +262,17 @@ func ParseReply(text string, e Expect) (Reply, error) {
 	}
 	switch {
 	case len(found) == 0:
-		return r, malformed("function " + e.FuncName + " not found")
+		return r, malformedC(ClassNotFound, "function "+e.FuncName+" not found")
 	case len(found) > 1:
 		return r, malformed(fmt.Sprintf("function %s declared %d times", e.FuncName, len(found)))
 	}
 	if canonical(found[0]) != e.canon {
-		return r, malformed("signature mismatch for " + e.FuncName)
+		return r, malformedC(ClassSignature, "signature mismatch for "+e.FuncName)
 	}
 	if kind := gate(f, e, found[0]); kind != "" {
+		if kind == badDeclaration {
+			return r, malformedC(ClassDeclaration, kind)
+		}
 		return r, malformed(kind)
 	}
 	out, err := format.Source([]byte(src))
@@ -266,6 +304,8 @@ var processControl = map[string]map[string]bool{
 // variable, a parameter or an interface can end the process. The reply gate
 // refuses the same names so a reply the scan would refuse never reaches it.
 var exitMethods = map[string]bool{"Fatal": true, "Fatalf": true, "Fatalln": true, "Panic": true, "Panicf": true, "Panicln": true}
+
+const badDeclaration = "declaration not allowed (init, exported, blank, foreign method or name collision)"
 
 // gate enforces, on every reply, what leaf code may do. It returns a fixed
 // kind and never any reply text. The runner cannot tell a real pass from an
@@ -318,7 +358,7 @@ func gate(f *ast.File, e Expect, target *ast.FuncDecl) string {
 		}
 		return false
 	}
-	const bad = "declaration not allowed (init, exported, blank, foreign method or name collision)"
+	const bad = badDeclaration
 	for _, d := range f.Decls {
 		switch d := d.(type) {
 		case *ast.FuncDecl:

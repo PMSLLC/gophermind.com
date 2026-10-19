@@ -4,6 +4,7 @@ Rules:
 - Output the complete contents of the file named in the file section, with the package named there, including the package clause, imports, and the function with its doc comment.
 - The signature must be character-for-character the one in the signature section.
 - The reply is the whole Go file, nothing else. Import only the standard library, this module's own packages, and the modules in `<constraints>`.
+- Write only the function and, if you need them, lower-case helpers and types whose names no other part of the package uses. The package's types, constants and other functions are already declared in other files: do not repeat them, even to make the file look complete.
 - Use only the declarations in the dependency section from other files; they already exist, do not redefine them.
 - Do not write tests. Do not modify any other file. Do not add exported identifiers beyond the signature.
 - If the contract is contradictory or impossible, do not guess. Output exactly the single line `CONTRACT_PROBLEM: <one sentence>` and nothing else.

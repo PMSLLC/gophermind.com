@@ -8,9 +8,11 @@ import (
 
 // baselineSHA is the SHA-256 of the prompt Pack builds for baseNode with the
 // guidance of guidanceNode("construction","security") and no failure, taken
-// from the implement template as it was before sub-project E. An unrevised
-// node's prompt must stay byte-identical.
-const baselineSHA = "aef7169da2bb1a86ffb1c80105c7c1a5b6a66b1870c843d81bb2434caefcb415"
+// from the implement template as it was before sub-project E, plus the one
+// rule line that says to write only the function and lower-case helpers (the
+// reply-strip change). An unrevised node's prompt must stay byte-identical to
+// that baseline.
+const baselineSHA = "dec396f889a76c0e955b51b7ff43f94281eb2d351c63e1009707964487c97f93"
 
 func baselinePack(t *testing.T) Packed {
 	t.Helper()

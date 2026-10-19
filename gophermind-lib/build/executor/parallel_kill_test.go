@@ -138,7 +138,7 @@ func TestParallelLandingConflictFallsBackToSerial(t *testing.T) {
 		t.Fatalf("fn-greet attempts = %s", v)
 	}
 	calls := g.leafCalls("fn-greet")
-	if len(calls) != 2 || !strings.Contains(userText(calls[1]), noteMalformed) {
+	if len(calls) != 2 || !strings.Contains(userText(calls[1]), noteDeclaration) {
 		t.Fatal("the attempt after the conflict does not say why")
 	}
 	if got := subjectIDs(g.leafSubjects()); !reflect.DeepEqual(got, []string{"fn-farewell", "fn-greet"}) {
