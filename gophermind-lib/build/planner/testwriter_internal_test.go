@@ -332,3 +332,62 @@ func TestTestwriterAcceptsEmptyExpectBoundaryTest(t *testing.T) {
 		t.Errorf("stored given %q expect %q", tests[1]["given"], tests[1]["expect"])
 	}
 }
+
+// The local model leaves a "given" string unclosed on a pretty-printed line.
+func TestParseTestwriteClosesAStrayString(t *testing.T) {
+	ct := map[string]any{"file": "internal/greet/greet.go", "errors": []any{
+		map[string]any{"when": "name is empty", "returns": "*NameError"},
+		map[string]any{"when": "name is too long", "returns": "*NameError"},
+	}}
+	src := strings.ReplaceAll(okTestSource, "\n\t\"example.com/greeter/internal/names\"\n", "")
+	src = strings.Replace(src, "names.Default", `"x"`, 1)
+	quoted, _ := jsonString(src)
+	long := strings.Repeat("ab", 5000)
+	pol := map[string]string{"a": "success", "b": "negative", "c": "negative"}
+	cov := map[string]string{"a": "happy", "b": "error:1", "c": "error:2"}
+	build := func(givenLine string) string {
+		var parts []string
+		for _, n := range []string{"a", "b", "c"} {
+			given := `    "given": "g",`
+			if n == "a" {
+				given = givenLine
+			}
+			parts = append(parts, "  {\n    \"name\": \""+n+"\",\n"+given+"\n    \"expect\": \"e\",\n    \"polarity\": \""+pol[n]+"\",\n    \"covers\": \""+cov[n]+"\"\n  }")
+		}
+		return "{\n\"tests\": [\n" + strings.Join(parts, ",\n") + "\n],\n\"test_file\": " + quoted + "\n}"
+	}
+	slip := `    "given": "value: \"` + long + `\",`
+	call := func(r string) ([]map[string]any, error) {
+		tests, _, err := parseTestwrite(r, ct, "greet", "TestGreet", "example.com/greeter", nil)
+		return tests, err
+	}
+
+	tests, err := call(build(slip))
+	if err != nil {
+		t.Fatalf("the stray string was not closed: %v", err)
+	}
+	if want := `value: "` + long + `"`; tests[0]["given"] != want {
+		t.Errorf("given = %.40q, want value: \"abab...\"", tests[0]["given"])
+	}
+
+	// A well-formed reply is left alone.
+	good := build(`    "given": "g",`)
+	if fixed, changed := closeStrayStrings(good); changed || fixed != good {
+		t.Error("a well-formed reply was touched")
+	}
+	// An even quote count is untouched.
+	even := `    "given": "value: \"x\"",`
+	if fixed, changed := closeStrayStrings(even); changed || fixed != even {
+		t.Errorf("an even line was changed to %q", fixed)
+	}
+	// A different defect keeps the original message.
+	missing := strings.Replace(good, "\"expect\": \"e\",\n    \"polarity\": \"success\"", "\"expect\": \"e\"\n    \"polarity\": \"success\"", 1)
+	if _, err := call(missing); err == nil || !strings.Contains(err.Error(), "a comma is missing") {
+		t.Errorf("missing comma: err = %v", err)
+	}
+	// A repair that does not make the reply decode reports the original error.
+	broken := strings.Replace(build(slip), "\"name\": \"b\"", "\"name\": b", 1)
+	if _, err := call(broken); err == nil || !strings.Contains(err.Error(), "line 5,") {
+		t.Errorf("unrepairable reply: err = %v", err)
+	}
+}

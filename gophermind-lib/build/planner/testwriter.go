@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -315,10 +316,26 @@ func parseTestwrite(text string, ct map[string]any, pkg, funcName, module string
 		Tests    []map[string]any `json:"tests"`
 		TestFile string           `json:"test_file"`
 	}
-	dec := json.NewDecoder(strings.NewReader(text))
-	dec.UseNumber() // a number keeps the digits the model wrote
-	if err := dec.Decode(&reply); err != nil {
-		return nil, "", fmt.Errorf("test-writer reply is not a JSON object (%s)", jsonErrIn(err, text))
+	decode := func(src string) error {
+		dec := json.NewDecoder(strings.NewReader(src))
+		dec.UseNumber() // a number keeps the digits the model wrote
+		return dec.Decode(&reply)
+	}
+	if err := decode(text); err != nil {
+		// Fallback only: an unclosed string on a pretty-printed line is
+		// closed in place. The repaired text is kept only if it decodes,
+		// otherwise the original error is the one reported.
+		var syn *json.SyntaxError
+		fixed, changed := closeStrayStrings(text)
+		if errors.As(err, &syn) && strings.Contains(syn.Error(), "in string") && changed {
+			reply.Tests, reply.TestFile = nil, ""
+			if decode(fixed) == nil {
+				err = nil
+			}
+		}
+		if err != nil {
+			return nil, "", fmt.Errorf("test-writer reply is not a JSON object (%s)", jsonErrIn(err, text))
+		}
 	}
 	need := len(objects(ct["errors"])) + 1
 	if len(reply.Tests) < need {
@@ -598,4 +615,56 @@ func osReason(err error) string {
 		return pe.Err.Error()
 	}
 	return "file system error"
+}
+
+var (
+	memberOpenRe  = regexp.MustCompile(`^\s*"(?:[^"\\]|\\.)*"\s*:\s*"`)
+	elementOpenRe = regexp.MustCompile(`^\s*"`)
+)
+
+// closeStrayStrings closes a string that a pretty-printed line leaves open.
+// A line that is a member (indent "key": "value...) or an array element
+// (indent "value...), optionally ending in a comma, with an odd number of
+// unescaped quotes gets one quote added before the trailing comma, or at the
+// end of the line. A quote after an odd run of backslashes is escaped. A
+// string cannot span lines, so lines are judged on their own. It reports
+// whether anything changed.
+func closeStrayStrings(text string) (string, bool) {
+	lines := strings.Split(text, "\n")
+	changed := false
+	for i, ln := range lines {
+		if !memberOpenRe.MatchString(ln) && !elementOpenRe.MatchString(ln) {
+			continue
+		}
+		if unescapedQuotes(ln)%2 == 0 {
+			continue
+		}
+		body := strings.TrimRight(ln, " \t\r")
+		tail := ln[len(body):]
+		if strings.HasSuffix(body, ",") {
+			body = strings.TrimSuffix(body, ",") + `",`
+		} else {
+			body += `"`
+		}
+		lines[i] = body + tail
+		changed = true
+	}
+	return strings.Join(lines, "\n"), changed
+}
+
+func unescapedQuotes(s string) int {
+	n, slashes := 0, 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			slashes++
+			continue
+		case '"':
+			if slashes%2 == 0 {
+				n++
+			}
+		}
+		slashes = 0
+	}
+	return n
 }

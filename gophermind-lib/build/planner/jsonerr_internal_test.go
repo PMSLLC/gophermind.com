@@ -64,7 +64,10 @@ func TestJSONErrInOtherKinds(t *testing.T) {
 }
 
 func TestParseTestwriteSyntaxErrorHintHasLocation(t *testing.T) {
-	_, _, err := parseTestwrite(unclosedStringReply, map[string]any{}, "p", "TestX", "m", nil)
+	// A second defect after the stray string (a missing comma) keeps the
+	// repair from decoding, so the original location is the one reported.
+	reply := strings.Replace(unclosedStringReply, "processed\",", "processed\"", 1)
+	_, _, err := parseTestwrite(reply, map[string]any{}, "p", "TestX", "m", nil)
 	if err == nil || !strings.Contains(err.Error(), "line 11") || strings.Contains(err.Error(), "CANARY") {
 		t.Fatalf("error %v", err)
 	}
