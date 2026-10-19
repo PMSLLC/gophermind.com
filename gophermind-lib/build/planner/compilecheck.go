@@ -244,7 +244,7 @@ func compileMessage(c *contract.Contracts, dir, src, line string, n int, diag st
 	case strings.Contains(diag, "undefined") || strings.Contains(diag, "not exported") || strings.Contains(diag, "unexported"):
 		clause := testClause(src)
 		if name := unexportedCalled(c, dir, line); name != "" && strings.HasSuffix(clause, "_test") {
-			return fmt.Sprintf("undefined name at line %d: %s is unexported and an external test package cannot call it; the test file must be in package %s (not %s) for an unexported function", n, name, strings.TrimSuffix(clause, "_test"), clause)
+			return fmt.Sprintf("undefined name at line %d: %s", n, unexportedRefusal(strings.TrimSuffix(clause, "_test")))
 		}
 		return fmt.Sprintf("undefined name at line %d: the function under test is called as the package provides it (an external test package cannot call an unexported name; use package %s for unexported functions)", n, strings.TrimSuffix(clause, "_test"))
 	case strings.Contains(diag, "cannot use") || strings.Contains(diag, "mismatched types") ||

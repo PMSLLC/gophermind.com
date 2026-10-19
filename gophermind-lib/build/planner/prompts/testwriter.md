@@ -16,11 +16,13 @@ Cover:
 
 {{if .MainPackage}}The package under test is a main package. The test file must declare `package main`, in the same directory, and call the functions directly: no import of the package (Go cannot import a main package), and never `package X_test` or any other package clause. Standard library imports and other packages of this module are fine.
 
+{{else}}{{if .Unexported}}The function under test is unexported: the first line of the file must be exactly `package {{.Clause}}`, the test lives in the same package, {{if .Method}}call the method on a value of its receiver type, with no package qualifier{{else}}call the function directly by its name (`{{.TargetName}}(...)`) without any package qualifier{{end}} and do not import the package. Never write `package {{.Clause}}_test`: a file in that package cannot see an unexported name and is refused. Standard library imports and other packages of this module are fine. Every import must be used, and every value must have the type the signature declares.
+
 {{else}}{{if .Module}}The Go module is `{{.Module}}`. The package under test is imported as `{{.ImportPath}}`. A test file in package `X_test` must import exactly that path to call the function; never use any other module name. A test file in the same package as the function needs no import of it. Standard library imports are fine.
 
 The test file is compiled against the contract's stubs before it is accepted. A test in package `X_test` can only call exported names; for an unexported function the test file must be in the same package as the function (package `X`, not `X_test`). Every import must be used, and every value must have the type the signature declares.
 
-{{end}}{{end}}Do not:
+{{end}}{{end}}{{end}}Do not:
 - test private helpers or implementation details,
 - import any package outside the standard library and this module,
 - reference any function or type not present in `dependency_signatures` or the contract,

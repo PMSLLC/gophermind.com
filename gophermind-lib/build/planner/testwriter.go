@@ -157,9 +157,74 @@ func renderTestwriter(node, module, file, funcName, testFile string) (string, er
 	if PackageClause(dir) == "main" {
 		mainPkg = "yes"
 	}
-	return render("testwriter", map[string]string{"MainPackage": mainPkg,
-		"Node": node, "PackageDir": dir, "TestFuncName": funcName, "TestFile": testFile,
-		"Module": module, "ImportPath": importPath})
+	data := map[string]string{"MainPackage": mainPkg, "Node": node, "PackageDir": dir,
+		"TestFuncName": funcName, "TestFile": testFile, "Module": module, "ImportPath": importPath}
+	data["Unexported"], data["Method"], data["Clause"], data["TargetName"] = "", "", "", ""
+	if name, method, ok := unexportedTarget(nodeSignature(node)); ok && mainPkg == "" {
+		data["Unexported"], data["Clause"], data["TargetName"] = "yes", PackageClause(dir), name
+		if method {
+			data["Method"] = "yes"
+		}
+	}
+	return render("testwriter", data)
+}
+
+// nodeSignature is contract.signature of a node's JSON, or "".
+func nodeSignature(node string) string {
+	var n struct {
+		Contract struct {
+			Signature string `json:"signature"`
+		} `json:"contract"`
+	}
+	if json.Unmarshal([]byte(node), &n) != nil {
+		return ""
+	}
+	return n.Contract.Signature
+}
+
+// unexportedTarget reports whether the function under test, given by its
+// signature, cannot be called from an external test package: an unexported
+// function, or a method whose name or receiver type is unexported. name is the
+// declared name; method says it has a receiver.
+func unexportedTarget(sig string) (name string, method, ok bool) {
+	f, err := parser.ParseFile(token.NewFileSet(), "d.go", "package p\n"+sig, 0)
+	if err != nil {
+		return "", false, false
+	}
+	for _, d := range f.Decls {
+		fd, isFn := d.(*ast.FuncDecl)
+		if !isFn {
+			continue
+		}
+		name = fd.Name.Name
+		if fd.Recv == nil || len(fd.Recv.List) == 0 {
+			return name, false, !ast.IsExported(name)
+		}
+		t := fd.Recv.List[0].Type
+		for {
+			switch x := t.(type) {
+			case *ast.StarExpr:
+				t = x.X
+				continue
+			case *ast.ParenExpr:
+				t = x.X
+				continue
+			case *ast.IndexExpr:
+				t = x.X
+				continue
+			case *ast.IndexListExpr:
+				t = x.X
+				continue
+			}
+			break
+		}
+		recv := ""
+		if id, isID := t.(*ast.Ident); isID {
+			recv = id.Name
+		}
+		return name, true, !ast.IsExported(name) || recv != "" && !ast.IsExported(recv)
+	}
+	return "", false, false
 }
 
 // writeTests makes the model call for one node and writes its test file.
@@ -381,7 +446,9 @@ func parseTestwrite(text string, ct map[string]any, pkg, funcName, module string
 	if err := checkPolarity(tests, len(objects(ct["errors"]))); err != nil {
 		return nil, "", err
 	}
-	if err := checkTestSource(reply.TestFile, pkg, funcName, module); err != nil {
+	sig, _ := ct["signature"].(string)
+	_, _, unexported := unexportedTarget(sig)
+	if err := checkTestSourceFor(reply.TestFile, pkg, funcName, module, unexported); err != nil {
 		return nil, "", err
 	}
 	if contains(hooks, "bench") && !hasBenchmark(reply.TestFile, funcName) {
@@ -462,6 +529,18 @@ func checkCommentVolume(fset *token.FileSet, f *ast.File, src string) error {
 
 // checkTestSource refuses a test file that is not the one asked for.
 func checkTestSource(src, pkg, funcName, module string) error {
+	return checkTestSourceFor(src, pkg, funcName, module, false)
+}
+
+// unexportedRefusal is the refusal for an external test package around an
+// unexported function under test. It quotes nothing from the reply.
+func unexportedRefusal(clause string) string {
+	return fmt.Sprintf("the function under test is unexported, so the test file must declare package %s (not %s_test) and call it without a qualifier", clause, clause)
+}
+
+// checkTestSourceFor is checkTestSource that also knows whether the function
+// under test is unexported. Then only the plain package clause is accepted.
+func checkTestSourceFor(src, pkg, funcName, module string, unexported bool) error {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "", src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
@@ -469,6 +548,11 @@ func checkTestSource(src, pkg, funcName, module string) error {
 	}
 	if err := checkCommentVolume(fset, f, src); err != nil {
 		return err
+	}
+	if unexported && PackageClause(pkg) != "main" {
+		if clause := path.Base(pkg); f.Name.Name == clause+"_test" {
+			return errors.New(unexportedRefusal(clause))
+		}
 	}
 	if names := packageClauseNames(pkg); !slices.Contains(names, f.Name.Name) {
 		if PackageClause(pkg) == "main" {
