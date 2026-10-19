@@ -419,3 +419,49 @@ func TestParseTestwriteClosesAStrayString(t *testing.T) {
 		t.Errorf("unrepairable reply: err = %v", err)
 	}
 }
+
+func commentedSource(comment string) string {
+	return "package greet\n\nimport \"testing\"\n\n" + comment + "func TestGreet(t *testing.T) {\n\tfor i := 0; i < 3; i++ {\n\t\t_ = i\n\t}\n\t_ = t\n\t_ = 1\n\t_ = 2\n\t_ = 3\n\t_ = 4\n\t_ = 5\n\t_ = 6\n\t_ = 7\n\t_ = 8\n\t_ = 9\n\t_ = 10\n\t_ = 11\n\t_ = 12\n\t_ = 13\n\t_ = 14\n\t_ = 15\n\t_ = 16\n}\n"
+}
+
+func TestCheckTestSourceCommentVolume(t *testing.T) {
+	line := func(n int) string { return strings.Repeat("// a short note\n", n) }
+	for _, c := range []struct {
+		name, src string
+		ok        bool
+	}{
+		{"doc comment", commentedSource("// TestGreet checks greeting.\n// It covers the happy path.\n"), true},
+		{"licence header", "// Copyright\n" + line(7) + "\n" + commentedSource(""), true},
+		{"eight line run", commentedSource(line(8)), true},
+		{"twelve line run", commentedSource(line(12)), false},
+	} {
+		err := checkTestSource(c.src, "greet", "TestGreet", "example.com/greeter")
+		if c.ok && err != nil {
+			t.Errorf("%s: unexpected refusal: %v", c.name, err)
+		}
+		if !c.ok && (err == nil || !strings.Contains(err.Error(), "long comment block")) {
+			t.Errorf("%s: want long comment block refusal, got %v", c.name, err)
+		}
+	}
+	// many short groups, comment volume above 40 percent
+	var b strings.Builder
+	b.WriteString("package greet\n\nimport \"testing\"\n\nfunc TestGreet(t *testing.T) {\n")
+	for i := 0; i < 12; i++ {
+		b.WriteString("\t// why\n\t// not\n\t_ = t\n")
+	}
+	b.WriteString("}\n")
+	if err := checkTestSource(b.String(), "greet", "TestGreet", "example.com/greeter"); err == nil || !strings.Contains(err.Error(), "comments") {
+		t.Errorf("heavy comment volume: want refusal, got %v", err)
+	}
+}
+
+func TestCheckTestSourceCommentMessageHasNoSource(t *testing.T) {
+	src := commentedSource(strings.Repeat("// QUESTIONZEBRA how can I mock it\n", 12))
+	err := checkTestSource(src, "greet", "TestGreet", "example.com/greeter")
+	if err == nil {
+		t.Fatal("want refusal")
+	}
+	if strings.Contains(err.Error(), "QUESTIONZEBRA") || strings.Contains(err.Error(), "mock") {
+		t.Errorf("message quotes reply content: %v", err)
+	}
+}

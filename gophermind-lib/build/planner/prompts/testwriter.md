@@ -24,6 +24,8 @@ Cover:
 - reference any function or type not present in `dependency_signatures` or the contract,
 - depend on ordering, timing, randomness, or the network. Fake `*http.Client` transports and `Store` implementations inline in the test file when needed.
 
+The test file is code only. No questions, no deliberation, and no comment block longer than a few lines; a file that is mostly comments is refused. To provoke an error that the inputs alone do not reach, provoke it with what the test controls: a test double defined in the test file (for example an `io.Writer` whose `Write` returns an error), a value the dependency rejects (for example `math.NaN()` in a float field for `encoding/json`), or an invalid argument value. If the dependency is a package-level function that cannot be replaced, pick an input that makes the real one fail. Never ask how to mock it.
+
 If something you need is not stated and cannot be settled by choosing the most conservative option, reply with a line containing only `QUESTION:` followed by your question on the next lines, and nothing else.
 
 Node:

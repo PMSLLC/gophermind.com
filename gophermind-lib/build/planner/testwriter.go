@@ -423,11 +423,40 @@ func packageClauseNames(pkg string) []string {
 // mainRefusal is the refusal for a test file of a main package.
 const mainRefusal = "test file is not in package main: a test file for a main package must declare package main and must not import it"
 
+// maxCommentRun is the longest run of consecutive comment lines a test file may
+// carry; maxCommentShare is the share of the file's lines comments may fill.
+const (
+	maxCommentRun   = 8
+	maxCommentShare = 0.4
+)
+
+// checkCommentVolume refuses a test file that is mostly deliberation in
+// comments. The messages never quote the file.
+func checkCommentVolume(fset *token.FileSet, f *ast.File, src string) error {
+	total := 0
+	for _, g := range f.Comments {
+		first := fset.Position(g.Pos()).Line
+		n := fset.Position(g.End()).Line - first + 1
+		if n > maxCommentRun {
+			return fmt.Errorf("test file has a long comment block at line %d; a test file is code only: write the test, no deliberation or questions in comments", first)
+		}
+		total += n
+	}
+	if lines := strings.Count(src, "\n") + 1; lines > 0 && float64(total) > maxCommentShare*float64(lines) {
+		return fmt.Errorf("test file is %d%% comments (%d of %d lines); a test file is code only: write the test, no deliberation or questions in comments", total*100/lines, total, lines)
+	}
+	return nil
+}
+
 // checkTestSource refuses a test file that is not the one asked for.
 func checkTestSource(src, pkg, funcName, module string) error {
-	f, err := parser.ParseFile(token.NewFileSet(), "", src, parser.SkipObjectResolution)
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "", src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		return fmt.Errorf("test file (%d bytes) is not valid Go: %s", len(src), syntaxErr(err))
+	}
+	if err := checkCommentVolume(fset, f, src); err != nil {
+		return err
 	}
 	if names := packageClauseNames(pkg); !slices.Contains(names, f.Name.Name) {
 		if PackageClause(pkg) == "main" {
