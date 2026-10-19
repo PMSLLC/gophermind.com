@@ -210,3 +210,44 @@ func TestUnresolvableSignatureQualifierIsRepairedByKind(t *testing.T) {
 		}
 	}
 }
+
+// A bare file name in the stored contract is made repo-relative with a visible
+// warning that carries a count.
+func TestBareFileNameIsNormalizedWithAWarning(t *testing.T) {
+	g := brokenRig(t, "doc", map[string]string{
+		"contract._schema.txt": `{"types": [], "functions": [{"id": "fn-g135", "doc": "G135 is the last one."}]}`,
+	})
+	path := filepath.Join(g.runDir, "_state", "contract.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st map[string]any
+	if err := json.Unmarshal(raw, &st); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range st["doc"].(map[string]any)["functions"].([]any) {
+		if m := f.(map[string]any); m["id"] == "fn-g135" {
+			m["file"] = "g135.go"
+		}
+	}
+	out, _ := json.Marshal(st)
+	if err := os.WriteFile(path, out, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	g.mustPlan(planner.Options{RunID: greeterID, StopAfter: "contract"})
+	for _, f := range g.contracts().Functions {
+		if f.ID == "fn-g135" && f.File != "greet/g135.go" {
+			t.Errorf("file = %q, want greet/g135.go", f.File)
+		}
+	}
+	found := false
+	for _, e := range g.sink.OfKind(events.KindWarning) {
+		if strings.HasPrefix(e.Message, "file_path_normalized: 1 ") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("no file_path_normalized warning with a count")
+	}
+}

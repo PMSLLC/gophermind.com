@@ -491,6 +491,15 @@ func depModules(deps []Dependency) []string {
 // normalizeQualifiers removes the qualifier from same-package types in the
 // signatures (see normalizeSignatureQualifiers) and says so in one warning.
 func (p *Planner) normalizeQualifiers(r *run, st *contractState) error {
+	// Files first: every later check and consumer sees repo-relative paths.
+	if fn, fex := normalizeFiles(st.Doc); fn > 0 {
+		p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
+			"file_path_normalized: %d bare file names were joined with the directory of their package (%s)",
+			fn, strings.Join(fex, ", ")))
+		if err := writeJSON(r.path(stateContract), st); err != nil {
+			return err
+		}
+	}
 	n, ex := normalizeSignatureQualifiers(st.Doc)
 	if n == 0 {
 		return nil

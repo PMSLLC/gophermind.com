@@ -75,6 +75,7 @@ func (s *Sink) count(msg string) {
 		{"leaf_normalized: ", &s.counts.LeafNormalized},
 		{"outline_id_normalized: ", &s.counts.OutlineIDNormalized},
 		{"signature_qualifier_normalized: ", &s.counts.SignatureQualifierNormalized},
+		{"file_path_normalized: ", &s.counts.FilePathNormalized},
 	} {
 		rest, ok := strings.CutPrefix(msg, p.prefix)
 		if !ok {
@@ -98,5 +99,6 @@ type Counts struct {
 	LeafNormalized               int `json:"leaf_normalized"`
 	OutlineIDNormalized          int `json:"outline_id_normalized"`
 	SignatureQualifierNormalized int `json:"signature_qualifier_normalized"`
+	FilePathNormalized           int `json:"file_path_normalized"`
 	DuplicatesIgnored            int `json:"duplicates_ignored"`
 }

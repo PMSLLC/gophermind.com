@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -294,3 +295,56 @@ func qualifierIssues(doc map[string]any, deps []string) []schemaIssue {
 
 // qualifierText is what a prompt says about a node with such an issue.
 const qualifierText = "has a package qualifier in its signature that is not a package of this plan, not a dependency and not a standard library package; a type of the function's own package is written without any qualifier. Write the signature again"
+
+// RepoFile is file made repo-relative: a bare file name takes the directory of
+// its package (FileDirIn); a name that already has a directory is left alone.
+// It is idempotent.
+func RepoFile(module, pkg, file string) string {
+	if file == "" || strings.Contains(file, "/") {
+		return file
+	}
+	return path.Join(FileDirIn(module, pkg, file), file)
+}
+
+// NormalizeContractFiles makes the file of every type and function of c
+// repo-relative (see RepoFile) and returns how many it changed.
+func NormalizeContractFiles(c *contract.Contracts) int {
+	n := 0
+	for i := range c.Types {
+		t := &c.Types[i]
+		if f := RepoFile(c.Module, t.Package, t.File); f != t.File {
+			t.File, n = f, n+1
+		}
+	}
+	for i := range c.Functions {
+		fn := &c.Functions[i]
+		if f := RepoFile(c.Module, fn.Package, fn.File); f != fn.File {
+			fn.File, n = f, n+1
+		}
+	}
+	return n
+}
+
+// normalizeFiles makes the file of every type and function of the decoded
+// contract doc repo-relative. It returns the count and a few examples.
+func normalizeFiles(doc map[string]any) (int, []string) {
+	module, _ := doc["module"].(string)
+	n := 0
+	var ex []string
+	for _, key := range []string{"types", "functions"} {
+		for _, o := range objects(doc[key]) {
+			pkg, _ := o["package"].(string)
+			file, _ := o["file"].(string)
+			f := RepoFile(module, pkg, file)
+			if f == file {
+				continue
+			}
+			o["file"] = f
+			n++
+			if id, _ := o["id"].(string); len(ex) < 3 {
+				ex = append(ex, fmt.Sprintf("%s: %s -> %s", id, file, f))
+			}
+		}
+	}
+	return n, ex
+}

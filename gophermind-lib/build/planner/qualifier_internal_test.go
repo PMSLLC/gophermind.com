@@ -90,3 +90,58 @@ func TestFileDirInStripsTheModulePrefix(t *testing.T) {
 		}
 	}
 }
+
+// bareFileDoc is the csvstat shape: the directory is in package, the file is a bare name.
+func bareFileDoc() map[string]any {
+	raw := `{"module": "csvstat",
+	 "types": [{"id": "t-style", "package": "csvstat/internal/render", "file": "json.go", "decl": "type Style int"}],
+	 "functions": [
+	  {"id": "fn-a", "package": "internal/stats", "file": "stats.go", "signature": "func a()"},
+	  {"id": "fn-b", "package": "csvstat/internal/render", "file": "json.go", "signature": "func b()"},
+	  {"id": "fn-c", "package": "cmd/csvstat", "file": "main.go", "signature": "func main()"},
+	  {"id": "fn-d", "package": "csvstat", "file": "root.go", "signature": "func d()"},
+	  {"id": "fn-e", "package": "internal/stats", "file": "internal/stats/kept.go", "signature": "func e()"}]}`
+	var d map[string]any
+	if err := json.Unmarshal([]byte(raw), &d); err != nil {
+		panic(err)
+	}
+	return d
+}
+
+func TestNormalizeFilesMakesBareNamesRepoRelativeAndIsIdempotent(t *testing.T) {
+	d := bareFileDoc()
+	n, ex := normalizeFiles(d)
+	if n != 4 {
+		t.Fatalf("count = %d, want 4 (3 functions, 1 type)", n)
+	}
+	if len(ex) == 0 || !strings.Contains(strings.Join(ex, " "), "fn-a") {
+		t.Errorf("examples = %v", ex)
+	}
+	want := map[string]string{
+		"fn-a": "internal/stats/stats.go", "fn-b": "internal/render/json.go",
+		"fn-c": "cmd/csvstat/main.go", "fn-d": "root.go", "fn-e": "internal/stats/kept.go"}
+	for _, f := range objects(d["functions"]) {
+		if got := f["file"]; got != want[f["id"].(string)] {
+			t.Errorf("%v file = %v, want %s", f["id"], got, want[f["id"].(string)])
+		}
+	}
+	if got := objects(d["types"])[0]["file"]; got != "internal/render/json.go" {
+		t.Errorf("type file = %v", got)
+	}
+	if n2, _ := normalizeFiles(d); n2 != 0 {
+		t.Errorf("second pass changed %d files", n2)
+	}
+}
+
+func TestBareContractFileGivesTheTestFileBesideThePackage(t *testing.T) {
+	d := bareFileDoc()
+	normalizeFiles(d)
+	f := objects(d["functions"])[1]
+	file := f["file"].(string)
+	if got := testFilePath("fn-b", file); got != "internal/render/fn_b_test.go" {
+		t.Errorf("test file = %q", got)
+	}
+	if got := testCommand(file, "TestB"); got != "go test ./internal/render -run ^TestB$" {
+		t.Errorf("command = %q", got)
+	}
+}

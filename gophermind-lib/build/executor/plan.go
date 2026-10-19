@@ -211,10 +211,7 @@ func LoadPlan(runDir, repo string) (*Plan, error) {
 		return nil, fmt.Errorf("executor: _state/acceptance_tests.json is not readable (%s)", planner.JSONErr(err))
 	}
 
-	fns := map[string]contract.Function{}
-	for _, f := range c.Functions {
-		fns[f.ID] = f
-	}
+	fns := indexFunctions(c)
 	rootNet, err := rootNetwork(tr, c.BriefID)
 	if err != nil {
 		return nil, err
@@ -267,6 +264,18 @@ func LoadPlan(runDir, repo string) (*Plan, error) {
 // A leaf's Network is its own list when it has one, otherwise the root node's
 // list: the planner writes the brief's network block on the root only, and
 // that block (hosts and critical flags) applies to every leaf (spec 14).
+// indexFunctions makes the files of c repo-relative in place (a contracts.json
+// written before the planner did so holds bare file names; the approved bytes
+// on disk are not touched) and indexes its functions by id.
+func indexFunctions(c *contract.Contracts) map[string]contract.Function {
+	planner.NormalizeContractFiles(c)
+	fns := map[string]contract.Function{}
+	for _, f := range c.Functions {
+		fns[f.ID] = f
+	}
+	return fns
+}
+
 func (p *Plan) leaf(n tree.Node, rootNet []NetHost, fns map[string]contract.Function, tests map[string]planner.LeafTest, repo string) (*Leaf, error) {
 	raw, err := n.Marshal()
 	if err != nil {
@@ -281,14 +290,16 @@ func (p *Plan) leaf(n tree.Node, rootNet []NetHost, fns map[string]contract.Func
 		funcID = n.ID
 	}
 	f, ok := fns[funcID]
-	if !ok || f.File != d.Contract.File || f.Signature != d.Contract.Signature || f.Package != d.Contract.Package {
+	// A run written before the planner normalized file names holds bare names.
+	file := planner.RepoFile(p.Contracts.Module, d.Contract.Package, d.Contract.File)
+	if !ok || f.File != file || f.Signature != d.Contract.Signature || f.Package != d.Contract.Package {
 		return nil, fmt.Errorf("executor: leaf %s does not match contracts.json", n.ID)
 	}
 	lt, ok := tests[n.ID]
 	if !ok {
 		return nil, fmt.Errorf("executor: leaf %s has no recorded test", n.ID)
 	}
-	if _, err := pathsafe.ResolveSource(repo, d.Contract.File); err != nil {
+	if _, err := pathsafe.ResolveSource(repo, file); err != nil {
 		return nil, fmt.Errorf("executor: leaf %s: its source path is not allowed", n.ID)
 	}
 	abs, err := pathsafe.ResolveTest(repo, lt.TestFile)
@@ -308,9 +319,9 @@ func (p *Plan) leaf(n tree.Node, rootNet []NetHost, fns map[string]contract.Func
 	}
 	l := &Leaf{
 		ID: n.ID, Title: d.Title, Class: p.Classes[n.ID], Tier: d.ModelTier,
-		Package: planner.PackageClause(d.Contract.Package), File: d.Contract.File, Signature: d.Contract.Signature,
+		Package: planner.PackageClause(d.Contract.Package), File: file, Signature: d.Contract.Signature,
 		FuncID: funcID, DependsOn: append([]string{}, n.DependsOn...),
-		Dir:      planner.FileDirIn(p.Contracts.Module, d.Contract.Package, d.Contract.File),
+		Dir:      planner.FileDirIn(p.Contracts.Module, d.Contract.Package, file),
 		TestFile: lt.TestFile, TestFunc: lt.TestFunc, TestSHA256: lt.SHA256,
 		Constraints: d.Context.Constraints, DepSignatures: d.Context.DependencySignatures,
 		MaxContextTokens: d.Budget.MaxContextTokens, MaxRevisions: -1,
