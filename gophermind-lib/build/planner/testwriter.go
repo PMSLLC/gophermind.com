@@ -194,8 +194,7 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 		if err != nil {
 			return err
 		}
-		others := append(otherTestSources(r.repo, path.Dir(rel), id, st), stubSources(c, path.Dir(file))...)
-		if err := checkSharedNames(src, others); err != nil {
+		if err := checkSharedNames(src, otherTestSources(r.repo, path.Dir(rel), id, st), stubSources(c, path.Dir(file))); err != nil {
 			return err
 		}
 		tests, source = ts, src

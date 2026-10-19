@@ -35,8 +35,7 @@ func sharedWriteFile(t *testing.T, repo, rel, src string) {
 
 // sharedCollide runs the same composition the stage uses.
 func sharedCollide(repo, dir, self, src string, st *testwriterState, c *contract.Contracts) error {
-	others := append(otherTestSources(repo, dir, self, st), stubSources(c, dir)...)
-	return checkSharedNames(src, others)
+	return checkSharedNames(src, otherTestSources(repo, dir, self, st), stubSources(c, dir))
 }
 
 func TestSharedNamesSameHelperRefusedWithoutSource(t *testing.T) {
@@ -115,5 +114,39 @@ func TestSharedNamesStubCollisionRefused(t *testing.T) {
 	// An external test package does not share names with the package under test.
 	if err := sharedCollide(t.TempDir(), "internal/stats", "fn-x", sharedSrc("stats_test", "type Row struct{}"), st, c); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSharedNamesContractCollisionGetsDeclaredMessage(t *testing.T) {
+	c := &contract.Contracts{
+		Functions: []contract.Function{{ID: "fn-parse-flags", Package: "internal/stats", File: "internal/stats/flags.go", Signature: "func parseFlags(args []string) int"}},
+	}
+	err := sharedCollide(t.TempDir(), "internal/stats", "fn-parse-flags", sharedSrc("stats", "func parseFlags(args []string) int { return 0 }"), &testwriterState{}, c)
+	if err == nil {
+		t.Fatal("expected a refusal")
+	}
+	if err != errDeclaredName {
+		t.Fatalf("message = %q", err)
+	}
+	for _, bad := range []string{"parseFlags", "return 0", "prefix every helper"} {
+		if strings.Contains(err.Error(), bad) {
+			t.Fatalf("message leaks %q: %q", bad, err)
+		}
+	}
+	if !strings.Contains(err.Error(), "do not define or stub it") {
+		t.Fatalf("message = %q", err)
+	}
+}
+
+func TestSharedNamesBothKindsGiveDeclaredMessage(t *testing.T) {
+	repo := t.TempDir()
+	sharedWriteFile(t, repo, "internal/stats/fn_summarize_test.go", sharedReaderSrc)
+	st := &testwriterState{Nodes: map[string]writtenTests{"fn-summarize": {TestFile: "internal/stats/fn_summarize_test.go"}}}
+	c := &contract.Contracts{
+		Functions: []contract.Function{{ID: "fn-mean", Package: "internal/stats", File: "internal/stats/mean.go", Signature: "func Mean(xs []float64) float64"}},
+	}
+	src := sharedSrc("stats", "type errorReader struct{}\nfunc Mean() {}")
+	if err := sharedCollide(repo, "internal/stats", "fn-x", src, st, c); err != errDeclaredName {
+		t.Fatalf("err = %v", err)
 	}
 }

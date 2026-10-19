@@ -16,6 +16,11 @@ import (
 // errSharedName is the refusal for a test file whose top-level name is already
 // declared by another file of the same package. It names the defect kind only:
 // the identifier is never printed.
+// errDeclaredName is the refusal for a test file that defines a name the
+// contract already declares in its package (the function under test, another
+// contract function or a contract type). It never names the identifier.
+var errDeclaredName = errors.New("test file defines code the package already declares (the function under test or a contract type); do not define or stub it, call it as the package provides it and write only tests and test doubles")
+
 var errSharedName = errors.New("test file declares a top-level name that another file of this package already declares; prefix every helper type, function and variable with this function's name (for example <FuncName>Reader) or declare it inside the test function")
 
 // topLevelNames is the package clause of src and the names it declares at top
@@ -55,23 +60,33 @@ func topLevelNames(src string) (clause string, names map[string]bool, ok bool) {
 }
 
 // checkSharedNames refuses src when it declares a top-level name that any of
-// others declares in the same package clause. Sources that do not parse are
-// skipped: they cannot be compared.
-func checkSharedNames(src string, others []string) error {
+// tests or stubs declares in the same package clause. A collision with a
+// contract declaration (stubs) wins over one with another test file. Sources
+// that do not parse are skipped: they cannot be compared.
+func checkSharedNames(src string, tests, stubs []string) error {
 	clause, mine, ok := topLevelNames(src)
 	if !ok {
 		return nil
 	}
-	for _, o := range others {
-		oc, theirs, ok := topLevelNames(o)
-		if !ok || oc != clause {
-			continue
-		}
-		for n := range mine {
-			if theirs[n] {
-				return errSharedName
+	collides := func(others []string) bool {
+		for _, o := range others {
+			oc, theirs, ok := topLevelNames(o)
+			if !ok || oc != clause {
+				continue
+			}
+			for n := range mine {
+				if theirs[n] {
+					return true
+				}
 			}
 		}
+		return false
+	}
+	if collides(stubs) {
+		return errDeclaredName
+	}
+	if collides(tests) {
+		return errSharedName
 	}
 	return nil
 }
