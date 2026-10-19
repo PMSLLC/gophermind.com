@@ -310,7 +310,7 @@ func (p *Plan) leaf(n tree.Node, rootNet []NetHost, fns map[string]contract.Func
 		ID: n.ID, Title: d.Title, Class: p.Classes[n.ID], Tier: d.ModelTier,
 		Package: planner.PackageClause(d.Contract.Package), File: d.Contract.File, Signature: d.Contract.Signature,
 		FuncID: funcID, DependsOn: append([]string{}, n.DependsOn...),
-		Dir:      planner.FileDir(d.Contract.Package, d.Contract.File),
+		Dir:      planner.FileDirIn(p.Contracts.Module, d.Contract.Package, d.Contract.File),
 		TestFile: lt.TestFile, TestFunc: lt.TestFunc, TestSHA256: lt.SHA256,
 		Constraints: d.Context.Constraints, DepSignatures: d.Context.DependencySignatures,
 		MaxContextTokens: d.Budget.MaxContextTokens, MaxRevisions: -1,

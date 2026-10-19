@@ -159,3 +159,54 @@ func TestResumeAfterAFinalValidationFailureRunsOnlyTheRepair(t *testing.T) {
 		t.Errorf("doc = %q", doc)
 	}
 }
+
+// setSignature replaces the signature of fn-g135 in the stored state.
+func setSignature(t *testing.T, g *rig, sig string) {
+	t.Helper()
+	path := filepath.Join(g.runDir, "_state", "contract.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st map[string]any
+	if err := json.Unmarshal(raw, &st); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range st["doc"].(map[string]any)["functions"].([]any) {
+		if m := f.(map[string]any); m["id"] == "fn-g135" {
+			m["signature"] = sig
+		}
+	}
+	out, _ := json.Marshal(st)
+	if err := os.WriteFile(path, out, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Remove(filepath.Join(g.runDir, "contracts.json"))
+}
+
+// A qualifier that is no plan package, dependency or standard library package
+// is asked for again by kind: the prompt names the function and the word
+// qualifier, and the new signature replaces the old.
+func TestUnresolvableSignatureQualifierIsRepairedByKind(t *testing.T) {
+	g := brokenRig(t, "doc", map[string]string{
+		"contract._schema.txt": `{"types": [], "functions": [{"id": "fn-g135", "signature": "func G135() error", "doc": "G135 is the last one."}]}`,
+	})
+	setSignature(t, g, "func G135(x zzqualifier.Thing) error")
+	// brokenRig removed the doc too; the reply writes it again with the signature.
+	g.mustPlan(planner.Options{RunID: greeterID, StopAfter: "contract"})
+	var prompts []string
+	for _, r := range g.fake.Requests() {
+		prompts = append(prompts, r.Messages[1].Content)
+	}
+	if len(prompts) == 0 || !strings.Contains(prompts[0], `"fn-g135"`) || !strings.Contains(prompts[0], "qualifier") {
+		t.Fatalf("prompts = %.400v", prompts)
+	}
+	if _, sig := fnByID(g, "fn-g135"); sig != "func G135() error" {
+		t.Errorf("signature = %q", sig)
+	}
+	for _, e := range g.sink.OfKind(events.KindWarning) {
+		if strings.Contains(e.Message, "zzqualifier") {
+			t.Errorf("a warning quotes the signature: %s", e.Message)
+		}
+	}
+}

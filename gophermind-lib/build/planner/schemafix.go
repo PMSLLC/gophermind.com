@@ -101,6 +101,8 @@ func (i schemaIssue) String() string {
 		return who + " is missing " + i.field
 	case "invalid":
 		return who + " has an invalid " + i.field
+	case "qualifier":
+		return who + " has a signature with a package qualifier that cannot be resolved"
 	}
 	if i.unknown != "" {
 		return who + i.unknown
@@ -238,8 +240,9 @@ func defaultDocs(doc map[string]any) (int, []string) {
 
 // gapNode is one node to ask about: its list, id and the fields it lacks.
 type gapNode struct {
-	list, id string
-	fields   []string
+	list, id  string
+	fields    []string
+	qualifier bool // the node has a signature qualifier that cannot be resolved
 }
 
 func gapNodes(issues []schemaIssue) []gapNode {
@@ -254,6 +257,9 @@ func gapNodes(issues []schemaIssue) []gapNode {
 			out = append(out, gapNode{list: i.list, id: i.id})
 		}
 		out[k].fields = append(out[k].fields, i.field)
+		if i.kind == "qualifier" {
+			out[k].qualifier = true
+		}
 	}
 	return out
 }
@@ -313,6 +319,10 @@ func gapNodesText(doc map[string]any, nodes []gapNode, level int) string {
 			if o["id"] != n.id {
 				continue
 			}
+			if n.qualifier {
+				fmt.Fprintf(&b, "%s %q %s.\n%s\n\n", strings.TrimSuffix(n.list, "s"), n.id, qualifierText, mustJSON(trimNode(o, level)))
+				continue
+			}
 			fields := append([]string(nil), n.fields...)
 			sort.Strings(fields)
 			fmt.Fprintf(&b, "%s %q is missing: %s\n%s\n\n", strings.TrimSuffix(n.list, "s"), n.id, strings.Join(fields, ", "), mustJSON(trimNode(o, level)))
@@ -328,7 +338,10 @@ func gapNodesText(doc map[string]any, nodes []gapNode, level int) string {
 // so nothing is asked twice and a resume carries on from here.
 func (p *Planner) repairSchema(ctx context.Context, r *run, st *contractState, answers, itemSchemas string) error {
 	for {
-		issues := schemaIssues(st.Doc)
+		if err := p.normalizeQualifiers(r, st); err != nil {
+			return err
+		}
+		issues := contractIssues(st)
 		if len(issues) == 0 {
 			return nil
 		}
@@ -404,8 +417,8 @@ func (p *Planner) repairSchema(ctx context.Context, r *run, st *contractState, a
 			return err
 		}
 	}
-	if issues := schemaIssues(st.Doc); len(issues) > 0 {
-		return errors.New(issuesText(fmt.Sprintf("stage contract: the contract still fails its schema after %d repair passes", maxSchemaRepairs), issues))
+	if issues := contractIssues(st); len(issues) > 0 {
+		return errors.New(issuesText(fmt.Sprintf("stage contract: the contract still fails its checks after %d repair passes", maxSchemaRepairs), issues))
 	}
 	return nil
 }
@@ -459,4 +472,31 @@ func componentsByID(doc map[string]any, ids []string) []any {
 		}
 	}
 	return out
+}
+
+// contractIssues are the schema failures of the contract and the signatures
+// whose package qualifier cannot be resolved.
+func contractIssues(st *contractState) []schemaIssue {
+	return append(schemaIssues(st.Doc), qualifierIssues(st.Doc, depModules(st.Deps))...)
+}
+
+func depModules(deps []Dependency) []string {
+	var out []string
+	for _, d := range deps {
+		out = append(out, d.Module)
+	}
+	return out
+}
+
+// normalizeQualifiers removes the qualifier from same-package types in the
+// signatures (see normalizeSignatureQualifiers) and says so in one warning.
+func (p *Planner) normalizeQualifiers(r *run, st *contractState) error {
+	n, ex := normalizeSignatureQualifiers(st.Doc)
+	if n == 0 {
+		return nil
+	}
+	p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
+		"signature_qualifier_normalized: %d qualifiers on types of the function's own package were removed from signatures (%s)",
+		n, strings.Join(ex, ", ")))
+	return writeJSON(r.path(stateContract), st)
 }

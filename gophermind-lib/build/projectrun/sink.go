@@ -74,6 +74,7 @@ func (s *Sink) count(msg string) {
 		{"doc_defaulted: ", &s.counts.DocDefaulted},
 		{"leaf_normalized: ", &s.counts.LeafNormalized},
 		{"outline_id_normalized: ", &s.counts.OutlineIDNormalized},
+		{"signature_qualifier_normalized: ", &s.counts.SignatureQualifierNormalized},
 	} {
 		rest, ok := strings.CutPrefix(msg, p.prefix)
 		if !ok {
@@ -92,9 +93,10 @@ func (s *Sink) count(msg string) {
 
 // Counts are the planner warning counts of a run.
 type Counts struct {
-	LeafDefaulted       int `json:"leaf_defaulted"`
-	DocDefaulted        int `json:"doc_defaulted"`
-	LeafNormalized      int `json:"leaf_normalized"`
-	OutlineIDNormalized int `json:"outline_id_normalized"`
-	DuplicatesIgnored   int `json:"duplicates_ignored"`
+	LeafDefaulted                int `json:"leaf_defaulted"`
+	DocDefaulted                 int `json:"doc_defaulted"`
+	LeafNormalized               int `json:"leaf_normalized"`
+	OutlineIDNormalized          int `json:"outline_id_normalized"`
+	SignatureQualifierNormalized int `json:"signature_qualifier_normalized"`
+	DuplicatesIgnored            int `json:"duplicates_ignored"`
 }

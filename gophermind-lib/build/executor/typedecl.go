@@ -9,7 +9,6 @@ import (
 	"go/scanner"
 	"go/token"
 	"path"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,55 +19,9 @@ import (
 	"gophermind/gophermind-lib/build/planner"
 )
 
-// stdQualifiers maps the package qualifier a signature or type declaration
-// commonly uses to its import path. The allow decision is not made here: the
-// resolved paths go to packer.ImportPolicy.Check. os/exec, syscall and unsafe
-// are listed only so that the policy, not a resolution failure, refuses them.
-// "template" (text or html) and "rand" (math or crypto) are ambiguous; see
-// resolveQualifier.
-var stdQualifiers = map[string]string{
-	"bytes": "bytes", "context": "context", "json": "encoding/json", "errors": "errors", "fmt": "fmt",
-	"io": "io", "fs": "io/fs", "log": "log", "net": "net", "http": "net/http", "url": "net/url",
-	"os": "os", "path": "path", "filepath": "path/filepath", "regexp": "regexp", "sort": "sort",
-	"strconv": "strconv", "strings": "strings", "sync": "sync", "atomic": "sync/atomic",
-	"testing": "testing", "time": "time", "unicode": "unicode", "utf8": "unicode/utf8",
-	"sql": "database/sql", "bufio": "bufio", "math": "math", "sha256": "crypto/sha256",
-	"hex": "encoding/hex", "base64": "encoding/base64", "multipart": "mime/multipart",
-	"signal": "os/signal", "html": "html",
-	"exec": "os/exec", "syscall": "syscall", "unsafe": "unsafe",
-}
-
-var versionElemRE = regexp.MustCompile(`^v[0-9]+$`)
-
-// packageImports maps each contract package clause (the last element of a
-// directory-valued package) to its import path, the module path plus the
-// directory of its file. The first declaration in
-// contract order wins when two directories share a package name.
-func packageImports(c *contract.Contracts) map[string]string {
-	out := map[string]string{}
-	add := func(pkg, file string) {
-		if pkg == "" {
-			return
-		}
-		pkg = planner.PackageClause(pkg)
-		if _, ok := out[pkg]; ok {
-			return
-		}
-		dir := path.Dir(file)
-		if dir == "." {
-			out[pkg] = c.Module
-			return
-		}
-		out[pkg] = c.Module + "/" + dir
-	}
-	for _, t := range c.Types {
-		add(t.Package, t.File)
-	}
-	for _, f := range c.Functions {
-		add(f.Package, f.File)
-	}
-	return out
-}
+// packageImports maps each contract package clause to its import path. The rule
+// is the planner's, so both sides agree.
+func packageImports(c *contract.Contracts) map[string]string { return planner.PackageImports(c) }
 
 // parseErrAt is the kind of parse failure as "line:col", never the message,
 // which can quote source text. prefix is the number of lines put before the
@@ -89,42 +42,11 @@ func parseErrAt(err error, prefix int) (line, col int) {
 	return l, p.Column
 }
 
-// resolveQualifier finds the import path of a package qualifier: contract
-// packages first, then the modules of dependencies.json, then the standard
-// library table. ok is false when it cannot be told, which includes the
-// ambiguous qualifiers.
-//
-// A qualifier is taken to be the package it names even when the declaration
-// shadows it with its own identifier, and rand is math/rand unless the text
-// says otherwise. A wrong guess only produces a file that does not compile,
-// which the build step reports; it can never widen what is imported.
+// resolveQualifier finds the import path of a package qualifier by the
+// planner's rule (planner.ResolveQualifier), which is also what the planner
+// checks a signature with.
 func resolveQualifier(q, src string, siblings map[string]string, pol packer.ImportPolicy) (string, bool) {
-	if p, ok := siblings[q]; ok {
-		return p, true
-	}
-	for _, d := range pol.Deps {
-		last := path.Base(d)
-		if versionElemRE.MatchString(last) {
-			last = path.Base(path.Dir(d))
-		}
-		if last == q {
-			return d, true
-		}
-	}
-	if q == "rand" {
-		// math/rand and crypto/rand share the qualifier; the text cannot say which.
-		if strings.Contains(src, "crypto/rand") {
-			return "", false
-		}
-		for _, only := range []string{"rand.Reader", "rand.Prime", "rand.Text"} {
-			if strings.Contains(src, only) {
-				return "", false
-			}
-		}
-		return "math/rand", true
-	}
-	p, ok := stdQualifiers[q]
-	return p, ok
+	return planner.ResolveQualifier(q, src, siblings, pol.Deps)
 }
 
 // deriveImports finds the import paths a declaration or signature needs. It
@@ -140,20 +62,7 @@ func deriveImports(id, src string, siblings map[string]string, pol packer.Import
 	if len(f.Imports) > 0 {
 		return nil, fmt.Errorf("type %s: declaration does not parse (1:1)", id)
 	}
-	quals := map[string]bool{}
-	ast.Inspect(f, func(n ast.Node) bool {
-		if sel, ok := n.(*ast.SelectorExpr); ok {
-			if x, ok := sel.X.(*ast.Ident); ok && x.Obj == nil {
-				quals[x.Name] = true
-			}
-		}
-		return true
-	})
-	names := make([]string, 0, len(quals))
-	for q := range quals {
-		names = append(names, q)
-	}
-	sort.Strings(names)
+	names := planner.Qualifiers(f)
 	seen := map[string]bool{}
 	var imports []string
 	for _, q := range names {

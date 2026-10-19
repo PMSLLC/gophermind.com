@@ -51,7 +51,7 @@ func contractBins(c *contract.Contracts) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, f := range c.Functions {
-		if name, ok := BinName(PackageClause(f.Package), FileDir(f.Package, f.File)); ok && !seen[name] {
+		if name, ok := BinName(PackageClause(f.Package), FileDirIn(c.Module, f.Package, f.File)); ok && !seen[name] {
 			seen[name] = true
 			out = append(out, name)
 		}

@@ -12,6 +12,7 @@ import (
 
 	"gophermind/gophermind-lib/build/contract"
 	"gophermind/gophermind-lib/build/packer"
+	"gophermind/gophermind-lib/build/planner"
 )
 
 const panicLine = `panic("gm: not implemented")`
@@ -190,5 +191,36 @@ func TestStubSourceRefusesImportPolicyViolationInFinalFile(t *testing.T) {
 	pol := packer.ImportPolicy{Module: "example.com/m"}
 	if err := checkAssembled([]byte("package p\n\nimport (\n\t\"os/exec\"\n)\n\nfunc F() {\n\tpanic(\"gm: not implemented\")\n}\n"), "p", pol); err == nil {
 		t.Fatal("an os/exec import passed checkAssembled")
+	}
+}
+
+func TestStubForModulePrefixedPackageResolvesSiblingQualifier(t *testing.T) {
+	c := &contract.Contracts{Module: "csvstat",
+		Types: []contract.Type{{ID: "t-sum", Package: "csvstat/internal/stats", File: "internal/stats/stats.go", Decl: "type ColumnSummary struct{}"}},
+		Functions: []contract.Function{
+			{ID: "fn-a", Package: "csvstat/internal/stats", File: "summarize.go", Signature: "func a() []ColumnSummary"},
+			{ID: "fn-b", Package: "csvstat/internal/render", File: "render.go", Signature: "func b(s stats.ColumnSummary) error"}}}
+	if got := packageImports(c)["stats"]; got != "csvstat/internal/stats" {
+		t.Fatalf("stats imports as %q", got)
+	}
+	if got := packageImports(c)["render"]; got != "csvstat/internal/render" {
+		t.Fatalf("render imports as %q", got)
+	}
+	l := &Leaf{ID: "fn-b", Package: "render", Signature: c.Functions[1].Signature, Dir: "internal/render"}
+	src, err := stubFor(c, packer.ImportPolicy{Module: "csvstat"}, l)
+	if err != nil || !strings.Contains(string(src), `"csvstat/internal/stats"`) {
+		t.Fatalf("err %v\n%s", err, src)
+	}
+}
+
+func TestStubForUnresolvableQualifierSharesThePlannerRule(t *testing.T) {
+	c := &contract.Contracts{Module: "csvstat"}
+	pol := packer.ImportPolicy{Module: "csvstat"}
+	for _, q := range []string{"io", "time", "csvstat", "nosuch"} {
+		_, got := resolveQualifier(q, "func f(x "+q+".T)", packageImports(c), pol)
+		_, want := planner.ResolveQualifier(q, "func f(x "+q+".T)", packageImports(c), pol.Deps)
+		if got != want {
+			t.Errorf("%s: executor %v planner %v", q, got, want)
+		}
 	}
 }
