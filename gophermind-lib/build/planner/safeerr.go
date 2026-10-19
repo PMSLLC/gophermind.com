@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"go/scanner"
+	"go/token"
 	"io"
 	"regexp"
 	"sort"
@@ -239,11 +240,60 @@ func loadErr(err error, doc map[string]any) error {
 	return errors.New(msg)
 }
 
-// syntaxErr describes a Go parse failure by position only.
+// syntaxErr describes a Go parse failure by line and column of the first
+// error, relative to the source that was parsed. When the parser says
+// "expected X, found Y" and both are fixed tokens (punctuation, a keyword, or
+// the scanner's newline and EOF), the tokens are appended; the fixed
+// "missing ',' in <construct>" messages are kept too. Identifiers, literals and
+// any other source text are never copied.
 func syntaxErr(err error) string {
 	var list scanner.ErrorList
 	if errors.As(err, &list) && len(list) > 0 {
-		return fmt.Sprintf("syntax error at byte %d", list[0].Pos.Offset)
+		pos := list[0].Pos
+		msg := fmt.Sprintf("syntax error at line %d, column %d", pos.Line, pos.Column)
+		if detail := syntaxDetail(list[0].Msg); detail != "" {
+			msg += ": " + detail
+		}
+		return msg
 	}
 	return "syntax error"
+}
+
+var (
+	expectedFoundRE = regexp.MustCompile(`^expected (\S+?), found (\S+)$`)
+	missingCommaRE  = regexp.MustCompile(`^missing ',' in (composite literal|argument list|parameter list|type argument list|type parameter list)$`)
+)
+
+// syntaxDetail returns the safe part of a parser message, or "".
+func syntaxDetail(msg string) string {
+	if missingCommaRE.MatchString(msg) {
+		return msg
+	}
+	if m := expectedFoundRE.FindStringSubmatch(msg); m != nil && fixedToken(m[1]) && fixedToken(m[2]) {
+		return "expected " + m[1] + ", found " + m[2]
+	}
+	return ""
+}
+
+// fixedToken reports whether t is a quoted single punctuation token or Go
+// keyword, or the scanner's newline or EOF. Anything else (identifiers,
+// literals, words such as operand) is source or parser prose and is refused.
+func fixedToken(t string) bool {
+	switch t {
+	case "newline", "'EOF'":
+		return true
+	}
+	if len(t) < 3 || t[0] != '\'' || t[len(t)-1] != '\'' {
+		return false
+	}
+	inner := t[1 : len(t)-1]
+	if token.Lookup(inner).IsKeyword() {
+		return true
+	}
+	for _, r := range inner {
+		if r > 127 || !strings.ContainsRune("+-*/%&|^<>=!:;,.()[]{}~", r) {
+			return false
+		}
+	}
+	return len(inner) <= 3
 }

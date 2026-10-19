@@ -3,6 +3,8 @@ package planner
 import (
 	"encoding/json"
 	"errors"
+	"go/parser"
+	"go/token"
 	"strings"
 	"testing"
 
@@ -135,5 +137,62 @@ func TestSchemaErrOtherKindsKeepTheirShape(t *testing.T) {
 	got = schemaErr(contractVE(t, `{"components":[{"id":"A b","package":"p","exports":[]}]}`))
 	if !strings.Contains(got, "/components/0/id is not valid") || strings.Contains(got, "allowed") {
 		t.Errorf("schemaErr = %q", got)
+	}
+}
+
+func syntaxMsg(t *testing.T, src string) string {
+	t.Helper()
+	_, err := parser.ParseFile(token.NewFileSet(), "", src, parser.SkipObjectResolution)
+	if err == nil {
+		t.Fatal("source parsed")
+	}
+	return syntaxErr(err)
+}
+
+func TestSyntaxErrLineColumnAndTokens(t *testing.T) {
+	cases := []struct{ name, src, want string }{
+		{"punctuation and punctuation", "package p\nfunc f() {\n x := (1\n}\n", "syntax error at line 3, column 9: expected ')', found newline"},
+		{"unclosed literal at EOF", "package p\nvar x = map[string]int{\"a\": 1,\n", "syntax error at line 2, column 32: expected '}', found 'EOF'"},
+		{"punctuation and punctuation 2", "package p\nfunc f( {\n}\n", "syntax error at line 2, column 9: expected ')', found '{'"},
+		{"mistyped slice literal", "package p\nvar x = []string{\"[\"],\n", "syntax error at line 2, column 21: missing ',' in composite literal"},
+		{"missing comma in call", "package p\nvar x = f(1 2)\n", "syntax error at line 2, column 13: missing ',' in argument list"},
+		{"identifier found", "package p\nfunc f() { for i := range 3 secretIdent }\n", "syntax error at line 2, column 29"},
+		{"literal found", "package p\nvar x = 5 6\n", "syntax error at line 2, column 11"},
+		{"non-token expected", "package p\nvar x = ]\n", "syntax error at line 2, column 9"},
+	}
+	for _, c := range cases {
+		if got := syntaxMsg(t, c.src); got != c.want {
+			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestSyntaxErrExpectedFoundPunctuation(t *testing.T) {
+	// "expected X, found Y" with both X and Y punctuation is reported as tokens.
+	got := syntaxMsg(t, "package p\nfunc f() int { return 1 }\nvar y = [2]int{1, 2}\nfunc g( ]\n")
+	want := "syntax error at line 4, column 9: expected ')', found ']'"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestSyntaxErrDoesNotLeakSource(t *testing.T) {
+	for _, src := range []string{
+		"package p\nfunc f() { for i := range 3 leakyName }\n",
+		"package p\nvar x = \"leaky string\" \"more\"\n",
+		"package p\nvar leakyName = 12345 67890\n",
+	} {
+		got := syntaxMsg(t, src)
+		for _, bad := range []string{"leaky", "12345", "67890", "more"} {
+			if strings.Contains(got, bad) {
+				t.Errorf("%q leaks %q", got, bad)
+			}
+		}
+	}
+}
+
+func TestSyntaxErrNotAParseError(t *testing.T) {
+	if got := syntaxErr(errors.New("other")); got != "syntax error" {
+		t.Errorf("got %q", got)
 	}
 }
