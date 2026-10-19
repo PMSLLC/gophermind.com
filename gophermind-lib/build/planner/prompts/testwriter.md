@@ -26,6 +26,8 @@ Cover:
 
 The test file is code only. No questions, no deliberation, and no comment block longer than a few lines; a file that is mostly comments is refused. To provoke an error that the inputs alone do not reach, provoke it with what the test controls: a test double defined in the test file (for example an `io.Writer` whose `Write` returns an error), a value the dependency rejects (for example `math.NaN()` in a float field for `encoding/json`), or an invalid argument value. If the dependency is a package-level function that cannot be replaced, pick an input that makes the real one fail. Never ask how to mock it.
 
+Other test files share this package, so every top-level helper (test double type, function, variable or constant) must start with this function's name (for example `ValidateEmailReader`), or live inside the test function; an unprefixed helper that another file also declares breaks the build.
+
 If something you need is not stated and cannot be settled by choosing the most conservative option, reply with a line containing only `QUESTION:` followed by your question on the next lines, and nothing else.
 
 Node:
