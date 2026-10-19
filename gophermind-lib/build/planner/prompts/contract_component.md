@@ -8,11 +8,13 @@ Requirements:
 - Every type decl is complete Go source with a doc comment. Declare a type here only when no other component needs it.
 - Every `file` is a path relative to the repository root, inside this component's package.
 - Follow the conventions in the outline. No secrets. Refer to secrets by environment variable name only.
-- A component whose package is under `cmd/` is the entry point of a program and is package main. Its functions live in files of that directory. `main` has the signature `func main()` and only calls `os.Exit` with the result of `run`. `run` has the signature `func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int`: it parses flags, opens the input, calls the feature functions of the other components (list them in `uses`) and returns the exit code, writing errors to stderr. Other small helpers for flags or input are allowed.
+- A component whose package is under `cmd/` is the entry point of a program and is package main. Its functions live in files of that directory. The component must contain a function with id `fn-main` named `main` whose signature is exactly `func main()` (no parameters, no results); without it the program does not build. `main` only calls `os.Exit` with the result of `run`. `run` has the signature `func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int`: it parses flags, opens the input, calls the feature functions of the other components (list them in `uses`) and returns the exit code, writing errors to stderr. Other small helpers for flags or input are allowed.
 - Do not repeat a function listed under "Already written for this component".
 - There is no limit on the number of functions. Write every function the component needs. If the reply is getting long, stop at a function boundary and set "more" to true; you will be asked to continue. Set "more" to false only when the component is complete.
 
-Component:
+{{if .Defect}}Defect in what is written so far: {{.Defect}}. Write the missing function now; do not repeat the functions already written.
+
+{{end}}Component:
 <component>
 {{.Component}}
 </component>

@@ -115,3 +115,63 @@ func TestEntryPointStillMissingWarnsAndContinues(t *testing.T) {
 		t.Error("no outline_no_entry_point warning")
 	}
 }
+
+const entryNoMain = `{"types": [], "functions": [
+  {"id": "fn-run", "package": "cmd/greeter", "file": "cmd/greeter/run.go",
+   "signature": "func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int", "doc": "run wires the feature functions and returns the exit code.", "uses": ["fn-greet"]}
+], "more": false}`
+
+const entryOnlyMain = `{"types": [], "functions": [
+  {"id": "fn-main", "package": "cmd/greeter", "file": "cmd/greeter/main.go",
+   "signature": "func main()", "doc": "main calls run and exits with its code.", "uses": ["fn-run"]}
+], "more": false}`
+
+func hasMain(g *rig) bool {
+	for _, f := range g.contracts().Functions {
+		if f.Package == "cmd/greeter" && f.Signature == "func main()" {
+			return true
+		}
+	}
+	return false
+}
+
+func TestEntryPointWithoutMainIsRepairedOnce(t *testing.T) {
+	g := cliRig(t, map[string]string{
+		"contract.outline.entry.txt": `{"components": [` + entryComp + `]}`,
+		"contract.entry-point.txt":   entryNoMain,
+		"contract.entry-point.2.txt": entryOnlyMain,
+	})
+	g.mustPlan(planner.Options{StopAfter: "contract"})
+	if n := count(g.stagesCalled(), "contract:entry-point"); n != 2 {
+		t.Fatalf("entry-point component calls = %d, want 2", n)
+	}
+	if !hasMain(g) {
+		t.Fatal("the contract has no func main() in cmd/greeter after the repair round")
+	}
+	n := 0
+	for _, r := range g.fake.Requests() {
+		if planner.StageOf(r) != "contract:entry-point" {
+			continue
+		}
+		n++
+		p := r.Messages[1].Content
+		has := strings.Contains(p, "package cmd/greeter is a main package but declares no function main")
+		if n == 1 && has || n == 2 && !has {
+			t.Errorf("call %d: defect text present = %v", n, has)
+		}
+	}
+}
+
+func TestEntryPointStillWithoutMainIsAskedOnlyOnce(t *testing.T) {
+	g := cliRig(t, map[string]string{
+		"contract.outline.entry.txt": `{"components": [` + entryComp + `]}`,
+		"contract.entry-point.txt":   entryNoMain,
+	})
+	g.mustPlan(planner.Options{StopAfter: "contract"})
+	if n := count(g.stagesCalled(), "contract:entry-point"); n != 2 {
+		t.Fatalf("entry-point component calls = %d, want 2 (one repair round)", n)
+	}
+	if hasMain(g) {
+		t.Fatal("unexpected main")
+	}
+}

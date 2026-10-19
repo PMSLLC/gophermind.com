@@ -19,7 +19,7 @@ Requirements:
 {{else if .Batch}}- This is a batch pass. Write the components and types for THESE features only: {{.Batch}}
   Each feature's full text is under its `### <name>` heading in the brief. Write one component per feature, plus any type only these features need. Do not write components or types for other features. You may name the ids already declared below in `uses`.
 {{else}}- This is the shared pass. Write `module`, `conventions`, `dependencies`, the `types` component (id `types`, for shared declarations) and the shared domain types: the entities more than one feature uses. Write NO feature component here; each feature gets its own pass afterwards.
-{{end}}{{if .EntryName}}- The brief describes something that is run, so this pass also writes the entry point: one component with id `entry-point` and package `cmd/{{.EntryName}}`, listed after the feature components. A later pass gives it a `main` function and the functions that wire the feature functions into the program (flags, input, output, exit codes).
+{{end}}{{if .EntryName}}- The brief describes something that is run, so this pass also writes the entry point: one component with id `entry-point` and package `cmd/{{.EntryName}}`, listed after the feature components. A later pass gives it a function `fn-main` named `main` with the signature `func main()`, and the functions that wire the feature functions into the program (flags, input, output, exit codes).
 {{end}}- The first pass writes `module`, `conventions` and `dependencies`. A later pass leaves `module` and `conventions` out and lists only the components, types and dependencies that are new.
 
 Module and conventions already fixed by earlier passes:

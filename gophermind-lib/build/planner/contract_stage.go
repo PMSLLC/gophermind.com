@@ -44,6 +44,9 @@ type contractState struct {
 	OutlineSharedIDs  []string `json:"outline_shared_ids,omitempty"`
 	// ComponentPasses counts the stored passes of each component, for the cap.
 	ComponentPasses map[string]int `json:"component_passes,omitempty"`
+	// MainRepairs counts, per component, the passes that asked for a missing
+	// func main() of a main package (one round at most).
+	MainRepairs map[string]int `json:"main_repairs,omitempty"`
 	// SchemaRepairs counts the passes that asked for fields the merged contract
 	// lacked (attempts that failed count too, across restarts).
 	SchemaRepairs int `json:"schema_repairs,omitempty"`
@@ -370,9 +373,11 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 		if contains(st.Done, id) {
 			continue
 		}
+		defect := ""
 		for {
 			build := func(level int) (string, error) {
 				return render("contract_component", map[string]string{
+					"Defect":       defect,
 					"Component":    mustJSON(comp),
 					"Outline":      outlineJSONAt(st.Doc, level),
 					"Declared":     declaredTextAt(st.Doc, level),
@@ -402,6 +407,19 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			}
 			p.noteNormalized(&st, "contract:"+id, notes)
 			p.noteIgnored(&st, "contract:"+id, ignored)
+			defect = ""
+			if !more {
+				// A main package with no func main() cannot be built: one more
+				// pass names the package and asks for it.
+				pkg, _ := comp["package"].(string)
+				if st.MainRepairs[id] == 0 && contains(mainDefects(st.Doc), pkg) {
+					if st.MainRepairs == nil {
+						st.MainRepairs = map[string]int{}
+					}
+					st.MainRepairs[id]++
+					defect, more = mainDefectText(pkg), true
+				}
+			}
 			if !more {
 				st.Done = append(st.Done, id)
 			}
@@ -420,6 +438,10 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 					strings.Trim(boundedID(id), `"`), maxComponentPasses)
 			}
 		}
+	}
+
+	for _, pkg := range mainDefects(st.Doc) {
+		p.emit(events.KindWarning, "contract", "", "main_function_missing: "+mainDefectText(pkg))
 	}
 
 	// Every component is written; ids a function or type uses but nobody
