@@ -152,7 +152,11 @@ func renderTestwriter(node, module, file, funcName, testFile string) (string, er
 			importPath = module + "/" + dir
 		}
 	}
-	return render("testwriter", map[string]string{
+	mainPkg := ""
+	if PackageClause(dir) == "main" {
+		mainPkg = "yes"
+	}
+	return render("testwriter", map[string]string{"MainPackage": mainPkg,
 		"Node": node, "PackageDir": dir, "TestFuncName": funcName, "TestFile": testFile,
 		"Module": module, "ImportPath": importPath})
 }
@@ -402,18 +406,22 @@ func PackageClause(pkg string) string {
 }
 
 // packageClauseNames are the package clauses a test file for contract package
-// pkg may carry, plain or with the _test suffix. A directory under cmd/ may
-// also keep its last element as the clause.
+// pkg may carry, plain or with the _test suffix. A main package can only be
+// tested from package main: Go cannot import it, and a second clause in its
+// directory breaks the build.
 func packageClauseNames(pkg string) []string {
+	if PackageClause(pkg) == "main" {
+		return []string{"main"}
+	}
 	var names []string
 	if base := path.Base(pkg); base != "." && base != "/" {
 		names = append(names, base, base+"_test")
 	}
-	if c := PackageClause(pkg); c == "main" && path.Base(pkg) != "main" {
-		names = append(names, "main", "main_test")
-	}
 	return names
 }
+
+// mainRefusal is the refusal for a test file of a main package.
+const mainRefusal = "test file is not in package main: a test file for a main package must declare package main and must not import it"
 
 // checkTestSource refuses a test file that is not the one asked for.
 func checkTestSource(src, pkg, funcName, module string) error {
@@ -422,12 +430,25 @@ func checkTestSource(src, pkg, funcName, module string) error {
 		return fmt.Errorf("test file (%d bytes) is not valid Go: %s", len(src), syntaxErr(err))
 	}
 	if names := packageClauseNames(pkg); !slices.Contains(names, f.Name.Name) {
+		if PackageClause(pkg) == "main" {
+			return errors.New(mainRefusal)
+		}
 		return fmt.Errorf("test file is not in package %s", strings.Join(names, " or "))
+	}
+	self := ""
+	if module != "" && PackageClause(pkg) == "main" {
+		self = module
+		if d := path.Clean(pkg); d != "." {
+			self = module + "/" + d
+		}
 	}
 	for _, imp := range f.Imports {
 		p, err := strconv.Unquote(imp.Path.Value)
 		if err != nil {
 			return errors.New("test file has an unreadable import")
+		}
+		if self != "" && p == self {
+			return errors.New(mainRefusal)
 		}
 		first, _, _ := strings.Cut(p, "/")
 		standard := stdTopLevel[first]

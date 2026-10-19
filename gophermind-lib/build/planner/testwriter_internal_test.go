@@ -206,10 +206,12 @@ func TestCheckTestSourcePackageClause(t *testing.T) {
 		{"greet", "greet_test", true},
 		{"greet", "other", false},
 		{"cmd/csvstat", "main", true},
-		{"cmd/csvstat", "main_test", true},
-		{"cmd/csvstat", "csvstat", true},
+		{"cmd/csvstat", "main_test", false},
+		{"cmd/csvstat", "csvstat", false},
+		{"cmd/csvstat", "csvstat_test", false},
 		{".", "main", true},
 		{"", "main", true},
+		{".", "main_test", false},
 		{"internal/stats", "main", false},
 		{"greet", "main", false},
 	}
@@ -222,6 +224,32 @@ func TestCheckTestSourcePackageClause(t *testing.T) {
 		if !c.ok && (err == nil || !strings.Contains(err.Error(), "is not in package")) {
 			t.Errorf("package %q, clause %q: err = %v, want a package refusal", c.pkg, c.clause, err)
 		}
+	}
+}
+
+func TestCheckTestSourceMainPackageSelfImport(t *testing.T) {
+	const mod = "github.com/example/csvstat"
+	src := func(clause, imp string) string {
+		return "package " + clause + "\n\nimport (\n\t\"testing\"\n" + imp + ")\n\nfunc TestGreet(t *testing.T) {}\n"
+	}
+	if err := checkTestSource(src("main", ""), "cmd/csvstat", "TestGreet", mod); err != nil {
+		t.Errorf("package main without import was refused: %v", err)
+	}
+	if err := checkTestSource(src("main", "\t\"github.com/example/csvstat/internal/stats\"\n"), "cmd/csvstat", "TestGreet", mod); err != nil {
+		t.Errorf("package main importing another own package was refused: %v", err)
+	}
+	for _, c := range []struct{ pkg, imp string }{
+		{"cmd/csvstat", "github.com/example/csvstat/cmd/csvstat"},
+		{".", "github.com/example/csvstat"},
+	} {
+		err := checkTestSource(src("main", "\t\""+c.imp+"\"\n"), c.pkg, "TestGreet", mod)
+		if err == nil || !strings.Contains(err.Error(), "must declare package main and must not import it") {
+			t.Errorf("pkg %q self-import: err = %v", c.pkg, err)
+		}
+	}
+	err := checkTestSource(src("csvstat_test", "\t\"github.com/example/csvstat/cmd/csvstat\"\n"), "cmd/csvstat", "TestGreet", mod)
+	if err == nil || !strings.Contains(err.Error(), "must declare package main and must not import it") {
+		t.Errorf("csvstat_test: err = %v", err)
 	}
 }
 
