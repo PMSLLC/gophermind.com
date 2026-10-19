@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"gophermind/gophermind-lib/build/blackboard"
@@ -75,6 +76,8 @@ const (
 type Planner struct {
 	d    Deps
 	dump dumpState
+	// noGoWarn records the missing go tool once per planner.
+	noGoWarn sync.Once
 }
 
 func New(d Deps) *Planner {

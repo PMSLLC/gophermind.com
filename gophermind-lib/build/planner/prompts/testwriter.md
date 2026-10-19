@@ -18,6 +18,8 @@ Cover:
 
 {{else}}{{if .Module}}The Go module is `{{.Module}}`. The package under test is imported as `{{.ImportPath}}`. A test file in package `X_test` must import exactly that path to call the function; never use any other module name. A test file in the same package as the function needs no import of it. Standard library imports are fine.
 
+The test file is compiled against the contract's stubs before it is accepted. A test in package `X_test` can only call exported names; for an unexported function the test file must be in the same package as the function (package `X`, not `X_test`). Every import must be used, and every value must have the type the signature declares.
+
 {{end}}{{end}}Do not:
 - test private helpers or implementation details,
 - import any package outside the standard library and this module,

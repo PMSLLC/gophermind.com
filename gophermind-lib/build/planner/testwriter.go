@@ -22,6 +22,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"gophermind/gophermind-lib/build/contract"
+	"gophermind/gophermind-lib/build/events"
 	"gophermind/gophermind-lib/build/pathsafe"
 	"gophermind/gophermind-lib/build/router"
 	"gophermind/gophermind-lib/build/tree"
@@ -195,6 +196,14 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 			return err
 		}
 		if err := checkSharedNames(src, otherTestSources(r.repo, path.Dir(rel), id, st), stubSources(c, path.Dir(file))); err != nil {
+			return err
+		}
+		if err := compileCheckTestFile(c, rel, src, otherTestSources(r.repo, path.Dir(rel), id, st)); err != nil {
+			if errors.Is(err, errNoGo) {
+				p.noGoWarn.Do(func() { p.emit(events.KindWarning, cs.stage, id, err.Error()) })
+				tests, source = ts, src
+				return nil
+			}
 			return err
 		}
 		tests, source = ts, src
