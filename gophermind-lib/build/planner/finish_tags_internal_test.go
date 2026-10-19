@@ -13,10 +13,11 @@ func TestCoversRefusalsStateTheCountAndTheValidTags(t *testing.T) {
 		covers string
 		want   []string
 	}{
-		{"no errors listed", 0, "error:1", []string{"0 error conditions", "no test may use error:<n>", "input:<param name>", "happy"}},
-		{"two errors listed", 2, "error:3", []string{"2 error conditions", "happy", "input:<name>", "error:1 to error:2"}},
+		{"no errors listed", 0, "error:1", []string{"0 error conditions", "no test may use error:<n>", "input:<param name>", "happy", "boundary"}},
+		{"two errors listed", 2, "error:3", []string{"2 error conditions", "happy", "input:<name>", "error:1 to error:2", "boundary"}},
 		{"malformed tag, none listed", 0, "everything", []string{"0 error conditions", "no test may use error:<n>", "input:<param name>", "happy"}},
-		{"malformed tag, two listed", 2, "everything", []string{"2 error conditions", "happy", "input:<name>", "error:1 to error:2"}},
+		{"malformed tag, two listed", 2, "everything", []string{"2 error conditions", "happy", "input:<name>", "error:1 to error:2", "boundary"}},
+		{"edge is not a tag", 2, "edge", []string{"2 error conditions", "boundary"}},
 	} {
 		tests := []map[string]any{{"name": marker, "polarity": "success", "covers": c.covers}}
 		err := checkPolarity(tests, c.errors)
@@ -45,5 +46,17 @@ func TestTestwriterPromptSaysWhatToDoWithNoErrors(t *testing.T) {
 	}
 	if !strings.Contains(string(b), "lists no errors") {
 		t.Error("testwriter.md does not say what to do when the contract lists no errors")
+	}
+}
+
+func TestBoundaryCoversIsAccepted(t *testing.T) {
+	for _, pol := range []string{"boundary", "success", "negative"} {
+		tests := []map[string]any{
+			{"name": "a", "polarity": "success", "covers": "happy"},
+			{"name": "b", "polarity": pol, "covers": "boundary"},
+		}
+		if err := checkPolarity(tests, 0); err != nil {
+			t.Errorf("polarity %s: %v", pol, err)
+		}
 	}
 }

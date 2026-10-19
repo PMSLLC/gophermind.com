@@ -71,7 +71,7 @@ func testwriterView(d map[string]any) map[string]any {
 
 var (
 	polarities = []string{"success", "negative", "boundary", "property"}
-	coversRE   = regexp.MustCompile(`^(happy|error:[0-9]+|input:[A-Za-z_][A-Za-z0-9_]*)$`)
+	coversRE   = regexp.MustCompile(`^(happy|boundary|error:[0-9]+|input:[A-Za-z_][A-Za-z0-9_]*)$`)
 )
 
 // coversHelp states how many error conditions the contract lists and which
@@ -79,13 +79,13 @@ var (
 // nothing from the reply.
 func coversHelp(errors int) string {
 	if errors == 0 {
-		return "The contract lists 0 error conditions, so no test may use error:<n>. Valid covers: happy, or input:<param name> for a test of an odd input."
+		return "The contract lists 0 error conditions, so no test may use error:<n>. Valid covers: happy, boundary (an edge case that is not about one parameter), or input:<param name> for a test of an odd input."
 	}
 	rng := "error:1"
 	if errors > 1 {
 		rng = fmt.Sprintf("error:1 to error:%d", errors)
 	}
-	return fmt.Sprintf("The contract lists %d error conditions. Valid covers: happy, input:<name> (a parameter name), or %s.", errors, rng)
+	return fmt.Sprintf("The contract lists %d error conditions. Valid covers: happy, boundary (an edge case that is not about one parameter or one listed error), input:<name> (a parameter name), or %s.", errors, rng)
 }
 
 // checkPolarity applies the coverage rules to a Test-writer reply: every test
