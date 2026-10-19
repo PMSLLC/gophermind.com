@@ -53,9 +53,9 @@ func TestCheckTestSource(t *testing.T) {
 	bad := []struct{ name, edit, with, want string }{
 		{"not Go", "package greet", "pakage greet", "not valid Go"},
 		{"another package", "package greet\n", "package other\n", "is not in package greet"},
-		{"a third-party import", `"strings"`, `"github.com/stretchr/testify/assert"`, "imports a package (34 bytes) outside"},
-		{"another module that shares the prefix", `example.com/greeter/internal/names`, `example.com/greeter2/internal/names`, "only the standard library and this module"},
-		{"an extended library import", `"strings"`, `"golang.org/x/text/cases"`, "imports a package (23 bytes) outside"},
+		{"a third-party import", `"strings"`, `"github.com/stretchr/testify/assert"`, "imports a package outside the standard library and this module; the module path is example.com/greeter"},
+		{"another module that shares the prefix", `example.com/greeter/internal/names`, `example.com/greeter2/internal/names`, "imports a package outside the standard library and this module"},
+		{"an extended library import", `"strings"`, `"golang.org/x/text/cases"`, "imports a package outside the standard library and this module; the module path is example.com/greeter"},
 		{"the test function is missing", "func TestGreet(", "func TestOther(", "has no func TestGreet(t *testing.T)"},
 		{"the test function has the wrong shape", "func TestGreet(t *testing.T)", "func TestGreet(t *testing.B)", "not as func TestGreet(t *testing.T)"},
 		{"the name is only a method", "func TestGreet(t *testing.T)", "func (x X) TestGreet(t *testing.T)", "has no func TestGreet"},

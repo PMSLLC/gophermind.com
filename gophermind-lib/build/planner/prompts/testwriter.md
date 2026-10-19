@@ -22,7 +22,10 @@ Cover:
 
 The test file is compiled against the contract's stubs before it is accepted. A test in package `X_test` can only call exported names; for an unexported function the test file must be in the same package as the function (package `X`, not `X_test`). Every import must be used, and every value must have the type the signature declares.
 
-{{end}}{{end}}{{end}}Do not:
+{{end}}{{end}}{{end}}{{if .Module}}Every import of a package of this module is the module path `{{.Module}}` plus the package directory, spelled exactly; no other module name or path form exists.{{if .Imports}} The import path of each package qualifier used in the signature and dependency signatures is:
+{{.Imports}}{{end}}
+
+{{end}}Do not:
 - test private helpers or implementation details,
 - import any package outside the standard library and this module,
 - reference any function or type not present in `dependency_signatures` or the contract,

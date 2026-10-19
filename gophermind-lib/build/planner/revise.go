@@ -441,7 +441,7 @@ func (p *Planner) reviseTests(ctx context.Context, r *run, c *contract.Contracts
 	file, _ := ct["file"].(string)
 	pkg, _ := ct["package"].(string)
 	funcName := testFuncName(id)
-	prompt, err := renderTestwriter(scrubInput(mustJSON(testwriterView(merged)), req.Secrets, maxReviseTestSource), c.Module, file, funcName, testFile)
+	prompt, err := renderTestwriterWith(scrubInput(mustJSON(testwriterView(merged)), req.Secrets, maxReviseTestSource), c.Module, file, funcName, testFile, PackageImports(c))
 	if err != nil {
 		return "", "", err
 	}
@@ -459,7 +459,7 @@ func (p *Planner) reviseTests(ctx context.Context, r *run, c *contract.Contracts
 			return nil
 		}
 		last = ClassReviseInvalid
-		ts, s, perr := parseTestwrite(StripReply(text), ct, pkg, funcName, c.Module, hookList(merged))
+		ts, s, perr := parseTestwriteIn(StripReply(text), ct, pkg, funcName, c.Module, hookList(merged), packageSet(c))
 		if perr != nil {
 			return perr
 		}

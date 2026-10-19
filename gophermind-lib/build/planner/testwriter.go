@@ -145,6 +145,13 @@ func (p *Planner) testwriter(ctx context.Context, r *run) error {
 // does not invent a module name checkTestSource would refuse. The import path
 // is the module plus the directory of the contract file ("." is the module).
 func renderTestwriter(node, module, file, funcName, testFile string) (string, error) {
+	return renderTestwriterWith(node, module, file, funcName, testFile, nil)
+}
+
+// renderTestwriterWith is renderTestwriter that also lists the import path of
+// every package qualifier the node's signature and dependency signatures use.
+// siblings maps contract package clauses to import paths (PackageImports).
+func renderTestwriterWith(node, module, file, funcName, testFile string, siblings map[string]string) (string, error) {
 	dir := path.Dir(file)
 	importPath := ""
 	if module != "" {
@@ -158,7 +165,8 @@ func renderTestwriter(node, module, file, funcName, testFile string) (string, er
 		mainPkg = "yes"
 	}
 	data := map[string]string{"MainPackage": mainPkg, "Node": node, "PackageDir": dir,
-		"TestFuncName": funcName, "TestFile": testFile, "Module": module, "ImportPath": importPath}
+		"TestFuncName": funcName, "TestFile": testFile, "Module": module, "ImportPath": importPath,
+		"Imports": qualifierImports(node, siblings)}
 	data["Unexported"], data["Method"], data["Clause"], data["TargetName"] = "", "", "", ""
 	if name, method, ok := unexportedTarget(nodeSignature(node)); ok && mainPkg == "" {
 		data["Unexported"], data["Clause"], data["TargetName"] = "yes", PackageClause(dir), name
@@ -167,6 +175,99 @@ func renderTestwriter(node, module, file, funcName, testFile string) (string, er
 		}
 	}
 	return render("testwriter", data)
+}
+
+// qualifierImports lists, one per line, the import path of every package
+// qualifier used in the node's signature and in its dependency signatures
+// ("stats" = "csvstat/internal/stats"). A qualifier that cannot be resolved is
+// left out. The result is "" when there is nothing to list.
+func qualifierImports(node string, siblings map[string]string) string {
+	var n struct {
+		Contract struct {
+			Signature string `json:"signature"`
+		} `json:"contract"`
+		Context struct {
+			Deps json.RawMessage `json:"dependency_signatures"`
+		} `json:"context"`
+	}
+	if json.Unmarshal([]byte(node), &n) != nil {
+		return ""
+	}
+	texts := []string{n.Contract.Signature}
+	var collect func(v any)
+	collect = func(v any) {
+		switch x := v.(type) {
+		case string:
+			texts = append(texts, x)
+		case []any:
+			for _, e := range x {
+				collect(e)
+			}
+		case map[string]any:
+			for _, e := range x {
+				collect(e)
+			}
+		}
+	}
+	if len(n.Context.Deps) > 0 {
+		var v any
+		if json.Unmarshal(n.Context.Deps, &v) == nil {
+			collect(v)
+		}
+	}
+	found := map[string]string{}
+	for _, t := range texts {
+		f, err := parser.ParseFile(token.NewFileSet(), "d.go", "package p\n"+t, 0)
+		if err != nil {
+			continue
+		}
+		for _, q := range Qualifiers(f) {
+			if p, ok := ResolveQualifier(q, t, siblings, nil); ok {
+				found[q] = p
+			}
+		}
+	}
+	names := make([]string, 0, len(found))
+	for q := range found {
+		names = append(names, q)
+	}
+	sort.Strings(names)
+	var b strings.Builder
+	for _, q := range names {
+		fmt.Fprintf(&b, "- `%s` = `%s`\n", q, found[q])
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// contractPackagePaths are the import paths of the packages of the contract:
+// the module path plus the directory of each declaration's file. all includes
+// main packages; importable leaves them out. Both are sorted and unique.
+func contractPackagePaths(c *contract.Contracts) (all, importable []string) {
+	seenAll, seenImp := map[string]bool{}, map[string]bool{}
+	add := func(pkg, file string) {
+		dir := FileDirIn(c.Module, pkg, file)
+		p := c.Module
+		if dir != "." {
+			p = c.Module + "/" + dir
+		}
+		if !seenAll[p] {
+			seenAll[p] = true
+			all = append(all, p)
+		}
+		if PackageClause(dir) != "main" && !seenImp[p] {
+			seenImp[p] = true
+			importable = append(importable, p)
+		}
+	}
+	for _, t := range c.Types {
+		add(t.Package, t.File)
+	}
+	for _, f := range c.Functions {
+		add(f.Package, f.File)
+	}
+	sort.Strings(all)
+	sort.Strings(importable)
+	return all, importable
 }
 
 // nodeSignature is contract.signature of a node's JSON, or "".
@@ -248,7 +349,7 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 		}
 		return writtenTests{}, fmt.Errorf("test file %s already exists and this run did not write it; move it away, then resume", path.Base(rel))
 	}
-	prompt, err := renderTestwriter(mustJSON(testwriterView(d)), c.Module, file, funcName, rel)
+	prompt, err := renderTestwriterWith(mustJSON(testwriterView(d)), c.Module, file, funcName, rel, PackageImports(c))
 	if err != nil {
 		return writtenTests{}, err
 	}
@@ -257,7 +358,7 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	renamedHelpers := false
 	cs := callSpec{stage: "testwrite:" + id, taskType: "testwrite", nodeID: id, nodeClass: class, tier: p.tierFor(strField(d, "model_tier")), scope: router.ScopeNode, maxTokens: maxTokensTestwrite}
 	err = p.callAsking(ctx, r, cs, prompt, func(text string) error {
-		ts, src, err := parseTestwrite(StripReply(text), ct, pkg, funcName, c.Module, hookList(d))
+		ts, src, err := parseTestwriteIn(StripReply(text), ct, pkg, funcName, c.Module, hookList(d), packageSet(c))
 		if err != nil {
 			return err
 		}
@@ -399,6 +500,13 @@ func testField(t map[string]any, key string, n int) (string, error) {
 // imports nothing outside the standard library and the module. Level and
 // command are set here, whatever the model wrote.
 func parseTestwrite(text string, ct map[string]any, pkg, funcName, module string, hooks []string) ([]map[string]any, string, error) {
+	return parseTestwriteIn(text, ct, pkg, funcName, module, hooks, importSet{})
+}
+
+// parseTestwriteIn is parseTestwrite that also knows the packages of the
+// contract, so an import of this module can be checked and a refusal can name
+// the valid ones.
+func parseTestwriteIn(text string, ct map[string]any, pkg, funcName, module string, hooks []string, pkgs importSet) ([]map[string]any, string, error) {
 	var reply struct {
 		Tests    []map[string]any `json:"tests"`
 		TestFile string           `json:"test_file"`
@@ -454,7 +562,7 @@ func parseTestwrite(text string, ct map[string]any, pkg, funcName, module string
 	}
 	sig, _ := ct["signature"].(string)
 	_, _, unexported := unexportedTarget(sig)
-	if err := checkTestSourceFor(reply.TestFile, pkg, funcName, module, unexported); err != nil {
+	if err := checkTestSourceIn(reply.TestFile, pkg, funcName, module, unexported, pkgs); err != nil {
 		return nil, "", err
 	}
 	if contains(hooks, "bench") && !hasBenchmark(reply.TestFile, funcName) {
@@ -547,6 +655,39 @@ func unexportedRefusal(clause string) string {
 // checkTestSourceFor is checkTestSource that also knows whether the function
 // under test is unexported. Then only the plain package clause is accepted.
 func checkTestSourceFor(src, pkg, funcName, module string, unexported bool) error {
+	return checkTestSourceIn(src, pkg, funcName, module, unexported, importSet{})
+}
+
+// importSet is what the contract says about the packages of this module. A zero
+// value means unknown: any path under the module is accepted.
+type importSet struct {
+	all        []string // every package path, main packages included
+	importable []string // the ones a test may import
+}
+
+const maxListedPackages = 12
+
+// importRefusal is the refusal for an import that is neither standard library
+// nor a package of this module. It quotes nothing from the reply: the module
+// path and the package list come from the contract.
+func importRefusal(module string, pkgs importSet) string {
+	msg := "test file imports a package outside the standard library and this module"
+	if module == "" {
+		return msg
+	}
+	list := pkgs.importable
+	if len(list) == 0 {
+		return fmt.Sprintf("%s; the module path is %s", msg, module)
+	}
+	if len(list) > maxListedPackages {
+		list = list[:maxListedPackages]
+	}
+	return fmt.Sprintf("%s; the module path is %s and the packages of this module are: %s; import only those, spelled exactly", msg, module, strings.Join(list, ", "))
+}
+
+// checkTestSourceIn is checkTestSourceFor that also checks the imports under
+// the module path against the contract's packages when pkgs is known.
+func checkTestSourceIn(src, pkg, funcName, module string, unexported bool, pkgs importSet) error {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "", src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
@@ -584,8 +725,11 @@ func checkTestSourceFor(src, pkg, funcName, module string, unexported bool) erro
 		first, _, _ := strings.Cut(p, "/")
 		standard := stdTopLevel[first]
 		own := module != "" && (p == module || strings.HasPrefix(p, module+"/"))
+		if own && len(pkgs.all) > 0 && !slices.Contains(pkgs.all, p) {
+			own = false
+		}
 		if !standard && !own {
-			return fmt.Errorf("test file imports a package (%d bytes) outside the standard library and this module; only the standard library and this module (%s) are allowed", len(p), module)
+			return errors.New(importRefusal(module, pkgs))
 		}
 	}
 	for _, decl := range f.Decls {
@@ -819,4 +963,10 @@ func unescapedQuotes(s string) int {
 		slashes = 0
 	}
 	return n
+}
+
+// packageSet is the importSet of a contract.
+func packageSet(c *contract.Contracts) importSet {
+	all, imp := contractPackagePaths(c)
+	return importSet{all: all, importable: imp}
 }
