@@ -70,6 +70,9 @@ type contractState struct {
 	// IDsNormalized counts the ids and references rewritten to the id syntax
 	// (outline_id_normalized); the rewrite is deterministic, so this is only a count.
 	IDsNormalized int `json:"ids_normalized,omitempty"`
+	// SigTypeIDsNormalized counts the type ids in signatures replaced by Go type
+	// names (signature_type_id_normalized).
+	SigTypeIDsNormalized int `json:"sig_type_ids_normalized,omitempty"`
 }
 
 const maxIgnoredRecorded = 200
@@ -1105,7 +1108,11 @@ func cleanGoFile(file string) error {
 func parseSignature(sig string) (*ast.FuncDecl, error) {
 	f, err := parser.ParseFile(token.NewFileSet(), "", "package p\n"+sig+" {}\n", parser.SkipObjectResolution)
 	if err != nil {
-		return nil, fmt.Errorf("signature (%d bytes) is not valid Go: %s", len(sig), syntaxErr(err))
+		hint := ""
+		if hasHyphenToken(sig) {
+			hint = hyphenatedIDHint
+		}
+		return nil, fmt.Errorf("signature (%d bytes) is not valid Go: %s%s", len(sig), syntaxErr(err), hint)
 	}
 	if len(f.Decls) != 1 {
 		return nil, fmt.Errorf("signature (%d bytes) must declare exactly one function", len(sig))

@@ -41,6 +41,10 @@ type idNotes struct {
 	Count    int
 	Examples []string
 	Ignored  []string
+	// SigTypeIDs counts the type ids replaced by Go type names in signatures;
+	// SigExamples are the bounded ids of the functions they stood in.
+	SigTypeIDs  int
+	SigExamples []string
 }
 
 func isUpper(c byte) bool { return c >= 'A' && c <= 'Z' }
@@ -203,6 +207,14 @@ func normalizeReply(doc map[string]any, text string, kind replyKind) (string, id
 		}
 	}
 
+	// Signatures: a type id written for a Go type name is replaced by the name.
+	if kind != replyOutline {
+		if n, ex := normalizeSigTypeIDs(doc, lists["types"], lists["functions"]); n > 0 {
+			notes.SigTypeIDs, notes.SigExamples = n, ex
+			changed = true
+		}
+	}
+
 	// References: a uses entry may name a type or a function, so it resolves to
 	// whichever normalised form is declared, else by its own shape (an id-like
 	// forward reference is rewritten too: a later pass declares it in that form).
@@ -277,6 +289,12 @@ func normalizeReply(doc map[string]any, text string, kind replyKind) (string, id
 // noteNormalized records the rewritten ids in the state and reports them as
 // one warning: a count and at most 10 bounded examples, never other reply text.
 func (p *Planner) noteNormalized(st *contractState, stage string, n idNotes) {
+	if n.SigTypeIDs > 0 {
+		st.SigTypeIDsNormalized += n.SigTypeIDs
+		p.emit(events.KindWarning, stage, "", fmt.Sprintf(
+			"signature_type_id_normalized: %d type ids in signatures were replaced by Go type names (%s); %d in all so far",
+			n.SigTypeIDs, strings.Join(n.SigExamples, ", "), st.SigTypeIDsNormalized))
+	}
 	if n.Count == 0 {
 		return
 	}
