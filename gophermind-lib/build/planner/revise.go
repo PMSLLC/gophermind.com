@@ -59,6 +59,7 @@ type ReviseProposal struct {
 	TestSHA256  string
 	TestChanged bool
 	Model       string
+	Warnings    []string // fields of a whole-node reply that were left out of the patch
 }
 
 // Reviser is the planner's revise stage. The executor calls it through its
@@ -228,7 +229,8 @@ type parsedRevise struct {
 	changed   []string
 	needTests bool
 	flag      *reviseErr
-	secret    bool // the reply held a secret value: refused without a repair request
+	warnings  []string // what the whole-document leniency left out
+	secret    bool     // the reply held a secret value: refused without a repair request
 }
 
 func classOf(err error, fallback string) string {
@@ -329,7 +331,7 @@ func (v *Reviser) Revise(ctx context.Context, req ReviseRequest) (ReviseProposal
 			got.secret = true
 			return nil
 		}
-		rep, perr := parseReviseReplyScanned(text, secrets)
+		rep, warns, perr := parseReviseReplyFor(text, secrets, orig)
 		if perr != nil {
 			if classOf(perr, "") == ClassSecretInReply {
 				// No error back to the router: its repair request would send the
@@ -340,7 +342,7 @@ func (v *Reviser) Revise(ctx context.Context, req ReviseRequest) (ReviseProposal
 			lastClass = classOf(perr, ClassReviseInvalid)
 			return perr
 		}
-		got.rep = rep
+		got.rep, got.warnings = rep, warns
 		if rep.kind != kindPatch {
 			return nil
 		}
@@ -427,7 +429,7 @@ func (v *Reviser) Revise(ctx context.Context, req ReviseRequest) (ReviseProposal
 	body = append(body, '\n')
 	return ReviseProposal{
 		Outcome: OutcomeRewritten, Body: body, BodySHA256: hashHex(body), Changed: got.changed,
-		Assumptions: got.rep.patch.Assumptions, TestSource: testSource, TestSHA256: testSHA, TestChanged: testChanged, Model: res.Entry,
+		Assumptions: got.rep.patch.Assumptions, Warnings: got.warnings, TestSource: testSource, TestSHA256: testSHA, TestChanged: testChanged, Model: res.Entry,
 	}, nil
 }
 

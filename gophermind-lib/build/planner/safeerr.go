@@ -38,6 +38,9 @@ func jsonErr(err error) string {
 	case errors.As(err, &typ):
 		return fmt.Sprintf("field %q has the wrong JSON type", typ.Field)
 	default:
+		if t, ok := unknownFieldText(err); ok {
+			return "the reply holds " + t
+		}
 		return "not valid JSON"
 	}
 }
