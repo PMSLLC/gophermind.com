@@ -211,7 +211,12 @@ func refuseCompile(c *contract.Contracts, dir, base, src, out string) error {
 	lines := strings.Split(src, "\n")
 	seen := map[int]bool{}
 	var msgs []string
-	for _, m := range diagRE.FindAllStringSubmatch(out, -1) {
+	for _, loc := range diagRE.FindAllStringSubmatchIndex(out, -1) {
+		m := make([]string, 5)
+		for i := range m {
+			m[i] = out[loc[2*i]:loc[2*i+1]]
+		}
+		m[4] += diagContinuation(out[loc[1]:])
 		if m[1] != base {
 			continue
 		}
@@ -235,18 +240,45 @@ func refuseCompile(c *contract.Contracts, dir, base, src, out string) error {
 	return fmt.Errorf("test file does not compile against the contract: %s", strings.Join(msgs, "; "))
 }
 
+// diagContinuation is the tab-indented lines that follow a diagnostic line
+// (the have and want lists of a wrong argument count), with their newlines.
+func diagContinuation(rest string) string {
+	var b strings.Builder
+	for _, l := range strings.Split(rest, "\n")[1:] {
+		if !strings.HasPrefix(l, "\t") {
+			break
+		}
+		b.WriteString("\n" + l)
+	}
+	return b.String()
+}
+
 // compileMessage is the fixed phrase for one diagnostic. diag is read for its
 // class only and never copied.
 func compileMessage(c *contract.Contracts, dir, src, line string, n int, diag string) string {
+	safe := newSafeNames(c, dir)
 	switch {
 	case strings.Contains(diag, "imported and not used") || strings.Contains(diag, "imported as") && strings.Contains(diag, "not used"):
 		return fmt.Sprintf("unused import at line %d", n)
+	case strings.Contains(diag, "declared and not used") || strings.Contains(diag, "declared but not used"):
+		return fmt.Sprintf("unused variable at line %d", n)
+	case strings.Contains(diag, "missing return"):
+		return fmt.Sprintf("missing return at line %d", n)
+	case strings.Contains(diag, "arguments in call to"):
+		if m := richArgCount(safe, n, diag); m != "" {
+			return m
+		}
+		return fmt.Sprintf("wrong number of arguments at line %d", n)
+	case richNoField(safe, n, diag) != "":
+		return richNoField(safe, n, diag)
 	case strings.Contains(diag, "undefined") || strings.Contains(diag, "not exported") || strings.Contains(diag, "unexported"):
 		clause := testClause(src)
 		if name := unexportedCalled(c, dir, line); name != "" && strings.HasSuffix(clause, "_test") {
 			return fmt.Sprintf("undefined name at line %d: %s", n, unexportedRefusal(strings.TrimSuffix(clause, "_test")))
 		}
 		return fmt.Sprintf("undefined name at line %d: the function under test is called as the package provides it (an external test package cannot call an unexported name; use package %s for unexported functions)", n, strings.TrimSuffix(clause, "_test"))
+	case richMismatch(safe, n, diag) != "":
+		return richMismatch(safe, n, diag)
 	case strings.Contains(diag, "cannot use") || strings.Contains(diag, "mismatched types") ||
 		strings.Contains(diag, "invalid composite literal") || strings.Contains(diag, "cannot convert") ||
 		strings.Contains(diag, "does not satisfy") || strings.Contains(diag, "incompatible"):
