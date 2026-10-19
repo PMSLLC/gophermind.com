@@ -28,5 +28,6 @@ Rules:
 - `kind` is `decision`, or `fact` with a `fact_key` from: {{.FactKeys}}.
 - Every decision has a `recommended` and a one-sentence `recommended_why`; when there are options it must be one of them.
 - Ask at most {{.MaxQuestions}} more questions.
+- Keep `question` under 1000 bytes (one short sentence), `why_it_matters` under 1000 bytes and `recommended_why` under 500 bytes; longer explanations are cut.
 
 If nothing new is needed, respond with [].

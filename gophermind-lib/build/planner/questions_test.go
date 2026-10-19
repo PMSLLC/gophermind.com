@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 const canaryQ = "CANARY-q-8841"
@@ -373,5 +374,45 @@ func TestParseQuestionListRejectsAnAmbiguousOrUnmatchedRecommendation(t *testing
 		if err == nil || !strings.Contains(err.Error(), "the recommended answer of question 1 must be one of its options") {
 			t.Fatalf("%s: err = %v", name, err)
 		}
+	}
+}
+
+func TestParseQuestionListTruncatesAnOverLongWhy(t *testing.T) {
+	why := strings.Repeat("This matters a great deal. ", 80)
+	rwhy := strings.Repeat("Because it is simplest here ", 40)
+	text := `[{"id":"q1","question":"Which store?","why_it_matters":"` + why + `","recommended":"memory","recommended_why":"` + rwhy + `"}]`
+	got, err := parseQuestionList(text, qstore{}, qparseOpts{MaxTotal: 30, RaisedBy: "clarify"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got[0].Why) > maxQuestionBytes || len(got[0].Why) < maxQuestionBytes-100 || !strings.HasSuffix(got[0].Why, "...") {
+		t.Errorf("why len %d, tail %q", len(got[0].Why), got[0].Why[len(got[0].Why)-10:])
+	}
+	if len(got[0].RecommendedWhy) > maxQuestionBytes/2 || !strings.HasSuffix(got[0].RecommendedWhy, "...") {
+		t.Errorf("recommended_why len %d", len(got[0].RecommendedWhy))
+	}
+}
+
+func TestParseQuestionListTruncatesWithoutCuttingARune(t *testing.T) {
+	for _, s := range []string{strings.Repeat("é", 700), strings.Repeat("日本語 ", 300), strings.Repeat("x", 1005) + "日"} {
+		text := `[{"id":"q1","question":"a?","why_it_matters":"` + s + `","recommended":"y"}]`
+		got, err := parseQuestionList(text, qstore{}, qparseOpts{MaxTotal: 30, RaisedBy: "clarify"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !utf8.ValidString(got[0].Why) || len(got[0].Why) > maxQuestionBytes {
+			t.Errorf("bad truncation: valid=%v len=%d", utf8.ValidString(got[0].Why), len(got[0].Why))
+		}
+	}
+}
+
+func TestParseQuestionListStillRejectsAnOverLongQuestionAndNamesTheField(t *testing.T) {
+	text := `[{"id":"q1","question":"` + canaryQ + strings.Repeat("q", 1001) + `?","recommended":"y"}]`
+	_, err := parseQuestionList(text, qstore{}, qparseOpts{MaxTotal: 30})
+	if err == nil || !strings.Contains(err.Error(), "question 1: the question text is longer than 1000 bytes") {
+		t.Fatalf("err = %v", err)
+	}
+	if strings.Contains(err.Error(), canaryQ) {
+		t.Errorf("the error quotes the reply: %v", err)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"gophermind/gophermind-lib/build/runfs"
 )
@@ -212,6 +213,27 @@ type qparseOpts struct {
 // parseQuestionList reads a Clarify reply. A violation is an error whose text
 // names the rule and the question's position, never its words, so it can be
 // sent back to the model on a retry.
+// clipAtBoundary shortens s to at most max bytes, including a trailing "...",
+// cutting at the last sentence end or whitespace and never inside a rune.
+func clipAtBoundary(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= max {
+		return s
+	}
+	const mark = "..."
+	cut := max - len(mark)
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	head := s[:cut]
+	if i := strings.LastIndexAny(head, ".!?"); i >= cut/2 {
+		head = head[:i+1]
+	} else if i := strings.LastIndexAny(head, " \t\n"); i > 0 {
+		head = head[:i]
+	}
+	return strings.TrimSpace(head) + mark
+}
+
 func parseQuestionList(text string, have qstore, o qparseOpts) ([]qrec, error) {
 	var raw []struct {
 		ID             string   `json:"id"`
@@ -258,9 +280,13 @@ func parseQuestionList(text string, have qstore, o qparseOpts) ([]qrec, error) {
 		if text == "" {
 			return nil, fmt.Errorf("clarify reply: question %d has no text", n)
 		}
-		if len(text) > maxQuestionBytes || len(x.Why) > maxQuestionBytes || len(x.RecommendedWhy) > maxQuestionBytes/2 {
-			return nil, fmt.Errorf("clarify reply: question %d is too long", n)
+		if len(text) > maxQuestionBytes {
+			return nil, fmt.Errorf("clarify reply: question %d: the question text is longer than %d bytes; ask it in one short sentence", n, maxQuestionBytes)
 		}
+		// The explanatory fields are context, not the question: shorten them
+		// rather than refuse a reply that cost a whole model call.
+		x.Why = clipAtBoundary(x.Why, maxQuestionBytes)
+		x.RecommendedWhy = clipAtBoundary(x.RecommendedWhy, maxQuestionBytes/2)
 		kind := x.Kind
 		switch kind {
 		case "":

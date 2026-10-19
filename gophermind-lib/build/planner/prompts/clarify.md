@@ -25,5 +25,6 @@ Rules:
 - `kind` is `decision` for something only the owner can decide. Use `fact` only when a known fact above answers the question, and then also set `fact_key` to one of: {{.FactKeys}}.
 - `options` is either empty (a free-text answer) or 2 to 8 distinct choices. `recommended` is your best answer and, when there are options, must be one of them. Every decision has a `recommended` and a one-sentence `recommended_why`.
 - Ask at most {{.MaxQuestions}} questions in total.
+- Keep `question` under 1000 bytes (one short sentence), `why_it_matters` under 1000 bytes and `recommended_why` under 500 bytes; longer explanations are cut.
 
 If you have no questions, respond with [].
