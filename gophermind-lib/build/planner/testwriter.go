@@ -10,6 +10,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"os"
 	"path"
 	"path/filepath"
@@ -167,9 +168,9 @@ func renderTestwriterWith(node, module, file, funcName, testFile string, sibling
 	data := map[string]string{"MainPackage": mainPkg, "Node": node, "PackageDir": dir,
 		"TestFuncName": funcName, "TestFile": testFile, "Module": module, "ImportPath": importPath,
 		"Imports": qualifierImports(node, siblings)}
-	data["Unexported"], data["Method"], data["Clause"], data["TargetName"] = "", "", "", ""
-	if name, method, ok := unexportedTarget(nodeSignature(node)); ok && mainPkg == "" {
-		data["Unexported"], data["Clause"], data["TargetName"] = "yes", PackageClause(dir), name
+	data["Unexported"], data["Method"], data["Clause"], data["TargetName"], data["Why"] = "", "", "", "", ""
+	if name, method, why := internalTarget(nodeSignature(node)); why != whyNone && mainPkg == "" {
+		data["Unexported"], data["Clause"], data["TargetName"], data["Why"] = "yes", PackageClause(dir), name, whyPrompt(why)
 		if method {
 			data["Method"] = "yes"
 		}
@@ -283,14 +284,23 @@ func nodeSignature(node string) string {
 	return n.Contract.Signature
 }
 
-// unexportedTarget reports whether the function under test, given by its
-// signature, cannot be called from an external test package: an unexported
-// function, or a method whose name or receiver type is unexported. name is the
+// Why a test of the function under test has to live in the package itself.
+const (
+	whyNone  = ""
+	whyFunc  = "function" // the function, or its receiver type, is unexported
+	whyTypes = "types"    // an exported function whose signature uses unexported types
+)
+
+// internalTarget reports whether the function under test, given by its
+// signature, cannot be called from an external test package, and why: an
+// unexported function, a method whose name or receiver type is unexported, or a
+// signature that mentions an unexported type of the package (an unqualified,
+// non-predeclared, lower-case name that is not a type parameter). name is the
 // declared name; method says it has a receiver.
-func unexportedTarget(sig string) (name string, method, ok bool) {
+func internalTarget(sig string) (name string, method bool, why string) {
 	f, err := parser.ParseFile(token.NewFileSet(), "d.go", "package p\n"+sig, 0)
 	if err != nil {
-		return "", false, false
+		return "", false, whyNone
 	}
 	for _, d := range f.Decls {
 		fd, isFn := d.(*ast.FuncDecl)
@@ -298,34 +308,129 @@ func unexportedTarget(sig string) (name string, method, ok bool) {
 			continue
 		}
 		name = fd.Name.Name
-		if fd.Recv == nil || len(fd.Recv.List) == 0 {
-			return name, false, !ast.IsExported(name)
+		tparams := map[string]bool{}
+		if fd.Recv != nil && len(fd.Recv.List) > 0 {
+			method = true
+			t := fd.Recv.List[0].Type
+			for {
+				switch x := t.(type) {
+				case *ast.StarExpr:
+					t = x.X
+					continue
+				case *ast.ParenExpr:
+					t = x.X
+					continue
+				case *ast.IndexExpr:
+					if id, ok := x.Index.(*ast.Ident); ok {
+						tparams[id.Name] = true
+					}
+					t = x.X
+					continue
+				case *ast.IndexListExpr:
+					for _, i := range x.Indices {
+						if id, ok := i.(*ast.Ident); ok {
+							tparams[id.Name] = true
+						}
+					}
+					t = x.X
+					continue
+				}
+				break
+			}
+			if id, isID := t.(*ast.Ident); isID && !ast.IsExported(id.Name) {
+				return name, true, whyFunc
+			}
 		}
-		t := fd.Recv.List[0].Type
-		for {
-			switch x := t.(type) {
-			case *ast.StarExpr:
-				t = x.X
-				continue
-			case *ast.ParenExpr:
-				t = x.X
-				continue
-			case *ast.IndexExpr:
-				t = x.X
-				continue
-			case *ast.IndexListExpr:
-				t = x.X
+		if !ast.IsExported(name) {
+			return name, method, whyFunc
+		}
+		if fd.Type.TypeParams != nil {
+			for _, p := range fd.Type.TypeParams.List {
+				for _, n := range p.Names {
+					tparams[n.Name] = true
+				}
+			}
+		}
+		var exprs []ast.Expr
+		for _, fl := range []*ast.FieldList{fd.Type.TypeParams, fd.Type.Params, fd.Type.Results} {
+			if fl == nil {
 				continue
 			}
-			break
+			for _, p := range fl.List {
+				exprs = append(exprs, p.Type)
+			}
 		}
-		recv := ""
-		if id, isID := t.(*ast.Ident); isID {
-			recv = id.Name
+		for _, e := range exprs {
+			if mentionsUnexported(e, tparams) {
+				return name, method, whyTypes
+			}
 		}
-		return name, true, !ast.IsExported(name) || recv != "" && !ast.IsExported(recv)
+		return name, method, whyNone
 	}
-	return "", false, false
+	return "", false, whyNone
+}
+
+// mentionsUnexported reports whether the type expression uses an unqualified,
+// lower-case name that is neither predeclared nor in skip (type parameters).
+func mentionsUnexported(e ast.Expr, skip map[string]bool) bool {
+	var fields func(fl *ast.FieldList) bool
+	fields = func(fl *ast.FieldList) bool {
+		if fl == nil {
+			return false
+		}
+		for _, f := range fl.List {
+			if mentionsUnexported(f.Type, skip) {
+				return true
+			}
+		}
+		return false
+	}
+	switch x := e.(type) {
+	case *ast.Ident:
+		if x.Name == "_" || ast.IsExported(x.Name) || skip[x.Name] {
+			return false
+		}
+		if obj := types.Universe.Lookup(x.Name); obj != nil {
+			if _, ok := obj.(*types.TypeName); ok {
+				return false
+			}
+		}
+		return true
+	case *ast.StarExpr:
+		return mentionsUnexported(x.X, skip)
+	case *ast.ParenExpr:
+		return mentionsUnexported(x.X, skip)
+	case *ast.Ellipsis:
+		return x.Elt != nil && mentionsUnexported(x.Elt, skip)
+	case *ast.ArrayType:
+		return mentionsUnexported(x.Elt, skip)
+	case *ast.MapType:
+		return mentionsUnexported(x.Key, skip) || mentionsUnexported(x.Value, skip)
+	case *ast.ChanType:
+		return mentionsUnexported(x.Value, skip)
+	case *ast.FuncType:
+		return fields(x.Params) || fields(x.Results)
+	case *ast.StructType:
+		return fields(x.Fields)
+	case *ast.InterfaceType:
+		return fields(x.Methods)
+	case *ast.IndexExpr:
+		return mentionsUnexported(x.X, skip) || mentionsUnexported(x.Index, skip)
+	case *ast.IndexListExpr:
+		if mentionsUnexported(x.X, skip) {
+			return true
+		}
+		for _, i := range x.Indices {
+			if mentionsUnexported(i, skip) {
+				return true
+			}
+		}
+	case *ast.BinaryExpr:
+		return mentionsUnexported(x.X, skip) || mentionsUnexported(x.Y, skip)
+	case *ast.UnaryExpr:
+		return mentionsUnexported(x.X, skip)
+	}
+	return false
 }
 
 // writeTests makes the model call for one node and writes its test file.
@@ -561,8 +666,8 @@ func parseTestwriteIn(text string, ct map[string]any, pkg, funcName, module stri
 		return nil, "", err
 	}
 	sig, _ := ct["signature"].(string)
-	_, _, unexported := unexportedTarget(sig)
-	if err := checkTestSourceIn(reply.TestFile, pkg, funcName, module, unexported, pkgs); err != nil {
+	_, _, why := internalTarget(sig)
+	if err := checkTestSourceIn(reply.TestFile, pkg, funcName, module, why, pkgs); err != nil {
 		return nil, "", err
 	}
 	if contains(hooks, "bench") && !hasBenchmark(reply.TestFile, funcName) {
@@ -643,19 +748,33 @@ func checkCommentVolume(fset *token.FileSet, f *ast.File, src string) error {
 
 // checkTestSource refuses a test file that is not the one asked for.
 func checkTestSource(src, pkg, funcName, module string) error {
-	return checkTestSourceFor(src, pkg, funcName, module, false)
+	return checkTestSourceFor(src, pkg, funcName, module, whyNone)
 }
 
-// unexportedRefusal is the refusal for an external test package around an
-// unexported function under test. It quotes nothing from the reply.
-func unexportedRefusal(clause string) string {
-	return fmt.Sprintf("the function under test is unexported, so the test file must declare package %s (not %s_test) and call it without a qualifier", clause, clause)
+// whyPrompt is the opening clause of the prompt's internal-test block.
+func whyPrompt(why string) string {
+	if why == whyTypes {
+		return "The signature of the function under test uses unexported types, which only code in the same package can build"
+	}
+	return "The function under test is unexported"
 }
 
-// checkTestSourceFor is checkTestSource that also knows whether the function
-// under test is unexported. Then only the plain package clause is accepted.
-func checkTestSourceFor(src, pkg, funcName, module string, unexported bool) error {
-	return checkTestSourceIn(src, pkg, funcName, module, unexported, importSet{})
+// unexportedRefusal is the refusal for an external test package around a
+// function under test that only the package itself can call or build
+// arguments for. It quotes nothing from the reply.
+func unexportedRefusal(clause, why string) string {
+	reason := "the function under test is unexported"
+	if why == whyTypes {
+		reason = "the signature of the function under test uses unexported types, which only code in the same package can build"
+	}
+	return fmt.Sprintf("%s, so the test file must declare package %s (not %s_test) and call it without a qualifier", reason, clause, clause)
+}
+
+// checkTestSourceFor is checkTestSource that also knows why (whyNone, whyFunc,
+// whyTypes) the test has to be internal. Then only the plain package clause is
+// accepted.
+func checkTestSourceFor(src, pkg, funcName, module, why string) error {
+	return checkTestSourceIn(src, pkg, funcName, module, why, importSet{})
 }
 
 // importSet is what the contract says about the packages of this module. A zero
@@ -687,7 +806,7 @@ func importRefusal(module string, pkgs importSet) string {
 
 // checkTestSourceIn is checkTestSourceFor that also checks the imports under
 // the module path against the contract's packages when pkgs is known.
-func checkTestSourceIn(src, pkg, funcName, module string, unexported bool, pkgs importSet) error {
+func checkTestSourceIn(src, pkg, funcName, module, why string, pkgs importSet) error {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "", src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
@@ -696,9 +815,9 @@ func checkTestSourceIn(src, pkg, funcName, module string, unexported bool, pkgs 
 	if err := checkCommentVolume(fset, f, src); err != nil {
 		return err
 	}
-	if unexported && PackageClause(pkg) != "main" {
+	if why != whyNone && PackageClause(pkg) != "main" {
 		if clause := path.Base(pkg); f.Name.Name == clause+"_test" {
-			return errors.New(unexportedRefusal(clause))
+			return errors.New(unexportedRefusal(clause, why))
 		}
 	}
 	if names := packageClauseNames(pkg); !slices.Contains(names, f.Name.Name) {

@@ -49,7 +49,7 @@ func TestPromptWithoutQualifiersListsNone(t *testing.T) {
 
 func TestImportRefusalNamesModuleAndPackagesNotTheReply(t *testing.T) {
 	for _, bad := range []string{"gophermind/internal/stats", "csvstat/stats", "csvstat/internal/nothere", "github.com/x/y"} {
-		err := checkTestSourceIn(impSrc(bad), "internal/render", "TestRenderText", impMod, false, impSet())
+		err := checkTestSourceIn(impSrc(bad), "internal/render", "TestRenderText", impMod, whyNone, impSet())
 		if err == nil {
 			t.Fatalf("%s accepted", bad)
 		}
@@ -65,7 +65,7 @@ func TestImportRefusalNamesModuleAndPackagesNotTheReply(t *testing.T) {
 }
 
 func TestImportOfContractPackageAccepted(t *testing.T) {
-	if err := checkTestSourceIn(impSrc("csvstat/internal/stats"), "internal/render", "TestRenderText", impMod, false, impSet()); err != nil {
+	if err := checkTestSourceIn(impSrc("csvstat/internal/stats"), "internal/render", "TestRenderText", impMod, whyNone, impSet()); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -273,8 +273,8 @@ func compileMessage(c *contract.Contracts, dir, src, line string, n int, diag st
 		return richNoField(safe, n, diag)
 	case strings.Contains(diag, "undefined") || strings.Contains(diag, "not exported") || strings.Contains(diag, "unexported"):
 		clause := testClause(src)
-		if name := unexportedCalled(c, dir, line); name != "" && strings.HasSuffix(clause, "_test") {
-			return fmt.Sprintf("undefined name at line %d: %s", n, unexportedRefusal(strings.TrimSuffix(clause, "_test")))
+		if why := unexportedCalled(c, dir, line); why != whyNone && strings.HasSuffix(clause, "_test") {
+			return fmt.Sprintf("undefined name at line %d: %s", n, unexportedRefusal(strings.TrimSuffix(clause, "_test"), why))
 		}
 		return fmt.Sprintf("undefined name at line %d: the function under test is called as the package provides it (an external test package cannot call an unexported name; use package %s for unexported functions)", n, strings.TrimSuffix(clause, "_test"))
 	case richMismatch(safe, n, diag) != "":
@@ -295,10 +295,24 @@ func testClause(src string) string {
 	return f.Name.Name
 }
 
-// unexportedCalled is the name of an unexported contract function of dir that
-// the source line selects (pkg.name), or "". Only declared contract names are
-// ever returned.
+// unexportedCalled says why (whyFunc or whyTypes) the source line fails: it
+// selects (pkg.name) an unexported contract function of dir, or an unexported
+// contract type of dir. "" when it selects neither. Only declared contract
+// names are ever matched, and nothing from the line is returned.
 func unexportedCalled(c *contract.Contracts, dir, line string) string {
+	selects := func(name string) bool {
+		return regexp.MustCompile(`\.` + regexp.QuoteMeta(name) + `\b`).MatchString(line)
+	}
+	for _, t := range c.Types {
+		if FileDirIn(c.Module, t.Package, t.File) != dir {
+			continue
+		}
+		for _, n := range declNames(t.Decl) {
+			if !ast.IsExported(n) && selects(n) {
+				return whyTypes
+			}
+		}
+	}
 	for _, fn := range c.Functions {
 		if FileDirIn(c.Module, fn.Package, fn.File) != dir {
 			continue
@@ -308,12 +322,10 @@ func unexportedCalled(c *contract.Contracts, dir, line string) string {
 			continue
 		}
 		for _, d := range f.Decls {
-			if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv == nil && !ast.IsExported(fd.Name.Name) {
-				if strings.Contains(line, "."+fd.Name.Name) {
-					return fd.Name.Name
-				}
+			if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv == nil && !ast.IsExported(fd.Name.Name) && selects(fd.Name.Name) {
+				return whyFunc
 			}
 		}
 	}
-	return ""
+	return whyNone
 }
