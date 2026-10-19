@@ -251,3 +251,53 @@ func TestBareFileNameIsNormalizedWithAWarning(t *testing.T) {
 		t.Error("no file_path_normalized warning with a count")
 	}
 }
+
+// A function that shares its file with another function is given a file of its
+// own, with a visible warning that lists function ids only.
+func TestSharedFunctionFileIsMadeUniqueWithAWarning(t *testing.T) {
+	g := brokenRig(t, "doc", map[string]string{
+		"contract._schema.txt": `{"types": [], "functions": [{"id": "fn-g135", "doc": "G135 is the last one."}]}`,
+	})
+	path := filepath.Join(g.runDir, "_state", "contract.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st map[string]any
+	if err := json.Unmarshal(raw, &st); err != nil {
+		t.Fatal(err)
+	}
+	var shared string
+	for _, f := range st["doc"].(map[string]any)["functions"].([]any) {
+		m := f.(map[string]any)
+		if m["id"] != "fn-g135" && shared == "" {
+			shared, _ = m["file"].(string)
+		}
+	}
+	for _, f := range st["doc"].(map[string]any)["functions"].([]any) {
+		if m := f.(map[string]any); m["id"] == "fn-g135" {
+			m["file"] = shared
+		}
+	}
+	out, _ := json.Marshal(st)
+	if err := os.WriteFile(path, out, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	g.mustPlan(planner.Options{RunID: greeterID, StopAfter: "contract"})
+	seen := map[string]string{}
+	for _, f := range g.contracts().Functions {
+		if other, dup := seen[f.File]; dup {
+			t.Errorf("%s and %s share %s", other, f.ID, f.File)
+		}
+		seen[f.File] = f.ID
+	}
+	found := false
+	for _, e := range g.sink.OfKind(events.KindWarning) {
+		if strings.HasPrefix(e.Message, "function_file_unique: ") && strings.Contains(e.Message, "fn-g135") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("no function_file_unique warning naming fn-g135")
+	}
+}

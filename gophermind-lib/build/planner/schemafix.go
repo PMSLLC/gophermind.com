@@ -500,6 +500,18 @@ func (p *Planner) normalizeQualifiers(r *run, st *contractState) error {
 			return err
 		}
 	}
+	if ids := uniqueFunctionFilesDoc(st.Doc); len(ids) > 0 {
+		shown := ids
+		if len(shown) > maxUnresolvedInError {
+			shown = shown[:maxUnresolvedInError]
+		}
+		p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
+			"function_file_unique: %d functions shared a file with another function or a type and were given a file of their own (%s)",
+			len(ids), strings.Join(shown, ", ")))
+		if err := writeJSON(r.path(stateContract), st); err != nil {
+			return err
+		}
+	}
 	n, ex := normalizeSignatureQualifiers(st.Doc)
 	fq, fex, amb := qualifyForeignTypes(st.Doc)
 	if len(amb) > 0 {

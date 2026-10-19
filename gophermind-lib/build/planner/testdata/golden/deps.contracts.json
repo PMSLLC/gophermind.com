@@ -37,7 +37,7 @@
     {
       "component": "types",
       "doc": "Error returns the reason, so *NameError satisfies error.",
-      "file": "internal/greet/errors.go",
+      "file": "internal/greet/name_error_error.go",
       "id": "fn-name-error-error",
       "package": "greet",
       "signature": "func (e *NameError) Error() string",

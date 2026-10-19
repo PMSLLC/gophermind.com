@@ -33,7 +33,7 @@
     {
       "component": "csvstat",
       "doc": "Summarize builds a Summary using Mean.",
-      "file": "internal/stat/summary.go",
+      "file": "internal/stat/summarize.go",
       "id": "fn-summarize",
       "package": "stat",
       "signature": "func Summarize(xs []float64) (Summary, error)",

@@ -48,6 +48,7 @@ type Plan struct {
 	keys    map[string]string // node id -> "tree/<path>"
 	rootNet []NetHost
 	fns     map[string]contract.Function
+	moved   map[string]string // function id -> its file in the saved contract, for functions given a file of their own
 	revMu   sync.Mutex
 	// chainMu orders the writes of a revision transaction (each one under the
 	// write lock) against planIntact's re-proof of the chains (the read lock),
@@ -211,7 +212,7 @@ func LoadPlan(runDir, repo string) (*Plan, error) {
 		return nil, fmt.Errorf("executor: _state/acceptance_tests.json is not readable (%s)", planner.JSONErr(err))
 	}
 
-	fns := indexFunctions(c)
+	fns, moved := indexFunctionsMoved(c)
 	rootNet, err := rootNetwork(tr, c.BriefID)
 	if err != nil {
 		return nil, err
@@ -222,7 +223,7 @@ func LoadPlan(runDir, repo string) (*Plan, error) {
 		Brief: b, BriefRepo: b.Front.Repo, Contracts: c,
 		byID: map[string]*Leaf{}, Requirements: reqs, Coverage: cov, Deps: deps, Classes: classes, Hashes: hashes,
 		Serve: cov.Serve, AcceptTests: accept,
-		Revised: revised, keys: map[string]string{}, rootNet: rootNet, fns: fns,
+		Revised: revised, keys: map[string]string{}, rootNet: rootNet, fns: fns, moved: moved,
 	}
 	if err := p.checkAcceptTests(repo); err != nil {
 		return nil, err
@@ -251,6 +252,9 @@ func LoadPlan(runDir, repo string) (*Plan, error) {
 			return nil, fmt.Errorf("executor: function %s of contracts.json has no node", f.ID)
 		}
 	}
+	if err := checkLeafFiles(c, p.Leaves); err != nil {
+		return nil, err
+	}
 	// brief.md and contracts.json were read after the first check. Checking
 	// the approval again now refuses a plan that changed in between.
 	if err := planner.VerifyApproval(runDir); err != nil {
@@ -268,12 +272,45 @@ func LoadPlan(runDir, repo string) (*Plan, error) {
 // written before the planner did so holds bare file names; the approved bytes
 // on disk are not touched) and indexes its functions by id.
 func indexFunctions(c *contract.Contracts) map[string]contract.Function {
+	fns, _ := indexFunctionsMoved(c)
+	return fns
+}
+
+// indexFunctionsMoved is indexFunctions that also gives every function a file
+// of its own (planner.UniqueFunctionFiles): a swap writes a reply whole into the
+// leaf's file, so a file shared with another function or a type would be
+// overwritten. A saved contract written before the planner did so benefits on
+// resume. moved is the file each moved function had in the saved contract,
+// which is the file its node still carries.
+func indexFunctionsMoved(c *contract.Contracts) (fns map[string]contract.Function, moved map[string]string) {
 	planner.NormalizeContractFiles(c)
-	fns := map[string]contract.Function{}
+	moved = planner.UniqueFunctionFiles(c)
+	fns = map[string]contract.Function{}
 	for _, f := range c.Functions {
 		fns[f.ID] = f
 	}
-	return fns
+	return fns, moved
+}
+
+// checkLeafFiles refuses a plan in which two leaves share a file or a leaf's
+// file is a contract type's file: the swap of one would destroy the other. It
+// names ids only.
+func checkLeafFiles(c *contract.Contracts, leaves []*Leaf) error {
+	typeOf := map[string]string{}
+	for _, t := range c.Types {
+		typeOf[t.File] = t.ID
+	}
+	owner := map[string]string{}
+	for _, l := range leaves {
+		if id, ok := typeOf[l.File]; ok {
+			return fmt.Errorf("executor: leaf %s has the same file as type %s", l.ID, id)
+		}
+		if o, ok := owner[l.File]; ok {
+			return fmt.Errorf("executor: leaves %s and %s have the same file", o, l.ID)
+		}
+		owner[l.File] = l.ID
+	}
+	return nil
 }
 
 func (p *Plan) leaf(n tree.Node, rootNet []NetHost, fns map[string]contract.Function, tests map[string]planner.LeafTest, repo string) (*Leaf, error) {
@@ -292,6 +329,11 @@ func (p *Plan) leaf(n tree.Node, rootNet []NetHost, fns map[string]contract.Func
 	f, ok := fns[funcID]
 	// A run written before the planner normalized file names holds bare names.
 	file := planner.RepoFile(p.Contracts.Module, d.Contract.Package, d.Contract.File)
+	// A function moved off a shared file (indexFunctionsMoved) has its old file in
+	// its node; the leaf uses the contract's.
+	if old, isMoved := p.moved[funcID]; isMoved && file == old {
+		file = f.File
+	}
 	if !ok || f.File != file || f.Signature != d.Contract.Signature || f.Package != d.Contract.Package {
 		return nil, fmt.Errorf("executor: leaf %s does not match contracts.json", n.ID)
 	}

@@ -15,7 +15,7 @@ var csvstatFiles = map[string]string{
  "types": [{"id": "summary", "package": "stat", "file": "internal/stat/summary.go", "decl": "// Summary holds column statistics.\ntype Summary struct {\n\tMean float64\n}"}]}`,
 	"contract.csvstat.txt": `{"types": [], "functions": [
   {"id": "fn-mean", "package": "stat", "file": "internal/stat/mean.go", "signature": "func Mean(xs []float64) (float64, error)", "doc": "Mean averages xs. An empty slice is an error.", "uses": []},
-  {"id": "fn-summarize", "package": "stat", "file": "internal/stat/summary.go", "signature": "func Summarize(xs []float64) (Summary, error)", "doc": "Summarize builds a Summary using Mean.", "uses": ["summary", "fn-mean"]}
+  {"id": "fn-summarize", "package": "stat", "file": "internal/stat/summarize.go", "signature": "func Summarize(xs []float64) (Summary, error)", "doc": "Summarize builds a Summary using Mean.", "uses": ["summary", "fn-mean"]}
 ], "more": false}`,
 }
 
