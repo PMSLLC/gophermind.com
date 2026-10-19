@@ -323,3 +323,17 @@ func TestSharedGoCacheIsContentAddressedAndResultsAreNotCached(t *testing.T) {
 		t.Fatalf("the test ran %d times for 3 checks (err %v): go test served a cached result", strings.Count(string(raw), "x"), err)
 	}
 }
+
+// A stub exits with status 86 instead of panicking. go test reports that as a
+// failing package, so the unit-test red check still sees a failure.
+func TestTestAgainstExitingStubIsNotAPass(t *testing.T) {
+	g := newRig(t, map[string]string{
+		"a/a_test.go":          "package a\n\nimport \"testing\"\n\nfunc TestF(t *testing.T) {\n\tif F() != 1 {\n\t\tt.Fatal(\"bad\")\n\t}\n}\n",
+		"a/zz_gm_stub_fn-f.go": "package a\n\nimport gmos \"os\"\n\nfunc F() int {\n\tgmos.Stderr.WriteString(\"gm: not implemented\\n\")\n\tgmos.Exit(86)\n\tpanic(\"gm: not implemented\")\n}\n",
+	})
+	v := g.r.Test(context.Background(), TestSet{Repo: g.repo, Pkg: "./a", Funcs: []string{"TestF"}, Env: g.env, Timeout: time.Minute})
+	if v.Pass() {
+		t.Fatalf("a test over an exiting stub passed: class %q", v.Class)
+	}
+	t.Logf("class %q reason %q", v.Class, v.Reason())
+}

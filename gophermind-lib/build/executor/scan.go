@@ -211,6 +211,9 @@ func ScanGoSource(rel string, src []byte) ([]Finding, error) {
 		if fd, ok := decl.(*ast.FuncDecl); ok && fd.Recv == nil && fd.Name.Name == "main" && isMain {
 			continue // the one place a process may end itself
 		}
+		if fd, ok := decl.(*ast.FuncDecl); ok && strings.HasPrefix(path.Base(rel), "zz_gm_stub_") && isStubBody(fd, pkgOf) {
+			continue // a harness stub: its exit with StubExitStatus is how it fails loudly
+		}
 		sels := map[*ast.Ident]bool{}
 		ast.Inspect(decl, func(n ast.Node) bool {
 			switch x := n.(type) {
@@ -258,6 +261,51 @@ func ScanGoSource(rel string, src []byte) ([]Finding, error) {
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Line < out[j].Line })
 	return out, nil
+}
+
+// isStubBody is true when fd's body is exactly the stub body: write
+// StubMessage to os.Stderr, os.Exit(StubExitStatus), panic(StubMessage), with
+// os bound to the name gmos. Nothing else in a stub file is exempt.
+func isStubBody(fd *ast.FuncDecl, pkgOf map[string]string) bool {
+	if fd.Body == nil || len(fd.Body.List) != 3 || pkgOf["gmos"] != "os" {
+		return false
+	}
+	call := func(i int) *ast.CallExpr {
+		es, ok := fd.Body.List[i].(*ast.ExprStmt)
+		if !ok {
+			return nil
+		}
+		c, _ := es.X.(*ast.CallExpr)
+		return c
+	}
+	lit := func(c *ast.CallExpr, want string) bool {
+		if c == nil || len(c.Args) != 1 {
+			return false
+		}
+		bl, ok := c.Args[0].(*ast.BasicLit)
+		return ok && bl.Value == want
+	}
+	w, e, pn := call(0), call(1), call(2)
+	if w == nil || e == nil || pn == nil {
+		return false
+	}
+	sel, ok := w.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "WriteString" {
+		return false
+	}
+	if inner, ok := sel.X.(*ast.SelectorExpr); !ok || inner.Sel.Name != "Stderr" || !isIdent(inner.X, "gmos") {
+		return false
+	}
+	if es, ok := e.Fun.(*ast.SelectorExpr); !ok || es.Sel.Name != "Exit" || !isIdent(es.X, "gmos") {
+		return false
+	}
+	return lit(w, strconv.Quote(StubMessage+"\n")) && lit(e, strconv.Itoa(StubExitStatus)) &&
+		isIdent(pn.Fun, "panic") && lit(pn, strconv.Quote(StubMessage))
+}
+
+func isIdent(e ast.Expr, name string) bool {
+	id, ok := e.(*ast.Ident)
+	return ok && id.Name == name
 }
 
 func cleanRel(rel string) bool {

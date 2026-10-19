@@ -151,6 +151,9 @@ func materializeContract(root string, c *contract.Contracts) bool {
 	}
 	for i, f := range c.Functions {
 		dir := FileDirIn(c.Module, f.Package, f.File)
+		// Only compiled here, never run, so the panic body is enough: the executor's
+		// stubs also print and exit with status 86, which needs an os import this
+		// scratch assembly does not resolve. A panic body compiles the same way.
 		decl := f.Signature + " {\n\tpanic(\"gm: not implemented\")\n}"
 		body, ok := assembleFile(c.Module, dir, PackageClause(f.Package), decl, siblings)
 		if !ok || !write(path.Join(dir, "zz_gm_stub_"+strconv.Itoa(i)+".go"), body) {

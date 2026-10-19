@@ -17,6 +17,9 @@ import (
 
 const panicLine = `panic("gm: not implemented")`
 
+// stubBodyText is the body every stub has: the message, exit 86, the panic.
+const stubBodyText = "\tgmos.Stderr.WriteString(\"gm: not implemented\\n\")\n\tgmos.Exit(86)\n\t" + panicLine
+
 func goIn(t *testing.T, dir string, args ...string) (string, error) {
 	t.Helper()
 	cmd := exec.Command("go", args...)
@@ -59,7 +62,7 @@ func TestStubSource(t *testing.T) {
 					t.Errorf("stub lacks import %s", imp)
 				}
 			}
-			if !strings.Contains(string(src), tc.sig+" {\n\t"+panicLine+"\n}\n") {
+			if !strings.Contains(string(src), tc.sig+" {\n"+stubBodyText+"\n}\n") {
 				t.Fatalf("stub body is not exactly the panic line:\n%s", src)
 			}
 			if strings.Count(string(src), "return") != 0 {
@@ -116,10 +119,10 @@ func TestStubForGreeterLeaves(t *testing.T) {
 		if imp != "" && !strings.Contains(string(src), `"`+imp+`"`) {
 			t.Errorf("%s: stub lacks %s", id, imp)
 		}
-		if imp == "" && strings.Contains(string(src), "import") {
+		if imp == "" && strings.Count(string(src), "\"") != 4+2*strings.Count(l.Signature, "\"") && strings.Contains(string(src), "import (\n\t\"") {
 			t.Errorf("%s: stub has imports it does not need", id)
 		}
-		if !strings.Contains(string(src), l.Signature+" {\n\t"+panicLine+"\n}") {
+		if !strings.Contains(string(src), l.Signature+" {\n"+stubBodyText+"\n}") {
 			t.Errorf("%s: wrong body", id)
 		}
 	}
@@ -238,7 +241,127 @@ func TestStubForQualifiedForeignTypeImportsItsPackage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stub does not parse: %v", err)
 	}
-	if len(f.Imports) != 1 || f.Imports[0].Path.Value != `"github.com/example/csvstat/internal/stats"` {
-		t.Fatalf("imports = %v\n%s", f.Imports, src)
+	if len(f.Imports) != 2 || f.Imports[0].Path.Value != `"github.com/example/csvstat/internal/stats"` ||
+		f.Imports[1].Path.Value != `"os"` || f.Imports[1].Name == nil || f.Imports[1].Name.Name != "gmos" {
+		t.Fatalf("want the stats import and os as gmos\n%s", src)
+	}
+}
+
+// runStub builds a one-file module of src (package main gets a main that calls
+// call) and runs it, returning the exit status and stderr.
+func runStub(t *testing.T, src []byte, mainSrc string) (int, string) {
+	t.Helper()
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "go.mod"), "module example.com/stubrun\n\ngo 1.22\n")
+	write(t, filepath.Join(dir, "zz_gm_stub_fn.go"), string(src))
+	write(t, filepath.Join(dir, "main.go"), mainSrc)
+	if out, err := goIn(t, dir, "vet", "./..."); err != nil {
+		t.Fatalf("go vet: %v\n%s", err, out)
+	}
+	bin := filepath.Join(dir, "bin")
+	if out, err := goIn(t, dir, "build", "-o", bin, "."); err != nil {
+		t.Fatalf("go build: %v\n%s", err, out)
+	}
+	cmd := exec.Command(bin)
+	var errb strings.Builder
+	cmd.Stderr = &errb
+	err := cmd.Run()
+	if err == nil {
+		return 0, errb.String()
+	}
+	ee, ok := err.(*exec.ExitError)
+	if !ok {
+		t.Fatal(err)
+	}
+	return ee.ExitCode(), errb.String()
+}
+
+func TestStubExitsWithDistinctStatusNotPanicStatus(t *testing.T) {
+	tests := []struct{ name, sig, call string }{
+		{"no results", "func run()", "run()"},
+		{"results", "func count(s string) (n int, err error)", "count(\"x\")"},
+		{"result with os in signature", "func open(f *os.File) *os.File", "open(nil)"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var imports []string
+			if strings.Contains(tc.sig, "os.") {
+				imports = []string{"os"}
+			}
+			src, err := StubSource("main", tc.sig, imports)
+			if err != nil {
+				t.Fatal(err)
+			}
+			code, stderr := runStub(t, src, "package main\n\nfunc main() { "+tc.call+" }\n")
+			if code != 86 {
+				t.Fatalf("exit status = %d, want 86 (a panic would be 2)", code)
+			}
+			if !strings.Contains(stderr, "gm: not implemented") {
+				t.Fatalf("stderr = %q", stderr)
+			}
+		})
+	}
+}
+
+func TestStubSupportsLibraryPackageUnderVet(t *testing.T) {
+	src, err := StubSource("lib", "func Parse(s string) (map[string]int, error)", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "go.mod"), "module example.com/lib\n\ngo 1.22\n")
+	write(t, filepath.Join(dir, "zz_gm_stub_fn-a.go"), string(src))
+	write(t, filepath.Join(dir, "lib_test.go"), "package lib\n\nimport \"testing\"\n\nfunc TestParse(t *testing.T) { Parse(\"x\") }\n")
+	if out, err := goIn(t, dir, "vet", "./..."); err != nil {
+		t.Fatalf("go vet: %v\n%s", err, out)
+	}
+	out, err := goIn(t, dir, "test", "./...")
+	if err == nil || !strings.Contains(out, "gm: not implemented") || !strings.Contains(out, "FAIL") {
+		t.Fatalf("a test over a stub must fail and print the message (err %v):\n%s", err, out)
+	}
+}
+
+// Two stubs in one package each carry their own exit, so a second stub never
+// redeclares a helper, and removing a stub file removes everything of it.
+func TestTwoStubsOneDirectoryCompileAndCarryTheirOwnExit(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "go.mod"), "module example.com/two\n\ngo 1.22\n")
+	for i, sig := range []string{"func A() int", "func B() error"} {
+		src, err := StubSource("two", sig, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		write(t, filepath.Join(dir, "zz_gm_stub_fn-"+string(rune('a'+i))+".go"), string(src))
+	}
+	if out, err := goIn(t, dir, "vet", "./..."); err != nil {
+		t.Fatalf("go vet: %v\n%s", err, out)
+	}
+	if err := os.Remove(filepath.Join(dir, "zz_gm_stub_fn-a.go")); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "a.go"), "package two\n\nfunc A() int { return 1 }\n")
+	if out, err := goIn(t, dir, "vet", "./..."); err != nil {
+		t.Fatalf("go vet after one stub was replaced: %v\n%s", err, out)
+	}
+}
+
+func TestScanAcceptsStubBodyButNotOtherExits(t *testing.T) {
+	src, err := StubSource("main", "func run() int", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fs, err := ScanGoSource("zz_gm_stub_fn-run.go", src); err != nil || len(fs) != 0 {
+		t.Fatalf("a stub was flagged: %v %v", fs, err)
+	}
+	if fs, _ := ScanGoSource("run.go", src); len(fs) == 0 {
+		t.Fatal("a stub body outside a stub file name must still be flagged")
+	}
+	evil := strings.Replace(string(src), "gmos.Exit(86)", "gmos.Exit(0)", 1)
+	if fs, _ := ScanGoSource("zz_gm_stub_fn-run.go", []byte(evil)); len(fs) == 0 {
+		t.Fatal("a stub that exits with another status must be flagged")
+	}
+	extra := string(src) + "\nfunc init() { gmos.Exit(0) }\n"
+	if fs, _ := ScanGoSource("zz_gm_stub_fn-run.go", []byte(extra)); len(fs) == 0 {
+		t.Fatal("an extra exit in a stub file must be flagged")
 	}
 }
