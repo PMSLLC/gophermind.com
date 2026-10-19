@@ -501,11 +501,24 @@ func (p *Planner) normalizeQualifiers(r *run, st *contractState) error {
 		}
 	}
 	n, ex := normalizeSignatureQualifiers(st.Doc)
-	if n == 0 {
+	fq, fex, amb := qualifyForeignTypes(st.Doc)
+	if len(amb) > 0 {
+		p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
+			"signature_type_ambiguous: %d functions use a bare type name declared in more than one other package (%s)",
+			len(amb), strings.Join(amb, ", ")))
+	}
+	if n > 0 {
+		p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
+			"signature_qualifier_normalized: %d qualifiers on types of the function's own package were removed from signatures (%s)",
+			n, strings.Join(ex, ", ")))
+	}
+	if fq > 0 {
+		p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
+			"signature_type_qualified: %d bare names of types declared in another package were qualified in signatures (%s)",
+			fq, strings.Join(fex, ", ")))
+	}
+	if n == 0 && fq == 0 {
 		return nil
 	}
-	p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
-		"signature_qualifier_normalized: %d qualifiers on types of the function's own package were removed from signatures (%s)",
-		n, strings.Join(ex, ", ")))
 	return writeJSON(r.path(stateContract), st)
 }

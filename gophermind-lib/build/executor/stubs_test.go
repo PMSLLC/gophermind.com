@@ -224,3 +224,21 @@ func TestStubForUnresolvableQualifierSharesThePlannerRule(t *testing.T) {
 		}
 	}
 }
+
+func TestStubForQualifiedForeignTypeImportsItsPackage(t *testing.T) {
+	c := &contract.Contracts{Module: "github.com/example/csvstat",
+		Types:     []contract.Type{{ID: "t-cs", Package: "internal/stats", File: "internal/stats/types.go", Decl: "type ColumnSummary struct{}"}},
+		Functions: []contract.Function{{ID: "fn-render-json", Package: "internal/render", File: "internal/render/r.go", Signature: "func RenderJSON(summaries []stats.ColumnSummary) ([]byte, error)"}}}
+	l := &Leaf{ID: "fn-render-json", Package: "render", File: "internal/render/r.go", Signature: c.Functions[0].Signature, Dir: "internal/render"}
+	src, err := stubFor(c, packer.ImportPolicy{Module: c.Module}, l)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := parser.ParseFile(token.NewFileSet(), "stub.go", src, 0)
+	if err != nil {
+		t.Fatalf("stub does not parse: %v", err)
+	}
+	if len(f.Imports) != 1 || f.Imports[0].Path.Value != `"github.com/example/csvstat/internal/stats"` {
+		t.Fatalf("imports = %v\n%s", f.Imports, src)
+	}
+}
