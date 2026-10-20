@@ -27,7 +27,7 @@ func TestAdoptRefusesWhatTheGateRefuses(t *testing.T) {
 	}{
 		{"forged pass", forgedSrc, "does not satisfy the contract"},
 		{"forbidden import", execImport, "Allowed imports:"},
-		{"not a signature match", "package greet\n\nfunc Greet(name string) string { return name }\n", "does not satisfy the contract"},
+		{"not a signature match", "package greet\n\nfunc Greet(name string) string { return name }\n", noteSignature},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

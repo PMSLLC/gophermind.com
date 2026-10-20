@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -266,19 +267,48 @@ func (g *rig) planOffline(briefPath string, mem *memSecrets, dirs []string) {
 		g.t.Fatal(err)
 	}
 	cfg := planner.FixtureSettings()
-	rt := router.New(cfg, map[string]provider.Provider{"fake": fake}, g.led, g.sink)
+	// A missing scripted reply is a stale fixture, not a transient fault: the
+	// router would exclude the model and wait out a cooldown. Cancel the run at
+	// once with the stage named, and bound any other stall.
+	ctx, cancel := context.WithTimeoutCause(context.Background(), planStallLimit,
+		errors.New("the planner made no progress within "+planStallLimit.String()+" (an unusable scripted reply?)"))
+	defer cancel()
+	ctx, cancelCause := context.WithCancelCause(ctx)
+	defer cancelCause(nil)
+	rt := router.New(cfg, map[string]provider.Provider{"fake": &failFastProvider{Provider: fake, cancel: cancelCause}}, g.led, g.sink)
 	deps := planner.Deps{
 		Caller: rt, Sink: g.sink, Board: g.board, Settings: cfg, LedgerErrors: rt.LedgerErrors,
 		OpenSecrets:  func() (planner.Secrets, error) { return mem, nil },
 		PromptSecret: func(name, purpose string) (string, error) { return canarySecret, nil },
 	}
-	out, err := planner.New(deps).Run(context.Background(), planner.Options{BriefPath: briefPath, Yes: true})
+	out, err := planner.New(deps).Run(ctx, planner.Options{BriefPath: briefPath, Yes: true})
+	if cause := context.Cause(ctx); cause != nil {
+		g.t.Fatalf("planner.Run stopped: %v", cause)
+	}
 	if err != nil || out != planner.Done {
 		g.t.Fatalf("planner.Run = %q, %v; want done", out, err)
 	}
 	if v, ok := mem.Get(vault.RunScope(g.id), greeterSecret); !ok || v != canarySecret {
 		g.t.Fatal("the planner did not store the brief's secret")
 	}
+}
+
+// planStallLimit bounds the offline planning of a rig; a healthy plan takes seconds.
+const planStallLimit = 90 * time.Second
+
+// failFastProvider cancels the planning run the first time the fixture provider
+// has no reply for a stage, with the provider's message (it names the stage).
+type failFastProvider struct {
+	provider.Provider
+	cancel context.CancelCauseFunc
+}
+
+func (f *failFastProvider) Complete(ctx context.Context, req provider.Request) (provider.Response, error) {
+	resp, err := f.Provider.Complete(ctx, req)
+	if err != nil && strings.Contains(err.Error(), "no fixture reply") {
+		f.cancel(err)
+	}
+	return resp, err
 }
 
 // gitCmd runs git in the repo with no user or system configuration.

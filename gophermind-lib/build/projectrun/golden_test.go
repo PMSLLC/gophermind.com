@@ -145,9 +145,11 @@ planner_warning_lines
 planner_warnings
 planner_warnings.doc_defaulted
 planner_warnings.duplicates_ignored
+planner_warnings.file_path_normalized
 planner_warnings.leaf_defaulted
 planner_warnings.leaf_normalized
 planner_warnings.outline_id_normalized
+planner_warnings.signature_qualifier_normalized
 preflight
 preflight[].detail
 preflight[].fix

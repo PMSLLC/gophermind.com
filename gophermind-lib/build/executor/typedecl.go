@@ -234,7 +234,8 @@ func WriteTypes(repo string, c *contract.Contracts, pol packer.ImportPolicy) ([]
 			return nil, fmt.Errorf("type %s: %w", t.ID, err)
 		}
 		pkg := planner.PackageClause(t.Package)
-		if !validPackageName(pkg) {
+		// An empty package would read as the module root (package main).
+		if t.Package == "" || !validPackageName(pkg) {
 			return nil, fmt.Errorf("type %s: the package name is not a valid identifier", t.ID)
 		}
 		imps, err := deriveImports(t.ID, t.Decl, siblings, pol)

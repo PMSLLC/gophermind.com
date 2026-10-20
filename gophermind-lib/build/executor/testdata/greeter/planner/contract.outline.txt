@@ -10,7 +10,7 @@
   "components": [
     {"id": "types", "package": "greet", "exports": []},
     {"id": "greet", "package": "greet", "exports": []},
-    {"id": "server", "package": "main", "exports": []}
+    {"id": "server", "package": "cmd/greeter", "exports": []}
   ],
   "types": [
     {"id": "name-error", "package": "greet", "file": "internal/greet/errors.go",

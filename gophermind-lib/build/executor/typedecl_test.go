@@ -148,7 +148,7 @@ func TestPackageImports(t *testing.T) {
 		Types:     []contract.Type{{ID: "t", Package: "model", File: "internal/model/user.go"}},
 		Functions: []contract.Function{{ID: "f", Package: "main", File: "cmd/x/main.go"}, {ID: "g", Package: "util", File: "util.go"}}}
 	got := packageImports(c)
-	if got["model"] != "example.com/m/internal/model" || got["main"] != "example.com/m/cmd/x" || got["util"] != "example.com/m" {
+	if got["model"] != "example.com/m/internal/model" || got["main"] != "example.com/m/cmd/x" || got["util"] != "example.com/m/util" { // a bare file name sits in its package directory
 		t.Fatalf("packageImports = %v", got)
 	}
 }
