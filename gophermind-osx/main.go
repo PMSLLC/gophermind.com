@@ -12,7 +12,7 @@ import (
 
 	"gophermind/gophermind-lib/llm"
 	"gophermind/gophermind-lib/modelcat"
-	"gophermind/gophermind-lib/phaseflow"
+	"gophermind/gophermind-lib/runview"
 	"gophermind/gophermind-osx/client"
 	"gophermind/gophermind-osx/connection"
 	appui "gophermind/gophermind-osx/ui"
@@ -214,10 +214,23 @@ func main() {
 				ServerBinaryPath: binPath,
 			}
 		}
-		return connMgr.Connect(ctx, cfg)
+		if err := connMgr.Connect(ctx, cfg); err != nil {
+			return err
+		}
+		// A backend is live now, so the pipeline panel can follow it. Without
+		// this, a disconnect (which stops the follower) or a launch with no
+		// reachable backend left the panel empty until relaunch. restart does
+		// not block; queueMain only puts it on the UI thread.
+		queueMain(chat.pipelineUI.restart)
+		return nil
 	}
 	chat.settingsUI.disconnectFunc = func(name string) {
+		chat.pipelineUI.stop()
 		connMgr.Disconnect(name)
+		// Another backend may still be connected: follow that one instead.
+		if _, err := liveClient(connMgr); err == nil {
+			queueMain(chat.pipelineUI.restart)
+		}
 	}
 
 	// Connect on startup. If the local binary isn't found, don't show an
@@ -358,8 +371,8 @@ func main() {
 	// Wire the pipeline panel to the live connection. It is built in
 	// chatinput.go with both callbacks nil, because no connection exists
 	// that early; until this runs, Start Breakdown has nothing to call.
-	chat.pipelineUI.setLiveFuncs(
-		func(ctx context.Context, briefPath, prompt string) (string, error) {
+	chat.pipelineUI.setLiveFuncs(PipelineLive{
+		Start: func(ctx context.Context, briefPath, prompt string) (string, error) {
 			cl, err := liveClient(connMgr)
 			if err != nil {
 				return "", err
@@ -395,18 +408,38 @@ func main() {
 			})
 			return sessionID, nil
 		},
-		func(ctx context.Context) ([]phaseflow.Task, error) {
+		Fetch: func(ctx context.Context) (runview.StateBody, error) {
 			cl, err := liveClient(connMgr)
 			if err != nil {
 				// Not an error worth showing: with no backend the panel
 				// just starts empty, which is its documented state, and
 				// the user already gets a connect hint above.
-				return nil, nil
+				return runview.StateBody{}, nil
 			}
-			tasks, _, err := cl.PipelineState(ctx)
-			return tasks, err
+			return cl.PipelineState(ctx, "")
 		},
-	)
+		Report: func(ctx context.Context, runID string) (runview.ReportBody, error) {
+			cl, err := liveClient(connMgr)
+			if err != nil {
+				return runview.ReportBody{}, err
+			}
+			return cl.PipelineReport(ctx, runID)
+		},
+		Node: func(ctx context.Context, runID, nodeID string) (string, error) {
+			cl, err := liveClient(connMgr)
+			if err != nil {
+				return "", err
+			}
+			return appui.LoadNodeDetail(ctx, cl, runID, nodeID)
+		},
+		Open: func(ctx context.Context, runID string, since int64) (*client.EventStream, error) {
+			cl, err := liveClient(connMgr)
+			if err != nil {
+				return nil, err
+			}
+			return cl.PipelineEvents(ctx, runID, since)
+		},
+	})
 
 	// Reconnect every other configured backend restored from
 	// backends.json/the Keychain (see chatinput.go's NewChatWindow) --
@@ -445,7 +478,9 @@ func main() {
 	}
 	app.Run()
 
-	// Cleanup: disconnect all backends (kills the server subprocess).
+	// Cleanup: stop the pipeline follower, then disconnect all backends
+	// (kills the server subprocess).
+	chat.pipelineUI.stop()
 	connMgr.DisconnectAll()
 
 	w, h := app.ContentSize()

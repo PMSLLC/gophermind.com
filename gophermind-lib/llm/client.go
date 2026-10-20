@@ -614,7 +614,7 @@ func (c *Client) CloneForModel(model string) *Client {
 		// recorded the model it asked for - the exact misattribution this
 		// clone exists to prevent. A caller that wants to try several models
 		// should try them explicitly, one clone each, and record what each
-		// one did; phaseflow.FallbackRunner is that caller.
+		// one did; the executor's router is that caller.
 		Fallbacks:                 nil,
 		Cache:                     c.Cache,
 		sleep:                     c.sleep,

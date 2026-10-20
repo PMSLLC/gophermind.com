@@ -469,10 +469,6 @@ func TestModelsAndCatalogueAndPipelineAndSkills(t *testing.T) {
 			w.WriteHeader(200)
 		case strings.HasPrefix(r.URL.Path, "/skills/sources/") && r.Method == http.MethodDelete:
 			w.WriteHeader(200)
-		case r.URL.Path == "/pipeline/state":
-			io.WriteString(w, `{"tasks":[],"generated_at":"2026-01-01T00:00:00Z"}`)
-		case r.URL.Path == "/pipeline/report":
-			io.WriteString(w, `{}`)
 		case r.URL.Path == "/session/s1/messages":
 			io.WriteString(w, `[]`)
 		case r.URL.Path == "/session/s1/approve":
@@ -513,12 +509,6 @@ func TestModelsAndCatalogueAndPipelineAndSkills(t *testing.T) {
 	if err := c.RemoveSkillSource(ctx, "abc"); err != nil {
 		t.Errorf("RemoveSkillSource: %v", err)
 	}
-	if tasks, _, err := c.PipelineState(ctx); err != nil || tasks == nil {
-		t.Errorf("PipelineState: %v, %v", tasks, err)
-	}
-	if _, err := c.PipelineReport(ctx); err != nil {
-		t.Errorf("PipelineReport: %v", err)
-	}
 	if _, err := c.SessionMessages(ctx, "s1"); err != nil {
 		t.Errorf("SessionMessages: %v", err)
 	}
@@ -543,28 +533,5 @@ func TestRun_ReturnsResponseBody(t *testing.T) {
 	}
 	if got != "echo:hello" {
 		t.Errorf("got %q", got)
-	}
-}
-
-func TestPipelineEvents_StreamsTaskStatus(t *testing.T) {
-	body := buildSSE([2]string{"task-status", `{"id":"01-01","status":"in_progress","wave":1}`})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		io.WriteString(w, body)
-	}))
-	defer srv.Close()
-	c := New(Config{BaseURL: srv.URL, Token: "t"})
-	stream, err := c.PipelineEvents(context.Background())
-	if err != nil {
-		t.Fatalf("PipelineEvents: %v", err)
-	}
-	defer stream.Close()
-	ev, err := stream.Next()
-	if err != nil {
-		t.Fatalf("Next: %v", err)
-	}
-	ts, err := ev.TaskStatus()
-	if err != nil || ts.ID != "01-01" || ts.Status != "in_progress" {
-		t.Errorf("TaskStatus() = %+v, err %v", ts, err)
 	}
 }

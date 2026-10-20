@@ -1,14 +1,16 @@
 package serve
 
 import (
+	"bytes"
 	"embed"
 	"encoding/json"
 	"io"
 	"net/http"
-	"sync"
+	"os"
+	"strconv"
 	"time"
 
-	"gophermind/gophermind-lib/phaseflow"
+	"gophermind/gophermind-lib/runview"
 )
 
 // pipelineAssets embeds the dashboard page (pipeline piece 5, task 3). It
@@ -43,219 +45,133 @@ func pipelineDashboardHandler() http.HandlerFunc {
 	}
 }
 
-// This file implements the server side of the live pipeline view (pipeline
-// piece 5, see docs/superpowers/specs/2026-09-11-harness-pipeline-design.md,
-// from source spec sections 4 and 5): GET /pipeline/state (current tasks,
-// waves, statuses and attempts), GET /pipeline/events (SSE: task and
-// attempt changes as they happen) and GET /pipeline/report (the run
-// summary). GET /pipeline, the dashboard itself, is added alongside this in
-// the same piece.
-//
-// State is always read fresh from assignments.json on request - there is no
-// cache here to go stale. Live events are a separate concern: PipelineHub
-// fans out frames to every connected /pipeline/events client, fed by
-// whatever is driving a run (see FallbackRunner.OnAttempt in fallback.go,
-// which piece 3 added for exactly this purpose).
+// This file holds the dashboard page and the shared pieces of the pipeline
+// routes. pipeline_api.go has the JSON routes; the event stream is below. Every
+// route reads the run folder through gophermind-lib/runview: there is no
+// cache, no hub and no watcher, so a stream and a fresh state call cannot
+// disagree about what happened.
 
-// PipelineDeps configures the pipeline routes. Root is the project root
-// whose .planning/assignments.json backs GET /pipeline/state and GET
-// /pipeline/report. Hub, when nil, is replaced with a fresh empty
-// PipelineHub, so GET /pipeline/events always serves a valid stream even
-// when nothing is currently publishing to it.
+// PipelineDeps configures the pipeline routes. Root is the repo root whose
+// .gophermind/<run>/ folders the routes read. MaxStreams caps concurrent event
+// streams (zero means 16; the server reads GOPHERMIND_PIPELINE_MAX_STREAMS).
 type PipelineDeps struct {
-	Root string
-	Hub  *PipelineHub
+	Root       string
+	MaxStreams int
 }
 
-// pipelineEvent is one frame queued to a PipelineHub subscriber: an SSE
-// event name plus its already-encoded JSON data.
-type pipelineEvent struct {
-	event string
-	data  string
-}
-
-// pipelineSubBuffer bounds how many unread events a slow /pipeline/events
-// client can fall behind by before PipelineHub.publish starts dropping
-// frames for that subscriber specifically, rather than letting one slow
-// reader block every other subscriber or the run that is publishing.
-const pipelineSubBuffer = 64
-
-// PipelineHub fans out pipeline events (task-status, task-attempt,
-// wave-changed, run-report) to every connected GET /pipeline/events client.
-// The zero value is not usable; build one with NewPipelineHub.
-//
-// Publishing never blocks the publisher: each subscriber owns a buffered
-// channel, and a full channel means that one subscriber drops the frame
-// rather than stalling the goroutine doing the publishing, or every other
-// subscriber.
-type PipelineHub struct {
-	mu   sync.Mutex
-	subs map[chan pipelineEvent]struct{}
-}
-
-// NewPipelineHub builds an empty hub.
-func NewPipelineHub() *PipelineHub {
-	return &PipelineHub{subs: make(map[chan pipelineEvent]struct{})}
-}
-
-// subscribe registers a new subscriber and returns its event channel plus a
-// function that removes it. Callers must invoke the returned function
-// exactly once on every exit path, including a client disconnect, or the
-// subscription leaks.
-func (h *PipelineHub) subscribe() (chan pipelineEvent, func()) {
-	ch := make(chan pipelineEvent, pipelineSubBuffer)
-	h.mu.Lock()
-	h.subs[ch] = struct{}{}
-	h.mu.Unlock()
-	return ch, func() {
-		h.mu.Lock()
-		delete(h.subs, ch)
-		h.mu.Unlock()
+// PipelineMaxStreamsFromEnv reads GOPHERMIND_PIPELINE_MAX_STREAMS. Unset,
+// invalid or below 1 gives 0, which means the default.
+func PipelineMaxStreamsFromEnv() int {
+	n, err := strconv.Atoi(os.Getenv("GOPHERMIND_PIPELINE_MAX_STREAMS"))
+	if err != nil || n < 1 {
+		return 0
 	}
+	return n
 }
 
-// subCount reports the current number of subscribers. It exists for tests
-// that need to confirm a disconnected client's subscription was actually
-// removed, not just that its handler returned.
-func (h *PipelineHub) subCount() int {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return len(h.subs)
+// pipelineKeepalive and pipelinePoll are variables so tests can shorten them.
+var (
+	pipelineKeepalive = 15 * time.Second
+	pipelinePoll      = 250 * time.Millisecond
+)
+
+// sinceOf is where an event stream starts. ?since=N wins, then Last-Event-ID;
+// with neither the stream starts at the current end of the log (live only).
+func sinceOf(r *http.Request, v *runview.View) (int64, error) {
+	raw := r.URL.Query().Get("since")
+	if raw == "" {
+		raw = r.Header.Get("Last-Event-ID")
+	}
+	if raw == "" {
+		return v.EventSeq(), nil
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n < 0 {
+		return 0, runview.ErrBadID
+	}
+	return n, nil
 }
 
-// publish fans data out to every current subscriber. A subscriber whose
-// channel is already full is skipped rather than blocked, so one slow or
-// stalled client can never hold up publish for anyone else.
-func (h *PipelineHub) publish(event, data string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	for ch := range h.subs {
+// events handles GET /pipeline/events: an SSE stream of the run's events, each
+// with its line number as id. At most MaxStreams streams run at once; one more
+// gets 503. A client that goes away (the request context ends) frees its slot.
+func (a *pipelineAPI) events(w http.ResponseWriter, r *http.Request) {
+	select {
+	case a.slots <- struct{}{}:
+		defer func() { <-a.slots }()
+	default:
+		w.Header().Set("Retry-After", "5")
+		pipelineJSON(w, http.StatusServiceUnavailable,
+			map[string]any{"schema_version": runview.SchemaVersion, "error": "too many event streams"})
+		return
+	}
+	v, err := a.view(r, runview.WithPoll(pipelinePoll))
+	if err != nil {
+		pipelineError(w, err)
+		return
+	}
+	since, err := sinceOf(r, v)
+	if err != nil {
+		pipelineError(w, err)
+		return
+	}
+	// A resume id past the end of this run's log belongs to another run (a
+	// client that reconnects after a newer run became the default): replay
+	// from the start rather than skip this run's events.
+	if since > v.EventSeq() {
+		since = 0
+	}
+	ctx := r.Context()
+	ch, err := v.Follow(ctx, since)
+	if err != nil {
+		pipelineError(w, err)
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", "text/event-stream")
+	h.Set("Cache-Control", "no-cache")
+	h.Set("Connection", "keep-alive")
+	rc := http.NewResponseController(w)
+	// send writes one chunk under a fresh write deadline, so a client that
+	// stops reading cannot hold its stream slot: the write fails and the
+	// handler returns. A writer without deadline support just has none.
+	send := func(b []byte) bool {
+		_ = rc.SetWriteDeadline(time.Now().Add(2 * pipelineKeepalive))
+		if _, err := w.Write(b); err != nil {
+			return false
+		}
+		return rc.Flush() == nil
+	}
+	// Headers go out before the first event so a client whose Do blocks until a
+	// response arrives is connected at once.
+	w.WriteHeader(http.StatusOK)
+	if !send(nil) {
+		return
+	}
+	ka := time.NewTicker(pipelineKeepalive)
+	defer ka.Stop()
+	for {
 		select {
-		case ch <- pipelineEvent{event: event, data: data}:
-		default:
-		}
-	}
-}
-
-// TaskStatus publishes a "task-status" event: task id changed to status,
-// which belongs to wave.
-func (h *PipelineHub) TaskStatus(id, status string, wave int) {
-	b, _ := json.Marshal(TaskStatusEvent{ID: id, Status: status, Wave: wave})
-	h.publish("task-status", string(b))
-}
-
-// TaskAttempt publishes a "task-attempt" event: one model's attempt at
-// taskID completed, whether it passed or failed.
-func (h *PipelineHub) TaskAttempt(taskID string, a phaseflow.Attempt) {
-	b, _ := json.Marshal(TaskAttemptEvent{TaskID: taskID, Model: a.Model, Duration: a.Duration, Verdict: a.Verdict, Reason: a.Reason})
-	h.publish("task-attempt", string(b))
-}
-
-// WaveChanged publishes a "wave-changed" event: wave started or finished,
-// per state ("started" or "finished").
-func (h *PipelineHub) WaveChanged(wave int, state string) {
-	b, _ := json.Marshal(WaveChangedEvent{Wave: wave, State: state})
-	h.publish("wave-changed", string(b))
-}
-
-// RunReport publishes a "run-report" event: a run ended and produced r.
-func (h *PipelineHub) RunReport(r phaseflow.RunReport) {
-	b, _ := json.Marshal(r)
-	h.publish("run-report", string(b))
-}
-
-// pipelineStateResponse is the JSON body of GET /pipeline/state.
-type pipelineStateResponse struct {
-	Tasks       []phaseflow.Task `json:"tasks"`
-	GeneratedAt time.Time        `json:"generated_at"`
-}
-
-// pipelineStateHandler handles GET /pipeline/state: every task in root's
-// assignments.json, with its wave, status and attempt history, read fresh
-// on every request. A project with no plan yet (no assignments.json) is not
-// an error - it returns an empty task list, matching LoadAssignments' own
-// "not found" contract.
-func pipelineStateHandler(root string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "use GET", http.StatusMethodNotAllowed)
-			return
-		}
-		a, _, err := phaseflow.LoadAssignments(root)
-		if err != nil {
-			http.Error(w, "load assignments", http.StatusInternalServerError)
-			return
-		}
-		tasks := a.Tasks
-		if tasks == nil {
-			tasks = []phaseflow.Task{}
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(pipelineStateResponse{Tasks: tasks, GeneratedAt: time.Now()})
-	}
-}
-
-// pipelineReportHandler handles GET /pipeline/report: the run report
-// aggregated from root's current assignments.json via
-// phaseflow.BuildRunReport. The report is a pure derived view over
-// Attempts, so it is well defined at any point in a run; callers that want
-// the final report simply call it after the run ends.
-func pipelineReportHandler(root string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "use GET", http.StatusMethodNotAllowed)
-			return
-		}
-		a, _, err := phaseflow.LoadAssignments(root)
-		if err != nil {
-			http.Error(w, "load assignments", http.StatusInternalServerError)
-			return
-		}
-		report := phaseflow.BuildRunReport(a.Tasks, time.Now())
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(report)
-	}
-}
-
-// pipelineEventsHandler handles GET /pipeline/events: an SSE stream of
-// task-status, task-attempt, wave-changed and run-report frames, written in
-// the order hub publishes them via writeSSEEvent (sse.go), which already
-// handles the newline escaping that makes multi-line data safe.
-//
-// It subscribes for the lifetime of the request and always unsubscribes on
-// return - including when the client disconnects, detected via
-// r.Context().Done() - so a client that goes away never leaks a
-// subscription or blocks whatever is publishing.
-func pipelineEventsHandler(hub *PipelineHub) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "use GET", http.StatusMethodNotAllowed)
-			return
-		}
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
-		flusher, _ := w.(http.Flusher)
-		// Write and flush the headers immediately, before subscribing or
-		// waiting for the first event: otherwise a client whose request
-		// method blocks until it sees a response (e.g. net/http's Do) would
-		// hang until the first event happened to arrive, rather than
-		// establishing the stream right away.
-		w.WriteHeader(http.StatusOK)
-		if flusher != nil {
-			flusher.Flush()
-		}
-
-		ch, unsubscribe := hub.subscribe()
-		defer unsubscribe()
-
-		for {
-			select {
-			case ev := <-ch:
-				writeSSEEvent(w, flusher, ev.event, ev.data)
-			case <-r.Context().Done():
+		case e, ok := <-ch:
+			if !ok {
 				return
 			}
+			var compact bytes.Buffer
+			data := string(e.Data)
+			if json.Compact(&compact, e.Data) == nil {
+				data = compact.String()
+			}
+			var frame bytes.Buffer
+			writeSSEFrame(&frame, nil, e.Seq, e.Type, data)
+			if !send(frame.Bytes()) {
+				return
+			}
+		case <-ka.C:
+			if !send([]byte(": keepalive\n\n")) {
+				return
+			}
+		case <-ctx.Done():
+			return
 		}
 	}
 }

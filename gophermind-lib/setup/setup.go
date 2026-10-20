@@ -43,9 +43,9 @@ type Result struct {
 	GitHubToken   string
 	NotifyWebhook string
 
-	// SpeedModel is GOPHERMIND_SPEED_MODEL: the faster/cheaper tier used for
-	// /project-execute's "speed" task assignments (empty falls back to
-	// Model, the same as an unset env var).
+	// SpeedModel is GOPHERMIND_SPEED_MODEL: the faster/cheaper model used by
+	// -speed and GOPHERMIND_AUTO_ROUTE (empty means none, the same as an
+	// unset env var).
 	SpeedModel string
 }
 

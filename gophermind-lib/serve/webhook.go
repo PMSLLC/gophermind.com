@@ -247,7 +247,8 @@ type Deps struct {
 	// means the catalogue omits local-endpoint entries.
 	EndpointModels func() []string
 	// Pipeline, when non-nil, registers the live pipeline view routes: GET
-	// /pipeline/state, GET /pipeline/events (SSE) and GET /pipeline/report,
+	// /pipeline/runs, state, node, artifact, decisions, GET /pipeline/events
+	// (SSE) and GET /pipeline/report,
 	// behind the same bearer-token auth as the session routes. Nil skips
 	// registering them.
 	Pipeline *PipelineDeps
@@ -313,7 +314,11 @@ func resolveToken(opt Options) (string, error) {
 //	POST    /skills/sources                bearer+HMAC  d.Skills
 //	DELETE  /skills/sources/{id...}        bearer+HMAC  d.Skills
 //	GET     /pipeline                      none         d.Pipeline (HTML shell only; carries no data)
+//	GET     /pipeline/runs                 bearer+HMAC  d.Pipeline
 //	GET     /pipeline/state                bearer+HMAC  d.Pipeline
+//	GET     /pipeline/node                 bearer+HMAC  d.Pipeline
+//	GET     /pipeline/artifact             bearer+HMAC  d.Pipeline
+//	GET     /pipeline/decisions            bearer+HMAC  d.Pipeline
 //	GET     /pipeline/events               bearer+HMAC  d.Pipeline (SSE)
 //	GET     /pipeline/report               bearer+HMAC  d.Pipeline
 //
@@ -411,15 +416,16 @@ func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 		// It carries no task data of its own - its JS fetches the data
 		// routes with the token entered in the page - so serving it
 		// unauthenticated discloses nothing.
-		hub := d.Pipeline.Hub
-		if hub == nil {
-			hub = NewPipelineHub()
-		}
-		mux.HandleFunc("GET /pipeline", pipelineDashboardHandler())
-		pipeWrap := func(h http.Handler) http.Handler { return limited(sessionAuth(token, h)) }
-		mux.Handle("GET /pipeline/state", pipeWrap(pipelineStateHandler(d.Pipeline.Root)))
-		mux.Handle("GET /pipeline/events", pipeWrap(pipelineEventsHandler(hub)))
-		mux.Handle("GET /pipeline/report", pipeWrap(pipelineReportHandler(d.Pipeline.Root)))
+		api := newPipelineAPI(*d.Pipeline)
+		mux.Handle("GET /pipeline", withPipelineSchema(pipelineDashboardHandler()))
+		pipeWrap := func(h http.Handler) http.Handler { return withPipelineSchema(limited(sessionAuth(token, h))) }
+		mux.Handle("GET /pipeline/runs", pipeWrap(http.HandlerFunc(api.runs)))
+		mux.Handle("GET /pipeline/state", pipeWrap(http.HandlerFunc(api.state)))
+		mux.Handle("GET /pipeline/node", pipeWrap(http.HandlerFunc(api.node)))
+		mux.Handle("GET /pipeline/artifact", pipeWrap(http.HandlerFunc(api.artifact)))
+		mux.Handle("GET /pipeline/decisions", pipeWrap(http.HandlerFunc(api.decisions)))
+		mux.Handle("GET /pipeline/events", pipeWrap(http.HandlerFunc(api.events)))
+		mux.Handle("GET /pipeline/report", pipeWrap(http.HandlerFunc(api.report)))
 	}
 	return mux, nil
 }

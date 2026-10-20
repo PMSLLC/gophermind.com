@@ -610,10 +610,22 @@ func run() error {
 		os.Exit(runFree(args[1:], os.Stdout))
 	}
 
-	// `gophermind brief ...` (v2 brief loader, vault, tree tools) runs before
+	// `gophermind brief ...` (brief loader, vault, tree tools) runs before
 	// Validate for the same reason as `free`: it needs no configured endpoint.
 	if cmd == "brief" {
 		os.Exit(runBrief(args[1:], os.Stdin, os.Stdout, os.Stderr))
+	}
+
+	// `gophermind project ...` plans and builds a brief in one run. Like
+	// `brief`, it needs no chat endpoint, so it runs before Validate.
+	if cmd == "project" {
+		os.Exit(runProject(args[1:], os.Stdin, os.Stdout, os.Stderr))
+	}
+
+	// `gophermind phase ...` was removed with PhaseFlow's roadmap workflow. It
+	// needs no configured endpoint to say so.
+	if cmd == "phase" {
+		os.Exit(runPhaseRemoved(os.Stderr))
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -998,22 +1010,6 @@ func run() error {
 		cmd = "chat"
 	}
 
-	// `gophermind phase ...` runs the PhaseFlow spec-driven workflow. State
-	// commands (init/status/next) are served locally; a loop step (roadmap/plan/
-	// execute/verify/milestone) produces a state-seeded prompt that is executed
-	// through the standard agent path below by rewriting cmd to "run".
-	if cmd == "phase" {
-		handled, seeded, err := runPhase(cfg.RootDir, args[1:])
-		if err != nil {
-			return err
-		}
-		if handled {
-			return nil
-		}
-		task = seeded
-		cmd = "run"
-	}
-
 	switch cmd {
 	case "secaudit":
 		// Security bug-hunt over a repo: static scan (+ optional model
@@ -1252,15 +1248,14 @@ func run() error {
 			defer cancel()
 			return client.ListModels(ctx)
 		}
-		pipelineHub := serve.NewPipelineHub()
 		mux, err := serve.NewMux(serve.Deps{
 			Run: run, Stream: stream, Metrics: metrics,
 			SessionTurn: sessionTurn, Approvals: approvals, Devices: devStore,
 			SessionMessages: loadMessages, ListModels: listModels,
-			// Pipeline piece 5: live dashboard + run summary at GET
-			// /pipeline, backed by cfg.RootDir's .planning/assignments.json
-			// - the same project state every other command reads.
-			Pipeline: &serve.PipelineDeps{Root: cfg.RootDir, Hub: pipelineHub},
+			// The pipeline routes read cfg.RootDir/.gophermind/<run>/ through
+			// gophermind-lib/runview: runs, state, node, artifact, decisions,
+			// report and a followed event stream.
+			Pipeline: &serve.PipelineDeps{Root: cfg.RootDir, MaxStreams: serve.PipelineMaxStreamsFromEnv()},
 			Skills:   &serve.SkillsDeps{Root: cfg.RootDir, ConfigDir: skillCfgDir},
 		}, serve.Options{})
 		if err != nil {
@@ -1290,13 +1285,6 @@ func run() error {
 		// saved. Every other long-running command here already does this.
 		serveCtx, stopServe := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stopServe()
-		// Feed the hub. A run executes in a different process (the TUI's
-		// /project-execute, or `gophermind phase execute`), so nothing in it
-		// can call this hub directly; watching the assignments file is the
-		// only channel between them, and it is the same file /pipeline/state
-		// serves. Without this the dashboard's event stream stayed silent
-		// and the page showed whatever state existed when it loaded.
-		serve.StartPipelineWatcher(serveCtx, cfg.RootDir, pipelineHub)
 		return serve.Serve(serveCtx, ln, mux)
 	case "queue":
 		if task == "" {
@@ -2351,9 +2339,11 @@ Usage:
                                 session/mobile: POST /session, POST /session/{id}/stream (SSE),
                                 GET /session, DELETE /session/{id}, POST /session/{id}/approve,
                                 POST /devices — see docs/mobile-serve.md
-                                pipeline: GET /pipeline (dashboard), GET /pipeline/state,
-                                GET /pipeline/events (SSE), GET /pipeline/report
-
+                                pipeline: GET /pipeline (dashboard), GET /pipeline/runs,
+                                /pipeline/state, /pipeline/node, /pipeline/artifact,
+                                /pipeline/decisions, /pipeline/report, GET /pipeline/events (SSE)`)
+	fmt.Fprintln(os.Stderr, projectUsage)
+	fmt.Fprintln(os.Stderr, `
 On first interactive launch with nothing configured, a short setup wizard runs
 and saves your choices to the global config (see below); later launches skip it.
 

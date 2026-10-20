@@ -7,14 +7,14 @@ session start alongside CONTEXT.md.
 
 `gophermind` is a Go coding-agent CLI (a Claude-Code-style tool) that talks to
 any OpenAI-compatible model endpoint. It has its own agent loop, tool set, TUI,
-sessions, personas, prompt registry, and — as of the PhaseFlow work — a native
-spec-driven workflow (`internal/phaseflow`).
+sessions, personas, prompt registry, and a brief-to-build planner and executor
+(`gophermind-lib/build`).
 
 - Module: `gophermind` (see `go.mod`, `go 1.25.0`; local toolchain go1.26.4)
 - Entrypoint: `cmd/gophermind/main.go`
 - Core packages: `internal/agent` (loop, taskgraph, verify, reflection),
   `internal/tools` (read/search/edit/shell/sql/http/…), `internal/tui`,
-  `internal/phaseflow` (spec-driven workflow).
+  `gophermind-lib/build` (brief planner and executor).
 
 ## Build / test / format
 
@@ -39,16 +39,6 @@ Always run these from the repo root (the directory containing `go.mod`).
 - Slash commands: TUI dispatch in `internal/tui/update.go` + `commands.go`; CLI
   subcommands are `if cmd == "…"` blocks (early) or `case` arms in the main
   `switch cmd` in `cmd/gophermind/main.go`.
-
-## PhaseFlow (internal/phaseflow)
-
-Native port of github.com/jbrahy/metaphaseflow (MIT, © 2025 Lex Christopherson).
-State under `.planning/`. User surface: `gophermind phase <cmd>` and `/phase
-<cmd>`. Deterministic bookkeeping (status/next/done/sync/archive) is pure Go;
-loop steps (roadmap/plan/execute/verify/milestone + any embedded command by
-name) run the agent with a state-seeded prompt. Vendored assets under
-`internal/phaseflow/assets/` are the source of truth for embedding — re-vendor,
-don't hand-edit. See CREDITS.md for attribution.
 
 ## Secrets
 

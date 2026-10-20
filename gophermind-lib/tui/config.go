@@ -150,9 +150,9 @@ func runConfigWizardIO(in io.Reader, out io.Writer, defaults setup.Result) (setu
 	model := firstNonEmpty(strings.TrimSpace(line), defaults.Model)
 
 	// 3b) Speed model (free-text; blank keeps whatever was already set, same
-	// convention as Model above -- empty just means /project-execute's
-	// "speed" tier falls back to Model, exactly as an unset env var does).
-	fmt.Fprintf(out, "Speed model, for /project-execute's faster tier (blank = same as Model)%s: ", defaultHint(defaults.SpeedModel))
+	// convention as Model above -- empty just means no speed model is
+	// configured, exactly as an unset env var does).
+	fmt.Fprintf(out, "Speed model, for -speed and GOPHERMIND_AUTO_ROUTE (blank = none)%s: ", defaultHint(defaults.SpeedModel))
 	line, err = readLine()
 	if err != nil {
 		return setup.Result{}, err
@@ -286,10 +286,9 @@ func (m *model) handleConfigDone(msg configDoneMsg) {
 		m.agent.SetAPIKey(res.APIKey)
 		changes = append(changes, "API key")
 	}
-	// speedModel lives on the TUI model, not the agent: /project-execute
-	// reads it fresh from m at the start of every run (see execute.go), so
-	// setting it here is the whole fix -- no agent call needed for it to
-	// take effect on the next run.
+	// speedModel lives on the TUI model, not the agent, and is only what the
+	// config wizard prefills; the agent does not read it. The setting takes
+	// effect through the saved env (-speed, GOPHERMIND_AUTO_ROUTE).
 	if res.SpeedModel != "" && res.SpeedModel != beforeSpeedModel {
 		m.speedModel = res.SpeedModel
 		changes = append(changes, "speed model")

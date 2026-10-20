@@ -1,0 +1,19 @@
+[
+  {
+    "id": "fn-name-error-error",
+    "title": "NameError.Error",
+    "description": "Return the reason so that *NameError satisfies error.",
+    "model_tier": "any",
+    "node_class": "pure",
+    "depends_on": ["name-error"],
+    "contract": {
+      "package": "greet",
+      "file": "internal/greet/errors.go",
+      "signature": "func (e *NameError) Error() string",
+      "inputs": [],
+      "outputs": [{"name": "reason", "type": "string", "description": "the Reason field, unchanged"}],
+      "errors": [],
+      "side_effects": []
+    }
+  }
+]

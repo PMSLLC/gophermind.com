@@ -22,15 +22,19 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"gophermind/gophermind-lib/modelcat"
-	"gophermind/gophermind-lib/phaseflow"
+	"gophermind/gophermind-lib/runview"
+	"gophermind/gophermind-lib/serve"
 	"gophermind/gophermind-lib/session"
 	"gophermind/gophermind-lib/skills"
 )
@@ -140,50 +144,65 @@ func isRetryableStatus(code int) bool {
 // method's response is small JSON, so this keeps every caller simpler than
 // threading io.ReadCloser lifetime through each of them; Stream/RunStream/
 // PipelineEvents (SSE) bypass do entirely and manage the body themselves.
+// doH is the same but also returns the response header, which the pipeline
+// calls need for the schema check.
 func (c *Client) do(ctx context.Context, method, path string, body []byte) ([]byte, error) {
+	b, _, err := c.doH(ctx, method, path, body)
+	return b, err
+}
+
+// maxResponseBytes is the largest response body the client reads. The server
+// already cuts an artifact at its own limit and appends a marker, so a body
+// over this one is an error for every endpoint, never a silent truncation.
+const maxResponseBytes = 4 << 20
+
+// ErrResponseTooLarge is returned when a response body is over 4 MiB.
+var ErrResponseTooLarge = errors.New("client: response too large")
+
+func (c *Client) doH(ctx context.Context, method, path string, body []byte) ([]byte, http.Header, error) {
 	var lastErr error
 	for attempt := 1; attempt <= c.retry.MaxAttempts; attempt++ {
 		if attempt > 1 {
 			select {
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				return nil, nil, ctx.Err()
 			case <-time.After(c.retry.backoff(attempt - 1)):
 			}
 		}
 
-		respBody, status, err := c.attempt(ctx, method, path, body)
+		respBody, status, hdr, err := c.attempt(ctx, method, path, body)
 		if err == nil && !isRetryableStatus(status) {
 			if status < 200 || status >= 300 {
-				return nil, &StatusError{StatusCode: status, Body: string(respBody)}
+				return nil, hdr, &StatusError{StatusCode: status, Body: string(respBody)}
 			}
-			return respBody, nil
+			return respBody, hdr, nil
 		}
 		if err == nil {
 			lastErr = &StatusError{StatusCode: status, Body: string(respBody)}
 		} else {
 			lastErr = err
+			if errors.Is(err, ErrResponseTooLarge) {
+				return nil, nil, err // a retry would get the same body
+			}
 			if ctx.Err() != nil {
-				return nil, lastErr // context cancelled/deadline: don't keep retrying
+				return nil, nil, lastErr // context cancelled/deadline: don't keep retrying
 			}
 		}
 	}
-	return nil, fmt.Errorf("after %d attempts: %w", c.retry.MaxAttempts, lastErr)
+	return nil, nil, fmt.Errorf("after %d attempts: %w", c.retry.MaxAttempts, lastErr)
 }
 
-// attempt performs exactly one HTTP round trip. Returns (body, status, nil)
-// for any response actually received (including a non-2xx one -- that's
-// the caller's decision to retry or surface), or (nil, 0, err) for a
-// network-level failure (err is always the retry-worthy case here; a
-// non-network error, like a bad request build, would be a caller bug and
-// currently can't happen given how these requests are constructed).
-func (c *Client) attempt(ctx context.Context, method, path string, body []byte) ([]byte, int, error) {
+// attempt performs exactly one HTTP round trip. It returns (body, status,
+// header, nil) for any response actually received (a non-2xx one included:
+// retrying is the caller's decision), or an error for a network-level failure.
+func (c *Client) attempt(ctx context.Context, method, path string, body []byte) ([]byte, int, http.Header, error) {
 	var reader io.Reader
 	if body != nil {
 		reader = bytes.NewReader(body)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reader)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, err
 	}
 	c.authorize(req)
 	if body != nil {
@@ -192,14 +211,17 @@ func (c *Client) attempt(ctx context.Context, method, path string, body []byte) 
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, err
 	}
 	defer resp.Body.Close()
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, err
 	}
-	return respBody, resp.StatusCode, nil
+	if len(respBody) > maxResponseBytes {
+		return nil, 0, nil, ErrResponseTooLarge
+	}
+	return respBody, resp.StatusCode, resp.Header, nil
 }
 
 // authorize applies the configured bearer token to req. Called on every
@@ -419,33 +441,132 @@ func (c *Client) RemoveSkillSource(ctx context.Context, id string) error {
 
 // --- Pipeline ---
 
-// PipelineState backs GET /pipeline/state.
-func (c *Client) PipelineState(ctx context.Context) ([]phaseflow.Task, time.Time, error) {
-	body, err := c.do(ctx, http.MethodGet, "/pipeline/state", nil)
-	if err != nil {
-		return nil, time.Time{}, err
-	}
-	resp, err := decodeJSON[struct {
-		Tasks       []phaseflow.Task `json:"tasks"`
-		GeneratedAt time.Time        `json:"generated_at"`
-	}](body)
-	return resp.Tasks, resp.GeneratedAt, err
+// SchemaMismatchMessage is what the pipeline panel shows when the server and
+// this app speak different versions of the pipeline contract.
+const SchemaMismatchMessage = "This server and this app disagree about the pipeline contract. Update the older one."
+
+// SchemaMismatchError is returned by every pipeline call when the server's
+// contract version (header X-Gophermind-Pipeline-Schema, or the body's
+// schema_version) is not the one this app was built for. An old server that
+// sends neither gives Got 0. Chat does not use the pipeline contract, so it
+// keeps working.
+type SchemaMismatchError struct{ Got, Want int }
+
+func (e *SchemaMismatchError) Error() string {
+	return fmt.Sprintf("pipeline contract mismatch: server speaks version %d, this app speaks %d; update the older one", e.Got, e.Want)
 }
 
-// PipelineReport backs GET /pipeline/report.
-func (c *Client) PipelineReport(ctx context.Context) (phaseflow.RunReport, error) {
-	body, err := c.do(ctx, http.MethodGet, "/pipeline/report", nil)
-	if err != nil {
-		return phaseflow.RunReport{}, err
+func checkSchemaHeader(h http.Header) error {
+	got, _ := strconv.Atoi(h.Get(serve.PipelineSchemaHeader))
+	if got != runview.SchemaVersion {
+		return &SchemaMismatchError{Got: got, Want: runview.SchemaVersion}
 	}
-	return decodeJSON[phaseflow.RunReport](body)
+	return nil
 }
 
-// PipelineEvents backs GET /pipeline/events: the live SSE feed of
-// task-status/task-attempt/wave-changed/run-report events. Not retried --
-// see the package doc comment.
-func (c *Client) PipelineEvents(ctx context.Context) (*EventStream, error) {
-	return c.openSSE(ctx, http.MethodGet, "/pipeline/events", nil)
+func pipelineQuery(path string, kv ...string) string {
+	q := url.Values{}
+	for i := 0; i+1 < len(kv); i += 2 {
+		if kv[i+1] != "" {
+			q.Set(kv[i], kv[i+1])
+		}
+	}
+	if len(q) == 0 {
+		return path
+	}
+	return path + "?" + q.Encode()
+}
+
+// getPipeline fetches a pipeline JSON route, checks the schema header and,
+// when checkBody is set, the body's own schema_version, then decodes it.
+func getPipeline[T any](ctx context.Context, c *Client, path string, checkBody bool) (T, error) {
+	var zero T
+	body, hdr, err := c.doH(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return zero, err
+	}
+	if err := checkSchemaHeader(hdr); err != nil {
+		return zero, err
+	}
+	if checkBody {
+		var v struct {
+			SchemaVersion int `json:"schema_version"`
+		}
+		if err := json.Unmarshal(body, &v); err != nil {
+			return zero, err
+		}
+		if v.SchemaVersion != runview.SchemaVersion {
+			return zero, &SchemaMismatchError{Got: v.SchemaVersion, Want: runview.SchemaVersion}
+		}
+	}
+	return decodeJSON[T](body)
+}
+
+// PipelineRuns backs GET /pipeline/runs, newest first.
+func (c *Client) PipelineRuns(ctx context.Context) ([]runview.RunSummary, error) {
+	b, err := getPipeline[runview.RunsBody](ctx, c, "/pipeline/runs", true)
+	return b.Runs, err
+}
+
+// PipelineState backs GET /pipeline/state. An empty run is the newest run.
+func (c *Client) PipelineState(ctx context.Context, run string) (runview.StateBody, error) {
+	return getPipeline[runview.StateBody](ctx, c, pipelineQuery("/pipeline/state", "run", run), true)
+}
+
+// PipelineNode backs GET /pipeline/node.
+func (c *Client) PipelineNode(ctx context.Context, run, id string) (runview.NodeBody, error) {
+	return getPipeline[runview.NodeBody](ctx, c, pipelineQuery("/pipeline/node", "run", run, "id", id), true)
+}
+
+// PipelineDecisions backs GET /pipeline/decisions: the root's records followed
+// by the build's revision decisions, as the server returns them.
+func (c *Client) PipelineDecisions(ctx context.Context, run string) (runview.DecisionsBody, error) {
+	return getPipeline[runview.DecisionsBody](ctx, c, pipelineQuery("/pipeline/decisions", "run", run), true)
+}
+
+// PipelineReport backs GET /pipeline/report. The body is the executor's
+// report.json, which keeps its own schema_version, so only the header is
+// checked. ReportBody.IsComplete says whether the run has finished.
+func (c *Client) PipelineReport(ctx context.Context, run string) (runview.ReportBody, error) {
+	return getPipeline[runview.ReportBody](ctx, c, pipelineQuery("/pipeline/report", "run", run), false)
+}
+
+// PipelineArtifact backs GET /pipeline/artifact: the text of one saved file of
+// one attempt (file is reply.go, reply.txt, check-output.txt or attempt.json).
+func (c *Client) PipelineArtifact(ctx context.Context, run, id string, attempt int, file string) (string, error) {
+	body, hdr, err := c.doH(ctx, http.MethodGet,
+		pipelineQuery("/pipeline/artifact", "run", run, "id", id, "attempt", strconv.Itoa(attempt), "file", file), nil)
+	if err != nil {
+		return "", err
+	}
+	if err := checkSchemaHeader(hdr); err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+// PipelineEvents backs GET /pipeline/events: the live SSE feed of node-status,
+// node-attempt, node-result, wave-changed, run-status and run-report events,
+// each with an id (the line number of the run's event log). since resumes
+// after that event id; a negative since omits it (the server then follows from
+// the current end of the log). Not retried: see the package doc comment. A
+// server with another contract version gives a *SchemaMismatchError and no
+// stream. An error from the server (a 503 when the stream cap is reached
+// included) is a *StatusError.
+func (c *Client) PipelineEvents(ctx context.Context, run string, since int64) (*EventStream, error) {
+	kv := []string{"run", run}
+	if since >= 0 {
+		kv = append(kv, "since", strconv.FormatInt(since, 10))
+	}
+	s, err := c.openSSE(ctx, http.MethodGet, pipelineQuery("/pipeline/events", kv...), nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkSchemaHeader(s.Header()); err != nil {
+		s.Close()
+		return nil, err
+	}
+	return s, nil
 }
 
 // --- Health (unauthenticated; no retry needed, these are meant to be cheap

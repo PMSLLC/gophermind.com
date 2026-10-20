@@ -1,0 +1,6 @@
+{
+ "rationale": "Groups the functions that implement one feature of the brief so they are built and tested together.",
+ "assumptions": [],
+ "open_questions": [],
+ "decision_ids": []
+}

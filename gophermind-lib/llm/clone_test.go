@@ -10,7 +10,7 @@ import "testing"
 // rather than of what ran" the clone was introduced to stop, arriving through
 // a second door.
 //
-// Per-candidate fallback belongs one level up, in phaseflow.FallbackRunner,
+// Per-candidate fallback belongs one level up, in the executor's router,
 // which records an Attempt for each model it tries. Two independent layers of
 // fallback cannot both be accounted for.
 func TestCloneForModelDoesNotInheritFallbacks(t *testing.T) {

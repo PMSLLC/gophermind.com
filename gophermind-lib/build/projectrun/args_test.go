@@ -1,0 +1,166 @@
+package projectrun
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestParseArgsTable(t *testing.T) {
+	cases := []struct {
+		name     string
+		args     []string
+		attended bool
+		wantErr  string
+		check    func(t *testing.T, o Options)
+	}{
+		{name: "flags before", args: []string{"--repo", "/r", "--resume", "b.md"}, check: func(t *testing.T, o Options) {
+			if o.BriefPath != "b.md" || o.Repo != "/r" || !o.Resume {
+				t.Fatalf("%+v", o)
+			}
+		}},
+		{name: "flags after", args: []string{"b.md", "--repo=/r", "--require-private"}, check: func(t *testing.T, o Options) {
+			if o.BriefPath != "b.md" || o.Repo != "/r" || !o.RequirePrivate {
+				t.Fatalf("%+v", o)
+			}
+		}},
+		{name: "generate repeated", args: []string{"b.md", "--generate", "A_B=hex32", "--generate", "C1=placeholder"}, check: func(t *testing.T, o Options) {
+			if len(o.Generate) != 2 || o.Generate["A_B"] != "hex32" || o.Generate["C1"] != "placeholder" {
+				t.Fatalf("%+v", o.Generate)
+			}
+		}},
+		{name: "bad kind", args: []string{"b.md", "--generate", "A=zzz-secret"}, wantErr: "--generate"},
+		{name: "bad name", args: []string{"b.md", "--generate", "a=hex32"}, wantErr: "--generate"},
+		{name: "no equals", args: []string{"b.md", "--generate", "supersecretvalue"}, wantErr: "--generate"},
+		{name: "duplicate name", args: []string{"b.md", "--generate", "A=hex32", "--generate", "A=placeholder"}, wantErr: "--generate"},
+		{name: "attended refused", args: []string{"b.md", "--attended"}, wantErr: "attended runs need a terminal and are only available from the gophermind project command"},
+		{name: "attended allowed", args: []string{"b.md", "--attended"}, attended: true, check: func(t *testing.T, o Options) {
+			if !o.Attended {
+				t.Fatal("not attended")
+			}
+		}},
+		{name: "both query flags", args: []string{"b.md", "--preflight-only", "--print-state-paths"}, wantErr: "--preflight-only"},
+		{name: "preflight only", args: []string{"b.md", "--preflight-only"}, check: func(t *testing.T, o Options) {
+			if !o.PreflightOnly {
+				t.Fatal("not set")
+			}
+		}},
+		{name: "two positionals", args: []string{"name", "b.md"}, wantErr: `"/project <name> <brief>" is no longer accepted: give the brief path only`},
+		{name: "none", args: nil, wantErr: "usage"},
+		{name: "unknown flag", args: []string{"b.md", "--bogus=hunter2"}, wantErr: "--bogus"},
+		{name: "missing value", args: []string{"b.md", "--repo"}, wantErr: "--repo"},
+		{name: "binary commit too short", args: []string{"b.md", "--expect-binary-commit", "abc12"}, wantErr: "--expect-binary-commit"},
+		{name: "binary commit not hex", args: []string{"b.md", "--expect-binary-commit", "zzzzzzzz"}, wantErr: "--expect-binary-commit"},
+		{name: "binary commit", args: []string{"b.md", "--expect-binary-commit", "abc1234"}, check: func(t *testing.T, o Options) {
+			if o.ExpectBinaryCommit != "abc1234" {
+				t.Fatal(o.ExpectBinaryCommit)
+			}
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			o, err := ParseArgs(c.args, c.attended)
+			if c.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), c.wantErr) {
+					t.Fatalf("err = %v, want %q", err, c.wantErr)
+				}
+				for _, secret := range []string{"zzz-secret", "supersecretvalue", "hunter2"} {
+					if strings.Contains(err.Error(), secret) {
+						t.Fatalf("error echoes a flag value: %v", err)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.check(t, o)
+		})
+	}
+}
+
+func TestParseArgsGraded(t *testing.T) {
+	o, err := ParseArgs([]string{"b.md", "--expect-head", "abc"}, false)
+	if err != nil || !o.Graded || o.ExpectHead != "abc" {
+		t.Fatalf("%+v %v", o, err)
+	}
+	for name, args := range map[string][]string{
+		"graded alone":     {"b.md", "--graded"},
+		"graded resume":    {"b.md", "--graded", "--expect-head", "x", "--resume"},
+		"graded attended":  {"b.md", "--graded", "--expect-head", "x", "--attended"},
+		"implied attended": {"b.md", "--expect-head", "x", "--attended"},
+	} {
+		if _, err := ParseArgs(args, true); err == nil {
+			t.Errorf("%s: no error", name)
+		}
+	}
+	_, err = ParseArgs([]string{"b.md", "--graded"}, false)
+	if err == nil || !strings.Contains(err.Error(), "--graded needs --expect-head <rev>") {
+		t.Fatalf("err = %v", err)
+	}
+	_, err = ParseArgs([]string{"b.md", "--graded", "--expect-head", "x", "--resume"}, false)
+	if err == nil || !strings.Contains(err.Error(), "a graded attempt never resumes") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestExitCodes(t *testing.T) {
+	got := []int{ExitVerified, ExitFailed, ExitInvalid, ExitWaiting, ExitEscalated, ExitInterrupted, ExitPreflight, ExitFault}
+	for i, v := range got {
+		if v != i {
+			t.Fatalf("constant %d = %d", i, v)
+		}
+	}
+	for _, c := range []struct {
+		status, reason string
+		want           int
+	}{
+		{"verified", "", 0}, {"failed", "", 1}, {"escalated", "", 4},
+		{"escalated", "waiting_on_human", 3}, {"interrupted", "", 5},
+		{"preflight_failed", "", 6}, {"harness_fault", "", 7}, {"invalid_brief", "", 2},
+	} {
+		if g := ExitCode(c.status, c.reason); g != c.want {
+			t.Errorf("ExitCode(%q,%q) = %d, want %d", c.status, c.reason, g, c.want)
+		}
+	}
+}
+
+func TestParseArgsValueFlagsRefuseFlagLookingValues(t *testing.T) {
+	for _, f := range []string{"--repo", "--expect-head", "--expect-binary-commit", "--generate"} {
+		_, err := ParseArgs([]string{"b.md", f, "--resume"}, false)
+		if err == nil || !strings.Contains(err.Error(), "flag "+f+" needs a value") || strings.Contains(err.Error(), "--resume") {
+			t.Errorf("%s: err = %v", f, err)
+		}
+	}
+	o, err := ParseArgs([]string{"b.md", "--repo=-x"}, false)
+	if err != nil || o.Repo != "-x" {
+		t.Fatalf("%+v %v", o, err)
+	}
+}
+
+func TestParseArgsRefusesRepeatedFlags(t *testing.T) {
+	for _, args := range [][]string{
+		{"b.md", "--repo", "a", "--repo", "b"},
+		{"b.md", "--resume", "--resume"},
+		{"b.md", "--expect-head=x", "--expect-head=y"},
+	} {
+		_, err := ParseArgs(args, true)
+		if err == nil || !strings.Contains(err.Error(), "given twice") || strings.Contains(err.Error(), "=y") {
+			t.Errorf("%v: err = %v", args, err)
+		}
+	}
+}
+
+func TestParseArgsSpellingsAndEmptyValues(t *testing.T) {
+	for _, a := range []string{"-resume", "---resume", "-x"} {
+		_, err := ParseArgs([]string{"b.md", a}, true)
+		if err == nil || !strings.Contains(err.Error(), "unknown flag") {
+			t.Errorf("%s: err = %v", a, err)
+		}
+	}
+	for _, args := range [][]string{{"b.md", "--repo="}, {"b.md", "--repo", ""}} {
+		_, err := ParseArgs(args, true)
+		if err == nil || !strings.Contains(err.Error(), "flag --repo needs a value") {
+			t.Errorf("%v: err = %v", args, err)
+		}
+	}
+}

@@ -1,0 +1,16 @@
+package greet
+
+import "strings"
+
+// Farewell trims the name but returns a plain error for an empty one.
+func Farewell(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", emptyFarewell{}
+	}
+	return "Goodbye, " + name + "!", nil
+}
+
+type emptyFarewell struct{}
+
+func (emptyFarewell) Error() string { return "name is empty" }

@@ -6,6 +6,24 @@ All notable changes to GopherMind are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`/project` now runs the v2 planner and executor in one command.** `gophermind project <brief>` (and `/project <brief>` in the TUI) runs the preflight, plans the brief and builds it. Unattended runs take Clarify recommendations and confirm the understanding by rule, recording `confirmed_by: unattended` and its hash. A failed preflight exits 6 with a numbered list of what a human must provide. `--graded` marks a single graded attempt. The project report carries a node-class table. `scripts/build-dev-binary.sh` builds the version-stamped dev binary.
+- **Parallel leaves.** `executor.workers` (1 to 8, default 1) and `gophermind brief run --workers n` run the leaves of one level at once, each in a private copy of the repository. Landing order is fixed by leaf id and the work branch stays a linear history. With 1 nothing changes.
+- **A revise stage.** When a leaf has used its whole model ladder, or answers `CONTRACT_PROBLEM`, the planner rewrites the node (description, contract text, tests, groups) and the build goes on from the rewrite, bounded by `max_revisions`. A changed signature or `depends_on` is flagged to a person, not rewritten. Rewrites and decisions are kept in `_state/revisions/` and `decisions/rv-*.md`. The `revise:` section of `gophermind.yaml` configures it.
+
+### Changed
+
+- **Breaking: the pipeline contract.** The server's `/pipeline/state`, `/pipeline/events` and `/pipeline/report` and the desktop app's pipeline panel now read the run folder (nodes, runtime files, event log, report) instead of `.planning/assignments.json`. Every body carries `schema_version` 1 and every response the header `X-Gophermind-Pipeline-Schema: 1`. New routes: `/pipeline/runs`, `/pipeline/node`, `/pipeline/artifact`, `/pipeline/decisions`. Event streams carry ids, resume with `since` or `Last-Event-ID`, and are capped at 16 (`GOPHERMIND_PIPELINE_MAX_STREAMS`). The server and the desktop app must be updated together; a pair that disagrees shows a message in the panel and chat keeps working.
+- **Breaking: run state is files, not SQLite.** A run's nodes, runtime state (`<node>.runtime.json`, claims and attempts), event log (`_state/events.jsonl`), call log (`_state/calls.jsonl`), saved attempts and report are all files in `.gophermind/<run-id>/`. `blackboard.db` is no longer created; a leftover one from an older version is ignored.
+- **The pipeline is node based.** Planning and building work on a tree of nodes with groups and a contract slice, replacing the task-based `.planning/assignments.json` pipeline.
+- The `briefv2` package folder is now `gophermind-lib/build` and `docs/briefv2` is `docs/build` (import path change only, no behavior change).
+
+### Removed
+
+- **`gophermind phase` and `/phase` are removed**, with PhaseFlow's roadmap workflow, its embedded prompts and its `.planning/` files (`ROADMAP.md`, `STATE.md`, `assignments.json`). There is no replacement for the roadmap loop. `gophermind phase ...` and `/phase` now print a notice and the CLI exits 2; plan and build a brief with `gophermind brief plan` and `gophermind brief run`, or with `/project`. Existing `.planning/` folders are not read. The notice stub is removed in the release after this one.
+- **The v1 planner and runner are removed**: the `plantree` and `orchestrate` packages, `/plan-v1`, `/plan-v1-execute`, `/project-execute` and `/questions`.
+
 ## [0.9.0] - 2026-09-29
 
 ### Added

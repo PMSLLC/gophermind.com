@@ -1,0 +1,8 @@
+{
+ "rationale": "The whole greeter library: the features, constraints and acceptance bullets of the brief in one plan.",
+ "assumptions": [],
+ "open_questions": [],
+ "decision_ids": [
+  "q1"
+ ]
+}

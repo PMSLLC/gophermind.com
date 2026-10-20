@@ -1,0 +1,51 @@
+{
+  "schema_version": 3,
+  "run_id": "gm-2026-10-08-001",
+  "started_at": "2026-10-08T12:02:00.000000000Z",
+  "finished_at": "2026-10-08T12:20:00.000000000Z",
+  "status": "verified",
+  "resumed": false,
+  "sandbox": "none",
+  "stop_reason": "",
+  "exit_code": 0,
+  "requirements_covered": {
+    "covered": 1,
+    "total": 1
+  },
+  "acceptance": {
+    "passed": 0,
+    "total": 0
+  },
+  "constraints_checked": {
+    "passed": 0,
+    "total": 0
+  },
+  "waves": 2,
+  "nodes": {
+    "total": 3,
+    "verified": 3,
+    "failed": 0,
+    "escalated": 0,
+    "blocked": 0
+  },
+  "by_task_type": [],
+  "leaves": [],
+  "weak_tests": 0,
+  "repairs": 0,
+  "revised_leaves": [
+    {
+      "node_id": "fn-bye",
+      "revisions": 1,
+      "changed": [
+        "tests"
+      ],
+      "tests_rewritten": true
+    }
+  ],
+  "rewritten_leaves": 1,
+  "parallel": {
+    "workers": 2,
+    "parallel_levels": 1,
+    "landing_conflicts": 0
+  }
+}

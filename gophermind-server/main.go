@@ -161,7 +161,7 @@ func run(logger *slog.Logger) error {
 func runWithConfig(cfg serverConfig, ln net.Listener, logger *slog.Logger, ctx context.Context) error {
 	logger.Info("starting", "port", cfg.Port, "wg_interface", cfg.WGInterface, "llm_endpoint_configured", cfg.LLMEndpoint != "", "root", cfg.Root)
 
-	svcDeps, pipelineHub, err := buildDeps(cfg, cfg.Root, logger)
+	svcDeps, err := buildDeps(cfg, cfg.Root, logger)
 	if err != nil {
 		return fmt.Errorf("build deps: %w", err)
 	}
@@ -184,13 +184,6 @@ func runWithConfig(cfg serverConfig, ln net.Listener, logger *slog.Logger, ctx c
 		go tracker.runSweeper(ctx, peerSweepInterval)
 	}
 	httpSrv := &http.Server{Handler: mux}
-
-	// Feeds the pipeline hub by watching cfg.Root/.planning/assignments.json
-	// for changes, so GET /pipeline/events has something to stream -- the
-	// same mechanism the CLI's own "serve" command uses (a phase execute run
-	// happens in a different process; the assignments file is the only
-	// channel between them).
-	serve.StartPipelineWatcher(ctx, cfg.Root, pipelineHub)
 
 	return runServer(ln, httpSrv, wgCloser, logger, ctx)
 }

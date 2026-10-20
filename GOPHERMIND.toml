@@ -14,7 +14,6 @@ core_packages = [
   "internal/agent",      # Agent loop, task graph, verification
   "internal/tools",      # Read/search/edit/shell/sql/http
   "internal/tui",        # Terminal UI
-  "internal/phaseflow",  # Spec-driven workflow
   "internal/prompt",     # Prompt registry and rendering
   "internal/models",     # Model endpoints and personas
 ]
@@ -55,7 +54,7 @@ golden_tests_env = "GOLDEN_UPDATE=1"
 description = """
 Single-binary Go agent loop (gophermind) that talks to any OpenAI-compatible
 model. Features: TUI, tool set (read/search/edit/shell/sql/http), sessions,
-personas, prompt registry, and native spec-driven workflow (PhaseFlow).
+personas, prompt registry, and a brief-to-build planner and executor.
 
 Agent loop (internal/agent):
   - TaskGraph: deterministic task decomposition
@@ -68,13 +67,6 @@ TUI (internal/tui):
   - Command dispatch and prompt entry
   - Inline approvals and streaming output
   - Token/cost meter and live feedback
-
-PhaseFlow (internal/phaseflow):
-  - Ported from github.com/jbrahy/metaphaseflow (MIT)
-  - State under .planning/
-  - User surface: `gophermind phase <cmd>` and `/phase <cmd>`
-  - Deterministic bookkeeping (status/next/done/sync/archive)
-  - Embedded command support
 
 Model Endpoints:
   - OpenAI-compatible API abstraction
@@ -95,6 +87,5 @@ credentials_file = "credentials.md"
 note = "Never commit credentials.md; hold dev auth keys and service tokens"
 
 [state_dirs]
-planning = ".planning/"
 remember = ".remember/"
 workdir = "workspace/"

@@ -181,51 +181,13 @@ you ──▶ TUI ──▶ agent loop ──▶ OpenAI-compatible model
 The model requests tools by name; the harness runs them against your repo
 (inside the sandbox), feeds the results back, and repeats until it produces an
 answer or hits the iteration budget. That's the whole idea — see
-[`internal/agent`](internal/agent) and [`internal/tools`](internal/tools).
+[`gophermind-lib/agent`](gophermind-lib/agent) and [`gophermind-lib/tools`](gophermind-lib/tools).
 
-## PhaseFlow: spec-driven workflow
+## Plan and build from a brief
 
-GopherMind natively speaks PhaseFlow,
-a spec-driven development loop: **Roadmap → Phases → Plan → Execute → Verify →
-Milestone**. Workflow state lives under `.planning/` (`ROADMAP.md`, `STATE.md`,
-`PROJECT.md`, `config.json`) — the same on-disk model as upstream, so the two
-tools are interchangeable.
+`gophermind brief plan <brief.md>` plans a brief into a tree of nodes under `.gophermind/<run-id>/` in your repo, `gophermind brief run <run-id>` builds it, and `/project <brief>` in the TUI (or `gophermind project <brief>`) does both in one run. Everything a run does is a browsable file in that folder: the nodes, their runtime state, the event log, the call log, the saved attempts and the report. With `executor.workers` above 1 (or `gophermind brief run --workers n`) independent leaves build in parallel in private copies of the repo, and a leaf that has used its whole model ladder is rewritten by the planner's revise stage instead of failing the run. `gophermind serve` and the desktop app show a run live (`GET /pipeline`; the wire format is `docs/pipeline-contract.md`, and the server and the app must be released together). See `docs/build/README.md`.
 
-```
-gophermind phase init "My Project"   # scaffold .planning/
-gophermind phase roadmap             # draft the roadmap (agent)
-gophermind phase status              # progress + current phase (local)
-gophermind phase plan 1              # plan a phase (agent)
-gophermind phase execute 1           # execute its plans (agent)
-gophermind phase done 01-01          # mark a plan done, sync STATE.md (local)
-gophermind phase verify 1            # verify success criteria (agent)
-gophermind phase archive v1.0 MVP    # snapshot a shipped milestone (local)
-```
-
-The same commands are available in the TUI as `/phase <cmd>`. Loop steps
-(`roadmap`/`plan`/`execute`/`verify`/`milestone`, and any embedded PhaseFlow
-command by name) run gophermind's agent seeded with the current project state.
-The bookkeeping commands (`status`, `next`, `done`, `sync`, `archive`) are pure
-Go — they update `.planning/` deterministically with no model calls, so
-progress can never drift from the roadmap's checkboxes. See
-[`internal/phaseflow`](internal/phaseflow).
-
-### Autonomous execution: `/project-execute`
-
-Once a project plan is approved (via `/project <name>` → approve), you can run:
-
-```sh
-gophermind project-execute          # TUI: `/project-execute`
-```
-
-This autonomously executes every `pending` task in the approved `.planning/assignments.json` — **in plan-id order, all phases, each task in a fresh isolated agent**. Each task agent:
-- Runs with its assigned **model** and **catalog prompt** (seeded from the project's per-type agent catalog)
-- Verifies its output against the task's acceptance criteria (one verify-and-correct round)
-- Updates its status (`pending` → `done` on success, or `failed` with details)
-
-Failed tasks are marked `failed`, the executor continues to the next task, and a summary is printed at the end. Task agents run in **auto-approval mode** (unattended — no per-task prompts) for safety; this is a deliberate gating mechanism.
-
-**Abort handling:** Pressing Ctrl-C stops the executor; in-flight tasks cleanly revert to `pending` so they can be re-run. Like `/phase execute`, this command requires an approved plan.
+`gophermind phase` and `/phase` were removed in 0.10.0. PhaseFlow's roadmap workflow has no replacement; `.planning/` folders are not read.
 
 ## Configuration
 

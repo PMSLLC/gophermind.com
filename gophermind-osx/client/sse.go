@@ -4,13 +4,25 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
-	"gophermind/gophermind-lib/phaseflow"
+	"gophermind/gophermind-lib/runview"
 	"gophermind/gophermind-lib/serve"
 )
+
+// maxSSELine is the longest single SSE line Next accepts. The run-report event
+// carries the whole final report as one compacted data: line, which can pass
+// the scanner's 64 KB default.
+const maxSSELine = 8 << 20
+
+// ErrSSELineTooLong is returned by Next when one line of the stream is longer
+// than 8 MiB. The stream cannot be read past it, so a caller should close it
+// rather than call Next again.
+var ErrSSELineTooLong = errors.New("client: an event stream line is over 8 MiB")
 
 // Event is one parsed SSE frame: the "event:" line's value and the
 // "data:" line(s)' payload (multiple data: lines are joined with "\n",
@@ -23,6 +35,9 @@ import (
 type Event struct {
 	Type string
 	Data string
+	// ID is the frame's "id:" value (the pipeline stream sends the line number
+	// of the run's event log), or 0 when the frame has none.
+	ID int64
 }
 
 // ToolCall decodes Data as a serve.ToolCallEvent. Call only when Type ==
@@ -66,33 +81,44 @@ func (e Event) ModelSwitched() (serve.ModelSwitchedEvent, error) {
 	return v, err
 }
 
-// TaskStatus/TaskAttempt/WaveChanged decode Data for PipelineEvents'
-// stream, whose event vocabulary (task-status, task-attempt, wave-changed,
-// run-report) differs from a session/run stream's.
-func (e Event) TaskStatus() (serve.TaskStatusEvent, error) {
-	var v serve.TaskStatusEvent
+// NodeStatus, NodeAttempt, NodeResult, WaveChanged, RunStatus and RunReport
+// decode Data for PipelineEvents' stream, whose vocabulary (node-status,
+// node-attempt, node-result, wave-changed, run-status, run-report) differs from
+// a session or run stream's. The types come from gophermind-lib/runview.
+func (e Event) NodeStatus() (runview.NodeStatusData, error) {
+	var v runview.NodeStatusData
 	err := json.Unmarshal([]byte(e.Data), &v)
 	return v, err
 }
 
-func (e Event) TaskAttempt() (serve.TaskAttemptEvent, error) {
-	var v serve.TaskAttemptEvent
+func (e Event) NodeAttempt() (runview.NodeAttemptData, error) {
+	var v runview.NodeAttemptData
 	err := json.Unmarshal([]byte(e.Data), &v)
 	return v, err
 }
 
-func (e Event) WaveChanged() (serve.WaveChangedEvent, error) {
-	var v serve.WaveChangedEvent
+func (e Event) NodeResult() (runview.NodeResultData, error) {
+	var v runview.NodeResultData
 	err := json.Unmarshal([]byte(e.Data), &v)
 	return v, err
 }
 
-// RunReport decodes Data as a phaseflow.RunReport (Type == "run-report" on
-// the pipeline events stream) -- the same type PipelineReport's GET
-// response decodes to; RunReport publishes it marshaled directly (see
-// gophermind-lib/serve/pipeline.go's PipelineHub.RunReport).
-func (e Event) RunReport() (phaseflow.RunReport, error) {
-	var v phaseflow.RunReport
+func (e Event) WaveChanged() (runview.WaveChangedData, error) {
+	var v runview.WaveChangedData
+	err := json.Unmarshal([]byte(e.Data), &v)
+	return v, err
+}
+
+func (e Event) RunStatus() (runview.RunStatusData, error) {
+	var v runview.RunStatusData
+	err := json.Unmarshal([]byte(e.Data), &v)
+	return v, err
+}
+
+// RunReport decodes the run-report event: the same body GET /pipeline/report
+// returns.
+func (e Event) RunReport() (runview.ReportBody, error) {
+	var v runview.ReportBody
 	err := json.Unmarshal([]byte(e.Data), &v)
 	return v, err
 }
@@ -105,6 +131,22 @@ func (e Event) RunReport() (phaseflow.RunReport, error) {
 type EventStream struct {
 	body    io.ReadCloser
 	scanner *bufio.Scanner
+	header  http.Header
+	lastID  int64
+}
+
+// Header is the response header the stream was opened with.
+func (s *EventStream) Header() http.Header { return s.header }
+
+// LastID is the id of the last frame Next returned that carried one. A caller
+// that reconnects passes it as since.
+func (s *EventStream) LastID() int64 { return s.lastID }
+
+func (s *EventStream) frame(event string, data []string, id int64) Event {
+	if id > 0 {
+		s.lastID = id
+	}
+	return Event{Type: event, Data: strings.Join(data, "\n"), ID: id}
 }
 
 // Close closes the underlying connection. Safe to call more than once.
@@ -117,13 +159,14 @@ func (s *EventStream) Close() error {
 func (s *EventStream) Next() (Event, error) {
 	var event string
 	var data []string
+	var id int64
 	haveContent := false
 
 	for s.scanner.Scan() {
 		line := s.scanner.Text()
 		if line == "" {
 			if haveContent {
-				return Event{Type: event, Data: strings.Join(data, "\n")}, nil
+				return s.frame(event, data, id), nil
 			}
 			continue // a blank line before any field is not a frame boundary
 		}
@@ -137,18 +180,27 @@ func (s *EventStream) Next() (Event, error) {
 			haveContent = true
 			continue
 		}
-		// Any other field (id:, retry:, or a comment starting with ':') is
+		if v, ok := sseField(line, "id"); ok {
+			if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+				id = n
+			}
+			continue
+		}
+		// Any other field (retry:, or a comment starting with ':') is
 		// valid SSE this client doesn't currently use; ignored rather than
 		// treated as an error, per the SSE spec's forward-compatibility rule.
 	}
 	if err := s.scanner.Err(); err != nil {
+		if errors.Is(err, bufio.ErrTooLong) {
+			return Event{}, ErrSSELineTooLong
+		}
 		return Event{}, err
 	}
 	// A trailing frame with no terminating blank line (the connection just
 	// closed) is still real data -- flush it rather than silently dropping
 	// the last event.
 	if haveContent {
-		return Event{Type: event, Data: strings.Join(data, "\n")}, nil
+		return s.frame(event, data, id), nil
 	}
 	return Event{}, io.EOF
 }
@@ -188,5 +240,7 @@ func (c *Client) openSSE(ctx context.Context, method, path string, body io.Reade
 		resp.Body.Close()
 		return nil, &StatusError{StatusCode: resp.StatusCode, Body: string(b)}
 	}
-	return &EventStream{body: resp.Body, scanner: bufio.NewScanner(resp.Body)}, nil
+	sc := bufio.NewScanner(resp.Body)
+	sc.Buffer(make([]byte, 64<<10), maxSSELine)
+	return &EventStream{body: resp.Body, scanner: sc, header: resp.Header}, nil
 }

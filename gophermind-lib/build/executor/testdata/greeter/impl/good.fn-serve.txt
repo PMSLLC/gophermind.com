@@ -1,0 +1,11 @@
+package main
+
+import "net/http"
+
+// serve registers /hello and /bye on a ServeMux and calls http.ListenAndServe on addr.
+func serve(addr string) error {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/hello", helloHandler)
+	mux.HandleFunc("/bye", byeHandler)
+	return http.ListenAndServe(addr, mux)
+}

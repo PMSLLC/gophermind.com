@@ -1,16 +1,16 @@
 # Example briefs
 
-Starting points for `/project`'s optional brief argument. Each file here is a
+Starting points for `/project`'s brief argument. Each file here is a
 short, deliberately incomplete project description -- a paragraph or two, not
 a full spec. That's the point: pick one, run
 
 ```
-/project <name> examples/phase-flow/briefs/01-cli-tool.md
+/project examples/phase-flow/briefs/01-cli-tool.md
 ```
 
-and the model will ask you questions to fill in the gaps before it writes
-`SPEC.md`, `ROADMAP.md`, and `assignments.json` into `.planning/`. Omit the
-path and `/project` interviews you from scratch, exactly as before.
+and the model will ask you questions to fill in the gaps, then plan the brief
+into a task tree under `.gophermind/<run-id>/` and build it. The brief path is
+required.
 
 There's nothing special about these files' format. `/project` reads whatever
 plain-text file you point it at -- these are just a few realistic starting

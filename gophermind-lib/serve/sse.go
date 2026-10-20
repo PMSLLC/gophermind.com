@@ -31,6 +31,16 @@ func writeSSEEvent(w io.Writer, flusher http.Flusher, event, data string) {
 	}
 }
 
+// writeSSEFrame is writeSSEEvent with an "id:" line first. A client sends the
+// last id it saw back as Last-Event-ID (or since=) to resume the stream. An id
+// of zero writes no id line.
+func writeSSEFrame(w io.Writer, flusher http.Flusher, id int64, event, data string) {
+	if id > 0 {
+		fmt.Fprintf(w, "id: %d\n", id)
+	}
+	writeSSEEvent(w, flusher, event, data)
+}
+
 // SSEFramesForAgentEvent maps an agent.Event to a typed SSE (event, data)
 // pair. emit is false for unrecognized event types, so callers can silently
 // skip them without special-casing.

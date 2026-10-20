@@ -57,29 +57,7 @@ type ModelSwitchedEvent struct {
 	Reason string `json:"reason"`
 }
 
-// TaskStatusEvent ("task-status") reports a PhaseFlow task's status change.
-type TaskStatusEvent struct {
-	ID     string `json:"id"`
-	Status string `json:"status"`
-	Wave   int    `json:"wave"`
-}
-
-// TaskAttemptEvent ("task-attempt") reports one model's completed attempt at
-// a PhaseFlow task.
-type TaskAttemptEvent struct {
-	TaskID   string `json:"task_id"`
-	Model    string `json:"model"`
-	Duration string `json:"duration"`
-	Verdict  string `json:"verdict"`
-	Reason   string `json:"reason"`
-}
-
-// WaveChangedEvent ("wave-changed") reports a PhaseFlow wave starting or
-// finishing.
-type WaveChangedEvent struct {
-	Wave  int    `json:"wave"`
-	State string `json:"state"` // "started" or "finished"
-}
-
-// RunReportEvent ("run-report") reports a finished PhaseFlow run. Payload is
-// phaseflow.RunReport directly — see gophermind-lib/phaseflow/summary.go.
+// The pipeline stream (GET /pipeline/events) has its own event vocabulary:
+// node-status, node-attempt, node-result, wave-changed, run-status and
+// run-report. Its payload types live in gophermind-lib/runview (events.go
+// would otherwise import the run folder reader).

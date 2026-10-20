@@ -1,0 +1,73 @@
+// Package gitland is the executor's git layer: a work branch, exact-path commits and a
+// fast-forward of the base branch. The Repo interface cannot express push, force, reset or rebase.
+package gitland
+
+import (
+	"errors"
+	"fmt"
+)
+
+// Repo is the whole surface the executor may use. There is no Push, Force, Rebase or Reset.
+type Repo interface {
+	// Start verifies base exists. When work does not exist it requires every dirty path to be one of allowDirty
+	// (exact repo-relative paths; nil means the tree must be clean) and creates work from base's tip; when it exists
+	// it only switches to it (resume: the executor applies the dirt policy).
+	Start(baseBranch, workBranch string, allowDirty []string) error
+	// Reenter is Start for a run that stopped before its Wave 0 commit: an existing work branch is reused only
+	// while it points exactly at base's tip, otherwise ErrWorkBranchMoved.
+	Reenter(baseBranch, workBranch string, allowDirty []string) error
+	CommitWave0(paths []string) (string, error)
+	CommitLeaf(nodeID, title string, add, remove []string) (string, error)
+	CommitRepair(nodeID string, round int, add []string) (string, error)
+	// CommitRevision commits the rewritten test file of a revised node: subject "gm(revise): <node> test, revision <n>",
+	// trailers GopherMind-Node, GopherMind-Revision and the run trailer. Never taken for the leaf commit (LeafCommit).
+	CommitRevision(nodeID string, revision int, add []string) (string, error)
+	// Finish makes the empty final commit on the work branch, then fast-forwards base to it.
+	Finish(msg string) (string, error)
+	// Dirty lists sorted repo-relative paths: tracked changes and untracked files.
+	Dirty() ([]string, error)
+	// Ignored lists sorted repo-relative paths of files git ignores, one per file. The harness's own
+	// .gophermind/ run folder is never listed. The executor counts an ignored file it did not declare as stray.
+	Ignored() ([]string, error)
+	// Files lists sorted repo-relative paths of the working tree's files that git
+	// knows or would add: tracked files still on disk and untracked files that are
+	// not ignored. .gophermind/ is never listed. It changes nothing.
+	Files() ([]string, error)
+	// Diff is the working tree against base, including new files, for diff_only.
+	Diff(base string) ([]byte, error)
+	// Restore puts tracked paths back to HEAD (index and tree) and removes untracked files.
+	Restore(paths []string) error
+	Head() (string, error)
+	Branch() (string, error)
+	// LeafCommit finds the leaf commit for nodeID on the current branch. ok is false when none exists.
+	LeafCommit(nodeID string) (hash string, ok bool, err error)
+	// IsAncestor reports whether the commit rev is HEAD or one of its ancestors. A resume uses it to prove the work
+	// branch still contains what the run recorded; an unknown revision is an error, not an answer.
+	IsAncestor(rev string) (bool, error)
+	// ForeignCommits counts the commits after since (a revision, or the base branch when empty) up to HEAD that this
+	// run did not make: a commit counts as the run's only with a gm( subject and this run's GopherMind-Run trailer.
+	ForeignCommits(since string) (int, error)
+	// CanFastForward reports whether the base branch is still an ancestor of the work branch (Start must have run).
+	CanFastForward() (bool, error)
+}
+
+var (
+	ErrLandingBlocked   = errors.New("gitland: landing_blocked: base branch moved, fast-forward is not possible")
+	ErrDirtyTree        = errors.New("gitland: working tree is not clean")
+	ErrWorkBranchMoved  = errors.New("gitland: the work branch no longer points at the base branch tip")
+	ErrNothingToCommit  = errors.New("gitland: nothing to commit for the named paths")
+	ErrIndexNotClean    = errors.New("gitland: the index holds changes the commit did not name")
+	ErrNotRepoRoot      = errors.New("gitland: the directory is not the root of a git repository")
+	ErrForbiddenGitArgs = errors.New("gitland: refused git arguments")
+)
+
+// ValidateLanding is called by the executor before Start. "" is treated as commit.
+func ValidateLanding(mode string) error {
+	switch mode {
+	case "", "diff_only", "commit":
+		return nil
+	case "pull_request":
+		return fmt.Errorf("brief field landing: %q is not supported by this executor", mode)
+	}
+	return errors.New("brief field landing: value is not supported by this executor")
+}

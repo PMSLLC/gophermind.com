@@ -8,13 +8,13 @@ longer ones to see what a complete brief looks like.
 A paragraph or two each. Pick one, click **Start Breakdown** in the Pipeline
 panel, and the model asks you questions to fill the gaps before it writes
 `SPEC.md`, `ROADMAP.md`, and `assignments.json` into a `.planning/` directory.
-These files have no special format: **Pick Brief...** reads any plain-text file.
+These files have no special format: **Pick Brief...** reads any plain-text file. The Pipeline panel's live view shows a `gophermind brief` run (`gophermind project <brief>`), not these planning files.
 
 - `01-cli-tool.md`: a small command-line utility
 - `02-rest-api.md`: a small backend service
 - `03-menu-bar-app.md`: a small native macOS utility
 
-## Complete briefs (04 to 08): the v2 brief format
+## Complete briefs (04 to 08): the brief format
 
 Each one starts with a YAML block that says how the run should behave, followed by
 seven required sections: Overview, Features, Architecture, Data, Constraints, Out of
@@ -26,7 +26,7 @@ gophermind brief validate 06-hookrelay.md
 
 An invalid brief exits with code 2 and names the field. All five here validate
 with no warnings. Every brief in this format is for a **Go** project (the only
-language v2 accepts today), and none uses a real account, key, or address.
+language the loader accepts today), and none uses a real account, key, or address.
 
 They are ordered by size, and between them they use every option the format has:
 
@@ -49,5 +49,5 @@ What the options mean, in the order they appear in the block:
 - `network`: the hosts the build may reach; `critical: true` fails the task when a request fails, and `*.example.com` matches a whole domain.
 - `budget`: the largest prompt for one task, and how many rewrite rounds a failed task gets.
 
-A test (`gophermind-lib/briefv2/brief/examples_test.go`) parses every complete
+A test (`gophermind-lib/build/brief/examples_test.go`) parses every complete
 brief here and fails if one stops validating or if the set stops covering an option.

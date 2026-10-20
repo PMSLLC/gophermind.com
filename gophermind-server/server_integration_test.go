@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -9,10 +10,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"gophermind/gophermind-lib/runview"
+	"gophermind/gophermind-lib/runview/runviewtest"
+	"gophermind/gophermind-lib/serve"
 	"gophermind/gophermind-lib/wireguard"
 )
 
@@ -351,5 +356,130 @@ func TestRunSweeper_RemovesTimedOutPeersOnATicker(t *testing.T) {
 	}
 	if wg.PeerCount() != 0 {
 		t.Errorf("peer count = %d, want 0 (runSweeper should have timed the peer out)", wg.PeerCount())
+	}
+}
+
+// pipelinePaths is every pipeline route the contract has, with the query that
+// makes it answer for the built fixture run.
+var pipelinePaths = []string{
+	"/pipeline/runs", "/pipeline/state", "/pipeline/node?id=fn-bye",
+	"/pipeline/artifact?id=fn-bye&attempt=1&file=check-output.txt", "/pipeline/decisions", "/pipeline/report",
+}
+
+func getAuthed(t *testing.T, url, token string) (*http.Response, []byte) {
+	t.Helper()
+	resp, err := http.DefaultClient.Do(authedReq(t, http.MethodGet, url, token, ""))
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp, b
+}
+
+// TestPipelineEndpointsAgainstARunFolder starts the real mux (buildDeps plus
+// serve.NewMux) on a loopback listener over a run folder built by the real
+// writers, and fetches every pipeline endpoint with a token. This is the
+// server half of "released together": the desktop client tests decode the same
+// bodies through the golden files.
+func TestPipelineEndpointsAgainstARunFolder(t *testing.T) {
+	srv, root := testServer(t, []string{finalAnswerBody("hi")}, "t")
+	runviewtest.Build(t, root, runviewtest.Building)
+
+	for _, p := range pipelinePaths {
+		if resp, _ := getAuthed(t, srv.URL+p, ""); resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("%s without a token: %d, want 401", p, resp.StatusCode)
+		}
+		resp, body := getAuthed(t, srv.URL+p, "t")
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("%s: %d %s", p, resp.StatusCode, body)
+			continue
+		}
+		if resp.Header.Get(serve.PipelineSchemaHeader) != "1" {
+			t.Errorf("%s: schema header = %q", p, resp.Header.Get(serve.PipelineSchemaHeader))
+		}
+		if strings.HasPrefix(resp.Header.Get("Content-Type"), "application/json") && !json.Valid(body) {
+			t.Errorf("%s: invalid JSON", p)
+		}
+	}
+
+	var st runview.StateBody
+	_, body := getAuthed(t, srv.URL+"/pipeline/state", "t")
+	if json.Unmarshal(body, &st) != nil || st.Run == nil || st.Run.Status != "building" || len(st.Nodes) != 5 {
+		t.Fatalf("state = %s", body)
+	}
+
+	// The event stream: replay from the start and read the first frame.
+	resp, err := http.DefaultClient.Do(authedReq(t, http.MethodGet, srv.URL+"/pipeline/events?since=0", "t", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	br := bufio.NewReader(resp.Body)
+	var sawID, sawEvent bool
+	for i := 0; i < 8 && !(sawID && sawEvent); i++ {
+		line, err := br.ReadString('\n')
+		if err != nil {
+			t.Fatalf("event stream: %v", err)
+		}
+		sawID = sawID || strings.TrimRight(line, "\r\n") == "id: 1"
+		sawEvent = sawEvent || strings.HasPrefix(line, "event: node-")
+	}
+	if !sawID || !sawEvent {
+		t.Error("the first replayed frame must carry id: 1 and a node-* event")
+	}
+}
+
+// TestPipelineSmokeRealRoot serves a real repo's runs and fetches every
+// endpoint, printing what it found. It is skipped unless
+// GOPHERMIND_SMOKE_ROOT names a repo that holds .gophermind/<run>/ (for
+// example the csvstat repo after a /project run). The listener is
+// 127.0.0.1 only; the token is the test's own.
+func TestPipelineSmokeRealRoot(t *testing.T) {
+	root := os.Getenv("GOPHERMIND_SMOKE_ROOT")
+	if root == "" {
+		t.Skip("set GOPHERMIND_SMOKE_ROOT to a repo with a run folder to run this")
+	}
+	llm := fakeLLM(t, []string{finalAnswerBody("hi")})
+	defer llm.Close()
+	d, err := buildDeps(serverConfig{Token: "t", LLMEndpoint: llm.URL, Root: root}, root, discardLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux, err := serve.NewMux(d, serve.Options{Token: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	_, body := getAuthed(t, srv.URL+"/pipeline/runs", "t")
+	var runs runview.RunsBody
+	if json.Unmarshal(body, &runs) != nil || len(runs.Runs) == 0 {
+		t.Fatalf("no runs under %s/.gophermind: %s", root, body)
+	}
+	newest := runs.Runs[0]
+	t.Logf("newest run %s: %s (%s), %d function nodes, coverage %d/%d", newest.RunID, newest.Status, newest.StopReason,
+		newest.Counts.Nodes, newest.Coverage.Covered, newest.Coverage.Total)
+	for _, p := range []string{"/pipeline/state", "/pipeline/decisions", "/pipeline/report"} {
+		resp, b := getAuthed(t, srv.URL+p+"?run="+newest.RunID, "t")
+		if resp.StatusCode != http.StatusOK || resp.Header.Get(serve.PipelineSchemaHeader) != "1" || !json.Valid(b) {
+			t.Errorf("%s: %d %s", p, resp.StatusCode, b)
+		}
+	}
+	var st runview.StateBody
+	_, b := getAuthed(t, srv.URL+"/pipeline/state?run="+newest.RunID, "t")
+	_ = json.Unmarshal(b, &st)
+	for _, n := range st.Nodes {
+		if n.Kind != "function" {
+			continue
+		}
+		resp, nb := getAuthed(t, srv.URL+"/pipeline/node?run="+newest.RunID+"&id="+n.ID, "t")
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("node %s: %d %s", n.ID, resp.StatusCode, nb)
+		}
+	}
+	for _, w := range st.Warnings {
+		t.Logf("warning: %s", w)
 	}
 }

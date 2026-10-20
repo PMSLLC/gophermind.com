@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"gophermind/gophermind-lib/gitenv"
+	"gophermind/gophermind-lib/tui"
 )
 
 // dispatchBinPath is the compiled gophermind binary the tests in this file
@@ -103,5 +104,44 @@ func TestFreeDispatchSurvivesLeadingGlobalFlags(t *testing.T) {
 				t.Errorf("gophermind %s did not print the provider table:\n%s", strings.Join(tc.args, " "), out)
 			}
 		})
+	}
+}
+
+// runDispatchExit runs the compiled binary and returns its combined output and
+// exit code, without failing the test on a non-zero exit.
+func runDispatchExit(t *testing.T, args ...string) (string, int) {
+	t.Helper()
+	cmd := exec.Command(dispatchBinPath, args...)
+	cmd.Env = dispatchEnv(t)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return string(out), 0
+	}
+	if ee, ok := err.(*exec.ExitError); ok {
+		return string(out), ee.ExitCode()
+	}
+	t.Fatalf("gophermind %s: %v", strings.Join(args, " "), err)
+	return "", -1
+}
+
+// TestPhaseStubPrintsTheNoticeAndExits2 pins the one-release stub: every form
+// of `gophermind phase` prints the notice and exits 2, with no endpoint
+// configured, so it works on a fresh machine.
+func TestPhaseStubPrintsTheNoticeAndExits2(t *testing.T) {
+	for _, args := range [][]string{{"phase"}, {"phase", "status"}, {"phase", "init", "Demo"}, {"-q", "phase", "execute", "1"}} {
+		out, code := runDispatchExit(t, args...)
+		if code != 2 {
+			t.Errorf("gophermind %s: exit %d, want 2\n%s", strings.Join(args, " "), code, out)
+		}
+		if !strings.Contains(out, "gophermind phase was removed in") || !strings.Contains(out, "gophermind brief plan") {
+			t.Errorf("gophermind %s: no notice:\n%s", strings.Join(args, " "), out)
+		}
+	}
+}
+
+func TestRunPhaseRemovedWritesTheSharedNotice(t *testing.T) {
+	var b strings.Builder
+	if code := runPhaseRemoved(&b); code != 2 || strings.TrimSpace(b.String()) != tui.PhaseRemovedNotice() {
+		t.Errorf("code %d, text %q", code, b.String())
 	}
 }

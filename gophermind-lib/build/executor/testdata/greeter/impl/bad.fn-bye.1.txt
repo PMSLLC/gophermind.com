@@ -1,0 +1,20 @@
+package main
+
+import (
+	"fmt"
+	"net/http"
+	"sync"
+)
+
+var (
+	mu       sync.Mutex
+	lastName string
+)
+
+// byeHandler keeps the name in a package-level variable and has no default name.
+func byeHandler(w http.ResponseWriter, r *http.Request) {
+	mu.Lock()
+	defer mu.Unlock()
+	lastName = r.URL.Query().Get("name")
+	fmt.Fprintf(w, "Goodbye, %s!", lastName)
+}

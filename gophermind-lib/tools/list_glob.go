@@ -50,7 +50,7 @@ func ListFilesGlob(root string) Tool {
 				if err != nil {
 					return err
 				}
-				if d.IsDir() && ignoredDirs[d.Name()] && path != base {
+				if d.IsDir() && skipIgnoredDir(rootAbs, path, d.Name()) && path != base {
 					return filepath.SkipDir
 				}
 				// Check .gitignore.
@@ -175,7 +175,7 @@ func ListFilesSymlink(root string) Tool {
 				if err != nil {
 					return err
 				}
-				if d.IsDir() && ignoredDirs[d.Name()] && path != base {
+				if d.IsDir() && skipIgnoredDir(rootAbs, path, d.Name()) && path != base {
 					return filepath.SkipDir
 				}
 				if d.IsDir() {

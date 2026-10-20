@@ -7,9 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"gophermind/gophermind-lib/briefv2/brief"
-	"gophermind/gophermind-lib/briefv2/tree"
-	"gophermind/gophermind-lib/briefv2/vault"
+	"gophermind/gophermind-lib/build/brief"
+	"gophermind/gophermind-lib/build/tree"
+	"gophermind/gophermind-lib/build/vault"
 	"gophermind/gophermind-lib/config"
 )
 
@@ -18,12 +18,22 @@ var vaultOptions vault.Options
 
 const briefUsage = `usage:
   gophermind brief validate <brief.md>
+  gophermind brief plan <brief.md> [--yes] [--gate terminal|file] [--fake <fixture-dir>] [--allow-public]
+  gophermind brief resume <run-id> [--yes] [--gate terminal|file] [--fake <fixture-dir>] [--allow-public]
+  gophermind brief answer <run-id> <question-id> <new answer...>
+  gophermind brief run <run-id> [--gate terminal|file] [--repo <path>] [--workers n]
+  gophermind brief run <run-id> --check-env      (environment preflight, no model call; exit 6 on a failed check)
+  gophermind brief report <run-id> [--json]
+  gophermind brief status <run-id>
+  gophermind brief coverage <run-id>
+  gophermind brief calls <run-id>
   gophermind brief vault set <NAME>      (value from a terminal prompt or stdin)
   gophermind brief vault list
   gophermind brief tree check <run-dir>`
 
 // runBrief implements `gophermind brief ...` and returns the process exit
-// code: 0 ok, 1 error, 2 invalid brief.
+// code: 0 ok, 1 error, 2 invalid brief, 3 waiting on a human (file gate), 4
+// escalated, 5 interrupted (run), 6 failed preflight (run --check-env).
 func runBrief(args []string, in *os.File, out, errw io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprintln(errw, briefUsage)
@@ -36,6 +46,26 @@ func runBrief(args []string, in *os.File, out, errw io.Writer) int {
 			return 1
 		}
 		return briefValidate(args[1], out, errw)
+	case "plan", "resume":
+		return briefPlan(args[0], args[1:], in, out, errw)
+	case "answer":
+		return briefAnswer(args[1:], out, errw)
+	case "run":
+		return briefRun(args[1:], in, out, errw)
+	case "report":
+		return briefReport(args[1:], out, errw)
+	case "status", "coverage", "calls":
+		if len(args) != 2 {
+			fmt.Fprintln(errw, briefUsage)
+			return 1
+		}
+		switch args[0] {
+		case "status":
+			return briefStatus(args[1], out, errw)
+		case "coverage":
+			return briefCoverage(args[1], out, errw)
+		}
+		return briefCalls(args[1], out, errw)
 	case "vault":
 		return briefVault(args[1:], in, out, errw)
 	case "tree":

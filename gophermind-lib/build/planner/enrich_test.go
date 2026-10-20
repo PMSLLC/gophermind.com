@@ -1,0 +1,312 @@
+package planner
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+	"testing"
+
+	"gophermind/gophermind-lib/build/contract"
+	"gophermind/gophermind-lib/build/router"
+	"gophermind/gophermind-lib/build/settings"
+)
+
+func TestTierForFollowsTheNodeUnlessTheSettingIsOff(t *testing.T) {
+	p := &Planner{d: Deps{Settings: settings.Default()}}
+	for in, want := range map[string]router.Tier{"strong": router.TierStrong, "standard": router.TierStandard, "any": router.TierAny, "": router.TierStrong, "weird": router.TierStrong} {
+		if got := p.tierFor(in); got != want {
+			t.Errorf("tierFor(%q) = %q, want %q", in, got, want)
+		}
+	}
+	off := false
+	p.d.Settings.Defaults.RouteByNodeTier = &off
+	if got := p.tierFor("any"); got != router.TierStrong {
+		t.Errorf("with route_by_node_tier false every stage is strong, got %q", got)
+	}
+}
+
+func TestBatchTierIsTheStrongestInTheBatch(t *testing.T) {
+	p := &Planner{d: Deps{Settings: settings.Default()}}
+	mk := func(tiers ...string) []map[string]any {
+		var out []map[string]any
+		for _, t := range tiers {
+			out = append(out, map[string]any{"model_tier": t})
+		}
+		return out
+	}
+	for want, in := range map[router.Tier][]string{router.TierAny: {"any", "any"}, router.TierStandard: {"any", "standard"}, router.TierStrong: {"any", "strong", "standard"}} {
+		if got := p.batchTier(mk(in...)); got != want {
+			t.Errorf("batchTier(%v) = %q, want %q", in, got, want)
+		}
+	}
+	if got := p.batchTier(nil); got != router.TierStrong {
+		t.Errorf("an empty batch is strong, got %q", got)
+	}
+}
+
+func TestNextBatchSizeHalvesOnATruncatedReply(t *testing.T) {
+	for _, tc := range []struct {
+		size, n   int
+		truncated bool
+		want      int
+	}{{4, 4, true, 2}, {2, 2, true, 1}, {1, 1, true, 1}, {4, 4, false, 4}, {4, 3, true, 1}} {
+		if got := nextBatchSize(tc.size, tc.n, tc.truncated); got != tc.want {
+			t.Errorf("nextBatchSize(%d,%d,%v) = %d, want %d", tc.size, tc.n, tc.truncated, got, tc.want)
+		}
+	}
+}
+
+func draftFixture(t *testing.T) map[string]any {
+	t.Helper()
+	var d map[string]any
+	raw := `{"spec_version":"2.0","id":"fn-register","kind":"function","parent":"registration","title":"POST /register","description":"Decode, validate, create, respond.",
+ "brief_ref":"#features/registration","status":"pending","revision":0,"model_tier":"standard","node_class":"handler","depends_on":[],
+ "context":{"dependency_signatures":[],"constraints":[]},
+ "contract":{"package":"httpapi","file":"internal/httpapi/register.go","signature":"func (s *Server) HandleRegister(w http.ResponseWriter, r *http.Request)",
+  "inputs":[{"name":"w","type":"the response writer"},{"name":"r","type":"the request"}],"outputs":[],
+  "errors":[{"when":"body is not valid JSON","returns":"400 BAD_JSON"},{"when":"email taken","returns":"409 EMAIL_TAKEN"}],"side_effects":[]}}`
+	if err := json.Unmarshal([]byte(raw), &d); err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+func contractFixtureForEnrich() *contract.Contracts {
+	return &contract.Contracts{Module: "example.com/acme", Components: []contract.Component{{ID: "registration", Package: "httpapi"}}}
+}
+
+func replyFixture(t *testing.T, edit func(m map[string]any)) map[string]any {
+	t.Helper()
+	m := groupsDoc(t, nil) // the valid handler groups of groups_test.go
+	delete(m, "assumptions")
+	m["assumptions"] = []any{}
+	m["error_kinds"] = []any{"wrapped", "sentinel"}
+	if edit != nil {
+		edit(m)
+	}
+	return m
+}
+
+func enrichEnvFixture() groupEnv {
+	e := testEnv()
+	e.Params = map[string]bool{"w": true, "r": true}
+	return e
+}
+
+func TestMergeEnrichmentFillsGroupsKindsAndGoTypes(t *testing.T) {
+	merged, ds, warns := mergeEnrichment(draftFixture(t), replyFixture(t, nil), contractFixtureForEnrich(), enrichEnvFixture())
+	if len(ds) != 0 {
+		t.Fatalf("defects: %v", kindsOf(ds))
+	}
+	if len(warns) != 0 {
+		t.Errorf("warnings: %v", warns)
+	}
+	ct := merged["contract"].(map[string]any)
+	errs := objects(ct["errors"])
+	if errs[0]["kind"] != "wrapped" || errs[1]["kind"] != "sentinel" {
+		t.Errorf("error kinds = %v", errs)
+	}
+	in := objects(ct["inputs"])
+	if in[0]["go_type"] != "http.ResponseWriter" || in[1]["go_type"] != "*http.Request" {
+		t.Errorf("go_type = %v", in)
+	}
+	if merged["rationale"] == nil || merged["security"] == nil || merged["node_class"] != "handler" {
+		t.Errorf("merged = %v", merged)
+	}
+	if _, has := merged["error_kinds"]; has {
+		t.Error("error_kinds is a reply field, not a node field")
+	}
+}
+
+func TestMergeEnrichmentDefects(t *testing.T) {
+	cases := []struct {
+		name string
+		edit func(m map[string]any)
+		kind string
+	}{
+		{"a missing group", func(m map[string]any) { delete(m, "security") }, grpMissing},
+		{"too few error kinds", func(m map[string]any) { m["error_kinds"] = []any{"wrapped"} }, grpEnum},
+		{"an unknown decision id", func(m map[string]any) { m["decision_ids"] = []any{"q9"} }, grpDecision},
+		{"a shape the schema refuses", func(m map[string]any) {
+			m["performance"] = map[string]any{"complexity": "O(1)", "concurrency": "maybe", "hot_path": false}
+		}, grpSchema},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, ds, _ := mergeEnrichment(draftFixture(t), replyFixture(t, tc.edit), contractFixtureForEnrich(), enrichEnvFixture())
+			if !hasKind(ds, tc.kind) {
+				t.Fatalf("kinds = %v, want %s", kindsOf(ds), tc.kind)
+			}
+		})
+	}
+}
+
+func TestMergeEnrichmentTurnsAnUnresolvedTypeIntoAWarningNotAFailure(t *testing.T) {
+	d := draftFixture(t)
+	d["contract"].(map[string]any)["signature"] = "func (s *Server) HandleRegister(w http.ResponseWriter, r *http.Request, store Ghost)"
+	d["contract"].(map[string]any)["inputs"] = []any{map[string]any{"name": "w", "type": "x"}, map[string]any{"name": "r", "type": "x"}, map[string]any{"name": "store", "type": "x"}}
+	e := enrichEnvFixture()
+	e.Params["store"] = true
+	_, ds, warns := mergeEnrichment(d, replyFixture(t, nil), contractFixtureForEnrich(), e)
+	if len(ds) != 0 {
+		t.Fatalf("defects: %v", kindsOf(ds))
+	}
+	if len(warns) != 1 || !strings.Contains(warns[0], "fn-register") {
+		t.Errorf("warnings = %v", warns)
+	}
+}
+
+func TestEnrichDefectMessagesQuoteNothing(t *testing.T) {
+	const canary = "CANARY-enrich-4410"
+	_, ds, warns := mergeEnrichment(draftFixture(t), replyFixture(t, func(m map[string]any) {
+		m["rationale"] = canary
+		m["decision_ids"] = []any{canary}
+		m["error_kinds"] = []any{canary, canary}
+		m["security"].(map[string]any)["secret_use"] = []any{canary}
+	}), contractFixtureForEnrich(), enrichEnvFixture())
+	for _, d := range ds {
+		if strings.Contains(d.msg, canary) {
+			t.Errorf("a %s message quotes the reply: %q", d.kind, d.msg)
+		}
+	}
+	for _, w := range warns {
+		if strings.Contains(w, canary) {
+			t.Errorf("a warning quotes the reply: %q", w)
+		}
+	}
+}
+
+func TestFieldsOfGroupDefectsAreAskedForAgain(t *testing.T) {
+	ds := []groupDefect{{grpMissing, "security", ""}, {grpNAForbid, "observability", ""}, {grpEnum, "error_kinds", ""}, {grpSchema, "", ""}}
+	got := fieldsOfGroup(ds)
+	for _, want := range []string{"security", "observability", "error_kinds"} {
+		if !contains(got, want) {
+			t.Errorf("fields = %v lacks %s", got, want)
+		}
+	}
+	if len(fieldsOfGroup([]groupDefect{{grpSchema, "", ""}})) != len(enrichFieldsAll) {
+		t.Error("a schema defect with no named field asks for every group again")
+	}
+}
+
+func TestEnrichQuestionIdsPassTheIdPattern(t *testing.T) {
+	for _, stage := range []string{"enrich:greeting", enrichFixStage, "enrich_comp:greeting", "enrich_root"} {
+		id := strings.ReplaceAll(stage, ":", "-") + "-q1"
+		if !decisionIDRE.MatchString(id) {
+			t.Errorf("the id %q a question in stage %s would get does not match the decision id pattern", id, stage)
+		}
+	}
+}
+
+func TestMergeEnrichmentEmptyProfileHooksNamesTheSchemaError(t *testing.T) {
+	_, ds, _ := mergeEnrichment(draftFixture(t), replyFixture(t, func(m map[string]any) {
+		m["profile_hooks"] = []any{}
+	}), contractFixtureForEnrich(), enrichEnvFixture())
+	var got *groupDefect
+	for i := range ds {
+		if ds[i].kind == grpSchema {
+			got = &ds[i]
+		}
+	}
+	if got == nil {
+		t.Fatalf("kinds = %v, want %s", kindsOf(ds), grpSchema)
+	}
+	if !strings.Contains(got.msg, "profile_hooks") {
+		t.Errorf("the schema defect does not name the group: %q", got.msg)
+	}
+	if got.field != "profile_hooks" {
+		t.Errorf("field = %q, want profile_hooks", got.field)
+	}
+	if text := defectsText([]pendingEnrich{{ID: "fn-x", Defects: kindsOfGroup(ds), Notes: notesOfGroup(ds), Fields: fieldsOfGroup(ds)}}); !strings.Contains(text, "  problem: ") || !strings.Contains(text, "profile_hooks is not valid") {
+		t.Errorf("the repair prompt lacks the schema error:\n%s", text)
+	}
+}
+
+func repairText(ds []groupDefect) string {
+	return defectsText([]pendingEnrich{{ID: "fn-x", Defects: kindsOfGroup(ds), Notes: notesOfGroup(ds), Fields: fieldsOfGroup(ds)}})
+}
+
+func TestDefectsTextStatesTheThreatsRule(t *testing.T) {
+	_, ds, _ := mergeEnrichment(draftFixture(t), replyFixture(t, func(m map[string]any) {
+		sec := m["security"].(map[string]any)
+		sec["trust_boundary"] = "internal"
+		sec["threats"] = []any{}
+	}), contractFixtureForEnrich(), enrichEnvFixture())
+	if !hasKind(ds, grpThreats) {
+		t.Fatalf("kinds = %v, want %s", kindsOf(ds), grpThreats)
+	}
+	if text := repairText(ds); !strings.Contains(text, "a trust boundary other than none needs at least one threat with its mitigation") {
+		t.Errorf("the repair prompt lacks the rule:\n%s", text)
+	}
+}
+
+func TestDefectsTextCarriesEveryKindOnceAndBounded(t *testing.T) {
+	ds := []groupDefect{
+		{grpThreats, "security", "rule one"}, {grpGoMin, "portability", "rule two"}, {grpThreats, "security", "rule one"},
+	}
+	text := repairText(ds)
+	for _, want := range []string{"rule one", "rule two"} {
+		if strings.Count(text, want) != 1 {
+			t.Errorf("%q appears %d times, want 1:\n%s", want, strings.Count(text, want), text)
+		}
+	}
+	var many []groupDefect
+	for i := 0; i < 40; i++ {
+		many = append(many, groupDefect{grpEnum, "error_kinds", fmt.Sprintf("note %d %s", i, strings.Repeat("x", 2000))})
+	}
+	if n := len(notesOfGroup(many)); n > maxEnrichNotes {
+		t.Errorf("%d notes, want at most %d", n, maxEnrichNotes)
+	}
+	for _, n := range notesOfGroup(many) {
+		if len(n) > maxEnrichNoteBytes {
+			t.Errorf("a note has %d bytes, want at most %d", len(n), maxEnrichNoteBytes)
+		}
+	}
+}
+
+func TestDefectsTextNeverQuotesTheReply(t *testing.T) {
+	const canary = "CANARY-enrich-7731"
+	edits := map[string]func(m map[string]any){
+		"rationale":   func(m map[string]any) { m["rationale"] = canary },
+		"decision":    func(m map[string]any) { m["decision_ids"] = []any{canary} },
+		"error kinds": func(m map[string]any) { m["error_kinds"] = []any{canary} },
+		"secret":      func(m map[string]any) { m["security"].(map[string]any)["secret_use"] = []any{canary} },
+		"untrusted":   func(m map[string]any) { m["security"].(map[string]any)["untrusted_inputs"] = []any{canary} },
+		"boundary": func(m map[string]any) {
+			m["security"].(map[string]any)["trust_boundary"] = canary
+			m["security"].(map[string]any)["threats"] = []any{}
+		},
+		"go_min": func(m map[string]any) { m["portability"].(map[string]any)["go_min"] = canary },
+		"deps":   func(m map[string]any) { m["portability"].(map[string]any)["deps"] = []any{canary} },
+		"log msg": func(m map[string]any) {
+			m["observability"].(map[string]any)["log_events"] = []any{map[string]any{"level": "warn", "msg": canary + " %s"}}
+		},
+		"log field": func(m map[string]any) {
+			m["observability"].(map[string]any)["log_events"] = []any{map[string]any{"level": "warn", "msg": "m", "fields": []any{"crm_token"}}}
+		},
+		"na reason": func(m map[string]any) { m["alternatives"] = map[string]any{"not_applicable": canary} },
+		"na group": func(m map[string]any) {
+			m["security"] = map[string]any{"not_applicable": canary + " " + canary + " " + canary}
+		},
+		"construction": func(m map[string]any) {
+			m["construction"] = map[string]any{"approach_chosen": canary, "steps": []any{canary}}
+		},
+		"schema enum": func(m map[string]any) {
+			m["performance"] = map[string]any{"complexity": "O(1)", "concurrency": canary, "hot_path": false}
+		},
+		"schema type":   func(m map[string]any) { m["profile_hooks"] = canary },
+		"schema extra":  func(m map[string]any) { m["performance"].(map[string]any)[canary] = canary },
+		"schema nested": func(m map[string]any) { m["alternatives"] = []any{map[string]any{"approach": canary, canary: canary}} },
+	}
+	for name, edit := range edits {
+		t.Run(name, func(t *testing.T) {
+			_, ds, _ := mergeEnrichment(draftFixture(t), replyFixture(t, edit), contractFixtureForEnrich(), enrichEnvFixture())
+			if len(ds) == 0 {
+				t.Skip("this edit produced no defect")
+			}
+			if text := repairText(ds); strings.Contains(text, canary) {
+				t.Errorf("the repair prompt quotes the reply:\n%s", text)
+			}
+		})
+	}
+}

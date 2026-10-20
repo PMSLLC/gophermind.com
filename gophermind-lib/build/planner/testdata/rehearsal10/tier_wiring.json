@@ -1,0 +1,40 @@
+{
+ "component": "documents",
+ "raw": {
+  "contract": {
+   "errors": [],
+   "file": "service.go",
+   "inputs": [
+    {
+     "description": "The persistence backend for document metadata. Must not be nil.",
+     "name": "store",
+     "type": "DocumentStore"
+    },
+    {
+     "description": "The storage backend for document content. Must not be nil.",
+     "name": "blob",
+     "type": "BlobStore"
+    }
+   ],
+   "outputs": [
+    {
+     "description": "A new, initialized DocumentService instance.",
+     "name": "*",
+     "type": "*DocumentService"
+    }
+   ],
+   "package": "internal/document",
+   "side_effects": [],
+   "signature": "func NewDocumentService(store DocumentStore, blob BlobStore) *DocumentService"
+  },
+  "depends_on": [
+   "document-store",
+   "blob-store"
+  ],
+  "description": "Creates a new DocumentService instance with the provided persistence and storage backends.",
+  "id": "fn-new-document-service",
+  "model_tier": "wiring",
+  "node_class": "wiring",
+  "title": "NewDocumentService constructor"
+ }
+}

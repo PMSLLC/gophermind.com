@@ -1,17 +1,15 @@
 package serve
 
 import (
-	"bufio"
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
-	"time"
-
-	"gophermind/gophermind-lib/phaseflow"
 )
 
 // TestPipelineDashboardServesWithoutToken checks that GET /pipeline serves
@@ -145,317 +143,301 @@ func TestPipelineDashboardSkippedWhenPipelineNil(t *testing.T) {
 	}
 }
 
-// TestPipelineStateReturnsRealTasksAndRequiresToken checks that GET
-// /pipeline/state returns the tasks (with wave, status and attempts) from a
-// real assignments.json, and that it is behind the same bearer-token auth
-// as the rest of the mux.
-func TestPipelineStateReturnsRealTasksAndRequiresToken(t *testing.T) {
-	root := t.TempDir()
-	a := phaseflow.Assignments{Tasks: []phaseflow.Task{
-		{
-			ID: "t1", Title: "Implement endpoint", Wave: 2, Status: phaseflow.StatusDone,
-			Attempts: []phaseflow.Attempt{
-				{Model: "model-a", Duration: "1s", Verdict: "fail", Reason: "timeout"},
-				{Model: "model-b", Duration: "2s", Verdict: "pass", Reason: "6/6 passing"},
-			},
-		},
-		{ID: "t2", Title: "Write tests", Wave: 1, Status: phaseflow.StatusPending},
-	}}
-	if err := a.Save(root); err != nil {
-		t.Fatalf("save assignments: %v", err)
-	}
-
+// TestPipelineDashboardUsesTheNodeContract pins that the page talks to the new
+// routes and no longer speaks the old task vocabulary.
+func TestPipelineDashboardUsesTheNodeContract(t *testing.T) {
 	t.Setenv("GOPHERMIND_SERVE_TOKEN", "t")
-	mux, err := NewMux(Deps{Pipeline: &PipelineDeps{Root: root}}, Options{})
+	mux, err := NewMux(Deps{Pipeline: &PipelineDeps{Root: t.TempDir()}}, Options{})
 	if err != nil {
-		t.Fatalf("NewMux: %v", err)
+		t.Fatal(err)
 	}
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
-
-	// No token: unauthorized.
-	resp, err := http.Get(srv.URL + "/pipeline/state")
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("no-token request: got %d, want 401", resp.StatusCode)
-	}
-
-	// With token: real task state.
-	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/pipeline/state", nil)
-	req.Header.Set("Authorization", "Bearer t")
-	resp, err = http.DefaultClient.Do(req)
+	resp, err := http.Get(srv.URL + "/pipeline")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("authorized request: got %d, want 200", resp.StatusCode)
+	if resp.Header.Get(PipelineSchemaHeader) != "1" {
+		t.Errorf("the page response needs %s: 1", PipelineSchemaHeader)
 	}
-	var body pipelineStateResponse
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if len(body.Tasks) != 2 {
-		t.Fatalf("got %d tasks, want 2", len(body.Tasks))
-	}
-	var t1 phaseflow.Task
-	for _, tk := range body.Tasks {
-		if tk.ID == "t1" {
-			t1 = tk
+	raw, _ := io.ReadAll(resp.Body)
+	body := string(raw)
+	for _, want := range []string{
+		"/pipeline/runs", "/pipeline/state", "/pipeline/node", "/pipeline/artifact", "/pipeline/decisions",
+		"/pipeline/report", "/pipeline/events", "since", "X-Gophermind-Pipeline-Schema", "node-status", "run-status",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the page does not mention %q", want)
 		}
 	}
-	if t1.Wave != 2 || t1.Status != phaseflow.StatusDone {
-		t.Errorf("t1 = %+v, want wave=2 status=done", t1)
-	}
-	if len(t1.Attempts) != 2 || t1.Attempts[1].Model != "model-b" || t1.Attempts[1].Verdict != "pass" {
-		t.Errorf("t1 attempts = %+v, want the two real recorded attempts", t1.Attempts)
-	}
-}
-
-// TestPipelineReportRequiresToken checks GET /pipeline/report is behind the
-// same auth as the other pipeline routes and returns a real aggregation.
-func TestPipelineReportRequiresToken(t *testing.T) {
-	root := t.TempDir()
-	a := phaseflow.Assignments{Tasks: []phaseflow.Task{
-		{ID: "t1", Attempts: []phaseflow.Attempt{
-			{Model: "model-a", Duration: "1s", Verdict: "pass", Reason: "ok"},
-		}},
-	}}
-	if err := a.Save(root); err != nil {
-		t.Fatalf("save: %v", err)
-	}
-
-	t.Setenv("GOPHERMIND_SERVE_TOKEN", "t")
-	mux, err := NewMux(Deps{Pipeline: &PipelineDeps{Root: root}}, Options{})
-	if err != nil {
-		t.Fatalf("NewMux: %v", err)
-	}
-	srv := httptest.NewServer(mux)
-	defer srv.Close()
-
-	resp, err := http.Get(srv.URL + "/pipeline/report")
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("no-token request: got %d, want 401", resp.StatusCode)
-	}
-
-	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/pipeline/report", nil)
-	req.Header.Set("Authorization", "Bearer t")
-	resp, err = http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	var report phaseflow.RunReport
-	if err := json.NewDecoder(resp.Body).Decode(&report); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if len(report.Models) != 1 || report.Models[0].Model != "model-a" || report.Models[0].Passes != 1 {
-		t.Errorf("report.Models = %+v, want one model-a entry with 1 pass", report.Models)
-	}
-}
-
-// TestPipelineHubTaskStatusEvent checks that publishing a task-status event
-// through the hub reaches a subscribed /pipeline/events client as a
-// "task-status" SSE frame carrying the real field values, not placeholders.
-func TestPipelineHubTaskStatusEvent(t *testing.T) {
-	hub := NewPipelineHub()
-	srv := httptest.NewServer(pipelineEventsHandler(hub))
-	defer srv.Close()
-
-	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-
-	// Give the handler a moment to subscribe before publishing, since the
-	// subscription happens inside the handler goroutine after the response
-	// headers are already flowing.
-	waitForSubscribers(t, hub, 1)
-
-	hub.TaskStatus("t1", phaseflow.StatusRunning, 2)
-
-	event, data := readOneSSEFrame(t, bufio.NewReader(resp.Body))
-	if event != "task-status" {
-		t.Fatalf("event = %q, want task-status", event)
-	}
-	var got struct {
-		ID     string `json:"id"`
-		Status string `json:"status"`
-		Wave   int    `json:"wave"`
-	}
-	if err := json.Unmarshal([]byte(data), &got); err != nil {
-		t.Fatalf("unmarshal %q: %v", data, err)
-	}
-	if got.ID != "t1" || got.Status != phaseflow.StatusRunning || got.Wave != 2 {
-		t.Errorf("got %+v, want id=t1 status=running wave=2", got)
-	}
-}
-
-// TestPipelineHubTaskAttemptEvent checks that a completed attempt emits a
-// task-attempt frame with model, duration, verdict and reason all populated
-// from the real Attempt, not placeholder text.
-func TestPipelineHubTaskAttemptEvent(t *testing.T) {
-	hub := NewPipelineHub()
-	srv := httptest.NewServer(pipelineEventsHandler(hub))
-	defer srv.Close()
-
-	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	waitForSubscribers(t, hub, 1)
-
-	hub.TaskAttempt("t1", phaseflow.Attempt{
-		Model: "llama-3.3-70b", Duration: "4.8s", Verdict: "fail", Reason: "2/6 failing",
-	})
-
-	event, data := readOneSSEFrame(t, bufio.NewReader(resp.Body))
-	if event != "task-attempt" {
-		t.Fatalf("event = %q, want task-attempt", event)
-	}
-	var got struct {
-		TaskID   string `json:"task_id"`
-		Model    string `json:"model"`
-		Duration string `json:"duration"`
-		Verdict  string `json:"verdict"`
-		Reason   string `json:"reason"`
-	}
-	if err := json.Unmarshal([]byte(data), &got); err != nil {
-		t.Fatalf("unmarshal %q: %v", data, err)
-	}
-	if got.TaskID != "t1" || got.Model != "llama-3.3-70b" || got.Duration != "4.8s" ||
-		got.Verdict != "fail" || got.Reason != "2/6 failing" {
-		t.Errorf("got %+v, want the real attempt fields, not placeholders", got)
-	}
-}
-
-// TestPipelineHubEventsArriveInOrder checks that several published events
-// reach a subscriber in the order they were published.
-func TestPipelineHubEventsArriveInOrder(t *testing.T) {
-	hub := NewPipelineHub()
-	srv := httptest.NewServer(pipelineEventsHandler(hub))
-	defer srv.Close()
-
-	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	waitForSubscribers(t, hub, 1)
-
-	hub.TaskStatus("t1", phaseflow.StatusRunning, 1)
-	hub.TaskAttempt("t1", phaseflow.Attempt{Model: "model-a", Duration: "1s", Verdict: "fail", Reason: "r1"})
-	hub.TaskStatus("t1", phaseflow.StatusNeedsRevision, 1)
-
-	br := bufio.NewReader(resp.Body)
-	var got []string
-	for i := 0; i < 3; i++ {
-		event, _ := readOneSSEFrame(t, br)
-		got = append(got, event)
-	}
-	want := []string{"task-status", "task-attempt", "task-status"}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("frame order = %v, want %v", got, want)
+	for _, gone := range []string{"task-status", "task-attempt", "acceptance_criteria", "revision_rounds", "contract_flagged"} {
+		if strings.Contains(body, gone) {
+			t.Errorf("the page still uses the old vocabulary %q", gone)
 		}
 	}
 }
 
-// TestPipelineEventsDisconnectDoesNotLeak checks that a client disconnecting
-// mid-stream is unsubscribed (no goroutine or subscription left behind) and
-// that publishing afterward does not block.
-func TestPipelineEventsDisconnectDoesNotLeak(t *testing.T) {
-	hub := NewPipelineHub()
-	srv := httptest.NewServer(pipelineEventsHandler(hub))
-	defer srv.Close()
+// pipelineHarness loads the page's script into a node vm with a minimal stub
+// DOM, fetch and AbortController, then runs one named scenario against it.
+const pipelineHarness = `
+const vm = require('vm');
+const fs = require('fs');
+const src = fs.readFileSync(process.argv[2], 'utf8');
+const scenario = process.argv[3];
+const flush = async () => { for (let i = 0; i < 30; i++) await new Promise(r => setImmediate(r)); };
+function assert(c, m){ if(!c){ console.error('ASSERT FAILED: ' + m); process.exit(1); } }
 
-	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
-	resp, err := http.DefaultClient.Do(req)
+function mkEl(tag){
+  const e = { tag, textContent: '', className: '', children: [], parent: null, dataset: {}, style: {},
+    value: '', hidden: false, scrollTop: 0, scrollHeight: 100, clientHeight: 100, listeners: {} };
+  e.classList = { add(){}, remove(){} };
+  e.appendChild = c => { c.parent = e; e.children.push(c); return c; };
+  e.replaceChildren = (...cs) => { e.children.forEach(c => { c.parent = null; }); e.children = []; cs.forEach(e.appendChild); };
+  e.remove = () => { if(e.parent){ e.parent.children = e.parent.children.filter(c => c !== e); e.parent = null; } };
+  e.insertAdjacentElement = (where, c) => {
+    c.remove();
+    const i = e.parent.children.indexOf(e);
+    e.parent.children.splice(i + 1, 0, c);
+    c.parent = e.parent;
+    return c;
+  };
+  e.addEventListener = (n, f) => { e.listeners[n] = f; };
+  return e;
+}
+
+// deferred fetch: the test resolves each pending request by hand.
+function makeEnv(){
+  const els = {};
+  const pending = [];   // { path, params, resolve, reject, signal }
+  const eventCalls = [];
+  const document = {
+    getElementById: id => els[id] || (els[id] = mkEl('#' + id)),
+    createElement: mkEl,
+    createTextNode: t => ({ textContent: t }),
+  };
+  function resp(body, status){
+    return { ok: (status || 200) < 400, status: status || 200,
+      headers: { get: () => '1' }, json: async () => body, text: async () => String(body) };
+  }
+  const fetchStub = (url, opts) => new Promise((resolve, reject) => {
+    const u = new URL(url, 'http://x');
+    const call = { path: u.pathname, params: Object.fromEntries(u.searchParams), resolve: b => resolve(resp(b)), reject, signal: opts && opts.signal };
+    if(u.pathname === '/pipeline/events'){
+      eventCalls.push(call);
+      const r = resp('');
+      r.body = { getReader: () => ({ read: () => new Promise((_, rej) => {
+        call.signal.addEventListener('abort', () => rej(new Error('aborted')));
+      }) }) };
+      resolve(r);
+      return;
+    }
+    pending.push(call);
+  });
+  const ctx = vm.createContext({ document, fetch: fetchStub, URLSearchParams, AbortController, TextDecoder,
+    setTimeout, console, Number, Date, Math, Array, Set, JSON, Promise,
+    location: { hash: '', pathname: '/pipeline' }, history: { replaceState(){} } });
+  vm.runInContext(src, ctx);
+  const get = e => vm.runInContext(e, ctx);
+  const take = path => { const i = pending.findIndex(p => p.path === path); assert(i >= 0, 'no pending ' + path); return pending.splice(i, 1)[0]; };
+  return { ctx, get, els, pending, eventCalls, take };
+}
+const state = (seq, status, att) => ({ event_seq: seq, generated_at: '2026-01-01T00:00:00Z',
+  run: { status: status || 'building', coverage: { covered: 0, total: 1 } },
+  nodes: [{ id: 'n1', kind: 'function', status: 'pending', wave: 1, attempt_count: att || 0, revision: 0, parent: 'c' }] });
+const nodeBody = { node: { id: 'n1', kind: 'function' }, runtime: { attempts: [] }, artifacts: [] };
+
+const scenarios = {
+  async skipsFramesAtOrBelowStateSeq(){
+    const env = makeEnv();
+    env.get('runId = "r1"');
+    const p = env.get('loadState()');
+    env.take('/pipeline/state').resolve(state(10));
+    await flush();
+    env.take('/pipeline/node').resolve(nodeBody);
+    await p;
+    assert(env.get('stateSeq') === 10, 'stateSeq 10');
+    const att = JSON.stringify({ id: 'n1', attempt: { started_at: 'a' } });
+    env.get('handleFrame')('node-attempt', '10', att);
+    env.get('handleFrame')('node-attempt', '3', att);
+    assert(env.get('nodes[0].attempt_count') === 0, 'old frames must be skipped');
+    assert(env.get('lastSeq') === 10, 'old frames must not move lastSeq');
+    env.get('handleFrame')('node-attempt', '11', att);
+    assert(env.get('nodes[0].attempt_count') === 1, 'new frame applied once');
+    assert(env.get('lastSeq') === 11, 'lastSeq 11');
+    env.get('handleFrame')('node-attempt', 'abc', JSON.stringify({ id: 'n1', attempt: { started_at: 'b' } }));
+    assert(env.get('lastSeq') === 11, 'non-numeric id leaves lastSeq alone');
+    // a derived frame shares the latest line's id, so an id equal to stateSeq
+    // is still applied: run-status refetches the state, run-report is kept.
+    const before = env.pending.length;
+    env.get('handleFrame')('run-status', '10', JSON.stringify({ status: 'verified' }));
+    await flush();
+    assert(env.pending.some(c => c.path === '/pipeline/state'), 'run-status at stateSeq must refetch the state');
+    assert(env.pending.length > before, 'run-status issued requests');
+    env.get('handleFrame')('run-report', '10', JSON.stringify({ status: 'verified', complete: true }));
+    assert(env.get('finalReport && finalReport.status') === 'verified', 'run-report at stateSeq must be kept');
+  },
+  async staleLoadStateIsDiscarded(){
+    const env = makeEnv();
+    env.get('runId = "r1"');
+    const p1 = env.get('loadState()');
+    const p2 = env.get('loadState()');
+    const first = env.take('/pipeline/state'), second = env.take('/pipeline/state');
+    second.resolve(state(10, 'building', 7));
+    await flush();
+    first.resolve(state(5, 'building', 1));
+    await flush();
+    while(env.pending.length) env.pending.shift().resolve(nodeBody);
+    await flush();
+    assert((await p1) === null, 'stale response reports null');
+    assert(env.get('stateSeq') === 10, 'stateSeq kept at 10, got ' + env.get('stateSeq'));
+    assert(env.get('nodes[0].attempt_count') === 7, 'nodes not overwritten by the stale response');
+    await p2;
+  },
+  async framesDuringStateLoadAreQueued(){
+    const env = makeEnv();
+    env.get('runId = "r1"');
+    const p = env.get('loadState()');
+    // frame 9 is already in the snapshot below (attempt_count 1); frame 11 is not.
+    env.get('handleFrame')('node-attempt', '9', JSON.stringify({ id: 'n1', attempt: { started_at: 'a9' } }));
+    env.get('handleFrame')('node-attempt', '11', JSON.stringify({ id: 'n1', attempt: { started_at: 'a11' } }));
+    assert(env.get('queuedFrames.length') === 2, 'frames queued while the state request is in flight');
+    assert(env.get('lastSeq') === 11, 'queued frames still advance lastSeq');
+    env.take('/pipeline/state').resolve(state(10, 'building', 1));
+    await flush();
+    env.take('/pipeline/node').resolve(nodeBody);
+    await p;
+    assert(env.get('stateSeq') === 10, 'stateSeq from the snapshot');
+    assert(env.get('nodes[0].attempt_count') === 2, 'frame 11 applied once, frame 9 not twice; got ' + env.get('nodes[0].attempt_count'));
+    assert(env.get('nodes[0].last_attempt.started_at') === 'a11', 'frame 11 is the last attempt');
+    assert(env.get('queuedFrames.length') === 0 && env.get('stateLoading') === false, 'queue cleared');
+    env.get('handleFrame')('node-status', '12', JSON.stringify({ id: 'n1', status: 'verified', wave: 1, revision: 0 }));
+    assert(env.get('nodes[0].status') === 'verified', 'frames after the load apply directly');
+  },
+  async staleStateKeepsQueueFailedStateFlushesIt(){
+    const env = makeEnv();
+    env.get('runId = "r1"');
+    const p0 = env.get('loadState()');
+    env.take('/pipeline/state').resolve(state(5));
+    await flush();
+    env.take('/pipeline/node').resolve(nodeBody);
+    await p0;
+    const p1 = env.get('loadState()');
+    const p2 = env.get('loadState()');
+    const first = env.take('/pipeline/state'), second = env.take('/pipeline/state');
+    env.get('handleFrame')('node-attempt', '11', JSON.stringify({ id: 'n1', attempt: { started_at: 'a11' } }));
+    first.resolve(state(20, 'building', 5));
+    assert((await p1) === null, 'stale response reports null');
+    assert(env.get('queuedFrames.length') === 1, 'a stale response leaves the queue to the newer request');
+    assert(env.get('nodes[0].attempt_count') === 0, 'a stale response applies nothing');
+    second.reject(new Error('down'));
+    let failed = false;
+    try{ await p2; } catch(e){ failed = true; }
+    assert(failed, 'the newest request failed');
+    assert(env.get('queuedFrames.length') === 0 && env.get('stateLoading') === false, 'queue flushed after failure');
+    assert(env.get('stateSeq') === 5, 'stateSeq unchanged by the failure');
+    assert(env.get('nodes[0].attempt_count') === 1, 'the queued frame was applied to the old state');
+  },
+  async invalidBriefIsTerminal(){
+    const env = makeEnv();
+    env.get('runId = "r1"');
+    const p = env.get('resync()');
+    env.take('/pipeline/state').resolve(state(4, 'invalid_brief'));
+    await flush();
+    env.take('/pipeline/node').resolve(nodeBody);
+    await flush();
+    env.take('/pipeline/report').resolve({ status: 'invalid_brief', complete: true });
+    assert((await p) === true, 'resync succeeded');
+    assert(env.get('finalReport && finalReport.status') === 'invalid_brief', 'the report of an invalid_brief run is fetched');
+  },
+  async runSwitchAbortsOldStream(){
+    const env = makeEnv();
+    env.els.tokenInput = mkEl('input'); env.els.tokenInput.value = 'tok';
+    const c = env.get('connect()');
+    env.take('/pipeline/runs').resolve({ runs: [{ run_id: 'r1', status: 'building' }, { run_id: 'r2', status: 'building' }] });
+    await c; await flush();
+    assert(env.eventCalls.length === 1, 'one stream open');
+    const old = env.eventCalls[0];
+    assert(old.params.run === 'r1', 'old stream is for r1');
+    env.take('/pipeline/state').resolve(state(40));
+    await flush();
+    env.take('/pipeline/node').resolve(nodeBody);
+    await flush();
+    assert(env.get('lastSeq') === 40, 'lastSeq from state');
+    env.get('switchRun')('r2');
+    assert(old.signal.aborted, 'old stream aborted');
+    assert(env.get('lastSeq') === 0 && env.get('stateSeq') === 0, 'counters reset');
+    await flush();
+    assert(env.eventCalls.length === 2 && env.eventCalls[1].params.run === 'r2' && env.eventCalls[1].params.since === '0', 'new stream for r2 from 0');
+    // an old stream frame arriving late must not raise the new run's counters
+    env.take('/pipeline/state').resolve(state(3));
+    await flush();
+    assert(env.get('lastSeq') === 3, 'new run lastSeq from its own state');
+  },
+};
+let done = false;
+process.on('exit', () => { if(!done){ console.error('scenario ' + scenario + ' never finished (a promise hung)'); process.exitCode = 1; } });
+scenarios[scenario]().then(() => { done = true; console.log('ok ' + scenario); process.exit(0); },
+  e => { console.error(e && e.stack || e); process.exit(1); });
+`
+
+// TestPipelineDashboardBehavior runs the page's script in node against a
+// stubbed DOM and fetch: replayed frames are skipped, a stale state response
+// loses to a newer one, and a run switch aborts the old stream.
+func TestPipelineDashboardBehavior(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not installed")
+	}
+	page, err := os.ReadFile(filepath.Join("assets", "pipeline.html"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitForSubscribers(t, hub, 1)
-
-	// Simulate the client going away.
-	resp.Body.Close()
-
-	deadline := time.Now().Add(2 * time.Second)
-	for hub.subCount() != 0 {
-		if time.Now().After(deadline) {
-			t.Fatalf("subscriber not removed after disconnect, subCount=%d", hub.subCount())
-		}
-		time.Sleep(10 * time.Millisecond)
+	s := string(page)
+	i, j := strings.Index(s, "<script>"), strings.LastIndex(s, "</script>")
+	if i < 0 || j < i {
+		t.Fatal("no script block")
 	}
-
-	// Publishing after every subscriber has gone must not block.
-	done := make(chan struct{})
-	go func() {
-		hub.TaskStatus("t1", phaseflow.StatusDone, 1)
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("publish blocked after subscriber disconnected")
+	dir := t.TempDir()
+	script := filepath.Join(dir, "pipeline.js")
+	harness := filepath.Join(dir, "harness.js")
+	if err := os.WriteFile(script, []byte(s[i+len("<script>"):j]), 0o600); err != nil {
+		t.Fatal(err)
 	}
-}
-
-// waitForSubscribers polls until hub has exactly n subscribers, failing the
-// test if that never happens. Needed because /pipeline/events subscribes
-// from inside its handler goroutine, asynchronously with the client's
-// response arriving.
-func waitForSubscribers(t *testing.T, hub *PipelineHub, n int) {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for hub.subCount() != n {
-		if time.Now().After(deadline) {
-			t.Fatalf("subCount = %d after waiting, want %d", hub.subCount(), n)
-		}
-		time.Sleep(5 * time.Millisecond)
+	if err := os.WriteFile(harness, []byte(pipelineHarness), 0o600); err != nil {
+		t.Fatal(err)
 	}
-}
-
-// readOneSSEFrame reads and parses exactly one "event: ...\ndata: ...\n\n"
-// frame from br, a reader held open across the caller's successive calls -
-// necessary because a single Read can return more than one frame's worth of
-// bytes, and a fresh reader per call would silently drop whatever it did not
-// consume.
-func readOneSSEFrame(t *testing.T, br *bufio.Reader) (event, data string) {
-	t.Helper()
-	inFrame := false
-	for {
-		line, err := br.ReadString('\n')
-		trimmed := strings.TrimRight(line, "\n")
-		if trimmed == "" {
-			if inFrame {
-				return event, data
+	for _, name := range []string{"skipsFramesAtOrBelowStateSeq", "staleLoadStateIsDiscarded", "framesDuringStateLoadAreQueued", "staleStateKeepsQueueFailedStateFlushesIt", "invalidBriefIsTerminal", "runSwitchAbortsOldStream"} {
+		t.Run(name, func(t *testing.T) {
+			out, err := exec.Command(node, harness, script, name).CombinedOutput()
+			if err != nil || !strings.Contains(string(out), "ok "+name) {
+				t.Fatalf("%v\n%s", err, out)
 			}
-		} else {
-			inFrame = true
-			switch {
-			case strings.HasPrefix(trimmed, "event: "):
-				event = strings.TrimPrefix(trimmed, "event: ")
-			case strings.HasPrefix(trimmed, "data: "):
-				if data != "" {
-					data += "\n"
-				}
-				data += strings.TrimPrefix(trimmed, "data: ")
-			}
-		}
-		if err != nil {
-			t.Fatalf("read SSE frame: %v", err)
-		}
+		})
+	}
+}
+
+// TestPipelineDashboardScriptParses runs `node --check` on the page's script
+// when node is installed, so a syntax slip is a red test and not a blank page.
+func TestPipelineDashboardScriptParses(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not installed")
+	}
+	page, err := os.ReadFile(filepath.Join("assets", "pipeline.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(page)
+	i, j := strings.Index(s, "<script>"), strings.LastIndex(s, "</script>")
+	if i < 0 || j < i {
+		t.Fatal("no script block")
+	}
+	file := filepath.Join(t.TempDir(), "pipeline.js")
+	if err := os.WriteFile(file, []byte(s[i+len("<script>"):j]), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command(node, "--check", file).CombinedOutput(); err != nil {
+		t.Fatalf("node --check failed: %v\n%s", err, out)
 	}
 }

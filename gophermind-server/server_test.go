@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"gophermind/gophermind-lib/runview/runviewtest"
 	"gophermind/gophermind-lib/serve"
 )
 
@@ -79,7 +80,7 @@ func testServer(t *testing.T, llmBodies []string, token string) (*httptest.Serve
 	cfg := serverConfig{Token: token, LLMEndpoint: llm.URL, Root: root}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	d, _, err := buildDeps(cfg, root, logger)
+	d, err := buildDeps(cfg, root, logger)
 	if err != nil {
 		t.Fatalf("buildDeps: %v", err)
 	}
@@ -114,16 +115,13 @@ func TestBuildDeps_Compiles(t *testing.T) {
 	root := t.TempDir()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	d, hub, err := buildDeps(serverConfig{Token: "t", LLMEndpoint: llm.URL, Root: root}, root, logger)
+	d, err := buildDeps(serverConfig{Token: "t", LLMEndpoint: llm.URL, Root: root}, root, logger)
 	if err != nil {
 		t.Fatalf("buildDeps: %v", err)
 	}
 	if d.Run == nil || d.Stream == nil || d.SessionTurn == nil || d.Approvals == nil ||
 		d.ListModels == nil || d.EndpointModels == nil || d.Pipeline == nil || d.Skills == nil || d.Metrics == nil {
 		t.Errorf("buildDeps left a field nil: %+v", d)
-	}
-	if hub == nil {
-		t.Error("buildDeps returned a nil pipeline hub")
 	}
 }
 
@@ -216,7 +214,7 @@ func TestModelsCatalogue(t *testing.T) {
 // yet, and events is a live SSE stream that at least connects and can be
 // read from without erroring.
 func TestPipelineStateAndEvents(t *testing.T) {
-	srv, _ := testServer(t, []string{finalAnswerBody("hi")}, "t")
+	srv, root := testServer(t, []string{finalAnswerBody("hi")}, "t")
 
 	resp, err := http.DefaultClient.Do(authedReq(t, http.MethodGet, srv.URL+"/pipeline/state", "t", ""))
 	if err != nil {
@@ -227,6 +225,8 @@ func TestPipelineStateAndEvents(t *testing.T) {
 		t.Errorf("/pipeline/state status = %d, want 200", resp.StatusCode)
 	}
 
+	// With no run, /pipeline/events is 404; the stream needs a run folder.
+	runviewtest.Build(t, root, runviewtest.Planned)
 	req := authedReq(t, http.MethodGet, srv.URL+"/pipeline/events", "t", "")
 	eventsResp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -238,6 +238,28 @@ func TestPipelineStateAndEvents(t *testing.T) {
 	}
 	if ct := eventsResp.Header.Get("Content-Type"); !strings.Contains(ct, "event-stream") {
 		t.Errorf("/pipeline/events Content-Type = %q, want event-stream", ct)
+	}
+}
+
+// TestPipelineEventsStreamCapFromEnv checks buildDeps wires
+// GOPHERMIND_PIPELINE_MAX_STREAMS into the route: with a cap of one, a second
+// open stream gets 503.
+func TestPipelineEventsStreamCapFromEnv(t *testing.T) {
+	t.Setenv("GOPHERMIND_PIPELINE_MAX_STREAMS", "1")
+	srv, root := testServer(t, []string{finalAnswerBody("hi")}, "t")
+	runviewtest.Build(t, root, runviewtest.Planned)
+
+	var codes []int
+	for i := 0; i < 2; i++ {
+		resp, err := http.DefaultClient.Do(authedReq(t, http.MethodGet, srv.URL+"/pipeline/events", "t", ""))
+		if err != nil {
+			t.Fatalf("GET /pipeline/events: %v", err)
+		}
+		t.Cleanup(func() { resp.Body.Close() })
+		codes = append(codes, resp.StatusCode)
+	}
+	if codes[0] != http.StatusOK || codes[1] != http.StatusServiceUnavailable {
+		t.Errorf("status codes = %v, want [200 503]", codes)
 	}
 }
 

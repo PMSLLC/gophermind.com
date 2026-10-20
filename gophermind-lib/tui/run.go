@@ -23,9 +23,9 @@ type Config struct {
 	// drives the status-line and banner attribution. Empty means the default
 	// endpoint, which shows no attribution.
 	Profile string
-	// SpeedModel is the faster/cheaper model tier used for tasks whose plan
-	// assignment resolves to "speed" (see /project-execute); Model doubles as
-	// the "strong" tier. Empty disables tier resolution (falls back to Model).
+	// SpeedModel is GOPHERMIND_SPEED_MODEL, the faster/cheaper model used by
+	// -speed and GOPHERMIND_AUTO_ROUTE; Model is the strong one. The TUI only
+	// uses it to prefill the config wizard. Empty means none is configured.
 	SpeedModel       string
 	Mode             string // "auto" | "ask"
 	MaxIter          int

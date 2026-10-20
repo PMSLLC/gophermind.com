@@ -49,6 +49,10 @@ var (
 				Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#111827"}).
 				Background(lipgloss.AdaptiveColor{Light: "#D97706", Dark: "#FBBF24"}).
 				Padding(0, 1)
+
+	// projectBannerStyle marks one-line status banners (the /optimize result).
+	projectBannerStyle = lipgloss.NewStyle().Bold(true).
+				Foreground(lipgloss.AdaptiveColor{Light: "#7C3AED", Dark: "#A78BFA"})
 )
 
 // resultMaxLines caps how many lines of a tool result are shown inline so a

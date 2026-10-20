@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"gophermind/gophermind-lib/briefv2/vault"
+	"gophermind/gophermind-lib/build/vault"
 )
 
-const exampleDir = "../../gophermind-lib/briefv2/testdata/example"
+const exampleDir = "../../gophermind-lib/build/testdata/example"
 
 func runBriefCmd(t *testing.T, stdin string, args ...string) (int, string, string) {
 	t.Helper()
@@ -37,7 +37,7 @@ func TestBriefValidate(t *testing.T) {
 }
 
 func TestBriefValidateVentureStudioBriefWithinWarningCeiling(t *testing.T) {
-	code, out, errs := runBriefCmd(t, "", "validate", "../../gophermind-lib/briefv2/testdata/ai-venture-studio-server-brief.md")
+	code, out, errs := runBriefCmd(t, "", "validate", "../../gophermind-lib/build/testdata/ai-venture-studio-server-brief.md")
 	if code != 0 || !strings.Contains(out, "gm-2026-09-29-002") {
 		t.Fatalf("code=%d out=%q err=%q", code, out, errs)
 	}
@@ -178,7 +178,7 @@ func TestBriefTreeCheckFullExampleReportsDanglingDependency(t *testing.T) {
 }
 
 func TestBriefUnknownSubcommandPrintsUsage(t *testing.T) {
-	code, _, errs := runBriefCmd(t, "", "run", "x.md")
+	code, _, errs := runBriefCmd(t, "", "frobnicate", "x.md")
 	if code != 1 || !strings.Contains(errs, "usage") {
 		t.Errorf("code=%d err=%q", code, errs)
 	}
@@ -203,7 +203,16 @@ func TestBriefValidateDuplicateAndReservedExitTwo(t *testing.T) {
 }
 
 func TestBriefValidateWarningWording(t *testing.T) {
-	_, _, errs := runBriefCmd(t, "", "validate", "../../gophermind-lib/briefv2/testdata/ai-venture-studio-server-brief.md")
+	src, err := os.ReadFile("../../gophermind-lib/build/testdata/ai-venture-studio-server-brief.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(t.TempDir(), "b.md")
+	body := strings.Replace(string(src), "\n## ", "\n\nMail goes through SENDGRID_KEY.\n\n## ", 1)
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, errs := runBriefCmd(t, "", "validate", p)
 	if !strings.Contains(errs, "looks like a secret name but is not declared under secrets or env") {
 		t.Errorf("err=%q", errs)
 	}

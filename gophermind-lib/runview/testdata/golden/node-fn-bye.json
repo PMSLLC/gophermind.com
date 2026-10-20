@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "node": {
+    "brief_ref": "#greeting",
+    "contract": {
+      "file": "greeting/fn-bye.go",
+      "inputs": [],
+      "outputs": [],
+      "package": "greeting",
+      "signature": "func F()"
+    },
+    "depends_on": [
+      "fn-greet"
+    ],
+    "description": "Implements fn-bye.",
+    "id": "fn-bye",
+    "kind": "function",
+    "parent": "greeting",
+    "spec_version": "2.0",
+    "status": "pending",
+    "tests": [
+      {
+        "command": "go test ./greeting",
+        "expect": "e",
+        "given": "g",
+        "level": "unit",
+        "name": "t"
+      }
+    ],
+    "title": "Function fn-bye",
+    "wave": 1
+  },
+  "runtime": {
+    "status": "in_progress",
+    "revision": 0,
+    "claimed_by": "worker-1",
+    "heartbeat_at": "",
+    "updated_at": "",
+    "attempts": [
+      {
+        "model": "qwen3.6",
+        "provider": "mini",
+        "verdict": "fail",
+        "failure_reason": "test: TestBye failed",
+        "duration_ms": 1200,
+        "started_at": "2026-10-08T12:01:00.000000000Z",
+        "order": 1,
+        "revision": 0,
+        "tests_passed": 1,
+        "tests_total": 2,
+        "failed_tests": [
+          "TestBye"
+        ]
+      }
+    ],
+    "result": null
+  },
+  "artifacts": [
+    {
+      "attempt": 1,
+      "files": [
+        "reply.txt",
+        "check-output.txt",
+        "attempt.json"
+      ]
+    }
+  ]
+}

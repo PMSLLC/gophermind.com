@@ -1,0 +1,18 @@
+package main
+
+import (
+	"fmt"
+	"net/http"
+)
+
+var lastName string
+
+// byeHandler writes Goodbye, <name>! for the name query parameter, or world when it is empty.
+func byeHandler(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		name = "world"
+	}
+	lastName = name
+	fmt.Fprintf(w, "Goodbye, %s!", name)
+}

@@ -1,0 +1,12 @@
+package greet
+
+import "strings"
+
+// Farewell trims the name and returns Goodbye, <name>!. An empty name is an error.
+func Farewell(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", &NameError{Reason: "name is empty"}
+	}
+	return "Goodbye, " + name + "!", nil
+}

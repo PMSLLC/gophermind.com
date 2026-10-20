@@ -22,7 +22,6 @@ import tempfile
 FILES = {
     'README.md', 'code-review.md', 'diagnosing-bugs.md', 'tdd.md',
     'gophermind-architecture.md', 'gophermind-build-test.md',
-    'gophermind-phaseflow.md',
 }
 
 
@@ -47,7 +46,7 @@ def main() -> int:
         print(('PASS' if condition else 'FAIL') + ': ' + name + (': ' + detail if detail else ''))
 
     found = {p.name for p in packs.iterdir() if p.is_file()}
-    check('Exactly seven flat Markdown replacements', found == FILES)
+    check('Exactly six flat Markdown replacements', found == FILES)
     check('No nested prompt-pack directories', not any(p.is_dir() for p in packs.iterdir()))
     texts = {name: (packs / name).read_text(encoding='utf-8') for name in sorted(FILES)}
     check('ASCII prompt-pack text', all(t.isascii() for t in texts.values()))
@@ -63,8 +62,6 @@ def main() -> int:
         ('scripts/hitl-loop.template.sh', '[tests.md]', '[mocking.md]', '/setup-matt-pocock-skills')))
     check('Separate Standards and Spec report sections',
           '`## Standards` and `## Spec`' in texts['code-review.md'])
-    check('No root-level PhaseFlow state path',
-          '.planning/state.json' not in texts['gophermind-phaseflow.md'])
     check('No recursive format-write instruction',
           'gofmt -w .' not in texts['gophermind-build-test.md'])
     check('License and provenance retained',
@@ -242,7 +239,7 @@ func TestOriginalPrefixCheckAcceptsEscapingSymlink(t *testing.T) {
         'mode': 'static-only' if args.static_only else 'static-and-isolated-command-fixtures',
         'versions': versions, 'checks': checks,
         'limitations': [
-            'No GopherMind repository, loader, or PhaseFlow runtime was available.',
+            'No GopherMind repository, loader, or runtime was available.',
             'No model-in-the-loop behavioral acceptance tests were run.',
             'No macOS/iOS/release or production environment was tested.',
             'Containment demonstrations do not test a replacement runtime implementation.',

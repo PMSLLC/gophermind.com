@@ -1,0 +1,167 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-08T13:00:00Z",
+  "event_seq": 11,
+  "run": {
+    "run_id": "gm-2026-10-08-001",
+    "title": "Greeter",
+    "repo_name": "repo",
+    "status": "building",
+    "stop_reason": "",
+    "planned_at": "2026-10-08T12:00:00.000000000Z",
+    "started_at": "2026-10-08T12:02:00.000000000Z",
+    "updated_at": "",
+    "waves": 2,
+    "counts": {
+      "nodes": 3,
+      "by_status": {
+        "in_progress": 1,
+        "pending": 1,
+        "verified": 1
+      }
+    },
+    "coverage": {
+      "covered": 1,
+      "total": 1
+    }
+  },
+  "nodes": [
+    {
+      "id": "gm-2026-10-08-001",
+      "kind": "root",
+      "parent": "",
+      "title": "Greeter",
+      "status": "in_progress",
+      "wave": 0,
+      "model_tier": "",
+      "node_class": "",
+      "depends_on": [],
+      "requirement_ids": [],
+      "revision": 0,
+      "claimed_by": "",
+      "attempt_count": 0,
+      "last_attempt": null,
+      "result": null,
+      "tests": {
+        "total": 0
+      }
+    },
+    {
+      "id": "greeting",
+      "kind": "component",
+      "parent": "gm-2026-10-08-001",
+      "title": "Greeting",
+      "status": "in_progress",
+      "wave": 0,
+      "model_tier": "",
+      "node_class": "",
+      "depends_on": [],
+      "requirement_ids": [],
+      "revision": 0,
+      "claimed_by": "",
+      "attempt_count": 0,
+      "last_attempt": null,
+      "result": null,
+      "tests": {
+        "total": 0
+      }
+    },
+    {
+      "id": "fn-greet",
+      "kind": "function",
+      "parent": "greeting",
+      "title": "Function fn-greet",
+      "status": "verified",
+      "wave": 0,
+      "model_tier": "standard",
+      "node_class": "pure",
+      "depends_on": [],
+      "requirement_ids": [
+        "F1"
+      ],
+      "revision": 0,
+      "claimed_by": "",
+      "attempt_count": 2,
+      "last_attempt": {
+        "model": "qwen3.6",
+        "provider": "mini",
+        "verdict": "pass",
+        "failure_reason": "",
+        "duration_ms": 1200,
+        "started_at": "2026-10-08T12:02:00.000000000Z",
+        "order": 2,
+        "revision": 0,
+        "tests_passed": 2,
+        "tests_total": 2,
+        "failed_tests": []
+      },
+      "result": {
+        "commit": "abc1234",
+        "files_changed": [
+          "greeting/fn-greet.go"
+        ]
+      },
+      "tests": {
+        "total": 1
+      }
+    },
+    {
+      "id": "fn-bye",
+      "kind": "function",
+      "parent": "greeting",
+      "title": "Function fn-bye",
+      "status": "in_progress",
+      "wave": 1,
+      "model_tier": "",
+      "node_class": "",
+      "depends_on": [
+        "fn-greet"
+      ],
+      "requirement_ids": [],
+      "revision": 0,
+      "claimed_by": "worker-1",
+      "attempt_count": 1,
+      "last_attempt": {
+        "model": "qwen3.6",
+        "provider": "mini",
+        "verdict": "fail",
+        "failure_reason": "test: TestBye failed",
+        "duration_ms": 1200,
+        "started_at": "2026-10-08T12:01:00.000000000Z",
+        "order": 1,
+        "revision": 0,
+        "tests_passed": 1,
+        "tests_total": 2,
+        "failed_tests": [
+          "TestBye"
+        ]
+      },
+      "result": null,
+      "tests": {
+        "total": 1
+      }
+    },
+    {
+      "id": "fn-late",
+      "kind": "function",
+      "parent": "greeting",
+      "title": "Function fn-late",
+      "status": "pending",
+      "wave": 1,
+      "model_tier": "",
+      "node_class": "",
+      "depends_on": [
+        "fn-greet"
+      ],
+      "requirement_ids": [],
+      "revision": 0,
+      "claimed_by": "",
+      "attempt_count": 0,
+      "last_attempt": null,
+      "result": null,
+      "tests": {
+        "total": 1
+      }
+    }
+  ]
+}

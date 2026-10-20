@@ -1,0 +1,110 @@
+[
+  {
+    "id": "fn-farewell",
+    "rationale": "Serves the fn-farewell part of the brief so callers get the behaviour the contract promises.",
+    "construction": {
+      "approach_chosen": "write it directly",
+      "steps": [
+        "Check the input.",
+        "Build and return the result."
+      ]
+    },
+    "alternatives": {
+      "not_applicable": "there is one obvious way to write a function this small"
+    },
+    "error_kinds": [
+      "typed"
+    ],
+    "portability": {
+      "os": [
+        "linux",
+        "darwin"
+      ],
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "go_min": "1.21",
+      "cgo": false,
+      "deps": []
+    },
+    "security": {
+      "not_applicable": "the function handles no input from outside the process"
+    },
+    "performance": {
+      "complexity": "O(n)",
+      "max_latency_ms": null,
+      "alloc_budget": "one small string",
+      "concurrency": "none",
+      "hot_path": false
+    },
+    "observability": {
+      "log_events": [],
+      "metrics": [],
+      "trace_span": null
+    },
+    "refactor_notes": {
+      "not_applicable": "nothing worth restructuring in a function this small"
+    },
+    "profile_hooks": {
+      "not_applicable": "this function is too small to profile usefully"
+    },
+    "assumptions": [],
+    "open_questions": [],
+    "decision_ids": []
+  },
+  {
+    "id": "fn-greet",
+    "rationale": "Serves the fn-greet part of the brief so callers get the behaviour the contract promises.",
+    "construction": {
+      "approach_chosen": "write it directly",
+      "steps": [
+        "Check the input.",
+        "Build and return the result."
+      ]
+    },
+    "alternatives": {
+      "not_applicable": "there is one obvious way to write a function this small"
+    },
+    "error_kinds": [
+      "typed"
+    ],
+    "portability": {
+      "os": [
+        "linux",
+        "darwin"
+      ],
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "go_min": "1.21",
+      "cgo": false,
+      "deps": []
+    },
+    "security": {
+      "not_applicable": "the function handles no input from outside the process"
+    },
+    "performance": {
+      "complexity": "O(n)",
+      "max_latency_ms": null,
+      "alloc_budget": "one small string",
+      "concurrency": "none",
+      "hot_path": false
+    },
+    "observability": {
+      "log_events": [],
+      "metrics": [],
+      "trace_span": null
+    },
+    "refactor_notes": {
+      "not_applicable": "nothing worth restructuring in a function this small"
+    },
+    "profile_hooks": {
+      "not_applicable": "this function is too small to profile usefully"
+    },
+    "assumptions": [],
+    "open_questions": [],
+    "decision_ids": []
+  }
+]

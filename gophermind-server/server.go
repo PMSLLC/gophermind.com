@@ -39,11 +39,7 @@ const llmMaxIter = 12
 // resolves it (or it times out). Run/Stream (POST /run, /run/stream) have no
 // session/client to notify, so they use safety.Auto -- matching the CLI
 // webhook's own choice for the same reason (see main.go's "serve" case).
-// buildDeps' second return value is the pipeline hub, exposed separately
-// (rather than only inside serve.Deps.Pipeline.Hub) because the caller must
-// also start serve.StartPipelineWatcher against it -- Deps alone doesn't
-// carry enough to do that without a type assertion.
-func buildDeps(cfg serverConfig, root string, logger *slog.Logger) (serve.Deps, *serve.PipelineHub, error) {
+func buildDeps(cfg serverConfig, root string, logger *slog.Logger) (serve.Deps, error) {
 	client := llm.New(cfg.LLMEndpoint, "", "", 0, false)
 
 	// A Client with no Model set makes every Complete/Stream call fail with
@@ -93,7 +89,7 @@ func buildDeps(cfg serverConfig, root string, logger *slog.Logger) (serve.Deps, 
 
 	pb, err := prompt.NewBuilder()
 	if err != nil {
-		return serve.Deps{}, nil, err
+		return serve.Deps{}, err
 	}
 	basePrompt := pb.Build()
 	systemSuffix := project.Instructions(root)
@@ -221,7 +217,6 @@ func buildDeps(cfg serverConfig, root string, logger *slog.Logger) (serve.Deps, 
 		return out, true, sc.Err()
 	}
 
-	pipelineHub := serve.NewPipelineHub()
 	skillCfgDir, _ := config.Dir()
 
 	// EndpointModels wants func() []string (no error, per catalogue's "best
@@ -244,10 +239,10 @@ func buildDeps(cfg serverConfig, root string, logger *slog.Logger) (serve.Deps, 
 		SessionMessages: loadMessages,
 		ListModels:      listModels,
 		EndpointModels:  endpointModels,
-		Pipeline:        &serve.PipelineDeps{Root: root, Hub: pipelineHub},
+		Pipeline:        &serve.PipelineDeps{Root: root, MaxStreams: serve.PipelineMaxStreamsFromEnv()},
 		Skills:          &serve.SkillsDeps{Root: root, ConfigDir: skillCfgDir},
 	}
 
 	logger.Info("deps built", "llm_endpoint_configured", cfg.LLMEndpoint != "", "root", root)
-	return d, pipelineHub, nil
+	return d, nil
 }

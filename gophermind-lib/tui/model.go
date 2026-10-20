@@ -15,8 +15,6 @@ import (
 	"github.com/jbrahy/bubblecomplete/ngram"
 	"gophermind/gophermind-lib/agent"
 	"gophermind/gophermind-lib/banner"
-	"gophermind/gophermind-lib/phaseflow"
-	"gophermind/gophermind-lib/plantree/plan"
 	"gophermind/gophermind-lib/prompthistory"
 )
 
@@ -57,8 +55,8 @@ type model struct {
 	sub     chan tea.Msg // agent events + approval requests + done/err arrive here
 	allowed *allowSet
 
-	model      string // model name, for the status line; also the "strong" tier for /project-execute
-	speedModel string // "speed" tier model for /project-execute (empty falls back to model)
+	model      string // model name, for the status line; also the strong model for -speed routing
+	speedModel string // GOPHERMIND_SPEED_MODEL, kept to prefill the config wizard (empty = none)
 	mode       string // "auto" | "ask"
 	profile    string // active config profile; "" for the default endpoint
 	hyperlinks bool   // terminal supports OSC 8; false keeps output plain
@@ -68,7 +66,7 @@ type model struct {
 
 	// goal is a session-scoped steering goal set via "/goal" and injected into
 	// every subsequent normal prompt (see goalPreamble / handleSubmit). Empty
-	// means no goal is active. Session-only for v1 — no disk persistence.
+	// means no goal is active. Session-only, no disk persistence.
 	goal string
 
 	input    textarea.Model
@@ -99,35 +97,7 @@ type model struct {
 	st      state
 	pending approvalMsg // valid when st == stateApproval
 	cancel  context.CancelFunc
-
-	// /project state machine (see project.go and approve.go). proj is projNone
-	// unless the flow is active: it names the project being planned. The plan
-	// itself lives on disk in .planning/plan, so nothing about it is held here
-	// and a cancelled flow loses nothing.
-	proj     projPhase
-	projName string
-	// planWindow, when positive, is the context window the planning passes are
-	// sized for instead of probing the session's client. It is a test hook,
-	// like completer; in a session it stays zero and the probe (cached by the
-	// client) decides.
-	planWindow int
-
-	// Question round state (see questions.go and question_round.go). qphase is
-	// qNone unless the round is showing or its pass is running; round holds
-	// the answers being composed. completer overrides the planning completer
-	// so a test can drive the round with no agent; nil means build one from
-	// this session's client.
-	qphase    qPhase
-	round     questionRound
-	completer plan.Completer
-
-	// execOutcomes accumulates /project-execute's finished tasks as they
-	// stream in via execProgressMsg, so a Ctrl-C mid-run can tally a partial
-	// summary (see the errMsg case in update.go) instead of just "cancelled".
-	// execDoneMsg clears it once the run's own authoritative summary has been
-	// shown; nil the rest of the time, including during an ordinary agent
-	// turn, which is how the cancel handler tells the two cases apart.
-	execOutcomes []phaseflow.TaskOutcome
+	projV2  bool // a /project run (projectrun.Run) is working; see project_v2.go
 
 	usage  agent.UsageSnapshot // running session token + cost meter
 	width  int

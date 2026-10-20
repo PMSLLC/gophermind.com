@@ -27,9 +27,7 @@ func candidatesEqual(t *testing.T, got, want []bubblecomplete.Candidate) {
 
 func TestCommandProviderSingleMatchGhost(t *testing.T) {
 	p := newCommandProvider()
-	// "/project" is no longer an unambiguous prefix on its own since
-	// "/project-execute" also starts with it; "/cl" still uniquely matches
-	// "/clear" only.
+	// "/cl" uniquely matches "/clear" only.
 	input := "/cl"
 	got := p.Suggest(input, len(input))
 	want := []bubblecomplete.Candidate{
@@ -45,12 +43,9 @@ func TestCommandProviderMenuOnMultipleMatches(t *testing.T) {
 	p := newCommandProvider()
 	input := "/p"
 	got := p.Suggest(input, len(input))
-	// "/project", "/project-execute", "/phase", and "/provider" all start
-	// with "/p".
+	// "/project" and "/provider" both start with "/p".
 	want := []bubblecomplete.Candidate{
-		{Text: "roject", Display: "/project <name> <brief>", Replace: 0},
-		{Text: "roject-execute", Display: "/project-execute", Replace: 0},
-		{Text: "hase", Display: "/phase <cmd>", Replace: 0},
+		{Text: "roject", Display: "/project <brief> [flags]", Replace: 0},
 		{Text: "rovider", Display: "/provider", Replace: 0},
 	}
 	candidatesEqual(t, got, want)

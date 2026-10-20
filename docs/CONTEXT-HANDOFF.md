@@ -31,7 +31,7 @@ a cache-hit ratio, with any rebuild spike traceable to a structural cause.
 - [x] `humanize` tool, first tool in the tree that makes its own model call - `internal/tools/humanize.go` (`50492ff`)
 - [x] Session rename and delete from the list (`8f5659c`, `1926880`)
 - [x] Per-session working folder, plus the `PickFolder` binding - `internal/serve/session_root.go`, `desktop/app.go` (`75a442d`)
-- [x] Planner emits `depends_on` and `is_contract`; `ValidatePlan` checks the graph - `internal/tui/project.go`, `internal/phaseflow/validate.go` (`be1d0f7`)
+- [x] Planner emits `depends_on` and `is_contract`; `ValidatePlan` checks the graph - `internal/tui/project.go`, `internal/phaseflow/validate.go` (`be1d0f7`) (both files removed in 0.10.0)
 - [x] `File > New Project` reads a brief and seeds an interview (`8036fd3`, `e3ceb12`)
 - [x] A 429 falls back to a sibling model on the same provider - `internal/modelcat/fallbacks.go` (`8eeba37`)
 - [x] Live turn status: what it is doing plus a ticking second counter (`dbf0e03`)

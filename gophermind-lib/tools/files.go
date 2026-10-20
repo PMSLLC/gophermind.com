@@ -18,10 +18,25 @@ var ignoredDirs = map[string]bool{
 	"node_modules": true,
 	"vendor":       true,
 	"dist":         true,
-	"build":        true,
 	"bin":          true,
 	".idea":        true,
 	".vscode":      true,
+}
+
+// skipIgnoredDir reports whether a directory is ignored when walking under root.
+// Names in ignoredDirs are skipped at any depth; "build" is skipped only when it
+// sits directly under root, so nested folders such as lib/build are still seen.
+func skipIgnoredDir(root, path, name string) bool {
+	return ignoredDirs[name] || isRootBuild(root, path, name)
+}
+
+// isRootBuild reports whether path is the "build" directory directly under root.
+func isRootBuild(root, path, name string) bool {
+	if name != "build" {
+		return false
+	}
+	rel, err := filepath.Rel(root, path)
+	return err == nil && rel == "build"
 }
 
 // ReadFile returns the read_file tool, which reads a file relative to root.
@@ -156,7 +171,7 @@ func ListFiles(root string) Tool {
 				if err != nil {
 					return err
 				}
-				if d.IsDir() && ignoredDirs[d.Name()] && path != base {
+				if d.IsDir() && skipIgnoredDir(rootAbs, path, d.Name()) && path != base {
 					return filepath.SkipDir
 				}
 				if d.IsDir() {
