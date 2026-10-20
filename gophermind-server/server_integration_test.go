@@ -277,12 +277,20 @@ func TestRunWithConfig_EndToEnd(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- runWithConfig(cfg, ln, logger, ctx) }()
 
+	// A private client that never keeps a connection alive. http.DefaultClient
+	// can leave a dialed-but-unused connection (the transport races a fresh
+	// dial against an idle one) that the server still sees as StateNew, and
+	// http.Server.Shutdown does not treat a StateNew connection as idle until
+	// it is 5 s old. That 5 s wait is stdlib behaviour, bounded by
+	// shutdownTimeout, and it is what made this test miss its own 5 s bound.
+	client := &http.Client{Transport: &http.Transport{DisableKeepAlives: true}}
+
 	// Poll /healthz rather than a fixed sleep: runWithConfig does real work
 	// (buildDeps, NewMux, WireGuard init) before runServer starts Serve.
 	deadline := time.Now().Add(5 * time.Second)
 	var up bool
 	for time.Now().Before(deadline) {
-		resp, err := http.Get("http://" + addr + "/healthz")
+		resp, err := client.Get("http://" + addr + "/healthz")
 		if err == nil {
 			resp.Body.Close()
 			up = true
@@ -296,7 +304,7 @@ func TestRunWithConfig_EndToEnd(t *testing.T) {
 
 	// A registered route (proves the full mux, not just healthz, is live)
 	// and the WireGuard route (proves startWireGuard actually ran).
-	resp, err := http.DefaultClient.Do(authedReq(t, http.MethodGet, "http://"+addr+"/session", "t", ""))
+	resp, err := client.Do(authedReq(t, http.MethodGet, "http://"+addr+"/session", "t", ""))
 	if err != nil {
 		t.Fatalf("GET /session: %v", err)
 	}
@@ -304,7 +312,7 @@ func TestRunWithConfig_EndToEnd(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("/session status = %d, want 200", resp.StatusCode)
 	}
-	wgResp, err := http.DefaultClient.Do(authedReq(t, http.MethodPost, "http://"+addr+"/wg/register", "t", `{"public_key":"x"}`))
+	wgResp, err := client.Do(authedReq(t, http.MethodPost, "http://"+addr+"/wg/register", "t", `{"public_key":"x"}`))
 	if err != nil {
 		t.Fatalf("POST /wg/register: %v", err)
 	}
@@ -341,7 +349,11 @@ func TestRunSweeper_RemovesTimedOutPeersOnATicker(t *testing.T) {
 		t.Fatalf("Register: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	// Cancel when the sweeper has done its job, not after a fixed window: a
+	// fixed 200 ms budget assumed the first ticks always get scheduled and
+	// the peer removal finishes inside it, which a loaded -race run breaks.
+	// The deadline below is only the failure bound.
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan struct{})
 	go func() {
@@ -349,13 +361,19 @@ func TestRunSweeper_RemovesTimedOutPeersOnATicker(t *testing.T) {
 		close(done)
 	}()
 
+	deadline := time.Now().Add(10 * time.Second)
+	for wg.PeerCount() != 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if n := wg.PeerCount(); n != 0 {
+		t.Errorf("peer count = %d, want 0 (runSweeper should have timed the peer out)", n)
+	}
+
+	cancel()
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("runSweeper did not stop when its context was cancelled")
-	}
-	if wg.PeerCount() != 0 {
-		t.Errorf("peer count = %d, want 0 (runSweeper should have timed the peer out)", wg.PeerCount())
 	}
 }
 
