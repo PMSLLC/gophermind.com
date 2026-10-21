@@ -6,6 +6,10 @@ package contract
 import (
 	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"path"
 	"sort"
 	"strings"
 
@@ -306,4 +310,84 @@ func (c *Contracts) Affected(changed []string, deps map[string][]string) ([]stri
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// ReceiverName returns the base type name of a method signature's receiver
+// (pointer and type parameters stripped), or "" for a plain function or a
+// signature that does not parse.
+func ReceiverName(sig string) string {
+	f, err := parser.ParseFile(token.NewFileSet(), "", "package p\n"+sig+" {}\n", parser.SkipObjectResolution)
+	if err != nil {
+		return ""
+	}
+	for _, d := range f.Decls {
+		fd, ok := d.(*ast.FuncDecl)
+		if !ok || fd.Recv == nil || len(fd.Recv.List) == 0 {
+			continue
+		}
+		t := fd.Recv.List[0].Type
+		for {
+			switch x := t.(type) {
+			case *ast.StarExpr:
+				t = x.X
+				continue
+			case *ast.ParenExpr:
+				t = x.X
+				continue
+			case *ast.IndexExpr:
+				t = x.X
+				continue
+			case *ast.IndexListExpr:
+				t = x.X
+				continue
+			}
+			break
+		}
+		if id, ok := t.(*ast.Ident); ok {
+			return id.Name
+		}
+	}
+	return ""
+}
+
+// ReceiverTypeID returns the ID of the contract type that declares the
+// receiver of method f, preferring a type in the package directory of f.File,
+// or "" when f is not a method or no contract type declares its receiver. A
+// method implicitly uses its receiver type even when uses does not list it.
+func (c *Contracts) ReceiverTypeID(f Function) string {
+	name := ReceiverName(f.Signature)
+	if name == "" {
+		return ""
+	}
+	dir := path.Dir(f.File)
+	found := ""
+	for _, t := range c.Types {
+		if !declaresType(t.Decl, name) {
+			continue
+		}
+		if path.Dir(t.File) == dir {
+			return t.ID
+		}
+		if found == "" {
+			found = t.ID
+		}
+	}
+	return found
+}
+
+func declaresType(decl, name string) bool {
+	f, err := parser.ParseFile(token.NewFileSet(), "", "package p\n"+decl+"\n", parser.SkipObjectResolution)
+	if err != nil {
+		return false
+	}
+	for _, d := range f.Decls {
+		if gd, ok := d.(*ast.GenDecl); ok {
+			for _, s := range gd.Specs {
+				if ts, ok := s.(*ast.TypeSpec); ok && ts.Name.Name == name {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }

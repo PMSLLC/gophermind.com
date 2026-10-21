@@ -33,7 +33,9 @@ The test file is compiled against the contract's stubs before it is accepted. A 
 
 The test file is code only. No questions, no deliberation, and no comment block longer than a few lines; a file that is mostly comments is refused. To provoke an error that the inputs alone do not reach, provoke it with what the test controls: a test double defined in the test file (for example an `io.Writer` whose `Write` returns an error), a value the dependency rejects (for example `math.NaN()` in a float field for `encoding/json`), or an invalid argument value. If the dependency is a package-level function that cannot be replaced, pick an input that makes the real one fail. Never ask how to mock it.
 
-Never define the function under test, any other contract function, or any contract type in the test file, not even as a stub or a re-implementation: the production code is written later and the test calls it by name. A test double is only for things outside the contract (a writer, a reader).
+{{if .Receiver}}The receiver type `{{.Receiver}}` is already declared by the package and its declaration is in dependency_signatures: do not declare, stub or redefine it in the test file, and do not invent fields it lacks; build a value of it with a composite literal of the declared fields.
+
+{{end}}Never define the function under test, any other contract function, or any contract type in the test file, not even as a stub or a re-implementation: the production code is written later and the test calls it by name. A test double is only for things outside the contract (a writer, a reader).
 
 Other test files share this package, so every top-level helper (test double type, function, variable or constant) must start with this function's name (for example `ValidateEmailReader`), or live inside the test function; an unprefixed helper that another file also declares breaks the build.
 
