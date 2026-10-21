@@ -461,6 +461,7 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	var tests []map[string]any
 	var source string
 	renamedHelpers := false
+	var droppedImports []string
 	cs := callSpec{stage: "testwrite:" + id, taskType: "testwrite", nodeID: id, nodeClass: class, tier: p.tierFor(strField(d, "model_tier")), scope: router.ScopeNode, maxTokens: maxTokensTestwrite}
 	err = p.callAsking(ctx, r, cs, prompt, func(text string) error {
 		ts, src, err := parseTestwriteIn(StripReply(text), ct, pkg, funcName, c.Module, hookList(d), packageSet(c))
@@ -472,15 +473,16 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 		if err != nil {
 			return err
 		}
+		src, dropped := dropUnusedImports(src)
 		if err := compileCheckTestFile(c, rel, src, others); err != nil {
 			if errors.Is(err, errNoGo) {
 				p.noGoWarn.Do(func() { p.emit(events.KindWarning, cs.stage, id, err.Error()) })
-				tests, source, renamedHelpers = ts, src, renamed
+				tests, source, renamedHelpers, droppedImports = ts, src, renamed, dropped
 				return nil
 			}
 			return err
 		}
-		tests, source, renamedHelpers = ts, src, renamed
+		tests, source, renamedHelpers, droppedImports = ts, src, renamed, dropped
 		return nil
 	})
 	if err != nil {
@@ -488,6 +490,11 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	}
 	if renamedHelpers {
 		p.emit(events.KindWarning, cs.stage, id, "test_helper_renamed: helpers in the test file of node "+id+" collided with another test file of the package and were renamed with the function name")
+	}
+	if len(droppedImports) > 0 {
+		p.emit(events.KindWarning, cs.stage, id, fmt.Sprintf(
+			"test_import_normalized: %d unused imports were removed from the test file of node %s (%s)",
+			len(droppedImports), id, strings.Join(droppedImports, ", ")))
 	}
 	wt := writtenTests{Tests: tests, TestFile: rel, SHA256: hashHex([]byte(source))}
 	if st.Pending == nil {
