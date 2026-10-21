@@ -1,6 +1,6 @@
 # Unifying the planner, the executor and PhaseFlow: overview
 
-Last updated: 2026-10-15. Status: sub-projects A to G are built and merged to `main` (2026-10-20); the csvstat smoke and the graded run are still to do (active goal: `docs/GOAL-FINISH.md`). This page is the map; each item links to the document that holds the detail.
+Last updated: 2026-10-20. Status: sub-projects A to G are built and merged to `main` (2026-10-20); the csvstat smoke and the graded run are still to do (active goal: `docs/GOAL-FINISH.md`). This page is the map; each item links to the document that holds the detail.
 
 ## 1. What this is
 

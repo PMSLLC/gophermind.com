@@ -1,6 +1,6 @@
 # Proposed website section: Plan and build from a brief
 
-Not applied. Drop into `site/index.html` after the "Why this one" section (before the `<hr class="rule">` that precedes `#install`) once the csvstat smoke passes. Copy is 58 words and claims only what README.md section "Plan and build from a brief" says.
+Applied to `site/index.html` on 2026-10-20 by the finish goal (`docs/GOAL-FINISH.md` task 4), before the csvstat smoke verified; the copy claims only what README.md says and does not claim a verified end-to-end build. Original instruction: drop into `site/index.html` after the "Why this one" section (before the `<hr class="rule">` that precedes `#install`) once the csvstat smoke passes. Copy is 58 words and claims only what README.md section "Plan and build from a brief" says.
 
 ```html
   <section class="wrap" id="brief">

@@ -175,6 +175,7 @@ footer .wrap{display:flex; justify-content:space-between; gap:1rem;
     <a class="mark" href="/">Gopher<span>Mind</span></a>
     <nav>
       <a href="#why">Why</a>
+      <a href="#brief">Briefs</a>
       <a href="#install">Install</a>
       <a href="https://github.com/jbrahy/gophermind.com">Source</a>
     </nav>
@@ -274,6 +275,24 @@ footer .wrap{display:flex; justify-content:space-between; gap:1rem;
         Prometheus metrics.</p>
         <p class="proof">Every integration is inert until you configure it, so
         the default install stays small and quiet.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section class="wrap" id="brief">
+    <h2>Plan and build from a brief</h2>
+    <div class="claims">
+
+      <div class="claim">
+        <h3>One brief, one run</h3>
+        <p><code>/project &lt;brief&gt;</code> plans a brief into a tree of nodes,
+        then builds it. Independent leaves build in parallel, and a leaf that
+        runs out of models is rewritten by the planner.</p>
+        <p class="proof">Every node, event and attempt is a plain file in
+        <code>.gophermind/</code> in your repo.</p>
       </div>
 
     </div>
