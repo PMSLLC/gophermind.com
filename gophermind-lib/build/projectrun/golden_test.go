@@ -150,6 +150,7 @@ planner_warnings.leaf_defaulted
 planner_warnings.leaf_normalized
 planner_warnings.outline_id_normalized
 planner_warnings.signature_qualifier_normalized
+planner_warnings.test_comment_normalized
 planner_warnings.test_import_normalized
 preflight
 preflight[].detail

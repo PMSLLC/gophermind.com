@@ -36,8 +36,7 @@ func dropUnusedImports(src string) (string, []string) {
 		}
 		return true
 	})
-	type cut struct{ from, to int } // byte offsets, to exclusive
-	var cuts []cut
+	var cuts []srcCut
 	var removed []string
 	off := func(p token.Pos) int { return fset.Position(p).Offset }
 	for _, d := range f.Decls {
@@ -59,7 +58,7 @@ func dropUnusedImports(src string) (string, []string) {
 			continue
 		}
 		if len(drop) == len(gd.Specs) || !gd.Lparen.IsValid() {
-			cuts = append(cuts, cut{off(gd.Pos()), off(gd.End())})
+			cuts = append(cuts, srcCut{off(gd.Pos()), off(gd.End()), true})
 			continue
 		}
 		for _, is := range drop {
@@ -67,44 +66,13 @@ func dropUnusedImports(src string) (string, []string) {
 			if is.Comment != nil {
 				end = is.Comment.End()
 			}
-			cuts = append(cuts, cut{off(is.Pos()), off(end)})
+			cuts = append(cuts, srcCut{off(is.Pos()), off(end), true})
 		}
 	}
 	if len(cuts) == 0 {
 		return src, nil
 	}
-	sort.Slice(cuts, func(i, j int) bool { return cuts[i].from < cuts[j].from })
-	var b strings.Builder
-	pos := 0
-	for _, c := range cuts {
-		from, to := c.from, c.to
-		// Take the line's indentation and newline too when nothing else is on it.
-		ls := strings.LastIndexByte(src[:from], '\n') + 1
-		le := to
-		for le < len(src) && (src[le] == ' ' || src[le] == '\t' || src[le] == '\r') {
-			le++
-		}
-		if strings.TrimSpace(src[ls:from]) == "" && (le == len(src) || src[le] == '\n') {
-			from = ls
-			if le < len(src) {
-				to = le + 1
-			}
-		}
-		if to == c.to && le < len(src) && src[le] == ';' {
-			// Same-line form: take the separator with the spec.
-			to = le + 1
-			for to < len(src) && (src[to] == ' ' || src[to] == '\t') {
-				to++
-			}
-		}
-		if from < pos {
-			continue
-		}
-		b.WriteString(src[pos:from])
-		pos = to
-	}
-	b.WriteString(src[pos:])
-	out, err := format.Source([]byte(b.String()))
+	out, err := format.Source([]byte(applyCuts(src, cuts)))
 	if err != nil {
 		return src, nil
 	}
@@ -149,4 +117,46 @@ func isStdlib(p string) bool {
 	}
 	st, err := os.Stat(filepath.Join(root, "src", filepath.FromSlash(p)))
 	return err == nil && st.IsDir()
+}
+
+// srcCut is a byte range of a source file to remove (to exclusive). sep is
+// true when a ';' that follows on the same line goes with it.
+type srcCut struct {
+	from, to int
+	sep      bool
+}
+
+// applyCuts removes the ranges. A range alone on its lines takes the lines
+// (indentation and newline) with it.
+func applyCuts(src string, cuts []srcCut) string {
+	sort.Slice(cuts, func(i, j int) bool { return cuts[i].from < cuts[j].from })
+	var b strings.Builder
+	pos := 0
+	for _, c := range cuts {
+		from, to := c.from, c.to
+		ls := strings.LastIndexByte(src[:from], '\n') + 1
+		le := to
+		for le < len(src) && (src[le] == ' ' || src[le] == '\t' || src[le] == '\r') {
+			le++
+		}
+		if strings.TrimSpace(src[ls:from]) == "" && (le == len(src) || src[le] == '\n') {
+			from = ls
+			if le < len(src) {
+				to = le + 1
+			}
+		}
+		if c.sep && to == c.to && le < len(src) && src[le] == ';' {
+			to = le + 1
+			for to < len(src) && (src[to] == ' ' || src[to] == '\t') {
+				to++
+			}
+		}
+		if from < pos {
+			continue
+		}
+		b.WriteString(src[pos:from])
+		pos = to
+	}
+	b.WriteString(src[pos:])
+	return b.String()
 }

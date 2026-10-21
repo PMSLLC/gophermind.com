@@ -836,3 +836,45 @@ func TestAnUnusedTestImportInTheRepairReplyIsDropped(t *testing.T) {
 		}
 	}
 }
+
+func withLongComment(t *testing.T, reply string) string {
+	t.Helper()
+	out := strings.Replace(reply, `func TestGreet`, strings.Repeat(`// secret deliberation\n`, 12)+`func TestGreet`, 1)
+	if out == reply {
+		t.Fatal("fixture has no TestGreet")
+	}
+	return out
+}
+
+func commentWarnings(g *rig) (n int, leaked bool) {
+	for _, e := range g.sink.OfKind(events.KindWarning) {
+		if strings.HasPrefix(e.Message, "test_comment_normalized: 1 ") {
+			n++
+			leaked = leaked || strings.Contains(e.Message, "deliberation")
+		}
+	}
+	return
+}
+
+// A long comment block is removed before the validator runs, on the first
+// reply and on the repair reply alike.
+func TestALongTestCommentIsDroppedWithAWarning(t *testing.T) {
+	good := string(mustRead(t, filepath.Join(greeter, "testwrite.fn-greet.txt")))
+	bad := withLongComment(t, good)
+	for name, files := range map[string]map[string]string{
+		"first reply":  {"testwrite.fn-greet.txt": bad},
+		"repair reply": {"testwrite.fn-greet.txt": "nope", "testwrite.fn-greet.2.txt": bad},
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := newRig(t, approving(), variant(t, files))
+			g.mustPlan(planner.Options{})
+			src, err := os.ReadFile(filepath.Join(g.repo, "internal/greet/fn_greet_test.go"))
+			if err != nil || strings.Contains(string(src), "deliberation") {
+				t.Errorf("written file still has the comment block: %v", err)
+			}
+			if n, leaked := commentWarnings(g); n != 1 || leaked {
+				t.Errorf("warnings = %d, leaked = %v", n, leaked)
+			}
+		})
+	}
+}

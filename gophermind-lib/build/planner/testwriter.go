@@ -462,9 +462,10 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	var source string
 	renamedHelpers := false
 	var droppedImports []string
+	var droppedComments int
 	cs := callSpec{stage: "testwrite:" + id, taskType: "testwrite", nodeID: id, nodeClass: class, tier: p.tierFor(strField(d, "model_tier")), scope: router.ScopeNode, maxTokens: maxTokensTestwrite}
 	err = p.callAsking(ctx, r, cs, prompt, func(text string) error {
-		ts, src, err := parseTestwriteIn(StripReply(text), ct, pkg, funcName, c.Module, hookList(d), packageSet(c))
+		ts, src, droppedC, err := parseTestwriteCounted(StripReply(text), ct, pkg, funcName, c.Module, hookList(d), packageSet(c))
 		if err != nil {
 			return err
 		}
@@ -477,12 +478,12 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 		if err := compileCheckTestFile(c, rel, src, others); err != nil {
 			if errors.Is(err, errNoGo) {
 				p.noGoWarn.Do(func() { p.emit(events.KindWarning, cs.stage, id, err.Error()) })
-				tests, source, renamedHelpers, droppedImports = ts, src, renamed, dropped
+				tests, source, renamedHelpers, droppedImports, droppedComments = ts, src, renamed, dropped, droppedC
 				return nil
 			}
 			return err
 		}
-		tests, source, renamedHelpers, droppedImports = ts, src, renamed, dropped
+		tests, source, renamedHelpers, droppedImports, droppedComments = ts, src, renamed, dropped, droppedC
 		return nil
 	})
 	if err != nil {
@@ -495,6 +496,11 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 		p.emit(events.KindWarning, cs.stage, id, fmt.Sprintf(
 			"test_import_normalized: %d unused imports were removed from the test file of node %s",
 			len(droppedImports), id))
+	}
+	if droppedComments > 0 {
+		p.emit(events.KindWarning, cs.stage, id, fmt.Sprintf(
+			"test_comment_normalized: %d long comment blocks were removed from the test file of node %s",
+			droppedComments, id))
 	}
 	wt := writtenTests{Tests: tests, TestFile: rel, SHA256: hashHex([]byte(source))}
 	if st.Pending == nil {
@@ -619,6 +625,13 @@ func parseTestwrite(text string, ct map[string]any, pkg, funcName, module string
 // contract, so an import of this module can be checked and a refusal can name
 // the valid ones.
 func parseTestwriteIn(text string, ct map[string]any, pkg, funcName, module string, hooks []string, pkgs importSet) ([]map[string]any, string, error) {
+	tests, src, _, err := parseTestwriteCounted(text, ct, pkg, funcName, module, hooks, pkgs)
+	return tests, src, err
+}
+
+// parseTestwriteCounted is parseTestwriteIn that also reports how many long
+// comments it removed from the test file before the validator ran.
+func parseTestwriteCounted(text string, ct map[string]any, pkg, funcName, module string, hooks []string, pkgs importSet) ([]map[string]any, string, int, error) {
 	var reply struct {
 		Tests    []map[string]any `json:"tests"`
 		TestFile string           `json:"test_file"`
@@ -641,12 +654,12 @@ func parseTestwriteIn(text string, ct map[string]any, pkg, funcName, module stri
 			}
 		}
 		if err != nil {
-			return nil, "", fmt.Errorf("test-writer reply is not a JSON object (%s)", jsonErrIn(err, text))
+			return nil, "", 0, fmt.Errorf("test-writer reply is not a JSON object (%s)", jsonErrIn(err, text))
 		}
 	}
 	need := len(objects(ct["errors"])) + 1
 	if len(reply.Tests) < need {
-		return nil, "", fmt.Errorf("test-writer reply has %d tests; the contract lists %d error conditions, so at least %d are needed (the happy path and one per condition)",
+		return nil, "", 0, fmt.Errorf("test-writer reply has %d tests; the contract lists %d error conditions, so at least %d are needed (the happy path and one per condition)",
 			len(reply.Tests), need-1, need)
 	}
 	file, _ := ct["file"].(string)
@@ -655,32 +668,34 @@ func parseTestwriteIn(text string, ct map[string]any, pkg, funcName, module stri
 	for i, t := range reply.Tests {
 		name, _ := t["name"].(string)
 		if strings.TrimSpace(name) == "" {
-			return nil, "", fmt.Errorf("test %d needs a name", i+1)
+			return nil, "", 0, fmt.Errorf("test %d needs a name", i+1)
 		}
 		given, err := testField(t, "given", i+1)
 		if err != nil {
-			return nil, "", err
+			return nil, "", 0, err
 		}
 		expect, err := testField(t, "expect", i+1)
 		if err != nil {
-			return nil, "", err
+			return nil, "", 0, err
 		}
 		pol, _ := t["polarity"].(string)
 		cov, _ := t["covers"].(string)
 		tests = append(tests, map[string]any{"name": name, "level": "unit", "given": given, "expect": expect, "command": command, "polarity": pol, "covers": cov})
 	}
 	if err := checkPolarity(tests, len(objects(ct["errors"]))); err != nil {
-		return nil, "", err
+		return nil, "", 0, err
 	}
 	sig, _ := ct["signature"].(string)
 	_, _, why := internalTarget(sig)
+	var dropped int
+	reply.TestFile, dropped = dropLongComments(reply.TestFile)
 	if err := checkTestSourceIn(reply.TestFile, pkg, funcName, module, why, pkgs); err != nil {
-		return nil, "", err
+		return nil, "", 0, err
 	}
 	if contains(hooks, "bench") && !hasBenchmark(reply.TestFile, funcName) {
-		return nil, "", fmt.Errorf("%s: the profile hooks ask for a benchmark, but the test file has no Benchmark%s function", grpHookBench, strings.TrimPrefix(funcName, "Test"))
+		return nil, "", 0, fmt.Errorf("%s: the profile hooks ask for a benchmark, but the test file has no Benchmark%s function", grpHookBench, strings.TrimPrefix(funcName, "Test"))
 	}
-	return tests, reply.TestFile, nil
+	return tests, reply.TestFile, dropped, nil
 }
 
 func hashHex(b []byte) string {
