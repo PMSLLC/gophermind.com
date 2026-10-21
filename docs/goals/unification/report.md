@@ -1,26 +1,26 @@
 # Unification goal report
 
-Written 2026-10-15. Branch `feat/briefv2-planner-core` (worktree `/Users/jbrahy/OtherProjects/PMSLLC/gophermind-planner-core`), tip `7a78497`. Not merged, not pushed from this session (see step 1). Goal document: `docs/GOAL-UNIFICATION.md`.
+Written 2026-10-15. Branch `feat/briefv2-planner-core` (worktree `/Users/jbrahy/OtherProjects/PMSLLC/gophermind-planner-core`), tip `b977a59`. Merged to `main` and pushed on 2026-10-20 (merge commits d869c51, a647ceb); all 305 branch commits were re-authored as John Brahy on 2026-10-20, so the hashes below are the rewritten ones. The smoke and the graded run are still open (`docs/GOAL-FINISH.md`). Goal document: `docs/GOAL-UNIFICATION.md`.
 
 ## Where the goal stopped
 
 Tasks 0 to 10, 12 and the dry-run merge are done. Task 11.1 (csvstat on the mini) and 11.2 (the graded AIVS run) did not run: a human prerequisite is missing (list below). Everything before them is done and verified.
 
-## What was built, with commit ranges (all on the branch)
+## What was built, with commit ranges (merged to `main`)
 
 | Sub-project | Commits | Result |
 |---|---|---|
-| A: run state as files | `27b25d4` and its range, earlier sessions | no SQLite; runtime files, `_state/events.jsonl`, `calls.jsonl`, scrubbed `attempts/` |
+| A: run state as files | `7565af7` and its range, earlier sessions | no SQLite; runtime files, `_state/events.jsonl`, `calls.jsonl`, scrubbed `attempts/` |
 | B: node widening and question model | earlier sessions | every group on every node; questions in rounds; decisions in the tree |
-| C: `/project` single entry | up to `48022af` | `/project` drives plan and build through the one system |
-| E: planner revise stage | `ede81d5..de24662` (spec fix in main `956917b`) | a failed leaf is rewritten within the approval rules; bounded by `max_revisions` |
-| F: parallel leaves | `dedafc7..2492c62` | `executor.workers` 1 to 8, `--workers`; private work trees; deterministic landing |
-| D and G: run view, v1 removal, rename | `c30dbfa..f93e600` | `runview`, node-based pipeline contract, dashboard, desktop client and panel, v1 and `/phase` removed, `briefv2` renamed `build` |
-| Docs sweep | `84e59b7`, `7a78497` | README, CHANGELOG, architecture index, `INDEX.md` regenerated |
+| C: `/project` single entry | up to `5bb886b` | `/project` drives plan and build through the one system |
+| E: planner revise stage | `ce2fc06..da545e9` (spec fix in main `956917b`) | a failed leaf is rewritten within the approval rules; bounded by `max_revisions` |
+| F: parallel leaves | `0e10090..b834b99` | `executor.workers` 1 to 8, `--workers`; private work trees; deterministic landing |
+| D and G: run view, v1 removal, rename | `fcb0d68..af1e421` | `runview`, node-based pipeline contract, dashboard, desktop client and panel, v1 and `/phase` removed, `briefv2` renamed `build` |
+| Docs sweep | `3348844`, `b977a59` | README, CHANGELOG, architecture index, `INDEX.md` regenerated |
 
-Docs in this checkout: plans and specs for E, F, D+G; spec amendments `fb9ca16`; overview `f52632b`; rename map and GOAL.md path `1a308a6`.
+Docs commits on `main` (unchanged by the rewrite): plans and specs for E, F, D+G; spec amendments `fb9ca16`; overview `f52632b`; rename map and GOAL.md path `1a308a6`.
 
-## Verification (final matrix, tip 7a78497, all pass)
+## Verification (final matrix, tip b977a59, all pass)
 
 - `gofmt -l`: empty. `go build` and `go vet`: clean in the root module, `gophermind-lib`, `gophermind-osx` (cgo and libui present).
 - Executor package alone: pass in 1924 s (the known load flake did not trigger). The other 80 `gophermind-lib` packages, `./cmd/...`, `gophermind-server` (plain and `-race`), `desktop`: pass.
@@ -29,7 +29,7 @@ Docs in this checkout: plans and specs for E, F, D+G; spec amendments `fb9ca16`;
 - Gates: removal and rename gates pass; no `briefv2` outside the historical list; no importer of `plantree`, `orchestrate`, `phaseflow`; no SQLite in `gophermind-lib/build`.
 - `brief validate`: both briefs (AIVS and csvstat) print no warning.
 - `brief plan --fake` on the greeter: `Requirements covered: 7 of 7`. `brief run` has no `--fake` flag; the offline greeter run is covered by the executor and cmd Go tests, not by a shell run.
-- Dry-run merge (`git merge-tree --write-tree main feat/briefv2-planner-core`): no conflicts, result tree `f0e01e9`. The branch is 263 commits ahead of `main`.
+- Dry-run merge (`git merge-tree --write-tree main feat/briefv2-planner-core`): no conflicts, result tree `f0e01e9`. The merge was done on 2026-10-20.
 - Per-task and final reviews: every task had a spec and quality review; E, F and D+G each had a multi-agent final review with adversarial verification and one fix wave plus a scoped re-review.
 
 ## Rulings made (all in the SDD ledgers under `.superpowers/sdd/*/progress.md` and `rulings.md`)
@@ -63,8 +63,8 @@ Preflight failed: `~/.gophermind/gophermind.yaml` does not exist (`gophermind-li
 
 ## Steps for you
 
-1. Push the branch: the git wrapper blocked `git push origin feat/briefv2-planner-core` (fast-forward; the remote is at `48022af`). Run it yourself, or tell me to use `--gw-force`.
-2. Review the branch and merge it (the dry-run is clean). Commit nothing else to `main` first; `main` holds docs only until the merge.
+1. Done 2026-10-20: the branch was merged to `main` and pushed; the remote branch is deleted.
+2. Done 2026-10-20: the executor suite passes (41 minutes, `-timeout 60m`; the fixture was stale, entry point stage) and the server shutdown and sweeper test flakes were fixed in test code.
 3. Write `~/.gophermind/gophermind.yaml` and provide the AIVS prerequisites above, then tell me; I run the csvstat smoke, then the graded loop to `v0.1.0` in the target repo.
 4. Deploy the server to the mini (Fedora, systemd, not launchd): on the host `git fetch` and `git checkout <ref>` (use `ssh -A`, the host has no GitHub key), build there, `sudo systemctl restart gophermind` (unit name per `gophermind-server/deploy/gophermind.service`), then fetch `/pipeline/runs` and `/pipeline/state` with a token.
 5. Build, sign and notarise the desktop app and release it in the same window as the server (the pipeline contract changed; they ship together). `build-app.sh` needs your signing identity.

@@ -1,6 +1,6 @@
 # Unifying the planner, the executor and PhaseFlow: overview
 
-Last updated: 2026-10-15. Status: sub-projects A to G are built on the branch (not merged); the graded run is still to do. This page is the map; each item links to the document that holds the detail.
+Last updated: 2026-10-15. Status: sub-projects A to G are built and merged to `main` (2026-10-20); the csvstat smoke and the graded run are still to do (active goal: `docs/GOAL-FINISH.md`). This page is the map; each item links to the document that holds the detail.
 
 ## 1. What this is
 
@@ -10,36 +10,36 @@ John asked for the planner to be tightly integrated with PhaseFlow. Reading both
 
 | Thing | Where |
 |---|---|
-| These documents | the `main` checkout (`/Users/jbrahy/OtherProjects/PMSLLC/gophermind.com`), which holds docs only by design |
-| The code to change | branch `feat/briefv2-planner-core`, in the linked worktree `/Users/jbrahy/OtherProjects/PMSLLC/gophermind-planner-core` (far ahead of `main`, not merged, one writer at a time) |
+| These documents | the `main` checkout (`/Users/jbrahy/OtherProjects/PMSLLC/gophermind.com`), which now also holds the code |
+| The code to change | `main` (merged 2026-10-20). The linked worktree `/Users/jbrahy/OtherProjects/PMSLLC/gophermind-planner-core` keeps the local branch `feat/briefv2-planner-core` for the smoke-fix loop (one writer at a time, merged back at checkpoints) |
 | Local session state | `CONTEXT.md` (gitignored) and the memory index under `~/.claude/projects/...gophermind-com/memory/` |
 
 ## 3. The documents
 
 | Document | What it is | Status |
 |---|---|---|
-| `docs/superpowers/specs/2026-10-07-planner-phaseflow-unification-design.md` | The umbrella design: decisions, the six sub-projects, sub-project A in full | built on the branch |
+| `docs/superpowers/specs/2026-10-07-planner-phaseflow-unification-design.md` | The umbrella design: decisions, the six sub-projects, sub-project A in full | merged to `main` |
 | `docs/reviews/2026-10-07-planner-executor-v1-v2-review.md` | Four-agent review of v1 and v2: side-by-side table, ranked defects, keep and drop verdicts, the new node fields | review; its section 8 claims were spot-checked in the goal task 1 |
 | `docs/reviews/2026-10-07-grilling-and-the-question-model.md` | The `grilling` skill against the v1 and v2 question models | decided; refined by the B spec |
-| `docs/superpowers/specs/2026-10-07-node-widening-and-question-model-design.md` | Sub-project B: the node groups, the Enrich stage, the question rounds, questions and answers in the tree | built on the branch |
+| `docs/superpowers/specs/2026-10-07-node-widening-and-question-model-design.md` | Sub-project B: the node groups, the Enrich stage, the question rounds, questions and answers in the tree | merged to `main` |
 | `docs/reviews/2026-10-08-v1-caller-inventory.md` | Who uses v1 (server, desktop app, `/phase`, the TUI) and what upgrading each means | inventory; its two decisions were taken and built |
-| `docs/superpowers/specs/2026-10-08-retire-v1-and-upgrade-consumers-design.md` | Sub-projects D and G: the `runview` library, the new pipeline contract, the server and desktop app upgrade, retiring `/phase` and v1, dropping the version names | built on the branch |
-| `docs/superpowers/plans/2026-10-07-filesystem-run-state.md` | Sub-project A plan: files instead of SQLite, attempt artifacts (9 tasks) | built on the branch |
-| `docs/superpowers/plans/2026-10-08-node-widening-and-question-model.md` | Sub-project B plan (13 tasks) | built on the branch |
+| `docs/superpowers/specs/2026-10-08-retire-v1-and-upgrade-consumers-design.md` | Sub-projects D and G: the `runview` library, the new pipeline contract, the server and desktop app upgrade, retiring `/phase` and v1, dropping the version names | merged to `main` |
+| `docs/superpowers/plans/2026-10-07-filesystem-run-state.md` | Sub-project A plan: files instead of SQLite, attempt artifacts (9 tasks) | merged to `main` |
+| `docs/superpowers/plans/2026-10-08-node-widening-and-question-model.md` | Sub-project B plan (13 tasks) | merged to `main` |
 | `docs/GOAL-UNIFICATION.md` | The goal document that finishes A to G, E and F and then the graded run, with the verification matrix, the stop conditions and the report | running (started 2026-10-08) |
-| `docs/GOAL.md` and `docs/superpowers/specs/2026-09-30-project-single-entry-design.md` (branch) | The graded run and `/project` as the single entry point, which this work must not disturb | active |
+| `docs/GOAL.md` and `docs/superpowers/specs/2026-09-30-project-single-entry-design.md` (`main`) | The graded run and `/project` as the single entry point, which this work must not disturb | active |
 
 ## 4. The seven sub-projects and their order
 
 | # | Sub-project | Detail | State |
 |---|---|---|---|
-| A | Run state as browsable files in the run folder; no SQLite; scrubbed attempt artifacts | umbrella spec section 4; plan A | built on the branch |
-| B | Node widening (every group on every node) and the question model (rounds, fact probe, confirm gate, decisions, questions and answers recorded in the tree) | B spec; plan B | built on the branch |
-| C | `/project` plans and builds through v2 | project-single-entry, 14 tasks | built on the branch |
-| D | The run view: `runview` library and the pipeline endpoints under one new node-based contract (no `.planning/` files are generated) | G spec | built on the branch |
-| E | A planner revise stage that rewrites a node after a failure (neither v1 nor v2 does this) | E spec; plan E (11 tasks) | built on the branch |
-| F | Parallel waves in the executor | F spec; plan F (12 tasks) | built on the branch |
-| G | Retire v1 and `/phase`, upgrade the server and the desktop app, drop the version names | G spec | built on the branch (before the graded run) |
+| A | Run state as browsable files in the run folder; no SQLite; scrubbed attempt artifacts | umbrella spec section 4; plan A | merged to `main` |
+| B | Node widening (every group on every node) and the question model (rounds, fact probe, confirm gate, decisions, questions and answers recorded in the tree) | B spec; plan B | merged to `main` |
+| C | `/project` plans and builds through v2 | project-single-entry, 14 tasks | merged to `main` |
+| D | The run view: `runview` library and the pipeline endpoints under one new node-based contract (no `.planning/` files are generated) | G spec | merged to `main` |
+| E | A planner revise stage that rewrites a node after a failure (neither v1 nor v2 does this) | E spec; plan E (11 tasks) | merged to `main` |
+| F | Parallel waves in the executor | F spec; plan F (12 tasks) | merged to `main` |
+| G | Retire v1 and `/phase`, upgrade the server and the desktop app, drop the version names | G spec | merged to `main` (before the graded run) |
 
 Decision 11 was reversed on 2026-10-08: the unification runs first (`docs/GOAL-UNIFICATION.md`), and the GOAL.md graded run is its task 11.2.
 
@@ -88,7 +88,7 @@ This is why the unification work waits: every change to the planner, the executo
 ## 8. Open items for John
 
 1. G's open items: the name of the root package after the rename (`build` proposed), whether `CREDITS.md` keeps a PhaseFlow thank-you line (proposed yes), stream cap and polling defaults, run retention (G spec section 13).
-2. After the graded run: revisit merging the branch, re-check the eight unverified review claims, then start A.
+2. After the graded run: re-check the eight unverified review claims, then start A.
 5. Backlog, outside the unification goal (added 2026-10-08): bring the free LLM providers from `git@github.com:tashfeenahmed/freellmapi.git` into GopherMind. Not started. Before any code: read the repo (licence, what it wraps, how it authenticates), compare it with `docs/free-providers.md`, decide whether to depend on it or reimplement the providers behind the router, and apply the privacy rules (a public provider may only see node-scope calls). Third-party code is treated as untrusted until reviewed.
 4. Enrich's cost on the real brief (136 function nodes in the rehearsal) is unmeasured; measure on the csvstat brief first.
 
@@ -99,7 +99,7 @@ This is why the unification work waits: every change to the planner, the executo
 3. Spot-check the review's section 8 claims.
 4. Execute plan A, then plan B, subagent-driven (John's standing rule), on the branch, one writer at a time.
 
-## 10. Rename map (G7, done on the branch)
+## 10. Rename map (G7, done and merged to `main`)
 
 The version names are gone. Folders and import paths:
 
