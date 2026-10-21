@@ -11,7 +11,7 @@ GopherMind is a CLI, not a server deployment; "deploy" here means building the b
 - Provider settings: `reasoning_effort: none` for the mini, call timeout 10 minutes default (25 minutes planned for private providers), `executor.workers: 1`, `max_run_minutes: 720`, `executor.sandbox: on`.
 
 ## Test commands
-- `cd gophermind-lib && gofmt -l briefv2 && go vet ./briefv2/... && go test ./briefv2/... -race -count=1 -timeout 30m` (executor package ~11 min), then from the repo root `go test ./cmd/... -race -count=1`. In the worktree use `go build ./cmd/... ./gophermind-lib/...` (the ignored `desktop/frontend/dist` is missing).
+- `cd gophermind-lib && gofmt -l build && go vet ./build/... && go test ./build/... -race -count=1 -timeout 30m` (executor package ~11 min), then from the repo root `go test ./cmd/... -race -count=1`. In the worktree use `go build ./cmd/... ./gophermind-lib/...` (the ignored `desktop/frontend/dist` is missing).
 - Pre-push gate (hook): gofmt, vet, build, `go test -race ./...` for root packages, iOS XCTest (flaky: retry unchanged, never bypass). Tests that run git must strip every GIT_* variable.
 
 ## Rehearsals and graded run

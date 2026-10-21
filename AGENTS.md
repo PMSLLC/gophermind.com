@@ -5,7 +5,7 @@ Instructions for any coding agent working in this repo. `CLAUDE.md` has the same
 ## Layout
 
 - `main` checkout: code and docs (the unification branch was merged on 2026-10-20).
-- Worktree `../gophermind-planner-core` (branch `feat/briefv2-planner-core`): smoke-fix loop, one writer at a time.
+- Worktree `../gophermind-planner-core` (the local planner-core branch): smoke-fix loop, one writer at a time.
 - Packages: `gophermind-lib/build` (planner and executor), `gophermind-lib/runview` (run view), `gophermind-server` (pipeline endpoints), `desktop` and `gophermind-osx` (clients).
 - Pipeline contract: `docs/pipeline-contract.md` . Run state is browsable files in the run folder, not SQLite.
 

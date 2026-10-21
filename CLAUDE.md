@@ -5,7 +5,7 @@ Read `PROJECT.md` and `CONTEXT.md` first. Global rules live in `~/.claude/CLAUDE
 ## Where things live
 
 - This checkout (`main`) holds the code and the docs. The unification branch was merged into `main` on 2026-10-20 (merge commits d869c51, a647ceb) and pushed; the remote branch is deleted.
-- The linked worktree `../gophermind-planner-core` keeps the local branch `feat/briefv2-planner-core` (same code) for the smoke-fix loop. One writer at a time; work merges back to `main` at checkpoints.
+- The linked worktree `../gophermind-planner-core` keeps the local planner-core branch (same code; `git -C ../gophermind-planner-core branch --show-current` names it) for the smoke-fix loop. One writer at a time; work merges back to `main` at checkpoints.
 - Map of the unification work: `docs/unification-overview.md`. Goal: `docs/GOAL-UNIFICATION.md`. Run report: `docs/goals/unification/report.md`. Graded run: `docs/GOAL.md`.
 
 ## Build and test (from a module root, in this checkout or the worktree)
