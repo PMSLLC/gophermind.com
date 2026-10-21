@@ -493,8 +493,8 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	}
 	if len(droppedImports) > 0 {
 		p.emit(events.KindWarning, cs.stage, id, fmt.Sprintf(
-			"test_import_normalized: %d unused imports were removed from the test file of node %s (%s)",
-			len(droppedImports), id, strings.Join(droppedImports, ", ")))
+			"test_import_normalized: %d unused imports were removed from the test file of node %s",
+			len(droppedImports), id))
 	}
 	wt := writtenTests{Tests: tests, TestFile: rel, SHA256: hashHex([]byte(source))}
 	if st.Pending == nil {

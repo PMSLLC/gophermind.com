@@ -65,6 +65,45 @@ func TestDropUnusedImports(t *testing.T) {
 			removed: []string{"rand"},
 		},
 		{
+			name: "used major-version module path kept",
+			src:  "package p\n\nimport (\n\t\"example.com/m/v2\"\n\t\"testing\"\n)\n\nfunc TestX(t *testing.T) { _ = m.X }\n",
+			same: true,
+		},
+		{
+			name: "used package whose name differs from its directory kept",
+			src:  "package p\n\nimport (\n\t\"mod/internal/greet\"\n\t\"testing\"\n)\n\nfunc TestX(t *testing.T) { _ = greeter.X }\n",
+			same: true,
+		},
+		{
+			name: "used v1 api package kept",
+			src:  "package p\n\nimport (\n\t\"k8s.io/api/core/v1\"\n\t\"testing\"\n)\n\nfunc TestX(t *testing.T) { _ = v1.Pod{} }\n",
+			same: true,
+		},
+		{
+			name: "unused non-stdlib import without alias kept (limit)",
+			src:  "package p\n\nimport (\n\t\"mod/internal/greet\"\n\t\"testing\"\n)\n\nfunc TestX(t *testing.T) {}\n",
+			same: true,
+		},
+		{
+			name: "unused import beside same-named local variable kept (limit)",
+			src:  "package p\n\nimport (\n\t\"bytes\"\n\t\"testing\"\n)\n\nfunc TestX(t *testing.T) { var bytes struct{ N int }; _ = bytes.N }\n",
+			same: true,
+		},
+		{
+			name:    "build tag and comments preserved",
+			src:     "//go:build linux\n\n// Package p tests.\npackage p\n\n// imports\nimport (\n\t\"bytes\" // unused\n\t\"testing\" // keep\n)\n\nfunc TestX(t *testing.T) {}\n",
+			want:    "//go:build linux\n\n// Package p tests.\npackage p\n\n// imports\nimport (\n\t\"testing\" // keep\n)",
+			absent:  "bytes",
+			removed: []string{"bytes"},
+		},
+		{
+			name:    "two specs on one line",
+			src:     "package p\n\nimport (\"bytes\"; \"testing\")\n\nfunc TestX(t *testing.T) {}\n",
+			want:    "func TestX(t *testing.T) {}",
+			absent:  "bytes",
+			removed: []string{"bytes"},
+		},
+		{
 			name: "unparseable file unchanged",
 			src:  "package p\n\nimport \"bytes\"\n\nfunc TestX( {\n",
 			same: true,

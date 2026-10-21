@@ -818,3 +818,21 @@ func TestAnUnusedTestImportIsDroppedWithAWarning(t *testing.T) {
 		t.Error("no test_import_normalized warning with a count")
 	}
 }
+
+// The normalization also covers the repair reply: the first reply is unusable,
+// the second one carries the unused import.
+func TestAnUnusedTestImportInTheRepairReplyIsDropped(t *testing.T) {
+	good := string(mustRead(t, filepath.Join(greeter, "testwrite.fn-greet.txt")))
+	bad := strings.Replace(good, `import \"testing\"`, `import (\n\t\"bytes\"\n\t\"testing\"\n)`, 1)
+	g := newRig(t, approving(), variant(t, map[string]string{"testwrite.fn-greet.txt": "nope", "testwrite.fn-greet.2.txt": bad}))
+	g.mustPlan(planner.Options{})
+	src, err := os.ReadFile(filepath.Join(g.repo, "internal/greet/fn_greet_test.go"))
+	if err != nil || strings.Contains(string(src), "bytes") {
+		t.Errorf("written file still has the unused import: %v", err)
+	}
+	for _, e := range g.sink.OfKind(events.KindWarning) {
+		if strings.HasPrefix(e.Message, "test_import_normalized: 1 ") && strings.Contains(e.Message, "bytes") {
+			t.Errorf("warning names an import: %q", e.Message)
+		}
+	}
+}

@@ -5,7 +5,10 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
+	"os"
+	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,9 +19,8 @@ import (
 // unambiguous fix, so it is made here instead of costing a repair call. Blank
 // and dot imports are never touched, an import is only ever removed, and a file
 // that does not parse is returned unchanged. The package name is the explicit
-// alias or the last path element (the one before a /vN suffix); a path whose
-// last element is not a plain identifier is kept, since its declared name is
-// unknown. removed lists the names dropped, in source order.
+// alias or, for standard library paths only, the last path element; every other
+// import without an alias is kept. removed lists the names dropped, in source order.
 func dropUnusedImports(src string) (string, []string) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "", src, parser.ParseComments)
@@ -34,9 +36,10 @@ func dropUnusedImports(src string) (string, []string) {
 		}
 		return true
 	})
-	type cut struct{ from, to int } // 1-based inclusive line range
+	type cut struct{ from, to int } // byte offsets, to exclusive
 	var cuts []cut
 	var removed []string
+	off := func(p token.Pos) int { return fset.Position(p).Offset }
 	for _, d := range f.Decls {
 		gd, ok := d.(*ast.GenDecl)
 		if !ok || gd.Tok != token.IMPORT {
@@ -56,32 +59,51 @@ func dropUnusedImports(src string) (string, []string) {
 			continue
 		}
 		if len(drop) == len(gd.Specs) || !gd.Lparen.IsValid() {
-			cuts = append(cuts, cut{fset.Position(gd.Pos()).Line, fset.Position(gd.End()).Line})
+			cuts = append(cuts, cut{off(gd.Pos()), off(gd.End())})
 			continue
 		}
 		for _, is := range drop {
-			cuts = append(cuts, cut{fset.Position(is.Pos()).Line, fset.Position(is.End()).Line})
+			end := is.End()
+			if is.Comment != nil {
+				end = is.Comment.End()
+			}
+			cuts = append(cuts, cut{off(is.Pos()), off(end)})
 		}
 	}
 	if len(cuts) == 0 {
 		return src, nil
 	}
 	sort.Slice(cuts, func(i, j int) bool { return cuts[i].from < cuts[j].from })
-	lines := strings.SplitAfter(src, "\n")
 	var b strings.Builder
-	for i, l := range lines {
-		n := i + 1
-		skip := false
-		for _, c := range cuts {
-			if n >= c.from && n <= c.to {
-				skip = true
-				break
+	pos := 0
+	for _, c := range cuts {
+		from, to := c.from, c.to
+		// Take the line's indentation and newline too when nothing else is on it.
+		ls := strings.LastIndexByte(src[:from], '\n') + 1
+		le := to
+		for le < len(src) && (src[le] == ' ' || src[le] == '\t' || src[le] == '\r') {
+			le++
+		}
+		if strings.TrimSpace(src[ls:from]) == "" && (le == len(src) || src[le] == '\n') {
+			from = ls
+			if le < len(src) {
+				to = le + 1
 			}
 		}
-		if !skip {
-			b.WriteString(l)
+		if to == c.to && le < len(src) && src[le] == ';' {
+			// Same-line form: take the separator with the spec.
+			to = le + 1
+			for to < len(src) && (src[to] == ' ' || src[to] == '\t') {
+				to++
+			}
 		}
+		if from < pos {
+			continue
+		}
+		b.WriteString(src[pos:from])
+		pos = to
 	}
+	b.WriteString(src[pos:])
 	out, err := format.Source([]byte(b.String()))
 	if err != nil {
 		return src, nil
@@ -90,10 +112,13 @@ func dropUnusedImports(src string) (string, []string) {
 }
 
 var plainIdent = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-var versionElem = regexp.MustCompile(`^v[0-9]+$`)
+var versionElem = regexp.MustCompile(`^v([2-9]|[1-9][0-9]+)$`)
 
 // importName is the name an import is referenced by, or "" when it cannot be
-// known from the path alone.
+// known from the path alone. Only standard library paths (a directory under
+// GOROOT/src; a module path without a dot is not enough) are guessed; any other path without an alias is kept, since
+// its declared package name may differ from its directory. A /vN suffix is a
+// major-version element only for N >= 2 (math/rand/v2 declares rand).
 func importName(is *ast.ImportSpec) string {
 	if is.Name != nil {
 		return is.Name.Name
@@ -103,6 +128,9 @@ func importName(is *ast.ImportSpec) string {
 		return ""
 	}
 	parts := strings.Split(p, "/")
+	if !isStdlib(p) {
+		return ""
+	}
 	last := parts[len(parts)-1]
 	if versionElem.MatchString(last) && len(parts) > 1 {
 		last = parts[len(parts)-2]
@@ -111,4 +139,14 @@ func importName(is *ast.ImportSpec) string {
 		return ""
 	}
 	return last
+}
+
+// isStdlib reports whether p is a package directory of the standard library.
+func isStdlib(p string) bool {
+	root := runtime.GOROOT()
+	if root == "" || strings.Contains(strings.Split(p, "/")[0], ".") {
+		return false
+	}
+	st, err := os.Stat(filepath.Join(root, "src", filepath.FromSlash(p)))
+	return err == nil && st.IsDir()
 }
