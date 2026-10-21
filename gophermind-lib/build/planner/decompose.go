@@ -203,11 +203,22 @@ func breakDependencyCycles(c *contract.Contracts, dec decomposed) []string {
 	return warnings
 }
 
+// usesWithReceiver is f.Uses plus the contract type that declares the receiver
+// of a method: a method implicitly uses its receiver type, so its declaration
+// reaches the node's dependency signatures even when uses omits it.
+func usesWithReceiver(c *contract.Contracts, f contract.Function) []string {
+	uses := append([]string(nil), f.Uses...)
+	if id := c.ReceiverTypeID(f); id != "" && !contains(uses, id) {
+		uses = append(uses, id)
+	}
+	return uses
+}
+
 // decomposeCall asks for the nodes of one batch of one component's functions.
 func (p *Planner) decomposeCall(ctx context.Context, r *run, c *contract.Contracts, comp contract.Component, batch []contract.Function) (draftResult, error) {
 	var uses []string
 	for _, f := range batch {
-		uses = append(uses, f.Uses...)
+		uses = append(uses, usesWithReceiver(c, f)...)
 	}
 	slice, err := c.Slice(uses, "")
 	if err != nil {
@@ -396,7 +407,7 @@ func (e *nodeEnv) normalizeNode(f contract.Function, d map[string]any) (class st
 
 	// depends_on holds node ids only; types reach the node through its
 	// dependency signatures.
-	deps := append(strList(d["depends_on"]), f.Uses...)
+	deps := append(strList(d["depends_on"]), usesWithReceiver(e.c, f)...)
 	unknown := false
 	for i, id := range deps {
 		if !e.known[id] {

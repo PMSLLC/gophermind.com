@@ -169,6 +169,7 @@ func renderTestwriterWith(node, module, file, funcName, testFile string, sibling
 		"TestFuncName": funcName, "TestFile": testFile, "Module": module, "ImportPath": importPath,
 		"Imports": qualifierImports(node, siblings)}
 	data["Unexported"], data["Method"], data["Clause"], data["TargetName"], data["Why"] = "", "", "", "", ""
+	data["Receiver"] = contract.ReceiverName(nodeSignature(node))
 	if name, method, why := internalTarget(nodeSignature(node)); why != whyNone && mainPkg == "" {
 		data["Unexported"], data["Clause"], data["TargetName"], data["Why"] = "yes", PackageClause(dir), name, whyPrompt(why)
 		if method {
@@ -433,6 +434,53 @@ func mentionsUnexported(e ast.Expr, skip map[string]bool) bool {
 	return false
 }
 
+// withReceiverDecl returns view with the declaration of the node's receiver
+// type added to context.dependency_signatures when the node is a method whose
+// receiver is a contract type and the declaration is not already there. It
+// serves a run decomposed before a method's receiver counted as used. view and
+// the node it came from are left unchanged.
+func withReceiverDecl(c *contract.Contracts, view map[string]any) map[string]any {
+	ct, _ := view["contract"].(map[string]any)
+	sig, _ := ct["signature"].(string)
+	file, _ := ct["file"].(string)
+	id := c.ReceiverTypeID(contract.Function{Signature: sig, File: file})
+	if id == "" {
+		return view
+	}
+	decl := ""
+	for _, t := range c.Types {
+		if t.ID == id {
+			decl = t.Decl
+		}
+	}
+	nctx, _ := view["context"].(map[string]any)
+	var sigs []any
+	switch v := nctx["dependency_signatures"].(type) {
+	case []any:
+		sigs = append(sigs, v...)
+	case []string:
+		for _, s := range v {
+			sigs = append(sigs, s)
+		}
+	}
+	for _, s := range sigs {
+		if s == decl {
+			return view
+		}
+	}
+	out := map[string]any{}
+	for k, v := range view {
+		out[k] = v
+	}
+	cp := map[string]any{}
+	for k, v := range nctx {
+		cp[k] = v
+	}
+	cp["dependency_signatures"] = append([]any{decl}, sigs...)
+	out["context"] = cp
+	return out
+}
+
 // writeTests makes the model call for one node and writes its test file.
 func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts, d map[string]any, class string, st *testwriterState) (writtenTests, error) {
 	id, _ := d["id"].(string)
@@ -454,7 +502,7 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 		}
 		return writtenTests{}, fmt.Errorf("test file %s already exists and this run did not write it; move it away, then resume", path.Base(rel))
 	}
-	prompt, err := renderTestwriterWith(mustJSON(testwriterView(d)), c.Module, file, funcName, rel, PackageImports(c))
+	prompt, err := renderTestwriterWith(mustJSON(withReceiverDecl(c, testwriterView(d))), c.Module, file, funcName, rel, PackageImports(c))
 	if err != nil {
 		return writtenTests{}, err
 	}
