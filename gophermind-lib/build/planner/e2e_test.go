@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"gophermind/gophermind-lib/build/blackboard"
+	"gophermind/gophermind-lib/build/events"
 	"gophermind/gophermind-lib/build/human"
 	"gophermind/gophermind-lib/build/ledger"
 	"gophermind/gophermind-lib/build/planner"
@@ -787,5 +788,93 @@ func TestTreeFinishRefusesADanglingDecisionID(t *testing.T) {
 	}
 	if g.has("greeting/fn-greet.json") {
 		t.Error("a tree with a dangling decision id was written")
+	}
+}
+
+// An unused import in a model-written test file is dropped before the compile
+// check, so the first reply passes and a warning records it.
+func TestAnUnusedTestImportIsDroppedWithAWarning(t *testing.T) {
+	good := string(mustRead(t, filepath.Join(greeter, "testwrite.fn-greet.txt")))
+	bad := strings.Replace(good, `import \"testing\"`, `import (\n\t\"bytes\"\n\t\"testing\"\n)`, 1)
+	if bad == good {
+		t.Fatal("fixture has no testing import to extend")
+	}
+	g := newRig(t, approving(), variant(t, map[string]string{"testwrite.fn-greet.txt": bad}))
+	g.mustPlan(planner.Options{})
+	if n := count(g.stagesCalled(), "testwrite:fn-greet"); n != 1 {
+		t.Errorf("testwrite:fn-greet called %d times, want 1", n)
+	}
+	src, err := os.ReadFile(filepath.Join(g.repo, "internal/greet/fn_greet_test.go"))
+	if err != nil || strings.Contains(string(src), "bytes") {
+		t.Errorf("written file still has the unused import: %v", err)
+	}
+	found := false
+	for _, e := range g.sink.OfKind(events.KindWarning) {
+		if strings.HasPrefix(e.Message, "test_import_normalized: 1 ") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("no test_import_normalized warning with a count")
+	}
+}
+
+// The normalization also covers the repair reply: the first reply is unusable,
+// the second one carries the unused import.
+func TestAnUnusedTestImportInTheRepairReplyIsDropped(t *testing.T) {
+	good := string(mustRead(t, filepath.Join(greeter, "testwrite.fn-greet.txt")))
+	bad := strings.Replace(good, `import \"testing\"`, `import (\n\t\"bytes\"\n\t\"testing\"\n)`, 1)
+	g := newRig(t, approving(), variant(t, map[string]string{"testwrite.fn-greet.txt": "nope", "testwrite.fn-greet.2.txt": bad}))
+	g.mustPlan(planner.Options{})
+	src, err := os.ReadFile(filepath.Join(g.repo, "internal/greet/fn_greet_test.go"))
+	if err != nil || strings.Contains(string(src), "bytes") {
+		t.Errorf("written file still has the unused import: %v", err)
+	}
+	for _, e := range g.sink.OfKind(events.KindWarning) {
+		if strings.HasPrefix(e.Message, "test_import_normalized: 1 ") && strings.Contains(e.Message, "bytes") {
+			t.Errorf("warning names an import: %q", e.Message)
+		}
+	}
+}
+
+func withLongComment(t *testing.T, reply string) string {
+	t.Helper()
+	out := strings.Replace(reply, `func TestGreet`, strings.Repeat(`// secret deliberation\n`, 12)+`func TestGreet`, 1)
+	if out == reply {
+		t.Fatal("fixture has no TestGreet")
+	}
+	return out
+}
+
+func commentWarnings(g *rig) (n int, leaked bool) {
+	for _, e := range g.sink.OfKind(events.KindWarning) {
+		if strings.HasPrefix(e.Message, "test_comment_normalized: 1 ") {
+			n++
+			leaked = leaked || strings.Contains(e.Message, "deliberation")
+		}
+	}
+	return
+}
+
+// A long comment block is removed before the validator runs, on the first
+// reply and on the repair reply alike.
+func TestALongTestCommentIsDroppedWithAWarning(t *testing.T) {
+	good := string(mustRead(t, filepath.Join(greeter, "testwrite.fn-greet.txt")))
+	bad := withLongComment(t, good)
+	for name, files := range map[string]map[string]string{
+		"first reply":  {"testwrite.fn-greet.txt": bad},
+		"repair reply": {"testwrite.fn-greet.txt": "nope", "testwrite.fn-greet.2.txt": bad},
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := newRig(t, approving(), variant(t, files))
+			g.mustPlan(planner.Options{})
+			src, err := os.ReadFile(filepath.Join(g.repo, "internal/greet/fn_greet_test.go"))
+			if err != nil || strings.Contains(string(src), "deliberation") {
+				t.Errorf("written file still has the comment block: %v", err)
+			}
+			if n, leaked := commentWarnings(g); n != 1 || leaked {
+				t.Errorf("warnings = %d, leaked = %v", n, leaked)
+			}
+		})
 	}
 }

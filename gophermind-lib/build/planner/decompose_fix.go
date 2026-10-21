@@ -69,6 +69,8 @@ func defectFields(kinds []string) []string {
 			add("contract.errors")
 		case defDepends:
 			add("depends_on")
+		case defUndeclaredField:
+			add("description", "contract.inputs", "contract.outputs", "contract.errors", "contract.side_effects")
 		case defSchema:
 			add("title", "description", "model_tier", "contract.side_effects")
 		}

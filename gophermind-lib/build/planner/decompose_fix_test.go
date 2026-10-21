@@ -157,3 +157,39 @@ func TestUnparseableDecomposeReplyIsStillUnusable(t *testing.T) {
 		t.Error("an unparseable reply must not leave pending nodes")
 	}
 }
+
+// A node whose prose names a field its parameter's declared struct lacks (the
+// csvstat fn-finish-stats shape) is asked for again, with the type and its
+// declared fields in the prompt, and the repaired prose replaces it.
+func TestUndeclaredFieldInProseIsRepaired(t *testing.T) {
+	node := func(desc, effect string) string {
+		return `{"id": "fn-finish", "title": "Finish", "description": "` + desc + `", "model_tier": "any", "node_class": "pure", "depends_on": ["summary"],
+ "contract": {"package": "stat", "file": "internal/stat/finish.go", "signature": "func Finish(s *Summary)",
+  "inputs": [{"name": "s", "type": "*Summary"}], "outputs": [], "errors": [], "side_effects": ["` + effect + `"]}}`
+	}
+	files := map[string]string{
+		"contract.outline.txt": csvstatFiles["contract.outline.txt"],
+		"contract.csvstat.txt": `{"types": [], "functions": [
+  {"id": "fn-finish", "package": "stat", "file": "internal/stat/finish.go", "signature": "func Finish(s *Summary)", "doc": "Finish sets the mean.", "uses": ["summary"]}
+], "more": false}`,
+		"decompose.csvstat.txt": "[" + node("Finishes the summary.", "CANARYPROSE sets s.Mean = s.Sum / s.Count") + "]",
+		"decompose._fix.txt":    `[{"id": "fn-finish", "description": "Finishes the summary.", "contract": {"side_effects": ["Leaves s.Mean unchanged."]}}]`,
+	}
+	g := newRig(t, approving(), variant(t, files))
+	g.mustPlan(planner.Options{StopAfter: "decompose"})
+	var p string
+	for _, r := range g.fake.Requests() {
+		if planner.StageOf(r) == "decompose:_fix" {
+			p = r.Messages[1].Content
+		}
+	}
+	for _, want := range []string{`function "fn-finish"`, "undeclared_field", "field or method Sum", "type Summary", "declared fields: Mean"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("repair prompt lacks %q:\n%.900s", want, p)
+		}
+	}
+	st := string(g.read("_state/decomposed.json"))
+	if strings.Contains(st, "s.Sum") || !strings.Contains(st, "Leaves s.Mean unchanged.") || strings.Contains(st, `"pending": [`) {
+		t.Errorf("the repaired prose was not stored:\n%.600s", st)
+	}
+}
