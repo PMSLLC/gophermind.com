@@ -55,7 +55,7 @@ Decision 11 was reversed on 2026-10-08: the unification runs first (`docs/GOAL-U
 | 2026-10-07 | Order: files, node widening with the question model, `/project` on v2, the PhaseFlow view, the revise stage, parallel waves |
 | 2026-10-07 | Save attempt artifacts (scrubbed, in the run folder, with a setting to turn them off) |
 | 2026-10-07 | Every node carries all groups |
-| 2026-10-07 | Do not merge the branch; `main` stays docs-only |
+| 2026-10-07 | Do not merge the branch; `main` stays docs-only (superseded: merged on 2026-10-20 after the graded-run ordering changed) |
 | 2026-10-07 | Finish the GOAL.md graded run first (reversed on 2026-10-08, see below) |
 | 2026-10-07 | Clarify as rounds with a dependency tree; the confirm-understanding gate; decision records; caps of 4 model calls and 30 questions |
 | 2026-10-08 | One version means no v1 and v2: v1 is removed and the version names go (sub-project G); the rehearsal run `gm-2026-09-29-002` is not needed |
