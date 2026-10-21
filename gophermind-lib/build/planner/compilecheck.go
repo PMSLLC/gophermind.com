@@ -272,6 +272,8 @@ func compileMessage(c *contract.Contracts, dir, src, line string, n int, diag st
 			return m
 		}
 		return fmt.Sprintf("wrong number of arguments at line %d", n)
+	case richUnknownField(safe, c, dir, n, diag) != "":
+		return richUnknownField(safe, c, dir, n, diag)
 	case richNoField(safe, n, diag) != "":
 		return richNoField(safe, n, diag)
 	case strings.Contains(diag, "undefined") || strings.Contains(diag, "not exported") || strings.Contains(diag, "unexported"):

@@ -244,6 +244,9 @@ var (
 	cannotUseRE = regexp.MustCompile(`^cannot use .* \((?:[^()]*? )?of type (.+?)\) as (.+?) value in (argument to ([^\s:]+)|assignment|return statement|struct literal|field value|variable declaration)`)
 	argCountRE  = regexp.MustCompile(`(?s)^(not enough|too many) arguments in call to ([^\s:]+)(?:\s*\n\s*have (\(.*?\))\s*\n\s*want (\(.*?\)))?`)
 	noFieldRE   = regexp.MustCompile(`^\S+ undefined \(type (.+?) has no field or method `)
+	// "unknown field values in struct literal of type columnState"; older
+	// compilers quote the field and leave the type out.
+	unknownFieldLitRE = regexp.MustCompile(`^unknown field '?([A-Za-z_][A-Za-z0-9_]*)'? in struct literal(?: of type (.+?))?$`)
 )
 
 // mismatchWords is the phrase for a value of type t offered where u is
@@ -322,4 +325,62 @@ func richNoField(s *safeNames, n int, diag string) string {
 		return fmt.Sprintf("unknown field or method at line %d on a value of type %s", n, t)
 	}
 	return fmt.Sprintf("unknown field or method at line %d", n)
+}
+
+// richUnknownField is the phrase for a keyed composite literal that names a
+// field its struct does not declare: the line, the type when it is safe, and
+// the contract's declared fields as the valid values. The field name from the
+// diagnostic is the model's and is printed only when it is a wrong-case
+// spelling of a declared field. "" when diag is another diagnostic.
+func richUnknownField(s *safeNames, c *contract.Contracts, dir string, n int, diag string) string {
+	m := unknownFieldLitRE.FindStringSubmatch(diag)
+	if m == nil {
+		return ""
+	}
+	out := fmt.Sprintf("unknown field at line %d in a composite literal", n)
+	t, ok := s.typeText(m[2])
+	if !ok {
+		return out
+	}
+	si, ok := contractStruct(c, dir, t)
+	if !ok {
+		return out + " of type " + t
+	}
+	for _, f := range si.fields {
+		if strings.EqualFold(f, m[1]) {
+			out = fmt.Sprintf("unknown field %s at line %d in a composite literal", m[1], n)
+			break
+		}
+	}
+	out += " of type " + t + "; declared fields: " + strings.Join(si.fields, ", ")
+	if si.embedded {
+		out += "; the type embeds other types"
+	}
+	return out
+}
+
+// contractStruct is the contract struct a safe type text names (T, pkg.T or
+// *T). When several packages declare the name, the one in dir is preferred.
+func contractStruct(c *contract.Contracts, dir, text string) (structInfo, bool) {
+	e, err := parser.ParseExpr(text)
+	if err != nil {
+		return structInfo{}, false
+	}
+	if st, ok := e.(*ast.StarExpr); ok {
+		e = st.X
+	}
+	name := ""
+	switch v := e.(type) {
+	case *ast.Ident:
+		name = v.Name
+	case *ast.SelectorExpr:
+		name = v.Sel.Name
+	}
+	pkg := ""
+	for _, t := range c.Types {
+		if contains(declNames(t.Decl), name) && (pkg == "" || FileDirIn(c.Module, t.Package, t.File) == dir) {
+			pkg = t.Package
+		}
+	}
+	return lookupStruct(name, pkg, c)
 }

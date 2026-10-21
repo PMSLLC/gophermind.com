@@ -278,3 +278,58 @@ func TestFnRender(t *testing.T) {
 		t.Errorf("leaked: %v", err)
 	}
 }
+
+// A composite literal that names a field the contract struct does not declare
+// (the csvstat finalize smoke: &columnState{values: ...}). The message names
+// the kind, the line, the type and the contract's declared fields; the invented
+// field name is never copied. A wrong-case spelling of a declared field is the
+// contract's own vocabulary and is named.
+func TestCompileMessageUnknownFieldInLiteral(t *testing.T) {
+	c := compileCheckContract()
+	cases := []struct{ dir, diag, want string }{
+		{"internal/stats", "unknown field secretValues in struct literal of type ColumnSummary",
+			"unknown field at line 21 in a composite literal of type ColumnSummary; declared fields: Name, Count"},
+		{"internal/stats", "unknown field count in struct literal of type ColumnSummary",
+			"unknown field count at line 21 in a composite literal of type ColumnSummary; declared fields: Name, Count"},
+		{"internal/render", "unknown field secretValues in struct literal of type stats.ColumnSummary",
+			"unknown field at line 21 in a composite literal of type stats.ColumnSummary; declared fields: Name, Count"},
+		{"internal/stats", "unknown field secretValues in struct literal of type secretHelper",
+			"unknown field at line 21 in a composite literal"},
+		{"internal/stats", "unknown field 'secretValues' in struct literal",
+			"unknown field at line 21 in a composite literal"},
+	}
+	for _, tc := range cases {
+		m := compileMessage(c, tc.dir, "package stats\n", "x", 21, tc.diag)
+		if m != tc.want {
+			t.Errorf("%q: want %q, got %q", tc.diag, tc.want, m)
+		}
+	}
+	c.Types = append(c.Types, contract.Type{ID: "t_emb", Package: "internal/stats", File: "internal/stats/stats.go", Decl: "type Wide struct {\n\tColumnSummary\n\tRows int\n}"})
+	m := compileMessage(c, "internal/stats", "package stats\n", "x", 3, "unknown field secretValues in struct literal of type Wide")
+	if m != "unknown field at line 3 in a composite literal of type Wide; declared fields: Rows; the type embeds other types" {
+		t.Errorf("got %q", m)
+	}
+}
+
+// End to end through the compiler, the shape of the csvstat finalize smoke.
+func TestCompileCheckUnknownFieldInLiteral(t *testing.T) {
+	src := `package stats
+
+import "testing"
+
+func TestFnSummarize(t *testing.T) {
+	s := &ColumnSummary{
+		Name:         "a",
+		secretValues: []float64{1, 2},
+	}
+	_ = s
+}
+`
+	err := ccCheck(t, "internal/stats/fn_summarize_test.go", src)
+	if err == nil || !strings.Contains(err.Error(), "unknown field at line 8 in a composite literal of type ColumnSummary; declared fields: Name, Count") {
+		t.Fatalf("got %v", err)
+	}
+	if strings.Contains(err.Error(), "secretValues") {
+		t.Errorf("leaked: %v", err)
+	}
+}
