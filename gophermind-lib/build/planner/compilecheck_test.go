@@ -289,9 +289,11 @@ func TestCompileMessageUnknownFieldInLiteral(t *testing.T) {
 	cases := []struct{ dir, diag, want string }{
 		{"internal/stats", "unknown field secretValues in struct literal of type ColumnSummary",
 			"unknown field at line 21 in a composite literal of type ColumnSummary; declared fields: Name, Count"},
-		{"internal/stats", "unknown field count in struct literal of type ColumnSummary",
+		{"internal/stats", "unknown field count in struct literal of type ColumnSummary, but does have Count",
 			"unknown field count at line 21 in a composite literal of type ColumnSummary; declared fields: Name, Count"},
 		{"internal/render", "unknown field secretValues in struct literal of type stats.ColumnSummary",
+			"unknown field at line 21 in a composite literal of type stats.ColumnSummary; declared fields: Name, Count"},
+		{"internal/render", "unknown field Secret in struct literal of type stats.ColumnSummary, but does have unexported secret",
 			"unknown field at line 21 in a composite literal of type stats.ColumnSummary; declared fields: Name, Count"},
 		{"internal/stats", "unknown field secretValues in struct literal of type secretHelper",
 			"unknown field at line 21 in a composite literal"},
@@ -331,5 +333,30 @@ func TestFnSummarize(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "secretValues") {
 		t.Errorf("leaked: %v", err)
+	}
+}
+
+// End to end with a wrong-case spelling of a declared field, where the
+// compiler appends its "but does have" hint. The declared fields still reach
+// the message and the hint itself is not echoed.
+func TestCompileCheckUnknownFieldWrongCase(t *testing.T) {
+	src := `package stats
+
+import "testing"
+
+func TestFnSummarize(t *testing.T) {
+	s := &ColumnSummary{
+		name:  "a",
+		count: 1,
+	}
+	_ = s
+}
+`
+	err := ccCheck(t, "internal/stats/fn_summarize_test.go", src)
+	if err == nil || !strings.Contains(err.Error(), "unknown field name at line 7 in a composite literal of type ColumnSummary; declared fields: Name, Count") {
+		t.Fatalf("got %v", err)
+	}
+	if strings.Contains(err.Error(), "does have") {
+		t.Errorf("hint echoed: %v", err)
 	}
 }

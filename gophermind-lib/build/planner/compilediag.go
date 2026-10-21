@@ -245,8 +245,12 @@ var (
 	argCountRE  = regexp.MustCompile(`(?s)^(not enough|too many) arguments in call to ([^\s:]+)(?:\s*\n\s*have (\(.*?\))\s*\n\s*want (\(.*?\)))?`)
 	noFieldRE   = regexp.MustCompile(`^\S+ undefined \(type (.+?) has no field or method `)
 	// "unknown field values in struct literal of type columnState"; older
-	// compilers quote the field and leave the type out.
-	unknownFieldLitRE = regexp.MustCompile(`^unknown field '?([A-Za-z_][A-Za-z0-9_]*)'? in struct literal(?: of type (.+?))?$`)
+	// compilers quote the field and leave the type out. go1.27 appends a
+	// hint when a declared field differs only by case or is unexported:
+	// "..., but does have Count", "..., but does have unexported count". The
+	// hint is matched so the type capture stops before it, and discarded: the
+	// name it offers is already in the declared-fields list of the message.
+	unknownFieldLitRE = regexp.MustCompile(`^unknown field '?([A-Za-z_][A-Za-z0-9_]*)'? in struct literal(?: of type (.+?))?(?:, but does have (?:unexported )?[A-Za-z_][A-Za-z0-9_]*)?$`)
 )
 
 // mismatchWords is the phrase for a value of type t offered where u is
