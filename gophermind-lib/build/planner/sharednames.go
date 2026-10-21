@@ -2,6 +2,7 @@ package planner
 
 import (
 	"errors"
+	"fmt"
 	"go/ast"
 	"go/format"
 	"go/parser"
@@ -233,4 +234,61 @@ func otherTestSources(repo, dir, self string, st *testwriterState) []string {
 		}
 	}
 	return out
+}
+
+// richDeclaredName is errDeclaredName made specific: the first top-level
+// declaration of src (in source order) that the contract declares in dir, with
+// its line, whether it is a contract type or function and, for a struct, the
+// declared fields. The identifier is printed only when the contract declares
+// it; anything else gives err back unchanged.
+func richDeclaredName(src string, c *contract.Contracts, dir string, err error) error {
+	if c == nil {
+		return err
+	}
+	fset := token.NewFileSet()
+	f, perr := parser.ParseFile(fset, "", src, parser.SkipObjectResolution)
+	if perr != nil {
+		return err
+	}
+	safe := newSafeNames(c, dir)
+	const tail = "; do not define or stub it, "
+	const end = " and write only tests and test doubles"
+	for _, decl := range f.Decls {
+		switch d := decl.(type) {
+		case *ast.FuncDecl:
+			if d.Recv != nil || !safe.sameDir[d.Name.Name] {
+				continue
+			}
+			if _, isType := contractStruct(c, dir, d.Name.Name); isType || declaredType(c, d.Name.Name) {
+				continue
+			}
+			return fmt.Errorf("test file declares %s at line %d, a function the package already declares%scall it as the package provides it%s",
+				d.Name.Name, fset.Position(d.Pos()).Line, tail, end)
+		case *ast.GenDecl:
+			for _, spec := range d.Specs {
+				ts, ok := spec.(*ast.TypeSpec)
+				if !ok || !safe.sameDir[ts.Name.Name] || !declaredType(c, ts.Name.Name) {
+					continue
+				}
+				line := fset.Position(ts.Pos()).Line
+				if si, ok := contractStruct(c, dir, ts.Name.Name); ok && len(si.fields) > 0 {
+					return fmt.Errorf("test file declares %s at line %d, which the package already declares (fields: %s)%sbuild it with a composite literal of those fields%s",
+						ts.Name.Name, line, strings.Join(si.fields, ", "), tail, end)
+				}
+				return fmt.Errorf("test file declares %s at line %d, which the package already declares%suse it as the package provides it%s",
+					ts.Name.Name, line, tail, end)
+			}
+		}
+	}
+	return err
+}
+
+// declaredType reports whether the contract declares a type called name.
+func declaredType(c *contract.Contracts, name string) bool {
+	for _, t := range c.Types {
+		if contains(declNames(t.Decl), name) {
+			return true
+		}
+	}
+	return false
 }

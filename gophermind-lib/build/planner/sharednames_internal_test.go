@@ -150,3 +150,50 @@ func TestSharedNamesBothKindsGiveDeclaredMessage(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func richDeclContract() *contract.Contracts {
+	return &contract.Contracts{
+		Types: []contract.Type{
+			{ID: "t-col", Package: "internal/stats", File: "internal/stats/col.go", Decl: "type columnState struct {\n\tname string\n\tcount int\n\tdistinct map[string]struct{}\n}"},
+			{ID: "t-kind", Package: "internal/stats", File: "internal/stats/col.go", Decl: "type kind int"},
+		},
+		Functions: []contract.Function{{ID: "fn-fin", Package: "internal/stats", File: "internal/stats/col.go", Signature: "func finalizeAll(n int) int"}},
+	}
+}
+
+func TestRichDeclaredNameStruct(t *testing.T) {
+	c := richDeclContract()
+	src := sharedSrc("stats", "import \"testing\"\n\nfunc TestX(t *testing.T) {}\n\ntype columnState struct {\n\tname string\n}")
+	err := richDeclaredName(src, c, "internal/stats", errDeclaredName)
+	want := "test file declares columnState at line 7, which the package already declares (fields: name, count, distinct); do not define or stub it, build it with a composite literal of those fields and write only tests and test doubles"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestRichDeclaredNameFunctionAndType(t *testing.T) {
+	c := richDeclContract()
+	err := richDeclaredName(sharedSrc("stats", "func finalizeAll(n int) int { return n }"), c, "internal/stats", errDeclaredName)
+	if err == nil || !strings.Contains(err.Error(), "finalizeAll at line 3, a function the package already declares") || !strings.Contains(err.Error(), "call it as the package provides it") {
+		t.Fatalf("err = %v", err)
+	}
+	err = richDeclaredName(sharedSrc("stats", "type kind int"), c, "internal/stats", errDeclaredName)
+	if err == nil || !strings.Contains(err.Error(), "kind at line 3") || strings.Contains(err.Error(), "fields:") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestRichDeclaredNameFallsBackWhenNotContractDeclared(t *testing.T) {
+	c := richDeclContract()
+	for _, src := range []string{
+		sharedSrc("stats", "type helperThing struct{}"),
+		sharedSrc("stats", "type columnState struct{"),
+	} {
+		if err := richDeclaredName(src, c, "internal/stats", errDeclaredName); err != errDeclaredName {
+			t.Fatalf("err = %v", err)
+		}
+	}
+	if err := richDeclaredName(sharedSrc("stats", "type columnState struct{}"), c, "other/dir", errDeclaredName); err != errDeclaredName {
+		t.Fatalf("err = %v", err)
+	}
+}

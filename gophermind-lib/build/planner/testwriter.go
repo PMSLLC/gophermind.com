@@ -471,6 +471,9 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 		}
 		others := otherTestSources(r.repo, path.Dir(rel), id, st)
 		src, renamed, err := resolveSharedNames(src, strings.TrimPrefix(funcName, "Test"), others, stubSources(c, path.Dir(file)))
+		if err == errDeclaredName {
+			err = richDeclaredName(src, c, path.Dir(rel), err)
+		}
 		if err != nil {
 			return err
 		}
