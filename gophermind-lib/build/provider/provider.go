@@ -33,6 +33,12 @@ type Request struct {
 	Temperature    float64 // executor uses 0 for implementation, 0.2 for planning
 	// StopSequences are optional; the executor uses them to cut off trailing prose after a code fence.
 	StopSequences []string
+	// Workdir is the absolute path of the leaf's worktree. Providers that do not
+	// work in a directory ignore it.
+	Workdir string
+	// TargetFile is the slash-separated path, relative to Workdir, of the one file
+	// the reply must carry; empty when the call has none.
+	TargetFile string
 }
 
 type Usage struct {

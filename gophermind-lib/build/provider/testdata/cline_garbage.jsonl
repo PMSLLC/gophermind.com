@@ -1,0 +1,10 @@
+
+Cline starting up...
+not json at all {
+{"type":"mystery_event","payload":[1,2,3]}
+
+{"ts":"2026-10-21T21:23:00.000Z","type":"agent_event","event":{"type":"content_start","contentType":"text","text":"hi"}}
+[1,2,3]
+{"ts":"2026-10-21T21:23:03.010Z","type":"run_result","finishReason":"completed","iterations":2,"usage":{"inputTokens":500,"outputTokens":40},"durationMs":3000,"text":"Done."}
+trailing garbage }}}
+

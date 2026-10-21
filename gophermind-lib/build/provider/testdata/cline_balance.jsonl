@@ -1,0 +1,4 @@
+{"ts":"2026-10-21T21:20:00.000Z","type":"hook_event","hookEventName":"agent_start","agentId":"agent_x","taskId":"conv_x","parentAgentId":null}
+{"ts":"2026-10-21T21:20:00.100Z","type":"agent_event","event":{"type":"iteration_start","iteration":1}}
+{"ts":"2026-10-21T21:20:01.000Z","type":"agent_event","event":{"type":"done","reason":"error","text":"Insufficient balance. Your Cline Credits balance is $-0.01 (Request ID: x)","iterations":1,"usage":{"inputTokens":0,"outputTokens":0}}}
+{"ts":"2026-10-21T21:20:01.010Z","type":"run_result","finishReason":"error","iterations":1,"usage":{"inputTokens":0,"outputTokens":0},"durationMs":900,"text":"Insufficient balance. Your Cline Credits balance is $-0.01 (Request ID: x)"}
