@@ -247,20 +247,24 @@ var nodeClasses = []string{"pure", "validation", "handler", "client", "storage",
 // draftDefect kinds, a fixed vocabulary: they name what is wrong with a node
 // without quoting the reply, and say which fields to ask for again.
 const (
-	defMissingNode   = "missing_node"
-	defNodeClass     = "node_class"
-	defTitle         = "title"
-	defDescription   = "description"
-	defContract      = "contract_missing"
-	defInputsMissing = "inputs_missing"
-	defInputType     = "input_type"
-	defOutputsCount  = "outputs_count"
-	defOutputType    = "output_type"
-	defErrorsMissing = "errors_missing"
-	defErrorsPartial = "errors_incomplete"
-	defDepends       = "depends_unknown"
-	defSchema        = "schema"
+	defMissingNode     = "missing_node"
+	defNodeClass       = "node_class"
+	defTitle           = "title"
+	defDescription     = "description"
+	defContract        = "contract_missing"
+	defInputsMissing   = "inputs_missing"
+	defInputType       = "input_type"
+	defOutputsCount    = "outputs_count"
+	defOutputType      = "output_type"
+	defErrorsMissing   = "errors_missing"
+	defErrorsPartial   = "errors_incomplete"
+	defDepends         = "depends_unknown"
+	defSchema          = "schema"
+	defUndeclaredField = "undeclared_field"
 )
+
+// maxFieldRefDetails bounds the undeclared-field lines kept per node.
+const maxFieldRefDetails = 4
 
 // nodeEnv is what normalising one node needs besides the node.
 type nodeEnv struct {
@@ -380,6 +384,13 @@ func (e *nodeEnv) normalizeNode(f contract.Function, d map[string]any) (class st
 		}
 		for _, ld := range leafDefects(ct, fd, declared) {
 			defect(ld.kind, "%s", ld.msg)
+		}
+		// Prose that names a field its parameter's declared struct lacks.
+		for _, ref := range undeclaredFieldRefs(f, d, e.c) {
+			defect(defUndeclaredField, "%s", ref.detail())
+			if len(e.details) < maxFieldRefDetails {
+				e.details = append(e.details, ref.detail())
+			}
 		}
 	}
 
