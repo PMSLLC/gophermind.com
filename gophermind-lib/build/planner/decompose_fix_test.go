@@ -183,7 +183,7 @@ func TestUndeclaredFieldInProseIsRepaired(t *testing.T) {
 			p = r.Messages[1].Content
 		}
 	}
-	for _, want := range []string{`function "fn-finish"`, "undeclared_field", "field Sum", "type Summary", "declared fields: Mean"} {
+	for _, want := range []string{`function "fn-finish"`, "undeclared_field", "field or method Sum", "type Summary", "declared fields: Mean"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("repair prompt lacks %q:\n%.900s", want, p)
 		}

@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -14,12 +15,14 @@ const fieldRefContract = `{"spec_version": "2.0", "brief_id": "gm-2026-09-29-900
  "conventions": {"layout": ["internal/stats"], "naming": ["verbs"], "errors": "return error"},
  "types": [
   {"id": "t-summary", "package": "stats", "file": "internal/stats/summary.go", "decl": "type ColumnSummary struct {\n\tName string\n\tCount int\n\tMean float64\n}"},
+  {"id": "t-request", "package": "stats", "file": "internal/stats/request.go", "decl": "type Request struct {\n\tID int\n}"},
   {"id": "t-wrapped", "package": "stats", "file": "internal/stats/wrapped.go", "decl": "type Wrapped struct {\n\tColumnSummary\n\tNote string\n}"}],
  "functions": [
   {"id": "fn-finish-stats", "package": "stats", "file": "internal/stats/finish.go", "signature": "func finishStats(s *ColumnSummary)", "doc": "d", "uses": ["t-summary"], "component": "stats"},
   {"id": "fn-label", "package": "stats", "file": "internal/stats/label.go", "signature": "func (s *ColumnSummary) Label()", "doc": "d", "uses": ["t-summary"], "component": "stats"},
   {"id": "fn-unwrap", "package": "stats", "file": "internal/stats/unwrap.go", "signature": "func unwrap(w Wrapped)", "doc": "d", "uses": ["t-wrapped"], "component": "stats"},
   {"id": "fn-rows", "package": "stats", "file": "internal/stats/rows.go", "signature": "func sumRows(rows []ColumnSummary)", "doc": "d", "uses": ["t-summary"], "component": "stats"},
+  {"id": "fn-http", "package": "stats", "file": "internal/stats/http.go", "signature": "func serve(r *http.Request)", "doc": "d", "uses": ["t-request"], "component": "stats"},
   {"id": "fn-with-e", "package": "stats", "file": "internal/stats/e.go", "signature": "func withE(e *ColumnSummary)", "doc": "d", "uses": ["t-summary"], "component": "stats"}],
  "components": [{"id": "stats", "package": "stats", "exports": []}]}`
 
@@ -50,7 +53,7 @@ func TestUndeclaredFieldInSideEffectsIsADefect(t *testing.T) {
 		t.Fatalf("res = %+v", res)
 	}
 	d := strings.Join(res.bad[0].Details, "\n")
-	for _, want := range []string{"parameter s", "field Sum", "ColumnSummary", "Name", "Count", "Mean"} {
+	for _, want := range []string{"parameter s", "Sum", "ColumnSummary", "Name", "Count", "Mean"} {
 		if !strings.Contains(d, want) {
 			t.Errorf("details lack %q: %q", want, d)
 		}
@@ -86,7 +89,7 @@ func TestDeclaredFieldsMethodsAndOtherNamesAreFine(t *testing.T) {
 
 func TestEgAndIeAreNotSelectors(t *testing.T) {
 	node := fieldRefNode("fn-with-e", "Pure (e.g. no io, i.e. nothing else).", "None.", "e", "*ColumnSummary")
-	if res := fieldRefSplit(t, 4, node); len(res.good) != 1 {
+	if res := fieldRefSplit(t, 5, node); len(res.good) != 1 {
 		t.Errorf("res = %+v", res)
 	}
 }
@@ -127,5 +130,44 @@ func TestRepairPromptNamesTheDefectAndNeverQuotesTheReply(t *testing.T) {
 		if strings.Contains(line, "CANARYWORDS") || strings.Contains(line, "from s.Sum") {
 			t.Errorf("a detail quotes the reply: %q", line)
 		}
+	}
+}
+
+// A parameter whose type has a package qualifier is another package's type,
+// even when the contract declares a struct of the same bare name.
+func TestQualifiedParameterTypeIsNotResolvedToASameNamedStruct(t *testing.T) {
+	node := fieldRefNode("fn-http", "Reads r.URL and r.Method.", "None.", "r", "*http.Request")
+	if res := fieldRefSplit(t, 4, node); len(res.good) != 1 {
+		t.Errorf("res = %+v", res)
+	}
+}
+
+// Words that look like file names are not field references, but a wrong-case
+// spelling of a declared field and an exported unknown field are.
+func TestFileLikeLowercaseWordsAreNotFieldReferences(t *testing.T) {
+	for _, desc := range []string{"Reads s.csv and writes s.json.", "Opens s.txt, then s.yaml."} {
+		node := fieldRefNode("fn-finish-stats", desc, "None.", "s", "*ColumnSummary")
+		if res := fieldRefSplit(t, 0, node); len(res.good) != 1 {
+			t.Errorf("%q: res = %+v", desc, res)
+		}
+	}
+	node := fieldRefNode("fn-finish-stats", "Sets s.mean.", "None.", "s", "*ColumnSummary")
+	if res := fieldRefSplit(t, 0, node); len(res.bad) != 1 {
+		t.Errorf("wrong-case declared field: %+v", res)
+	}
+}
+
+// Details of the undeclared field survive a schema failure of the same node.
+func TestUndeclaredFieldDetailsAreKeptBesideSchemaDetails(t *testing.T) {
+	c, _ := contract.Load([]byte(fieldRefContract))
+	r := &run{id: "gm-2026-09-29-900", brief: &brief.Brief{}}
+	env := newNodeEnv("stats", c, r)
+	d := map[string]any{}
+	if err := json.Unmarshal([]byte(strings.Replace(fieldRefNode("fn-finish-stats", "Uses s.Sum.", "None.", "s", "*ColumnSummary"), `"model_tier"`, `"x"`, 1)), &d); err != nil {
+		t.Fatal(err)
+	}
+	_, kinds, _, err := env.normalizeNode(c.Functions[0], d)
+	if err != nil || !contains(kinds, defUndeclaredField) || !strings.Contains(strings.Join(env.details, "\n"), "Sum") {
+		t.Fatalf("kinds %v details %v err %v", kinds, env.details, err)
 	}
 }

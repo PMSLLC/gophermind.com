@@ -432,7 +432,7 @@ func (e *nodeEnv) normalizeNode(f contract.Function, d map[string]any) (class st
 	if verr := validateDraft(d); verr != nil {
 		defect(defSchema, "%v", verr)
 		if ve := draftSchemaFailure(d); ve != nil {
-			e.details = schemaDetails(ve)
+			e.details = append(e.details, schemaDetails(ve)...)
 		}
 	}
 	return class, kinds, msgs, nil

@@ -28,7 +28,7 @@ type fieldRef struct {
 // quotes only identifiers: the parameter, the type, the unknown field and the
 // type's declared fields.
 func (f fieldRef) detail() string {
-	return fmt.Sprintf("undeclared_field: parameter %s of type %s has no field %s; declared fields: %s",
+	return fmt.Sprintf("undeclared_field: parameter %s of type %s has no field or method %s; declared fields: %s",
 		f.Name, f.Type, f.Field, strings.Join(f.Declared, ", "))
 }
 
@@ -74,7 +74,7 @@ func nodeProse(d map[string]any) []string {
 
 // undeclaredFieldRefs lists, for function f and its node d, the selectors in
 // the node's prose of the form <parameter or receiver>.<Field> where the name's
-// type (after stripping *, [] and ...) is a struct the contract declares and
+// type (after stripping *, [] and ...; a package-qualified type is never resolved) is a struct the contract declares and
 // Field is neither one of its fields nor a method the contract declares on it.
 // A struct with embedded fields is skipped: it promotes fields this check
 // cannot list. At most one report per name and field.
@@ -119,8 +119,8 @@ func undeclaredFieldRefs(f contract.Function, d map[string]any, c *contract.Cont
 			if !ok || si.embedded || contains(si.fields, field) || contains(si.methods, field) {
 				continue
 			}
-			if len(field) == 1 && field[0] >= 'a' && field[0] <= 'z' {
-				continue // e.g., i.e.
+			if !fieldLike(field, si) {
+				continue
 			}
 			if key := name + "." + field; !seen[key] {
 				seen[key] = true
@@ -129,6 +129,24 @@ func undeclaredFieldRefs(f contract.Function, d map[string]any, c *contract.Cont
 		}
 	}
 	return out
+}
+
+// fieldLike decides whether prose `name.word` is a field reference. Prose is
+// full of dotted words (in.json, s.csv, e.g.), so only two shapes count: an
+// exported-looking word (leading upper case), and a lowercase word that equals
+// a declared field ignoring case (the wrong-case spelling of a real field).
+// A lowercase word that matches nothing is not flagged: it is more likely a
+// file name or a plain word than a reference to hidden state.
+func fieldLike(word string, si structInfo) bool {
+	if word[0] >= 'A' && word[0] <= 'Z' {
+		return true
+	}
+	for _, f := range si.fields {
+		if strings.EqualFold(f, word) {
+			return true
+		}
+	}
+	return false
 }
 
 // baseTypeName strips pointers, slices, arrays, ellipses and parentheses from
@@ -146,7 +164,9 @@ func baseTypeName(e ast.Expr) string {
 		case *ast.ParenExpr:
 			e = x.X
 		case *ast.SelectorExpr:
-			return x.Sel.Name
+			// A package-qualified type belongs to that package, whatever
+			// the contract calls its own types.
+			return ""
 		case *ast.Ident:
 			return x.Name
 		default:
