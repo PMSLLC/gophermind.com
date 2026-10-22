@@ -695,3 +695,25 @@ func TestWave0RetryRefusesForeignDirt(t *testing.T) {
 		t.Fatalf("retry err = %v, want a refusal naming notes.txt", err)
 	}
 }
+
+// A cline provider has no base_url; the proxy allowlist must skip it.
+func TestProxyRulesSkipAClineProvider(t *testing.T) {
+	t.Parallel()
+	g := newRig(t, func(o *rigOpts) {
+		o.Settings = func(c *settings.Config) {
+			c.Providers = append(c.Providers, settings.ProviderConfig{
+				Name: "cline", Kind: "cline", ClineProvider: "cline-pass", Visibility: settings.Public, MaxConcurrent: 1,
+				Models: []settings.ModelEntry{{ID: "cline-pass/m", ContextTokens: 1000}},
+			})
+		}
+	})
+	if rc := g.newRC(t); rc.prox == nil {
+		t.Fatal("no proxy")
+	}
+	allow, _ := allowlist(g.plan, g.cfg)
+	for _, h := range allow {
+		if h == "" {
+			t.Errorf("allowlist holds an empty host: %v", allow)
+		}
+	}
+}

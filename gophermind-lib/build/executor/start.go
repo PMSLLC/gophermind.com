@@ -433,6 +433,9 @@ func (rc *runCtx) startProxy() error {
 	}
 	var urls []string
 	for _, p := range rc.cfg.Providers {
+		if p.IsCline() {
+			continue // no base URL; Cline's own traffic does not go through this proxy
+		}
 		urls = append(urls, p.BaseURL)
 	}
 	rules, err := proxy.BuildRules(network, urls, false)

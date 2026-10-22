@@ -177,3 +177,75 @@ func TestDirtyOutsideTestsEmptyRunDir(t *testing.T) {
 		t.Errorf("DirtyOutsideTests = %d, %v; want 1 (stray.txt only, .gophermind/ not counted)", n, err)
 	}
 }
+
+func clineConfig(binary, dir string) *settings.Config {
+	c := testConfig("http://127.0.0.1:1/v1")
+	c.Providers = append(c.Providers, settings.ProviderConfig{
+		Name: "cline", Kind: "cline", ClineProvider: "cline-pass", ClineBinary: binary, ClineSettingsDir: dir,
+		Visibility: settings.Public, MaxConcurrent: 1,
+		Models: []settings.ModelEntry{{ID: "cline-pass/m", ContextTokens: 1000}},
+	})
+	c.Models["any"] = []string{"cline/cline-pass/m", "fake/fixture"}
+	return c
+}
+
+func TestResolveBaseURLsSkipsAClineProvider(t *testing.T) {
+	good := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "{}") }))
+	t.Cleanup(good.Close)
+	cfg := clineConfig("cline", t.TempDir())
+	cfg.Providers[0].BaseURL = good.URL + "/v1"
+	got, res := ResolveBaseURLs(context.Background(), cfg, &http.Client{}, time.Second)
+	if len(res) != 1 || res[0].Provider != "fake" || !res[0].Answered {
+		t.Fatalf("results = %+v", res)
+	}
+	if got.Providers[1].BaseURL != "" {
+		t.Errorf("the cline provider got a base_url: %q", got.Providers[1].BaseURL)
+	}
+}
+
+func TestCheckClineProviders(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "cline")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	settingsDir := filepath.Join(dir, "settings")
+	if err := os.MkdirAll(settingsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(settingsDir, "providers.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	res := CheckClineProviders(clineConfig(bin, settingsDir))
+	if len(res) != 1 || res[0].Provider != "cline" || res[0].Err != nil {
+		t.Fatalf("good setup: %+v", res)
+	}
+	if res := CheckClineProviders(testConfig("http://127.0.0.1:1/v1")); len(res) != 0 {
+		t.Errorf("no cline provider but results = %+v", res)
+	}
+
+	// PATH lookup.
+	t.Setenv("PATH", dir)
+	res = CheckClineProviders(clineConfig("cline", settingsDir))
+	if len(res) != 1 || res[0].Err != nil {
+		t.Errorf("binary on PATH: %+v", res)
+	}
+
+	cases := []struct {
+		name, binary, dir, want string
+	}{
+		{"binary missing", filepath.Join(dir, "nope"), settingsDir, "not found"},
+		{"binary not on PATH", "no-such-cline-binary", settingsDir, "not found"},
+		{"not executable", filepath.Join(settingsDir, "providers.json"), settingsDir, "not found"},
+		{"no providers.json", bin, dir, "providers.json"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := CheckClineProviders(clineConfig(tc.binary, tc.dir))
+			if len(res) != 1 || res[0].Err == nil || !strings.Contains(res[0].Err.Error(), tc.want) {
+				t.Errorf("results = %+v, want an error mentioning %q", res, tc.want)
+			}
+		})
+	}
+}

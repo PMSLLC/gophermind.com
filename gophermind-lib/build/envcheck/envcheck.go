@@ -7,12 +7,14 @@ package envcheck
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -56,7 +58,7 @@ func ResolveBaseURLs(ctx context.Context, cfg *settings.Config, client *http.Cli
 			}
 			seen[name] = true
 			for i, p := range c.Providers {
-				if p.Name != name {
+				if p.Name != name || p.IsCline() { // a cline provider has no base URL; CheckClineProviders covers it
 					continue
 				}
 				r := ProbeResult{Provider: name}
@@ -81,6 +83,57 @@ func ResolveBaseURLs(ctx context.Context, cfg *settings.Config, client *http.Cli
 		}
 	}
 	return &c, res
+}
+
+// ClineResult is the setup check of one cline provider; Err is nil when it passes.
+type ClineResult struct {
+	Provider string
+	Err      error
+}
+
+// CheckClineProviders checks every cline provider the tier chains use: the
+// binary resolves (exec.LookPath, which also takes an absolute path) and
+// cline_settings_dir holds providers.json. Nothing is run and nothing is dialled.
+func CheckClineProviders(cfg *settings.Config) []ClineResult {
+	var res []ClineResult
+	seen := map[string]bool{}
+	for _, tier := range settings.Tiers {
+		for _, entry := range cfg.Models[tier] {
+			name, _, ok := settings.SplitEntry(entry)
+			if !ok || seen[name] {
+				continue
+			}
+			seen[name] = true
+			for _, p := range cfg.Providers {
+				if p.Name == name && p.IsCline() {
+					res = append(res, ClineResult{Provider: name, Err: checkCline(p)})
+				}
+			}
+		}
+	}
+	return res
+}
+
+func checkCline(p settings.ProviderConfig) error {
+	bin := p.ClineBinary
+	if bin == "" {
+		bin = "cline"
+	}
+	if _, err := exec.LookPath(bin); err != nil {
+		return fmt.Errorf("the Cline binary %q was not found or is not executable; set cline_binary or install Cline", bin)
+	}
+	dir := p.ClineSettingsDir
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return errors.New("cline_settings_dir is not set and the home directory is unknown")
+		}
+		dir = filepath.Join(home, ".cline", "data", "settings")
+	}
+	if fi, err := os.Stat(filepath.Join(dir, "providers.json")); err != nil || !fi.Mode().IsRegular() {
+		return fmt.Errorf("%s has no providers.json; sign in to Cline first or set cline_settings_dir", filepath.Join(dir, "providers.json"))
+	}
+	return nil
 }
 
 // ProbeBaseURL says whether base answers, within timeout in all: GET
