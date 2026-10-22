@@ -6,6 +6,11 @@ All notable changes to GopherMind are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **A type that a signature uses but no type declares is now asked for.** After the components are written, the contract stage lists the Go types named in function signatures (parameters, results and receivers) that no type declares and sends them to the existing repair pass. Before, the plan went on with a warning and the test-writer later refused every correct test of the function, because its stub could not compile. If the repair budget is spent the plan still continues, with a `signature_type_undeclared` warning.
+- **A provider that cannot answer a request is skipped, not cooled down.** `provider.RequestFilter` lets a provider say it takes only some requests. The Cline provider takes only a leaf-file request (a worktree and a target file), so the planner's calls skip it with no ledger row; before, each one failed as transient and cooled the whole chain.
+
 ## [0.10.0] - 2026-10-21
 
 ### Added

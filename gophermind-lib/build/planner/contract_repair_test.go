@@ -175,3 +175,74 @@ func TestResumeBetweenComponentsDefersReferences(t *testing.T) {
 		t.Errorf("resume called %q, want only contract:farewell", got)
 	}
 }
+
+// greetStateReply is a greeting component whose function returns a type the
+// contract never declares.
+const greetStateReply = `{"types": [], "functions": [
+  {"id": "fn-greet", "package": "greet", "file": "internal/greet/greet.go",
+   "signature": "func Greet(name string) (*greetState, error)", "doc": "Greet returns the state for name.", "uses": ["name-error"]}
+], "more": false}`
+
+const greetStateType = `{"types": [
+  {"id": "greet-state", "package": "greet", "file": "internal/greet/state.go",
+   "decl": "// greetState is what Greet builds.\ntype greetState struct {\n\tName string\n}"}
+], "functions": []}`
+
+func TestATypeNamedInASignatureButNeverDeclaredIsRepairedInOnePass(t *testing.T) {
+	g := newRig(t, approving(), variant(t, map[string]string{
+		"contract.greeting.txt": greetStateReply,
+		"contract._repair.txt":  greetStateType,
+	}))
+	g.mustPlan(planner.Options{StopAfter: "contract"})
+	if n := repairStages(g); n != 1 {
+		t.Fatalf("repair calls = %d, want 1", n)
+	}
+	for _, r := range g.fake.Requests() {
+		if planner.StageOf(r) == "contract:_repair" {
+			p := r.Messages[1].Content
+			if !strings.Contains(p, "greetState") || !strings.Contains(p, "fn-greet") {
+				t.Errorf("repair prompt names neither the type nor the function that uses it:\n%s", p)
+			}
+		}
+	}
+	found := false
+	for _, ty := range g.contracts().Types {
+		if ty.ID == "greet-state" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the repaired contract lacks the greet-state type")
+	}
+}
+
+func TestATypeStillUndeclaredAfterTheRepairBoundIsAWarningNotAnError(t *testing.T) {
+	g := newRig(t, approving(), variant(t, map[string]string{
+		"contract.greeting.txt":  greetStateReply,
+		"contract._repair.txt":   `{"types": [], "functions": []}`,
+		"contract._repair.2.txt": `{"types": [], "functions": []}`,
+	}))
+	g.mustPlan(planner.Options{StopAfter: "contract"})
+	if n := repairStages(g); n != 2 {
+		t.Errorf("repair calls = %d, want 2 (the bound)", n)
+	}
+	warned := false
+	for _, w := range g.sink.OfKind("warning") {
+		if strings.Contains(w.Message, "signature_type_undeclared") && strings.Contains(w.Message, "greetState") {
+			warned = true
+		}
+	}
+	if !warned {
+		t.Error("no signature_type_undeclared warning naming greetState")
+	}
+}
+
+func TestASignatureTypeTheContractDeclaresCostsNoRepair(t *testing.T) {
+	g := newRig(t, approving(), variant(t, map[string]string{
+		"contract.greeting.txt": greetReply("name-error"),
+	}))
+	g.mustPlan(planner.Options{StopAfter: "contract"})
+	if n := repairStages(g); n != 0 {
+		t.Errorf("repair calls = %d, want none: every type in the signature is declared", n)
+	}
+}

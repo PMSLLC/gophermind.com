@@ -449,20 +449,38 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 
 	// Every component is written; ids a function or type uses but nobody
 	// declared are asked for, not treated as an unusable reply.
+	// A type that signatures use and no type declares is asked for the same way:
+	// without it the function cannot compile, nor can its test.
 	for {
 		un := unresolvedFinal(st.Doc)
-		if len(un) == 0 {
+		sigs := undeclaredSignatureTypes(st.Doc)
+		if len(un) == 0 && len(sigs) == 0 {
 			break
 		}
 		if st.Repairs >= maxOutlineRepairs {
-			return unresolvedErr(repairStage, un)
+			if len(un) > 0 {
+				return unresolvedErr(repairStage, un)
+			}
+			for _, s := range sigs {
+				p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
+					"signature_type_undeclared: the type %s is used by a signature (%s) and no type of the contract declares it, so these functions cannot compile",
+					boundedName(s.Name), strings.Join(boundedIDs(s.Users, maxUnresolvedInError), ", ")))
+			}
+			break
+		}
+		comps := unresolvedOwnerComponents(st.Doc, un)
+		for _, s := range sigs {
+			for _, c := range s.Components {
+				comps = appendOnce(comps, c)
+			}
 		}
 		build := func(level int) (string, error) {
 			return render("contract_repair", map[string]string{
 				"Outline":  outlineJSONAt(st.Doc, level),
 				"Declared": declaredTextAt(st.Doc, level), "Answers": answersText(as), "ItemSchemas": itemSchemas,
-				"BriefSections": briefExcerpt(r, featuresOfComponents(r, unresolvedOwnerComponents(st.Doc, un)), repairExcerptLevel(level)),
-				"Unresolved":    unresolvedOwnersText(st.Doc, un), "UnresolvedCount": fmt.Sprint(len(un))})
+				"BriefSections": briefExcerpt(r, featuresOfComponents(r, comps), repairExcerptLevel(level)),
+				"Unresolved":    unresolvedOwnersText(st.Doc, un), "UnresolvedCount": fmt.Sprint(len(un)),
+				"SignatureTypes": sigTypesText(sigs)})
 		}
 		var ignored []string
 		var notes idNotes
