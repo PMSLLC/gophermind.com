@@ -74,6 +74,13 @@ func NewCline(cfg ClineConfig) *Cline {
 			cfg.SettingsDir = filepath.Join(home, ".cline", "data", "settings")
 		}
 	}
+	if home, err := os.UserHomeDir(); err == nil {
+		if cfg.SettingsDir == "~" {
+			cfg.SettingsDir = home
+		} else if strings.HasPrefix(cfg.SettingsDir, "~/") {
+			cfg.SettingsDir = filepath.Join(home, cfg.SettingsDir[2:])
+		}
+	}
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 15 * time.Minute
 	}

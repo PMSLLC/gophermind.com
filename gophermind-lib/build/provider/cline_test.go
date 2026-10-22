@@ -525,3 +525,21 @@ func TestClineNameAndModels(t *testing.T) {
 		t.Error("Name or Models wrong")
 	}
 }
+
+func TestClineSettingsDirExpandsTilde(t *testing.T) {
+	for _, tc := range []struct{ dir, sub string }{{"~/cfg", "cfg"}, {"~", ""}} {
+		f := newFake(t, fakeRun{fixture: "cline_run_ok.jsonl", body: writeTarget})
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		if err := os.MkdirAll(filepath.Join(home, tc.sub), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(home, tc.sub, "providers.json"), []byte(`{}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		f.cl = NewCline(ClineConfig{Name: "cline", Binary: f.cl.cfg.Binary, ClineProvider: "cline-pass", SettingsDir: tc.dir, Timeout: 20 * time.Second})
+		if _, err := f.cl.Complete(context.Background(), f.req); err != nil {
+			t.Errorf("SettingsDir %q: %v", tc.dir, err)
+		}
+	}
+}
