@@ -10,6 +10,8 @@ which builds that plan, proves it and commits it (`gophermind brief run`).
 `gophermind project`) chains them into one command that needs no human step
 (see "One command: /project").
 
+Providers of `kind: cline`, which let the Cline CLI write each leaf's file, are described in [cline-provider.md](cline-provider.md).
+
 ## Commands
 
 ```text
