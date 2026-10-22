@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -87,5 +88,32 @@ func TestNewMuxServesHealthz(t *testing.T) {
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	if rec.Code != http.StatusOK {
 		t.Errorf("GET /healthz = %d, want 200", rec.Code)
+	}
+}
+
+// The root is a public landing page, not a 404, and it must not shadow the
+// other routes or answer for unknown paths.
+func TestNewMuxServesLanding(t *testing.T) {
+	t.Setenv("GOPHERMIND_SERVE_TOKEN", "t")
+	mux, err := NewMux(Deps{}, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET / = %d, want 200", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("GET / Content-Type = %q, want text/html", ct)
+	}
+	if !strings.Contains(rec.Body.String(), "GopherMind") {
+		t.Errorf("GET / body lacks the product name: %q", rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/nope", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("GET /nope = %d, want 404", rec.Code)
 	}
 }

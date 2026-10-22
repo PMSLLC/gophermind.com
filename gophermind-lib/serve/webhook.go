@@ -89,6 +89,27 @@ func healthHandler() http.HandlerFunc {
 	}
 }
 
+// landingPage is the public page at the server root: it says what answers here
+// and where the unauthenticated probes are, so a browser visit is not a bare 404.
+const landingPage = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>GopherMind</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="font-family:system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem">
+<h1>GopherMind</h1>
+<p>This is a GopherMind server. It serves an authenticated API; there is no web UI here.</p>
+<p>Probes: <a href="/healthz">/healthz</a>, <a href="/readyz">/readyz</a>.</p>
+</body></html>
+`
+
+// landingHandler answers GET / only. The "{$}" pattern in NewMux matches the
+// root exactly, so unknown paths still 404.
+func landingHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = io.WriteString(w, landingPage)
+	}
+}
+
 // readyHandler is a readiness probe: 200 when ready returns true, else 503, so
 // traffic is only routed once the server can serve it.
 func readyHandler(ready func() bool) http.HandlerFunc {
@@ -361,6 +382,7 @@ func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 	// Unauthenticated liveness/readiness probes for load balancers / k8s.
 	mux.HandleFunc("/healthz", healthHandler())
 	mux.HandleFunc("/readyz", readyHandler(func() bool { return true }))
+	mux.HandleFunc("GET /{$}", landingHandler())
 	if d.Metrics != nil {
 		mux.HandleFunc("/metrics", metricsHandler(d.Metrics))
 	}
