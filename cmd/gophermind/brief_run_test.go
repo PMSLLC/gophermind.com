@@ -1033,6 +1033,41 @@ func TestBriefRunCheckEnvTakesTheFallbackThatAnswers(t *testing.T) {
 	}
 }
 
+func TestBriefRunCheckEnvChecksAClineProvider(t *testing.T) {
+	for _, good := range []bool{true, false} {
+		e := newPreflightEnv(t)
+		dir := t.TempDir()
+		bin := filepath.Join(dir, "cline")
+		if good {
+			if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "providers.json"), []byte("{}"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		old := runHook
+		runHook = func() (*settings.Config, map[string]provider.Provider, error) {
+			cfg, p, err := old()
+			cfg.Providers = append(cfg.Providers, settings.ProviderConfig{
+				Name: "cline", Kind: "cline", ClineProvider: "cline-pass", ClineBinary: bin, ClineSettingsDir: dir,
+				Visibility: settings.Public, MaxConcurrent: 1,
+				Models: []settings.ModelEntry{{ID: "cline-pass/m", ContextTokens: 1000}},
+			})
+			cfg.Models["any"] = append(cfg.Models["any"], "cline/cline-pass/m")
+			return cfg, p, err
+		}
+		code, out, errs := runBriefCmd(t, "", "run", e.id, "--check-env")
+		runHook = old
+		if good && (code != 0 || !strings.Contains(out, "pass: provider cline")) {
+			t.Errorf("good: code=%d out=%q err=%q", code, out, errs)
+		}
+		if !good && (code != exitPreflight || !strings.Contains(out, "FAIL: provider cline: ")) {
+			t.Errorf("bad: code=%d out=%q err=%q", code, out, errs)
+		}
+	}
+}
+
 func closedAddr(t *testing.T) string {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")

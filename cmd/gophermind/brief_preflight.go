@@ -172,6 +172,15 @@ func briefPreflight(ctx context.Context, rec planner.RunRecord, repo string, cfg
 		}
 	}
 
+	for _, r := range envcheck.CheckClineProviders(cfg) {
+		name := "provider " + r.Provider
+		if r.Err != nil {
+			c.fail(name, safeLine(r.Err.Error()))
+		} else {
+			c.pass(name, "cline binary and providers.json found")
+		}
+	}
+
 	// approval
 	if err := planner.VerifyApproval(rec.RunDir); err != nil {
 		c.fail("approval", "approval.json is missing or does not match the plan")

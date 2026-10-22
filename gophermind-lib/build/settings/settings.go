@@ -54,6 +54,73 @@ type ProviderConfig struct {
 	// CallTimeoutSeconds overrides defaults.call_timeout for this provider. Nil means
 	// the global value; a value below 1 is refused.
 	CallTimeoutSeconds *int `yaml:"call_timeout_seconds,omitempty"`
+	// Kind is "openai" (also the meaning of empty) or "cline". A cline provider
+	// runs the Cline CLI in a scratch copy of the repository instead of calling an
+	// OpenAI-compatible endpoint. Cline makes its own network calls and sends the
+	// repository's code to Cline's service, so the kind is opt-in, needs
+	// visibility public and is refused under privacy.mode private_only. It takes
+	// no base_url, base_url_fallbacks or api_key_secret; each model id is the
+	// Cline model slug (for example "cline-pass/qwen3.7-max") and is passed to
+	// Cline as -m.
+	Kind string `yaml:"kind,omitempty"`
+	// ClineBinary is the Cline executable. Empty means "cline" on PATH.
+	ClineBinary string `yaml:"cline_binary,omitempty"`
+	// ClineProvider is the value passed to Cline as -P, for example "cline-pass".
+	// Required when kind is cline.
+	ClineProvider string `yaml:"cline_provider,omitempty"`
+	// ClineSettingsDir holds Cline's providers.json. Empty means ~/.cline/data/settings.
+	ClineSettingsDir string `yaml:"cline_settings_dir,omitempty"`
+	// ClineTimeoutSeconds bounds one Cline run. Nil means the provider's own
+	// default; a value below 1 is refused.
+	ClineTimeoutSeconds *int `yaml:"cline_timeout_seconds,omitempty"`
+}
+
+// IsCline reports whether the provider runs the Cline CLI.
+func (p ProviderConfig) IsCline() bool { return p.Kind == "cline" }
+
+// validateKind checks kind and the fields that belong to one kind only. The
+// messages name the provider and the field, never a value other than the kind.
+func (c *Config) validateKind(p ProviderConfig, where string) error {
+	switch p.Kind {
+	case "", "openai":
+		var stray string
+		switch {
+		case p.ClineBinary != "":
+			stray = "cline_binary"
+		case p.ClineProvider != "":
+			stray = "cline_provider"
+		case p.ClineSettingsDir != "":
+			stray = "cline_settings_dir"
+		case p.ClineTimeoutSeconds != nil:
+			stray = "cline_timeout_seconds"
+		}
+		if stray != "" {
+			return fmt.Errorf("%s: %s needs kind cline", where, stray)
+		}
+		return nil
+	case "cline":
+	default:
+		return fmt.Errorf("%s: kind must be openai or cline, got %q", where, p.Kind)
+	}
+	if p.Visibility != Public {
+		return fmt.Errorf("%s: kind cline needs visibility public, because Cline sends the repository's code to an outside service", where)
+	}
+	if c.Privacy.Mode == "private_only" {
+		return fmt.Errorf("%s: kind cline is not allowed under privacy.mode private_only, because Cline sends the repository's code to an outside service", where)
+	}
+	switch {
+	case p.ClineProvider == "":
+		return fmt.Errorf("%s: cline_provider is required for kind cline", where)
+	case p.BaseURL != "":
+		return fmt.Errorf("%s: base_url is ignored by kind cline; remove it", where)
+	case len(p.BaseURLFallbacks) > 0:
+		return fmt.Errorf("%s: base_url_fallbacks is ignored by kind cline; remove it", where)
+	case p.APIKeySecret != "":
+		return fmt.Errorf("%s: api_key_secret is ignored by kind cline (Cline holds its own credentials); remove it", where)
+	case p.ClineTimeoutSeconds != nil && *p.ClineTimeoutSeconds < 1:
+		return fmt.Errorf("%s: cline_timeout_seconds must be at least 1, got %d", where, *p.ClineTimeoutSeconds)
+	}
+	return nil
 }
 
 type Privacy struct {
@@ -259,10 +326,14 @@ func (c *Config) Validate() error {
 		}
 		byName[p.Name] = p
 		where = "provider " + p.Name
-		if p.BaseURL == "" {
-			return fmt.Errorf("%s: base_url is required", where)
+		if err := c.validateKind(p, where); err != nil {
+			return err
 		}
-		if !validBaseURL(p.BaseURL) {
+		if p.IsCline() {
+			// validateKind has checked everything that applies; no base_url to check.
+		} else if p.BaseURL == "" {
+			return fmt.Errorf("%s: base_url is required", where)
+		} else if !validBaseURL(p.BaseURL) {
 			return fmt.Errorf("%s: base_url must be an http or https URL with a host and no credentials", where)
 		}
 		// A private provider's prompts go to its base_url, so that host must be on a

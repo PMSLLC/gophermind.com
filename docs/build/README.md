@@ -10,6 +10,8 @@ which builds that plan, proves it and commits it (`gophermind brief run`).
 `gophermind project`) chains them into one command that needs no human step
 (see "One command: /project").
 
+Providers of `kind: cline`, which let the Cline CLI write each leaf's file, are described in [cline-provider.md](cline-provider.md).
+
 ## Commands
 
 ```text
@@ -278,6 +280,24 @@ for a live worker, wait up to `executor.stale_claim_seconds` and run again.
 - `disk space`: 2 GiB free where the module cache lives.
 
 A provider may list `base_url_fallbacks` in the settings. When `base_url` does not answer, the fallbacks are tried in order, at preflight and at the start of a run, and the first that answers is used for that process only: the settings file is never rewritten. A fallback may not change who sees the prompts and the provider's key. The router's privacy rule keys on a provider's visibility, so a `private` provider (and every provider under `privacy.mode: private_only`) accepts only a private-network host: loopback, RFC 1918, the VPN range 100.64.0.0/10, link-local, IPv6 ULA, or a name ending in `.local`, `.internal` or `.lan`; a public provider accepts only public hosts. The host is judged by its text and no name is resolved. `settings.Validate` refuses a violating entry (the message names the provider and the key), and preflight and the start of a run skip one without dialling it. The default mini entry lists its VPN address (`http://10.8.0.6:11434/v1`). The preflight says which host answered, and the run report's environment section records the host (host only, never the URL).
+
+A provider may instead be of `kind: cline`, which runs the Cline CLI in a scratch copy of the repository and returns the finished file. It is opt-in and off by default. Cline makes its own network calls, outside the harness proxy, and sends the repository's code to Cline's service, so `settings.Validate` refuses a cline provider that is `private`, and refuses any cline provider under `privacy.mode: private_only`. A cline provider takes no `base_url`, `base_url_fallbacks` or `api_key_secret` (setting one is an error); Cline holds its own credentials in `cline_settings_dir/providers.json`. Preflight checks that the binary resolves and that file exists, instead of probing a URL. Each model id is the Cline model slug and is passed to Cline as `-m`, so the ladder entry is `provider/model`, here `cline/cline-pass/qwen3.7-max`. Unix only.
+
+```yaml
+# providers:
+#   - name: cline
+#     kind: cline
+#     cline_provider: cline-pass       # Cline's -P value; required
+#     cline_binary: cline              # optional, default "cline" on PATH
+#     cline_settings_dir: /home/you/.cline/data/settings   # optional; default ~/.cline/data/settings
+#     cline_timeout_seconds: 900       # optional, at least 1
+#     visibility: public
+#     max_concurrent: 1
+#     models:
+#       - {id: cline-pass/qwen3.7-max, context_tokens: 131072}
+# models:
+#   any: [cline/cline-pass/qwen3.7-max, mini/qwen3.6:35b-a3b]
+```
 
 ## Sandbox and network
 

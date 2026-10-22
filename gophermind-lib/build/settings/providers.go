@@ -3,12 +3,14 @@ package settings
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"gophermind/gophermind-lib/build/provider"
 )
 
-// BuildProviders constructs one OpenAI-compatible provider per configured
-// entry. A provider with api_key_secret gets its key from secret(name); the
+// BuildProviders constructs one provider per configured entry: an
+// OpenAI-compatible one, or the Cline CLI runner for kind cline (which looks up
+// no secret; client does not reach it). A provider with api_key_secret gets its key from secret(name); the
 // value goes to the provider and nowhere else, and it never appears in an
 // error. client is the HTTP client every provider uses; nil means
 // provider.NewHTTPClient(0) (no redirects, no proxy environment).
@@ -18,6 +20,21 @@ func (c *Config) BuildProviders(client *http.Client, secret func(name string) (s
 	}
 	out := make(map[string]provider.Provider, len(c.Providers))
 	for _, p := range c.Providers {
+		if p.IsCline() {
+			models := make([]provider.ModelInfo, 0, len(p.Models))
+			for _, m := range p.Models {
+				models = append(models, provider.ModelInfo{ID: m.ID, ContextTokens: m.ContextTokens})
+			}
+			cc := provider.ClineConfig{
+				Name: p.Name, Binary: p.ClineBinary, ClineProvider: p.ClineProvider,
+				SettingsDir: p.ClineSettingsDir, MaxConcurrent: p.MaxConcurrent, Models: models,
+			}
+			if p.ClineTimeoutSeconds != nil {
+				cc.Timeout = time.Duration(*p.ClineTimeoutSeconds) * time.Second
+			}
+			out[p.Name] = provider.NewCline(cc)
+			continue
+		}
 		key := ""
 		if p.APIKeySecret != "" {
 			if secret == nil {
