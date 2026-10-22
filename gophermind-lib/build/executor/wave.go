@@ -278,7 +278,7 @@ func (rc *runCtx) runChecks(ctx context.Context, node string, final bool) (check
 	}
 
 	if final {
-		v := rc.chk.Test(ctx, runner.TestSet{Repo: rc.o.Repo, Pkg: "./...", Race: true, Env: env, Timeout: rc.testTimeout()})
+		v := rc.raceTest(ctx, runner.TestSet{Repo: rc.o.Repo, Pkg: "./...", Race: true, Env: env, Timeout: rc.testTimeout()})
 		if v.Pass() {
 			return checkResult{}, nil
 		}
@@ -300,7 +300,7 @@ func (rc *runCtx) runChecks(ctx context.Context, node string, final bool) (check
 	sort.Strings(dirs)
 	var out checkResult
 	for _, d := range dirs {
-		v := rc.chk.Test(ctx, runner.TestSet{
+		v := rc.raceTest(ctx, runner.TestSet{
 			Repo: rc.o.Repo, Pkg: pkgPattern(d), Funcs: verified[d], Race: true, Env: env, Timeout: rc.testTimeout(),
 		})
 		if v.Pass() {
@@ -313,6 +313,30 @@ func (rc *runCtx) runChecks(ctx context.Context, node string, final bool) (check
 		out.Failures = append(out.Failures, rc.scrubFailure(f))
 	}
 	return out, nil
+}
+
+// raceNeedsCgo is what go prints when -race cannot run with cgo off. The executor
+// pins CGO_ENABLED=0 (decision E13), and the race detector needs cgo on some
+// platforms (Linux on arm64); macOS does not.
+const raceNeedsCgo = "-race requires cgo"
+
+// raceTest is chk.Test for a wave check that asks for -race. When go says -race
+// needs cgo, the check is run again without it, once, and every later check
+// leaves -race out: the detector is not available here, and a failure that says
+// nothing about the code must not stop the run. The warning records it.
+func (rc *runCtx) raceTest(ctx context.Context, ts runner.TestSet) runner.Verdict {
+	if rc.noRace {
+		ts.Race = false
+		return rc.chk.Test(ctx, ts)
+	}
+	v := rc.chk.Test(ctx, ts)
+	if v.Pass() || !ts.Race || !strings.Contains(v.Out.Text(), raceNeedsCgo) {
+		return v
+	}
+	rc.noRace = true
+	rc.emit("race_unavailable", "", "go test -race needs cgo here and the executor builds with CGO_ENABLED=0: the wave checks run without the race detector")
+	ts.Race = false
+	return rc.chk.Test(ctx, ts)
 }
 
 // pkgPattern is the go package argument of a repo-relative directory.

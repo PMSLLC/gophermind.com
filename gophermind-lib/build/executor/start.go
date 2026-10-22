@@ -64,6 +64,7 @@ type runCtx struct {
 	accept     acceptPlan        // what the acceptance stage must prove (spec 9), computed before anything starts
 	serveAddr  string            // the address of the server the plan's serve declaration started, while it runs
 	noRedCheck bool              // tests only: skip the acceptance red check of Wave 0
+	noRace     bool              // go test -race needs cgo here (see raceTest): the repository-wide checks run without it
 	sandboxOn  bool
 	goBin      string
 	gitBin     string

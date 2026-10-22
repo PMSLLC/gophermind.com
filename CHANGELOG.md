@@ -8,6 +8,7 @@ All notable changes to GopherMind are documented here. The format follows
 
 ### Fixed
 
+- **The wave checks no longer fail on a platform where `-race` needs cgo.** The executor builds with `CGO_ENABLED=0` (decision E13), and `go test -race` refuses to run that way on Linux on arm64 (macOS does not need cgo for it), so every wave check, and the final one, failed as an unattributable `test_fail` and stopped the run after wave 0. When go says `-race requires cgo`, the check is run again without `-race`, once, later checks leave it out, and a `race_unavailable` warning is recorded.
 - **A type that a signature uses but no type declares is now asked for.** After the components are written, the contract stage lists the Go types named in function signatures (parameters, results and receivers) that no type declares and sends them to the existing repair pass. Before, the plan went on with a warning and the test-writer later refused every correct test of the function, because its stub could not compile. If the repair budget is spent the plan still continues, with a `signature_type_undeclared` warning.
 - **A provider that cannot answer a request is skipped, not cooled down.** `provider.RequestFilter` lets a provider say it takes only some requests. The Cline provider takes only a leaf-file request (a worktree and a target file), so the planner's calls skip it with no ledger row; before, each one failed as transient and cooled the whole chain.
 

@@ -433,3 +433,64 @@ func TestWaveCheckScrubsSplitSecrets(t *testing.T) {
 		t.Fatalf("the split secret is in the result: %s", blob)
 	}
 }
+
+// go test -race needs cgo on some platforms (Linux on arm64), and the executor
+// pins CGO_ENABLED=0 (decision E13). The check is run again without -race, and
+// later checks do not try -race again.
+func TestWaveCheckDropsRaceWhenGoNeedsCgo(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	rc, fc := g.waveRC(t)
+	w0 := g.leaves("fn-farewell", "fn-greet")
+	if wr, err := rc.scheduleLeaves(context.Background(), w0); err != nil || wr.Stop != nil || len(wr.Verified) != 2 {
+		t.Fatalf("wave 0 = %+v, %v", wr, err)
+	}
+	a := g.plan.Leaf("fn-greet")
+	fc.RepoScript.Test["./"+a.Dir] = []runner.Verdict{
+		{Class: runner.ClassTestFail, Out: outputOf("go: -race requires cgo; enable cgo by setting CGO_ENABLED=1\n")},
+	}
+
+	res, err := rc.waveChecks(context.Background(), 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Pass() {
+		t.Fatalf("the check failed on the missing cgo instead of running without -race: %+v", res)
+	}
+	got := fc.tests()
+	if len(got) < 2 || !got[0].Race || got[1].Race || got[0].Pkg != got[1].Pkg {
+		t.Fatalf("calls = %+v, want the same package twice: with -race, then without", got)
+	}
+
+	before := len(fc.tests())
+	if _, err := rc.waveChecks(context.Background(), 0, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range fc.tests()[before:] {
+		if c.Race {
+			t.Errorf("a later check asked for -race again: %+v", c)
+		}
+	}
+}
+
+// A failure that does not say cgo is still a failure, with -race on.
+func TestWaveCheckKeepsRaceForOtherFailures(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	rc, fc := g.waveRC(t)
+	w0 := g.leaves("fn-farewell", "fn-greet")
+	if wr, err := rc.scheduleLeaves(context.Background(), w0); err != nil || wr.Stop != nil || len(wr.Verified) != 2 {
+		t.Fatalf("wave 0 = %+v, %v", wr, err)
+	}
+	a := g.plan.Leaf("fn-greet")
+	fc.RepoScript.Test["./"+a.Dir] = []runner.Verdict{{Class: runner.ClassTestFail, Names: []string{a.TestFunc}, Out: outputOf("--- FAIL: " + a.TestFunc)}}
+	res, err := rc.waveChecks(context.Background(), 0, false)
+	if err != nil || res.Pass() {
+		t.Fatalf("res = %+v, err = %v, want the failure kept", res, err)
+	}
+	for _, c := range fc.tests() {
+		if !c.Race {
+			t.Errorf("a call lost -race for an ordinary failure: %+v", c)
+		}
+	}
+}
