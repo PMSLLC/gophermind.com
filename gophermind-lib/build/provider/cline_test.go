@@ -619,3 +619,16 @@ func TestClineRejectsBadOmitFiles(t *testing.T) {
 		f.noLeftovers(t)
 	}
 }
+
+func TestClineAcceptsOnlyARequestWithAWorktreeAndTargetFile(t *testing.T) {
+	c := &Cline{}
+	if c.Accepts(Request{}) {
+		t.Error("a request with no worktree or target file must not be accepted")
+	}
+	if c.Accepts(Request{Workdir: "/tmp/w"}) {
+		t.Error("a request with no target file must not be accepted")
+	}
+	if !c.Accepts(Request{Workdir: "/tmp/w", TargetFile: "a/b.go"}) {
+		t.Error("a request with a worktree and a target file must be accepted")
+	}
+}

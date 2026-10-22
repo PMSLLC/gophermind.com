@@ -179,6 +179,11 @@ func (r *Router) Call(ctx context.Context, info CallInfo, req provider.Request) 
 				reasons = append(reasons, reason)
 				continue
 			}
+			if f, ok := r.providers[provName].(provider.RequestFilter); ok && !f.Accepts(req) {
+				reasons = append(reasons, EntryReason{Entry: entry, Kind: ReasonUnsupported,
+					Detail: "this provider answers only a request that names a worktree and a target file"})
+				continue
+			}
 			mi, _ := r.cfg.ModelInfo(entry)
 			if pd.tokens+req.MaxTokens > mi.ContextTokens {
 				if !recordedTooLong[entry] {

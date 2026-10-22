@@ -96,6 +96,10 @@ func NewCline(cfg ClineConfig) *Cline {
 func (c *Cline) Name() string        { return c.cfg.Name }
 func (c *Cline) Models() []ModelInfo { return c.cfg.Models }
 
+// Accepts reports whether req names a worktree and a target file, the only kind of request
+// Cline can answer. The planner's calls carry neither, so the router skips this provider for them.
+func (c *Cline) Accepts(req Request) bool { return req.Workdir != "" && req.TargetFile != "" }
+
 func (c *Cline) Complete(ctx context.Context, req Request) (Response, error) {
 	start := time.Now()
 	if err := validateClineRequest(req); err != nil {

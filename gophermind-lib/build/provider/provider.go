@@ -65,6 +65,13 @@ type Provider interface {
 	Complete(ctx context.Context, req Request) (Response, error)
 }
 
+// RequestFilter is implemented by a provider that can only answer some requests (the Cline
+// provider answers only a request that names a worktree and a target file). The router skips
+// such a provider, without a ledger row or a cooldown, when Accepts is false.
+type RequestFilter interface {
+	Accepts(Request) bool
+}
+
 type ModelInfo struct {
 	ID            string
 	ContextTokens int

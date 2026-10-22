@@ -1052,3 +1052,62 @@ func TestPerProviderCallTimeoutOverride(t *testing.T) {
 		t.Errorf("rows = %+v", rows)
 	}
 }
+
+// fileOnly is a provider that, like the Cline provider, can only answer a request
+// that names a worktree and a target file.
+type fileOnly struct{ *provider.Fake }
+
+func (fileOnly) Accepts(r provider.Request) bool { return r.Workdir != "" && r.TargetFile != "" }
+
+func TestFileOnlyProviderIsSkippedForARequestWithoutAWorktree(t *testing.T) {
+	g := newRig(t, nil, okText("from kilo"), okText("from ovh"), nil)
+	g.build(t, testConfig(), map[string]provider.Provider{"mini": g.mini, "kilo": fileOnly{g.kilo}, "ovh": g.ovh}, nil)
+
+	res, err := g.r.Call(context.Background(), info(router.TierAny, router.ScopeNode), req("hi"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Response.Text != "from ovh" {
+		t.Errorf("answered %q, want the next entry (from ovh)", res.Response.Text)
+	}
+	if n := g.kilo.Calls(); n != 0 {
+		t.Errorf("the file-only provider was called %d times", n)
+	}
+	for _, row := range g.rows(t) {
+		if row.Provider == "kilo" {
+			t.Errorf("a ledger row was written for the skipped provider: %+v", row)
+		}
+	}
+	if w := g.clk.sleeps(); len(w) != 0 {
+		t.Errorf("waited %v for a provider that was only unsuitable", w)
+	}
+}
+
+func TestFileOnlyProviderIsUsedWhenTheRequestNamesAWorktreeAndFile(t *testing.T) {
+	g := newRig(t, nil, okText("from kilo"), nil, nil)
+	g.build(t, testConfig(), map[string]provider.Provider{"mini": g.mini, "kilo": fileOnly{g.kilo}, "ovh": g.ovh}, nil)
+
+	r := req("hi")
+	r.Workdir, r.TargetFile = "/tmp/work", "pkg/a.go"
+	res, err := g.r.Call(context.Background(), info(router.TierAny, router.ScopeNode), r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Response.Text != "from kilo" {
+		t.Errorf("answered %q, want the file-only provider (from kilo)", res.Response.Text)
+	}
+}
+
+func TestChainOfOnlyFileOnlyProvidersExplainsTheSkip(t *testing.T) {
+	g := newRig(t, nil, nil, nil, func(c *settings.Config) {
+		c.Models["any"] = []string{"kilo/auto"}
+	})
+	g.build(t, func() *settings.Config { c := testConfig(); c.Models["any"] = []string{"kilo/auto"}; return c }(),
+		map[string]provider.Provider{"mini": g.mini, "kilo": fileOnly{g.kilo}, "ovh": g.ovh}, nil)
+
+	_, err := g.r.Call(context.Background(), info(router.TierAny, router.ScopeNode), req("hi"))
+	var ce *router.ChainExhausted
+	if !errors.As(err, &ce) || len(ce.Reasons) != 1 || ce.Reasons[0].Kind != router.ReasonUnsupported {
+		t.Fatalf("err = %v, reasons = %+v", err, ce)
+	}
+}

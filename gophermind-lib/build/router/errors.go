@@ -15,6 +15,7 @@ const (
 	ReasonCooldown     = "cooldown"      // rate limited or failing; try again later
 	ReasonTooLong      = "too_long"      // the prompt does not fit the model
 	ReasonFailed       = "failed"        // the call was made and failed (for example a timeout)
+	ReasonUnsupported  = "unsupported"   // the provider cannot answer this kind of request (no worktree and target file)
 )
 
 // TruncatedDetail is the Detail of a ReasonFailed row whose reply was cut off at
