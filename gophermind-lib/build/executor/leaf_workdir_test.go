@@ -23,4 +23,7 @@ func TestLeafRequestCarriesWorkdirAndTargetFile(t *testing.T) {
 	if reqs[0].TargetFile != l.File {
 		t.Errorf("TargetFile = %q, want %q", reqs[0].TargetFile, l.File)
 	}
+	if l.StubFile == "" || len(reqs[0].OmitFiles) != 1 || reqs[0].OmitFiles[0] != l.StubFile {
+		t.Errorf("OmitFiles = %q, want [%q]", reqs[0].OmitFiles, l.StubFile)
+	}
 }

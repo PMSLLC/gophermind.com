@@ -543,3 +543,79 @@ func TestClineSettingsDirExpandsTilde(t *testing.T) {
 		}
 	}
 }
+
+func TestClineGophermindNotCopied(t *testing.T) {
+	f := newFake(t, fakeRun{fixture: "cline_run_ok.jsonl", body: writeTarget})
+	writeFiles(t, f.workdir, map[string]string{
+		".gophermind/run1/_state/x.json": "{}\n",
+		".gophermind/calls.jsonl":        "{}\n",
+		"sub/deeper/.gophermind":         "a file, not a directory\n",
+		"sub/deeper/keep.go":             "package deeper\n",
+	})
+	before := hashTree(t, f.workdir)
+	if _, err := f.cl.Complete(context.Background(), f.req); err != nil {
+		t.Fatal(err)
+	}
+	tree := f.read(t, "tree")
+	if strings.Contains(tree, ".gophermind") {
+		t.Errorf("scratch tree copied a .gophermind entry:\n%s", tree)
+	}
+	for _, want := range []string{"./a.go", "./sub/b.go", "./sub/deeper/keep.go"} {
+		if !strings.Contains("\n"+tree, "\n"+want+"\n") {
+			t.Errorf("scratch tree lacks %s", want)
+		}
+	}
+	if after := hashTree(t, f.workdir); after != before {
+		t.Error("the real workdir changed")
+	}
+}
+
+func TestClineOmitFiles(t *testing.T) {
+	f := newFake(t, fakeRun{fixture: "cline_run_ok.jsonl", body: writeTarget})
+	writeFiles(t, f.workdir, map[string]string{
+		"sub/zz_gm_stub_mine.go":  "package sub\n",
+		"sub/zz_gm_stub_other.go": "package sub\n",
+	})
+	f.req.OmitFiles = []string{"sub/zz_gm_stub_mine.go", "not/there.go"}
+	before := hashTree(t, f.workdir)
+	if _, err := f.cl.Complete(context.Background(), f.req); err != nil {
+		t.Fatal(err)
+	}
+	tree := f.read(t, "tree")
+	if strings.Contains(tree, "zz_gm_stub_mine.go") {
+		t.Errorf("the omitted file was copied:\n%s", tree)
+	}
+	for _, want := range []string{"./sub/zz_gm_stub_other.go", "./sub/b.go", "./a.go"} {
+		if !strings.Contains("\n"+tree, "\n"+want+"\n") {
+			t.Errorf("scratch tree lacks %s", want)
+		}
+	}
+	if after := hashTree(t, f.workdir); after != before {
+		t.Error("the real workdir changed")
+	}
+}
+
+func TestClineOmitFilesMayEqualTarget(t *testing.T) {
+	f := newFake(t, fakeRun{fixture: "cline_run_ok.jsonl", body: writeTarget})
+	writeFiles(t, f.workdir, map[string]string{"target.go": "package m\n"})
+	f.req.OmitFiles = []string{"target.go"}
+	if _, err := f.cl.Complete(context.Background(), f.req); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestClineRejectsBadOmitFiles(t *testing.T) {
+	for _, omit := range []string{"", "../x", "/abs", `a\b`, "a/../b.go", "./a.go", "."} {
+		f := newFake(t, fakeRun{fixture: "cline_run_ok.jsonl", body: writeTarget})
+		f.req.OmitFiles = []string{"sub/b.go", omit}
+		_, err := f.cl.Complete(context.Background(), f.req)
+		if err == nil {
+			t.Errorf("omit %q accepted", omit)
+		}
+		var et ErrTransient
+		if errors.As(err, &et) {
+			t.Errorf("omit %q: want a plain error, got ErrTransient", omit)
+		}
+		f.noLeftovers(t)
+	}
+}

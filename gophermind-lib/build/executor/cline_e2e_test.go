@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -119,6 +120,22 @@ func assertScratchOnly(t *testing.T, g *rig, l *Leaf, logs, n string) {
 	}
 }
 
+// assertScratchOmits checks that the copy holds no .gophermind entry and not
+// this leaf's own stub, while the other leaves' stubs and repo files remain.
+func assertScratchOmits(t *testing.T, g *rig, l *Leaf, logs, n string) {
+	t.Helper()
+	tree := readLog(t, logs, n, "tree")
+	if strings.Contains(tree, ".gophermind") {
+		t.Errorf("call %s: the scratch copy holds a .gophermind entry:\n%s", n, tree)
+	}
+	if strings.Contains(tree, "/"+path.Base(l.StubFile)+"\n") {
+		t.Errorf("call %s: the scratch copy holds the leaf's own stub %s:\n%s", n, l.StubFile, tree)
+	}
+	if !strings.Contains(tree, "./go.mod\n") {
+		t.Errorf("call %s: the scratch copy lacks go.mod:\n%s", n, tree)
+	}
+}
+
 // assertWorktreeUntouched checks that nothing the script wrote outside the
 // executor's own commit reached the real worktree.
 func assertWorktreeUntouched(t *testing.T, g *rig) {
@@ -135,12 +152,14 @@ func TestClineProviderBuildsALeafThroughTheRouter(t *testing.T) {
 	g := newRig(t)
 	l := g.plan.Leaf(leafID)
 	rc, logs := clineRig(t, g, l, []string{good(leafID)})
+	write(t, filepath.Join(g.repo, ".gophermind", "_state", "x"), "run state\n")
 
 	out := runOne(t, rc, leafID)
 	if out.Status != blackboard.StatusVerified || out.Interrupted {
 		t.Fatalf("outcome = %+v, want verified", out)
 	}
 	assertScratchOnly(t, g, l, logs, "1")
+	assertScratchOmits(t, g, l, logs, "1")
 	if got := verdictsOf(t, g.board, leafID); got != "pass" {
 		t.Fatalf("verdicts = %s, want pass", got)
 	}

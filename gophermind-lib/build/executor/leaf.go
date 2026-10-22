@@ -1132,6 +1132,9 @@ func (lr *leafRun) attempt(ctx context.Context, e ladderEntry, k int) (end entry
 		MaxTokens: max, Temperature: fixTemperature(k),
 		Workdir: lr.wt.Repo, TargetFile: l.File,
 	}
+	if l.StubFile != "" {
+		req.OmitFiles = []string{l.StubFile}
+	}
 	if grown := e.ContextTokens - packed.Tokens; e.ContextTokens > 0 && grown > max {
 		if grown > 16384 {
 			grown = 16384

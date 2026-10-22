@@ -118,7 +118,7 @@ func (c *Cline) Complete(ctx context.Context, req Request) (Response, error) {
 			return Response{}, fmt.Errorf("cline: creating the scratch directory: %w", err)
 		}
 	}
-	if err := copyTree(req.Workdir, work, c.cfg.MaxCopyBytes, c.cfg.MaxCopyFiles); err != nil {
+	if err := copyTree(req.Workdir, work, req.OmitFiles, c.cfg.MaxCopyBytes, c.cfg.MaxCopyFiles); err != nil {
 		return Response{}, err
 	}
 	if err := os.WriteFile(filepath.Join(settings, "global-settings.json"), []byte(clineSettings), 0o600); err != nil {
@@ -203,14 +203,24 @@ func validateClineRequest(req Request) error {
 	if fi, err := os.Stat(req.Workdir); err != nil || !fi.IsDir() {
 		return errors.New("cline: the workdir is not an existing directory")
 	}
-	t := req.TargetFile
-	if t == "" || t == "." || strings.ContainsAny(t, "\\\x00") || strings.HasPrefix(t, "/") || path.Clean(t) != t || t == ".." || strings.HasPrefix(t, "../") {
+	if !cleanRelPath(req.TargetFile) {
 		return errors.New("cline: the target file must be a clean relative path inside the workdir")
+	}
+	for _, o := range req.OmitFiles {
+		if !cleanRelPath(o) {
+			return errors.New("cline: each omitted file must be a clean relative path inside the workdir")
+		}
 	}
 	if req.Model == "" {
 		return errors.New("cline: no model given")
 	}
 	return nil
+}
+
+// cleanRelPath reports whether t is a non-empty, clean, slash-separated path
+// relative to, and inside, a directory.
+func cleanRelPath(t string) bool {
+	return !(t == "" || t == "." || strings.ContainsAny(t, "\\\x00") || strings.HasPrefix(t, "/") || path.Clean(t) != t || t == ".." || strings.HasPrefix(t, "../"))
 }
 
 // removeClineTemp deletes the scratch directory, after checking it is the one
@@ -235,9 +245,14 @@ func clineChildEnv() []string {
 	return env
 }
 
-// copyTree copies the regular files of src into dst, leaving out any .git entry
-// and every symlink, and never reading more than maxBytes or maxFiles.
-func copyTree(src, dst string, maxBytes int64, maxFiles int) error {
+// copyTree copies the regular files of src into dst, leaving out any .git or
+// .gophermind entry, every symlink and the slash-separated relative paths in
+// omit, and never reading more than maxBytes or maxFiles.
+func copyTree(src, dst string, omit []string, maxBytes int64, maxFiles int) error {
+	skip := map[string]bool{}
+	for _, o := range omit {
+		skip[filepath.FromSlash(o)] = true
+	}
 	var bytesCopied int64
 	files := 0
 	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
@@ -247,7 +262,7 @@ func copyTree(src, dst string, maxBytes int64, maxFiles int) error {
 		if p == src {
 			return nil
 		}
-		if d.Name() == ".git" {
+		if d.Name() == ".git" || d.Name() == ".gophermind" {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -256,6 +271,12 @@ func copyTree(src, dst string, maxBytes int64, maxFiles int) error {
 		rel, err := filepath.Rel(src, p)
 		if err != nil {
 			return errors.New("cline: could not read the workdir")
+		}
+		if skip[rel] {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		fi, err := d.Info()
 		if err != nil {

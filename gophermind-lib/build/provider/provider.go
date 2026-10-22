@@ -39,6 +39,10 @@ type Request struct {
 	// TargetFile is the slash-separated path, relative to Workdir, of the one file
 	// the reply must carry; empty when the call has none.
 	TargetFile string
+	// OmitFiles are slash-separated paths, relative to Workdir, that a provider
+	// working in a directory leaves out of its scratch copy. Other providers
+	// ignore it.
+	OmitFiles []string
 }
 
 type Usage struct {

@@ -8,8 +8,8 @@ The executor owns the stub and real file swap, the gates, the commit and the fai
 
 ## Data flow
 
-1. The executor builds the leaf prompt and a `provider.Request` with `Workdir` (the leaf worktree, absolute) and `TargetFile` (slash-separated, repo relative).
-2. The provider validates both, then copies the worktree into a fresh temp directory. The copy leaves out every `.git` entry and every symlink and is capped by size (64 MiB) and file count (5000).
+1. The executor builds the leaf prompt and a `provider.Request` with `Workdir` (the leaf worktree, absolute), `TargetFile` (slash-separated, repo relative) and `OmitFiles` (the leaf's own stub file, `zz_gm_stub_<id>.go`).
+2. The provider validates the paths, then copies the worktree into a fresh temp directory. The copy leaves out every `.git` entry, every `.gophermind` entry (the run folder and its state, at any depth), every symlink and each path in `OmitFiles`, and is capped by size (64 MiB) and file count (5000). Only this leaf's stub is left out: it declares the function the target file must now define, so keeping it would cause a redeclaration under `go test`. The stubs of the other leaves stay, so the package still compiles until they are built.
 3. It writes an isolated Cline data dir with settings that force act mode, telemetry off and auto-update off, and symlinks your `providers.json` into it. Your real Cline data dir is never written. Cline's default Plan mode refuses to write files, hence the isolated settings.
 4. It runs `cline --json --auto-approve true --data-dir <iso> -P <provider> -m <model> -c <scratch> -t <secs> <prompt>`. The prompt is the request messages plus a trailer that names the target file and asks Cline to write only that file and run `go test`.
 5. The child gets an environment allowlist (PATH, HOME, TMPDIR, LANG, LC_ALL and the Go variables). No API key or token from the parent process reaches it. It runs in its own process group, which is killed on timeout or cancel.
@@ -60,9 +60,8 @@ Optional variables: `GOPHERMIND_CLINE_BIN` (default `cline`), `GOPHERMIND_CLINE_
 ## Known limits and risks
 
 - Cline makes its own network calls, outside the harness proxy and its allowlist.
-- Cline sends repository code to Cline's service. Only the scratch copy is exposed, but that copy is the whole worktree (minus `.git` and symlinks). The copy is currently a plain copy of the worktree directory, so anything untracked in it, including the `.gophermind` run folder when the run lives inside the repository, is part of what Cline can read.
+- Cline sends repository code to Cline's service. Only the scratch copy is exposed, but that copy is the whole worktree minus `.git`, `.gophermind` and symlinks. Any other untracked file in the worktree is part of what Cline can read.
 - Auto-approve lets Cline run shell commands as the current user inside the scratch directory. There is no OS sandbox around it; the environment allowlist and the scratch copy limit what it finds, not what it can do.
-- The leaf's stub file (`zz_gm_stub_<id>.go`) is present in the worktree during the call, so the scratch copy contains it. If Cline declares the same function in the target file and runs `go test`, the scratch package may fail to compile with a redeclaration even though the real swap would pass.
 - The router's budget and ledger see only the token usage Cline reports.
 - Graded runs that use only the local model must not include a cline provider.
 - Windows is not supported; the provider is a stub there and always fails.
