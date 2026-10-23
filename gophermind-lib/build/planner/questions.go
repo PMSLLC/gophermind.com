@@ -17,7 +17,8 @@ import (
 
 // Question status and who answered. answered_by is a closed set: human (typed
 // or chosen), accepted (the person typed accept to take the recommendation),
-// unattended-default (nobody was asked), probe (a fact answered by code).
+// unattended-default (nobody was asked), probe (a fact answered by code), brief
+// (the brief states the answer and the harness quotes it).
 const (
 	qOpen    = "open"
 	qSettled = "settled"
@@ -26,6 +27,7 @@ const (
 	byAccepted   = "accepted"
 	byUnattended = "unattended-default"
 	byProbe      = "probe"
+	byBrief      = "brief"
 )
 
 // factKeys is the closed list of facts the probe can answer. A question of

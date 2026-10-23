@@ -148,11 +148,19 @@ func (p *Planner) clarifyRound(ctx context.Context, r *run, s *qstore, facts fac
 		return err
 	}
 	type result struct{ answer, by string }
+	surface := ExtractCLISurface(string(r.src))
 	results := make(map[string]result, len(qs))
 	if unattended {
 		for _, q := range qs {
 			if strings.TrimSpace(q.Recommended) == "" {
 				return fmt.Errorf("question %s has no recommended answer and this run takes recommendations", q.ID)
+			}
+			// A default is a guess; the brief's command-line surface is not. A
+			// question about it is answered by quoting the brief, so no default
+			// can contradict it (the csvstat run assumed stdin unsupported).
+			if surface.Touches(q.Text, q.Recommended) {
+				results[q.ID] = result{"The brief already states this and it is binding. Follow it exactly:\n" + surface.Text(), byBrief}
+				continue
 			}
 			results[q.ID] = result{q.Recommended, byUnattended}
 		}

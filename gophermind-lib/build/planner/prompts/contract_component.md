@@ -12,7 +12,12 @@ Requirements:
 - Do not repeat a function listed under "Already written for this component".
 - There is no limit on the number of functions. Write every function the component needs. If the reply is getting long, stop at a function boundary and set "more" to true; you will be asked to continue. Set "more" to false only when the component is complete.
 
-{{if .Defect}}Defect in what is written so far: {{.Defect}}. Write the missing function now; do not repeat the functions already written.
+{{if .Surface}}The brief fixes this command-line surface. The doc of `run` must state every item below, using the brief's own flag names, values and exit codes. Do not rename a flag, add flags the brief does not name, or drop one:
+<cli_surface>
+{{.Surface}}
+</cli_surface>
+
+{{end}}{{if .Defect}}Defect in what is written so far: {{.Defect}}. Write the missing function now; do not repeat the functions already written.
 
 {{end}}Component:
 <component>

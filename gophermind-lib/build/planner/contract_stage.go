@@ -47,6 +47,9 @@ type contractState struct {
 	// MainRepairs counts, per component, the passes that asked for a missing
 	// func main() of a main package (one round at most).
 	MainRepairs map[string]int `json:"main_repairs,omitempty"`
+	// SurfaceRepairs counts, per entry-point component, the passes that asked
+	// for the brief's command-line surface the run function left out (one at most).
+	SurfaceRepairs map[string]int `json:"surface_repairs,omitempty"`
 	// SchemaRepairs counts the passes that asked for fields the merged contract
 	// lacked (attempts that failed count too, across restarts).
 	SchemaRepairs int `json:"schema_repairs,omitempty"`
@@ -371,20 +374,33 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 	if err != nil {
 		return err
 	}
+	surface := ExtractCLISurface(string(r.src))
 	for _, comp := range objects(st.Doc["components"]) {
 		id, _ := comp["id"].(string)
 		if contains(st.Done, id) {
 			continue
 		}
+		pkg, _ := comp["package"].(string)
+		entry := isEntryPackage(pkg) && !surface.Empty()
 		defect := ""
+		var dropped map[string]any // the run function, taken out while it is rewritten
 		for {
+			base := st.Doc
+			if dropped != nil {
+				base = withoutFunction(st.Doc, dropped)
+			}
+			surfaceText := ""
+			if entry {
+				surfaceText = surface.Text()
+			}
 			build := func(level int) (string, error) {
 				return render("contract_component", map[string]string{
 					"Defect":       defect,
+					"Surface":      surfaceText,
 					"Component":    mustJSON(comp),
 					"Outline":      outlineJSONAt(st.Doc, level),
 					"Declared":     declaredTextAt(st.Doc, level),
-					"Written":      writtenText(st.Doc, id),
+					"Written":      writtenText(base, id),
 					"BriefSection": briefSectionAt(r, id, level),
 					"Answers":      answersText(as),
 					"ItemSchemas":  itemSchemas,
@@ -399,9 +415,13 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 				if err != nil {
 					return err
 				}
-				doc, m, ign, err := mergePass(st.Doc, id, text, r.id)
+				doc, m, ign, err := mergePass(base, id, text, r.id)
 				if err != nil {
 					return err
+				}
+				if dropped != nil && !hasFunction(doc, dropped) {
+					// The rewrite left the function out: keep the one it replaces.
+					doc["functions"] = append(objectsAsAny(doc["functions"]), dropped)
 				}
 				st.Doc, more, ignored, notes = doc, m, append(nt.Ignored, ign...), nt
 				return nil
@@ -410,7 +430,20 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			}
 			p.noteNormalized(&st, "contract:"+id, notes)
 			p.noteIgnored(&st, "contract:"+id, ignored)
-			defect = ""
+			defect, dropped = "", nil
+			if !more && entry && st.SurfaceRepairs[id] == 0 {
+				// The run function must state the brief's command-line surface; a
+				// pass that left items out is asked once to write it again.
+				if run := runFunction(st.Doc, id); run != nil {
+					if miss := surface.Missing(functionText(run)); len(miss) > 0 {
+						if st.SurfaceRepairs == nil {
+							st.SurfaceRepairs = map[string]int{}
+						}
+						st.SurfaceRepairs[id]++
+						defect, dropped, more = surfaceDefectText(fmt.Sprint(run["id"]), miss), run, true
+					}
+				}
+			}
 			if !more {
 				// A main package with no func main() cannot be built: one more
 				// pass names the package and asks for it.
@@ -445,6 +478,15 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 
 	for _, pkg := range mainDefects(st.Doc) {
 		p.emit(events.KindWarning, "contract", "", "main_function_missing: "+mainDefectText(pkg))
+	}
+	for _, comp := range objects(st.Doc["components"]) {
+		if pkg, _ := comp["package"].(string); isEntryPackage(pkg) && !surface.Empty() {
+			if run := runFunction(st.Doc, fmt.Sprint(comp["id"])); run != nil {
+				if miss := surface.Missing(functionText(run)); len(miss) > 0 {
+					p.emit(events.KindWarning, "contract", "", "cli_surface_missing: "+surfaceDefectText(fmt.Sprint(run["id"]), miss))
+				}
+			}
+		}
 	}
 
 	// Every component is written; ids a function or type uses but nobody
