@@ -34,6 +34,15 @@ The existing API handlers already require the server bearer token. For a request
 
 All four of client id, client secret, session secret and public URL set: auth is on. None set: the server behaves as today (bearer API only). Some set: refuse to start.
 
+## Temporary password login
+
+Until the Google OAuth client exists, `GOPHERMIND_WEB_USER` plus `GOPHERMIND_WEB_PASSWORD_HASH` (with the session secret and public URL) turn on a local login. It is isolated in `gophermind-lib/serve/passwordauth.go` and removed when Google sign-in is live.
+
+- `GET /auth/login` redirects to Google when Google is configured (unless `?local=1`), otherwise serves an embedded form (`assets/login.html`, strict CSP, no script, plain POST). `POST /auth/password` takes `username` and `password`, and on success sets the same `gm_session` cookie (the email value is the username) and answers 303 to `/`. So Middleware, `/auth/me`, the CSRF guard, the pages and logout are unchanged.
+- The hash is `pbkdf2-sha256$<iterations>$<base64 salt>$<base64 key>`, at least 600000 iterations, made by `gophermind-server hashpw`. The hash check runs for every attempt, and the username is compared in constant time, so a wrong user and a wrong password look alike (401, one message). A malformed stored hash never matches.
+- Brute force: 5 failures per client address per 15 minutes, then 429 until the window ends. The address is the connection's remote address; `X-Forwarded-For` counts (last entry only) just when the connection comes from loopback, the nginx on the same host. In memory, expired entries swept, table capped.
+- Login CSRF: the POST is refused (403) when `Origin` is present and not the public URL, or `Sec-Fetch-Site` is not same-origin or none.
+
 ## Tasks
 
 1. Auth package in `gophermind-lib/serve` (login, callback, logout, session cookie, middleware, bearer bridge), Google endpoints injectable for tests.

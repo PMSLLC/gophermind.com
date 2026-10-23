@@ -105,6 +105,27 @@ With these variables set, `gophermind-server` puts every route except `/healthz`
 
 Set the first four to turn it on, or none to leave it off. A partial set makes the server refuse to start and name the missing variables. Keep the values in the server's env file, not in tracked files.
 
+## Temporary password login
+
+Until a Google OAuth client exists, a single username and password can sign in to the web interface. It is temporary and is removed once Google sign-in is live (the delete list is in the header of `gophermind-lib/serve/passwordauth.go`). A successful login issues the same `gm_session` cookie as Google sign-in.
+
+Make the hash on any machine (the password comes from stdin, never argv, and is not printed back; only the hash line is printed):
+
+```bash
+gophermind-server hashpw
+```
+
+Put these in the server's env file, not in tracked files. Never put the plaintext password in the env.
+
+| Variable | Meaning |
+|---|---|
+| `GOPHERMIND_WEB_USER` | the username |
+| `GOPHERMIND_WEB_PASSWORD_HASH` | the `pbkdf2-sha256$...` line from `hashpw` |
+| `GOPHERMIND_SESSION_SECRET` | at least 32 bytes (shared with Google sign-in) |
+| `GOPHERMIND_PUBLIC_URL` | external base URL (shared with Google sign-in) |
+
+User and hash set with the session secret and public URL: the local login is on, and it can be on alongside Google (`/auth/login` still goes to Google; `/auth/login?local=1` shows the password form). With only the local login, `/auth/login` shows the form. A partial set refuses to start and names the missing variables. After 5 failed attempts from one client address in 15 minutes the server answers 429 until the window ends; the limiter is in memory and restarts clear it.
+
 ## Running Tasks
 
 Once registered, gophermind can work on tasks:

@@ -10,6 +10,7 @@ All notable changes to GopherMind are documented here. The format follows
 
 - **Google sign-in for `gophermind-server`.** Setting `GOPHERMIND_GOOGLE_CLIENT_ID`, `GOPHERMIND_GOOGLE_CLIENT_SECRET`, `GOPHERMIND_SESSION_SECRET` and `GOPHERMIND_PUBLIC_URL` (plus `GOPHERMIND_ALLOWED_DOMAIN`, default `brahy.com`) adds `/auth/login`, `/auth/callback` and `/auth/logout` and puts every route except the probes, `/auth/*` and `/run` behind a signed session cookie. A signed-in session gets the server bearer token injected; requests that carry their own `Authorization` header are unchanged. A partial set refuses to start.
 - **Browser pages behind the sign-in.** `GET /` is a signed-in home (email from the new `GET /auth/me`, links to chat and runs, Sign out) when sign-in is on, and the plain landing text when it is off. `GET /app/chat` is a chat page over the session API (list, create, SSE stream, history, tool calls, Approve and Deny for gated tools; model text is only ever set as text). `/pipeline` connects by itself when a valid session cookie exists, so no token is typed.
+- **Temporary username and password login for `gophermind-server`.** `GOPHERMIND_WEB_USER` and `GOPHERMIND_WEB_PASSWORD_HASH` (a `pbkdf2-sha256` hash made with the new `gophermind-server hashpw`, which reads the password from stdin) turn on a form at `/auth/login` and `POST /auth/password` that issue the same session cookie as Google sign-in, with a 5 failures per 15 minutes limit per client address. It is isolated in `passwordauth.go` and removed once Google sign-in is live.
 
 ### Fixed
 

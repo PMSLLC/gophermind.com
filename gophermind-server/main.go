@@ -94,6 +94,10 @@ func parseServerConfig(args []string, getenv func(string) string, getwd func() (
 	if err != nil {
 		return serverConfig{}, err
 	}
+	google, err = addLocalLogin(getenv, google, cfg.Token)
+	if err != nil {
+		return serverConfig{}, err
+	}
 	cfg.Google = google
 	return cfg, nil
 }
@@ -113,7 +117,7 @@ func googleAuthFromEnv(getenv func(string) string, token string) (*serve.GoogleA
 		AllowedDomain: strEnvOr(getenv, "GOPHERMIND_ALLOWED_DOMAIN", "brahy.com"),
 		BearerToken:   token,
 	}
-	if g.ClientID == "" && g.ClientSecret == "" && g.SessionSecret == "" && g.PublicURL == "" {
+	if g.ClientID == "" && g.ClientSecret == "" && (localEnvSet(getenv) || (g.SessionSecret == "" && g.PublicURL == "")) {
 		return nil, nil
 	}
 	if err := g.Validate(); err != nil {
@@ -159,6 +163,13 @@ func resolveLLMEndpoint(cfg serverConfig, loadShared func() (config.Config, erro
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "hashpw" {
+		if err := runHashpw(os.Stdin, os.Stdout, os.Stderr); err != nil {
+			fmt.Fprintln(os.Stderr, "hashpw:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	if err := run(logger); err != nil {
 		logger.Error("gophermind-server", "error", err)

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'">
+<title>GopherMind sign in</title>
+<style>
+  body{font-family:system-ui,sans-serif;max-width:22rem;margin:4rem auto;padding:0 1rem;color:#1d2330}
+  label{display:block;margin:1rem 0 .25rem}
+  input{font:inherit;width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid #9aa4b5;border-radius:6px}
+  button{font:inherit;margin-top:1.25rem;padding:6px 14px;border:1px solid #9aa4b5;border-radius:6px;background:none;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>GopherMind</h1>
+<form method="post" action="/auth/password">
+<label for="username">Username</label>
+<input id="username" name="username" type="text" autocomplete="username" required>
+<label for="password">Password</label>
+<input id="password" name="password" type="password" autocomplete="current-password" required>
+<button type="submit">Sign in</button>
+</form>
+</body>
+</html>
