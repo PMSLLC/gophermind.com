@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"go/format"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -816,6 +817,46 @@ func TestAnUnusedTestImportIsDroppedWithAWarning(t *testing.T) {
 	}
 	if !found {
 		t.Error("no test_import_normalized warning with a count")
+	}
+}
+
+// A valid but unformatted model-written test file is formatted before it is
+// written, so the repo stays gofmt clean. A file with a syntax error is still
+// refused and the model is asked again.
+func TestAnUnformattedTestFileIsWrittenFormatted(t *testing.T) {
+	good := string(mustRead(t, filepath.Join(greeter, "testwrite.fn-greet.txt")))
+	bad := strings.Replace(good, `import \"testing\"`, `import   \"testing\"\n\nvar   padded   =   1`, 1)
+	if bad == good {
+		t.Fatal("fixture has no testing import to extend")
+	}
+	g := newRig(t, approving(), variant(t, map[string]string{"testwrite.fn-greet.txt": bad}))
+	g.mustPlan(planner.Options{})
+	src, err := os.ReadFile(filepath.Join(g.repo, "internal/greet/fn_greet_test.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), "var padded = 1") {
+		t.Fatalf("test file was not formatted:\n%s", src)
+	}
+	if out, err := format.Source(src); err != nil || string(out) != string(src) {
+		t.Errorf("written file is not gofmt clean (err %v)", err)
+	}
+}
+
+func TestATestFileWithASyntaxErrorIsStillRefused(t *testing.T) {
+	good := string(mustRead(t, filepath.Join(greeter, "testwrite.fn-greet.txt")))
+	bad := strings.Replace(good, `import \"testing\"`, `import \"testing\"\n\nvar = =`, 1)
+	if bad == good {
+		t.Fatal("fixture has no testing import to extend")
+	}
+	g := newRig(t, approving(), variant(t, map[string]string{"testwrite.fn-greet.txt": bad, "testwrite.fn-greet.2.txt": good}))
+	g.mustPlan(planner.Options{})
+	if n := count(g.stagesCalled(), "testwrite:fn-greet"); n < 2 {
+		t.Errorf("testwrite:fn-greet called %d times, want a repair call after the syntax error", n)
+	}
+	src, err := os.ReadFile(filepath.Join(g.repo, "internal/greet/fn_greet_test.go"))
+	if err != nil || strings.Contains(string(src), "var = =") {
+		t.Errorf("a file with a syntax error was written: %v", err)
 	}
 }
 

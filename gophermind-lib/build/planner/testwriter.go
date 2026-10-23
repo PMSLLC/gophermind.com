@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
+	"go/format"
 	"go/parser"
 	"go/token"
 	"go/types"
@@ -526,6 +527,11 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 			return err
 		}
 		src, dropped := dropUnusedImports(src)
+		formatted, ferr := format.Source([]byte(src))
+		if ferr != nil {
+			return fmt.Errorf("test file cannot be formatted: %v", ferr)
+		}
+		src = string(formatted)
 		if err := compileCheckTestFile(c, rel, src, others); err != nil {
 			if errors.Is(err, errNoGo) {
 				p.noGoWarn.Do(func() { p.emit(events.KindWarning, cs.stage, id, err.Error()) })
