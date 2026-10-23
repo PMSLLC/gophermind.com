@@ -6,6 +6,10 @@ All notable changes to GopherMind are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Google sign-in for `gophermind-server`.** Setting `GOPHERMIND_GOOGLE_CLIENT_ID`, `GOPHERMIND_GOOGLE_CLIENT_SECRET`, `GOPHERMIND_SESSION_SECRET` and `GOPHERMIND_PUBLIC_URL` (plus `GOPHERMIND_ALLOWED_DOMAIN`, default `brahy.com`) adds `/auth/login`, `/auth/callback` and `/auth/logout` and puts every route except the probes, `/auth/*` and `/run` behind a signed session cookie. A signed-in session gets the server bearer token injected; requests that carry their own `Authorization` header are unchanged. A partial set refuses to start.
+
 ### Fixed
 
 - **The wave checks no longer fail on a platform where `-race` needs cgo.** The executor builds with `CGO_ENABLED=0` (decision E13), and `go test -race` refuses to run that way on Linux on arm64 (macOS does not need cgo for it), so every wave check, and the final one, failed as an unattributable `test_fail` and stopped the run after wave 0. When go says `-race requires cgo`, the check is run again without `-race`, once, later checks leave it out, and a `race_unavailable` warning is recorded.

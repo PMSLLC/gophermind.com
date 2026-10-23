@@ -91,6 +91,20 @@ The server reads these files to understand the project:
 
 All are in the cloned repo; no additional server-side configuration needed.
 
+## Google Sign-In (optional)
+
+With these variables set, `gophermind-server` puts every route except `/healthz`, `/readyz`, `/auth/*` and `/run` behind a Google sign-in. A signed-in browser session is given the server bearer token by the server; the token never reaches the browser. Native clients that send their own `Authorization` header are unchanged. Design: `docs/design/web-ui.md`.
+
+| Variable | Meaning |
+|---|---|
+| `GOPHERMIND_GOOGLE_CLIENT_ID` | OAuth web client id |
+| `GOPHERMIND_GOOGLE_CLIENT_SECRET` | OAuth web client secret |
+| `GOPHERMIND_SESSION_SECRET` | signs the cookies, at least 32 bytes |
+| `GOPHERMIND_PUBLIC_URL` | external base URL, for example `https://gophermind.brahy.com`; the redirect URI is `<url>/auth/callback` |
+| `GOPHERMIND_ALLOWED_DOMAIN` | email domain allowed in, default `brahy.com` |
+
+Set the first four to turn it on, or none to leave it off. A partial set makes the server refuse to start and name the missing variables. Keep the values in the server's env file, not in tracked files.
+
 ## Running Tasks
 
 Once registered, gophermind can work on tasks:

@@ -205,3 +205,58 @@ func mustListen(t *testing.T) net.Listener {
 	t.Cleanup(func() { ln.Close() })
 	return ln
 }
+
+func googleEnv(extra map[string]string) func(string) string {
+	m := map[string]string{
+		"GOPHERMIND_TOKEN":                "env-token",
+		"GOPHERMIND_GOOGLE_CLIENT_ID":     "cid",
+		"GOPHERMIND_GOOGLE_CLIENT_SECRET": "csecret",
+		"GOPHERMIND_SESSION_SECRET":       strings.Repeat("s", 32),
+		"GOPHERMIND_PUBLIC_URL":           "https://gophermind.example",
+	}
+	for k, v := range extra {
+		m[k] = v
+	}
+	return envMap(m)
+}
+
+func TestParseServerConfig_GoogleAuthOff(t *testing.T) {
+	cfg, err := parseServerConfig(nil, envMap(map[string]string{"GOPHERMIND_TOKEN": "t"}), fixedGetwd("/cwd"))
+	if err != nil {
+		t.Fatalf("parseServerConfig: %v", err)
+	}
+	if cfg.Google != nil {
+		t.Errorf("Google = %+v, want nil when no variable is set", cfg.Google)
+	}
+}
+
+func TestParseServerConfig_GoogleAuthOn(t *testing.T) {
+	cfg, err := parseServerConfig(nil, googleEnv(nil), fixedGetwd("/cwd"))
+	if err != nil {
+		t.Fatalf("parseServerConfig: %v", err)
+	}
+	g := cfg.Google
+	if g == nil || g.ClientID != "cid" || g.AllowedDomain != "brahy.com" || g.BearerToken != "env-token" || g.PublicURL != "https://gophermind.example" {
+		t.Fatalf("Google = %+v", g)
+	}
+	cfg, err = parseServerConfig(nil, googleEnv(map[string]string{"GOPHERMIND_ALLOWED_DOMAIN": "example.org"}), fixedGetwd("/cwd"))
+	if err != nil || cfg.Google.AllowedDomain != "example.org" {
+		t.Fatalf("domain override: %v %+v", err, cfg.Google)
+	}
+}
+
+func TestParseServerConfig_GoogleAuthPartialRefuses(t *testing.T) {
+	for _, drop := range []string{"GOPHERMIND_GOOGLE_CLIENT_ID", "GOPHERMIND_GOOGLE_CLIENT_SECRET", "GOPHERMIND_SESSION_SECRET", "GOPHERMIND_PUBLIC_URL"} {
+		_, err := parseServerConfig(nil, googleEnv(map[string]string{drop: ""}), fixedGetwd("/cwd"))
+		if err == nil || !strings.Contains(err.Error(), drop) {
+			t.Errorf("without %s: err = %v, want it to name the variable", drop, err)
+		}
+		if err != nil && (strings.Contains(err.Error(), "csecret") || strings.Contains(err.Error(), "env-token")) {
+			t.Errorf("error leaks a value: %v", err)
+		}
+	}
+	_, err := parseServerConfig(nil, googleEnv(map[string]string{"GOPHERMIND_SESSION_SECRET": "short"}), fixedGetwd("/cwd"))
+	if err == nil || strings.Contains(err.Error(), "short") {
+		t.Errorf("short session secret: err = %v", err)
+	}
+}

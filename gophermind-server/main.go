@@ -52,6 +52,9 @@ type serverConfig struct {
 	// this explicitly to a free port instead -- see wireguard_test.go and
 	// server_integration_test.go.
 	WGListenPort uint16
+	// Google, when non-nil, puts the whole mux behind a Google sign-in (see
+	// googleAuthFromEnv). Nil keeps the bearer-only behaviour.
+	Google *serve.GoogleAuth
 }
 
 // parseServerConfig parses flags against args (typically os.Args[1:]), using
@@ -87,7 +90,36 @@ func parseServerConfig(args []string, getenv func(string) string, getwd func() (
 		}
 		cfg.Root = wd
 	}
+	google, err := googleAuthFromEnv(getenv, cfg.Token)
+	if err != nil {
+		return serverConfig{}, err
+	}
+	cfg.Google = google
 	return cfg, nil
+}
+
+// googleAuthFromEnv builds the Google sign-in config from
+// GOPHERMIND_GOOGLE_CLIENT_ID, GOPHERMIND_GOOGLE_CLIENT_SECRET,
+// GOPHERMIND_SESSION_SECRET, GOPHERMIND_PUBLIC_URL and
+// GOPHERMIND_ALLOWED_DOMAIN (default brahy.com). None of the first four set
+// returns nil (sign-in off); some set is an error that names what is missing,
+// never a value, so a half-configured server does not start open.
+func googleAuthFromEnv(getenv func(string) string, token string) (*serve.GoogleAuth, error) {
+	g := &serve.GoogleAuth{
+		ClientID:      getenv("GOPHERMIND_GOOGLE_CLIENT_ID"),
+		ClientSecret:  getenv("GOPHERMIND_GOOGLE_CLIENT_SECRET"),
+		SessionSecret: getenv("GOPHERMIND_SESSION_SECRET"),
+		PublicURL:     getenv("GOPHERMIND_PUBLIC_URL"),
+		AllowedDomain: strEnvOr(getenv, "GOPHERMIND_ALLOWED_DOMAIN", "brahy.com"),
+		BearerToken:   token,
+	}
+	if g.ClientID == "" && g.ClientSecret == "" && g.SessionSecret == "" && g.PublicURL == "" {
+		return nil, nil
+	}
+	if err := g.Validate(); err != nil {
+		return nil, err
+	}
+	return g, nil
 }
 
 func intEnvOr(getenv func(string) string, key string, fallback int) int {
@@ -165,7 +197,7 @@ func runWithConfig(cfg serverConfig, ln net.Listener, logger *slog.Logger, ctx c
 	if err != nil {
 		return fmt.Errorf("build deps: %w", err)
 	}
-	mux, err := serve.NewMux(svcDeps, serve.Options{Token: cfg.Token})
+	mux, err := serve.NewMux(svcDeps, serve.Options{Token: cfg.Token, Google: cfg.Google})
 	if err != nil {
 		return fmt.Errorf("build mux: %w", err)
 	}
@@ -183,7 +215,11 @@ func runWithConfig(cfg serverConfig, ln net.Listener, logger *slog.Logger, ctx c
 		mux.Handle("POST /wg/register", wgRegisterHandler(tracker, stubTokenValidator, logger))
 		go tracker.runSweeper(ctx, peerSweepInterval)
 	}
-	httpSrv := &http.Server{Handler: mux}
+	var handler http.Handler = mux
+	if cfg.Google != nil {
+		handler = cfg.Google.Middleware(mux)
+	}
+	httpSrv := &http.Server{Handler: handler}
 
 	return runServer(ln, httpSrv, wgCloser, logger, ctx)
 }

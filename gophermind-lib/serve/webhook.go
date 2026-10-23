@@ -289,6 +289,10 @@ type Options struct {
 	// means "read GOPHERMIND_SERVE_TOKEN". NewMux returns an error if both
 	// are empty: this endpoint runs shell commands and must never be open.
 	Token string
+	// Google, when non-nil, gets its /auth/* routes registered on the mux.
+	// The caller wraps the finished mux with Google.Middleware (after adding
+	// any routes of its own), so the sign-in gate covers every path.
+	Google *GoogleAuth
 }
 
 // resolveToken determines the bearer token NewMux enforces: an explicit
@@ -383,6 +387,9 @@ func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 	mux.HandleFunc("/healthz", healthHandler())
 	mux.HandleFunc("/readyz", readyHandler(func() bool { return true }))
 	mux.HandleFunc("GET /{$}", landingHandler())
+	if opt.Google != nil {
+		opt.Google.Register(mux)
+	}
 	if d.Metrics != nil {
 		mux.HandleFunc("/metrics", metricsHandler(d.Metrics))
 	}
