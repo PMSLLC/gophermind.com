@@ -1,8 +1,8 @@
 # Roadmap: the summit, and every path to it
 
-Written 2026-10-23 for John. One page that says where GopherMind, its web interface, Burrow and the graded run meet, in what order, and what blocks what. Detail lives in the linked documents; this page does not repeat it. Items marked (proposed) are my reading of John's intent and need his OK.
+Written 2026-10-23 for John. One page that says where GopherMind, its web interface, Burrow and the graded run meet, in what order, and what blocks what. Detail lives in the linked documents; this page does not repeat it. Decisions John has taken are in section 7.
 
-## 1. The summit (proposed)
+## 1. The summit (confirmed by John, 2026-10-23)
 
 All five true, with evidence in one report:
 
@@ -55,7 +55,7 @@ Each phase ends on a verifiable result. Streams run in parallel only where they 
 **Phase 3. Graded run prerequisites and the run (I).**
 - Prerequisites John owns: `~/.gophermind/vault.age`, `gophermind-dev`, the Postgres forwarder (missing as of 2026-10-20).
 - Run the clean-run loop of `docs/GOAL-UNIFICATION.md` task 11.2 with the mini model only (no Cline). Done when: one clean run, report written, perfect-release gate of `docs/GOAL.md` met.
-- Graded evidence matters more than speed; Burrow and Cline stay out of it.
+- Graded evidence matters more than speed. Cline stays out (local model only). Burrow lookups are allowed (John, 2026-10-23), provided a reused function passes the same gates and tests; the run report records which leaves were reused.
 
 **Phase 4. Burrow foundation (F, parallel with Phase 2 and 3).**
 - Burrow phases 1 to 3: contract keys, catalog (Postgres, pgvector, exact key then embedding then verify), Go plug-in with sandbox, first function verified end to end. One writer at a time in the Burrow repo.
@@ -93,15 +93,22 @@ Each phase ends on a verifiable result. Streams run in parallel only where they 
 - AWS is deprecated; hosting is OCI; nothing is hosted from the laptop.
 - No em dashes or emojis in anything written.
 
-## 7. Open decisions for John
+## 7. Decisions
 
-1. Confirm the summit in section 1 (especially statements 3 and 5).
-2. Burrow hosting: OCI host choice at its phase 2.
-3. Whether Burrow lookups run inside the graded run (recommended: no, keep the graded run to the mini only and exclude reuse).
-4. When to deploy the web interface (needs the OAuth client first).
+Taken by John on 2026-10-23:
+
+1. The five summit statements in section 1 are confirmed.
+2. Burrow lookups are allowed in the graded run (my reading of "no" to "should they stay out"). The run report must say which leaves were reused.
+3. Until a Google OAuth client exists, the web interface signs in with a temporary username and password set in the server env. It is isolated in one file and removed once Google sign-in is live.
+
+Still open:
+
+- Burrow hosting: the OCI host choice at its phase 2.
+- ClinePass terms and limits for automated use.
+- The Google OAuth client (redirect URI `https://gophermind.brahy.com/auth/callback`), needed to retire the temporary login.
 
 ## 8. Record keeping
 
 This file is the single consolidated plan. When a phase finishes, change its state in section 2 and add a dated line below; do not rewrite history.
 
-- 2026-10-23: created.
+- 2026-10-23: created; summit confirmed; Burrow allowed in the graded run; temporary password login chosen for the web interface.
