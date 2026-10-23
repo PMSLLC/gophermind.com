@@ -403,7 +403,7 @@ func gate(f *ast.File, e Expect, target *ast.FuncDecl) string {
 				if processControl[alias[x.Name]][v.Sel.Name] {
 					kind = "forbidden call (process exit or fatal log)"
 				}
-				if alias[x.Name] == "flag" && (v.Sel.Name == "ExitOnError" || v.Sel.Name == "ContinueOnError") {
+				if alias[x.Name] == "flag" && f.Name.Name != "main" && (v.Sel.Name == "ExitOnError" || v.Sel.Name == "ContinueOnError") {
 					kind = "forbidden flag error handling (ExitOnError)"
 				}
 			}

@@ -158,3 +158,21 @@ func TestNilDeclaredFailsClosed(t *testing.T) {
 		t.Errorf("no helpers needs no Declared: %v", err)
 	}
 }
+
+func TestFlagErrorHandlingOnlyRefusedOutsideMain(t *testing.T) {
+	const body = "import (\n\t\"flag\"\n\t\"io\"\n)\n\nfunc run(args []string, stderr io.Writer) int {\n\tfs := flag.NewFlagSet(\"x\", flag.ContinueOnError)\n\tfs.SetOutput(stderr)\n\tif fs.Parse(args) != nil {\n\t\treturn 2\n\t}\n\treturn 0\n}\n"
+	sig := "func run(args []string, stderr io.Writer) int"
+	for _, c := range []struct {
+		pkg string
+		ok  bool
+	}{{"main", true}, {"greet", false}} {
+		e, err := NewExpect(c.pkg, sig)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = ParseReply("package "+c.pkg+"\n\n"+body, e)
+		if (err == nil) != c.ok {
+			t.Errorf("package %s: err=%v want ok=%v", c.pkg, err, c.ok)
+		}
+	}
+}
