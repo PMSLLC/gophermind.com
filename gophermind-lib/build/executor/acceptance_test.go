@@ -623,6 +623,38 @@ func TestAcceptanceRepairThenFail(t *testing.T) {
 			t.Errorf("%d implement calls, want 2 (no repair call)", n)
 		}
 	})
+
+	t.Run("an unmapped failure does not stop the repair of a mapped one", func(t *testing.T) {
+		g := newRig(t)
+		script := goodScript(g)
+		withRepairs(script, "fn-bye", 1, "MARKER-BYE")
+		fc := g.fastChecker()
+		fc.LeafScript["fn-bye"] = []runner.Verdict{passVerdict(), passVerdict()}
+		edit := func(rc *runCtx, h *hybridChecker) {
+			byeFile := rc.plan.Leaf("fn-bye").File
+			setCommand(t, rc, "A2", vr("grep -q MARKER-BYE "+byeFile+" || { echo CANARY-ACC-OUT; exit 1; }"))
+			bullet(t, rc, "A2").nodes = []string{"fn-bye"}
+			setCommand(t, rc, "A1", vr("exit 1"))
+			bullet(t, rc, "A1").nodes = []string{"root"} // not a leaf: unmapped
+		}
+		rep, err, _ := g.accRun(t, script, fc, edit, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n := len(g.leafCalls("fn-bye")); n != 2 {
+			t.Errorf("fn-bye had %d implement calls, want 2 (the mapped bullet was repaired)", n)
+		}
+		if rep.Status != "failed" || rep.StopReason != "acceptance_unmapped" {
+			t.Fatalf("report = %s (%s), %v, want failed/acceptance_unmapped", rep.Status, rep.StopReason, rep.Failures)
+		}
+		msg := strings.Join(rep.Failures, "\n")
+		if !strings.Contains(msg, "A1") || strings.Contains(msg, "A2") {
+			t.Errorf("failures %q should name the unmapped A1 only, A2 was fixed", msg)
+		}
+		if !strings.Contains(msg, "which no leaf is mapped to") {
+			t.Errorf("failures %q lack the unmapped explanation", msg)
+		}
+	})
 }
 
 func TestConstraintsChecked(t *testing.T) {

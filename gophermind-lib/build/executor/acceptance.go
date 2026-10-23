@@ -728,20 +728,24 @@ func (rc *runCtx) acceptance(ctx context.Context) (accResult, *stopError, error)
 			return acc, nil, nil
 		}
 		ids, accFailed := rc.failedIDs(p, failed)
-		var unmapped []string
+		var mapped, unmapped []string
 		for _, id := range ids {
 			if len(rc.attribute(failed[id])) == 0 {
 				unmapped = append(unmapped, id)
+			} else {
+				mapped = append(mapped, id)
 			}
 		}
-		if len(unmapped) > 0 {
+		// An unmapped failure stays failed and is reported, but only ends the
+		// run when nothing is left that a repair could still fix.
+		if len(mapped) == 0 {
 			return acc, &stopError{Status: "failed", Reason: "acceptance_unmapped",
 				Message: "executor: acceptance failed for " + strings.Join(unmapped, ", ") + ", which no leaf is mapped to, so no repair was tried"}, nil
 		}
 		if round >= bound {
 			return acc, rc.acceptStop(ids, failed, accFailed), nil
 		}
-		if se, err := rc.acceptRepair(ctx, round+1, ids, failed); err != nil || se != nil {
+		if se, err := rc.acceptRepair(ctx, round+1, mapped, failed); err != nil || se != nil {
 			return acc, se, err
 		}
 		// A repair changed leaves, maybe under cmd/: the rerun must use a binary
