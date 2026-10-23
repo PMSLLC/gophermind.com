@@ -103,7 +103,13 @@ const landingPage = `<!doctype html>
 
 // landingHandler answers GET / only. The "{$}" pattern in NewMux matches the
 // root exactly, so unknown paths still 404.
-func landingHandler() http.HandlerFunc {
+//
+// With Google sign-in on, the root is the signed-in home page (pages.go)
+// instead; the middleware has already sent a signed-out browser to sign in.
+func landingHandler(signIn bool) http.HandlerFunc {
+	if signIn {
+		return pageHandler("assets/home.html")
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = io.WriteString(w, landingPage)
@@ -386,10 +392,11 @@ func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 	// Unauthenticated liveness/readiness probes for load balancers / k8s.
 	mux.HandleFunc("/healthz", healthHandler())
 	mux.HandleFunc("/readyz", readyHandler(func() bool { return true }))
-	mux.HandleFunc("GET /{$}", landingHandler())
+	mux.HandleFunc("GET /{$}", landingHandler(opt.Google != nil))
 	if opt.Google != nil {
 		opt.Google.Register(mux)
 	}
+	mux.HandleFunc("GET /app/chat", pageHandler("assets/chat.html"))
 	if d.Metrics != nil {
 		mux.HandleFunc("/metrics", metricsHandler(d.Metrics))
 	}

@@ -961,6 +961,21 @@ if(location.hash){
     connect();
   }
 }
+
+// Behind Google sign-in the browser holds a session cookie and the server adds
+// the bearer token itself, so a valid session needs no token typed. With
+// sign-in off /auth/me does not exist (or answers 401) and the token flow above
+// is the only way in.
+if(!tokenInput.value){
+  fetch('/auth/me', { credentials: 'same-origin' }).then(r => {
+    if(r.ok && !tokenInput.value){
+      tokenInput.placeholder = 'signed in';
+      tokenInput.disabled = true;
+      connectBtn.hidden = true;
+      connect();
+    }
+  }).catch(() => {});
+}
 </script>
 </body>
 </html>

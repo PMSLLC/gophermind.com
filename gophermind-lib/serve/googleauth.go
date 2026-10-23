@@ -97,6 +97,7 @@ func (a *GoogleAuth) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /auth/login", a.login)
 	mux.HandleFunc("GET /auth/callback", a.callback)
 	mux.HandleFunc("POST /auth/logout", a.logout)
+	mux.HandleFunc("GET /auth/me", a.me)
 }
 
 // sign returns base64url(payload) "." base64url(HMAC(kind "|" payload)). The
@@ -208,6 +209,19 @@ func (a *GoogleAuth) callback(w http.ResponseWriter, r *http.Request) {
 func (a *GoogleAuth) logout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Path: "/", MaxAge: -1, HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode})
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// me answers GET /auth/me for the pages: the signed-in email, or 401. It sits
+// under /auth/, which the middleware lets through, so it checks the cookie itself.
+func (a *GoogleAuth) me(w http.ResponseWriter, r *http.Request) {
+	p, ok := a.readCookie(r, sessionCookieName, "session")
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(map[string]string{"email": p.Email})
 }
 
 // exchange trades code for an ID token at Google's token endpoint and returns

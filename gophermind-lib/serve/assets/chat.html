@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<!-- Everything the model says is put on the page with textContent, never as
+     markup; the policy below is a second layer should that ever slip. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<title>GopherMind chat</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,sans-serif;color:#1d2330;height:100vh;display:flex}
+  aside{width:260px;border-right:1px solid #d5d9e2;display:flex;flex-direction:column;min-height:0}
+  aside header{padding:10px;display:flex;gap:6px;align-items:center;border-bottom:1px solid #d5d9e2}
+  aside header a{margin-left:auto;color:#556;font-size:.85rem}
+  #sessions{overflow:auto;flex:1}
+  .sess{padding:8px 10px;border-bottom:1px solid #eef0f4;cursor:pointer;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sess:hover{background:#f3f5f9}
+  .sess.on{background:#e3f1f0}
+  main{flex:1;display:flex;flex-direction:column;min-width:0}
+  #log{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
+  .msg{max-width:48rem;white-space:pre-wrap;word-wrap:break-word;padding:8px 12px;border-radius:8px;line-height:1.4}
+  .user{align-self:flex-end;background:#e3f1f0}
+  .assistant{align-self:flex-start;background:#f3f5f9}
+  .tool{align-self:flex-start;font:12px ui-monospace,Menlo,monospace;color:#556;border-left:3px solid #9aa4b5;padding:2px 8px;max-width:48rem;white-space:pre-wrap;word-wrap:break-word}
+  .err{align-self:flex-start;color:#a3261f}
+  .approval{align-self:flex-start;border:1px solid #c88a00;border-radius:8px;padding:8px 12px;max-width:48rem}
+  .approval pre{margin:6px 0;white-space:pre-wrap;word-wrap:break-word;font:12px ui-monospace,Menlo,monospace}
+  form{display:flex;gap:8px;padding:10px;border-top:1px solid #d5d9e2}
+  textarea{flex:1;font:inherit;padding:8px;border:1px solid #9aa4b5;border-radius:6px;resize:vertical;min-height:44px;max-height:30vh}
+  button{font:inherit;padding:6px 14px;border:1px solid #9aa4b5;border-radius:6px;background:none;cursor:pointer}
+  button:hover:not(:disabled){border-color:#0b7a75;color:#0b7a75}
+  button:disabled{opacity:.5;cursor:default}
+  #status{padding:2px 16px;font-size:.8rem;color:#556;min-height:1.2em}
+</style>
+</head>
+<body class="gm-chat">
+<aside>
+  <header><button id="newBtn" type="button">New chat</button><a href="/">Home</a></header>
+  <div id="sessions"></div>
+</aside>
+<main>
+  <div id="log"></div>
+  <div id="status"></div>
+  <form id="form">
+    <textarea id="input" rows="2" placeholder="Message GopherMind (Enter sends, Shift+Enter for a new line)"></textarea>
+    <button id="sendBtn" type="submit">Send</button>
+  </form>
+</main>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const logEl = $('log'), listEl = $('sessions'), statusEl = $('status');
+const inputEl = $('input'), sendBtn = $('sendBtn'), formEl = $('form');
+let sessionId = '';
+let busy = false;
+
+// el builds an element; text only ever goes in through textContent.
+function el(tag, cls, text){
+  const e = document.createElement(tag);
+  if(cls) e.className = cls;
+  if(text != null) e.textContent = String(text);
+  return e;
+}
+
+// api calls the server with the session cookie; the server adds the bearer.
+function api(path, opts){
+  return fetch(path, Object.assign({ credentials: 'same-origin' }, opts || {}));
+}
+
+function addMsg(cls, text){
+  const e = el('div', 'msg ' + cls, text);
+  logEl.appendChild(e);
+  logEl.scrollTop = logEl.scrollHeight;
+  return e;
+}
+
+function addTool(text){
+  const e = el('div', 'tool', text);
+  logEl.appendChild(e);
+  logEl.scrollTop = logEl.scrollHeight;
+  return e;
+}
+
+function clip(s, n){
+  s = String(s == null ? '' : s);
+  return s.length > n ? s.slice(0, n) + '...' : s;
+}
+
+function setStatus(t){ statusEl.textContent = t || ''; }
+
+async function loadSessions(){
+  try{
+    const r = await api('/session');
+    if(!r.ok) throw new Error(String(r.status));
+    const infos = await r.json();
+    listEl.replaceChildren();
+    infos.forEach(s => {
+      const row = el('div', 'sess' + (s.ID === sessionId ? ' on' : ''), s.Name || s.Title || s.ID);
+      row.title = s.ID;
+      row.addEventListener('click', () => openSession(s.ID));
+      listEl.appendChild(row);
+    });
+  } catch(err){
+    setStatus('could not list sessions: ' + err.message);
+  }
+}
+
+// renderHistory draws saved messages (llm.Message JSON) compactly.
+function renderHistory(msgs){
+  logEl.replaceChildren();
+  (msgs || []).forEach(m => {
+    if(m.role === 'user' || m.role === 'assistant'){
+      if(m.content) addMsg(m.role, m.content);
+      (m.tool_calls || []).forEach(tc => {
+        const f = tc.function || {};
+        addTool('tool ' + f.name + ' ' + clip(f.arguments, 200));
+      });
+    } else if(m.role === 'tool'){
+      addTool('result ' + (m.name || '') + ' ' + clip(m.content, 300));
+    }
+  });
+}
+
+async function openSession(id){
+  if(busy) return;
+  sessionId = id;
+  logEl.replaceChildren();
+  setStatus('');
+  try{
+    const r = await api('/session/' + encodeURIComponent(id) + '/messages');
+    if(r.ok) renderHistory(await r.json());
+  } catch(err){
+    setStatus('could not load history: ' + err.message);
+  }
+  loadSessions();
+}
+
+async function newSession(){
+  const r = await api('/session', { method: 'POST' });
+  if(!r.ok) throw new Error('create session: ' + r.status);
+  return (await r.json()).id;
+}
+
+// approve answers an approval-needed event. POST /session/{id}/approve.
+async function approve(box, id, ok){
+  box.querySelectorAll('button').forEach(b => { b.disabled = true; });
+  try{
+    const r = await api('/session/' + encodeURIComponent(sessionId) + '/approve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approval_id: id, approved: ok })
+    });
+    box.appendChild(el('div', null, r.ok ? (ok ? 'approved' : 'denied') : 'approval failed: ' + r.status));
+  } catch(err){
+    box.appendChild(el('div', 'err', 'approval failed: ' + err.message));
+  }
+}
+
+function addApproval(ev){
+  const box = el('div', 'approval');
+  box.appendChild(el('div', null, 'Approval needed to run ' + ev.tool));
+  box.appendChild(el('pre', null, clip(ev.args, 1000)));
+  const yes = el('button', null, 'Approve'), no = el('button', null, 'Deny');
+  yes.type = 'button'; no.type = 'button';
+  yes.addEventListener('click', () => approve(box, ev.approval_id, true));
+  no.addEventListener('click', () => approve(box, ev.approval_id, false));
+  box.appendChild(yes);
+  box.appendChild(no);
+  logEl.appendChild(box);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function parseJSON(s){
+  try{ return JSON.parse(s); } catch(e){ return null; }
+}
+
+// handle applies one SSE event. cur holds the open assistant bubble.
+function handle(cur, event, data){
+  switch(event){
+  case 'token':
+    if(!cur.el) cur.el = addMsg('assistant', '');
+    cur.el.textContent += data;
+    logEl.scrollTop = logEl.scrollHeight;
+    break;
+  case 'assistant':
+    // The complete message supersedes any streamed tokens for it.
+    if(!cur.el) cur.el = addMsg('assistant', '');
+    cur.el.textContent = data;
+    cur.el = null;
+    break;
+  case 'tool_call': {
+    cur.el = null;
+    const t = parseJSON(data) || {};
+    addTool('tool ' + (t.name || '?') + ' ' + clip(t.args, 200));
+    break;
+  }
+  case 'tool_result': {
+    const t = parseJSON(data) || {};
+    addTool('result ' + (t.name || '') + ' ' + clip(t.text, 300));
+    break;
+  }
+  case 'approval-needed': {
+    const a = parseJSON(data);
+    if(a && a.approval_id) addApproval(a);
+    break;
+  }
+  case 'usage': {
+    const u = parseJSON(data);
+    if(u) setStatus(clip(JSON.stringify(u), 160));
+    break;
+  }
+  case 'error':
+    cur.el = null;
+    addMsg('err', data);
+    break;
+  default:
+    break;
+  }
+}
+
+// readSSE reads an event stream from fetch, calling onEvent(event, data).
+async function readSSE(resp, onEvent){
+  const reader = resp.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '', event = '', data = [];
+  const flush = () => {
+    if(event || data.length) onEvent(event || 'message', data.join('\n'));
+    event = ''; data = [];
+  };
+  for(;;){
+    const { value, done } = await reader.read();
+    if(done) break;
+    buf += dec.decode(value, { stream: true });
+    let nl;
+    while((nl = buf.indexOf('\n')) >= 0){
+      let line = buf.slice(0, nl);
+      buf = buf.slice(nl + 1);
+      if(line.endsWith('\r')) line = line.slice(0, -1);
+      if(line === ''){ flush(); continue; }
+      if(line.startsWith('event:')) event = line.slice(6).trim();
+      else if(line.startsWith('data:')){
+        const v = line.slice(5);
+        data.push(v.startsWith(' ') ? v.slice(1) : v);
+      }
+    }
+  }
+  flush();
+}
+
+async function send(text){
+  busy = true;
+  sendBtn.disabled = true;
+  setStatus('working...');
+  try{
+    if(!sessionId) sessionId = await newSession();
+    addMsg('user', text);
+    const resp = await api('/session/' + encodeURIComponent(sessionId) + '/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: text
+    });
+    if(!resp.ok){
+      addMsg('err', resp.status === 409 ? 'This session is busy with another turn.' : 'request failed: ' + resp.status);
+      return;
+    }
+    const cur = { el: null };
+    await readSSE(resp, (ev, data) => handle(cur, ev, data));
+  } catch(err){
+    addMsg('err', 'error: ' + err.message);
+  } finally {
+    busy = false;
+    sendBtn.disabled = false;
+    setStatus('');
+    loadSessions();
+  }
+}
+
+formEl.addEventListener('submit', e => {
+  e.preventDefault();
+  const text = inputEl.value.trim();
+  if(!text || busy) return;
+  inputEl.value = '';
+  send(text);
+});
+inputEl.addEventListener('keydown', e => {
+  if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); formEl.requestSubmit(); }
+});
+$('newBtn').addEventListener('click', () => {
+  if(busy) return;
+  sessionId = '';
+  logEl.replaceChildren();
+  setStatus('');
+  loadSessions();
+});
+
+loadSessions();
+</script>
+</body>
+</html>
