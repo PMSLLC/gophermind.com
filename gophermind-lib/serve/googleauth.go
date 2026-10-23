@@ -323,6 +323,10 @@ func (a *GoogleAuth) Middleware(next http.Handler) http.Handler {
 			return
 		}
 		if _, ok := a.readCookie(r, sessionCookieName, "session"); ok {
+			if !a.sameOriginWrite(r) {
+				http.Error(w, "cross-origin request refused", http.StatusForbidden)
+				return
+			}
 			r.Header.Set("Authorization", "Bearer "+a.BearerToken)
 			r.Header.Del("X-Hub-Signature-256")
 			if secret := serveHMACSecret(); secret != "" {
@@ -349,4 +353,23 @@ func (a *GoogleAuth) Middleware(next http.Handler) http.Handler {
 		}
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 	})
+}
+
+// sameOriginWrite is the CSRF guard for a signed-in browser: a request that
+// changes state must not be marked cross-site or same-site-but-other-origin by
+// the browser (Sec-Fetch-Site), and an Origin header, when sent, must be this
+// server's. SameSite=Lax alone lets a sibling subdomain through. Reads and
+// non-browser clients (no such headers) are not affected.
+func (a *GoogleAuth) sameOriginWrite(r *http.Request) bool {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	}
+	if s := r.Header.Get("Sec-Fetch-Site"); s != "" && s != "same-origin" && s != "none" {
+		return false
+	}
+	if o := r.Header.Get("Origin"); o != "" && o != strings.TrimRight(a.PublicURL, "/") {
+		return false
+	}
+	return true
 }

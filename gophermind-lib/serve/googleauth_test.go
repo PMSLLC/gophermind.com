@@ -313,3 +313,27 @@ func TestNewMuxRegistersAuthRoutes(t *testing.T) {
 		t.Fatalf("login via NewMux: %d", w.Code)
 	}
 }
+
+func TestGoogleAuthRefusesCrossOriginWrites(t *testing.T) {
+	f := newFakeGoogle(t, goodClaims())
+	h := authedHandler(newTestAuth(f))
+	state, sc := startLogin(t, h)
+	sess := cookieNamed(callback(h, state, sc), "gm_session")
+	cases := []struct {
+		name, method string
+		hdr          map[string]string
+		want         int
+	}{
+		{"same origin post", "POST", map[string]string{"Origin": "https://gophermind.example"}, 200},
+		{"no origin post (non-browser)", "POST", nil, 200},
+		{"other origin post", "POST", map[string]string{"Origin": "https://evil.brahy.com"}, 403},
+		{"sibling site fetch metadata", "POST", map[string]string{"Sec-Fetch-Site": "same-site"}, 403},
+		{"cross-site delete", "DELETE", map[string]string{"Sec-Fetch-Site": "cross-site"}, 403},
+		{"other origin get is a read", "GET", map[string]string{"Origin": "https://evil.brahy.com"}, 200},
+	}
+	for _, c := range cases {
+		if w := do(h, c.method, "/api", c.hdr, sess); w.Code != c.want {
+			t.Errorf("%s: got %d want %d", c.name, w.Code, c.want)
+		}
+	}
+}
