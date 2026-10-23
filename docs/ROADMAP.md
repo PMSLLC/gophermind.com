@@ -112,3 +112,4 @@ Still open:
 This file is the single consolidated plan. When a phase finishes, change its state in section 2 and add a dated line below; do not rewrite history.
 
 - 2026-10-23: created; summit confirmed; Burrow allowed in the graded run; temporary password login chosen for the web interface.
+- 2026-10-23: web interface with temporary login deployed to development-jb; csvstat run built 5 of 5 leaves, acceptance 3 of 6 (planner placement and flag defects, see memory unification-goal-state).
