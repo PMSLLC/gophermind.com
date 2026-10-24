@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -164,7 +165,11 @@ func (p *Planner) Run(ctx context.Context, o Options) (Outcome, error) {
 			return Waiting, nil
 		}
 		if err != nil {
+			p.recordPlannerError(r, st.name, err)
 			return "", fmt.Errorf("planner: %s: %w", st.name, err)
+		}
+		if exists(r.path(statePlannerError)) {
+			_ = os.Remove(r.path(statePlannerError))
 		}
 		if r.status.Waiting != "" {
 			r.status.Waiting = ""

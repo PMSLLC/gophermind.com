@@ -24,7 +24,10 @@ type Refusal struct {
 }
 
 // safeRefusal keeps printable ASCII, joins lines with "; " and bounds the size.
-func safeRefusal(s string) string {
+func safeRefusal(s string) string { return safeText(s, maxRefusalBytes) }
+
+// safeText is safeRefusal with a caller-chosen bound.
+func safeText(s string, max int) string {
 	var b strings.Builder
 	for _, line := range strings.Split(s, "\n") {
 		line = strings.TrimSpace(line)
@@ -40,13 +43,13 @@ func safeRefusal(s string) string {
 			}
 			b.WriteRune(r)
 		}
-		if b.Len() >= maxRefusalBytes {
+		if b.Len() >= max {
 			break
 		}
 	}
 	out := b.String()
-	if len(out) > maxRefusalBytes {
-		out = out[:maxRefusalBytes] + "..."
+	if len(out) > max {
+		out = out[:max] + "..."
 	}
 	return out
 }
@@ -103,4 +106,30 @@ func ReadRefusals(runDir string) []Refusal {
 		}
 	}
 	return out
+}
+
+// PlannerError is _state/planner_error.json: the error that stopped the last
+// planning attempt. Text is the error the command printed, bounded and made
+// single-line; it is removed when a later attempt gets past that stage.
+type PlannerError struct {
+	At    string `json:"at"`
+	Stage string `json:"stage"`
+	Text  string `json:"text"`
+}
+
+const maxPlannerErrorBytes = 1500
+
+// recordPlannerError keeps the error that ended a planning attempt in the run
+// folder, so a person does not need the terminal output of the failed run.
+func (p *Planner) recordPlannerError(r *run, stage string, cause error) {
+	_ = writeJSON(r.path(statePlannerError), PlannerError{At: p.d.Now().UTC().Format("2006-01-02T15:04:05Z"), Stage: stage, Text: safeText(cause.Error(), maxPlannerErrorBytes)})
+}
+
+// ReadPlannerError returns the recorded planner error, or nil when there is none.
+func ReadPlannerError(runDir string) *PlannerError {
+	var pe PlannerError
+	if found, err := readJSON(filepath.Join(runDir, filepath.FromSlash(statePlannerError)), &pe); err != nil || !found {
+		return nil
+	}
+	return &pe
 }

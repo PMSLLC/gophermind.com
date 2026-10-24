@@ -45,3 +45,17 @@ func TestAMalformedClarifyReplyIsRecordedWithoutItsText(t *testing.T) {
 		t.Errorf("refusals = %+v", got)
 	}
 }
+
+func TestAPlannerFailureIsKeptInTheRunFolder(t *testing.T) {
+	g := newRig(t, approving(), variant(t, map[string]string{
+		"contract.greeting.txt": twoGreeters, "decompose.greeting.txt": "CANARY prose, no nodes",
+	}))
+	_, err := g.plan(planner.Options{StopAfter: "decompose"})
+	if err == nil {
+		t.Fatal("want a planner error")
+	}
+	pe := planner.ReadPlannerError(g.runDir)
+	if pe == nil || pe.Stage != "decompose" || !strings.Contains(pe.Text, "unusable") || strings.Contains(pe.Text, "CANARY") {
+		t.Fatalf("planner error = %+v", pe)
+	}
+}
