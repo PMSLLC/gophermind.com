@@ -17,6 +17,7 @@ All notable changes to GopherMind are documented here. The format follows
 - **Answer clarify questions in the browser.** Uploading with `?ask=1` (a checkbox on the Upload page) plans with the file gate; the run pauses as `waiting` at open questions, the run page lists them with an answer box and a button for the recommended option, and `POST /app/briefs/{id}/answer` fills the answer and resumes planning (`brief resume --yes --gate file`, then `brief run`). Without `ask` the launcher is unchanged. The sudoers rule for a `gmrun` launch needs `brief resume *` added.
 - **Wave checks and repairs on the run page.** `/app/briefs/{id}/state` has `wave_checks` (per wave: check result and failing leaf ids) and `repairs` (total and leaves being repaired), derived from leaf statuses, `leaf-results.json` and the stop reason; attempts omit `model` and `provider` when none was recorded.
 - **Live run updates.** `GET /app/briefs/{id}/events` streams the run state as server-sent events, pushed when the run folder or log changes (checked every second, at most 8 streams); the run page uses it and falls back to polling.
+- **Where a run's time and problems are, in the state API.** `/app/briefs/{id}/state` gains `stages` (model calls per stage kind from `_state/calls.jsonl`: calls, ok, problems, time, tokens), `slow_calls` (the five slowest calls) and `problems` (each failed leaf with its last attempt's class, reason and malformed reason). Counts and ids only, never prompt or reply text; the fields are additive.
 
 ### Removed
 

@@ -30,6 +30,12 @@ type BriefState struct {
 	WaveChecks    []BriefWave      `json:"wave_checks"`
 	Repairs       BriefRepairs     `json:"repairs"`
 	LogTail       []string         `json:"log_tail"`
+	// Stages, SlowCalls and Problems are additive (older consumers ignore
+	// them): model-call totals per stage, the five slowest calls, and the
+	// last failure of each failed leaf. Never any prompt or reply text.
+	Stages    []BriefStage    `json:"stages"`
+	SlowCalls []BriefSlowCall `json:"slow_calls"`
+	Problems  []BriefProblem  `json:"problems"`
 }
 
 // BriefRun is the header: phase is the launcher's view (planning, running,
@@ -255,6 +261,7 @@ func BuildBriefState(root, id string, rec *briefRecord, active bool, logText str
 	st := BriefState{
 		SchemaVersion: BriefStateVersion, GeneratedAt: now.UTC().Format("2006-01-02T15:04:05Z"),
 		Nodes: []BriefNode{}, Questions: []BriefQuestion{}, WaveChecks: []BriefWave{}, Repairs: BriefRepairs{Open: []BriefRepair{}}, LogTail: tailLines(logText),
+		Stages: []BriefStage{}, SlowCalls: []BriefSlowCall{}, Problems: []BriefProblem{},
 	}
 	st.Run = BriefRun{ID: id, Active: active, Counts: runview.Counts{ByStatus: map[string]int{}}}
 	if rec != nil {
@@ -320,6 +327,8 @@ func BuildBriefState(root, id string, rec *briefRecord, active bool, logText str
 		st.Nodes = append(st.Nodes, n)
 	}
 	markBlocked(st.Nodes)
+	st.Problems = problemsOf(st.Nodes)
+	st.Stages, st.SlowCalls = readCalls(dir)
 	st.WaveChecks, st.Repairs = waveChecks(dir, st.Run, st.Nodes)
 
 	if b, err := readSmallFile(filepath.Join(dir, "UNDERSTANDING.md"), maxUnderstandingBytes); err == nil {
