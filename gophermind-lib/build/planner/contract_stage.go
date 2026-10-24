@@ -242,7 +242,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 				return render("contract_outline", map[string]string{
 					"EntryName": entryName, "Entry": entry,
 					"Brief": brief, "Answers": answersText(as), "TypeSchema": typeSchema,
-					"Fixed": outlineFixedText(st.Doc), "Emitted": outlineEmittedTextAt(st.Doc, st.OutlineSharedIDs, level),
+					"Fixed": outlineFixedText(st.Doc) + repoModuleText(r, st.Doc), "Emitted": outlineEmittedTextAt(st.Doc, st.OutlineSharedIDs, level),
 					"Batch":      strings.Join(batch, ", "),
 					"Unresolved": unresolvedPromptText(unresolved), "UnresolvedCount": fmt.Sprint(len(unresolved))})
 			}
@@ -291,6 +291,9 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			case len(unresolved) > 0:
 				st.OutlineRepairs++
 			case first:
+				if err := p.bindModuleToFacts(r, st.Doc); err != nil {
+					return err
+				}
 				st.OutlinePasses++
 				st.OutlineBatches, st.OutlineBatchesSet = allBatches, true
 				st.OutlineSharedIDs = outlineIDs(st.Doc, maxSharedIDs)
@@ -685,6 +688,50 @@ func boundedID(id string) string {
 		return fmt.Sprintf("<%d bytes>", len(id))
 	}
 	return fmt.Sprintf("%q", id)
+}
+
+// repoModuleText tells the first outline pass the module of the repository's
+// go.mod, when the facts know one, as binding.
+func repoModuleText(r *run, doc map[string]any) string {
+	if doc != nil {
+		return ""
+	}
+	f, err := loadFacts(r)
+	if err != nil || f.Module == "" {
+		return ""
+	}
+	return "\nThe repository's go.mod declares the module " + f.Module + ". Use this module path exactly as `module`."
+}
+
+// bindModuleToFacts makes the contract's module the one the repository's
+// go.mod declares, when the facts know one. The model's outline is only a
+// proposal for a new repository: an existing module path is not its to choose,
+// and every import downstream is built from the contract's module.
+func (p *Planner) bindModuleToFacts(r *run, doc map[string]any) error {
+	f, err := loadFacts(r)
+	if err != nil {
+		return err
+	}
+	got, _ := doc["module"].(string)
+	if f.Module == "" || got == f.Module {
+		return nil
+	}
+	doc["module"] = f.Module
+	p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
+		"contract_module_overridden: the outline named %s; the repository's go.mod says %s",
+		boundedModulePath(got), boundedModulePath(f.Module)))
+	return nil
+}
+
+var modulePathRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._~/-]*$`)
+
+// boundedModulePath is boundedModule for a go.mod module path, which may have
+// no dot (csvstat): quoted when it is plain path text of at most 128 bytes.
+func boundedModulePath(m string) string {
+	if !modulePathRE.MatchString(m) || len(m) > 128 {
+		return fmt.Sprintf("<%d bytes>", len(m))
+	}
+	return fmt.Sprintf("%q", m)
 }
 
 // boundedModule is boundedID for a module path.

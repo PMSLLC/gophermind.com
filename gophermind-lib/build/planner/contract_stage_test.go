@@ -2,10 +2,13 @@ package planner_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"gophermind/gophermind-lib/build/contract"
+	"gophermind/gophermind-lib/build/events"
 	"gophermind/gophermind-lib/build/ledger"
 	"gophermind/gophermind-lib/build/planner"
 )
@@ -137,4 +140,71 @@ func TestContractResumeSkipsFinishedComponents(t *testing.T) {
 			t.Errorf("stage %s done = %v, want %v", s.Name, s.Done, want)
 		}
 	}
+}
+
+func moduleWarnings(g *rig) []string {
+	var out []string
+	for _, e := range g.sink.OfKind(events.KindWarning) {
+		if strings.Contains(e.Message, "contract_module_overridden") {
+			out = append(out, e.Message)
+		}
+	}
+	return out
+}
+
+// The repository's go.mod owns the module path: an outline that names another
+// one is overridden, and the first outline prompt states the module.
+func TestContractModuleIsTheRepositoryGoMod(t *testing.T) {
+	g := newRig(t, approving(), variant(t, map[string]string{
+		"contract.outline.1.txt": strings.Replace(readGreeter(t, "contract.outline.1.txt"), "example.com/greeter", "github.com/csvstat/csvstat", 1),
+	}))
+	if err := os.WriteFile(filepath.Join(g.repo, "go.mod"), []byte("module csvstat\n\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	g.mustPlan(planner.Options{StopAfter: "contract"})
+
+	c := g.contracts()
+	if c.Module != "csvstat" {
+		t.Errorf("contract module = %q, want csvstat", c.Module)
+	}
+	w := moduleWarnings(g)
+	if len(w) != 1 || !strings.Contains(w[0], `the outline named "github.com/csvstat/csvstat"; the repository's go.mod says "csvstat"`) {
+		t.Errorf("warnings = %v", w)
+	}
+	var first string
+	for _, r := range g.fake.Requests() {
+		if planner.StageOf(r) == "contract:outline:1" {
+			first = r.Messages[1].Content
+			break
+		}
+	}
+	if !strings.Contains(first, "declares the module csvstat") {
+		t.Error("the first outline prompt does not state the repository module")
+	}
+	for pkg, imp := range planner.PackageImports(c) {
+		if !strings.Contains(imp, "csvstat") || strings.Contains(imp, "github.com") {
+			t.Errorf("import for %s = %q, want one under csvstat", pkg, imp)
+		}
+	}
+}
+
+// With no go.mod the model's module stands and nothing is warned.
+func TestContractModuleStandsWithoutGoMod(t *testing.T) {
+	g := newRig(t, approving())
+	g.mustPlan(planner.Options{StopAfter: "contract"})
+	if c := g.contracts(); c.Module != "example.com/greeter" {
+		t.Errorf("contract module = %q", c.Module)
+	}
+	if w := moduleWarnings(g); len(w) != 0 {
+		t.Errorf("warnings = %v", w)
+	}
+}
+
+func readGreeter(t *testing.T, name string) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(greeter, name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
 }

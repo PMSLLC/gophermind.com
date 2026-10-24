@@ -16,6 +16,7 @@ All notable changes to GopherMind are documented here. The format follows
 
 ### Fixed
 
+- **The contract uses the repository's go.mod module.** When the planner's facts have a Go module for the target repository, the contract outline's module is set to it (warning `contract_module_overridden`) and the first outline prompt states it as binding, so stub files, test imports and the wave 0 build no longer import a module path the model invented (csvstat: `github.com/csvstat/csvstat` against `module csvstat`). No go.mod: unchanged.
 - A clarify answer taken from the brief (`answered_by: brief`) is accepted by the node schema; before, the decompose stage rejected it and a csvstat plan stopped there.
 - Enrich parse errors say what to change: a rationale that is missing or too short now reports its length and the 20 to 600 target (and `open_questions` / array checks report counts), so the single retry has a number to act on. The per-node group check uses the same wording. Error text still never quotes the reply.
 - Enrich trims an over-long rationale (more than 600 characters) at the last sentence boundary at or under 600, else the last word boundary, instead of failing the stage, and records a `rationale_trimmed` warning naming the node, component or root and the before and after lengths. Missing or too short still fails. Covers component and root structure calls and the per-function path.
