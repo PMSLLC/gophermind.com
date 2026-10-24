@@ -8,6 +8,7 @@ All notable changes to GopherMind are documented here. The format follows
 
 ### Added
 
+- **The planner records why it refused a model reply.** Each refused reply (a test file that does not compile, a decompose leaf check, a contract or enrich repair pass) now appends a line to `_state/refusals.jsonl` (time, stage, node id, round, and the planner's own refusal wording, never the reply) and emits a `refusal` event. Before, the text was dropped when the repair call went out.
 - **Google sign-in for `gophermind-server`.** Setting `GOPHERMIND_GOOGLE_CLIENT_ID`, `GOPHERMIND_GOOGLE_CLIENT_SECRET`, `GOPHERMIND_SESSION_SECRET` and `GOPHERMIND_PUBLIC_URL` (plus `GOPHERMIND_ALLOWED_DOMAIN`, default `brahy.com`) adds `/auth/login`, `/auth/callback` and `/auth/logout` and puts every route except the probes, `/auth/*` and `/run` behind a signed session cookie. A signed-in session gets the server bearer token injected; requests that carry their own `Authorization` header are unchanged. A partial set refuses to start.
 - **Browser pages behind the sign-in.** `GET /` is a signed-in home (email from the new `GET /auth/me`, links to chat and runs, Sign out) when sign-in is on, and the plain landing text when it is off. `GET /app/chat` is a chat page over the session API (list, create, SSE stream, history, tool calls, Approve and Deny for gated tools; model text is only ever set as text). `/pipeline` connects by itself when a valid session cookie exists, so no token is typed.
 

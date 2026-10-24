@@ -19,6 +19,9 @@ const (
 	KindLedgerError    = "ledger_error"
 	KindWarning        = "warning"
 	KindCoverageGap    = "coverage_gap"
+	// KindRefusal is a model reply the planner refused. Message is the fixed
+	// refusal text the planner builds, never the reply.
+	KindRefusal = "refusal"
 )
 
 // Event is one progress report. Call is set only for KindCall and carries the

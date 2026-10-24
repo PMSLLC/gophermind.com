@@ -251,7 +251,7 @@ func untouchedRunDir(dir string) bool {
 			}
 			for _, s := range sub {
 				switch s.Name() {
-				case "status.json", "calls.jsonl", "calls.seq", "calls.lock", "events.jsonl", "replies":
+				case "status.json", "calls.jsonl", "calls.seq", "calls.lock", "events.jsonl", "refusals.jsonl", "replies":
 					// Ledger, events and saved replies of a plan that died
 					// in its first stage; replacing the folder drops them.
 				default:

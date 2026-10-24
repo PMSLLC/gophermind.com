@@ -27,6 +27,7 @@ const (
 	stateDecomposed   = "_state/decomposed.json"
 	stateClasses      = "_state/classes.json"
 	stateTestwriter   = "_state/testwriter.json"
+	stateRefusals     = "_state/refusals.jsonl"
 	stateTestFiles    = "_state/test_files.json"
 	stateLeafTests    = "_state/leaf_tests.json"
 	stateAcceptTests  = "_state/acceptance_tests.json"

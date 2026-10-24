@@ -78,6 +78,9 @@ type Planner struct {
 	dump dumpState
 	// noGoWarn records the missing go tool once per planner.
 	noGoWarn sync.Once
+	// refusals counts the refused replies per stage and node, for the round.
+	refusalMu sync.Mutex
+	refusals  map[string]int
 }
 
 func New(d Deps) *Planner {
@@ -245,6 +248,16 @@ func (p *Planner) callRes(ctx context.Context, r *run, cs callSpec, prompt strin
 				p.saveReply(r, cs.stage, text)
 			}
 			return inner(text)
+		}
+	}
+	{
+		inner := parse
+		parse = func(text string) error {
+			err := inner(text)
+			if err != nil {
+				p.recordRefusal(r, cs.stage, cs.nodeID, err)
+			}
+			return err
 		}
 	}
 	res, err := p.d.Caller.CallParsed(ctx, info, req, parse)
