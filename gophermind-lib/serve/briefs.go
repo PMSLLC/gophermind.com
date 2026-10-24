@@ -200,6 +200,7 @@ func (m *briefManager) prepare(dir, briefPath string, src []byte, rec briefRecor
 }
 
 // denyEnv names the server's own secrets: a launched run never inherits them.
+// GOPHERMIND_WEB_PASSWORD_HASH is no longer read but may linger in an env file.
 var denyEnv = []string{
 	"GOPHERMIND_TOKEN", "GOPHERMIND_SERVE_TOKEN", "GOPHERMIND_SERVE_HMAC_SECRET", "GOPHERMIND_SESSION_SECRET",
 	"GOPHERMIND_GOOGLE_CLIENT_SECRET", "GOPHERMIND_WEB_PASSWORD_HASH",

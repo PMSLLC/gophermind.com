@@ -260,3 +260,23 @@ func TestParseServerConfig_GoogleAuthPartialRefuses(t *testing.T) {
 		t.Errorf("short session secret: err = %v", err)
 	}
 }
+
+// GOPHERMIND_WEB_USER and GOPHERMIND_WEB_PASSWORD_HASH are no longer read.
+func TestParseServerConfig_WebUserVariablesAreIgnored(t *testing.T) {
+	web := map[string]string{"GOPHERMIND_WEB_USER": "admin", "GOPHERMIND_WEB_PASSWORD_HASH": "pbkdf2-sha256$600000$c2FsdA$a2V5"}
+	cfg, err := parseServerConfig(nil, envMap(mergeEnv(map[string]string{"GOPHERMIND_TOKEN": "t"}, web)), fixedGetwd("/cwd"))
+	if err != nil || cfg.Google != nil {
+		t.Fatalf("web vars alone: err=%v google=%+v, want auth off", err, cfg.Google)
+	}
+	cfg, err = parseServerConfig(nil, googleEnv(web), fixedGetwd("/cwd"))
+	if err != nil || cfg.Google == nil || cfg.Google.ClientID != "cid" {
+		t.Fatalf("with google: err=%v google=%+v", err, cfg.Google)
+	}
+}
+
+func mergeEnv(a, b map[string]string) map[string]string {
+	for k, v := range b {
+		a[k] = v
+	}
+	return a
+}

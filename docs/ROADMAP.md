@@ -99,13 +99,12 @@ Taken by John on 2026-10-23:
 
 1. The five summit statements in section 1 are confirmed.
 2. Burrow lookups are allowed in the graded run (my reading of "no" to "should they stay out"). The run report must say which leaves were reused.
-3. Until a Google OAuth client exists, the web interface signs in with a temporary username and password set in the server env. It is isolated in one file and removed once Google sign-in is live.
+3. Until a Google OAuth client existed, the web interface signed in with a temporary username and password set in the server env. Google sign-in is live and that login is removed (see the 2026-10-23 log line on its removal).
 
 Still open:
 
 - Burrow: John's OK for the HTTP service, and the local model for Burrow Phase 4 (embeddings and verify); the graded run allows only the mini's local model.
 - ClinePass terms and limits for automated use.
-- The Google OAuth client (redirect URI `https://gophermind.brahy.com/auth/callback`), needed to retire the temporary login.
 
 ## 8. Record keeping
 
@@ -115,3 +114,4 @@ This file is the single consolidated plan. When a phase finishes, change its sta
 - 2026-10-23: web interface with temporary login deployed to development-jb; csvstat run built 5 of 5 leaves, acceptance 3 of 6 (the built `run` leaf ignored the brief: `-f` instead of `--format`, `-` not read as stdin; fixed in 7f83b9f, 3c55ffa, d24c92b, re-run pending).
 - 2026-10-23: phase 2 built (not deployed): upload, one-at-a-time launch with an injectable command, stop, run state JSON and run pages under `/app/briefs`; sudo/`gmrun` launch documented in `docs/SERVER-SETUP.md` but not applied; browser rendering unchecked; clarify answering and a live event stream on the run page are not built.
 - 2026-10-23: synced with the Burrow session: its status, host decision, `origin` values (`built`, `reused`, `lookup_missed`, `not_eligible`) and the pure-Go eligibility limits recorded above.
+- 2026-10-23: temporary password login removed from code and docs (Google sign-in is live): `serve/passwordauth.go`, `login.html`, the server env wiring and `hashpw` deleted; `GOPHERMIND_WEB_*` are ignored and must be dropped from the server env file. Not yet deployed.

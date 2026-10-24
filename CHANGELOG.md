@@ -10,9 +10,12 @@ All notable changes to GopherMind are documented here. The format follows
 
 - **Google sign-in for `gophermind-server`.** Setting `GOPHERMIND_GOOGLE_CLIENT_ID`, `GOPHERMIND_GOOGLE_CLIENT_SECRET`, `GOPHERMIND_SESSION_SECRET` and `GOPHERMIND_PUBLIC_URL` (plus `GOPHERMIND_ALLOWED_DOMAIN`, default `brahy.com`) adds `/auth/login`, `/auth/callback` and `/auth/logout` and puts every route except the probes, `/auth/*` and `/run` behind a signed session cookie. A signed-in session gets the server bearer token injected; requests that carry their own `Authorization` header are unchanged. A partial set refuses to start.
 - **Browser pages behind the sign-in.** `GET /` is a signed-in home (email from the new `GET /auth/me`, links to chat and runs, Sign out) when sign-in is on, and the plain landing text when it is off. `GET /app/chat` is a chat page over the session API (list, create, SSE stream, history, tool calls, Approve and Deny for gated tools; model text is only ever set as text). `/pipeline` connects by itself when a valid session cookie exists, so no token is typed.
-- **Temporary username and password login for `gophermind-server`.** `GOPHERMIND_WEB_USER` and `GOPHERMIND_WEB_PASSWORD_HASH` (a `pbkdf2-sha256` hash made with the new `gophermind-server hashpw`, which reads the password from stdin) turn on a form at `/auth/login` and `POST /auth/password` that issue the same session cookie as Google sign-in, with a 5 failures per 15 minutes limit per client address. It is isolated in `passwordauth.go` and removed once Google sign-in is live.
 
 - **Briefs from the browser.** With `GOPHERMIND_BRIEFS_DIR` set, `gophermind-server` serves `/app/briefs/new` (upload), `/app/briefs` (runs) and `/app/briefs/{id}` (decomposition tree with waves, per-leaf status and attempts, clarify questions with `answered_by`, acceptance, log tail, Stop). `POST /app/briefs` validates with the `brief validate` parser (256 KiB cap) and runs `brief plan --yes` then `brief run` as a subprocess, one run at a time (409 with the active run id), with a log per run; `POST /app/briefs/{id}/stop` kills the process group. The launcher is injectable (`GOPHERMIND_BRIEF_CMD`) so a deployment can run as `gmrun`. `GET /app/briefs/{id}/state` carries an empty per-leaf `origin` field for later Burrow reuse. The home page links Upload brief and Runs.
+
+### Removed
+
+- **The temporary username and password login.** Google sign-in is live, so `GOPHERMIND_WEB_USER`, `GOPHERMIND_WEB_PASSWORD_HASH`, the `gophermind-server hashpw` subcommand, `POST /auth/password`, the password form and `/auth/login?local=1` are gone. The variables are ignored; remove them from the env file. `/auth/login?local=1` now redirects to Google like `/auth/login`.
 
 ### Fixed
 

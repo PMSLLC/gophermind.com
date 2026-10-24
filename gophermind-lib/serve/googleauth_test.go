@@ -337,3 +337,19 @@ func TestGoogleAuthRefusesCrossOriginWrites(t *testing.T) {
 		}
 	}
 }
+
+// The temporary password login is gone: ?local=1 is just the Google redirect
+// and no password route exists.
+func TestLoginLocalParamGoesToGoogleAndNoPasswordRoute(t *testing.T) {
+	h := authedHandler(newTestAuth(newFakeGoogle(t, goodClaims())))
+	for _, target := range []string{"/auth/login", "/auth/login?local=1"} {
+		w := do(h, "GET", target, nil)
+		if w.Code != http.StatusFound || !strings.HasPrefix(w.Header().Get("Location"), "https://accounts.example/authorize") {
+			t.Errorf("%s: %d %s", target, w.Code, w.Header().Get("Location"))
+		}
+	}
+	w := doBody(h, "POST", "/auth/password", "username=admin&password=x", map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+	if w.Code == http.StatusSeeOther || cookieNamed(w, sessionCookieName) != nil {
+		t.Errorf("password route active: %d", w.Code)
+	}
+}

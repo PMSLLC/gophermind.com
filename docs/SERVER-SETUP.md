@@ -150,26 +150,9 @@ GOPHERMIND_BRIEF_KILL_CMD=sudo -n -u gmrun /bin/kill
 
 `GOPHERMIND_BRIEFS_DIR` must be created by the service (a `StateDirectory=` entry, like the one above, works) and be readable by `gmrun` (mode 0755; the brief and log files are 0644, and a brief holds secret names only, never values). The vault passphrase and provider settings the run needs must be available to `gmrun` itself, not passed through the server. The sudoers wildcards let `gophermind` pass any arguments to those two commands, so review them before use. Not verified on a host: whether the process group of a command started through `sudo` is the group that `kill -- -<pgid>` reaches; check it with a Stop on the first real run.
 
-## Temporary password login
+## Removed: temporary password login
 
-Until a Google OAuth client exists, a single username and password can sign in to the web interface. It is temporary and is removed once Google sign-in is live (the delete list is in the header of `gophermind-lib/serve/passwordauth.go`). A successful login issues the same `gm_session` cookie as Google sign-in.
-
-Make the hash on any machine (the password comes from stdin, never argv, and is not printed back; only the hash line is printed):
-
-```bash
-gophermind-server hashpw
-```
-
-Put these in the server's env file, not in tracked files. Never put the plaintext password in the env.
-
-| Variable | Meaning |
-|---|---|
-| `GOPHERMIND_WEB_USER` | the username |
-| `GOPHERMIND_WEB_PASSWORD_HASH` | the `pbkdf2-sha256$...` line from `hashpw` |
-| `GOPHERMIND_SESSION_SECRET` | at least 32 bytes (shared with Google sign-in) |
-| `GOPHERMIND_PUBLIC_URL` | external base URL (shared with Google sign-in) |
-
-User and hash set with the session secret and public URL: the local login is on, and it can be on alongside Google (`/auth/login` still goes to Google; `/auth/login?local=1` shows the password form). With only the local login, `/auth/login` shows the form. A partial set refuses to start and names the missing variables. After 5 failed attempts from one client address in 15 minutes the server answers 429 until the window ends; the limiter is in memory and restarts clear it.
+The temporary username and password login is gone; sign-in is Google only. `GOPHERMIND_WEB_USER` and `GOPHERMIND_WEB_PASSWORD_HASH` are ignored and should be removed from the server's env file, and the `gophermind-server hashpw` subcommand no longer exists. `/auth/login?local=1` behaves like `/auth/login`.
 
 ## Running Tasks
 

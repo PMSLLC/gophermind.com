@@ -48,9 +48,6 @@ type GoogleAuth struct {
 	Issuer     string // when set, the only accepted iss
 	HTTPClient *http.Client
 	Now        func() time.Time
-
-	// Local, when non-nil, adds the TEMPORARY password login (passwordauth.go).
-	Local *LocalLogin
 }
 
 // Validate reports which required settings are missing (names only, never
@@ -101,9 +98,6 @@ func (a *GoogleAuth) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /auth/callback", a.callback)
 	mux.HandleFunc("POST /auth/logout", a.logout)
 	mux.HandleFunc("GET /auth/me", a.me)
-	if a.Local != nil {
-		mux.HandleFunc("POST /auth/password", a.passwordLogin)
-	}
 }
 
 // sign returns base64url(payload) "." base64url(HMAC(kind "|" payload)). The
@@ -171,10 +165,6 @@ func (a *GoogleAuth) readCookie(r *http.Request, name, kind string) (cookiePaylo
 }
 
 func (a *GoogleAuth) login(w http.ResponseWriter, r *http.Request) {
-	if a.Local != nil && (a.ClientID == "" || r.URL.Query().Get("local") == "1") {
-		a.Local.serveLoginForm(w)
-		return
-	}
 	nonce := make([]byte, 24)
 	if _, err := rand.Read(nonce); err != nil {
 		http.Error(w, "sign-in unavailable", http.StatusInternalServerError)
