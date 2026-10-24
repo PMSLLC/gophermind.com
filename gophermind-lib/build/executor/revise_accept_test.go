@@ -396,9 +396,9 @@ func TestAPatchCannotNameAPath(t *testing.T) {
 			t.Fatalf("%s exists", p)
 		}
 	}
-	// Two revise calls (max_refusals 2), each the reply plus the router's one repair request.
-	if n := requestsFor(g, "revise:"+id); n != 4 {
-		t.Fatalf("revise requests = %d, want 4 (2 calls, each with a router repair)", n)
+	// Two revise calls (max_refusals 2), each the reply plus the router's two repair requests (single usable entry).
+	if n := requestsFor(g, "revise:"+id); n != 6 {
+		t.Fatalf("revise requests = %d, want 6 (2 calls, each with two router repairs)", n)
 	}
 	dir, _ := revlog.NodeDir(g.runDir, id)
 	recs, _ := revlog.Read(dir)

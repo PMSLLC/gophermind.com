@@ -115,10 +115,10 @@ func TestNothingChargedIsNotALeafFailure(t *testing.T) {
 	}{
 		{"cooldown then auth", []step{rl, auth}, "provider_unavailable"},
 		{"auth then cooldown", []step{auth, rl}, "provider_unavailable"},
-		{"cooldown then malformed", []step{rl, prose, prose}, "provider_unavailable"},
+		{"cooldown then malformed", []step{rl, prose, prose, prose}, "provider_unavailable"},
 		{"timeout then auth", []step{to, auth}, "provider_unavailable"},
 		{"auth on every entry", []step{auth, auth}, "auth"},
-		{"auth then malformed", []step{auth, prose, prose}, "auth"},
+		{"auth then malformed", []step{auth, prose, prose, prose}, "auth"},
 		{"malformed on every entry", []step{prose, prose, prose, prose}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
