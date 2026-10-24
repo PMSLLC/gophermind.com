@@ -1111,3 +1111,68 @@ func TestChainOfOnlyFileOnlyProvidersExplainsTheSkip(t *testing.T) {
 		t.Fatalf("err = %v, reasons = %+v", err, ce)
 	}
 }
+
+func TestMaxParseRetriesIsTwo(t *testing.T) {
+	if router.MaxParseRetries != 2 {
+		t.Errorf("MaxParseRetries = %d, want 2", router.MaxParseRetries)
+	}
+}
+
+func TestCallParsedSingleModelChainSucceedsOnTheSecondRetry(t *testing.T) {
+	g := newRig(t, func(call int, r provider.Request) (provider.Response, error) {
+		if call <= 2 {
+			return provider.Response{Text: "bad", Model: r.Model}, nil
+		}
+		return provider.Response{Text: "good", Model: r.Model}, nil
+	}, nil, nil, nil)
+	res, err := g.r.CallParsed(context.Background(), info(router.TierStrong, router.ScopeNode), req("write JSON"), rejectBad)
+	if err != nil || res.Text != "good" {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if g.mini.Calls() != 3 {
+		t.Errorf("mini %d calls, want 3 (first try plus two told retries)", g.mini.Calls())
+	}
+	third := g.mini.Requests()[2].Messages
+	if len(third) < 3 || !strings.Contains(third[len(third)-1].Content, "not JSON") {
+		t.Errorf("third request does not carry the parse error: %+v", third)
+	}
+	var outcomes []ledger.Outcome
+	for _, row := range g.rows(t) {
+		outcomes = append(outcomes, row.Outcome)
+	}
+	if len(outcomes) != 3 || outcomes[0] != ledger.OutcomeMalformed || outcomes[1] != ledger.OutcomeMalformed || outcomes[2] != ledger.OutcomeOK {
+		t.Errorf("outcomes = %v, want malformed, malformed, ok", outcomes)
+	}
+}
+
+func TestCallParsedSingleModelChainFailsAfterTwoRetries(t *testing.T) {
+	g := newRig(t, okText("bad"), nil, nil, nil)
+	_, err := g.r.CallParsed(context.Background(), info(router.TierStrong, router.ScopeNode), req("write JSON"), rejectBad)
+	var ce *router.ChainExhausted
+	if !errors.As(err, &ce) || !errors.Is(ce.ParseErr, errBad) {
+		t.Fatalf("err = %v, want ChainExhausted with ParseErr", err)
+	}
+	if g.mini.Calls() != 3 {
+		t.Errorf("mini %d calls, want 3", g.mini.Calls())
+	}
+	rows := g.rows(t)
+	if len(rows) != 3 {
+		t.Fatalf("rows = %d, want 3", len(rows))
+	}
+	for _, row := range rows {
+		if row.Outcome != ledger.OutcomeMalformed {
+			t.Errorf("row %+v should be malformed", row)
+		}
+	}
+}
+
+func TestCallParsedMultiModelChainKeepsOneRetryThenMovesOn(t *testing.T) {
+	g := newRig(t, okText("bad"), okText("good"), nil, nil)
+	res, err := g.r.CallParsed(context.Background(), info(router.TierStandard, router.ScopeNode), req("write JSON"), rejectBad)
+	if err != nil || res.Entry != "kilo/auto" {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if g.mini.Calls() != 2 || g.kilo.Calls() != 1 {
+		t.Errorf("mini %d kilo %d, want 2 and 1", g.mini.Calls(), g.kilo.Calls())
+	}
+}

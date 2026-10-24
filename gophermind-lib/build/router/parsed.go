@@ -6,12 +6,19 @@ import (
 
 	"gophermind/gophermind-lib/build/ledger"
 	"gophermind/gophermind-lib/build/provider"
+	"gophermind/gophermind-lib/build/settings"
 )
+
+// MaxParseRetries is how many told-what-was-wrong retries the same model gets
+// when it is the only usable entry in the tier chain. With other entries to
+// fall back on, a model gets one.
+const MaxParseRetries = 2
 
 // CallParsed is Call plus the stage's parser. A reply that arrives fine but
 // does not parse is a failed attempt: its ledger row is corrected to
-// malformed, the same model gets one more try with the parse error appended,
-// and if that also fails the model is excluded and the chain continues.
+// malformed, the same model gets one more try with the parse error appended
+// (up to MaxParseRetries when it is the chain's only usable entry), and if
+// that also fails the model is excluded and the chain continues.
 func (r *Router) CallParsed(ctx context.Context, info CallInfo, req provider.Request, parse func(text string) error) (Result, error) {
 	exclude := append([]string(nil), info.Exclude...)
 	var lastParse error
@@ -30,22 +37,31 @@ func (r *Router) CallParsed(ctx context.Context, info CallInfo, req provider.Req
 		lastParse = perr
 		r.markMalformed(ctx, info.RunID, res)
 
-		// One more try on the same model, told what was wrong.
-		again := next
-		again.Only = res.Entry
-		res2, err := r.Call(ctx, again, withParseError(req, res.Text, perr))
-		if err == nil {
+		// Retry the same model, told what was wrong. A chain with nowhere else
+		// to go gets the bounded second retry; otherwise one retry, then move on.
+		retries := 1
+		if r.soleUsable(info) {
+			retries = MaxParseRetries
+		}
+		lastReply, lastErr := res.Text, perr
+		for i := 0; i < retries; i++ {
+			again := next
+			again.Only = res.Entry
+			res2, err := r.Call(ctx, again, withParseError(req, lastReply, lastErr))
+			if err != nil {
+				var ce *ChainExhausted
+				if !errors.As(err, &ce) {
+					return Result{}, err // the caller's context ended
+				}
+				break
+			}
 			perr2 := parse(res2.Text)
 			if perr2 == nil {
 				return res2, nil
 			}
 			lastParse = perr2
 			r.markMalformed(ctx, info.RunID, res2)
-		} else {
-			var ce *ChainExhausted
-			if !errors.As(err, &ce) {
-				return Result{}, err // the caller's context ended
-			}
+			lastReply, lastErr = res2.Text, perr2
 		}
 		exclude = append(exclude, res.Entry)
 	}
@@ -76,4 +92,22 @@ func withParseError(req provider.Request, reply string, perr error) provider.Req
 		provider.Message{Role: provider.RoleUser, Content: "That reply could not be used: " + perr.Error() + "\nReply again with the corrected output only."})
 	req.Messages = msgs
 	return req
+}
+
+// soleUsable reports whether the call's tier chain has exactly one entry that
+// is not excluded by the caller or gated off (no provider, auth failure,
+// privacy, cooldown).
+func (r *Router) soleUsable(info CallInfo) bool {
+	chain, err := r.chainFor(info)
+	if err != nil {
+		return false
+	}
+	usable := 0
+	for _, entry := range chain {
+		provName, _, _ := settings.SplitEntry(entry)
+		if _, skip := r.gate(info, entry, provName); !skip {
+			usable++
+		}
+	}
+	return usable == 1
 }
