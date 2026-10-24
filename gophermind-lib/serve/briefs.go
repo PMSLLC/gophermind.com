@@ -81,6 +81,8 @@ type activeBrief struct {
 	stopped bool
 	pgid    int
 	done    chan struct{}
+	// sudoHidden counts the sudoers warnings kept out of run.log so far.
+	sudoHidden int
 }
 
 type briefBusyError struct{ activeID string }
@@ -276,7 +278,8 @@ outer:
 // returns errNotActive without starting it.
 func (m *briefManager) step(a *activeBrief, logf *os.File, args ...string) (int, error) {
 	cmd := m.cmd(args)
-	cmd.Stdout, cmd.Stderr, cmd.Stdin = logf, logf, nil
+	sf := &sudoFilter{w: logf}
+	cmd.Stdout, cmd.Stderr, cmd.Stdin = logf, sf, nil
 	if cmd.Env == nil {
 		cmd.Env = childEnv()
 	}
@@ -296,8 +299,10 @@ func (m *briefManager) step(a *activeBrief, logf *os.File, args ...string) (int,
 		return 0, err
 	}
 	err = cmd.Wait()
+	_ = sf.Flush()
 	m.mu.Lock()
 	a.pgid = 0
+	a.sudoHidden += sf.hidden
 	m.mu.Unlock()
 	var ee *exec.ExitError
 	switch {
@@ -311,6 +316,12 @@ func (m *briefManager) step(a *activeBrief, logf *os.File, args ...string) (int,
 
 func (m *briefManager) run(a *activeBrief, rec briefRecord, first []string, logf *os.File) {
 	defer func() {
+		m.mu.Lock()
+		hidden := a.sudoHidden
+		m.mu.Unlock()
+		if hidden > 0 {
+			fmt.Fprintf(logf, "(%d sudo warnings hidden)\n", hidden)
+		}
 		logf.Close()
 		m.mu.Lock()
 		m.active = nil
