@@ -275,6 +275,8 @@ func missingStdImport(diag string) string {
 	return m[1]
 }
 
+var stdStreamAssignRE = regexp.MustCompile(`\bos\.(Stdin|Stdout|Stderr)\s*=`)
+
 var undefinedQualRE = regexp.MustCompile(`^undefined: (?:\w+\.)?(\w+)$`)
 
 // undeclaredName is the advice for a call to a name the contract does not
@@ -306,6 +308,8 @@ func compileMessage(c *contract.Contracts, dir, src, line string, n int, diag st
 		return fmt.Sprintf("unused import at line %d", n)
 	case strings.Contains(diag, "declared and not used") || strings.Contains(diag, "declared but not used"):
 		return fmt.Sprintf("unused variable at line %d", n)
+	case stdStreamAssignRE.MatchString(line) && (strings.Contains(diag, "cannot use") || strings.Contains(diag, "mismatched types")):
+		return fmt.Sprintf("type mismatch at line %d: os.Stdin, os.Stdout and os.Stderr are *os.File values; assign an *os.File (from os.Pipe or os.CreateTemp), never a type of your own", n)
 	case strings.Contains(diag, "cannot assign to") || strings.Contains(diag, "not in selector"):
 		return fmt.Sprintf("cannot assign at line %d: a declared function is not a variable and cannot be replaced; do not stub or reassign the code under test, call it with real inputs (for a file path input, write a real file under t.TempDir() with os.WriteFile and pass its path; for a reader input use strings.NewReader)", n)
 	case strings.Contains(diag, "missing return"):

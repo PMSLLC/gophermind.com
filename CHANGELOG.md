@@ -27,6 +27,7 @@ All notable changes to GopherMind are documented here. The format follows
 
 ### Fixed
 
+- **Test-writer refusal for replacing os.Stdin, os.Stdout or os.Stderr with a custom type.** The refusal now says these are `*os.File` values and to use `os.Pipe` or a temp file, instead of a bare "type mismatch".
 - **Test-writer reply limit raised to 12000 tokens.** A test file for a function that composes several others was cut off at the 6000 token limit on the local model, twice in a row, which stopped planning.
 - **Test-writer refusal for replacing a function.** A test that assigned to a package function (`stats.OpenInput = ...`) was refused with only "does not compile at line N". The refusal now says a declared function cannot be replaced and the code under test should be called with real inputs.
 - **Test-writer refusal for a name the contract does not declare.** A test that called an invented helper (`pInt` for `parseInt`) was refused with advice about unexported names. The refusal now lists the functions and types the contract declares for the package.

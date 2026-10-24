@@ -399,3 +399,11 @@ func TestCompileMessageCannotAssignToAFunction(t *testing.T) {
 		t.Errorf("message %q", m)
 	}
 }
+
+func TestCompileMessageStdStreamAssignedAForeignType(t *testing.T) {
+	c := compileCheckContract()
+	m := compileMessage(c, "cmd/csvstat", "package main\n", "os.Stdin = &mockStdin{}", 131, "cannot use &mockStdin{} (value of type *mockStdin) as *os.File value in assignment")
+	if !strings.HasPrefix(m, "type mismatch at line 131: os.Stdin, os.Stdout and os.Stderr are *os.File") || strings.Contains(m, "mockStdin") {
+		t.Errorf("message %q", m)
+	}
+}
