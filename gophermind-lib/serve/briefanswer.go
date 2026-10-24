@@ -270,6 +270,7 @@ func (m *briefManager) answerHandler(w http.ResponseWriter, r *http.Request) {
 		briefError(w, http.StatusInternalServerError, "cannot save the answer", nil)
 		return
 	}
+	m.log.Info("brief answer saved", "run_id", id, "question_id", req.QuestionID, "remaining", remaining)
 	if remaining > 0 {
 		briefJSON(w, http.StatusOK, map[string]any{"run_id": id, "saved": true, "resumed": false, "remaining": remaining})
 		return

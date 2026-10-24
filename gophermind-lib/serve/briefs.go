@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"mime"
 	"net/http"
 	"os"
@@ -66,6 +67,7 @@ type briefManager struct {
 	signal    func(pgid int, force bool) error
 	killGrace time.Duration
 	now       func() time.Time
+	log       *slog.Logger
 
 	mu       sync.Mutex
 	active   *activeBrief
@@ -99,6 +101,10 @@ func newBriefManager(opt Options, root string) (*briefManager, error) {
 		dir: opt.BriefsDir, root: root, cmd: opt.BriefCommand, signal: opt.BriefSignal,
 		streams: make(chan struct{}, maxEventStreams), eventEvery: defaultEventEvery,
 		killGrace: 10 * time.Second, now: func() time.Time { return time.Now().UTC() },
+		log: opt.BriefLogger,
+	}
+	if m.log == nil {
+		m.log = slog.Default()
 	}
 	if m.cmd == nil {
 		m.cmd = func(args []string) *exec.Cmd { return exec.Command("gophermind", args...) }
@@ -201,6 +207,7 @@ func (m *briefManager) start(b *brief.Brief, src []byte, ask bool) (briefRecord,
 	a := &activeBrief{id: id, done: make(chan struct{})}
 	m.active = a
 	m.mu.Unlock()
+	m.log.Info("brief upload accepted", "run_id", id, "ask", ask)
 	go m.run(a, rec, planArgs(briefPath, ask), logf)
 	return rec, nil
 }
@@ -238,6 +245,7 @@ func (m *briefManager) resume(rec briefRecord) error {
 	a := &activeBrief{id: rec.ID, done: make(chan struct{})}
 	m.active = a
 	m.mu.Unlock()
+	m.log.Info("brief resume started", "run_id", rec.ID)
 	go m.run(a, rec, []string{"brief", "resume", rec.ID, "--yes", "--gate", "file"}, logf)
 	return nil
 }
@@ -295,9 +303,16 @@ func (m *briefManager) step(a *activeBrief, logf *os.File, args ...string) (int,
 		a.pgid = cmd.Process.Pid
 	}
 	m.mu.Unlock()
+	stepName := ""
+	if len(args) > 1 {
+		stepName = args[1]
+	}
 	if err != nil {
+		m.log.Error("brief process not started", "run_id", a.id, "step", stepName, "error", err.Error())
 		return 0, err
 	}
+	began := time.Now()
+	m.log.Info("brief process started", "run_id", a.id, "step", stepName, "pid", cmd.Process.Pid)
 	err = cmd.Wait()
 	_ = sf.Flush()
 	m.mu.Lock()
@@ -305,13 +320,17 @@ func (m *briefManager) step(a *activeBrief, logf *os.File, args ...string) (int,
 	a.sudoHidden += sf.hidden
 	m.mu.Unlock()
 	var ee *exec.ExitError
-	switch {
-	case err == nil:
-		return 0, nil
-	case errors.As(err, &ee):
-		return ee.ExitCode(), nil
+	code := 0
+	if errors.As(err, &ee) {
+		code, err = ee.ExitCode(), nil
 	}
-	return 0, err
+	ended := []any{"run_id", a.id, "step", stepName, "exit_code", code, "duration_ms", time.Since(began).Milliseconds()}
+	if err != nil {
+		m.log.Error("brief process ended", append(ended, "error", err.Error())...)
+		return 0, err
+	}
+	m.log.Info("brief process ended", ended...)
+	return code, nil
 }
 
 func (m *briefManager) run(a *activeBrief, rec briefRecord, first []string, logf *os.File) {
@@ -382,6 +401,7 @@ func (m *briefManager) stop(id string) error {
 	a.stopped = true
 	pgid := a.pgid
 	m.mu.Unlock()
+	m.log.Info("brief stop requested", "run_id", id, "process_live", pgid > 0)
 	if pgid > 0 {
 		_ = m.signal(pgid, false)
 		go func() {

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -312,6 +313,10 @@ type Options struct {
 	// BriefSignal stops a run's process group (force means SIGKILL). Nil
 	// signals the group directly.
 	BriefSignal func(pgid int, force bool) error
+	// BriefLogger gets one structured line per brief event (upload accepted,
+	// process started and ended, stop requested, answer saved, resume
+	// started). Never any brief or answer text. Nil uses slog.Default().
+	BriefLogger *slog.Logger
 }
 
 // resolveToken determines the bearer token NewMux enforces: an explicit

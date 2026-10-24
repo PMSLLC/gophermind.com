@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -31,6 +32,7 @@ type briefEnv struct {
 	mu     sync.Mutex
 	calls  [][]string
 	script func(args []string) string // shell snippet per invocation
+	logs   lockedBuf                  // the manager's structured log lines
 }
 
 func newBriefEnv(t *testing.T) *briefEnv {
@@ -44,6 +46,7 @@ func newBriefEnv(t *testing.T) *briefEnv {
 	}
 	mux, err := NewMux(d, Options{
 		Token: testBearer, Google: a, BriefsDir: e.dir,
+		BriefLogger: slog.New(slog.NewTextHandler(&e.logs, nil)),
 		BriefCommand: func(args []string) *exec.Cmd {
 			e.mu.Lock()
 			e.calls = append(e.calls, append([]string(nil), args...))

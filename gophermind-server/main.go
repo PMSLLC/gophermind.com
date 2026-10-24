@@ -209,7 +209,7 @@ func runWithConfig(cfg serverConfig, ln net.Listener, logger *slog.Logger, ctx c
 	if err != nil {
 		return fmt.Errorf("build deps: %w", err)
 	}
-	mux, err := serve.NewMux(svcDeps, briefOptions(cfg, serve.Options{Token: cfg.Token, Google: cfg.Google}))
+	mux, err := serve.NewMux(svcDeps, briefOptions(cfg, serve.Options{Token: cfg.Token, Google: cfg.Google, BriefLogger: logger}))
 	if err != nil {
 		return fmt.Errorf("build mux: %w", err)
 	}
