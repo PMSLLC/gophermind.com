@@ -7,29 +7,21 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'">
 <title>GopherMind</title>
 <style>
-  body{font-family:system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem;color:#1d2330}
-  nav{display:flex;gap:12px;margin:1.5rem 0}
-  nav a{padding:10px 18px;border:1px solid #9aa4b5;border-radius:6px;text-decoration:none;color:inherit}
-  nav a:hover{border-color:#0b7a75;color:#0b7a75}
-  .who{color:#556;font-size:.9rem}
-  button{font:inherit;padding:6px 14px;border:1px solid #9aa4b5;border-radius:6px;background:none;cursor:pointer}
+/*GM_CSS*/
 </style>
 </head>
 <body class="gm-home">
-<h1>GopherMind</h1>
-<p class="who">Signed in as <b id="email">...</b></p>
-<nav>
-  <a href="/app/chat">Chat</a>
-  <a href="/app/briefs/new">Upload brief</a>
-  <a href="/app/briefs">Runs</a>
-  <a href="/pipeline">Pipeline</a>
-</nav>
-<form method="post" action="/auth/logout"><button type="submit">Sign out</button></form>
-<script>
-fetch('/auth/me', { credentials: 'same-origin' })
-  .then(r => r.ok ? r.json() : Promise.reject(new Error(String(r.status))))
-  .then(j => { document.getElementById('email').textContent = j.email; })
-  .catch(() => { document.getElementById('email').textContent = 'unknown'; });
-</script>
+<div class="shell">
+<!--GM_RAIL-->
+<main class="main">
+<div class="head"><h1>GopherMind</h1><p class="meta">Turn a written brief into a planned, tested and verified build.</p></div>
+<div class="tiles">
+  <a href="/app/briefs/new"><b>Upload a brief</b><span>Start planning and building from a Markdown brief.</span></a>
+  <a href="/app/briefs"><b>Runs</b><span>Follow a build: the plan, each attempt, and the checks.</span></a>
+  <a href="/app/chat"><b>Chat</b><span>Ask GopherMind about the code, with approval for each tool.</span></a>
+  <a href="/pipeline"><b>Pipeline</b><span>The live dashboard of the pipeline and its queue.</span></a>
+</div>
+</main>
+</div>
 </body>
 </html>

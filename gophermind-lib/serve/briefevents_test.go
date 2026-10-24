@@ -194,8 +194,16 @@ freed:
 		c()
 	}
 
-	if w := e.get("/app/briefs/gm-2026-10-24-777/events"); w.Code != http.StatusNotFound {
-		t.Errorf("unknown run = %d", w.Code)
+	// The cancelled streams free their slots as their handlers return, a moment
+	// after the cancel; until then the cap answers 503 before the run lookup.
+	var unknown int
+	for until := time.Now().Add(3 * time.Second); time.Now().Before(until); time.Sleep(20 * time.Millisecond) {
+		if unknown = e.get("/app/briefs/gm-2026-10-24-777/events").Code; unknown != http.StatusServiceUnavailable {
+			break
+		}
+	}
+	if unknown != http.StatusNotFound {
+		t.Errorf("unknown run = %d", unknown)
 	}
 	if w := e.get("/app/briefs/x/events"); w.Code != http.StatusNotFound {
 		t.Errorf("bad id = %d", w.Code)

@@ -4,34 +4,37 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'">
 <title>Upload brief - GopherMind</title>
 <style>
-  body{font-family:system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem;color:#1d2330}
-  a{color:#0b7a75}
-  input[type=file]{display:block;margin:1rem 0}
-  button{font:inherit;padding:6px 14px;border:1px solid #9aa4b5;border-radius:6px;background:none;cursor:pointer}
-  button:hover:not(:disabled){border-color:#0b7a75;color:#0b7a75}
-  button:disabled{opacity:.5;cursor:default}
-  #msg{margin-top:1rem;min-height:1.4em}
-  .err{color:#a3261f}
-  .hint{color:#556;font-size:.9rem}
+/*GM_CSS*/
 </style>
 </head>
 <body class="gm-brief-new">
-<p><a href="/">Home</a> | <a href="/app/briefs">Runs</a></p>
-<h1>Upload a brief</h1>
-<p class="hint">A brief is a Markdown file with YAML frontmatter. It is checked the same way as <code>gophermind brief validate</code> (256 KiB at most). Planning and the run start at once; one run can be active at a time.</p>
+<div class="shell">
+<!--GM_RAIL-->
+<main class="main">
+<div class="head"><h1>Upload a brief</h1></div>
+<p class="lede">A brief is a Markdown file with YAML frontmatter, checked the same way as <code>gophermind brief validate</code> (256 KiB at most). Planning and the run start at once. One run can be active at a time.</p>
 <form id="form">
-  <input id="file" type="file" accept=".md,text/markdown,text/plain" required>
-  <p><label><input id="ask" type="checkbox"> Ask me the clarify questions here (the run pauses until you answer them)</label></p>
+  <label class="drop" for="file">Choose the brief file
+    <input id="file" type="file" accept=".md,text/markdown,text/plain" required>
+    <span class="picked" id="picked"></span>
+  </label>
+  <label class="opt"><input id="ask" type="checkbox"><span>Ask me the clarify questions here. The run pauses until you answer them.</span></label>
   <button id="go" type="submit">Upload and start</button>
 </form>
 <div id="msg" role="status"></div>
+</main>
+</div>
 <script>
 'use strict';
 const msg = document.getElementById('msg');
 const go = document.getElementById('go');
+document.getElementById('file').addEventListener('change', ev => {
+  const f = ev.target.files[0];
+  document.getElementById('picked').textContent = f ? f.name + ' (' + Math.max(1, Math.round(f.size / 1024)) + ' KiB)' : '';
+});
 function show(text, isErr, href){
   msg.textContent = '';
   const s = document.createElement('span');

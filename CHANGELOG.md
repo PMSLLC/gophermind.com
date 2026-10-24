@@ -21,6 +21,10 @@ All notable changes to GopherMind are documented here. The format follows
 
 - **The temporary username and password login.** Google sign-in is live, so `GOPHERMIND_WEB_USER`, `GOPHERMIND_WEB_PASSWORD_HASH`, the `gophermind-server hashpw` subcommand, `POST /auth/password`, the password form and `/auth/login?local=1` are gone. The variables are ignored; remove them from the env file. `/auth/login?local=1` now redirects to Google like `/auth/login`.
 
+### Changed
+
+- **Redesigned browser pages.** The signed-in pages share one stylesheet and a navigation rail (Runs, Upload brief, Chat, Pipeline, the signed-in address and Sign out). The run page opens with a build strip of leaf counts (verified, running, blocked, failed, not started), the runs table and upload page are restyled, and the layout holds at phone width, where the rail becomes a top bar.
+
 ### Fixed
 
 - **Test-writer reply limit raised to 12000 tokens.** A test file for a function that composes several others was cut off at the 6000 token limit on the local model, twice in a row, which stopped planning.

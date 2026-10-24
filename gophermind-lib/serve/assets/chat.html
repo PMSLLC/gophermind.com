@@ -6,48 +6,33 @@
 <meta name="referrer" content="no-referrer">
 <!-- Everything the model says is put on the page with textContent, never as
      markup; the policy below is a second layer should that ever slip. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'">
 <title>GopherMind chat</title>
 <style>
-  *{box-sizing:border-box}
-  body{margin:0;font-family:system-ui,sans-serif;color:#1d2330;height:100vh;display:flex}
-  aside{width:260px;border-right:1px solid #d5d9e2;display:flex;flex-direction:column;min-height:0}
-  aside header{padding:10px;display:flex;gap:6px;align-items:center;border-bottom:1px solid #d5d9e2}
-  aside header a{margin-left:auto;color:#556;font-size:.85rem}
-  #sessions{overflow:auto;flex:1}
-  .sess{padding:8px 10px;border-bottom:1px solid #eef0f4;cursor:pointer;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .sess:hover{background:#f3f5f9}
-  .sess.on{background:#e3f1f0}
-  main{flex:1;display:flex;flex-direction:column;min-width:0}
-  #log{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
-  .msg{max-width:48rem;white-space:pre-wrap;word-wrap:break-word;padding:8px 12px;border-radius:8px;line-height:1.4}
-  .user{align-self:flex-end;background:#e3f1f0}
-  .assistant{align-self:flex-start;background:#f3f5f9}
-  .tool{align-self:flex-start;font:12px ui-monospace,Menlo,monospace;color:#556;border-left:3px solid #9aa4b5;padding:2px 8px;max-width:48rem;white-space:pre-wrap;word-wrap:break-word}
-  .err{align-self:flex-start;color:#a3261f}
-  .approval{align-self:flex-start;border:1px solid #c88a00;border-radius:8px;padding:8px 12px;max-width:48rem}
-  .approval pre{margin:6px 0;white-space:pre-wrap;word-wrap:break-word;font:12px ui-monospace,Menlo,monospace}
-  form{display:flex;gap:8px;padding:10px;border-top:1px solid #d5d9e2}
-  textarea{flex:1;font:inherit;padding:8px;border:1px solid #9aa4b5;border-radius:6px;resize:vertical;min-height:44px;max-height:30vh}
-  button{font:inherit;padding:6px 14px;border:1px solid #9aa4b5;border-radius:6px;background:none;cursor:pointer}
-  button:hover:not(:disabled){border-color:#0b7a75;color:#0b7a75}
-  button:disabled{opacity:.5;cursor:default}
-  #status{padding:2px 16px;font-size:.8rem;color:#556;min-height:1.2em}
+/*GM_CSS*/
 </style>
 </head>
 <body class="gm-chat">
-<aside>
-  <header><button id="newBtn" type="button">New chat</button><a href="/">Home</a></header>
+<div class="shell">
+<!--GM_RAIL-->
+<main class="main">
+<div class="chat">
+<aside class="sessions">
+  <header><button id="newBtn" type="button">New chat</button></header>
   <div id="sessions"></div>
 </aside>
-<main>
+<section class="conv">
   <div id="log"></div>
   <div id="status"></div>
   <form id="form">
     <textarea id="input" rows="2" placeholder="Message GopherMind (Enter sends, Shift+Enter for a new line)"></textarea>
     <button id="sendBtn" type="submit">Send</button>
   </form>
+</section>
+</div>
 </main>
+</div>
+
 <script>
 'use strict';
 const $ = id => document.getElementById(id);

@@ -6,42 +6,24 @@
 <meta name="referrer" content="no-referrer">
 <!-- Run data is put on the page with textContent only, never as markup; the
      policy below is a second layer should that ever slip. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'">
 <title>Run - GopherMind</title>
 <style>
-  body{font-family:system-ui,sans-serif;max-width:70rem;margin:2rem auto;padding:0 1rem;color:#1d2330}
-  a{color:#0b7a75}
-  h2{margin:1.6rem 0 .4rem;font-size:1.05rem}
-  button{font:inherit;padding:4px 12px;border:1px solid #9aa4b5;border-radius:6px;background:none;cursor:pointer}
-  button:hover:not(:disabled){border-color:#a3261f;color:#a3261f}
-  button:disabled{opacity:.5;cursor:default}
-  .pill{display:inline-block;padding:1px 8px;border-radius:10px;background:#eef0f4;font-size:.8rem}
-  .pill.running,.pill.live{background:#fff3cd}
-  .pill.verified,.pill.good,.pill.pass{background:#d9f2e6}
-  .pill.failed,.pill.bad,.pill.fail,.pill.error{background:#f8d7d4}
-  .pill.blocked{background:#e5e0f5}
-  .meta{color:#556;font-size:.9rem}
-  ul.tree{list-style:none;margin:0;padding-left:1.2rem}
-  ul.tree.top{padding-left:0}
-  .node{padding:2px 0}
-  .node .id{font:12px ui-monospace,Menlo,monospace}
-  .sub{color:#556;font-size:.8rem;margin-left:.4rem}
-  .origin{font-size:.8rem;color:#0b7a75;margin-left:.4rem}
-  details>summary{cursor:pointer}
-  table{border-collapse:collapse;margin:.3rem 0 .3rem 1.2rem}
-  th,td{text-align:left;padding:2px 10px;border-bottom:1px solid #eef0f4;font-size:.82rem}
-  pre{background:#f3f5f9;padding:8px 10px;border-radius:6px;overflow:auto;max-height:22rem;font:12px ui-monospace,Menlo,monospace;white-space:pre-wrap;word-wrap:break-word}
-  .q{margin:.4rem 0;padding:6px 10px;border-left:3px solid #9aa4b5}
-  .err{color:#a3261f}
-  textarea{display:block;width:100%;max-width:40rem;font:inherit;margin:.3rem 0}
+/*GM_CSS*/
 </style>
 </head>
 <body class="gm-brief">
-<p><a href="/">Home</a> | <a href="/app/briefs">Runs</a> | <a href="/app/briefs/new">Upload brief</a></p>
-<h1 id="title">Run</h1>
-<div class="meta" id="head"></div>
-<p><button id="stop" type="button" hidden>Stop this run</button> <span id="stopmsg" class="err"></span></p>
+<div class="shell">
+<!--GM_RAIL-->
+<main class="main">
+<div class="head">
+  <h1 id="title">Run</h1>
+  <div class="actions"><button id="stop" type="button" hidden>Stop this run</button><span id="stopmsg" class="err"></span></div>
+  <div class="meta" id="head"></div>
+</div>
 <div id="load" class="meta">Loading...</div>
+
+<div id="strip"></div>
 
 <h2>Decomposition</h2>
 <div id="counts" class="meta"></div>
@@ -64,6 +46,8 @@
 
 <h2>Log</h2>
 <pre id="log"></pre>
+</main>
+</div>
 
 <script>
 'use strict';
@@ -90,21 +74,71 @@ function phaseClass(p){
   return '';
 }
 
+function when(iso){
+  if (!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d) ? iso : d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+const STRIP = [
+  ['verified', 's-verified', ['verified']],
+  ['running', 's-running', ['running', 'building', 'claimed']],
+  ['blocked', 's-blocked', ['blocked']],
+  ['failed', 's-failed', ['failed', 'escalated']]
+];
+function renderStrip(c){
+  const box = $('strip');
+  box.textContent = '';
+  const total = c.nodes || 0;
+  if (!total) return;
+  const by = c.by_status || {};
+  const bar = el('div', 'strip');
+  bar.setAttribute('role', 'img');
+  const legend = el('div', 'legend');
+  let counted = 0;
+  for (const [label, cls, keys] of STRIP) {
+    let n = 0;
+    for (const k of keys) n += by[k] || 0;
+    counted += n;
+    if (!n) continue;
+    const seg = el('span', cls);
+    seg.style.width = (100 * n / total) + '%';
+    bar.appendChild(seg);
+    const item = el('span');
+    item.appendChild(el('i', cls));
+    item.appendChild(el('b', '', n));
+    item.appendChild(document.createTextNode(' ' + label));
+    legend.appendChild(item);
+  }
+  const rest = total - counted;
+  if (rest > 0) {
+    const item = el('span');
+    item.appendChild(el('i'));
+    item.appendChild(el('b', '', rest));
+    item.appendChild(document.createTextNode(' not started'));
+    legend.appendChild(item);
+  }
+  bar.setAttribute('aria-label', total + ' leaves');
+  box.appendChild(bar);
+  box.appendChild(legend);
+}
+
 function renderHead(run){
-  $('title').textContent = (run.title || 'Run') + ' (' + run.id + ')';
+  $('title').textContent = run.title || 'Run';
   const h = $('head');
   h.textContent = '';
-  h.appendChild(document.createTextNode('Launch: '));
+  h.appendChild(el('span', 'mono', run.id));
+  h.appendChild(document.createTextNode('  '));
   h.appendChild(pill(run.phase || 'external', phaseClass(run.phase)));
-  h.appendChild(document.createTextNode('  Run folder: '));
+  h.appendChild(document.createTextNode(' '));
   h.appendChild(pill(run.status || 'not created yet', run.status === 'verified' ? 'good' : ''));
-  if (run.stop_reason) h.appendChild(document.createTextNode('  Stop reason: ' + run.stop_reason));
-  if (run.started_at) h.appendChild(document.createTextNode('  Started: ' + run.started_at));
-  if (run.finished_at) h.appendChild(document.createTextNode('  Finished: ' + run.finished_at));
-  if (run.exit_code !== null && run.exit_code !== undefined) h.appendChild(document.createTextNode('  Exit code: ' + run.exit_code));
+  if (run.stop_reason) h.appendChild(document.createTextNode('  Stopped: ' + run.stop_reason));
+  if (run.started_at) h.appendChild(document.createTextNode('  Started ' + when(run.started_at)));
+  if (run.finished_at) h.appendChild(document.createTextNode('  Finished ' + when(run.finished_at)));
+  if (run.exit_code !== null && run.exit_code !== undefined) h.appendChild(document.createTextNode('  Exit code ' + run.exit_code));
   if (run.error) { h.appendChild(document.createTextNode('  ')); h.appendChild(el('span', 'err', run.error)); }
   $('stop').hidden = !run.active;
   const c = run.counts || {};
+  renderStrip(c);
   const parts = [];
   for (const k of Object.keys(c.by_status || {}).sort()) parts.push(k + ' ' + c.by_status[k]);
   $('counts').textContent = (c.nodes || 0) + ' leaves' + (parts.length ? ' (' + parts.join(', ') + ')' : '') +
