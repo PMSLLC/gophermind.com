@@ -105,6 +105,9 @@ func (lr *leafRun) rewrite(ctx context.Context, trigger string) error {
 			History: history, LastFailure: rc.scrubText(failureLines(lr.prev)),
 			TestSource: testSrc, TestSHA256: l.TestSHA256, Refused: append([]string(nil), lr.refusals...), Secrets: rc.secretValues(),
 		}
+		if d, ok := rc.redOut.Load(l.ID); ok && len(lr.refusals) > 0 && lr.refusals[len(lr.refusals)-1] == planner.ClassRedBuild {
+			req.RefusedDetail, _ = d.(string)
+		}
 		if trigger == planner.TriggerContractProblem {
 			req.Problem = clip(rc.scrubText(lr.problem), maxProblemBytes)
 		}

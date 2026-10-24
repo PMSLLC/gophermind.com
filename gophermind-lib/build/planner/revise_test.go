@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -623,5 +624,57 @@ func TestReviseRefusesASecretThatOnlyDecodingReveals(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The revised test goes through the steps of the first write: an unused import
+// is dropped instead of reaching the executor's red check as a build failure.
+func TestReviseDropsAnUnusedImportFromTheRewrittenTest(t *testing.T) {
+	withUnused := strings.Replace(revisedGreetTest, "import \"testing\"", "import (\n\t\"strings\"\n\t\"testing\"\n)", 1)
+	g := planned(t, map[string]string{"revise.fn-greet.txt": descriptionPatch, "testwrite.fn-greet-r1.txt": testwriteReply(t, withUnused)})
+	prop, err := planner.NewReviser(g.deps).Revise(context.Background(), reviseReq(t, g))
+	if err != nil || prop.Outcome != planner.OutcomeRewritten {
+		t.Fatalf("proposal = %+v, %v", prop, err)
+	}
+	if strings.Contains(prop.TestSource, `"strings"`) || !prop.TestChanged {
+		t.Fatalf("the test source still has the unused import:\n%s", prop.TestSource)
+	}
+}
+
+// A rewritten test that does not compile against the contract's stubs is refused
+// inside the Test-writer's repair loop (the compile check of the first write),
+// not accepted to fail the executor's red check with its reason lost.
+func TestReviseRefusesARewrittenTestThatDoesNotCompile(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("no go tool")
+	}
+	broken := strings.Replace(revisedGreetTest, "Greet(c.in)", "Greeet(c.in)", 1)
+	g := planned(t, map[string]string{"revise.fn-greet.txt": descriptionPatch, "testwrite.fn-greet-r1.txt": testwriteReply(t, broken)})
+	before := len(g.stagesCalled())
+	prop, err := planner.NewReviser(g.deps).Revise(context.Background(), reviseReq(t, g))
+	if err != nil || prop.Outcome != planner.OutcomeUnusable || prop.Class != planner.ClassReviseInvalid {
+		t.Fatalf("proposal = %+v, %v; want unusable %s", prop, err, planner.ClassReviseInvalid)
+	}
+	if got := g.stagesCalled()[before:]; len(got) != 4 {
+		t.Fatalf("stages = %v, want the revise call and three Test-writer calls", got)
+	}
+}
+
+func TestRevisePromptCarriesTheRefusedTestOutputAndTheTestIsWrongRule(t *testing.T) {
+	g := planned(t, map[string]string{"revise.fn-greet.txt": descriptionPatch, "testwrite.fn-greet-r1.txt": testwriteReply(t, revisedGreetTest)})
+	req := reviseReq(t, g)
+	req.Refused = []string{planner.ClassRedBuild}
+	req.RefusedDetail = "greet_test.go:9:2: \"strings\" imported and not used"
+	req.History = append(req.History, "attempt 2 a/m1 fail identical_reply")
+	before := len(g.fake.Requests())
+	if _, err := planner.NewReviser(g.deps).Revise(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	msgs := requestsSince(g, before)[0]
+	text := msgs[len(msgs)-1].Content
+	for _, want := range []string{"<refused_output>", "imported and not used", "identical_reply", "the TEST is wrong, not the contract"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("revise prompt lacks %q", want)
+		}
 	}
 }

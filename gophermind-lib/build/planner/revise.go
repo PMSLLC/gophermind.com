@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/format"
 	"go/scanner"
 	"go/token"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -33,7 +35,10 @@ type ReviseRequest struct {
 	LastFailure                 string
 	TestSource, TestSHA256      string
 	Refused                     []string
-	Secrets                     []string
+	// RefusedDetail is what the compiler said about the last rewritten test that
+	// was refused for not building (revise_red_build): the next rewrite needs it.
+	RefusedDetail string
+	Secrets       []string
 }
 
 // ReviseOutcome is what a revise call came to.
@@ -206,7 +211,7 @@ func (p *Planner) revisePrompt(r *run, c *contract.Contracts, orig map[string]an
 		"Refused": strings.Join(req.Refused, ", "),
 		"Node":    scrubInput(mustJSON(reviseView(orig, component)), req.Secrets, maxReviseTestSource), "Contract": scrubInput(strings.Join(slice, "\n\n"), req.Secrets, maxReviseTestSource),
 		"TestFile": testFile, "TestSource": strings.TrimRight(req.TestSource, "\n"),
-		"Attempts": bulletList(req.History), "Failure": req.LastFailure, "Problem": req.Problem,
+		"Attempts": bulletList(req.History), "Failure": req.LastFailure, "Problem": req.Problem, "RefusedDetail": req.RefusedDetail,
 		"Component": "", "BriefSection": "", "Decisions": "",
 	}
 	if component {
@@ -300,6 +305,7 @@ func (v *Reviser) Revise(ctx context.Context, req ReviseRequest) (ReviseProposal
 	for i, h := range req.History {
 		sreq.History[i] = scrubInput(h, req.Secrets, maxReviseInput)
 	}
+	sreq.RefusedDetail = scrubInput(req.RefusedDetail, req.Secrets, maxReviseInput)
 	sreq.Refused = make([]string, len(req.Refused))
 	for i, h := range req.Refused {
 		sreq.Refused[i] = scrubInput(h, req.Secrets, maxReviseInput)
@@ -467,6 +473,30 @@ func (p *Planner) reviseTests(ctx context.Context, r *run, c *contract.Contracts
 		}
 		if lerr := linkErrorTests(ct, ts); lerr != nil {
 			return lerr
+		}
+		// The same steps as the first write (writeTests): a revised test that does
+		// not compile against the stubs would only be refused by the executor's
+		// red check with the compiler's reason thrown away.
+		var st testwriterState
+		if _, rerr := readJSON(r.path(stateTestwriter), &st); rerr != nil {
+			return rerr
+		}
+		others := otherTestSources(r.repo, path.Dir(testFile), id, &st)
+		s, _, rerr := resolveSharedNames(s, strings.TrimPrefix(funcName, "Test"), others, stubSources(c, path.Dir(file)))
+		if rerr == errDeclaredName {
+			rerr = richDeclaredName(s, c, path.Dir(testFile), rerr)
+		}
+		if rerr != nil {
+			return rerr
+		}
+		s, _ = dropUnusedImports(s)
+		formatted, ferr := format.Source([]byte(s))
+		if ferr != nil {
+			return fmt.Errorf("test file cannot be formatted: %v", ferr)
+		}
+		s = string(formatted)
+		if cerr := compileCheckTestFile(c, testFile, s, others); cerr != nil && !errors.Is(cerr, errNoGo) {
+			return cerr
 		}
 		tests, src = ts, s
 		return nil

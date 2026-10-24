@@ -48,6 +48,7 @@ func (e *stopError) Error() string { return e.Message }
 // runCtx is everything one run shares (called rc everywhere).
 type runCtx struct {
 	gateMu     sync.Mutex // one question to the gate at a time (decision F11)
+	redOut     sync.Map   // leaf id -> the compiler output of the last revised test refused as not red (build or vet)
 	o          Options
 	cfg        *settings.Config
 	plan       *Plan

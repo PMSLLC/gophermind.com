@@ -157,6 +157,9 @@ func (rc *runCtx) redCheckRevision(ctx context.Context, l *Leaf) (string, error)
 	case v.Pass():
 		return planner.ClassVacuousTest, nil
 	case v.Class == runner.ClassBuild || v.Class == runner.ClassVet:
+		// The refusal class alone tells the next revise call nothing it can
+		// act on: keep what the compiler said about the new test.
+		rc.redOut.Store(l.ID, rc.scrubText(clip(failureLines(failureOf(v, rc.secretValues())), maxProblemBytes*5)))
 		return planner.ClassRedBuild, nil
 	}
 	return "", nil

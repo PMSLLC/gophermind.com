@@ -520,3 +520,33 @@ func TestARedCheckRefusalRepeatsTheCallThenEscalatesWithTheLastClass(t *testing.
 		t.Fatal("a refused proposal changed the node")
 	}
 }
+
+// TestARedBuildRefusalHandsTheCompilerOutputToTheNextRewrite: a rewritten test
+// that does not build is refused as revise_red_build, and the next Revise call
+// of the same revision carries what the compiler said (RefusedDetail), where
+// the first call has none. Before, only the class name was passed on.
+func TestARedBuildRefusalHandsTheCompilerOutputToTheNextRewrite(t *testing.T) {
+	t.Parallel()
+	g := newRig(t, reviseRewrite(2))
+	id := leafID
+	rc, fc := g.leafRC(t, Script{"implement:" + id: distinct(id, 2)}, true)
+	failing(fc, id, 2)
+	fc.LeafScript[id] = append(fc.LeafScript[id],
+		failVerdict(runner.ClassBuild, "greet_test.go:9:2: \"strings\" imported and not used"),
+		failVerdict(runner.ClassBuild, "x"))
+	prop := g.proposal(t, id, "REVISED-SENTENCE for the greeting.", greetTest)
+	fr := &fakeReviser{steps: []func(planner.ReviseRequest) (planner.ReviseProposal, error){answer(prop), answer(prop), answer(prop)}}
+	rc.rev = fr
+	_, err := rc.runLeaf(context.Background(), rc.plan.Leaf(id), leafIn{})
+	asStop(t, err, "escalated", "human_stop")
+	reqs := fr.calls()
+	if len(reqs) != 2 {
+		t.Fatalf("Revise calls = %d, want 2", len(reqs))
+	}
+	if reqs[0].RefusedDetail != "" {
+		t.Fatalf("the first request has a refusal detail: %q", reqs[0].RefusedDetail)
+	}
+	if !strings.Contains(reqs[1].RefusedDetail, `"strings" imported and not used`) {
+		t.Fatalf("the second request lacks the compiler output: %q", reqs[1].RefusedDetail)
+	}
+}
