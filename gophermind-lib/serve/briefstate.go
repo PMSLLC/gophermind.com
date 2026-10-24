@@ -85,6 +85,14 @@ type BriefQuestion struct {
 	Status     string `json:"status"`
 	Answer     string `json:"answer"`
 	AnsweredBy string `json:"answered_by"`
+	// Why, Options and Recommended are the model's advice for an open question.
+	Why            string   `json:"why"`
+	Options        []string `json:"options"`
+	Recommended    string   `json:"recommended"`
+	RecommendedWhy string   `json:"recommended_why"`
+	// Askable is true when the run is waiting at the file gate and this
+	// question is one it is waiting for: POST /answer accepts it.
+	Askable bool `json:"askable"`
 }
 
 // BriefAcceptance is acceptance.json reduced to counts and verdicts.
@@ -190,13 +198,17 @@ var ErrBriefNotFound = errors.New("serve: no such run")
 
 type questionStoreFile struct {
 	Questions []struct {
-		ID         string `json:"id"`
-		Text       string `json:"question"`
-		Kind       string `json:"kind"`
-		Round      int    `json:"round"`
-		Status     string `json:"status"`
-		Answer     string `json:"answer"`
-		AnsweredBy string `json:"answered_by"`
+		ID             string   `json:"id"`
+		Text           string   `json:"question"`
+		Kind           string   `json:"kind"`
+		Round          int      `json:"round"`
+		Status         string   `json:"status"`
+		Answer         string   `json:"answer"`
+		AnsweredBy     string   `json:"answered_by"`
+		Why            string   `json:"why_it_matters"`
+		Options        []string `json:"options"`
+		Recommended    string   `json:"recommended"`
+		RecommendedWhy string   `json:"recommended_why"`
 	} `json:"questions"`
 }
 
@@ -247,7 +259,10 @@ func BuildBriefState(root, id string, rec *briefRecord, active bool, logText str
 		if rec == nil {
 			return BriefState{}, ErrBriefNotFound
 		}
-		return st, nil // launched, but the run folder is not made yet
+		// Launched, but the run folder is not (fully) made yet; the gate's
+		// questions may still be there.
+		st.Questions = questionsOf(root, id, rec)
+		return st, nil
 	}
 	body := v.State()
 	if r := body.Run; r != nil {
@@ -298,9 +313,19 @@ func BuildBriefState(root, id string, rec *briefRecord, active bool, logText str
 	if b, err := readSmallFile(filepath.Join(dir, "UNDERSTANDING.md"), maxUnderstandingBytes); err == nil {
 		st.Understanding = string(b)
 	}
-	st.Questions = readQuestions(dir)
+	st.Questions = questionsOf(root, id, rec)
 	st.Acceptance = readAcceptance(dir)
 	return st, nil
+}
+
+// questionsOf is the run's questions, with the ones a waiting run is blocked on
+// marked askable.
+func questionsOf(root, id string, rec *briefRecord) []BriefQuestion {
+	qs := readQuestions(filepath.Join(root, ".gophermind", id))
+	if rec != nil && rec.Phase == phaseWaiting {
+		qs = markAskable(qs, readGateQuestions(root, id))
+	}
+	return qs
 }
 
 func readQuestions(dir string) []BriefQuestion {
@@ -310,7 +335,8 @@ func readQuestions(dir string) []BriefQuestion {
 		if json.Unmarshal(b, &f) == nil {
 			for _, q := range f.Questions {
 				out = append(out, BriefQuestion{ID: q.ID, Question: q.Text, Kind: q.Kind, Round: q.Round,
-					Status: q.Status, Answer: q.Answer, AnsweredBy: q.AnsweredBy})
+					Status: q.Status, Answer: q.Answer, AnsweredBy: q.AnsweredBy,
+					Why: q.Why, Options: nonNilStrings(q.Options), Recommended: q.Recommended, RecommendedWhy: q.RecommendedWhy})
 			}
 			return out
 		}
@@ -351,13 +377,9 @@ func readAcceptance(dir string) *BriefAcceptance {
 	return a
 }
 
-// state handles GET /app/briefs/{id}/state.
-func (m *briefManager) state(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if !runview.ValidRunID(id) {
-		briefError(w, http.StatusNotFound, "no such run", nil)
-		return
-	}
+// buildState is the state of one run from the launcher's record, the run
+// folder and the log.
+func (m *briefManager) buildState(id string) (BriefState, error) {
 	var rec *briefRecord
 	logText := ""
 	if x, ok := m.readRecord(id); ok {
@@ -366,7 +388,17 @@ func (m *briefManager) state(w http.ResponseWriter, r *http.Request) {
 			logText = string(b)
 		}
 	}
-	st, err := BuildBriefState(m.root, id, rec, m.activeID() == id, logText, m.now())
+	return BuildBriefState(m.root, id, rec, m.activeID() == id, logText, m.now())
+}
+
+// state handles GET /app/briefs/{id}/state.
+func (m *briefManager) state(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !runview.ValidRunID(id) {
+		briefError(w, http.StatusNotFound, "no such run", nil)
+		return
+	}
+	st, err := m.buildState(id)
 	if err != nil {
 		briefError(w, http.StatusNotFound, "no such run", nil)
 		return
@@ -424,4 +456,30 @@ func (m *briefManager) list(w http.ResponseWriter, r *http.Request) {
 		return out[i].ID > out[j].ID
 	})
 	briefJSON(w, http.StatusOK, map[string]any{"schema_version": BriefStateVersion, "active_run_id": active, "runs": out})
+}
+
+func nonNilStrings(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
+
+// markAskable flags the questions the file gate is waiting on. A gate
+// question the question store does not know (a stage asking on its own) is
+// added from QUESTIONS.md, so it can still be answered.
+func markAskable(qs []BriefQuestion, gate []gateQuestion) []BriefQuestion {
+	for _, g := range gate {
+		found := false
+		for i := range qs {
+			if qs[i].ID == g.ID {
+				qs[i].Askable, found = true, true
+			}
+		}
+		if !found {
+			qs = append(qs, BriefQuestion{ID: g.ID, Question: g.Text, Kind: "decision", Status: "open",
+				Options: []string{}, Askable: true})
+		}
+	}
+	return qs
 }

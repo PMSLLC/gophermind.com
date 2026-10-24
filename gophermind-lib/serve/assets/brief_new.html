@@ -24,6 +24,7 @@
 <p class="hint">A brief is a Markdown file with YAML frontmatter. It is checked the same way as <code>gophermind brief validate</code> (256 KiB at most). Planning and the run start at once; one run can be active at a time.</p>
 <form id="form">
   <input id="file" type="file" accept=".md,text/markdown,text/plain" required>
+  <p><label><input id="ask" type="checkbox"> Ask me the clarify questions here (the run pauses until you answer them)</label></p>
   <button id="go" type="submit">Upload and start</button>
 </form>
 <div id="msg" role="status"></div>
@@ -55,7 +56,7 @@ document.getElementById('form').addEventListener('submit', async ev => {
   try {
     const fd = new FormData();
     fd.append('brief', f, f.name);
-    const r = await fetch('/app/briefs', { method: 'POST', body: fd, credentials: 'same-origin' });
+    const r = await fetch('/app/briefs' + (document.getElementById('ask').checked ? '?ask=1' : ''), { method: 'POST', body: fd, credentials: 'same-origin' });
     let j = {};
     try { j = await r.json(); } catch (e) {}
     if (r.status === 202 && j.url) { window.location.assign(j.url); return; }

@@ -422,6 +422,7 @@ func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 		mux.Handle("POST /app/briefs", briefWrap(bm.create))
 		mux.Handle("POST /app/briefs/{id}/stop", briefWrap(bm.stopHandler))
 		mux.Handle("GET /app/briefs/{id}/state", briefWrap(bm.state))
+		mux.Handle("POST /app/briefs/{id}/answer", briefWrap(bm.answerHandler))
 		mux.Handle("GET /app/api/briefs", briefWrap(bm.list))
 	}
 	if d.Metrics != nil {

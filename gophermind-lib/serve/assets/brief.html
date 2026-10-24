@@ -33,6 +33,7 @@
   pre{background:#f3f5f9;padding:8px 10px;border-radius:6px;overflow:auto;max-height:22rem;font:12px ui-monospace,Menlo,monospace;white-space:pre-wrap;word-wrap:break-word}
   .q{margin:.4rem 0;padding:6px 10px;border-left:3px solid #9aa4b5}
   .err{color:#a3261f}
+  textarea{display:block;width:100%;max-width:40rem;font:inherit;margin:.3rem 0}
 </style>
 </head>
 <body class="gm-brief">
@@ -77,7 +78,7 @@ function pill(text, extra){
   return s;
 }
 function phaseClass(p){
-  if (p === 'planning' || p === 'running') return 'live';
+  if (p === 'planning' || p === 'running' || p === 'waiting') return 'live';
   if (p === 'done') return 'good';
   if (p === 'failed' || p === 'stopped' || p === 'interrupted') return 'bad';
   return '';
@@ -168,16 +169,72 @@ function renderTree(nodes){
   t.appendChild(renderList(roots, true));
 }
 
+let qSig = '';
+async function sendAnswer(q, text, msg, btns){
+  msg.textContent = '';
+  if (!text.trim()) { msg.textContent = 'Write an answer first.'; return; }
+  for (const b of btns) b.disabled = true;
+  try {
+    const r = await fetch('/app/briefs/' + runId + '/answer', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question_id: q.id, answer: text })
+    });
+    let j = {};
+    try { j = await r.json(); } catch (e) {}
+    if (r.ok) {
+      msg.textContent = j.resumed ? 'Saved. Planning continues.' : ('Saved. ' + j.remaining + ' more to answer.');
+      qSig = '';
+      kick();
+    } else {
+      msg.textContent = j.error || ('Refused (' + r.status + ').');
+    }
+  } catch (e) {
+    msg.textContent = 'Failed: ' + e.message;
+  }
+  for (const b of btns) b.disabled = false;
+}
+
 function renderQuestions(qs){
+  // Rebuilding the boxes on every update would wipe what is being typed, so
+  // they are only rebuilt when the questions themselves changed.
+  const sig = JSON.stringify(qs);
+  if (sig === qSig) return;
+  qSig = sig;
   const box = $('questions');
   box.textContent = '';
   if (!qs.length) { box.appendChild(el('div', 'meta', 'None.')); return; }
   for (const q of qs) {
     const d = el('div', 'q');
     d.appendChild(el('div', '', q.id + ' (' + q.kind + ', round ' + q.round + '): ' + q.question));
-    const a = el('div', 'meta');
-    a.textContent = q.status === 'settled' ? ('Answer: ' + q.answer + '  [answered by ' + (q.answered_by || 'unknown') + ']') : 'Open';
-    d.appendChild(a);
+    if (q.status === 'settled') {
+      d.appendChild(el('div', 'meta', 'Answer: ' + q.answer + '  [answered by ' + (q.answered_by || 'unknown') + ']'));
+    } else {
+      d.appendChild(el('div', 'meta', q.askable ? 'Waiting for your answer' : 'Open'));
+      if (q.why) d.appendChild(el('div', 'meta', 'Why it matters: ' + q.why));
+      if (q.options && q.options.length) d.appendChild(el('div', 'meta', 'Options: ' + q.options.join(' | ')));
+      if (q.askable) {
+        const ta = el('textarea');
+        ta.rows = 2; ta.maxLength = 8192; ta.setAttribute('aria-label', 'Answer to ' + q.id);
+        const msg = el('span', 'err');
+        const send = el('button', '', 'Send answer');
+        send.type = 'button';
+        const btns = [send];
+        if (q.recommended) {
+          const rec = el('button', '', 'Use recommended: ' + q.recommended);
+          rec.type = 'button';
+          rec.title = q.recommended_why || '';
+          rec.addEventListener('click', () => sendAnswer(q, q.recommended, msg, btns));
+          btns.push(rec);
+          d.appendChild(el('div', 'meta', 'Recommended: ' + q.recommended + (q.recommended_why ? ' (' + q.recommended_why + ')' : '')));
+        }
+        send.addEventListener('click', () => sendAnswer(q, ta.value, msg, btns));
+        d.appendChild(ta);
+        d.appendChild(el('br'));
+        for (const b of btns) { d.appendChild(b); d.appendChild(document.createTextNode(' ')); }
+        d.appendChild(msg);
+      }
+    }
     box.appendChild(d);
   }
 }
@@ -201,7 +258,11 @@ function renderAcceptance(a){
   box.appendChild(t);
 }
 
+let timer = null;
+function kick(){ clearTimeout(timer); timer = setTimeout(refresh, 300); }
+
 async function refresh(){
+  clearTimeout(timer);
   let again = true;
   try {
     const r = await fetch('/app/briefs/' + runId + '/state', { credentials: 'same-origin', cache: 'no-store' });
@@ -223,7 +284,7 @@ async function refresh(){
   } catch (e) {
     $('load').textContent = 'Could not refresh: ' + e.message;
   }
-  if (again) setTimeout(refresh, 3000);
+  if (again) timer = setTimeout(refresh, 3000);
 }
 
 $('stop').addEventListener('click', async () => {

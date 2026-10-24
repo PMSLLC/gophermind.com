@@ -24,9 +24,10 @@ import (
 const maxBriefBytes = 256 << 10
 
 // Run phases of a record the web interface made. planning and running are
-// live; the rest are final.
+// live; waiting is paused on a person; the rest are final.
 const (
 	phasePlanning    = "planning"
+	phaseWaiting     = "waiting" // planning paused at open questions (file gate); no process runs
 	phaseRunning     = "running"
 	phaseDone        = "done"
 	phaseFailed      = "failed"
@@ -45,7 +46,14 @@ type briefRecord struct {
 	StartedAt  string `json:"started_at"`
 	FinishedAt string `json:"finished_at,omitempty"`
 	Error      string `json:"error,omitempty"`
+	// Ask is set when the run was uploaded with ask=1: planning uses the file
+	// gate and stops at open questions instead of taking unattended defaults.
+	Ask bool `json:"ask,omitempty"`
 }
+
+// exitWaiting is what `gophermind brief plan|resume` exits with when the file
+// gate is waiting on a person.
+const exitWaiting = 3
 
 // briefManager launches `gophermind brief plan` then `brief run`, one run at
 // a time, and keeps a record, a copy of the brief and a log per run under dir.
@@ -59,8 +67,9 @@ type briefManager struct {
 	killGrace time.Duration
 	now       func() time.Time
 
-	mu     sync.Mutex
-	active *activeBrief
+	mu       sync.Mutex
+	active   *activeBrief
+	answerMu sync.Mutex // one answer at a time: file edit, then resume
 }
 
 type activeBrief struct {
@@ -158,7 +167,7 @@ func readSmallFile(path string, max int64) ([]byte, error) {
 
 // start records a new run and launches it in the background. The slot is
 // taken before anything is written, so two requests cannot both start.
-func (m *briefManager) start(b *brief.Brief, src []byte) (briefRecord, error) {
+func (m *briefManager) start(b *brief.Brief, src []byte, ask bool) (briefRecord, error) {
 	id := b.Front.ID
 	m.mu.Lock()
 	if m.active != nil {
@@ -174,7 +183,7 @@ func (m *briefManager) start(b *brief.Brief, src []byte) (briefRecord, error) {
 		}
 		return briefRecord{}, err
 	}
-	rec := briefRecord{ID: id, Title: b.Front.Title, Phase: phasePlanning, StartedAt: m.stamp()}
+	rec := briefRecord{ID: id, Title: b.Front.Title, Phase: phasePlanning, StartedAt: m.stamp(), Ask: ask}
 	briefPath := filepath.Join(dir, "brief.md")
 	logf, err := m.prepare(dir, briefPath, src, rec)
 	if err != nil {
@@ -185,8 +194,45 @@ func (m *briefManager) start(b *brief.Brief, src []byte) (briefRecord, error) {
 	a := &activeBrief{id: id, done: make(chan struct{})}
 	m.active = a
 	m.mu.Unlock()
-	go m.run(a, rec, briefPath, logf)
+	go m.run(a, rec, planArgs(briefPath, ask), logf)
 	return rec, nil
+}
+
+// planArgs is the first step: unattended defaults, or the file gate when the
+// upload asked to be asked. Approval stays unattended (--yes) either way.
+func planArgs(briefPath string, ask bool) []string {
+	args := []string{"brief", "plan", briefPath, "--yes"}
+	if ask {
+		args = append(args, "--gate", "file")
+	}
+	return args
+}
+
+// resume continues a run that is waiting on answers: it takes the slot, marks
+// the run planning again and runs `brief resume` with the file gate.
+func (m *briefManager) resume(rec briefRecord) error {
+	m.mu.Lock()
+	if m.active != nil {
+		busy := &briefBusyError{activeID: m.active.id}
+		m.mu.Unlock()
+		return busy
+	}
+	logf, err := os.OpenFile(filepath.Join(m.runDir(rec.ID), "run.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		m.mu.Unlock()
+		return err
+	}
+	rec.Phase, rec.Error = phasePlanning, ""
+	if err := m.writeRecord(rec); err != nil {
+		m.mu.Unlock()
+		logf.Close()
+		return err
+	}
+	a := &activeBrief{id: rec.ID, done: make(chan struct{})}
+	m.active = a
+	m.mu.Unlock()
+	go m.run(a, rec, []string{"brief", "resume", rec.ID, "--yes", "--gate", "file"}, logf)
+	return nil
 }
 
 func (m *briefManager) prepare(dir, briefPath string, src []byte, rec briefRecord) (*os.File, error) {
@@ -258,7 +304,7 @@ func (m *briefManager) step(a *activeBrief, logf *os.File, args ...string) (int,
 	return 0, err
 }
 
-func (m *briefManager) run(a *activeBrief, rec briefRecord, briefPath string, logf *os.File) {
+func (m *briefManager) run(a *activeBrief, rec briefRecord, first []string, logf *os.File) {
 	defer func() {
 		logf.Close()
 		m.mu.Lock()
@@ -276,7 +322,17 @@ func (m *briefManager) run(a *activeBrief, rec briefRecord, briefPath string, lo
 		rec.Phase, rec.ExitCode, rec.Error, rec.FinishedAt = phase, code, msg, m.stamp()
 		_ = m.writeRecord(rec)
 	}
-	code, err := m.step(a, logf, "brief", "plan", briefPath, "--yes")
+	code, err := m.step(a, logf, first...)
+	if err == nil && code == exitWaiting && rec.Ask {
+		m.mu.Lock()
+		stopped := a.stopped
+		m.mu.Unlock()
+		if !stopped {
+			rec.Phase, rec.Error = phaseWaiting, ""
+			_ = m.writeRecord(rec)
+			return
+		}
+	}
 	if err != nil || code != 0 {
 		finish(phaseFailed, &code, stepMessage("plan", code, err))
 		return
@@ -450,7 +506,7 @@ func (m *briefManager) create(w http.ResponseWriter, r *http.Request) {
 			"invalid brief: repo must be the server's repo root, "+m.root, map[string]any{"repo_root": m.root})
 		return
 	}
-	rec, err := m.start(b, src)
+	rec, err := m.start(b, src, r.URL.Query().Get("ask") == "1")
 	var busy *briefBusyError
 	switch {
 	case errors.As(err, &busy):
