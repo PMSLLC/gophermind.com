@@ -117,6 +117,39 @@ Environment=GOPHERMIND_CONFIG_DIR=/var/lib/gophermind
 
 Then `sudo systemctl daemon-reload && sudo systemctl restart gophermind`.
 
+## Briefs from the browser
+
+With `GOPHERMIND_BRIEFS_DIR` set, a signed-in browser can upload a brief and watch it run: `/app/briefs/new` (upload), `/app/briefs` (runs) and `/app/briefs/<id>` (decomposition, attempts, clarify answers, acceptance, log tail, Stop). Routes: `POST /app/briefs`, `POST /app/briefs/{id}/stop`, `GET /app/briefs/{id}/state`, `GET /app/api/briefs`. Design: `docs/design/web-ui.md`.
+
+| Variable | Meaning |
+|---|---|
+| `GOPHERMIND_BRIEFS_DIR` | server-owned directory; one folder per run holds `brief.md` (the upload), `run.json` (phase, exit code) and `run.log` (output of both steps). Unset turns the routes off. |
+| `GOPHERMIND_BRIEF_CMD` | words put before every `gophermind` call, no shell. Unset runs `gophermind` from `PATH` as the server user. |
+| `GOPHERMIND_BRIEF_KILL_CMD` | words put before `-TERM -- -<pgid>` (or `-KILL`) to stop a run's process group. Unset signals the group directly. |
+
+Behaviour:
+
+- The upload is the raw body or a multipart `brief` file, at most 256 KiB, checked with the same parser as `gophermind brief validate`. Its `repo:` must be the absolute path of the server's root (`GOPHERMIND_ROOT`), because the run folder is made inside the brief's repo and the pages read only `<root>/.gophermind/<id>`. Anything else is a 400.
+- Two steps run in order, `gophermind brief plan <brief.md> --yes` then `gophermind brief run <id> --repo <root>`, each in its own process group with stdin closed and the server's own secrets (`GOPHERMIND_TOKEN`, session secret, OAuth secret, password hash, HMAC secret) removed from the environment. Output goes to `run.log`.
+- One run at a time. A second upload while one is live gets 409 with `active_run_id`; so does an id that was used before. A server restart marks a run that was live as `interrupted`.
+- Stop signals the whole process group (SIGTERM, then SIGKILL after 10 seconds) and does not start `brief run` if the plan was still going.
+
+Running as `gmrun` (documentation only, nothing here is applied). The server runs as `gophermind`, and the repo and run folders belong to `gmrun`. Point the launcher at a narrow sudoers rule:
+
+```
+# /etc/sudoers.d/gophermind-briefs  (visudo -f)
+gophermind ALL=(gmrun) NOPASSWD: /usr/local/bin/gophermind brief plan *, /usr/local/bin/gophermind brief run *
+gophermind ALL=(gmrun) NOPASSWD: /bin/kill -TERM -- *, /bin/kill -KILL -- *
+```
+
+```
+GOPHERMIND_BRIEFS_DIR=/var/lib/gophermind/briefs
+GOPHERMIND_BRIEF_CMD=sudo -n -u gmrun /usr/local/bin/gophermind
+GOPHERMIND_BRIEF_KILL_CMD=sudo -n -u gmrun /bin/kill
+```
+
+`GOPHERMIND_BRIEFS_DIR` must be created by the service (a `StateDirectory=` entry, like the one above, works) and be readable by `gmrun` (mode 0755; the brief and log files are 0644, and a brief holds secret names only, never values). The vault passphrase and provider settings the run needs must be available to `gmrun` itself, not passed through the server. The sudoers wildcards let `gophermind` pass any arguments to those two commands, so review them before use. Not verified on a host: whether the process group of a command started through `sudo` is the group that `kill -- -<pgid>` reaches; check it with a Stop on the first real run.
+
 ## Temporary password login
 
 Until a Google OAuth client exists, a single username and password can sign in to the web interface. It is temporary and is removed once Google sign-in is live (the delete list is in the header of `gophermind-lib/serve/passwordauth.go`). A successful login issues the same `gm_session` cookie as Google sign-in.

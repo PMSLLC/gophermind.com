@@ -113,3 +113,4 @@ This file is the single consolidated plan. When a phase finishes, change its sta
 
 - 2026-10-23: created; summit confirmed; Burrow allowed in the graded run; temporary password login chosen for the web interface.
 - 2026-10-23: web interface with temporary login deployed to development-jb; csvstat run built 5 of 5 leaves, acceptance 3 of 6 (planner placement and flag defects, see memory unification-goal-state).
+- 2026-10-23: phase 2 built (not deployed): upload, one-at-a-time launch with an injectable command, stop, run state JSON and run pages under `/app/briefs`; sudo/`gmrun` launch documented in `docs/SERVER-SETUP.md` but not applied; browser rendering unchecked; clarify answering and a live event stream on the run page are not built.

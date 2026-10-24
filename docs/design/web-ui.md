@@ -21,7 +21,18 @@ The existing API handlers already require the server bearer token. For a request
 - `/` : signed-in home with links to Chat and Runs; replaces the landing page for signed-in users, and signed-out users are sent to sign in.
 - `/app/chat` : chat against `POST /session`, `POST /session/{id}/stream` (SSE), `GET /session`.
 - `/pipeline` : existing runs dashboard, now behind sign-in and without the token prompt.
-- Starting a brief from the browser is a later task: it needs a safe way to launch `gophermind brief run` as the unprivileged `gmrun` user. Out of scope until designed.
+- `/app/briefs/new`, `/app/briefs`, `/app/briefs/{id}` : upload a brief, list runs, watch one run (built 2026-10-23, phase 2 of `docs/ROADMAP.md`). See "Briefs from the browser" below.
+
+## Briefs from the browser
+
+Status: built 2026-10-23; browser rendering not yet checked by eye, and not deployed.
+
+- `POST /app/briefs` takes a raw body or multipart `brief`, at most 256 KiB, checks it with `brief.Parse` (the parser behind `brief validate`), requires `repo:` to be the server root, saves it to `<BriefsDir>/<id>/brief.md`, and starts `brief plan <file> --yes` then `brief run <id> --repo <root>` as a subprocess in its own process group. 202 with the run id; 400 invalid; 413 too large; 409 with `active_run_id` while another run is live (one at a time) or when the id was used before.
+- The launcher is an injectable command (`serve.Options.BriefCommand`), defaulting to `gophermind` run directly. A deployment launches as `gmrun` with `GOPHERMIND_BRIEF_CMD` (sudo prefix); see `docs/SERVER-SETUP.md`. The log is `<BriefsDir>/<id>/run.log` because the run folder belongs to `gmrun` and does not exist until planning starts.
+- `POST /app/briefs/{id}/stop` signals the process group (TERM, then KILL after 10 s). Both POSTs sit behind the sign-in, the bearer bridge and `sameOriginWrite`.
+- `GET /app/briefs/{id}/state` is built by `BuildBriefState` from the run folder (through `runview`) plus the launch record: nodes with parent, wave, normalized status (pending, running, verified, failed, blocked), attempts with model, provider and outcome, clarify questions with `answered_by` (`_state/clarify/questions.json`, `answers.json` for old runs), `acceptance.json`, `UNDERSTANDING.md` and the log tail. Each node carries an empty `origin`, reserved for Burrow reuse. The page polls it every 3 seconds, sets everything with `textContent`, and stops polling once the launch is final.
+- `GET /app/api/briefs` lists launched runs and any other run folder under the root.
+- Not built: answering clarify questions in the browser (a run that needs a human exits at the file gate and shows as failed with its questions visible), live event stream on the run page (polling is used), wave checks and repairs as separate sections.
 
 ## Config
 
@@ -49,4 +60,4 @@ Until the Google OAuth client exists, `GOPHERMIND_WEB_USER` plus `GOPHERMIND_WEB
 2. Wire it into `NewMux`/`gophermind-server` config; deploy docs.
 3. Chat page and home page (static, no build step).
 4. Server deploy and Google client setup (John creates the OAuth client; secrets only in `/opt/gophermind/.env` on the server).
-5. Later: start a brief from the browser.
+5. Start a brief from the browser (done 2026-10-23, see above).
