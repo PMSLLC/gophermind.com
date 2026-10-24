@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"gophermind/gophermind-lib/build/blackboard"
+	"gophermind/gophermind-lib/build/contract"
 	"gophermind/gophermind-lib/build/packer"
 	"gophermind/gophermind-lib/build/runner"
 )
@@ -196,5 +197,33 @@ func TestHistoryLine(t *testing.T) {
 	nl := blackboard.Attempt{Provider: "a", Model: "m", Verdict: blackboard.VerdictError, FailureReason: "x\ny"}
 	if strings.Contains(historyLine(1, nl), "\n") {
 		t.Error("historyLine holds a newline")
+	}
+}
+
+func TestFailureWithHintsCarriesDeclaredFieldsAndImports(t *testing.T) {
+	c := &contract.Contracts{
+		Module: "csvstat",
+		Types:  []contract.Type{{ID: "t", Package: "internal/stats", File: "internal/stats/stats.go", Decl: "type ColumnSummary struct {\n\tName string\n\tCount int\n}"}},
+		Functions: []contract.Function{
+			{ID: "f", Package: "internal/stats", File: "internal/stats/summarize.go", Signature: "func Summarize(rows [][]string) []ColumnSummary"},
+		},
+	}
+	rc := &runCtx{o: Options{}, plan: &Plan{Contracts: c}}
+	build := runner.Verdict{Class: runner.ClassBuild}
+	build.Out = outputOf("# csvstat/internal/stats\n" +
+		"internal/stats/summarize.go:7:2: \"math\" imported and not used\n" +
+		"internal/stats/summarize.go:43:4: unknown field DistinctValues in struct literal of type ColumnSummary\n" +
+		"internal/stats/summarize.go:69:33: not enough arguments in call to Summarize\n\thave ([][]string)\n\twant ([][]string, int)\n")
+	got := strings.Join(rc.failureWithHints(build).Lines, "\n")
+	for _, want := range []string{"unknown field DistinctValues", "Hints from the contract:", "ColumnSummary declares only these fields: Name, Count.",
+		"The contract declares Summarize as: func Summarize(rows [][]string) []ColumnSummary.", `Delete these imports, nothing in the file uses them: "math".`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("failure lacks %q:\n%s", want, got)
+		}
+	}
+	// A test failure is not given hints, even when its output looks the same.
+	fail := runner.Verdict{Class: runner.ClassTestFail, Out: build.Out}
+	if strings.Contains(strings.Join(rc.failureWithHints(fail).Lines, "\n"), "Hints from the contract") {
+		t.Error("a test failure got build hints")
 	}
 }

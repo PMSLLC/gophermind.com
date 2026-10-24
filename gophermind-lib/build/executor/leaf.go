@@ -1385,7 +1385,7 @@ func (lr *leafRun) check(ctx context.Context, e ladderEntry, started time.Time, 
 		class, next = ClassNetworkCritical, failureText(noteCritical)
 		reason = failureReason(class, crit)
 	case !v.Pass():
-		class, next = v.Class, failureOf(v, rc.secretValues())
+		class, next = v.Class, rc.failureWithHints(v)
 		reason = v.Reason()
 	default:
 		if lr.wt.Private {

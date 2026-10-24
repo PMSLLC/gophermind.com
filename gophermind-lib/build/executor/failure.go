@@ -8,6 +8,7 @@ import (
 
 	"gophermind/gophermind-lib/build/blackboard"
 	"gophermind/gophermind-lib/build/packer"
+	"gophermind/gophermind-lib/build/planner"
 	"gophermind/gophermind-lib/build/runner"
 )
 
@@ -126,4 +127,26 @@ func historyLine(n int, a blackboard.Attempt) string {
 		}
 		return r
 	}, s)
+}
+
+// failureWithHints is failureOf plus, for a build or vet failure, the lines
+// planner.BuildHints derives from the compiler output and the contract: the
+// declared fields of the struct a literal got wrong, the declared signature of
+// a function called with the wrong arguments, the imports to delete. They are
+// appended after the condensed output, so the 2 KB cap of the output does not
+// cut them. Any other verdict gives failureOf unchanged.
+func (rc *runCtx) failureWithHints(v runner.Verdict) packer.Failure {
+	f := failureOf(v, rc.secretValues())
+	if v.Class != runner.ClassBuild && v.Class != runner.ClassVet {
+		return f
+	}
+	hints := planner.BuildHints(rc.plan.Contracts, v.Out.Text())
+	if len(hints) == 0 {
+		return f
+	}
+	f.Lines = append(append([]string(nil), f.Lines...), "Hints from the contract:")
+	for _, h := range hints {
+		f.Lines = append(f.Lines, "- "+rc.scrubText(h))
+	}
+	return f
 }
