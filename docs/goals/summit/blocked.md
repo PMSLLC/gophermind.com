@@ -21,3 +21,9 @@ The failed leaves are terminal in the run state: `brief run` on the same run id 
 1. Decide the contract text for overflow in `fn-parse-float` (say whether `1.8e+308` is valid), or accept a stronger model for test writing on non-graded runs.
 2. Investigate why the mini's test-writer calls hang for 9 to 10 minutes (the provider call timeout is 1500 seconds in `~gmrun/.gophermind/gophermind.yaml`).
 3. Plan again from a fresh repo and run; read the result with `brief diagnose`.
+
+## Second attempt, 2026-10-24 (fresh plan `gm-2026-10-24-003`, repo `/home/gmrun/csvstat-run8`)
+- Planned after three resumes at the test-writer (each stop was a model reply refused by the compile check; the refusal text is now recorded, see `brief diagnose`). Built: 7 of 10 leaves verified with no failed leaf; the run then stopped with `provider_unavailable` and was resumed once.
+- The remaining leaf `fn-summarize-file` (reads a file path, or stdin for `-`) failed 11 attempts. Cline (`cline-pass/qwen3.7-max`) wrote code that failed the same two tests every time (`happy_path_stdin` and `error_summarize_invalid_csv`), then hit its rate limit (`rate_limited`), and the local model's attempts failed to compile 6 times. After that every model was cooling down and the run waited in one-minute steps (280 model calls ended in error).
+- Likely cause for the two failing tests: the stdin case can only be tested by swapping `os.Stdin`, which the test writer does not do correctly, so the test expects something a correct implementation cannot give. This is the same class as `fn-parse-float` in the first run: a test-writer error that the build step cannot repair.
+- Useful engine follow-ups (not done): when the same tests fail identically for two different providers, treat the tests as suspect and rewrite them before further build attempts; and do not fall back to a model that has already failed to compile the same leaf repeatedly.
