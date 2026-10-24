@@ -6,6 +6,8 @@ All notable changes to GopherMind are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-24
+
 ### Added
 
 - **`gophermind brief diagnose <run-id> [--repo <path>] [--json]`.** A read-only diagnosis of a run folder: status and stop reason, one line per planner stage and executor phase (calls, malformed, retries, model time and span), the five slowest model calls, tokens by provider and model, every failed, skipped or blocked node with its attempts (provider, model, class, reason, `malformed_reason`), the last planner refusal per node, the planner error, and a likely-cause list from simple rules (identical replies, truncation, repeated build failures, calls that got no answer, where a blocking chain starts). It prints ids, counts, durations, classes and reasons only. `--repo` reads `<repo>/.gophermind/<run-id>` on a machine with no record of the run.
