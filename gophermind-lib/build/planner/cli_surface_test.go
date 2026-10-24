@@ -1,6 +1,7 @@
 package planner_test
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -120,5 +121,64 @@ func TestUnattendedClarifyDefaultCannotContradictTheBriefsSurface(t *testing.T) 
 	}
 	if q2.AnsweredBy != "unattended-default" || q2.Answer != "File order" {
 		t.Errorf("q2 = %+v", q2)
+	}
+}
+
+// The csvstat brief fixture is the real-world brief this surface check exists
+// for. Planned with the fake provider (its entry point first leaves the surface
+// out, then states it on the repair), every token ExtractCLISurface reads from
+// it must be in the contract's text for the entry point, and the prompts of the
+// entry point must carry the brief's surface. TestEntryPointStatingTheSurface
+// IsNotRepaired covers the greeter brief's invented surface; this one is bound
+// to the csvstat fixture, so a change to the extractor or the brief that drops
+// or adds a token is seen here.
+func TestCsvstatSurfaceTokensAreInTheEntryPointContract(t *testing.T) {
+	raw, err := os.ReadFile("testdata/csvstat-cli/brief.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	surface := planner.ExtractCLISurface(string(raw))
+	if surface.Empty() {
+		t.Fatal("the csvstat brief has no command-line surface")
+	}
+	g := surfaceRig(t, map[string]string{
+		"contract.entry-point.txt":   runWithoutSurface,
+		"contract.entry-point.2.txt": runWithSurface,
+	})
+	g.briefPath = writeBrief(t, g.repo, func(string) string {
+		s := strings.Replace(string(raw), "REPO_DIR", g.repo, 1)
+		return strings.Replace(s, "id: gm-2026-09-29-003", "id: gm-2026-09-29-900", 1)
+	})
+	g.mustPlan(planner.Options{StopAfter: "contract"})
+
+	doc := runDoc(g)
+	if m := surface.Missing(doc); len(m) != 0 {
+		t.Errorf("the entry point's contract text leaves out %v: %q", m, doc)
+	}
+	for _, f := range surface.Flags {
+		if !strings.Contains(doc, f) {
+			t.Errorf("flag %s is not in the contract text", f)
+		}
+		for _, v := range surface.Values[f] {
+			if !strings.Contains(doc, v) {
+				t.Errorf("value %s of %s is not in the contract text", v, f)
+			}
+		}
+	}
+	for _, c := range surface.ExitCodes {
+		if !strings.Contains(doc, c) {
+			t.Errorf("exit code %s is not in the contract text", c)
+		}
+	}
+	if surface.Stdin && !strings.Contains(doc, "stdin") {
+		t.Error("standard input is not in the contract text")
+	}
+	for _, r := range g.fake.Requests() {
+		if planner.StageOf(r) != "contract:entry-point" {
+			continue
+		}
+		if p := r.Messages[1].Content; !strings.Contains(p, surface.Text()) {
+			t.Error("an entry-point call does not carry the csvstat surface")
+		}
 	}
 }

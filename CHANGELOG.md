@@ -23,6 +23,7 @@ All notable changes to GopherMind are documented here. The format follows
 
 ### Fixed
 
+- A planner test binds the csvstat brief fixture to the entry point's contract: every flag, value, exit code and the standard input item that `ExtractCLISurface` reads from it must be in the entry point's contract text after the repair, and the entry-point prompts must carry the surface (`TestCsvstatSurfaceTokensAreInTheEntryPointContract`).
 - The `NewMux` route table comment lists the `/app/chat` and `/app/briefs` routes (pages, list, upload, state, events, stop, answer), with their auth and gating.
 - `attempts/<leaf>/<n>/attempt.json` records why a reply was rejected as malformed: `malformed_reason`, a fixed-word `<class>:<rule>` such as `syntax:syntax_error` or `other:unbalanced_fence` (the packer's class and the validator or gate rule; never the reply, a name or a secret). `/app/briefs/{id}/state` shows it on the attempt as `malformed_reason`, omitted when empty.
 - `TestBriefStopKillsProcessGroup` no longer fails rarely with a temp dir cleanup error: it left its second run (a live process group writing `run.log`) running when the test returned. It now stops that run and waits until the slot is free (process reaped, log closed), and waits for the first run's slot to free before asserting the second stop is a conflict.
