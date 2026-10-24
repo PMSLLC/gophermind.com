@@ -105,6 +105,18 @@ With these variables set, `gophermind-server` puts every route except `/healthz`
 
 Set the first four to turn it on, or none to leave it off. A partial set makes the server refuse to start and name the missing variables. Keep the values in the server's env file, not in tracked files.
 
+## Writable state directory
+
+The unit runs with `ProtectSystem=strict`, so the service user's home (`/opt/gophermind`) is read-only and web chat sessions fail with `create transcript dir ... read-only file system`. A drop-in gives the service a writable state directory (`/etc/systemd/system/gophermind.service.d/state.conf`):
+
+```
+[Service]
+StateDirectory=gophermind
+Environment=GOPHERMIND_CONFIG_DIR=/var/lib/gophermind
+```
+
+Then `sudo systemctl daemon-reload && sudo systemctl restart gophermind`.
+
 ## Temporary password login
 
 Until a Google OAuth client exists, a single username and password can sign in to the web interface. It is temporary and is removed once Google sign-in is live (the delete list is in the header of `gophermind-lib/serve/passwordauth.go`). A successful login issues the same `gm_session` cookie as Google sign-in.
