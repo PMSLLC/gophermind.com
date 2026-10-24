@@ -137,15 +137,15 @@ Behaviour:
 - `/state` also carries `wave_checks` (per wave: leaves, verified count, check `pass`, `fail`, `repairing`, `running` or `pending`, and the failing leaf ids) and `repairs` (the report's count of leaf reopenings and the leaves being repaired now, with attempts so far and the reason). The executor keeps no log of each check, so a wave's result is derived from leaf statuses, `_state/leaf-results.json` and the run's stop reason; a repair that already succeeded is counted only in the total.
 - Stop signals the whole process group (SIGTERM, then SIGKILL after 10 seconds) and does not start `brief run` if the plan was still going.
 
-Running as `gmrun` (as deployed on development-jb). The server runs as `gophermind`, and the repo and run folders belong to `gmrun`. The launcher goes through a narrow sudoers rule in `/etc/sudoers.d/gophermind-briefs` (edit with `visudo -f`). `/bin` is a symlink to `/usr/bin` on this host, so the kill binary must be named `/usr/bin/kill`; a rule for `/bin/kill` never matches what sudo resolves.
+Running as `gmrun` (as deployed on development-jb). `go` and `gofmt` must be on `gmrun`'s PATH (sudo resets it): on development-jb they are symlinked into `/usr/local/bin`. Without `go` the planner skips the compile check of the generated tests (a warning in the plan log) and the run fails at Wave 0. The server runs as `gophermind`, and the repo and run folders belong to `gmrun`. The launcher goes through a narrow sudoers rule in `/etc/sudoers.d/gophermind-briefs` (edit with `visudo -f`). `/bin` is a symlink to `/usr/bin` on this host, so the kill binary must be named `/usr/bin/kill`; a rule for `/bin/kill` never matches what sudo resolves.
 
 ```
 # /etc/sudoers.d/gophermind-briefs
-gophermind ALL=(gmrun) NOPASSWD: /usr/local/bin/gophermind brief plan *, /usr/local/bin/gophermind brief resume *, /usr/local/bin/gophermind brief run *
+gophermind ALL=(gmrun) NOPASSWD: /usr/local/bin/gophermind brief plan *, /usr/local/bin/gophermind brief resume *, /usr/local/bin/gophermind brief fill-answer *, /usr/local/bin/gophermind brief run *
 gophermind ALL=(gmrun) NOPASSWD: /usr/bin/kill -TERM -- *, /usr/bin/kill -KILL -- *
 ```
 
-`brief resume` is needed only for runs uploaded with `ask=1`; add it to a sudoers file written before that feature existed.
+`brief resume` and `brief fill-answer` are needed only for runs uploaded with `ask=1`; add them to a sudoers file written before that feature existed. The run folder is not writable by the server user, so an answer is written by `sudo -u gmrun gophermind brief fill-answer <run-id> <question-id> --repo <root>` (the text on stdin); the server tries a direct write first and uses the command only when the direct write is refused.
 
 ```
 GOPHERMIND_BRIEFS_DIR=/var/lib/gophermind/briefs
@@ -162,9 +162,9 @@ ProtectHome=false
 ReadWritePaths=/home/gmrun
 ```
 
-Why: `sudo` is a setuid program, and `NoNewPrivileges=true` (the base unit's hardening) stops a setuid binary from gaining privileges, so every launch would fail with "The \"no new privileges\" flag is set". The run's repo and run folders live under `gmrun`'s home, so `ProtectHome=false` lets the service see `/home` and `ReadWritePaths=/home/gmrun` lets it write there (the server reads the run folder for the pages and, for answers, edits `QUESTIONS.md` in it). Then `sudo systemctl daemon-reload && sudo systemctl restart gophermind`.
+Why: `sudo` is a setuid program, and `NoNewPrivileges=true` (the base unit's hardening) stops a setuid binary from gaining privileges, so every launch would fail with "The \"no new privileges\" flag is set". The run's repo and run folders live under `gmrun`'s home, so `ProtectHome=false` lets the service see `/home` and `ReadWritePaths=/home/gmrun` lets it write there (the server reads the run folder for the pages and, for answers, has the run user edit `QUESTIONS.md` in it). Then `sudo systemctl daemon-reload && sudo systemctl restart gophermind`.
 
-`GOPHERMIND_BRIEFS_DIR` is `/var/lib/gophermind/briefs`, owned by `gophermind`, mode 0755 so `gmrun` can read it (a `StateDirectory=` entry creates it; the brief and log files are 0644, and a brief holds secret names only, never values). The vault passphrase and provider settings the run needs must be available to `gmrun` itself, not passed through the server. The sudoers wildcards let `gophermind` pass any arguments to those commands, so review them before use. Not verified on a host: whether the process group of a command started through `sudo` is the group that `kill -- -<pgid>` reaches (check it with a Stop on a real run), and whether the server user can read and replace `QUESTIONS.md`: the planner creates the run folder 0700 and the gate writes the file 0600 as `gmrun`, so answering needs the server user to have access to both. If a first `ask=1` run answers with 409 or 500, check that access first.
+`GOPHERMIND_BRIEFS_DIR` is `/var/lib/gophermind/briefs`, owned by `gophermind`, mode 0755 so `gmrun` can read it (a `StateDirectory=` entry creates it; the brief and log files are 0644, and a brief holds secret names only, never values). The vault passphrase and provider settings the run needs must be available to `gmrun` itself, not passed through the server. The sudoers wildcards let `gophermind` pass any arguments to those commands, so review them before use. Not verified on a host: whether the process group of a command started through `sudo` is the group that `kill -- -<pgid>` reaches (check it with a Stop on a real run) Stop was checked on a real run on 2026-10-24: no `brief` or `go` process was left. Answering is covered by `brief fill-answer` above.
 
 ## Removed: temporary password login
 

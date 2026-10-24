@@ -208,3 +208,42 @@ func TestMarkAskableMergesStoreAndGate(t *testing.T) {
 		t.Errorf("questions %+v", st.Questions)
 	}
 }
+
+// A run folder the server user cannot write is answered through the launcher:
+// `brief fill-answer` runs as the run user with the text on stdin.
+func TestBriefAnswerFallsBackToTheLauncherWhenTheFolderIsReadOnly(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory modes")
+	}
+	e := newBriefEnv(t)
+	const id = "gm-2026-10-24-003"
+	e.startAsking(id)
+	dir := filepath.Join(e.root, ".gophermind", id)
+	inner := e.script
+	e.script = func(args []string) string {
+		if len(args) > 1 && args[1] == "fill-answer" {
+			return "cat > '" + filepath.Join(e.root, "got.txt") + "'; echo 'remaining 1'"
+		}
+		return inner(args)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o700) })
+	w := e.post("/app/briefs/"+id+"/answer", answerBody("clarify-q1", "sqlite"), nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("answer = %d %s", w.Code, w.Body)
+	}
+	if m := decodeMap(t, w); m["saved"] != true || m["remaining"] != float64(1) {
+		t.Errorf("body %v", m)
+	}
+	e.mu.Lock()
+	last := strings.Join(e.calls[len(e.calls)-1], " ")
+	e.mu.Unlock()
+	if want := "brief fill-answer " + id + " clarify-q1 --repo " + e.root; last != want {
+		t.Errorf("launcher call %q, want %q", last, want)
+	}
+	if got, _ := os.ReadFile(filepath.Join(e.root, "got.txt")); string(got) != "sqlite" {
+		t.Errorf("stdin text %q", got)
+	}
+}

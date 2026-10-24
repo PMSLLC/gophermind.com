@@ -1,11 +1,14 @@
 package serve
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -106,6 +109,56 @@ func readGateQuestions(root, id string) []gateQuestion {
 
 var errNoSuchQuestion = errors.New("no such question")
 
+// ErrNoSuchQuestion is returned by FillGateAnswer for a question id the run's
+// QUESTIONS.md does not hold.
+var ErrNoSuchQuestion = errNoSuchQuestion
+
+// FillGateAnswer is the answer write as a command: `gophermind brief
+// fill-answer` runs it as the user that owns the run folder, which the web
+// server may not be allowed to write.
+func FillGateAnswer(root, id, qid, text string) (remaining int, err error) {
+	if !runview.ValidRunID(id) || !questionIDRE.MatchString(qid) {
+		return 0, errors.New("invalid run or question id")
+	}
+	return writeGateAnswer(root, id, qid, text)
+}
+
+// fillAnswerExit codes of `brief fill-answer`.
+const (
+	fillExitNoQuestion = 3
+	fillExitNoRun      = 4
+)
+
+// writeAnswerAs writes the answer through the launcher command, for a run
+// folder the server user cannot write: `brief fill-answer <id> <qid> --repo
+// <root>` with the text on stdin, answering "remaining N" on stdout.
+func (m *briefManager) writeAnswerAs(id, qid, text string) (int, error) {
+	cmd := m.cmd([]string{"brief", "fill-answer", id, qid, "--repo", m.root})
+	cmd.Stdin = strings.NewReader(text)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if cmd.Env == nil {
+		cmd.Env = childEnv()
+	}
+	if err := cmd.Run(); err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			switch ee.ExitCode() {
+			case fillExitNoQuestion:
+				return 0, errNoSuchQuestion
+			case fillExitNoRun:
+				return 0, os.ErrNotExist
+			}
+		}
+		return 0, err
+	}
+	var n int
+	if _, err := fmt.Sscanf(strings.TrimSpace(out.String()), "remaining %d", &n); err != nil {
+		return 0, errors.New("unexpected fill-answer output")
+	}
+	return n, nil
+}
+
 // writeGateAnswer puts text in the answer block of question qid and reports
 // how many blocks are still empty.
 func writeGateAnswer(root, id, qid, text string) (remaining int, err error) {
@@ -200,6 +253,10 @@ func (m *briefManager) answerHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	remaining, err := writeGateAnswer(m.root, id, req.QuestionID, text)
+	if errors.Is(err, os.ErrPermission) {
+		// The run folder belongs to the run user: let it write its own file.
+		remaining, err = m.writeAnswerAs(id, req.QuestionID, text)
+	}
 	switch {
 	case errors.Is(err, errNoSuchQuestion):
 		briefError(w, http.StatusNotFound, "no such open question", nil)

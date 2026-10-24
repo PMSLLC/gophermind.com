@@ -50,6 +50,8 @@ func runBrief(args []string, in *os.File, out, errw io.Writer) int {
 		return briefPlan(args[0], args[1:], in, out, errw)
 	case "answer":
 		return briefAnswer(args[1:], out, errw)
+	case "fill-answer":
+		return briefFillAnswer(args[1:], in, out, errw)
 	case "run":
 		return briefRun(args[1:], in, out, errw)
 	case "report":
