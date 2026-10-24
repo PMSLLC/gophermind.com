@@ -256,6 +256,25 @@ func diagContinuation(rest string) string {
 	return b.String()
 }
 
+// stdTestPackages are the standard library packages a test file commonly uses
+// without importing. A closed set, so only these words ever reach the model.
+var stdTestPackages = map[string]bool{
+	"bytes": true, "context": true, "errors": true, "fmt": true, "io": true, "math": true, "os": true,
+	"reflect": true, "sort": true, "strconv": true, "strings": true, "sync": true, "testing": true, "time": true,
+}
+
+var undefinedNameRE = regexp.MustCompile(`^undefined: (\w+)$`)
+
+// missingStdImport is the standard library package the diagnostic "undefined:
+// pkg" names, or "" when it names anything else.
+func missingStdImport(diag string) string {
+	m := undefinedNameRE.FindStringSubmatch(strings.TrimSpace(diag))
+	if m == nil || !stdTestPackages[m[1]] {
+		return ""
+	}
+	return m[1]
+}
+
 // compileMessage is the fixed phrase for one diagnostic. diag is read for its
 // class only and never copied.
 func compileMessage(c *contract.Contracts, dir, src, line string, n int, diag string) string {
@@ -276,6 +295,8 @@ func compileMessage(c *contract.Contracts, dir, src, line string, n int, diag st
 		return richUnknownField(safe, c, dir, n, diag)
 	case richNoField(safe, n, diag) != "":
 		return richNoField(safe, n, diag)
+	case missingStdImport(diag) != "":
+		return fmt.Sprintf("undefined name at line %d: package %s is used but not imported; add %q to the import block", n, missingStdImport(diag), missingStdImport(diag))
 	case strings.Contains(diag, "undefined") || strings.Contains(diag, "not exported") || strings.Contains(diag, "unexported"):
 		clause := testClause(src)
 		if why := unexportedCalled(c, dir, line); why != whyNone && strings.HasSuffix(clause, "_test") {

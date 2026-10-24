@@ -360,3 +360,18 @@ func TestFnSummarize(t *testing.T) {
 		t.Errorf("hint echoed: %v", err)
 	}
 }
+
+func TestCompileMessageMissingStdImport(t *testing.T) {
+	got := compileMessage(&contract.Contracts{}, "internal/render", "package render_test\n", "var w io.Writer", 18, "undefined: io")
+	for _, want := range []string{"undefined name at line 18", `package io is used but not imported`, `add "io"`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("message %q lacks %q", got, want)
+		}
+	}
+	if strings.Contains(got, "unexported") {
+		t.Fatalf("message %q gives the unexported advice for a missing import", got)
+	}
+	if other := compileMessage(&contract.Contracts{}, "internal/render", "package render_test\n", "x := secret.Foo()", 3, "undefined: secret"); strings.Contains(other, "secret") {
+		t.Fatalf("message %q quotes a name outside the closed set", other)
+	}
+}
