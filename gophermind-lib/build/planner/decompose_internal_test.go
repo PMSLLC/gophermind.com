@@ -65,6 +65,20 @@ func TestLeafChecks(t *testing.T) {
 		})
 	}
 
+	t.Run("depends_on named by Go name is rewritten to the node id (a type name is accepted and dropped)", func(t *testing.T) {
+		d := strings.Replace(okDraft, `"depends_on": []`, `"depends_on": ["Join", "NameError"]`, 1)
+		drafts, _, err := normalizeDrafts("["+d+"]", "greeting", greet, c, r)
+		if err != nil {
+			t.Fatalf("refused: %v", err)
+		}
+		if got := strings.Join(strList(drafts[0]["depends_on"]), ","); got != "fn-join" {
+			t.Errorf("depends_on = %q", got)
+		}
+		ghost := strings.Replace(okDraft, `"depends_on": []`, `"depends_on": ["ghostly"]`, 1)
+		if _, _, err := normalizeDrafts("["+ghost+"]", "greeting", greet, c, r); err == nil || !strings.Contains(err.Error(), "not Go names") {
+			t.Errorf("an unmatched name: err = %v", err)
+		}
+	})
 	t.Run("a node nobody asked for", func(t *testing.T) {
 		extra := strings.Replace(okDraft, `"id": "fn-greet"`, `"id": "fn-extra"`, 1)
 		if _, _, err := normalizeDrafts("["+okDraft+","+extra+"]", "greeting", greet, c, r); err == nil || !strings.Contains(err.Error(), "not one of the functions asked for") {

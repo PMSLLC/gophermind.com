@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"go/ast"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -283,6 +284,7 @@ type nodeEnv struct {
 	constraints    []any
 	isFunction     map[string]bool
 	known          map[string]bool
+	aliases        map[string]string // alias key of a declared node id or Go name -> node id
 	c              *contract.Contracts
 	// notes records, per node checked, the shape changes made before the checks
 	// (field and kind only); details is the schema failure of the node last
@@ -291,13 +293,64 @@ type nodeEnv struct {
 	details []string
 }
 
+var typeNameRE = regexp.MustCompile(`(?m)^\s*type\s+([A-Za-z_]\w*)`)
+
+// aliasKey folds a node id ("fn-detect-type") and the Go name it stands for
+// ("detectType") to one key: lower case letters and digits, no "fn" prefix on an id.
+func aliasKey(name string) string {
+	n := strings.TrimPrefix(name, "fn-")
+	var b strings.Builder
+	for _, r := range strings.ToLower(n) {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// resolveDepAliases rewrites a depends_on entry that is not a node id but names
+// one by its Go name (a model slip seen on csvstat) to the declared id. An
+// entry that is unknown and matches nothing, or matches two nodes, is left as is.
+func (e *nodeEnv) resolveDepAliases(deps []string) ([]string, bool) {
+	out := make([]string, len(deps))
+	changed := false
+	for i, id := range deps {
+		out[i] = id
+		if e.known[id] {
+			continue
+		}
+		if to := e.aliases[aliasKey(id)]; to != "" {
+			out[i], changed = to, true
+		}
+	}
+	return out, changed
+}
+
 func newNodeEnv(component string, c *contract.Contracts, r *run) *nodeEnv {
 	e := &nodeEnv{component: component, c: c, isFunction: map[string]bool{}, known: map[string]bool{}, ref: "#architecture"}
+	e.aliases = map[string]string{}
+	alias := func(name, id string) {
+		if k := aliasKey(name); k != "" {
+			if prev, dup := e.aliases[k]; dup && prev != id {
+				e.aliases[k] = "" // ambiguous: never rewrite
+			} else if !dup {
+				e.aliases[k] = id
+			}
+		}
+	}
 	for _, f := range c.Functions {
 		e.isFunction[f.ID], e.known[f.ID] = true, true
+		alias(f.ID, f.ID)
+		if fd, err := parseSignature(f.Signature); err == nil && fd.Name != nil {
+			alias(fd.Name.Name, f.ID)
+		}
 	}
 	for _, t := range c.Types {
 		e.known[t.ID] = true
+		alias(t.ID, t.ID)
+		if m := typeNameRE.FindStringSubmatch(t.Decl); m != nil {
+			alias(m[1], t.ID)
+		}
 	}
 	for _, q := range r.reqs {
 		if q.Kind == ReqConstraint {
@@ -407,11 +460,21 @@ func (e *nodeEnv) normalizeNode(f contract.Function, d map[string]any) (class st
 
 	// depends_on holds node ids only; types reach the node through its
 	// dependency signatures.
-	deps := append(strList(d["depends_on"]), usesWithReceiver(e.c, f)...)
+	raw := strList(d["depends_on"])
+	if fixed, changed := e.resolveDepAliases(raw); changed {
+		raw = fixed
+		list := make([]any, len(fixed))
+		for i, id := range fixed {
+			list[i] = id
+		}
+		d["depends_on"] = list
+		e.notes = append(e.notes, f.ID+" depends_on named by Go name")
+	}
+	deps := append(raw, usesWithReceiver(e.c, f)...)
 	unknown := false
 	for i, id := range deps {
 		if !e.known[id] {
-			defect(defDepends, "depends_on entry %d (%d bytes) is an unknown id", i+1, len(id))
+			defect(defDepends, "depends_on entry %d (%d bytes) is an unknown id: depends_on holds the node ids declared in the contract (like fn-detect-type), not Go names", i+1, len(id))
 			unknown = true
 		}
 	}
