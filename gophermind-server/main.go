@@ -55,6 +55,15 @@ type serverConfig struct {
 	// Google, when non-nil, puts the whole mux behind a Google sign-in (see
 	// googleAuthFromEnv). Nil keeps the bearer-only behaviour.
 	Google *serve.GoogleAuth
+	// BriefsDir turns on the browser brief routes (GOPHERMIND_BRIEFS_DIR).
+	// BriefCmd is the space-separated launcher prefix put before every
+	// gophermind invocation (GOPHERMIND_BRIEF_CMD, for example
+	// "sudo -n -u gmrun /usr/local/bin/gophermind"); empty runs gophermind
+	// directly. BriefKillCmd is the prefix for signalling a run's process
+	// group (GOPHERMIND_BRIEF_KILL_CMD, for example "sudo -n -u gmrun /bin/kill").
+	BriefsDir    string
+	BriefCmd     string
+	BriefKillCmd string
 }
 
 // parseServerConfig parses flags against args (typically os.Args[1:]), using
@@ -99,6 +108,9 @@ func parseServerConfig(args []string, getenv func(string) string, getwd func() (
 		return serverConfig{}, err
 	}
 	cfg.Google = google
+	cfg.BriefsDir = getenv("GOPHERMIND_BRIEFS_DIR")
+	cfg.BriefCmd = getenv("GOPHERMIND_BRIEF_CMD")
+	cfg.BriefKillCmd = getenv("GOPHERMIND_BRIEF_KILL_CMD")
 	return cfg, nil
 }
 
@@ -208,7 +220,7 @@ func runWithConfig(cfg serverConfig, ln net.Listener, logger *slog.Logger, ctx c
 	if err != nil {
 		return fmt.Errorf("build deps: %w", err)
 	}
-	mux, err := serve.NewMux(svcDeps, serve.Options{Token: cfg.Token, Google: cfg.Google})
+	mux, err := serve.NewMux(svcDeps, briefOptions(cfg, serve.Options{Token: cfg.Token, Google: cfg.Google}))
 	if err != nil {
 		return fmt.Errorf("build mux: %w", err)
 	}
