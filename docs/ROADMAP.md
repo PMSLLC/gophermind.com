@@ -21,7 +21,7 @@ All five true, with evidence in one report:
 | C. Hosted server | `gophermind-server` on OCI development-jb, public at `gophermind.brahy.com`, run as `gmrun` | Live; landing page, API and run view up. Runs briefs on the server. |
 | D. Web interface | Google sign-in, home, chat, runs (`docs/design/web-ui.md`) | Code committed locally (451e01a to b8a6d1b), not pushed or deployed. |
 | E. Brief tracking | Upload a brief, start a run from the browser, see the full decomposition, waves, attempts and sources | Designed in outline only. Needs the run-launch design. |
-| F. Burrow | Function library keyed by language-neutral contract | Design approved; Phase 1 (keys) in progress on a branch in its own repo. Phases 2 to 8 not started. |
+| F. Burrow | Function library keyed by language-neutral contract | Design approved; private repo PMSLLC/burrow. Phases 1 and 2 done and deployed (2026-10-23); Phase 3 (Go plug-in and sandbox) on its last task; Phases 4 to 8 not started. No network API yet: lookup is a Go library and the CLI has only exact-key `burrow find`. |
 | G. Clients | Desktop app, gophermind-osx, iOS | Released with 0.10.0; desktop install and mini deploy of 0.10.0 pending. |
 | H. Release | 0.10.0 out; 0.10.1 holds the Cline provider and four fixes | 0.10.1 not cut. npm OTP, install steps from 0.10.0 pending. |
 | I. Graded run | AI Venture Studio from its brief, mini model only | Blocked on prerequisites (below). |
@@ -33,7 +33,7 @@ Today: `brief plan` (load, clarify, confirm, contract, decompose, enrich, covera
 Burrow touches two stages, nothing else:
 
 - **Contract stage (planner).** Every leaf that is generic must carry a Burrow contract (verb, object, inputs, outputs, effects, traits, failures; `burrow-contract/v1`). Gap: today's node contract holds a Go signature, not that shape. Phase 8 work: extend the contract stage to emit it, and have `burrow key` derive the intent key.
-- **Leaf stage (executor).** Before a model builds a generic leaf: look up by key, then top 3 by embedding, then verify. A hit is written into the leaf as its file and verified by the same gates as a built one. A miss builds as today, then stores the result with its tests. Record the outcome in a per-leaf `origin` field (`built`, `reused`, `lookup_missed`) so the web interface can show it.
+- **Leaf stage (executor).** Before a model builds a generic leaf: look up by key, then top 3 by embedding, then verify. A hit is written into the leaf as its file and verified by the same gates as a built one. A miss builds as today, then stores the result with its tests, but only for pure Go leaves (no effects, stdlib only, no os, net, os/exec, syscall or unsafe imports) whose tests can be written as input and output vectors. Record the outcome in a per-leaf `origin` field (`built`, `reused`, `lookup_missed`, `not_eligible`) so the web interface can show it; a `reused` record also carries the stored key and version. Until Burrow Phase 4 (embedding and LLM verify, which needs a model decision from John), a reuse is an exact-key hit only. After a hit, call the function with the parameter order of the stored contract: the key ignores parameter names and order.
 
 Rule that keeps this safe: a reused body passes the same reply gates, scan and tests as a built one. Burrow never bypasses the executor's checks.
 
@@ -59,8 +59,8 @@ Each phase ends on a verifiable result. Streams run in parallel only where they 
 
 **Phase 4. Burrow foundation (F, parallel with Phase 2 and 3).**
 - Burrow phases 1 to 3: contract keys, catalog (Postgres, pgvector, exact key then embedding then verify), Go plug-in with sandbox, first function verified end to end. One writer at a time in the Burrow repo.
-- Decide the OCI host (check `server-checklist.md`, verify capacity over SSH, or add a Terraform instance). Never the laptop.
-- Done when: `burrow` stores and returns a tested Go function by key on an OCI host.
+- OCI host decided (Burrow session, 2026-10-23): catalog on the `burrow` VM (10.40.10.131, reachable only inside the VCN or VPN); sandbox (rootless podman, user `burrowrun`) on development-jb, the same 1 OCPU host as gophermind-server, because OCI refused a new VM (LimitExceeded). Heavy sandbox jobs are paused while a gophermind run is active.
+- Done when: `burrow` stores and returns a tested Go function by key on an OCI host. Burrow will send the CLI output and response shape when Phase 3 completes. A small HTTP service (`POST /v1/lookup`, `/v1/store`, bearer token, VCN-internal) is proposed and needs John's OK.
 
 **Phase 5. Join Burrow to GopherMind.**
 - Burrow phase 8 pulled forward as soon as phase 3 of Burrow is done: contract stage emits Burrow contracts; leaf stage looks up and stores; web interface shows the `origin` per leaf and the lookup trail (key, candidates, verdict).
@@ -81,7 +81,7 @@ Each phase ends on a verifiable result. Streams run in parallel only where they 
 | Sign-in live | Google OAuth client created, values placed in the server env | John |
 | Graded run | vault.age, gophermind-dev, Postgres forwarder | John |
 | Cline in unattended runs | ClinePass terms and usage limits for automated use (unconfirmed) | John to confirm |
-| Burrow on a host | Host choice and capacity check | Decided in Burrow phase 2 |
+| Burrow on a host | Host choice and capacity check | Decided: catalog on the `burrow` VM, sandbox on development-jb |
 | Joined system | Burrow phases 1 to 3 complete; contract shape extended in the planner | Claude, subagent-driven |
 | npm and install steps of 0.10.0 | npm OTP, John's go for the mini deploy and desktop install | John |
 
@@ -103,7 +103,7 @@ Taken by John on 2026-10-23:
 
 Still open:
 
-- Burrow hosting: the OCI host choice at its phase 2.
+- Burrow: John's OK for the HTTP service, and the local model for Burrow Phase 4 (embeddings and verify); the graded run allows only the mini's local model.
 - ClinePass terms and limits for automated use.
 - The Google OAuth client (redirect URI `https://gophermind.brahy.com/auth/callback`), needed to retire the temporary login.
 
@@ -114,3 +114,4 @@ This file is the single consolidated plan. When a phase finishes, change its sta
 - 2026-10-23: created; summit confirmed; Burrow allowed in the graded run; temporary password login chosen for the web interface.
 - 2026-10-23: web interface with temporary login deployed to development-jb; csvstat run built 5 of 5 leaves, acceptance 3 of 6 (planner placement and flag defects, see memory unification-goal-state).
 - 2026-10-23: phase 2 built (not deployed): upload, one-at-a-time launch with an injectable command, stop, run state JSON and run pages under `/app/briefs`; sudo/`gmrun` launch documented in `docs/SERVER-SETUP.md` but not applied; browser rendering unchecked; clarify answering and a live event stream on the run page are not built.
+- 2026-10-23: synced with the Burrow session: its status, host decision, `origin` values (`built`, `reused`, `lookup_missed`, `not_eligible`) and the pure-Go eligibility limits recorded above.
