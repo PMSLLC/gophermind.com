@@ -112,6 +112,6 @@ Still open:
 This file is the single consolidated plan. When a phase finishes, change its state in section 2 and add a dated line below; do not rewrite history.
 
 - 2026-10-23: created; summit confirmed; Burrow allowed in the graded run; temporary password login chosen for the web interface.
-- 2026-10-23: web interface with temporary login deployed to development-jb; csvstat run built 5 of 5 leaves, acceptance 3 of 6 (planner placement and flag defects, see memory unification-goal-state).
+- 2026-10-23: web interface with temporary login deployed to development-jb; csvstat run built 5 of 5 leaves, acceptance 3 of 6 (the built `run` leaf ignored the brief: `-f` instead of `--format`, `-` not read as stdin; fixed in 7f83b9f, 3c55ffa, d24c92b, re-run pending).
 - 2026-10-23: phase 2 built (not deployed): upload, one-at-a-time launch with an injectable command, stop, run state JSON and run pages under `/app/briefs`; sudo/`gmrun` launch documented in `docs/SERVER-SETUP.md` but not applied; browser rendering unchecked; clarify answering and a live event stream on the run page are not built.
 - 2026-10-23: synced with the Burrow session: its status, host decision, `origin` values (`built`, `reused`, `lookup_missed`, `not_eligible`) and the pure-Go eligibility limits recorded above.
