@@ -365,6 +365,16 @@ func resolveToken(opt Options) (string, error) {
 //	GET     /pipeline/decisions            bearer+HMAC  d.Pipeline
 //	GET     /pipeline/events               bearer+HMAC  d.Pipeline (SSE)
 //	GET     /pipeline/report               bearer+HMAC  d.Pipeline
+//	GET     /app/chat                      sign-in      always (HTML page)
+//	GET     /app/briefs                    sign-in      d.Pipeline && Options.BriefsDir (HTML list of runs)
+//	GET     /app/briefs/new                sign-in      d.Pipeline && Options.BriefsDir (HTML upload page)
+//	GET     /app/briefs/{id}               sign-in      d.Pipeline && Options.BriefsDir (HTML run page)
+//	GET     /app/api/briefs                bearer+HMAC  d.Pipeline && Options.BriefsDir (JSON list of runs)
+//	POST    /app/briefs                    bearer+HMAC  d.Pipeline && Options.BriefsDir (upload a brief, start plan then run)
+//	GET     /app/briefs/{id}/state         bearer+HMAC  d.Pipeline && Options.BriefsDir (run state JSON)
+//	GET     /app/briefs/{id}/events        bearer+HMAC  d.Pipeline && Options.BriefsDir (SSE of the run state)
+//	POST    /app/briefs/{id}/stop          bearer+HMAC  d.Pipeline && Options.BriefsDir (kill the active run)
+//	POST    /app/briefs/{id}/answer        bearer+HMAC  d.Pipeline && Options.BriefsDir (answer a clarify question, resume)
 //
 // All bearer+HMAC routes share one rate limiter (GOPHERMIND_SERVE_RATE
 // req/min) keyed by the Authorization header, so no route can be used to

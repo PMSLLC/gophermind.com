@@ -23,6 +23,7 @@ All notable changes to GopherMind are documented here. The format follows
 
 ### Fixed
 
+- The `NewMux` route table comment lists the `/app/chat` and `/app/briefs` routes (pages, list, upload, state, events, stop, answer), with their auth and gating.
 - `attempts/<leaf>/<n>/attempt.json` records why a reply was rejected as malformed: `malformed_reason`, a fixed-word `<class>:<rule>` such as `syntax:syntax_error` or `other:unbalanced_fence` (the packer's class and the validator or gate rule; never the reply, a name or a secret). `/app/briefs/{id}/state` shows it on the attempt as `malformed_reason`, omitted when empty.
 - `TestBriefStopKillsProcessGroup` no longer fails rarely with a temp dir cleanup error: it left its second run (a live process group writing `run.log`) running when the test returned. It now stops that run and waits until the slot is free (process reaped, log closed), and waits for the first run's slot to free before asserting the second stop is a conflict.
 - `TestParallelDeterministicCommitOrder` no longer looks hung. It was slow, not deadlocked: its 21 sequential runs each plan and run Wave 0 with the real go tools (about 12 s each, over four minutes in all), so a bare `-timeout 120s` expired mid-`go test`. The twenty randomized runs are now parallel subtests (about 2 minutes alone).
