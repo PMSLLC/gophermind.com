@@ -485,12 +485,20 @@ func markAskable(qs []BriefQuestion, gate []gateQuestion) []BriefQuestion {
 		found := false
 		for i := range qs {
 			if qs[i].ID == g.ID {
-				qs[i].Askable, found = true, true
+				found = true
+				if g.Filled {
+					qs[i].Status, qs[i].Answer, qs[i].AnsweredBy = "settled", g.Answer, "human"
+				} else {
+					qs[i].Askable = true
+				}
 			}
 		}
 		if !found {
-			qs = append(qs, BriefQuestion{ID: g.ID, Question: g.Text, Kind: "decision", Status: "open",
-				Options: []string{}, Askable: true})
+			q := BriefQuestion{ID: g.ID, Question: g.Text, Kind: "decision", Status: "open", Options: []string{}, Askable: !g.Filled}
+			if g.Filled {
+				q.Status, q.Answer, q.AnsweredBy = "settled", g.Answer, "human"
+			}
+			qs = append(qs, q)
 		}
 	}
 	return qs

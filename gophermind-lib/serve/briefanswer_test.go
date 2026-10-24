@@ -247,3 +247,17 @@ func TestBriefAnswerFallsBackToTheLauncherWhenTheFolderIsReadOnly(t *testing.T) 
 		t.Errorf("stdin text %q", got)
 	}
 }
+
+func TestMarkAskableShowsAFilledBlockAsSettled(t *testing.T) {
+	_, gate := parseGateQuestions(strings.Replace(gateFixture, "```answer clarify-q1\n\n```", "```answer clarify-q1\nsqlite\n```", 1))
+	qs := markAskable([]BriefQuestion{{ID: "clarify-q1", Status: "open"}}, gate)
+	if len(qs) != 2 {
+		t.Fatalf("questions %+v", qs)
+	}
+	if q := qs[0]; q.Status != "settled" || q.Answer != "sqlite" || q.AnsweredBy != "human" || q.Askable {
+		t.Errorf("answered question %+v", q)
+	}
+	if q := qs[1]; q.Status != "open" || !q.Askable {
+		t.Errorf("open question %+v", q)
+	}
+}

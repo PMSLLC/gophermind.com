@@ -31,8 +31,9 @@ type gateQuestion struct {
 	ID       string
 	Text     string
 	Filled   bool // the answer block holds text (an answer or a default)
-	startIdx int  // line index of the "```answer <id>" fence
-	endIdx   int  // line index of the closing fence
+	Answer   string
+	startIdx int // line index of the "```answer <id>" fence
+	endIdx   int // line index of the closing fence
 }
 
 var (
@@ -73,6 +74,7 @@ func parseGateQuestions(src string) (lines []string, qs []gateQuestion) {
 				}
 				j++
 			}
+			cur.Answer = strings.TrimSpace(strings.Join(lines[i+1:j], "\n"))
 			cur.endIdx = j
 			i = j
 			continue
