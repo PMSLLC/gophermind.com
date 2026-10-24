@@ -19,6 +19,7 @@ All notable changes to GopherMind are documented here. The format follows
 - **Wave checks and repairs on the run page.** `/app/briefs/{id}/state` has `wave_checks` (per wave: check result and failing leaf ids) and `repairs` (total and leaves being repaired), derived from leaf statuses, `leaf-results.json` and the stop reason; attempts omit `model` and `provider` when none was recorded.
 - **Live run updates.** `GET /app/briefs/{id}/events` streams the run state as server-sent events, pushed when the run folder or log changes (checked every second, at most 8 streams); the run page uses it and falls back to polling.
 - **Where a run's time and problems are, in the state API.** `/app/briefs/{id}/state` gains `stages` (model calls per stage kind from `_state/calls.jsonl`: calls, ok, problems, time, tokens), `slow_calls` (the five slowest calls) and `problems` (each failed leaf with its last attempt's class, reason and malformed reason). Counts and ids only, never prompt or reply text; the fields are additive.
+- **Problems and "Where the time went" on the run page.** A Problems list near the top names each failed or blocked leaf with its last reason and links to its row in the tree (opening its attempts); a table shows calls, problems, time and tokens per stage, with the slowest calls under it. Both appear only when there is something to show, and the page still works against a state without the new fields.
 
 ### Removed
 

@@ -98,6 +98,10 @@ ul.tree.top{padding-left:0;border-left:0}
 .sub{color:var(--muted);font-size:.84rem;margin-left:.45rem}
 .origin{font-size:.84rem;color:var(--accent);margin-left:.45rem}
 .node table{margin:.4rem 0 .4rem 1rem;width:auto;font-size:.82rem}
+.problems{list-style:none;margin:0 0 .6rem;padding:0}
+.problems li{padding:.5rem .9rem;margin:.35rem 0;background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--bad);border-radius:6px}
+.problems .why{margin-top:.2rem;color:var(--text);font-size:.88rem;word-wrap:break-word}
+.node:target{background:#fff6dc;box-shadow:-.5rem 0 0 #fff6dc}
 .q{margin:.6rem 0;padding:.7rem 1rem;background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:6px}
 .q textarea{margin:.5rem 0}
 .q button{margin:.2rem .4rem .2rem 0}

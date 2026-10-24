@@ -25,9 +25,20 @@
 
 <div id="strip"></div>
 
+<div id="problems" hidden>
+  <h2>Problems</h2>
+  <ul id="problist" class="problems"></ul>
+</div>
+
 <h2>Decomposition</h2>
 <div id="counts" class="meta"></div>
 <div id="tree"></div>
+
+<div id="timing" hidden>
+  <h2>Where the time went</h2>
+  <div id="stages"></div>
+  <div id="slow"></div>
+</div>
 
 <h2>Wave checks</h2>
 <div id="waves"></div>
@@ -145,6 +156,111 @@ function renderHead(run){
     '; waves ' + (run.waves || 0) + '; requirements covered ' + ((run.coverage || {}).covered || 0) + ' of ' + ((run.coverage || {}).total || 0);
 }
 
+function fmtMs(ms){
+  ms = Number(ms) || 0;
+  if (ms < 1000) return ms + ' ms';
+  const sec = Math.round(ms / 1000);
+  if (sec < 60) return sec + ' s';
+  const mn = Math.floor(sec / 60);
+  if (mn < 60) return mn + ' min ' + (sec % 60) + ' s';
+  return Math.floor(mn / 60) + ' h ' + (mn % 60) + ' min';
+}
+
+// goNode opens a leaf's attempts when a problem links to it; the tree is
+// rebuilt on every update, so the choice is kept in opened.
+function goNode(id){
+  opened.add(id);
+  const li = $('node-' + id);
+  const d = li ? li.querySelector('details') : null;
+  if (d) d.open = true;
+}
+
+// renderProblems names each failed or blocked leaf with its last reason.
+// Older states have no problems field: failed leaves then come from the tree.
+function renderProblems(s){
+  const nodes = s.nodes || [];
+  const byId = {};
+  for (const n of nodes) byId[n.id] = n;
+  const items = [];
+  const seen = new Set();
+  const failed = s.problems || nodes.filter(n => n.kind === 'function' && n.status === 'failed').map(n => {
+    const last = (n.attempts || [])[(n.attempts || []).length - 1] || {};
+    return { node: n.id, title: n.title, attempts: (n.attempts || []).length, class: last.outcome || '', reason: last.failure_reason || '', malformed_reason: last.malformed_reason || '' };
+  });
+  for (const p of failed) {
+    seen.add(p.node);
+    let text = p.reason || 'no reason recorded';
+    if (p.malformed_reason) text += ' (' + p.malformed_reason + ')';
+    const tail = p.attempts ? ' after ' + p.attempts + ' attempt' + (p.attempts === 1 ? '' : 's') : '';
+    items.push({ id: p.node, status: 'failed', title: p.title, text: (p.class ? p.class + ': ' : '') + text + tail });
+  }
+  for (const n of nodes) {
+    if (n.kind !== 'function' || n.status !== 'blocked' || seen.has(n.id)) continue;
+    const bad = (n.depends_on || []).filter(d => byId[d] && (byId[d].status === 'failed' || byId[d].status === 'blocked'));
+    items.push({ id: n.id, status: 'blocked', title: n.title, text: 'waiting on ' + (bad.length ? bad.join(', ') : 'a failed leaf') });
+  }
+  const box = $('problems');
+  const ul = $('problist');
+  ul.textContent = '';
+  box.hidden = !items.length;
+  for (const it of items) {
+    const li = el('li');
+    li.appendChild(pill(it.status));
+    const a = el('a', 'id', ' ' + it.id);
+    a.href = '#node-' + it.id;
+    a.addEventListener('click', () => goNode(it.id));
+    li.appendChild(a);
+    if (it.title) li.appendChild(el('span', 'sub', it.title));
+    li.appendChild(el('div', 'why', it.text));
+    ul.appendChild(li);
+  }
+}
+
+// renderTiming shows the model-call totals per stage and the slowest calls.
+function renderTiming(stages, slow){
+  const box = $('timing');
+  box.hidden = !stages.length;
+  const sb = $('stages');
+  sb.textContent = '';
+  const sl = $('slow');
+  sl.textContent = '';
+  if (!stages.length) return;
+  const t = el('table');
+  const hr = el('tr');
+  for (const c of ['stage', 'calls', 'problems', 'time', 'tokens']) hr.appendChild(el('th', '', c));
+  t.appendChild(hr);
+  for (const g of stages) {
+    const tr = el('tr');
+    tr.appendChild(el('td', '', g.stage));
+    tr.appendChild(el('td', '', g.calls));
+    const pc = el('td');
+    if (g.problems) pc.appendChild(el('span', 'err', g.problems)); else pc.textContent = '0';
+    tr.appendChild(pc);
+    tr.appendChild(el('td', '', fmtMs(g.duration_ms)));
+    tr.appendChild(el('td', '', g.tokens));
+    t.appendChild(tr);
+  }
+  sb.appendChild(t);
+  if (!slow.length) return;
+  const d = el('details');
+  d.appendChild(el('summary', '', 'Slowest calls'));
+  const t2 = el('table');
+  const h2 = el('tr');
+  for (const c of ['stage', 'leaf', 'time', 'tokens', 'outcome']) h2.appendChild(el('th', '', c));
+  t2.appendChild(h2);
+  for (const c of slow) {
+    const tr = el('tr');
+    tr.appendChild(el('td', '', c.stage));
+    tr.appendChild(el('td', '', c.node));
+    tr.appendChild(el('td', '', fmtMs(c.duration_ms)));
+    tr.appendChild(el('td', '', c.tokens));
+    const o = el('td'); o.appendChild(pill(c.outcome === 'ok' ? 'pass' : c.outcome, c.outcome === 'ok' ? 'pass' : 'fail')); tr.appendChild(o);
+    t2.appendChild(tr);
+  }
+  d.appendChild(t2);
+  sl.appendChild(d);
+}
+
 function attemptTable(n){
   const t = el('table');
   const hr = el('tr');
@@ -168,6 +284,7 @@ function attemptTable(n){
 
 function renderNode(n, kids){
   const li = el('li', 'node');
+  li.id = 'node-' + n.id;
   const head = [pill(n.status), el('span', 'id', ' ' + n.id), el('span', 'sub', n.title ? n.title : '')];
   if (n.kind === 'function') head.push(el('span', 'sub', 'wave ' + n.wave));
   if (n.origin) head.push(el('span', 'origin', 'origin: ' + n.origin));
@@ -350,7 +467,9 @@ function kick(){ if (es) return; clearTimeout(timer); timer = setTimeout(refresh
 function show(s){
   $('load').textContent = '';
   renderHead(s.run);
+  renderProblems(s);
   renderTree(s.nodes);
+  renderTiming(s.stages || [], s.slow_calls || []);
   renderWaves(s.wave_checks || [], s.repairs || { total: 0, open: [] });
   renderQuestions(s.questions);
   renderAcceptance(s.acceptance);

@@ -38,3 +38,15 @@ func TestPagesCarryTheSharedStylesheetAndRail(t *testing.T) {
 		})
 	}
 }
+
+// The run page carries the observability panels and the anchors they link to.
+func TestRunPageHasProblemAndTimingPanels(t *testing.T) {
+	w := httptest.NewRecorder()
+	pageHandler("assets/brief.html")(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	body := w.Body.String()
+	for _, want := range []string{`id="problems"`, `Where the time went`, `li.id = 'node-' + n.id`, `s.stages || []`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("run page lacks %q", want)
+		}
+	}
+}
