@@ -306,6 +306,8 @@ func compileMessage(c *contract.Contracts, dir, src, line string, n int, diag st
 		return fmt.Sprintf("unused import at line %d", n)
 	case strings.Contains(diag, "declared and not used") || strings.Contains(diag, "declared but not used"):
 		return fmt.Sprintf("unused variable at line %d", n)
+	case strings.Contains(diag, "cannot assign to") || strings.Contains(diag, "not in selector"):
+		return fmt.Sprintf("cannot assign at line %d: a declared function is not a variable and cannot be replaced; do not stub or reassign the code under test, call it with real inputs (use a small reader such as strings.NewReader for an input)", n)
 	case strings.Contains(diag, "missing return"):
 		return fmt.Sprintf("missing return at line %d", n)
 	case strings.Contains(diag, "arguments in call to"):

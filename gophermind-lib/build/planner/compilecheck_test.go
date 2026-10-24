@@ -387,3 +387,15 @@ func TestCompileMessageUndeclaredNameListsTheDeclaredOnes(t *testing.T) {
 		t.Errorf("message %q", m)
 	}
 }
+
+func TestCompileMessageCannotAssignToAFunction(t *testing.T) {
+	c := compileCheckContract()
+	m := compileMessage(c, "internal/stats", "package stats\n", "stats.OpenInput = nil", 164, "cannot assign to stats.OpenInput (neither addressable nor a map index expression)")
+	if !strings.HasPrefix(m, "cannot assign at line 164") || strings.Contains(m, "OpenInput") {
+		t.Errorf("message %q", m)
+	}
+	m = compileMessage(c, "internal/stats", "package stats\n", "stats.OpenInput = nil", 166, "use of package stats not in selector")
+	if !strings.HasPrefix(m, "cannot assign at line 166") {
+		t.Errorf("message %q", m)
+	}
+}
