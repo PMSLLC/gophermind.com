@@ -275,6 +275,28 @@ func missingStdImport(diag string) string {
 	return m[1]
 }
 
+var undefinedQualRE = regexp.MustCompile(`^undefined: (?:\w+\.)?(\w+)$`)
+
+// undeclaredName is the advice for a call to a name the contract does not
+// declare in the package: the declared names, which are the contract's own
+// words, never the model's. "" when the diagnostic is not that, or the name is
+// declared (then it is the unexported-name case).
+func undeclaredName(s *safeNames, diag string) string {
+	m := undefinedQualRE.FindStringSubmatch(strings.TrimSpace(diag))
+	if m == nil || s.sameDir[m[1]] || stdTestPackages[m[1]] || len(s.sameDir) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(s.sameDir))
+	for n := range s.sameDir {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	if len(names) > 12 {
+		names = names[:12]
+	}
+	return "that name is not declared in the contract; call only the functions and types the contract declares for this package: " + strings.Join(names, ", ")
+}
+
 // compileMessage is the fixed phrase for one diagnostic. diag is read for its
 // class only and never copied.
 func compileMessage(c *contract.Contracts, dir, src, line string, n int, diag string) string {
@@ -301,6 +323,9 @@ func compileMessage(c *contract.Contracts, dir, src, line string, n int, diag st
 		clause := testClause(src)
 		if why := unexportedCalled(c, dir, line); why != whyNone && strings.HasSuffix(clause, "_test") {
 			return fmt.Sprintf("undefined name at line %d: %s", n, unexportedRefusal(strings.TrimSuffix(clause, "_test"), why))
+		}
+		if m := undeclaredName(safe, diag); m != "" {
+			return fmt.Sprintf("undefined name at line %d: %s", n, m)
 		}
 		return fmt.Sprintf("undefined name at line %d: the function under test is called as the package provides it (an external test package cannot call an unexported name; use package %s for unexported functions)", n, strings.TrimSuffix(clause, "_test"))
 	case richMismatch(safe, n, diag) != "":

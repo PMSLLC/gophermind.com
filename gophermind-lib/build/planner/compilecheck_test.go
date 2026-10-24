@@ -379,3 +379,11 @@ func TestCompileMessageMissingStdImport(t *testing.T) {
 		t.Fatalf("message %q quotes a name outside the closed set", other)
 	}
 }
+
+func TestCompileMessageUndeclaredNameListsTheDeclaredOnes(t *testing.T) {
+	c := compileCheckContract()
+	m := compileMessage(c, "internal/stats", "package stats\n", "x := pInt(s)", 126, "undefined: pInt")
+	if !strings.Contains(m, "undefined name at line 126") || !strings.Contains(m, "not declared in the contract") || strings.Contains(m, "pInt") || strings.Contains(m, "external test package") {
+		t.Errorf("message %q", m)
+	}
+}
