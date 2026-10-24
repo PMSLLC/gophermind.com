@@ -307,8 +307,29 @@ function renderAcceptance(a){
 }
 
 let timer = null;
-function kick(){ clearTimeout(timer); timer = setTimeout(refresh, 300); }
+let es = null;
+// kick refetches soon (after an answer). With a live stream the stream
+// delivers the change; the fetch only runs when polling.
+function kick(){ if (es) return; clearTimeout(timer); timer = setTimeout(refresh, 300); }
 
+// show puts one state on the page and says whether the run can still change.
+function show(s){
+  $('load').textContent = '';
+  renderHead(s.run);
+  renderTree(s.nodes);
+  renderWaves(s.wave_checks || [], s.repairs || { total: 0, open: [] });
+  renderQuestions(s.questions);
+  renderAcceptance(s.acceptance);
+  $('understanding').textContent = s.understanding || '(none yet)';
+  const log = $('log');
+  const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+  log.textContent = s.log_tail.join('\n');
+  if (atEnd) log.scrollTop = log.scrollHeight;
+  const ph = s.run.phase;
+  return s.run.active || !(ph === 'done' || ph === 'failed' || ph === 'stopped' || ph === 'interrupted');
+}
+
+// refresh is the polling fallback: one fetch every 3 s while the run is live.
 async function refresh(){
   clearTimeout(timer);
   let again = true;
@@ -316,24 +337,29 @@ async function refresh(){
     const r = await fetch('/app/briefs/' + runId + '/state', { credentials: 'same-origin', cache: 'no-store' });
     if (r.status === 404) { $('load').textContent = 'No such run.'; return; }
     if (!r.ok) throw new Error(String(r.status));
-    const s = await r.json();
-    $('load').textContent = '';
-    renderHead(s.run);
-    renderTree(s.nodes);
-    renderWaves(s.wave_checks || [], s.repairs || { total: 0, open: [] });
-    renderQuestions(s.questions);
-    renderAcceptance(s.acceptance);
-    $('understanding').textContent = s.understanding || '(none yet)';
-    const log = $('log');
-    const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
-    log.textContent = s.log_tail.join('\n');
-    if (atEnd) log.scrollTop = log.scrollHeight;
-    const ph = s.run.phase;
-    if (!s.run.active && (ph === 'done' || ph === 'failed' || ph === 'stopped' || ph === 'interrupted')) again = false;
+    again = show(await r.json());
   } catch (e) {
     $('load').textContent = 'Could not refresh: ' + e.message;
   }
   if (again) timer = setTimeout(refresh, 3000);
+}
+
+// live follows the run over a server-sent event stream and drops to polling
+// if the stream cannot be had.
+function live(){
+  if (typeof EventSource === 'undefined') { refresh(); return; }
+  es = new EventSource('/app/briefs/' + runId + '/events');
+  es.addEventListener('state', ev => {
+    try { show(JSON.parse(ev.data)); } catch (e) { $('load').textContent = 'Bad update: ' + e.message; }
+  });
+  es.addEventListener('end', () => { es.close(); });
+  es.onerror = () => {
+    // An error is also the end of a finished stream; either way, one fetch
+    // shows the truth and keeps polling only while the run is live.
+    es.close();
+    es = null;
+    refresh();
+  };
 }
 
 $('stop').addEventListener('click', async () => {
@@ -348,7 +374,7 @@ $('stop').addEventListener('click', async () => {
   $('stop').disabled = false;
 });
 
-if (!runId) { $('load').textContent = 'Bad run id.'; } else { refresh(); }
+if (!runId) { $('load').textContent = 'Bad run id.'; } else { live(); }
 </script>
 </body>
 </html>

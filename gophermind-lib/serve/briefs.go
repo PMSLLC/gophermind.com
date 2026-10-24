@@ -70,6 +70,10 @@ type briefManager struct {
 	mu       sync.Mutex
 	active   *activeBrief
 	answerMu sync.Mutex // one answer at a time: file edit, then resume
+
+	// events: open-stream slots and how often one stream looks at the files.
+	streams    chan struct{}
+	eventEvery time.Duration
 }
 
 type activeBrief struct {
@@ -91,6 +95,7 @@ var (
 func newBriefManager(opt Options, root string) (*briefManager, error) {
 	m := &briefManager{
 		dir: opt.BriefsDir, root: root, cmd: opt.BriefCommand, signal: opt.BriefSignal,
+		streams: make(chan struct{}, maxEventStreams), eventEvery: defaultEventEvery,
 		killGrace: 10 * time.Second, now: func() time.Time { return time.Now().UTC() },
 	}
 	if m.cmd == nil {
