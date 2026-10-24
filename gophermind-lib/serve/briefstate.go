@@ -25,6 +25,8 @@ type BriefState struct {
 	Nodes         []BriefNode      `json:"nodes"`
 	Questions     []BriefQuestion  `json:"questions"`
 	Acceptance    *BriefAcceptance `json:"acceptance"`
+	WaveChecks    []BriefWave      `json:"wave_checks"`
+	Repairs       BriefRepairs     `json:"repairs"`
 	LogTail       []string         `json:"log_tail"`
 }
 
@@ -67,8 +69,8 @@ type BriefNode struct {
 // BriefAttempt is one model attempt at a leaf; Outcome is pass, fail or error.
 type BriefAttempt struct {
 	N             int    `json:"n"`
-	Model         string `json:"model"`
-	Provider      string `json:"provider"`
+	Model         string `json:"model,omitempty"`
+	Provider      string `json:"provider,omitempty"`
 	Outcome       string `json:"outcome"`
 	FailureReason string `json:"failure_reason"`
 	DurationMS    int64  `json:"duration_ms"`
@@ -247,7 +249,7 @@ type acceptanceDisk struct {
 func BuildBriefState(root, id string, rec *briefRecord, active bool, logText string, now time.Time) (BriefState, error) {
 	st := BriefState{
 		SchemaVersion: BriefStateVersion, GeneratedAt: now.UTC().Format("2006-01-02T15:04:05Z"),
-		Nodes: []BriefNode{}, Questions: []BriefQuestion{}, LogTail: tailLines(logText),
+		Nodes: []BriefNode{}, Questions: []BriefQuestion{}, WaveChecks: []BriefWave{}, Repairs: BriefRepairs{Open: []BriefRepair{}}, LogTail: tailLines(logText),
 	}
 	st.Run = BriefRun{ID: id, Active: active, Counts: runview.Counts{ByStatus: map[string]int{}}}
 	if rec != nil {
@@ -309,6 +311,7 @@ func BuildBriefState(root, id string, rec *briefRecord, active bool, logText str
 		st.Nodes = append(st.Nodes, n)
 	}
 	markBlocked(st.Nodes)
+	st.WaveChecks, st.Repairs = waveChecks(dir, st.Run, st.Nodes)
 
 	if b, err := readSmallFile(filepath.Join(dir, "UNDERSTANDING.md"), maxUnderstandingBytes); err == nil {
 		st.Understanding = string(b)

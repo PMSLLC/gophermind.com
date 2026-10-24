@@ -47,6 +47,12 @@
 <div id="counts" class="meta"></div>
 <div id="tree"></div>
 
+<h2>Wave checks</h2>
+<div id="waves"></div>
+
+<h2>Repairs</h2>
+<div id="repairs"></div>
+
 <h2>Clarify questions</h2>
 <div id="questions"></div>
 
@@ -108,13 +114,15 @@ function renderHead(run){
 function attemptTable(n){
   const t = el('table');
   const hr = el('tr');
-  for (const c of ['#', 'model', 'provider', 'outcome', 'tests', 'ms', 'reason']) hr.appendChild(el('th', '', c));
+  const hasModel = n.attempts.some(a => a.model), hasProv = n.attempts.some(a => a.provider);
+  const cols = ['#'].concat(hasModel ? ['model'] : [], hasProv ? ['provider'] : [], ['outcome', 'tests', 'ms', 'reason']);
+  for (const c of cols) hr.appendChild(el('th', '', c));
   t.appendChild(hr);
   for (const a of n.attempts) {
     const tr = el('tr');
     tr.appendChild(el('td', '', a.n));
-    tr.appendChild(el('td', '', a.model));
-    tr.appendChild(el('td', '', a.provider));
+    if (hasModel) tr.appendChild(el('td', '', a.model));
+    if (hasProv) tr.appendChild(el('td', '', a.provider));
     const o = el('td'); o.appendChild(pill(a.outcome)); tr.appendChild(o);
     tr.appendChild(el('td', '', a.tests_passed + '/' + a.tests_total));
     tr.appendChild(el('td', '', a.duration_ms));
@@ -195,6 +203,46 @@ async function sendAnswer(q, text, msg, btns){
   for (const b of btns) b.disabled = false;
 }
 
+function renderWaves(ws, rp){
+  const box = $('waves');
+  box.textContent = '';
+  if (!ws.length) box.appendChild(el('div', 'meta', 'No waves yet.'));
+  else {
+    const t = el('table');
+    const hr = el('tr');
+    for (const c of ['wave', 'check', 'leaves verified', 'failing leaves']) hr.appendChild(el('th', '', c));
+    t.appendChild(hr);
+    for (const w of ws) {
+      const tr = el('tr');
+      tr.appendChild(el('td', '', w.wave));
+      const c = el('td'); c.appendChild(pill(w.check, w.check === 'repairing' ? 'running' : w.check)); tr.appendChild(c);
+      tr.appendChild(el('td', '', w.verified + '/' + w.leaves.length));
+      tr.appendChild(el('td', '', w.failing_leaves.join(', ')));
+      t.appendChild(tr);
+    }
+    box.appendChild(t);
+  }
+  const rb = $('repairs');
+  rb.textContent = '';
+  rb.appendChild(el('div', 'meta', 'Reopened after a failed wave check, whole run: ' + rp.total + (rp.total ? '' : ' (counted when the run ends)')));
+  if (rp.open.length) {
+    const t = el('table');
+    const hr = el('tr');
+    for (const c of ['leaf', 'wave', 'attempts so far', 'reason', 'status']) hr.appendChild(el('th', '', c));
+    t.appendChild(hr);
+    for (const r of rp.open) {
+      const tr = el('tr');
+      tr.appendChild(el('td', '', r.leaf));
+      tr.appendChild(el('td', '', r.wave));
+      tr.appendChild(el('td', '', r.attempts));
+      tr.appendChild(el('td', '', r.reason));
+      tr.appendChild(el('td', '', r.status));
+      t.appendChild(tr);
+    }
+    rb.appendChild(t);
+  }
+}
+
 function renderQuestions(qs){
   // Rebuilding the boxes on every update would wipe what is being typed, so
   // they are only rebuilt when the questions themselves changed.
@@ -272,6 +320,7 @@ async function refresh(){
     $('load').textContent = '';
     renderHead(s.run);
     renderTree(s.nodes);
+    renderWaves(s.wave_checks || [], s.repairs || { total: 0, open: [] });
     renderQuestions(s.questions);
     renderAcceptance(s.acceptance);
     $('understanding').textContent = s.understanding || '(none yet)';
