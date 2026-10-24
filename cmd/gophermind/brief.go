@@ -25,6 +25,7 @@ const briefUsage = `usage:
   gophermind brief run <run-id> --check-env      (environment preflight, no model call; exit 6 on a failed check)
   gophermind brief report <run-id> [--json]
   gophermind brief status <run-id>
+  gophermind brief diagnose <run-id> [--repo <path>] [--json]   (read-only: stages, slow calls, failed nodes, likely cause)
   gophermind brief coverage <run-id>
   gophermind brief calls <run-id>
   gophermind brief vault set <NAME>      (value from a terminal prompt or stdin)
@@ -56,6 +57,8 @@ func runBrief(args []string, in *os.File, out, errw io.Writer) int {
 		return briefRun(args[1:], in, out, errw)
 	case "report":
 		return briefReport(args[1:], out, errw)
+	case "diagnose":
+		return briefDiagnose(args[1:], out, errw)
 	case "status", "coverage", "calls":
 		if len(args) != 2 {
 			fmt.Fprintln(errw, briefUsage)
