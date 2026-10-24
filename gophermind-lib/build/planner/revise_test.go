@@ -214,9 +214,9 @@ func TestReviseRefusalsAreUnusableNotErrors(t *testing.T) {
 		class string
 		calls int
 	}{
-		"not json twice": {fixed(map[string]string{"revise.fn-greet.txt": "I would rather not."}), planner.ClassReviseInvalid, 2},
-		"unknown key":    {fixed(map[string]string{"revise.fn-greet.txt": `{"description":"x","test_file":"../evil_test.go"}`}), planner.ClassReviseInvalid, 2},
-		"no op":          {noop, planner.ClassReviseNoop, 2},
+		"not json twice": {fixed(map[string]string{"revise.fn-greet.txt": "I would rather not."}), planner.ClassReviseInvalid, 3},
+		"unknown key":    {fixed(map[string]string{"revise.fn-greet.txt": `{"description":"x","test_file":"../evil_test.go"}`}), planner.ClassReviseInvalid, 3},
+		"no op":          {noop, planner.ClassReviseNoop, 3},
 		"secret":         {fixed(map[string]string{"revise.fn-greet.txt": `{"description":"use ` + runSecret + ` as the name"}`}), planner.ClassSecretInReply, 1},
 		"secret in the test writer reply": {fixed(map[string]string{
 			"revise.fn-greet.txt":       descriptionPatch,
@@ -225,7 +225,7 @@ func TestReviseRefusalsAreUnusableNotErrors(t *testing.T) {
 		"test writer wrong function": {fixed(map[string]string{
 			"revise.fn-greet.txt":       descriptionPatch,
 			"testwrite.fn-greet-r1.txt": `{"test_file":"package greet\n\nimport \"testing\"\n\nfunc TestOther(t *testing.T) {}\n","tests":[]}`,
-		}), planner.ClassReviseInvalid, 3},
+		}), planner.ClassReviseInvalid, 4},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -237,7 +237,7 @@ func TestReviseRefusalsAreUnusableNotErrors(t *testing.T) {
 				t.Fatalf("proposal = %+v, %v; want unusable %s", prop, err, c.class)
 			}
 			if got := g.stagesCalled()[before:]; len(got) != c.calls {
-				t.Fatalf("stages = %v, want %d calls (the reply and the one repair call of the router)", got, c.calls)
+				t.Fatalf("stages = %v, want %d calls (the reply and the two repair calls of a single-model chain)", got, c.calls)
 			}
 			// A reply that held a secret is never saved.
 			entries, _ := os.ReadDir(filepath.Join(g.runDir, "_state", "replies"))
