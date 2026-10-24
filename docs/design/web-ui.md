@@ -25,14 +25,17 @@ The existing API handlers already require the server bearer token. For a request
 
 ## Briefs from the browser
 
-Status: built 2026-10-23; browser rendering not yet checked by eye, and not deployed.
+Status: phase 2 built 2026-10-23 and deployed; answering questions, the wave check and repair sections and the event stream built 2026-10-24 (browser rendering of those not yet checked by eye).
 
 - `POST /app/briefs` takes a raw body or multipart `brief`, at most 256 KiB, checks it with `brief.Parse` (the parser behind `brief validate`), requires `repo:` to be the server root, saves it to `<BriefsDir>/<id>/brief.md`, and starts `brief plan <file> --yes` then `brief run <id> --repo <root>` as a subprocess in its own process group. 202 with the run id; 400 invalid; 413 too large; 409 with `active_run_id` while another run is live (one at a time) or when the id was used before.
 - The launcher is an injectable command (`serve.Options.BriefCommand`), defaulting to `gophermind` run directly. A deployment launches as `gmrun` with `GOPHERMIND_BRIEF_CMD` (sudo prefix); see `docs/SERVER-SETUP.md`. The log is `<BriefsDir>/<id>/run.log` because the run folder belongs to `gmrun` and does not exist until planning starts.
 - `POST /app/briefs/{id}/stop` signals the process group (TERM, then KILL after 10 s). Both POSTs sit behind the sign-in, the bearer bridge and `sameOriginWrite`.
 - `GET /app/briefs/{id}/state` is built by `BuildBriefState` from the run folder (through `runview`) plus the launch record: nodes with parent, wave, normalized status (pending, running, verified, failed, blocked), attempts with model, provider and outcome, clarify questions with `answered_by` (`_state/clarify/questions.json`, `answers.json` for old runs), `acceptance.json`, `UNDERSTANDING.md` and the log tail. Each node carries an empty `origin`, reserved for Burrow reuse. The page polls it every 3 seconds, sets everything with `textContent`, and stops polling once the launch is final.
 - `GET /app/api/briefs` lists launched runs and any other run folder under the root.
-- Not built: answering clarify questions in the browser (a run that needs a human exits at the file gate and shows as failed with its questions visible), live event stream on the run page (polling is used), wave checks and repairs as separate sections.
+- Answering clarify questions (2026-10-24): `POST /app/briefs?ask=1` plans with `--gate file` instead of the unattended defaults. The planner stops at open questions (exit 3), the launch record's phase becomes `waiting` (no process, slot free, not marked interrupted by a restart) and `QUESTIONS.md` is in the run folder. State marks the questions the gate waits on `askable` and carries the model's why, options and recommendation. `POST /app/briefs/{id}/answer {question_id, answer}` (same-origin guard, sign-in, 8 KiB cap, id charset `[A-Za-z0-9._-]{1,64}`) edits that question's answer block and, once no block is empty, runs `brief resume <id> --yes --gate file`, then `brief run`. It edits the file the file gate reads rather than calling `brief answer`, which changes an answer already settled and would restart planning. 404 unknown run or question, 409 not waiting or another run active.
+- Wave checks and repairs (2026-10-24): `/state` has `wave_checks` and `repairs`. The executor persists no per-check log, so each wave's `check` (pass, fail, repairing, running, pending) is derived from leaf statuses, `_state/leaf-results.json` (a reopened leaf carries the reason `integration: <kind>`) and the run's stop reason. `repairs.total` is `report.json`'s count and appears when the run ends; `repairs.open` lists leaves reopened and not yet verified, with attempts so far. A repair that succeeded leaves no trace except the total.
+- Per-attempt model and provider: each attempt carries `model` and `provider` (omitted from the JSON when the attempt recorded none, and the page then leaves the column out).
+- Live updates (2026-10-24): `GET /app/briefs/{id}/events` is a server-sent event stream. It sends a `state` event with the full state JSON at once, polls the run folder and log every second server side and sends another when a content hash of the state (not its timestamp) changes, a `: keep-alive` comment every 15 seconds, and an `end` event when the run is final. At most 8 streams (503 beyond); it stops when the request context ends. The page keeps its 3 second polling as the fallback when `EventSource` is missing or errors.
 
 ## Config
 
@@ -52,3 +55,4 @@ All four of client id, client secret, session secret and public URL set: auth is
 3. Chat page and home page (static, no build step).
 4. Server deploy and Google client setup (John creates the OAuth client; secrets only in `/opt/gophermind/.env` on the server).
 5. Start a brief from the browser (done 2026-10-23, see above).
+6. Answer questions, wave checks and repairs, live stream (built 2026-10-24, see above).
