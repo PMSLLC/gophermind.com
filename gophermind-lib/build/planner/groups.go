@@ -139,8 +139,8 @@ func groupDefects(d map[string]any, class string, env groupEnv) []groupDefect {
 			add(grpMissing, g, "%s is missing", g)
 		}
 	}
-	if s, ok := d["rationale"].(string); ok && len([]rune(strings.TrimSpace(s))) < 20 {
-		add(grpMissing, "rationale", "rationale is shorter than 20 characters")
+	if s, ok := d["rationale"].(string); ok && len([]rune(strings.TrimSpace(s))) < rationaleMin {
+		add(grpMissing, "rationale", "%s", rationaleProblem(len([]rune(strings.TrimSpace(s))), true))
 	}
 	if c, ok := d["construction"].(map[string]any); ok {
 		steps := strList(c["steps"])

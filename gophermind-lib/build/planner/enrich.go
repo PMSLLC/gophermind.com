@@ -182,6 +182,12 @@ func mergeEnrichment(draft, reply map[string]any, c *contract.Contracts, env gro
 			merged[g] = v
 		}
 	}
+	if rat, ok := merged["rationale"].(string); ok {
+		if cut, trimmed := trimRationale(rat); trimmed {
+			warnings = append(warnings, rationaleTrimmedWarning(boundedID(id), len([]rune(strings.TrimSpace(rat))), len([]rune(cut))))
+			merged["rationale"] = cut
+		}
+	}
 	class, _ := merged["node_class"].(string)
 	ct, _ := merged["contract"].(map[string]any)
 	sig, _ := ct["signature"].(string)
@@ -548,12 +554,7 @@ func (p *Planner) applyEnrichment(dec *decomposed, st *enrichedState, res enrich
 		}
 		st.Pending = kept
 	}
-	for _, w := range res.warnings {
-		if !contains(st.Warnings, w) {
-			st.Warnings = append(st.Warnings, w)
-			p.emit(events.KindWarning, "enrich", "", w)
-		}
-	}
+	p.addWarnings(st, res.warnings)
 	for _, b := range res.bad {
 		replaced := false
 		for i := range st.Pending {
@@ -661,6 +662,16 @@ func (p *Planner) repairEnrichment(ctx context.Context, r *run, c *contract.Cont
 	return nil
 }
 
+// addWarnings records each warning once and emits it.
+func (p *Planner) addWarnings(st *enrichedState, warns []string) {
+	for _, w := range warns {
+		if !contains(st.Warnings, w) {
+			st.Warnings = append(st.Warnings, w)
+			p.emit(events.KindWarning, "enrich", "", w)
+		}
+	}
+}
+
 // enrichStructure writes the rationale, assumptions, open questions and
 // decision ids of every component and of the root: one small call each.
 func (p *Planner) enrichStructure(ctx context.Context, r *run, c *contract.Contracts, dec decomposed, st *enrichedState, env groupEnv) error {
@@ -684,11 +695,12 @@ func (p *Planner) enrichStructure(ctx context.Context, r *run, c *contract.Contr
 			fns = append(fns, map[string]any{"id": d["id"], "title": d["title"], "description": d["description"]})
 		}
 		subject := mustJSON(map[string]any{"component": comp, "functions": fns})
-		g, err := p.structureCall(ctx, r, "enrich_comp:"+comp.ID, "component", subject, briefSection(r, comp.ID), router.ScopeComponent, qs, env)
+		g, warns, err := p.structureCall(ctx, r, "enrich_comp:"+comp.ID, "component", comp.ID, subject, briefSection(r, comp.ID), router.ScopeComponent, qs, env)
 		if err != nil {
 			return err
 		}
 		st.Components[comp.ID] = g
+		p.addWarnings(st, warns)
 		if err := st.save(r); err != nil {
 			return err
 		}
@@ -699,11 +711,12 @@ func (p *Planner) enrichStructure(ctx context.Context, r *run, c *contract.Contr
 			ids = append(ids, comp.ID)
 		}
 		subject := mustJSON(map[string]any{"title": r.brief.Front.Title, "overview": oneLine(r.brief.Sections["Overview"], 2000), "components": ids})
-		g, err := p.structureCall(ctx, r, "enrich_root", "root", subject, oneLine(r.brief.Sections["Overview"], 2000), router.ScopeBrief, qs, env)
+		g, warns, err := p.structureCall(ctx, r, "enrich_root", "root", "root", subject, oneLine(r.brief.Sections["Overview"], 2000), router.ScopeBrief, qs, env)
 		if err != nil {
 			return err
 		}
 		st.Root = g
+		p.addWarnings(st, warns)
 		if err := st.save(r); err != nil {
 			return err
 		}
@@ -712,39 +725,45 @@ func (p *Planner) enrichStructure(ctx context.Context, r *run, c *contract.Contr
 }
 
 // structureCall asks for the groups of a component or the root.
-func (p *Planner) structureCall(ctx context.Context, r *run, stage, kind, subject, section string, scope router.Scope, qs qstore, env groupEnv) (map[string]any, error) {
+func (p *Planner) structureCall(ctx context.Context, r *run, stage, kind, label, subject, section string, scope router.Scope, qs qstore, env groupEnv) (map[string]any, []string, error) {
 	prompt, err := render("enrich_structure", map[string]string{"Kind": kind, "Subject": subject, "BriefSection": section, "Decisions": decisionsText(qs)})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var out map[string]any
+	var warns []string
 	cs := callSpec{stage: stage, taskType: "enrich", scope: scope, maxTokens: maxTokensEnrichStructure}
 	err = p.call(ctx, r, cs, prompt, func(text string) error {
 		var x map[string]any
 		if err := json.Unmarshal([]byte(StripReply(text)), &x); err != nil {
 			return fmt.Errorf("enrich reply is not a JSON object (%s)", jsonErrIn(err, StripReply(text)))
 		}
-		rat, _ := x["rationale"].(string)
-		if n := len([]rune(strings.TrimSpace(rat))); n < 20 || n > 600 {
-			return errors.New("enrich reply: rationale must be 20 to 600 characters")
+		rat, has := x["rationale"].(string)
+		if n := len([]rune(strings.TrimSpace(rat))); n < rationaleMin {
+			return errors.New("enrich reply: " + rationaleProblem(n, has))
 		}
 		for _, k := range []string{"assumptions", "open_questions", "decision_ids"} {
 			if _, ok := x[k].([]any); !ok {
-				return fmt.Errorf("enrich reply: %s must be an array", k)
+				return fmt.Errorf("enrich reply: %s must be a JSON array (write [] when there is nothing to list)", k)
 			}
 		}
-		if len(strList(x["open_questions"])) > 0 {
-			return errors.New("enrich reply: open_questions must be empty")
+		if n := len(strList(x["open_questions"])); n > 0 {
+			return fmt.Errorf("enrich reply: open_questions has %d entries; it must be an empty array", n)
 		}
 		for i, id := range strList(x["decision_ids"]) {
 			if !env.Decisions[id] {
 				return fmt.Errorf("enrich reply: decision_ids entry %d is not a settled question", i+1)
 			}
 		}
-		out = map[string]any{"rationale": strings.TrimSpace(rat), "assumptions": x["assumptions"], "open_questions": []any{}, "decision_ids": x["decision_ids"]}
+		warns = nil
+		rat, trimmed := trimRationale(rat)
+		if trimmed {
+			warns = append(warns, rationaleTrimmedWarning(label, len([]rune(strings.TrimSpace(x["rationale"].(string)))), len([]rune(rat))))
+		}
+		out = map[string]any{"rationale": rat, "assumptions": x["assumptions"], "open_questions": []any{}, "decision_ids": x["decision_ids"]}
 		return nil
 	})
-	return out, err
+	return out, warns, err
 }
 
 // enrich is the Enrich stage.
@@ -777,4 +796,47 @@ func openQuestionStructures(st enrichedState) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+const (
+	rationaleMin = 20
+	rationaleMax = 600
+)
+
+// rationaleProblem says what is wrong with a rationale that is missing or too
+// short, in numbers the model can act on. It never quotes the reply.
+func rationaleProblem(n int, present bool) string {
+	if !present {
+		return fmt.Sprintf("rationale is missing; write 2 to 3 sentences of %d to %d characters", rationaleMin, rationaleMax)
+	}
+	return fmt.Sprintf("your rationale was %d characters; it must be at least %d, so write 2 to 3 full sentences (%d to %d characters)", n, rationaleMin, rationaleMin, rationaleMax)
+}
+
+func rationaleTrimmedWarning(id string, from, to int) string {
+	return fmt.Sprintf("%s: rationale_trimmed from %d to %d characters", id, from, to)
+}
+
+// trimRationale cuts a rationale longer than the limit at the last sentence end
+// at or under it, else at the last word boundary, with no ellipsis. A text that
+// fits is returned trimmed of surrounding space with trimmed false.
+func trimRationale(s string) (string, bool) {
+	rs := []rune(strings.TrimSpace(s))
+	if len(rs) <= rationaleMax {
+		return string(rs), false
+	}
+	isSpace := func(r rune) bool { return r == ' ' || r == '\n' || r == '\t' || r == '\r' }
+	for e := rationaleMax; e >= rationaleMin; e-- {
+		if (rs[e-1] == '.' || rs[e-1] == '!' || rs[e-1] == '?') && isSpace(rs[e]) {
+			return string(rs[:e]), true
+		}
+	}
+	if isSpace(rs[rationaleMax]) {
+		return strings.TrimRight(string(rs[:rationaleMax]), " ,;:\n\t\r"), true
+	}
+	for e := rationaleMax - 1; e >= rationaleMin; e-- {
+		if isSpace(rs[e]) {
+			return strings.TrimRight(string(rs[:e]), " ,;:\n\t\r"), true
+		}
+	}
+	return string(rs[:rationaleMax]), true
 }
