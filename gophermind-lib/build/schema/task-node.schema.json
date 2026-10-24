@@ -795,7 +795,8 @@
               "human",
               "accepted",
               "unattended-default",
-              "probe"
+              "probe",
+              "brief"
             ]
           },
           "round": {

@@ -134,18 +134,19 @@ func TestNodeGroupsValidateAndRejectBadShapes(t *testing.T) {
 "tests":[{"name":"n","level":"unit","given":"g","expect":"e","command":"go test ./p"}]` + extra + `}`)
 	}
 	good := map[string]string{
-		"rationale":       `,"rationale":"Serves the registration form so a visitor can sign up."`,
-		"construction":    `,"construction":{"approach_chosen":"a","steps":["one","two"]}`,
-		"alternatives":    `,"alternatives":[{"approach":"x","rejected_because":"y"}]`,
-		"alternatives na": `,"alternatives":{"not_applicable":"there is only one sensible way to write this"}`,
-		"security":        `,"security":{"trust_boundary":"none"}`,
-		"performance":     `,"performance":{"complexity":"O(1)","max_latency_ms":null,"concurrency":"none","hot_path":false}`,
-		"observability":   `,"observability":{"log_events":[{"level":"warn","msg":"m","fields":["f"]}],"trace_span":null}`,
-		"portability":     `,"portability":{"os":["linux"],"arch":["amd64"],"go_min":"1.22","cgo":false}`,
-		"profile_hooks":   `,"profile_hooks":["bench"]`,
-		"refactor_notes":  `,"refactor_notes":[{"what":"w","why":"y","when":"z"}]`,
-		"ids":             `,"requirement_ids":["C1","A2","F3"],"decision_ids":["q1","decompose-greeting-q1"],"open_questions":[]`,
-		"decisions":       `,"decisions":[{"id":"q1","question":"Which store?","kind":"decision","options":["memory","postgres"],"recommended":"memory","answer":"memory","answered_by":"accepted","round":1,"raised_by":"clarify","settled_at":"2026-10-08T00:00:00Z","history":[{"at":"2026-10-08T00:01:00Z","answer":"postgres"}]}]`,
+		"rationale":         `,"rationale":"Serves the registration form so a visitor can sign up."`,
+		"construction":      `,"construction":{"approach_chosen":"a","steps":["one","two"]}`,
+		"alternatives":      `,"alternatives":[{"approach":"x","rejected_because":"y"}]`,
+		"alternatives na":   `,"alternatives":{"not_applicable":"there is only one sensible way to write this"}`,
+		"security":          `,"security":{"trust_boundary":"none"}`,
+		"performance":       `,"performance":{"complexity":"O(1)","max_latency_ms":null,"concurrency":"none","hot_path":false}`,
+		"observability":     `,"observability":{"log_events":[{"level":"warn","msg":"m","fields":["f"]}],"trace_span":null}`,
+		"portability":       `,"portability":{"os":["linux"],"arch":["amd64"],"go_min":"1.22","cgo":false}`,
+		"profile_hooks":     `,"profile_hooks":["bench"]`,
+		"refactor_notes":    `,"refactor_notes":[{"what":"w","why":"y","when":"z"}]`,
+		"ids":               `,"requirement_ids":["C1","A2","F3"],"decision_ids":["q1","decompose-greeting-q1"],"open_questions":[]`,
+		"decision by brief": `,"decisions":[{"id":"q1","question":"Does it read stdin?","kind":"decision","answer":"The brief says - means stdin.","answered_by":"brief","round":1,"raised_by":"clarify","settled_at":"2026-10-08T00:00:00Z"}]`,
+		"decisions":         `,"decisions":[{"id":"q1","question":"Which store?","kind":"decision","options":["memory","postgres"],"recommended":"memory","answer":"memory","answered_by":"accepted","round":1,"raised_by":"clarify","settled_at":"2026-10-08T00:00:00Z","history":[{"at":"2026-10-08T00:01:00Z","answer":"postgres"}]}]`,
 	}
 	for name, extra := range good {
 		if err := schema.Validate(schema.KindNode, base(extra)); err != nil {
