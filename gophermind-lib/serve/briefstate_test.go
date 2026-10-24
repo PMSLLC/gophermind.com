@@ -1,12 +1,15 @@
 package serve
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"gophermind/gophermind-lib/build/blackboard"
 	"gophermind/gophermind-lib/runview/runviewtest"
 )
 
@@ -192,5 +195,79 @@ func TestTailLinesBounds(t *testing.T) {
 	}
 	if len(tailLines("")) != 0 {
 		t.Error("empty text gives no lines")
+	}
+}
+
+func TestBuildBriefStateMalformedReason(t *testing.T) {
+	root := t.TempDir()
+	f := runviewtest.Build(t, root, runviewtest.Verified)
+	runDir := filepath.Join(root, ".gophermind", f.RunID)
+	// A third attempt of fn-greet that was refused as malformed, with the
+	// attempt.json the executor writes for it. Attempt 2 (a pass) also gets one
+	// that names a reason: it must not be shown, only malformed attempts are.
+	err := f.BB.AppendAttempt(context.Background(), f.RunID, "fn-greet", blackboard.Attempt{
+		Model: "qwen3.6", Provider: "mini", Order: 3, StartedAt: stateNow, Verdict: blackboard.VerdictError, FailureReason: "malformed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := func(n, body string) {
+		d := filepath.Join(runDir, "attempts", "fn-greet", n)
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(d, "attempt.json"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st, err := BuildBriefState(root, f.RunID, nil, false, "", stateNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := nodeByID(t, st, "fn-greet").Attempts; len(a) != 3 || a[2].MalformedReason != "" {
+		t.Fatalf("without attempt.json: %+v", a)
+	}
+	write("2", `{"class":"x","malformed_reason":"syntax:syntax_error"}`)
+	write("3", `{"class":"malformed","malformed_reason":"syntax:syntax_error"}`)
+	st, err = BuildBriefState(root, f.RunID, nil, false, "", stateNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := nodeByID(t, st, "fn-greet").Attempts
+	if at[2].MalformedReason != "syntax:syntax_error" {
+		t.Errorf("malformed_reason = %q", at[2].MalformedReason)
+	}
+	if at[1].MalformedReason != "" {
+		t.Errorf("a non-malformed attempt shows %q", at[1].MalformedReason)
+	}
+	// On the wire: present for the malformed attempt, omitted for the others.
+	b, _ := json.Marshal(at)
+	if strings.Count(string(b), "malformed_reason") != 1 {
+		t.Errorf("malformed_reason must appear once and be omitted when empty: %s", b)
+	}
+}
+
+func TestMalformedReasonOfRefusesFreeText(t *testing.T) {
+	dir := t.TempDir()
+	d := filepath.Join(dir, "attempts", "fn-a", "1")
+	if err := os.MkdirAll(d, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for body, want := range map[string]string{
+		`{"malformed_reason":"other:unbalanced_fence"}`: "other:unbalanced_fence",
+		`{"malformed_reason":"password is hunter2"}`:    "",
+		`{"malformed_reason":"<script>"}`:               "",
+		`{}`:                                            "",
+		`not json`:                                      "",
+	} {
+		if err := os.WriteFile(filepath.Join(d, "attempt.json"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := malformedReasonOf(dir, "fn-a", 1); got != want {
+			t.Errorf("%s -> %q, want %q", body, got, want)
+		}
+	}
+	if malformedReasonOf(dir, "../x", 1) != "" || malformedReasonOf(dir, "fn-a", 9) != "" {
+		t.Error("a bad leaf id or a missing attempt must give an empty reason")
 	}
 }

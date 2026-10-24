@@ -1040,6 +1040,9 @@ type attemptArt struct {
 	raw    string // the reply text as the model wrote it (the last text the parser saw)
 	source []byte // the formatted file the reply carried
 	out    string // the check output
+	// malformed is the fixed-word reason a reply was rejected as malformed
+	// (packer.ErrorReason): a class and a rule, never reply text.
+	malformed string
 }
 
 // record appends one attempt to the blackboard. It holds the model, the
@@ -1087,7 +1090,7 @@ func (rc *runCtx) saveArtifacts(lr *leafRun, a blackboard.Attempt, class string)
 	lr.art = attemptArt{}
 	_, err := rc.art.Save(lr.l.ID, artifacts.Meta{
 		Provider: a.Provider, Model: a.Model, Revision: a.Revision, Order: a.Order, Verdict: string(a.Verdict),
-		Class: class, Reason: a.FailureReason, ReplySHA256: a.ReplySHA256, StartedAt: a.StartedAt, DurationMS: a.DurationMS,
+		Class: class, Reason: a.FailureReason, MalformedReason: art.malformed, ReplySHA256: a.ReplySHA256, StartedAt: a.StartedAt, DurationMS: a.DurationMS,
 	}, artifacts.Files{Source: art.source, Raw: art.raw, CheckOutput: art.out})
 	if err != nil {
 		rc.emit("warning", lr.l.ID, "artifacts: an attempt could not be saved")
@@ -1293,6 +1296,7 @@ func (lr *leafRun) providerError(ctx context.Context, e ladderEntry, started tim
 		class, end = runner.ClassMalformed, endMalformed
 		if parseErr != nil {
 			lr.prev = failureText(malformedNote(parseErr))
+			lr.art.malformed = packer.ErrorReason(parseErr)
 		}
 	case len(ce.Reasons) > 0:
 		switch kind := ce.Reasons[0].Kind; kind {

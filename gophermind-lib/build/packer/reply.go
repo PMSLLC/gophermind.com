@@ -166,6 +166,53 @@ func ErrorClass(err error) string {
 	return ""
 }
 
+// ErrorReason is the fixed-word reason of a ParseReply error for the attempt
+// record: "<class>:<rule>", the class one of the Class constants or "other",
+// the rule the validator or gate check that refused the reply. It is built
+// from a closed set of words, never from the reply, a name or a size.
+func ErrorReason(err error) string {
+	var me *MalformedError
+	if !errors.As(err, &me) {
+		return ""
+	}
+	class := me.Class
+	if class == "" {
+		class = "other"
+	}
+	return class + ":" + ruleOf(me.Kind)
+}
+
+// ruleOf names the check behind a MalformedError kind.
+func ruleOf(kind string) string {
+	for _, r := range []struct{ prefix, rule string }{
+		{"empty reply", "empty_reply"},
+		{"reply too large", "reply_too_large"},
+		{"reply has too many lines", "too_many_lines"},
+		{"contract problem mixed", "contract_problem_mixed"},
+		{"contract problem too long", "contract_problem_too_long"},
+		{"unbalanced fence", "unbalanced_fence"},
+		{"text outside the code fence", "text_outside_fence"},
+		{"syntax error", "syntax_error"},
+		{"test package", "test_package"},
+		{"package mismatch", "package_mismatch"},
+		{"unreadable import path", "unreadable_import"},
+		{"cgo import", "cgo_import"},
+		{"function ", "function_not_found_or_repeated"},
+		{"signature mismatch", "signature_mismatch"},
+		{"directive not allowed", "directive_not_allowed"},
+		{"testing import not allowed", "testing_import"},
+		{"dot import of a process-control", "process_control_import"},
+		{"init function not allowed", "init_function"},
+		{"declaration not allowed", "declaration_not_allowed"},
+		{"file cannot be formatted", "unformattable"},
+	} {
+		if strings.HasPrefix(kind, r.prefix) {
+			return r.rule
+		}
+	}
+	return "other"
+}
+
 // ParseReply returns a non-nil error only for a malformed reply. Forbidden and
 // ContractProblem replies return a Reply and a nil error.
 func ParseReply(text string, e Expect) (Reply, error) {

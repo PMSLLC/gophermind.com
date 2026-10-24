@@ -3,6 +3,7 @@ package packer
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"go/format"
 	"strings"
 	"testing"
@@ -204,5 +205,29 @@ func TestNewExpectRejectsBadContractSignature(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "malformed") {
 		t.Errorf("must not read as a reply defect: %v", err)
+	}
+}
+
+func TestErrorReasonIsAFixedWordClassAndRule(t *testing.T) {
+	for _, c := range []struct{ kind, class, want string }{
+		{"syntax error at line 3 col 4 (80 bytes)", ClassSyntax, "syntax:syntax_error"},
+		{"package mismatch", ClassPackage, "package:package_mismatch"},
+		{"function Secret_fn not found", ClassNotFound, "not_found:function_not_found_or_repeated"},
+		{"signature mismatch for Secret_fn", ClassSignature, "signature:signature_mismatch"},
+		{badDeclaration, ClassDeclaration, "declaration:declaration_not_allowed"},
+		{"unbalanced fence", "", "other:unbalanced_fence"},
+		{"init function not allowed", "", "other:init_function"},
+		{"something new", "", "other:other"},
+	} {
+		got := ErrorReason(&MalformedError{Kind: c.kind, Class: c.class})
+		if got != c.want {
+			t.Errorf("ErrorReason(%q) = %q, want %q", c.kind, got, c.want)
+		}
+		if strings.Contains(got, "Secret") {
+			t.Errorf("reason %q carries a name", got)
+		}
+	}
+	if ErrorReason(errors.New("x")) != "" || ErrorReason(nil) != "" {
+		t.Error("a non-malformed error has no reason")
 	}
 }

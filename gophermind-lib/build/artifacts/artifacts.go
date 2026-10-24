@@ -22,16 +22,19 @@ import (
 
 // Meta describes one attempt. It holds no reply text.
 type Meta struct {
-	Provider    string    `json:"provider"`
-	Model       string    `json:"model"`
-	Revision    int       `json:"revision"`
-	Order       int       `json:"order"`
-	Verdict     string    `json:"verdict"`
-	Class       string    `json:"class"`
-	Reason      string    `json:"reason,omitempty"`
-	ReplySHA256 string    `json:"reply_sha256,omitempty"`
-	StartedAt   time.Time `json:"started_at"`
-	DurationMS  int64     `json:"duration_ms"`
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+	Revision int    `json:"revision"`
+	Order    int    `json:"order"`
+	Verdict  string `json:"verdict"`
+	Class    string `json:"class"`
+	Reason   string `json:"reason,omitempty"`
+	// MalformedReason says why a reply was rejected as malformed: a fixed-word
+	// class and the validator or gate rule, "<class>:<rule>". Never reply text.
+	MalformedReason string    `json:"malformed_reason,omitempty"`
+	ReplySHA256     string    `json:"reply_sha256,omitempty"`
+	StartedAt       time.Time `json:"started_at"`
+	DurationMS      int64     `json:"duration_ms"`
 }
 
 // Files is what to save. An empty field creates no file.

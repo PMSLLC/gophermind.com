@@ -5,7 +5,9 @@ import (
 	"errors"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -73,9 +75,12 @@ type BriefAttempt struct {
 	Provider      string `json:"provider,omitempty"`
 	Outcome       string `json:"outcome"`
 	FailureReason string `json:"failure_reason"`
-	DurationMS    int64  `json:"duration_ms"`
-	TestsPassed   int    `json:"tests_passed"`
-	TestsTotal    int    `json:"tests_total"`
+	// MalformedReason is the fixed-word class and rule that refused a malformed
+	// reply, read from attempts/<leaf>/<n>/attempt.json; omitted when empty.
+	MalformedReason string `json:"malformed_reason,omitempty"`
+	DurationMS      int64  `json:"duration_ms"`
+	TestsPassed     int    `json:"tests_passed"`
+	TestsTotal      int    `json:"tests_total"`
 }
 
 // BriefQuestion is a clarify question and, once settled, its answer.
@@ -299,11 +304,15 @@ func BuildBriefState(root, id string, rec *briefRecord, active bool, logText str
 				n.Origin = doc.Origin
 				if nb.Runtime != nil {
 					for i, a := range nb.Runtime.Attempts {
-						n.Attempts = append(n.Attempts, BriefAttempt{
+						ba := BriefAttempt{
 							N: i + 1, Model: a.Model, Provider: a.Provider, Outcome: a.Verdict,
 							FailureReason: a.FailureReason, DurationMS: a.DurationMS,
 							TestsPassed: a.TestsPassed, TestsTotal: a.TestsTotal,
-						})
+						}
+						if strings.HasPrefix(a.FailureReason, "malformed") {
+							ba.MalformedReason = malformedReasonOf(dir, ns.ID, i+1)
+						}
+						n.Attempts = append(n.Attempts, ba)
 					}
 				}
 			}
@@ -485,4 +494,26 @@ func markAskable(qs []BriefQuestion, gate []gateQuestion) []BriefQuestion {
 		}
 	}
 	return qs
+}
+
+var malformedReasonRE = regexp.MustCompile(`^[a-z_]{1,32}:[a-z_]{1,48}$`)
+
+// malformedReasonOf reads the malformed_reason of attempts/<leaf>/<n>/attempt.json.
+// Only a value of the fixed "<class>:<rule>" shape is returned; anything else,
+// or a missing file, is "".
+func malformedReasonOf(runDir, leaf string, n int) string {
+	if leaf == "" || strings.ContainsAny(leaf, `/\`) || strings.Contains(leaf, "..") {
+		return ""
+	}
+	b, err := readSmallFile(filepath.Join(runDir, "attempts", leaf, strconv.Itoa(n), "attempt.json"), 1<<16)
+	if err != nil {
+		return ""
+	}
+	var m struct {
+		MalformedReason string `json:"malformed_reason"`
+	}
+	if json.Unmarshal(b, &m) != nil || !malformedReasonRE.MatchString(m.MalformedReason) {
+		return ""
+	}
+	return m.MalformedReason
 }

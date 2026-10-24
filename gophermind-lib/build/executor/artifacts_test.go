@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -131,5 +132,36 @@ func TestCheckOutputCutThroughASecretLeaksNoPrefix(t *testing.T) {
 	got := run(boomOf(canarySecret), capBytes)
 	if strings.Contains(got, canarySecret[:8]) {
 		t.Errorf("cap %d: the saved check output holds a prefix of the canary secret: %q", capBytes, got)
+	}
+}
+
+// A reply refused as malformed is recorded in attempt.json as a fixed-word
+// class and the rule that refused it, never the reply or a secret in it.
+func TestExecutorRecordsWhyAReplyWasMalformed(t *testing.T) {
+	t.Parallel()
+	g := newRig(t)
+	bad := "package greet\n\n// token: " + canarySecret + "\nfunc Greet(name string) (string, error) {\n\treturn \"\", nil\n"
+	rc, _ := g.leafRC(t, Script{"implement:" + leafID: {reply(bad), reply(bad), reply(good(leafID))}}, false)
+	runOne(t, rc, leafID)
+	b, err := os.ReadFile(filepath.Join(g.runDir, "attempts", leafID, "1", "attempt.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var meta struct {
+		Class           string `json:"class"`
+		MalformedReason string `json:"malformed_reason"`
+	}
+	if err := json.Unmarshal(b, &meta); err != nil {
+		t.Fatal(err)
+	}
+	if meta.Class != "malformed" || meta.MalformedReason != "syntax:syntax_error" {
+		t.Errorf("attempt 1 = %+v, want class malformed and reason syntax:syntax_error", meta)
+	}
+	if strings.Contains(string(b), canarySecret) || strings.Contains(string(b), "Greet") {
+		t.Errorf("attempt.json holds reply text: %s", b)
+	}
+	last, err := os.ReadFile(filepath.Join(g.runDir, "attempts", leafID, "2", "attempt.json"))
+	if err != nil || strings.Contains(string(last), "malformed_reason") {
+		t.Errorf("a non-malformed attempt carries a malformed_reason: %s, %v", last, err)
 	}
 }
