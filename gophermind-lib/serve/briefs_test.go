@@ -77,6 +77,37 @@ func (e *briefEnv) get(path string) *httptest.ResponseRecorder {
 	return do(e.h, "GET", path, nil, e.cookie)
 }
 
+// waitNotActive polls until the run is no longer the active one: a stop of it
+// answers 409. The run goroutine closes its log before it frees the slot, so
+// this also means nothing writes into the run folder any more.
+func (e *briefEnv) waitNotActive(id string) {
+	e.t.Helper()
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		w := e.get("/app/briefs/" + id + "/state")
+		if w.Code == http.StatusOK && !strings.Contains(w.Body.String(), `"active":true`) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	e.t.Fatalf("run %s is still active", id)
+}
+
+// stopAndDrain stops the run and waits until its process group is reaped and
+// its log is closed.
+func (e *briefEnv) stopAndDrain(id string) {
+	e.t.Helper()
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		w := e.post("/app/briefs/"+id+"/stop", "", nil)
+		if w.Code == http.StatusConflict {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	e.t.Fatalf("run %s did not stop", id)
+}
+
 func (e *briefEnv) waitPhase(id string, phases ...string) briefRecord {
 	e.t.Helper()
 	deadline := time.Now().Add(20 * time.Second)
@@ -295,12 +326,19 @@ func TestBriefStopKillsProcessGroup(t *testing.T) {
 		t.Errorf("a stopped plan went on to run: %d calls", n)
 	}
 	// The run is over, so the slot is free and a second stop is a conflict.
+	// The record turns stopped before the run goroutine closes its log and
+	// frees the slot, so wait for the conflict instead of expecting it at once.
+	e.waitNotActive("gm-2026-10-23-020")
 	if w := e.post("/app/briefs/gm-2026-10-23-020/stop", "", nil); w.Code != http.StatusConflict {
 		t.Errorf("second stop = %d", w.Code)
 	}
 	if w := e.post("/app/briefs", e.briefText("gm-2026-10-23-021"), nil); w.Code != http.StatusAccepted {
-		t.Errorf("slot not freed: %d %s", w.Code, w.Body)
+		t.Fatalf("slot not freed: %d %s", w.Code, w.Body)
 	}
+	// The second run is a live process group writing run.log into the test's
+	// temp dir: stop it and wait until it is reaped and its log closed, or the
+	// directory cleanup races a writer ("directory not empty").
+	e.stopAndDrain("gm-2026-10-23-021")
 }
 
 func TestBriefStopUnknownRun(t *testing.T) {
