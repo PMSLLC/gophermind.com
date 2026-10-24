@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -186,6 +187,13 @@ func sixLevelRun(t *testing.T, workers int, seed int64) levelRun {
 
 // Spec 15.5: twenty runs with random delays and 2, 3 or 6 workers give the
 // serial run's commit subjects, node trailers and leaf_verified order.
+//
+// This test is slow, not stuck: every run builds its own rig (the offline plan,
+// Wave 0 with the real build, vet and red checks), about 12 s of go tool work,
+// so 21 runs one after another take over four minutes and a bare `go test
+// -timeout 120s` of this test alone expires with the goroutine dump showing a
+// healthy go command. The twenty runs are independent, so they are subtests
+// that run in parallel (bounded by -parallel).
 func TestParallelDeterministicCommitOrder(t *testing.T) {
 	t.Parallel()
 	serial := sixLevelRun(t, 1, 0)
@@ -193,11 +201,15 @@ func TestParallelDeterministicCommitOrder(t *testing.T) {
 		t.Fatalf("serial order = %v", serial.subjects)
 	}
 	for i := 0; i < 20; i++ {
+		i := i
 		w := []int{2, 3, 6}[i%3]
-		got := sixLevelRun(t, w, int64(i+1))
-		if !reflect.DeepEqual(got.subjects, serial.subjects) || !reflect.DeepEqual(got.nodes, serial.nodes) || !reflect.DeepEqual(got.verified, sixIDs) {
-			t.Fatalf("run %d (workers %d): subjects %v nodes %v verified %v; serial %v %v", i, w, got.subjects, got.nodes, got.verified, serial.subjects, serial.nodes)
-		}
+		t.Run(fmt.Sprintf("run%02d_workers%d", i, w), func(t *testing.T) {
+			t.Parallel()
+			got := sixLevelRun(t, w, int64(i+1))
+			if !reflect.DeepEqual(got.subjects, serial.subjects) || !reflect.DeepEqual(got.nodes, serial.nodes) || !reflect.DeepEqual(got.verified, sixIDs) {
+				t.Fatalf("run %d (workers %d): subjects %v nodes %v verified %v; serial %v %v", i, w, got.subjects, got.nodes, got.verified, serial.subjects, serial.nodes)
+			}
+		})
 	}
 }
 
