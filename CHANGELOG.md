@@ -23,6 +23,7 @@ All notable changes to GopherMind are documented here. The format follows
 
 ### Fixed
 
+- **Test-writer refusal for a missing standard library member.** A method that a standard library value does not have (for example `String` on a `*strings.Reader`) now carries a hint to keep the original value instead of reading it back, so the repair reply can fix it.
 - **Test-writer compile refusal for a missing standard import.** A test file that used `io` (or `fmt`, `os`, and so on) without importing it was refused with advice about unexported names, which misled the model into failing the stage. The refusal now names the package to import.
 - A planner test binds the csvstat brief fixture to the entry point's contract: every flag, value, exit code and the standard input item that `ExtractCLISurface` reads from it must be in the entry point's contract text after the repair, and the entry-point prompts must carry the surface (`TestCsvstatSurfaceTokensAreInTheEntryPointContract`).
 - The `NewMux` route table comment lists the `/app/chat` and `/app/briefs` routes (pages, list, upload, state, events, stop, answer), with their auth and gating.

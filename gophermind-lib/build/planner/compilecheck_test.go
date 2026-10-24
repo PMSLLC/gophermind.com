@@ -247,6 +247,10 @@ func TestCompileMessageUnusedVariableMissingReturnUnknownField(t *testing.T) {
 	if m != "unknown field or method at line 8 on a value of type *stats.ColumnSummary" {
 		t.Errorf("got %s", m)
 	}
+	m = compileMessage(c, "internal/stats", "package stats\n", "x", 9, "r.String undefined (type *strings.Reader has no field or method String)")
+	if !strings.HasPrefix(m, "unknown field or method at line 9 on a value of type *strings.Reader (") || !strings.Contains(m, "standard library") {
+		t.Errorf("got %s", m)
+	}
 	m = compileMessage(c, "internal/stats", "package stats\n", "x", 8, "s.Total undefined (type secretHelper has no field or method Total)")
 	if m != "unknown field or method at line 8" {
 		t.Errorf("got %s", m)

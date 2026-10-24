@@ -318,6 +318,8 @@ func richArgCount(s *safeNames, n int, diag string) string {
 	return out
 }
 
+var stdQualifiedRE = regexp.MustCompile(`^\*?(strings|bytes|bufio|os|io|time|bytes)\.\w+$`)
+
 // richNoField is the phrase for "x.y undefined (type T has no field or
 // method y)", with T only when it is safe.
 func richNoField(s *safeNames, n int, diag string) string {
@@ -326,7 +328,11 @@ func richNoField(s *safeNames, n int, diag string) string {
 		return ""
 	}
 	if t, ok := s.typeText(m[1]); ok {
-		return fmt.Sprintf("unknown field or method at line %d on a value of type %s", n, t)
+		out := fmt.Sprintf("unknown field or method at line %d on a value of type %s", n, t)
+		if stdQualifiedRE.MatchString(t) {
+			out += " (the standard library does not define the member the line uses; keep the original value or string instead of reading it back from that type)"
+		}
+		return out
 	}
 	return fmt.Sprintf("unknown field or method at line %d", n)
 }
