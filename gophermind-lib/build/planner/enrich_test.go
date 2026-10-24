@@ -310,3 +310,74 @@ func TestDefectsTextNeverQuotesTheReply(t *testing.T) {
 		})
 	}
 }
+
+func csvstatContract() *contract.Contracts {
+	return &contract.Contracts{Module: "csvstat", Components: []contract.Component{{ID: "registration", Package: "httpapi"}},
+		Functions: []contract.Function{{ID: "fn-a", Package: "csvstat/internal/stats"}, {ID: "fn-b", Package: "internal/render"}}}
+}
+
+func csvstatEnv() groupEnv {
+	e := enrichEnvFixture()
+	e.DepMods = []string{"csvstat"}
+	return e
+}
+
+func setDeps(deps ...any) func(m map[string]any) {
+	return func(m map[string]any) { m["portability"].(map[string]any)["deps"] = deps }
+}
+
+func TestMergeEnrichmentNormalizesInventedHostPrefixOnOwnPackages(t *testing.T) {
+	merged, ds, warns := mergeEnrichment(draftFixture(t), replyFixture(t, setDeps("github.com/example/csvstat/internal/stats", "github.com/csvstat/internal/render")), csvstatContract(), csvstatEnv())
+	if len(ds) != 0 {
+		t.Fatalf("defects: %v", kindsOf(ds))
+	}
+	got := strList(merged["portability"].(map[string]any)["deps"])
+	if len(got) != 2 || got[0] != "csvstat/internal/stats" || got[1] != "csvstat/internal/render" {
+		t.Fatalf("deps = %v", got)
+	}
+	found := false
+	for _, w := range warns {
+		if strings.Contains(w, "portability_deps_normalized") && strings.Contains(w, "fn-register") {
+			found = true
+		}
+		if strings.Contains(w, "example") {
+			t.Errorf("warning quotes the reply: %q", w)
+		}
+	}
+	if !found {
+		t.Fatalf("no portability_deps_normalized warning in %v", warns)
+	}
+}
+
+func TestMergeEnrichmentUnknownDepStaysADefectNamingTheModule(t *testing.T) {
+	_, ds, _ := mergeEnrichment(draftFixture(t), replyFixture(t, setDeps("github.com/other/lib")), csvstatContract(), csvstatEnv())
+	if !hasKind(ds, grpDeps) {
+		t.Fatalf("kinds = %v", kindsOf(ds))
+	}
+	msgs := strings.Join(notesOfGroup(ds), " ")
+	if !strings.Contains(msgs, "csvstat") || strings.Contains(msgs, "other/lib") {
+		t.Fatalf("message = %q", msgs)
+	}
+}
+
+func TestMergeEnrichmentModuleLessDepsUnchanged(t *testing.T) {
+	c := csvstatContract()
+	c.Module = ""
+	e := csvstatEnv()
+	e.DepMods = []string{""}
+	merged, ds, warns := mergeEnrichment(draftFixture(t), replyFixture(t, setDeps("github.com/example/csvstat/internal/stats")), c, e)
+	if !hasKind(ds, grpDeps) {
+		t.Fatalf("kinds = %v", kindsOf(ds))
+	}
+	if got := strList(merged["portability"].(map[string]any)["deps"]); got[0] != "github.com/example/csvstat/internal/stats" {
+		t.Fatalf("deps rewritten: %v", got)
+	}
+	for _, w := range warns {
+		if strings.Contains(w, "portability_deps_normalized") {
+			t.Fatalf("unexpected warning %q", w)
+		}
+	}
+	if m := strings.Join(notesOfGroup(ds), " "); !strings.Contains(m, "this module or a planned dependency") {
+		t.Fatalf("message changed: %q", m)
+	}
+}

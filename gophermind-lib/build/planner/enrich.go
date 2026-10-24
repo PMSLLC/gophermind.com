@@ -219,6 +219,9 @@ func mergeEnrichment(draft, reply map[string]any, c *contract.Contracts, env gro
 		}
 	}
 	env.Params = paramNames(sig)
+	if n := normalizeDeps(merged, c, env); n.fixed > 0 {
+		warnings = append(warnings, fmt.Sprintf("%s: portability_deps_normalized %d of %d deps entries rewritten to this module's package paths", boundedID(id), n.fixed, n.total))
+	}
 	defects = append(defects, groupDefects(merged, class, env)...)
 	if len(defects) == 0 {
 		if verr := validateDraft(merged); verr != nil {
@@ -839,4 +842,56 @@ func trimRationale(s string) (string, bool) {
 		}
 	}
 	return string(rs[:rationaleMax]), true
+}
+
+type depsNormalized struct{ fixed, total int }
+
+// normalizeDeps rewrites a portability.deps entry that is not allowed but ends
+// with a package directory of the contract (or is one) to <module>/<dir>: the
+// model's own packages under an invented host prefix. The module and the
+// directories come from the contract. An entry matching no package is left for
+// the group check to report.
+func normalizeDeps(doc map[string]any, c *contract.Contracts, env groupEnv) depsNormalized {
+	var out depsNormalized
+	p, _ := doc["portability"].(map[string]any)
+	if p == nil || c == nil || c.Module == "" || env.DepMods == nil {
+		return out
+	}
+	deps, ok := p["deps"].([]any)
+	if !ok {
+		return out
+	}
+	out.total = len(deps)
+	dirs := map[string]bool{}
+	add := func(pkg string) {
+		if d := stripModule(c.Module, pkg); d != "." && d != "" {
+			dirs[d] = true
+		}
+	}
+	for _, t := range c.Types {
+		add(t.Package)
+	}
+	for _, f := range c.Functions {
+		add(f.Package)
+	}
+	for _, k := range c.Components {
+		add(k.Package)
+	}
+	for i, v := range deps {
+		dep, _ := v.(string)
+		if dep == "" || depAllowed(dep, env.DepMods) {
+			continue
+		}
+		best := ""
+		for d := range dirs {
+			if (dep == d || strings.HasSuffix(dep, "/"+d)) && len(d) > len(best) {
+				best = d
+			}
+		}
+		if best != "" {
+			deps[i] = c.Module + "/" + best
+			out.fixed++
+		}
+	}
+	return out
 }

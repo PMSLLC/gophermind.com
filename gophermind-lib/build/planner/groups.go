@@ -198,7 +198,7 @@ func groupDefects(d map[string]any, class string, env groupEnv) []groupDefect {
 		if env.DepMods != nil {
 			for i, dep := range strList(p["deps"]) {
 				if !depAllowed(dep, env.DepMods) {
-					add(grpDeps, "portability", "deps entry %d is not the standard library, this module or a planned dependency", i+1)
+					add(grpDeps, "portability", "%s", depDefectText(i+1, env.DepMods))
 				}
 			}
 		}
@@ -280,4 +280,26 @@ func goVersionLess(a, b string) bool {
 		}
 	}
 	return false
+}
+
+// maxDepNames bounds the planned dependency modules a deps defect lists.
+const maxDepNames = 5
+
+// depDefectText is the message for a deps entry that is not allowed. The module
+// and the planned dependencies come from the plan, never from the reply, so the
+// text names what is allowed without quoting what the model wrote.
+func depDefectText(n int, mods []string) string {
+	if len(mods) == 0 || mods[0] == "" {
+		return fmt.Sprintf("deps entry %d is not the standard library, this module or a planned dependency", n)
+	}
+	msg := fmt.Sprintf("deps entry %d is not the standard library, the module path %s or one of its packages, or a planned dependency", n, mods[0])
+	planned := mods[1:]
+	if len(planned) == 0 {
+		return msg
+	}
+	more := ""
+	if len(planned) > maxDepNames {
+		planned, more = planned[:maxDepNames], ", ..."
+	}
+	return msg + " (" + strings.Join(planned, ", ") + more + ")"
 }
