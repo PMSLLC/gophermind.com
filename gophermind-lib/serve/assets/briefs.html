@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Runs - GopherMind</title>
+<style>
+  body{font-family:system-ui,sans-serif;max-width:56rem;margin:3rem auto;padding:0 1rem;color:#1d2330}
+  a{color:#0b7a75}
+  table{border-collapse:collapse;width:100%;margin-top:1rem}
+  th,td{text-align:left;padding:6px 10px;border-bottom:1px solid #e3e6ec;font-size:.92rem}
+  .pill{display:inline-block;padding:1px 8px;border-radius:10px;background:#eef0f4;font-size:.8rem}
+  .pill.live{background:#fff3cd}
+  .pill.good{background:#d9f2e6}
+  .pill.bad{background:#f8d7d4}
+  #empty{color:#556;margin-top:1rem}
+</style>
+</head>
+<body class="gm-briefs">
+<p><a href="/">Home</a> | <a href="/app/briefs/new">Upload brief</a> | <a href="/pipeline">Pipeline dashboard</a></p>
+<h1>Runs</h1>
+<div id="empty"></div>
+<table id="tbl" hidden>
+  <thead><tr><th>Run</th><th>Title</th><th>Launch</th><th>State</th><th>Started</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<script>
+'use strict';
+function pill(text){
+  const s = document.createElement('span');
+  s.className = 'pill';
+  s.textContent = text || '-';
+  if (['planning','running','building','waiting'].includes(text)) s.className += ' live';
+  if (['done','verified'].includes(text)) s.className += ' good';
+  if (['failed','stopped','interrupted','escalated','harness_fault'].includes(text)) s.className += ' bad';
+  return s;
+}
+function cell(tr, child){
+  const td = document.createElement('td');
+  td.appendChild(typeof child === 'string' ? document.createTextNode(child) : child);
+  tr.appendChild(td);
+}
+fetch('/app/api/briefs', { credentials: 'same-origin' })
+  .then(r => r.ok ? r.json() : Promise.reject(new Error(String(r.status))))
+  .then(j => {
+    const rows = document.getElementById('rows');
+    if (!j.runs.length) { document.getElementById('empty').textContent = 'No runs yet.'; return; }
+    document.getElementById('tbl').hidden = false;
+    for (const r of j.runs) {
+      const tr = document.createElement('tr');
+      const a = document.createElement('a');
+      a.href = '/app/briefs/' + encodeURIComponent(r.id);
+      a.textContent = r.id;
+      cell(tr, a);
+      cell(tr, r.title || '');
+      cell(tr, pill(r.phase));
+      cell(tr, pill(r.status));
+      cell(tr, r.started_at || '');
+      rows.appendChild(tr);
+    }
+  })
+  .catch(e => { document.getElementById('empty').textContent = 'Could not load runs: ' + e.message; });
+</script>
+</body>
+</html>

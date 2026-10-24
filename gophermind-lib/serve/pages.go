@@ -11,7 +11,7 @@ import (
 // data comes from the session API and GET /auth/me, which the browser calls
 // with its session cookie (the middleware adds the bearer token).
 //
-//go:embed assets/home.html assets/chat.html
+//go:embed assets/home.html assets/chat.html assets/briefs.html assets/brief_new.html assets/brief.html
 var pagesAssets embed.FS
 
 // pageHandler serves one embedded page on GET.

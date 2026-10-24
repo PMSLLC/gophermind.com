@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Upload brief - GopherMind</title>
+<style>
+  body{font-family:system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem;color:#1d2330}
+  a{color:#0b7a75}
+  input[type=file]{display:block;margin:1rem 0}
+  button{font:inherit;padding:6px 14px;border:1px solid #9aa4b5;border-radius:6px;background:none;cursor:pointer}
+  button:hover:not(:disabled){border-color:#0b7a75;color:#0b7a75}
+  button:disabled{opacity:.5;cursor:default}
+  #msg{margin-top:1rem;min-height:1.4em}
+  .err{color:#a3261f}
+  .hint{color:#556;font-size:.9rem}
+</style>
+</head>
+<body class="gm-brief-new">
+<p><a href="/">Home</a> | <a href="/app/briefs">Runs</a></p>
+<h1>Upload a brief</h1>
+<p class="hint">A brief is a Markdown file with YAML frontmatter. It is checked the same way as <code>gophermind brief validate</code> (256 KiB at most). Planning and the run start at once; one run can be active at a time.</p>
+<form id="form">
+  <input id="file" type="file" accept=".md,text/markdown,text/plain" required>
+  <button id="go" type="submit">Upload and start</button>
+</form>
+<div id="msg" role="status"></div>
+<script>
+'use strict';
+const msg = document.getElementById('msg');
+const go = document.getElementById('go');
+function show(text, isErr, href){
+  msg.textContent = '';
+  const s = document.createElement('span');
+  s.className = isErr ? 'err' : '';
+  s.textContent = text;
+  msg.appendChild(s);
+  if (href) {
+    msg.appendChild(document.createTextNode(' '));
+    const a = document.createElement('a');
+    a.href = href;
+    a.textContent = 'Open the run';
+    msg.appendChild(a);
+  }
+}
+document.getElementById('form').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const f = document.getElementById('file').files[0];
+  if (!f) { show('Choose a file first.', true); return; }
+  if (f.size > 256 * 1024) { show('The file is larger than 256 KiB.', true); return; }
+  go.disabled = true;
+  show('Uploading...', false);
+  try {
+    const fd = new FormData();
+    fd.append('brief', f, f.name);
+    const r = await fetch('/app/briefs', { method: 'POST', body: fd, credentials: 'same-origin' });
+    let j = {};
+    try { j = await r.json(); } catch (e) {}
+    if (r.status === 202 && j.url) { window.location.assign(j.url); return; }
+    if (r.status === 409 && j.active_run_id) {
+      show(j.error + ': ' + j.active_run_id + '.', true, '/app/briefs/' + encodeURIComponent(j.active_run_id));
+    } else {
+      show(j.error || ('Upload failed (' + r.status + ').'), true);
+    }
+  } catch (e) {
+    show('Upload failed: ' + e.message, true);
+  }
+  go.disabled = false;
+});
+</script>
+</body>
+</html>

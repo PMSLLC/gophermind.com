@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -299,6 +300,18 @@ type Options struct {
 	// The caller wraps the finished mux with Google.Middleware (after adding
 	// any routes of its own), so the sign-in gate covers every path.
 	Google *GoogleAuth
+	// BriefsDir, when set (and Deps.Pipeline is set, for the repo root), turns
+	// on the browser brief routes under /app/briefs: uploads, one run at a
+	// time, a record, a copy of the brief and a log per run under it. The
+	// directory must be readable by the user that runs gophermind.
+	BriefsDir string
+	// BriefCommand builds the process for one gophermind invocation (args
+	// exclude the program name). Nil runs `gophermind` directly; a deployment
+	// that runs briefs as another user wraps it (see docs/SERVER-SETUP.md).
+	BriefCommand func(args []string) *exec.Cmd
+	// BriefSignal stops a run's process group (force means SIGKILL). Nil
+	// signals the group directly.
+	BriefSignal func(pgid int, force bool) error
 }
 
 // resolveToken determines the bearer token NewMux enforces: an explicit
@@ -397,6 +410,20 @@ func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 		opt.Google.Register(mux)
 	}
 	mux.HandleFunc("GET /app/chat", pageHandler("assets/chat.html"))
+	if opt.BriefsDir != "" && d.Pipeline != nil {
+		bm, err := newBriefManager(opt, d.Pipeline.Root)
+		if err != nil {
+			return nil, err
+		}
+		briefWrap := func(h http.HandlerFunc) http.Handler { return limited(sessionAuth(token, h)) }
+		mux.HandleFunc("GET /app/briefs", pageHandler("assets/briefs.html"))
+		mux.HandleFunc("GET /app/briefs/new", pageHandler("assets/brief_new.html"))
+		mux.HandleFunc("GET /app/briefs/{id}", pageHandler("assets/brief.html"))
+		mux.Handle("POST /app/briefs", briefWrap(bm.create))
+		mux.Handle("POST /app/briefs/{id}/stop", briefWrap(bm.stopHandler))
+		mux.Handle("GET /app/briefs/{id}/state", briefWrap(bm.state))
+		mux.Handle("GET /app/api/briefs", briefWrap(bm.list))
+	}
 	if d.Metrics != nil {
 		mux.HandleFunc("/metrics", metricsHandler(d.Metrics))
 	}

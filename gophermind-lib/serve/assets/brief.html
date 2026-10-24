@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<!-- Run data is put on the page with textContent only, never as markup; the
+     policy below is a second layer should that ever slip. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Run - GopherMind</title>
+<style>
+  body{font-family:system-ui,sans-serif;max-width:70rem;margin:2rem auto;padding:0 1rem;color:#1d2330}
+  a{color:#0b7a75}
+  h2{margin:1.6rem 0 .4rem;font-size:1.05rem}
+  button{font:inherit;padding:4px 12px;border:1px solid #9aa4b5;border-radius:6px;background:none;cursor:pointer}
+  button:hover:not(:disabled){border-color:#a3261f;color:#a3261f}
+  button:disabled{opacity:.5;cursor:default}
+  .pill{display:inline-block;padding:1px 8px;border-radius:10px;background:#eef0f4;font-size:.8rem}
+  .pill.running,.pill.live{background:#fff3cd}
+  .pill.verified,.pill.good,.pill.pass{background:#d9f2e6}
+  .pill.failed,.pill.bad,.pill.fail,.pill.error{background:#f8d7d4}
+  .pill.blocked{background:#e5e0f5}
+  .meta{color:#556;font-size:.9rem}
+  ul.tree{list-style:none;margin:0;padding-left:1.2rem}
+  ul.tree.top{padding-left:0}
+  .node{padding:2px 0}
+  .node .id{font:12px ui-monospace,Menlo,monospace}
+  .sub{color:#556;font-size:.8rem;margin-left:.4rem}
+  .origin{font-size:.8rem;color:#0b7a75;margin-left:.4rem}
+  details>summary{cursor:pointer}
+  table{border-collapse:collapse;margin:.3rem 0 .3rem 1.2rem}
+  th,td{text-align:left;padding:2px 10px;border-bottom:1px solid #eef0f4;font-size:.82rem}
+  pre{background:#f3f5f9;padding:8px 10px;border-radius:6px;overflow:auto;max-height:22rem;font:12px ui-monospace,Menlo,monospace;white-space:pre-wrap;word-wrap:break-word}
+  .q{margin:.4rem 0;padding:6px 10px;border-left:3px solid #9aa4b5}
+  .err{color:#a3261f}
+</style>
+</head>
+<body class="gm-brief">
+<p><a href="/">Home</a> | <a href="/app/briefs">Runs</a> | <a href="/app/briefs/new">Upload brief</a></p>
+<h1 id="title">Run</h1>
+<div class="meta" id="head"></div>
+<p><button id="stop" type="button" hidden>Stop this run</button> <span id="stopmsg" class="err"></span></p>
+<div id="load" class="meta">Loading...</div>
+
+<h2>Decomposition</h2>
+<div id="counts" class="meta"></div>
+<div id="tree"></div>
+
+<h2>Clarify questions</h2>
+<div id="questions"></div>
+
+<h2>Acceptance</h2>
+<div id="accept"></div>
+
+<h2>Understanding</h2>
+<details id="udet"><summary>Show</summary><pre id="understanding"></pre></details>
+
+<h2>Log</h2>
+<pre id="log"></pre>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const m = /^\/app\/briefs\/(gm-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3})\/?$/.exec(window.location.pathname);
+const runId = m ? m[1] : '';
+const opened = new Set();
+
+// el builds an element; text only ever goes in through textContent.
+function el(tag, cls, text){
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined && text !== null) e.textContent = String(text);
+  return e;
+}
+function pill(text, extra){
+  const s = el('span', 'pill ' + (extra || text || ''), text || '-');
+  return s;
+}
+function phaseClass(p){
+  if (p === 'planning' || p === 'running') return 'live';
+  if (p === 'done') return 'good';
+  if (p === 'failed' || p === 'stopped' || p === 'interrupted') return 'bad';
+  return '';
+}
+
+function renderHead(run){
+  $('title').textContent = (run.title || 'Run') + ' (' + run.id + ')';
+  const h = $('head');
+  h.textContent = '';
+  h.appendChild(document.createTextNode('Launch: '));
+  h.appendChild(pill(run.phase || 'external', phaseClass(run.phase)));
+  h.appendChild(document.createTextNode('  Run folder: '));
+  h.appendChild(pill(run.status || 'not created yet', run.status === 'verified' ? 'good' : ''));
+  if (run.stop_reason) h.appendChild(document.createTextNode('  Stop reason: ' + run.stop_reason));
+  if (run.started_at) h.appendChild(document.createTextNode('  Started: ' + run.started_at));
+  if (run.finished_at) h.appendChild(document.createTextNode('  Finished: ' + run.finished_at));
+  if (run.exit_code !== null && run.exit_code !== undefined) h.appendChild(document.createTextNode('  Exit code: ' + run.exit_code));
+  if (run.error) { h.appendChild(document.createTextNode('  ')); h.appendChild(el('span', 'err', run.error)); }
+  $('stop').hidden = !run.active;
+  const c = run.counts || {};
+  const parts = [];
+  for (const k of Object.keys(c.by_status || {}).sort()) parts.push(k + ' ' + c.by_status[k]);
+  $('counts').textContent = (c.nodes || 0) + ' leaves' + (parts.length ? ' (' + parts.join(', ') + ')' : '') +
+    '; waves ' + (run.waves || 0) + '; requirements covered ' + ((run.coverage || {}).covered || 0) + ' of ' + ((run.coverage || {}).total || 0);
+}
+
+function attemptTable(n){
+  const t = el('table');
+  const hr = el('tr');
+  for (const c of ['#', 'model', 'provider', 'outcome', 'tests', 'ms', 'reason']) hr.appendChild(el('th', '', c));
+  t.appendChild(hr);
+  for (const a of n.attempts) {
+    const tr = el('tr');
+    tr.appendChild(el('td', '', a.n));
+    tr.appendChild(el('td', '', a.model));
+    tr.appendChild(el('td', '', a.provider));
+    const o = el('td'); o.appendChild(pill(a.outcome)); tr.appendChild(o);
+    tr.appendChild(el('td', '', a.tests_passed + '/' + a.tests_total));
+    tr.appendChild(el('td', '', a.duration_ms));
+    tr.appendChild(el('td', '', a.failure_reason));
+    t.appendChild(tr);
+  }
+  return t;
+}
+
+function renderNode(n, kids){
+  const li = el('li', 'node');
+  const head = [pill(n.status), el('span', 'id', ' ' + n.id), el('span', 'sub', n.title ? n.title : '')];
+  if (n.kind === 'function') head.push(el('span', 'sub', 'wave ' + n.wave));
+  if (n.origin) head.push(el('span', 'origin', 'origin: ' + n.origin));
+  if (n.depends_on.length) head.push(el('span', 'sub', 'needs ' + n.depends_on.join(', ')));
+  if (n.requirement_ids.length) head.push(el('span', 'sub', 'covers ' + n.requirement_ids.join(', ')));
+  if (n.attempts.length) {
+    const d = el('details');
+    if (opened.has(n.id)) d.open = true;
+    d.addEventListener('toggle', () => { if (d.open) opened.add(n.id); else opened.delete(n.id); });
+    const s = el('summary');
+    for (const h of head) s.appendChild(h);
+    s.appendChild(el('span', 'sub', n.attempts.length + ' attempt' + (n.attempts.length === 1 ? '' : 's')));
+    d.appendChild(s);
+    d.appendChild(attemptTable(n));
+    li.appendChild(d);
+  } else {
+    for (const h of head) li.appendChild(h);
+  }
+  if (kids && kids.length) li.appendChild(renderList(kids, false));
+  return li;
+}
+
+let byParent = {};
+function renderList(nodes, top){
+  const ul = el('ul', 'tree' + (top ? ' top' : ''));
+  for (const n of nodes) ul.appendChild(renderNode(n, byParent[n.id]));
+  return ul;
+}
+
+function renderTree(nodes){
+  const t = $('tree');
+  t.textContent = '';
+  if (!nodes.length) { t.appendChild(el('div', 'meta', 'No plan yet.')); return; }
+  const ids = new Set(nodes.map(n => n.id));
+  byParent = {};
+  const roots = [];
+  for (const n of nodes) {
+    if (n.parent && ids.has(n.parent)) (byParent[n.parent] = byParent[n.parent] || []).push(n);
+    else roots.push(n);
+  }
+  t.appendChild(renderList(roots, true));
+}
+
+function renderQuestions(qs){
+  const box = $('questions');
+  box.textContent = '';
+  if (!qs.length) { box.appendChild(el('div', 'meta', 'None.')); return; }
+  for (const q of qs) {
+    const d = el('div', 'q');
+    d.appendChild(el('div', '', q.id + ' (' + q.kind + ', round ' + q.round + '): ' + q.question));
+    const a = el('div', 'meta');
+    a.textContent = q.status === 'settled' ? ('Answer: ' + q.answer + '  [answered by ' + (q.answered_by || 'unknown') + ']') : 'Open';
+    d.appendChild(a);
+    box.appendChild(d);
+  }
+}
+
+function renderAcceptance(a){
+  const box = $('accept');
+  box.textContent = '';
+  if (!a) { box.appendChild(el('div', 'meta', 'Not run yet.')); return; }
+  box.appendChild(el('div', 'meta', 'Acceptance ' + a.acceptance.passed + ' of ' + a.acceptance.total +
+    '; constraints ' + a.constraints.passed + ' of ' + a.constraints.total + '; repair round ' + a.round +
+    (a.complete ? '' : '; in progress') + (a.reason ? ' (' + a.reason + ')' : '')));
+  const t = el('table');
+  for (const b of a.bullets) {
+    const tr = el('tr');
+    tr.appendChild(el('td', '', b.requirement));
+    tr.appendChild(el('td', '', b.kind));
+    const v = el('td'); v.appendChild(pill(b.verdict)); tr.appendChild(v);
+    tr.appendChild(el('td', '', b.text));
+    t.appendChild(tr);
+  }
+  box.appendChild(t);
+}
+
+async function refresh(){
+  let again = true;
+  try {
+    const r = await fetch('/app/briefs/' + runId + '/state', { credentials: 'same-origin', cache: 'no-store' });
+    if (r.status === 404) { $('load').textContent = 'No such run.'; return; }
+    if (!r.ok) throw new Error(String(r.status));
+    const s = await r.json();
+    $('load').textContent = '';
+    renderHead(s.run);
+    renderTree(s.nodes);
+    renderQuestions(s.questions);
+    renderAcceptance(s.acceptance);
+    $('understanding').textContent = s.understanding || '(none yet)';
+    const log = $('log');
+    const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+    log.textContent = s.log_tail.join('\n');
+    if (atEnd) log.scrollTop = log.scrollHeight;
+    const ph = s.run.phase;
+    if (!s.run.active && (ph === 'done' || ph === 'failed' || ph === 'stopped' || ph === 'interrupted')) again = false;
+  } catch (e) {
+    $('load').textContent = 'Could not refresh: ' + e.message;
+  }
+  if (again) setTimeout(refresh, 3000);
+}
+
+$('stop').addEventListener('click', async () => {
+  $('stop').disabled = true;
+  $('stopmsg').textContent = '';
+  try {
+    const r = await fetch('/app/briefs/' + runId + '/stop', { method: 'POST', credentials: 'same-origin' });
+    if (!r.ok) $('stopmsg').textContent = 'Stop refused (' + r.status + ').';
+  } catch (e) {
+    $('stopmsg').textContent = 'Stop failed: ' + e.message;
+  }
+  $('stop').disabled = false;
+});
+
+if (!runId) { $('load').textContent = 'Bad run id.'; } else { refresh(); }
+</script>
+</body>
+</html>
