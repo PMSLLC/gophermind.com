@@ -23,6 +23,7 @@ All notable changes to GopherMind are documented here. The format follows
 
 ### Fixed
 
+- **Test-writer reply limit raised to 12000 tokens.** A test file for a function that composes several others was cut off at the 6000 token limit on the local model, twice in a row, which stopped planning.
 - **Test-writer refusal for replacing a function.** A test that assigned to a package function (`stats.OpenInput = ...`) was refused with only "does not compile at line N". The refusal now says a declared function cannot be replaced and the code under test should be called with real inputs.
 - **Test-writer refusal for a name the contract does not declare.** A test that called an invented helper (`pInt` for `parseInt`) was refused with advice about unexported names. The refusal now lists the functions and types the contract declares for the package.
 - **Decompose accepts Go names in `depends_on`.** A node that depended on `detectType` instead of `fn-detect-type` failed the leaf checks three times and stopped planning. An entry that names a declared function or type by its Go name is now rewritten to the node id; an unmatched entry is still refused, with a message that says node ids are expected.
