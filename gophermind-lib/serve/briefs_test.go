@@ -278,6 +278,45 @@ func TestBriefDuplicateIDConflicts(t *testing.T) {
 	}
 }
 
+func TestBriefResubmitTakesNextFreeID(t *testing.T) {
+	e := newBriefEnv(t)
+	body := e.briefText("gm-2026-10-23-012")
+	if w := e.post("/app/briefs", body, nil); w.Code != http.StatusAccepted {
+		t.Fatalf("first = %d", w.Code)
+	}
+	e.waitPhase("gm-2026-10-23-012", phaseDone)
+
+	// Upload again with ?resubmit=1: a new id, the old run untouched.
+	w := e.post("/app/briefs?resubmit=1", body, nil)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("resubmit upload = %d %s", w.Code, w.Body)
+	}
+	id1, _ := decodeMap(t, w)["run_id"].(string)
+	if id1 == "" || id1 == "gm-2026-10-23-012" {
+		t.Fatalf("run id %q", id1)
+	}
+	e.waitPhase(id1, phaseDone)
+	stored, err := os.ReadFile(filepath.Join(e.dir, id1, "brief.md"))
+	if err != nil || !strings.Contains(string(stored), "id: "+id1) {
+		t.Errorf("stored brief id not rewritten: %v\n%s", err, stored)
+	}
+
+	// Resubmit from a finished run.
+	w = e.post("/app/briefs/gm-2026-10-23-012/resubmit", "", nil)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("resubmit run = %d %s", w.Code, w.Body)
+	}
+	id2, _ := decodeMap(t, w)["run_id"].(string)
+	if id2 == "" || id2 == id1 || id2 == "gm-2026-10-23-012" {
+		t.Errorf("second run id %q", id2)
+	}
+	e.waitPhase(id2, phaseDone)
+
+	if w := e.post("/app/briefs/gm-2026-10-23-999/resubmit", "", nil); w.Code != http.StatusNotFound {
+		t.Errorf("unknown run = %d", w.Code)
+	}
+}
+
 func TestBriefStopKillsProcessGroup(t *testing.T) {
 	e := newBriefEnv(t)
 	pidFile := filepath.Join(t.TempDir(), "pid")
@@ -374,6 +413,7 @@ func TestBriefRoutesNeedSignIn(t *testing.T) {
 	for _, tc := range []struct{ method, path string }{
 		{"POST", "/app/briefs"},
 		{"POST", "/app/briefs/gm-2026-10-23-001/stop"},
+		{"POST", "/app/briefs/gm-2026-10-23-001/resubmit"},
 		{"GET", "/app/briefs/gm-2026-10-23-001/state"},
 		{"GET", "/app/api/briefs"},
 	} {

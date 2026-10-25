@@ -23,6 +23,7 @@
   </label>
   <label class="opt"><input id="ask" type="checkbox"><span>Ask me the clarify questions here. The run pauses until you answer them.</span></label>
   <button id="go" type="submit">Upload and start</button>
+  <label class="opt"><input id="again" type="checkbox"><span>If this id was already used, start it under the next free id.</span></label>
 </form>
 <div id="msg" role="status"></div>
 </main>
@@ -59,12 +60,14 @@ document.getElementById('form').addEventListener('submit', async ev => {
   try {
     const fd = new FormData();
     fd.append('brief', f, f.name);
-    const r = await fetch('/app/briefs' + (document.getElementById('ask').checked ? '?ask=1' : ''), { method: 'POST', body: fd, credentials: 'same-origin' });
+    const r = await fetch('/app/briefs' + (document.getElementById('ask').checked ? '?ask=1' : '') + (document.getElementById('again').checked ? (document.getElementById('ask').checked ? '&' : '?') + 'resubmit=1' : ''), { method: 'POST', body: fd, credentials: 'same-origin' });
     let j = {};
     try { j = await r.json(); } catch (e) {}
     if (r.status === 202 && j.url) { window.location.assign(j.url); return; }
     if (r.status === 409 && j.active_run_id) {
       show(j.error + ': ' + j.active_run_id + '.', true, '/app/briefs/' + encodeURIComponent(j.active_run_id));
+    } else if (r.status === 409 && j.run_id) {
+      show(j.error + ': ' + j.run_id + '. Tick the box above to start it under the next free id.', true, '/app/briefs/' + encodeURIComponent(j.run_id));
     } else {
       show(j.error || ('Upload failed (' + r.status + ').'), true);
     }

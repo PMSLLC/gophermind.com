@@ -380,6 +380,7 @@ func resolveToken(opt Options) (string, error) {
 //	GET     /app/briefs/{id}/state         bearer+HMAC  d.Pipeline && Options.BriefsDir (run state JSON)
 //	GET     /app/briefs/{id}/events        bearer+HMAC  d.Pipeline && Options.BriefsDir (SSE of the run state)
 //	POST    /app/briefs/{id}/stop          bearer+HMAC  d.Pipeline && Options.BriefsDir (kill the active run)
+//	POST    /app/briefs/{id}/resubmit      bearer+HMAC  d.Pipeline && Options.BriefsDir (run the stored brief again under the next free id)
 //	POST    /app/briefs/{id}/answer        bearer+HMAC  d.Pipeline && Options.BriefsDir (answer a clarify question, resume)
 //
 // All bearer+HMAC routes share one rate limiter (GOPHERMIND_SERVE_RATE
@@ -438,6 +439,7 @@ func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 		mux.HandleFunc("GET /app/briefs/{id}", pageHandler("assets/brief.html"))
 		mux.Handle("POST /app/briefs", briefWrap(bm.create))
 		mux.Handle("POST /app/briefs/{id}/stop", briefWrap(bm.stopHandler))
+		mux.Handle("POST /app/briefs/{id}/resubmit", briefWrap(bm.resubmitHandler))
 		mux.Handle("GET /app/briefs/{id}/state", briefWrap(bm.state))
 		mux.Handle("POST /app/briefs/{id}/answer", briefWrap(bm.answerHandler))
 		mux.Handle("GET /app/briefs/{id}/events", briefWrap(bm.eventsHandler))

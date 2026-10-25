@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -519,7 +520,72 @@ func sameDir(a, b string) bool {
 	return clean(a) == clean(b)
 }
 
-// create handles POST /app/briefs.
+var frontIDLine = regexp.MustCompile(`(?m)^id:[ \t]*.*$`)
+
+// freshID returns the first gm-<today>-NNN with no run folder yet.
+func (m *briefManager) freshID() (string, error) {
+	day := m.now().Format("2006-01-02")
+	for n := 1; n < 1000; n++ {
+		id := fmt.Sprintf("gm-%s-%03d", day, n)
+		if _, err := os.Lstat(m.runDir(id)); errors.Is(err, fs.ErrNotExist) {
+			return id, nil
+		}
+	}
+	return "", errors.New("no free run id today")
+}
+
+// withFreshID rewrites the frontmatter id of a brief to the next free one and
+// parses the result, so a brief can be submitted again without editing it.
+func (m *briefManager) withFreshID(src []byte) (*brief.Brief, []byte, error) {
+	id, err := m.freshID()
+	if err != nil {
+		return nil, nil, err
+	}
+	src = frontIDLine.ReplaceAllLiteral(src, []byte("id: "+id))
+	b, err := brief.Parse(src)
+	return b, src, err
+}
+
+// resubmitHandler handles POST /app/briefs/{id}/resubmit: the stored brief of
+// an earlier run goes in again under the next free id.
+func (m *briefManager) resubmitHandler(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !runview.ValidRunID(id) {
+		briefError(w, http.StatusNotFound, "no such run", nil)
+		return
+	}
+	src, err := readSmallFile(filepath.Join(m.runDir(id), "brief.md"), maxBriefBytes)
+	if err != nil {
+		briefError(w, http.StatusNotFound, "no stored brief for this run", nil)
+		return
+	}
+	b, src, err := m.withFreshID(src)
+	if err != nil {
+		briefError(w, http.StatusInternalServerError, "cannot resubmit: "+err.Error(), nil)
+		return
+	}
+	rec, _ := m.readRecord(id)
+	m.startReply(w, b, src, rec.Ask)
+}
+
+// startReply starts the run and writes the response for create and resubmit.
+func (m *briefManager) startReply(w http.ResponseWriter, b *brief.Brief, src []byte, ask bool) {
+	rec, err := m.start(b, src, ask)
+	var busy *briefBusyError
+	switch {
+	case errors.As(err, &busy):
+		briefError(w, http.StatusConflict, "a run is already active", map[string]any{"active_run_id": busy.activeID})
+	case errors.Is(err, errBriefExists):
+		briefError(w, http.StatusConflict, "a run with this id already exists", map[string]any{"run_id": b.Front.ID})
+	case err != nil:
+		briefError(w, http.StatusInternalServerError, "cannot start the run", nil)
+	default:
+		briefJSON(w, http.StatusAccepted, map[string]any{"run_id": rec.ID, "url": "/app/briefs/" + rec.ID})
+	}
+}
+
+// create handles POST /app/briefs. With ?resubmit=1 a brief whose id is
+// already used goes in under the next free id instead of being refused.
 func (m *briefManager) create(w http.ResponseWriter, r *http.Request) {
 	src, code, msg := readBriefBody(w, r)
 	if code != 0 {
@@ -542,18 +608,16 @@ func (m *briefManager) create(w http.ResponseWriter, r *http.Request) {
 			"invalid brief: repo must be the server's repo root, "+m.root, map[string]any{"repo_root": m.root})
 		return
 	}
-	rec, err := m.start(b, src, r.URL.Query().Get("ask") == "1")
-	var busy *briefBusyError
-	switch {
-	case errors.As(err, &busy):
-		briefError(w, http.StatusConflict, "a run is already active", map[string]any{"active_run_id": busy.activeID})
-	case errors.Is(err, errBriefExists):
-		briefError(w, http.StatusConflict, "a run with this id already exists", map[string]any{"run_id": b.Front.ID})
-	case err != nil:
-		briefError(w, http.StatusInternalServerError, "cannot start the run", nil)
-	default:
-		briefJSON(w, http.StatusAccepted, map[string]any{"run_id": rec.ID, "url": "/app/briefs/" + rec.ID})
+	if r.URL.Query().Get("resubmit") == "1" {
+		if _, err := os.Lstat(m.runDir(b.Front.ID)); err == nil {
+			var ferr error
+			if b, src, ferr = m.withFreshID(src); ferr != nil {
+				briefError(w, http.StatusInternalServerError, "cannot resubmit: "+ferr.Error(), nil)
+				return
+			}
+		}
 	}
+	m.startReply(w, b, src, r.URL.Query().Get("ask") == "1")
 }
 
 // stopHandler handles POST /app/briefs/{id}/stop.

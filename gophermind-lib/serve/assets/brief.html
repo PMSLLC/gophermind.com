@@ -18,7 +18,7 @@
 <main class="main">
 <div class="head">
   <h1 id="title">Run</h1>
-  <div class="actions"><button id="stop" type="button" hidden>Stop this run</button><span id="stopmsg" class="err"></span></div>
+  <div class="actions"><button id="resubmit" type="button" hidden>Resubmit this brief</button><button id="stop" type="button" hidden>Stop this run</button><span id="stopmsg" class="err"></span></div>
   <div class="meta" id="head"></div>
 </div>
 <div id="load" class="meta">Loading...</div>
@@ -148,6 +148,7 @@ function renderHead(run){
   if (run.exit_code !== null && run.exit_code !== undefined) h.appendChild(document.createTextNode('  Exit code ' + run.exit_code));
   if (run.error) { h.appendChild(document.createTextNode('  ')); h.appendChild(el('span', 'err', run.error)); }
   $('stop').hidden = !run.active;
+  $('resubmit').hidden = !!run.active;
   const c = run.counts || {};
   renderStrip(c);
   const parts = [];
@@ -525,6 +526,21 @@ $('stop').addEventListener('click', async () => {
     $('stopmsg').textContent = 'Stop failed: ' + e.message;
   }
   $('stop').disabled = false;
+});
+
+$('resubmit').addEventListener('click', async () => {
+  $('resubmit').disabled = true;
+  $('stopmsg').textContent = '';
+  try {
+    const r = await fetch('/app/briefs/' + runId + '/resubmit', { method: 'POST', credentials: 'same-origin' });
+    let j = {};
+    try { j = await r.json(); } catch (e) {}
+    if (r.status === 202 && j.url) { window.location.assign(j.url); return; }
+    $('stopmsg').textContent = (j.error || 'Resubmit refused (' + r.status + ')') + (j.active_run_id ? ': ' + j.active_run_id : '') + '.';
+  } catch (e) {
+    $('stopmsg').textContent = 'Resubmit failed: ' + e.message;
+  }
+  $('resubmit').disabled = false;
 });
 
 if (!runId) { $('load').textContent = 'Bad run id.'; } else { live(); }
