@@ -297,6 +297,8 @@ Steps 1, 2 and 3 run in parallel.
 - 2026-10-24, John: chains deferred; `chain=` reserved.
 - 2026-10-24, John: 100% means zero false accepts; misses are acceptable.
 - 2026-10-24, John: feature reuse from a previous project is explicit, named in the brief, with no search.
+- 2026-10-25, GopherMind accepts Burrow's six implementation differences from the 4g gate (Burrow's 6.6): (1) no `key` field in the lookup request; (2) failure names compared lowercased and trimmed; (3) the type gate compares sorted multisets of input and output types and maps parameters by name, position or distinct type; (4) among agreeing candidates the exact-key one wins before smallest bundle; (5) the GopherMind executor calls with `param_order` and maps with `input_map` and `output_map` positions, not by name (section 4 is read this way); (6) a miss is not kept when the request is cancelled mid-gate or rejected with 400. None of them changes the zero false accept rule of section 5; they are recorded for John with the rest of the spec.
+- 2026-10-25, GopherMind: `origin` of a leaf record maps from the gate answer as Burrow stated: a gate hit is `reused` (even with `awaiting_confirmation`), a miss with reason `not_eligible` is `not_eligible`, any other miss is `lookup_missed`, and a legacy (no vectors) answer is not the 100 percent path and is never used as a reuse.
 
 ## 12. Glossary
 
