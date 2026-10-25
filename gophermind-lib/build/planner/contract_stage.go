@@ -1194,6 +1194,9 @@ func localChecks(c *contract.Contracts, briefID string) error {
 		if _, err := parseSignature(f.Signature); err != nil {
 			return fmt.Errorf("contract: function %s: %w", boundedID(f.ID), err)
 		}
+		if err := stdinNeedsReader(f); err != nil {
+			return fmt.Errorf("contract: function %s: %w", boundedID(f.ID), err)
+		}
 	}
 	return nil
 }

@@ -5,6 +5,7 @@ Requirements:
 - Functions are small. One responsibility each. If a function needs more than roughly 40 lines, split it.
 - Every function id starts with `fn-` and is unique across the whole contract. Ids are lower case letters, digits and dashes only: `fn-validate-email` and a type id `intake-session`, never `IntakeSession` or `intake_session`. Write every id in `uses` the same way.
 - `uses` lists every type and function id a function's signature or expected body depends on. Use only ids listed under "Already declared" or declared in this reply. Be complete; the harness derives dependency order from it.
+- A function that reads standard input or writes to standard output takes an `io.Reader` or `io.Writer` parameter for it, and its doc says so. Only the entry point chooses `os.Stdin` or `os.Stdout` and passes it in. Never write a function that opens `os.Stdin` itself, because a test cannot give it input.
 - Every type decl is complete Go source with a doc comment. Declare a type here only when no other component needs it.
 - Every `file` is a path relative to the repository root, inside this component's package.
 - Follow the conventions in the outline. No secrets. Refer to secrets by environment variable name only.
