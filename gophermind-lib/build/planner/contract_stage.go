@@ -1177,6 +1177,9 @@ func localChecks(c *contract.Contracts, briefID string) error {
 		if err := cleanGoFile(t.File); err != nil {
 			return fmt.Errorf("contract: type %s: %w", boundedID(t.ID), err)
 		}
+		if err := TypeDeclShape(t.Decl); err != nil {
+			return fmt.Errorf("contract: type %s: %w", boundedID(t.ID), err)
+		}
 	}
 	for _, f := range c.Functions {
 		if comps[f.ID] || f.ID == briefID {

@@ -192,23 +192,7 @@ func validateDecl(id, decl string) error {
 	if len(f.Imports) > 0 || hasDirective(f) {
 		return bad
 	}
-	types := 0
-	for _, d := range f.Decls {
-		switch d := d.(type) {
-		case *ast.GenDecl:
-			if d.Tok != token.TYPE {
-				return bad
-			}
-			types++
-		case *ast.FuncDecl:
-			if d.Recv == nil || d.Body == nil {
-				return bad
-			}
-		default:
-			return bad
-		}
-	}
-	if types == 0 {
+	if planner.TypeDeclShape(decl) != nil {
 		return bad
 	}
 	return nil

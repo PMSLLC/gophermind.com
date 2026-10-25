@@ -6,6 +6,10 @@ All notable changes to GopherMind are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **A contract type declaration with a `const` block is refused while planning, not at build time.** The executor only writes type declarations and their methods (Wave 0), so a typed enum (`type T int` plus `const (... iota)`) passed planning and then failed the run in seconds. The planner now applies the same rule (`planner.TypeDeclShape`, shared with the executor) when the contract is written, so the model gets a repair hint that names the defect and no values.
+
 ## [0.10.1] - 2026-10-24
 
 ### Added
