@@ -6,6 +6,10 @@ All notable changes to GopherMind are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **A downloadable brief specification.** `GET /app/brief-spec.md` (signed in) serves `gophermind-lib/serve/assets/brief-spec.md` as a Markdown download, and the upload page links it. It gives another tool or agent what it needs to write a brief that the upload accepts: the frontmatter keys and their rules, the seven required sections, the bullet and fence rules the validator enforces, the server rules (unique id, `repo` equal to the server root, 256 KiB, one run at a time), practices that make a brief plan and build well, and a complete example. A test parses the example with `brief.Parse`, so the document cannot drift from the validator.
+
 ### Fixed
 
 - **A mistyped key in a component or root enrich reply no longer ends planning.** The reply for a component came back with `ratione` instead of `rationale` three times in a row, and each retry said only that the rationale was missing, so the model repeated the typo and the plan stopped at enrich (an uploaded brief failed after 22 minutes). A key within two edits of one of the four structure keys is now taken as that key, with a `rationale_key_normalized` style warning, and a retry for a missing rationale names the valid keys (and never quotes the reply).

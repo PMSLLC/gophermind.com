@@ -14,7 +14,7 @@ import (
 // gm.css is the one stylesheet; pageHandler inlines it and the navigation rail
 // into each page (the page's CSP allows inline styles and scripts only).
 //
-//go:embed assets/home.html assets/chat.html assets/briefs.html assets/brief_new.html assets/brief.html assets/gm.css
+//go:embed assets/home.html assets/chat.html assets/briefs.html assets/brief_new.html assets/brief.html assets/gm.css assets/brief-spec.md
 var pagesAssets embed.FS
 
 // Markers a page carries where the shared parts go.
@@ -57,6 +57,20 @@ func railHTML(active string) string {
 		`<script>fetch('/auth/me',{credentials:'same-origin'}).then(function(r){return r.ok?r.json():null}).then(function(j){` +
 		`if(j&&j.email)document.getElementById('who-email').textContent=j.email}).catch(function(){})</script>`)
 	return b.String()
+}
+
+// briefSpecHandler serves the brief specification as a Markdown download, for
+// other tools that write briefs.
+func briefSpecHandler(w http.ResponseWriter, r *http.Request) {
+	b, err := pagesAssets.ReadFile("assets/brief-spec.md")
+	if err != nil {
+		http.Error(w, "page asset missing", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="gophermind-brief-spec.md"`)
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(b)
 }
 
 // pageHandler serves one embedded page on GET.

@@ -373,6 +373,7 @@ func resolveToken(opt Options) (string, error) {
 //	GET     /app/chat                      sign-in      always (HTML page)
 //	GET     /app/briefs                    sign-in      d.Pipeline && Options.BriefsDir (HTML list of runs)
 //	GET     /app/briefs/new                sign-in      d.Pipeline && Options.BriefsDir (HTML upload page)
+//	GET     /app/brief-spec.md             sign-in      d.Pipeline && Options.BriefsDir (the brief specification, Markdown download)
 //	GET     /app/briefs/{id}               sign-in      d.Pipeline && Options.BriefsDir (HTML run page)
 //	GET     /app/api/briefs                bearer+HMAC  d.Pipeline && Options.BriefsDir (JSON list of runs)
 //	POST    /app/briefs                    bearer+HMAC  d.Pipeline && Options.BriefsDir (upload a brief, start plan then run)
@@ -433,6 +434,7 @@ func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 		briefWrap := func(h http.HandlerFunc) http.Handler { return limited(sessionAuth(token, h)) }
 		mux.HandleFunc("GET /app/briefs", pageHandler("assets/briefs.html"))
 		mux.HandleFunc("GET /app/briefs/new", pageHandler("assets/brief_new.html"))
+		mux.HandleFunc("GET /app/brief-spec.md", briefSpecHandler)
 		mux.HandleFunc("GET /app/briefs/{id}", pageHandler("assets/brief.html"))
 		mux.Handle("POST /app/briefs", briefWrap(bm.create))
 		mux.Handle("POST /app/briefs/{id}/stop", briefWrap(bm.stopHandler))
