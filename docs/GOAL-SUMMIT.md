@@ -51,6 +51,15 @@ Not authorized (wait for John): tagging or publishing a release, npm publish, in
 9. **Operate and tidy.** Laptop WireGuard persistence; remove the stale `ssh home` note; delete `/tmp/homebrew-tap` (guarded); update `docs/ROADMAP.md` states and dated log as each task ends; refresh memory notes.
 10. **Shared spec, GopherMind side.** Added 2026-10-24 by John: `docs/specs/gopher-burrow-gophermind-shared-spec.md` (draft for his approval). GopherMind owns sections 4, 7 and 8, in the order of its section 9: step 5 (adapter and executor lookup with the gate), step 6 (planner emits Gopher), step 7 (archive of finished runs), step 8 (import stage). Each step starts only when the steps it depends on exist: Gopher's library (experiment gate, `Extract`, edge-vector rules), Burrow's confirmed contract names and gate. Build what is unblocked and test it against fakes; for a step whose dependency has not landed, write the blocker in `docs/goals/summit/blocked.md` and go on. Until the spec is approved, do not change what the planner emits (it keeps its JSON). Decisions that touch another component's section go to that session as a message, and the spec's section 11 records them. Task 7 (Join Burrow) is read through this spec: section 6.1 is the lookup shape.
 
+## Status 2026-10-24 late evening (after John approved all waiting items)
+
+- John approved: Burrow wiring and its HTTP service, the graded-run prerequisites, the 0.10.1 tag and publish, the task 10 spec. He told the session to deploy, rerun csvstat and complete the goal. Not yet heard from him: feat vs reuse, `job=`, reasoning on or off (the Gopher session treats all three as undecided).
+- Server `development-jb` runs `de621a7` (`/opt/gophermind/.sha`), idle at the start. Reach it with `ssh -A ubuntu@10.40.1.202` (the `-i ~/.ssh/oci-prod` key is rejected); the `jbrahy-oci` tunnel had to be started.
+- Task 1: fresh plan `gm-2026-10-24-005` started 23:52 PDT in `/home/gmrun/csvstat-run10`, log `/home/gmrun/csvstat-server-run26-plan.log`. Then `brief run`. The Gopher session yielded the qwen server (port 18081) to this run and waits for "gophermind done".
+- Browser sign-in was not clicked through: the Google account chooser is an SSO grant, so runs start from the server CLI until John says otherwise.
+- Burrow: sent the 4g lookup gate wire shapes (burrow repo `docs/plans/2026-10-25-phase-4g-lookup-gate.md`, commit bd68a40); the HTTP server is not built (its Task 7 is later); 4g Tasks 1 to 3 committed, Task 4 not started. Gopher: Phase B in progress (reuse record, CheckVectors, Write/Extract/Eligible, grammar modes, `docs/library.md`); signatures arrive by message when B1 and B3 are committed.
+- Tasks 7 and 10 stay blocked on those two deliveries; their blockers go in `docs/goals/summit/blocked.md` when a step cannot start.
+
 ## Waiting on John (ask once, early, in one message)
 
 - Burrow: OK for its HTTP service, and the local model for its Phase 4.
