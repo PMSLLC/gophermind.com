@@ -92,6 +92,7 @@ type Router struct {
 
 	mu         sync.Mutex
 	cooldown   map[string]time.Time // provider -> earliest next use
+	rateLimits map[string]int       // provider -> 429 answers in a row since its last success
 	disabled   map[string]bool      // provider -> auth failed this run
 	missing    map[string]bool      // provider/model -> not found this run
 	ledgerErrs int
@@ -104,12 +105,13 @@ func New(cfg *settings.Config, providers map[string]provider.Provider, led ledge
 	}
 	r := &Router{
 		cfg: cfg, providers: providers, led: led, sink: sink,
-		sleep:    sleepCtx,
-		now:      time.Now,
-		slots:    map[string]chan struct{}{},
-		cooldown: map[string]time.Time{},
-		disabled: map[string]bool{},
-		missing:  map[string]bool{},
+		sleep:      sleepCtx,
+		now:        time.Now,
+		slots:      map[string]chan struct{}{},
+		cooldown:   map[string]time.Time{},
+		rateLimits: map[string]int{},
+		disabled:   map[string]bool{},
+		missing:    map[string]bool{},
 	}
 	for _, p := range cfg.Providers {
 		r.slots[p.Name] = make(chan struct{}, p.MaxConcurrent)
@@ -314,6 +316,42 @@ func (r *Router) timeoutCooldown() time.Duration {
 
 func (r *Router) defaultCooldown() time.Duration {
 	return time.Duration(r.cfg.RateLimits.CooldownAfter429Seconds) * time.Second
+}
+
+// maxRateCooldown caps the cooldown that repeated 429 answers build up to.
+const maxRateCooldown = 30 * time.Minute
+
+// rateLimited counts one more 429 answer from provName in a row and returns
+// how long to cool it: d (its Retry-After, or the configured cooldown), and
+// from the second answer in a row the configured cooldown doubled for each
+// further one, up to maxRateCooldown. A provider that never answers is asked
+// less and less often instead of every cooldown for the whole run.
+func (r *Router) rateLimited(provName string, d time.Duration) time.Duration {
+	r.mu.Lock()
+	r.rateLimits[provName]++
+	n := r.rateLimits[provName]
+	r.mu.Unlock()
+	if n < 2 {
+		return d
+	}
+	esc := r.defaultCooldown()
+	for i := 1; i < n && esc < maxRateCooldown; i++ {
+		esc *= 2
+	}
+	if esc > maxRateCooldown {
+		esc = maxRateCooldown
+	}
+	if esc > d {
+		return esc
+	}
+	return d
+}
+
+// answeredOK forgets provName's run of 429 answers.
+func (r *Router) answeredOK(provName string) {
+	r.mu.Lock()
+	delete(r.rateLimits, provName)
+	r.mu.Unlock()
 }
 
 func (r *Router) emit(e events.Event) {

@@ -51,6 +51,7 @@ func (r *Router) attempt(ctx context.Context, info CallInfo, req provider.Reques
 		row.DurationMS = r.now().Sub(start).Milliseconds()
 
 		if cerr == nil {
+			r.answeredOK(provName)
 			row.ModelServed = resp.Model
 			row.PromptTokens, row.CompletionTokens = resp.Usage.PromptTokens, resp.Usage.CompletionTokens
 			row.ResponseBytes, row.ResponseSHA256 = ledger.Digest([]byte(resp.Text))
@@ -97,6 +98,7 @@ func (r *Router) attempt(ctx context.Context, info CallInfo, req provider.Reques
 			if d <= 0 {
 				d = r.defaultCooldown()
 			}
+			d = r.rateLimited(provName, d)
 			row.Outcome, row.ErrorKind, row.RetryAfterS = ledger.OutcomeRateLimited, "rate_limited", int(d/time.Second)
 			r.record(ctx, row)
 			r.setCooldown(provName, d)
