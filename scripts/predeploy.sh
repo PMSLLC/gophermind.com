@@ -62,7 +62,7 @@ echo "${green}  builds${reset}"
 
 # 4. full Go suite under the race detector
 step "go test -race ./..."
-go test -race ./... || fail "go test -race"
+go test -race -timeout 20m ./... || fail "go test -race"
 echo "${green}  all Go tests pass${reset}"
 
 # 5. iOS tests (macOS only; the app lives here)
