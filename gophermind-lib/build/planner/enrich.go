@@ -741,9 +741,14 @@ func (p *Planner) structureCall(ctx context.Context, r *run, stage, kind, label,
 		if err := json.Unmarshal([]byte(StripReply(text)), &x); err != nil {
 			return fmt.Errorf("enrich reply is not a JSON object (%s)", jsonErrIn(err, StripReply(text)))
 		}
+		keyWarns := normalizeStructureKeys(x, label)
 		rat, has := x["rationale"].(string)
 		if n := len([]rune(strings.TrimSpace(rat))); n < rationaleMin {
-			return errors.New("enrich reply: " + rationaleProblem(n, has))
+			msg := rationaleProblem(n, has)
+			if !has {
+				msg += "; the reply must use exactly these keys: " + strings.Join(structureKeys, ", ")
+			}
+			return errors.New("enrich reply: " + msg)
 		}
 		for _, k := range []string{"assumptions", "open_questions", "decision_ids"} {
 			if _, ok := x[k].([]any); !ok {
@@ -758,7 +763,7 @@ func (p *Planner) structureCall(ctx context.Context, r *run, stage, kind, label,
 				return fmt.Errorf("enrich reply: decision_ids entry %d is not a settled question", i+1)
 			}
 		}
-		warns = nil
+		warns = keyWarns
 		rat, trimmed := trimRationale(rat)
 		if trimmed {
 			warns = append(warns, rationaleTrimmedWarning(label, len([]rune(strings.TrimSpace(x["rationale"].(string)))), len([]rune(rat))))
