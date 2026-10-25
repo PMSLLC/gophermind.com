@@ -136,6 +136,7 @@ type leafRun struct {
 	cp          map[int]int       // contract problems per revision
 	lastSHA     map[string]string // entry name -> hash of the last reply on it (memory, else the blackboard)
 	tooLong     map[string]bool   // entries whose floor does not fit, for the whole leaf
+	buildFails  map[string]int    // entry name -> build-class failures since the last rewrite
 	history     []string          // historyLine of every attempt, for the revise prompt (Task 11b)
 	prev        packer.Failure    // the previous failure text, memory only
 	problem     string            // the last CONTRACT_PROBLEM sentence, memory only, never persisted
@@ -970,6 +971,11 @@ func (lr *leafRun) oneRevision(ctx context.Context) (revResult, error) {
 			tooLong++
 			continue
 		}
+		// A model that failed to compile a whole round of attempts is not asked
+		// again while another entry is left: more of the same only fills the history.
+		if len(entries) > 1 && lr.buildFails[e.Name] > rc.cfg.Executor.FixAttempts {
+			continue
+		}
 		end, err := lr.runEntry(ctx, e)
 		if err != nil {
 			return revExhausted, err
@@ -1076,6 +1082,12 @@ func (lr *leafRun) record(ctx context.Context, e ladderEntry, started time.Time,
 	if verdict == blackboard.VerdictFail {
 		lr.charged++
 		lr.failClass = class
+		if class == runner.ClassBuild {
+			if lr.buildFails == nil {
+				lr.buildFails = map[string]int{}
+			}
+			lr.buildFails[e.Name]++
+		}
 	}
 	rc.emit("attempt", lr.l.ID, fmt.Sprintf("entry %s %s %s", e.Name, verdict, class))
 	return nil

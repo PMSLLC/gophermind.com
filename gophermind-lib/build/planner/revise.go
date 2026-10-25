@@ -38,7 +38,12 @@ type ReviseRequest struct {
 	// RefusedDetail is what the compiler said about the last rewritten test that
 	// was refused for not building (revise_red_build): the next rewrite needs it.
 	RefusedDetail string
-	Secrets       []string
+	// FailedTests are the names of the tests that failed against the builders'
+	// code. A rewritten test file is told to assert those cases differently:
+	// the contract alone gives the same file back, and a file equal to the
+	// current one ends the revise as a no-op.
+	FailedTests []string
+	Secrets     []string
 }
 
 // ReviseOutcome is what a revise call came to.
@@ -453,6 +458,7 @@ func (p *Planner) reviseTests(ctx context.Context, r *run, c *contract.Contracts
 	if err != nil {
 		return "", "", err
 	}
+	prompt += failedTestsNote(req.FailedTests)
 	var tests []map[string]any
 	var src string
 	last := ClassReviseInvalid
@@ -570,4 +576,16 @@ func goLiterals(src string) []string {
 		}
 	}
 	return out
+}
+
+// failedTestsNote is the paragraph added to a rewrite's test-writer prompt: the
+// names of the tests that failed against the builders' code. Names only, never
+// code or output. It is "" when no name is known.
+func failedTestsNote(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	return "\n\nAn earlier version of these tests was run against independent implementations of the contract and these cases failed every time: " +
+		strings.Join(names, ", ") +
+		". They are probably asserting something the contract does not say or the language cannot do. Write those cases differently: check only what the contract states, and do not repeat the earlier assertions.\n"
 }

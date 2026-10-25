@@ -36,6 +36,8 @@ All notable changes to GopherMind are documented here. The format follows
 
 ### Fixed
 
+- **Test rewrite names the failed tests.** A test rewrite after repeated identical failures now tells the test writer which test names failed, so the new file no longer comes back equal to the old one and ends the revise as `revise_noop`.
+- **No second round on a model that cannot compile.** A model that failed to compile a whole round of attempts on a leaf is not asked again by the next revision while another model is left.
 - **Test-writer refusal for replacing os.Stdin, os.Stdout or os.Stderr with a custom type.** The refusal now says these are `*os.File` values and to use `os.Pipe` or a temp file, instead of a bare "type mismatch".
 - **Test-writer reply limit raised to 12000 tokens.** A test file for a function that composes several others was cut off at the 6000 token limit on the local model, twice in a row, which stopped planning.
 - **Test-writer refusal for replacing a function.** A test that assigned to a package function (`stats.OpenInput = ...`) was refused with only "does not compile at line N". The refusal now says a declared function cannot be replaced and the code under test should be called with real inputs.

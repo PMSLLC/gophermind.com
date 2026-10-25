@@ -75,6 +75,7 @@ func (lr *leafRun) afterRewrite(ctx context.Context) error {
 	lr.cp = map[int]int{}
 	lr.lastSHA = map[string]string{}
 	lr.tooLong = map[string]bool{}
+	lr.buildFails = nil
 	lr.prev = packer.Failure{}
 	lr.problem = ""
 	lr.charged = 0
@@ -103,7 +104,8 @@ func (lr *leafRun) rewrite(ctx context.Context, trigger string) error {
 			RunID: rc.plan.RunID, RunDir: rc.o.RunDir, Repo: rc.o.Repo, NodeID: l.ID, Trigger: trigger,
 			Revision: l.Revision, Remaining: rc.maxRevisions(l) - l.Revision,
 			History: history, LastFailure: rc.scrubText(failureLines(lr.prev)),
-			TestSource: testSrc, TestSHA256: l.TestSHA256, Refused: append([]string(nil), lr.refusals...), Secrets: rc.secretValues(),
+			FailedTests: failedTestNames(lr.prev, lr.history),
+			TestSource:  testSrc, TestSHA256: l.TestSHA256, Refused: append([]string(nil), lr.refusals...), Secrets: rc.secretValues(),
 		}
 		if d, ok := rc.redOut.Load(l.ID); ok && len(lr.refusals) > 0 && lr.refusals[len(lr.refusals)-1] == planner.ClassRedBuild {
 			req.RefusedDetail, _ = d.(string)
@@ -146,4 +148,34 @@ func (lr *leafRun) rewrite(ctx context.Context, trigger string) error {
 			return &reviseStop{Reason: refusal}
 		}
 	}
+}
+
+// failedTestNames are the names of the tests the builders failed, from the
+// last failure and from the history lines of earlier attempts
+// ("... test_fail: TestA/x, TestB/y)"), each once and at most 8 in all.
+func failedTestNames(prev packer.Failure, history []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(n string) {
+		n = strings.TrimSpace(n)
+		if n == "" || seen[n] || len(out) >= 8 || !strings.HasPrefix(n, "Test") {
+			return
+		}
+		seen[n] = true
+		out = append(out, n)
+	}
+	for _, n := range prev.Names {
+		add(n)
+	}
+	for _, ln := range history {
+		_, rest, ok := strings.Cut(ln, "test_fail: ")
+		if !ok {
+			continue
+		}
+		rest = strings.TrimSuffix(strings.TrimSpace(rest), ")")
+		for _, n := range strings.Split(rest, ",") {
+			add(n)
+		}
+	}
+	return out
 }
