@@ -36,6 +36,8 @@ type BriefState struct {
 	Stages    []BriefStage    `json:"stages"`
 	SlowCalls []BriefSlowCall `json:"slow_calls"`
 	Problems  []BriefProblem  `json:"problems"`
+	// Progress is how far the current step has got; nil when no step is open.
+	Progress *BriefProgress `json:"progress"`
 }
 
 // BriefRun is the header: phase is the launcher's view (planning, running,
@@ -336,6 +338,9 @@ func BuildBriefState(root, id string, rec *briefRecord, active bool, logText str
 	}
 	st.Questions = questionsOf(root, id, rec)
 	st.Acceptance = readAcceptance(dir)
+	if st.Run.Phase == phasePlanning || st.Run.Phase == phaseRunning {
+		st.Progress = progressOf(dir, &st, logText)
+	}
 	return st, nil
 }
 

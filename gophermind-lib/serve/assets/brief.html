@@ -23,6 +23,11 @@
 </div>
 <div id="load" class="meta">Loading...</div>
 
+<div id="progress" class="progress" hidden>
+  <div class="ptext"><span id="ptitle"></span><span id="pnum"></span></div>
+  <div class="pbar"><div id="pfill" class="pfill"></div></div>
+</div>
+
 <div id="strip"></div>
 
 <div id="problems" hidden>
@@ -214,6 +219,25 @@ function renderProblems(s){
     if (it.title) li.appendChild(el('span', 'sub', it.title));
     li.appendChild(el('div', 'why', it.text));
     ul.appendChild(li);
+  }
+}
+
+// renderProgress shows how far the current step has got; the bar slides when
+// the size of the step is not known.
+function renderProgress(p){
+  const box = $('progress');
+  box.hidden = !p;
+  if (!p) return;
+  $('ptitle').textContent = p.step + ': ' + p.label;
+  const f = $('pfill');
+  if (p.total > 0) {
+    f.className = 'pfill';
+    f.style.width = p.percent + '%';
+    $('pnum').textContent = p.done + ' of ' + p.total + ' (' + p.percent + '%)';
+  } else {
+    f.className = 'pfill unknown';
+    f.style.width = '';
+    $('pnum').textContent = p.calls ? p.calls + ' model calls so far' : 'working';
   }
 }
 
@@ -470,6 +494,7 @@ function show(s){
   renderHead(s.run);
   renderProblems(s);
   renderTree(s.nodes);
+  renderProgress(s.progress);
   renderTiming(s.stages || [], s.slow_calls || []);
   renderWaves(s.wave_checks || [], s.repairs || { total: 0, open: [] });
   renderQuestions(s.questions);

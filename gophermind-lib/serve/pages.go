@@ -44,7 +44,8 @@ var navItems = []struct{ key, href, label string }{
 // Everything in it is static; the signed-in address is set as text by a script.
 func railHTML(active string) string {
 	var b strings.Builder
-	b.WriteString(`<aside class="rail"><a class="brand" href="/"><i></i>GopherMind</a><nav aria-label="Main">`)
+	b.WriteString(`<aside class="rail"><button type="button" class="railtoggle" id="railtoggle" aria-label="Collapse the navigation" aria-expanded="true">&laquo;</button>` +
+		`<a class="brand" href="/"><i></i>GopherMind</a><nav aria-label="Main">`)
 	for _, n := range navItems {
 		b.WriteString(`<a href="` + n.href + `"`)
 		if n.key == active {
@@ -55,7 +56,12 @@ func railHTML(active string) string {
 	b.WriteString(`</nav><div class="who"><span class="email" id="who-email"></span>` +
 		`<form method="post" action="/auth/logout"><button type="submit">Sign out</button></form></div></aside>` +
 		`<script>fetch('/auth/me',{credentials:'same-origin'}).then(function(r){return r.ok?r.json():null}).then(function(j){` +
-		`if(j&&j.email)document.getElementById('who-email').textContent=j.email}).catch(function(){})</script>`)
+		`if(j&&j.email)document.getElementById('who-email').textContent=j.email}).catch(function(){})</script>` +
+		`<script>(function(){var s=document.querySelector('.shell'),b=document.getElementById('railtoggle');if(!s||!b)return;` +
+		`function set(m){s.classList.toggle('min',m);b.textContent=m?'\u00bb':'\u00ab';b.setAttribute('aria-expanded',m?'false':'true');` +
+		`b.setAttribute('aria-label',m?'Expand the navigation':'Collapse the navigation')}` +
+		`try{set(localStorage.getItem('gm-rail')==='min')}catch(e){}` +
+		`b.addEventListener('click',function(){var m=!s.classList.contains('min');set(m);try{localStorage.setItem('gm-rail',m?'min':'full')}catch(e){}})})()</script>`)
 	return b.String()
 }
 
