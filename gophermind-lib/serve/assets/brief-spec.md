@@ -62,7 +62,8 @@ These are not checked by the validator. They come from briefs that failed to bui
 - Say how tests are written: table driven, using `strings.NewReader` and `bytes.Buffer`, never real files or `os.Stdin`.
 - Settle every boundary the tests will assert. If you do not say what happens on overflow, an empty file, a header with no rows, or a malformed row, the test writer invents an answer and the build then fails against it. Give the exact result for each edge you care about.
 - Give exact text. Output formats, error messages and exit codes written out in full are tested as written.
-- Acceptance commands must be runnable as written, for example `printf 'a\n1\n' | go run . --format json -`, with the result stated. Include at least `go build ./...`, `go vet ./...` and `go test ./...`.
+- Put the program's `main` package in `cmd/<name>/` (for example `cmd/wordcount`), and say so in Architecture. Before the acceptance commands run, the harness builds every main package under `cmd/` and puts the binaries on PATH. A program whose `main` is in the repository root has no binary to test, and the planner refuses its acceptance tests as `acceptance_vacuous`, which stops planning.
+- Write acceptance commands that run the built binary by name, for example `printf 'a\n1\n' | wordcount --format json -`, with the result stated. Never use `go run`, `go install`, `go build -o` or a path such as `./wordcount`. Also include `go build ./...`, `go vet ./...` and `go test ./...`.
 - Prefer the standard library. Each added module is a download the build has to allow in `network`.
 - No secrets in the file. Name them in `secrets` and the harness asks for values at run time.
 - Keep the whole brief short. One focused program per brief; a few hundred lines at most.
@@ -111,7 +112,7 @@ on_ambiguity: assume_and_document
 
 ## Architecture
 
-- `main` in the repository root: reads the argument, opens the file or chooses `os.Stdin`, calls `count.Stream`, prints the result and decides the exit code. Nothing else.
+- `cmd/wordcount` (package `main`): reads the argument, opens the file or chooses `os.Stdin`, calls `count.Stream`, prints the result and decides the exit code. Nothing else.
 - `internal/count`: `Stream(r io.Reader) (Result, error)` counts lines, words and bytes. No printing, no files.
 
 Data flow: `main` opens the input, `count.Stream` reads it once from top to bottom, `main` formats the line.
@@ -139,7 +140,7 @@ Data flow: `main` opens the input, `count.Stream` reads it once from top to bott
 - `go build ./...` succeeds.
 - `go vet ./...` reports nothing.
 - `go test ./...` passes.
-- `printf 'one two\nthree\n' | go run . -` prints `2 3 14`.
-- `printf '' | go run . -` prints `0 0 0`.
-- `go run . a b` exits with code 2.
+- `printf 'one two\nthree\n' | wordcount -` prints `2 3 14`.
+- `printf '' | wordcount -` prints `0 0 0`.
+- `wordcount a b` exits with code 2.
 ```
