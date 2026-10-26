@@ -157,6 +157,9 @@ func (p *Planner) notePublic(r *run, o Options) error {
 // resolveRepo turns the brief's repo into an absolute path to an existing
 // directory. A URL is refused: cloning belongs to the git landing plan.
 func resolveRepo(repo string) (string, error) {
+	if repo == "" {
+		return "", &brief.InvalidError{Reason: "repo: the brief names no repository; add a repo line to the frontmatter"}
+	}
 	if strings.Contains(repo, "://") || strings.HasPrefix(repo, "git@") {
 		return "", &brief.InvalidError{Reason: fmt.Sprintf("repo: %q is a URL; the planner needs an existing local path (cloning belongs to git landing)", repo)}
 	}

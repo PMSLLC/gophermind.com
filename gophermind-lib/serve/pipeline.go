@@ -56,6 +56,7 @@ func pipelineDashboardHandler() http.HandlerFunc {
 // streams (zero means 16; the server reads GOPHERMIND_PIPELINE_MAX_STREAMS).
 type PipelineDeps struct {
 	Root       string
+	ReposDir   string // per-run repos (GOPHERMIND_REPOS_DIR); empty means every run lives in Root
 	MaxStreams int
 }
 

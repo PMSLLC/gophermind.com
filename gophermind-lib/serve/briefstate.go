@@ -409,7 +409,7 @@ func (m *briefManager) buildState(id string) (BriefState, error) {
 			logText = string(b)
 		}
 	}
-	return BuildBriefState(m.root, id, rec, m.activeID() == id, logText, m.now())
+	return BuildBriefState(runRoot(m.repos, m.root, id), id, rec, m.activeID() == id, logText, m.now())
 }
 
 // state handles GET /app/briefs/{id}/state.
@@ -448,7 +448,7 @@ func (m *briefManager) list(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if runs, err := runview.Runs(m.root); err == nil {
+	if runs, err := listRuns(m.repos, m.root); err == nil {
 		for _, s := range runs {
 			it := items[s.RunID]
 			if it == nil {

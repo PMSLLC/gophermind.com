@@ -135,7 +135,7 @@ const (
 // folder the server user cannot write: `brief fill-answer <id> <qid> --repo
 // <root>` with the text on stdin, answering "remaining N" on stdout.
 func (m *briefManager) writeAnswerAs(id, qid, text string) (int, error) {
-	cmd := m.cmd([]string{"brief", "fill-answer", id, qid, "--repo", m.root})
+	cmd := m.cmd([]string{"brief", "fill-answer", id, qid, "--repo", m.repoFor(id)})
 	cmd.Stdin = strings.NewReader(text)
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -254,7 +254,7 @@ func (m *briefManager) answerHandler(w http.ResponseWriter, r *http.Request) {
 		briefError(w, http.StatusConflict, "a run is already active", map[string]any{"active_run_id": active})
 		return
 	}
-	remaining, err := writeGateAnswer(m.root, id, req.QuestionID, text)
+	remaining, err := writeGateAnswer(m.repoFor(id), id, req.QuestionID, text)
 	if errors.Is(err, os.ErrPermission) {
 		// The run folder belongs to the run user: let it write its own file.
 		remaining, err = m.writeAnswerAs(id, req.QuestionID, text)

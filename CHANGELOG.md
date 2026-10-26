@@ -12,6 +12,8 @@ All notable changes to GopherMind are documented here. The format follows
 
 - **A brief can be submitted again.** `POST /app/briefs/{id}/resubmit` takes the stored `brief.md` of an earlier run and starts it under the next free `gm-<today>-NNN` id (the frontmatter `id:` line is rewritten); the run page has a "Resubmit this brief" button when the run is not active. The upload page has a box to start an upload whose id is already used under the next free id (`POST /app/briefs?resubmit=1`), and a plain duplicate now says to tick it. The old run is left as it was.
 
+- **Every uploaded run gets a repository of its own.** With `GOPHERMIND_REPOS_DIR` set the server makes `<dir>/<run id>` for each upload (`gophermind brief init-repo`: a new git repo on `main` with one empty commit), points the stored brief at it and builds there, so two runs never share a working tree and a finished run's files no longer block the next one (the shared repo's leftovers made the next build refuse to start). The brief no longer names a repo: `repo` is optional in the frontmatter schema, the upload page ignores any `repo:` line, and a brief without one given to `gophermind brief plan` is refused with a message that says to add it. The Runs and pipeline pages read run folders from every run repo. Without the variable nothing changes.
+
 ### Fixed
 
 - **The live pipeline page is easier to read.** The dim text color was 2.6 to 1 against the page background and most type was 10.5 to 12.5 px. Text colors now reach at least 6 to 1 and the smallest type is 12 px.

@@ -306,6 +306,9 @@ type Options struct {
 	// time, a record, a copy of the brief and a log per run under it. The
 	// directory must be readable by the user that runs gophermind.
 	BriefsDir string
+	// ReposDir, when set with BriefsDir, gives every uploaded run its own repo
+	// under it (made by `brief init-repo`); the brief needs no repo line.
+	ReposDir string
 	// BriefCommand builds the process for one gophermind invocation (args
 	// exclude the program name). Nil runs `gophermind` directly; a deployment
 	// that runs briefs as another user wraps it (see docs/SERVER-SETUP.md).

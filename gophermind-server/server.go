@@ -239,7 +239,7 @@ func buildDeps(cfg serverConfig, root string, logger *slog.Logger) (serve.Deps, 
 		SessionMessages: loadMessages,
 		ListModels:      listModels,
 		EndpointModels:  endpointModels,
-		Pipeline:        &serve.PipelineDeps{Root: root, MaxStreams: serve.PipelineMaxStreamsFromEnv()},
+		Pipeline:        &serve.PipelineDeps{Root: root, ReposDir: cfg.ReposDir, MaxStreams: serve.PipelineMaxStreamsFromEnv()},
 		Skills:          &serve.SkillsDeps{Root: root, ConfigDir: skillCfgDir},
 	}
 

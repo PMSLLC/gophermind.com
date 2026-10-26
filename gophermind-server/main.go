@@ -62,6 +62,7 @@ type serverConfig struct {
 	// directly. BriefKillCmd is the prefix for signalling a run's process
 	// group (GOPHERMIND_BRIEF_KILL_CMD, for example "sudo -n -u gmrun /bin/kill").
 	BriefsDir    string
+	ReposDir     string // GOPHERMIND_REPOS_DIR: one repo per uploaded run
 	BriefCmd     string
 	BriefKillCmd string
 }
@@ -105,6 +106,7 @@ func parseServerConfig(args []string, getenv func(string) string, getwd func() (
 	}
 	cfg.Google = google
 	cfg.BriefsDir = getenv("GOPHERMIND_BRIEFS_DIR")
+	cfg.ReposDir = getenv("GOPHERMIND_REPOS_DIR")
 	cfg.BriefCmd = getenv("GOPHERMIND_BRIEF_CMD")
 	cfg.BriefKillCmd = getenv("GOPHERMIND_BRIEF_KILL_CMD")
 	return cfg, nil

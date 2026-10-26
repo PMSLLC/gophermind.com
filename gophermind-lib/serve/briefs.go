@@ -62,6 +62,9 @@ const exitWaiting = 3
 type briefManager struct {
 	dir  string // server-owned: <id>/{brief.md,run.json,run.log}
 	root string // repo root whose .gophermind/<id> folders runview reads
+	// repos, when set, holds one fresh repo per run (<repos>/<id>); a run then
+	// never shares a working tree with another, and its brief names no repo.
+	repos string
 	// cmd builds the process for one gophermind invocation (args exclude the
 	// program name). The default runs gophermind directly.
 	cmd       func(args []string) *exec.Cmd
@@ -99,7 +102,7 @@ var (
 
 func newBriefManager(opt Options, root string) (*briefManager, error) {
 	m := &briefManager{
-		dir: opt.BriefsDir, root: root, cmd: opt.BriefCommand, signal: opt.BriefSignal,
+		dir: opt.BriefsDir, root: root, repos: opt.ReposDir, cmd: opt.BriefCommand, signal: opt.BriefSignal,
 		streams: make(chan struct{}, maxEventStreams), eventEvery: defaultEventEvery,
 		killGrace: 10 * time.Second, now: func() time.Time { return time.Now().UTC() },
 		log: opt.BriefLogger,
@@ -196,6 +199,16 @@ func (m *briefManager) start(b *brief.Brief, src []byte, ask bool) (briefRecord,
 			return briefRecord{}, errBriefExists
 		}
 		return briefRecord{}, err
+	}
+	if m.repos != "" {
+		repo := filepath.Join(m.repos, id)
+		if out, err := m.cmd([]string{"brief", "init-repo", repo}).CombinedOutput(); err != nil {
+			m.mu.Unlock()
+			_ = os.RemoveAll(dir)
+			m.log.Error("run repo not made", "run_id", id, "error", err.Error(), "output", strings.TrimSpace(string(out)))
+			return briefRecord{}, err
+		}
+		src = withRepo(src, repo)
 	}
 	rec := briefRecord{ID: id, Title: b.Front.Title, Phase: phasePlanning, StartedAt: m.stamp(), Ask: ask}
 	briefPath := filepath.Join(dir, "brief.md")
@@ -375,7 +388,7 @@ func (m *briefManager) run(a *activeBrief, rec briefRecord, first []string, logf
 	}
 	rec.Phase = phaseRunning
 	_ = m.writeRecord(rec)
-	code, err = m.step(a, logf, "brief", "run", rec.ID, "--repo", m.root)
+	code, err = m.step(a, logf, "brief", "run", rec.ID, "--repo", m.repoFor(rec.ID))
 	if err != nil || code != 0 {
 		finish(phaseFailed, &code, stepMessage("run", code, err))
 		return
@@ -520,7 +533,28 @@ func sameDir(a, b string) bool {
 	return clean(a) == clean(b)
 }
 
-var frontIDLine = regexp.MustCompile(`(?m)^id:[ \t]*.*$`)
+var (
+	frontIDLine   = regexp.MustCompile(`(?m)^id:[ \t]*.*$`)
+	frontRepoLine = regexp.MustCompile(`(?m)^repo:[ \t]*.*$`)
+)
+
+// withRepo sets the repo line of the frontmatter to repo, adding it after the
+// id line when the brief has none: the server, not the brief, says where a run
+// builds.
+func withRepo(src []byte, repo string) []byte {
+	end := bytes.Index(src, []byte("\n---"))
+	if end < 0 {
+		end = len(src)
+	}
+	line := []byte("repo: " + repo)
+	if loc := frontRepoLine.FindIndex(src[:end]); loc != nil {
+		return append(append(append([]byte{}, src[:loc[0]]...), line...), src[loc[1]:]...)
+	}
+	if loc := frontIDLine.FindIndex(src[:end]); loc != nil {
+		return append(append(append(append([]byte{}, src[:loc[1]]...), '\n'), line...), src[loc[1]:]...)
+	}
+	return src
+}
 
 // freshID returns the first gm-<today>-NNN with no run folder yet.
 func (m *briefManager) freshID() (string, error) {
@@ -603,7 +637,7 @@ func (m *briefManager) create(w http.ResponseWriter, r *http.Request) {
 	}
 	// The run folder is made inside the brief's repo; this server only shows
 	// folders under its own root, so any other repo would run unseen.
-	if !filepath.IsAbs(b.Front.Repo) || !sameDir(b.Front.Repo, m.root) {
+	if m.repos == "" && (!filepath.IsAbs(b.Front.Repo) || !sameDir(b.Front.Repo, m.root)) {
 		briefError(w, http.StatusBadRequest,
 			"invalid brief: repo must be the server's repo root, "+m.root, map[string]any{"repo_root": m.root})
 		return

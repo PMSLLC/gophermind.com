@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,18 +25,19 @@ import (
 // briefEnv is a mux with the brief routes on, a fake launcher and a signed-in
 // cookie.
 type briefEnv struct {
-	t      *testing.T
-	h      http.Handler
-	root   string
-	dir    string
-	cookie *http.Cookie
-	mu     sync.Mutex
-	calls  [][]string
-	script func(args []string) string // shell snippet per invocation
-	logs   lockedBuf                  // the manager's structured log lines
+	t        *testing.T
+	h        http.Handler
+	root     string
+	dir      string
+	reposDir string
+	cookie   *http.Cookie
+	mu       sync.Mutex
+	calls    [][]string
+	script   func(args []string) string // shell snippet per invocation
+	logs     lockedBuf                  // the manager's structured log lines
 }
 
-func newBriefEnv(t *testing.T) *briefEnv {
+func newBriefEnv(t *testing.T, tweak ...func(*Options, *Deps)) *briefEnv {
 	t.Helper()
 	e := &briefEnv{t: t, root: t.TempDir(), dir: t.TempDir()}
 	e.script = func(args []string) string { return "echo ran" }
@@ -44,7 +46,7 @@ func newBriefEnv(t *testing.T) *briefEnv {
 		Run:      func(ctx context.Context, task string) (string, error) { return "", nil },
 		Pipeline: &PipelineDeps{Root: e.root},
 	}
-	mux, err := NewMux(d, Options{
+	opt := Options{
 		Token: testBearer, Google: a, BriefsDir: e.dir,
 		BriefLogger: slog.New(slog.NewTextHandler(&e.logs, nil)),
 		BriefCommand: func(args []string) *exec.Cmd {
@@ -53,7 +55,15 @@ func newBriefEnv(t *testing.T) *briefEnv {
 			e.mu.Unlock()
 			return exec.Command("sh", "-c", e.script(args))
 		},
-	})
+	}
+	for _, f := range tweak {
+		f(&opt, &d)
+	}
+	e.reposDir = opt.ReposDir
+	if opt.ReposDir != "" {
+		d.Pipeline.ReposDir = opt.ReposDir
+	}
+	mux, err := NewMux(d, opt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,6 +324,54 @@ func TestBriefResubmitTakesNextFreeID(t *testing.T) {
 
 	if w := e.post("/app/briefs/gm-2026-10-23-999/resubmit", "", nil); w.Code != http.StatusNotFound {
 		t.Errorf("unknown run = %d", w.Code)
+	}
+}
+
+// A server with a repos dir gives each run its own repo: the brief needs no
+// repo line, the stored copy names the run's repo, and the build runs there.
+func TestBriefRunsGetTheirOwnRepo(t *testing.T) {
+	e := newBriefEnv(t, func(o *Options, d *Deps) { o.ReposDir = t.TempDir() })
+	repos := e.reposDir
+	e.script = func(args []string) string {
+		if len(args) > 1 && args[1] == "init-repo" {
+			return "mkdir -p " + args[2]
+		}
+		return "echo ran"
+	}
+	body := regexp.MustCompile(`(?m)^repo:.*\n`).ReplaceAllString(e.briefText("gm-2026-10-23-020"), "")
+	if strings.Contains(body, "\nrepo:") {
+		t.Fatal("test brief still names a repo")
+	}
+	if w := e.post("/app/briefs", body, nil); w.Code != http.StatusAccepted {
+		t.Fatalf("upload = %d %s", w.Code, w.Body)
+	}
+	e.waitPhase("gm-2026-10-23-020", phaseDone)
+	want := filepath.Join(repos, "gm-2026-10-23-020")
+	stored, _ := os.ReadFile(filepath.Join(e.dir, "gm-2026-10-23-020", "brief.md"))
+	if !strings.Contains(string(stored), "\nrepo: "+want+"\n") {
+		t.Errorf("stored brief does not name %s:\n%.400s", want, stored)
+	}
+	var sawInit, sawRun bool
+	e.mu.Lock()
+	for _, c := range e.calls {
+		line := strings.Join(c, " ")
+		sawInit = sawInit || line == "brief init-repo "+want
+		sawRun = sawRun || strings.HasSuffix(line, "brief run gm-2026-10-23-020 --repo "+want) || line == "brief run gm-2026-10-23-020 --repo "+want
+	}
+	e.mu.Unlock()
+	if !sawInit || !sawRun {
+		t.Errorf("calls %v: init-repo %v, run in own repo %v", e.calls, sawInit, sawRun)
+	}
+}
+
+func TestWithRepoReplacesOrInserts(t *testing.T) {
+	a := withRepo([]byte("---\nid: gm-2026-10-23-001\nrepo: ~/x\nbase_branch: main\n---\nrepo: body\n"), "/r/1")
+	if string(a) != "---\nid: gm-2026-10-23-001\nrepo: /r/1\nbase_branch: main\n---\nrepo: body\n" {
+		t.Errorf("replace: %q", a)
+	}
+	b := withRepo([]byte("---\nid: gm-2026-10-23-001\nbase_branch: main\n---\nbody\n"), "/r/1")
+	if string(b) != "---\nid: gm-2026-10-23-001\nrepo: /r/1\nbase_branch: main\n---\nbody\n" {
+		t.Errorf("insert: %q", b)
 	}
 }
 

@@ -22,7 +22,7 @@ Unknown keys are rejected.
 | `id` | yes | `gm-YYYY-MM-DD-NNN` (for example `gm-2026-10-25-004`). It names the run and must be unique on the server: a second upload with the same id is refused. Use today's date and the next free number. |
 | `title` | yes | 1 to 120 characters. The product name. |
 | `language` | yes | `go`. |
-| `repo` | yes | For the upload page, the server's repo root exactly (the page shows it in the error if you get it wrong; on the current server it is `/opt/gophermind/workspace`). For `gophermind brief plan` on your own machine, a local path or a git URL. |
+| `repo` | no | Leave it out for the upload page: the server builds every run in a new repository of its own and ignores this line. Only `gophermind brief plan` on your own machine needs it, as a local path. |
 | `base_branch` | yes | For example `main`. |
 | `landing` | yes | `diff_only` (leave the result as a diff), `commit`, or `pull_request`. |
 | `on_ambiguity` | yes | `halt` (stop and ask) or `assume_and_document` (pick the conservative option and record it). |
@@ -84,7 +84,6 @@ spec_version: "2.0"
 id: gm-2026-01-01-001
 title: wordcount
 language: go
-repo: /opt/gophermind/workspace
 base_branch: main
 landing: commit
 on_ambiguity: assume_and_document

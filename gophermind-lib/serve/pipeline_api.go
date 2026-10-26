@@ -23,6 +23,7 @@ const defaultPipelineStreams = 16
 // every route, because the stream slots are shared.
 type pipelineAPI struct {
 	root  string
+	repos string
 	slots chan struct{}
 }
 
@@ -31,7 +32,7 @@ func newPipelineAPI(d PipelineDeps) *pipelineAPI {
 	if n < 1 {
 		n = defaultPipelineStreams
 	}
-	return &pipelineAPI{root: d.Root, slots: make(chan struct{}, n)}
+	return &pipelineAPI{root: d.Root, repos: d.ReposDir, slots: make(chan struct{}, n)}
 }
 
 // withPipelineSchema stamps the schema header before anything else can answer,
@@ -68,16 +69,16 @@ func pipelineError(w http.ResponseWriter, err error) {
 func (a *pipelineAPI) view(r *http.Request, opts ...runview.Option) (*runview.View, error) {
 	id := r.URL.Query().Get("run")
 	if id == "" {
-		id = runview.NewestRunID(a.root)
+		id = newestRun(a.repos, a.root)
 		if id == "" {
 			return nil, runview.ErrNotFound
 		}
 	}
-	return runview.Open(a.root, id, opts...)
+	return runview.Open(runRoot(a.repos, a.root, id), id, opts...)
 }
 
 func (a *pipelineAPI) runs(w http.ResponseWriter, r *http.Request) {
-	runs, err := runview.Runs(a.root)
+	runs, err := listRuns(a.repos, a.root)
 	if err != nil {
 		pipelineError(w, err)
 		return

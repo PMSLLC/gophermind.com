@@ -10,7 +10,6 @@
     "id",
     "title",
     "language",
-    "repo",
     "base_branch",
     "landing",
     "on_ambiguity"
@@ -36,7 +35,7 @@
     "repo": {
       "type": "string",
       "minLength": 1,
-      "description": "Local path (~ expanded) or git URL. A URL is cloned into the run directory."
+      "description": "Local path (~ expanded) the run builds in. Optional in the file: the web server gives every run its own repo and ignores this line; the command line needs it or --repo."
     },
     "base_branch": {
       "type": "string",
