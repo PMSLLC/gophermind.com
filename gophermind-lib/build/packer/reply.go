@@ -118,6 +118,7 @@ func NewExpect(pkg, signature string) (Expect, error) {
 // Reply is the checked outcome of a model reply.
 type Reply struct {
 	Source          []byte   // formatted file, ready to write; nil when ContractProblem or Forbidden is set
+	AddedImports    []string // standard library imports the model left out and the packer added
 	ContractProblem string   // the one sentence, when the model answered CONTRACT_PROBLEM
 	Forbidden       string   // "" or "file_header", "diff_header", "multiple_fences"
 	Imports         []string // unquoted import paths of Source
@@ -286,6 +287,11 @@ func ParseReply(text string, e Expect) (Reply, error) {
 		return r, malformed("test package")
 	case f.Name.Name != e.Package:
 		return r, malformedC(ClassPackage, "package mismatch")
+	}
+	if fixed, added := addMissingStdImports(src); len(added) > 0 {
+		if nf, err := parser.ParseFile(token.NewFileSet(), "", fixed, parser.ParseComments); err == nil {
+			f, src, r.AddedImports = nf, fixed, added
+		}
 	}
 	if ns, nf, nsrc := stripContract(src, e); len(ns) > 0 {
 		f, src, r.Stripped = nf, nsrc, ns
