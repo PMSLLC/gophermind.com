@@ -1,144 +1,76 @@
-# System Review: Sub-projects A and B against the code
+# System Review: Sub-projects A and B
 
-Status (added 2026-10-27): point-in-time review of the A and B plans as they stood on 2026-10-08. Both sub-projects were built on `main` afterwards (for example `runfs`, `runview`, and the Enrich commits `6fe29d2`, `ef97650`, `8bb2d4e`), and some findings below are fixed there. Nothing here was re-checked against the built code; treat each finding as a lead to verify, not as a current defect. System finding 6 (main not docs-only) is superseded: main now carries code by design.
+First written 2026-10-08 as a review of the A and B plans against the branch code (`feat/briefv2-planner-core` at `08db179`). Rechecked 2026-10-27 against the built code on `main` at `d627459`, after both sub-projects had landed. Each finding below carries its status as of the recheck. Reviewer: Claude (Opus 5.5), read-only; nothing was run.
 
-Date: 2026-10-08. Reviewer: Claude (Opus 5.5), read-only.
+Paths are relative to `gophermind-lib/build/` (the old `gophermind-lib/briefv2/`) unless they start with `cmd/` or another top-level folder. The plans reviewed were `docs/superpowers/plans/2026-10-07-filesystem-run-state.md` (A) and `docs/superpowers/plans/2026-10-08-node-widening-and-question-model.md` (B).
 
-Inputs reviewed:
-- `docs/superpowers/plans/2026-10-07-filesystem-run-state.md` (A, 9 tasks)
-- `docs/superpowers/plans/2026-10-08-node-widening-and-question-model.md` (B, 13 tasks, commit `12be1bc`)
-- `docs/superpowers/specs/2026-10-07-planner-phaseflow-unification-design.md`
-- `docs/superpowers/specs/2026-10-07-node-widening-and-question-model-design.md`
+## 1. Where things stand
 
-Every claim was checked against the worktree `~/OtherProjects/PMSLLC/gophermind-planner-core`, branch `feat/briefv2-planner-core`, HEAD `08db179`. Code paths are relative to `gophermind-lib/briefv2/` unless they start with `cmd/`. "A:NNN" and "B:NNN" are line numbers in the two plans. Nothing was run and nothing was changed.
+Thirteen findings remain open, one of them partly fixed (section 2, most severe first). Everything else from the 2026-10-08 review is fixed (section 3), accepted, or no longer applies (section 4). Section 5 records that two of the three policy questions were decided in code.
 
-## 1. Verdict
+The most severe open items:
+- The `runfs` lock and append primitives still have the race and the partial-line defects (A-N1 and A-N2). These matter most for sub-project F (parallel waves), where several workers contend for the same locks after a crash.
+- Function nodes with open questions still stall at approve (B8).
+- The repair stage name `enrich:_fix` is still shared by every component (B7).
 
-Both plans are well grounded: almost every identifier, line range and interface they cite exists as described. Neither is ready to execute as written.
+## 2. Open findings, most severe first
 
-- **A**: 6 defects make tests fail or behave wrongly, 3 of them concurrency or durability bugs in the new `runfs` primitives, and 1 is a design limit (Windows).
-- **B**: 4 defects block the build or the test suite, and 1 policy question breaks every existing approval. B also has several smaller correctness and privacy gaps.
-
-All of them are plan-text fixes. None needs a design change except two policy questions for John (section 5).
-
-## 2. System-level findings
-
-1. **The PhaseFlow bridge design is obsolete.** The earlier draft ("Planner and PhaseFlow Bridge": a `TaskRunner` on PhaseFlow's wave loop, an `ExportLegacy`-style exporter, a FallbackRunner versus router question) is replaced by unification decisions 2, 4, 15 and 16. The v2 executor runs leaves, PhaseFlow is retired, and the run folder is read through `runview` (sub-project D). The one idea that survives is decision 5: the router owns model fallback. Don't revive the bridge sections.
-2. **The approval-hash policy is the main cross-plan risk.** `RenderPlan` folds the name and length of every `hashedFiles` entry into the plan hash even when the file is absent (`planner/approve.go:224-232`). B changes that hash twice: Task 7 adds `_state/understanding.json` and Task 11 adds a "Node groups" section to the hashed text. `executor.LoadPlan` calls `VerifyApproval` (`planner/exported.go:26`), so after B every run approved before B fails to load. That includes an executor run already in progress. Decision 11 (finish the graded run first) keeps the graded run itself safe. Any later resume is not.
-3. **"Untouched run folder" stops meaning untouched.** `untouchedRunDir` (`planner/load.go:212-242`) allows only `status.json` in `_state`. A adds `calls.jsonl`, `calls.seq`, `calls.lock`, `events.jsonl` and `replies/`; B adds `clarify/` and `understanding.json`. After A, a run that crashes in its first stage can't be replanned, and the error asks for a resume. Neither plan updates the function or records the behaviour change.
-4. **The locking design is the foundation for sub-project F and has a race today.** Unification open item 5 says to measure lock contention before F raises the worker count. Finding A-N1 below is a correctness bug, not just a contention issue, and it occurs exactly when workers contend on leftover locks after a crash. Fix it in A, before F.
-5. **Windows is a shipped target, but the A design is POSIX-only.** `.goreleaser.yaml:17` builds for Windows. On Windows, `os.Rename` onto a file another process has open fails. That hits `brief status` while `brief run` is running, and the 0600/0700 mode assertions also fail. Either gate the feature and tests by GOOS, or record "run state is POSIX-only" as a decision.
-6. **Main is not docs-only right now.** The main checkout has an untracked `gophermind-lib/briefv2/planner/` and `.planning/plan/`, plus a deleted `.planning/assignments.json`. That contradicts decision 9. Find out who wrote them before any commit on main.
-7. **Cost on the mini.** For a 50-leaf plan in about 8 components, B's Enrich adds roughly 25 to 35 model calls, and up to about 55 with repairs, before router retries. Each batch prompt repeats the brief section and up to 6 KB of decisions. The mini serves one request at a time. Unification section 5 already says to measure this on csvstat before the real brief; this review puts a number on it.
-8. **Tier routing is half done.** Decision 10 (B spec) and unification section 5 ask for planning calls to be routed by `model_tier`. B routes only Enrich (`callSpec.tier`); Test-writer still uses the hard-coded strong tier (`planner/planner.go:203`), and B's own self-review (B:7397) admits it.
-
-## 3. Sub-project A: filesystem run state
-
-### 3.1 Defects, most severe first
-
-| # | Severity | Finding | Evidence | Fix |
+| # | Severity | Finding | Evidence (2026-10-27) | Suggested fix |
 |---|---|---|---|---|
-| A1 | High | Task 5 breaks the executor canary tests. Artifacts default to on (A:1725, A:2067), and the rig uses `settings.Default()`. `hasCanary` and `e2eStores` walk the run folder, which now includes `attempts/`, where the markers (not declared secrets) are saved verbatim. | `executor/harness_test.go:844`, `executor/e2e_test.go:229`, `run_test.go:698-714`, `resume_test.go:1131-1159`, `e2e_test.go:920,1070`, `leaf_test.go:761` | Decide per test: turn artifacts off in the rig, or exclude `attempts/` from the canary walk and add a separate test that `attempts/` holds only scrubbed text. The plan must name each test. |
-| A2 | High | Task 7 misses two command tests built on `blackboard.db`. | `cmd/gophermind/brief_run_test.go:1236-1281` | Rewrite both tests against the run folder. |
-| A3 | High | Task 7 under-specifies removing the database from tests. Raw SQL, SQLite file reads, `*SQLite`-typed fields and a `dbPath` parameter remain. | `planner/rerun_test.go:20,59`, `router/router_test.go:82,599-626`, `planner/e2e_test.go:503-504`, `packer/packer_test.go:510-520`, `executor/rig_test.go:84-85,129-169`, `planner/harness_test.go:87-88,153` | List each site and its replacement. |
-| A4 | Medium | Planner replies are saved only in debug mode. `saveReply` is placed beside `dumpReply` inside `if p.dumpDir(r) != ""`. | A:2396, `planner/planner.go:207-212` | Call it outside that block. |
-| A5 | Medium | `TestFSEventsAreOneJSONLinePerChange` can't pass: it decodes `run_id`/`node_id` into untagged fields. | A:669 | Add json tags. |
-| A6 | Medium | The Task 8 no-SQL grep matches the doc comment at `blackboard/blackboard.go:8`. | A:2578 | Edit the comment in Task 8. The `executor/typedecl.go:34` hit is a known false positive (A:2592). |
+| A-N1 | Medium | **The lock reclaim can give two holders at once.** A stale lock is removed with stat-then-remove, so two waiters can each remove one, and one deletes the other's fresh lock. `unlock` removes the file without checking that it holds the lock, so a holder paused past 30s deletes the next holder's lock. The comment at `runfs/runfs.go:89-93` calls the window negligible. It matters more once F adds workers. | `runfs/runfs.go:104,109-111` | Write a unique token into the lock and remove only your own. Steal a stale lock by renaming it to a unique name first. |
+| A-N2 | Medium | **One partial line breaks the ledger permanently.** `AppendLine` doesn't fsync and doesn't check for a trailing newline, and `readAll` fails on any line that isn't JSON. After a crash, `Summary`, `List`, `Amend` and `brief status` fail for that run from then on. The A-N3 fix depends on this too: `maxLoggedID` skips lines it can't parse, so an id fused onto a partial line is invisible to it. | `runfs/runfs.go:126-144`, `ledger/fs.go:141,229-231` | Before appending, write a newline when the file doesn't end in one. Skip unparseable lines with a warning. |
+| B8 | Medium | **Open questions on a function node have no way out.** `mergeEnrichment` copies a function reply's `open_questions`, and `groupDefects` doesn't reject a non-empty list, so the node stalls at approve. The approve error points to `brief answer`, which can't clear such a question. Component and root replies are rejected. | `planner/groups.go:132-140,236-239`, `planner/enrich.go:180-183,758`, `planner/approve.go:56-58` | Make a non-empty `open_questions` on a function node a group defect, so it goes through the repair loop. |
+| B7 | Medium | **The repair stage is shared across components.** Commit `6fe29d2` widened the id pattern, so `enrich-_fix-qN` now parses. The stage name is still the shared `enrich:_fix`, so `callAsking` can replay one component's answers and pending question into another component's repair. A question raised there maps to no component, so its reset is broader still (see 7.7). | `planner/enrich.go:26,440-443`, `planner/planner.go:297-341` | Name the repair stage per component, for example `enrich:fix:<comp>`, so `componentOfStage` resets the right one. |
+| S5 | Medium | **Windows is still a release target, but run state is POSIX-only.** `runfs` has no GOOS gate, the mode-0600 test isn't gated, and no doc says the run state is POSIX-only. On Windows, a rename onto a file another process has open fails, which hits `brief status` while `brief run` is running. | `.goreleaser.yaml:17,55`, `runfs/runfs.go:70,104`, `runfs/runfs_test.go:30` | Decide (question 3 in section 5). The recommendation is to record run state as POSIX-only and gate the tests by GOOS. |
+| A-stale | Low | **Two settings disagree about when a holder is dead.** Locks go stale after a hard-coded 30s. Claims go stale after `stale_claim_seconds` (default 120), which only drives `ReleaseStale`. Spec 4.3 rule 3 says the lock should use `stale_claim_seconds`. | `runfs/runfs.go:82`, `blackboard/fs.go:59`, `ledger/fs.go:43`, `settings/executor.go:46` | Pass the setting through, or record the 30s as a deviation and explain why it differs. |
+| B6b | Low | **The tree-finish decision check always passes.** `embedDecisions` rebuilds the documents from the store just before `finishGroupDefects` checks them, so a hand edit to the tree on disk is never seen. Commits `70b15f8` and `79926dd` added a dangling-id check but no on-disk check. | `planner/testwriter.go:953,1021-1022`, `planner/decompose.go:925`, `planner/finish.go:173-188` | Run `checkEmbedded` against the tree read from disk before the rebuild, or on resume when a tree exists. |
+| B11 | Low | **A crash in the middle of a round can lose answers.** `File.Ask` renames `QUESTIONS.md` to `QUESTIONS.answered.md` before it returns, which is before the planner saves the answers. On resume, nothing reads the `.answered.md` file back. | `human/file.go:69-71,130-132` | Rename after the caller has saved, or read `.answered.md` back on resume. |
+| A-N4 | Low | **`Watch` stalls silently if `events.jsonl` shrinks.** It keeps a byte offset and never resets it, so once the file is truncated or recreated, the offset is past the end. | `blackboard/fs.go:468,480-484` | When the file is smaller than the offset, reset the offset to 0. |
+| A-N5 | Low | **The `runtimePath` cache is never cleared.** A reused run folder with a different component layout gets the old paths. | `blackboard/fs.go:176-190` | Key the cache by the plan hash, or drop it when the tree is reloaded. |
+| S3 | Low | **Partly fixed: a crash during Clarify still blocks a replan.** `untouchedRunDir` now allows A's state files, but not B's `_state/clarify/`, so a crash during Clarify still forces a resume. | `planner/load.go:255-262`, `planner/clarify.go:31` | Add `clarify/` to the allowed list, or record that a Clarify crash means resume. |
+| 7.7 | Low | **A mid-stage answer redoes the whole component, but spec 7.7 says one call.** `resetComponent` resets the whole component, and the deviation is not recorded in `docs/build/README.md`. | `planner/change.go:128-137,166` | Record the deviation, or narrow the reset. |
+| S7 | Info | **Enrich cost is unmeasured on the mini.** Enrich makes about 0.25 calls per leaf plus about 1 per component: roughly 25 to 30 calls for 50 leaves in 8 components, before up to 2 repair rounds and batch halving. `enrich_batch_size` (default 4, range 1 to 32) is now a setting. | `settings/settings.go:138,199,419`, `planner/enrich.go:25,512-531` | Measure it on the csvstat brief before the real brief. |
 
-### 3.2 New defects in the `runfs` primitives
+## 3. Fixed since 2026-10-08
 
-| # | Severity | Finding | Evidence | Fix |
-|---|---|---|---|---|
-| A-N1 | Medium | **The lock reclaim can give two holders at once.** Stat-then-Remove of a stale lock lets two waiters each remove a lock, so one deletes the other's fresh lock. `unlock` also removes the lock unconditionally, so a holder paused for more than 30s deletes the next holder's lock. | A:407, A:412-414 | Write a unique token into the lock and remove only your own. Steal a stale lock by renaming it to a unique name first. |
-| A-N2 | Medium | **One partial line breaks the ledger permanently.** `AppendLine` doesn't fsync and doesn't check for a trailing newline. After a crash, the next append fuses onto the partial line, and `readAll` fails on every call from then on (`Summary`, `List`, `Amend`, `brief status`). | A:429-447, A:1612-1613 | When the file doesn't end in a newline, write one first. Skip unparseable lines and log them as a warning. |
-| A-N3 | Low | **Duplicate call ids after a power loss.** No directory fsync after rename and no fsync on append, so the `calls.seq` rename can be lost while the `calls.jsonl` line survives. That contradicts "never a duplicate" (A:1517-1519). | A:382 | Derive the next id from the highest id in `calls.jsonl` and drop the seq file. |
-| A-N4 | Low | **`Watch` stalls silently** if `events.jsonl` is truncated or recreated, because it keeps a byte offset. The SQLite version used row ids. | A:1173, A:1185 | When the size drops below the offset, reset the offset. |
-| A-N5 | Low | **`runtimePath`'s cache is never cleared.** A miss reloads the whole tree under `f.mu`. A reused run id with a new layout writes to old paths, and `MkdirAll` recreates them. | A:880-897 | Key the cache by the plan hash, or reload on a miss and drop stale entries. |
+| # | What was wrong | Where it is fixed |
+|---|---|---|
+| S1 | The PhaseFlow bridge draft was obsolete | PhaseFlow is retired: no `phaseflow` package remains, `gates/removal_test.go:77-85` bans it, and `gophermind phase` prints a "removed" message (`54cb713`) |
+| S2 / B2 | Approvals made before B failed with a bare hash mismatch | `VerifyApproval` names the cause when an approval has no `UnderstandingHash` (`planner/exported.go:30-38`, `957848f`). An approval written after the understanding existed but before node groups still gets the generic message, which affects only dev runs. |
+| S8 | Test-writer did not route by node tier | `p.tierFor(model_tier)` in `planner/testwriter.go:515` and `planner/revise.go:466` (`79926dd`) |
+| A1 | Artifacts broke the executor canary tests | The walks skip `attempts/`, and a dedicated test covers secrets there (`executor/harness_test.go:847-851`, `executor/e2e_test.go:236-240`, `executor/artifacts_test.go:57`) |
+| A2, A3 | Tests still used SQLite and `blackboard.db` | Only negative assertions remain, and the gate is `nosql_test.go` |
+| A4 | Planner replies were saved only in debug mode | `saveReply` has its own wrapper (`planner/planner.go:249-257`) |
+| A5 | The events test decoded into untagged fields | json tags added (`blackboard/fs_test.go:482-485`) |
+| A-N3 | Call ids could repeat after a power loss | The next id is the higher of `calls.seq` and the highest logged id (`ledger/fs.go:108-145`). This depends on A-N2. |
+| B1 | Executor and cmd fixtures were missing Enrich replies | Greeter fixtures in the round format (`14b3824`) |
+| B3 / Q1 | Resuming a run planned before B repeated Clarify | `loadQStore` imports the old `answers.json` as a complete store (`planner/questions.go:84-114`) |
+| B4 | `TestPlanEndToEnd` hung on the confirm gate | A `KindConfirm` case (`planner/e2e_test.go:90-91`) |
+| B5 | Three compile errors in tests | All resolved |
+| B6a | Root and nodes shared one record map | A copy per node (`planner/questions.go:517`) |
+| B9 | An unattended fact question with no recommendation failed every resume | Facts need a recommendation too (`planner/questions.go:210,341-342`) |
+| B10 | The approval did not bind the component and root groups | `stateEnriched` is hashed (`planner/approve.go:272`). `_state/clarify/questions.json` is not, but the derived `answers.json` is, which is enough. |
+| B12 | An answer settled mid-Enrich could not be cited | The settled set is rebuilt in each call's parse (`planner/enrich.go:447-455`) |
+| Privacy | The Test-writer could receive the whole draft; `<guidance>` was not escaped | Test-writer gets a projection (`planner/testwriter.go:506`), `sectionTagRE` includes `guidance` (`packer/packer.go:454`), and canary tests cover both |
+| 4.4 gaps | Spec coverage gaps | Covered: trust boundaries per component, component and root assumptions, and named skipped go.mod checks, all in `planner/groupsummary.go`. Tests added: bytes-per-node (a 24 KiB ceiling rather than golden bytes), Enrich QUESTION pause and resume, truncated-reply halving, and approve refusing an unconfirmed understanding. |
 
-### 3.3 Unrecorded deviations from the spec
+## 4. Accepted or no longer applicable
 
-Add these to A's Deviations section, or fix them:
-- `saveReply` doesn't scrub, but spec 4.3 rule 9 says replies go through the scrubbers.
-- The lock's stale age is hard-coded to 30s (A:763, A:1455), but spec rule 3 says `stale_claim_seconds`.
-- The replies path is `_state/replies/<stage>-<n>.txt`, but the spec says `_state/replies/<stage>/`.
-- Spec 4.6 test 6 still names `.state.json` and `.claim`, which deviations 1 and 2 replace. Task 9 amends this; check that it does.
+- **A6, not applicable.** The no-SQL gate now parses imports, so a doc comment can't trip it.
+- **Reply scrubbing, accepted.** Planner replies are not scrubbed. `planner/replies.go:12-17` records why: planner prompts carry no secrets.
+- **Replies path layout, accepted.** Replies are saved flat as `_state/replies/<stage>-<n>.txt`, not under `<stage>/` as spec 4.3 says. Update the spec to match the code.
+- **B13, accepted.** `uuid` is a real package in the pinned Go standard library (go1.27.1), and a test asserts it. The clash with third-party `uuid` only causes a warning.
+- **Farewell parameter, not applicable.** The mismatch was in the plan text only; the fixture uses `name`.
 
-### 3.4 Verified correct
+## 5. Policy questions
 
-- **Blackboard interface** (`blackboard.go:110-148`, 13 methods): matched by the FS implementation, including `ErrNotFound`, `ErrBadTransition` and `ErrNotOwner`.
-- **`Amend` callers:** `markMalformed` (`router/parsed.go:59`) is the only production caller.
-- **`tree.Store.Load` skip list:** includes `*.runtime.json`, `_state/`, `logs/`, `.lock` and `.tmp-*` (`tree/store.go:76-84`).
-- **Deleting `ResetRun`:** safe, because `rundir.Create` refuses an existing folder (`rundir.go:34-36`).
-- **`LookupRun`:** exists (`planner/state.go:56`).
-- **Database importers:** the only other importers of `db` are the cmd files the plan lists.
-- **Settings names:** exist as named.
-- **Path safety:** node ids and run ids are checked against regexes.
+1. **Runs planned before B.** Decided in code: an old `answers.json` is imported as a complete question store.
+2. **Approvals made before B.** Decided in code: they are refused with a named cause, and there is no `schema_version` path for accepting them.
+3. **Windows.** Still open (S5).
 
-## 4. Sub-project B: node widening and the question model
+## 6. Suggested next steps
 
-### 4.1 Blocking defects
-
-| # | Severity | Finding | Evidence | Fix |
-|---|---|---|---|---|
-| B1 | High | **The executor and cmd fixtures are never updated.** `executor/testdata/greeter/planner` (used by the executor rig and `cmd/gophermind/brief_run_test.go:219`) has no `enrich.*`, `enrich_comp.*` or `enrich_root.txt`, and its testwrite replies have no `polarity`/`covers`. fn-hello and fn-bye are `handler` nodes, so their security group can't be "not applicable". Task 13 only looks at `planner/testdata/greeter*`. Expect "no fixture reply for stage enrich:greet". | B Task 13 steps 1, 3, 5.2 | Add a step that writes these fixtures, and extend the error-count table to fn-bye, fn-hello and fn-serve. |
-| B2 | High | **Every approval made before B fails to verify** (system finding 2). | Task 7 (B:3907), Task 11, `approve.go:224-232`, `exported.go:26` | John decides the policy (section 5, Q2). |
-| B3 | High | **Resuming a run planned before B repeats Clarify and overwrites `answers.json`.** `clarifyDone` now needs a `Complete` store, and `loadQStore` doesn't migrate. A mid-stage question on such a run also loses every old answer. This breaks B's own Review Focus 6. | B:3381-3384, B:1970-1979, B:2196-2200, B:3770-3788, old `planner/clarify.go:39` | John decides (Q1), then add a migration or a refusal in Task 4. |
-| B4 | High | **`TestPlanEndToEnd` hangs.** Its programmatic gate answers only `KindAsk` and `KindApprove`, never `KindConfirm`. | `planner/e2e_test.go:80-90`, B:3827 | Add a `KindConfirm` case in Task 6. |
-| B5 | High | **Compile errors in the test packages:** <ul><li>Task 3 appends unprefixed identifiers to `package human_test` (B:1223-1338).</li><li>Task 6 removes `parseClarify`, but `planner/safeerr_internal_test.go:60-72` still calls it.</li><li>Task 8 redeclares `type draftFile` (B:5248), which already exists at `planner/decompose_test.go:18`.</li></ul> | as cited | <ul><li>Prefix with `human.`.</li><li>Move the canary checks to `parseQuestionList`.</li><li>Reuse `g.drafts()`.</li></ul> |
-| B6 | High | **`embedDecisions` shares one record map between the root and the node.** A hand edit to one changes both, so two tests expecting exactly one problem fail. The finish-time check is also always true, because `finishTree` rebuilds the decisions from the store just before checking them, so it can never catch a hand edit on disk (spec section 10 asks for that). | B:2297-2321, B:1853-1856, B:5595, B:5872-5880 | Call `recordOf(q)` once per node. Check the on-disk tree before the rebuild. |
-
-### 4.2 Correctness gaps
-
-| # | Severity | Finding | Evidence | Fix |
-|---|---|---|---|---|
-| B7 | Medium | **A question during an Enrich repair corrupts the tree.** The id `enrich-_fix-qN` breaks the schema pattern `^[a-z0-9][a-z0-9:-]*$`, so `ParseNode` fails. The shared stage name `enrich:_fix` also replays one component's question into another component's repair prompt. | B:280-300, `planner.go:237-260,282`, `decompose.go:695` | Name the repair stage per component without an underscore, for example `enrich:fix:<comp>`. |
-| B8 | Medium | **Open questions on function nodes have no exit.** `groupDefects` accepts a non-empty `open_questions`, so approve then refuses. The fix it suggests (`brief answer`) only changes settled questions. Components and the root already reject them in `structureCall`. | Task 8 group checks | Make a non-empty `open_questions` an Enrich defect, so it goes to the repair loop. |
-| B9 | Medium | **An unattended run can fail permanently on a fact question.** A fact with a valid `fact_key` that the probe can't answer, and with no `recommended`, errors on every resume. | B:2168, B:3509-3512 | In unattended mode, require a recommendation for facts too, or turn unanswerable facts into decisions when parsing. |
-| B10 | Medium | **The approval doesn't bind the component and root groups.** `hashedFiles` leaves out `_state/enriched.json` and `_state/clarify/questions.json`, but `finishTree` rebuilds nodes from them after approval. | Task 7, Task 9 | Add both to `hashedFiles`, together with the Q2 policy. |
-| B11 | Low | **A crash mid-round can lose answers.** `File.Ask` renames `QUESTIONS.md` to `QUESTIONS.answered.md` before the planner saves the answers. On resume, nothing reads the `.answered.md` file back. | `human/file.go:111`, B:3521-3545 | Save first, then rename. Or read `.answered.md` on resume. |
-| B12 | Low | **A question answered mid-Enrich can't be cited.** The settled-decision set is computed once per Enrich run, so citing that answer fails with `decision_unknown`. | Task 8 | Recompute the set per batch. |
-| B13 | Low | **`IsStdPackageName("uuid")` returns true** because `packer/stdlist.txt:179` lists it, so third-party `uuid.UUID` is never flagged. It only produces a warning. | B:1019 | Match on the full import path where it is available. |
-
-### 4.3 Privacy
-
-- **Window between commits.** After Task 8, drafts carry `rationale` and `decision_ids`, but `writeTests` still sends the whole draft at node scope (`mustJSON(d)`, `testwriter.go:162`) until Task 9. Move `testwriterView` into Task 8 so no commit leaks.
-- **Unescaped opening tag.** `sectionTagRE` (`packer.go:380`) doesn't list `guidance`, so a forged opening `<guidance>` tag is not escaped. The closing tag is. Add it in Task 12.
-- **Verified:** `testwriterView` and `guidanceFrom` use fixed allow-lists, each with a canary test, and Task 13 scans every Test-writer prompt. Enrich uses component scope and the root call brief scope, and `router/privacy.go:17-24` keeps node scope on public providers only with `--allow-public`.
-
-### 4.4 Spec coverage gaps
-
-- **Tier routing (spec section 4, decision 10):** Test-writer is not tier-routed (system finding 8).
-- **Spec section 6, trust boundaries:** counted per plan, not per component.
-- **Spec section 6, approval summary:** component and root assumptions are missing from it.
-- **Spec section 5.3, summary:** the go.mod checks that were skipped are not named in it.
-- **Spec section 10, missing tests:**
-  - no golden bytes-per-node size test;
-  - no Enrich stage test for a `QUESTION:` reply pausing and resuming;
-  - no test for a truncated reply halving the batch;
-  - no test that approve refuses an unconfirmed understanding. The open-question refusal is tested (B:7316-7335).
-- **Spec section 7.7:** a mid-stage answer resets the whole component (Decompose and Enrich), not one call. This deviation is not listed.
-- **Fixture mismatch:** Task 13 says Farewell's parameter is `n`, but the fixture has `func Farewell(name string)`.
-
-### 4.5 Verified correct
-
-- **Load skip list:** `tree.Store.Load` parses any root-level `*.json` that is not on the skip list, so deviation 1 (`_state/understanding.json`) is right.
-- **Schema additions:** optional and additive. `contract.errors` items have no `additionalProperties: false`, so old fixtures validate.
-- **Stage mechanism:** stages are `{name, run, done}` and resume skips any stage whose `done` is true. `clarify:more` maps to `clarify.more.txt`.
-- **Human gate implementers:** all listed, so the interface change compiles apart from B4 and B5.
-- **Question store against hostile replies:** handles cycles, forward refs, duplicate ids, caps and invalid recommendations. Error messages carry positions and counts only.
-- **Task 12 and executor hashing:** Task 12 leaves `hashNodes` alone. A node planned before B gives an empty guidance section and an unchanged prompt.
-- **Helpers and signatures:** every helper Tasks 1 to 13 call exists or is created by the plan, and signatures match across tasks.
-
-## 5. Questions for John
-
-1. **Runs planned before B (B3).** Import an existing `answers.json` as a complete question store, so resume works and Clarify is skipped? Or refuse to resume a pre-B run? Recommendation: import. It is about 30 lines in `loadQStore`, and refusing strands any run in progress.
-2. **Approvals made before B (B2, B10).** Accept them by hashing a `hashedFiles` entry only when the file exists, and putting the new summary section behind a `schema_version`? Or invalidate them and require re-approval? Recommendation: invalidate, but make `VerifyApproval` name the cause ("approved before node widening; run brief approve again") instead of a bare hash mismatch. Silently accepting an approval that never saw the groups weakens the gate the approval exists for.
-3. **Windows (system finding 5).** Support Windows for run state, or record it as POSIX-only for now? Recommendation: POSIX-only for now, gate the tests by GOOS, and say so in the README.
-
-## 6. Recommended order
-
-1. John answers section 5.
-2. Amend plan A: section 3 fixes, the lock and append fixes, and the deviations. Each fix is plan text only.
-3. Amend plan B: blockers B1 to B6 first, then B7 to B10, then the privacy window and the spec gaps.
-4. Keep decision 11: neither plan starts until the GOAL.md graded run has finished.
-5. Before any commit on main, resolve the stray code in the main checkout (system finding 6).
+1. Fix A-N1 and A-N2 in `runfs` and the ledger, with tests for two contending waiters and a fused partial line. Do this before sub-project F.
+2. Fix B8 and B7 in `planner/groups.go` and `planner/enrich.go`.
+3. Decide Windows (S5), then gate or document it.
+4. Pick up the low-severity items as cleanup: A-stale, B6b, B11, A-N4, A-N5, S3, and the 7.7 deviation note.

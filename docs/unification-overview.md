@@ -23,7 +23,7 @@ John asked for the planner to be tightly integrated with PhaseFlow. Reading both
 | `docs/reviews/2026-10-07-grilling-and-the-question-model.md` | The `grilling` skill against the v1 and v2 question models | decided; refined by the B spec |
 | `docs/superpowers/specs/2026-10-07-node-widening-and-question-model-design.md` | Sub-project B: the node groups, the Enrich stage, the question rounds, questions and answers in the tree | merged to `main` |
 | `docs/reviews/2026-10-08-v1-caller-inventory.md` | Who uses v1 (server, desktop app, `/phase`, the TUI) and what upgrading each means | inventory; its two decisions were taken and built |
-| `docs/reviews/2026-10-08-system-review-a-and-b.md` | Review of the A and B plans against the branch code: ranked defects, runfs lock and append bugs, approval-hash and resume policy questions | snapshot of the plans on 2026-10-08; not re-checked against the built code |
+| `docs/reviews/2026-10-08-system-review-a-and-b.md` | Review of the A and B plans against the branch code: ranked defects, runfs lock and append bugs, approval-hash and resume policy questions | rechecked against main on 2026-10-27: 13 findings open (runfs lock and append, B7, B8, Windows lead) |
 | `docs/superpowers/specs/2026-10-08-retire-v1-and-upgrade-consumers-design.md` | Sub-projects D and G: the `runview` library, the new pipeline contract, the server and desktop app upgrade, retiring `/phase` and v1, dropping the version names | merged to `main` |
 | `docs/superpowers/plans/2026-10-07-filesystem-run-state.md` | Sub-project A plan: files instead of SQLite, attempt artifacts (9 tasks) | merged to `main` |
 | `docs/superpowers/plans/2026-10-08-node-widening-and-question-model.md` | Sub-project B plan (13 tasks) | merged to `main` |
