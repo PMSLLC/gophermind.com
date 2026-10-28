@@ -68,7 +68,7 @@ type builtinProfile struct {
 	ModelsPath string        // "" => llm.Client default "/v1/models"
 }
 
-// builtinProfiles are the three example backends a user can select with
+// builtinProfiles are the example backends a user can select with
 // --profile without configuring anything. Each is still overridable via
 // per-profile env vars (see profileEnvOr). API keys are intentionally never
 // baked in here; supply them with GOPHERMIND_PROFILE_<NAME>_API_KEY.
@@ -94,6 +94,14 @@ var builtinProfiles = map[string]builtinProfile{
 		BaseURL:    "http://127.0.0.1:8082/v1",
 		Model:      "claude-3-5-sonnet",
 		Timeout:    120 * time.Second,
+		ChatPath:   "/chat/completions", // BaseURL already ends in /v1
+		ModelsPath: "/models",           // BaseURL already ends in /v1
+	},
+	"muse-glimmer": {
+		// ExecuTorch serve.py for Muse-Glimmer-30B on the same machine.
+		BaseURL:    "http://127.0.0.1:8000/v1",
+		Model:      "muse-glimmer-30B",
+		Timeout:    600 * time.Second,   // prefill of a ~10k-token prompt takes minutes
 		ChatPath:   "/chat/completions", // BaseURL already ends in /v1
 		ModelsPath: "/models",           // BaseURL already ends in /v1
 	},

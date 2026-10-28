@@ -83,6 +83,7 @@ var knownModels = map[string]modelCapability{
 	"qwen2.5":           {32768, 8192, true},
 	"qwen2":             {32768, 8192, true},
 	"deepseek":          {65536, 8192, true},
+	"muse-glimmer":      {131072, 4096, true},
 }
 
 // modelsCapabilityResponse captures the (varied) capability fields different
