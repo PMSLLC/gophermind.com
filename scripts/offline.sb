@@ -1,0 +1,12 @@
+; macOS sandbox profile that behaves like a machine with no network: every
+; outbound connection is denied except loopback and local sockets.
+;
+;   sandbox-exec -f scripts/offline.sb <command>
+;
+; Used to prove a service or a run works offline (the internet and DNS fail,
+; 127.0.0.1 works).
+(version 1)
+(allow default)
+(deny network-outbound)
+(allow network-outbound (remote ip "localhost:*"))
+(allow network-outbound (remote unix-socket))
