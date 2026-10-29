@@ -53,6 +53,9 @@ type idNotes struct {
 	// EmptyTypes counts the type entries dropped because their declaration,
 	// once the package clause was removed, declared nothing.
 	EmptyTypes int
+	// DashedTypes counts the type names written with dashes, like an id, that
+	// were renamed to camel case.
+	DashedTypes int
 }
 
 func isUpper(c byte) bool { return c >= 'A' && c <= 'Z' }
@@ -224,6 +227,11 @@ func normalizeReply(doc map[string]any, text string, kind replyKind) (string, id
 				notes.PackageClauses++
 				changed = true
 			}
+			if renamed, n := camelDashedTypeNames(o["decl"].(string)); n > 0 {
+				o["decl"] = renamed
+				notes.DashedTypes += n
+				changed = true
+			}
 		}
 	}
 	// A type entry that declares nothing (a package clause and a comment for
@@ -364,6 +372,10 @@ func (p *Planner) noteNormalized(st *contractState, stage string, n idNotes) {
 		p.emit(events.KindWarning, stage, "", fmt.Sprintf(
 			"signature_type_id_normalized: %d type ids in signatures were replaced by Go type names (%s); %d in all so far",
 			n.SigTypeIDs, strings.Join(n.SigExamples, ", "), st.SigTypeIDsNormalized))
+	}
+	if n.DashedTypes > 0 {
+		p.emit(events.KindWarning, stage, "", fmt.Sprintf(
+			"type_name_camel_cased: %d type names were written with dashes like an id; renamed to camel case", n.DashedTypes))
 	}
 	if n.EmptyTypes > 0 {
 		p.emit(events.KindWarning, stage, "", fmt.Sprintf(
