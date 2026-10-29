@@ -17,6 +17,11 @@ func TestOnlyObjectReplyStagesAskForJSONMode(t *testing.T) {
 	for _, rq := range g.fake.Requests() {
 		system := rq.Messages[0].Content
 		switch {
+		case strings.Contains(system, "testwrite:"), strings.HasSuffix(system, "Stage: coverage"):
+			contract++
+			if !rq.JSON {
+				t.Errorf("a test-writer or coverage request (its reply is one object) did not ask for JSON mode: %q", system)
+			}
 		case strings.Contains(system, "contract:"):
 			contract++
 			if !rq.JSON {
