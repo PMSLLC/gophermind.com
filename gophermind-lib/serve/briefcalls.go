@@ -137,6 +137,35 @@ func readCallErrors(dir string) []BriefCallError {
 	return out
 }
 
+// maxStopReason bounds the planner's own stop message shown on the page.
+const maxStopReason = 800
+
+// readStopReason is why the planner stopped, in its own words, from
+// _state/planner_error.json: "<stage>: <message>". The planner writes that
+// message to be safe to show (it names a line and column, never the text), and
+// the page shows it as text. Empty when the planner did not stop on an error.
+func readStopReason(dir string) string {
+	b, err := readSmallFile(filepath.Join(dir, "_state", "planner_error.json"), 64<<10)
+	if err != nil {
+		return ""
+	}
+	var e struct {
+		Stage string `json:"stage"`
+		Text  string `json:"text"`
+	}
+	if json.Unmarshal(b, &e) != nil || strings.TrimSpace(e.Text) == "" {
+		return ""
+	}
+	s := strings.Join(strings.Fields(e.Text), " ")
+	if e.Stage != "" {
+		s = e.Stage + ": " + s
+	}
+	if r := []rune(s); len(r) > maxStopReason {
+		s = string(r[:maxStopReason]) + "..."
+	}
+	return s
+}
+
 // describeKind says in plain words what an error kind means, for calls whose
 // record has no message of its own (older runs, and replies the planner
 // refused, which are never stored because a parse error can quote them).

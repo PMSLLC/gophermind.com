@@ -39,6 +39,9 @@ type BriefState struct {
 	// CallErrors are the latest model calls that did not succeed, newest
 	// first, each with what went wrong. Never any prompt or reply text.
 	CallErrors []BriefCallError `json:"call_errors"`
+	// StopReason is why the planner stopped, in its own words; empty when it
+	// did not stop on an error.
+	StopReason string `json:"stop_reason"`
 	// Progress is how far the current step has got; nil when no step is open.
 	Progress *BriefProgress `json:"progress"`
 }
@@ -335,6 +338,7 @@ func BuildBriefState(root, id string, rec *briefRecord, active bool, logText str
 	st.Problems = problemsOf(st.Nodes)
 	st.Stages, st.SlowCalls = readCalls(dir)
 	st.CallErrors = readCallErrors(dir)
+	st.StopReason = readStopReason(dir)
 	st.WaveChecks, st.Repairs = waveChecks(dir, st.Run, st.Nodes)
 
 	if b, err := readSmallFile(filepath.Join(dir, "UNDERSTANDING.md"), maxUnderstandingBytes); err == nil {

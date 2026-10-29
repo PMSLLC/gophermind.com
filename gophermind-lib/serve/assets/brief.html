@@ -32,6 +32,10 @@
 
 <div id="callerrs" hidden>
   <h2>Errors</h2>
+  <div id="stopreason" hidden>
+    <p class="err">Why the run stopped</p>
+    <div class="callmsg" id="stopreasontext"></div>
+  </div>
   <p class="meta" id="callerrsnote"></p>
   <ul id="callerrlist" class="problems"></ul>
 </div>
@@ -231,11 +235,14 @@ function renderProblems(s){
 // renderCallErrors lists the latest model calls that did not succeed, newest
 // first, each with what went wrong: the model server's own message or a plain
 // description. The text is shown as text, never as markup.
-function renderCallErrors(errs){
+function renderCallErrors(errs, stopReason){
   const box = $('callerrs');
   const ul = $('callerrlist');
   ul.textContent = '';
-  box.hidden = !errs.length;
+  box.hidden = !errs.length && !stopReason;
+  $('stopreason').hidden = !stopReason;
+  $('stopreasontext').textContent = stopReason || '';
+  $('callerrsnote').hidden = !errs.length;
   if (!errs.length) return;
   $('callerrsnote').textContent = 'The latest ' + errs.length + ' model call' + (errs.length === 1 ? '' : 's') +
     ' that did not succeed, newest first. A call can fail because the model server refused it, did not answer, or gave a reply the planner could not use.';
@@ -521,7 +528,7 @@ function kick(){ if (es) return; clearTimeout(timer); timer = setTimeout(refresh
 function show(s){
   $('load').textContent = '';
   renderHead(s.run);
-  renderCallErrors(s.call_errors || []);
+  renderCallErrors(s.call_errors || [], s.stop_reason || '');
   renderProblems(s);
   renderTree(s.nodes);
   renderProgress(s.progress);

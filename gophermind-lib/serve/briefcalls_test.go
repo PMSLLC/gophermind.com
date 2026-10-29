@@ -141,3 +141,27 @@ func TestReadCallErrorsKeepsOnlyTheLatest(t *testing.T) {
 		t.Errorf("%d errors kept, want %d", len(got), maxCallErrors)
 	}
 }
+
+func TestReadStopReasonQuotesThePlannersOwnMessage(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "_state"), 0o755)
+	os.WriteFile(filepath.Join(dir, "_state", "planner_error.json"),
+		[]byte(`{"at":"2026-10-29T05:55:45Z","stage":"contract","text":"router: no model answered for tier strong: excluded; last parse error: contract outline is not a JSON object (syntax error at line 1, column 8604)"}`), 0o644)
+	got := readStopReason(dir)
+	if !strings.Contains(got, "contract") || !strings.Contains(got, "column 8604") {
+		t.Errorf("stop reason = %q", got)
+	}
+	if readStopReason(t.TempDir()) != "" {
+		t.Error("no planner_error.json should give an empty reason")
+	}
+}
+
+func TestReadStopReasonIsBounded(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "_state"), 0o755)
+	b, _ := json.Marshal(map[string]string{"stage": "contract", "text": strings.Repeat("x", 5000)})
+	os.WriteFile(filepath.Join(dir, "_state", "planner_error.json"), b, 0o644)
+	if got := readStopReason(dir); len(got) > 900 {
+		t.Errorf("stop reason is %d bytes, want it bounded", len(got))
+	}
+}
