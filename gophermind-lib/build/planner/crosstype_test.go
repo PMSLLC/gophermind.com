@@ -59,3 +59,36 @@ func TestCrossPackageTypeFieldsExportedWhenAlreadyQualified(t *testing.T) {
 		t.Errorf("refused: %v", err)
 	}
 }
+
+// The coverage fill step added a function after the type had been exported,
+// and wrote the old unexported spelling.
+func TestOldSpellingOfAnExportedTypeIsRepaired(t *testing.T) {
+	doc := map[string]any{
+		"module": "example.com/slugify",
+		"types":  []any{map[string]any{"id": "slug-config", "package": "internal/slug", "decl": "type SlugConfig struct {\n\tMaxLen int\n}\n"}},
+		"functions": []any{
+			map[string]any{"id": "fn-process-files", "package": "internal/cli", "signature": "func processFiles(files []string, cfg slugConfig, stdout io.Writer) error", "uses": []any{}},
+			map[string]any{"id": "fn-check", "package": "internal/slug", "signature": "func check(cfg slugConfig) error", "uses": []any{}},
+		},
+	}
+	qualifyCrossPackageTypes(doc)
+	fns := objects(doc["functions"])
+	if s := fns[0]["signature"]; s != "func processFiles(files []string, cfg slug.SlugConfig, stdout io.Writer) error" {
+		t.Errorf("cli signature = %v", s)
+	}
+	if s := fns[1]["signature"]; s != "func check(cfg SlugConfig) error" {
+		t.Errorf("slug signature = %v", s)
+	}
+}
+
+func TestOldSpellingLeavesParameterNamesAlone(t *testing.T) {
+	doc := map[string]any{
+		"module":    "example.com/x",
+		"types":     []any{map[string]any{"id": "config", "package": "internal/conf", "decl": "type Config struct{ N int }\n"}},
+		"functions": []any{map[string]any{"id": "fn-load", "package": "internal/conf", "signature": "func load(config Config) (Config, error)", "uses": []any{}}},
+	}
+	qualifyCrossPackageTypes(doc)
+	if s := objects(doc["functions"])[0]["signature"]; s != "func load(config Config) (Config, error)" {
+		t.Errorf("signature = %v", s)
+	}
+}

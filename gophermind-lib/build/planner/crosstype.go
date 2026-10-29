@@ -37,6 +37,25 @@ func qualifyCrossPackageTypes(doc map[string]any) []string {
 			ownNames[dir][n] = true
 		}
 	}
+	// An exported type may still be written with its old unexported spelling
+	// (a step that ran after the export used the name it was first given).
+	for name, ref := range byName {
+		low := unexportName(name)
+		if low == name || byName[low].t != nil {
+			continue
+		}
+		// Only where a type stands: followed by a comma, a closing parenthesis
+		// or the end, never a parameter name (config Config).
+		re := regexp.MustCompile(`(^|[^.\w])` + regexp.QuoteMeta(low) + `(\s*[,)]|\s*$)`)
+		for _, f := range objects(doc["functions"]) {
+			pkg, _ := f["package"].(string)
+			if stripModule(module, pkg) == ref.dir || !ownNames[stripModule(module, pkg)][low] {
+				if sig := strField(f, "signature"); re.MatchString(sig) {
+					f["signature"] = re.ReplaceAllString(sig, "${1}"+name+"${2}")
+				}
+			}
+		}
+	}
 	var changed []string
 	for _, f := range objects(doc["functions"]) {
 		pkg, _ := f["package"].(string)
@@ -133,6 +152,12 @@ func bareIdentRE(name string) *regexp.Regexp {
 	return regexp.MustCompile(`(^|[^.\w])` + regexp.QuoteMeta(name) + `\b`)
 }
 
+func unexportName(name string) string {
+	r := []rune(name)
+	r[0] = unicode.ToLower(r[0])
+	return string(r)
+}
+
 func exportName(name string) string {
 	r := []rune(name)
 	r[0] = unicode.ToUpper(r[0])
@@ -146,8 +171,8 @@ func renameTypeEverywhere(doc map[string]any, module, dir string, t map[string]a
 	t["decl"] = re.ReplaceAllString(strField(t, "decl"), "${1}"+to)
 	for _, f := range objects(doc["functions"]) {
 		pkg, _ := f["package"].(string)
-		if stripModule(module, pkg) == dir {
-			f["signature"] = re.ReplaceAllString(strField(f, "signature"), "${1}"+to)
+		if sig := strField(f, "signature"); stripModule(module, pkg) == dir && re.MatchString(sig) {
+			f["signature"] = re.ReplaceAllString(sig, "${1}"+to)
 		}
 	}
 }
