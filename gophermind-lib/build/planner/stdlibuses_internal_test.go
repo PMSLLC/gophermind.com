@@ -62,3 +62,20 @@ func TestDropStdlibUsesLeavesOtherIDsAlone(t *testing.T) {
 		t.Errorf("uses = %v", got)
 	}
 }
+
+// The model also lists identifiers from those packages as functions: io.Writer
+// as fn-io-writer, os.File as fn-os-file. The repair step then asked it to
+// write a function with that id, and the signature it invented did not parse.
+func TestStandardLibraryIdentifiersAreDroppedFromUses(t *testing.T) {
+	doc := fnDoc(
+		fn("fn-a", "fn-io-writer", "fn-os-file", "io-reader", "fn-bufio-scanner", "fn-strings-builder", "fn-errors-new", "fn-b", "fn-io-handler"),
+		fn("fn-b"),
+	)
+	dropped := dropStdlibUses(doc)
+	if want := []string{"fn-io-writer", "fn-os-file", "io-reader", "fn-bufio-scanner", "fn-strings-builder", "fn-errors-new"}; !reflect.DeepEqual(dropped, want) {
+		t.Errorf("dropped = %v, want %v", dropped, want)
+	}
+	if got := strList(objects(doc["functions"])[0]["uses"]); !reflect.DeepEqual(got, []string{"fn-b", "fn-io-handler"}) {
+		t.Errorf("uses = %v: fn-io-handler is not a standard library name and must stay for the repair step", got)
+	}
+}

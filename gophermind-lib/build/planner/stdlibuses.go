@@ -18,10 +18,33 @@ var stdlibPackages = func() map[string]bool {
 	return m
 }()
 
-// isStdlibName reports whether id names a standard library package: the
-// package path in id form, with or without the fn- prefix.
+// stdlibIdents are the exported types and functions of the standard library a
+// model is likely to list as if they were contract functions, written as an id:
+// io.Writer is "io-writer". Only well-known names are listed: an id that merely
+// starts with a package name (fn-io-handler) may be a real function.
+var stdlibIdents = func() map[string]bool {
+	m := map[string]bool{}
+	for _, p := range strings.Fields(`io.Reader io.Writer io.ReadCloser io.WriteCloser io.ReadWriter io.Closer io.EOF
+		io.Copy io.ReadAll io.Discard os.File os.Args os.Exit os.Stdin os.Stdout os.Stderr os.Open os.Create os.ReadFile
+		os.WriteFile os.Getenv os.Stat bufio.Reader bufio.Writer bufio.Scanner bufio.NewReader bufio.NewScanner
+		bufio.NewWriter strings.Builder strings.Reader strings.NewReader strings.Split strings.Join strings.TrimSpace
+		bytes.Buffer bytes.NewBuffer bytes.NewReader errors.New errors.Is errors.As errors.Error fmt.Errorf fmt.Sprintf
+		fmt.Fprintf fmt.Println fmt.Fprintln fmt.Sprint strconv.Atoi strconv.Itoa strconv.ParseInt strconv.ParseFloat
+		strconv.FormatInt time.Time time.Duration time.Now time.Sleep context.Context sync.Mutex sync.WaitGroup
+		sync.RWMutex http.Client http.Request http.Handler http.HandlerFunc http.ResponseWriter http.Server
+		json.Marshal json.Unmarshal json.NewDecoder json.NewEncoder regexp.Regexp regexp.MustCompile unicode.IsLetter
+		unicode.IsDigit unicode.IsSpace flag.Parse flag.String flag.Int flag.FlagSet sort.Slice sort.Strings log.Printf
+		log.Fatal testing.T testing.B`) {
+		m[strings.ToLower(strings.ReplaceAll(p, ".", "-"))] = true
+	}
+	return m
+}()
+
+// isStdlibName reports whether id names a standard library package or one of
+// its well-known identifiers, in id form, with or without the fn- prefix.
 func isStdlibName(id string) bool {
-	return stdlibPackages[strings.TrimPrefix(strings.ToLower(id), "fn-")]
+	id = strings.TrimPrefix(strings.ToLower(id), "fn-")
+	return stdlibPackages[id] || stdlibIdents[id]
 }
 
 // dropStdlibUses removes from every function's and type's uses the entries that
