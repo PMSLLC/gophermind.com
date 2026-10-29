@@ -730,7 +730,7 @@ func (rc *runCtx) acceptance(ctx context.Context) (accResult, *stopError, error)
 		ids, accFailed := rc.failedIDs(p, failed)
 		var mapped, unmapped []string
 		for _, id := range ids {
-			if len(rc.attribute(failed[id])) == 0 {
+			if len(rc.attributeFor(id, failed[id])) == 0 {
 				unmapped = append(unmapped, id)
 			} else {
 				mapped = append(mapped, id)
@@ -738,6 +738,12 @@ func (rc *runCtx) acceptance(ctx context.Context) (accResult, *stopError, error)
 		}
 		// An unmapped failure stays failed and is reported, but only ends the
 		// run when nothing is left that a repair could still fix.
+		if len(mapped) == 0 && !accFailed {
+			// Only constraint checks that no leaf owns failed: nothing a repair
+			// could change, so they are reported and the run is not failed for them.
+			rc.emit("constraint_unverified", "", "constraint checks failed that no leaf owns, so none was repaired: "+strings.Join(unmapped, ", "))
+			return acc, nil, nil
+		}
 		if len(mapped) == 0 {
 			return acc, &stopError{Status: "failed", Reason: "acceptance_unmapped",
 				Message: "executor: acceptance failed for " + strings.Join(unmapped, ", ") + ", which no leaf is mapped to, so no repair was tried"}, nil
@@ -792,6 +798,29 @@ func (rc *runCtx) attribute(b failedBullet) []string {
 	return ids
 }
 
+// attributeFor is attribute for the failing requirement id. The coverage step
+// maps the feature requirements to leaves and often leaves the acceptance bullets
+// empty, so one that tests the program as a whole had no leaf and no repair was
+// tried although the program was wrong. An acceptance bullet nobody owns falls
+// back to every leaf. A constraint nobody owns does not: it is usually a check
+// that no code change can satisfy (go 1.22 against the go.mod the harness wrote).
+func (rc *runCtx) attributeFor(id string, b failedBullet) []string {
+	if ids := rc.attribute(b); len(ids) > 0 {
+		return ids
+	}
+	for _, pb := range rc.accept.acceptance {
+		if pb.req.ID == id {
+			all := make([]string, 0, len(rc.plan.Leaves))
+			for _, l := range rc.plan.Leaves {
+				all = append(all, l.ID)
+			}
+			sort.Strings(all)
+			return all
+		}
+	}
+	return nil
+}
+
 // acceptRepair is one acceptance repair round (spec 9 Failure): every leaf that
 // owns a failing bullet is reopened and rebuilt with only its own bullets'
 // capped output as the previous failure, then the last wave is checked again.
@@ -799,7 +828,7 @@ func (rc *runCtx) acceptRepair(ctx context.Context, round int, ids []string, fai
 	byNode := map[string][]packer.Failure{}
 	var lost []string
 	for _, id := range ids {
-		nodes := rc.attribute(failed[id])
+		nodes := rc.attributeFor(id, failed[id])
 		if len(nodes) == 0 {
 			lost = append(lost, id)
 		}
