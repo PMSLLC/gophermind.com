@@ -12,7 +12,8 @@ func TestNudgeSyntax(t *testing.T) {
 	extraBrace := "package cli\n\nimport \"testing\"\n\nfunc TestX(t *testing.T) {\n\tcases := []struct{ a int }{\n\t\t{\n\t\t\ta: 1,\n\t\t},\n\t\t},\n\t\t{\n\t\t\ta: 2,\n\t\t},\n\t}\n\t_ = cases\n}\n"
 	commaClosed := "package cli\n\nimport \"testing\"\n\nfunc TestX(t *testing.T) {\n\ttests := []struct {\n\t\tname string\n\t}{\n\t\t{\n\t\t\tname: \"a\",\n\t\t},\n\t\t},\n\n\tfor _, tt := range tests {\n\t\t_ = tt\n\t}\n}\n"
 	literalNewline := "package cli\n\nimport \"testing\"\n\nfunc TestX(t *testing.T) {\n\tcases := []struct{ a int }{\n\t\t{\n\t\t\ta: 1,\n\t\t},\\n\t\t{\n\t\t\ta: 2,\n\t\t},\n\t}\n\t_ = cases\n}\n"
-	for name, src := range map[string]string{"literal newline": literalNewline, "comma closed": commaClosed, "unclosed": unclosed, "inner quotes": innerQuotes, "stray quote": strayQuote, "extra brace": extraBrace} {
+	unclosedRun := "package cli\n\nimport \"testing\"\n\nfunc TestX(t *testing.T) {\n\tfor _, n := range []string{\"a\"} {\n\t\tt.Run(n, func(t *testing.T) {\n\t\t\t_ = t\n\t\t}\n\t}\n}\n"
+	for name, src := range map[string]string{"unclosed run": unclosedRun, "literal newline": literalNewline, "comma closed": commaClosed, "unclosed": unclosed, "inner quotes": innerQuotes, "stray quote": strayQuote, "extra brace": extraBrace} {
 		got := nudgeSyntax(src)
 		if !parsesAsGo(got) {
 			t.Errorf("%s: not repaired:\n%s", name, got)

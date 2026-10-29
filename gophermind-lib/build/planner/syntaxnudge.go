@@ -98,6 +98,13 @@ func syntaxCandidates(src string, line int) []string {
 	// A closing brace missing just before the reported line.
 	ins := append(append(append([]string{}, lines[:i]...), indent+"}"), lines[i:]...)
 	out = append(out, join(ins))
+	// A function literal passed as an argument (t.Run) closed with "}"
+	// where ")" must follow.
+	if strings.TrimSpace(lines[i]) == "}" {
+		rep := append([]string{}, lines...)
+		rep[i] = indent + "})"
+		out = append(out, join(rep))
+	}
 	// A literal closed with "}," where its statement ends: "}" at the
 	// reported line's indent.
 	for j := i - 1; j >= 0 && j >= i-3; j-- {
