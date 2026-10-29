@@ -113,7 +113,7 @@ func TestPagesNeverAssignModelOutputAsHTML(t *testing.T) {
 }
 
 func TestPipelinePageAutoConnectsOnSession(t *testing.T) {
-	b, err := pipelineAssets.ReadFile("assets/pipeline.html")
+	b, err := pagesAssets.ReadFile("assets/pipeline.html")
 	if err != nil {
 		t.Fatal(err)
 	}

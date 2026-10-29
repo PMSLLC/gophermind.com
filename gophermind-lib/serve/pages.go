@@ -14,7 +14,7 @@ import (
 // gm.css is the one stylesheet; pageHandler inlines it and the navigation rail
 // into each page (the page's CSP allows inline styles and scripts only).
 //
-//go:embed assets/home.html assets/chat.html assets/briefs.html assets/brief_new.html assets/brief.html assets/gm.css assets/brief-spec.md
+//go:embed assets/home.html assets/chat.html assets/briefs.html assets/brief_new.html assets/brief.html assets/pipeline.html assets/gm.css assets/brief-spec.md
 var pagesAssets embed.FS
 
 // Markers a page carries where the shared parts go.
@@ -30,6 +30,7 @@ var pageNav = map[string]string{
 	"assets/brief.html":     "runs",
 	"assets/brief_new.html": "upload",
 	"assets/chat.html":      "chat",
+	"assets/pipeline.html":  "pipeline",
 }
 
 // navItems are the rail's links, in order.

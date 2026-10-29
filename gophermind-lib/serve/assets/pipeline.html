@@ -2,45 +2,43 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <!-- This page holds a bearer token that runs shell commands, so it is
      worth more than one layer. The page loads nothing external, which lets
      connect-src stay 'self': should an escaping bug ever appear here, an
      injected script would have nowhere to send what it steals. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'">
-<title>Task Runner - Live Pipeline</title>
+<title>Pipeline - GopherMind</title>
 <style>
+/*GM_CSS*/
   /* Layout, typography and color palette are carried over from
      docs/design/pipeline_view_mockup.html - the target this dashboard
      adapts. Additions below (marked) cover states the mockup never drew:
      escalated, a flagged-contract state, failed, unknown, plus the token/connection
      controls and the run report panel. */
+  /* The dashboard's own palette, mapped onto the shared stylesheet's light
+     theme (gm.css) so this page looks like the others. */
   :root{
-    --void:#0D1210;
-    --panel:#131A17;
-    --panel-2:#0F1512;
-    --line:#243029;
-    --ink:#E7ECE9;
-    --muted:#9EADA6;
-    --dim:#4B5A54;
-    --faint:#93A39C;
-    --phosphor:#6FDE8C;
-    --amber:#E8A33D;
-    --rust:#E2604B;
-    --teal:#4FB8B0;
+    --p-void:var(--bg);
+    --p-panel:var(--surface);
+    --p-panel-2:#f0f3f6;
+    --p-line:var(--line);
+    --p-ink:#14202b;
+    --p-muted:#5b6876;
+    --p-dim:#8b97a4;
+    --p-faint:#6b7886;
+    --p-phosphor:var(--ok);
+    --p-amber:var(--run);
+    --p-rust:var(--bad);
+    --p-teal:var(--accent);
   }
   *{box-sizing:border-box;}
-  html,body{margin:0;padding:0;height:100%;background:var(--void);}
-  body{
-    font-family:'IBM Plex Mono', ui-monospace, monospace;
-    color:var(--ink);
-    -webkit-font-smoothing:antialiased;
-  }
   .app{
     display:flex;
     flex-direction:column;
-    min-height:100vh;
-    padding:20px;
+    font-family:var(--mono);
+    color:var(--p-ink);
     gap:16px;
   }
 
@@ -49,54 +47,54 @@
     display:flex;
     align-items:baseline;
     justify-content:space-between;
-    border-bottom:1px solid var(--line);
+    border-bottom:1px solid var(--p-line);
     padding-bottom:14px;
     flex-wrap:wrap;
     gap:10px;
   }
   .masthead{
-    font-family:'Space Grotesk', sans-serif;
-    font-weight:600;
-    font-size:22px;
-    letter-spacing:0.2px;
+    font-family:var(--sans);
+    font-weight:650;
+    font-size:1.65rem;
+    letter-spacing:-0.02em;
   }
-  .masthead span{color:var(--muted); font-weight:500; font-size:14px; margin-left:10px; font-family:'IBM Plex Mono', monospace;}
+  .masthead span{color:var(--p-muted); font-weight:500; font-size:14px; margin-left:10px; font-family:var(--mono);}
   .runmeta{
     display:flex;
     align-items:center;
     gap:22px;
     font-size:13.5px;
-    color:var(--muted);
+    color:var(--p-muted);
     flex-wrap:wrap;
   }
-  .runmeta b{color:var(--ink); font-weight:600;}
+  .runmeta b{color:var(--p-ink); font-weight:600;}
 
   /* ---- token / connect (new: the mockup had no auth story) ---- */
   .connect{display:flex; align-items:center; gap:6px;}
   .connect input{
-    background:var(--panel-2);
-    border:1px solid var(--line);
-    color:var(--ink);
+    background:var(--p-panel-2);
+    border:1px solid var(--p-line);
+    color:var(--p-ink);
     font-family:inherit;
     font-size:13px;
     padding:5px 8px;
     width:170px;
   }
-  .connect input:focus{outline:1px solid var(--teal);}
+  .connect input:focus{outline:1px solid var(--p-teal);}
   .connect button{
     background:none;
-    border:1px solid var(--dim);
-    color:var(--muted);
+    border:1px solid var(--p-dim);
+    color:var(--p-muted);
     font-family:inherit;
     font-size:13px;
     padding:6px 10px;
     cursor:pointer;
   }
-  .connect button:hover{border-color:var(--teal); color:var(--teal);}
+  .connect button:hover{border-color:var(--p-teal); color:var(--p-teal);}
   .connstate{font-size:12px; letter-spacing:0.4px; text-transform:uppercase;}
-  .connstate.live{color:var(--phosphor);}
-  .connstate.off{color:var(--faint);}
-  .connstate.err{color:var(--rust);}
+  .connstate.live{color:var(--p-phosphor);}
+  .connstate.off{color:var(--p-faint);}
+  .connstate.err{color:var(--p-rust);}
 
   /* ---- layout ---- */
   .board{
@@ -120,14 +118,14 @@
   }
   .wave-label{
     font-size:12.5px;
-    color:var(--faint);
+    color:var(--p-faint);
     letter-spacing:0.5px;
     display:flex;
     align-items:center;
     gap:8px;
     margin-bottom:6px;
   }
-  .wave-label .rule{flex:1; height:1px; background:var(--line);}
+  .wave-label .rule{flex:1; height:1px; background:var(--p-line);}
   .wave-block{margin-bottom:4px;}
 
   .task-pill{
@@ -135,53 +133,53 @@
     align-items:center;
     gap:9px;
     padding:9px 10px;
-    border:1px solid var(--line);
-    background:var(--panel);
+    border:1px solid var(--p-line);
+    background:var(--p-panel);
     margin-bottom:6px;
     cursor:pointer;
     font-size:13.5px;
     transition:border-color 120ms ease, background 120ms ease;
   }
-  .task-pill:hover{border-color:var(--dim);}
+  .task-pill:hover{border-color:var(--p-dim);}
   .task-pill.active{
-    border-color:var(--teal);
-    background:#122320;
+    border-color:var(--p-teal);
+    background:rgba(0,128,154,0.08);
   }
   /* escalated and flagged-contract nodes get their own left-edge stripe on top of
      the dot below, so they read as distinct even at a glance across the
      whole wave board - not just up close. New, not in the mockup. */
-  .task-pill.pill-escalated{border-left:3px solid var(--rust);}
-  .task-pill.pill-contract-flagged{border-left:3px solid var(--amber);}
+  .task-pill.pill-escalated{border-left:3px solid var(--p-rust);}
+  .task-pill.pill-contract-flagged{border-left:3px solid var(--p-amber);}
 
   .dot{
     width:8px; height:8px; flex:0 0 8px;
     border-radius:50%;
-    background:var(--dim);
+    background:var(--p-dim);
   }
-  .dot.queued{background:var(--dim);}
-  .dot.running{background:var(--amber); box-shadow:0 0 0 3px rgba(232,163,61,0.15); animation:pulse 1.4s ease-in-out infinite;}
-  .dot.verified{background:var(--phosphor);}
-  .dot.revisit{background:var(--rust); box-shadow:0 0 0 3px rgba(226,96,75,0.18); animation:pulse 1.4s ease-in-out infinite;}
+  .dot.queued{background:var(--p-dim);}
+  .dot.running{background:var(--p-amber); box-shadow:0 0 0 3px rgba(232,163,61,0.15); animation:pulse 1.4s ease-in-out infinite;}
+  .dot.verified{background:var(--p-phosphor);}
+  .dot.revisit{background:var(--p-rust); box-shadow:0 0 0 3px rgba(226,96,75,0.18); animation:pulse 1.4s ease-in-out infinite;}
   /* New dot treatments: needs_revision (above, "revisit") is a normal part
      of the loop, but escalated and a flagged contract both mean a human is
      needed, so each gets a static (non-pulsing, nothing to wait out) dot
      with a second ring, visually louder than "revisit" rather than folded
      into it. failed and unknown are new too, for completeness. */
-  .dot.escalated{background:var(--rust); box-shadow:0 0 0 2px var(--void), 0 0 0 4px var(--rust);}
-  .dot.contract-flagged{background:var(--amber); box-shadow:0 0 0 2px var(--void), 0 0 0 4px var(--amber);}
-  .dot.failed{background:var(--rust);}
-  .dot.unknown{background:var(--dim); border:1px dashed var(--muted);}
+  .dot.escalated{background:var(--p-rust); box-shadow:0 0 0 2px var(--p-void), 0 0 0 4px var(--p-rust);}
+  .dot.contract-flagged{background:var(--p-amber); box-shadow:0 0 0 2px var(--p-void), 0 0 0 4px var(--p-amber);}
+  .dot.failed{background:var(--p-rust);}
+  .dot.unknown{background:var(--p-dim); border:1px dashed var(--p-muted);}
   @keyframes pulse{
     0%,100%{opacity:1;}
     50%{opacity:0.45;}
   }
-  .task-pill .tname{flex:1; color:var(--ink);}
-  .task-pill .tstatus{color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:0.4px;}
+  .task-pill .tname{flex:1; color:var(--p-ink);}
+  .task-pill .tstatus{color:var(--p-muted); font-size:12px; text-transform:uppercase; letter-spacing:0.4px;}
 
   /* ---- hero / detail panel ---- */
   .detail{
-    border:1px solid var(--line);
-    background:var(--panel);
+    border:1px solid var(--p-line);
+    background:var(--p-panel);
     display:flex;
     flex-direction:column;
     min-height:0;
@@ -189,12 +187,12 @@
   }
   .detail-head{
     padding:16px 18px;
-    border-bottom:1px solid var(--line);
-    background:var(--panel-2);
+    border-bottom:1px solid var(--p-line);
+    background:var(--p-panel-2);
   }
   .detail-head .tag{
     font-size:12px;
-    color:var(--faint);
+    color:var(--p-faint);
     letter-spacing:0.5px;
     margin-bottom:6px;
   }
@@ -202,7 +200,7 @@
     margin:0 0 10px 0;
     font-size:17px;
     font-weight:600;
-    font-family:'IBM Plex Mono', monospace;
+    font-family:var(--mono);
   }
   .spec-row{
     display:flex;
@@ -211,8 +209,8 @@
     font-size:13px;
   }
   .spec-row div{max-width:420px;}
-  .spec-row .k{color:var(--faint); font-size:12px; letter-spacing:0.4px; margin-bottom:3px;}
-  .spec-row .v{color:var(--muted); line-height:1.5;}
+  .spec-row .k{color:var(--p-faint); font-size:12px; letter-spacing:0.4px; margin-bottom:3px;}
+  .spec-row .v{color:var(--p-muted); line-height:1.5;}
 
   .log{
     flex:1;
@@ -227,94 +225,96 @@
     gap:12px;
     align-items:baseline;
     padding:6px 0;
-    border-bottom:1px solid var(--panel-2);
+    border-bottom:1px solid var(--p-panel-2);
   }
-  .log-line .idx{color:var(--faint);}
-  .log-line .model{color:var(--ink);}
-  .log-line .reason{color:var(--muted);}
+  .log-line .idx{color:var(--p-faint);}
+  .log-line .model{color:var(--p-ink);}
+  .log-line .reason{color:var(--p-muted);}
   .log-line .verdict{text-align:right; font-weight:600; letter-spacing:0.3px;}
-  .verdict.running{color:var(--amber);}
-  .verdict.pass{color:var(--phosphor);}
-  .verdict.fail{color:var(--rust);}
+  .verdict.running{color:var(--p-amber);}
+  .verdict.pass{color:var(--p-phosphor);}
+  .verdict.fail{color:var(--p-rust);}
 
   .revisit-block{
     margin-top:10px;
-    border:1px dashed var(--rust);
-    background:#1A100E;
+    border:1px dashed var(--p-rust);
+    background:var(--bad-bg);
     padding:12px 14px;
     font-size:13px;
-    color:#F0B7AC;
+    color:var(--bad);
   }
-  .revisit-block .k{color:var(--rust); font-size:12px; letter-spacing:0.4px; margin-bottom:5px; font-weight:600;}
+  .revisit-block .k{color:var(--p-rust); font-size:12px; letter-spacing:0.4px; margin-bottom:5px; font-weight:600;}
   .revisit-block .round{margin-top:8px;}
 
   .foot{
-    border-top:1px solid var(--line);
+    border-top:1px solid var(--p-line);
     padding:10px 18px;
     display:flex;
     justify-content:space-between;
     align-items:center;
-    background:var(--panel-2);
+    background:var(--p-panel-2);
   }
   .replay{
     background:none;
-    border:1px solid var(--dim);
-    color:var(--muted);
+    border:1px solid var(--p-dim);
+    color:var(--p-muted);
     font-family:inherit;
     font-size:13px;
     padding:6px 12px;
     cursor:pointer;
     letter-spacing:0.3px;
   }
-  .replay:hover{border-color:var(--teal); color:var(--teal);}
-  .foot .hint{font-size:12.5px; color:var(--faint);}
+  .replay:hover{border-color:var(--p-teal); color:var(--p-teal);}
+  .foot .hint{font-size:12.5px; color:var(--p-faint);}
 
   /* ---- run report panel (new: source spec section 5's "render it as a
      final Run Report in the dashboard") ---- */
   .report-overlay{
     position:fixed; inset:0;
-    background:rgba(6,9,8,0.75);
+    background:rgba(14,22,33,0.55);
     display:flex; align-items:flex-start; justify-content:center;
     padding:40px 16px;
     overflow-y:auto;
   }
   .report-panel{
-    background:var(--panel);
-    border:1px solid var(--line);
+    background:var(--p-panel);
+    border:1px solid var(--p-line);
     max-width:760px;
     width:100%;
   }
   .report-head{
     display:flex; justify-content:space-between; align-items:center;
     padding:14px 18px;
-    border-bottom:1px solid var(--line);
-    background:var(--panel-2);
+    border-bottom:1px solid var(--p-line);
+    background:var(--p-panel-2);
   }
   .report-head h2{margin:0; font-size:16px;}
   .report-body{padding:16px 18px; font-size:13.5px;}
   table.model-stats{width:100%; border-collapse:collapse; margin-bottom:16px;}
   table.model-stats th, table.model-stats td{
-    text-align:left; padding:6px 8px; border-bottom:1px solid var(--panel-2);
+    text-align:left; padding:6px 8px; border-bottom:1px solid var(--p-panel-2);
   }
-  table.model-stats th{color:var(--faint); font-size:12px; letter-spacing:0.4px; text-transform:uppercase;}
+  table.model-stats th{color:var(--p-faint); font-size:12px; letter-spacing:0.4px; text-transform:uppercase;}
   .close-report{
-    background:none; border:1px solid var(--dim); color:var(--muted);
+    background:none; border:1px solid var(--p-dim); color:var(--p-muted);
     font-family:inherit; font-size:13px; padding:5px 10px; cursor:pointer;
   }
-  .close-report:hover{border-color:var(--teal); color:var(--teal);}
+  .close-report:hover{border-color:var(--p-teal); color:var(--p-teal);}
   [hidden]{display:none!important;}
-  select{background:var(--panel); color:var(--ink); border:1px solid var(--line); font:inherit; padding:2px 4px;}
-  .artifact-link{color:var(--teal); cursor:pointer; text-decoration:underline;}
-  .check-output{white-space:pre-wrap; background:var(--void); border:1px solid var(--line); padding:8px; margin:6px 0; color:var(--muted); font-size:13px;}
+  select{background:var(--p-panel); color:var(--p-ink); border:1px solid var(--p-line); font:inherit; padding:2px 4px;}
+  .artifact-link{color:var(--p-teal); cursor:pointer; text-decoration:underline;}
+  .check-output{white-space:pre-wrap; background:var(--p-void); border:1px solid var(--p-line); padding:8px; margin:6px 0; color:var(--p-muted); font-size:13px;}
   .rpt-line{margin-bottom:8px;}
-  .rpt-note{color:var(--muted);}
+  .rpt-note{color:var(--p-muted);}
 </style>
 </head>
-<body>
-
+<body class="gm-pipeline">
+<div class="shell">
+<!--GM_RAIL-->
+<main class="main">
 <div class="app">
   <header>
-    <div class="masthead">TASK RUNNER<span>/ live pipeline</span></div>
+    <div class="masthead">Pipeline<span>live run view</span></div>
     <div class="runmeta">
       <div class="connect">
         <input id="tokenInput" type="password" placeholder="bearer token" autocomplete="off">
@@ -374,6 +374,9 @@
     </div>
     <div class="report-body" id="reportBody">-</div>
   </div>
+</div>
+
+</main>
 </div>
 
 <script>

@@ -441,3 +441,33 @@ func TestPipelineDashboardScriptParses(t *testing.T) {
 		t.Fatalf("node --check failed: %v\n%s", err, out)
 	}
 }
+
+// The pipeline page sits in the same shell as the other pages: the rail with
+// its links, Pipeline marked as the current one, and the shared stylesheet in
+// place of the page's own dark palette.
+func TestPipelinePageSharesTheNavigationRail(t *testing.T) {
+	t.Setenv("GOPHERMIND_SERVE_TOKEN", "t")
+	mux, err := NewMux(Deps{Pipeline: &PipelineDeps{Root: t.TempDir()}}, Options{})
+	if err != nil {
+		t.Fatalf("NewMux: %v", err)
+	}
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/pipeline")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	body := string(raw)
+	for _, want := range []string{`class="rail"`, `href="/app/briefs"`, `href="/pipeline" aria-current="page"`, `--bg:`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("GET /pipeline lacks %q", want)
+		}
+	}
+	for _, bad := range []string{"GM_CSS", "GM_RAIL", "--void"} {
+		if strings.Contains(body, bad) {
+			t.Errorf("GET /pipeline still contains %q", bad)
+		}
+	}
+}
