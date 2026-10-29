@@ -32,6 +32,7 @@ The test file is compiled against the contract's stubs before it is accepted. A 
 - import any package outside the standard library and this module,
 - reference any function or type not present in `dependency_signatures` or the contract,
 - share a reader or a writer between cases: an `io.Reader` (`strings.NewReader`, `bytes.Buffer`) is used up by its first read, so every case after the first would read nothing. Give each case its own reader, built inside the case or by a `func() io.Reader` field,
+- nest a struct type inside the table's case struct: give each expected value its own flat field (for example `wantMax int`, `wantFile string`, `wantErr bool`), so every case is one flat composite literal,
 - depend on ordering, timing, randomness, or the network. Fake `*http.Client` transports and `Store` implementations inline in the test file when needed.
 
 The test file is code only. No questions, no deliberation, and no comment block longer than a few lines; a file that is mostly comments is refused. To provoke an error that the inputs alone do not reach, provoke it with what the test controls: a test double defined in the test file (for example an `io.Writer` whose `Write` returns an error), a value the dependency rejects (for example `math.NaN()` in a float field for `encoding/json`), or an invalid argument value. If the dependency is a package-level function that cannot be replaced, pick an input that makes the real one fail. Never ask how to mock it.
