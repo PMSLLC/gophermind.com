@@ -1,6 +1,9 @@
 package planner
 
-import "path"
+import (
+	"path"
+	"strings"
+)
 
 // alignFunctionsToComponents gives a function the package of the component that
 // owns it, and moves its file into that package's folder (the base name is
@@ -38,4 +41,38 @@ func alignFunctionsToComponents(doc map[string]any) []string {
 		changed = append(changed, id)
 	}
 	return changed
+}
+
+// moveMainToEntryPoint moves each func main() that is not under cmd/ into the
+// first component whose package is under cmd/, with the file main.go in that
+// folder. A model put main in the cli component and left the entry-point
+// component empty: only a main function under cmd/ builds into a program, so
+// no acceptance command could run one. With no cmd/ component, or main already
+// under cmd/, nothing moves. It returns the ids it moved.
+func moveMainToEntryPoint(doc map[string]any) []string {
+	entryID, entryPkg := "", ""
+	for _, c := range objects(doc["components"]) {
+		if p, _ := c["package"].(string); strings.HasPrefix(path.Clean(p), "cmd/") {
+			entryID, _ = c["id"].(string)
+			entryPkg = path.Clean(p)
+			break
+		}
+	}
+	if entryID == "" {
+		return nil
+	}
+	var moved []string
+	for _, f := range objects(doc["functions"]) {
+		sig, _ := f["signature"].(string)
+		if strings.Join(strings.Fields(sig), " ") != "func main()" {
+			continue
+		}
+		if p, _ := f["package"].(string); strings.HasPrefix(path.Clean(p), "cmd/") {
+			continue
+		}
+		f["component"], f["package"], f["file"] = entryID, entryPkg, entryPkg+"/main.go"
+		id, _ := f["id"].(string)
+		moved = append(moved, id)
+	}
+	return moved
 }
