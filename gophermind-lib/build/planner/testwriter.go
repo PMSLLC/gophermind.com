@@ -526,36 +526,41 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	var droppedImports []string
 	var droppedComments int
 	cs := callSpec{jsonObject: true, schema: testwriteReplySchema, stage: "testwrite:" + id, taskType: "testwrite", nodeID: id, nodeClass: class, tier: p.tierFor(strField(d, "model_tier")), scope: router.ScopeNode, maxTokens: maxTokensTestwrite}
-	err = p.callAsking(ctx, r, cs, prompt, func(text string) error {
-		ts, src, droppedC, err := parseTestwriteCounted(StripReply(text), ct, pkg, funcName, c.Module, hookList(d), packageSet(c))
-		if err != nil {
-			return err
-		}
-		others := otherTestSources(r.repo, path.Dir(rel), id, st)
-		src, renamed, err := resolveSharedNames(src, strings.TrimPrefix(funcName, "Test"), others, stubSources(c, path.Dir(file)))
-		if err == errDeclaredName {
-			err = richDeclaredName(src, c, path.Dir(rel), err)
-		}
-		if err != nil {
-			return err
-		}
-		src, dropped := dropUnusedImports(src)
-		formatted, ferr := format.Source([]byte(src))
-		if ferr != nil {
-			return fmt.Errorf("test file cannot be formatted: %v", ferr)
-		}
-		src = string(formatted)
-		if err := compileCheckTestFile(c, rel, src, others); err != nil {
-			if errors.Is(err, errNoGo) {
-				p.noGoWarn.Do(func() { p.emit(events.KindWarning, cs.stage, id, err.Error()) })
-				tests, source, renamedHelpers, droppedImports, droppedComments = ts, src, renamed, dropped, droppedC
-				return nil
+	sig, _ := ct["signature"].(string)
+	if mt, msrc, ok := mainEntryTest(sig, file, funcName); ok {
+		tests, source = mt, msrc
+	} else {
+		err = p.callAsking(ctx, r, cs, prompt, func(text string) error {
+			ts, src, droppedC, err := parseTestwriteCounted(StripReply(text), ct, pkg, funcName, c.Module, hookList(d), packageSet(c))
+			if err != nil {
+				return err
 			}
-			return err
-		}
-		tests, source, renamedHelpers, droppedImports, droppedComments = ts, src, renamed, dropped, droppedC
-		return nil
-	})
+			others := otherTestSources(r.repo, path.Dir(rel), id, st)
+			src, renamed, err := resolveSharedNames(src, strings.TrimPrefix(funcName, "Test"), others, stubSources(c, path.Dir(file)))
+			if err == errDeclaredName {
+				err = richDeclaredName(src, c, path.Dir(rel), err)
+			}
+			if err != nil {
+				return err
+			}
+			src, dropped := dropUnusedImports(src)
+			formatted, ferr := format.Source([]byte(src))
+			if ferr != nil {
+				return fmt.Errorf("test file cannot be formatted: %v", ferr)
+			}
+			src = string(formatted)
+			if err := compileCheckTestFile(c, rel, src, others); err != nil {
+				if errors.Is(err, errNoGo) {
+					p.noGoWarn.Do(func() { p.emit(events.KindWarning, cs.stage, id, err.Error()) })
+					tests, source, renamedHelpers, droppedImports, droppedComments = ts, src, renamed, dropped, droppedC
+					return nil
+				}
+				return err
+			}
+			tests, source, renamedHelpers, droppedImports, droppedComments = ts, src, renamed, dropped, droppedC
+			return nil
+		})
+	}
 	if err != nil {
 		return writtenTests{}, err
 	}
