@@ -750,6 +750,9 @@ func parseTestwriteCounted(text string, ct map[string]any, pkg, funcName, module
 	_, _, why := internalTarget(sig)
 	var dropped int
 	reply.TestFile = fixTestPackageClause(reply.TestFile, pkg)
+	if module != "" {
+		reply.TestFile = dropSelfImport(reply.TestFile, path.Join(module, pkg))
+	}
 	reply.TestFile, dropped = dropLongComments(reply.TestFile)
 	if err := checkTestSourceIn(reply.TestFile, pkg, funcName, module, why, pkgs); err != nil {
 		return nil, "", 0, err
