@@ -3,7 +3,6 @@ spec_version: "2.0"
 id: gm-2026-09-29-003
 title: csvstat
 language: go
-repo: ~/src/csvstat
 base_branch: main
 landing: diff_only
 on_ambiguity: assume_and_document
@@ -72,7 +71,7 @@ Acceptance criteria:
 
 Packages:
 
-- `main` in the repository root: flag parsing and printing only.
+- `cmd/csvstat` (package `main`): flag parsing and printing only. Its binary is named `csvstat`.
 - `internal/stats`: reads records from an `io.Reader` and returns a `[]ColumnSummary`. No printing.
 - `internal/render`: turns a `[]ColumnSummary` into text or JSON.
 
@@ -115,7 +114,7 @@ ColumnSummary:
 - `go build ./...` succeeds.
 - `go vet ./...` reports nothing.
 - `go test ./...` passes.
-- `printf 'a,b\n1,x\n2,\n' | go run . -` prints two column blocks; `a` is `int` with `min` 1 and `max` 2, `b` is
+- `printf 'a,b\n1,x\n2,\n' | csvstat -` prints two column blocks; `a` is `int` with `min` 1 and `max` 2, `b` is
   `string` with one empty value.
-- `printf 'a\n1\n' | go run . --format json -` prints a JSON array with one object.
-- `go run . --format yaml x.csv` exits with code 2.
+- `printf 'a\n1\n' | csvstat --format json -` prints a JSON array with one object.
+- `csvstat --format yaml x.csv` exits with code 2.

@@ -3,7 +3,6 @@ spec_version: "2.0"
 id: gm-2026-09-29-004
 title: retryx
 language: go
-repo: ~/src/retryx
 base_branch: main
 work_branch: gm/retryx-lib
 landing: commit

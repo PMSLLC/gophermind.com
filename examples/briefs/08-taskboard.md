@@ -3,7 +3,6 @@ spec_version: "2.0"
 id: gm-2026-09-29-007
 title: taskboard
 language: go
-repo: ~/src/taskboard
 base_branch: main
 work_branch: gm/taskboard
 landing: pull_request
@@ -256,5 +255,5 @@ RFC 3339 text.
   reminder interval, and asserts exactly one email is sent, and none after a second tick.
 - A test reuses a refresh token twice and asserts every refresh token of that user is revoked.
 - A test asserts that a user who is not a member gets 404 (not 403) for a board they cannot see.
-- `go run ./cmd/taskboard` starts, and `curl -s localhost:8080/healthz` prints `ok`.
-- `go run ./cmd/tb --help` lists `login`, `boards`, `tasks`, `add`, `move`, and `watch`.
+- A test starts the server on a free port with an in-memory store and asserts that `GET /healthz` returns HTTP 200 with the body `ok`.
+- `tb --help` lists `login`, `boards`, `tasks`, `add`, `move`, and `watch`.

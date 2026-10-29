@@ -3,7 +3,6 @@ spec_version: "2.0"
 id: gm-2026-09-29-006
 title: ledger-sync
 language: go
-repo: ~/src/ledger-sync
 base_branch: main
 landing: commit
 on_ambiguity: assume_and_document

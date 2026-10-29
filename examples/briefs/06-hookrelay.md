@@ -3,7 +3,6 @@ spec_version: "2.0"
 id: gm-2026-09-29-005
 title: hookrelay
 language: go
-repo: ~/src/hookrelay
 base_branch: main
 landing: pull_request
 on_ambiguity: halt

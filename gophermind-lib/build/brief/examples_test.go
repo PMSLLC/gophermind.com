@@ -10,9 +10,8 @@ import (
 	"gophermind/gophermind-lib/build/brief"
 )
 
-// examplesDir is the folder the desktop app ships as its Examples. The short
-// starters (01 to 03) are plain text with no frontmatter; 04 and later are
-// complete v2 briefs.
+// examplesDir is the folder the desktop app ships as its Examples. Every file
+// in it is a complete v2 brief.
 const examplesDir = "../../../examples/briefs"
 
 // completeExamples parses every example that starts with a frontmatter block,
@@ -44,13 +43,13 @@ func completeExamples(t *testing.T) map[string]*brief.Brief {
 
 func TestCompleteExampleBriefsValidateWithoutWarnings(t *testing.T) {
 	ex := completeExamples(t)
-	if len(ex) != 5 {
+	if len(ex) != 8 {
 		names := make([]string, 0, len(ex))
 		for n := range ex {
 			names = append(names, n)
 		}
 		sort.Strings(names)
-		t.Fatalf("expected 5 complete example briefs, found %d: %v", len(ex), names)
+		t.Fatalf("expected 8 complete example briefs, found %d: %v", len(ex), names)
 	}
 	ids := map[string]string{}
 	for name, b := range ex {

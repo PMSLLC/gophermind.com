@@ -1,44 +1,40 @@
 # Example briefs
 
-Two kinds of example live here. Use the short ones to try the interview, and the
-longer ones to see what a complete brief looks like.
+Eight complete briefs, each a working example of the brief format. Every one is
+for a **Go** project (the only language the loader accepts today), validates with
+no warnings, and uses no real account, key or address. The full format rules are
+in `gophermind-lib/serve/assets/brief-spec.md`, which the server also serves at
+`/app/brief-spec.md`.
 
-## Starters (01 to 03): short and incomplete on purpose
+## Try one
 
-A paragraph or two each. Pick one, click **Start Breakdown** in the Pipeline
-panel, and the model asks you questions to fill the gaps before it writes
-`SPEC.md`, `ROADMAP.md`, and `assignments.json` into a `.planning/` directory.
-These files have no special format: **Pick Brief...** reads any plain-text file. The Pipeline panel's live view shows a `gophermind brief` run (`gophermind project <brief>`), not these planning files.
+1. Pick a brief. `04-csvstat` is the smallest to plan; `01-linkcheck` and `03-cliphist` are a good first run.
+2. Check it: `gophermind brief validate examples/briefs/01-linkcheck.md`. An invalid brief exits with code 2 and names the field.
+3. Upload it on the web page (`/app/briefs/new`). The briefs carry no `repo` line, because the server builds each run in a repository of its own.
+4. To plan on your own machine instead, add `repo: /path/to/an-empty-git-repo` to the frontmatter and run `gophermind brief plan <file>`. Only a local plan reads that line.
 
-- `01-cli-tool.md`: a small command-line utility
-- `02-rest-api.md`: a small backend service
-- `03-menu-bar-app.md`: a small native macOS utility
+Change the `id` to a free one before uploading: a second upload with the same id is refused.
 
-## Complete briefs (04 to 08): the brief format
+## The set
 
-Each one starts with a YAML block that says how the run should behave, followed by
-seven required sections: Overview, Features, Architecture, Data, Constraints, Out of
-scope, and Acceptance. Check any of them (or your own) with:
-
-```sh
-gophermind brief validate 06-hookrelay.md
-```
-
-An invalid brief exits with code 2 and names the field. All five here validate
-with no warnings. Every brief in this format is for a **Go** project (the only
-language the loader accepts today), and none uses a real account, key, or address.
-
-They are ordered by size, and between them they use every option the format has:
-
-| Brief | What it builds | Size | Landing | On unclear | Approval between waves | Secrets | Env settings | Hosts | Revisions |
+| Brief | What it builds | Features | Landing | On unclear | Approval between waves | Secrets | Env settings | Hosts | Revisions |
 |---|---|---|---|---|---|---|---|---|---|
-| `04-csvstat` | command-line CSV summarizer | 2 features | `diff_only` | `assume_and_document` | off | 0 | 1, with a default | 2, module downloads | 0 |
-| `05-retryx` | retry library, no program at all | 3 features | `commit` on its own branch | `halt` | off, set explicitly | 0 | 0 | 2 | 1 |
-| `06-hookrelay` | signed-webhook relay service | 4 features | `pull_request` | `halt` | on | 2 | 4, all with defaults | 3, one allowed to fail | 2 |
-| `07-ledger-sync` | batch data pipeline into SQLite | 5 features | `commit` | `assume_and_document` | off | 1 | 4, all with defaults | 4, one wildcard host allowed to fail | 3 |
-| `08-taskboard` | API, live updates, background worker, and a CLI client | 7 features | `pull_request` on its own branch | `halt` | on | 3 | 8, one with no default | 3, a wildcard host allowed to fail | 2 |
+| `01-linkcheck` | link checker for Markdown and HTML | 5 | `commit` | `assume_and_document` | off | 0 | 0 | 2, module downloads | default |
+| `02-notes-api` | in-memory notes REST service | 6 | `pull_request` on its own branch | `halt` | on | 0 | 1, with a default | 0 | default |
+| `03-cliphist` | clipboard history store and CLI | 5 | `diff_only` | `assume_and_document` | off | 0 | 2, with defaults | 0 | default |
+| `04-csvstat` | command-line CSV summarizer | 2 | `diff_only` | `assume_and_document` | off | 0 | 1, with a default | 2 | 0 |
+| `05-retryx` | retry library, no program at all | 3 | `commit` on its own branch | `halt` | off, set explicitly | 0 | 0 | 2 | 1 |
+| `06-hookrelay` | signed-webhook relay service | 4 | `pull_request` | `halt` | on | 2 | 4, all with defaults | 3, one allowed to fail | 2 |
+| `07-ledger-sync` | batch data pipeline into SQLite | 5 | `commit` | `assume_and_document` | off | 1 | 4, all with defaults | 4, one wildcard host allowed to fail | 3 |
+| `08-taskboard` | API, live updates, background worker, and a CLI client | 7 | `pull_request` on its own branch | `halt` | on | 3 | 8, one with no default | 3, a wildcard host allowed to fail | 2 |
 
-What the options mean, in the order they appear in the block:
+Between them they use every option the format has. A test
+(`gophermind-lib/build/brief/examples_test.go`) parses every brief here and fails
+if one stops validating or if the set stops covering an option.
+
+## What the options mean
+
+In the order they appear in the frontmatter:
 
 - `landing`: `diff_only` stops at a patch, `commit` commits each verified task, `pull_request` pushes a branch and opens one.
 - `on_ambiguity`: `halt` stops and asks; `assume_and_document` picks the conservative option and records it on the task.
@@ -49,5 +45,18 @@ What the options mean, in the order they appear in the block:
 - `network`: the hosts the build may reach; `critical: true` fails the task when a request fails, and `*.example.com` matches a whole domain.
 - `budget`: the largest prompt for one task, and how many rewrite rounds a failed task gets.
 
-A test (`gophermind-lib/build/brief/examples_test.go`) parses every complete
-brief here and fails if one stops validating or if the set stops covering an option.
+## Why they are written the way they are
+
+Each brief follows the practices in section 5 of the spec, which come from briefs that failed to build:
+
+- The program's `main` is in `cmd/<name>/`, and acceptance commands run the built binary by name, never `go run`.
+- Input and output go through `io.Reader` and `io.Writer`; tests are table driven and never touch the network or real files.
+- Every boundary a test will assert has an exact answer: empty input, out of range, malformed, over the limit.
+- Output text, flag names and exit codes are written out in full.
+
+## Test fixtures, not examples
+
+These briefs sit next to the code that tests them and are not shipped:
+`gophermind-lib/build/planner/testdata/` (`greeter`, `csvstat-cli`),
+`gophermind-lib/build/executor/testdata/greeter/`, and `gophermind-lib/build/testdata/`
+(`example`, and the 750-line AI Venture Studio brief).
