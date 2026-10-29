@@ -13,7 +13,7 @@ import (
 // examplesDir is the folder the desktop app ships as its Examples. The short
 // starters (01 to 03) are plain text with no frontmatter; 04 and later are
 // complete v2 briefs.
-const examplesDir = "../../../gophermind-osx/examples/briefs"
+const examplesDir = "../../../examples/briefs"
 
 // completeExamples parses every example that starts with a frontmatter block,
 // keyed by file name. A brief that no longer parses fails the calling test.

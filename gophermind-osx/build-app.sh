@@ -57,7 +57,8 @@ cp build/gophermind-server "${RES_DIR}/gophermind-server"
 chmod 755 "${RES_DIR}/gophermind-server"
 
 # --- Bundle example briefs so the File > Examples menu item finds them ---
-cp -R examples "${RES_DIR}/examples"
+mkdir -p "${RES_DIR}/examples"
+cp -R ../examples/briefs "${RES_DIR}/examples/briefs"
 
 # --- Copy icon ---
 if [ ! -f iconfile.icns ]; then

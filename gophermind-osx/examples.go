@@ -1,5 +1,5 @@
 // This file backs the File menu's "Examples" item: a handful of sample
-// brief files (gophermind-osx/examples/briefs/), the format the Pipeline
+// brief files (examples/briefs/ at the repo root), the format the Pipeline
 // panel's "Pick Brief..." reads, for someone who has never used the
 // pipeline feature and doesn't know what to feed it.
 package main
@@ -14,9 +14,9 @@ import (
 // findExamplesDir locates the examples/briefs directory, same search
 // order and same bundle-vs-dev-layout reasoning as findServerBinary:
 // GOPHERMIND_EXAMPLES override, then the .app bundle's Resources
-// directory (build-app.sh copies examples/ there, sibling to
-// gophermind-server -- see that script's own copy step), then the bare
-// dev-checkout path relative to the current directory (running
+// directory (build-app.sh copies examples/briefs there, sibling to
+// gophermind-server -- see that script's own copy step), then the repo-root
+// path relative to the current directory (running
 // `./gophermind-osx` or `go run .` from within this module, the same way
 // findServerBinary's dev-layout fallback assumes for its own sibling
 // module).
@@ -38,8 +38,8 @@ func findExamplesDir() string {
 			}
 		}
 	}
-	if info, err := os.Stat("examples/briefs"); err == nil && info.IsDir() {
-		return "examples/briefs"
+	if info, err := os.Stat("../examples/briefs"); err == nil && info.IsDir() {
+		return "../examples/briefs"
 	}
 	return ""
 }
