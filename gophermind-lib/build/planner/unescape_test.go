@@ -32,3 +32,19 @@ func TestPlaceholderTestFileRefused(t *testing.T) {
 		t.Fatal("real source refused")
 	}
 }
+
+func TestQuoteBareImports(t *testing.T) {
+	broken := "package cli\n\nimport (\n\t\"testing\"\n\n\texample.com/slugify/internal/slug\n\tstr \"strings\"\n)\n\nvar _ = slug.Make\nvar _ = str.ToUpper\nvar _ testing.T\n"
+	got := quoteBareImports(broken)
+	if !strings.Contains(got, "\t\"example.com/slugify/internal/slug\"\n") || !parsesAsGo(got) {
+		t.Fatalf("not repaired:\n%s", got)
+	}
+	single := "package cli\n\nimport example.com/x/y\n\nvar _ = y.Z\n"
+	if got := quoteBareImports(single); !strings.Contains(got, "import \"example.com/x/y\"") {
+		t.Errorf("single import not repaired:\n%s", got)
+	}
+	ok := "package cli\n\nimport \"testing\"\n\nvar _ testing.T\n"
+	if quoteBareImports(ok) != ok {
+		t.Error("valid source was changed")
+	}
+}

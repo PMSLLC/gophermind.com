@@ -96,7 +96,7 @@ func (p *Planner) writeAcceptanceTest(ctx context.Context, r *run, c *contract.C
 		if err := checkNotPlaceholder(rep.TestFile); err != nil {
 			return err
 		}
-		src, err := checkAcceptanceSource(unescapeQuotedSource(rep.TestFile), b)
+		src, err := checkAcceptanceSource(quoteBareImports(unescapeQuotedSource(rep.TestFile)), b)
 		if err != nil {
 			return err
 		}
