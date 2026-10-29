@@ -271,6 +271,38 @@ func scalarsToText(m map[string]any, keys ...string) bool {
 	return changed
 }
 
+// coerceToText makes each of the given fields of m text: a number or boolean is
+// its text, and a list is its elements joined with ", " (["a", "b"] is "a, b").
+// A string, a missing field and any other shape are left as they are. It
+// reports whether it changed any.
+func coerceToText(m map[string]any, keys ...string) bool {
+	changed := scalarsToText(m, keys...)
+	for _, k := range keys {
+		arr, ok := m[k].([]any)
+		if !ok {
+			continue
+		}
+		parts := make([]string, 0, len(arr))
+		for _, x := range arr {
+			switch v := x.(type) {
+			case string:
+				parts = append(parts, v)
+			case json.Number:
+				parts = append(parts, v.String())
+			case float64:
+				parts = append(parts, strconv.FormatFloat(v, 'f', -1, 64))
+			case bool:
+				parts = append(parts, strconv.FormatBool(v))
+			default:
+				parts = append(parts, fmt.Sprint(v))
+			}
+		}
+		m[k] = strings.Join(parts, ", ")
+		changed = true
+	}
+	return changed
+}
+
 func hasKey(m map[string]any, k string) bool { _, ok := m[k]; return ok }
 
 func orEmpty(v any) any {

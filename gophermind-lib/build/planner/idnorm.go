@@ -222,6 +222,18 @@ func normalizeReply(doc map[string]any, text string, kind replyKind) (string, id
 		}
 	}
 
+	// An integration test's fields are text in the schema; a list of arguments or
+	// an exit code written as a number is read as text.
+	for _, o := range lists["components"] {
+		if tests, ok := o["integration_tests"].([]any); ok {
+			for _, x := range tests {
+				if m, ok := x.(map[string]any); ok && coerceToText(m, "name", "given", "expect", "command") {
+					changed = true
+				}
+			}
+		}
+	}
+
 	// Signatures: a type id written for a Go type name is replaced by the name.
 	if kind != replyOutline {
 		if n, ex := normalizeSigTypeIDs(doc, lists["types"], lists["functions"]); n > 0 {
