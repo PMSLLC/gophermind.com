@@ -55,8 +55,12 @@ type Call struct {
 	ResponseSHA256   string
 	DurationMS       int64
 
-	Outcome     Outcome
-	ErrorKind   string
+	Outcome   Outcome
+	ErrorKind string
+	// ErrorDetail is one short line saying what went wrong with a failed call:
+	// the provider's own error message or a fixed description. It never holds
+	// prompt or reply text.
+	ErrorDetail string
 	RetryAfterS int
 }
 

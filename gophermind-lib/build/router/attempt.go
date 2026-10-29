@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"gophermind/gophermind-lib/build/events"
@@ -64,7 +65,7 @@ func (r *Router) attempt(ctx context.Context, info CallInfo, req provider.Reques
 
 		// The caller gave up: record it and stop the whole walk.
 		if ctx.Err() != nil {
-			row.Outcome, row.ErrorKind = ledger.OutcomeError, "cancelled"
+			row.Outcome, row.ErrorKind, row.ErrorDetail = ledger.OutcomeError, "cancelled", "the run was stopped before the model answered"
 			r.record(ctx, row)
 			return Result{}, EntryReason{}, false, ctx.Err()
 		}
@@ -78,6 +79,7 @@ func (r *Router) attempt(ctx context.Context, info CallInfo, req provider.Reques
 		switch {
 		case errors.As(cerr, &tr):
 			row.Outcome, row.ErrorKind = ledger.OutcomeError, "truncated"
+			row.ErrorDetail = fmt.Sprintf("the reply used its whole budget of %d tokens before it finished (a reasoning model may be thinking too long)", req.MaxTokens)
 			r.record(ctx, row)
 			// The model spent its whole budget: try once more on this entry with double.
 			if bigger := grownBudget(req.MaxTokens, req.MaxGrownTokens); !grew && bigger > req.MaxTokens {
@@ -89,7 +91,7 @@ func (r *Router) attempt(ctx context.Context, info CallInfo, req provider.Reques
 			return Result{}, EntryReason{Entry: entry, Kind: ReasonFailed, Detail: TruncatedDetail}, false, nil
 
 		case errors.As(cerr, &er):
-			row.Outcome, row.ErrorKind = ledger.OutcomeError, "empty_reply"
+			row.Outcome, row.ErrorKind, row.ErrorDetail = ledger.OutcomeError, "empty_reply", "the model returned no text"
 			r.record(ctx, row)
 			return Result{}, EntryReason{Entry: entry, Kind: ReasonFailed, Detail: "empty reply"}, false, nil
 
@@ -100,17 +102,18 @@ func (r *Router) attempt(ctx context.Context, info CallInfo, req provider.Reques
 			}
 			d = r.rateLimited(provName, d)
 			row.Outcome, row.ErrorKind, row.RetryAfterS = ledger.OutcomeRateLimited, "rate_limited", int(d/time.Second)
+			row.ErrorDetail = "the provider asked for a pause of " + d.String()
 			r.record(ctx, row)
 			r.setCooldown(provName, d)
 			return Result{}, EntryReason{Entry: entry, Kind: ReasonCooldown, Detail: "rate limited for " + d.String()}, false, nil
 
 		case errors.As(cerr, &tl):
-			row.Outcome, row.ErrorKind = ledger.OutcomeTooLong, "too_long"
+			row.Outcome, row.ErrorKind, row.ErrorDetail = ledger.OutcomeTooLong, "too_long", "the provider refused the prompt as too long for the model"
 			r.record(ctx, row)
 			return Result{}, EntryReason{Entry: entry, Kind: ReasonTooLong, Detail: "the provider refused the prompt as too long"}, false, nil
 
 		case errors.As(cerr, &au):
-			row.Outcome, row.ErrorKind = ledger.OutcomeAuth, "auth"
+			row.Outcome, row.ErrorKind, row.ErrorDetail = ledger.OutcomeAuth, "auth", "the provider rejected the credentials"
 			r.record(ctx, row)
 			r.mu.Lock()
 			first := !r.disabled[provName]
@@ -123,7 +126,7 @@ func (r *Router) attempt(ctx context.Context, info CallInfo, req provider.Reques
 			return Result{}, EntryReason{Entry: entry, Kind: ReasonAuth, Detail: "authentication failed"}, false, nil
 
 		case errors.As(cerr, &nf):
-			row.Outcome, row.ErrorKind = ledger.OutcomeModelMissing, "model_missing"
+			row.Outcome, row.ErrorKind, row.ErrorDetail = ledger.OutcomeModelMissing, "model_missing", "the provider does not have this model"
 			r.record(ctx, row)
 			r.mu.Lock()
 			r.missing[entry] = true
@@ -136,14 +139,14 @@ func (r *Router) attempt(ctx context.Context, info CallInfo, req provider.Reques
 			// Our own call_timeout expired (the caller's context is still live).
 			// The entry sits out a cooldown, so the next call does not wait out another
 			// call_timeout on a dead provider; the walk goes on to the next entry.
-			row.Outcome, row.ErrorKind = ledger.OutcomeTimeout, "timeout"
+			row.Outcome, row.ErrorKind, row.ErrorDetail = ledger.OutcomeTimeout, "timeout", "no answer within "+callTimeout.String()
 			r.record(ctx, row)
 			r.setCooldown(entry, r.timeoutCooldown())
 			return Result{}, EntryReason{Entry: entry, Kind: ReasonFailed, Detail: "timed out after " + callTimeout.String()}, false, nil
 		}
 
 		// ErrTransient, and anything else the provider returned: retry with backoff.
-		row.Outcome, row.ErrorKind = ledger.OutcomeError, "transient"
+		row.Outcome, row.ErrorKind, row.ErrorDetail = ledger.OutcomeError, "transient", detailOf(cerr)
 		r.record(ctx, row)
 		if try >= transientRetries {
 			r.setCooldown(provName, r.defaultCooldown())
@@ -176,4 +179,18 @@ func grownBudget(n, limit int) int {
 		g = limit
 	}
 	return g
+}
+
+// maxDetail bounds the error message kept with a failed call.
+const maxDetail = 300
+
+// detailOf is err's message as one bounded line: the provider's own text, with
+// white space collapsed, so a failed call can say what went wrong without a
+// multi-line body filling the ledger.
+func detailOf(err error) string {
+	s := strings.Join(strings.Fields(err.Error()), " ")
+	if r := []rune(s); len(r) > maxDetail {
+		s = string(r[:maxDetail]) + "..."
+	}
+	return s
 }

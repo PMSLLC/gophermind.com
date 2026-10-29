@@ -1176,3 +1176,44 @@ func TestCallParsedMultiModelChainKeepsOneRetryThenMovesOn(t *testing.T) {
 		t.Errorf("mini %d kilo %d, want 2 and 1", g.mini.Calls(), g.kilo.Calls())
 	}
 }
+
+func TestFailedCallsRecordWhatWentWrong(t *testing.T) {
+	g := newRig(t, nil, func(int, provider.Request) (provider.Response, error) {
+		return provider.Response{}, provider.ErrTransient{Cause: errors.New("HTTP 400: Unsupported parameter(s): reasoning_effort\n\twith a second line")}
+	}, nil, nil)
+	g.r.Call(context.Background(), info(router.TierAny, router.ScopeNode), req("hi"))
+	var seen bool
+	for _, row := range g.rows(t) {
+		if row.ErrorKind != "transient" {
+			continue
+		}
+		seen = true
+		if !strings.Contains(row.ErrorDetail, "Unsupported parameter") {
+			t.Errorf("ErrorDetail = %q, want the provider's message", row.ErrorDetail)
+		}
+		if strings.ContainsAny(row.ErrorDetail, "\n\t") {
+			t.Errorf("ErrorDetail has line breaks: %q", row.ErrorDetail)
+		}
+	}
+	if !seen {
+		t.Fatal("no transient row recorded")
+	}
+}
+
+func TestTruncatedCallsSayHowBigTheBudgetWas(t *testing.T) {
+	g := newRig(t, nil, func(int, provider.Request) (provider.Response, error) {
+		return provider.Response{}, provider.ErrTruncated{}
+	}, nil, nil)
+	r := req("hi")
+	r.MaxTokens = 1234
+	g.r.Call(context.Background(), info(router.TierAny, router.ScopeNode), r)
+	for _, row := range g.rows(t) {
+		if row.ErrorKind == "truncated" {
+			if !strings.Contains(row.ErrorDetail, "1234") {
+				t.Errorf("ErrorDetail = %q, want the token budget in it", row.ErrorDetail)
+			}
+			return
+		}
+	}
+	t.Fatal("no truncated row recorded")
+}

@@ -70,6 +70,7 @@ type wire struct {
 	DurationMS       int64  `json:"duration_ms,omitempty"`
 	Outcome          string `json:"outcome"`
 	ErrorKind        string `json:"error_kind,omitempty"`
+	ErrorDetail      string `json:"error_detail,omitempty"`
 	RetryAfterS      int    `json:"retry_after_s,omitempty"`
 }
 
@@ -79,7 +80,7 @@ func toWire(c Call) wire {
 		NodeID: c.NodeID, Revision: c.Revision, Scope: c.Scope, Tier: c.Tier, ChainPos: c.ChainPos, Provider: c.Provider,
 		ModelRequested: c.ModelRequested, ModelServed: c.ModelServed, PromptTokens: c.PromptTokens, CompletionTokens: c.CompletionTokens,
 		PromptBytes: c.PromptBytes, PromptSHA256: c.PromptSHA256, ResponseBytes: c.ResponseBytes, ResponseSHA256: c.ResponseSHA256,
-		DurationMS: c.DurationMS, Outcome: string(c.Outcome), ErrorKind: c.ErrorKind, RetryAfterS: c.RetryAfterS,
+		DurationMS: c.DurationMS, Outcome: string(c.Outcome), ErrorKind: c.ErrorKind, ErrorDetail: c.ErrorDetail, RetryAfterS: c.RetryAfterS,
 	}
 }
 
@@ -90,7 +91,7 @@ func (w wire) call() Call {
 		Revision: w.Revision, Scope: w.Scope, Tier: w.Tier, ChainPos: w.ChainPos, Provider: w.Provider,
 		ModelRequested: w.ModelRequested, ModelServed: w.ModelServed, PromptTokens: w.PromptTokens, CompletionTokens: w.CompletionTokens,
 		PromptBytes: w.PromptBytes, PromptSHA256: w.PromptSHA256, ResponseBytes: w.ResponseBytes, ResponseSHA256: w.ResponseSHA256,
-		DurationMS: w.DurationMS, Outcome: Outcome(w.Outcome), ErrorKind: w.ErrorKind, RetryAfterS: w.RetryAfterS,
+		DurationMS: w.DurationMS, Outcome: Outcome(w.Outcome), ErrorKind: w.ErrorKind, ErrorDetail: w.ErrorDetail, RetryAfterS: w.RetryAfterS,
 	}
 }
 

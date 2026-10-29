@@ -440,3 +440,20 @@ func TestFSIDsStayUniqueWhenCallsSeqIsCorrupt(t *testing.T) {
 		t.Fatalf("id %d reused or err %v with calls.seq missing", c.ID, err)
 	}
 }
+
+func TestErrorDetailIsKeptWithTheCall(t *testing.T) {
+	l, _ := newLedger(t)
+	ctx := context.Background()
+	c := call("r", "clarify", "muse", "muse-glimmer-30B", ledger.OutcomeError)
+	c.ErrorKind, c.ErrorDetail = "transient", "HTTP 400: Unsupported parameter(s): reasoning_effort"
+	if err := l.Record(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	got, err := l.List(ctx, "r", ledger.Filter{})
+	if err != nil || len(got) != 1 {
+		t.Fatalf("List = %d rows, %v", len(got), err)
+	}
+	if got[0].ErrorDetail != c.ErrorDetail {
+		t.Errorf("ErrorDetail = %q, want %q", got[0].ErrorDetail, c.ErrorDetail)
+	}
+}
