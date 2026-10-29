@@ -745,6 +745,7 @@ func parseTestwriteCounted(text string, ct map[string]any, pkg, funcName, module
 	sig, _ := ct["signature"].(string)
 	_, _, why := internalTarget(sig)
 	var dropped int
+	reply.TestFile = fixTestPackageClause(reply.TestFile, pkg)
 	reply.TestFile, dropped = dropLongComments(reply.TestFile)
 	if err := checkTestSourceIn(reply.TestFile, pkg, funcName, module, why, pkgs); err != nil {
 		return nil, "", 0, err
