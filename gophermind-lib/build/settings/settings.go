@@ -143,7 +143,11 @@ type Defaults struct {
 	ClarifyMaxCalls     int           `yaml:"clarify_max_calls"`     // model calls in the Clarify loop
 	ClarifyMaxQuestions int           `yaml:"clarify_max_questions"` // questions asked in a run
 	EnrichBatchSize     int           `yaml:"enrich_batch_size"`     // function nodes per Enrich call
-	RouteByNodeTier     *bool         `yaml:"route_by_node_tier"`    // node stages use the node's model_tier chain; unset means true
+	// MaxParseRetries is how many told-what-was-wrong retries a model that is
+	// its chain's only usable entry gets for a reply that does not parse.
+	// Omitted or 0 means router.MaxParseRetries.
+	MaxParseRetries int   `yaml:"max_parse_retries"`
+	RouteByNodeTier *bool `yaml:"route_by_node_tier"` // node stages use the node's model_tier chain; unset means true
 }
 
 // RouteByTier reports whether stages that work on one node use that node's
@@ -414,6 +418,8 @@ func (c *Config) Validate() error {
 	switch {
 	case d.MaxContextTokens < 1:
 		return fmt.Errorf("defaults.max_context_tokens must be at least 1, got %d", d.MaxContextTokens)
+	case d.MaxParseRetries < 0 || d.MaxParseRetries > 10:
+		return fmt.Errorf("defaults.max_parse_retries must be 0 to 10, got %d", d.MaxParseRetries)
 	case d.MaxRevisions < 0:
 		return fmt.Errorf("defaults.max_revisions must not be negative, got %d", d.MaxRevisions)
 	case d.MaxCoverageRounds < 0:

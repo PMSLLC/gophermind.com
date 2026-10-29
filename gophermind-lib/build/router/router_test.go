@@ -1217,3 +1217,15 @@ func TestTruncatedCallsSayHowBigTheBudgetWas(t *testing.T) {
 	}
 	t.Fatal("no truncated row recorded")
 }
+
+func TestCallParsedSingleModelChainTakesTheConfiguredRetries(t *testing.T) {
+	g := newRig(t, okText("bad"), nil, nil, func(c *settings.Config) { c.Defaults.MaxParseRetries = 4 })
+	_, err := g.r.CallParsed(context.Background(), info(router.TierStrong, router.ScopeNode), req("write JSON"), rejectBad)
+	var ce *router.ChainExhausted
+	if !errors.As(err, &ce) {
+		t.Fatalf("err = %v", err)
+	}
+	if g.mini.Calls() != 5 {
+		t.Errorf("mini %d calls, want 5 (first try plus four told retries)", g.mini.Calls())
+	}
+}

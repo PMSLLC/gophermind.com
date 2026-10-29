@@ -42,6 +42,9 @@ func (r *Router) CallParsed(ctx context.Context, info CallInfo, req provider.Req
 		retries := 1
 		if r.soleUsable(info) {
 			retries = MaxParseRetries
+			if n := r.cfg.Defaults.MaxParseRetries; n > 0 {
+				retries = n
+			}
 		}
 		lastReply, lastErr := res.Text, perr
 		for i := 0; i < retries; i++ {
