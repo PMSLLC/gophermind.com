@@ -31,10 +31,31 @@ func TestQualifyCrossPackageTypes(t *testing.T) {
 		t.Errorf("uses = %v", u)
 	}
 	decl := objects(doc["types"])[0]["decl"].(string)
-	if !strings.Contains(decl, "type SlugConfig struct") || !strings.Contains(decl, "// SlugConfig holds") {
+	if !strings.Contains(decl, "type SlugConfig struct") || !strings.Contains(decl, "// SlugConfig holds") || !strings.Contains(decl, "\tMaxLen int") {
 		t.Errorf("decl = %q", decl)
 	}
 	if again := qualifyCrossPackageTypes(doc); len(again) != 0 {
 		t.Errorf("not idempotent: %v", again)
+	}
+}
+
+func TestCrossPackageTypeFieldsExportedWhenAlreadyQualified(t *testing.T) {
+	doc := map[string]any{
+		"module": "example.com/slugify",
+		"types":  []any{map[string]any{"id": "cli-error", "package": "internal/cli", "decl": "type CliError struct {\n\tcode    int\n\tmessage string\n}\n\nfunc (e *CliError) Error() string { return e.message }\n"}},
+		"functions": []any{
+			map[string]any{"id": "fn-main", "package": "cmd/x", "signature": "func report(e *cli.CliError) int", "uses": []any{}},
+		},
+	}
+	qualifyCrossPackageTypes(doc)
+	decl := objects(doc["types"])[0]["decl"].(string)
+	if !strings.Contains(decl, "Code    int") && !strings.Contains(decl, "Code int") {
+		t.Errorf("code not exported: %q", decl)
+	}
+	if !strings.Contains(decl, "return e.Message") {
+		t.Errorf("the method still uses the old field name: %q", decl)
+	}
+	if err := TypeDeclShape(decl); err != nil {
+		t.Errorf("refused: %v", err)
 	}
 }

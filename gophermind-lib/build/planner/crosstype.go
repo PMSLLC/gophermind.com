@@ -1,8 +1,12 @@
 package planner
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"regexp"
 	"sort"
+	"strings"
 	"unicode"
 )
 
@@ -70,7 +74,57 @@ func qualifyCrossPackageTypes(doc map[string]any) []string {
 			changed = append(changed, id)
 		}
 	}
+	// A struct used from another package is built there with a composite
+	// literal, which cannot name an unexported field: its fields are exported.
+	for _, f := range objects(doc["functions"]) {
+		pkg, _ := f["package"].(string)
+		dir := stripModule(module, pkg)
+		sig := strField(f, "signature")
+		for name, ref := range byName {
+			if ref.dir != dir && strings.Contains(sig, PackageClause(ref.dir)+"."+name) {
+				ref.t["decl"] = exportStructFields(strField(ref.t, "decl"), name)
+			}
+		}
+	}
 	return changed
+}
+
+// exportStructFields capitalises the unexported field names of struct type
+// name in decl, and their uses in the declaration's methods.
+func exportStructFields(decl, name string) string {
+	f, err := parser.ParseFile(token.NewFileSet(), "decl.go", "package p\n"+decl, parser.ParseComments)
+	if err != nil {
+		return decl
+	}
+	var fields []string
+	ast.Inspect(f, func(n ast.Node) bool {
+		ts, ok := n.(*ast.TypeSpec)
+		if !ok || ts.Name.Name != name {
+			return true
+		}
+		if st, ok := ts.Type.(*ast.StructType); ok {
+			for _, fl := range st.Fields.List {
+				for _, id := range fl.Names {
+					if !ast.IsExported(id.Name) {
+						fields = append(fields, id.Name)
+					}
+				}
+			}
+		}
+		return false
+	})
+	taken := map[string]bool{}
+	for _, n := range declNames(decl) {
+		taken[n] = true
+	}
+	for _, fl := range fields {
+		up := exportName(fl)
+		if taken[up] {
+			continue
+		}
+		decl = regexp.MustCompile(`\b`+regexp.QuoteMeta(fl)+`\b`).ReplaceAllString(decl, up)
+	}
+	return decl
 }
 
 // bareIdentRE matches name as a whole identifier that no package qualifier
