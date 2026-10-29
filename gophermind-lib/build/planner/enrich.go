@@ -193,6 +193,11 @@ func mergeEnrichment(draft, reply map[string]any, c *contract.Contracts, env gro
 	sig, _ := ct["signature"].(string)
 	if errs := objects(ct["errors"]); len(errs) > 0 {
 		kinds := strList(reply["error_kinds"])
+		if len(kinds) == 0 {
+			if have, ok := contractErrorKinds(errs); ok {
+				kinds = have
+			}
+		}
 		if len(kinds) != len(errs) {
 			defects = append(defects, groupDefect{grpEnum, "error_kinds", fmt.Sprintf("error_kinds has %d entries for %d errors", len(kinds), len(errs))})
 		} else {
@@ -221,6 +226,9 @@ func mergeEnrichment(draft, reply map[string]any, c *contract.Contracts, env gro
 	env.Params = paramNames(sig)
 	if n := normalizeDeps(merged, c, env); n.fixed > 0 {
 		warnings = append(warnings, fmt.Sprintf("%s: portability_deps_normalized %d of %d deps entries rewritten to this module's package paths", boundedID(id), n.fixed, n.total))
+	}
+	if gs := emptyGroupsNotApplicable(merged); len(gs) > 0 {
+		warnings = append(warnings, fmt.Sprintf("%s: empty_group_not_applicable %s were empty lists and became not applicable", boundedID(id), strings.Join(gs, ", ")))
 	}
 	if normalizeProfileHooks(merged) {
 		warnings = append(warnings, fmt.Sprintf("%s: profile_hooks_normalized the profile_hooks group was put in the form the schema allows", boundedID(id)))
