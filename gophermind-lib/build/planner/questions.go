@@ -314,6 +314,14 @@ func parseQuestionList(text string, have qstore, o qparseOpts) ([]qrec, error) {
 		}
 		earlier[id] = true
 		opts := x.Options
+		if len(opts) == 1 {
+			// One option is no choice: ask openly, with it as the recommendation
+			// unless the model gave one.
+			if strings.TrimSpace(x.Recommended) == "" && strings.TrimSpace(x.Default) == "" {
+				x.Recommended = opts[0]
+			}
+			opts = nil
+		}
 		if len(opts) != 0 && (len(opts) < 2 || len(opts) > 8) {
 			return nil, fmt.Errorf("clarify reply: question %d has %d options; give 2 to 8 or none", n, len(opts))
 		}

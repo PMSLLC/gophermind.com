@@ -46,6 +46,23 @@ func TestParseQuestionListFillsIdsAliasesAndDowngradesFacts(t *testing.T) {
 	}
 }
 
+// One option is not a choice. A model writes it often, and refusing the reply
+// cost a whole call three times in a row, so the option becomes the
+// recommended answer and the question is asked openly.
+func TestParseQuestionListTurnsASingleOptionIntoTheRecommendation(t *testing.T) {
+	got, err := parseQuestionList(`[{"id":"q2","question":"Trim the input?","options":["Yes, trim it"]},
+ {"id":"q3","question":"Which flag?","options":["-m"],"recommended":"--max"}]`, qstore{}, qparseOpts{MaxTotal: 30, RequireRecommended: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got[0].Options) != 0 || got[0].Recommended != "Yes, trim it" {
+		t.Errorf("a single option should become the recommendation and leave no options: %+v", got[0])
+	}
+	if len(got[1].Options) != 0 || got[1].Recommended != "--max" {
+		t.Errorf("a recommendation the model gave must win over the single option: %+v", got[1])
+	}
+}
+
 func TestParseQuestionListRejects(t *testing.T) {
 	have := qstore{Questions: []qrec{{ID: "q1", Status: qSettled}}}
 	cases := []struct {
@@ -64,7 +81,6 @@ func TestParseQuestionListRejects(t *testing.T) {
 		{"self dependency", `[{"id":"q2","question":"` + canaryQ + `?","depends_on":["q2"]}]`, qparseOpts{}, "itself"},
 		{"unknown dependency", `[{"id":"q2","question":"` + canaryQ + `?","depends_on":["q77"]}]`, qparseOpts{}, "not earlier"},
 		{"bad kind", `[{"id":"q2","kind":"opinion","question":"` + canaryQ + `?"}]`, qparseOpts{}, "kind"},
-		{"one option", `[{"id":"q2","question":"` + canaryQ + `?","options":["only"]}]`, qparseOpts{}, "2 to 8"},
 		{"nine options", `[{"id":"q2","question":"a?","options":["1","2","3","4","5","6","7","8","` + canaryQ + `"]}]`, qparseOpts{}, "2 to 8"},
 		{"duplicate options", `[{"id":"q2","question":"a?","options":["` + canaryQ + `","` + canaryQ + `"]}]`, qparseOpts{}, "distinct"},
 		{"recommended is not an option", `[{"id":"q2","question":"a?","options":["a","b"],"recommended":"` + canaryQ + `"}]`, qparseOpts{}, "recommended"},
