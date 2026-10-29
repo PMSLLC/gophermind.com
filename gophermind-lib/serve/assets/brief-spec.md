@@ -55,7 +55,7 @@ A name may not be declared twice, or in both `env` and `secrets`. These names be
 
 ## 5. Practices that make a brief plan and build well
 
-These are not checked by the validator. They come from briefs that failed to build, and they change the result.
+They come from briefs that failed to build, and they change the result. The validator does not refuse a brief for breaking them. Five are checked as warnings, which never block an upload: acceptance that runs the program with `go run`, `go install`, `go build -o` or a `./path`; acceptance with no `go build ./...`, `go vet ./...` or `go test`; a program whose Architecture does not put `main` in `cmd/<name>/`; a brief that reads standard input without saying the code takes an `io.Reader`; and a brief longer than 400 lines. The rest are not checked.
 
 - Keep functions small. The planner splits each feature into functions of roughly 40 lines; a brief whose features describe several behaviors in one sentence produces large, hard to test functions. State one behavior per bullet.
 - Say how input reaches the code. A function that reads standard input must take an `io.Reader` (and output an `io.Writer`); only `main` chooses `os.Stdin` or `os.Stdout`. The planner refuses a function that says it reads standard input without taking a reader. Write the architecture that way: "`Summarize` takes an `io.Reader`; `main` opens the file or standard input and passes it in."
@@ -73,7 +73,10 @@ These are not checked by the validator. They come from briefs that failed to bui
 - Page: `https://gophermind.brahy.com/app/briefs/new` (Google sign-in with an `@brahy.com` account). Choose the file and upload. Planning starts at once and the run page shows every step.
 - One run is active at a time. A second upload while one runs is refused with the id of the active run.
 - Tick "Ask me the clarify questions" to answer the planner's questions in the browser. The run pauses until you do.
-- On the command line: `gophermind brief validate brief.md` checks a file with the same rules, with no server and no model.
+- A refused upload lists every problem at once, each with its line and the source around it. An accepted upload that breaks a practice from section 5 shows the warnings next to the link to the run.
+- On the command line: `gophermind brief validate brief.md` checks a file with the same rules, with no server and no model. It prints one `invalid brief: line N: ...` line per problem and exits 2, or prints `lint: line N: ...` warnings and exits 0.
+- A server run on your own machine in local mode has no sign-in: open `/app/briefs/new` on its address directly.
+- Eight complete example briefs, from a two-feature tool to a seven-feature system, are in `examples/briefs/` in the GopherMind repository, with a table of which options each one uses.
 
 ## 7. Complete example
 
