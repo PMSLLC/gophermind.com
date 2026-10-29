@@ -619,3 +619,38 @@ func TestChildEnvDropsServerSecrets(t *testing.T) {
 		t.Error("vault path should pass through")
 	}
 }
+
+func TestBriefRefusalListsEveryProblemWithItsLine(t *testing.T) {
+	e := newBriefEnv(t)
+	bad := strings.Replace(e.briefText("gm-2026-10-23-005"), "## Features", "## Not Features", 1)
+	bad = strings.Replace(bad, "language: go\n", "language: go\nzzz_key: 1\n", 1)
+	w := e.post("/app/briefs", bad, nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("= %d %s", w.Code, w.Body)
+	}
+	var got struct {
+		Error    string `json:"error"`
+		Problems []struct {
+			Line    int    `json:"line"`
+			Message string `json:"message"`
+		} `json:"problems"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Problems) < 2 {
+		t.Fatalf("problems = %+v, want at least the unknown key and the missing section", got.Problems)
+	}
+	var unknownKey bool
+	for _, p := range got.Problems {
+		if strings.Contains(p.Message, "zzz_key") && p.Line > 1 {
+			unknownKey = true
+		}
+	}
+	if !unknownKey {
+		t.Errorf("no problem names zzz_key with a line: %+v", got.Problems)
+	}
+	if !strings.HasPrefix(got.Error, "invalid brief: ") || !strings.Contains(got.Error, "more") {
+		t.Errorf("error = %q, want a summary that says how many more", got.Error)
+	}
+}

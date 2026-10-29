@@ -179,3 +179,22 @@ body.gm-chat #log:empty::before{content:"Ask about the code, a run or a plan. Ea
   body.gm-chat #log{padding:1rem}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+.problems{margin:1rem 0 0;max-width:62rem}
+.problems .ptitle{margin:0 0 .7rem;font-weight:600}
+.problem{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--bad);border-radius:6px;margin:0 0 .8rem;overflow:hidden}
+.problem .phead{display:flex;gap:.8rem;align-items:baseline;padding:.6rem .9rem}
+.problem .where{font:600 .78rem var(--mono);color:var(--bad);white-space:nowrap}
+.pmsg .hl-ref{font-family:var(--mono);font-size:.86em;background:var(--bad-bg);color:var(--bad);padding:0 .25rem;border-radius:3px}
+.src{background:var(--ink);color:#d8dee9;font:.82rem/1.6 var(--mono);overflow-x:auto;padding:.4rem 0}
+.src .row{display:flex;white-space:pre;min-width:max-content}
+.src .ln{flex:0 0 3.2rem;text-align:right;padding-right:1rem;color:#5d6b7c;user-select:none}
+.src .row.hit{background:rgba(224,108,117,.18)}
+.src .row.hit .ln{color:#e8a0a6}
+.src .hl-key{color:#7fb9ff}
+.src .hl-str{color:#a9d98c}
+.src .hl-num{color:#e5c07b}
+.src .hl-punct,.src .hl-cmt{color:#7d8b9c}
+.src .hl-cmt{font-style:italic}
+.src .hl-h{color:#e5c07b;font-weight:600}
+.src .hl-bullet,.src .hl-fence{color:#56b6c2}
+.src .hl-code{color:#c792ea}

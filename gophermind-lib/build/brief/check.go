@@ -43,6 +43,14 @@ func splitFrontmatter(src []byte) (front, body string, bodyLine int, p *Problem)
 	return strings.Join(lines[1:end], "\n"), strings.Join(lines[end+1:], "\n"), end + 2, nil
 }
 
+// String is "line N: message", or just the message when it has no line.
+func (p Problem) String() string {
+	if p.Line == 0 {
+		return p.Message
+	}
+	return fmt.Sprintf("line %d: %s", p.Line, p.Message)
+}
+
 var quotedRE = regexp.MustCompile(`'([^']+)'`)
 
 // Check lists every problem in a brief, in file order, where Parse stops at

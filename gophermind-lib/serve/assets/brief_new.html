@@ -50,6 +50,95 @@ function show(text, isErr, href){
     msg.appendChild(a);
   }
 }
+// Syntax classes for one line of a brief, by what it is.
+function lineKinds(lines){
+  const k = []; let state = 'start';
+  lines.forEach((l, i) => {
+    if (i === 0 && l === '---') { k.push('delim'); state = 'fm'; return; }
+    if (state === 'fm') { if (l === '---') { k.push('delim'); state = 'body'; } else k.push('fm'); return; }
+    if (/^\s*(```|~~~)/.test(l)) { k.push('fence'); state = state === 'fence' ? 'body' : 'fence'; return; }
+    k.push(state === 'fence' ? 'code' : 'body');
+  });
+  return k;
+}
+function span(parent, text, cls){
+  if (!text) return;
+  const s = document.createElement('span');
+  if (cls) s.className = cls;
+  s.textContent = text;
+  parent.appendChild(s);
+}
+function inlineCode(parent, text, plain){
+  text.split(/(`[^`]*`)/).forEach(p => span(parent, p, p.length > 1 && p[0] === '`' ? 'hl-code' : plain));
+}
+function yamlValue(parent, v){
+  const m = v.match(/^(\s*)(.*?)(\s+#.*)?$/);
+  span(parent, m[1]);
+  const x = m[2];
+  span(parent, x, /^(".*"|'.*')$/.test(x) ? 'hl-str' : /^(-?\d+(\.\d+)?|true|false|null)$/.test(x) ? 'hl-num' : '');
+  span(parent, m[3], 'hl-cmt');
+}
+// Fill el with line, coloured by kind.
+function highlight(el, line, kind){
+  if (kind === 'delim' || kind === 'fence') { span(el, line, 'hl-fence'); return; }
+  if (kind === 'code') { span(el, line, 'hl-code'); return; }
+  if (kind === 'fm') {
+    const m = line.match(/^(\s*)(- )?([A-Za-z_][\w-]*)(:)(.*)$/);
+    if (m) { span(el, m[1]); span(el, m[2], 'hl-punct'); span(el, m[3], 'hl-key'); span(el, m[4], 'hl-punct'); yamlValue(el, m[5]); return; }
+    const d = line.match(/^(\s*)(- )(.*)$/);
+    if (d) { span(el, d[1]); span(el, d[2], 'hl-punct'); yamlValue(el, d[3]); return; }
+    span(el, line, line.trim()[0] === '#' ? 'hl-cmt' : '');
+    return;
+  }
+  if (/^#{1,6}\s/.test(line)) { span(el, line, 'hl-h'); return; }
+  if (/^\s*<!--/.test(line)) { span(el, line, 'hl-cmt'); return; }
+  const b = line.match(/^(\s*)([-*+]|\d+[.)])(\s+)(.*)$/);
+  if (b) { span(el, b[1]); span(el, b[2], 'hl-bullet'); span(el, b[3]); inlineCode(el, b[4], ''); return; }
+  inlineCode(el, line, '');
+}
+// A problem message with every quoted name picked out.
+function messageEl(text){
+  const el = document.createElement('span');
+  el.className = 'pmsg';
+  text.split(/("[^"]*"|'[^']*')/).forEach(p => span(el, p, p.length > 1 && (p[0] === '"' || p[0] === "'") ? 'hl-ref' : ''));
+  return el;
+}
+function showProblems(problems, name, text){
+  msg.textContent = '';
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  const kinds = lineKinds(lines);
+  const box = document.createElement('div');
+  box.className = 'problems';
+  const h = document.createElement('p');
+  h.className = 'err ptitle';
+  h.textContent = problems.length === 1 ? '1 problem in ' + name : problems.length + ' problems in ' + name;
+  box.appendChild(h);
+  problems.forEach(p => {
+    const item = document.createElement('div');
+    item.className = 'problem';
+    const head = document.createElement('div');
+    head.className = 'phead';
+    span(head, p.line > 0 ? 'line ' + p.line : 'whole file', 'where');
+    head.appendChild(messageEl(p.message));
+    item.appendChild(head);
+    if (p.line > 0 && p.line <= lines.length) {
+      const src = document.createElement('div');
+      src.className = 'src';
+      for (let n = Math.max(1, p.line - 2); n <= Math.min(lines.length, p.line + 2); n++) {
+        const row = document.createElement('div');
+        row.className = n === p.line ? 'row hit' : 'row';
+        span(row, String(n), 'ln');
+        const code = document.createElement('span');
+        highlight(code, lines[n - 1], kinds[n - 1]);
+        row.appendChild(code);
+        src.appendChild(row);
+      }
+      item.appendChild(src);
+    }
+    box.appendChild(item);
+  });
+  msg.appendChild(box);
+}
 document.getElementById('form').addEventListener('submit', async ev => {
   ev.preventDefault();
   const f = document.getElementById('file').files[0];
@@ -58,6 +147,7 @@ document.getElementById('form').addEventListener('submit', async ev => {
   go.disabled = true;
   show('Uploading...', false);
   try {
+    const text = await f.text();
     const fd = new FormData();
     fd.append('brief', f, f.name);
     const r = await fetch('/app/briefs' + (document.getElementById('ask').checked ? '?ask=1' : '') + (document.getElementById('again').checked ? (document.getElementById('ask').checked ? '&' : '?') + 'resubmit=1' : ''), { method: 'POST', body: fd, credentials: 'same-origin' });
@@ -68,6 +158,8 @@ document.getElementById('form').addEventListener('submit', async ev => {
       show(j.error + ': ' + j.active_run_id + '.', true, '/app/briefs/' + encodeURIComponent(j.active_run_id));
     } else if (r.status === 409 && j.run_id) {
       show(j.error + ': ' + j.run_id + '. Tick the box above to start it under the next free id.', true, '/app/briefs/' + encodeURIComponent(j.run_id));
+    } else if (r.status === 400 && Array.isArray(j.problems) && j.problems.length) {
+      showProblems(j.problems, f.name, text);
     } else {
       show(j.error || ('Upload failed (' + r.status + ').'), true);
     }

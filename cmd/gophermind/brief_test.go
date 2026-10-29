@@ -217,3 +217,21 @@ func TestBriefValidateWarningWording(t *testing.T) {
 		t.Errorf("err=%q", errs)
 	}
 }
+
+func TestBriefValidateReportsEveryProblemWithItsLine(t *testing.T) {
+	src, _ := os.ReadFile(filepath.Join(exampleDir, "brief.md"))
+	body := strings.Replace(string(src), "language: go\n", "language: go\nzzz_key: 1\n", 1)
+	body = strings.Replace(body, "## Features", "## Not Features", 1)
+	p := filepath.Join(t.TempDir(), "many.md")
+	_ = os.WriteFile(p, []byte(body), 0o600)
+	code, _, errs := runBriefCmd(t, "", "validate", p)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2", code)
+	}
+	if !strings.Contains(errs, "zzz_key") || !strings.Contains(errs, `"## Features"`) {
+		t.Errorf("want both problems listed, got %q", errs)
+	}
+	if n := strings.Count(errs, "\n"); n < 2 {
+		t.Errorf("want one line per problem, got %d lines: %q", n, errs)
+	}
+}

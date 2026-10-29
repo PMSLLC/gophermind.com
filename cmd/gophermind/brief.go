@@ -90,6 +90,12 @@ func briefValidate(path string, out, errw io.Writer) int {
 		fmt.Fprintf(errw, "error: %v\n", err)
 		return 1
 	}
+	if probs := brief.Check(src); len(probs) > 0 {
+		for _, p := range probs {
+			fmt.Fprintf(errw, "invalid brief: %s\n", p)
+		}
+		return 2
+	}
 	b, err := brief.Parse(src)
 	if err != nil {
 		var inv *brief.InvalidError

@@ -626,6 +626,14 @@ func (m *briefManager) create(w http.ResponseWriter, r *http.Request) {
 		briefError(w, code, msg, nil)
 		return
 	}
+	if probs := brief.Check(src); len(probs) > 0 {
+		summary := "invalid brief: " + probs[0].String()
+		if n := len(probs) - 1; n > 0 {
+			summary += fmt.Sprintf(" (and %d more)", n)
+		}
+		briefError(w, http.StatusBadRequest, summary, map[string]any{"problems": probs})
+		return
+	}
 	b, err := brief.Parse(src)
 	if err != nil {
 		briefError(w, http.StatusBadRequest, "invalid brief: "+err.Error(), nil)
