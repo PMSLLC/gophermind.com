@@ -1112,8 +1112,8 @@ docs/build/handoff/     the original handoff, for reference only (it describes a
 
 ## Example briefs
 
-Eight complete briefs ship with the desktop app, from `examples/briefs/`
-(`01-linkcheck` to `08-taskboard`), from a two-feature CLI up to a seven-feature system.
+Thirteen complete briefs ship with the desktop app, from `examples/briefs/`
+(`01-linkcheck` to `13-hashsum`), from five tiny single-purpose tools up to a seven-feature system.
 Together they use every option the frontmatter has. That README has the table; a test
 (`gophermind-lib/build/brief/examples_test.go`) keeps every one valid with no scan
 warnings and fails if the set stops covering an option. The AI Venture Studio brief is a

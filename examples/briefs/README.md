@@ -1,6 +1,6 @@
 # Example briefs
 
-Eight complete briefs, each a working example of the brief format. Every one is
+Thirteen complete briefs, each a working example of the brief format, from five tiny ones that a small model can build in minutes up to a seven-feature system. Every one is
 for a **Go** project (the only language the loader accepts today), validates with
 no warnings, and uses no real account, key or address. The full format rules are
 in `gophermind-lib/serve/assets/brief-spec.md`, which the server also serves at
@@ -8,7 +8,7 @@ in `gophermind-lib/serve/assets/brief-spec.md`, which the server also serves at
 
 ## Try one
 
-1. Pick a brief. `04-csvstat` is the smallest to plan; `01-linkcheck` and `03-cliphist` are a good first run.
+1. Pick a brief. `09-slugify` to `13-hashsum` are the smallest (one or two features, about 65 lines): start there to try a model or a change to the planner. `01-linkcheck` and `03-cliphist` are a good next step.
 2. Check it: `gophermind brief validate examples/briefs/01-linkcheck.md`. An invalid brief exits with code 2 and names the field.
 3. Upload it on the web page (`/app/briefs/new`). The briefs carry no `repo` line, because the server builds each run in a repository of its own.
 4. To plan on your own machine instead, add `repo: /path/to/an-empty-git-repo` to the frontmatter and run `gophermind brief plan <file>`. Only a local plan reads that line.
@@ -19,6 +19,11 @@ Change the `id` to a free one before uploading: a second upload with the same id
 
 | Brief | What it builds | Features | Landing | On unclear | Approval between waves | Secrets | Env settings | Hosts | Revisions |
 |---|---|---|---|---|---|---|---|---|---|
+| `09-slugify` | text to URL slug | 2 | `diff_only` | `assume_and_document` | off | 0 | 0 | 0 | default |
+| `10-wordfreq` | most frequent words in a text | 2 | `commit` | `halt` | off | 0 | 0 | 0 | default |
+| `11-humandur` | seconds to a human duration and back | 2 | `diff_only` | `assume_and_document` | off | 0 | 0 | 0 | default |
+| `12-roman` | integers to Roman numerals and back | 2 | `commit` | `halt` | off | 0 | 0 | 0 | default |
+| `13-hashsum` | hex digest of files or standard input | 2 | `diff_only` | `assume_and_document` | off | 0 | 0 | 0 | default |
 | `01-linkcheck` | link checker for Markdown and HTML | 7 | `commit` | `assume_and_document` | off | 0 | 0 | 0 | default |
 | `02-notes-api` | in-memory notes REST service | 8 | `pull_request` on its own branch | `halt` | on | 0 | 1, with a default | 0 | default |
 | `03-cliphist` | clipboard history store and CLI | 5 | `diff_only` | `assume_and_document` | off | 0 | 2, with defaults | 0 | default |

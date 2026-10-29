@@ -43,13 +43,13 @@ func completeExamples(t *testing.T) map[string]*brief.Brief {
 
 func TestCompleteExampleBriefsValidateWithoutWarnings(t *testing.T) {
 	ex := completeExamples(t)
-	if len(ex) != 8 {
+	if len(ex) != 13 {
 		names := make([]string, 0, len(ex))
 		for n := range ex {
 			names = append(names, n)
 		}
 		sort.Strings(names)
-		t.Fatalf("expected 8 complete example briefs, found %d: %v", len(ex), names)
+		t.Fatalf("expected 13 complete example briefs, found %d: %v", len(ex), names)
 	}
 	ids := map[string]string{}
 	for name, b := range ex {
