@@ -30,6 +30,12 @@
 
 <div id="strip"></div>
 
+<div id="callerrs" hidden>
+  <h2>Errors</h2>
+  <p class="meta" id="callerrsnote"></p>
+  <ul id="callerrlist" class="problems"></ul>
+</div>
+
 <div id="problems" hidden>
   <h2>Problems</h2>
   <ul id="problist" class="problems"></ul>
@@ -218,6 +224,29 @@ function renderProblems(s){
     li.appendChild(a);
     if (it.title) li.appendChild(el('span', 'sub', it.title));
     li.appendChild(el('div', 'why', it.text));
+    ul.appendChild(li);
+  }
+}
+
+// renderCallErrors lists the latest model calls that did not succeed, newest
+// first, each with what went wrong: the model server's own message or a plain
+// description. The text is shown as text, never as markup.
+function renderCallErrors(errs){
+  const box = $('callerrs');
+  const ul = $('callerrlist');
+  ul.textContent = '';
+  box.hidden = !errs.length;
+  if (!errs.length) return;
+  $('callerrsnote').textContent = 'The latest ' + errs.length + ' model call' + (errs.length === 1 ? '' : 's') +
+    ' that did not succeed, newest first. A call can fail because the model server refused it, did not answer, or gave a reply the planner could not use.';
+  for (const e of errs) {
+    const li = el('li');
+    li.appendChild(pill(e.outcome, e.outcome === 'malformed' ? 'blocked' : 'fail'));
+    const when = e.at ? new Date(e.at).toLocaleTimeString() : '';
+    const where = [e.stage, e.node].filter(Boolean).join(' ');
+    const who = [e.provider, e.model].filter(Boolean).join('/');
+    li.appendChild(el('span', 'sub', [when, where, who, e.duration_ms ? fmtMs(e.duration_ms) : ''].filter(Boolean).join('  ')));
+    li.appendChild(el('div', 'callmsg', e.detail));
     ul.appendChild(li);
   }
 }
@@ -492,6 +521,7 @@ function kick(){ if (es) return; clearTimeout(timer); timer = setTimeout(refresh
 function show(s){
   $('load').textContent = '';
   renderHead(s.run);
+  renderCallErrors(s.call_errors || []);
   renderProblems(s);
   renderTree(s.nodes);
   renderProgress(s.progress);

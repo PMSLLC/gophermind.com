@@ -36,6 +36,9 @@ type BriefState struct {
 	Stages    []BriefStage    `json:"stages"`
 	SlowCalls []BriefSlowCall `json:"slow_calls"`
 	Problems  []BriefProblem  `json:"problems"`
+	// CallErrors are the latest model calls that did not succeed, newest
+	// first, each with what went wrong. Never any prompt or reply text.
+	CallErrors []BriefCallError `json:"call_errors"`
 	// Progress is how far the current step has got; nil when no step is open.
 	Progress *BriefProgress `json:"progress"`
 }
@@ -263,7 +266,7 @@ func BuildBriefState(root, id string, rec *briefRecord, active bool, logText str
 	st := BriefState{
 		SchemaVersion: BriefStateVersion, GeneratedAt: now.UTC().Format("2006-01-02T15:04:05Z"),
 		Nodes: []BriefNode{}, Questions: []BriefQuestion{}, WaveChecks: []BriefWave{}, Repairs: BriefRepairs{Open: []BriefRepair{}}, LogTail: tailLines(logText),
-		Stages: []BriefStage{}, SlowCalls: []BriefSlowCall{}, Problems: []BriefProblem{},
+		Stages: []BriefStage{}, SlowCalls: []BriefSlowCall{}, Problems: []BriefProblem{}, CallErrors: []BriefCallError{},
 	}
 	st.Run = BriefRun{ID: id, Active: active, Counts: runview.Counts{ByStatus: map[string]int{}}}
 	if rec != nil {
@@ -331,6 +334,7 @@ func BuildBriefState(root, id string, rec *briefRecord, active bool, logText str
 	markBlocked(st.Nodes)
 	st.Problems = problemsOf(st.Nodes)
 	st.Stages, st.SlowCalls = readCalls(dir)
+	st.CallErrors = readCallErrors(dir)
 	st.WaveChecks, st.Repairs = waveChecks(dir, st.Run, st.Nodes)
 
 	if b, err := readSmallFile(filepath.Join(dir, "UNDERSTANDING.md"), maxUnderstandingBytes); err == nil {

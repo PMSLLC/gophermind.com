@@ -2,6 +2,7 @@ package serve
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,5 +87,57 @@ func TestBriefStateNoCallsNoProblems(t *testing.T) {
 		if !strings.Contains(string(b), k) {
 			t.Errorf("missing %s", k)
 		}
+	}
+}
+
+const errorCallsSample = `{"kind":"call","id":1,"at":"2026-10-29T05:00:01.000000000Z","stage":"clarify","provider":"muse","model_requested":"muse-glimmer-30B","duration_ms":5,"outcome":"error","error_kind":"transient","error_detail":"HTTP 400: Unsupported parameter(s): reasoning_effort"}
+{"kind":"call","id":2,"at":"2026-10-29T05:00:10.000000000Z","stage":"clarify","provider":"muse","model_requested":"muse-glimmer-30B","duration_ms":9000,"outcome":"ok","prompt_tokens":10,"completion_tokens":5}
+{"kind":"call","id":3,"at":"2026-10-29T05:00:20.000000000Z","stage":"contract:outline:1","provider":"muse","model_requested":"muse-glimmer-30B","duration_ms":364321,"outcome":"error","error_kind":"truncated","error_detail":"the reply used its whole budget of 4096 tokens before it finished"}
+{"kind":"call","id":4,"at":"2026-10-29T05:00:30.000000000Z","stage":"contract:types","provider":"muse","model_requested":"muse-glimmer-30B","duration_ms":4000,"outcome":"ok"}
+{"kind":"amend","id":4,"outcome":"malformed","error_kind":"malformed"}
+{"kind":"call","id":5,"at":"2026-10-29T05:00:40.000000000Z","stage":"leaf","outcome":"error","error_kind":"transient"}
+`
+
+func TestReadCallErrorsListsFailedCallsNewestFirstWithTheirMessage(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "_state"), 0o755)
+	os.WriteFile(filepath.Join(dir, "_state", "calls.jsonl"), []byte(errorCallsSample), 0o644)
+	got := readCallErrors(dir)
+	if len(got) != 4 {
+		t.Fatalf("%d errors, want the 4 calls that were not ok: %+v", len(got), got)
+	}
+	if got[0].Stage != "leaf" || got[3].Stage != "clarify" {
+		t.Errorf("order: first %q last %q, want newest first", got[0].Stage, got[3].Stage)
+	}
+	if !strings.Contains(got[3].Detail, "reasoning_effort") || got[3].Provider != "muse" || got[3].Model != "muse-glimmer-30B" {
+		t.Errorf("clarify error = %+v", got[3])
+	}
+	if !strings.Contains(got[2].Detail, "4096") || got[2].DurationMS != 364321 {
+		t.Errorf("truncated error = %+v", got[2])
+	}
+	if got[1].Outcome != "malformed" || !strings.Contains(got[1].Detail, "format") {
+		t.Errorf("a malformed call gets a fixed plain description: %+v", got[1])
+	}
+	if got[0].Detail == "" {
+		t.Errorf("a call recorded without detail still says something: %+v", got[0])
+	}
+}
+
+func TestReadCallErrorsIsEmptyWithNoFile(t *testing.T) {
+	if got := readCallErrors(t.TempDir()); got == nil || len(got) != 0 {
+		t.Errorf("want empty non-nil, got %v", got)
+	}
+}
+
+func TestReadCallErrorsKeepsOnlyTheLatest(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "_state"), 0o755)
+	var b strings.Builder
+	for i := 1; i <= 40; i++ {
+		fmt.Fprintf(&b, `{"kind":"call","id":%d,"at":"2026-10-29T05:00:00.000000000Z","stage":"s","outcome":"error","error_kind":"transient"}`+"\n", i)
+	}
+	os.WriteFile(filepath.Join(dir, "_state", "calls.jsonl"), []byte(b.String()), 0o644)
+	if got := readCallErrors(dir); len(got) != maxCallErrors {
+		t.Errorf("%d errors kept, want %d", len(got), maxCallErrors)
 	}
 }

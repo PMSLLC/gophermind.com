@@ -204,3 +204,4 @@ body.gm-chat #log:empty::before{content:"Ask about the code, a run or a plan. Ea
 .problem.warn{border-left-color:#c98a00}
 .problem.warn .where{color:var(--run)}
 .problem.warn .pmsg .hl-ref{background:var(--run-bg);color:var(--run)}
+.callmsg{margin-top:.35rem;padding:.4rem .65rem;background:var(--bg);border-radius:4px;font:.82rem/1.5 var(--mono);white-space:pre-wrap;word-break:break-word}
