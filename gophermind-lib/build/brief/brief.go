@@ -101,24 +101,10 @@ var requiredSections = []string{"Overview", "Features", "Architecture", "Data", 
 // Parse splits, validates, and sections a brief. Failures caused by the
 // brief's content are *InvalidError.
 func Parse(src []byte) (*Brief, error) {
-	text := strings.ReplaceAll(string(src), "\r\n", "\n")
-	text = strings.TrimPrefix(text, string([]byte{0xef, 0xbb, 0xbf}))
-	lines := strings.Split(text, "\n")
-	if len(lines) == 0 || lines[0] != "---" {
-		return nil, invalid("brief must start with a --- frontmatter block")
+	front, body, bodyLine, p := splitFrontmatter(src)
+	if p != nil {
+		return nil, invalid("%s", p.Message)
 	}
-	end := -1
-	for i := 1; i < len(lines); i++ {
-		if lines[i] == "---" {
-			end = i
-			break
-		}
-	}
-	if end < 0 {
-		return nil, invalid("frontmatter block is not closed with ---")
-	}
-	front := strings.Join(lines[1:end], "\n")
-	body := strings.Join(lines[end+1:], "\n")
 
 	var doc map[string]any
 	if err := yaml.Unmarshal([]byte(front), &doc); err != nil {
@@ -134,7 +120,7 @@ func Parse(src []byte) (*Brief, error) {
 	if err := schema.Validate(schema.KindBrief, js); err != nil {
 		return nil, invalid("frontmatter: %v", err)
 	}
-	b := &Brief{body: body, bodyLine: end + 2}
+	b := &Brief{body: body, bodyLine: bodyLine}
 	if err := json.Unmarshal(js, &b.Front); err != nil {
 		return nil, invalid("frontmatter: %v", err)
 	}
@@ -172,7 +158,7 @@ func Parse(src []byte) (*Brief, error) {
 		}
 	}
 
-	if err := checkBody(body, b.bodyLine); err != nil {
+	if err := checkBody(body, bodyLine); err != nil {
 		return nil, err
 	}
 	sections, features, err := parseSections(body)
@@ -328,6 +314,15 @@ func BulletText(line string) (string, bool) {
 // indented continuation, a heading, a comment or part of a fence. Errors name
 // the file line, never the text. firstLine is the file line of the first body line.
 func checkBody(body string, firstLine int) error {
+	if ps := bodyProblems(body, firstLine); len(ps) > 0 {
+		return invalid("line %d: %s", ps[0].Line, ps[0].Message)
+	}
+	return nil
+}
+
+// bodyProblems is every body problem checkBody looks for, in file order.
+func bodyProblems(body string, firstLine int) []Problem {
+	var out []Problem
 	section := ""
 	inFence, inComment := false, false
 	fenceLine := 0
@@ -364,11 +359,11 @@ func checkBody(body string, firstLine int) error {
 			continue
 		}
 		if _, ok := BulletText(line); !ok {
-			return invalid("line %d, under \"## %s\": not a bullet (start it with \"- \", \"* \", \"+ \" or \"1. \"), so it would not count as a requirement", n, section)
+			out = append(out, Problem{Line: n, Message: fmt.Sprintf("under \"## %s\": not a bullet (start it with \"- \", \"* \", \"+ \" or \"1. \"), so it would not count as a requirement", section)})
 		}
 	}
 	if inFence {
-		return invalid("line %d: a code fence is opened and never closed, so every later line would be hidden", fenceLine)
+		out = append(out, Problem{Line: fenceLine, Message: "a code fence is opened and never closed, so every later line would be hidden"})
 	}
-	return nil
+	return out
 }

@@ -7,9 +7,12 @@ import (
 	"bytes"
 	"embed"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 )
 
 //go:embed task-node.schema.json brief-frontmatter.schema.json contract.schema.json
@@ -82,6 +85,49 @@ func Validate(kind Kind, doc []byte) error {
 		return fmt.Errorf("schema: not valid JSON: %w", err)
 	}
 	return sch.Validate(v)
+}
+
+// Violation is one place where a document breaks its schema.
+type Violation struct {
+	// Path is a JSON pointer such as "/landing"; empty for the document itself.
+	Path    string
+	Message string
+}
+
+// Violations lists every way doc breaks the schema for kind, not just the
+// first. It returns nil for a valid document. An error means the check itself
+// could not run (unknown kind, doc is not JSON), not that doc is invalid.
+func Violations(kind Kind, doc []byte) ([]Violation, error) {
+	err := Validate(kind, doc)
+	if err == nil {
+		return nil, nil
+	}
+	ve, ok := err.(*jsonschema.ValidationError)
+	if !ok {
+		return nil, err
+	}
+	p := message.NewPrinter(language.English)
+	var out []Violation
+	seen := map[Violation]bool{}
+	var walk func(e *jsonschema.ValidationError)
+	walk = func(e *jsonschema.ValidationError) {
+		if len(e.Causes) == 0 {
+			v := Violation{Message: e.ErrorKind.LocalizedString(p)}
+			if len(e.InstanceLocation) > 0 {
+				v.Path = "/" + strings.Join(e.InstanceLocation, "/")
+			}
+			if !seen[v] {
+				seen[v] = true
+				out = append(out, v)
+			}
+			return
+		}
+		for _, c := range e.Causes {
+			walk(c)
+		}
+	}
+	walk(ve)
+	return out, nil
 }
 
 // Raw returns the embedded schema file for kind, byte for byte. The Contract
