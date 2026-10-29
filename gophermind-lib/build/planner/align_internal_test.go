@@ -74,18 +74,53 @@ func TestMainOutsideCmdMovesToTheEntryPointComponent(t *testing.T) {
 	}
 }
 
-func TestMainAlreadyUnderCmdOrWithoutAnEntryPointStaysPut(t *testing.T) {
+func TestMainAlreadyUnderCmdOrNotMainStaysPut(t *testing.T) {
 	under := alignDoc([]any{comp("entry-point", "cmd/slugify")}, mainFn("entry-point", "cmd/slugify", "cmd/slugify/main.go"))
 	if got := moveMainToEntryPoint(under); len(got) != 0 {
 		t.Errorf("moved %v although main was already under cmd/", got)
-	}
-	none := alignDoc([]any{comp("cli", "internal/cli")}, mainFn("cli", "internal/cli", "internal/cli/main.go"))
-	if got := moveMainToEntryPoint(none); len(got) != 0 {
-		t.Errorf("moved %v with no cmd/ component to move it to", got)
 	}
 	other := alignDoc([]any{comp("cli", "internal/cli"), comp("entry-point", "cmd/x")},
 		map[string]any{"id": "fn-run", "component": "cli", "package": "internal/cli", "file": "internal/cli/run.go", "signature": "func run() int"})
 	if got := moveMainToEntryPoint(other); len(got) != 0 {
 		t.Errorf("moved %v, which is not func main()", got)
+	}
+}
+
+// A plan with no component under cmd/ at all: the entry-point component's
+// package was "main" (a folder main/). The program's home is cmd/<name>, the
+// name taken from the module, or no acceptance command can run it.
+func TestMainWithNoCmdComponentGetsOneNamedAfterTheModule(t *testing.T) {
+	doc := alignDoc([]any{comp("slug", "internal/slug"), comp("entry-point", "main")},
+		mainFn("entry-point", "main", "main/main.go"))
+	doc["module"] = "slugify"
+	got := moveMainToEntryPoint(doc)
+	if want := []string{"fn-main"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("moved = %v, want %v", got, want)
+	}
+	f := objects(doc["functions"])[0]
+	if f["package"] != "cmd/slugify" || f["file"] != "cmd/slugify/main.go" || f["component"] != "entry-point" {
+		t.Errorf("fn-main = %v %v %v", f["component"], f["package"], f["file"])
+	}
+	if p := objects(doc["components"])[1]["package"]; p != "cmd/slugify" {
+		t.Errorf("the entry-point component's package = %v, want cmd/slugify", p)
+	}
+}
+
+func TestMainSharingAComponentGetsANewEntryPointComponent(t *testing.T) {
+	doc := alignDoc([]any{comp("cli", "internal/cli")},
+		mainFn("cli", "internal/cli", "internal/cli/main.go"),
+		fnFull("fn-run", "cli", "internal/cli", "internal/cli/run.go"))
+	doc["module"] = "example.com/acme/Slug_Tool"
+	moveMainToEntryPoint(doc)
+	comps := objects(doc["components"])
+	if len(comps) != 2 || comps[1]["id"] != "entry-point" || comps[1]["package"] != "cmd/slug-tool" {
+		t.Fatalf("components = %v", comps)
+	}
+	fns := objects(doc["functions"])
+	if fns[0]["component"] != "entry-point" || fns[0]["file"] != "cmd/slug-tool/main.go" {
+		t.Errorf("fn-main = %v", fns[0])
+	}
+	if fns[1]["component"] != "cli" || fns[1]["package"] != "internal/cli" {
+		t.Errorf("fn-run moved with main: %v", fns[1])
 	}
 }

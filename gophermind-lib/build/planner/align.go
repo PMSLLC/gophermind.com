@@ -43,13 +43,30 @@ func alignFunctionsToComponents(doc map[string]any) []string {
 	return changed
 }
 
-// moveMainToEntryPoint moves each func main() that is not under cmd/ into the
-// first component whose package is under cmd/, with the file main.go in that
-// folder. A model put main in the cli component and left the entry-point
-// component empty: only a main function under cmd/ builds into a program, so
-// no acceptance command could run one. With no cmd/ component, or main already
-// under cmd/, nothing moves. It returns the ids it moved.
+// moveMainToEntryPoint puts each func main() under cmd/. It moves one that is
+// not into the first component whose package is under cmd/, with the file
+// main.go in that folder. A model put main in the cli component and left the
+// entry-point component empty; another gave the entry-point component the
+// package "main", so there was no cmd/ at all. Only a main function under cmd/
+// builds into a program, so no acceptance command could run one. When no
+// component is under cmd/ one is made from the module's name: the main
+// function's own component if it holds nothing else, else a new "entry-point".
+// With main already under cmd/, nothing moves. It returns the ids it moved.
 func moveMainToEntryPoint(doc map[string]any) []string {
+	var mains []map[string]any
+	for _, f := range objects(doc["functions"]) {
+		sig, _ := f["signature"].(string)
+		if strings.Join(strings.Fields(sig), " ") != "func main()" {
+			continue
+		}
+		if p, _ := f["package"].(string); strings.HasPrefix(path.Clean(p), "cmd/") {
+			continue
+		}
+		mains = append(mains, f)
+	}
+	if len(mains) == 0 {
+		return nil
+	}
 	entryID, entryPkg := "", ""
 	for _, c := range objects(doc["components"]) {
 		if p, _ := c["package"].(string); strings.HasPrefix(path.Clean(p), "cmd/") {
@@ -59,20 +76,72 @@ func moveMainToEntryPoint(doc map[string]any) []string {
 		}
 	}
 	if entryID == "" {
-		return nil
+		entryPkg = "cmd/" + programName(doc)
+		entryID = entryComponentFor(doc, mains[0], entryPkg)
 	}
 	var moved []string
-	for _, f := range objects(doc["functions"]) {
-		sig, _ := f["signature"].(string)
-		if strings.Join(strings.Fields(sig), " ") != "func main()" {
-			continue
-		}
-		if p, _ := f["package"].(string); strings.HasPrefix(path.Clean(p), "cmd/") {
-			continue
-		}
+	for _, f := range mains {
 		f["component"], f["package"], f["file"] = entryID, entryPkg, entryPkg+"/main.go"
 		id, _ := f["id"].(string)
 		moved = append(moved, id)
 	}
 	return moved
+}
+
+// entryComponentFor returns the id of the component that will hold the program:
+// main's own when nothing else is in it, retargeted to pkg; otherwise a new one.
+func entryComponentFor(doc map[string]any, main map[string]any, pkg string) string {
+	own, _ := main["component"].(string)
+	shared := false
+	for _, f := range objects(doc["functions"]) {
+		if c, _ := f["component"].(string); c == own && f["id"] != main["id"] {
+			shared = true
+		}
+	}
+	comps := objects(doc["components"])
+	for _, c := range comps {
+		if id, _ := c["id"].(string); id == own && own != "" && !shared {
+			c["package"] = pkg
+			return id
+		}
+	}
+	id := "entry-point"
+	for taken := true; taken; {
+		taken = false
+		for _, c := range comps {
+			if c["id"] == id {
+				id += "-main"
+				taken = true
+			}
+		}
+	}
+	list, _ := doc["components"].([]any)
+	doc["components"] = append(list, map[string]any{"id": id, "package": pkg, "exports": []any{}, "integration_tests": []any{}})
+	return id
+}
+
+// programName is the name of the program built from cmd/: the last element of
+// the module path, lower case with anything but letters and digits as a dash.
+func programName(doc map[string]any) string {
+	m, _ := doc["module"].(string)
+	last := m
+	if i := strings.LastIndex(m, "/"); i >= 0 {
+		last = m[i+1:]
+	}
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.ToLower(last) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			dash = false
+		} else if b.Len() > 0 && !dash {
+			b.WriteByte('-')
+			dash = true
+		}
+	}
+	name := strings.Trim(b.String(), "-")
+	if name == "" {
+		return "app"
+	}
+	return name
 }
