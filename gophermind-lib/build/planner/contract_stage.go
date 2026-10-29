@@ -507,6 +507,11 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			"function_aligned_to_component: %d functions did not sit in the folder of their component; moved: %s",
 			len(rep.Aligned), strings.Join(boundedIDs(rep.Aligned, maxUnresolvedInError), ", ")))
 	}
+	if ids := addErrorMethods(st.Doc); len(ids) > 0 {
+		p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
+			"error_method_added: %d types named as errors had no Error method, so they were not errors; added one returning their first string field: %s",
+			len(ids), strings.Join(boundedIDs(ids, maxUnresolvedInError), ", ")))
+	}
 	if ids := architectureUses(st.Doc, r.brief.Sections["Architecture"]); len(ids) > 0 {
 		p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
 			"architecture_uses_added: %d functions call a function in another folder as the brief's Architecture section says, but did not list it in uses; added for: %s",
