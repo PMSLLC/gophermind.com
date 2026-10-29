@@ -14,6 +14,10 @@ set -euo pipefail
 LABEL="${GM_LOCAL_LABEL:-com.gophermind.local.server}"
 PORT="${GM_LOCAL_PORT:-8090}"
 LLM_ENDPOINT="${GM_LOCAL_LLM_ENDPOINT:-http://127.0.0.1:8000/v1}"
+# Offline by default: a brief run must never wait on a module proxy, a Go
+# toolchain download or a model hub. GM_LOCAL_ONLINE=1 at install time leaves
+# those settings unset, for building programs that need downloaded modules.
+if [ "${GM_LOCAL_ONLINE:-0}" = "1" ]; then OFFLINE_ENV=""; else OFFLINE_ENV='export GOPROXY=off GOTOOLCHAIN=local GOSUMDB=off HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1'; fi
 BASE="${GM_LOCAL_HOME:-$HOME/.gophermind/local}"
 LOGDIR="$HOME/Library/Logs/gophermind-local"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
@@ -72,6 +76,7 @@ export GOPHERMIND_BRIEFS_DIR="$BASE/briefs"
 export GOPHERMIND_REPOS_DIR="$BASE/repos"
 export GOPHERMIND_LLM_ENDPOINT="$LLM_ENDPOINT"
 export PATH="$BASE/bin:/opt/homebrew/bin:/usr/local/bin:/usr/local/go/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+$OFFLINE_ENV
 exec "$BASE/bin/gophermind-server" -wg-interface=
 EOF
   chmod 700 "$BASE/run-server.sh"
@@ -95,6 +100,12 @@ EOF
   plutil -lint "$PLIST" >/dev/null
 
   launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
+  # bootout returns before launchd has finished removing the job; loading it
+  # again too soon fails with "Input/output error".
+  for _ in $(seq 1 20); do
+    launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1 || break
+    sleep 0.5
+  done
   launchctl bootstrap "$DOMAIN" "$PLIST"
   launchctl kickstart -k "$DOMAIN/$LABEL"
 
