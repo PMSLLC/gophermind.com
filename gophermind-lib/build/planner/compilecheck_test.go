@@ -407,3 +407,14 @@ func TestCompileMessageStdStreamAssignedAForeignType(t *testing.T) {
 		t.Errorf("message %q", m)
 	}
 }
+
+// go vet wrote "variable of interface type io.Writer": the detailed phrase
+// still names both standard library types, so the model can fix the call.
+func TestCompileMessageInterfaceTypeWording(t *testing.T) {
+	c := compileCheckContract()
+	diag := "cannot use w (variable of interface type io.Writer) as io.Reader value in argument to io.ReadAll: io.Writer does not implement io.Reader (missing method Read)"
+	m := compileMessage(c, "internal/stats", "package stats\n", "x", 34, diag)
+	if !strings.Contains(m, "io.Writer") || !strings.Contains(m, "io.Reader") || strings.Contains(m, " w ") {
+		t.Errorf("message = %q", m)
+	}
+}

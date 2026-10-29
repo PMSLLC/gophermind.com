@@ -241,7 +241,7 @@ func (s *safeNames) fields(b *strings.Builder, fl *ast.FieldList) bool {
 var anyTypeRE = regexp.MustCompile(`interface\{\}|\bany\b`)
 
 var (
-	cannotUseRE = regexp.MustCompile(`^cannot use .* \((?:[^()]*? )?of type (.+?)\) as (.+?) value in (argument to ([^\s:]+)|assignment|return statement|struct literal|field value|variable declaration)`)
+	cannotUseRE = regexp.MustCompile(`^cannot use .* \((?:[^()]*? )?of (?:(?:interface|struct|pointer|func|map|slice|chan) )?type (.+?)\) as (.+?) value in (argument to ([^\s:]+)|assignment|return statement|struct literal|field value|variable declaration)`)
 	argCountRE  = regexp.MustCompile(`(?s)^(not enough|too many) arguments in call to ([^\s:]+)(?:\s*\n\s*have (\(.*?\))\s*\n\s*want (\(.*?\)))?`)
 	noFieldRE   = regexp.MustCompile(`^\S+ undefined \(type (.+?) has no field or method `)
 	// "unknown field values in struct literal of type columnState"; older
