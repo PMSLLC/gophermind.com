@@ -32,3 +32,23 @@ func TestContractErrorKinds(t *testing.T) {
 		t.Error("an unknown kind was accepted")
 	}
 }
+
+func TestNotApplicableListFieldsBecomeEmpty(t *testing.T) {
+	m := map[string]any{
+		"observability": map[string]any{
+			"log_events": []any{map[string]any{"level": "info", "msg": "start"}},
+			"metrics":    map[string]any{"not_applicable": "main only delegates to Run and does no measurable work"},
+		},
+		"security": map[string]any{"not_applicable": "a pure function with no inputs from outside"},
+	}
+	got := notApplicableListFields(m)
+	if !slices.Equal(got, []string{"observability.metrics"}) {
+		t.Fatalf("changed %v", got)
+	}
+	if l, ok := m["observability"].(map[string]any)["metrics"].([]any); !ok || len(l) != 0 {
+		t.Errorf("metrics = %v, want []", m["observability"].(map[string]any)["metrics"])
+	}
+	if _, ok := m["security"].(map[string]any)["not_applicable"]; !ok {
+		t.Error("a group-level not_applicable was changed")
+	}
+}

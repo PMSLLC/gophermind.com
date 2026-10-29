@@ -36,3 +36,34 @@ func contractErrorKinds(errs []map[string]any) ([]string, bool) {
 	}
 	return kinds, true
 }
+
+// groupListFields are the fields inside a group that the node schema types as
+// lists.
+var groupListFields = map[string][]string{
+	"security":      {"untrusted_inputs", "secret_use", "threats"},
+	"observability": {"log_events", "metrics"},
+	"portability":   {"os", "arch", "build_tags", "deps"},
+}
+
+// notApplicableListFields turns a not-applicable object written for one list
+// field inside a group ("metrics": {"not_applicable": "..."}) into an empty
+// list: not applicable is a whole-group answer, and a model kept writing it for
+// one field through every repair. It returns the fields it changed.
+func notApplicableListFields(m map[string]any) []string {
+	var changed []string
+	for _, g := range []string{"security", "observability", "portability"} {
+		grp, ok := m[g].(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, f := range groupListFields[g] {
+			if v, ok := grp[f].(map[string]any); ok {
+				if _, na := v["not_applicable"]; na && len(v) == 1 {
+					grp[f] = []any{}
+					changed = append(changed, g+"."+f)
+				}
+			}
+		}
+	}
+	return changed
+}

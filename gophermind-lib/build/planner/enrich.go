@@ -227,6 +227,9 @@ func mergeEnrichment(draft, reply map[string]any, c *contract.Contracts, env gro
 	if n := normalizeDeps(merged, c, env); n.fixed > 0 {
 		warnings = append(warnings, fmt.Sprintf("%s: portability_deps_normalized %d of %d deps entries rewritten to this module's package paths", boundedID(id), n.fixed, n.total))
 	}
+	if fs := notApplicableListFields(merged); len(fs) > 0 {
+		warnings = append(warnings, fmt.Sprintf("%s: field_not_applicable_emptied %s were written as not applicable and became empty lists", boundedID(id), strings.Join(fs, ", ")))
+	}
 	if gs := emptyGroupsNotApplicable(merged); len(gs) > 0 {
 		warnings = append(warnings, fmt.Sprintf("%s: empty_group_not_applicable %s were empty lists and became not applicable", boundedID(id), strings.Join(gs, ", ")))
 	}
