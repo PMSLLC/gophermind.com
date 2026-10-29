@@ -67,7 +67,8 @@ type RevisedTip struct {
 // Leaf is one function node.
 type Leaf struct {
 	ID, Title, Class, Tier, Package, File, Signature string
-	FuncID                                           string // contract function id
+	FuncID                                           string   // contract function id
+	DepImports                                       []string // import path and qualifier of each dependency in another package
 	Wave                                             int
 	DependsOn                                        []string
 	Dir                                              string // slash dir of File, "." for the repo root
@@ -382,6 +383,20 @@ func (p *Plan) leaf(n tree.Node, rootNet []NetHost, fns map[string]contract.Func
 		l.MaxRevisions = *d.Budget.MaxRevisions
 	}
 	l.StubFile = path.Join(l.Dir, "zz_gm_stub_"+l.ID+".go")
+	if closure, err := p.Contracts.Closure(l.DependsOn); err == nil {
+		var ids []string
+		for _, f := range p.Contracts.Functions {
+			if closure[f.ID] && f.ID != funcID {
+				ids = append(ids, f.ID)
+			}
+		}
+		for _, t := range p.Contracts.Types {
+			if closure[t.ID] {
+				ids = append(ids, t.ID)
+			}
+		}
+		l.DepImports = dependencyImports(p.Contracts, ids, d.Contract.Package)
+	}
 	for _, h := range d.Network {
 		l.Network = append(l.Network, NetHost{Host: h.Host, Critical: h.Critical})
 	}
@@ -399,7 +414,7 @@ func (p *Plan) Leaf(id string) *Leaf { return p.byID[id] }
 func (p *Plan) View(l *Leaf, testSource string) packer.NodeView {
 	return packer.NodeView{
 		ID: l.ID, FuncID: l.FuncID, Package: l.Package, File: l.File, Signature: l.Signature,
-		DependencySignatures: l.DepSignatures, Constraints: l.Constraints,
+		DependencySignatures: l.DepSignatures, DependencyImports: l.DepImports, Constraints: l.Constraints,
 		TestFile: l.TestFile, TestSource: testSource, MaxContextTokens: l.MaxContextTokens,
 		Guidance: l.Guidance, Description: l.Description, Behaviour: l.Behaviour,
 	}

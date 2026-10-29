@@ -732,3 +732,30 @@ func TestHasSecretWhitespaceStripped(t *testing.T) {
 		t.Error("a secret that holds a space is missed when split across lines")
 	}
 }
+
+// A leaf in internal/cli calls Make from internal/slug. The dependency list shows
+// only `func Make(...)`, and a model called it bare three times (undefined: Make)
+// instead of importing the package and writing slug.Make. The prompt now names
+// the import path and the qualifier of every dependency in another package.
+func TestPackNamesTheImportOfADependencyInAnotherPackage(t *testing.T) {
+	n := baseNode()
+	n.DependencySignatures = []string{"func Make(s string, max int) string"}
+	n.DependencyImports = []string{`slug.Make: import "example.com/m/internal/slug"`}
+	p, err := Pack(n, contractsFixture(t), Inputs{Budget: 8000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`slug.Make: import "example.com/m/internal/slug"`, "never by the bare name"} {
+		if !strings.Contains(p.Text, want) {
+			t.Errorf("prompt lacks %q", want)
+		}
+	}
+	n.DependencyImports = nil
+	p, err = Pack(n, contractsFixture(t), Inputs{Budget: 8000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(p.Text, "never by the bare name") {
+		t.Error("the import note appears for a leaf with no dependency in another package")
+	}
+}

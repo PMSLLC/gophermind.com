@@ -42,11 +42,15 @@ type NodeView struct {
 	File                 string   // contract.file, repo-relative
 	Signature            string   // contract.signature, exactly as declared
 	DependencySignatures []string // harness-derived
-	Constraints          []string
-	TestFile             string // repo-relative path of the leaf's own test file
-	TestSource           string
-	MaxContextTokens     int // node budget; 0 when unset
-	Guidance             []Guidance
+	// DependencyImports names, for each dependency declared in another package,
+	// its qualifier and import path ("slug.Make: import \"m/internal/slug\""). The
+	// signatures alone do not say where a name lives, and a leaf called one bare.
+	DependencyImports []string
+	Constraints       []string
+	TestFile          string // repo-relative path of the leaf's own test file
+	TestSource        string
+	MaxContextTokens  int // node budget; 0 when unset
+	Guidance          []Guidance
 	// Description and Behaviour are set only for a node the planner rewrote
 	// (revision 1 or more): the current description, and one line each for the
 	// inputs, outputs, errors, side effects and notes of the contract. An
@@ -471,6 +475,15 @@ func (s *state) render() (string, error) {
 	deps := "(none)"
 	if len(s.deps) > 0 {
 		deps = strings.Join(s.deps, "\n\n")
+	}
+	if len(s.n.DependencyImports) > 0 {
+		note := "// Declared in other packages: import the package and call each by its qualifier, never by the bare name:\n// " +
+			strings.Join(s.n.DependencyImports, "\n// ")
+		if deps == "(none)" {
+			deps = note
+		} else {
+			deps += "\n\n" + note
+		}
 	}
 	cons := "(none)"
 	if len(s.n.Constraints) > 0 {
