@@ -496,6 +496,11 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 	// declared are asked for, not treated as an unusable reply.
 	// A type that signatures use and no type declares is asked for the same way:
 	// without it the function cannot compile, nor can its test.
+	if dropped := dropStdlibUses(st.Doc); len(dropped) > 0 {
+		p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
+			"uses_standard_library: %d uses entries named standard library packages, which are imported and never listed; dropped: %s",
+			len(dropped), strings.Join(boundedIDs(dropped, maxUnresolvedInError), ", ")))
+	}
 	for {
 		un := unresolvedFinal(st.Doc)
 		sigs := undeclaredSignatureTypes(st.Doc)
