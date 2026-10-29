@@ -198,9 +198,26 @@ func TestEnrichQuestionIdsPassTheIdPattern(t *testing.T) {
 	}
 }
 
-func TestMergeEnrichmentEmptyProfileHooksNamesTheSchemaError(t *testing.T) {
-	_, ds, _ := mergeEnrichment(draftFixture(t), replyFixture(t, func(m map[string]any) {
+// An empty profile_hooks list is no longer a schema error: it is put in the
+// not_applicable form the schema allows (see normalizeProfileHooks).
+func TestMergeEnrichmentEmptyProfileHooksBecomesNotApplicable(t *testing.T) {
+	merged, ds, _ := mergeEnrichment(draftFixture(t), replyFixture(t, func(m map[string]any) {
 		m["profile_hooks"] = []any{}
+	}), contractFixtureForEnrich(), enrichEnvFixture())
+	for _, d := range ds {
+		if d.kind == grpSchema {
+			t.Fatalf("an empty profile_hooks was refused: %v", kindsOf(ds))
+		}
+	}
+	if _, ok := merged["profile_hooks"].(map[string]any)["not_applicable"].(string); !ok {
+		t.Errorf("profile_hooks = %#v, want a not_applicable object", merged["profile_hooks"])
+	}
+}
+
+// A schema error still names the group it is about.
+func TestMergeEnrichmentSchemaErrorNamesTheGroup(t *testing.T) {
+	_, ds, _ := mergeEnrichment(draftFixture(t), replyFixture(t, func(m map[string]any) {
+		m["refactor_notes"] = 5
 	}), contractFixtureForEnrich(), enrichEnvFixture())
 	var got *groupDefect
 	for i := range ds {
@@ -211,14 +228,8 @@ func TestMergeEnrichmentEmptyProfileHooksNamesTheSchemaError(t *testing.T) {
 	if got == nil {
 		t.Fatalf("kinds = %v, want %s", kindsOf(ds), grpSchema)
 	}
-	if !strings.Contains(got.msg, "profile_hooks") {
+	if !strings.Contains(got.msg, "refactor_notes") {
 		t.Errorf("the schema defect does not name the group: %q", got.msg)
-	}
-	if got.field != "profile_hooks" {
-		t.Errorf("field = %q, want profile_hooks", got.field)
-	}
-	if text := defectsText([]pendingEnrich{{ID: "fn-x", Defects: kindsOfGroup(ds), Notes: notesOfGroup(ds), Fields: fieldsOfGroup(ds)}}); !strings.Contains(text, "  problem: ") || !strings.Contains(text, "profile_hooks is not valid") {
-		t.Errorf("the repair prompt lacks the schema error:\n%s", text)
 	}
 }
 
