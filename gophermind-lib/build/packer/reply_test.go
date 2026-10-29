@@ -217,6 +217,8 @@ func TestErrorReasonIsAFixedWordClassAndRule(t *testing.T) {
 		{badDeclaration, ClassDeclaration, "declaration:declaration_not_allowed"},
 		{"unbalanced fence", "", "other:unbalanced_fence"},
 		{"init function not allowed", "", "other:init_function"},
+		{"forbidden call (process exit or fatal log)", ClassForbidden, "forbidden:forbidden_call"},
+		{"forbidden flag error handling (ExitOnError)", ClassForbidden, "forbidden:forbidden_flag_handling"},
 		{"something new", "", "other:other"},
 	} {
 		got := ErrorReason(&MalformedError{Kind: c.kind, Class: c.class})

@@ -11,6 +11,7 @@ import (
 
 	"gophermind/gophermind-lib/build/blackboard"
 	"gophermind/gophermind-lib/build/gitland"
+	"gophermind/gophermind-lib/build/runner"
 )
 
 // overrideBoard shows one node with a status the test chose, for the reads
@@ -172,7 +173,14 @@ func TestFinishOrder(t *testing.T) {
 			setCommand(t, rc, "A2", vr("exit 1"))
 			bullet(t, rc, "A2").nodes = []string{"root"}
 		}
-		rep, err, log := g.accRun(t, goodScript(g), g.fastChecker(), edit, withRecGit(g, nil, &rec))
+		// A bullet no leaf owns is repaired by every leaf, so each has replies.
+		script := goodScript(g)
+		fc := g.fastChecker()
+		for _, l := range g.plan.Leaves {
+			withRepairs(script, l.ID, 2, "")
+			fc.LeafScript[l.ID] = []runner.Verdict{passVerdict(), passVerdict(), passVerdict()}
+		}
+		rep, err, log := g.accRun(t, script, fc, edit, withRecGit(g, nil, &rec))
 		if err != nil || rep.Status != "failed" {
 			t.Fatalf("run = %s (%s), %v", rep.Status, rep.StopReason, err)
 		}

@@ -10,9 +10,10 @@ import (
 // guidance of guidanceNode("construction","security") and no failure, taken
 // from the implement template as it was before sub-project E, plus the one
 // rule line that says to write only the function and lower-case helpers (the
-// reply-strip change). An unrevised node's prompt must stay byte-identical to
-// that baseline.
-const baselineSHA = "dec396f889a76c0e955b51b7ff43f94281eb2d351c63e1009707964487c97f93"
+// reply-strip change) and the one that names the forbidden calls (os.Exit,
+// flag.ContinueOnError outside main and the rest). An unrevised node's prompt
+// must stay byte-identical to that baseline.
+const baselineSHA = "83c44f54d0d2123bb461f94cc6927c675e1cbd985ac50d6c37acf2f4164236e5"
 
 func baselinePack(t *testing.T) Packed {
 	t.Helper()

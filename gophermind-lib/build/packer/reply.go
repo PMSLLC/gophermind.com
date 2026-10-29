@@ -142,6 +142,7 @@ const (
 	ClassNotFound    = "not_found"
 	ClassPackage     = "package"
 	ClassSyntax      = "syntax"
+	ClassForbidden   = "forbidden"
 )
 
 // MalformedError is a reply that cannot be used. Kind is a fixed sentence
@@ -206,6 +207,8 @@ func ruleOf(kind string) string {
 		{"init function not allowed", "init_function"},
 		{"declaration not allowed", "declaration_not_allowed"},
 		{"file cannot be formatted", "unformattable"},
+		{"forbidden call", "forbidden_call"},
+		{"forbidden flag error handling", "forbidden_flag_handling"},
 	} {
 		if strings.HasPrefix(kind, r.prefix) {
 			return r.rule
@@ -325,6 +328,9 @@ func ParseReply(text string, e Expect) (Reply, error) {
 	if kind := gate(f, e, found[0]); kind != "" {
 		if kind == badDeclaration {
 			return r, malformedC(ClassDeclaration, kind)
+		}
+		if strings.HasPrefix(kind, "forbidden") {
+			return r, malformedC(ClassForbidden, kind)
 		}
 		return r, malformed(kind)
 	}

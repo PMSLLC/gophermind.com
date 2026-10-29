@@ -21,6 +21,8 @@ func TestMalformedNoteByKind(t *testing.T) {
 		{"not found", "package stats\n\nfunc " + canary + "() {}\n", noteNotFound},
 		{"package", "package " + strings.ToLower(canary) + "\n\nfunc Finalize() int { return 1 }\n", notePackage},
 		{"syntax", "package stats\n\nfunc Finalize( {" + canary + "\n", noteSyntax},
+		{"forbidden", "package stats\n\nimport \"flag\"\n\nfunc Finalize() int { _ = flag.ContinueOnError; return 1 }\n", noteForbiddenCall},
+		{"forbidden exit", "package stats\n\nimport \"os\"\n\nfunc Finalize() int { os.Exit(1); return 1 }\n", noteForbiddenCall},
 		{"unknown kind", "", noteMalformed},
 	}
 	for _, c := range cases {

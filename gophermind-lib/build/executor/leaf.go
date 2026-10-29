@@ -40,6 +40,7 @@ const (
 	noteNotFound       = "The file must declare the function named in the contract."
 	notePackage        = "The file must use exactly the package named in the contract."
 	noteSyntax         = "The previous file is not valid Go source. Reply with exactly one complete Go source file in one code fence."
+	noteForbiddenCall  = "The previous file was refused: it used something model code may not use. Never call os.Exit, log.Fatal, log.Panic, runtime.Goexit or recover. Outside package main never use flag.ExitOnError or flag.ContinueOnError: read the arguments by looping over the slice by hand, and report a bad argument by returning an error or a code."
 	noteStray          = "The previous reply was refused: something other than the target file was written while its tests ran. Write only the target file."
 	noteCritical       = "The previous reply was refused: a request to a critical network host failed while its tests ran."
 )
@@ -58,6 +59,8 @@ func malformedNote(err error) string {
 		return notePackage
 	case packer.ClassSyntax:
 		return noteSyntax
+	case packer.ClassForbidden:
+		return noteForbiddenCall
 	}
 	return noteMalformed
 }

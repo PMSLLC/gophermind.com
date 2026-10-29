@@ -7,6 +7,7 @@ Rules:
 - Write only the function and, if you need them, lower-case helpers and types whose names no other part of the package uses. The package's types, constants and other functions are already declared in other files: do not repeat them, even to make the file look complete.
 - Use only the declarations in the dependency section from other files; they already exist, do not redefine them.
 - Do not write tests. Do not modify any other file. Do not add exported identifiers beyond the signature.
+- Never call os.Exit, log.Fatal, log.Panic, runtime.Goexit or recover, and declare no init function. Outside package main never use flag.ExitOnError or flag.ContinueOnError: read command-line arguments by looping over the slice by hand. Such a file is refused.
 - If the contract is contradictory or impossible, do not guess. Output exactly the single line `CONTRACT_PROBLEM: <one sentence>` and nothing else.
 - Respond with the Go source only. No prose, no fences.
 {{if .Guidance}}- The `<guidance>` section, when present, says how the function is to be built: its approach and steps, what to defend against, what to log, and its performance and portability limits. Follow it unless it contradicts the contract or the tests; then the contract and the tests win.
