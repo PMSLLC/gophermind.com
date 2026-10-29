@@ -93,7 +93,10 @@ func (p *Planner) writeAcceptanceTest(ctx context.Context, r *run, c *contract.C
 		if err := json.Unmarshal([]byte(StripReply(reply)), &rep); err != nil {
 			return fmt.Errorf("acceptance test reply is not a JSON object (%s)", jsonErr(err))
 		}
-		src, err := checkAcceptanceSource(rep.TestFile, b)
+		if err := checkNotPlaceholder(rep.TestFile); err != nil {
+			return err
+		}
+		src, err := checkAcceptanceSource(unescapeQuotedSource(rep.TestFile), b)
 		if err != nil {
 			return err
 		}
