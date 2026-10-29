@@ -67,3 +67,16 @@ func notApplicableListFields(m map[string]any) []string {
 	}
 	return changed
 }
+
+// observabilityNoLogs turns a not-applicable observability group into the
+// explicit answer "no log events, no metrics, no span" for a class that may not
+// dismiss the group. That answer passes the checks and says the same thing;
+// a model kept writing not applicable for a wiring function through every
+// repair. It reports whether it changed the group.
+func observabilityNoLogs(m map[string]any, class string) bool {
+	if _, na := notApplicable(m["observability"]); !na || naAllowed("observability", class) {
+		return false
+	}
+	m["observability"] = map[string]any{"log_events": []any{}, "metrics": []any{}, "trace_span": nil}
+	return true
+}

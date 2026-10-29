@@ -52,3 +52,18 @@ func TestNotApplicableListFieldsBecomeEmpty(t *testing.T) {
 		t.Error("a group-level not_applicable was changed")
 	}
 }
+
+func TestForbiddenObservabilityNABecomesNoLogs(t *testing.T) {
+	m := map[string]any{"observability": map[string]any{"not_applicable": "main only wires the program together and logs nothing"}}
+	if !observabilityNoLogs(m, "wiring") {
+		t.Fatal("not changed")
+	}
+	o, _ := m["observability"].(map[string]any)
+	if l, ok := o["log_events"].([]any); !ok || len(l) != 0 {
+		t.Errorf("observability = %v", m["observability"])
+	}
+	pure := map[string]any{"observability": map[string]any{"not_applicable": "a pure function has nothing to log here"}}
+	if observabilityNoLogs(pure, "pure") {
+		t.Error("an allowed not applicable was changed")
+	}
+}
