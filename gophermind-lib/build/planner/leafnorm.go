@@ -184,6 +184,11 @@ func normalizeShape(d map[string]any, fnName string, note func(field, what strin
 			ct[field] = arr
 			note("contract."+field, "array")
 		}
+		if field == "inputs" || field == "outputs" {
+			if nameParams(arr, field == "outputs") {
+				note("contract."+field, "named")
+			}
+		}
 		if field == "side_effects" {
 			for i, e := range arr {
 				if m, isObj := e.(map[string]any); isObj {
@@ -193,6 +198,33 @@ func normalizeShape(d map[string]any, fnName string, note func(field, what strin
 			}
 		}
 	}
+}
+
+// nameParams gives a name to each input or output object that has none: the
+// schema needs one, and Go results are often unnamed. A lone output is "result",
+// several are "result1", "result2"; inputs are "arg1", "arg2" by position. It
+// reports whether it named any.
+func nameParams(arr []any, output bool) bool {
+	named := false
+	for i, x := range arr {
+		m, ok := x.(map[string]any)
+		if !ok {
+			continue
+		}
+		if n, _ := m["name"].(string); strings.TrimSpace(n) != "" {
+			continue
+		}
+		switch {
+		case output && len(arr) == 1:
+			m["name"] = "result"
+		case output:
+			m["name"] = fmt.Sprintf("result%d", i+1)
+		default:
+			m["name"] = fmt.Sprintf("arg%d", i+1)
+		}
+		named = true
+	}
+	return named
 }
 
 func hasKey(m map[string]any, k string) bool { _, ok := m[k]; return ok }
