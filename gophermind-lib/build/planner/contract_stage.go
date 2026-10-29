@@ -507,6 +507,11 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			"function_aligned_to_component: %d functions did not sit in their component's package and folder; moved: %s",
 			len(rep.Aligned), strings.Join(boundedIDs(rep.Aligned, maxUnresolvedInError), ", ")))
 	}
+	if ids := architectureUses(st.Doc, r.brief.Sections["Architecture"]); len(ids) > 0 {
+		p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
+			"architecture_uses_added: %d functions call a function of another package as the brief's Architecture section says, but did not list it in uses; added for: %s",
+			len(ids), strings.Join(boundedIDs(ids, maxUnresolvedInError), ", ")))
+	}
 	if len(rep.Refiled) > 0 {
 		p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
 			"file_moved_to_package_dir: %d files were outside the folder of their package, so the package would not exist where it is imported; moved: %s",
