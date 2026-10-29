@@ -312,3 +312,48 @@ func TestExecutorArtifactsSetting(t *testing.T) {
 		t.Errorf("artifacts: maybe must be refused, got %v", err)
 	}
 }
+
+func TestProviderSamplingSettingsLoadAndAreValidated(t *testing.T) {
+	t.Setenv("GOPHERMIND_CONFIG_DIR", t.TempDir())
+	dir := t.TempDir()
+	fresh := filepath.Join(dir, "fresh.yaml")
+	if _, err := settings.Load(fresh); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(fresh)
+	var m map[string]any
+	if err := yaml.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name string, temp any, jsonMode bool) string {
+		p := m["providers"].([]any)[0].(map[string]any)
+		delete(p, "temperature")
+		delete(p, "json_mode")
+		if temp != nil {
+			p["temperature"] = temp
+		}
+		if jsonMode {
+			p["json_mode"] = true
+		}
+		out, _ := yaml.Marshal(m)
+		path := filepath.Join(dir, name)
+		os.WriteFile(path, out, 0o600)
+		return path
+	}
+	c, err := settings.Load(write("ok.yaml", 1.0, true))
+	if err != nil {
+		t.Fatalf("a valid file was refused: %v", err)
+	}
+	if p := c.Providers[0]; p.Temperature == nil || *p.Temperature != 1.0 || !p.JSONMode {
+		t.Errorf("provider = %+v", p)
+	}
+	for _, bad := range []float64{-0.1, 2.5} {
+		if _, err := settings.Load(write("bad.yaml", bad, false)); err == nil {
+			t.Errorf("temperature %v was accepted", bad)
+		}
+	}
+	c, err = settings.Load(write("none.yaml", nil, false))
+	if err != nil || c.Providers[0].Temperature != nil || c.Providers[0].JSONMode {
+		t.Errorf("unset fields should stay unset: %v %+v", err, c.Providers[0])
+	}
+}

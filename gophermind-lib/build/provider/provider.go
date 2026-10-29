@@ -31,6 +31,10 @@ type Request struct {
 	// with after a truncated reply; zero means the router's default cap.
 	MaxGrownTokens int
 	Temperature    float64 // executor uses 0 for implementation, 0.2 for planning
+	// JSON says the reply must be one JSON object. A provider configured with
+	// json_mode then asks its server to enforce valid JSON; any other call (code,
+	// prose) never does.
+	JSON bool
 	// StopSequences are optional; the executor uses them to cut off trailing prose after a code fence.
 	StopSequences []string
 	// Workdir is the absolute path of the leaf's worktree. Providers that do not
@@ -90,6 +94,13 @@ type Config struct {
 	// (none, low, medium, high). Thinking models such as qwen3.6 need "none" to
 	// answer in content instead of spending the budget on hidden reasoning.
 	ReasoningEffort string
+	// Temperature, when non-nil, replaces the temperature of every request to
+	// this provider, including an explicit 0. Some models loop at the low
+	// temperatures a caller asks for.
+	Temperature *float64
+	// JSONMode makes a call that expects JSON (Request.JSON) ask the server for
+	// response_format json_object. Off by default: not every server accepts it.
+	JSONMode bool
 }
 
 // Typed errors the router switches on. Any other error is treated as Transient.

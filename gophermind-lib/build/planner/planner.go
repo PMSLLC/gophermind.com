@@ -214,6 +214,11 @@ type callSpec struct {
 	tier router.Tier
 	// revision is the definition revision the call is made at; it goes to the ledger row.
 	revision int
+	// jsonObject marks a call whose reply is one JSON object (not a list), so a
+	// provider with json_mode may ask its server to enforce valid JSON. Leave it
+	// unset for a list or free text: JSON mode makes a server wrap a list in an
+	// object.
+	jsonObject bool
 	// skipSave, when set, is asked about each reply before it is saved or dumped:
 	// true keeps the reply out of _state/replies (a reply that holds a secret).
 	skipSave func(text string) bool
@@ -236,6 +241,7 @@ func (p *Planner) callRes(ctx context.Context, r *run, cs callSpec, prompt strin
 		TaskType: cs.taskType, NodeClass: cs.nodeClass, Revision: cs.revision}
 	req := request(cs.stage, prompt, cs.maxTokens)
 	req.MaxGrownTokens = cs.maxGrown
+	req.JSON = cs.jsonObject
 	keep := func(text string) bool { return cs.skipSave == nil || !cs.skipSave(text) }
 	if p.dumpDir(r) != "" {
 		inner := parse

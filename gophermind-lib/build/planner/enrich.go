@@ -735,7 +735,7 @@ func (p *Planner) structureCall(ctx context.Context, r *run, stage, kind, label,
 	}
 	var out map[string]any
 	var warns []string
-	cs := callSpec{stage: stage, taskType: "enrich", scope: scope, maxTokens: maxTokensEnrichStructure}
+	cs := callSpec{stage: stage, taskType: "enrich", scope: scope, maxTokens: maxTokensEnrichStructure, jsonObject: true}
 	err = p.call(ctx, r, cs, prompt, func(text string) error {
 		var x map[string]any
 		if err := json.Unmarshal([]byte(StripReply(text)), &x); err != nil {

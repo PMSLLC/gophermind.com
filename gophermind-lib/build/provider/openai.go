@@ -57,6 +57,12 @@ type wireRequest struct {
 	Stop        []string      `json:"stop,omitempty"`
 	// ReasoningEffort is omitted when empty.
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	// ResponseFormat is set only for a JSON-expecting call on a json_mode provider.
+	ResponseFormat *wireFormat `json:"response_format,omitempty"`
+}
+
+type wireFormat struct {
+	Type string `json:"type"`
 }
 
 type wireReply struct {
@@ -74,6 +80,12 @@ type wireReply struct {
 
 func (o *OpenAI) Complete(ctx context.Context, req Request) (Response, error) {
 	wr := wireRequest{Model: req.Model, MaxTokens: req.MaxTokens, Temperature: req.Temperature, Stop: req.StopSequences, ReasoningEffort: o.cfg.ReasoningEffort}
+	if o.cfg.Temperature != nil {
+		wr.Temperature = *o.cfg.Temperature
+	}
+	if o.cfg.JSONMode && req.JSON {
+		wr.ResponseFormat = &wireFormat{Type: "json_object"}
+	}
 	for _, m := range req.Messages {
 		wr.Messages = append(wr.Messages, wireMessage{Role: string(m.Role), Content: m.Content})
 	}

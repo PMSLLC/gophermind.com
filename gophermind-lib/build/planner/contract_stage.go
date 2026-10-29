@@ -252,7 +252,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			added := 0
 			first := st.Doc == nil
 			cs := callSpec{stage: stage, taskType: "contract", scope: router.ScopeBrief,
-				maxTokens: maxTokensOutline, maxGrown: maxGrownOutline}
+				maxTokens: maxTokensOutline, maxGrown: maxGrownOutline, jsonObject: true}
 			if err := p.callSized(ctx, r, cs, build, func(text string) error {
 				text, nt, err := normalizeReply(st.Doc, StripReply(text), replyOutline)
 				if err != nil {
@@ -412,7 +412,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			more := false
 			var ignored []string
 			var notes idNotes
-			cs := callSpec{stage: "contract:" + id, taskType: "contract", scope: router.ScopeComponent, maxTokens: maxTokensContract}
+			cs := callSpec{stage: "contract:" + id, taskType: "contract", scope: router.ScopeComponent, maxTokens: maxTokensContract, jsonObject: true}
 			if err := p.callSized(ctx, r, cs, build, func(text string) error {
 				text, nt, err := normalizeReply(st.Doc, StripReply(text), replyComponent)
 				if err != nil {

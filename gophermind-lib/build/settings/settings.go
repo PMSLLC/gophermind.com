@@ -47,6 +47,13 @@ type ProviderConfig struct {
 	APIKeySecret  string       `yaml:"api_key_secret,omitempty"`
 	// ReasoningEffort: none, low, medium or high. Empty means the field is not sent.
 	ReasoningEffort string `yaml:"reasoning_effort,omitempty"`
+	// Temperature, when set, replaces the temperature of every request to this
+	// provider (0 to 2). Unset keeps what each call asks for. gpt-oss loops at
+	// the 0.2 the planner asks for and wants 1.0.
+	Temperature *float64 `yaml:"temperature,omitempty"`
+	// JSONMode asks the server for valid JSON on calls that expect it (the
+	// planner's). Only for servers that accept response_format.
+	JSONMode bool `yaml:"json_mode,omitempty"`
 	// BaseURLFallbacks are tried in order when BaseURL does not answer within
 	// 3 s at preflight and at the start of a run (the mini's VPN address, for
 	// one). Optional; the first one that answers is used for the process only.
@@ -363,6 +370,9 @@ func (c *Config) Validate() error {
 		case "", "none", "low", "medium", "high":
 		default:
 			return fmt.Errorf("%s: reasoning_effort must be none, low, medium or high, got %q", where, p.ReasoningEffort)
+		}
+		if p.Temperature != nil && (*p.Temperature < 0 || *p.Temperature > 2) {
+			return fmt.Errorf("%s: temperature must be between 0 and 2, got %v", where, *p.Temperature)
 		}
 		if len(p.Models) == 0 {
 			return fmt.Errorf("%s: at least one model is required", where)
