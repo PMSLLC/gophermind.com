@@ -312,6 +312,9 @@ type Options struct {
 	// ReposDir, when set with BriefsDir, gives every uploaded run its own repo
 	// under it (made by `brief init-repo`); the brief needs no repo line.
 	ReposDir string
+	// HarnessBriefs, when set with BriefsDir, is a folder of example briefs the
+	// harness (/app/harness) runs again and again until each has passed once.
+	HarnessBriefs string
 	// BriefCommand builds the process for one gophermind invocation (args
 	// exclude the program name). Nil runs `gophermind` directly; a deployment
 	// that runs briefs as another user wraps it (see docs/SERVER-SETUP.md).
@@ -450,6 +453,17 @@ func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 		mux.Handle("POST /app/briefs/{id}/answer", briefWrap(bm.answerHandler))
 		mux.Handle("GET /app/briefs/{id}/events", briefWrap(bm.eventsHandler))
 		mux.Handle("GET /app/api/briefs", briefWrap(bm.list))
+		// The page is always there, so the rail never links to nothing; without
+		// HarnessBriefs its API answers 404 and the page says so.
+		mux.HandleFunc("GET /app/harness", pageHandler("assets/harness.html"))
+		if opt.HarnessBriefs != "" {
+			h := newHarness(bm, opt.HarnessBriefs)
+			mux.Handle("GET /app/api/harness", briefWrap(h.stateHandler))
+			mux.Handle("POST /app/api/harness/start", briefWrap(h.startHandler))
+			mux.Handle("POST /app/api/harness/stop", briefWrap(h.stopHandler))
+			mux.Handle("POST /app/api/harness/reset", briefWrap(h.resetHandler))
+			go h.loop()
+		}
 	}
 	if d.Metrics != nil {
 		mux.HandleFunc("/metrics", metricsHandler(d.Metrics))

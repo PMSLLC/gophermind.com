@@ -66,10 +66,13 @@ type serverConfig struct {
 	// "sudo -n -u gmrun /usr/local/bin/gophermind"); empty runs gophermind
 	// directly. BriefKillCmd is the prefix for signalling a run's process
 	// group (GOPHERMIND_BRIEF_KILL_CMD, for example "sudo -n -u gmrun /bin/kill").
-	BriefsDir    string
-	ReposDir     string // GOPHERMIND_REPOS_DIR: one repo per uploaded run
-	BriefCmd     string
-	BriefKillCmd string
+	BriefsDir string
+	ReposDir  string // GOPHERMIND_REPOS_DIR: one repo per uploaded run
+	// HarnessBriefs is GOPHERMIND_HARNESS_BRIEFS: the example briefs the
+	// harness page runs until each has passed.
+	HarnessBriefs string
+	BriefCmd      string
+	BriefKillCmd  string
 }
 
 // parseServerConfig parses flags against args (typically os.Args[1:]), using
@@ -116,6 +119,7 @@ func parseServerConfig(args []string, getenv func(string) string, getwd func() (
 	}
 	cfg.BriefsDir = getenv("GOPHERMIND_BRIEFS_DIR")
 	cfg.ReposDir = getenv("GOPHERMIND_REPOS_DIR")
+	cfg.HarnessBriefs = getenv("GOPHERMIND_HARNESS_BRIEFS")
 	cfg.BriefCmd = getenv("GOPHERMIND_BRIEF_CMD")
 	cfg.BriefKillCmd = getenv("GOPHERMIND_BRIEF_KILL_CMD")
 	return cfg, nil

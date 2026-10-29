@@ -74,6 +74,7 @@ export GOPHERMIND_PORT=$PORT
 export GOPHERMIND_ROOT="$BASE/workspace"
 export GOPHERMIND_BRIEFS_DIR="$BASE/briefs"
 export GOPHERMIND_REPOS_DIR="$BASE/repos"
+export GOPHERMIND_HARNESS_BRIEFS="$repo/examples/briefs"
 export GOPHERMIND_LLM_ENDPOINT="$LLM_ENDPOINT"
 export PATH="$BASE/bin:/opt/homebrew/bin:/usr/local/bin:/usr/local/go/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 $OFFLINE_ENV

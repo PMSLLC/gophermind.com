@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'">
+<title>Harness - GopherMind</title>
+<style>
+/*GM_CSS*/
+</style>
+</head>
+<body class="gm-briefs">
+<div class="shell">
+<!--GM_RAIL-->
+<main class="main">
+<div class="head"><h1>Harness</h1><div class="actions">
+  <button class="btn primary" id="start" type="button">Start</button>
+  <button class="btn" id="stop" type="button">Stop</button>
+  <button class="btn" id="reset" type="button">Clear score</button>
+</div></div>
+<p class="meta">Runs the example briefs one after another, again and again, until each has passed once. It keeps going across restarts and needs no network. It never changes code; it repeats runs and keeps the score.</p>
+<p class="meta" id="status"></p>
+<div id="empty"></div>
+<div class="tablewrap" id="wrap" hidden>
+<table>
+  <thead><tr><th>Brief</th><th>Title</th><th>Attempts</th><th>Passes</th><th>Last run</th><th>Last result</th><th>When</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+</div>
+</main>
+</div>
+<script>
+'use strict';
+function pill(text){
+  const s = document.createElement('span');
+  s.className = 'pill';
+  s.textContent = text || '-';
+  if (['planning','running','waiting'].includes(text)) s.className += ' live';
+  if (text === 'done') s.className += ' good';
+  if (['failed','stopped','interrupted','lost'].includes(text)) s.className += ' bad';
+  return s;
+}
+function cell(tr, child){
+  const td = document.createElement('td');
+  td.appendChild(typeof child === 'string' ? document.createTextNode(child) : child);
+  tr.appendChild(td);
+}
+function when(iso){
+  if (!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d) ? iso : d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+function render(s){
+  const st = document.getElementById('status');
+  let text = s.done ? 'Done: every example brief has passed.' : (s.running ? 'Running.' : 'Stopped.');
+  if (s.current) text += ' Now: ' + s.current_file + ' as ' + s.current + '.';
+  if (s.note) text += ' ' + s.note;
+  if (s.updated_at) text += ' Updated ' + when(s.updated_at) + '.';
+  st.textContent = text;
+  document.getElementById('start').disabled = s.running;
+  document.getElementById('stop').disabled = !s.running;
+  const rows = document.getElementById('rows');
+  rows.textContent = '';
+  if (!s.briefs || !s.briefs.length) { document.getElementById('empty').textContent = 'No example briefs found.'; return; }
+  document.getElementById('wrap').hidden = false;
+  for (const b of s.briefs) {
+    const tr = document.createElement('tr');
+    cell(tr, b.file);
+    cell(tr, b.title || '');
+    cell(tr, String(b.attempts));
+    cell(tr, String(b.passes));
+    if (b.last_run) {
+      const a = document.createElement('a');
+      a.href = '/app/briefs/' + encodeURIComponent(b.last_run);
+      a.textContent = b.last_run;
+      cell(tr, a);
+    } else cell(tr, '');
+    cell(tr, s.current && b.file === s.current_file ? pill('running') : pill(b.last_phase));
+    cell(tr, when(b.last_at));
+    rows.appendChild(tr);
+  }
+}
+function load(){
+  fetch('/app/api/harness', { credentials: 'same-origin' })
+    .then(r => {
+      if (r.status === 404) throw new Error('the harness is not set up on this server');
+      return r.ok ? r.json() : Promise.reject(new Error(String(r.status)));
+    })
+    .then(render)
+    .catch(e => { document.getElementById('status').textContent = 'Could not load the harness: ' + e.message; });
+}
+function act(what){
+  fetch('/app/api/harness/' + what, { method: 'POST', credentials: 'same-origin' })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error(String(r.status))))
+    .then(render)
+    .catch(e => { document.getElementById('status').textContent = 'Could not ' + what + ': ' + e.message; });
+}
+document.getElementById('start').addEventListener('click', () => act('start'));
+document.getElementById('stop').addEventListener('click', () => act('stop'));
+document.getElementById('reset').addEventListener('click', () => act('reset'));
+load();
+setInterval(load, 10000);
+</script>
+</body>
+</html>
