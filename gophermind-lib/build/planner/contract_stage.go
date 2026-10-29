@@ -642,6 +642,9 @@ func mergeOutline(doc map[string]any, have []Dependency, text, briefID string, f
 		return nil, nil, 0, nil, fmt.Errorf("contract outline is not a JSON object (%s)", jsonErrIn(err, text))
 	}
 	first := doc == nil
+	if first && o.Conventions != nil {
+		normalizeConventions(o.Conventions)
+	}
 	if first && o.Module != "" && !validModulePath(o.Module) {
 		return nil, nil, 0, nil, errors.New("contract outline: `module` is not a valid Go module path; write a short name such as slugify or example.com/slugify, not a file path")
 	}
