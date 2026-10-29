@@ -169,6 +169,10 @@ func renderTestwriterWith(node, module, file, funcName, testFile string, sibling
 	data := map[string]string{"MainPackage": mainPkg, "Node": node, "PackageDir": dir,
 		"TestFuncName": funcName, "TestFile": testFile, "Module": module, "ImportPath": importPath,
 		"Imports": qualifierImports(node, siblings)}
+	data["MainFunc"] = ""
+	if mainPkg != "" && strings.Join(strings.Fields(nodeSignature(node)), " ") == "func main()" {
+		data["MainFunc"] = "yes"
+	}
 	data["Unexported"], data["Method"], data["Clause"], data["TargetName"], data["Why"] = "", "", "", "", ""
 	data["Receiver"] = contract.ReceiverName(nodeSignature(node))
 	if name, method, why := internalTarget(nodeSignature(node)); why != whyNone && mainPkg == "" {

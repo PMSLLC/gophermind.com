@@ -14,7 +14,9 @@ Cover:
 - every constraint on every input (empty, whitespace, boundary lengths, nil),
 - boundaries on both sides (the last valid value and the first invalid value).
 
-{{if .MainPackage}}The package under test is a main package. The test file must declare `package main`, in the same directory, and call the functions directly: no import of the package (Go cannot import a main package), and never `package X_test` or any other package clause. Standard library imports and other packages of this module are fine.
+{{if .MainFunc}}The function under test is `func main()`. It takes nothing and returns nothing, and only wires the program together, so no test can call what it calls and its behaviour is covered by the program's acceptance commands. Write exactly one test whose body is `_ = main` (it proves the entry point exists), with the one test entry in `tests` describing that. Call no other function, define no helper, and import only `testing`.
+
+{{end}}{{if .MainPackage}}The package under test is a main package. The test file must declare `package main`, in the same directory, and call the functions directly: no import of the package (Go cannot import a main package), and never `package X_test` or any other package clause. Standard library imports and other packages of this module are fine.
 
 {{else}}{{if .Unexported}}{{.Why}}: the first line of the file must be exactly `package {{.Clause}}`, the test lives in the same package, {{if .Method}}call the method on a value of its receiver type, with no package qualifier{{else}}call the function directly by its name (`{{.TargetName}}(...)`) without any package qualifier{{end}} and do not import the package. Never write `package {{.Clause}}_test`: a file in that package cannot see an unexported name and is refused. Standard library imports and other packages of this module are fine. Every import must be used, and every value must have the type the signature declares.
 
