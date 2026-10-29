@@ -496,25 +496,26 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 	// declared are asked for, not treated as an unusable reply.
 	// A type that signatures use and no type declares is asked for the same way:
 	// without it the function cannot compile, nor can its test.
-	if moved := moveMainToEntryPoint(st.Doc); len(moved) > 0 {
+	rep := repairContractShape(st.Doc)
+	if len(rep.Moved) > 0 {
 		p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
 			"main_moved_to_entry_point: %d main functions were outside cmd/, so no program would build; moved: %s",
-			len(moved), strings.Join(boundedIDs(moved, maxUnresolvedInError), ", ")))
+			len(rep.Moved), strings.Join(boundedIDs(rep.Moved, maxUnresolvedInError), ", ")))
 	}
-	if aligned := alignFunctionsToComponents(st.Doc); len(aligned) > 0 {
+	if len(rep.Aligned) > 0 {
 		p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
 			"function_aligned_to_component: %d functions did not sit in their component's package and folder; moved: %s",
-			len(aligned), strings.Join(boundedIDs(aligned, maxUnresolvedInError), ", ")))
+			len(rep.Aligned), strings.Join(boundedIDs(rep.Aligned, maxUnresolvedInError), ", ")))
 	}
-	if dropped := dropStdlibUses(st.Doc); len(dropped) > 0 {
+	if len(rep.Dropped) > 0 {
 		p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
 			"uses_standard_library: %d uses entries named standard library packages, which are imported and never listed; dropped: %s",
-			len(dropped), strings.Join(boundedIDs(dropped, maxUnresolvedInError), ", ")))
+			len(rep.Dropped), strings.Join(boundedIDs(rep.Dropped, maxUnresolvedInError), ", ")))
 	}
-	if renamed := exportCrossPackageUses(st.Doc); len(renamed) > 0 {
+	if len(rep.Exported) > 0 {
 		p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
 			"cross_package_export: %d functions are used from another package, so their names were capitalised to be exported: %s",
-			len(renamed), strings.Join(boundedIDs(renamed, maxUnresolvedInError), ", ")))
+			len(rep.Exported), strings.Join(boundedIDs(rep.Exported, maxUnresolvedInError), ", ")))
 	}
 	for {
 		un := unresolvedFinal(st.Doc)

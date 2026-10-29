@@ -124,3 +124,32 @@ func TestMainSharingAComponentGetsANewEntryPointComponent(t *testing.T) {
 		t.Errorf("fn-run moved with main: %v", fns[1])
 	}
 }
+
+// The coverage fill step adds functions after the contract was checked. One that
+// puts main in internal/cli, lists fmt in uses or calls an unexported function
+// across packages must get the same repairs as the contract proper.
+func TestRepairContractShapeAppliesEveryRepair(t *testing.T) {
+	doc := alignDoc([]any{comp("cli", "internal/cli"), comp("entry-point", "cmd/slugify")},
+		mainFn("cli", "internal/cli", "internal/cli/main.go"),
+		fnIn("fn-run", "internal/cli", "func run() int", "fn-fmt"),
+	)
+	// main (now in cmd/slugify) uses run in another package, and uses fmt.
+	objects(doc["functions"])[0]["uses"] = []any{"fn-run", "fn-os"}
+	rep := repairContractShape(doc)
+	if !reflect.DeepEqual(rep.Moved, []string{"fn-main"}) {
+		t.Errorf("moved = %v", rep.Moved)
+	}
+	if !reflect.DeepEqual(rep.Dropped, []string{"fn-os", "fn-fmt"}) && !reflect.DeepEqual(rep.Dropped, []string{"fn-fmt", "fn-os"}) {
+		t.Errorf("dropped = %v", rep.Dropped)
+	}
+	if !reflect.DeepEqual(rep.Exported, []string{"fn-run"}) {
+		t.Errorf("exported = %v", rep.Exported)
+	}
+	if got := signatureOfFn(doc, "fn-run"); got != "func Run() int" {
+		t.Errorf("run = %q", got)
+	}
+	f := objects(doc["functions"])[0]
+	if f["package"] != "cmd/slugify" || f["component"] != "entry-point" {
+		t.Errorf("main = %v %v", f["component"], f["package"])
+	}
+}

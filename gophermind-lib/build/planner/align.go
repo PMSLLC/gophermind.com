@@ -145,3 +145,22 @@ func programName(doc map[string]any) string {
 	}
 	return name
 }
+
+// contractRepairs are the ids repairContractShape changed, by repair.
+type contractRepairs struct {
+	Moved, Aligned, Dropped, Exported []string
+}
+
+// repairContractShape applies, in order, the repairs a model's contract needs
+// before anything is built from it: main goes under cmd/, a function takes its
+// component's package, standard library names leave uses, and a function used
+// from another package is exported. It runs on the contract proper and on what
+// the coverage fill step adds, since both come from a model.
+func repairContractShape(doc map[string]any) contractRepairs {
+	return contractRepairs{
+		Moved:    moveMainToEntryPoint(doc),
+		Aligned:  alignFunctionsToComponents(doc),
+		Dropped:  dropStdlibUses(doc),
+		Exported: exportCrossPackageUses(doc),
+	}
+}
