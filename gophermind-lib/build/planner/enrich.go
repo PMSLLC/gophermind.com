@@ -753,10 +753,8 @@ func (p *Planner) structureCall(ctx context.Context, r *run, stage, kind, label,
 			}
 			return errors.New("enrich reply: " + msg)
 		}
-		for _, k := range []string{"assumptions", "open_questions", "decision_ids"} {
-			if _, ok := x[k].([]any); !ok {
-				return fmt.Errorf("enrich reply: %s must be a JSON array (write [] when there is nothing to list)", k)
-			}
+		if err := structureLists(x); err != nil {
+			return err
 		}
 		if n := len(strList(x["open_questions"])); n > 0 {
 			return fmt.Errorf("enrich reply: open_questions has %d entries; it must be an empty array", n)
@@ -902,4 +900,20 @@ func normalizeDeps(doc map[string]any, c *contract.Contracts, env groupEnv) deps
 		}
 	}
 	return out
+}
+
+// structureLists checks the list keys of a structure enrich reply. A key the
+// reply leaves out or sets to null is an empty list: the model dropped the
+// empty open_questions and decision_ids it was told to write, and three such
+// replies stopped planning. A key of another type is still refused.
+func structureLists(x map[string]any) error {
+	for _, k := range []string{"assumptions", "open_questions", "decision_ids"} {
+		if v, present := x[k]; !present || v == nil {
+			x[k] = []any{}
+		}
+		if _, ok := x[k].([]any); !ok {
+			return fmt.Errorf("enrich reply: %s must be a JSON array (write [] when there is nothing to list)", k)
+		}
+	}
+	return nil
 }
