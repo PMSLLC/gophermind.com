@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"regexp"
 	"strings"
 
@@ -48,6 +50,9 @@ type idNotes struct {
 	// PackageClauses counts the type declarations a stray `package x` line was
 	// removed from: the harness wraps a declaration in its own package.
 	PackageClauses int
+	// EmptyTypes counts the type entries dropped because their declaration,
+	// once the package clause was removed, declared nothing.
+	EmptyTypes int
 }
 
 func isUpper(c byte) bool { return c >= 'A' && c <= 'Z' }
@@ -221,6 +226,44 @@ func normalizeReply(doc map[string]any, text string, kind replyKind) (string, id
 			}
 		}
 	}
+	// A type entry that declares nothing (a package clause and a comment for
+	// a package the brief says has no shared types) is dropped, with every use
+	// of its id: it can never pass the declaration check, and a model repeated
+	// it on each repair.
+	empty := map[string]bool{}
+	var keptTypes []map[string]any
+	for _, o := range lists["types"] {
+		if decl, ok := o["decl"].(string); ok && declaresNothing(decl) {
+			if id, _ := o["id"].(string); id != "" {
+				empty[id] = true
+			}
+			notes.EmptyTypes++
+			changed = true
+			continue
+		}
+		keptTypes = append(keptTypes, o)
+	}
+	if len(empty) > 0 {
+		lists["types"] = keptTypes
+		kept := make([]any, 0, len(keptTypes))
+		for _, o := range keptTypes {
+			kept = append(kept, o)
+		}
+		reply["types"] = kept
+		for _, k := range []string{"components", "types", "functions"} {
+			for _, o := range objects(reply[k]) {
+				if uses, ok := o["uses"].([]any); ok {
+					kept := uses[:0:0]
+					for _, u := range uses {
+						if s, _ := u.(string); !empty[s] {
+							kept = append(kept, u)
+						}
+					}
+					o["uses"] = kept
+				}
+			}
+		}
+	}
 
 	// An integration test's fields are text in the schema; a list of arguments or
 	// an exit code written as a number is read as text.
@@ -322,6 +365,10 @@ func (p *Planner) noteNormalized(st *contractState, stage string, n idNotes) {
 			"signature_type_id_normalized: %d type ids in signatures were replaced by Go type names (%s); %d in all so far",
 			n.SigTypeIDs, strings.Join(n.SigExamples, ", "), st.SigTypeIDsNormalized))
 	}
+	if n.EmptyTypes > 0 {
+		p.emit(events.KindWarning, stage, "", fmt.Sprintf(
+			"type_decl_empty_dropped: %d type entries declared nothing once the package clause was removed; dropped", n.EmptyTypes))
+	}
 	if n.PackageClauses > 0 {
 		p.emit(events.KindWarning, stage, "", fmt.Sprintf(
 			"type_decl_package_clause_removed: %d type declarations carried a package clause, which the harness supplies; removed", n.PackageClauses))
@@ -411,4 +458,11 @@ var packageClauseRE = regexp.MustCompile(`(?m)^package[ \t]+[A-Za-z_][A-Za-z0-9_
 // writes a whole file adds its own clause, which makes the declaration unparseable.
 func stripPackageClause(decl string) string {
 	return packageClauseRE.ReplaceAllString(decl, "")
+}
+
+// declaresNothing reports whether a type declaration holds no declaration at
+// all: only comments and white space once the package clause is gone.
+func declaresNothing(decl string) bool {
+	f, err := parser.ParseFile(token.NewFileSet(), "decl.go", "package p\n"+stripPackageClause(decl), parser.ParseComments)
+	return err == nil && len(f.Decls) == 0
 }

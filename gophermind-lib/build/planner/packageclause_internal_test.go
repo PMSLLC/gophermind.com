@@ -59,3 +59,40 @@ func TestDoesNotParseTellsTheModelWhatToCheck(t *testing.T) {
 		t.Errorf("err = %v, want a hint that mentions the package clause and what the harness adds", err)
 	}
 }
+
+// A model listed a "types" entry that is only a package clause and a comment
+// (the brief says there are no shared types): it declares nothing, so it is
+// dropped instead of refused three times.
+func TestNormalizeReplyDropsATypeThatDeclaresNothing(t *testing.T) {
+	doc, _, err := parseOutline(okOutline, testRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply := `{"types": [{"id": "types", "package": "internal/types", "file": "internal/types/types.go", "decl": "// Package types holds shared declarations.\npackage types", "uses": []},` +
+		`{"id": "slug", "package": "x", "file": "internal/x/slug.go", "decl": "type Slug string", "uses": []}],` +
+		` "functions": [{"id": "fn-make", "uses": ["types", "slug"]}]}`
+	out, notes, err := normalizeReply(doc, reply, replyComponent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var r struct {
+		Types []struct {
+			ID string `json:"id"`
+		} `json:"types"`
+		Functions []struct {
+			Uses []string `json:"uses"`
+		} `json:"functions"`
+	}
+	if err := json.Unmarshal([]byte(out), &r); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Types) != 1 || r.Types[0].ID != "slug" {
+		t.Errorf("types = %+v, want only slug", r.Types)
+	}
+	if len(r.Functions) != 1 || strings.Join(r.Functions[0].Uses, ",") != "slug" {
+		t.Errorf("functions = %+v, want uses [slug]", r.Functions)
+	}
+	if notes.EmptyTypes != 1 {
+		t.Errorf("notes.EmptyTypes = %d, want 1", notes.EmptyTypes)
+	}
+}
