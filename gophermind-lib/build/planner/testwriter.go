@@ -154,6 +154,14 @@ func renderTestwriter(node, module, file, funcName, testFile string) (string, er
 // every package qualifier the node's signature and dependency signatures use.
 // siblings maps contract package clauses to import paths (PackageImports).
 func renderTestwriterWith(node, module, file, funcName, testFile string, siblings map[string]string) (string, error) {
+	return renderTestwriterBrief(node, module, file, funcName, testFile, siblings, "")
+}
+
+// renderTestwriterBrief is renderTestwriterWith that also gives the brief's own
+// section for the node's component. A test writer that saw only the node made
+// up values the brief settles ("max 0 returns an empty slug" where the brief
+// says 0 means no limit), and the revise step then bent the contract to match.
+func renderTestwriterBrief(node, module, file, funcName, testFile string, siblings map[string]string, brief string) (string, error) {
 	dir := path.Dir(file)
 	importPath := ""
 	if module != "" {
@@ -168,7 +176,7 @@ func renderTestwriterWith(node, module, file, funcName, testFile string, sibling
 	}
 	data := map[string]string{"MainPackage": mainPkg, "Node": node, "PackageDir": dir,
 		"TestFuncName": funcName, "TestFile": testFile, "Module": module, "ImportPath": importPath,
-		"Imports": qualifierImports(node, siblings)}
+		"Imports": qualifierImports(node, siblings), "BriefSection": brief}
 	data["MainFunc"] = ""
 	if mainPkg != "" && strings.Join(strings.Fields(nodeSignature(node)), " ") == "func main()" {
 		data["MainFunc"] = "yes"
@@ -507,7 +515,8 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 		}
 		return writtenTests{}, fmt.Errorf("test file %s already exists and this run did not write it; move it away, then resume", path.Base(rel))
 	}
-	prompt, err := renderTestwriterWith(mustJSON(withReceiverDecl(c, testwriterView(d))), c.Module, file, funcName, rel, PackageImports(c))
+	parent, _ := d["parent"].(string)
+	prompt, err := renderTestwriterBrief(mustJSON(withReceiverDecl(c, testwriterView(d))), c.Module, file, funcName, rel, PackageImports(c), briefSection(r, parent))
 	if err != nil {
 		return writtenTests{}, err
 	}
