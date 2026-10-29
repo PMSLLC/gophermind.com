@@ -415,6 +415,14 @@ func mergePatch(orig map[string]any, p revisePatch, c *contract.Contracts) (map[
 		if err := json.Unmarshal(raw, &v); err != nil {
 			return nil, invalid("a group is not valid JSON (%s)", jsonErrIn(err, string(raw)))
 		}
+		// A group is an object. A bare string where the node holds one is the
+		// model summing the group up ("none", "O(n) allocation"), not a new
+		// value, so the node keeps its own.
+		if _, isText := v.(string); isText {
+			if _, isObj := m[k].(map[string]any); isObj {
+				continue
+			}
+		}
 		m[k] = v
 	}
 	sig, _ := ct["signature"].(string)
