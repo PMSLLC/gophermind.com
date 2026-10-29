@@ -79,3 +79,19 @@ func TestStandardLibraryIdentifiersAreDroppedFromUses(t *testing.T) {
 		t.Errorf("uses = %v: fn-io-handler is not a standard library name and must stay for the repair step", got)
 	}
 }
+
+// Before the planner knows whether an id is a type or a function it keeps both
+// forms in one entry: "io-reader|fn-io-reader". That is still io.Reader.
+func TestPendingReferencesToStandardLibraryNamesAreDropped(t *testing.T) {
+	doc := fnDoc(
+		fn("fn-a", "io-reader|fn-io-reader", "os-file|fn-os-file", "slug|fn-slug", "fn-b"),
+		fn("fn-b"),
+	)
+	dropped := dropStdlibUses(doc)
+	if want := []string{"io-reader|fn-io-reader", "os-file|fn-os-file"}; !reflect.DeepEqual(dropped, want) {
+		t.Errorf("dropped = %v, want %v", dropped, want)
+	}
+	if got := strList(objects(doc["functions"])[0]["uses"]); !reflect.DeepEqual(got, []string{"slug|fn-slug", "fn-b"}) {
+		t.Errorf("uses = %v, want the non-standard-library pending reference kept", got)
+	}
+}

@@ -66,7 +66,7 @@ func dropStdlibUses(doc map[string]any) []string {
 			}
 			kept := make([]any, 0, len(uses))
 			for _, u := range uses {
-				if s, ok := u.(string); ok && !declared[s] && isStdlibName(s) {
+				if s, ok := u.(string); ok && isStdlibRef(s, declared) {
 					dropped = append(dropped, s)
 					continue
 				}
@@ -78,4 +78,22 @@ func dropStdlibUses(doc map[string]any) []string {
 		}
 	}
 	return dropped
+}
+
+// isStdlibRef reports whether a uses entry names the standard library and
+// nothing in the contract declares it. An entry may be a pending reference,
+// "type-form|fn-form", written before the planner knows which one exists.
+func isStdlibRef(s string, declared map[string]bool) bool {
+	forms := strings.Split(s, pendingSep)
+	for _, f := range forms {
+		if declared[f] {
+			return false
+		}
+	}
+	for _, f := range forms {
+		if isStdlibName(f) {
+			return true
+		}
+	}
+	return false
 }
