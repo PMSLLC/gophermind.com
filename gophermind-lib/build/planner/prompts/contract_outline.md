@@ -21,7 +21,8 @@ Requirements:
 {{else}}- This is the shared pass. Write `module`, `conventions`, `dependencies`, the `types` component (id `types`, for shared declarations) and the shared domain types: the entities more than one feature uses. Write NO feature component here; each feature gets its own pass afterwards.
 {{end}}{{if .EntryName}}- The brief describes something that is run, so this pass also writes the entry point: one component with id `entry-point` and package `cmd/{{.EntryName}}`, listed after the feature components. A later pass gives it a function `fn-main` named `main` with the signature `func main()`, and the functions that wire the feature functions into the program (flags, input, output, exit codes).
 {{end}}- If the fixed section below names the repository's go.mod module, `module` is that path exactly; do not invent another one.
-- The first pass writes `module`, `conventions` and `dependencies`. A later pass leaves `module` and `conventions` out and lists only the components, types and dependencies that are new.
+- `module` is a Go module path for the new repository: a short name such as `slugify` or `example.com/slugify`. It is never a file path and never the repository's folder.
+The first pass writes `module`, `conventions` and `dependencies`. A later pass leaves `module` and `conventions` out and lists only the components, types and dependencies that are new.
 
 Module and conventions already fixed by earlier passes:
 <fixed>
