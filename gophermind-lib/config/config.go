@@ -123,7 +123,17 @@ type Config struct {
 	// model listing and capability probing. GOPHERMIND_MODELS_PATH; empty
 	// (the default) means the client's historical "/v1/models", mirroring
 	// ChatPath's no-op default exactly.
-	ModelsPath     string
+	ModelsPath string
+	// SessionHeader names a request header that carries one random id per run
+	// (GOPHERMIND_SESSION_HEADER, e.g. X-ExecuTorch-Session-ID). Servers that
+	// keep per-session KV state reuse the cached prompt prefix across turns, so
+	// only the new tail is prefilled. Empty (the default) sends no such header.
+	SessionHeader string
+	// SessionClose (GOPHERMIND_SESSION_CLOSE) deletes the server-side session
+	// when gophermind exits. Off by default: the session id is stable per
+	// directory, so keeping it lets the next run reuse the cached prompt prefix.
+	// Turn it on when a server with few session slots is shared across projects.
+	SessionClose   bool
 	FallbackModels []string // GOPHERMIND_FALLBACK_MODELS: comma-separated, tried in order after Model on a fallback-eligible failure
 	SpeedModel     string   // GOPHERMIND_SPEED_MODEL: faster model selected by --speed (falls back to the first FallbackModels entry)
 	RootDir        string   // GOPHERMIND_ROOT (default: cwd)
@@ -266,6 +276,8 @@ func Load() (Config, error) {
 		Model:             envOr("GOPHERMIND_MODEL", ""), // empty => auto-discover from /v1/models
 		ChatPath:          envOr("GOPHERMIND_CHAT_PATH", ""),
 		ModelsPath:        envOr("GOPHERMIND_MODELS_PATH", ""),
+		SessionHeader:     envOr("GOPHERMIND_SESSION_HEADER", ""),
+		SessionClose:      envBool("GOPHERMIND_SESSION_CLOSE"),
 		FallbackModels:    envList("GOPHERMIND_FALLBACK_MODELS"),
 		SpeedModel:        envOr("GOPHERMIND_SPEED_MODEL", ""),
 		RootDir:           root,

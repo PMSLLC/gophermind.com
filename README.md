@@ -204,6 +204,8 @@ Everything is optional and layered: **flags > real env > `./.env` >
 | `GOPHERMIND_ATTENTION_FLASHES` | Screen flashes when the TUI needs you (default 4; 0 off) |
 | `GOPHERMIND_CHAT_PATH` | Path appended to `GOPHERMIND_BASE_URL` for chat completions (default `/v1/chat/completions`) |
 | `GOPHERMIND_MODELS_PATH` | Path appended to `GOPHERMIND_BASE_URL` for model listing (default `/v1/models`) |
+| `GOPHERMIND_SESSION_HEADER` | Request header that carries one random id per run, so a server with per-session KV state (for example ExecuTorch `X-ExecuTorch-Session-ID`) reuses the cached prompt prefix (default off) |
+| `GOPHERMIND_SESSION_CLOSE` | Delete the server-side session when gophermind exits (default off; the session id is stable per directory, so keeping it lets the next run reuse the cache) |
 
 ### The global config file
 

@@ -965,3 +965,38 @@ func TestBaseURLOverrideWithExplicitPathsIsHonored(t *testing.T) {
 		t.Errorf("ModelsPath = %q, want the explicit override /models", got.ModelsPath)
 	}
 }
+
+func TestLoadSessionHeader(t *testing.T) {
+	t.Setenv("GOPHERMIND_BASE_URL", "http://x")
+	t.Setenv("GOPHERMIND_MODEL", "m")
+
+	t.Setenv("GOPHERMIND_SESSION_HEADER", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.SessionHeader != "" {
+		t.Errorf("SessionHeader = %q, want empty by default", cfg.SessionHeader)
+	}
+
+	t.Setenv("GOPHERMIND_SESSION_HEADER", "X-ExecuTorch-Session-ID")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.SessionHeader != "X-ExecuTorch-Session-ID" {
+		t.Errorf("SessionHeader = %q, want X-ExecuTorch-Session-ID", cfg.SessionHeader)
+	}
+	if cfg.SessionClose {
+		t.Errorf("SessionClose = true, want false by default")
+	}
+
+	t.Setenv("GOPHERMIND_SESSION_CLOSE", "1")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.SessionClose {
+		t.Errorf("SessionClose = false, want true when GOPHERMIND_SESSION_CLOSE=1")
+	}
+}

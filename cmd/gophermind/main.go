@@ -649,6 +649,17 @@ func run() error {
 	}
 	client.ChatPath = cfg.ChatPath
 	client.ModelsPath = cfg.ModelsPath
+	if cfg.SessionHeader != "" {
+		sessionID := llm.StableSessionID(cfg.RootDir)
+		client.Use(llm.HeaderInjector(cfg.SessionHeader, sessionID))
+		if cfg.SessionClose {
+			defer func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = client.CloseSession(ctx, sessionID)
+			}()
+		}
+	}
 	client.SetStreamIdleTimeout(cfg.StreamIdleTimeout)
 	client.Fallbacks = cfg.FallbackModels
 	client.SetTemperature(cfg.Temperature)
