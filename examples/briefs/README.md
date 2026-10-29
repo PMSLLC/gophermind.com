@@ -19,8 +19,8 @@ Change the `id` to a free one before uploading: a second upload with the same id
 
 | Brief | What it builds | Features | Landing | On unclear | Approval between waves | Secrets | Env settings | Hosts | Revisions |
 |---|---|---|---|---|---|---|---|---|---|
-| `01-linkcheck` | link checker for Markdown and HTML | 5 | `commit` | `assume_and_document` | off | 0 | 0 | 2, module downloads | default |
-| `02-notes-api` | in-memory notes REST service | 6 | `pull_request` on its own branch | `halt` | on | 0 | 1, with a default | 0 | default |
+| `01-linkcheck` | link checker for Markdown and HTML | 7 | `commit` | `assume_and_document` | off | 0 | 0 | 0 | default |
+| `02-notes-api` | in-memory notes REST service | 8 | `pull_request` on its own branch | `halt` | on | 0 | 1, with a default | 0 | default |
 | `03-cliphist` | clipboard history store and CLI | 5 | `diff_only` | `assume_and_document` | off | 0 | 2, with defaults | 0 | default |
 | `04-csvstat` | command-line CSV summarizer | 2 | `diff_only` | `assume_and_document` | off | 0 | 1, with a default | 2 | 0 |
 | `05-retryx` | retry library, no program at all | 3 | `commit` on its own branch | `halt` | off, set explicitly | 0 | 0 | 2 | 1 |

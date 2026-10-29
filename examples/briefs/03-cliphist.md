@@ -25,50 +25,55 @@ env:
 
 `cliphist add hello world` stores the text `hello world`, the remaining arguments joined by single spaces, as the newest item.
 
-- A new item is placed first, so it becomes number 1.
+- Every argument after `add` is text, including ones that start with `-`.
+- Text that joins to an empty string or only white space (`strings.TrimSpace` gives empty), or no arguments at all, prints `cliphist: nothing to add` on standard error and exits with code 2.
+- Text that passes is stored exactly as joined, without trimming.
 - When the text equals the newest item exactly, nothing is stored and `duplicate` is printed. Otherwise `added` is printed. Both exit with code 0.
 - Text equal to an older item, not the newest, is stored as a new item.
-- When the history already holds `CLIPHIST_MAX` items, the oldest item is dropped so the count stays at `CLIPHIST_MAX`.
-- No arguments after `add`, or arguments that join to an empty string, print `cliphist: nothing to add` on standard error and exit with code 2.
+- After the new item is placed first, the history is cut to its first `CLIPHIST_MAX` items, so a file holding more than `CLIPHIST_MAX` items shrinks to that count on the next add that stores an item. A `duplicate` add changes nothing, even then.
 - A history file that does not exist is created by the first add that stores an item.
 
 ### List items
 
 `cliphist list` prints one line per item, newest first, in the form `<n>: <text>`, where `n` starts at 1.
 
-- A newline inside an item is printed as the two characters `\n`, so each item takes one line.
+- Only the line feed character in an item is printed as the two characters `\n`; carriage returns, tabs and backslashes print as stored.
 - An empty history, or a history file that does not exist, prints nothing and exits with code 0.
+- Any argument after `list` prints the usage line from Report errors and exits with code 2.
 
 ### Copy an item back
 
 `cliphist copy 2` prints the text of item 2, exactly as stored and followed by one newline, on standard output.
 
 - Item numbers are those shown by `list`.
-- A number below 1 or above the item count prints `cliphist: no item <n>` on standard error and exits with code 1.
-- A value that is not a base-10 integer prints `cliphist: invalid number "<value>"` on standard error and exits with code 2.
-- `copy` with no number, or with more than one, prints the usage line and exits with code 2.
+- A value that `strconv.Atoi` rejects (letters, an empty string, a decimal point, too large for int) prints `cliphist: invalid number "<value>"` on standard error and exits with code 2.
+- A value `Atoi` accepts is the parsed number, so `+2` is item 2.
+- A parsed number below 1 or above the item count, including 0 and -1, prints `cliphist: no item <n>` with the parsed number on standard error and exits with code 1. So does `copy 1` on an empty or missing history.
+- `copy` with no number, or with more than one, prints the usage line from Report errors and exits with code 2.
 
 ### Clear the history
 
-`cliphist clear` empties the history, prints `cleared` and exits with code 0.
+`cliphist clear` writes an empty history, prints `cleared` and exits with code 0.
 
-- Clearing a missing file succeeds and leaves an empty history in the file.
-- `list` or `clear` with extra arguments prints the usage line and exits with code 2.
+- `clear` does not read the history file: it always writes `[]`, so it also repairs a corrupt file, and clearing a missing file creates it holding `[]`.
+- Any argument after `clear` prints the usage line from Report errors and exits with code 2.
 
 ### Report errors
 
-- No command, or an unknown command, prints `usage: cliphist add <text...> | list | copy <n> | clear` on standard error and exits with code 2.
-- A history file that is not valid JSON, including a zero-byte file, prints `cliphist: corrupt history file <path>` on standard error and exits with code 1. The file is left untouched.
-- A `CLIPHIST_MAX` that is not a base-10 integer of at least 1 prints `cliphist: invalid CLIPHIST_MAX "<value>"` on standard error and exits with code 1.
+Checks run in this order: an invalid `CLIPHIST_MAX` (exit 1), then usage and argument errors (exit 2), then history file errors (exit 1). Arguments are checked before the history file is read, so `cliphist copy x` with a corrupt file exits 2.
+
+- The usage line is `usage: cliphist add <text...> | list | copy <n> | clear`, written to standard error. No command, or an unknown command, prints it and exits with code 2.
+- `CLIPHIST_MAX` set but empty, rejected by `Atoi`, or below 1 (`""`, `0`, `-1`, `1.5`, `abc`) prints `cliphist: invalid CLIPHIST_MAX "<value>"` on standard error and exits with code 1 for every command. Unset means 100.
+- A history file whose content is not exactly one JSON array of strings (invalid JSON, a zero-byte file, `null`, `{}`, `[1]`, `["a",null]`) prints `cliphist: corrupt history file <path>` on standard error and exits with code 1, where `<path>` is `CLIPHIST_FILE` exactly as given. The file is left untouched.
 - Any other read or write failure prints `cliphist: <error>` on standard error and exits with code 1.
 
 ## Architecture
 
 - `cmd/cliphist` (package `main`): reads `CLIPHIST_FILE` and `CLIPHIST_MAX` with their defaults, validates the maximum, calls `cli.Run` with `os.Args[1:]`, `os.Stdout` and `os.Stderr`, and exits with the returned code. Nothing else.
-- `internal/history`: the store. `Load(path string) ([]string, error)` returns the items newest first, an empty slice when the file is missing, and `ErrCorrupt` (wrapped with the path) when the JSON is invalid. `Save(path string, items []string) error` writes the file with mode 0600. `Add(items []string, text string, max int) ([]string, bool)` returns the new slice and whether it stored the item. No printing, no environment access.
-- `internal/cli`: `Run(args []string, path string, max int, stdout, stderr io.Writer) int` parses the command, calls `history`, writes the exact output text and returns the exit code. It never calls `os.Exit` and never reads the environment.
+- `internal/history`: the store. `Load(path string) ([]string, error)` returns the items newest first, an empty slice when the file is missing, and an error wrapping `ErrCorrupt` when the content is not one JSON array of strings. `Save(path string, items []string) error` writes the file with mode 0600, and writes `[]` for a nil or empty slice, never `null`. `Add(items []string, text string, max int) ([]string, bool)` returns the new slice, cut to `max` items, and whether it stored the item. No printing, no environment access.
+- `internal/cli`: `Run(args []string, path string, max int, stdout, stderr io.Writer) int` only dispatches to `runAdd`, `runList`, `runCopy` and `runClear`, each under 40 lines. `usageError` writes the usage line and returns 2. When `errors.Is(err, history.ErrCorrupt)`, the code prints the corrupt-file text and never the wrapped error text. Nothing here calls `os.Exit` or reads the environment.
 
-Data flow: `main` hands the path and maximum to `cli.Run`, `Run` loads the file, applies the command, saves the file when the command changed it, and prints the result.
+Data flow: `main` hands the path and maximum to `cli.Run`. `Run` checks the arguments, loads the file for add, list and copy only, applies the command, saves the file when the command changed it, and prints the result.
 
 Patterns to follow:
 
@@ -102,10 +107,10 @@ Patterns to follow:
 - `go build ./...` succeeds.
 - `go vet ./...` reports nothing.
 - `go test ./...` passes.
-- `CLIPHIST_FILE=/tmp/cliphist-acc.json cliphist clear` prints `cleared`.
-- `CLIPHIST_FILE=/tmp/cliphist-acc.json cliphist add one` prints `added`, then `CLIPHIST_FILE=/tmp/cliphist-acc.json cliphist add one` prints `duplicate`.
-- After `CLIPHIST_FILE=/tmp/cliphist-acc.json cliphist add two`, `CLIPHIST_FILE=/tmp/cliphist-acc.json cliphist list` prints `1: two` then `2: one`.
-- `CLIPHIST_FILE=/tmp/cliphist-acc.json cliphist copy 2` prints `one`.
-- `CLIPHIST_FILE=/tmp/cliphist-acc.json cliphist copy 3` exits with code 1.
-- `CLIPHIST_FILE=/tmp/cliphist-acc.json CLIPHIST_MAX=2 cliphist add three` followed by `CLIPHIST_FILE=/tmp/cliphist-acc.json cliphist list` prints `1: three` then `2: two`.
-- `CLIPHIST_FILE=/tmp/cliphist-acc.json cliphist` with no command exits with code 2.
+- `cliphist` with no arguments prints `usage: cliphist add <text...> | list | copy <n> | clear` on standard error and exits with code 2.
+- `cliphist bogus` exits with code 2.
+- `cliphist add` prints `cliphist: nothing to add` on standard error and exits with code 2.
+- `cliphist copy x` prints `cliphist: invalid number "x"` on standard error and exits with code 2.
+- `cliphist list extra` exits with code 2.
+- A test calls `cli.Run` on a `t.TempDir` file with `add one`, `add one`, `add two`, `list`, `copy 2`, `copy 3` in turn and asserts `added`, `duplicate`, `added`, the lines `1: two` and `2: one`, the line `one`, and exit code 1 with `cliphist: no item 3`.
+- A test calls `cli.Run` with max 2 on a history of two then one, runs `add three` then `list`, and asserts `1: three` and `2: two`.
