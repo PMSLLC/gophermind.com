@@ -281,3 +281,21 @@ func TestDefectTextForUntrustedInputsNamesProcessSources(t *testing.T) {
 		}
 	}
 }
+
+// A model listed os.Stdout and os.Stderr under untrusted_inputs. They are where
+// a program writes, not where it reads, so they carry nothing in and the
+// reply must not be refused for naming them; a real unknown name still is.
+func TestOutputStreamsInUntrustedInputsAreNotAnInputDefect(t *testing.T) {
+	ok := groupsDoc(t, func(m map[string]any) {
+		m["security"].(map[string]any)["untrusted_inputs"] = []any{"r", "os.Args", "os.Stdin", "os.Stdout", "os.Stderr"}
+	})
+	if ds := groupDefects(ok, "handler", testEnv()); len(ds) != 0 {
+		t.Errorf("defects for output streams named as inputs: %v", kindsOf(ds))
+	}
+	bad := groupsDoc(t, func(m map[string]any) {
+		m["security"].(map[string]any)["untrusted_inputs"] = []any{"os.Stdout", "zzz"}
+	})
+	if ds := groupDefects(bad, "handler", testEnv()); !hasKind(ds, grpSecret) {
+		t.Errorf("an unknown input name was no longer refused: %v", kindsOf(ds))
+	}
+}

@@ -129,6 +129,11 @@ func strField(m map[string]any, k string) string {
 // reads os.Stdin).
 var processSources = map[string]bool{"os.Args": true, "os.Stdin": true, "os.Environ": true, "os.Getenv": true, "flag.Args": true}
 
+// outputStreams are process streams a model names under untrusted_inputs by
+// mistake: a program writes to them, nothing comes in through them, so they
+// are neither an input to protect nor a defect.
+var outputStreams = map[string]bool{"os.Stdout": true, "os.Stderr": true}
+
 func groupDefects(d map[string]any, class string, env groupEnv) []groupDefect {
 	var out []groupDefect
 	add := func(kind, field, format string, a ...any) {
@@ -178,7 +183,7 @@ func groupDefects(d map[string]any, class string, env groupEnv) []groupDefect {
 
 	if sec := real["security"]; sec != nil {
 		for i, n := range strList(sec["untrusted_inputs"]) {
-			if !env.Params[n] && !processSources[strings.TrimSpace(n)] {
+			if !env.Params[n] && !processSources[strings.TrimSpace(n)] && !outputStreams[strings.TrimSpace(n)] {
 				add(grpSecret, "security", "untrusted_inputs entry %d must be a parameter name of the function or one of the process sources os.Args, os.Stdin, os.Environ, os.Getenv, flag.Args", i+1)
 			}
 		}
