@@ -301,6 +301,9 @@ type Options struct {
 	// The caller wraps the finished mux with Google.Middleware (after adding
 	// any routes of its own), so the sign-in gate covers every path.
 	Google *GoogleAuth
+	// Local marks a developer's own machine (loopback, no sign-in): the root
+	// serves the signed-in home page instead of the API-only stub.
+	Local bool
 	// BriefsDir, when set (and Deps.Pipeline is set, for the repo root), turns
 	// on the browser brief routes under /app/briefs: uploads, one run at a
 	// time, a record, a copy of the brief and a log per run under it. The
@@ -425,7 +428,7 @@ func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 	// Unauthenticated liveness/readiness probes for load balancers / k8s.
 	mux.HandleFunc("/healthz", healthHandler())
 	mux.HandleFunc("/readyz", readyHandler(func() bool { return true }))
-	mux.HandleFunc("GET /{$}", landingHandler(opt.Google != nil))
+	mux.HandleFunc("GET /{$}", landingHandler(opt.Google != nil || opt.Local))
 	if opt.Google != nil {
 		opt.Google.Register(mux)
 	}

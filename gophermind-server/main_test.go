@@ -280,3 +280,67 @@ func mergeEnv(a, b map[string]string) map[string]string {
 	}
 	return a
 }
+
+func TestParseServerConfig_LocalMode(t *testing.T) {
+	cfg, err := parseServerConfig(nil, envMap(map[string]string{"GOPHERMIND_TOKEN": "t", "GOPHERMIND_LOCAL": "1"}), fixedGetwd("/cwd"))
+	if err != nil || !cfg.Local {
+		t.Fatalf("env: err=%v Local=%v, want Local true", err, cfg.Local)
+	}
+	cfg, err = parseServerConfig([]string{"-local"}, envMap(map[string]string{"GOPHERMIND_TOKEN": "t"}), fixedGetwd("/cwd"))
+	if err != nil || !cfg.Local {
+		t.Fatalf("flag: err=%v Local=%v, want Local true", err, cfg.Local)
+	}
+	cfg, err = parseServerConfig(nil, envMap(map[string]string{"GOPHERMIND_TOKEN": "t"}), fixedGetwd("/cwd"))
+	if err != nil || cfg.Local {
+		t.Fatalf("default: err=%v Local=%v, want Local false", err, cfg.Local)
+	}
+}
+
+func TestParseServerConfig_LocalModeRefusesGoogleSignIn(t *testing.T) {
+	_, err := parseServerConfig([]string{"-local"}, googleEnv(nil), fixedGetwd("/cwd"))
+	if err == nil {
+		t.Fatal("want an error: local mode and Google sign-in are mutually exclusive")
+	}
+}
+
+func TestListenAddr(t *testing.T) {
+	if got := listenAddr(serverConfig{Port: 8090}); got != ":8090" {
+		t.Errorf("default = %q, want :8090", got)
+	}
+	if got := listenAddr(serverConfig{Port: 8090, Local: true}); got != "127.0.0.1:8090" {
+		t.Errorf("local = %q, want 127.0.0.1:8090", got)
+	}
+}
+
+func TestLocalAuth_SuppliesBearerWhenAbsent(t *testing.T) {
+	var got string
+	h := localAuth("tok", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("Authorization")
+	}))
+	h.ServeHTTP(nilWriter{}, mustReq(t, ""))
+	if got != "Bearer tok" {
+		t.Errorf("Authorization = %q, want %q", got, "Bearer tok")
+	}
+	h.ServeHTTP(nilWriter{}, mustReq(t, "Bearer own"))
+	if got != "Bearer own" {
+		t.Errorf("Authorization = %q, want the caller's own header kept", got)
+	}
+}
+
+type nilWriter struct{}
+
+func (nilWriter) Header() http.Header         { return http.Header{} }
+func (nilWriter) Write(b []byte) (int, error) { return len(b), nil }
+func (nilWriter) WriteHeader(int)             {}
+
+func mustReq(t *testing.T, auth string) *http.Request {
+	t.Helper()
+	r, err := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if auth != "" {
+		r.Header.Set("Authorization", auth)
+	}
+	return r
+}

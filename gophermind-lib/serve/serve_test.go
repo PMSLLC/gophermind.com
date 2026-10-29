@@ -117,3 +117,19 @@ func TestNewMuxServesLanding(t *testing.T) {
 		t.Errorf("GET /nope = %d, want 404", rec.Code)
 	}
 }
+
+func TestNewMuxLocalServesHomePageNotStub(t *testing.T) {
+	t.Setenv("GOPHERMIND_SERVE_TOKEN", "t")
+	mux, err := NewMux(Deps{}, Options{Local: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET / = %d, want 200", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), "there is no web UI here") {
+		t.Errorf("GET / in local mode served the API-only stub")
+	}
+}

@@ -55,6 +55,11 @@ type serverConfig struct {
 	// Google, when non-nil, puts the whole mux behind a Google sign-in (see
 	// googleAuthFromEnv). Nil keeps the bearer-only behaviour.
 	Google *serve.GoogleAuth
+	// Local (GOPHERMIND_LOCAL=1 or -local) is for a developer's own machine:
+	// the server binds 127.0.0.1 only and supplies the bearer token to any
+	// request that carries no Authorization header, so a browser needs no
+	// sign-in. Refused together with Google sign-in.
+	Local bool
 	// BriefsDir turns on the browser brief routes (GOPHERMIND_BRIEFS_DIR).
 	// BriefCmd is the space-separated launcher prefix put before every
 	// gophermind invocation (GOPHERMIND_BRIEF_CMD, for example
@@ -85,11 +90,12 @@ func parseServerConfig(args []string, getenv func(string) string, getwd func() (
 	wgIface := fs.String("wg-interface", strEnvOr(getenv, "GOPHERMIND_WG_INTERFACE", "wg0"), "WireGuard interface name")
 	llmEndpoint := fs.String("llm-endpoint", getenv("GOPHERMIND_LLM_ENDPOINT"), "LLM endpoint base URL (falls back to the shared config's GOPHERMIND_BASE_URL when unset)")
 	root := fs.String("root", getenv("GOPHERMIND_ROOT"), "workspace root for file/shell tools and the pipeline view (default: cwd)")
+	local := fs.Bool("local", getenv("GOPHERMIND_LOCAL") == "1", "dev mode: bind 127.0.0.1 only and skip login in the browser")
 	if err := fs.Parse(args); err != nil {
 		return serverConfig{}, err
 	}
 
-	cfg := serverConfig{Port: *port, Token: *token, WGInterface: *wgIface, LLMEndpoint: *llmEndpoint, Root: *root}
+	cfg := serverConfig{Port: *port, Token: *token, WGInterface: *wgIface, LLMEndpoint: *llmEndpoint, Root: *root, Local: *local}
 	if cfg.Token == "" {
 		return serverConfig{}, fmt.Errorf("refusing to start without a bearer token: set --token or GOPHERMIND_TOKEN")
 	}
@@ -105,6 +111,9 @@ func parseServerConfig(args []string, getenv func(string) string, getwd func() (
 		return serverConfig{}, err
 	}
 	cfg.Google = google
+	if cfg.Local && cfg.Google != nil {
+		return serverConfig{}, fmt.Errorf("local mode and Google sign-in are mutually exclusive: unset GOPHERMIND_LOCAL or the GOPHERMIND_GOOGLE_* variables")
+	}
 	cfg.BriefsDir = getenv("GOPHERMIND_BRIEFS_DIR")
 	cfg.ReposDir = getenv("GOPHERMIND_REPOS_DIR")
 	cfg.BriefCmd = getenv("GOPHERMIND_BRIEF_CMD")
@@ -134,6 +143,25 @@ func googleAuthFromEnv(getenv func(string) string, token string) (*serve.GoogleA
 		return nil, err
 	}
 	return g, nil
+}
+
+// listenAddr is every interface on cfg.Port, or loopback only in local mode.
+func listenAddr(cfg serverConfig) string {
+	if cfg.Local {
+		return fmt.Sprintf("127.0.0.1:%d", cfg.Port)
+	}
+	return fmt.Sprintf(":%d", cfg.Port)
+}
+
+// localAuth gives a request with no Authorization header the server's own
+// bearer token. Only safe because local mode binds loopback.
+func localAuth(token string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "" {
+			r.Header.Set("Authorization", "Bearer "+token)
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func intEnvOr(getenv func(string) string, key string, fallback int) int {
@@ -187,7 +215,7 @@ func run(logger *slog.Logger) error {
 	}
 	cfg.LLMEndpoint = resolveLLMEndpoint(cfg, config.Load)
 
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Port))
+	ln, err := net.Listen("tcp", listenAddr(cfg))
 	if err != nil {
 		return fmt.Errorf("listen on port %d: %w", cfg.Port, err)
 	}
@@ -211,7 +239,7 @@ func runWithConfig(cfg serverConfig, ln net.Listener, logger *slog.Logger, ctx c
 	if err != nil {
 		return fmt.Errorf("build deps: %w", err)
 	}
-	mux, err := serve.NewMux(svcDeps, briefOptions(cfg, serve.Options{Token: cfg.Token, Google: cfg.Google, BriefLogger: logger}))
+	mux, err := serve.NewMux(svcDeps, briefOptions(cfg, serve.Options{Token: cfg.Token, Google: cfg.Google, Local: cfg.Local, BriefLogger: logger}))
 	if err != nil {
 		return fmt.Errorf("build mux: %w", err)
 	}
@@ -232,6 +260,8 @@ func runWithConfig(cfg serverConfig, ln net.Listener, logger *slog.Logger, ctx c
 	var handler http.Handler = mux
 	if cfg.Google != nil {
 		handler = cfg.Google.Middleware(mux)
+	} else if cfg.Local {
+		handler = localAuth(cfg.Token, mux)
 	}
 	httpSrv := &http.Server{Handler: handler}
 
