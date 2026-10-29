@@ -62,7 +62,13 @@ type wireRequest struct {
 }
 
 type wireFormat struct {
-	Type string `json:"type"`
+	Type       string      `json:"type"`
+	JSONSchema *wireSchema `json:"json_schema,omitempty"`
+}
+
+type wireSchema struct {
+	Name   string          `json:"name"`
+	Schema json.RawMessage `json:"schema"`
 }
 
 type wireReply struct {
@@ -84,7 +90,11 @@ func (o *OpenAI) Complete(ctx context.Context, req Request) (Response, error) {
 		wr.Temperature = *o.cfg.Temperature
 	}
 	if o.cfg.JSONMode && req.JSON {
-		wr.ResponseFormat = &wireFormat{Type: "json_object"}
+		if len(req.Schema) > 0 {
+			wr.ResponseFormat = &wireFormat{Type: "json_schema", JSONSchema: &wireSchema{Name: "reply", Schema: req.Schema}}
+		} else {
+			wr.ResponseFormat = &wireFormat{Type: "json_object"}
+		}
 	}
 	for _, m := range req.Messages {
 		wr.Messages = append(wr.Messages, wireMessage{Role: string(m.Role), Content: m.Content})

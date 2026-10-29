@@ -6,6 +6,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"time"
 )
@@ -35,6 +36,9 @@ type Request struct {
 	// json_mode then asks its server to enforce valid JSON; any other call (code,
 	// prose) never does.
 	JSON bool
+	// Schema, with JSON, is the JSON Schema of the reply. A provider in json_mode
+	// has its server enforce it, so a list of objects cannot come back as strings.
+	Schema json.RawMessage
 	// StopSequences are optional; the executor uses them to cut off trailing prose after a code fence.
 	StopSequences []string
 	// Workdir is the absolute path of the leaf's worktree. Providers that do not

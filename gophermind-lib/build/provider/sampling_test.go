@@ -80,3 +80,39 @@ func TestJSONModeAsksForJSONOnlyWhenBothSidesWantIt(t *testing.T) {
 		}
 	}
 }
+
+// A call that knows the exact shape of its reply passes a schema, and a provider
+// in json_mode has its server enforce it (not only that the text is JSON): a
+// model once wrote a list of objects as {"}, then a string holding the rest.
+func TestJSONModeSendsTheCallsSchemaWhenItHasOne(t *testing.T) {
+	p, seen := capture(t, provider.Config{JSONMode: true})
+	r := request()
+	r.JSON = true
+	r.Schema = []byte(`{"type":"object","required":["tests"]}`)
+	if _, err := p.Complete(context.Background(), r); err != nil {
+		t.Fatal(err)
+	}
+	rf, _ := (*seen)[0]["response_format"].(map[string]any)
+	if rf["type"] != "json_schema" {
+		t.Fatalf("response_format = %v, want json_schema", (*seen)[0]["response_format"])
+	}
+	js, _ := rf["json_schema"].(map[string]any)
+	sch, _ := js["schema"].(map[string]any)
+	if sch["type"] != "object" || js["name"] == "" {
+		t.Errorf("json_schema = %v", js)
+	}
+
+	p, seen = capture(t, provider.Config{JSONMode: true})
+	r.Schema = nil
+	p.Complete(context.Background(), r)
+	if rf, _ := (*seen)[0]["response_format"].(map[string]any); rf["type"] != "json_object" {
+		t.Errorf("without a schema the format = %v, want json_object", (*seen)[0]["response_format"])
+	}
+
+	p, seen = capture(t, provider.Config{})
+	r.Schema = []byte(`{"type":"object"}`)
+	p.Complete(context.Background(), r)
+	if _, has := (*seen)[0]["response_format"]; has {
+		t.Error("a provider not in json_mode was sent a response_format")
+	}
+}

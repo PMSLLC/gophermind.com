@@ -516,7 +516,7 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	renamedHelpers := false
 	var droppedImports []string
 	var droppedComments int
-	cs := callSpec{jsonObject: true, stage: "testwrite:" + id, taskType: "testwrite", nodeID: id, nodeClass: class, tier: p.tierFor(strField(d, "model_tier")), scope: router.ScopeNode, maxTokens: maxTokensTestwrite}
+	cs := callSpec{jsonObject: true, schema: testwriteReplySchema, stage: "testwrite:" + id, taskType: "testwrite", nodeID: id, nodeClass: class, tier: p.tierFor(strField(d, "model_tier")), scope: router.ScopeNode, maxTokens: maxTokensTestwrite}
 	err = p.callAsking(ctx, r, cs, prompt, func(text string) error {
 		ts, src, droppedC, err := parseTestwriteCounted(StripReply(text), ct, pkg, funcName, c.Module, hookList(d), packageSet(c))
 		if err != nil {

@@ -2,6 +2,7 @@ package planner
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -219,6 +220,9 @@ type callSpec struct {
 	// unset for a list or free text: JSON mode makes a server wrap a list in an
 	// object.
 	jsonObject bool
+	// schema, with jsonObject, is the JSON Schema of the reply; a json_mode provider
+	// then has its server enforce the shape, not only that the text is JSON.
+	schema string
 	// skipSave, when set, is asked about each reply before it is saved or dumped:
 	// true keeps the reply out of _state/replies (a reply that holds a secret).
 	skipSave func(text string) bool
@@ -242,6 +246,9 @@ func (p *Planner) callRes(ctx context.Context, r *run, cs callSpec, prompt strin
 	req := request(cs.stage, prompt, cs.maxTokens)
 	req.MaxGrownTokens = cs.maxGrown
 	req.JSON = cs.jsonObject
+	if cs.jsonObject && cs.schema != "" {
+		req.Schema = json.RawMessage(cs.schema)
+	}
 	keep := func(text string) bool { return cs.skipSave == nil || !cs.skipSave(text) }
 	if p.dumpDir(r) != "" {
 		inner := parse

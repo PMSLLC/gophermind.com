@@ -463,7 +463,7 @@ func (p *Planner) reviseTests(ctx context.Context, r *run, c *contract.Contracts
 	var src string
 	last := ClassReviseInvalid
 	secret := false
-	cs := callSpec{jsonObject: true, stage: fmt.Sprintf("testwrite:%s-r%d", id, n), taskType: "testwrite", nodeID: id, nodeClass: class,
+	cs := callSpec{jsonObject: true, schema: testwriteReplySchema, stage: fmt.Sprintf("testwrite:%s-r%d", id, n), taskType: "testwrite", nodeID: id, nodeClass: class,
 		tier: p.tierFor(strField(merged, "model_tier")), scope: router.ScopeNode, maxTokens: maxTokensTestwrite, revision: req.Revision,
 		skipSave: func(text string) bool { return replyHoldsSecret(text, req.Secrets) }}
 	err = p.call(ctx, r, cs, prompt, func(text string) error {

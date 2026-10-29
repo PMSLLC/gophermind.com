@@ -84,7 +84,7 @@ func (p *Planner) coverage(ctx context.Context, r *run) error {
 		return err
 	}
 	var reply CoverageReply
-	cs := callSpec{stage: "coverage", taskType: "coverage", scope: router.ScopeBrief, maxTokens: maxTokensCoverage, jsonObject: true}
+	cs := callSpec{stage: "coverage", taskType: "coverage", scope: router.ScopeBrief, maxTokens: maxTokensCoverage, jsonObject: true, schema: coverageReplySchema}
 	if err := p.call(ctx, r, cs, prompt, func(text string) error {
 		cr, err := ParseCoverageReply(StripReply(text), r.reqs)
 		if err != nil {
