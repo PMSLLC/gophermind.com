@@ -527,6 +527,11 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			"uses_standard_library: %d uses entries named standard library packages, which are imported and never listed; dropped: %s",
 			len(rep.Dropped), strings.Join(boundedIDs(rep.Dropped, maxUnresolvedInError), ", ")))
 	}
+	if len(rep.Qualified) > 0 {
+		p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
+			"cross_folder_type_qualified: %d signatures used a type declared in another folder without its qualifier; the type was exported and qualified for: %s",
+			len(rep.Qualified), strings.Join(boundedIDs(rep.Qualified, maxUnresolvedInError), ", ")))
+	}
 	if len(rep.Exported) > 0 {
 		p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
 			"cross_package_export: %d functions are used from another package, so their names were capitalised to be exported: %s",
