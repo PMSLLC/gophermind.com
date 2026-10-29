@@ -235,3 +235,14 @@ func TestBriefValidateReportsEveryProblemWithItsLine(t *testing.T) {
 		t.Errorf("want one line per problem, got %d lines: %q", n, errs)
 	}
 }
+
+func TestBriefValidatePrintsLintWarningsAndStillPasses(t *testing.T) {
+	// The example brief runs its program with go run, which the spec warns about.
+	code, out, errs := runBriefCmd(t, "", "validate", filepath.Join(exampleDir, "brief.md"))
+	if code != 0 || !strings.Contains(out, "ok: ") {
+		t.Fatalf("code=%d out=%q err=%q", code, out, errs)
+	}
+	if !strings.Contains(errs, "lint: line ") || !strings.Contains(errs, "built binary by name") {
+		t.Errorf("want a lint line for go run, got %q", errs)
+	}
+}

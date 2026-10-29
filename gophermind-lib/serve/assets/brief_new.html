@@ -103,19 +103,27 @@ function messageEl(text){
   text.split(/("[^"]*"|'[^']*')/).forEach(p => span(el, p, p.length > 1 && (p[0] === '"' || p[0] === "'") ? 'hl-ref' : ''));
   return el;
 }
-function showProblems(problems, name, text){
+function showProblems(problems, name, text, warn, href){
   msg.textContent = '';
   const lines = text.replace(/\r\n/g, '\n').split('\n');
   const kinds = lineKinds(lines);
   const box = document.createElement('div');
   box.className = 'problems';
   const h = document.createElement('p');
-  h.className = 'err ptitle';
-  h.textContent = problems.length === 1 ? '1 problem in ' + name : problems.length + ' problems in ' + name;
+  h.className = (warn ? 'warn' : 'err') + ' ptitle';
+  const noun = warn ? 'warning' : 'problem';
+  h.textContent = (problems.length === 1 ? '1 ' + noun : problems.length + ' ' + noun + 's') + ' in ' + name + (warn ? '. The run has started; these are advice, not errors.' : '');
   box.appendChild(h);
+  if (href) {
+    const a = document.createElement('a');
+    a.href = href;
+    a.className = 'btn primary';
+    a.textContent = 'Open the run';
+    box.appendChild(a);
+  }
   problems.forEach(p => {
     const item = document.createElement('div');
-    item.className = 'problem';
+    item.className = warn ? 'problem warn' : 'problem';
     const head = document.createElement('div');
     head.className = 'phead';
     span(head, p.line > 0 ? 'line ' + p.line : 'whole file', 'where');
@@ -153,13 +161,17 @@ document.getElementById('form').addEventListener('submit', async ev => {
     const r = await fetch('/app/briefs' + (document.getElementById('ask').checked ? '?ask=1' : '') + (document.getElementById('again').checked ? (document.getElementById('ask').checked ? '&' : '?') + 'resubmit=1' : ''), { method: 'POST', body: fd, credentials: 'same-origin' });
     let j = {};
     try { j = await r.json(); } catch (e) {}
-    if (r.status === 202 && j.url) { window.location.assign(j.url); return; }
+    if (r.status === 202 && j.url) {
+      if (Array.isArray(j.warnings) && j.warnings.length) { showProblems(j.warnings, f.name, text, true, j.url); return; }
+      window.location.assign(j.url);
+      return;
+    }
     if (r.status === 409 && j.active_run_id) {
       show(j.error + ': ' + j.active_run_id + '.', true, '/app/briefs/' + encodeURIComponent(j.active_run_id));
     } else if (r.status === 409 && j.run_id) {
       show(j.error + ': ' + j.run_id + '. Tick the box above to start it under the next free id.', true, '/app/briefs/' + encodeURIComponent(j.run_id));
     } else if (r.status === 400 && Array.isArray(j.problems) && j.problems.length) {
-      showProblems(j.problems, f.name, text);
+      showProblems(j.problems, f.name, text, false, '');
     } else {
       show(j.error || ('Upload failed (' + r.status + ').'), true);
     }

@@ -198,3 +198,9 @@ body.gm-chat #log:empty::before{content:"Ask about the code, a run or a plan. Ea
 .src .hl-h{color:#e5c07b;font-weight:600}
 .src .hl-bullet,.src .hl-fence{color:#56b6c2}
 .src .hl-code{color:#c792ea}
+.problems .warn{color:var(--run)}
+.problems .ptitle.warn{margin:0 0 .7rem;font-weight:600}
+.problems .btn{display:inline-block;margin:0 0 .9rem;text-decoration:none}
+.problem.warn{border-left-color:#c98a00}
+.problem.warn .where{color:var(--run)}
+.problem.warn .pmsg .hl-ref{background:var(--run-bg);color:var(--run)}

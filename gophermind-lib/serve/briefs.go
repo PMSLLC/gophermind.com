@@ -599,11 +599,11 @@ func (m *briefManager) resubmitHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rec, _ := m.readRecord(id)
-	m.startReply(w, b, src, rec.Ask)
+	m.startReply(w, b, src, rec.Ask, brief.Lint(src))
 }
 
 // startReply starts the run and writes the response for create and resubmit.
-func (m *briefManager) startReply(w http.ResponseWriter, b *brief.Brief, src []byte, ask bool) {
+func (m *briefManager) startReply(w http.ResponseWriter, b *brief.Brief, src []byte, ask bool, warnings []brief.Problem) {
 	rec, err := m.start(b, src, ask)
 	var busy *briefBusyError
 	switch {
@@ -614,7 +614,11 @@ func (m *briefManager) startReply(w http.ResponseWriter, b *brief.Brief, src []b
 	case err != nil:
 		briefError(w, http.StatusInternalServerError, "cannot start the run", nil)
 	default:
-		briefJSON(w, http.StatusAccepted, map[string]any{"run_id": rec.ID, "url": "/app/briefs/" + rec.ID})
+		reply := map[string]any{"run_id": rec.ID, "url": "/app/briefs/" + rec.ID}
+		if len(warnings) > 0 {
+			reply["warnings"] = warnings
+		}
+		briefJSON(w, http.StatusAccepted, reply)
 	}
 }
 
@@ -659,7 +663,7 @@ func (m *briefManager) create(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	m.startReply(w, b, src, r.URL.Query().Get("ask") == "1")
+	m.startReply(w, b, src, r.URL.Query().Get("ask") == "1", brief.Lint(src))
 }
 
 // stopHandler handles POST /app/briefs/{id}/stop.

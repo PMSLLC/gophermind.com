@@ -654,3 +654,30 @@ func TestBriefRefusalListsEveryProblemWithItsLine(t *testing.T) {
 		t.Errorf("error = %q, want a summary that says how many more", got.Error)
 	}
 }
+
+func TestBriefAcceptedWithWarningsListsThem(t *testing.T) {
+	e := newBriefEnv(t)
+	// The example brief runs its program with go run, which the spec warns about.
+	w := e.post("/app/briefs", e.briefText("gm-2026-10-23-006"), nil)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("= %d %s", w.Code, w.Body)
+	}
+	var got struct {
+		Warnings []struct {
+			Line    int    `json:"line"`
+			Message string `json:"message"`
+		} `json:"warnings"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, x := range got.Warnings {
+		if x.Line > 0 && strings.Contains(x.Message, "built binary by name") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("warnings = %+v, want the go run warning with its line", got.Warnings)
+	}
+}

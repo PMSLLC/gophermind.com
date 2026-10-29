@@ -106,6 +106,9 @@ func briefValidate(path string, out, errw io.Writer) int {
 		fmt.Fprintf(errw, "error: %v\n", err)
 		return 1
 	}
+	for _, w := range brief.Lint(src) {
+		fmt.Fprintf(errw, "lint: %s\n", w)
+	}
 	for _, w := range b.UndeclaredSecrets() {
 		fmt.Fprintf(errw, "warning: line %d: %s looks like a secret name but is not declared under secrets or env\n", w.Line, w.Token)
 	}
