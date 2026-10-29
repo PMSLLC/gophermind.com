@@ -63,6 +63,7 @@ type Covered struct {
 // with no name or no command.
 func ParseCoverageReply(text string, reqs []Requirement) (CoverageReply, error) {
 	var r CoverageReply
+	text = unwrapStringifiedItems(text, "root_tests")
 	if err := json.Unmarshal([]byte(text), &r); err != nil {
 		return CoverageReply{}, fmt.Errorf("coverage reply is not valid JSON (%s)", jsonErrIn(err, text))
 	}
