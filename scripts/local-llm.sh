@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Run the local language model for GopherMind (gpt-oss-20b, from OpenAI, official
-# ggml-org GGUF) as a launchd user agent: it starts at login, restarts if it
-# dies, and never touches the network.
+# Run the local language model for GopherMind (Gemma 4 26B-A4B, from Google, the
+# official QAT Q4_0 GGUF) as a launchd user agent: it starts at login, restarts
+# if it dies, and never touches the network. It is the only local model; Burrow
+# uses it too.
 #
 #   scripts/local-llm.sh install     (re)write the wrapper and agent, load it
 #   scripts/local-llm.sh status      is it loaded, running, answering
@@ -15,11 +16,13 @@ set -euo pipefail
 LABEL="${GM_LLM_LABEL:-com.gophermind.local.llm}"
 PORT="${GM_LLM_PORT:-8081}"
 BASE="${GM_LOCAL_HOME:-$HOME/.gophermind/local}"
-MODEL="${GM_LLM_MODEL:-$BASE/models/gpt-oss-20b-MXFP4.gguf}"
-ALIAS="${GM_LLM_ALIAS:-gpt-oss-20b}"
-CTX="${GM_LLM_CTX:-65536}"      # total, shared by the slots below
+MODEL="${GM_LLM_MODEL:-$BASE/models/gemma-4-26B_q4_0-it.gguf}"
+ALIAS="${GM_LLM_ALIAS:-gemma-4-26b-a4b}"  # lowercase: Burrow refuses other names
+CTX="${GM_LLM_CTX:-262144}"     # total, shared by the slots below (128k each)
 SLOTS="${GM_LLM_SLOTS:-2}"
-EFFORT="${GM_LLM_EFFORT:-low}"  # reasoning effort when a request does not say
+# Thinking is off unless a request asks for it: with it on, Gemma spent a whole
+# 800-token reply on reasoning and returned no answer.
+KWARGS="${GM_LLM_TEMPLATE_KWARGS:-{\"enable_thinking\":false\}}"
 LOGDIR="$HOME/Library/Logs/gophermind-local"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 DOMAIN="gui/$(id -u)"
@@ -45,7 +48,7 @@ set -eu
 export HF_HUB_OFFLINE=1 LLAMA_OFFLINE=1
 exec "$server" --model "$MODEL" --alias "$ALIAS" \\
   --host 127.0.0.1 --port $PORT --offline --jinja --no-webui \\
-  -ngl 99 -fa on -c $CTX -np $SLOTS --reasoning-effort $EFFORT
+  -ngl 99 -fa on -c $CTX -np $SLOTS --chat-template-kwargs '$KWARGS'
 EOF
   chmod 700 "$BASE/run-llm.sh"
 
