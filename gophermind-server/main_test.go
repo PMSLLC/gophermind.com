@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -343,4 +345,16 @@ func mustReq(t *testing.T, auth string) *http.Request {
 		r.Header.Set("Authorization", auth)
 	}
 	return r
+}
+
+func TestLocalMeAnswersSoPagesConnectWithoutAToken(t *testing.T) {
+	rec := httptest.NewRecorder()
+	localMe(rec, httptest.NewRequest(http.MethodGet, "/auth/me", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("= %d, want 200", rec.Code)
+	}
+	var got map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || got["email"] == "" {
+		t.Fatalf("body = %q (%v), want a JSON object with an email", rec.Body, err)
+	}
 }

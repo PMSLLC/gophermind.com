@@ -164,6 +164,14 @@ func localAuth(token string, next http.Handler) http.Handler {
 	})
 }
 
+// localMe answers GET /auth/me in local mode as a signed-in session, so the
+// pages connect without asking for a token.
+func localMe(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = io.WriteString(w, `{"email":"local (no sign-in)"}`+"\n")
+}
+
 func intEnvOr(getenv func(string) string, key string, fallback int) int {
 	v := getenv(key)
 	if v == "" {
@@ -261,6 +269,7 @@ func runWithConfig(cfg serverConfig, ln net.Listener, logger *slog.Logger, ctx c
 	if cfg.Google != nil {
 		handler = cfg.Google.Middleware(mux)
 	} else if cfg.Local {
+		mux.HandleFunc("GET /auth/me", localMe)
 		handler = localAuth(cfg.Token, mux)
 	}
 	httpSrv := &http.Server{Handler: handler}
