@@ -9,7 +9,11 @@ import (
 )
 
 var (
-	stdinDocRE     = regexp.MustCompile(`(?i)\bstdin\b|\bstandard input\b`)
+	// stdinDocRE matches a doc that says the function takes in standard input: a
+	// read verb and, within the same clause, stdin or standard input. A doc that
+	// only names stdin ("empty means stdin", "reports whether path means standard
+	// input") does not read it.
+	stdinDocRE     = regexp.MustCompile(`(?i)\b(reads?|reading|consumes?|scans?|loads?|takes?|gets?|opens?|slurps?|receives?)\b[^.;\n]{0,60}\b(stdin|standard input)\b`)
 	readerParamRE  = regexp.MustCompile(`\bio\.(Reader|ReadCloser|ReadSeeker)\b|\bbufio\.(Reader|Scanner)\b|\*os\.File\b`)
 	errStdinReader = errors.New("a function whose doc says it reads standard input must take an io.Reader parameter; choose the input (a file or os.Stdin) in the entry point and pass it in, so a test can pass strings.NewReader")
 )

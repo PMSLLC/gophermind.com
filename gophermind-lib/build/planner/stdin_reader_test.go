@@ -20,6 +20,9 @@ func TestStdinNeedsReader(t *testing.T) {
 		{"takes a bufio reader", contract.Function{ID: "fn-b", Signature: "func Scan(br *bufio.Reader) error", Doc: "Reads from stdin."}, false},
 		{"main is the entry point", contract.Function{ID: "fn-main", Signature: "func main()", Doc: "Calls run with os.Stdin and exits with its code; standard input is read there."}, false},
 		{"no mention of stdin", contract.Function{ID: "fn-c", Signature: "func Parse(s string) (int, bool)", Doc: "Parses a base-10 integer."}, false},
+		{"names stdin as a return meaning only", contract.Function{ID: "fn-parse-flags", Signature: "func parseFlags(args []string) (max int, file string, err error)", Doc: "Parses --max and optional FILE from args. Returns max (default 0 meaning no limit), file (empty means stdin), or error for usage or invalid flags."}, false},
+		{"reports whether a path means stdin", contract.Function{ID: "fn-d", Signature: "func isStdin(path string) bool", Doc: "Reports whether path is \"-\", which means standard input."}, false},
+		{"reads standard input in its own sentence", contract.Function{ID: "fn-e", Signature: "func Load(path string) (string, error)", Doc: "Returns the text of the file. When path is \"-\" it reads from standard input instead."}, true},
 	}
 	for _, tc := range cases {
 		err := stdinNeedsReader(tc.fn)
