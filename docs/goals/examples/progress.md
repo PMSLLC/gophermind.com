@@ -1,10 +1,11 @@
 status: running
-last update: 2026-10-29 02:36 PDT
+last update: 2026-10-29 03:15 PDT
 briefs done: 0 of 13
-now: 09-slugify run gm-2026-10-29-028 (attempt 17)
+now: 09-slugify run gm-2026-10-29-032 (attempt 22)
 next: watch it; then 10-wordfreq
 
 - 00:07  09-slugify first run (gm-2026-10-28-004) got through all of planning and 1 of 11 leaves in 50 min. About 20 Muse fallback calls took 2300 of 3008 s: swap was 12.7 of 13.3 GB used (47.8 GB swapped out), so Muse ran at a few tokens a second. Decision: removed Muse from all three tiers (config only, backup gophermind.yaml.bak-with-muse-fallback-20261029); restarting 09-slugify. Also seen: llama.cpp returns HTTP 500 on a gpt-oss reply marked <|constrain|>json (rare, retried by the router).
+- 03:15  09-slugify run 031 planned completely (9 leaves, every test written) and the build stopped in wave 0 on a test that imported its own package; fixed (1198655). That is the first run to reach the build step since run 011. 24 fix commits so far, none repeated. Battery 100 percent, charging. Now run 032.
 - 02:36  09-slugify, runs 022 to 027: 20 fixes so far, every one general and tested, no failure repeated. Latest: coverage root tests written as JSON text unwrapped (656b4e5), function package aligned to its component (6b3ae34), func main moved under cmd/ (fe2dea6), conventions of the wrong shape reshaped (d9b55ce). No run has reached implement since run 011 (3 of 8 leaves verified); every failure so far is in planning, and each plan is different so a new gap shows up each time. Now run 028.
 - 01:56  09-slugify attempts 017 to 021 each failed one stage further on, all general harness gaps: test writer and coverage replies not in JSON mode (43ee76c), wrong test package clause (70f552f), stdlib identifiers and pending refs in uses (d98e7af, df48e3c), output streams as untrusted inputs (143ef99), unexported function used across packages (a04f779). 14 fix commits, no failure repeated. Now run 022.
 - 01:14  09-slugify, runs 012 to 016: one new failure each time, all general harness gaps now fixed: module was a file path (b255e0b), type decl with a package clause (182cb99), unnamed params (4d37d8a), Go identifiers in depends_on and numeric error returns (106c6d6). Run 011 got 3 leaves verified before the shared-reader test bug. Now run 016. 9 fix commits so far, none for the same failure twice.
