@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode"
@@ -149,6 +150,19 @@ func normalizeShape(d map[string]any, fnName string, note func(field, what strin
 		d["depends_on"] = arr
 		note("depends_on", "array")
 	}
+	if arr, ok := d["depends_on"].([]any); ok {
+		kept := make([]any, 0, len(arr))
+		for _, x := range arr {
+			if s, isStr := x.(string); isStr && strings.Contains(s, ".") {
+				continue // a Go identifier (os.File), not a contract id: ids have no dots
+			}
+			kept = append(kept, x)
+		}
+		if len(kept) != len(arr) {
+			d["depends_on"] = kept
+			note("depends_on", "dropped")
+		}
+	}
 	if t, present := d["title"]; (!present || strings.TrimSpace(fmt.Sprint(orEmpty(t))) == "") && fnName != "" {
 		if _, isString := t.(string); isString || !present || t == nil {
 			d["title"] = titleFromName(fnName)
@@ -183,6 +197,13 @@ func normalizeShape(d map[string]any, fnName string, note func(field, what strin
 		if changed {
 			ct[field] = arr
 			note("contract."+field, "array")
+		}
+		if field == "errors" {
+			for _, e := range arr {
+				if m, isObj := e.(map[string]any); isObj && scalarsToText(m, "when", "returns") {
+					note("contract.errors", "text")
+				}
+			}
 		}
 		if field == "inputs" || field == "outputs" {
 			if nameParams(arr, field == "outputs") {
@@ -225,6 +246,29 @@ func nameParams(arr []any, output bool) bool {
 		named = true
 	}
 	return named
+}
+
+// scalarsToText turns a number or a boolean under the given keys into its text,
+// so {"returns": 2} reads as "2". It reports whether it changed any.
+func scalarsToText(m map[string]any, keys ...string) bool {
+	changed := false
+	for _, k := range keys {
+		switch v := m[k].(type) {
+		case json.Number:
+			m[k] = v.String()
+			changed = true
+		case float64:
+			m[k] = strconv.FormatFloat(v, 'f', -1, 64)
+			changed = true
+		case int:
+			m[k] = strconv.Itoa(v)
+			changed = true
+		case bool:
+			m[k] = strconv.FormatBool(v)
+			changed = true
+		}
+	}
+	return changed
 }
 
 func hasKey(m map[string]any, k string) bool { _, ok := m[k]; return ok }
