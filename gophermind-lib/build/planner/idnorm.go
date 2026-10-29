@@ -45,6 +45,9 @@ type idNotes struct {
 	// SigExamples are the bounded ids of the functions they stood in.
 	SigTypeIDs  int
 	SigExamples []string
+	// PackageClauses counts the type declarations a stray `package x` line was
+	// removed from: the harness wraps a declaration in its own package.
+	PackageClauses int
 }
 
 func isUpper(c byte) bool { return c >= 'A' && c <= 'Z' }
@@ -207,6 +210,18 @@ func normalizeReply(doc map[string]any, text string, kind replyKind) (string, id
 		}
 	}
 
+	// A type declaration is written into a package of the harness's own: a
+	// package clause a model added (it wrote a whole file) is removed.
+	for _, o := range lists["types"] {
+		if decl, ok := o["decl"].(string); ok {
+			if clean := stripPackageClause(decl); clean != decl {
+				o["decl"] = clean
+				notes.PackageClauses++
+				changed = true
+			}
+		}
+	}
+
 	// Signatures: a type id written for a Go type name is replaced by the name.
 	if kind != replyOutline {
 		if n, ex := normalizeSigTypeIDs(doc, lists["types"], lists["functions"]); n > 0 {
@@ -295,6 +310,10 @@ func (p *Planner) noteNormalized(st *contractState, stage string, n idNotes) {
 			"signature_type_id_normalized: %d type ids in signatures were replaced by Go type names (%s); %d in all so far",
 			n.SigTypeIDs, strings.Join(n.SigExamples, ", "), st.SigTypeIDsNormalized))
 	}
+	if n.PackageClauses > 0 {
+		p.emit(events.KindWarning, stage, "", fmt.Sprintf(
+			"type_decl_package_clause_removed: %d type declarations carried a package clause, which the harness supplies; removed", n.PackageClauses))
+	}
 	if n.Count == 0 {
 		return
 	}
@@ -370,4 +389,14 @@ func resolveRefs(doc map[string]any) map[string]any {
 		}
 	}
 	return next
+}
+
+// packageClauseRE is a line that is only a package clause, at the start of the line.
+var packageClauseRE = regexp.MustCompile(`(?m)^package[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]*;?[ \t]*\r?\n?`)
+
+// stripPackageClause removes the package clause lines from a type declaration.
+// A declaration is code the harness puts in a package it names; a model that
+// writes a whole file adds its own clause, which makes the declaration unparseable.
+func stripPackageClause(decl string) string {
+	return packageClauseRE.ReplaceAllString(decl, "")
 }

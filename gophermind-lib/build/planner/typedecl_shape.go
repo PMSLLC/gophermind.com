@@ -20,7 +20,7 @@ var errTypeDeclShape = errors.New("a declaration may hold type declarations and 
 func TypeDeclShape(decl string) error {
 	f, err := parser.ParseFile(token.NewFileSet(), "decl.go", "package p\n"+decl, parser.ParseComments)
 	if err != nil {
-		return errors.New("does not parse")
+		return errors.New("does not parse: write only type declarations and methods with balanced braces, with no package clause and no import (the harness adds the package)")
 	}
 	if len(f.Imports) > 0 {
 		return errTypeDeclShape
