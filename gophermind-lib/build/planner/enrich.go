@@ -222,6 +222,9 @@ func mergeEnrichment(draft, reply map[string]any, c *contract.Contracts, env gro
 	if n := normalizeDeps(merged, c, env); n.fixed > 0 {
 		warnings = append(warnings, fmt.Sprintf("%s: portability_deps_normalized %d of %d deps entries rewritten to this module's package paths", boundedID(id), n.fixed, n.total))
 	}
+	if normalizeProfileHooks(merged) {
+		warnings = append(warnings, fmt.Sprintf("%s: profile_hooks_normalized the profile_hooks group was put in the form the schema allows", boundedID(id)))
+	}
 	defects = append(defects, groupDefects(merged, class, env)...)
 	if len(defects) == 0 {
 		if verr := validateDraft(merged); verr != nil {
