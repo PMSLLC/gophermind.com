@@ -529,7 +529,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 		}
 		var ignored []string
 		var notes idNotes
-		cs := callSpec{stage: repairStage, taskType: "contract", scope: router.ScopeBrief, maxTokens: maxTokensContract}
+		cs := callSpec{stage: repairStage, taskType: "contract", scope: router.ScopeBrief, maxTokens: maxTokensContract, jsonObject: true}
 		if err := p.callSized(ctx, r, cs, build, func(text string) error {
 			text, nt, err := normalizeReply(st.Doc, StripReply(text), replyRepair)
 			if err != nil {
