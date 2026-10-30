@@ -162,6 +162,23 @@ func syntaxCandidates(src string, line int) []string {
 		}
 		out = append(out, join(rep))
 	}
+	// Elements of a list literal written one per line with no comma after
+	// them (run gm-2026-10-30-069: func(c *config) { ... } lines): the
+	// reported line and its siblings at the same indent that end the same
+	// way each get a comma, in one edit.
+	if t := strings.TrimSpace(lines[i]); strings.HasSuffix(t, "}") && t != "}" && strings.Count(t, "{") == strings.Count(t, "}") {
+		rep := append([]string{}, lines...)
+		for j := i; j < len(rep); j++ {
+			lt := strings.TrimSpace(rep[j])
+			if !strings.HasPrefix(rep[j], indent) || len(rep[j])-len(strings.TrimLeft(rep[j], " \t")) != len(indent) {
+				break
+			}
+			if strings.HasSuffix(lt, "}") && lt != "}" && strings.Count(lt, "{") == strings.Count(lt, "}") {
+				rep[j] = strings.TrimRight(rep[j], " \t") + ","
+			}
+		}
+		out = append(out, join(rep))
+	}
 	// An import path whose closing quote is missing: "sync/atomic
 	if t := strings.TrimSpace(lines[i]); strings.HasPrefix(t, `"`) && strings.Count(t, `"`) == 1 && !strings.ContainsAny(t, " \t") {
 		rep := append([]string{}, lines...)

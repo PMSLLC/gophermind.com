@@ -24,7 +24,9 @@ func TestNudgeSyntax(t *testing.T) {
 	// an import path with no closing quote.
 	funcField := "package cli\n\nimport \"testing\"\n\nfunc TestX(t *testing.T) {\n\tcases := []struct {\n\t\tsetup func()\n\t\tcheck func()\n\t}{\n\t\t{\n\t\t\tsetup: func() {\n\t\t\t}\n\t\t\tcheck: func() {},\n\t\t},\n\t\t{\n\t\t\tsetup: func() {\n\t\t\t}\n\t\t\tcheck: func() {},\n\t\t},\n\t}\n\t_ = cases\n}\n"
 	openImport := "package cli\n\nimport (\n\t\"strings\n\t\"testing\"\n)\n\nfunc TestX(t *testing.T) { _ = strings.ToLower(\"A\") }\n"
-	for name, src := range map[string]string{"func field": funcField, "open import": openImport, "open setup": openSetup, "open setup with brace": openSetupBrace, "quotes before arguments": argQuotes, "last row": lastRow, "lone comma": loneComma, "unclosed run": unclosedRun, "literal newline": literalNewline, "comma closed": commaClosed, "unclosed": unclosed, "inner quotes": innerQuotes, "stray quote": strayQuote, "extra brace": extraBrace} {
+	// Run gm-2026-10-30-069: one-line function elements with no commas.
+	funcElems := "package cli\n\nimport \"testing\"\n\ntype config struct{ a, b int }\n\nfunc TestX(t *testing.T) {\n\tc := &config{}\n\topts := []func(*config){\n\t\tfunc(c *config) { c.a = 1 }\n\t\tfunc(c *config) { c.b = 2 }\n\t\tfunc(c *config) { c.a = 3 }\n\t}\n\tfor _, o := range opts {\n\t\to(c)\n\t}\n}\n"
+	for name, src := range map[string]string{"func elements": funcElems, "func field": funcField, "open import": openImport, "open setup": openSetup, "open setup with brace": openSetupBrace, "quotes before arguments": argQuotes, "last row": lastRow, "lone comma": loneComma, "unclosed run": unclosedRun, "literal newline": literalNewline, "comma closed": commaClosed, "unclosed": unclosed, "inner quotes": innerQuotes, "stray quote": strayQuote, "extra brace": extraBrace} {
 		got := nudgeSyntax(src)
 		if !parsesAsGo(got) {
 			t.Errorf("%s: not repaired:\n%s", name, got)
