@@ -312,6 +312,8 @@ func compileMessage(c *contract.Contracts, dir, src, line string, n int, diag st
 		return fmt.Sprintf("type mismatch at line %d: os.Stdin, os.Stdout and os.Stderr are *os.File values; assign an *os.File (from os.Pipe or os.CreateTemp), never a type of your own", n)
 	case strings.Contains(diag, "cannot assign to") || strings.Contains(diag, "not in selector"):
 		return fmt.Sprintf("cannot assign at line %d: a declared function is not a variable and cannot be replaced; do not stub or reassign the code under test, call it with real inputs (for a file path input, write a real file under t.TempDir() with os.WriteFile and pass its path; for a reader input use strings.NewReader)", n)
+	case strings.Contains(diag, "redeclared") || strings.Contains(diag, "duplicate field") || strings.Contains(diag, "duplicate key"):
+		return fmt.Sprintf("a name is declared twice at line %d: two struct fields, two keys or two variables share one name; a table field for a parameter named like the case name field (name) collides with it, so give the parameter field another name such as input or fileName", n)
 	case strings.Contains(diag, "missing return"):
 		return fmt.Sprintf("missing return at line %d", n)
 	case strings.Contains(diag, "arguments in call to"):

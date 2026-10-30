@@ -418,3 +418,16 @@ func TestCompileMessageInterfaceTypeWording(t *testing.T) {
 		t.Errorf("message = %q", m)
 	}
 }
+
+// Run gm-2026-10-30-077: the table declared name twice, once for the case
+// and once for the parameter of writeOutputLine(w, digest, name), and the
+// refusal said only "does not compile", six tries in a row.
+func TestCompileMessageNamesADuplicateField(t *testing.T) {
+	c := compileCheckContract()
+	for _, diag := range []string{"name redeclared", "duplicate field name SECRETFIELD in struct literal"} {
+		m := compileMessage(c, "internal/stats", "package stats\n", "x", 14, diag)
+		if !strings.Contains(m, "declared twice at line 14") || strings.Contains(m, "SECRET") {
+			t.Errorf("%q: %s", diag, m)
+		}
+	}
+}
