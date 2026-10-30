@@ -19,7 +19,7 @@
   <button class="btn" id="stop" type="button">Stop</button>
   <button class="btn" id="reset" type="button">Clear score</button>
 </div></div>
-<p class="meta">Runs the example briefs one after another, again and again, until each has passed once. It keeps going across restarts and needs no network. It never changes code; it repeats runs and keeps the score.</p>
+<p class="meta">Runs the example briefs one after another, again and again, until each has passed once. It keeps going across restarts and needs no network. It never changes code; it repeats runs and keeps the score. When planning has a question it waits for you: open the run, answer, and the harness carries it on./p>
 <p class="meta" id="status"></p>
 <div id="empty"></div>
 <div class="tablewrap" id="wrap" hidden>
@@ -36,7 +36,7 @@ function pill(text){
   const s = document.createElement('span');
   s.className = 'pill';
   s.textContent = text || '-';
-  if (['planning','running','waiting'].includes(text)) s.className += ' live';
+  if (['planning','running','waiting','waiting for your answers'].includes(text)) s.className += ' live';
   if (text === 'done') s.className += ' good';
   if (['failed','stopped','interrupted','lost'].includes(text)) s.className += ' bad';
   return s;
@@ -76,7 +76,8 @@ function render(s){
       a.textContent = b.last_run;
       cell(tr, a);
     } else cell(tr, '');
-    cell(tr, s.current && b.file === s.current_file ? pill('running') : pill(b.last_phase));
+    cell(tr, s.current && b.file === s.current_file ? pill('running')
+      : b.last_phase === 'waiting' ? pill('waiting for your answers') : pill(b.last_phase));
     cell(tr, when(b.last_at));
     rows.appendChild(tr);
   }

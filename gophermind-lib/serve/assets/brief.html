@@ -403,7 +403,9 @@ async function sendAnswer(q, text, msg, btns){
     let j = {};
     try { j = await r.json(); } catch (e) {}
     if (r.ok) {
-      msg.textContent = j.resumed ? 'Saved. Planning continues.' : ('Saved. ' + j.remaining + ' more to answer.');
+      msg.textContent = j.resumed ? 'Saved. Planning continues.'
+        : j.queued ? 'Saved. Planning continues when the run now going (' + j.active_run_id + ') ends.'
+        : ('Saved. ' + j.remaining + ' more to answer.');
       qSig = '';
       kick();
     } else {

@@ -100,6 +100,44 @@ func TestHarnessRetriesUntilEveryBriefPasses(t *testing.T) {
 	}
 }
 
+// A brief whose plan stops at questions is parked: the harness moves on, does
+// not start it again while it waits, and counts it once the answered run ends.
+func TestHarnessParksARunWaitingForAnswers(t *testing.T) {
+	e, _ := harnessEnv(t)
+	ask := func(args []string) string { return "echo ran" }
+	e.askScript(gateFixture)
+	ask, e.script = e.script, func(args []string) string {
+		if len(args) > 2 && args[1] == "plan" {
+			if b, _ := os.ReadFile(args[2]); !strings.Contains(string(b), "title: Small") {
+				return "echo ran"
+			}
+		}
+		return ask(args)
+	}
+	e.post("/app/api/harness/start", "", nil)
+	st := e.waitHarness(func(s harnessState) bool {
+		return len(s.Briefs) == 2 && s.Briefs[0].LastPhase == phaseWaiting && s.Briefs[1].Passes == 1 && s.Current == ""
+	})
+	if st.Done || !st.Running || !strings.Contains(st.Note, "answers") {
+		t.Errorf("state while a run waits = %+v, want running with a note about answers", st)
+	}
+	small := st.Briefs[0]
+	time.Sleep(100 * time.Millisecond)
+	if again := e.harnessState(); again.Briefs[0].Attempts != 1 {
+		t.Errorf("the waiting brief was started again: %+v", again.Briefs[0])
+	}
+	if w := e.post("/app/briefs/"+small.LastRun+"/answer", answerBody("clarify-q1", "sqlite"), nil); w.Code != http.StatusOK {
+		t.Fatalf("first answer = %d %s", w.Code, w.Body)
+	}
+	if w := e.post("/app/briefs/"+small.LastRun+"/answer", answerBody("clarify-q2", "no"), nil); w.Code != http.StatusAccepted && w.Code != http.StatusOK {
+		t.Fatalf("last answer = %d %s", w.Code, w.Body)
+	}
+	st = e.waitHarness(func(s harnessState) bool { return s.Done })
+	if b := st.Briefs[0]; b.Attempts != 1 || b.Passes != 1 || b.LastPhase != phaseDone {
+		t.Errorf("small = %+v, want its one answered attempt to pass", b)
+	}
+}
+
 func TestHarnessStateSurvivesARestart(t *testing.T) {
 	e, ex := harnessEnv(t)
 	e.post("/app/api/harness/start", "", nil)

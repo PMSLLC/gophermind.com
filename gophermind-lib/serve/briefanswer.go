@@ -250,10 +250,6 @@ func (m *briefManager) answerHandler(w http.ResponseWriter, r *http.Request) {
 		briefError(w, http.StatusConflict, "run is not waiting for answers", map[string]any{"phase": rec.Phase})
 		return
 	}
-	if active := m.activeID(); active != "" {
-		briefError(w, http.StatusConflict, "a run is already active", map[string]any{"active_run_id": active})
-		return
-	}
 	remaining, err := writeGateAnswer(m.repoFor(id), id, req.QuestionID, text)
 	if errors.Is(err, os.ErrPermission) {
 		// The run folder belongs to the run user: let it write its own file.
@@ -276,15 +272,52 @@ func (m *briefManager) answerHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := m.resume(rec); err != nil {
+		// Another run holds the slot: the answers are saved, and the run
+		// resumes by itself when that run ends (resumeAnswered).
 		var busy *briefBusyError
 		if errors.As(err, &busy) {
-			briefError(w, http.StatusConflict, "a run is already active", map[string]any{"active_run_id": busy.activeID})
+			briefJSON(w, http.StatusOK, map[string]any{"run_id": id, "saved": true, "resumed": false, "remaining": 0,
+				"queued": true, "active_run_id": busy.activeID})
 			return
 		}
 		briefError(w, http.StatusInternalServerError, "cannot resume the run", nil)
 		return
 	}
 	briefJSON(w, http.StatusAccepted, map[string]any{"run_id": id, "saved": true, "resumed": true, "remaining": 0})
+}
+
+// resumeAnswered resumes the oldest run that waits with every question
+// answered, when the slot is free. It reports the run it resumed, "" when none.
+func (m *briefManager) resumeAnswered() string {
+	m.answerMu.Lock()
+	defer m.answerMu.Unlock()
+	ents, err := os.ReadDir(m.dir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range ents {
+		id := e.Name()
+		if !e.IsDir() || !runview.ValidRunID(id) {
+			continue
+		}
+		rec, ok := m.readRecord(id)
+		if !ok || rec.Phase != phaseWaiting {
+			continue
+		}
+		qs := readGateQuestions(m.repoFor(id), id)
+		answered := len(qs) > 0
+		for _, q := range qs {
+			answered = answered && q.Filled
+		}
+		if !answered {
+			continue
+		}
+		if m.resume(rec) != nil {
+			return ""
+		}
+		return id
+	}
+	return ""
 }
 
 func hasFenceLine(s string) bool {

@@ -119,6 +119,44 @@ func TestBriefAnswerResumesPlanning(t *testing.T) {
 	}
 }
 
+// An answer that arrives while another run holds the slot is saved, and the
+// answered run resumes by itself once the slot is free.
+func TestBriefAnswerWhileAnotherRunIsActiveResumesLater(t *testing.T) {
+	e := newBriefEnv(t)
+	const id, other = "gm-2026-10-24-012", "gm-2026-10-24-013"
+	e.startAsking(id)
+	gate := filepath.Join(t.TempDir(), "go")
+	ask := e.script
+	e.script = func(args []string) string {
+		if len(args) > 2 && strings.Contains(args[2], other) {
+			return "while [ ! -f '" + gate + "' ]; do sleep 0.02; done; echo ran"
+		}
+		return ask(args)
+	}
+	if w := e.post("/app/briefs", e.briefText(other), nil); w.Code != http.StatusAccepted {
+		t.Fatalf("create other = %d %s", w.Code, w.Body)
+	}
+	if w := e.post("/app/briefs/"+id+"/answer", answerBody("clarify-q1", "sqlite"), nil); w.Code != http.StatusOK {
+		t.Fatalf("first answer = %d %s", w.Code, w.Body)
+	}
+	w := e.post("/app/briefs/"+id+"/answer", answerBody("clarify-q2", "no"), nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("last answer while busy = %d %s", w.Code, w.Body)
+	}
+	if m := decodeMap(t, w); m["resumed"] != false || m["remaining"] != float64(0) || m["queued"] != true {
+		t.Errorf("last answer body %v, want saved and queued", m)
+	}
+	if rec := e.waitPhase(id, phaseWaiting, phasePlanning, phaseDone); rec.Phase != phaseWaiting {
+		t.Errorf("phase %s while the other run is active, want waiting", rec.Phase)
+	}
+	if err := os.WriteFile(gate, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if rec := e.waitPhase(id, phaseDone, phaseFailed); rec.Phase != phaseDone {
+		t.Fatalf("answered run = %+v, want done", rec)
+	}
+}
+
 func TestBriefAnswerRefusals(t *testing.T) {
 	e := newBriefEnv(t)
 	const id = "gm-2026-10-24-003"

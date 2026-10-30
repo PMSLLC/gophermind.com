@@ -360,6 +360,8 @@ func (m *briefManager) run(a *activeBrief, rec briefRecord, first []string, logf
 		m.active = nil
 		m.mu.Unlock()
 		close(a.done)
+		// A run answered while this one held the slot continues now.
+		go m.resumeAnswered()
 	}()
 	finish := func(phase string, code *int, msg string) {
 		m.mu.Lock()

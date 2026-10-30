@@ -3,6 +3,7 @@ package serve
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -154,17 +155,36 @@ func (h *harness) tick() {
 		if !ok {
 			phase = "lost"
 		}
-		for i := range h.st.Briefs {
-			if h.st.Briefs[i].File == h.st.CurrentFile {
-				h.st.Briefs[i].LastPhase, h.st.Briefs[i].LastAt = phase, h.m.stamp()
-				if phase == phaseDone {
-					h.st.Briefs[i].Passes++
-				}
-			}
-		}
+		h.record(h.st.CurrentFile, phase)
 		h.log.Info("harness run ended", "run_id", h.st.Current, "brief", h.st.CurrentFile, "phase", phase)
 		h.st.Current, h.st.CurrentFile = "", ""
 		h.save()
+	}
+	// A parked run that was answered and resumed becomes the harness's run
+	// again; one that ended while parked is counted.
+	waiting := 0
+	for i := range h.st.Briefs {
+		b := &h.st.Briefs[i]
+		if b.LastPhase != phaseWaiting {
+			continue
+		}
+		rec, ok := h.m.readRecord(b.LastRun)
+		switch {
+		case ok && rec.Phase == phaseWaiting:
+			waiting++
+		case ok && (rec.Phase == phasePlanning || rec.Phase == phaseRunning):
+			h.st.Current, h.st.CurrentFile, h.st.Note = b.LastRun, b.File, ""
+			h.log.Info("harness resumed an answered run", "run_id", b.LastRun, "brief", b.File)
+			h.save()
+			return
+		default:
+			phase := rec.Phase
+			if !ok {
+				phase = "lost"
+			}
+			h.record(b.File, phase)
+			h.save()
+		}
 	}
 	if !h.st.Running {
 		return
@@ -178,10 +198,14 @@ func (h *harness) tick() {
 	idx := -1
 	for k := 0; k < len(h.st.Briefs); k++ {
 		i := (h.st.Next + k) % len(h.st.Briefs)
-		if h.st.Briefs[i].Passes == 0 {
+		if h.st.Briefs[i].Passes == 0 && h.st.Briefs[i].LastPhase != phaseWaiting {
 			idx = i
 			break
 		}
+	}
+	if idx < 0 && waiting > 0 {
+		h.st.Note = waitingNote(waiting)
+		return
 	}
 	if idx < 0 {
 		h.st.Running, h.st.Done, h.st.Note = false, true, "every example brief has passed"
@@ -191,6 +215,10 @@ func (h *harness) tick() {
 	}
 	if active := h.m.activeID(); active != "" {
 		h.st.Note = "waiting: another run is active (" + active + ")"
+		return
+	}
+	// An answered run goes before a new one; the next tick picks it up.
+	if h.m.resumeAnswered() != "" {
 		return
 	}
 	b := &h.st.Briefs[idx]
@@ -207,7 +235,9 @@ func (h *harness) tick() {
 		h.save()
 		return
 	}
-	rec, err := h.m.start(parsed, src, false)
+	// Planning asks its questions on the run's page rather than failing on
+	// them; a run that stops to ask is parked until it is answered.
+	rec, err := h.m.start(parsed, src, true)
 	var busy *briefBusyError
 	if errors.As(err, &busy) {
 		h.st.Note = "waiting: another run is active (" + busy.activeID + ")"
@@ -223,6 +253,25 @@ func (h *harness) tick() {
 	h.st.Current, h.st.CurrentFile, h.st.Next, h.st.Note = rec.ID, b.File, idx+1, ""
 	h.log.Info("harness started a run", "run_id", rec.ID, "brief", b.File, "attempt", b.Attempts)
 	h.save()
+}
+
+// record notes how a brief's latest run ended.
+func (h *harness) record(file, phase string) {
+	for i := range h.st.Briefs {
+		if h.st.Briefs[i].File == file {
+			h.st.Briefs[i].LastPhase, h.st.Briefs[i].LastAt = phase, h.m.stamp()
+			if phase == phaseDone {
+				h.st.Briefs[i].Passes++
+			}
+		}
+	}
+}
+
+func waitingNote(n int) string {
+	if n == 1 {
+		return "1 run is waiting for your answers; open it from the table"
+	}
+	return fmt.Sprintf("%d runs are waiting for your answers; open them from the table", n)
 }
 
 func (h *harness) snapshot() harnessState {
