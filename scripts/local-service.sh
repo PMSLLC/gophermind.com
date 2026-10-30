@@ -13,7 +13,8 @@ set -euo pipefail
 
 LABEL="${GM_LOCAL_LABEL:-com.gophermind.local.server}"
 PORT="${GM_LOCAL_PORT:-8090}"
-LLM_ENDPOINT="${GM_LOCAL_LLM_ENDPOINT:-http://127.0.0.1:8000/v1}"
+# The chat page's model server, without /v1: the client adds the API path.
+LLM_ENDPOINT="${GM_LOCAL_LLM_ENDPOINT:-http://127.0.0.1:8081}"
 # Offline by default: a brief run must never wait on a module proxy, a Go
 # toolchain download or a model hub. GM_LOCAL_ONLINE=1 at install time leaves
 # those settings unset, for building programs that need downloaded modules.
