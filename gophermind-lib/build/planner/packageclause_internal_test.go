@@ -96,3 +96,35 @@ func TestNormalizeReplyDropsATypeThatDeclaresNothing(t *testing.T) {
 		t.Errorf("notes.EmptyTypes = %d, want 1", notes.EmptyTypes)
 	}
 }
+
+// Gemma wrapped each type entry in an object named for its kind,
+// {"type": {...}}, six replies in a row (run gm-2026-10-30-031): the entry is
+// unwrapped, and a wrapper with other keys beside it is left for the schema.
+func TestNormalizeReplyUnwrapsAnEntryWrappedInItsKind(t *testing.T) {
+	reply := `{"components": [{"component": {"id": "core", "package": "retryx"}}], "types": [` +
+		`{"type": {"id": "sleeper", "package": "retryx", "file": "sleeper.go", "decl": "type Sleeper func()", "uses": []}},` +
+		`{"type": {"id": "odd"}, "id": "odd2"}]}`
+	out, notes, err := normalizeReply(nil, reply, replyOutline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var r struct {
+		Components []map[string]any `json:"components"`
+		Types      []map[string]any `json:"types"`
+	}
+	if err := json.Unmarshal([]byte(out), &r); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Components) != 1 || r.Components[0]["id"] != "core" {
+		t.Errorf("components = %v, want the unwrapped component", r.Components)
+	}
+	if len(r.Types) != 2 || r.Types[0]["id"] != "sleeper" || r.Types[0]["decl"] != "type Sleeper func()" {
+		t.Errorf("types = %v, want the first unwrapped", r.Types)
+	}
+	if _, kept := r.Types[1]["type"]; !kept {
+		t.Errorf("a wrapper with other keys was changed: %v", r.Types[1])
+	}
+	if notes.Unwrapped != 2 {
+		t.Errorf("notes.Unwrapped = %d, want 2", notes.Unwrapped)
+	}
+}

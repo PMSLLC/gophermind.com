@@ -56,6 +56,9 @@ type idNotes struct {
 	// DashedTypes counts the type names written with dashes, like an id, that
 	// were renamed to camel case.
 	DashedTypes int
+	// Unwrapped counts the entries a model wrapped in an object named for
+	// their kind, {"type": {...}}, that were taken out of the wrapper.
+	Unwrapped int
 }
 
 func isUpper(c byte) bool { return c >= 'A' && c <= 'Z' }
@@ -154,10 +157,14 @@ func normalizeReply(doc map[string]any, text string, kind replyKind) (string, id
 		if !ok {
 			return text, notes, nil
 		}
-		for _, x := range arr {
+		for i, x := range arr {
 			o, ok := x.(map[string]any)
 			if !ok {
 				return text, notes, nil
+			}
+			if inner, ok := o[strings.TrimSuffix(k, "s")].(map[string]any); ok && len(o) == 1 {
+				o, arr[i] = inner, inner
+				notes.Unwrapped++
 			}
 			lists[k] = append(lists[k], o)
 		}
@@ -178,7 +185,7 @@ func normalizeReply(doc map[string]any, text string, kind replyKind) (string, id
 			}
 		}
 	}
-	changed := false
+	changed := notes.Unwrapped > 0
 	for _, k := range keys {
 		owner := map[string]string{} // normalised id -> the raw id that first produced it
 		var kept []any
@@ -376,6 +383,10 @@ func (p *Planner) noteNormalized(st *contractState, stage string, n idNotes) {
 	if n.DashedTypes > 0 {
 		p.emit(events.KindWarning, stage, "", fmt.Sprintf(
 			"type_name_camel_cased: %d type names were written with dashes like an id; renamed to camel case", n.DashedTypes))
+	}
+	if n.Unwrapped > 0 {
+		p.emit(events.KindWarning, stage, "", fmt.Sprintf(
+			"entry_unwrapped: %d entries were wrapped in an object named for their kind, like {\"type\": {...}}; unwrapped", n.Unwrapped))
 	}
 	if n.EmptyTypes > 0 {
 		p.emit(events.KindWarning, stage, "", fmt.Sprintf(
