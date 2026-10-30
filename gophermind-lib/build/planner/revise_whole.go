@@ -103,6 +103,13 @@ func normalizeWholeDoc(text string, orig map[string]any) (string, []string) {
 			if m, ok := v.(map[string]any); ok {
 				origC, _ := orig["context"].(map[string]any)
 				for ck, cv := range m {
+					if ck != "constraints" && ck != "notes" {
+						// A context key the patch has no place for (run
+						// gm-2026-10-30-064 wrote dependency_signatures).
+						delete(m, ck)
+						drop("context." + ck)
+						continue
+					}
 					if sameJSON(cv, origC[ck]) {
 						delete(m, ck)
 						drop("context." + ck)
@@ -126,6 +133,21 @@ func normalizeWholeDoc(text string, orig map[string]any) (string, []string) {
 			}
 		case "rewrite_tests", "assumptions":
 		default:
+			// A group written at the top level instead of under groups
+			// (run gm-2026-10-30-064, six replies in a row).
+			if contains(reviseGroupKeys, k) && !sameJSON(v, orig[k]) {
+				g, _ := doc["groups"].(map[string]any)
+				if g == nil {
+					g = map[string]any{}
+					doc["groups"] = g
+				}
+				if _, set := g[k]; !set {
+					g[k] = v
+				}
+				delete(doc, k)
+				warns = append(warns, "moved "+k+" under groups")
+				continue
+			}
 			if ov, ok := orig[k]; ok && sameJSON(v, ov) {
 				delete(doc, k)
 				drop(k)

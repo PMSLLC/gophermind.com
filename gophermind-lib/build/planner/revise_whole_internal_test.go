@@ -174,3 +174,23 @@ func TestContractChangeNamingNoLockedFieldRewritesTests(t *testing.T) {
 		}
 	}
 }
+
+// Run gm-2026-10-30-064: six revise replies wrote construction at the top
+// level instead of under groups, with a context key the patch does not have.
+// The group moves under groups and the unknown context key is left out.
+func TestReviseReplyMovesATopLevelGroupUnderGroups(t *testing.T) {
+	reply := `{"construction": {"approach_chosen": "a", "steps": ["s1", "s2"]}, "context": {"dependency_signatures": ["func A()"], "notes": ["n"]}}`
+	rep, warns, err := parseReviseReplyFor(reply, nil, wholeOrig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := rep.patch.Groups["construction"]; !ok {
+		t.Errorf("groups = %v, want construction", rep.patch.Groups)
+	}
+	if rep.patch.Context == nil || rep.patch.Context.Notes == nil {
+		t.Errorf("context notes were lost: %+v", rep.patch.Context)
+	}
+	if !strings.Contains(strings.Join(warns, "|"), "context.dependency_signatures") {
+		t.Errorf("warnings = %q", warns)
+	}
+}
