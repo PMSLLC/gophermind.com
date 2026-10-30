@@ -34,11 +34,36 @@ var nodeFieldKeys = []string{"id", "title", "node_class", "model_tier", "depends
 func parseReviseReplyFor(text string, secrets []string, orig map[string]any) (reviseReply, []string, error) {
 	norm, warns := normalizeWholeDoc(text, orig)
 	rep, err := parseReviseReplyScanned(norm, secrets)
+	if err == nil && rep.kind == kindContractChange && testsBlamedRE.MatchString(rep.paragraph) && !lockedFieldRE.MatchString(rep.paragraph) {
+		rep = testsOnlyPatch(rep.paragraph)
+		warns = append(warns, "CONTRACT_CHANGE_REQUIRED blamed the tests and named no field a rewrite may not change, so it was taken as rewrite_tests")
+	}
 	if err != nil && len(warns) > 0 && classOf(err, "") == ClassReviseInvalid && strings.Contains(err.Error(), "changes nothing") {
 		// Every key the reply wrote repeats the current node.
 		return rep, warns, &reviseErr{ClassReviseNoop, "the rewrite equals the current node"}
 	}
 	return rep, warns, err
+}
+
+// lockedFieldRE matches the words of the fields a rewrite may not change. The
+// prompt keeps CONTRACT_CHANGE_REQUIRED for those; a model that answers it
+// while blaming the tests ("the contract is correct; the test is wrong") meant
+// the patch form's rewrite_tests.
+var lockedFieldRE = regexp.MustCompile(`(?i)\b(signature|package|file|depends[_ ]on|dependency|dependencies|wave|tier|parameters?|return type)\b`)
+
+// testsBlamedRE matches a paragraph that speaks of the tests at all; one that
+// does not ("the function must also return the number of runes") is a real
+// contract change even when it names no locked field.
+var testsBlamedRE = regexp.MustCompile(`(?i)\btests?\b`)
+
+// testsOnlyPatch is the patch that keeps the contract and has the tests
+// rewritten from it, with the model's reason as its assumption.
+func testsOnlyPatch(paragraph string) reviseReply {
+	reason := paragraph
+	if len(reason) > maxAssumptionLen {
+		reason = strings.ToValidUTF8(reason[:maxAssumptionLen], "")
+	}
+	return reviseReply{kind: kindPatch, patch: revisePatch{RewriteTests: true, Assumptions: []string{reason}}}
 }
 
 func normalizeWholeDoc(text string, orig map[string]any) (string, []string) {

@@ -141,3 +141,36 @@ func TestWholeDocLeavesKeywordAndStrictRepliesAlone(t *testing.T) {
 		t.Fatal("a changed tests list was accepted")
 	}
 }
+
+// A CONTRACT_CHANGE_REQUIRED reply that names nothing a rewrite may not change
+// (the run of gm-2026-10-30-038: "the contract is correct, the test is wrong")
+// is the patch form's rewrite_tests; one that names the signature stays a flag.
+func TestContractChangeNamingNoLockedFieldRewritesTests(t *testing.T) {
+	testsWrong := "CONTRACT_CHANGE_REQUIRED\n\nThe function `getRomanMappings` is intended to return a set of symbol mappings, " +
+		"not a slice of every integer from 1 to 3999. The test is incorrect in asserting that `wantLen` should be 3999. " +
+		"The contract is correct; tests must be rewritten to expect the discrete Roman numeral symbols and subtractive pairs."
+	rep, warns, err := parseReviseReplyFor(testsWrong, nil, wholeOrig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.kind != kindPatch || !rep.patch.RewriteTests || rep.patch.Description != nil || rep.patch.Contract != nil {
+		t.Fatalf("reply = %+v, want a patch that only rewrites the tests", rep)
+	}
+	if len(rep.patch.Assumptions) != 1 || len(rep.patch.Assumptions[0]) > maxAssumptionLen {
+		t.Errorf("assumptions = %q, want the reason cut to %d bytes", rep.patch.Assumptions, maxAssumptionLen)
+	}
+	if len(warns) != 1 || !strings.Contains(warns[0], "rewrite_tests") {
+		t.Errorf("warnings = %q", warns)
+	}
+	for _, locked := range []string{
+		"The signature must return an error as well.",
+		"It belongs in package internal/y, not internal/x.",
+		"It depends on fn-parse, so its depends_on must list it.",
+		"The function must also return the number of runes.",
+	} {
+		rep, _, err := parseReviseReplyFor("CONTRACT_CHANGE_REQUIRED\n"+locked, nil, wholeOrig())
+		if err != nil || rep.kind != kindContractChange {
+			t.Errorf("%q: kind %v err %v, want a contract change flag", locked, rep.kind, err)
+		}
+	}
+}
