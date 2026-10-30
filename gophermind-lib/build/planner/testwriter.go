@@ -564,6 +564,14 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	if err != nil {
 		return writtenTests{}, err
 	}
+	// A missing benchmark costs only the benchmark: refusing the file for it
+	// stopped run gm-2026-10-30-057 after six test files that were otherwise
+	// fine. Nothing later runs the profile hooks.
+	if contains(hookList(d), "bench") && !hasBenchmark(source, funcName) {
+		p.emit(events.KindWarning, cs.stage, id, fmt.Sprintf(
+			"%s: the profile hooks ask for a benchmark and the test file of node %s has no Benchmark%s function; kept without one",
+			grpHookBench, id, strings.TrimPrefix(funcName, "Test")))
+	}
 	if renamedHelpers {
 		p.emit(events.KindWarning, cs.stage, id, "test_helper_renamed: helpers in the test file of node "+id+" collided with another test file of the package and were renamed with the function name")
 	}
@@ -775,9 +783,6 @@ func parseTestwriteCounted(text string, ct map[string]any, pkg, funcName, module
 	reply.TestFile, dropped = dropLongComments(reply.TestFile)
 	if err := checkTestSourceIn(reply.TestFile, pkg, funcName, module, why, pkgs); err != nil {
 		return nil, "", 0, err
-	}
-	if contains(hooks, "bench") && !hasBenchmark(reply.TestFile, funcName) {
-		return nil, "", 0, fmt.Errorf("%s: the profile hooks ask for a benchmark, but the test file has no Benchmark%s function", grpHookBench, strings.TrimPrefix(funcName, "Test"))
 	}
 	return tests, reply.TestFile, dropped, nil
 }

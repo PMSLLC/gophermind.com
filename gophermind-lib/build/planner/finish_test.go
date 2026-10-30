@@ -101,11 +101,12 @@ func TestParseTestwriteRequiresPolarityAndCoverageOfEveryError(t *testing.T) {
 	}
 }
 
-func TestParseTestwriteRequiresABenchmarkWhenTheHookAsksForOne(t *testing.T) {
+// A missing benchmark is a warning, not a refusal (run gm-2026-10-30-057).
+func TestParseTestwriteKeepsAFileWithoutTheBenchmarkTheHookAsksFor(t *testing.T) {
 	ct := map[string]any{"file": "internal/httpapi/register.go", "errors": []any{}}
 	good := `[{"name":"valid","given":"g","expect":"e","polarity":"success","covers":"happy"}]`
-	if _, _, err := parseTestwrite(testsReply(good, goodTestFile), ct, "httpapi", "TestRegister", "example.com/acme", []string{"bench"}); err == nil || !strings.HasPrefix(err.Error(), grpHookBench+":") || !strings.Contains(err.Error(), "benchmark") {
-		t.Fatalf("err = %v, want a hook_bench refusal about the missing benchmark", err)
+	if _, _, err := parseTestwrite(testsReply(good, goodTestFile), ct, "httpapi", "TestRegister", "example.com/acme", []string{"bench"}); err != nil {
+		t.Fatalf("a file without the benchmark was refused: %v", err)
 	}
 	withBench := goodTestFile + "\nfunc BenchmarkRegister(b *testing.B) {}\n"
 	if _, _, err := parseTestwrite(testsReply(good, withBench), ct, "httpapi", "TestRegister", "example.com/acme", []string{"bench"}); err != nil {
