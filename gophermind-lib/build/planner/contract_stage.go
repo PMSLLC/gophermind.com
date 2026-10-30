@@ -918,6 +918,22 @@ func mergeList(doc map[string]any, key string, in []map[string]any, added int, w
 			}
 		}
 	}
+	// A type named like a component (type "store" in component "store")
+	// takes "-type": dropping it, as a repeat, left every method on it
+	// uncompilable (run gm-2026-10-30-032).
+	if key == "types" {
+		comps := map[string]bool{}
+		for _, o := range objects(doc["components"]) {
+			if id, _ := o["id"].(string); id != "" {
+				comps[id] = true
+			}
+		}
+		for _, m := range in {
+			if id, _ := m["id"].(string); comps[id] && !others[id+"-type"] {
+				m["id"] = id + "-type"
+			}
+		}
+	}
 	out, added, ignored := mergeByID(doc[key], in, added, what, prep, others)
 	doc[key] = out
 	return added, ignored

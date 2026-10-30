@@ -146,14 +146,16 @@ func TestMergePassDropsATypeWhoseIDIsAFunctionID(t *testing.T) {
 	}
 }
 
-func TestMergeOutlineDropsATypeWhoseIDIsAComponentID(t *testing.T) {
+// A type named like its component is a real type (run gm-2026-10-30-032: type
+// "store" in component "store" declared Store): it is kept under "-type".
+func TestMergeOutlineKeepsATypeWhoseIDIsAComponentID(t *testing.T) {
 	text := strings.Replace(okOutline, `"types": [{"id": "name-error"`, `"types": [{"id": "greeting", "package": "x", "file": "internal/x/g.go", "decl": "type G int"}, {"id": "name-error"`, 1)
 	doc, _, _, ign, err := mergeOutline(nil, nil, text, testRunID, false)
 	if err != nil {
-		t.Fatalf("a type id that repeats a component id is noise: %v", err)
+		t.Fatalf("a type id that repeats a component id: %v", err)
 	}
-	if len(objects(doc["types"])) != 1 || len(ign) != 1 || ign[0] != `type "greeting"` {
-		t.Errorf("types %d ignored %v", len(objects(doc["types"])), ign)
+	if ts := objects(doc["types"]); len(ts) != 2 || ts[0]["id"] != "greeting-type" || len(ign) != 0 {
+		t.Errorf("types %v ignored %v", ts, ign)
 	}
 }
 

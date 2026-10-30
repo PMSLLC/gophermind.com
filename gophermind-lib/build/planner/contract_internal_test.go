@@ -158,6 +158,26 @@ func TestMergeKeepsTheFirstEmission(t *testing.T) {
 	}
 }
 
+// Run gm-2026-10-30-032: the type "store" shared its id with the component
+// "store", so every repair that declared it was dropped and the methods on
+// *Store never compiled. It is kept as "store-type"; a second emission is a
+// repeat of that, and a function with a component's id is still dropped.
+func TestMergeRenamesATypeThatSharesAComponentID(t *testing.T) {
+	doc := map[string]any{"components": []any{map[string]any{"id": "store"}}}
+	in := []map[string]any{
+		{"id": "store", "decl": "type Store struct{}"},
+		{"id": "store", "decl": "type Store struct{}"},
+	}
+	added, ignored := mergeList(doc, "types", in, 0, "type", nil)
+	types := objects(doc["types"])
+	if added != 1 || len(types) != 1 || types[0]["id"] != "store-type" || len(ignored) != 0 {
+		t.Fatalf("types %v added %d ignored %v, want the store type kept once as store-type", types, added, ignored)
+	}
+	if _, ign := mergeList(doc, "functions", []map[string]any{{"id": "store"}}, 0, "function", nil); len(ign) != 1 {
+		t.Errorf("a function sharing a component id was kept: %v", ign)
+	}
+}
+
 func TestBoundedID(t *testing.T) {
 	const canary = "CANARY ID with spaces"
 	long := strings.Repeat("a", 10000)
