@@ -76,3 +76,23 @@ func TestCoverageReplyReadsAnIDWithTextAfterIt(t *testing.T) {
 		}
 	}
 }
+
+// Run gm-2026-10-30-073: "cmd && exit 1 || exit 0" asserts that cmd fails, but
+// the gate reads "|| exit 0" as a masked failure. A single pipeline in that
+// form becomes "! { cmd; }"; a chain stays as written, since negating it
+// would also pass when an earlier step failed.
+func TestCoverageReplyNegatesAnExpectedFailure(t *testing.T) {
+	reqs := []Requirement{{ID: "A1", Kind: ReqAcceptance, Text: "t", Line: 1}, {ID: "A2", Kind: ReqAcceptance, Text: "t", Line: 2}}
+	r, err := ParseCoverageReply(`{"root_tests": [`+
+		`{"requirement": "A1", "name": "n", "command": "printf 'x\\n' | linkcheck --workers 0 - 2>/dev/null && exit 1 || exit 0"},`+
+		`{"requirement": "A2", "name": "m", "command": "serve && linkcheck - && exit 1 || exit 0"}]}`, reqs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r.RootTests[0].Command; got != "! { printf 'x\\n' | linkcheck --workers 0 - 2>/dev/null; }" {
+		t.Errorf("single pipeline = %q", got)
+	}
+	if got := r.RootTests[1].Command; got != "serve && linkcheck - && exit 1 || exit 0" {
+		t.Errorf("a chain was rewritten: %q", got)
+	}
+}

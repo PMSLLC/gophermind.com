@@ -76,6 +76,7 @@ func ParseCoverageReply(text string, reqs []Requirement) (CoverageReply, error) 
 	}
 	for i := range r.RootTests {
 		r.RootTests[i].Requirement = leadingReqID(r.RootTests[i].Requirement, known)
+		r.RootTests[i].Command = negateExitPair(r.RootTests[i].Command)
 	}
 	for _, m := range r.Map {
 		if !known[m.Requirement] {
@@ -329,4 +330,18 @@ func leadingReqID(ref string, known map[string]bool) string {
 		return ref[:end]
 	}
 	return ref
+}
+
+var exitPairRE = regexp.MustCompile(`^\s*(.+?)\s*&&\s*exit\s+1\s*\|\|\s*exit\s+0\s*$`)
+
+// negateExitPair writes "cmd && exit 1 || exit 0", which asserts that cmd
+// fails, as "! { cmd; }": the quality gate reads "|| exit 0" as a masked
+// failure (run gm-2026-10-30-073). Only a single pipeline is rewritten; in a
+// chain the negation would also pass when an earlier step failed.
+func negateExitPair(cmd string) string {
+	m := exitPairRE.FindStringSubmatch(cmd)
+	if m == nil || strings.Contains(m[1], "&&") || strings.Contains(m[1], "||") || strings.Contains(m[1], ";") {
+		return cmd
+	}
+	return "! { " + m[1] + "; }"
 }
