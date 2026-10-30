@@ -34,3 +34,33 @@ func TestMoveFilesIntoPackageDir(t *testing.T) {
 		t.Errorf("not idempotent: %v", again)
 	}
 }
+
+// Run gm-2026-10-30-053: fn-run was in package "cli" but filed under
+// cmd/slugify, next to package main, so neither folder compiled. A bare
+// package name whose other entries share one folder of that name moves the
+// stray file there; a name with no such folder, or two, moves nothing.
+func TestMoveFilesIntoABarePackagesFolder(t *testing.T) {
+	doc := map[string]any{
+		"module": "example.com/slugify",
+		"functions": []any{
+			map[string]any{"id": "fn-main", "package": "cmd/slugify", "file": "cmd/slugify/main.go"},
+			map[string]any{"id": "fn-run", "package": "cli", "file": "cmd/slugify/run.go"},
+			map[string]any{"id": "fn-parse", "package": "cli", "file": "internal/cli/parse.go"},
+			map[string]any{"id": "fn-a", "package": "util", "file": "x/a.go"},
+			map[string]any{"id": "fn-b", "package": "util", "file": "internal/util/b.go"},
+			map[string]any{"id": "fn-c", "package": "util", "file": "pkg/util/c.go"},
+		},
+		"types": []any{map[string]any{"id": "cfg", "package": "cli", "file": "internal/cli/cfg.go"}},
+	}
+	moved := moveFilesIntoPackageDir(doc)
+	fs := objects(doc["functions"])
+	if fs[1]["file"] != "internal/cli/run.go" {
+		t.Errorf("fn-run file = %v", fs[1]["file"])
+	}
+	if fs[3]["file"] != "x/a.go" {
+		t.Errorf("a package with two folders moved a file: %v", fs[3]["file"])
+	}
+	if len(moved) != 1 || moved[0] != "fn-run" {
+		t.Errorf("moved = %v", moved)
+	}
+}
