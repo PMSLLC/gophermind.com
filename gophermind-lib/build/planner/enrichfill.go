@@ -22,19 +22,49 @@ func emptyGroupsNotApplicable(m map[string]any) []string {
 // errorKindValues are the kinds a contract error may have.
 var errorKindValues = []string{"sentinel", "wrapped", "typed", "panic", "http_status", "exit_code", "other"}
 
-// contractErrorKinds returns the kind of each error when the contract already
-// gives every one a valid kind, so a reply that leaves error_kinds out keeps
-// them instead of failing the group check.
-func contractErrorKinds(errs []map[string]any) ([]string, bool) {
-	kinds := make([]string, 0, len(errs))
-	for _, e := range errs {
-		k, _ := e["kind"].(string)
-		if !contains(errorKindValues, k) {
-			return nil, false
+// errorKindList reads a reply's error_kinds. A kind written as the only key of
+// an object, {"exit_code": 1}, is taken as that kind; a list holding anything
+// else that is not a string reads as no list, so the count check names it.
+func errorKindList(v any) []string {
+	arr, _ := v.([]any)
+	out := make([]string, 0, len(arr))
+	for _, x := range arr {
+		switch e := x.(type) {
+		case string:
+			out = append(out, e)
+		case map[string]any:
+			if len(e) != 1 {
+				return nil
+			}
+			for k := range e {
+				if !contains(errorKindValues, k) {
+					return nil
+				}
+				out = append(out, k)
+			}
+		default:
+			return nil
 		}
-		kinds = append(kinds, k)
 	}
-	return kinds, true
+	return out
+}
+
+// fitErrorKinds gives each contract error one kind: the reply's kind at its
+// position, else the error's own valid kind, else "other". Kinds beyond the
+// errors are dropped.
+func fitErrorKinds(kinds []string, errs []map[string]any) []string {
+	out := make([]string, len(errs))
+	for i, e := range errs {
+		switch k, _ := e["kind"].(string); {
+		case i < len(kinds):
+			out[i] = kinds[i]
+		case contains(errorKindValues, k):
+			out[i] = k
+		default:
+			out[i] = "other"
+		}
+	}
+	return out
 }
 
 // groupListFields are the fields inside a group that the node schema types as

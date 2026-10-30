@@ -1,7 +1,9 @@
 package planner
 
 import (
+	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -17,19 +19,6 @@ func TestEmptyGroupsBecomeNotApplicable(t *testing.T) {
 	}
 	if _, ok := m["construction"].([]any); !ok {
 		t.Error("construction may never be not applicable and must be left for the check")
-	}
-}
-
-func TestContractErrorKinds(t *testing.T) {
-	errs := []map[string]any{{"when": "a", "kind": "wrapped"}, {"when": "b", "kind": "sentinel"}}
-	if k, ok := contractErrorKinds(errs); !ok || !slices.Equal(k, []string{"wrapped", "sentinel"}) {
-		t.Fatalf("kinds = %v %v", k, ok)
-	}
-	if _, ok := contractErrorKinds([]map[string]any{{"when": "a"}}); ok {
-		t.Error("an error without a kind gave kinds")
-	}
-	if _, ok := contractErrorKinds([]map[string]any{{"when": "a", "kind": "made_up"}}); ok {
-		t.Error("an unknown kind was accepted")
 	}
 }
 
@@ -65,5 +54,37 @@ func TestForbiddenObservabilityNABecomesNoLogs(t *testing.T) {
 	pure := map[string]any{"observability": map[string]any{"not_applicable": "a pure function has nothing to log here"}}
 	if observabilityNoLogs(pure, "pure") {
 		t.Error("an allowed not applicable was changed")
+	}
+}
+
+// Run gm-2026-10-30-043: Gemma wrote each kind as the key of an object,
+// [{"exit_code": 1}] and [{"other": "error"}], on both repairs.
+func TestErrorKindListTakesAKindWrittenAsAKey(t *testing.T) {
+	var v any
+	_ = json.Unmarshal([]byte(`["wrapped", {"exit_code": 1}, {"other": "error"}]`), &v)
+	if got := errorKindList(v); strings.Join(got, ",") != "wrapped,exit_code,other" {
+		t.Errorf("got %q", got)
+	}
+	for _, bad := range []string{`[{"exit_code": 1, "other": 2}]`, `[{"oops": 1}]`, `[3]`} {
+		_ = json.Unmarshal([]byte(bad), &v)
+		if got := errorKindList(v); len(got) != 0 {
+			t.Errorf("%s: got %q, want nothing", bad, got)
+		}
+	}
+}
+
+// Run gm-2026-10-30-044: one kind for two errors, on both repairs. A missing
+// kind is the error's own valid kind from the contract, else "other"; extra
+// kinds are dropped.
+func TestFitErrorKinds(t *testing.T) {
+	errs := []map[string]any{{"kind": "sentinel"}, {"kind": "bogus"}, {}}
+	if got := fitErrorKinds([]string{"wrapped"}, errs); strings.Join(got, ",") != "wrapped,other,other" {
+		t.Errorf("short list: got %q", got)
+	}
+	if got := fitErrorKinds(nil, errs); strings.Join(got, ",") != "sentinel,other,other" {
+		t.Errorf("no list: got %q", got)
+	}
+	if got := fitErrorKinds([]string{"a", "b", "c", "d"}, errs); strings.Join(got, ",") != "a,b,c" {
+		t.Errorf("long list: got %q", got)
 	}
 }

@@ -192,18 +192,15 @@ func mergeEnrichment(draft, reply map[string]any, c *contract.Contracts, env gro
 	ct, _ := merged["contract"].(map[string]any)
 	sig, _ := ct["signature"].(string)
 	if errs := objects(ct["errors"]); len(errs) > 0 {
-		kinds := strList(reply["error_kinds"])
-		if len(kinds) == 0 {
-			if have, ok := contractErrorKinds(errs); ok {
-				kinds = have
-			}
-		}
+		// A short or long list is fitted rather than sent back: Gemma gave one
+		// kind for two errors on every repair (run gm-2026-10-30-044).
+		kinds := errorKindList(reply["error_kinds"])
 		if len(kinds) != len(errs) {
-			defects = append(defects, groupDefect{grpEnum, "error_kinds", fmt.Sprintf("error_kinds has %d entries for %d errors", len(kinds), len(errs))})
-		} else {
-			for i, e := range errs {
-				e["kind"] = kinds[i]
-			}
+			warnings = append(warnings, fmt.Sprintf("%s: error_kinds_fitted error_kinds had %d entries for %d errors; the missing ones took the contract's kind or other",
+				boundedID(id), len(kinds), len(errs)))
+		}
+		for i, k := range fitErrorKinds(kinds, errs) {
+			errs[i]["kind"] = k
 		}
 	}
 	if gt, gerr := deriveGoTypes(sig, c); gerr == nil {

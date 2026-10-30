@@ -125,7 +125,6 @@ func TestMergeEnrichmentDefects(t *testing.T) {
 		kind string
 	}{
 		{"a missing group", func(m map[string]any) { delete(m, "security") }, grpMissing},
-		{"too few error kinds", func(m map[string]any) { m["error_kinds"] = []any{"wrapped"} }, grpEnum},
 		{"an unknown decision id", func(m map[string]any) { m["decision_ids"] = []any{"q9"} }, grpDecision},
 		{"a shape the schema refuses", func(m map[string]any) {
 			m["performance"] = map[string]any{"complexity": "O(1)", "concurrency": "maybe", "hot_path": false}
