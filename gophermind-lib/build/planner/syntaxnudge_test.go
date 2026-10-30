@@ -20,7 +20,11 @@ func TestNudgeSyntax(t *testing.T) {
 	// Run gm-2026-10-30-045: a row's setup function returning a mock literal.
 	openSetup := "package cli\n\nimport \"testing\"\n\ntype M struct{ F func() int }\n\nfunc TestX(t *testing.T) {\n\tcases := []struct {\n\t\tsetup func() *M\n\t\twant  int\n\t}{\n\t\t{\n\t\t\tsetup: func() *M {\n\t\t\t\treturn &M{\n\t\t\t\t\tF: func() int {\n\t\t\t\t\t\treturn 1\n\t\t\t\t\t},\n\t\t\t\t},\n\t\t\twant: 1,\n\t\t},\n\t}\n\t_ = cases\n}\n"
 	openSetupBrace := strings.Replace(openSetup, "\t\t\t\t},\n\t\t\twant: 1,", "\t\t\t\t},\n\t\t\t}\n\t\t\twant: 1,", 1)
-	for name, src := range map[string]string{"open setup": openSetup, "open setup with brace": openSetupBrace, "quotes before arguments": argQuotes, "last row": lastRow, "lone comma": loneComma, "unclosed run": unclosedRun, "literal newline": literalNewline, "comma closed": commaClosed, "unclosed": unclosed, "inner quotes": innerQuotes, "stray quote": strayQuote, "extra brace": extraBrace} {
+	// Run gm-2026-10-30-062: function fields closed with "}" and no comma, and
+	// an import path with no closing quote.
+	funcField := "package cli\n\nimport \"testing\"\n\nfunc TestX(t *testing.T) {\n\tcases := []struct {\n\t\tsetup func()\n\t\tcheck func()\n\t}{\n\t\t{\n\t\t\tsetup: func() {\n\t\t\t}\n\t\t\tcheck: func() {},\n\t\t},\n\t\t{\n\t\t\tsetup: func() {\n\t\t\t}\n\t\t\tcheck: func() {},\n\t\t},\n\t}\n\t_ = cases\n}\n"
+	openImport := "package cli\n\nimport (\n\t\"strings\n\t\"testing\"\n)\n\nfunc TestX(t *testing.T) { _ = strings.ToLower(\"A\") }\n"
+	for name, src := range map[string]string{"func field": funcField, "open import": openImport, "open setup": openSetup, "open setup with brace": openSetupBrace, "quotes before arguments": argQuotes, "last row": lastRow, "lone comma": loneComma, "unclosed run": unclosedRun, "literal newline": literalNewline, "comma closed": commaClosed, "unclosed": unclosed, "inner quotes": innerQuotes, "stray quote": strayQuote, "extra brace": extraBrace} {
 		got := nudgeSyntax(src)
 		if !parsesAsGo(got) {
 			t.Errorf("%s: not repaired:\n%s", name, got)

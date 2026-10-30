@@ -67,6 +67,10 @@ func firstSyntaxErrLine(src string) (int, bool) {
 
 var innerQuoteRE = regexp.MustCompile(`^(.*?:\s*|.*?\(\s*|\s*)"(.*)"(\s*[,)}\]]*\s*)$`)
 
+// fieldLineRE is a line that starts a keyed field of a composite literal:
+// "validate: func(...".
+var fieldLineRE = regexp.MustCompile(`^\s*[A-Za-z_][A-Za-z0-9_]*:\s+\S`)
+
 // innerQuoteArgsRE is a format string with quotes inside, followed by
 // arguments that hold no string: t.Errorf("want "data"", got).
 var innerQuoteArgsRE = regexp.MustCompile(`^(.*?\(\s*)"(.*)"(\s*,[^"]*\)\s*)$`)
@@ -144,6 +148,24 @@ func syntaxCandidates(src string, line int) []string {
 		} else {
 			rep = append(append(append([]string{}, rep[:i]...), indent+"},"), rep[i:]...)
 		}
+		out = append(out, join(rep))
+	}
+	// A function-valued field closed with "}" and no comma before the next
+	// field (run gm-2026-10-30-062, on every row): each such brace gets its
+	// comma in one edit.
+	if strings.TrimSpace(lines[i]) == "}" && i+1 < len(lines) && fieldLineRE.MatchString(lines[i+1]) {
+		rep := append([]string{}, lines...)
+		for j := 0; j+1 < len(rep); j++ {
+			if strings.TrimSpace(rep[j]) == "}" && fieldLineRE.MatchString(rep[j+1]) {
+				rep[j] = strings.TrimRight(rep[j], " \t") + ","
+			}
+		}
+		out = append(out, join(rep))
+	}
+	// An import path whose closing quote is missing: "sync/atomic
+	if t := strings.TrimSpace(lines[i]); strings.HasPrefix(t, `"`) && strings.Count(t, `"`) == 1 && !strings.ContainsAny(t, " \t") {
+		rep := append([]string{}, lines...)
+		rep[i] = strings.TrimRight(lines[i], " \t") + `"`
 		out = append(out, join(rep))
 	}
 	// A closing brace missing just before the reported line.
