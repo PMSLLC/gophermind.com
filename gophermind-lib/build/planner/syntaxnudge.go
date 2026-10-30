@@ -131,6 +131,21 @@ func syntaxCandidates(src string, line int) []string {
 		rep[i+1] = strings.TrimSuffix(strings.TrimRight(lines[i+1], " \t"), ",")
 		out = append(out, join(rep))
 	}
+	// A function literal in a table row that returns a composite literal,
+	// closed as if it were the literal: "}," ends the return statement where
+	// "}" belongs, and the literal's own "}," is missing (run
+	// gm-2026-10-30-045, every reply). Either the next line is a lone "}"
+	// that takes the comma, or a "}," is added before the reported line.
+	if prev := i - 1; prev >= 0 && strings.TrimSpace(lines[prev]) == "}," {
+		rep := append([]string{}, lines...)
+		rep[prev] = strings.TrimSuffix(strings.TrimRight(lines[prev], " \t"), ",")
+		if strings.TrimSpace(lines[i]) == "}" {
+			rep[i] = strings.TrimRight(lines[i], " \t") + ","
+		} else {
+			rep = append(append(append([]string{}, rep[:i]...), indent+"},"), rep[i:]...)
+		}
+		out = append(out, join(rep))
+	}
 	// A closing brace missing just before the reported line.
 	ins := append(append(append([]string{}, lines[:i]...), indent+"}"), lines[i:]...)
 	out = append(out, join(ins))

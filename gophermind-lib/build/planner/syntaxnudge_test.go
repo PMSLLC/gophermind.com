@@ -17,7 +17,10 @@ func TestNudgeSyntax(t *testing.T) {
 	loneComma := "package cli\n\nimport \"testing\"\n\nfunc TestX(t *testing.T) {\n\tcases := []struct{ a int }{\n\t\t{\n\t\t\ta: 1,\n\t\t\t}\n\t\t,\n\t\t{\n\t\t\ta: 2,\n\t\t},\n\t}\n\t_ = cases\n}\n"
 	argQuotes := "package cli\n\nimport \"testing\"\n\nfunc TestX(t *testing.T) {\n\tgot := \"x\"\n\tt.Errorf(\"got %q, want \"data\"\", got)\n}\n"
 	lastRow := "package cli\n\nimport \"testing\"\n\nfunc TestX(t *testing.T) {\n\tcases := []struct{ a int }{\n\t\t{\n\t\t\ta: 1,\n\t\t\t}\n\t\t,\n\t\t{\n\t\t\ta: 2,\n\t\t\t}\n\t\t},\n\n\t_ = cases\n}\n"
-	for name, src := range map[string]string{"quotes before arguments": argQuotes, "last row": lastRow, "lone comma": loneComma, "unclosed run": unclosedRun, "literal newline": literalNewline, "comma closed": commaClosed, "unclosed": unclosed, "inner quotes": innerQuotes, "stray quote": strayQuote, "extra brace": extraBrace} {
+	// Run gm-2026-10-30-045: a row's setup function returning a mock literal.
+	openSetup := "package cli\n\nimport \"testing\"\n\ntype M struct{ F func() int }\n\nfunc TestX(t *testing.T) {\n\tcases := []struct {\n\t\tsetup func() *M\n\t\twant  int\n\t}{\n\t\t{\n\t\t\tsetup: func() *M {\n\t\t\t\treturn &M{\n\t\t\t\t\tF: func() int {\n\t\t\t\t\t\treturn 1\n\t\t\t\t\t},\n\t\t\t\t},\n\t\t\twant: 1,\n\t\t},\n\t}\n\t_ = cases\n}\n"
+	openSetupBrace := strings.Replace(openSetup, "\t\t\t\t},\n\t\t\twant: 1,", "\t\t\t\t},\n\t\t\t}\n\t\t\twant: 1,", 1)
+	for name, src := range map[string]string{"open setup": openSetup, "open setup with brace": openSetupBrace, "quotes before arguments": argQuotes, "last row": lastRow, "lone comma": loneComma, "unclosed run": unclosedRun, "literal newline": literalNewline, "comma closed": commaClosed, "unclosed": unclosed, "inner quotes": innerQuotes, "stray quote": strayQuote, "extra brace": extraBrace} {
 		got := nudgeSyntax(src)
 		if !parsesAsGo(got) {
 			t.Errorf("%s: not repaired:\n%s", name, got)
