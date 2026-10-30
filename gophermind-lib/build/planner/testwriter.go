@@ -767,6 +767,7 @@ func parseTestwriteCounted(text string, ct map[string]any, pkg, funcName, module
 		return nil, "", 0, err
 	}
 	reply.TestFile = nudgeSyntax(quoteBareImports(unescapeQuotedSource(reply.TestFile)))
+	reply.TestFile = dropUnusedImportAlias(reply.TestFile)
 	reply.TestFile = fixTestPackageClause(reply.TestFile, pkg)
 	if module != "" {
 		reply.TestFile = dropSelfImport(reply.TestFile, path.Join(module, pkg))
