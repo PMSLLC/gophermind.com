@@ -67,6 +67,19 @@ func fitErrorKinds(kinds []string, errs []map[string]any) []string {
 	return out
 }
 
+// securityNoBoundary turns a not-applicable security group into the explicit
+// answer "no trust boundary" for a class that may not dismiss the group, as
+// observabilityNoLogs does for logs: Gemma kept writing not applicable for a
+// handler that only writes its output (run gm-2026-10-30-049). It reports
+// whether it changed the group.
+func securityNoBoundary(m map[string]any, class string) bool {
+	if _, na := notApplicable(m["security"]); !na || naAllowed("security", class) {
+		return false
+	}
+	m["security"] = map[string]any{"trust_boundary": "none"}
+	return true
+}
+
 // groupListFields are the fields inside a group that the node schema types as
 // lists.
 var groupListFields = map[string][]string{

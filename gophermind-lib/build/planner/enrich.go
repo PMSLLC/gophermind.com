@@ -227,6 +227,9 @@ func mergeEnrichment(draft, reply map[string]any, c *contract.Contracts, env gro
 	if observabilityNoLogs(merged, class) {
 		warnings = append(warnings, fmt.Sprintf("%s: observability_no_logs observability may not be not applicable for this class, so it became an empty set of log events", boundedID(id)))
 	}
+	if securityNoBoundary(merged, class) {
+		warnings = append(warnings, fmt.Sprintf("%s: security_no_boundary security may not be not applicable for this class, so it became trust boundary none", boundedID(id)))
+	}
 	if fs := notApplicableListFields(merged); len(fs) > 0 {
 		warnings = append(warnings, fmt.Sprintf("%s: field_not_applicable_emptied %s were written as not applicable and became empty lists", boundedID(id), strings.Join(fs, ", ")))
 	}

@@ -88,3 +88,20 @@ func TestFitErrorKinds(t *testing.T) {
 		t.Errorf("long list: got %q", got)
 	}
 }
+
+// Run gm-2026-10-30-049: security written as not applicable for a handler
+// ("writes to an io.Writer and does not process untrusted input") through
+// every repair. It becomes the explicit answer, trust boundary none.
+func TestForbiddenSecurityNABecomesNoTrustBoundary(t *testing.T) {
+	m := map[string]any{"security": map[string]any{"not_applicable": "writes to an io.Writer and takes no untrusted input"}}
+	if !securityNoBoundary(m, "handler") {
+		t.Fatal("not changed")
+	}
+	if s, _ := m["security"].(map[string]any); s["trust_boundary"] != "none" || len(s) != 1 {
+		t.Errorf("security = %v", m["security"])
+	}
+	pure := map[string]any{"security": map[string]any{"not_applicable": "pure"}}
+	if securityNoBoundary(pure, "pure") {
+		t.Error("an allowed not applicable was changed")
+	}
+}
