@@ -49,6 +49,7 @@ func TestMoveFilesIntoABarePackagesFolder(t *testing.T) {
 			map[string]any{"id": "fn-a", "package": "util", "file": "x/a.go"},
 			map[string]any{"id": "fn-b", "package": "util", "file": "internal/util/b.go"},
 			map[string]any{"id": "fn-c", "package": "util", "file": "pkg/util/c.go"},
+			map[string]any{"id": "fn-out", "package": "cli", "file": "../cli/out.go"},
 		},
 		"types": []any{map[string]any{"id": "cfg", "package": "cli", "file": "internal/cli/cfg.go"}},
 	}
@@ -59,6 +60,9 @@ func TestMoveFilesIntoABarePackagesFolder(t *testing.T) {
 	}
 	if fs[3]["file"] != "x/a.go" {
 		t.Errorf("a package with two folders moved a file: %v", fs[3]["file"])
+	}
+	if fs[6]["file"] != "../cli/out.go" {
+		t.Errorf("a file that leaves the repository was moved: %v", fs[6]["file"])
 	}
 	if len(moved) != 1 || moved[0] != "fn-run" {
 		t.Errorf("moved = %v", moved)

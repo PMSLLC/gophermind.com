@@ -22,7 +22,8 @@ func moveFilesIntoPackageDir(doc map[string]any) []string {
 		for _, o := range objects(doc[key]) {
 			pkg, _ := o["package"].(string)
 			file, _ := o["file"].(string)
-			if d := path.Dir(file); pkg != "" && !strings.Contains(pkg, "/") && strings.Contains(file, "/") && path.Base(d) == pkg {
+			if d := path.Dir(file); pkg != "" && !strings.Contains(pkg, "/") && strings.Contains(file, "/") && path.Base(d) == pkg &&
+				!path.IsAbs(file) && !strings.HasPrefix(path.Clean(file), "..") {
 				if bare[pkg] == nil {
 					bare[pkg] = map[string]bool{}
 				}
@@ -35,7 +36,8 @@ func moveFilesIntoPackageDir(doc map[string]any) []string {
 		for _, o := range objects(doc[key]) {
 			pkg, _ := o["package"].(string)
 			file, _ := o["file"].(string)
-			if pkg == "" || !strings.Contains(file, "/") {
+			// A file that leaves the repository is refused later, not moved.
+			if pkg == "" || !strings.Contains(file, "/") || path.IsAbs(file) || strings.HasPrefix(path.Clean(file), "..") {
 				continue
 			}
 			dir := stripModule(module, pkg)
