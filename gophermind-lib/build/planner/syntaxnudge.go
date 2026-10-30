@@ -67,6 +67,10 @@ func firstSyntaxErrLine(src string) (int, bool) {
 
 var innerQuoteRE = regexp.MustCompile(`^(.*?:\s*|.*?\(\s*|\s*)"(.*)"(\s*[,)}\]]*\s*)$`)
 
+// innerQuoteArgsRE is a format string with quotes inside, followed by
+// arguments that hold no string: t.Errorf("want "data"", got).
+var innerQuoteArgsRE = regexp.MustCompile(`^(.*?\(\s*)"(.*)"(\s*,[^"]*\)\s*)$`)
+
 func syntaxCandidates(src string, line int) []string {
 	lines := strings.Split(src, "\n")
 	if line < 1 || line > len(lines) {
@@ -80,13 +84,23 @@ func syntaxCandidates(src string, line int) []string {
 	var out []string
 	// A newline or tab written as the two characters \n or \t on a line with
 	// no string literal.
+	// A model that makes this slip makes it on every row, so every such line
+	// is fixed in one edit.
 	if !strings.Contains(lines[i], `"`) && (strings.Contains(lines[i], `\n`) || strings.Contains(lines[i], `\t`)) {
 		esc := append([]string{}, lines...)
-		esc[i] = strings.NewReplacer(`\n`, "\n", `\t`, "\t").Replace(lines[i])
+		for j, l := range esc {
+			if !strings.Contains(l, `"`) {
+				esc[j] = strings.NewReplacer(`\n`, "\n", `\t`, "\t").Replace(l)
+			}
+		}
 		out = append(out, join(esc))
 	}
 	// Quotes inside a string literal that are not escaped.
-	if m := innerQuoteRE.FindStringSubmatch(lines[i]); m != nil && strings.Contains(m[2], `"`) && !strings.Contains(m[2], `\"`) {
+	m := innerQuoteRE.FindStringSubmatch(lines[i])
+	if m == nil {
+		m = innerQuoteArgsRE.FindStringSubmatch(lines[i])
+	}
+	if m != nil && strings.Contains(m[2], `"`) && !strings.Contains(m[2], `\"`) {
 		esc := append([]string{}, lines...)
 		esc[i] = m[1] + `"` + strings.ReplaceAll(m[2], `"`, `\"`) + `"` + m[3]
 		out = append(out, join(esc))
@@ -94,6 +108,28 @@ func syntaxCandidates(src string, line int) []string {
 	// A stray quote after the last brace.
 	if t := strings.TrimRight(src, "\n \t"); strings.HasSuffix(t, `}"`) {
 		out = append(out, strings.TrimSuffix(t, `"`)+"\n")
+	}
+	// A comma written on a line of its own after the brace it belongs to; a
+	// lone comma is never valid Go, and a model that writes one writes it on
+	// every row, so each is joined to the line before in one edit.
+	if near := func(j int) bool { return j > 0 && j < len(lines) && strings.TrimSpace(lines[j]) == "," }; near(i) || near(i+1) {
+		var rep []string
+		for j, l := range lines {
+			if j > 0 && strings.TrimSpace(l) == "," && len(rep) > 0 {
+				rep[len(rep)-1] = strings.TrimRight(rep[len(rep)-1], " \t") + ","
+				continue
+			}
+			rep = append(rep, l)
+		}
+		out = append(out, join(rep))
+	}
+	// The last table row closed with "}" and the table itself with "},": the
+	// comma belongs on the row.
+	if i+1 < len(lines) && strings.TrimSpace(lines[i]) == "}" && strings.TrimSpace(lines[i+1]) == "}," {
+		rep := append([]string{}, lines...)
+		rep[i] = strings.TrimRight(lines[i], " \t") + ","
+		rep[i+1] = strings.TrimSuffix(strings.TrimRight(lines[i+1], " \t"), ",")
+		out = append(out, join(rep))
 	}
 	// A closing brace missing just before the reported line.
 	ins := append(append(append([]string{}, lines[:i]...), indent+"}"), lines[i:]...)
