@@ -34,6 +34,18 @@ var StdQualifiers = map[string]string{
 	"hex": "encoding/hex", "base64": "encoding/base64", "multipart": "mime/multipart",
 	"signal": "os/signal", "html": "html",
 	"exec": "os/exec", "syscall": "syscall", "unsafe": "unsafe",
+	// Added after run gm-2026-10-30-066 refused hash.Hash: the unambiguous
+	// standard packages a signature or type commonly names.
+	"hash": "hash", "crc32": "hash/crc32", "crc64": "hash/crc64", "adler32": "hash/adler32", "fnv": "hash/fnv", "maphash": "hash/maphash",
+	"md5": "crypto/md5", "sha1": "crypto/sha1", "sha512": "crypto/sha512", "sha3": "crypto/sha3", "hmac": "crypto/hmac",
+	"subtle": "crypto/subtle", "tls": "crypto/tls", "x509": "crypto/x509", "aes": "crypto/aes", "cipher": "crypto/cipher",
+	"rsa": "crypto/rsa", "ecdsa": "crypto/ecdsa", "ed25519": "crypto/ed25519", "elliptic": "crypto/elliptic", "pem": "encoding/pem",
+	"csv": "encoding/csv", "xml": "encoding/xml", "binary": "encoding/binary", "gob": "encoding/gob",
+	"heap": "container/heap", "list": "container/list", "ring": "container/ring",
+	"slices": "slices", "maps": "maps", "cmp": "cmp", "iter": "iter", "flag": "flag", "big": "math/big", "bits": "math/bits",
+	"gzip": "compress/gzip", "zlib": "compress/zlib", "zip": "archive/zip", "tar": "archive/tar",
+	"tabwriter": "text/tabwriter", "httptest": "net/http/httptest", "httputil": "net/http/httputil", "netip": "net/netip",
+	"mail": "net/mail", "slog": "log/slog", "utf16": "unicode/utf16", "user": "os/user", "mime": "mime", "textproto": "net/textproto",
 }
 
 var versionElemRE = regexp.MustCompile(`^v[0-9]+$`)
