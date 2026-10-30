@@ -37,6 +37,10 @@ func parseReviseReplyFor(text string, secrets []string, orig map[string]any) (re
 	if err == nil && rep.kind == kindContractChange && testsBlamedRE.MatchString(rep.paragraph) && !lockedFieldRE.MatchString(rep.paragraph) {
 		rep = testsOnlyPatch(rep.paragraph)
 		warns = append(warns, "CONTRACT_CHANGE_REQUIRED blamed the tests and named no field a rewrite may not change, so it was taken as rewrite_tests")
+	} else if err == nil && rep.kind == kindContractChange && !lockedFieldRE.MatchString(rep.paragraph) {
+		// What it asks for is text, outputs or errors, which the patch form
+		// writes: asked again rather than stopping the run (gm-2026-10-30-067).
+		return rep, warns, &reviseErr{ClassReviseInvalid, "CONTRACT_CHANGE_REQUIRED is only for the signature, package, file, depends_on, wave or tier; the description, outputs, errors and notes you describe are fields the patch may change, so write the patch"}
 	}
 	if err != nil && len(warns) > 0 && classOf(err, "") == ClassReviseInvalid && strings.Contains(err.Error(), "changes nothing") {
 		// Every key the reply wrote repeats the current node.
@@ -49,7 +53,7 @@ func parseReviseReplyFor(text string, secrets []string, orig map[string]any) (re
 // prompt keeps CONTRACT_CHANGE_REQUIRED for those; a model that answers it
 // while blaming the tests ("the contract is correct; the test is wrong") meant
 // the patch form's rewrite_tests.
-var lockedFieldRE = regexp.MustCompile(`(?i)\b(signature|package|file|depends[_ ]on|dependency|dependencies|wave|tier|parameters?|return type)\b`)
+var lockedFieldRE = regexp.MustCompile(`(?i)\b(signature|package|file|depends[_ ]on|dependency|dependencies|wave|tier|parameters?|return type|also returns?|second value|another value|extra (?:return|value|parameter|argument))\b`)
 
 // testsBlamedRE matches a paragraph that speaks of the tests at all; one that
 // does not ("the function must also return the number of runes") is a real

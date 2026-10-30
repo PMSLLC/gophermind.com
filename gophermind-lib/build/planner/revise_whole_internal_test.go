@@ -194,3 +194,17 @@ func TestReviseReplyMovesATopLevelGroupUnderGroups(t *testing.T) {
 		t.Errorf("warnings = %q", warns)
 	}
 }
+
+// Run gm-2026-10-30-067: CONTRACT_CHANGE_REQUIRED asking for clearer exit
+// codes and an output renamed, all of which the patch form can write. Such a
+// reply is refused with the reason, so the model is asked again; a real
+// signature change ("must also return") is still a flag.
+func TestContractChangeAPatchCouldWriteIsRefused(t *testing.T) {
+	patchable := "CONTRACT_CHANGE_REQUIRED\nThe Run contract is underspecified regarding exit codes and output mapping. It must state that it returns exit code 0 on success and 2 on failure. The outputs field is also incorrectly named int instead of exit_code."
+	if _, _, err := parseReviseReplyFor(patchable, nil, wholeOrig()); err == nil || !strings.Contains(err.Error(), "write the patch") {
+		t.Errorf("err = %v, want a refusal that asks for the patch", err)
+	}
+	if rep, _, err := parseReviseReplyFor("CONTRACT_CHANGE_REQUIRED\nThe function must also return the number of runes.", nil, wholeOrig()); err != nil || rep.kind != kindContractChange {
+		t.Errorf("a new return value: kind %v err %v, want a flag", rep.kind, err)
+	}
+}
