@@ -71,6 +71,12 @@ func ParseCoverageReply(text string, reqs []Requirement) (CoverageReply, error) 
 	for _, q := range reqs {
 		known[q.ID] = true
 	}
+	for i := range r.Map {
+		r.Map[i].Requirement = leadingReqID(r.Map[i].Requirement, known)
+	}
+	for i := range r.RootTests {
+		r.RootTests[i].Requirement = leadingReqID(r.RootTests[i].Requirement, known)
+	}
 	for _, m := range r.Map {
 		if !known[m.Requirement] {
 			return CoverageReply{}, fmt.Errorf("coverage reply: map names unknown requirement (%d bytes)", len(m.Requirement))
@@ -307,4 +313,20 @@ func StrayCommandWarnings(briefSrc []byte, nodes []PlanNode) []string {
 		}
 	}
 	return out
+}
+
+// leadingReqID reads "F2 (line 28)" or "A1: builds" as the known id it starts
+// with (run gm-2026-10-30-055); anything else is returned as it was.
+func leadingReqID(ref string, known map[string]bool) string {
+	ref = strings.TrimSpace(ref)
+	if known[ref] {
+		return ref
+	}
+	end := strings.IndexFunc(ref, func(r rune) bool {
+		return !(r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' || r == '_')
+	})
+	if end > 0 && known[ref[:end]] {
+		return ref[:end]
+	}
+	return ref
 }

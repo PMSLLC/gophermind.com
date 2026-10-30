@@ -57,3 +57,22 @@ func TestCoverageParseErrorsNeverQuoteTheReply(t *testing.T) {
 		}
 	}
 }
+
+// Run gm-2026-10-30-055: Gemma wrote "F2 (line 28)" for F2, on every try. A
+// reference that is a known id followed by other text is that id; one whose
+// leading word is not an id stays unknown.
+func TestCoverageReplyReadsAnIDWithTextAfterIt(t *testing.T) {
+	reqs := []Requirement{{ID: "F2", Kind: ReqFeature, Name: "Parse", Text: "t", Line: 28}, {ID: "A1", Kind: ReqAcceptance, Text: "t", Line: 30}}
+	r, err := ParseCoverageReply(`{"map": [{"requirement": "F2 (line 28)", "nodes": ["fn-a"]}], "root_tests": [{"requirement": "A1: builds", "name": "n", "command": "true"}]}`, reqs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Map[0].Requirement != "F2" || r.RootTests[0].Requirement != "A1" {
+		t.Errorf("map %q root %q", r.Map[0].Requirement, r.RootTests[0].Requirement)
+	}
+	for _, bad := range []string{"F22", "F", "X2 (line 28)"} {
+		if _, err := ParseCoverageReply(`{"map": [{"requirement": "`+bad+`", "nodes": []}]}`, reqs); err == nil {
+			t.Errorf("%q was accepted", bad)
+		}
+	}
+}
