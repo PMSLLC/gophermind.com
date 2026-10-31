@@ -40,6 +40,8 @@ func writeOutcome(err error) string {
 		return "no such run."
 	case errors.Is(err, errNoStoredBrief):
 		return "that run has no stored brief to resubmit."
+	case errors.Is(err, errAlreadyAnswered):
+		return "that question is already answered; nothing was changed."
 	case errors.Is(err, errNoSuchQuestion):
 		return "no open question with that id; nothing was changed."
 	case errors.As(err, &notWaiting):
@@ -133,14 +135,7 @@ func (c *chatTools) briefAnswer() tools.Tool {
 			case strings.ContainsRune(text, 0) || hasFenceLine(text):
 				return "", fmt.Errorf("brief_answer: the answer must not hold a line of three backticks")
 			}
-			// The answer endpoint overwrites; a chat message must not replace an
-			// answer that is already in the file.
-			for _, q := range readGateQuestions(c.bm.repoFor(a.ID), a.ID) {
-				if q.ID == a.QuestionID && q.Filled {
-					return "that question is already answered; nothing was changed.", nil
-				}
-			}
-			remaining, err := c.bm.answerText(a.ID, a.QuestionID, text)
+			remaining, err := c.bm.answerTextOpt(a.ID, a.QuestionID, text, true)
 			if err != nil {
 				return c.clean(writeOutcome(err)), nil
 			}

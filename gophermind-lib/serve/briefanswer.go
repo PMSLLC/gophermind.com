@@ -124,6 +124,9 @@ func readGateQuestions(root, id string) []gateQuestion {
 
 var errNoSuchQuestion = errors.New("no such question")
 
+// errAlreadyAnswered is a refused write: the question already has an answer.
+var errAlreadyAnswered = errors.New("question is already answered")
+
 // ErrNoSuchQuestion is returned by FillGateAnswer for a question id the run's
 // QUESTIONS.md does not hold.
 var ErrNoSuchQuestion = errNoSuchQuestion
@@ -132,23 +135,38 @@ var ErrNoSuchQuestion = errNoSuchQuestion
 // fill-answer` runs it as the user that owns the run folder, which the web
 // server may not be allowed to write.
 func FillGateAnswer(root, id, qid, text string) (remaining int, err error) {
+	return FillGateAnswerOpt(root, id, qid, text, false)
+}
+
+// ErrAlreadyAnswered is returned by FillGateAnswerOpt with noOverwrite for a
+// question whose answer block is already filled.
+var ErrAlreadyAnswered = errAlreadyAnswered
+
+// FillGateAnswerOpt is FillGateAnswer; noOverwrite refuses a question that is
+// already answered, writing nothing.
+func FillGateAnswerOpt(root, id, qid, text string, noOverwrite bool) (remaining int, err error) {
 	if !runview.ValidRunID(id) || !questionIDRE.MatchString(qid) {
 		return 0, errors.New("invalid run or question id")
 	}
-	return writeGateAnswer(root, id, qid, text)
+	return writeGateAnswer(root, id, qid, text, noOverwrite)
 }
 
 // fillAnswerExit codes of `brief fill-answer`.
 const (
 	fillExitNoQuestion = 3
 	fillExitNoRun      = 4
+	fillExitAnswered   = 5
 )
 
 // writeAnswerAs writes the answer through the launcher command, for a run
 // folder the server user cannot write: `brief fill-answer <id> <qid> --repo
 // <root>` with the text on stdin, answering "remaining N" on stdout.
-func (m *briefManager) writeAnswerAs(id, qid, text string) (int, error) {
-	cmd := m.cmd([]string{"brief", "fill-answer", id, qid, "--repo", m.repoFor(id)})
+func (m *briefManager) writeAnswerAs(id, qid, text string, noOverwrite bool) (int, error) {
+	args := []string{"brief", "fill-answer", id, qid, "--repo", m.repoFor(id)}
+	if noOverwrite {
+		args = append(args, "--no-overwrite")
+	}
+	cmd := m.cmd(args)
 	cmd.Stdin = strings.NewReader(text)
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -163,6 +181,8 @@ func (m *briefManager) writeAnswerAs(id, qid, text string) (int, error) {
 				return 0, errNoSuchQuestion
 			case fillExitNoRun:
 				return 0, os.ErrNotExist
+			case fillExitAnswered:
+				return 0, errAlreadyAnswered
 			}
 		}
 		return 0, err
@@ -176,7 +196,7 @@ func (m *briefManager) writeAnswerAs(id, qid, text string) (int, error) {
 
 // writeGateAnswer puts text in the answer block of question qid and reports
 // how many blocks are still empty.
-func writeGateAnswer(root, id, qid, text string) (remaining int, err error) {
+func writeGateAnswer(root, id, qid, text string, noOverwrite bool) (remaining int, err error) {
 	path := filepath.Join(root, ".gophermind", id, questionsFile)
 	b, err := readSmallFile(path, 1<<20)
 	if err != nil {
@@ -193,6 +213,9 @@ func writeGateAnswer(root, id, qid, text string) (remaining int, err error) {
 		return 0, errNoSuchQuestion
 	}
 	q := qs[idx]
+	if noOverwrite && q.Filled {
+		return 0, errAlreadyAnswered
+	}
 	out := append([]string(nil), lines[:q.startIdx+1]...)
 	out = append(out, strings.Split(text, "\n")...)
 	out = append(out, lines[q.endIdx:]...)
@@ -301,6 +324,13 @@ func (e *resumeError) Unwrap() []error { return []error{errResumeFailed, e.err} 
 // errNoSuchQuestion, os.ErrNotExist, or a resume failure (errResumeFailed,
 // with a *briefBusyError inside when the run is queued; remaining is then 0).
 func (m *briefManager) answerText(id, qid, text string) (remaining int, err error) {
+	return m.answerTextOpt(id, qid, text, false)
+}
+
+// answerTextOpt is answerText; noOverwrite refuses (errAlreadyAnswered, nothing
+// written) a question whose answer block is already filled. The check runs under
+// answerMu on the data being written, for the direct write and the run-user one.
+func (m *briefManager) answerTextOpt(id, qid, text string, noOverwrite bool) (remaining int, err error) {
 	m.answerMu.Lock()
 	defer m.answerMu.Unlock()
 	rec, ok := m.readRecord(id)
@@ -310,10 +340,10 @@ func (m *briefManager) answerText(id, qid, text string) (remaining int, err erro
 	if rec.Phase != phaseWaiting {
 		return 0, &briefNotWaitingError{rec.Phase}
 	}
-	remaining, err = writeGateAnswer(m.repoFor(id), id, qid, text)
+	remaining, err = writeGateAnswer(m.repoFor(id), id, qid, text, noOverwrite)
 	if errors.Is(err, os.ErrPermission) {
 		// The run folder belongs to the run user: let it write its own file.
-		remaining, err = m.writeAnswerAs(id, qid, text)
+		remaining, err = m.writeAnswerAs(id, qid, text, noOverwrite)
 	}
 	if err != nil {
 		return 0, err

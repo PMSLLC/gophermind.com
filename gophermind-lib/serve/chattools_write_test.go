@@ -3,11 +3,14 @@ package serve
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -149,13 +152,16 @@ func TestBriefAnswerUnknownQuestion(t *testing.T) {
 
 func TestBriefAnswerAlreadyFilled(t *testing.T) {
 	e, ts := writeToolsEnv(t)
-	e.startAsking("gm-2026-10-30-006")
 	id := "gm-2026-10-30-006"
+	e.startAsking(id)
 	if out, err := callTool(t, ts, "brief_answer", map[string]any{"id": id, "question_id": "clarify-q1", "text": "sqlite"}); err != nil || !strings.Contains(out, "1 question") {
 		t.Fatalf("first answer: %q %v", out, err)
 	}
 	qf := filepath.Join(e.root, ".gophermind", id, "QUESTIONS.md")
 	before, _ := os.ReadFile(qf)
+	if !strings.Contains(string(before), "```answer clarify-q1\nsqlite") {
+		t.Fatalf("first answer not stored:\n%s", before)
+	}
 	out, err := callTool(t, ts, "brief_answer", map[string]any{"id": id, "question_id": "clarify-q1", "text": "postgres"})
 	if err != nil {
 		t.Fatal(err)
@@ -164,10 +170,95 @@ func TestBriefAnswerAlreadyFilled(t *testing.T) {
 		t.Errorf("out %q", out)
 	}
 	if after, _ := os.ReadFile(qf); string(after) != string(before) {
-		t.Error("QUESTIONS.md changed by a second answer")
+		t.Errorf("QUESTIONS.md changed by a refused second answer:\n%s", after)
 	}
-	if strings.Contains(string(before), "```answer clarify-q1\npostgres") {
-		t.Error("filled answer overwritten")
+}
+
+// The chat tool refuses a filled question on the real write path, while the
+// HTTP answer handler still overwrites exactly as before.
+func TestAnswerHandlerStillOverwritesFilled(t *testing.T) {
+	e, ts := writeToolsEnv(t)
+	id := "gm-2026-10-30-012"
+	e.startAsking(id)
+	if w := e.post("/app/briefs/"+id+"/answer", answerBody("clarify-q1", "sqlite"), nil); w.Code != http.StatusOK {
+		t.Fatalf("answer = %d %s", w.Code, w.Body)
+	}
+	qf := filepath.Join(e.root, ".gophermind", id, "QUESTIONS.md")
+	if out, _ := callTool(t, ts, "brief_answer", map[string]any{"id": id, "question_id": "clarify-q1", "text": "x"}); !strings.Contains(out, "already answered") {
+		t.Errorf("tool out %q", out)
+	}
+	if w := e.post("/app/briefs/"+id+"/answer", answerBody("clarify-q1", "postgres"), nil); w.Code != http.StatusOK {
+		t.Fatalf("overwrite = %d %s", w.Code, w.Body)
+	}
+	if b, _ := os.ReadFile(qf); !strings.Contains(string(b), "```answer clarify-q1\npostgres") {
+		t.Error("HTTP answer no longer overwrites")
+	}
+}
+
+// With a run folder the server cannot write, the launcher does the write and
+// the refusal comes from it (exit 5); the tool passes --no-overwrite.
+func TestBriefAnswerLauncherFallbackRefusesFilled(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory modes")
+	}
+	e, ts := writeToolsEnv(t)
+	id := "gm-2026-10-30-014"
+	e.startAsking(id)
+	dir := filepath.Join(e.root, ".gophermind", id)
+	inner := e.script
+	e.script = func(args []string) string {
+		if len(args) > 1 && args[1] == "fill-answer" {
+			return "exit 5"
+		}
+		return inner(args)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o700) })
+	out, err := callTool(t, ts, "brief_answer", map[string]any{"id": id, "question_id": "clarify-q1", "text": "x"})
+	if err != nil || !strings.Contains(out, "already answered") {
+		t.Fatalf("out %q err %v", out, err)
+	}
+	e.mu.Lock()
+	last := strings.Join(e.calls[len(e.calls)-1], " ")
+	e.mu.Unlock()
+	if !strings.HasSuffix(last, "--no-overwrite") {
+		t.Errorf("launcher call %q lacks --no-overwrite", last)
+	}
+}
+
+func TestBriefAnswerConcurrentOneWrite(t *testing.T) {
+	e, ts := writeToolsEnv(t)
+	id := "gm-2026-10-30-013"
+	e.startAsking(id)
+	var wg sync.WaitGroup
+	outs := make([]string, 8)
+	for i := range outs {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			outs[i], _ = callTool(t, ts, "brief_answer", map[string]any{"id": id, "question_id": "clarify-q1", "text": fmt.Sprintf("answer-%d", i)})
+		}(i)
+	}
+	wg.Wait()
+	saved, refused := 0, 0
+	for _, o := range outs {
+		switch {
+		case strings.Contains(o, "saved the answer"):
+			saved++
+		case strings.Contains(o, "already answered"):
+			refused++
+		default:
+			t.Errorf("unexpected outcome %q", o)
+		}
+	}
+	if saved != 1 || refused != len(outs)-1 {
+		t.Errorf("saved %d refused %d", saved, refused)
+	}
+	b, _ := os.ReadFile(filepath.Join(e.root, ".gophermind", id, "QUESTIONS.md"))
+	if n := strings.Count(string(b), "answer-"); n != 1 {
+		t.Errorf("%d answers in file, want 1:\n%s", n, b)
 	}
 }
 
@@ -175,17 +266,20 @@ func TestBriefAnswerNotWaitingAndBadInput(t *testing.T) {
 	_, ts := writeToolsEnv(t)
 	for _, a := range []map[string]any{
 		{"id": "../x", "question_id": "q1", "text": "a"},
-		{"id": "gm-2026-10-30-099", "question_id": "q1", "text": "a"},
 		{"id": "gm-2026-10-30-099", "question_id": "bad id", "text": "a"},
 		{"id": "gm-2026-10-30-099", "question_id": "q1", "text": "  "},
 		{"id": "gm-2026-10-30-099", "question_id": "q1", "text": "```\nx"},
 	} {
-		if _, err := callTool(t, ts, "brief_answer", a); err == nil {
-			out, _ := callTool(t, ts, "brief_answer", a)
-			if out == "" {
-				t.Errorf("%v: empty outcome", a)
-			}
+		if out, err := callTool(t, ts, "brief_answer", a); err == nil {
+			t.Errorf("%v: want an error, got %q", a, out)
 		}
+	}
+	out, err := callTool(t, ts, "brief_answer", map[string]any{"id": "gm-2026-10-30-099", "question_id": "q1", "text": "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "no such run") && !strings.Contains(out, "not waiting") {
+		t.Errorf("unknown run outcome %q", out)
 	}
 }
 
@@ -241,8 +335,9 @@ func TestBriefResubmitStartsNewRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "gm-2026-10-30-011") && !strings.Contains(out, "gm-2026-10-30-") {
-		t.Errorf("out %q", out)
+	newID := regexp.MustCompile(`started run (gm-[0-9-]+)`).FindStringSubmatch(out)
+	if newID == nil || newID[1] == id {
+		t.Errorf("out %q does not name a new id different from %s", out, id)
 	}
 	if n := runDirs(t, e.dir); len(n) != 2 {
 		t.Errorf("run dirs %v, want two", n)

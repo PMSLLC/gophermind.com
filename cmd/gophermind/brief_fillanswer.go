@@ -14,8 +14,9 @@ import (
 // QUESTIONS.md. The web server runs it as the run user (through sudo) because
 // it may not write that file itself. Not listed in the usage text.
 func briefFillAnswer(args []string, in io.Reader, out, errw io.Writer) int {
-	if len(args) != 4 || args[2] != "--repo" {
-		fmt.Fprintln(errw, "usage: gophermind brief fill-answer <run-id> <question-id> --repo <root> (answer on stdin)")
+	noOverwrite := len(args) == 5 && args[4] == "--no-overwrite"
+	if (len(args) != 4 && !noOverwrite) || args[2] != "--repo" {
+		fmt.Fprintln(errw, "usage: gophermind brief fill-answer <run-id> <question-id> --repo <root> [--no-overwrite] (answer on stdin)")
 		return 1
 	}
 	text, err := io.ReadAll(io.LimitReader(in, 16<<10))
@@ -23,11 +24,14 @@ func briefFillAnswer(args []string, in io.Reader, out, errw io.Writer) int {
 		fmt.Fprintln(errw, "gophermind brief fill-answer:", err)
 		return 1
 	}
-	n, err := serve.FillGateAnswer(args[3], args[0], args[1], string(text))
+	n, err := serve.FillGateAnswerOpt(args[3], args[0], args[1], string(text), noOverwrite)
 	switch {
 	case errors.Is(err, serve.ErrNoSuchQuestion):
 		fmt.Fprintln(errw, "gophermind brief fill-answer: no such open question")
 		return 3
+	case errors.Is(err, serve.ErrAlreadyAnswered):
+		fmt.Fprintln(errw, "gophermind brief fill-answer: the question is already answered")
+		return 5
 	case errors.Is(err, os.ErrNotExist):
 		fmt.Fprintln(errw, "gophermind brief fill-answer: the run is not waiting for answers")
 		return 4
