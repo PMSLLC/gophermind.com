@@ -24,7 +24,12 @@
 <section class="conv">
   <div id="log"></div>
   <div id="status"></div>
+  <div id="autoBar" class="autobar" hidden>
+    <span>Auto approve is ON for this chat. Brief actions still ask.</span>
+    <button id="autoOff" type="button">Turn off</button>
+  </div>
   <form id="form">
+    <label class="autotoggle"><input type="checkbox" id="autoApprove"> Auto approve</label>
     <textarea id="input" rows="2" placeholder="Message GopherMind (Enter sends, Shift+Enter for a new line)"></textarea>
     <button id="sendBtn" type="submit">Send</button>
   </form>
@@ -40,6 +45,25 @@ const logEl = $('log'), listEl = $('sessions'), statusEl = $('status');
 const inputEl = $('input'), sendBtn = $('sendBtn'), formEl = $('form');
 let sessionId = '';
 let busy = false;
+
+/*GM_AUTO_BEGIN*/
+// Brief actions always ask, even with Auto approve on. Names are compared
+// case-insensitively and exactly (fail closed).
+const BRIEF_ACTIONS = ['brief_create', 'brief_answer', 'brief_stop', 'brief_resubmit'];
+function shouldAutoApprove(autoOn, tool, truncated){
+  if(autoOn !== true || truncated) return false;
+  return BRIEF_ACTIONS.indexOf(String(tool == null ? '' : tool).toLowerCase()) < 0;
+}
+/*GM_AUTO_END*/
+
+// Auto approve lives only in this variable: it is off on every page load and
+// whenever the current chat changes.
+let autoOn = false;
+function setAuto(on){
+  autoOn = on === true;
+  $('autoApprove').checked = autoOn;
+  $('autoBar').hidden = !autoOn;
+}
 
 // el builds an element; text only ever goes in through textContent.
 function el(tag, cls, text){
@@ -111,6 +135,7 @@ function renderHistory(msgs){
 async function openSession(id){
   if(busy) return;
   sessionId = id;
+  setAuto(false);
   logEl.replaceChildren();
   setStatus('');
   try{
@@ -138,8 +163,10 @@ async function approve(box, id, ok){
       body: JSON.stringify({ approval_id: id, approved: ok })
     });
     box.appendChild(el('div', null, r.ok ? (ok ? 'approved' : 'denied') : 'approval failed: ' + r.status));
+    return r.ok;
   } catch(err){
     box.appendChild(el('div', 'err', 'approval failed: ' + err.message));
+    return false;
   }
 }
 
@@ -191,6 +218,23 @@ function addApproval(ev){
   logEl.scrollTop = logEl.scrollHeight;
 }
 
+// autoApprove answers an approval-needed event with approve true and leaves a
+// compact log entry that still shows the full arguments. If the POST fails the
+// normal card is shown so the call can be approved or denied by hand.
+async function autoApprove(ev){
+  const box = el('details', 'approval auto');
+  const sum = el('summary', null, 'Auto approved: ' + ev.tool);
+  box.appendChild(sum);
+  box.appendChild(el('pre', null, approvalArgs(ev.args).text));
+  logEl.appendChild(box);
+  logEl.scrollTop = logEl.scrollHeight;
+  const ok = await approve(box, ev.approval_id, true);
+  if(!ok){
+    sum.textContent = 'Auto approve failed: ' + ev.tool;
+    addApproval(ev);
+  }
+}
+
 function parseJSON(s){
   try{ return JSON.parse(s); } catch(e){ return null; }
 }
@@ -222,7 +266,10 @@ function handle(cur, event, data){
   }
   case 'approval-needed': {
     const a = parseJSON(data);
-    if(a && a.approval_id) addApproval(a);
+    if(a && a.approval_id){
+      if(shouldAutoApprove(autoOn, a.tool, approvalArgs(a.args).truncated)) autoApprove(a);
+      else addApproval(a);
+    }
     break;
   }
   case 'usage': {
@@ -309,10 +356,14 @@ inputEl.addEventListener('keydown', e => {
 $('newBtn').addEventListener('click', () => {
   if(busy) return;
   sessionId = '';
+  setAuto(false);
   logEl.replaceChildren();
   setStatus('');
   loadSessions();
 });
+
+$('autoApprove').addEventListener('change', e => setAuto(e.target.checked));
+$('autoOff').addEventListener('click', () => setAuto(false));
 
 loadSessions();
 </script>
