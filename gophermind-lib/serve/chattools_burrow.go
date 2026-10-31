@@ -164,7 +164,7 @@ func renderBurrowLookup(r burrowLookup) string {
 		return out
 	}
 	if r.AwaitingConfirmation || r.Rendering == nil {
-		return "found: yes ("+clampField(r.Outcome, 32)+"), key " + clampField(r.Key, 200) + "\nA generated body exists but is not confirmed, so it is not shown."
+		return "found: yes (" + clampField(r.Outcome, 32) + "), key " + clampField(r.Key, 200) + "\nA generated body exists but is not confirmed, so it is not shown."
 	}
 	var sc storedContract
 	hasContract := len(r.Contract) > 0 && string(r.Contract) != "null" && json.Unmarshal(r.Contract, &sc) == nil
