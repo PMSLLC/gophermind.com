@@ -3,12 +3,14 @@ package serve
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"gophermind/gophermind-lib/safety"
 )
@@ -68,13 +70,18 @@ func TestBurrowLookupToolHit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"found: yes", "text/words/count@d10b1d2a09aa", "parameter order: b, a", "verified at: 2026-10-25T18:30:00Z", "language: go", "eligible: true", "func Run() {}"} {
+	for _, want := range []string{"found: yes (exact)", "text/words/count@d10b1d2a09aa", "parameter order: b, a", "verified at: 2026-10-25T18:30:00Z", "language: go", "eligible: true", "func Run() {}"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
 		}
 	}
 	if !strings.Contains(*last, `"lang":"go"`) {
 		t.Errorf("lang default not sent: %s", *last)
+	}
+	for _, w := range []string{`"failures":[]`, `"traits":[]`, `"effects":[]`} {
+		if !strings.Contains(*last, w) {
+			t.Errorf("request lacks %s: %s", w, *last)
+		}
 	}
 	if strings.Contains(out, burrowTestToken) {
 		t.Error("token leaked")
@@ -188,5 +195,73 @@ func TestBurrowLookupToolNotRegisteredWithoutConfig(t *testing.T) {
 func TestBurrowLookupNotGated(t *testing.T) {
 	if safety.Gated("burrow_lookup") {
 		t.Fatal("burrow_lookup is read-only and must not be gated")
+	}
+}
+
+func checkBurrowCapped(t *testing.T, out string) {
+	t.Helper()
+	if len(out) > maxToolOutput {
+		t.Errorf("output %d bytes, want <= %d", len(out), maxToolOutput)
+	}
+	if !utf8.ValidString(out) {
+		t.Error("output is not valid UTF-8")
+	}
+	for _, want := range []string{"found: yes", "key: ", "parameter order: "} {
+		if !strings.Contains(out, want) {
+			t.Errorf("lost %q", want)
+		}
+	}
+}
+
+func TestBurrowLookupToolHugeContract(t *testing.T) {
+	var ins []string
+	for i := 0; i < 800; i++ {
+		ins = append(ins, fmt.Sprintf(`{"name":"param%04d","type":"string"}`, i))
+	}
+	body, _ := json.Marshal(map[string]any{
+		"outcome": "exact", "key": "k@1",
+		"contract":  json.RawMessage(`{"verb":"V","object":"O","inputs":[` + strings.Join(ins, ",") + `],"outputs":["int64"]}`),
+		"rendering": map[string]any{"lang": "go", "version": 1, "body": "package main\n", "verified_at": "x"},
+		"eligible":  true,
+	})
+	if len(body) < 20<<10 {
+		t.Fatalf("contract only %d bytes", len(body))
+	}
+	ct, _ := burrowToolEnv(t, 200, string(body))
+	out, err := runBurrow(t, ct, burrowGoodArgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkBurrowCapped(t, out)
+	if !strings.Contains(out, "param0000") || !strings.Contains(out, "...") {
+		t.Errorf("order not clamped visibly: %.300s", out)
+	}
+}
+
+func TestBurrowLookupToolHugeKey(t *testing.T) {
+	b := strings.Replace(burrowHitBody("package main\n", false), "text/words/count@d10b1d2a09aa", strings.Repeat("k", 5000), 1)
+	ct, _ := burrowToolEnv(t, 200, b)
+	out, _ := runBurrow(t, ct, burrowGoodArgs)
+	checkBurrowCapped(t, out)
+	if !strings.Contains(out, "(5000 bytes)") {
+		t.Error("key clamp must state the true length")
+	}
+}
+
+func TestBurrowLookupToolMultibyteBody(t *testing.T) {
+	ct, _ := burrowToolEnv(t, 200, burrowHitBody(strings.Repeat("\U0001F600", 5000), false))
+	out, _ := runBurrow(t, ct, burrowGoodArgs)
+	checkBurrowCapped(t, out)
+	if !strings.Contains(out, "[body cut:") {
+		t.Error("want a cut note")
+	}
+}
+
+func TestBurrowFromOptions(t *testing.T) {
+	if burrowFromOptions(Options{}) != nil || burrowFromOptions(Options{BurrowURL: "http://x"}) != nil || burrowFromOptions(Options{BurrowTokenFile: "/t"}) != nil {
+		t.Error("client built with a missing setting")
+	}
+	if burrowFromOptions(Options{BurrowURL: "http://x", BurrowTokenFile: "/t"}) == nil {
+		t.Error("client not built with both settings")
 	}
 }

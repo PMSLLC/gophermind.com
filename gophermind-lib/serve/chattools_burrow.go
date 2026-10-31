@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
+	"gophermind/gophermind-lib/safety"
 	"gophermind/gophermind-lib/tools"
 )
 
@@ -99,9 +101,9 @@ func (c *chatTools) burrowLookupTool() tools.Tool {
 			}
 			res, err := c.burrow.lookup(ctx, contract, lang)
 			if err != nil {
-				return c.clean(burrowErrorSentence(err)), nil
+				return c.cleanWith(burrowErrorSentence(err), "the Burrow catalogue"), nil
 			}
-			return c.clean(renderBurrowLookup(res)), nil
+			return headCap(redactText(renderBurrowLookup(res)), maxToolOutput), nil
 		},
 	}
 }
@@ -162,13 +164,13 @@ func renderBurrowLookup(r burrowLookup) string {
 		return out
 	}
 	if r.AwaitingConfirmation || r.Rendering == nil {
-		return "found: yes, key " + oneLine(r.Key) + "\nA generated body exists but is not confirmed, so it is not shown."
+		return "found: yes ("+clampField(r.Outcome, 32)+"), key " + clampField(r.Key, 200) + "\nA generated body exists but is not confirmed, so it is not shown."
 	}
 	var sc storedContract
 	hasContract := len(r.Contract) > 0 && string(r.Contract) != "null" && json.Unmarshal(r.Contract, &sc) == nil
 	var b strings.Builder
-	b.WriteString("found: yes\n")
-	fmt.Fprintf(&b, "key: %s\n", oneLine(r.Key))
+	fmt.Fprintf(&b, "found: yes (%s)\n", clampField(r.Outcome, 32))
+	fmt.Fprintf(&b, "key: %s\n", clampField(r.Key, 200))
 	if hasContract {
 		ins := make([]string, len(sc.Inputs))
 		names := make([]string, len(sc.Inputs))
@@ -183,35 +185,65 @@ func renderBurrowLookup(r burrowLookup) string {
 		if len(sc.Traits) > 0 {
 			line += " traits: " + oneLine(strings.Join(sc.Traits, ", "))
 		}
-		fmt.Fprintf(&b, "contract: %s\n", line)
+		fmt.Fprintf(&b, "contract: %s\n", clampField(line, 2048))
 		if len(names) == 0 {
 			b.WriteString("parameter order: (no inputs)\n")
 		} else {
-			fmt.Fprintf(&b, "parameter order: %s\n", strings.Join(names, ", "))
+			fmt.Fprintf(&b, "parameter order: %s\n", clampField(strings.Join(names, ", "), 1024))
 		}
 	} else {
 		b.WriteString("parameter order: unavailable (the stored contract could not be read)\n")
 	}
-	fmt.Fprintf(&b, "verified at: %s\n", oneLine(r.Rendering.VerifiedAt))
-	fmt.Fprintf(&b, "language: %s\n", oneLine(r.Rendering.Lang))
+	fmt.Fprintf(&b, "verified at: %s\n", clampField(r.Rendering.VerifiedAt, 64))
+	fmt.Fprintf(&b, "language: %s\n", clampField(r.Rendering.Lang, 32))
 	fmt.Fprintf(&b, "eligible: %t\n", r.Eligible)
 	b.WriteString("body:\n")
 	body := r.Rendering.Body
+	// Leave slack for redaction, which can lengthen text.
 	if room := maxToolOutput - b.Len() - 512; len(body) > room {
 		if room < 0 {
 			room = 0
 		}
-		cut := body[:room]
-		for len(cut) > 0 && !validTail(cut) {
-			cut = cut[:len(cut)-1]
-		}
-		body = cut + fmt.Sprintf("\n[body cut: first %d of %d bytes shown]", len(cut), len(r.Rendering.Body))
+		body = cutRunes(body, room) + fmt.Sprintf("\n[body cut: %d of %d bytes]", len(cutRunes(body, room)), len(r.Rendering.Body))
 	}
 	b.WriteString(body)
 	return b.String()
 }
 
-// validTail reports whether s does not end inside a UTF-8 sequence.
-func validTail(s string) bool {
-	return strings.ToValidUTF8(s, "�") == s
+// cutRunes returns the longest prefix of s of at most n bytes that ends on a
+// rune boundary.
+func cutRunes(s string, n int) string {
+	if n >= len(s) {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
+}
+
+// clampField flattens s to one line and cuts it to max bytes, marking the cut
+// with "..." and the true length.
+func clampField(s string, max int) string {
+	s = oneLine(s)
+	if len(s) <= max {
+		return s
+	}
+	return cutRunes(s, max) + fmt.Sprintf("... (%d bytes)", len(s))
+}
+
+// redactText redacts secrets without capping.
+func redactText(s string) string {
+	return bearerRE.ReplaceAllString(safety.NewSecretScanner().Redact(s), "Bearer [REDACTED]")
+}
+
+// headCap keeps the head of s within max bytes, on a rune boundary, and says
+// what it cut. Unlike capOutput it never drops the leading lines.
+func headCap(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	note := fmt.Sprintf("\n[body cut: %d of %d bytes]", 0, len(s))
+	keep := cutRunes(s, max-len(note)-8)
+	return keep + fmt.Sprintf("\n[body cut: %d of %d bytes]", len(keep), len(s))
 }

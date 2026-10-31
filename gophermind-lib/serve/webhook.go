@@ -463,9 +463,7 @@ func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 		// HarnessBriefs its API answers 404 and the page says so.
 		mux.HandleFunc("GET /app/harness", pageHandler("assets/harness.html"))
 		ct = &chatTools{bm: bm}
-		if opt.BurrowURL != "" && opt.BurrowTokenFile != "" {
-			ct.burrow = newBurrowClient(opt.BurrowURL, opt.BurrowTokenFile)
-		}
+		ct.burrow = burrowFromOptions(opt)
 		if opt.HarnessBriefs != "" {
 			h := newHarness(bm, opt.HarnessBriefs)
 			ct.h = h
@@ -588,4 +586,13 @@ func Serve(ctx context.Context, ln net.Listener, h http.Handler) error {
 // Addr returns the webhook listen address (GOPHERMIND_SERVE_ADDR or :8080).
 func Addr() string {
 	return serveAddr()
+}
+
+// burrowFromOptions builds the Burrow client only when both the URL and the
+// token file are set.
+func burrowFromOptions(opt Options) *burrowClient {
+	if opt.BurrowURL == "" || opt.BurrowTokenFile == "" {
+		return nil
+	}
+	return newBurrowClient(opt.BurrowURL, opt.BurrowTokenFile)
 }
