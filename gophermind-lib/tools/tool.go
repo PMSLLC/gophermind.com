@@ -80,3 +80,16 @@ func object(props map[string]any, required ...string) map[string]any {
 func str(desc string) map[string]any {
 	return map[string]any{"type": "string", "description": desc}
 }
+
+// With returns a copy of the registry that also holds ts. A tool with the same
+// name as an existing one replaces it in the copy; the original is untouched.
+func (r *Registry) With(ts ...Tool) *Registry {
+	m := make(map[string]Tool, len(r.tools)+len(ts))
+	for k, v := range r.tools {
+		m[k] = v
+	}
+	for _, t := range ts {
+		m[t.Name] = t
+	}
+	return &Registry{tools: m}
+}

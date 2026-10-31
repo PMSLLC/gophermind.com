@@ -178,6 +178,7 @@ func buildDeps(cfg serverConfig, root string, logger *slog.Logger) (serve.Deps, 
 			turnReg = newRegistryAt(r)
 			turnRoot = r
 		}
+		turnReg = turnReg.With(serve.ChatToolsFrom(ctx)...)
 		ag := agent.New(client, turnReg, llmMaxIter, turnApprove, onEvent)
 		if session.Exists(id) {
 			if err := session.Load(id, ag); err != nil {

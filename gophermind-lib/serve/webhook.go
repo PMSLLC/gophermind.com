@@ -436,6 +436,7 @@ func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 		opt.Google.Register(mux)
 	}
 	mux.HandleFunc("GET /app/chat", pageHandler("assets/chat.html"))
+	var ct *chatTools
 	if opt.BriefsDir != "" && d.Pipeline != nil {
 		bm, err := newBriefManager(opt, d.Pipeline.Root)
 		if err != nil {
@@ -456,8 +457,10 @@ func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 		// The page is always there, so the rail never links to nothing; without
 		// HarnessBriefs its API answers 404 and the page says so.
 		mux.HandleFunc("GET /app/harness", pageHandler("assets/harness.html"))
+		ct = &chatTools{bm: bm}
 		if opt.HarnessBriefs != "" {
 			h := newHarness(bm, opt.HarnessBriefs)
+			ct.h = h
 			mux.Handle("GET /app/api/harness", briefWrap(h.stateHandler))
 			mux.Handle("POST /app/api/harness/start", briefWrap(h.startHandler))
 			mux.Handle("POST /app/api/harness/stop", briefWrap(h.stopHandler))
@@ -479,7 +482,14 @@ func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 		locks := newSessionLocks()
 		sessionWrap := func(h http.Handler) http.Handler { return limited(sessionAuth(token, h)) }
 		mux.Handle("POST /session", sessionWrap(sessionCreateHandler()))
-		mux.Handle("POST /session/{id}/stream", sessionWrap(sessionStreamHandler(d.SessionTurn, locks)))
+		streamH := sessionStreamHandler(d.SessionTurn, locks)
+		if ct != nil {
+			inner := streamH
+			streamH = func(w http.ResponseWriter, r *http.Request) {
+				inner(w, r.WithContext(withChatTools(r.Context(), ct.all())))
+			}
+		}
+		mux.Handle("POST /session/{id}/stream", sessionWrap(streamH))
 		mux.Handle("GET /session", sessionWrap(sessionListHandler(session.List)))
 		mux.Handle("DELETE /session/{id}", sessionWrap(sessionDeleteHandler(session.Remove)))
 		mux.Handle("PATCH /session/{id}", sessionWrap(sessionRenameHandler(session.SetName)))
