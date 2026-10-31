@@ -139,3 +139,15 @@ func TestChatApprovalNotClipped(t *testing.T) {
 		t.Errorf("approval pre rule is not scrollable: %s", rule)
 	}
 }
+
+func TestChatApprovalTruncationVisible(t *testing.T) {
+	a := newTestAuth(newFakeGoogle(t, goodClaims()))
+	h := pagesMux(t, a)
+	c := a.sessionCookie("john@brahy.com", time.Now())
+	body := do(h, "GET", "/app/chat", nil, c).Body.String()
+	for _, want := range []string{"TRUNCATED: showing the first 200000 of ", "yes.disabled = true", "compactJSON(s)"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("chat page lacks %q", want)
+		}
+	}
+}

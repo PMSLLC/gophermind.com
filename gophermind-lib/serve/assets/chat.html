@@ -143,21 +143,46 @@ async function approve(box, id, ok){
   }
 }
 
-// approvalArgs renders a tool call's raw JSON args in full for the approval
-// card: pretty-printed when they parse, the raw string otherwise, capped only
-// at 200000 characters.
+// compactJSON removes insignificant whitespace (outside strings) from s.
+function compactJSON(s){
+  let out = '', inStr = false, esc = false;
+  for(const ch of s){
+    if(inStr){
+      out += ch;
+      if(esc) esc = false; else if(ch === '\\') esc = true; else if(ch === '"') inStr = false;
+    } else if(ch === '"'){ inStr = true; out += ch; }
+    else if(ch !== ' ' && ch !== '\n' && ch !== '\r' && ch !== '\t') out += ch;
+  }
+  return out;
+}
+
+// approvalArgs renders a tool call's raw JSON args for the approval card. The
+// pretty-printed form is used only when it is a faithful rendering (the parsed
+// value re-serializes to the same compact text); otherwise the raw string is
+// shown. Text is cut at 200000 characters, and then truncated is true with
+// the real length in total: the card must say so and block Approve.
 function approvalArgs(raw){
   let s = String(raw == null ? '' : raw);
-  try { s = JSON.stringify(JSON.parse(s), null, 2); } catch (e) {}
-  return clip(s, 200000);
+  const total = s.length;
+  try {
+    const v = JSON.parse(s);
+    if(JSON.stringify(v) === compactJSON(s)) s = JSON.stringify(v, null, 2);
+  } catch (e) {}
+  const truncated = s.length > 200000 || total > 200000;
+  return { text: truncated ? s.slice(0, 200000) : s, truncated: truncated, total: total };
 }
 
 function addApproval(ev){
   const box = el('div', 'approval');
   box.appendChild(el('div', null, 'Approval needed to run ' + ev.tool));
-  box.appendChild(el('pre', null, approvalArgs(ev.args)));
+  const shown = approvalArgs(ev.args);
+  if(shown.truncated){
+    box.appendChild(el('div', null, 'TRUNCATED: showing the first 200000 of ' + shown.total + ' characters. Approve is disabled because the full arguments cannot be reviewed.'));
+  }
+  box.appendChild(el('pre', null, shown.text));
   const yes = el('button', null, 'Approve'), no = el('button', null, 'Deny');
   yes.type = 'button'; no.type = 'button';
+  if(shown.truncated) yes.disabled = true;
   yes.addEventListener('click', () => approve(box, ev.approval_id, true));
   no.addEventListener('click', () => approve(box, ev.approval_id, false));
   box.appendChild(yes);
