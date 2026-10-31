@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -262,7 +263,7 @@ func (c *chatTools) briefArtifact() tools.Tool {
 
 // failGroup is one failure class in the digest.
 type failGroup struct {
-	reason string
+	reason string // first unnormalized example, one line, capped
 	runs   []string
 	nodes  []string
 	count  int
@@ -288,14 +289,63 @@ func failureOf(n BriefNode) string {
 	return "(no failure reason recorded)"
 }
 
+var (
+	runIDInReasonRE = regexp.MustCompile(`gm-\d{4}-\d{2}-\d{2}-\d+`)
+	timestampRE     = regexp.MustCompile(`\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?`)
+	digitsRE        = regexp.MustCompile(`\d+`)
+	spacesRE        = regexp.MustCompile(`\s+`)
+)
+
+// maxReasonRunes caps a reason or error line in the digest.
+const maxReasonRunes = 160
+
+// firstLine returns the first non-empty line of s, trimmed and capped.
+func firstLine(s string) string {
+	for _, l := range strings.Split(s, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			return capRunes(spacesRE.ReplaceAllString(l, " "), maxReasonRunes)
+		}
+	}
+	return ""
+}
+
+func capRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "..."
+}
+
+// normalizeReason reduces a failure reason to its class: first line only,
+// run ids and timestamps replaced, digit runs replaced with #, whitespace
+// collapsed, length capped. Two failures that differ only in line numbers,
+// ids or durations normalize to the same text.
+func normalizeReason(s string) string {
+	l := firstLine(s)
+	l = runIDInReasonRE.ReplaceAllString(l, "<run>")
+	l = timestampRE.ReplaceAllString(l, "<time>")
+	l = digitsRE.ReplaceAllString(l, "#")
+	return capRunes(spacesRE.ReplaceAllString(l, " "), maxReasonRunes)
+}
+
+// maxDigestGroups is how many failure classes the digest prints.
+const maxDigestGroups = 15
+
+// maxDigestEnded and maxDigestRunsCited keep the digest under the output cap.
+const (
+	maxDigestEnded     = 10
+	maxDigestRunsCited = 4
+)
+
 // runsDigest groups failed nodes over the newest runs by failure reason.
 func (c *chatTools) runsDigest() tools.Tool {
 	return tools.Tool{
 		Name:        "runs_digest",
-		Description: "Digest of the newest brief runs: failed nodes grouped by failure reason (count, run ids, example nodes), then the runs that ended failed or interrupted with their error. Optional limit: runs to cover, default 20, max 50.",
+		Description: "Digest of the newest brief runs: failed nodes grouped by normalized failure reason (count, run ids, example nodes), then the runs that ended failed or interrupted with their error. Optional limit: runs to cover, default 20, max 30.",
 		Schema: map[string]any{
 			"type":                 "object",
-			"properties":           map[string]any{"limit": map[string]any{"type": "integer", "description": "how many of the newest runs to cover (default 20, max 50)"}},
+			"properties":           map[string]any{"limit": map[string]any{"type": "integer", "description": "how many of the newest runs to cover (default 20, max 30)"}},
 			"additionalProperties": false,
 		},
 		Run: func(ctx context.Context, raw json.RawMessage) (string, error) {
@@ -310,8 +360,8 @@ func (c *chatTools) runsDigest() tools.Tool {
 			if a.Limit <= 0 {
 				a.Limit = 20
 			}
-			if a.Limit > 50 {
-				a.Limit = 50
+			if a.Limit > 30 {
+				a.Limit = 30
 			}
 			items, _ := c.bm.listItems()
 			if len(items) == 0 {
@@ -323,8 +373,14 @@ func (c *chatTools) runsDigest() tools.Tool {
 			groups := map[string]*failGroup{}
 			var order []string
 			var ended strings.Builder
+			endedN := 0
 			covered := 0
+			cancelled := false
 			for _, it := range items {
+				if ctx.Err() != nil {
+					cancelled = true
+					break
+				}
 				if !validBriefID(it.ID) || !runview.ValidRunID(it.ID) {
 					continue
 				}
@@ -337,10 +393,11 @@ func (c *chatTools) runsDigest() tools.Tool {
 					if n.Status != "failed" {
 						continue
 					}
-					key := failureOf(n)
+					example := failureOf(n)
+					key := normalizeReason(example)
 					g := groups[key]
 					if g == nil {
-						g = &failGroup{reason: key}
+						g = &failGroup{reason: firstLine(example)}
 						groups[key] = g
 						order = append(order, key)
 					}
@@ -353,7 +410,10 @@ func (c *chatTools) runsDigest() tools.Tool {
 					}
 				}
 				if p := st.Run.Phase; p == phaseFailed || p == phaseInterrupted {
-					fmt.Fprintf(&ended, "%s\t%s\t%s\n", it.ID, p, st.Run.Error)
+					endedN++
+					if endedN <= maxDigestEnded {
+						fmt.Fprintf(&ended, "%s\t%s\t%s\n", it.ID, p, firstLine(st.Run.Error))
+					}
 				}
 			}
 			sort.SliceStable(order, func(i, j int) bool { return groups[order[i]].count > groups[order[j]].count })
@@ -362,15 +422,31 @@ func (c *chatTools) runsDigest() tools.Tool {
 			if len(order) == 0 {
 				b.WriteString("  none\n")
 			}
-			for _, k := range order {
+			for i, k := range order {
+				if i == maxDigestGroups {
+					fmt.Fprintf(&b, "  %d more classes omitted\n", len(order)-maxDigestGroups)
+					break
+				}
 				g := groups[k]
-				fmt.Fprintf(&b, "  %s\n    count %d\n    runs: %s\n    example nodes: %s\n", g.reason, g.count, strings.Join(g.runs, ", "), strings.Join(g.nodes, ", "))
+				runs := g.runs
+				more := ""
+				if len(runs) > maxDigestRunsCited {
+					more = fmt.Sprintf(" (+%d more)", len(runs)-maxDigestRunsCited)
+					runs = runs[:maxDigestRunsCited]
+				}
+				fmt.Fprintf(&b, "  %s\n    count %d\n    runs: %s%s\n    example nodes: %s\n", g.reason, g.count, strings.Join(runs, ", "), more, strings.Join(g.nodes, ", "))
 			}
 			b.WriteString("runs that ended failed or interrupted:\n")
 			if ended.Len() == 0 {
 				b.WriteString("  none\n")
 			} else {
 				b.WriteString(ended.String())
+				if endedN > maxDigestEnded {
+					fmt.Fprintf(&b, "  %d more runs omitted\n", endedN-maxDigestEnded)
+				}
+			}
+			if cancelled {
+				b.WriteString("cancelled before all runs were read\n")
 			}
 			return c.clean(strings.TrimRight(b.String(), "\n")), nil
 		},

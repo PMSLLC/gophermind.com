@@ -3,11 +3,13 @@ package serve
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"gophermind/gophermind-lib/build/blackboard"
 	"gophermind/gophermind-lib/runview/runviewtest"
 	"gophermind/gophermind-lib/tools"
 )
@@ -330,6 +332,57 @@ func TestRunsDigestLimit(t *testing.T) {
 	}
 	if !strings.Contains(out, "count 2") || strings.Contains(out, "gm-2026-10-08-001") {
 		t.Errorf("limit 2 should cover only the two newest:\n%s", out)
+	}
+}
+
+func TestRunsDigestNormalizesReasons(t *testing.T) {
+	c, _ := chatToolsEnv(t)
+	for i, id := range []string{"gm-2026-10-08-001", "gm-2026-10-08-002"} {
+		f := runviewtest.BuildID(t, c.bm.root, id, runviewtest.Failed)
+		err := f.BB.AppendAttempt(context.Background(), id, "fn-bye", blackboard.Attempt{
+			Order: 2, StartedAt: runviewtest.T0, Verdict: blackboard.VerdictFail,
+			FailureReason: fmt.Sprintf("compile: bye.go:%d: undefined: x in %s took %dms\nsecond line", 10+i, id, 900+i),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := runTool(t, c, "runs_digest", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(out, "undefined: x") != 1 || !strings.Contains(out, "count 2") ||
+		!strings.Contains(out, "gm-2026-10-08-001") || !strings.Contains(out, "gm-2026-10-08-002") || strings.Contains(out, "second line") {
+		t.Errorf("want one group of 2:\n%s", out)
+	}
+}
+
+func TestRunsDigestManyClassesStaysUnderCap(t *testing.T) {
+	c, _ := chatToolsEnv(t)
+	long := strings.Repeat("w", 400)
+	// The first two runs share one reason (the biggest group); the rest are all distinct.
+	for i := 1; i <= 24; i++ {
+		id := fmt.Sprintf("gm-2026-10-08-%03d", i)
+		f := runviewtest.BuildID(t, c.bm.root, id, runviewtest.Failed)
+		reason := fmt.Sprintf("class%s-%s", strings.Repeat(string(rune('a'+i%26)), i), long)
+		if i <= 2 {
+			reason = "BIGGEST shared failure"
+		}
+		if err := f.BB.AppendAttempt(context.Background(), id, "fn-bye", blackboard.Attempt{
+			Order: 2, StartedAt: runviewtest.T0, Verdict: blackboard.VerdictFail, FailureReason: reason,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := runTool(t, c, "runs_digest", map[string]any{"limit": 30})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) > 8<<10 || strings.Contains(out, "[tail of") {
+		t.Errorf("output %d bytes or cut by cap", len(out))
+	}
+	if !strings.Contains(out, "BIGGEST shared failure") || !strings.Contains(out, "more classes omitted") {
+		t.Errorf("biggest group or omitted line missing:\n%s", out)
 	}
 }
 
