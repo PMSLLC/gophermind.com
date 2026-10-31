@@ -164,14 +164,15 @@ func TestBurrowLookupToolErrorSentences(t *testing.T) {
 func TestBurrowLookupToolRejectsBadArgs(t *testing.T) {
 	ct, last := burrowToolEnv(t, 200, `{"outcome":"miss"}`)
 	bad := map[string]string{
-		"case dup":      `{"verb":"Count","Verb":"Other","object":"T","inputs":[],"outputs":["int64"]}`,
-		"unknown key":   `{"verb":"Count","object":"T","inputs":[],"outputs":["int64"],"vectors":[]}`,
-		"empty verb":    `{"verb":" ","object":"T","inputs":[],"outputs":["int64"]}`,
-		"missing outs":  `{"verb":"Count","object":"T","inputs":[]}`,
-		"empty outs":    `{"verb":"Count","object":"T","inputs":[],"outputs":[]}`,
-		"input no name": `{"verb":"Count","object":"T","inputs":[{"type":"string"}],"outputs":["int64"]}`,
-		"input extra":   `{"verb":"Count","object":"T","inputs":[{"name":"a","type":"string","x":1}],"outputs":["int64"]}`,
-		"not json":      `nope`,
+		"case dup":       `{"verb":"Count","Verb":"Other","object":"T","inputs":[],"outputs":["int64"]}`,
+		"unknown key":    `{"verb":"Count","object":"T","inputs":[],"outputs":["int64"],"vectors":[]}`,
+		"empty verb":     `{"verb":" ","object":"T","inputs":[],"outputs":["int64"]}`,
+		"missing outs":   `{"verb":"Count","object":"T","inputs":[]}`,
+		"empty outs":     `{"verb":"Count","object":"T","inputs":[],"outputs":[]}`,
+		"input no name":  `{"verb":"Count","object":"T","inputs":[{"type":"string"}],"outputs":["int64"]}`,
+		"input case dup": `{"verb":"Count","object":"T","inputs":[{"name":"a","Name":"b","type":"string"}],"outputs":["int64"]}`,
+		"input extra":    `{"verb":"Count","object":"T","inputs":[{"name":"a","type":"string","x":1}],"outputs":["int64"]}`,
+		"not json":       `nope`,
 	}
 	for name, args := range bad {
 		if _, err := runBurrow(t, ct, args); err == nil {
@@ -290,5 +291,21 @@ func TestBurrowLookupToolBodyCutNeverSplitsSecret(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestBurrowLookupToolNullRendering(t *testing.T) {
+	hit := func(awaiting bool) string {
+		return `{"outcome":"exact","key":"k@1","contract":{"verb":"V","object":"O","inputs":[{"name":"b","type":"string"},{"name":"a","type":"int64"}],"outputs":["int64"]},"rendering":null,"eligible":true,"awaiting_confirmation":` + fmt.Sprint(awaiting) + `}`
+	}
+	ct, _ := burrowToolEnv(t, 200, hit(false))
+	out, _ := runBurrow(t, ct, `{"verb":"V","object":"O","inputs":[],"outputs":["int64"],"lang":"python"}`)
+	if !strings.Contains(out, "found: yes (exact), but no verified rendering in python") || strings.Contains(out, "generated body") || !strings.Contains(out, "parameter order: b, a") || !strings.Contains(out, "key: k@1") {
+		t.Errorf("null rendering: %s", out)
+	}
+	ct, _ = burrowToolEnv(t, 200, hit(true))
+	out, _ = runBurrow(t, ct, burrowGoodArgs)
+	if !strings.Contains(out, "generated body exists but is not confirmed") || !strings.Contains(out, "parameter order: b, a") {
+		t.Errorf("awaiting: %s", out)
 	}
 }

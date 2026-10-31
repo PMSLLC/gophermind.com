@@ -48,9 +48,15 @@ install() {
   if [ "${GM_BURROW_TOKEN_FILE+x}" = x ] && [ -z "$GM_BURROW_TOKEN_FILE" ]; then burrow_off=1; fi
   default_burrow_token="$HOME/OtherProjects/PMSLLC/burrow/.local/token"
   BURROW_ENV=""
+  if [ "$burrow_off" = 0 ] && [ -n "$BURROW_TOKEN_FILE" ] && [ ! -s "$BURROW_TOKEN_FILE" ]; then
+    die "GM_BURROW_TOKEN_FILE ($BURROW_TOKEN_FILE) does not exist or is empty"
+  fi
   if [ "$burrow_off" = 0 ]; then
     if [ -z "$BURROW_TOKEN_FILE" ] && [ -s "$default_burrow_token" ]; then BURROW_TOKEN_FILE="$default_burrow_token"; fi
     if [ -n "$BURROW_TOKEN_FILE" ] && [ -z "$BURROW_URL" ]; then BURROW_URL="http://127.0.0.1:8085"; fi
+  fi
+  if [ "$burrow_off" = 0 ] && [ -z "$BURROW_TOKEN_FILE" ]; then
+    echo "note: Burrow lookup is off (no token file found; set GM_BURROW_TOKEN_FILE)"
   fi
   if [ "$burrow_off" = 0 ] && [ -n "$BURROW_URL" ] && [ -n "$BURROW_TOKEN_FILE" ]; then
     # Both land inside "..." in run-server.sh, so these would break or inject.

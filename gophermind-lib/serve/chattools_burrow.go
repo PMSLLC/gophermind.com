@@ -24,7 +24,7 @@ type burrowInput struct {
 func (c *chatTools) burrowLookupTool() tools.Tool {
 	return tools.Tool{
 		Name:        "burrow_lookup",
-		Description: "Ask Burrow whether a function with this exact contract is already stored, and get its Go code. Exact contract only: similar functions are not searched. Call the returned function with its inputs in the order shown under 'parameter order', which can differ from the order you asked for. Types: string, int64, float64, bool, bytes, list<T>, optional<T>, map<string,V>, record{name:T,...}.",
+		Description: "Ask Burrow whether a function with this exact contract is already stored, and get its code in `lang` (default go). Exact contract only: similar functions are not searched. Call the returned function with its inputs in the order shown under 'parameter order', which can differ from the order you asked for. Types: string, int64, float64, bool, bytes, list<T>, optional<T>, map<string,V>, record{name:T,...}.",
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -53,6 +53,9 @@ func (c *chatTools) burrowLookupTool() tools.Tool {
 		Run: func(ctx context.Context, raw json.RawMessage) (string, error) {
 			const tool = "burrow_lookup"
 			if err := checkArgKeys(tool, raw, "verb", "object", "inputs", "outputs", "failures", "traits", "lang"); err != nil {
+				return "", err
+			}
+			if err := checkInputKeys(tool, raw); err != nil {
 				return "", err
 			}
 			var a struct {
@@ -103,7 +106,7 @@ func (c *chatTools) burrowLookupTool() tools.Tool {
 			if err != nil {
 				return c.cleanWith(burrowErrorSentence(err), "the Burrow catalogue"), nil
 			}
-			return headCap(redactText(renderBurrowLookup(res)), maxToolOutput), nil
+			return headCap(redactText(renderBurrowLookup(res, lang)), maxToolOutput), nil
 		},
 	}
 }
@@ -155,7 +158,7 @@ type storedContract struct {
 // renderBurrowLookup formats a lookup result. The hit is decided by Outcome
 // only (a miss carries a literal null contract). The body is capped here, head
 // first, so the key and parameter order always survive the output cap.
-func renderBurrowLookup(r burrowLookup) string {
+func renderBurrowLookup(r burrowLookup, lang string) string {
 	if r.Outcome != "exact" && r.Outcome != "similar" {
 		out := "found: no (exact contract only; similar functions are not searched without test vectors)"
 		if r.AwaitingConfirmation {
@@ -163,13 +166,14 @@ func renderBurrowLookup(r burrowLookup) string {
 		}
 		return out
 	}
-	if r.AwaitingConfirmation || r.Rendering == nil {
-		return "found: yes (" + clampField(r.Outcome, 32) + "), key " + clampField(r.Key, 200) + "\nA generated body exists but is not confirmed, so it is not shown."
-	}
 	var sc storedContract
 	hasContract := len(r.Contract) > 0 && string(r.Contract) != "null" && json.Unmarshal(r.Contract, &sc) == nil
 	var b strings.Builder
-	fmt.Fprintf(&b, "found: yes (%s)\n", clampField(r.Outcome, 32))
+	if r.Rendering == nil && !r.AwaitingConfirmation {
+		fmt.Fprintf(&b, "found: yes (%s), but no verified rendering in %s\n", clampField(r.Outcome, 32), clampField(lang, 32))
+	} else {
+		fmt.Fprintf(&b, "found: yes (%s)\n", clampField(r.Outcome, 32))
+	}
 	fmt.Fprintf(&b, "key: %s\n", clampField(r.Key, 200))
 	if hasContract {
 		ins := make([]string, len(sc.Inputs))
@@ -193,6 +197,13 @@ func renderBurrowLookup(r burrowLookup) string {
 		}
 	} else {
 		b.WriteString("parameter order: unavailable (the stored contract could not be read)\n")
+	}
+	if r.AwaitingConfirmation {
+		b.WriteString("A generated body exists but is not confirmed, so it is not shown.")
+		return b.String()
+	}
+	if r.Rendering == nil {
+		return strings.TrimRight(b.String(), "\n")
 	}
 	fmt.Fprintf(&b, "verified at: %s\n", clampField(r.Rendering.VerifiedAt, 64))
 	fmt.Fprintf(&b, "language: %s\n", clampField(r.Rendering.Lang, 32))
@@ -249,4 +260,21 @@ func headCap(s string, max int) string {
 	note := fmt.Sprintf("\n[body cut: %d of %d bytes]", 0, len(s))
 	keep := cutRunes(s, max-len(note)-8)
 	return keep + fmt.Sprintf("\n[body cut: %d of %d bytes]", len(keep), len(s))
+}
+
+// checkInputKeys applies the strict key check to each object of inputs:
+// unknown keys and keys equal after lower-casing are refused.
+func checkInputKeys(tool string, raw json.RawMessage) error {
+	var top struct {
+		Inputs []json.RawMessage `json:"inputs"`
+	}
+	if err := json.Unmarshal(raw, &top); err != nil {
+		return nil // the main decode reports the shape error
+	}
+	for _, in := range top.Inputs {
+		if err := checkArgKeys(tool, in, "name", "type"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
