@@ -206,7 +206,7 @@ func buildDeps(cfg serverConfig, root string, logger *slog.Logger) (serve.Deps, 
 			}
 		}
 		cur := ag.SystemPrompt()
-		if upd := withSystemNotes(cur, haveTools, haveBurrow); upd != cur {
+		if upd := withSystemNotes(cur, haveTools, haveBurrow, turnRoot == root); upd != cur {
 			ag.SetSystemPrompt(upd)
 		}
 		if m := serve.ReadSessionModel(id); m != "" {
@@ -289,46 +289,109 @@ const (
 	notesClose = "[/gophermind-system-notes]"
 )
 
-// briefToolsGuidance says what GopherMind is, that the working folder is an
-// empty scratch workspace, and where status questions go. It lives inside the
-// system notes block.
-const briefToolsGuidance = `GopherMind turns a brief into a plan and builds it. Each run is a folder of nodes and attempts. The Harness replays example briefs until each one passes. Your working folder is an empty scratch workspace, not the codebase: never list files, run shell commands or use git to find out what is going on. For status questions (where things are, what is running, what failed, what is waiting, what is next) call briefs_list, harness_state and questions_pending first, then runs_digest for repeated failures, and answer in a few lines with run ids. Before you claim a cause for a failure, call runs_digest and brief_artifact, and cite run ids and node names. Observations and optimization ideas are discussion only: change nothing without a write tool. The write tools (brief_create, brief_answer, brief_stop, brief_resubmit) need John's approval on the card, and you must never claim a write happened before the tool result says so.`
+// legacyBriefToolsGuidance and legacyBurrowToolGuidance are the unmarked
+// paragraphs that earlier releases appended to new sessions (the wording of
+// commits 6aa5306 through 1d79cf4). withSystemNotes strips them so they do not
+// compete with the notes block.
+const legacyBriefToolsGuidance = `You can look at briefs and runs with tools. When asked what needs an answer, call questions_pending. Before you claim a cause for a failure, call runs_digest and brief_artifact, and cite run ids and node names. Observations and optimization ideas are discussion only: change nothing without a write tool. The write tools (brief_create, brief_answer, brief_stop, brief_resubmit) need John's approval on the card, and you must never claim a write happened before the tool result says so.`
 
-// burrowToolGuidance follows briefToolsGuidance in the notes block when burrow_lookup is on.
+const legacyBurrowToolGuidance = `Use burrow_lookup before suggesting that a new function be built. It matches exact contracts only, so draft the contract in Burrow's type grammar, and say plainly that a miss may only mean the same function is spelled differently.`
+
+// Pieces of the notes block, in order. Short sentences on purpose: a small
+// local model follows them better.
+const (
+	notesWhatItIs = `GopherMind turns a brief into a plan and builds it. Each run is a folder of nodes and attempts. The Harness replays example briefs until each one passes.`
+
+	notesScratch = `Your working folder is an empty scratch workspace. It is not the codebase. Never list files, run shell commands or use git to find out what is going on.`
+
+	notesProject = `Your working folder is the project John pointed this chat at. Status questions about briefs and runs still go to the brief tools first.`
+
+	notesRouting = `For status questions (where things are, what is running, what failed, what is waiting, what is next), do these steps in order:
+1. Call briefs_list.
+2. Call harness_state.
+3. Call questions_pending.
+4. Call runs_digest to find repeated failures.
+Then answer in a few lines with run ids.`
+
+	notesRules = `Before you claim a cause for a failure, call runs_digest and brief_artifact. Cite run ids and node names. Observations and optimization ideas are discussion only. Change nothing without a write tool. The write tools (brief_create, brief_answer, brief_stop, brief_resubmit) need John's approval on the card. Never claim a write happened before the tool result says so.`
+)
+
+// burrowToolGuidance ends the notes block in the notes block when burrow_lookup is on.
 const burrowToolGuidance = `Use burrow_lookup before suggesting that a new function be built. It matches exact contracts only, so draft the contract in Burrow's type grammar, and say plainly that a miss may only mean the same function is spelled differently.`
+
+// stripLegacy removes the legacy paragraphs and one blank-line separator each.
+func stripLegacy(s string) string {
+	for _, lit := range []string{legacyBriefToolsGuidance, legacyBurrowToolGuidance} {
+		for {
+			k := strings.Index(s, lit)
+			if k < 0 {
+				break
+			}
+			switch {
+			case k >= 2 && s[k-2:k] == "\n\n":
+				s = s[:k-2] + s[k+len(lit):]
+			case strings.HasPrefix(s[k+len(lit):], "\n\n"):
+				s = s[:k] + s[k+len(lit)+2:]
+			default:
+				s = s[:k] + s[k+len(lit):]
+			}
+		}
+	}
+	return s
+}
+
+// findNotesBlock returns the span of the last open marker that has a close
+// marker after it, so a stray marker in user text cannot widen the span.
+func findNotesBlock(prompt string) (start, end int, ok bool) {
+	for from := len(prompt); from > 0; {
+		start = strings.LastIndex(prompt[:from], notesOpen)
+		if start < 0 {
+			return 0, 0, false
+		}
+		if e := strings.Index(prompt[start+len(notesOpen):], notesClose); e >= 0 {
+			return start, start + len(notesOpen) + e + len(notesClose), true
+		}
+		from = start
+	}
+	return 0, 0, false
+}
 
 // withSystemNotes returns prompt with the system notes block brought up to
 // date. With haveBriefTools it replaces an existing block in place or appends
-// one; without, it removes any block. Nothing outside the block changes, and
+// one; without, it removes any block. scratch says the turn's working folder
+// is the server's empty scratch workspace rather than a project. Legacy
+// unmarked guidance paragraphs are stripped. Nothing else changes, and
 // running it twice gives the same result.
-func withSystemNotes(prompt string, haveBriefTools, haveBurrow bool) string {
-	start := strings.Index(prompt, notesOpen)
-	end := -1
-	if start >= 0 {
-		if e := strings.Index(prompt[start:], notesClose); e >= 0 {
-			end = start + e + len(notesClose)
-		}
+func withSystemNotes(prompt string, haveBriefTools, haveBurrow, scratch bool) string {
+	start, end, found := findNotesBlock(prompt)
+	head, tail := prompt, ""
+	if found {
+		head, tail = prompt[:start], prompt[end:]
 	}
-	if end < 0 {
-		start = -1
-	}
+	head, tail = stripLegacy(head), stripLegacy(tail)
 	if !haveBriefTools {
-		if start < 0 {
-			return prompt
+		if !found {
+			return head
 		}
-		head := strings.TrimSuffix(prompt[:start], "\n\n")
-		return head + prompt[end:]
+		if head == "" {
+			return strings.TrimLeft(tail, "\n")
+		}
+		return strings.TrimSuffix(head, "\n\n") + tail
 	}
-	text := briefToolsGuidance
+	where := notesProject
+	if scratch {
+		where = notesScratch
+	}
+	text := notesWhatItIs + " " + where + "\n" + notesRouting + "\n" + notesRules
 	if haveBurrow {
 		text += " " + burrowToolGuidance
 	}
 	block := notesOpen + "\n" + text + "\n" + notesClose
-	if start < 0 {
-		if prompt == "" {
+	if !found {
+		if head == "" {
 			return block
 		}
-		return prompt + "\n\n" + block
+		return head + "\n\n" + block
 	}
-	return prompt[:start] + block + prompt[end:]
+	return head + block + tail
 }

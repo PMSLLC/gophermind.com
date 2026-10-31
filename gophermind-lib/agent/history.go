@@ -44,8 +44,8 @@ func (a *Agent) AppendSystemPrompt(text string) {
 	a.msgs[0].Content += "\n\n" + text
 }
 
-// SetSystemPrompt replaces the entire system prompt. It must be called before
-// the first Send. An empty text resets to the default system prompt.
+// SetSystemPrompt replaces the entire system prompt. It may be called before
+// the first Send or on a loaded session to rewrite its prompt. An empty text resets to the default system prompt.
 func (a *Agent) SetSystemPrompt(text string) {
 	if text == "" {
 		text = systemPrompt

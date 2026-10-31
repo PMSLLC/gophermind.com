@@ -91,12 +91,12 @@ func TestSessionTurnHasBriefToolsAndPrompt(t *testing.T) {
 		t.Errorf("request with BriefsDir lacks brief_state tool")
 	}
 	// The guidance is JSON-encoded inside the request; compare a short sentence.
-	if !strings.Contains(with, "questions_pending") || !strings.Contains(with, "never claim a write happened") {
+	if !strings.Contains(with, "questions_pending") || !strings.Contains(with, "Never claim a write happened") {
 		t.Errorf("request with BriefsDir lacks the brief guidance")
 	}
 
 	without := firstTurnRequest(t, "")
-	if strings.Contains(without, "brief_state") || strings.Contains(without, "never claim a write happened") {
+	if strings.Contains(without, "brief_state") || strings.Contains(without, "Never claim a write happened") {
 		t.Errorf("request without BriefsDir carries brief tools or guidance")
 	}
 }
