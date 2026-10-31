@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -41,10 +43,18 @@ func recordingLLM(t *testing.T, answer string) (*httptest.Server, func() []strin
 // firstTurnRequest runs one new-session turn and returns the model request body.
 func firstTurnRequest(t *testing.T, briefsDir string) string {
 	t.Helper()
+	return firstTurnRequestCfg(t, serverConfig{BriefsDir: briefsDir})
+}
+
+// firstTurnRequestCfg is firstTurnRequest with the brief and Burrow settings
+// taken from base.
+func firstTurnRequestCfg(t *testing.T, base serverConfig) string {
+	t.Helper()
 	llm, bodies := recordingLLM(t, "ok")
 	t.Setenv("GOPHERMIND_CONFIG_DIR", t.TempDir())
 	root := t.TempDir()
-	cfg := serverConfig{Token: "t", LLMEndpoint: llm.URL, Root: root, BriefsDir: briefsDir}
+	cfg := base
+	cfg.Token, cfg.LLMEndpoint, cfg.Root = "t", llm.URL, root
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	d, err := buildDeps(cfg, root, logger)
 	if err != nil {
@@ -88,5 +98,30 @@ func TestSessionTurnHasBriefToolsAndPrompt(t *testing.T) {
 	without := firstTurnRequest(t, "")
 	if strings.Contains(without, "brief_state") || strings.Contains(without, "never claim a write happened") {
 		t.Errorf("request without BriefsDir carries brief tools or guidance")
+	}
+}
+
+func TestBurrowToolWiredFromConfig(t *testing.T) {
+	tokenFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenFile, []byte("fake-token-value\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fake := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(fake.Close)
+
+	with := firstTurnRequestCfg(t, serverConfig{BriefsDir: t.TempDir(), BurrowURL: fake.URL, BurrowTokenFile: tokenFile})
+	if !strings.Contains(with, "burrow_lookup") {
+		t.Errorf("request with Burrow settings lacks the burrow_lookup tool")
+	}
+	if !strings.Contains(with, "matches exact contracts only") {
+		t.Errorf("request with Burrow settings lacks the burrow guidance")
+	}
+	if strings.Contains(with, "fake-token-value") {
+		t.Errorf("request carries the Burrow token")
+	}
+
+	without := firstTurnRequest(t, t.TempDir())
+	if strings.Contains(without, "burrow_lookup") || strings.Contains(without, "matches exact contracts only") {
+		t.Errorf("request without Burrow settings carries the tool or guidance")
 	}
 }

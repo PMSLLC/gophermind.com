@@ -18,6 +18,8 @@ func briefOptions(cfg serverConfig, opt serve.Options) serve.Options {
 	opt.BriefsDir = cfg.BriefsDir
 	opt.ReposDir = cfg.ReposDir
 	opt.HarnessBriefs = cfg.HarnessBriefs
+	opt.BurrowURL = cfg.BurrowURL
+	opt.BurrowTokenFile = cfg.BurrowTokenFile
 	if prefix := strings.Fields(cfg.BriefCmd); len(prefix) > 0 {
 		opt.BriefCommand = func(args []string) *exec.Cmd {
 			return exec.Command(prefix[0], append(append([]string(nil), prefix[1:]...), args...)...)

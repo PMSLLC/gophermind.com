@@ -358,3 +358,18 @@ func TestLocalMeAnswersSoPagesConnectWithoutAToken(t *testing.T) {
 		t.Fatalf("body = %q (%v), want a JSON object with an email", rec.Body, err)
 	}
 }
+
+func TestParseServerConfig_BurrowEnv(t *testing.T) {
+	getenv := envMap(map[string]string{
+		"GOPHERMIND_TOKEN":             "t",
+		"GOPHERMIND_BURROW_URL":        "http://127.0.0.1:8085",
+		"GOPHERMIND_BURROW_TOKEN_FILE": "/tmp/burrow-token",
+	})
+	cfg, err := parseServerConfig(nil, getenv, fixedGetwd("/cwd"))
+	if err != nil {
+		t.Fatalf("parseServerConfig: %v", err)
+	}
+	if cfg.BurrowURL != "http://127.0.0.1:8085" || cfg.BurrowTokenFile != "/tmp/burrow-token" {
+		t.Errorf("burrow settings = %q, %q", cfg.BurrowURL, cfg.BurrowTokenFile)
+	}
+}

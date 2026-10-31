@@ -8,6 +8,8 @@ All notable changes to GopherMind are documented here. The format follows
 
 ### Added
 
+- **The web chat can look up a function in Burrow.** With the brief routes on and `GOPHERMIND_BURROW_URL` and `GOPHERMIND_BURROW_TOKEN_FILE` set, a chat session gets the read-only `burrow_lookup` tool. It matches an exact contract only, so a miss can mean the same function is spelled differently; new sessions get one guidance sentence saying so. `scripts/local-service.sh` writes the two settings into `run-server.sh` from `GM_BURROW_URL` and `GM_BURROW_TOKEN_FILE`, or defaults them to `http://127.0.0.1:8085` and the local Burrow token file when that file exists. Without the settings the chat has no such tool.
+
 - **The web chat can read and manage briefs.** With the brief routes on, a chat session gets read tools (`briefs_list`, `brief_state`, `brief_artifact`, `questions_pending`, `harness_state`, `runs_digest`) and write tools behind the approval card (`brief_create`, `brief_answer`, `brief_stop`, `brief_resubmit`). A short guidance paragraph is added to the system prompt of new sessions only; sessions saved earlier keep the prompt they were created with, and the tool descriptions still guide them. Without a briefs directory the chat has none of these tools.
 
 - **Upgrade the CLI and the server together.** The chat answer path calls `gophermind brief fill-answer` with `--no-overwrite`; an older installed `gophermind` rejects it, and the chat then says the CLI is too old and to reinstall it with `gophermind-server`. The chat tools also refuse arguments with unknown keys or keys that differ only by case, `questions_pending` shows each run's phase (waiting runs first) and the recommended answer, and `runs_digest` groups ended runs by error.

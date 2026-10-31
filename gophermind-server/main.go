@@ -73,6 +73,10 @@ type serverConfig struct {
 	HarnessBriefs string
 	BriefCmd      string
 	BriefKillCmd  string
+	// BurrowURL and BurrowTokenFile (GOPHERMIND_BURROW_URL,
+	// GOPHERMIND_BURROW_TOKEN_FILE) give the chat the burrow_lookup tool.
+	BurrowURL       string
+	BurrowTokenFile string
 }
 
 // parseServerConfig parses flags against args (typically os.Args[1:]), using
@@ -122,6 +126,8 @@ func parseServerConfig(args []string, getenv func(string) string, getwd func() (
 	cfg.HarnessBriefs = getenv("GOPHERMIND_HARNESS_BRIEFS")
 	cfg.BriefCmd = getenv("GOPHERMIND_BRIEF_CMD")
 	cfg.BriefKillCmd = getenv("GOPHERMIND_BRIEF_KILL_CMD")
+	cfg.BurrowURL = getenv("GOPHERMIND_BURROW_URL")
+	cfg.BurrowTokenFile = getenv("GOPHERMIND_BURROW_TOKEN_FILE")
 	return cfg, nil
 }
 

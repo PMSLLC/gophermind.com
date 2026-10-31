@@ -194,6 +194,12 @@ func buildDeps(cfg serverConfig, root string, logger *slog.Logger) (serve.Deps, 
 			}
 			if len(serve.ChatToolsFrom(ctx)) > 0 {
 				ag.AppendSystemPrompt(briefToolsGuidance)
+				for _, tl := range serve.ChatToolsFrom(ctx) {
+					if tl.Name == "burrow_lookup" {
+						ag.AppendSystemPrompt(burrowToolGuidance)
+						break
+					}
+				}
 			}
 		}
 		if m := serve.ReadSessionModel(id); m != "" {
@@ -273,3 +279,6 @@ func buildDeps(cfg serverConfig, root string, logger *slog.Logger) (serve.Deps, 
 // when the brief tools are on. Sessions saved earlier keep the prompt they
 // were created with; the tool descriptions still guide them.
 const briefToolsGuidance = `You can look at briefs and runs with tools. When asked what needs an answer, call questions_pending. Before you claim a cause for a failure, call runs_digest and brief_artifact, and cite run ids and node names. Observations and optimization ideas are discussion only: change nothing without a write tool. The write tools (brief_create, brief_answer, brief_stop, brief_resubmit) need John's approval on the card, and you must never claim a write happened before the tool result says so.`
+
+// burrowToolGuidance is appended after briefToolsGuidance when burrow_lookup is on.
+const burrowToolGuidance = `Use burrow_lookup before suggesting that a new function be built. It matches exact contracts only, so draft the contract in Burrow's type grammar, and say plainly that a miss may only mean the same function is spelled differently.`

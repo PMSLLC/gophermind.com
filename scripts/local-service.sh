@@ -63,6 +63,20 @@ install() {
   fi
   chmod 600 "$BASE/token"
 
+  # Burrow lookup for the chat: GM_BURROW_URL and GM_BURROW_TOKEN_FILE, or the
+  # default local Burrow when its token file exists and is non-empty (only the
+  # file's existence is tested here, never its contents). Both must end up set.
+  BURROW_URL="${GM_BURROW_URL:-}"
+  BURROW_TOKEN_FILE="${GM_BURROW_TOKEN_FILE:-}"
+  default_burrow_token="$HOME/OtherProjects/PMSLLC/burrow/.local/token"
+  if [ -z "$BURROW_TOKEN_FILE" ] && [ -s "$default_burrow_token" ]; then BURROW_TOKEN_FILE="$default_burrow_token"; fi
+  if [ -n "$BURROW_TOKEN_FILE" ] && [ -z "$BURROW_URL" ]; then BURROW_URL="http://127.0.0.1:8085"; fi
+  BURROW_ENV=""
+  if [ -n "$BURROW_URL" ] && [ -n "$BURROW_TOKEN_FILE" ]; then
+    BURROW_ENV="export GOPHERMIND_BURROW_URL=\"$BURROW_URL\"
+export GOPHERMIND_BURROW_TOKEN_FILE=\"$BURROW_TOKEN_FILE\""
+  fi
+
   # The wrapper reads the token with a read loop, not `source`, so a literal $
   # in a secret is not expanded.
   cat > "$BASE/run-server.sh" <<EOF
@@ -77,6 +91,7 @@ export GOPHERMIND_BRIEFS_DIR="$BASE/briefs"
 export GOPHERMIND_REPOS_DIR="$BASE/repos"
 export GOPHERMIND_HARNESS_BRIEFS="$repo/examples/briefs"
 export GOPHERMIND_LLM_ENDPOINT="$LLM_ENDPOINT"
+$BURROW_ENV
 export PATH="$BASE/bin:/opt/homebrew/bin:/usr/local/bin:/usr/local/go/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 $OFFLINE_ENV
 exec "$BASE/bin/gophermind-server" -wg-interface=
