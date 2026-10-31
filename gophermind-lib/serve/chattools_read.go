@@ -101,3 +101,89 @@ func (c *chatTools) briefState() tools.Tool {
 		},
 	}
 }
+
+// questionsPending lists every unanswered question across all briefs. The
+// harness holds no questions of its own: its runs ask on their own run
+// folders, so those runs are found here and tagged with source harness.
+func (c *chatTools) questionsPending() tools.Tool {
+	return tools.Tool{
+		Name:        "questions_pending",
+		Description: "List every unanswered question across all brief runs: source (brief or harness), run id, question id, text, options, whether a default exists, and whether it can be answered through the chat.",
+		Schema:      emptySchema(),
+		Run: func(ctx context.Context, _ json.RawMessage) (string, error) {
+			owned := map[string]bool{}
+			if c.h != nil {
+				st := c.h.snapshot()
+				if st.Current != "" {
+					owned[st.Current] = true
+				}
+				for _, hb := range st.Briefs {
+					if hb.LastRun != "" {
+						owned[hb.LastRun] = true
+					}
+				}
+			}
+			items, _ := c.bm.listItems()
+			var b strings.Builder
+			for _, it := range items {
+				if !validBriefID(it.ID) || !runview.ValidRunID(it.ID) {
+					continue
+				}
+				var rec *briefRecord
+				if r, ok := c.bm.readRecord(it.ID); ok {
+					rec = &r
+				}
+				source := "brief"
+				if owned[it.ID] {
+					source = "harness"
+				}
+				for _, q := range questionsOf(c.bm.repoFor(it.ID), it.ID, rec) {
+					if q.Status == "settled" {
+						continue
+					}
+					def, ask := "no", "no"
+					if q.Recommended != "" {
+						def = "yes"
+					}
+					if q.Askable {
+						ask = "yes"
+					}
+					fmt.Fprintf(&b, "source: %s\nbrief: %s\nquestion: %s\ntext: %s\noptions: %s\ndefault: %s\nanswerable in chat: %s\n\n",
+						source, it.ID, q.ID, q.Question, strings.Join(q.Options, " | "), def, ask)
+				}
+			}
+			if b.Len() == 0 {
+				return "nothing is waiting", nil
+			}
+			return c.clean(strings.TrimRight(b.String(), "\n")), nil
+		},
+	}
+}
+
+// harnessState summarizes the example-brief harness.
+func (c *chatTools) harnessState() tools.Tool {
+	return tools.Tool{
+		Name:        "harness_state",
+		Description: "Show the example-brief harness: whether it is running, the run it waits on, its note and the score of each example brief.",
+		Schema:      emptySchema(),
+		Run: func(ctx context.Context, _ json.RawMessage) (string, error) {
+			if c.h == nil {
+				return "harness is off", nil
+			}
+			st := c.h.snapshot()
+			var b strings.Builder
+			fmt.Fprintf(&b, "running: %t\ndone: %t\n", st.Running, st.Done)
+			if st.Current != "" {
+				fmt.Fprintf(&b, "current run: %s (%s)\n", st.Current, st.CurrentFile)
+			}
+			if st.Note != "" {
+				fmt.Fprintf(&b, "note: %s\n", st.Note)
+			}
+			fmt.Fprintf(&b, "updated: %s\nbriefs:\n", st.UpdatedAt)
+			for _, hb := range st.Briefs {
+				fmt.Fprintf(&b, "  %s\t%s\tattempts %d\tpasses %d\tlast %s %s\n", hb.File, hb.Title, hb.Attempts, hb.Passes, hb.LastRun, hb.LastPhase)
+			}
+			return c.clean(b.String()), nil
+		},
+	}
+}

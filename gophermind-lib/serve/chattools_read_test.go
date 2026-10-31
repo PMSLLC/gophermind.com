@@ -119,3 +119,104 @@ func TestOutputRedactsSecrets(t *testing.T) {
 		t.Errorf("token leaked:\n%s", out)
 	}
 }
+
+func writeGate(t *testing.T, c *chatTools, id, body string) {
+	t.Helper()
+	d := filepath.Join(c.bm.repoFor(id), ".gophermind", id)
+	if err := os.MkdirAll(d, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(d, "QUESTIONS.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestQuestionsPendingAcrossBriefs(t *testing.T) {
+	c, dir := chatToolsEnv(t)
+	answered := strings.Replace(gateFixture, "```answer clarify-q1\n\n```", "```answer clarify-q1\nsqlite\n```", 1)
+	for i, id := range []string{"gm-2026-10-23-001", "gm-2026-10-24-001"} {
+		writeRunRecord(t, dir, briefRecord{ID: id, Title: "T", Phase: phaseWaiting, StartedAt: "2026-10-2" + string(rune('3'+i)) + "T10:00:00Z"}, "")
+		writeGate(t, c, id, answered)
+	}
+	out, err := findTool(t, c, "questions_pending").Run(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(out, "clarify-q2"); n != 2 {
+		t.Errorf("want 2 open q2 blocks, got %d:\n%s", n, out)
+	}
+	if strings.Contains(out, "clarify-q1") {
+		t.Errorf("answered question listed:\n%s", out)
+	}
+	for _, want := range []string{"gm-2026-10-23-001", "gm-2026-10-24-001", "source: brief", "Should the CLI print JSON?", "answerable in chat: yes"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestQuestionsPendingNone(t *testing.T) {
+	c, dir := chatToolsEnv(t)
+	writeRunRecord(t, dir, briefRecord{ID: "gm-2026-10-23-001", Title: "T", Phase: phaseDone}, "")
+	out, err := findTool(t, c, "questions_pending").Run(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "nothing is waiting") {
+		t.Errorf("got %q", out)
+	}
+}
+
+func TestQuestionsPendingHarnessSource(t *testing.T) {
+	c, dir := chatToolsEnv(t)
+	ex := t.TempDir()
+	if err := os.WriteFile(filepath.Join(ex, "a.md"), []byte("title: A\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c.h = newHarness(c.bm, ex)
+	const id = "gm-2026-10-24-001"
+	writeRunRecord(t, dir, briefRecord{ID: id, Title: "T", Phase: phaseWaiting}, "")
+	writeGate(t, c, id, gateFixture)
+	c.h.mu.Lock()
+	c.h.st.Briefs[0].LastRun, c.h.st.Briefs[0].LastPhase = id, phaseWaiting
+	c.h.mu.Unlock()
+	out, err := findTool(t, c, "questions_pending").Run(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "source: harness") || strings.Contains(out, "source: brief") {
+		t.Errorf("want harness source:\n%s", out)
+	}
+}
+
+func TestHarnessStateOff(t *testing.T) {
+	c, _ := chatToolsEnv(t)
+	out, err := findTool(t, c, "harness_state").Run(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "harness is off") {
+		t.Errorf("got %q", out)
+	}
+}
+
+func TestHarnessStateOn(t *testing.T) {
+	c, _ := chatToolsEnv(t)
+	ex := t.TempDir()
+	if err := os.WriteFile(filepath.Join(ex, "a.md"), []byte("title: A\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c.h = newHarness(c.bm, ex)
+	c.h.mu.Lock()
+	c.h.st.Running, c.h.st.Current = true, "gm-2026-10-24-001"
+	c.h.mu.Unlock()
+	out, err := findTool(t, c, "harness_state").Run(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"running: true", "gm-2026-10-24-001", "a.md"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+}
