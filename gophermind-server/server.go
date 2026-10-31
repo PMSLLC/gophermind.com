@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -192,15 +193,21 @@ func buildDeps(cfg serverConfig, root string, logger *slog.Logger) (serve.Deps, 
 			if systemSuffix != "" {
 				ag.AppendSystemPrompt(systemSuffix)
 			}
-			if len(serve.ChatToolsFrom(ctx)) > 0 {
-				ag.AppendSystemPrompt(briefToolsGuidance)
-				for _, tl := range serve.ChatToolsFrom(ctx) {
-					if tl.Name == "burrow_lookup" {
-						ag.AppendSystemPrompt(burrowToolGuidance)
-						break
-					}
-				}
+		}
+		// Every turn, new or loaded: bring the system notes block up to date
+		// so older sessions get the current text and a server restarted
+		// without the brief tools stops advertising them.
+		haveTools := len(serve.ChatToolsFrom(ctx)) > 0
+		haveBurrow := false
+		for _, tl := range serve.ChatToolsFrom(ctx) {
+			if tl.Name == "burrow_lookup" {
+				haveBurrow = true
+				break
 			}
+		}
+		cur := ag.SystemPrompt()
+		if upd := withSystemNotes(cur, haveTools, haveBurrow); upd != cur {
+			ag.SetSystemPrompt(upd)
 		}
 		if m := serve.ReadSessionModel(id); m != "" {
 			ag.SetModel(m)
@@ -275,10 +282,53 @@ func buildDeps(cfg serverConfig, root string, logger *slog.Logger) (serve.Deps, 
 	return d, nil
 }
 
-// briefToolsGuidance is appended to the system prompt of a new chat session
-// when the brief tools are on. Sessions saved earlier keep the prompt they
-// were created with; the tool descriptions still guide them.
-const briefToolsGuidance = `You can look at briefs and runs with tools. When asked what needs an answer, call questions_pending. Before you claim a cause for a failure, call runs_digest and brief_artifact, and cite run ids and node names. Observations and optimization ideas are discussion only: change nothing without a write tool. The write tools (brief_create, brief_answer, brief_stop, brief_resubmit) need John's approval on the card, and you must never claim a write happened before the tool result says so.`
+// notesOpen and notesClose delimit the system notes block in a session's
+// system prompt, so a later turn can find it and replace it.
+const (
+	notesOpen  = "[gophermind-system-notes]"
+	notesClose = "[/gophermind-system-notes]"
+)
 
-// burrowToolGuidance is appended after briefToolsGuidance when burrow_lookup is on.
+// briefToolsGuidance says what GopherMind is, that the working folder is an
+// empty scratch workspace, and where status questions go. It lives inside the
+// system notes block.
+const briefToolsGuidance = `GopherMind turns a brief into a plan and builds it. Each run is a folder of nodes and attempts. The Harness replays example briefs until each one passes. Your working folder is an empty scratch workspace, not the codebase: never list files, run shell commands or use git to find out what is going on. For status questions (where things are, what is running, what failed, what is waiting, what is next) call briefs_list, harness_state and questions_pending first, then runs_digest for repeated failures, and answer in a few lines with run ids. Before you claim a cause for a failure, call runs_digest and brief_artifact, and cite run ids and node names. Observations and optimization ideas are discussion only: change nothing without a write tool. The write tools (brief_create, brief_answer, brief_stop, brief_resubmit) need John's approval on the card, and you must never claim a write happened before the tool result says so.`
+
+// burrowToolGuidance follows briefToolsGuidance in the notes block when burrow_lookup is on.
 const burrowToolGuidance = `Use burrow_lookup before suggesting that a new function be built. It matches exact contracts only, so draft the contract in Burrow's type grammar, and say plainly that a miss may only mean the same function is spelled differently.`
+
+// withSystemNotes returns prompt with the system notes block brought up to
+// date. With haveBriefTools it replaces an existing block in place or appends
+// one; without, it removes any block. Nothing outside the block changes, and
+// running it twice gives the same result.
+func withSystemNotes(prompt string, haveBriefTools, haveBurrow bool) string {
+	start := strings.Index(prompt, notesOpen)
+	end := -1
+	if start >= 0 {
+		if e := strings.Index(prompt[start:], notesClose); e >= 0 {
+			end = start + e + len(notesClose)
+		}
+	}
+	if end < 0 {
+		start = -1
+	}
+	if !haveBriefTools {
+		if start < 0 {
+			return prompt
+		}
+		head := strings.TrimSuffix(prompt[:start], "\n\n")
+		return head + prompt[end:]
+	}
+	text := briefToolsGuidance
+	if haveBurrow {
+		text += " " + burrowToolGuidance
+	}
+	block := notesOpen + "\n" + text + "\n" + notesClose
+	if start < 0 {
+		if prompt == "" {
+			return block
+		}
+		return prompt + "\n\n" + block
+	}
+	return prompt[:start] + block + prompt[end:]
+}
