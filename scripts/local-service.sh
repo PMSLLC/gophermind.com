@@ -9,6 +9,9 @@
 #
 # The server runs in local mode (GOPHERMIND_LOCAL=1): 127.0.0.1 only, no login.
 # Settings below can be overridden from the environment when installing.
+# The chat's Burrow lookup uses GM_BURROW_URL and GM_BURROW_TOKEN_FILE (defaults
+# when the local Burrow token file exists); GM_BURROW_URL= or
+# GM_BURROW_TOKEN_FILE= (set but empty) installs without Burrow.
 set -euo pipefail
 
 LABEL="${GM_LOCAL_LABEL:-com.gophermind.local.server}"
@@ -65,14 +68,24 @@ install() {
 
   # Burrow lookup for the chat: GM_BURROW_URL and GM_BURROW_TOKEN_FILE, or the
   # default local Burrow when its token file exists and is non-empty (only the
-  # file's existence is tested here, never its contents). Both must end up set.
+  # file's existence is tested here, never its contents). Setting either one to
+  # the empty string (GM_BURROW_URL=) turns Burrow off. Both must end up set.
   BURROW_URL="${GM_BURROW_URL:-}"
   BURROW_TOKEN_FILE="${GM_BURROW_TOKEN_FILE:-}"
+  burrow_off=0
+  if [ "${GM_BURROW_URL+x}" = x ] && [ -z "$GM_BURROW_URL" ]; then burrow_off=1; fi
+  if [ "${GM_BURROW_TOKEN_FILE+x}" = x ] && [ -z "$GM_BURROW_TOKEN_FILE" ]; then burrow_off=1; fi
   default_burrow_token="$HOME/OtherProjects/PMSLLC/burrow/.local/token"
-  if [ -z "$BURROW_TOKEN_FILE" ] && [ -s "$default_burrow_token" ]; then BURROW_TOKEN_FILE="$default_burrow_token"; fi
-  if [ -n "$BURROW_TOKEN_FILE" ] && [ -z "$BURROW_URL" ]; then BURROW_URL="http://127.0.0.1:8085"; fi
   BURROW_ENV=""
-  if [ -n "$BURROW_URL" ] && [ -n "$BURROW_TOKEN_FILE" ]; then
+  if [ "$burrow_off" = 0 ]; then
+    if [ -z "$BURROW_TOKEN_FILE" ] && [ -s "$default_burrow_token" ]; then BURROW_TOKEN_FILE="$default_burrow_token"; fi
+    if [ -n "$BURROW_TOKEN_FILE" ] && [ -z "$BURROW_URL" ]; then BURROW_URL="http://127.0.0.1:8085"; fi
+  fi
+  if [ "$burrow_off" = 0 ] && [ -n "$BURROW_URL" ] && [ -n "$BURROW_TOKEN_FILE" ]; then
+    # Both land inside "..." in run-server.sh, so these would break or inject.
+    case "$BURROW_URL$BURROW_TOKEN_FILE" in
+      *[\"\$\`\\]*) die "GM_BURROW_URL and GM_BURROW_TOKEN_FILE must not contain a double quote, dollar sign, backtick or backslash" ;;
+    esac
     BURROW_ENV="export GOPHERMIND_BURROW_URL=\"$BURROW_URL\"
 export GOPHERMIND_BURROW_TOKEN_FILE=\"$BURROW_TOKEN_FILE\""
   fi
