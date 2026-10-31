@@ -386,6 +386,47 @@ func TestRunsDigestManyClassesStaysUnderCap(t *testing.T) {
 	}
 }
 
+func appendFailure(t *testing.T, f runviewtest.Fixture, reason string) {
+	t.Helper()
+	if err := f.BB.AppendAttempt(context.Background(), f.RunID, "fn-bye", blackboard.Attempt{
+		Order: 2, StartedAt: runviewtest.T0, Verdict: blackboard.VerdictFail, FailureReason: reason,
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFailureGroupKeyKeepsMalformedSuffix(t *testing.T) {
+	key := func(reason, mal string) string {
+		return normalizeReason(reason) + malformedSuffix(mal)
+	}
+	multi := func(n int) string { return fmt.Sprintf("malformed\nat line %d\nmore", n) }
+	if key(multi(1), "fence:no_block") == key(multi(1), "shape:bad_json") {
+		t.Error("different malformed classes merged")
+	}
+	if key(multi(1), "fence:no_block") != key(multi(7), "fence:no_block") {
+		t.Error("same malformed class with different line numbers split")
+	}
+	if !strings.HasSuffix(key(multi(1), "fence:no_block"), "[fence:no_block]") {
+		t.Errorf("suffix lost: %q", key(multi(1), "fence:no_block"))
+	}
+}
+
+func TestRunsDigestMultiByteStaysUnderCap(t *testing.T) {
+	c, _ := chatToolsEnv(t)
+	for i := 1; i <= 24; i++ {
+		id := fmt.Sprintf("gm-2026-10-08-%03d", i)
+		f := runviewtest.BuildID(t, c.bm.root, id, runviewtest.Failed)
+		appendFailure(t, f, strings.Repeat(string(rune(0x1F600+i)), 300))
+	}
+	out, err := runTool(t, c, "runs_digest", map[string]any{"limit": 30})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) > 8<<10 || strings.Contains(out, "[tail of") || !strings.Contains(out, "more classes omitted") {
+		t.Errorf("output %d bytes, cut or no omitted line", len(out))
+	}
+}
+
 func TestRunsDigestNoRuns(t *testing.T) {
 	c, _ := chatToolsEnv(t)
 	out, err := runTool(t, c, "runs_digest", nil)

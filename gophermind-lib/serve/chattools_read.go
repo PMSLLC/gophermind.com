@@ -271,22 +271,27 @@ type failGroup struct {
 
 // failureOf is the text a failed node is grouped by: the failure reason of its
 // last attempt that did not pass (BriefAttempt.FailureReason), with the
-// malformed class and rule (BriefAttempt.MalformedReason) appended when set.
-func failureOf(n BriefNode) string {
+// malformed class and rule (BriefAttempt.MalformedReason), returned separately
+// so the caller can keep the malformed part out of the first-line cut.
+func failureOf(n BriefNode) (reason, malformed string) {
 	for i := len(n.Attempts) - 1; i >= 0; i-- {
 		at := n.Attempts[i]
 		if at.Outcome == "pass" {
 			continue
 		}
-		r := at.FailureReason
-		if at.MalformedReason != "" {
-			r += " [" + at.MalformedReason + "]"
-		}
-		if r != "" {
-			return r
+		if at.FailureReason != "" || at.MalformedReason != "" {
+			return at.FailureReason, at.MalformedReason
 		}
 	}
-	return "(no failure reason recorded)"
+	return "(no failure reason recorded)", ""
+}
+
+// malformedSuffix is the bracketed malformed class, normalized and capped, or "".
+func malformedSuffix(m string) string {
+	if m == "" {
+		return ""
+	}
+	return " [" + normalizeReason(m) + "]"
 }
 
 var (
@@ -309,12 +314,24 @@ func firstLine(s string) string {
 	return ""
 }
 
+// maxReasonBytes also bounds a reason, so multi-byte text cannot outgrow the
+// output cap.
+const maxReasonBytes = 400
+
+// capRunes cuts s to n runes and maxReasonBytes bytes, on a rune boundary.
 func capRunes(s string, n int) string {
 	r := []rune(s)
-	if len(r) <= n {
+	cut := false
+	if len(r) > n {
+		r, cut = r[:n], true
+	}
+	for len(string(r)) > maxReasonBytes {
+		r, cut = r[:len(r)-1], true
+	}
+	if !cut {
 		return s
 	}
-	return string(r[:n]) + "..."
+	return string(r) + "..."
 }
 
 // normalizeReason reduces a failure reason to its class: first line only,
@@ -393,11 +410,12 @@ func (c *chatTools) runsDigest() tools.Tool {
 					if n.Status != "failed" {
 						continue
 					}
-					example := failureOf(n)
-					key := normalizeReason(example)
+					reason, mal := failureOf(n)
+					suffix := malformedSuffix(mal)
+					key := normalizeReason(reason) + suffix
 					g := groups[key]
 					if g == nil {
-						g = &failGroup{reason: firstLine(example)}
+						g = &failGroup{reason: firstLine(reason) + suffix}
 						groups[key] = g
 						order = append(order, key)
 					}
