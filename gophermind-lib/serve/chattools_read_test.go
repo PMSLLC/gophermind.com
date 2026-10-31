@@ -236,10 +236,10 @@ func TestQuestionsPendingDefaults(t *testing.T) {
 	// gate-only with a Recommended line, and one without
 	q1 := out[strings.Index(out, "question: clarify-q1"):strings.Index(out, "question: clarify-q2")]
 	q2 := out[strings.Index(out, "question: clarify-q2"):]
-	if !strings.Contains(q1, "default: yes") || !strings.Contains(q1, "sqlite | postgres") {
+	if !strings.Contains(q1, "recommended: sqlite") || !strings.Contains(q1, "sqlite | postgres") {
 		t.Errorf("q1 should show default and options:\n%s", q1)
 	}
-	if !strings.Contains(q2, "default: no") {
+	if !strings.Contains(q2, "default: none") {
 		t.Errorf("q2 should show no default:\n%s", q2)
 	}
 }
@@ -260,7 +260,7 @@ func TestQuestionsPendingStoreRecommended(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "question: s1") || !strings.Contains(out, "default: yes") || !strings.Contains(out, "a | b") {
+	if !strings.Contains(out, "question: s1") || !strings.Contains(out, "recommended: a") || !strings.Contains(out, "a | b") {
 		t.Errorf("store question:\n%s", out)
 	}
 }
@@ -432,5 +432,60 @@ func TestRunsDigestNoRuns(t *testing.T) {
 	out, err := runTool(t, c, "runs_digest", nil)
 	if err != nil || out != "no runs" {
 		t.Errorf("got %q, %v", out, err)
+	}
+}
+
+func TestQuestionsPendingPhaseAndOrder(t *testing.T) {
+	c, dir := chatToolsEnv(t)
+	const waiting, failed = "gm-2026-10-24-001", "gm-2026-10-24-002"
+	// the failed run is newer, so it lists first without the sort
+	writeRunRecord(t, dir, briefRecord{ID: waiting, Title: "W", Phase: phaseWaiting, StartedAt: "2026-10-24T10:00:00Z"}, "")
+	writeRunRecord(t, dir, briefRecord{ID: failed, Title: "F", Phase: phaseFailed, StartedAt: "2026-10-24T11:00:00Z"}, "")
+	writeGate(t, c, waiting, gateFixture)
+	d := filepath.Join(c.bm.repoFor(failed), ".gophermind", failed, "_state", "clarify")
+	if err := os.MkdirAll(d, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	js := `{"questions":[{"id":"s1","text":"Stale?","status":"open"}]}`
+	if err := os.WriteFile(filepath.Join(d, "questions.json"), []byte(js), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := findTool(t, c, "questions_pending").Run(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "run phase: waiting") || !strings.Contains(out, "run phase: failed") {
+		t.Errorf("phase lines missing:\n%s", out)
+	}
+	if strings.Index(out, "brief: "+waiting) > strings.Index(out, "brief: "+failed) {
+		t.Errorf("waiting run should come first:\n%s", out)
+	}
+}
+
+func TestRunsDigestGroupsEndedRuns(t *testing.T) {
+	c, dir := chatToolsEnv(t)
+	for i := 1; i <= 6; i++ {
+		id := fmt.Sprintf("gm-2026-10-08-%03d", i)
+		writeRunRecord(t, dir, briefRecord{ID: id, Title: "T", Phase: phaseFailed, Error: "brief plan exited with code 1", StartedAt: fmt.Sprintf("2026-10-08T10:0%d:00Z", i)}, "")
+	}
+	writeRunRecord(t, dir, briefRecord{ID: "gm-2026-10-08-007", Title: "T", Phase: phaseInterrupted, Error: "server restarted", StartedAt: "2026-10-08T10:07:00Z"}, "")
+	out, err := runTool(t, c, "runs_digest", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(out, "brief plan exited with code") != 1 || !strings.Contains(out, "count 6") || !strings.Contains(out, "(+2 more)") || !strings.Contains(out, "server restarted") {
+		t.Errorf("want one group of 6 and one of 1:\n%s", out)
+	}
+}
+
+func TestBriefsListFlattensTitle(t *testing.T) {
+	c, dir := chatToolsEnv(t)
+	writeRunRecord(t, dir, briefRecord{ID: "gm-2026-10-24-001", Title: "two\nlines\tand tab", Phase: phaseFailed}, "")
+	out, err := runTool(t, c, "briefs_list", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(out, "\n") != 0 || !strings.Contains(out, "two lines and tab") {
+		t.Errorf("title not flattened: %q", out)
 	}
 }

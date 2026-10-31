@@ -60,10 +60,22 @@ func capOutput(s string, max int, pointer string) string {
 // bearerRE catches short bearer tokens the scanner's 40-character rule misses.
 var bearerRE = regexp.MustCompile(`(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}`)
 
-// clean redacts secrets from s, then caps it.
+// clean redacts secrets from s, then caps it. The cut note points at the run
+// folder; tools whose full text lives elsewhere use cleanWith.
 func (c *chatTools) clean(s string) string {
+	return c.cleanWith(s, "the run folder")
+}
+
+// cleanWith is clean with the pointer the cut note names for the full text.
+func (c *chatTools) cleanWith(s, pointer string) string {
 	s = bearerRE.ReplaceAllString(safety.NewSecretScanner().Redact(s), "Bearer [REDACTED]")
-	return capOutput(s, maxToolOutput, "the run's run.log")
+	return capOutput(s, maxToolOutput, pointer)
+}
+
+// oneLine flattens every run of whitespace, newlines and tabs included, to one
+// space, so free text cannot break a one-line-per-record format.
+func oneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // validBriefID reports whether id is safe to use as a run id: non-empty, in

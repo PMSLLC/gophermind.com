@@ -42,9 +42,9 @@ func (c *chatTools) briefsList() tools.Tool {
 				if phase == "" {
 					phase = it.Status
 				}
-				fmt.Fprintf(&b, "%s\t%s\t%s\t%s\n", it.ID, it.Title, phase, it.StartedAt)
+				fmt.Fprintf(&b, "%s\t%s\t%s\t%s\n", it.ID, oneLine(it.Title), oneLine(phase), it.StartedAt)
 			}
-			return c.clean(strings.TrimRight(b.String(), "\n")), nil
+			return c.cleanWith(strings.TrimRight(b.String(), "\n"), "the briefs folder"), nil
 		},
 	}
 }
@@ -72,7 +72,7 @@ func (c *chatTools) briefState() tools.Tool {
 			}
 			var b strings.Builder
 			r := st.Run
-			fmt.Fprintf(&b, "id: %s\ntitle: %s\nphase: %s\nstatus: %s\nstarted: %s\n", r.ID, r.Title, r.Phase, r.Status, r.StartedAt)
+			fmt.Fprintf(&b, "id: %s\ntitle: %s\nphase: %s\nstatus: %s\nstarted: %s\n", r.ID, oneLine(r.Title), r.Phase, r.Status, r.StartedAt)
 			if r.Error != "" {
 				fmt.Fprintf(&b, "error: %s\n", r.Error)
 			}
@@ -81,25 +81,25 @@ func (c *chatTools) briefState() tools.Tool {
 			}
 			b.WriteString("nodes:\n")
 			for _, n := range st.Nodes {
-				fmt.Fprintf(&b, "  %s\t%s\t%s\n", n.ID, n.Status, n.Title)
+				fmt.Fprintf(&b, "  %s\t%s\t%s\n", n.ID, n.Status, oneLine(n.Title))
 			}
 			b.WriteString("failing attempts:\n")
 			for _, n := range st.Nodes {
 				for _, at := range n.Attempts {
 					if at.Outcome != "pass" {
-						fmt.Fprintf(&b, "  %s #%d %s: %s\n", n.ID, at.N, at.Outcome, at.FailureReason)
+						fmt.Fprintf(&b, "  %s #%d %s: %s\n", n.ID, at.N, at.Outcome, oneLine(at.FailureReason))
 					}
 				}
 			}
 			b.WriteString("open questions:\n")
 			for _, q := range st.Questions {
 				if q.Status != "settled" {
-					fmt.Fprintf(&b, "  %s: %s\n", q.ID, q.Question)
+					fmt.Fprintf(&b, "  %s: %s\n", q.ID, oneLine(q.Question))
 				}
 			}
 			b.WriteString("log tail:\n")
 			b.WriteString(strings.Join(st.LogTail, "\n"))
-			return c.clean(b.String()), nil
+			return c.cleanWith(b.String(), "the run's run.log"), nil
 		},
 	}
 }
@@ -110,7 +110,7 @@ func (c *chatTools) briefState() tools.Tool {
 func (c *chatTools) questionsPending() tools.Tool {
 	return tools.Tool{
 		Name:        "questions_pending",
-		Description: "List every unanswered question across all brief runs: source (brief or harness), run id, question id, text, options, whether a default exists, and whether it can be answered through the chat.",
+		Description: "List every unanswered question across all brief runs: source (brief or harness), run id, question id, text, options, the run phase (waiting runs first), the recommended answer if any, and whether it can be answered through the chat.",
 		Schema:      emptySchema(),
 		Run: func(ctx context.Context, _ json.RawMessage) (string, error) {
 			owned := map[string]bool{}
@@ -126,14 +126,25 @@ func (c *chatTools) questionsPending() tools.Tool {
 				}
 			}
 			items, _ := c.bm.listItems()
-			var b strings.Builder
+			type entry struct {
+				waiting bool
+				text    string
+			}
+			var entries []entry
 			for _, it := range items {
 				if !validBriefID(it.ID) || !runview.ValidRunID(it.ID) {
 					continue
 				}
+				phase := it.Phase
+				if phase == "" {
+					phase = it.Status
+				}
 				var rec *briefRecord
 				if r, ok := c.bm.readRecord(it.ID); ok {
 					rec = &r
+					if r.Phase != "" {
+						phase = r.Phase
+					}
 				}
 				source := "brief"
 				if owned[it.ID] {
@@ -143,21 +154,27 @@ func (c *chatTools) questionsPending() tools.Tool {
 					if q.Status == "settled" {
 						continue
 					}
-					def, ask := "no", "no"
-					if q.Recommended != "" {
-						def = "yes"
-					}
+					ask := "no"
 					if q.Askable {
 						ask = "yes"
 					}
-					fmt.Fprintf(&b, "source: %s\nbrief: %s\nquestion: %s\ntext: %s\noptions: %s\ndefault: %s\nanswerable in chat: %s\n\n",
-						source, it.ID, q.ID, q.Question, strings.Join(q.Options, " | "), def, ask)
+					def := "default: none"
+					if q.Recommended != "" {
+						def = "recommended: " + oneLine(q.Recommended)
+					}
+					entries = append(entries, entry{phase == phaseWaiting, fmt.Sprintf("source: %s\nbrief: %s\nrun phase: %s\nquestion: %s\ntext: %s\noptions: %s\n%s\nanswerable in chat: %s\n\n",
+						source, it.ID, oneLine(phase), q.ID, oneLine(q.Question), oneLine(strings.Join(q.Options, " | ")), def, ask)})
 				}
+			}
+			sort.SliceStable(entries, func(i, j int) bool { return entries[i].waiting && !entries[j].waiting })
+			var b strings.Builder
+			for _, en := range entries {
+				b.WriteString(en.text)
 			}
 			if b.Len() == 0 {
 				return "nothing is waiting", nil
 			}
-			return c.clean(strings.TrimRight(b.String(), "\n")), nil
+			return c.cleanWith(strings.TrimRight(b.String(), "\n"), "each run's QUESTIONS.md"), nil
 		},
 	}
 }
@@ -176,16 +193,16 @@ func (c *chatTools) harnessState() tools.Tool {
 			var b strings.Builder
 			fmt.Fprintf(&b, "running: %t\ndone: %t\n", st.Running, st.Done)
 			if st.Current != "" {
-				fmt.Fprintf(&b, "current run: %s (%s)\n", st.Current, st.CurrentFile)
+				fmt.Fprintf(&b, "current run: %s (%s)\n", st.Current, oneLine(st.CurrentFile))
 			}
 			if st.Note != "" {
-				fmt.Fprintf(&b, "note: %s\n", st.Note)
+				fmt.Fprintf(&b, "note: %s\n", oneLine(st.Note))
 			}
 			fmt.Fprintf(&b, "updated: %s\nbriefs:\n", st.UpdatedAt)
 			for _, hb := range st.Briefs {
-				fmt.Fprintf(&b, "  %s\t%s\tattempts %d\tpasses %d\tlast %s %s\n", hb.File, hb.Title, hb.Attempts, hb.Passes, hb.LastRun, hb.LastPhase)
+				fmt.Fprintf(&b, "  %s\t%s\tattempts %d\tpasses %d\tlast %s %s\n", hb.File, oneLine(hb.Title), hb.Attempts, hb.Passes, hb.LastRun, hb.LastPhase)
 			}
-			return c.clean(b.String()), nil
+			return c.cleanWith(b.String(), "the harness state file"), nil
 		},
 	}
 }
@@ -227,9 +244,9 @@ func (c *chatTools) briefArtifact() tools.Tool {
 				}
 				var b strings.Builder
 				for _, n := range st.Nodes {
-					fmt.Fprintf(&b, "%s\t%s\t%s\n", n.ID, n.Status, n.Title)
+					fmt.Fprintf(&b, "%s\t%s\t%s\n", n.ID, n.Status, oneLine(n.Title))
 				}
-				return c.clean(strings.TrimRight(b.String(), "\n")), nil
+				return c.cleanWith(strings.TrimRight(b.String(), "\n"), "the run folder"), nil
 			}
 			if !runview.ValidNodeID(a.Node) {
 				return "", fmt.Errorf("brief_artifact: %q is not a valid node id", a.Node)
@@ -247,7 +264,7 @@ func (c *chatTools) briefArtifact() tools.Tool {
 				for _, e := range ents {
 					fmt.Fprintf(&b, "attempt %d: %s\n", e.Attempt, strings.Join(e.Files, " "))
 				}
-				return c.clean(strings.TrimRight(b.String(), "\n")), nil
+				return c.cleanWith(strings.TrimRight(b.String(), "\n"), "the run folder"), nil
 			}
 			if a.Attempt < 1 || !runview.ValidArtifactName(a.File) {
 				return "", fmt.Errorf("brief_artifact: attempt must be 1 or more and file one of the listed names")
@@ -256,7 +273,7 @@ func (c *chatTools) briefArtifact() tools.Tool {
 			if err != nil {
 				return "", fmt.Errorf("brief_artifact: no such file")
 			}
-			return c.clean(text), nil
+			return c.cleanWith(text, "the saved file "+a.File), nil
 		},
 	}
 }
@@ -266,6 +283,14 @@ type failGroup struct {
 	reason string // first unnormalized example, one line, capped
 	runs   []string
 	nodes  []string
+	count  int
+}
+
+// endGroup is one error class among the runs that ended failed or interrupted.
+type endGroup struct {
+	reason string // first unnormalized error line
+	phases string // space-separated distinct phases
+	runs   []string
 	count  int
 }
 
@@ -389,8 +414,8 @@ func (c *chatTools) runsDigest() tools.Tool {
 			}
 			groups := map[string]*failGroup{}
 			var order []string
-			var ended strings.Builder
-			endedN := 0
+			endedGroups := map[string]*endGroup{}
+			var endedOrder []string
 			covered := 0
 			cancelled := false
 			for _, it := range items {
@@ -428,12 +453,21 @@ func (c *chatTools) runsDigest() tools.Tool {
 					}
 				}
 				if p := st.Run.Phase; p == phaseFailed || p == phaseInterrupted {
-					endedN++
-					if endedN <= maxDigestEnded {
-						fmt.Fprintf(&ended, "%s\t%s\t%s\n", it.ID, p, firstLine(st.Run.Error))
+					key := normalizeReason(st.Run.Error)
+					g := endedGroups[key]
+					if g == nil {
+						g = &endGroup{reason: firstLine(st.Run.Error)}
+						endedGroups[key] = g
+						endedOrder = append(endedOrder, key)
+					}
+					g.count++
+					g.runs = append(g.runs, it.ID)
+					if !strings.Contains(" "+g.phases+" ", " "+p+" ") {
+						g.phases = strings.TrimSpace(g.phases + " " + p)
 					}
 				}
 			}
+			sort.SliceStable(endedOrder, func(i, j int) bool { return endedGroups[endedOrder[i]].count > endedGroups[endedOrder[j]].count })
 			sort.SliceStable(order, func(i, j int) bool { return groups[order[i]].count > groups[order[j]].count })
 			var b strings.Builder
 			fmt.Fprintf(&b, "runs covered: %d\nfailure classes:\n", covered)
@@ -455,18 +489,26 @@ func (c *chatTools) runsDigest() tools.Tool {
 				fmt.Fprintf(&b, "  %s\n    count %d\n    runs: %s%s\n    example nodes: %s\n", g.reason, g.count, strings.Join(runs, ", "), more, strings.Join(g.nodes, ", "))
 			}
 			b.WriteString("runs that ended failed or interrupted:\n")
-			if ended.Len() == 0 {
+			if len(endedOrder) == 0 {
 				b.WriteString("  none\n")
-			} else {
-				b.WriteString(ended.String())
-				if endedN > maxDigestEnded {
-					fmt.Fprintf(&b, "  %d more runs omitted\n", endedN-maxDigestEnded)
+			}
+			for i, k := range endedOrder {
+				if i == maxDigestEnded {
+					fmt.Fprintf(&b, "  %d more error classes omitted\n", len(endedOrder)-maxDigestEnded)
+					break
 				}
+				g := endedGroups[k]
+				runs, more := g.runs, ""
+				if len(runs) > maxDigestRunsCited {
+					more = fmt.Sprintf(" (+%d more)", len(runs)-maxDigestRunsCited)
+					runs = runs[:maxDigestRunsCited]
+				}
+				fmt.Fprintf(&b, "  %s\n    count %d (%s)\n    runs: %s%s\n", g.reason, g.count, strings.ReplaceAll(g.phases, " ", ", "), strings.Join(runs, ", "), more)
 			}
 			if cancelled {
 				b.WriteString("cancelled before all runs were read\n")
 			}
-			return c.clean(strings.TrimRight(b.String(), "\n")), nil
+			return c.cleanWith(strings.TrimRight(b.String(), "\n"), "the run folders"), nil
 		},
 	}
 }

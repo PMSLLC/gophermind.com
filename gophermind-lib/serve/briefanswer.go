@@ -138,6 +138,10 @@ func FillGateAnswer(root, id, qid, text string) (remaining int, err error) {
 	return FillGateAnswerOpt(root, id, qid, text, false)
 }
 
+// errCLITooOld is a launcher that rejected --no-overwrite: an installed
+// gophermind older than this server.
+var errCLITooOld = errors.New("the installed gophermind CLI does not know --no-overwrite")
+
 // ErrAlreadyAnswered is returned by FillGateAnswerOpt with noOverwrite for a
 // question whose answer block is already filled.
 var ErrAlreadyAnswered = errAlreadyAnswered
@@ -170,6 +174,10 @@ func (m *briefManager) writeAnswerAs(id, qid, text string, noOverwrite bool) (in
 	cmd.Stdin = strings.NewReader(text)
 	var out bytes.Buffer
 	cmd.Stdout = &out
+	var errOut bytes.Buffer
+	if cmd.Stderr == nil {
+		cmd.Stderr = &errOut
+	}
 	if cmd.Env == nil {
 		cmd.Env = childEnv()
 	}
@@ -183,6 +191,10 @@ func (m *briefManager) writeAnswerAs(id, qid, text string, noOverwrite bool) (in
 				return 0, os.ErrNotExist
 			case fillExitAnswered:
 				return 0, errAlreadyAnswered
+			case 1:
+				if noOverwrite && strings.Contains(errOut.String(), "usage:") {
+					return 0, errCLITooOld
+				}
 			}
 		}
 		return 0, err

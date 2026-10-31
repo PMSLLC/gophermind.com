@@ -48,6 +48,8 @@ func writeOutcome(err error) string {
 		return "that run is not waiting for answers (phase " + notWaiting.phase + "); nothing was changed."
 	case errors.Is(err, errNotActive):
 		return "that run is not active, so there is nothing to stop."
+	case errors.Is(err, errCLITooOld):
+		return "the installed gophermind CLI is too old for chat answers; reinstall it together with gophermind-server."
 	case errors.Is(err, errResumeFailed):
 		return "the answer is saved but the run could not be resumed."
 	case errors.Is(err, os.ErrNotExist):
@@ -59,7 +61,7 @@ func writeOutcome(err error) string {
 func (c *chatTools) briefCreate() tools.Tool {
 	return tools.Tool{
 		Name:        "brief_create",
-		Description: "Start a run from brief text. Needs John's approval. ask defaults to true, so open questions stop for John to answer.",
+		Description: "Start a run from brief text. Needs John's approval. ask defaults to true, so open questions stop for John to answer. The Approve button is disabled for arguments over about 200000 characters, so a very large brief must be uploaded on the Briefs page instead.",
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -70,6 +72,9 @@ func (c *chatTools) briefCreate() tools.Tool {
 			"additionalProperties": false,
 		},
 		Run: func(ctx context.Context, raw json.RawMessage) (string, error) {
+			if err := checkArgKeys("brief_create", raw, "text", "ask"); err != nil {
+				return "", err
+			}
 			var a struct {
 				Text string `json:"text"`
 				Ask  *bool  `json:"ask"`
@@ -100,7 +105,7 @@ func (c *chatTools) briefCreate() tools.Tool {
 func (c *chatTools) briefAnswer() tools.Tool {
 	return tools.Tool{
 		Name:        "brief_answer",
-		Description: "Answer one open question of a waiting run. Needs John's approval. Use only the answer John gave.",
+		Description: "Answer one open question of a waiting run. Needs John's approval. Use only the answer John gave. A question whose answer block is already filled (including a pre-filled gate default) cannot be changed from chat.",
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -112,6 +117,9 @@ func (c *chatTools) briefAnswer() tools.Tool {
 			"additionalProperties": false,
 		},
 		Run: func(ctx context.Context, raw json.RawMessage) (string, error) {
+			if err := checkArgKeys("brief_answer", raw, "id", "question_id", "text"); err != nil {
+				return "", err
+			}
 			var a struct {
 				ID         string `json:"id"`
 				QuestionID string `json:"question_id"`
@@ -158,9 +166,9 @@ func (c *chatTools) briefStop() tools.Tool {
 				return "", err
 			}
 			if err := c.bm.stop(id); err != nil {
-				return writeOutcome(err), nil
+				return c.clean(writeOutcome(err)), nil
 			}
-			return "stop requested for run " + id + "; it ends shortly.", nil
+			return c.clean("stop requested for run " + id + "; it ends shortly."), nil
 		},
 	}
 }
@@ -179,13 +187,42 @@ func (c *chatTools) briefResubmit() tools.Tool {
 			if err != nil {
 				return c.clean(writeOutcome(err)), nil
 			}
-			return "started run " + rec.ID + " from the brief of " + id + ".", nil
+			return c.clean("started run " + rec.ID + " from the brief of " + id + "."), nil
 		},
 	}
 }
 
+// checkArgKeys rejects arguments holding a key the schema does not name, or two
+// keys that differ only by case: Go's JSON decoding would match both to one
+// field and keep the last, so the approval card and the tool could disagree.
+func checkArgKeys(tool string, raw json.RawMessage, allowed ...string) error {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return fmt.Errorf("%s: bad arguments: %w", tool, err)
+	}
+	seen := map[string]bool{}
+	for k := range m {
+		lk := strings.ToLower(k)
+		if seen[lk] {
+			return fmt.Errorf("%s: the arguments are ambiguous: two keys differ only by letter case; nothing was done", tool)
+		}
+		seen[lk] = true
+		ok := false
+		for _, a := range allowed {
+			ok = ok || k == a
+		}
+		if !ok {
+			return fmt.Errorf("%s: the arguments are ambiguous: unknown key %q; nothing was done", tool, k)
+		}
+	}
+	return nil
+}
+
 // idArg decodes {"id": ...} and checks it is a usable run id.
 func idArg(tool string, raw json.RawMessage) (string, error) {
+	if err := checkArgKeys(tool, raw, "id"); err != nil {
+		return "", err
+	}
 	var a struct {
 		ID string `json:"id"`
 	}

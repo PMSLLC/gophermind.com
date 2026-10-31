@@ -228,20 +228,55 @@ func TestBriefAnswerLauncherFallbackRefusesFilled(t *testing.T) {
 	}
 }
 
+// An older installed CLI rejects --no-overwrite with its usage text and exit 1;
+// the chat tool says to reinstall rather than "exit status 1".
+func TestBriefAnswerOldCLIMessage(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory modes")
+	}
+	e, ts := writeToolsEnv(t)
+	id := "gm-2026-10-30-015"
+	e.startAsking(id)
+	dir := filepath.Join(e.root, ".gophermind", id)
+	inner := e.script
+	e.script = func(args []string) string {
+		if len(args) > 1 && args[1] == "fill-answer" {
+			return "echo 'usage: gophermind brief fill-answer <run-id> <question-id> --repo <root>' >&2; exit 1"
+		}
+		return inner(args)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o700) })
+	out, err := callTool(t, ts, "brief_answer", map[string]any{"id": id, "question_id": "clarify-q1", "text": "x"})
+	if err != nil || !strings.Contains(out, "too old for chat answers; reinstall it together with gophermind-server") {
+		t.Fatalf("out %q err %v", out, err)
+	}
+}
+
 func TestBriefAnswerConcurrentOneWrite(t *testing.T) {
 	e, ts := writeToolsEnv(t)
 	id := "gm-2026-10-30-013"
 	e.startAsking(id)
+	answer := pick(t, ts, "brief_answer")
 	var wg sync.WaitGroup
-	outs := make([]string, 8)
-	for i := range outs {
+	res := make(chan string, 8)
+	for i := 0; i < 8; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			outs[i], _ = callTool(t, ts, "brief_answer", map[string]any{"id": id, "question_id": "clarify-q1", "text": fmt.Sprintf("answer-%d", i)})
+			raw, _ := json.Marshal(map[string]any{"id": id, "question_id": "clarify-q1", "text": fmt.Sprintf("answer-%d", i)})
+			out, _ := answer.Run(context.Background(), raw)
+			res <- out
 		}(i)
 	}
 	wg.Wait()
+	close(res)
+	var outs []string
+	for o := range res {
+		outs = append(outs, o)
+	}
 	saved, refused := 0, 0
 	for _, o := range outs {
 		switch {
@@ -467,5 +502,25 @@ func TestWriteToolApprovedStartsRun(t *testing.T) {
 	e.waitNotActive(id)
 	if n := runDirs(t, e.dir); len(n) != 1 {
 		t.Errorf("run dirs %v", n)
+	}
+}
+
+// Arguments with an unknown key, or two keys that differ only by case, are
+// refused by all four write tools before anything runs.
+func TestWriteToolsRejectAmbiguousArgs(t *testing.T) {
+	_, ts := writeToolsEnv(t)
+	cases := map[string][]string{
+		"brief_create":   {`{"text":"a","TEXT":"b"}`, `{"text":"a","extra":1}`},
+		"brief_answer":   {`{"id":"gm-2026-10-30-001","question_id":"q1","text":"a","Text":"b"}`, `{"id":"gm-2026-10-30-001","question_id":"q1","text":"a","x":1}`},
+		"brief_stop":     {`{"id":"gm-2026-10-30-001","ID":"gm-2026-10-30-002"}`, `{"id":"gm-2026-10-30-001","x":1}`},
+		"brief_resubmit": {`{"id":"gm-2026-10-30-001","Id":"gm-2026-10-30-002"}`, `{"id":"gm-2026-10-30-001","x":1}`},
+	}
+	for name, args := range cases {
+		for _, a := range args {
+			out, err := pick(t, ts, name).Run(context.Background(), json.RawMessage(a))
+			if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+				t.Errorf("%s %s: out %q err %v", name, a, out, err)
+			}
+		}
 	}
 }

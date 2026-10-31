@@ -485,6 +485,10 @@ func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 		streamH := sessionStreamHandler(d.SessionTurn, locks)
 		if ct != nil {
 			inner := streamH
+			// The tool set is placed on the context for every server built through
+			// serve.NewMux, including `gophermind serve`, whose session approval
+			// can be Auto. Any consumer of ChatToolsFrom must therefore use a
+			// remote approval gate (safety.Gated tools are never auto-approved).
 			streamH = func(w http.ResponseWriter, r *http.Request) {
 				inner(w, r.WithContext(withChatTools(r.Context(), ct.all())))
 			}
