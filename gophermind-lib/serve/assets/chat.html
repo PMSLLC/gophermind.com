@@ -143,10 +143,19 @@ async function approve(box, id, ok){
   }
 }
 
+// approvalArgs renders a tool call's raw JSON args in full for the approval
+// card: pretty-printed when they parse, the raw string otherwise, capped only
+// at 200000 characters.
+function approvalArgs(raw){
+  let s = String(raw == null ? '' : raw);
+  try { s = JSON.stringify(JSON.parse(s), null, 2); } catch (e) {}
+  return clip(s, 200000);
+}
+
 function addApproval(ev){
   const box = el('div', 'approval');
   box.appendChild(el('div', null, 'Approval needed to run ' + ev.tool));
-  box.appendChild(el('pre', null, clip(ev.args, 1000)));
+  box.appendChild(el('pre', null, approvalArgs(ev.args)));
   const yes = el('button', null, 'Approve'), no = el('button', null, 'Deny');
   yes.type = 'button'; no.type = 'button';
   yes.addEventListener('click', () => approve(box, ev.approval_id, true));

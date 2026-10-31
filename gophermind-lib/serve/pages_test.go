@@ -121,3 +121,21 @@ func TestPipelinePageAutoConnectsOnSession(t *testing.T) {
 		t.Error("pipeline page does not probe /auth/me for a cookie session")
 	}
 }
+
+func TestChatApprovalNotClipped(t *testing.T) {
+	a := newTestAuth(newFakeGoogle(t, goodClaims()))
+	h := pagesMux(t, a)
+	c := a.sessionCookie("john@brahy.com", time.Now())
+	body := do(h, "GET", "/app/chat", nil, c).Body.String()
+	if strings.Contains(body, "clip(ev.args, 1000)") {
+		t.Error("approval card still clips args to 1000 characters")
+	}
+	i := strings.Index(body, ".approval pre{")
+	if i < 0 {
+		t.Fatal("chat page lacks an .approval pre rule")
+	}
+	rule := body[i : i+strings.Index(body[i:], "}")]
+	if !strings.Contains(rule, "max-height") || !strings.Contains(rule, "overflow") {
+		t.Errorf("approval pre rule is not scrollable: %s", rule)
+	}
+}
