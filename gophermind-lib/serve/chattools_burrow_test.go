@@ -265,3 +265,30 @@ func TestBurrowFromOptions(t *testing.T) {
 		t.Error("client not built with both settings")
 	}
 }
+
+func TestBurrowLookupToolBodyCutNeverSplitsSecret(t *testing.T) {
+	const secret = "Zq8Xv3Lm9Rt2Wk7Ph4Dn6Bc1Fg5Hj0YsAe8UoIiX2"
+	const bearer = "Bearer qwErty1234567890ZXCVbnm"
+	// Sweep the secret across the cut point so some offset splits it.
+	for pad := 7000; pad < 7800; pad += 3 {
+		body := strings.Repeat("a ", pad/2) + secret + " " + bearer + strings.Repeat(" b", 2000)
+		ct, _ := burrowToolEnv(t, 200, burrowHitBody(body, false))
+		out, err := runBurrow(t, ct, burrowGoodArgs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(out) > maxToolOutput {
+			t.Fatalf("pad %d: %d bytes", pad, len(out))
+		}
+		if strings.Count(out, "[body cut:") > 1 {
+			t.Fatalf("pad %d: more than one cut note", pad)
+		}
+		for _, sec := range []string{secret, "qwErty1234567890ZXCVbnm"} {
+			for i := 0; i+8 <= len(sec); i++ {
+				if strings.Contains(out, sec[i:i+8]) {
+					t.Fatalf("pad %d: fragment %q of a secret in output", pad, sec[i:i+8])
+				}
+			}
+		}
+	}
+}

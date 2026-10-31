@@ -198,13 +198,16 @@ func renderBurrowLookup(r burrowLookup) string {
 	fmt.Fprintf(&b, "language: %s\n", clampField(r.Rendering.Lang, 32))
 	fmt.Fprintf(&b, "eligible: %t\n", r.Eligible)
 	b.WriteString("body:\n")
-	body := r.Rendering.Body
+	// Redact before any cut, so a cut never splits a secret into a fragment the
+	// scanner no longer matches.
+	body := redactText(r.Rendering.Body)
+	total := len(body)
 	// Leave slack for redaction, which can lengthen text.
 	if room := maxToolOutput - b.Len() - 512; len(body) > room {
 		if room < 0 {
 			room = 0
 		}
-		body = cutRunes(body, room) + fmt.Sprintf("\n[body cut: %d of %d bytes]", len(cutRunes(body, room)), len(r.Rendering.Body))
+		body = cutRunes(body, room) + fmt.Sprintf("\n[body cut: %d of %d bytes]", len(cutRunes(body, room)), total)
 	}
 	b.WriteString(body)
 	return b.String()
