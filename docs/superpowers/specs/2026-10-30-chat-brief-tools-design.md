@@ -60,3 +60,7 @@ Author's calls (John can overturn any of them):
 - The brief manager, `runview` and Harness state are shared with the HTTP routes by passing one instance, not building a second. Chat-driven stop and resubmit go through the same manager methods and locks as the HTTP routes.
 - `questions_pending` merges the two sources (brief `QUESTIONS.md` gates and Harness questions) into one list with a `source` field.
 - The tools and the system-prompt addition exist for every authenticated session on a server with `BriefsDir` set.
+- `brief_create` defaults `ask` to true. The spec said defaults match `POST /app/briefs`, where `ask` is false; a chat-started run should stop for John at open questions instead of taking unattended defaults.
+- `brief_resubmit` takes only an id, so the approval card does not show the brief text being started again.
+- `runs_digest` takes at most 30 runs (`limit` is capped at 30, default 20).
+- The chat answer path refuses to overwrite a filled answer, including a pre-filled gate default, whether the write is done by the server or by the launcher (`--no-overwrite`).
