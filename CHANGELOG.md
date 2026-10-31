@@ -8,6 +8,10 @@ All notable changes to GopherMind are documented here. The format follows
 
 ### Added
 
+- **The web chat can read and manage briefs.** With the brief routes on, a chat session gets read tools (`briefs_list`, `brief_state`, `brief_artifact`, `questions_pending`, `harness_state`, `runs_digest`) and write tools behind the approval card (`brief_create`, `brief_answer`, `brief_stop`, `brief_resubmit`). A short guidance paragraph is added to the system prompt of new sessions only; sessions saved earlier keep the prompt they were created with, and the tool descriptions still guide them. Without a briefs directory the chat has none of these tools.
+
+- **The approval card shows the full arguments.** It prints the pretty-printed arguments in a scrollable block, and when the arguments were truncated it says so and blocks Approve.
+
 - **A downloadable brief specification.** `GET /app/brief-spec.md` (signed in) serves `gophermind-lib/serve/assets/brief-spec.md` as a Markdown download, and the upload page links it. It gives another tool or agent what it needs to write a brief that the upload accepts: the frontmatter keys and their rules, the seven required sections, the bullet and fence rules the validator enforces, the server rules (unique id, `repo` equal to the server root, 256 KiB, one run at a time), practices that make a brief plan and build well, and a complete example. A test parses the example with `brief.Parse`, so the document cannot drift from the validator.
 
 - **A brief can be submitted again.** `POST /app/briefs/{id}/resubmit` takes the stored `brief.md` of an earlier run and starts it under the next free `gm-<today>-NNN` id (the frontmatter `id:` line is rewritten); the run page has a "Resubmit this brief" button when the run is not active. The upload page has a box to start an upload whose id is already used under the next free id (`POST /app/briefs?resubmit=1`), and a plain duplicate now says to tick it. The old run is left as it was.
@@ -18,6 +22,7 @@ All notable changes to GopherMind are documented here. The format follows
 
 ### Fixed
 
+- **The server finds its model at the start of each turn until it has one.** It could start before the model server was up, fail the single lookup at startup and answer "no model configured" to every chat until restarted.
 - **A model reply that forgets a standard library import is fixed, not retried.** Caesar's `fn-cipher-file` failed 9 attempts in a row with `undefined: utf8` (the code used `utf8.` and never imported `unicode/utf8`), which blocked three more functions behind it. `packer.ParseReply` now adds the import of any standard library package the code uses as a qualifier without importing it or declaring the name in the file, when the package name belongs to exactly one standard library path (`rand`, `template` and a few others are left to the model). The added paths are in `Reply.AddedImports`.
 - **The brief specification now says where `main` goes and how acceptance commands run.** A brief with `main` in the repository root and acceptance commands such as `go build -o caesar .` planned to the coverage step and then stopped: the harness builds only main packages under `cmd/` and refuses acceptance tests that run no such binary (`acceptance_vacuous`), so two uploads of one brief failed after about 40 minutes each. The spec and its example now put `main` in `cmd/<name>/` and run the binary by name.
 - **The live pipeline page is easier to read.** The dim text color was 2.6 to 1 against the page background and most type was 10.5 to 12.5 px. Text colors now reach at least 6 to 1 and the smallest type is 12 px.

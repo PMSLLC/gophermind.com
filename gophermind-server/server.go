@@ -192,6 +192,9 @@ func buildDeps(cfg serverConfig, root string, logger *slog.Logger) (serve.Deps, 
 			if systemSuffix != "" {
 				ag.AppendSystemPrompt(systemSuffix)
 			}
+			if len(serve.ChatToolsFrom(ctx)) > 0 {
+				ag.AppendSystemPrompt(briefToolsGuidance)
+			}
 		}
 		if m := serve.ReadSessionModel(id); m != "" {
 			ag.SetModel(m)
@@ -265,3 +268,8 @@ func buildDeps(cfg serverConfig, root string, logger *slog.Logger) (serve.Deps, 
 	logger.Info("deps built", "llm_endpoint_configured", cfg.LLMEndpoint != "", "root", root)
 	return d, nil
 }
+
+// briefToolsGuidance is appended to the system prompt of a new chat session
+// when the brief tools are on. Sessions saved earlier keep the prompt they
+// were created with; the tool descriptions still guide them.
+const briefToolsGuidance = `You can look at briefs and runs with tools. When asked what needs an answer, call questions_pending. Before you claim a cause for a failure, call runs_digest and brief_artifact, and cite run ids and node names. Observations and optimization ideas are discussion only: change nothing without a write tool. The write tools (brief_create, brief_answer, brief_stop, brief_resubmit) need John's approval on the card, and you must never claim a write happened before the tool result says so.`
