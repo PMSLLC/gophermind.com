@@ -522,7 +522,7 @@ func markAskable(qs []BriefQuestion, gate []gateQuestion) []BriefQuestion {
 			}
 		}
 		if !found {
-			q := BriefQuestion{ID: g.ID, Question: g.Text, Kind: "decision", Status: "open", Options: []string{}, Askable: !g.Filled}
+			q := BriefQuestion{ID: g.ID, Question: g.Text, Kind: "decision", Status: "open", Options: nonNilStrings(g.Options), Recommended: g.Recommended, Askable: !g.Filled}
 			if g.Filled {
 				q.Status, q.Answer, q.AnsweredBy = "settled", g.Answer, "human"
 			}

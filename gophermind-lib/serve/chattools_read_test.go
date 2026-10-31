@@ -220,3 +220,44 @@ func TestHarnessStateOn(t *testing.T) {
 		}
 	}
 }
+
+func TestQuestionsPendingDefaults(t *testing.T) {
+	c, dir := chatToolsEnv(t)
+	const id = "gm-2026-10-24-001"
+	writeRunRecord(t, dir, briefRecord{ID: id, Title: "T", Phase: phaseWaiting}, "")
+	writeGate(t, c, id, gateFixture)
+	out, err := findTool(t, c, "questions_pending").Run(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// gate-only with a Recommended line, and one without
+	q1 := out[strings.Index(out, "question: clarify-q1"):strings.Index(out, "question: clarify-q2")]
+	q2 := out[strings.Index(out, "question: clarify-q2"):]
+	if !strings.Contains(q1, "default: yes") || !strings.Contains(q1, "sqlite | postgres") {
+		t.Errorf("q1 should show default and options:\n%s", q1)
+	}
+	if !strings.Contains(q2, "default: no") {
+		t.Errorf("q2 should show no default:\n%s", q2)
+	}
+}
+
+func TestQuestionsPendingStoreRecommended(t *testing.T) {
+	c, dir := chatToolsEnv(t)
+	const id = "gm-2026-10-24-002"
+	writeRunRecord(t, dir, briefRecord{ID: id, Title: "T", Phase: phaseRunning}, "")
+	d := filepath.Join(c.bm.repoFor(id), ".gophermind", id, "_state", "clarify")
+	if err := os.MkdirAll(d, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	js := `{"questions":[{"id":"s1","text":"Pick one?","status":"open","options":["a","b"],"recommended":"a"}]}`
+	if err := os.WriteFile(filepath.Join(d, "questions.json"), []byte(js), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := findTool(t, c, "questions_pending").Run(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "question: s1") || !strings.Contains(out, "default: yes") || !strings.Contains(out, "a | b") {
+		t.Errorf("store question:\n%s", out)
+	}
+}

@@ -28,12 +28,16 @@ var questionIDRE = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
 
 // gateQuestion is one question of the file gate's QUESTIONS.md.
 type gateQuestion struct {
-	ID       string
-	Text     string
-	Filled   bool // the answer block holds text (an answer or a default)
-	Answer   string
-	startIdx int // line index of the "```answer <id>" fence
-	endIdx   int // line index of the closing fence
+	ID     string
+	Text   string
+	Filled bool // the answer block holds text (an answer or a default)
+	Answer string
+	// Options and Recommended come from the "Options:" and "Recommended:"
+	// lines the file gate writes; empty when the question has none.
+	Options     []string
+	Recommended string
+	startIdx    int // line index of the "```answer <id>" fence
+	endIdx      int // line index of the closing fence
 }
 
 var (
@@ -78,6 +82,15 @@ func parseGateQuestions(src string) (lines []string, qs []gateQuestion) {
 			cur.endIdx = j
 			i = j
 			continue
+		}
+		if t, ok := strings.CutPrefix(ln, "Options:"); ok && cur.startIdx < 0 {
+			for _, o := range strings.Split(t, "|") {
+				if o = strings.TrimSpace(o); o != "" {
+					cur.Options = append(cur.Options, o)
+				}
+			}
+		} else if t, ok := strings.CutPrefix(ln, "Recommended:"); ok && cur.startIdx < 0 {
+			cur.Recommended = strings.TrimSpace(t)
 		}
 		if inText {
 			if strings.HasPrefix(ln, "Why it matters:") || strings.HasPrefix(ln, "Options:") || strings.HasPrefix(ln, "Recommended:") {
