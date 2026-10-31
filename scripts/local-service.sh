@@ -37,6 +37,32 @@ install() {
   command -v go >/dev/null || die "go is not on PATH"
   [ -d "$repo/gophermind-server" ] || die "run this from a gophermind checkout (no gophermind-server in $repo)"
 
+  # Burrow lookup for the chat: GM_BURROW_URL and GM_BURROW_TOKEN_FILE, or the
+  # default local Burrow when its token file exists and is non-empty (only the
+  # file's existence is tested here, never its contents). Setting either one to
+  # the empty string (GM_BURROW_URL=) turns Burrow off. Both must end up set.
+  BURROW_URL="${GM_BURROW_URL:-}"
+  BURROW_TOKEN_FILE="${GM_BURROW_TOKEN_FILE:-}"
+  burrow_off=0
+  if [ "${GM_BURROW_URL+x}" = x ] && [ -z "$GM_BURROW_URL" ]; then burrow_off=1; fi
+  if [ "${GM_BURROW_TOKEN_FILE+x}" = x ] && [ -z "$GM_BURROW_TOKEN_FILE" ]; then burrow_off=1; fi
+  default_burrow_token="$HOME/OtherProjects/PMSLLC/burrow/.local/token"
+  BURROW_ENV=""
+  if [ "$burrow_off" = 0 ]; then
+    if [ -z "$BURROW_TOKEN_FILE" ] && [ -s "$default_burrow_token" ]; then BURROW_TOKEN_FILE="$default_burrow_token"; fi
+    if [ -n "$BURROW_TOKEN_FILE" ] && [ -z "$BURROW_URL" ]; then BURROW_URL="http://127.0.0.1:8085"; fi
+  fi
+  if [ "$burrow_off" = 0 ] && [ -n "$BURROW_URL" ] && [ -n "$BURROW_TOKEN_FILE" ]; then
+    # Both land inside "..." in run-server.sh, so these would break or inject.
+    # Checked here, before any build, so a bad value leaves nothing half installed.
+    burrow_nl=$'\n'
+    case "$BURROW_URL$BURROW_TOKEN_FILE" in
+      *[\"\$\`\\]*|*"$burrow_nl"*) die "GM_BURROW_URL and GM_BURROW_TOKEN_FILE must not contain a double quote, dollar sign, backtick, backslash or newline" ;;
+    esac
+    BURROW_ENV="export GOPHERMIND_BURROW_URL=\"$BURROW_URL\"
+export GOPHERMIND_BURROW_TOKEN_FILE=\"$BURROW_TOKEN_FILE\""
+  fi
+
   # Another process on the port that launchd does not own would make the agent
   # crash-loop. Say so instead of killing something that is not ours.
   if healthy && ! launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
@@ -65,30 +91,6 @@ install() {
     (umask 077; openssl rand -hex 24 > "$BASE/token")
   fi
   chmod 600 "$BASE/token"
-
-  # Burrow lookup for the chat: GM_BURROW_URL and GM_BURROW_TOKEN_FILE, or the
-  # default local Burrow when its token file exists and is non-empty (only the
-  # file's existence is tested here, never its contents). Setting either one to
-  # the empty string (GM_BURROW_URL=) turns Burrow off. Both must end up set.
-  BURROW_URL="${GM_BURROW_URL:-}"
-  BURROW_TOKEN_FILE="${GM_BURROW_TOKEN_FILE:-}"
-  burrow_off=0
-  if [ "${GM_BURROW_URL+x}" = x ] && [ -z "$GM_BURROW_URL" ]; then burrow_off=1; fi
-  if [ "${GM_BURROW_TOKEN_FILE+x}" = x ] && [ -z "$GM_BURROW_TOKEN_FILE" ]; then burrow_off=1; fi
-  default_burrow_token="$HOME/OtherProjects/PMSLLC/burrow/.local/token"
-  BURROW_ENV=""
-  if [ "$burrow_off" = 0 ]; then
-    if [ -z "$BURROW_TOKEN_FILE" ] && [ -s "$default_burrow_token" ]; then BURROW_TOKEN_FILE="$default_burrow_token"; fi
-    if [ -n "$BURROW_TOKEN_FILE" ] && [ -z "$BURROW_URL" ]; then BURROW_URL="http://127.0.0.1:8085"; fi
-  fi
-  if [ "$burrow_off" = 0 ] && [ -n "$BURROW_URL" ] && [ -n "$BURROW_TOKEN_FILE" ]; then
-    # Both land inside "..." in run-server.sh, so these would break or inject.
-    case "$BURROW_URL$BURROW_TOKEN_FILE" in
-      *[\"\$\`\\]*) die "GM_BURROW_URL and GM_BURROW_TOKEN_FILE must not contain a double quote, dollar sign, backtick or backslash" ;;
-    esac
-    BURROW_ENV="export GOPHERMIND_BURROW_URL=\"$BURROW_URL\"
-export GOPHERMIND_BURROW_TOKEN_FILE=\"$BURROW_TOKEN_FILE\""
-  fi
 
   # The wrapper reads the token with a read loop, not `source`, so a literal $
   # in a secret is not expanded.
