@@ -32,11 +32,17 @@ func ChatToolsFrom(ctx context.Context) []tools.Tool {
 type chatTools struct {
 	bm *briefManager
 	h  *harness // may be nil
+	// burrow, when non-nil, adds the burrow_lookup tool.
+	burrow *burrowClient
 }
 
 // all returns the tools.
 func (c *chatTools) all() []tools.Tool {
-	return []tools.Tool{c.briefsList(), c.briefState(), c.questionsPending(), c.harnessState(), c.briefArtifact(), c.runsDigest(), c.briefCreate(), c.briefAnswer(), c.briefStop(), c.briefResubmit()}
+	ts := []tools.Tool{c.briefsList(), c.briefState(), c.questionsPending(), c.harnessState(), c.briefArtifact(), c.runsDigest(), c.briefCreate(), c.briefAnswer(), c.briefStop(), c.briefResubmit()}
+	if c.burrow != nil {
+		ts = append(ts, c.burrowLookupTool())
+	}
+	return ts
 }
 
 // capOutput keeps the tail of s within max bytes. When it cuts, the result ends

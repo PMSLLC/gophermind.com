@@ -315,6 +315,11 @@ type Options struct {
 	// HarnessBriefs, when set with BriefsDir, is a folder of example briefs the
 	// harness (/app/harness) runs again and again until each has passed once.
 	HarnessBriefs string
+	// BurrowURL and BurrowTokenFile, when both are set (and BriefsDir is), give
+	// the chat the read-only burrow_lookup tool. The token is read from the
+	// file on every call and never logged.
+	BurrowURL       string
+	BurrowTokenFile string
 	// BriefCommand builds the process for one gophermind invocation (args
 	// exclude the program name). Nil runs `gophermind` directly; a deployment
 	// that runs briefs as another user wraps it (see docs/SERVER-SETUP.md).
@@ -458,6 +463,9 @@ func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 		// HarnessBriefs its API answers 404 and the page says so.
 		mux.HandleFunc("GET /app/harness", pageHandler("assets/harness.html"))
 		ct = &chatTools{bm: bm}
+		if opt.BurrowURL != "" && opt.BurrowTokenFile != "" {
+			ct.burrow = newBurrowClient(opt.BurrowURL, opt.BurrowTokenFile)
+		}
 		if opt.HarnessBriefs != "" {
 			h := newHarness(bm, opt.HarnessBriefs)
 			ct.h = h
