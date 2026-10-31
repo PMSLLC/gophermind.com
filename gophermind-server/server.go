@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"sync"
 	"time"
 
 	"gophermind/gophermind-lib/agent"
@@ -53,16 +54,30 @@ func buildDeps(cfg serverConfig, root string, logger *slog.Logger) (serve.Deps, 
 	// a turn); ErrNoModel then correctly rejects Run/Stream/SessionTurn
 	// calls with a clear error instead of this function refusing to start
 	// the whole server over it.
-	if cfg.LLMEndpoint != "" {
+	// discoverMu serialises the lookup so a turn only ever reads client.Model
+	// after the write that set it. The model server can come up after this one
+	// (launchd starts both at login), so the lookup is repeated at the start of
+	// every turn until it succeeds, not tried once at startup.
+	var discoverMu sync.Mutex
+	ensureModel := func() {
+		if cfg.LLMEndpoint == "" {
+			return
+		}
+		discoverMu.Lock()
+		defer discoverMu.Unlock()
+		if client.Model != "" {
+			return
+		}
 		discoverCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		model, err := client.DiscoverModel(discoverCtx)
 		cancel()
 		if err != nil {
-			logger.Warn("model discovery failed; Run/Stream/SessionTurn will error until this is fixed", "error", err)
-		} else {
-			client.Model = model
+			logger.Warn("model discovery failed; turns will error until this is fixed", "error", err)
+			return
 		}
+		client.Model = model
 	}
+	ensureModel()
 
 	// newRegistryAt builds a tool set rooted at dir. Every tool captures its
 	// root at construction -- ReadFileRange, WriteFile and RunShellEnhanced
@@ -109,6 +124,7 @@ func buildDeps(cfg serverConfig, root string, logger *slog.Logger) (serve.Deps, 
 	}
 
 	run := func(ctx context.Context, task string) (string, error) {
+		ensureModel()
 		ag := agent.New(client, reg, llmMaxIter, safety.ApprovalFunc(safety.Auto), nil)
 		ag.SetSystemPrompt(basePrompt)
 		if systemSuffix != "" {
@@ -122,6 +138,7 @@ func buildDeps(cfg serverConfig, root string, logger *slog.Logger) (serve.Deps, 
 	}
 
 	stream := func(ctx context.Context, task string, emit func(string)) error {
+		ensureModel()
 		ag := agent.New(client, reg, llmMaxIter, safety.ApprovalFunc(safety.Auto), func(e agent.Event) {
 			if e.Type == "token" {
 				emit(e.Text)
@@ -136,6 +153,7 @@ func buildDeps(cfg serverConfig, root string, logger *slog.Logger) (serve.Deps, 
 	}
 
 	sessionTurn := func(ctx context.Context, id, task string, emit func(event, data string) error) error {
+		ensureModel()
 		onEvent := func(e agent.Event) {
 			event, data, ok := serve.SSEFramesForAgentEvent(e)
 			if !ok {
