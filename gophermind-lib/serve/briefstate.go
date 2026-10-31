@@ -453,6 +453,12 @@ type BriefListItem struct {
 // list handles GET /app/api/briefs: runs this server launched plus any other
 // run folder under the root, newest first.
 func (m *briefManager) list(w http.ResponseWriter, r *http.Request) {
+	out, active := m.listItems()
+	briefJSON(w, http.StatusOK, map[string]any{"schema_version": BriefStateVersion, "active_run_id": active, "runs": out})
+}
+
+// listItems returns every known run, newest first, and the active run's id.
+func (m *briefManager) listItems() ([]BriefListItem, string) {
 	items := map[string]*BriefListItem{}
 	if ents, err := readDirNames(m.dir); err == nil {
 		for _, id := range ents {
@@ -489,7 +495,7 @@ func (m *briefManager) list(w http.ResponseWriter, r *http.Request) {
 		}
 		return out[i].ID > out[j].ID
 	})
-	briefJSON(w, http.StatusOK, map[string]any{"schema_version": BriefStateVersion, "active_run_id": active, "runs": out})
+	return out, active
 }
 
 func nonNilStrings(s []string) []string {
