@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"gophermind/gophermind-lib/runview/runviewtest"
 	"gophermind/gophermind-lib/tools"
 )
 
@@ -259,5 +260,83 @@ func TestQuestionsPendingStoreRecommended(t *testing.T) {
 	}
 	if !strings.Contains(out, "question: s1") || !strings.Contains(out, "default: yes") || !strings.Contains(out, "a | b") {
 		t.Errorf("store question:\n%s", out)
+	}
+}
+
+func runTool(t *testing.T, c *chatTools, name string, args map[string]any) (string, error) {
+	t.Helper()
+	raw, _ := json.Marshal(args)
+	return findTool(t, c, name).Run(context.Background(), raw)
+}
+
+func TestBriefArtifactListsThenReads(t *testing.T) {
+	c, _ := chatToolsEnv(t)
+	f := runviewtest.Build(t, c.bm.root, runviewtest.Verified)
+	out, err := runTool(t, c, "brief_artifact", map[string]any{"id": f.RunID})
+	if err != nil || !strings.Contains(out, "fn-greet") {
+		t.Fatalf("node list: %q, %v", out, err)
+	}
+	out, err = runTool(t, c, "brief_artifact", map[string]any{"id": f.RunID, "node": "fn-greet"})
+	if err != nil || !strings.Contains(out, "1") || !strings.Contains(out, "check-output.txt") {
+		t.Fatalf("artifact list: %q, %v", out, err)
+	}
+	out, err = runTool(t, c, "brief_artifact", map[string]any{"id": f.RunID, "node": "fn-greet", "attempt": 1, "file": "check-output.txt"})
+	if err != nil || !strings.Contains(out, "undefined: name") {
+		t.Fatalf("content: %q, %v", out, err)
+	}
+}
+
+func TestBriefArtifactRejectsTraversal(t *testing.T) {
+	c, _ := chatToolsEnv(t)
+	f := runviewtest.Build(t, c.bm.root, runviewtest.Verified)
+	if _, err := runTool(t, c, "brief_artifact", map[string]any{"id": f.RunID, "node": "fn-greet", "attempt": 1, "file": "../../run.json"}); err == nil {
+		t.Error("file traversal accepted")
+	}
+	if _, err := runTool(t, c, "brief_artifact", map[string]any{"id": f.RunID, "node": "../x", "attempt": 1, "file": "reply.txt"}); err == nil {
+		t.Error("node traversal accepted")
+	}
+	if _, err := runTool(t, c, "brief_artifact", map[string]any{"id": "../x"}); err == nil {
+		t.Error("id traversal accepted")
+	}
+}
+
+func TestRunsDigestGroupsSameReason(t *testing.T) {
+	c, _ := chatToolsEnv(t)
+	runviewtest.BuildID(t, c.bm.root, "gm-2026-10-08-001", runviewtest.Failed)
+	runviewtest.BuildID(t, c.bm.root, "gm-2026-10-08-002", runviewtest.Failed)
+	runviewtest.BuildID(t, c.bm.root, "gm-2026-10-08-003", runviewtest.Verified)
+	out, err := runTool(t, c, "runs_digest", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(out, "TestBye failed") != 1 {
+		t.Errorf("want one group for the shared reason:\n%s", out)
+	}
+	for _, want := range []string{"count 2", "gm-2026-10-08-001", "gm-2026-10-08-002", "fn-bye"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRunsDigestLimit(t *testing.T) {
+	c, _ := chatToolsEnv(t)
+	runviewtest.BuildID(t, c.bm.root, "gm-2026-10-08-001", runviewtest.Failed)
+	runviewtest.BuildID(t, c.bm.root, "gm-2026-10-08-002", runviewtest.Failed)
+	runviewtest.BuildID(t, c.bm.root, "gm-2026-10-08-003", runviewtest.Failed)
+	out, err := runTool(t, c, "runs_digest", map[string]any{"limit": 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "count 2") || strings.Contains(out, "gm-2026-10-08-001") {
+		t.Errorf("limit 2 should cover only the two newest:\n%s", out)
+	}
+}
+
+func TestRunsDigestNoRuns(t *testing.T) {
+	c, _ := chatToolsEnv(t)
+	out, err := runTool(t, c, "runs_digest", nil)
+	if err != nil || out != "no runs" {
+		t.Errorf("got %q, %v", out, err)
 	}
 }

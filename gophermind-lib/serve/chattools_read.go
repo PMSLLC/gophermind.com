@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"gophermind/gophermind-lib/runview"
@@ -184,6 +185,194 @@ func (c *chatTools) harnessState() tools.Tool {
 				fmt.Fprintf(&b, "  %s\t%s\tattempts %d\tpasses %d\tlast %s %s\n", hb.File, hb.Title, hb.Attempts, hb.Passes, hb.LastRun, hb.LastPhase)
 			}
 			return c.clean(b.String()), nil
+		},
+	}
+}
+
+// briefArtifact lists a run's nodes, a node's saved attempt files, or returns
+// one file's text.
+func (c *chatTools) briefArtifact() tools.Tool {
+	return tools.Tool{
+		Name:        "brief_artifact",
+		Description: "Read what a brief run saved. With only id: list its nodes. With node: list its attempts and files. With node, attempt and file: return that file (reply.go, reply.txt, check-output.txt or attempt.json).",
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"id":      map[string]any{"type": "string", "description": "the brief run id, as listed by briefs_list"},
+				"node":    map[string]any{"type": "string", "description": "a node id from the node list"},
+				"attempt": map[string]any{"type": "integer", "description": "attempt number, 1 or more"},
+				"file":    map[string]any{"type": "string", "description": "one of the file names listed for the attempt"},
+			},
+			"required":             []string{"id"},
+			"additionalProperties": false,
+		},
+		Run: func(ctx context.Context, raw json.RawMessage) (string, error) {
+			var a struct {
+				ID      string `json:"id"`
+				Node    string `json:"node"`
+				Attempt int    `json:"attempt"`
+				File    string `json:"file"`
+			}
+			if err := json.Unmarshal(raw, &a); err != nil {
+				return "", fmt.Errorf("brief_artifact: bad arguments: %w", err)
+			}
+			if !validBriefID(a.ID) || !runview.ValidRunID(a.ID) {
+				return "", fmt.Errorf("brief_artifact: %q is not a valid brief id", a.ID)
+			}
+			if a.Node == "" {
+				st, err := c.bm.buildState(a.ID)
+				if err != nil {
+					return "", fmt.Errorf("brief_artifact: no such brief %q", a.ID)
+				}
+				var b strings.Builder
+				for _, n := range st.Nodes {
+					fmt.Fprintf(&b, "%s\t%s\t%s\n", n.ID, n.Status, n.Title)
+				}
+				return c.clean(strings.TrimRight(b.String(), "\n")), nil
+			}
+			if !runview.ValidNodeID(a.Node) {
+				return "", fmt.Errorf("brief_artifact: %q is not a valid node id", a.Node)
+			}
+			v, err := runview.Open(runRoot(c.bm.repos, c.bm.root, a.ID), a.ID)
+			if err != nil {
+				return "", fmt.Errorf("brief_artifact: no such brief %q", a.ID)
+			}
+			if a.File == "" {
+				ents := v.ArtifactNames(a.Node)
+				if len(ents) == 0 {
+					return "no saved attempts for that node", nil
+				}
+				var b strings.Builder
+				for _, e := range ents {
+					fmt.Fprintf(&b, "attempt %d: %s\n", e.Attempt, strings.Join(e.Files, " "))
+				}
+				return c.clean(strings.TrimRight(b.String(), "\n")), nil
+			}
+			if a.Attempt < 1 || !runview.ValidArtifactName(a.File) {
+				return "", fmt.Errorf("brief_artifact: attempt must be 1 or more and file one of the listed names")
+			}
+			text, err := v.Artifact(a.Node, a.Attempt, a.File)
+			if err != nil {
+				return "", fmt.Errorf("brief_artifact: no such file")
+			}
+			return c.clean(text), nil
+		},
+	}
+}
+
+// failGroup is one failure class in the digest.
+type failGroup struct {
+	reason string
+	runs   []string
+	nodes  []string
+	count  int
+}
+
+// failureOf is the text a failed node is grouped by: the failure reason of its
+// last attempt that did not pass (BriefAttempt.FailureReason), with the
+// malformed class and rule (BriefAttempt.MalformedReason) appended when set.
+func failureOf(n BriefNode) string {
+	for i := len(n.Attempts) - 1; i >= 0; i-- {
+		at := n.Attempts[i]
+		if at.Outcome == "pass" {
+			continue
+		}
+		r := at.FailureReason
+		if at.MalformedReason != "" {
+			r += " [" + at.MalformedReason + "]"
+		}
+		if r != "" {
+			return r
+		}
+	}
+	return "(no failure reason recorded)"
+}
+
+// runsDigest groups failed nodes over the newest runs by failure reason.
+func (c *chatTools) runsDigest() tools.Tool {
+	return tools.Tool{
+		Name:        "runs_digest",
+		Description: "Digest of the newest brief runs: failed nodes grouped by failure reason (count, run ids, example nodes), then the runs that ended failed or interrupted with their error. Optional limit: runs to cover, default 20, max 50.",
+		Schema: map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{"limit": map[string]any{"type": "integer", "description": "how many of the newest runs to cover (default 20, max 50)"}},
+			"additionalProperties": false,
+		},
+		Run: func(ctx context.Context, raw json.RawMessage) (string, error) {
+			var a struct {
+				Limit int `json:"limit"`
+			}
+			if len(raw) > 0 {
+				if err := json.Unmarshal(raw, &a); err != nil {
+					return "", fmt.Errorf("runs_digest: bad arguments: %w", err)
+				}
+			}
+			if a.Limit <= 0 {
+				a.Limit = 20
+			}
+			if a.Limit > 50 {
+				a.Limit = 50
+			}
+			items, _ := c.bm.listItems()
+			if len(items) == 0 {
+				return "no runs", nil
+			}
+			if len(items) > a.Limit {
+				items = items[:a.Limit]
+			}
+			groups := map[string]*failGroup{}
+			var order []string
+			var ended strings.Builder
+			covered := 0
+			for _, it := range items {
+				if !validBriefID(it.ID) || !runview.ValidRunID(it.ID) {
+					continue
+				}
+				st, err := c.bm.buildState(it.ID)
+				if err != nil {
+					continue
+				}
+				covered++
+				for _, n := range st.Nodes {
+					if n.Status != "failed" {
+						continue
+					}
+					key := failureOf(n)
+					g := groups[key]
+					if g == nil {
+						g = &failGroup{reason: key}
+						groups[key] = g
+						order = append(order, key)
+					}
+					g.count++
+					if len(g.runs) == 0 || g.runs[len(g.runs)-1] != it.ID {
+						g.runs = append(g.runs, it.ID)
+					}
+					if len(g.nodes) < 3 {
+						g.nodes = append(g.nodes, n.ID)
+					}
+				}
+				if p := st.Run.Phase; p == phaseFailed || p == phaseInterrupted {
+					fmt.Fprintf(&ended, "%s\t%s\t%s\n", it.ID, p, st.Run.Error)
+				}
+			}
+			sort.SliceStable(order, func(i, j int) bool { return groups[order[i]].count > groups[order[j]].count })
+			var b strings.Builder
+			fmt.Fprintf(&b, "runs covered: %d\nfailure classes:\n", covered)
+			if len(order) == 0 {
+				b.WriteString("  none\n")
+			}
+			for _, k := range order {
+				g := groups[k]
+				fmt.Fprintf(&b, "  %s\n    count %d\n    runs: %s\n    example nodes: %s\n", g.reason, g.count, strings.Join(g.runs, ", "), strings.Join(g.nodes, ", "))
+			}
+			b.WriteString("runs that ended failed or interrupted:\n")
+			if ended.Len() == 0 {
+				b.WriteString("  none\n")
+			} else {
+				b.WriteString(ended.String())
+			}
+			return c.clean(strings.TrimRight(b.String(), "\n")), nil
 		},
 	}
 }

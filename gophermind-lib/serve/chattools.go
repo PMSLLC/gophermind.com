@@ -36,7 +36,7 @@ type chatTools struct {
 
 // all returns the tools.
 func (c *chatTools) all() []tools.Tool {
-	return []tools.Tool{c.briefsList(), c.briefState(), c.questionsPending(), c.harnessState()}
+	return []tools.Tool{c.briefsList(), c.briefState(), c.questionsPending(), c.harnessState(), c.briefArtifact(), c.runsDigest()}
 }
 
 // capOutput keeps the tail of s within max bytes. When it cuts, the result ends
