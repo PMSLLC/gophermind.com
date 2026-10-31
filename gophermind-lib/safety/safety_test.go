@@ -77,3 +77,16 @@ func TestCheckCommandWhitespaceBypass(t *testing.T) {
 		}
 	}
 }
+
+func TestGatedBriefWriteTools(t *testing.T) {
+	for _, n := range []string{"brief_create", "brief_answer", "brief_stop", "brief_resubmit"} {
+		if !Gated(n) {
+			t.Errorf("%s must be gated", n)
+		}
+	}
+	for _, n := range []string{"briefs_list", "brief_state", "brief_artifact", "questions_pending", "harness_state", "runs_digest"} {
+		if Gated(n) {
+			t.Errorf("read tool %s must not be gated", n)
+		}
+	}
+}

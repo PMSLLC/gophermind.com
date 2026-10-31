@@ -151,7 +151,7 @@ func Gated(tool string) bool {
 		return true
 	}
 	switch tool {
-	case "write_file", "edit_file", "run_shell", "move_file", "delete_file", "mkdir", "apply_patch", "fetch_url", "http_request", "create_migration", "set_csv_cell", "write_xlsx", "invalidate_fact":
+	case "write_file", "edit_file", "run_shell", "move_file", "delete_file", "mkdir", "apply_patch", "fetch_url", "http_request", "create_migration", "set_csv_cell", "write_xlsx", "invalidate_fact", "brief_create", "brief_answer", "brief_stop", "brief_resubmit":
 		return true
 	default:
 		return false
