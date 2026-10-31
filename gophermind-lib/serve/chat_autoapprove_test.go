@@ -72,6 +72,7 @@ for (const b of briefs) assert.strictEqual(shouldAutoApprove(true, b, false), fa
 assert.strictEqual(shouldAutoApprove(true, 'run_shell', true), false);
 assert.strictEqual(shouldAutoApprove(true, 'brief_state', false), true);
 assert.strictEqual(shouldAutoApprove(true, 'BRIEF_CREATE', false), false);
+for (const bad of [undefined, '', null, 42]) assert.strictEqual(shouldAutoApprove(true, bad, false), false, String(bad));
 console.log('ok');
 `
 	f := filepath.Join(t.TempDir(), "t.js")

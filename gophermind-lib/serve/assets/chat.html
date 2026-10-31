@@ -29,7 +29,7 @@
     <button id="autoOff" type="button">Turn off</button>
   </div>
   <form id="form">
-    <label class="autotoggle"><input type="checkbox" id="autoApprove"> Auto approve</label>
+    <label class="autotoggle"><input type="checkbox" id="autoApprove" autocomplete="off"> Auto approve</label>
     <textarea id="input" rows="2" placeholder="Message GopherMind (Enter sends, Shift+Enter for a new line)"></textarea>
     <button id="sendBtn" type="submit">Send</button>
   </form>
@@ -52,7 +52,8 @@ let busy = false;
 const BRIEF_ACTIONS = ['brief_create', 'brief_answer', 'brief_stop', 'brief_resubmit'];
 function shouldAutoApprove(autoOn, tool, truncated){
   if(autoOn !== true || truncated) return false;
-  return BRIEF_ACTIONS.indexOf(String(tool == null ? '' : tool).toLowerCase()) < 0;
+  if(typeof tool !== 'string' || tool === '') return false;
+  return BRIEF_ACTIONS.indexOf(tool.toLowerCase()) < 0;
 }
 /*GM_AUTO_END*/
 
@@ -163,10 +164,10 @@ async function approve(box, id, ok){
       body: JSON.stringify({ approval_id: id, approved: ok })
     });
     box.appendChild(el('div', null, r.ok ? (ok ? 'approved' : 'denied') : 'approval failed: ' + r.status));
-    return r.ok;
+    return r.ok ? 'ok' : 'failed';
   } catch(err){
     box.appendChild(el('div', 'err', 'approval failed: ' + err.message));
-    return false;
+    return 'network';
   }
 }
 
@@ -199,9 +200,10 @@ function approvalArgs(raw){
   return { text: truncated ? s.slice(0, 200000) : s, truncated: truncated, total: total };
 }
 
-function addApproval(ev){
+function addApproval(ev, note){
   const box = el('div', 'approval');
   box.appendChild(el('div', null, 'Approval needed to run ' + ev.tool));
+  if(note) box.appendChild(el('div', 'err', note));
   const shown = approvalArgs(ev.args);
   if(shown.truncated){
     box.appendChild(el('div', null, 'TRUNCATED: showing the first 200000 of ' + shown.total + ' characters. Approve is disabled because the full arguments cannot be reviewed.'));
@@ -223,16 +225,20 @@ function addApproval(ev){
 // normal card is shown so the call can be approved or denied by hand.
 async function autoApprove(ev){
   const box = el('details', 'approval auto');
-  const sum = el('summary', null, 'Auto approved: ' + ev.tool);
+  const sum = el('summary', null, 'Auto approving: ' + ev.tool);
   box.appendChild(sum);
   box.appendChild(el('pre', null, approvalArgs(ev.args).text));
   logEl.appendChild(box);
   logEl.scrollTop = logEl.scrollHeight;
-  const ok = await approve(box, ev.approval_id, true);
-  if(!ok){
-    sum.textContent = 'Auto approve failed: ' + ev.tool;
-    addApproval(ev);
+  const res = await approve(box, ev.approval_id, true);
+  if(res === 'ok'){
+    sum.textContent = 'Auto approved: ' + ev.tool;
+    return;
   }
+  sum.textContent = 'Auto approve failed: ' + ev.tool;
+  addApproval(ev, res === 'network'
+    ? 'The auto approval request failed in transit. It may already have been applied, so Deny might not stop the call.'
+    : null);
 }
 
 function parseJSON(s){
@@ -364,6 +370,9 @@ $('newBtn').addEventListener('click', () => {
 
 $('autoApprove').addEventListener('change', e => setAuto(e.target.checked));
 $('autoOff').addEventListener('click', () => setAuto(false));
+// A restored page (back/forward cache) must not keep Auto approve on.
+window.addEventListener('pageshow', e => { if(e.persisted) setAuto(false); });
+setAuto(false);
 
 loadSessions();
 </script>
