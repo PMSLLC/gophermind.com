@@ -252,51 +252,80 @@ func (m *briefManager) answerHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	remaining, err := m.answerText(id, req.QuestionID, text)
+	var notWaiting *briefNotWaitingError
+	var busy *briefBusyError
+	switch {
+	case errors.Is(err, errNoSuchRun):
+		briefError(w, http.StatusNotFound, "no such run", nil)
+	case errors.As(err, &notWaiting):
+		briefError(w, http.StatusConflict, "run is not waiting for answers", map[string]any{"phase": notWaiting.phase})
+	case errors.Is(err, errNoSuchQuestion):
+		briefError(w, http.StatusNotFound, "no such open question", nil)
+	case errors.Is(err, errResumeFailed) && errors.As(err, &busy):
+		// Another run holds the slot: the answers are saved, and the run
+		// resumes by itself when that run ends (resumeAnswered).
+		briefJSON(w, http.StatusOK, map[string]any{"run_id": id, "saved": true, "resumed": false, "remaining": 0,
+			"queued": true, "active_run_id": busy.activeID})
+	case errors.Is(err, errResumeFailed):
+		briefError(w, http.StatusInternalServerError, "cannot resume the run", nil)
+	case errors.Is(err, os.ErrNotExist):
+		briefError(w, http.StatusConflict, "run is not waiting for answers", nil)
+	case err != nil:
+		briefError(w, http.StatusInternalServerError, "cannot save the answer", nil)
+	case remaining > 0:
+		briefJSON(w, http.StatusOK, map[string]any{"run_id": id, "saved": true, "resumed": false, "remaining": remaining})
+	default:
+		briefJSON(w, http.StatusAccepted, map[string]any{"run_id": id, "saved": true, "resumed": true, "remaining": 0})
+	}
+}
+
+// briefNotWaitingError is an answer sent to a run that is not waiting.
+type briefNotWaitingError struct{ phase string }
+
+func (e *briefNotWaitingError) Error() string { return "run is not waiting for answers" }
+
+// errResumeFailed wraps the error from resuming a run after its last answer.
+// The answer itself was saved. A *briefBusyError inside means the run is
+// queued behind the active one.
+var errResumeFailed = errors.New("cannot resume the run")
+
+type resumeError struct{ err error }
+
+func (e *resumeError) Error() string   { return errResumeFailed.Error() + ": " + e.err.Error() }
+func (e *resumeError) Unwrap() []error { return []error{errResumeFailed, e.err} }
+
+// answerText fills the question's block in the run's QUESTIONS.md and, when
+// no block is left empty, resumes planning. text must already be cleaned (see
+// answerHandler). Errors: errNoSuchRun, *briefNotWaitingError,
+// errNoSuchQuestion, os.ErrNotExist, or a resume failure (errResumeFailed,
+// with a *briefBusyError inside when the run is queued; remaining is then 0).
+func (m *briefManager) answerText(id, qid, text string) (remaining int, err error) {
 	m.answerMu.Lock()
 	defer m.answerMu.Unlock()
 	rec, ok := m.readRecord(id)
 	if !ok {
-		briefError(w, http.StatusNotFound, "no such run", nil)
-		return
+		return 0, errNoSuchRun
 	}
 	if rec.Phase != phaseWaiting {
-		briefError(w, http.StatusConflict, "run is not waiting for answers", map[string]any{"phase": rec.Phase})
-		return
+		return 0, &briefNotWaitingError{rec.Phase}
 	}
-	remaining, err := writeGateAnswer(m.repoFor(id), id, req.QuestionID, text)
+	remaining, err = writeGateAnswer(m.repoFor(id), id, qid, text)
 	if errors.Is(err, os.ErrPermission) {
 		// The run folder belongs to the run user: let it write its own file.
-		remaining, err = m.writeAnswerAs(id, req.QuestionID, text)
+		remaining, err = m.writeAnswerAs(id, qid, text)
 	}
-	switch {
-	case errors.Is(err, errNoSuchQuestion):
-		briefError(w, http.StatusNotFound, "no such open question", nil)
-		return
-	case errors.Is(err, os.ErrNotExist):
-		briefError(w, http.StatusConflict, "run is not waiting for answers", nil)
-		return
-	case err != nil:
-		briefError(w, http.StatusInternalServerError, "cannot save the answer", nil)
-		return
+	if err != nil {
+		return 0, err
 	}
-	m.log.Info("brief answer saved", "run_id", id, "question_id", req.QuestionID, "remaining", remaining)
+	m.log.Info("brief answer saved", "run_id", id, "question_id", qid, "remaining", remaining)
 	if remaining > 0 {
-		briefJSON(w, http.StatusOK, map[string]any{"run_id": id, "saved": true, "resumed": false, "remaining": remaining})
-		return
+		return remaining, nil
 	}
 	if err := m.resume(rec); err != nil {
-		// Another run holds the slot: the answers are saved, and the run
-		// resumes by itself when that run ends (resumeAnswered).
-		var busy *briefBusyError
-		if errors.As(err, &busy) {
-			briefJSON(w, http.StatusOK, map[string]any{"run_id": id, "saved": true, "resumed": false, "remaining": 0,
-				"queued": true, "active_run_id": busy.activeID})
-			return
-		}
-		briefError(w, http.StatusInternalServerError, "cannot resume the run", nil)
-		return
+		return 0, &resumeError{err}
 	}
-	briefJSON(w, http.StatusAccepted, map[string]any{"run_id": id, "saved": true, "resumed": true, "remaining": 0})
+	return 0, nil
 }
 
 // resumeAnswered resumes the oldest run that waits with every question

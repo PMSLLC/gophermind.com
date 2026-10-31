@@ -582,37 +582,81 @@ func (m *briefManager) withFreshID(src []byte) (*brief.Brief, []byte, error) {
 	return b, src, err
 }
 
+// Errors the create and resubmit helpers return, so a caller (the HTTP
+// handlers or the chat tools) can tell the cases apart.
+var (
+	errNoSuchRun     = errors.New("no such run")
+	errNoStoredBrief = errors.New("no stored brief for this run")
+)
+
+// briefInvalidError is a brief that failed validation. extra is the JSON
+// detail the HTTP reply carries (problems, repo_root), nil when none.
+type briefInvalidError struct {
+	msg   string
+	extra map[string]any
+}
+
+func (e *briefInvalidError) Error() string { return e.msg }
+
+// briefResubmitError is a failure to give a brief a fresh id.
+type briefResubmitError struct{ err error }
+
+func (e *briefResubmitError) Error() string { return "cannot resubmit: " + e.err.Error() }
+func (e *briefResubmitError) Unwrap() error { return e.err }
+
 // resubmitHandler handles POST /app/briefs/{id}/resubmit: the stored brief of
 // an earlier run goes in again under the next free id.
 func (m *briefManager) resubmitHandler(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
+	rec, warnings, err := m.resubmitWarn(r.PathValue("id"))
+	m.startReply(w, rec, warnings, err)
+}
+
+// resubmitID starts the stored brief of an earlier run again under the next
+// free id.
+func (m *briefManager) resubmitID(id string) (briefRecord, error) {
+	rec, _, err := m.resubmitWarn(id)
+	return rec, err
+}
+
+func (m *briefManager) resubmitWarn(id string) (briefRecord, []brief.Problem, error) {
 	if !runview.ValidRunID(id) {
-		briefError(w, http.StatusNotFound, "no such run", nil)
-		return
+		return briefRecord{}, nil, errNoSuchRun
 	}
 	src, err := readSmallFile(filepath.Join(m.runDir(id), "brief.md"), maxBriefBytes)
 	if err != nil {
-		briefError(w, http.StatusNotFound, "no stored brief for this run", nil)
-		return
+		return briefRecord{}, nil, errNoStoredBrief
 	}
 	b, src, err := m.withFreshID(src)
 	if err != nil {
-		briefError(w, http.StatusInternalServerError, "cannot resubmit: "+err.Error(), nil)
-		return
+		return briefRecord{}, nil, &briefResubmitError{err}
 	}
-	rec, _ := m.readRecord(id)
-	m.startReply(w, b, src, rec.Ask, brief.Lint(src))
+	old, _ := m.readRecord(id)
+	rec, err := m.start(b, src, old.Ask)
+	if errors.Is(err, errBriefExists) {
+		rec.ID = b.Front.ID
+	}
+	return rec, brief.Lint(src), err
 }
 
-// startReply starts the run and writes the response for create and resubmit.
-func (m *briefManager) startReply(w http.ResponseWriter, b *brief.Brief, src []byte, ask bool, warnings []brief.Problem) {
-	rec, err := m.start(b, src, ask)
+// startReply writes the response for create and resubmit: the error mapped to
+// its status, or 202 with the new run.
+func (m *briefManager) startReply(w http.ResponseWriter, rec briefRecord, warnings []brief.Problem, err error) {
 	var busy *briefBusyError
+	var invalid *briefInvalidError
+	var resub *briefResubmitError
 	switch {
+	case errors.Is(err, errNoSuchRun):
+		briefError(w, http.StatusNotFound, "no such run", nil)
+	case errors.Is(err, errNoStoredBrief):
+		briefError(w, http.StatusNotFound, "no stored brief for this run", nil)
+	case errors.As(err, &invalid):
+		briefError(w, http.StatusBadRequest, invalid.msg, invalid.extra)
+	case errors.As(err, &resub):
+		briefError(w, http.StatusInternalServerError, resub.Error(), nil)
 	case errors.As(err, &busy):
 		briefError(w, http.StatusConflict, "a run is already active", map[string]any{"active_run_id": busy.activeID})
 	case errors.Is(err, errBriefExists):
-		briefError(w, http.StatusConflict, "a run with this id already exists", map[string]any{"run_id": b.Front.ID})
+		briefError(w, http.StatusConflict, "a run with this id already exists", map[string]any{"run_id": rec.ID})
 	case err != nil:
 		briefError(w, http.StatusInternalServerError, "cannot start the run", nil)
 	default:
@@ -632,40 +676,52 @@ func (m *briefManager) create(w http.ResponseWriter, r *http.Request) {
 		briefError(w, code, msg, nil)
 		return
 	}
+	rec, warnings, err := m.createTextOpt(src, r.URL.Query().Get("ask") == "1", r.URL.Query().Get("resubmit") == "1")
+	m.startReply(w, rec, warnings, err)
+}
+
+// createText validates a brief and starts its run. Invalid briefs come back as
+// *briefInvalidError, a busy slot as *briefBusyError, a used id as errBriefExists.
+func (m *briefManager) createText(src []byte, ask bool) (rec briefRecord, warnings []brief.Problem, err error) {
+	return m.createTextOpt(src, ask, false)
+}
+
+// createTextOpt is createText; resubmit moves a brief whose id is already used
+// to the next free id instead of refusing it.
+func (m *briefManager) createTextOpt(src []byte, ask, resubmit bool) (briefRecord, []brief.Problem, error) {
 	if probs := brief.Check(src); len(probs) > 0 {
 		summary := "invalid brief: " + probs[0].String()
 		if n := len(probs) - 1; n > 0 {
 			summary += fmt.Sprintf(" (and %d more)", n)
 		}
-		briefError(w, http.StatusBadRequest, summary, map[string]any{"problems": probs})
-		return
+		return briefRecord{}, nil, &briefInvalidError{summary, map[string]any{"problems": probs}}
 	}
 	b, err := brief.Parse(src)
 	if err != nil {
-		briefError(w, http.StatusBadRequest, "invalid brief: "+err.Error(), nil)
-		return
+		return briefRecord{}, nil, &briefInvalidError{"invalid brief: " + err.Error(), nil}
 	}
 	if !runview.ValidRunID(b.Front.ID) {
-		briefError(w, http.StatusBadRequest, "invalid brief: id must look like gm-YYYY-MM-DD-NNN", nil)
-		return
+		return briefRecord{}, nil, &briefInvalidError{"invalid brief: id must look like gm-YYYY-MM-DD-NNN", nil}
 	}
 	// The run folder is made inside the brief's repo; this server only shows
 	// folders under its own root, so any other repo would run unseen.
 	if m.repos == "" && (!filepath.IsAbs(b.Front.Repo) || !sameDir(b.Front.Repo, m.root)) {
-		briefError(w, http.StatusBadRequest,
-			"invalid brief: repo must be the server's repo root, "+m.root, map[string]any{"repo_root": m.root})
-		return
+		return briefRecord{}, nil, &briefInvalidError{
+			"invalid brief: repo must be the server's repo root, " + m.root, map[string]any{"repo_root": m.root}}
 	}
-	if r.URL.Query().Get("resubmit") == "1" {
+	if resubmit {
 		if _, err := os.Lstat(m.runDir(b.Front.ID)); err == nil {
 			var ferr error
 			if b, src, ferr = m.withFreshID(src); ferr != nil {
-				briefError(w, http.StatusInternalServerError, "cannot resubmit: "+ferr.Error(), nil)
-				return
+				return briefRecord{}, nil, &briefResubmitError{ferr}
 			}
 		}
 	}
-	m.startReply(w, b, src, r.URL.Query().Get("ask") == "1", brief.Lint(src))
+	rec, err := m.start(b, src, ask)
+	if errors.Is(err, errBriefExists) {
+		rec.ID = b.Front.ID
+	}
+	return rec, brief.Lint(src), err
 }
 
 // stopHandler handles POST /app/briefs/{id}/stop.
