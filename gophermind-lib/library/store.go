@@ -56,6 +56,8 @@ type meta struct {
 type Store struct {
 	dir string
 	now func() time.Time
+	// afterMkdir is a test hook run after a new version directory is made.
+	afterMkdir func() error
 
 	mu    sync.Mutex
 	locks map[string]*sync.Mutex
@@ -181,7 +183,7 @@ func (s *Store) metas(fdir string) ([]meta, error) {
 	}
 	var out []meta
 	for _, e := range ents {
-		if !e.IsDir() || versionRe.MatchString(e.Name()) == false {
+		if !e.IsDir() || !versionRe.MatchString(e.Name()) {
 			continue
 		}
 		m, err := readMeta(filepath.Join(fdir, e.Name()))
@@ -244,18 +246,48 @@ func (s *Store) Save(family, parent, label string, text []byte) (Version, error)
 	if err := os.MkdirAll(fdir, 0o755); err != nil {
 		return Version{}, err
 	}
+	// A directory with no valid meta.json is an orphan of a failed save. We
+	// hold the family lock and it is not in metas, so it is safe to reclaim.
+	if _, statErr := os.Lstat(vdir); statErr == nil {
+		if _, merr := readMeta(vdir); merr != nil {
+			if err := removeInside(fdir, vdir); err != nil {
+				return Version{}, err
+			}
+		}
+	}
 	if err := os.Mkdir(vdir, 0o755); err != nil {
 		return Version{}, err
 	}
 	m := meta{Family: family, Name: name, Parent: parent, Label: label,
 		Created: s.now().UTC().Format(time.RFC3339)}
-	if err := writeAtomic(filepath.Join(vdir, "brief.md"), text); err != nil {
-		return Version{}, err
-	}
-	if err := writeMeta(vdir, m); err != nil {
+	if err := s.fillVersion(vdir, m, text); err != nil {
+		if rerr := removeInside(fdir, vdir); rerr != nil {
+			err = errors.Join(err, rerr)
+		}
 		return Version{}, err
 	}
 	return m.version(), nil
+}
+
+func (s *Store) fillVersion(vdir string, m meta, text []byte) error {
+	if s.afterMkdir != nil {
+		if err := s.afterMkdir(); err != nil {
+			return err
+		}
+	}
+	if err := writeAtomic(filepath.Join(vdir, "brief.md"), text); err != nil {
+		return err
+	}
+	return writeMeta(vdir, m)
+}
+
+// removeInside deletes target, which must be an absolute path strictly inside base.
+func removeInside(base, target string) error {
+	if target == "" || base == "" || !filepath.IsAbs(target) || !filepath.IsAbs(base) ||
+		!strings.HasPrefix(filepath.Clean(target), filepath.Clean(base)+string(filepath.Separator)) {
+		return fmt.Errorf("refusing to remove %q outside %q", target, base)
+	}
+	return os.RemoveAll(filepath.Clean(target))
 }
 
 // Update rewrites a draft's text in place. A locked version returns ErrLocked.
@@ -302,12 +334,15 @@ func (s *Store) Get(family, name string) (Version, []byte, error) {
 
 // Lock marks a version immutable. Locking a locked version is a no-op.
 func (s *Store) Lock(family, name string) error {
-	return s.LockForRun(family, name, func() error { return nil })
+	return s.LockForRun(family, name, func(Version, []byte) error { return nil })
 }
 
-// LockForRun runs fn under the family lock and locks the version only if fn
-// returns nil. If fn fails its error is returned and the version stays a draft.
-func (s *Store) LockForRun(family, name string, fn func() error) error {
+// LockForRun reads the version under the family lock, passes it and its exact
+// text to fn, and locks the version only if fn returns nil. If fn fails its
+// error is returned and the version stays a draft. The text fn sees is the text
+// that gets locked. fn must not call back into the Store for the same family
+// (the family lock is held, so it would deadlock).
+func (s *Store) LockForRun(family, name string, fn func(v Version, text []byte) error) error {
 	vdir, err := s.verDir(family, name)
 	if err != nil {
 		return err
@@ -319,7 +354,11 @@ func (s *Store) LockForRun(family, name string, fn func() error) error {
 	if err != nil {
 		return ErrNoSuchVersion
 	}
-	if err := fn(); err != nil {
+	text, err := os.ReadFile(filepath.Join(vdir, "brief.md"))
+	if err != nil {
+		return ErrNoSuchVersion
+	}
+	if err := fn(m.version(), text); err != nil {
 		return err
 	}
 	if m.LockedAt != "" {

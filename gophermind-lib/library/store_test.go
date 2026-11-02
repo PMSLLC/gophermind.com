@@ -186,16 +186,16 @@ func TestLockForRun(t *testing.T) {
 	s, _ := newStore(t)
 	mustSave(t, s, "fam", "")
 	boom := errors.New("boom")
-	if err := s.LockForRun("fam", "v1", func() error { return boom }); !errors.Is(err, boom) {
+	if err := s.LockForRun("fam", "v1", func(Version, []byte) error { return boom }); !errors.Is(err, boom) {
 		t.Fatalf("got %v", err)
 	}
 	if v, _, _ := s.Get("fam", "v1"); v.Locked {
 		t.Fatal("locked after fn error")
 	}
-	if err := s.LockForRun("fam", "v9", func() error { return nil }); !errors.Is(err, ErrNoSuchVersion) {
+	if err := s.LockForRun("fam", "v9", func(Version, []byte) error { return nil }); !errors.Is(err, ErrNoSuchVersion) {
 		t.Fatalf("missing: %v", err)
 	}
-	if err := s.LockForRun("fam", "v1", func() error { return nil }); err != nil {
+	if err := s.LockForRun("fam", "v1", func(Version, []byte) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	if v, _, _ := s.Get("fam", "v1"); !v.Locked {
@@ -208,12 +208,13 @@ func TestLockForRunConcurrentUpdate(t *testing.T) {
 		s, dir := newStore(t)
 		mustSave(t, s, "fam", "")
 		var seen []byte
+		var seenV Version
 		var wg sync.WaitGroup
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			_ = s.LockForRun("fam", "v1", func() error {
-				seen, _ = os.ReadFile(filepath.Join(dir, "fam", "v1", "brief.md"))
+			_ = s.LockForRun("fam", "v1", func(v Version, text []byte) error {
+				seen, seenV = text, v
 				return nil
 			})
 		}()
@@ -228,8 +229,67 @@ func TestLockForRunConcurrentUpdate(t *testing.T) {
 		if err != nil || !v.Locked {
 			t.Fatalf("not locked: %v", err)
 		}
+		disk, _ := os.ReadFile(filepath.Join(dir, "fam", "v1", "brief.md"))
+		if !bytes.Equal(seen, disk) || seenV.Name != "v1" {
+			t.Fatalf("fn text %q differs from disk %q", seen, disk)
+		}
 		if !bytes.Equal(seen, text) {
 			t.Fatalf("bytes changed after lock: ran on %q, now %q", seen, text)
 		}
+	}
+}
+
+func TestLockForRunPassesStoredText(t *testing.T) {
+	s, _ := newStore(t)
+	if _, err := s.Save("fam", "", "l", []byte("exact\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	err := s.LockForRun("fam", "v1", func(v Version, text []byte) error {
+		called = true
+		if v.Name != "v1" || string(text) != "exact\r\n" {
+			t.Errorf("got %+v %q", v, text)
+		}
+		return nil
+	})
+	if err != nil || !called {
+		t.Fatalf("err %v called %v", err, called)
+	}
+}
+
+func TestFailedSaveCleansUp(t *testing.T) {
+	s, dir := newStore(t)
+	mustSave(t, s, "fam", "")
+	s.afterMkdir = func() error { return errors.New("disk full") }
+	if _, err := s.Save("fam", "v1", "l", []byte("x")); err == nil {
+		t.Fatal("expected error")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "fam", "v1.1")); !os.IsNotExist(err) {
+		t.Fatalf("orphan left: %v", err)
+	}
+	s.afterMkdir = nil
+	v, err := s.Save("fam", "v1", "l", []byte("x"))
+	if err != nil || v.Name != "v1.1" {
+		t.Fatalf("retry: %+v %v", v, err)
+	}
+}
+
+func TestOrphanDirReclaimed(t *testing.T) {
+	s, dir := newStore(t)
+	mustSave(t, s, "fam", "")
+	orphan := filepath.Join(dir, "fam", "v1.1")
+	if err := os.Mkdir(orphan, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(orphan, "junk"), []byte("j"), 0o644)
+	v, err := s.Save("fam", "v1", "l", []byte("fresh"))
+	if err != nil || v.Name != "v1.1" {
+		t.Fatalf("save: %+v %v", v, err)
+	}
+	if _, text, err := s.Get("fam", "v1.1"); err != nil || string(text) != "fresh" {
+		t.Fatalf("get: %q %v", text, err)
+	}
+	if _, err := os.Stat(filepath.Join(orphan, "junk")); !os.IsNotExist(err) {
+		t.Fatal("orphan contents survived")
 	}
 }
