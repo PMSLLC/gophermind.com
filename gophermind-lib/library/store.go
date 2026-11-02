@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -250,6 +251,9 @@ func (s *Store) Save(family, parent, label string, text []byte) (Version, error)
 	// hold the family lock and it is not in metas, so it is safe to reclaim.
 	if _, statErr := os.Lstat(vdir); statErr == nil {
 		if _, merr := readMeta(vdir); merr != nil {
+			if !errors.Is(merr, fs.ErrNotExist) {
+				return Version{}, fmt.Errorf("version directory %s has an unreadable meta.json, not reclaiming: %w", vdir, merr)
+			}
 			if err := removeInside(fdir, vdir); err != nil {
 				return Version{}, err
 			}

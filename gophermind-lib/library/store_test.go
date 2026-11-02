@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -291,5 +292,25 @@ func TestOrphanDirReclaimed(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(orphan, "junk")); !os.IsNotExist(err) {
 		t.Fatal("orphan contents survived")
+	}
+}
+
+func TestCorruptMetaNotReclaimed(t *testing.T) {
+	s, dir := newStore(t)
+	mustSave(t, s, "fam", "")
+	vd := filepath.Join(dir, "fam", "v1.1")
+	if err := os.Mkdir(vd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(vd, "brief.md"), []byte("precious"), 0o644)
+	os.WriteFile(filepath.Join(vd, "meta.json"), []byte("{trunc"), 0o644)
+	if _, err := s.Save("fam", "v1", "l", []byte("new")); err == nil || !strings.Contains(err.Error(), "v1.1") {
+		t.Fatalf("expected error naming dir, got %v", err)
+	}
+	if b, err := os.ReadFile(filepath.Join(vd, "brief.md")); err != nil || string(b) != "precious" {
+		t.Fatalf("brief lost: %q %v", b, err)
+	}
+	if _, err := os.Stat(filepath.Join(vd, "meta.json")); err != nil {
+		t.Fatalf("meta lost: %v", err)
 	}
 }
