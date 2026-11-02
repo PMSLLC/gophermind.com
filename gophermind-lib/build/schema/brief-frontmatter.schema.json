@@ -20,8 +20,9 @@
     },
     "id": {
       "type": "string",
+      "maxLength": 120,
       "pattern": "^(?:gm-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3}|[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+[a-z]?(?:\\.[0-9]+[a-z]?)*-[0-9]{8}-r[0-9]{3,})$",
-      "description": "gm-YYYY-MM-DD-NNN. Becomes the run ID, tree root ID, and work branch suffix."
+      "description": "gm-YYYY-MM-DD-NNN or <family>-<version>-<yyyymmdd>-rNNN (at most 120 characters). Becomes the run ID, tree root ID, and work branch suffix."
     },
     "title": {
       "type": "string",

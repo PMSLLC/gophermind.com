@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"regexp"
 	"strconv"
@@ -12,7 +11,11 @@ import (
 
 	"gophermind/gophermind-lib/build/brief"
 	"gophermind/gophermind-lib/library"
+	"gophermind/gophermind-lib/runview"
 )
+
+// stampedLine matches one id: or repo: frontmatter line with its line end.
+var stampedLine = regexp.MustCompile(`(?m)^(?:id|repo):.*\r?\n?`)
 
 // stampFront removes any id and repo lines from the frontmatter of src and
 // puts the given ones right after the opening --- line. The stored version
@@ -27,12 +30,14 @@ func stampFront(src []byte, id, repo string) []byte {
 		return src
 	}
 	head, rest := src[nl+1:nl+end+1], src[nl+end+1:]
-	head = frontIDLine.ReplaceAll(head, nil)
-	head = frontRepoLine.ReplaceAll(head, nil)
-	head = regexp.MustCompile(`(?m)^\n`).ReplaceAll(head, nil)
+	head = stampedLine.ReplaceAll(head, nil)
+	eol := "\n"
+	if nl > 0 && src[nl-1] == '\r' {
+		eol = "\r\n"
+	}
 	var out bytes.Buffer
 	out.Write(src[:nl+1])
-	fmt.Fprintf(&out, "id: %s\nrepo: %s\n", id, repo)
+	fmt.Fprintf(&out, "id: %s%srepo: %s%s", id, eol, repo, eol)
 	out.Write(head)
 	out.Write(rest)
 	return out.Bytes()
@@ -72,6 +77,9 @@ func (m *briefManager) startVersion(family, version string, ask bool) (briefReco
 			return err
 		}
 		id := library.RunName(family, version, day, n)
+		if !runview.ValidRunID(id) {
+			return &briefInvalidError{"run id " + id + " is not a valid run id (family and version names are too long)", nil}
+		}
 		stamped := stampFront(text, id, m.root)
 		b, err := brief.Parse(stamped)
 		if err != nil {
@@ -87,7 +95,10 @@ func (m *briefManager) startVersion(family, version string, ask bool) (briefReco
 		warnings = brief.Lint(stamped)
 		return nil
 	})
+	if err != nil && rec.Phase != "" {
+		// The run launched but the lock was not written: not silent.
+		m.log.Error("run started but version not locked", "run_id", rec.ID, "family", family, "version", version, "error", err.Error())
+		err = nil
+	}
 	return rec, warnings, err
 }
-
-var _ = fs.ErrNotExist
