@@ -120,26 +120,37 @@ The dry run (no flag) prints every `old -> new`, the families, skipped run recor
 
 The local server is the launchd agent `com.gophermind.local.server` (`scripts/local-service.sh` has install, status, restart and uninstall but no stop). The paths below are the local install's.
 
+Migrate before the new server runs. Installing the new server and then uploading a brief or resubmitting a run creates library versions, and after that `--apply` refuses with "already migrated". The installed `gophermind` on PATH (`/opt/homebrew/bin/gophermind`) is the old release and has no `migrate-library` subcommand, so build the current binary from this repo and run that.
+
 1. Stop the server so it does not answer `/healthz`: `launchctl bootout "gui/$(id -u)/com.gophermind.local.server"`. Check with `bash scripts/local-service.sh status` (`agent: not loaded`). Wait for any live run to finish first.
-2. Make unreadable files readable. The real tree has one: `repos/gm-2026-10-30-054/.gophermind/gm-2026-10-30-054-scratch/.../noaccess`. The backup cannot copy it, so `--apply` refuses until its mode is fixed (`chmod u+r` on that file, and `u+rx` on a directory). The dry run lists every such path.
-3. Dry run, and read the output:
+2. Build the migration binary from the repo root (the checkout you are about to install) into a fresh temporary folder, and check it has the subcommand:
 
    ```
-   gophermind brief migrate-library \
+   GM_MIG="$(mktemp -d)"
+   go build -o "$GM_MIG/gm-migrate" ./cmd/gophermind
+   "$GM_MIG/gm-migrate" brief migrate-library --help
+   ```
+
+   The help lists `-apply`, `-rollback` and `-force-rollback`. Use `"$GM_MIG/gm-migrate"` for every command below, in the same shell.
+3. Make unreadable files readable. The real tree has one: `repos/gm-2026-10-30-054/.gophermind/gm-2026-10-30-054-scratch/.../noaccess`. The backup cannot copy it, so `--apply` refuses until its mode is fixed (`chmod u+r` on that file, and `u+rx` on a directory). The dry run lists every such path.
+4. Dry run, and read the output:
+
+   ```
+   "$GM_MIG/gm-migrate" brief migrate-library \
      --briefs ~/.gophermind/local/briefs \
      --repos  ~/.gophermind/local/repos \
      --runs   ~/.gophermind/runs
    ```
 
    It must end with `0 problems`.
-4. Apply with the same flags plus `--apply`. It ends with a line like `migrated: families 13, runs migrated 145, skipped 0, errors 0; backup kept at ...`. If it stops partway, run the same command again to resume.
-5. Install the new build and start the server: `bash scripts/local-service.sh install` (it rebuilds, loads the agent and waits for `/healthz`).
-6. Open `http://127.0.0.1:8090/app/library` and check: each family has a locked `v1` labelled `imported`, and an old link such as `/app/briefs/gm-2026-10-29-007` still opens its run.
-7. Keep the `library-migration-backup-*` folder until you are satisfied. The command never deletes it.
+5. Apply with the same binary and flags plus `--apply`. It ends with a line like `migrated: families 13, runs migrated 145, skipped 0, errors 0; backup kept at ...`. If it stops partway, run the same command again to resume.
+6. Only now install the new build and start the server: `bash scripts/local-service.sh install` (it rebuilds, loads the agent and waits for `/healthz`).
+7. Open `http://127.0.0.1:8090/app/library` and check: each family has a locked `v1` labelled `imported`, and an old link such as `/app/briefs/gm-2026-10-29-007` still opens its run.
+8. Keep the `library-migration-backup-*` folder until you are satisfied. The command never deletes it.
 
 ### Rollback
 
-`gophermind brief migrate-library --briefs ... --repos ... --runs ... --rollback` (server stopped) undoes the journal in reverse: it renames folders back, restores each rewritten file from the backup, removes the library entries the migration made and the journal, then compares the briefs, repos and touched run records with the backup and lists any path that differs (in which case the journal is kept).
+`"$GM_MIG/gm-migrate" brief migrate-library --briefs ... --repos ... --runs ... --rollback` (server stopped; the binary built in step 2, since the installed release may lack the subcommand) undoes the journal in reverse: it renames folders back, restores each rewritten file from the backup, removes the library entries the migration made and the journal, then compares the briefs, repos and touched run records with the backup and lists any path that differs (in which case the journal is kept).
 
 Rollback refuses, changing nothing, when there is later work it would lose or leave behind: a file the migration wrote has since changed, the library holds a version other than the migrated `v1`, a `v1` is no longer locked or has other text, or a migrated family has a run folder the migration did not make. It prints each as `later work: ...`.
 
@@ -152,3 +163,5 @@ Rollback refuses, changing nothing, when there is later work it would lose or le
 ### Not renamed
 
 Go module paths, git branch names, the `logs/` folders of runs, scratch directories, and any text in non-JSON files of a run folder keep their old content. The migration rewrites only the paths and ids listed in step 5 of "What it does".
+
+Two names tied to the old id stay as they were: the git work branch `gm/<old id>` inside each run's repo, and the vault secret keys `run/<old id>`. A migrated run can be viewed and resubmitted, but a CLI resume (`gophermind brief resume`) or a clear-state (`scripts/clear-project-state.sh`) of a migrated failed run will not find its branch or secrets under the new id. Resubmit it instead.
