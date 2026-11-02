@@ -63,7 +63,7 @@ func (c *chatTools) briefState() tools.Tool {
 			if err := json.Unmarshal(raw, &a); err != nil {
 				return "", fmt.Errorf("brief_state: bad arguments: %w", err)
 			}
-			if !validBriefID(a.ID) || !runview.ValidRunID(a.ID) {
+			if !validBriefID(a.ID) {
 				return "", fmt.Errorf("brief_state: %q is not a valid brief id", a.ID)
 			}
 			a.ID = c.bm.resolveID(a.ID)
@@ -133,7 +133,7 @@ func (c *chatTools) questionsPending() tools.Tool {
 			}
 			var entries []entry
 			for _, it := range items {
-				if !validBriefID(it.ID) || !runview.ValidRunID(it.ID) {
+				if !validBriefID(it.ID) {
 					continue
 				}
 				phase := it.Phase
@@ -235,7 +235,7 @@ func (c *chatTools) briefArtifact() tools.Tool {
 			if err := json.Unmarshal(raw, &a); err != nil {
 				return "", fmt.Errorf("brief_artifact: bad arguments: %w", err)
 			}
-			if !validBriefID(a.ID) || !runview.ValidRunID(a.ID) {
+			if !validBriefID(a.ID) {
 				return "", fmt.Errorf("brief_artifact: %q is not a valid brief id", a.ID)
 			}
 			a.ID = c.bm.resolveID(a.ID)
@@ -425,7 +425,7 @@ func (c *chatTools) runsDigest() tools.Tool {
 					cancelled = true
 					break
 				}
-				if !validBriefID(it.ID) || !runview.ValidRunID(it.ID) {
+				if !validBriefID(it.ID) {
 					continue
 				}
 				st, err := c.bm.buildState(it.ID)

@@ -8,7 +8,6 @@ import (
 	"os"
 	"strings"
 
-	"gophermind/gophermind-lib/runview"
 	"gophermind/gophermind-lib/tools"
 )
 
@@ -128,7 +127,7 @@ func (c *chatTools) briefAnswer() tools.Tool {
 			if err := json.Unmarshal(raw, &a); err != nil {
 				return "", fmt.Errorf("brief_answer: bad arguments: %w", err)
 			}
-			if !validBriefID(a.ID) || !runview.ValidRunID(a.ID) {
+			if !validBriefID(a.ID) {
 				return "", fmt.Errorf("brief_answer: %q is not a valid brief id", a.ID)
 			}
 			a.ID = c.bm.resolveID(a.ID)
@@ -231,7 +230,7 @@ func idArg(tool string, raw json.RawMessage) (string, error) {
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return "", fmt.Errorf("%s: bad arguments: %w", tool, err)
 	}
-	if !validBriefID(a.ID) || !runview.ValidRunID(a.ID) {
+	if !validBriefID(a.ID) {
 		return "", fmt.Errorf("%s: %q is not a valid brief id", tool, a.ID)
 	}
 	return a.ID, nil

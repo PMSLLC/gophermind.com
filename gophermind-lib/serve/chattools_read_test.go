@@ -498,3 +498,35 @@ func TestRunIDInReasonRE_NewShape(t *testing.T) {
 		}
 	}
 }
+
+// TestChatToolsAcceptLongLibraryRunID: a library run id can be up to 120
+// characters, longer than a question id. brief_state, questions_pending and
+// runs_digest must all see a 100-character one instead of skipping it.
+func TestChatToolsAcceptLongLibraryRunID(t *testing.T) {
+	fam := "inventory-reconciliation-service-for-the-north-region-warehouses-and-their-own-store"
+	id := fam[:83] + "-v1-20261101-r001"
+	if len(id) != 100 {
+		t.Fatalf("id is %d chars", len(id))
+	}
+	c, dir := chatToolsEnv(t)
+	answered := strings.Replace(gateFixture, "```answer clarify-q1\n\n```", "```answer clarify-q1\nsqlite\n```", 1)
+	writeRunRecord(t, dir, briefRecord{ID: id, Title: "Long", Phase: phaseWaiting, StartedAt: "2026-11-01T10:00:00Z"}, "LONG-LOG\n")
+	writeGate(t, c, id, answered)
+
+	raw, _ := json.Marshal(map[string]string{"id": id})
+	out, err := findTool(t, c, "brief_state").Run(context.Background(), raw)
+	if err != nil || !strings.Contains(out, "LONG-LOG") {
+		t.Errorf("brief_state: %v\n%s", err, out)
+	}
+	out, err = findTool(t, c, "questions_pending").Run(context.Background(), json.RawMessage(`{}`))
+	if err != nil || !strings.Contains(out, id) || !strings.Contains(out, "clarify-q2") {
+		t.Errorf("questions_pending skips the long id: %v\n%s", err, out)
+	}
+
+	c2, _ := chatToolsEnv(t)
+	runviewtest.BuildID(t, c2.bm.root, id, runviewtest.Failed)
+	out, err = runTool(t, c2, "runs_digest", nil)
+	if err != nil || !strings.Contains(out, id) {
+		t.Errorf("runs_digest skips the long id: %v\n%s", err, out)
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"gophermind/gophermind-lib/runview"
 	"gophermind/gophermind-lib/safety"
 	"gophermind/gophermind-lib/tools"
 )
@@ -84,8 +85,9 @@ func oneLine(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
-// validBriefID reports whether id is safe to use as a run id: non-empty, in
-// the question-id character set, and free of path separators.
+// validBriefID reports whether id is a run id in either shape (gm-YYYY-MM-DD-NNN
+// or a library run id of up to 120 characters). runview.ValidRunID admits no
+// path separators, dots-only names or uppercase.
 func validBriefID(id string) bool {
-	return questionIDRE.MatchString(id) && !strings.ContainsAny(id, "/\\") && id != "." && id != ".."
+	return runview.ValidRunID(id)
 }
