@@ -12,7 +12,6 @@
 .head h1{font-size:22px;font-weight:700}
 .notice{max-width:56rem;margin:0 0 1rem;padding:.7rem 1rem;border:1px solid var(--run);border-radius:6px;background:var(--run-bg);color:var(--run);font-weight:550}
 #text{max-width:56rem;min-height:26rem;font:13px/1.55 var(--mono);white-space:pre;overflow:auto}
-#text[readonly]{background:var(--idle-bg)}
 .links{margin:0 0 1rem;color:var(--muted);font-size:.9rem;display:flex;flex-wrap:wrap;gap:.3rem 1.4rem}
 .links a{font-family:var(--mono)}
 .bar{display:flex;flex-wrap:wrap;gap:.6rem;margin:1rem 0}
@@ -81,13 +80,14 @@ function linkRow(label, names){
   names.forEach((n, i) => { if (i) d.appendChild(document.createTextNode(', ')); d.appendChild(libLink(n)); });
   return d;
 }
-function show(j){
+// show fills the page from a version. keepText leaves the textarea alone, so a
+// reload after a refused save keeps what the user typed.
+function show(j, keepText){
   cur = j;
   document.title = family + ' ' + j.name + ' - GopherMind';
   document.getElementById('fam').textContent = family;
   document.getElementById('ver').textContent = j.name + (j.locked ? ' (locked)' : ' (editable)');
-  text.value = j.text;
-  text.readOnly = j.locked;
+  if (!keepText) text.value = j.text;
   document.getElementById('notice').hidden = !j.locked;
   document.getElementById('savein').hidden = j.locked;
   document.getElementById('cmp').hidden = !j.parent;
@@ -109,10 +109,10 @@ function show(j){
   });
   links.appendChild(rs);
 }
-function load(){
+function load(keepText){
   fetch(base, { credentials: 'same-origin' })
     .then(r => r.ok ? r.json() : Promise.reject(new Error(r.status === 404 ? 'No such version.' : 'Error ' + r.status)))
-    .then(show)
+    .then(j => show(j, keepText))
     .catch(e => say(e.message, true));
 }
 async function save(inPlace){
@@ -126,7 +126,7 @@ async function save(inPlace){
     const j = await r.json().catch(() => ({}));
     if (r.status === 409) {
       say((j.error || 'This version is locked.') + '. ' + (j.hint || 'Save as new version') + ' to keep your edits.', true);
-      load();
+      load(true);
     } else if (!r.ok) {
       say(j.error || 'Save failed (' + r.status + ').', true);
     } else if (inPlace) {

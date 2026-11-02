@@ -395,3 +395,39 @@ func TestRunRecordWithoutLockFlagShowsLocked(t *testing.T) {
 		t.Errorf("locked without runs: %+v", v[1])
 	}
 }
+
+// TestEditorKeepsEditsOnLockedAndConflict: a locked version stays editable (only
+// the in-place button hides; "Save as new version" saves the edited text as a
+// child), and a 409 from an in-place save reloads only the metadata, never
+// overwriting what the user typed.
+func TestEditorKeepsEditsOnLockedAndConflict(t *testing.T) {
+	page, err := pagesAssets.ReadFile("assets/library_edit.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(page)
+	if strings.Contains(s, "readOnly") || strings.Contains(s, "readonly") {
+		t.Error("the editor makes the textarea read-only")
+	}
+	if !strings.Contains(s, "This version is locked, so it cannot change. Saving makes a new version.") {
+		t.Error("locked notice missing")
+	}
+	if !strings.Contains(s, "getElementById('savein').hidden = j.locked") {
+		t.Error("in-place button not hidden for a locked version")
+	}
+	i := strings.Index(s, "r.status === 409")
+	if i < 0 {
+		t.Fatal("no 409 branch")
+	}
+	branch := s[i:]
+	if j := strings.Index(branch, "} else if"); j > 0 {
+		branch = branch[:j]
+	}
+	if strings.Contains(branch, "text.value =") || strings.Contains(branch, "load()") || !strings.Contains(branch, "load(true)") {
+		t.Errorf("409 branch may overwrite the edits:\n%s", branch)
+	}
+	// The one assignment from the server response is skipped when keeping text.
+	if n := strings.Count(s, "text.value ="); n != 1 || !strings.Contains(s, "if (!keepText) text.value = j.text;") {
+		t.Errorf("text.value assignments: %d, unguarded", n)
+	}
+}
