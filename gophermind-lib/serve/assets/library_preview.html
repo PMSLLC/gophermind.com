@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'">
+<title>Run preview - GopherMind</title>
+<style>
+/*GM_CSS*/
+.head h1 .ver{font-size:1rem;font-weight:500;color:var(--muted);margin-left:.4rem}
+.head h1{font-size:22px;font-weight:700}
+.links{margin:0 0 1rem;color:var(--muted);font-size:.9rem;display:flex;flex-wrap:wrap;gap:.3rem 1.4rem}
+.links a{font-family:var(--mono)}
+.banner{max-width:56rem;margin:0 0 1rem;padding:.7rem 1rem;border:1px solid var(--run);border-radius:6px;background:var(--run-bg);color:var(--run);font-weight:550}
+.banner ul{margin:.4rem 0 0 1.2rem;padding:0;font-weight:400}
+.settings{max-width:56rem;margin:0 0 1rem;padding:.7rem 1rem;border:1px solid var(--line,#8884);border-radius:6px}
+.settings label{display:flex;gap:.5rem;align-items:center}
+.settings .meta{margin-top:.4rem;font-family:var(--mono)}
+.doc{max-width:56rem;margin:0 0 1rem}
+.doc h2{font-size:1.25rem;margin:1.2rem 0 .4rem}
+.doc h3{font-size:1.05rem;margin:1rem 0 .3rem}
+.doc h4{font-size:.95rem;margin:.8rem 0 .3rem}
+.doc p{margin:.4rem 0;line-height:1.55}
+.doc ul,.doc ol{margin:.4rem 0 .4rem 1.4rem;padding:0;line-height:1.55}
+.doc pre{padding:.6rem .8rem;overflow:auto;font:13px/1.5 var(--mono);background:var(--idle-bg);border-radius:6px}
+.doc code{font-family:var(--mono);background:var(--idle-bg);padding:0 .25em;border-radius:3px}
+.doc pre code{background:none;padding:0}
+.doc .empty{color:var(--muted);font-style:italic}
+.bar{display:flex;flex-wrap:wrap;gap:.6rem;margin:1rem 0}
+.bar .why{align-self:center;color:var(--muted)}
+</style>
+</head>
+<body class="gm-library-preview">
+<div class="shell">
+<!--GM_RAIL-->
+<main class="main">
+<div class="head"><h1><span id="fam"></span><span class="ver" id="ver"></span></h1></div>
+<div class="links" id="links"></div>
+<div class="banner" id="banner" hidden></div>
+<div class="settings" id="settings" hidden>
+  <label><input type="checkbox" id="ask" checked> Stop and ask me about open questions</label>
+  <div class="meta">Run name: <span id="runname"></span></div>
+</div>
+<div class="bar">
+  <button type="button" class="primary" id="go" disabled>Continue</button>
+  <a class="btn" id="cancel">Cancel</a>
+  <span class="why" id="why"></span>
+</div>
+<div id="msg" role="status"></div>
+<div class="doc" id="doc"></div>
+</main>
+</div>
+<script>
+'use strict';
+const parts = location.pathname.split('/');
+const msg = document.getElementById('msg');
+let family = '', version = '';
+try {
+  family = decodeURIComponent(parts[3] || '');
+  version = decodeURIComponent(parts[4] || '');
+} catch (e) {
+  msg.textContent = 'This address is not a valid brief version.';
+  msg.className = 'err';
+}
+const edit = '/app/library/' + encodeURIComponent(family) + '/' + encodeURIComponent(version);
+const base = '/app/api/library/' + encodeURIComponent(family) + '/' + encodeURIComponent(version);
+document.getElementById('cancel').href = edit;
+const go = document.getElementById('go');
+const el = (tag, text) => { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; return n; };
+
+function inline(parent, s){
+  const bits = s.split('`');
+  bits.forEach((b, i) => {
+    if (i % 2 === 1 && i < bits.length - 1) parent.appendChild(el('code', b));
+    else parent.appendChild(document.createTextNode(i % 2 === 1 ? '`' + b : b));
+  });
+}
+// A small safe renderer: headings, paragraphs, lists, fenced code, inline code.
+// Everything else is a plain paragraph. Only textContent and text nodes are used.
+function render(into, md){
+  const lines = md.split('\n');
+  let i = 0, para = [], list = null, listTag = '';
+  const flush = () => {
+    if (para.length) { const p = el('p'); inline(p, para.join(' ')); into.appendChild(p); para = []; }
+    list = null;
+  };
+  while (i < lines.length) {
+    const line = lines[i];
+    const t = line.trim();
+    if (t.startsWith('```') || t.startsWith('~~~')) {
+      flush();
+      const fence = t.slice(0, 3), code = [];
+      i++;
+      while (i < lines.length && !lines[i].trim().startsWith(fence)) { code.push(lines[i]); i++; }
+      i++;
+      const pre = el('pre'); pre.appendChild(el('code', code.join('\n'))); into.appendChild(pre);
+      continue;
+    }
+    const h = /^(#{3,6})\s+(.*)$/.exec(line);
+    const li = /^\s*(?:([-*+])|(\d+)\.)\s+(.*)$/.exec(line);
+    if (h) {
+      flush();
+      const n = el('h' + Math.min(h[1].length + 1, 6)); inline(n, h[2]); into.appendChild(n);
+    } else if (li) {
+      if (para.length) flush();
+      const tag = li[1] ? 'ul' : 'ol';
+      if (!list || listTag !== tag) { list = el(tag); listTag = tag; into.appendChild(list); }
+      const item = el('li'); inline(item, li[3]); list.appendChild(item);
+    } else if (t === '') {
+      flush();
+    } else if (list && /^\s+\S/.test(line)) {
+      inline(list.lastChild, ' ' + t);
+    } else {
+      list = null;
+      para.push(t);
+    }
+    i++;
+  }
+  flush();
+}
+function libLink(name){
+  const a = el('a', name);
+  a.href = '/app/library/' + encodeURIComponent(family) + '/' + encodeURIComponent(name);
+  return a;
+}
+function linkRow(label, names){
+  const d = el('span');
+  d.appendChild(document.createTextNode(label + ': '));
+  if (!names.length) d.appendChild(document.createTextNode('none'));
+  names.forEach((n, i) => { if (i) d.appendChild(document.createTextNode(', ')); d.appendChild(libLink(n)); });
+  return d;
+}
+function show(j){
+  document.title = 'Run preview ' + family + ' ' + j.version + ' - GopherMind';
+  document.getElementById('fam').textContent = family;
+  document.getElementById('ver').textContent = j.version + (j.locked ? ' (locked)' : ' (editable)');
+  const links = document.getElementById('links');
+  links.textContent = '';
+  links.appendChild(linkRow('Parent', j.parent ? [j.parent] : []));
+  links.appendChild(linkRow('Children', j.children || []));
+  const banner = document.getElementById('banner');
+  banner.textContent = '';
+  banner.hidden = false;
+  if (j.problems.length) {
+    banner.appendChild(el('div', 'This brief does not pass the section rules:'));
+    const ul = el('ul');
+    j.problems.forEach(p => ul.appendChild(el('li', typeof p === 'string' ? p : (p.line ? 'line ' + p.line + ': ' : '') + p.message)));
+    banner.appendChild(ul);
+  } else {
+    banner.appendChild(el('div', 'Passes the section rules'));
+  }
+  if (j.warnings && j.warnings.length) {
+    banner.appendChild(el('div', 'Warnings (these do not block the run):'));
+    const ul = el('ul');
+    j.warnings.forEach(p => ul.appendChild(el('li', typeof p === 'string' ? p : (p.line ? 'line ' + p.line + ': ' : '') + p.message)));
+    banner.appendChild(ul);
+  }
+  document.getElementById('settings').hidden = false;
+  document.getElementById('ask').checked = j.ask_default !== false;
+  document.getElementById('runname').textContent = j.run_name;
+  go.disabled = j.problems.length > 0;
+  document.getElementById('why').textContent = j.problems.length ? 'Continue is off until the problems above are fixed.' : '';
+  const doc = document.getElementById('doc');
+  doc.textContent = '';
+  j.sections.forEach(s => {
+    if (s.heading) doc.appendChild(el('h2', s.heading));
+    if (s.body.trim()) render(doc, s.body);
+    else doc.appendChild(el('p', 'Missing or empty.')).className = 'empty';
+  });
+}
+function load(){
+  fetch(base + '/preview', { credentials: 'same-origin' })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error(r.status === 404 ? 'No such version.' : 'Error ' + r.status)))
+    .then(show)
+    .catch(e => { msg.textContent = e.message; msg.className = 'err'; });
+}
+go.addEventListener('click', async () => {
+  go.disabled = true;
+  try {
+    const r = await fetch(base + '/run', {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ask: document.getElementById('ask').checked })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.run_id) {
+      location.href = '/app/briefs/' + encodeURIComponent(j.run_id);
+      return;
+    }
+    msg.className = 'err';
+    msg.textContent = r.status === 409 && j.active_run_id
+      ? 'A run is already active (' + j.active_run_id + '). Wait for it or stop it, then try again.'
+      : (j.error || 'The run did not start (' + r.status + ').');
+  } catch (e) {
+    msg.className = 'err';
+    msg.textContent = 'The run did not start: ' + e.message;
+  }
+  go.disabled = false;
+});
+if (family && version) load();
+</script>
+</body>
+</html>

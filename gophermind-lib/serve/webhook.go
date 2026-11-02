@@ -465,6 +465,9 @@ func NewMux(d Deps, opt Options) (*http.ServeMux, error) {
 		mux.Handle("GET /app/api/library/{family}/{version}", briefWrap(bm.libraryGet))
 		mux.Handle("POST /app/api/library/{family}/{version}/save", briefWrap(bm.librarySave))
 		mux.Handle("GET /app/api/library/{family}/{version}/diff", briefWrap(bm.libraryDiff))
+		mux.HandleFunc("GET /app/library/{family}/{version}/preview", pageHandler("assets/library_preview.html"))
+		mux.Handle("GET /app/api/library/{family}/{version}/preview", briefWrap(bm.libraryPreview))
+		mux.Handle("POST /app/api/library/{family}/{version}/run", briefWrap(bm.libraryRun))
 		// The page is always there, so the rail never links to nothing; without
 		// HarnessBriefs its API answers 404 and the page says so.
 		mux.HandleFunc("GET /app/harness", pageHandler("assets/harness.html"))
