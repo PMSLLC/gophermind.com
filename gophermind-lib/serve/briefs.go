@@ -76,6 +76,7 @@ type briefManager struct {
 	signal    func(pgid int, force bool) error
 	killGrace time.Duration
 	now       func() time.Time
+	saveMu    sync.Mutex // serialises find-or-save of library versions
 	log       *slog.Logger
 	lib       *library.Store // <dir>/library: saved brief versions
 
@@ -617,12 +618,6 @@ type briefInvalidError struct {
 
 func (e *briefInvalidError) Error() string { return e.msg }
 
-// briefResubmitError is a failure to give a brief a fresh id.
-type briefResubmitError struct{ err error }
-
-func (e *briefResubmitError) Error() string { return "cannot resubmit: " + e.err.Error() }
-func (e *briefResubmitError) Unwrap() error { return e.err }
-
 // resubmitHandler handles POST /app/briefs/{id}/resubmit: the version of an
 // earlier run starts again as a new run.
 func (m *briefManager) resubmitHandler(w http.ResponseWriter, r *http.Request) {
@@ -650,7 +645,7 @@ func (m *briefManager) resubmitWarn(id string) (briefRecord, []brief.Problem, er
 	if err != nil {
 		return briefRecord{}, nil, errNoStoredBrief
 	}
-	return m.createTextOpt(src, old.Ask, false)
+	return m.createText(src, old.Ask)
 }
 
 // startReply writes the response for create and resubmit: the error mapped to
@@ -658,7 +653,6 @@ func (m *briefManager) resubmitWarn(id string) (briefRecord, []brief.Problem, er
 func (m *briefManager) startReply(w http.ResponseWriter, rec briefRecord, warnings []brief.Problem, err error) {
 	var busy *briefBusyError
 	var invalid *briefInvalidError
-	var resub *briefResubmitError
 	switch {
 	case errors.Is(err, errNoSuchRun):
 		briefError(w, http.StatusNotFound, "no such run", nil)
@@ -666,11 +660,9 @@ func (m *briefManager) startReply(w http.ResponseWriter, rec briefRecord, warnin
 		briefError(w, http.StatusNotFound, "no stored brief for this run", nil)
 	case errors.As(err, &invalid):
 		briefError(w, http.StatusBadRequest, invalid.msg, invalid.extra)
-	case errors.As(err, &resub):
-		briefError(w, http.StatusInternalServerError, resub.Error(), nil)
 	case errors.As(err, &busy):
 		briefError(w, http.StatusConflict, "a run is already active", map[string]any{"active_run_id": busy.activeID})
-	case errors.Is(err, errBriefExists):
+	case errors.Is(err, errBriefExists): // can't happen: run ids are server-assigned and the counter skips used ones
 		briefError(w, http.StatusConflict, "a run with this id already exists", map[string]any{"run_id": rec.ID})
 	case err != nil:
 		briefError(w, http.StatusInternalServerError, "cannot start the run", nil)
@@ -683,29 +675,20 @@ func (m *briefManager) startReply(w http.ResponseWriter, rec briefRecord, warnin
 	}
 }
 
-// create handles POST /app/briefs. ?resubmit=1 is accepted and ignored.
+// create handles POST /app/briefs. A ?resubmit=1 query from older clients is
+// ignored: run ids are always server-assigned.
 func (m *briefManager) create(w http.ResponseWriter, r *http.Request) {
 	src, code, msg := readBriefBody(w, r)
 	if code != 0 {
 		briefError(w, code, msg, nil)
 		return
 	}
-	rec, warnings, err := m.createTextOpt(src, r.URL.Query().Get("ask") == "1", r.URL.Query().Get("resubmit") == "1")
+	rec, warnings, err := m.createText(src, r.URL.Query().Get("ask") == "1")
 	m.startReply(w, rec, warnings, err)
 }
 
-// createText validates a brief and starts its run. Invalid briefs come back as
-// *briefInvalidError, a busy slot as *briefBusyError, a used id as errBriefExists.
-func (m *briefManager) createText(src []byte, ask bool) (rec briefRecord, warnings []brief.Problem, err error) {
-	return m.createTextOpt(src, ask, false)
-}
-
-// createTextOpt is createText. The text goes through the brief library: any
-// id: or repo: line is dropped (the server assigns the run id), the family is
-// the slug of the title, and the version is new, reused or a child of the
-// newest. resubmit is accepted and ignored: run ids are always server-assigned.
-func (m *briefManager) createTextOpt(src []byte, ask, resubmit bool) (briefRecord, []brief.Problem, error) {
-	_ = resubmit
+func (m *briefManager) createText(src []byte, ask bool) (briefRecord, []brief.Problem, error) {
+	src = bytes.TrimPrefix(src, []byte("\xef\xbb\xbf"))
 	stripped := stripFront(src)
 	// Validate a provisionally stamped copy, so invalid briefs are refused
 	// with the same messages as before.
@@ -735,6 +718,8 @@ func (m *briefManager) createTextOpt(src []byte, ask, resubmit bool) (briefRecor
 // saveVersion returns the version of family holding exactly text: an existing
 // identical one, a first v1, or a child of the newest version.
 func (m *briefManager) saveVersion(family string, text []byte) (string, error) {
+	m.saveMu.Lock()
+	defer m.saveMu.Unlock()
 	if v, ok := m.lib.FindIdentical(family, text); ok {
 		return v.Name, nil
 	}

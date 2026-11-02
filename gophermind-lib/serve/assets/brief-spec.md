@@ -19,7 +19,7 @@ Unknown keys are rejected.
 | Key | Required | Rule |
 | --- | --- | --- |
 | `spec_version` | yes | The string `"2.0"`. |
-| `id` | yes | Any value that passes the format check, for example the example below. The server assigns the real run id (`<family>-<version>-<yyyymmdd>-rNNN`) and ignores whatever is supplied here; the line is still required so the brief validates as a file. |
+| `id` | validate only | Required only when validating a file with `gophermind brief validate`; any value that passes the format check will do. On upload the server assigns the run id (`<family>-<version>-<yyyymmdd>-rNNN`), and a supplied, changed or missing `id` line is ignored. |
 | `title` | yes | 1 to 120 characters. The product name. |
 | `language` | yes | `go`. |
 | `repo` | no | Leave it out for the upload page: the server builds every run in a new repository of its own and ignores this line. Only `gophermind brief plan` on your own machine needs it, as a local path. |
@@ -32,6 +32,8 @@ Unknown keys are rejected.
 | `secrets` | no | List of `name` (UPPER_SNAKE_CASE) and `purpose`. Names only, never values. |
 | `network` | no | List of `host`, `purpose`, `critical` (true or false). Hosts the build or program may reach; `host` is a hostname or `*.suffix`, no scheme, no path. |
 | `budget` | no | `max_context_tokens` (at least 1024) and `max_revisions` (0 or more). |
+
+Uploads are saved as versions by `title`. Uploading the same text again reuses the version and only starts a new run; "the same" means byte-identical, so a CRLF or trailing-newline change makes a new child version.
 
 A name may not be declared twice, or in both `env` and `secrets`. These names belong to the harness and may not be declared: `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `GOPHERMIND_NODE`, `PATH`, `HOME`, `GOCACHE`, `GOMODCACHE`, `GOPATH`, `TMPDIR`.
 

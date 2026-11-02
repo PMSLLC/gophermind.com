@@ -34,7 +34,7 @@ func writeOutcome(err error) string {
 			}
 		}
 		return msg + "; nothing was started."
-	case errors.Is(err, errBriefExists):
+	case errors.Is(err, errBriefExists): // can't happen: run ids are server-assigned
 		return "a run with this brief's id already exists; nothing was started."
 	case errors.Is(err, errNoSuchRun):
 		return "no such run."

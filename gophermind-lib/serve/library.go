@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -84,6 +85,14 @@ func (m *briefManager) startVersion(family, version string, ask bool) (briefReco
 		b, err := brief.Parse(stamped)
 		if err != nil {
 			return &briefInvalidError{"invalid brief: " + err.Error(), nil}
+		}
+		// Backstop: the run must carry the id the server assigned and, with no
+		// per-run repos, the server's root, whatever the stored text says.
+		if b.Front.ID != id {
+			return &briefInvalidError{"invalid brief: the stored version cannot be stamped with a run id", nil}
+		}
+		if m.repos == "" && (!filepath.IsAbs(b.Front.Repo) || !sameDir(b.Front.Repo, m.root)) {
+			return &briefInvalidError{"invalid brief: the stored version cannot be stamped with the server's repo", nil}
 		}
 		rec, err = m.startRec(b, stamped, briefRecord{Ask: ask, Family: family, Version: version})
 		if errors.Is(err, errBriefExists) {

@@ -33,6 +33,10 @@ var (
 )
 
 // Version is one saved brief in a family.
+// createdLayout is fixed width with nanoseconds, so Created strings sort in
+// creation order even for versions saved within the same second.
+const createdLayout = "2006-01-02T15:04:05.000000000Z"
+
 type Version struct {
 	Family, Name, Parent, Label, Created string
 	Locked                               bool
@@ -263,7 +267,7 @@ func (s *Store) Save(family, parent, label string, text []byte) (Version, error)
 		return Version{}, err
 	}
 	m := meta{Family: family, Name: name, Parent: parent, Label: label,
-		Created: s.now().UTC().Format(time.RFC3339)}
+		Created: s.now().UTC().Format(createdLayout)}
 	if err := s.fillVersion(vdir, m, text); err != nil {
 		if rerr := removeInside(fdir, vdir); rerr != nil {
 			err = errors.Join(err, rerr)
