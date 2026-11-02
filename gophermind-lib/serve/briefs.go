@@ -687,6 +687,16 @@ func (m *briefManager) create(w http.ResponseWriter, r *http.Request) {
 	m.startReply(w, rec, warnings, err)
 }
 
+// invalidFromProblems is the refusal for a brief whose Check list is not
+// empty: the first problem plus a count, with the full list attached.
+func invalidFromProblems(probs []brief.Problem) *briefInvalidError {
+	summary := "invalid brief: " + probs[0].String()
+	if n := len(probs) - 1; n > 0 {
+		summary += fmt.Sprintf(" (and %d more)", n)
+	}
+	return &briefInvalidError{summary, map[string]any{"problems": probs}}
+}
+
 // createText validates a brief and starts its run through the library: a new
 // title saves v1, text identical to a stored version reuses it, and changed
 // text is saved as a child of the newest version. Invalid briefs come back as
@@ -699,11 +709,7 @@ func (m *briefManager) createText(src []byte, ask bool) (briefRecord, []brief.Pr
 	// with the same messages as before.
 	prov := stampFront(stripped, "provisional-v1-"+m.now().UTC().Format("20060102")+"-r001", m.root)
 	if probs := brief.Check(prov); len(probs) > 0 {
-		summary := "invalid brief: " + probs[0].String()
-		if n := len(probs) - 1; n > 0 {
-			summary += fmt.Sprintf(" (and %d more)", n)
-		}
-		return briefRecord{}, nil, &briefInvalidError{summary, map[string]any{"problems": probs}}
+		return briefRecord{}, nil, invalidFromProblems(probs)
 	}
 	b, err := brief.Parse(prov)
 	if err != nil {

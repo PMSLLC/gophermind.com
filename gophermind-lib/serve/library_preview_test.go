@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 type previewJSON struct {
@@ -25,7 +26,6 @@ type previewJSON struct {
 	Warnings   []map[string]any `json:"warnings"`
 	AskDefault bool             `json:"ask_default"`
 	RunName    string           `json:"run_name"`
-	TextBytes  int              `json:"text_bytes"`
 }
 
 func getPreview(t *testing.T, e *briefEnv, v string) previewJSON {
@@ -93,7 +93,7 @@ func TestPreviewSections(t *testing.T) {
 	if !strings.Contains(p.Sections[0].Body, "HTTP service") || strings.Contains(p.Sections[0].Body, "## ") {
 		t.Errorf("overview body %q", p.Sections[0].Body)
 	}
-	if len(p.Problems) != 0 || !p.AskDefault || p.Family != "csvstat" || p.Version != "v1" || p.Locked || p.TextBytes == 0 {
+	if len(p.Problems) != 0 || !p.AskDefault || p.Family != "csvstat" || p.Version != "v1" || p.Locked {
 		t.Errorf("%+v", p)
 	}
 }
@@ -292,4 +292,95 @@ func TestPreviewExtraSectionsKept(t *testing.T) {
 	if p.Sections[0].Heading != "Overview" || p.Parent != "v1" {
 		t.Errorf("%+v", p)
 	}
+}
+
+func TestPreviewSectionsLargeBodyIsFast(t *testing.T) {
+	text := []byte("---\ntitle: x\n---\n\n## Overview\n\n" + strings.Repeat("x\n", 125000) + "\n## Features\n\nf\n")
+	start := time.Now()
+	got := previewSections(text)
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("previewSections took %v", d)
+	}
+	if len(got[0].Body) < 249999 || got[1].Body != "f" {
+		t.Errorf("bodies %d / %q", len(got[0].Body), got[1].Body)
+	}
+}
+
+func TestPreviewSectionsCases(t *testing.T) {
+	heads := func(s []previewSection) string {
+		var h []string
+		for _, x := range s {
+			h = append(h, x.Heading)
+		}
+		return strings.Join(h, "|")
+	}
+	const req = "Overview|Features|Architecture|Data|Constraints|Out of scope|Acceptance"
+	t.Run("crlf", func(t *testing.T) {
+		got := previewSections([]byte("---\r\ntitle: x\r\n---\r\n\r\n## Overview\r\n\r\nhello\r\nthere\r\n\r\n## Data\r\n\r\nd\r\n"))
+		if got[0].Body != "hello\nthere" || got[3].Body != "d" || heads(got) != req {
+			t.Errorf("%+v", got)
+		}
+	})
+	t.Run("lowercase heading", func(t *testing.T) {
+		got := previewSections([]byte("## out of scope\n\nnope\n"))
+		if heads(got) != req+"|out of scope" || got[5].Body != "" || got[7].Body != "nope" {
+			t.Errorf("%+v", got)
+		}
+	})
+	t.Run("duplicate headings", func(t *testing.T) {
+		got := previewSections([]byte("## Data\n\nfirst\n\n## Data\n\nsecond\n"))
+		if heads(got) != req+"|Data" || got[3].Body != "first" || got[7].Body != "second" {
+			t.Errorf("%+v", got)
+		}
+	})
+	t.Run("text before first heading", func(t *testing.T) {
+		got := previewSections([]byte("---\ntitle: x\n---\n\nstray words\n\n## Overview\n\no\n"))
+		if heads(got) != req+"|"+preambleHeading || got[7].Body != "stray words" || got[0].Body != "o" {
+			t.Errorf("%+v", got)
+		}
+	})
+	t.Run("hash hash in fence", func(t *testing.T) {
+		got := previewSections([]byte("## Overview\n\n```\n## Features\n```\n"))
+		if heads(got) != req || got[0].Body != "```\n## Features\n```" || got[1].Body != "" {
+			t.Errorf("%+v", got)
+		}
+	})
+}
+
+func TestRunPreviewTokenMatchStartsRun(t *testing.T) {
+	e, _ := libEnv(t)
+	p := getPreviewTok(t, e, "v1")
+	if len(p) != 64 {
+		t.Fatalf("token %q", p)
+	}
+	w := runPost(e, "v1", `{"ask":false,"preview_token":"`+p+`"}`)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("run = %d %s", w.Code, w.Body)
+	}
+}
+
+func TestRunPreviewTokenStale(t *testing.T) {
+	e, m := libEnv(t)
+	tok := getPreviewTok(t, e, "v1")
+	if err := m.lib.Update("csvstat", "v1", append(e.versionBody(), []byte("\n- more\n")...)); err != nil {
+		t.Fatal(err)
+	}
+	before := runDirCount(t, e)
+	w := runPost(e, "v1", `{"preview_token":"`+tok+`"}`)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "the brief changed since you previewed it, reload the preview") {
+		t.Fatalf("run = %d %s", w.Code, w.Body)
+	}
+	if runDirCount(t, e) != before || getPreview(t, e, "v1").Locked {
+		t.Error("stale token started or locked")
+	}
+}
+
+func getPreviewTok(t *testing.T, e *briefEnv, v string) string {
+	t.Helper()
+	var j struct {
+		Token string `json:"preview_token"`
+	}
+	w := e.get("/app/api/library/csvstat/" + v + "/preview")
+	_ = json.Unmarshal(w.Body.Bytes(), &j)
+	return j.Token
 }

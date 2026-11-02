@@ -1,6 +1,8 @@
 package serve
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,6 +15,8 @@ import (
 
 // requiredSections are the headings every brief carries, in the spec's order.
 var requiredSections = []string{"Overview", "Features", "Architecture", "Data", "Constraints", "Out of scope", "Acceptance"}
+
+const preambleHeading = "Before the first section"
 
 type previewSection struct {
 	Heading string `json:"heading"`
@@ -34,9 +38,15 @@ func previewSections(text []byte) []previewSection {
 		}
 	}
 	var all []previewSection
+	var lines [][]string
 	cur := -1
 	inFence := false
-	add := func(h string) { all = append(all, previewSection{Heading: h}); cur = len(all) - 1 }
+	hasPre := false
+	add := func(h string) {
+		all = append(all, previewSection{Heading: h})
+		lines = append(lines, nil)
+		cur = len(all) - 1
+	}
 	for _, line := range strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n") {
 		t := strings.TrimSpace(line)
 		if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
@@ -50,17 +60,18 @@ func previewSections(text []byte) []previewSection {
 			if t == "" {
 				continue
 			}
-			add("")
+			add(preambleHeading)
+			hasPre = true
 		}
-		all[cur].Body += line + "\n"
+		lines[cur] = append(lines[cur], line)
 	}
 	for i := range all {
-		all[i].Body = strings.Trim(all[i].Body, "\n")
+		all[i].Body = strings.Trim(strings.Join(lines[i], "\n"), "\n")
 	}
 	used := make([]bool, len(all))
 	out := make([]previewSection, 0, len(all)+len(requiredSections))
 	var pre []previewSection
-	if len(all) > 0 && all[0].Heading == "" {
+	if len(all) > 0 && hasPre {
 		pre = all[:1]
 		used[0] = true
 	}
@@ -82,6 +93,12 @@ func previewSections(text []byte) []previewSection {
 		}
 	}
 	return out
+}
+
+// previewToken identifies the stored text a preview showed.
+func previewToken(text []byte) string {
+	sum := sha256.Sum256(text)
+	return hex.EncodeToString(sum[:])
 }
 
 // provisionalRunName is the id startVersion would assign right now. It is not
@@ -133,9 +150,9 @@ func (m *briefManager) libraryPreview(w http.ResponseWriter, r *http.Request) {
 	}
 	briefJSON(w, http.StatusOK, map[string]any{
 		"family": family, "version": v.Name, "parent": v.Parent, "children": children,
-		"locked":   v.Locked || len(m.runsByVersion()[family+"/"+name]) > 0,
-		"sections": previewSections(text), "problems": problems, "warnings": warnings,
-		"ask_default": true, "run_name": id, "text_bytes": len(text),
+		"locked":        v.Locked || len(m.runsByVersion()[family+"/"+name]) > 0,
+		"preview_token": previewToken(text), "sections": previewSections(text), "problems": problems, "warnings": warnings,
+		"ask_default": true, "run_name": id,
 	})
 }
 
@@ -145,7 +162,8 @@ func (m *briefManager) libraryPreview(w http.ResponseWriter, r *http.Request) {
 func (m *briefManager) libraryRun(w http.ResponseWriter, r *http.Request) {
 	family, name := r.PathValue("family"), r.PathValue("version")
 	var body struct {
-		Ask *bool `json:"ask"`
+		Ask          *bool  `json:"ask"`
+		PreviewToken string `json:"preview_token"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
@@ -158,14 +176,17 @@ func (m *briefManager) libraryRun(w http.ResponseWriter, r *http.Request) {
 		briefError(w, http.StatusNotFound, "no such version", nil)
 		return
 	}
+	if body.PreviewToken != "" && body.PreviewToken != previewToken(text) {
+		briefError(w, http.StatusConflict, "the brief changed since you previewed it, reload the preview", nil)
+		return
+	}
 	id, err := m.provisionalRunName(family, name)
 	if err != nil {
 		briefError(w, http.StatusInternalServerError, "cannot read the runs", nil)
 		return
 	}
 	if probs := brief.Check(stampFront(text, id, m.root)); len(probs) > 0 {
-		summary := "invalid brief: " + probs[0].String()
-		m.startReply(w, briefRecord{}, nil, &briefInvalidError{summary, map[string]any{"problems": probs}})
+		m.startReply(w, briefRecord{}, nil, invalidFromProblems(probs))
 		return
 	}
 	rec, warnings, err := m.startVersion(family, name, ask)

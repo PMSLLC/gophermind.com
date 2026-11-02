@@ -55,7 +55,7 @@
 'use strict';
 const parts = location.pathname.split('/');
 const msg = document.getElementById('msg');
-let family = '', version = '';
+let family = '', version = '', token = '';
 try {
   family = decodeURIComponent(parts[3] || '');
   version = decodeURIComponent(parts[4] || '');
@@ -132,6 +132,7 @@ function linkRow(label, names){
   return d;
 }
 function show(j){
+  token = j.preview_token || '';
   document.title = 'Run preview ' + family + ' ' + j.version + ' - GopherMind';
   document.getElementById('fam').textContent = family;
   document.getElementById('ver').textContent = j.version + (j.locked ? ' (locked)' : ' (editable)');
@@ -180,7 +181,7 @@ go.addEventListener('click', async () => {
   try {
     const r = await fetch(base + '/run', {
       method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ask: document.getElementById('ask').checked })
+      body: JSON.stringify({ ask: document.getElementById('ask').checked, preview_token: token })
     });
     const j = await r.json().catch(() => ({}));
     if (r.ok && j.run_id) {
