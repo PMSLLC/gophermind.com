@@ -253,8 +253,8 @@ func refusals() []refusal {
 		{"no .git", "nogit", "repo has no .git directory", func(t *testing.T, repo, arch string) (string, []string, []string) {
 			return t.TempDir(), []string{t.TempDir(), clearID, br, arch}, nil
 		}},
-		{"bad id", "id", "id is not gm-YYYY-MM-DD-NNN", std(func(a []string) { a[1] = "gm-1" })},
-		{"empty id", "id", "id is not gm-YYYY-MM-DD-NNN", std(func(a []string) { a[1] = "" })},
+		{"bad id", "id", "id is not gm-YYYY-MM-DD-NNN or <family>-v<version>-<yyyymmdd>-r<NNN>", std(func(a []string) { a[1] = "gm-1" })},
+		{"empty id", "id", "id is not gm-YYYY-MM-DD-NNN or <family>-v<version>-<yyyymmdd>-r<NNN>", std(func(a []string) { a[1] = "" })},
 		{"empty branch", "branch-empty", "work branch is empty", std(func(a []string) { a[2] = "" })},
 		{"dash branch", "branch-form", "work branch is not a valid branch name", std(func(a []string) { a[2] = "-D" })},
 		{"dotdot branch", "branch-form", "work branch is not a valid branch name", std(func(a []string) { a[2] = "a..b" })},
@@ -456,5 +456,32 @@ func TestClearScriptLateSymlinkGuardIsLoadBearing(t *testing.T) {
 	clearRun{script: mut, cwd: repo, cfg: cfg, home: t.TempDir(), args: []string{repo, clearID, "gm/" + clearID, t.TempDir()}}.do(t)
 	if _, serr := os.Stat(filepath.Join(outside, clearID, "keep.txt")); serr == nil {
 		t.Fatal("without the late guards nothing outside the repo was deleted: the scenario does not exercise them")
+	}
+}
+
+// TestClearScriptAcceptsLibraryRunID: a run started from the brief library has
+// an id of the form <family>-v<version>-<yyyymmdd>-r<NNN>; the script must
+// clear it like an old gm- id, and still refuse ids outside both shapes.
+func TestClearScriptAcceptsLibraryRunID(t *testing.T) {
+	const newID = "csvstat-v1.1b.2-20261101-r001"
+	repo, cfg := clearRepo(t, "gm/"+newID)
+	run := filepath.Join(repo, ".gophermind", newID)
+	os.MkdirAll(filepath.Join(run, "_state"), 0o755)
+	os.WriteFile(filepath.Join(cfg, "runs", newID+".json"), []byte("{}"), 0o644)
+	out, err, _ := clearRun{cwd: repo, cfg: cfg, home: t.TempDir(), args: []string{repo, newID, "gm/" + newID, t.TempDir()}}.do(t)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	for _, p := range []string{run, filepath.Join(cfg, "runs", newID+".json")} {
+		if _, serr := os.Stat(p); serr == nil {
+			t.Errorf("%s survives", p)
+		}
+	}
+	for _, bad := range []string{"CSVSTAT-v1-20261101-r001", "../x", "a/b", "csvstat-v1-20261101-r01"} {
+		repo, cfg := clearRepo(t, "gm/x")
+		out, err, calls := clearRun{cwd: repo, cfg: cfg, home: t.TempDir(), args: []string{repo, bad, "gm/x", t.TempDir()}}.do(t)
+		if err == nil || !strings.Contains(out, "id is not") || len(calls) != 0 {
+			t.Errorf("id %q: err %v, git calls %d, stderr %q", bad, err, len(calls), out)
+		}
 	}
 }

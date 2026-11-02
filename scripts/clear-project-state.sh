@@ -4,7 +4,7 @@
 # Usage: scripts/clear-project-state.sh <repo> <id> <work-branch> <archive-dir>
 #   <repo>         absolute path of the target repo (not /, not $HOME, not an
 #                  ancestor of $HOME, no .. component; symlinks are resolved)
-#   <id>           the brief id, gm-YYYY-MM-DD-NNN
+#   <id>           the run id, gm-YYYY-MM-DD-NNN or <family>-v<version>-<yyyymmdd>-r<NNN>
 #   <work-branch>  the git_branch_delete line of --print-state-paths
 #                  (gm/<id> unless the brief sets work_branch)
 #   <archive-dir>  absolute, existing directory outside the repo; it receives
@@ -47,7 +47,10 @@ case "$R" in *[!/]*) ;; *) die "repo must not be /" ;; esac # guard:root
 [ "$R" != "$HOME_DIR" ] || die "repo must not be \$HOME" # guard:home
 case "$HOME_DIR/" in "$R"/?*) die "repo must not contain \$HOME" ;; esac # guard:ancestor
 [ -d "$R/.git" ] || die "repo has no .git directory" # guard:nogit
-[[ "$ID" =~ ^gm-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3}$ ]] || die "id is not gm-YYYY-MM-DD-NNN" # guard:id
+# the two run id shapes of rundir.ValidID: gm-YYYY-MM-DD-NNN (before the brief
+# library) and <family>-v<version>-<yyyymmdd>-r<NNN> (library runs), 120 chars max
+ID_RE='^(gm-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3}|[a-z0-9]+(-[a-z0-9]+)*-v[0-9]+[a-z]?(\.[0-9]+[a-z]?)*-[0-9]{8}-r[0-9]{3,})$'
+{ [ "${#ID}" -le 120 ] && [[ "$ID" =~ $ID_RE ]]; } || die "id is not gm-YYYY-MM-DD-NNN or <family>-v<version>-<yyyymmdd>-r<NNN>" # guard:id
 [ -n "$BR" ] || die "work branch is empty" # guard:branch-empty
 ref_ok "$BR" || die "work branch is not a valid branch name" # guard:branch-form
 ref_ok "$BASE_BRANCH" || die "BASE_BRANCH is not a valid branch name" # guard:base-form
