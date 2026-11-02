@@ -687,6 +687,11 @@ func (m *briefManager) create(w http.ResponseWriter, r *http.Request) {
 	m.startReply(w, rec, warnings, err)
 }
 
+// createText validates a brief and starts its run through the library: a new
+// title saves v1, text identical to a stored version reuses it, and changed
+// text is saved as a child of the newest version. Invalid briefs come back as
+// *briefInvalidError, a busy slot as *briefBusyError, and a used run id as
+// errBriefExists (which cannot happen: ids are server-assigned).
 func (m *briefManager) createText(src []byte, ask bool) (briefRecord, []brief.Problem, error) {
 	src = bytes.TrimPrefix(src, []byte("\xef\xbb\xbf"))
 	stripped := stripFront(src)

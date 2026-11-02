@@ -32,11 +32,11 @@ var (
 	versionRe = regexp.MustCompile(`^v[0-9]+[a-z]?(\.[0-9]+[a-z]?)*$`)
 )
 
-// Version is one saved brief in a family.
 // createdLayout is fixed width with nanoseconds, so Created strings sort in
 // creation order even for versions saved within the same second.
 const createdLayout = "2006-01-02T15:04:05.000000000Z"
 
+// Version is one saved brief in a family.
 type Version struct {
 	Family, Name, Parent, Label, Created string
 	Locked                               bool

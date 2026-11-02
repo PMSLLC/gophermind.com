@@ -18,19 +18,44 @@ import (
 // stampedLine matches one id: or repo: frontmatter line with its line end.
 var stampedLine = regexp.MustCompile(`(?m)^(?:id|repo):.*\r?\n?`)
 
+// frontEnd finds the frontmatter of src the way build/brief does: the first
+// line is exactly --- (a trailing CR aside) and the block ends at the next
+// such line. head is src[headStart:headEnd]; headEnd is where that closing
+// line begins.
+func frontEnd(src []byte) (headStart, headEnd int, ok bool) {
+	isDash := func(l []byte) bool { return string(bytes.TrimSuffix(l, []byte("\r"))) == "---" }
+	nl := bytes.IndexByte(src, '\n')
+	if nl < 0 || !isDash(src[:nl]) {
+		return 0, 0, false
+	}
+	pos := nl + 1
+	for pos <= len(src) {
+		eol := bytes.IndexByte(src[pos:], '\n')
+		line := src[pos:]
+		if eol >= 0 {
+			line = src[pos : pos+eol]
+		}
+		if isDash(line) {
+			return nl + 1, pos, true
+		}
+		if eol < 0 {
+			break
+		}
+		pos += eol + 1
+	}
+	return 0, 0, false
+}
+
 // stampFront removes any id and repo lines from the frontmatter of src and
 // puts the given ones right after the opening --- line. The stored version
 // carries neither; the run copy needs both.
 func stampFront(src []byte, id, repo string) []byte {
-	nl := bytes.IndexByte(src, '\n')
-	if nl < 0 || strings.TrimSpace(string(src[:nl])) != "---" {
+	hs, he, ok := frontEnd(src)
+	if !ok {
 		return src
 	}
-	end := bytes.Index(src[nl:], []byte("\n---"))
-	if end < 0 {
-		return src
-	}
-	head, rest := src[nl+1:nl+end+1], src[nl+end+1:]
+	nl := hs - 1
+	head, rest := src[hs:he], src[he:]
 	head = stampedLine.ReplaceAll(head, nil)
 	eol := "\n"
 	if nl > 0 && src[nl-1] == '\r' {
@@ -114,18 +139,14 @@ func (m *briefManager) startVersion(family, version string, ask bool) (briefReco
 
 // stripFront removes any id and repo lines from the frontmatter of src.
 func stripFront(src []byte) []byte {
-	nl := bytes.IndexByte(src, '\n')
-	if nl < 0 || strings.TrimSpace(string(src[:nl])) != "---" {
+	hs, he, ok := frontEnd(src)
+	if !ok {
 		return src
 	}
-	end := bytes.Index(src[nl:], []byte("\n---"))
-	if end < 0 {
-		return src
-	}
-	head := stampedLine.ReplaceAll(src[nl+1:nl+end+1], nil)
+	head := stampedLine.ReplaceAll(src[hs:he], nil)
 	var out bytes.Buffer
-	out.Write(src[:nl+1])
+	out.Write(src[:hs])
 	out.Write(head)
-	out.Write(src[nl+end+1:])
+	out.Write(src[he:])
 	return out.Bytes()
 }

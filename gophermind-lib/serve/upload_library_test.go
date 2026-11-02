@@ -334,3 +334,28 @@ func TestUploadChildOfNewestVersion(t *testing.T) {
 		t.Fatalf("version %+v err %v, want a child of the newest, v1.1.1", v, err)
 	}
 }
+
+// A "--- " line is not the end of the frontmatter for the parser, so id and
+// repo lines after it are still frontmatter and must not survive.
+func TestUploadSecondYAMLDocCannotChooseIDOrRepo(t *testing.T) {
+	e := newBriefEnv(t)
+	m := e.manager()
+	src := strings.Replace(e.briefText("gm-2026-10-23-001"), "\n---\n", "\n--- \nid: gm-evil-001\nrepo: /somewhere/else\n---\n", 1)
+	rec, _, err := m.createText([]byte(src), false)
+	if err != nil {
+		t.Logf("refused: %v", err) // refused is acceptable
+		return
+	}
+	waitIdle(t, m)
+	if rec.ID != rid(1) {
+		t.Fatalf("run id %q came from the client", rec.ID)
+	}
+	_, stored := mustGetFam(t, m, uploadFamily, rec.Version)
+	if bytes.Contains(stored, []byte("gm-evil-001")) || bytes.Contains(stored, []byte("/somewhere/else")) {
+		t.Fatalf("stored version keeps client id or repo:\n%s", stored)
+	}
+	run, _ := os.ReadFile(filepath.Join(e.dir, rec.ID, "brief.md"))
+	if bytes.Contains(run, []byte("gm-evil-001")) || bytes.Contains(run, []byte("/somewhere/else")) || !bytes.Contains(run, []byte("repo: "+e.root)) {
+		t.Fatalf("run copy wrong:\n%s", run)
+	}
+}

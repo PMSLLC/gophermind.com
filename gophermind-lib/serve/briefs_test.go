@@ -298,7 +298,7 @@ func TestBriefResubmitTakesNextFreeID(t *testing.T) {
 	}
 	e.waitPhase(rid(1), phaseDone)
 
-	// Upload again with ?resubmit=1: a new id, the old run untouched.
+	// ?resubmit=1 is ignored: the same text is simply the next run.
 	w := e.post("/app/briefs?resubmit=1", body, nil)
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("resubmit upload = %d %s", w.Code, w.Body)
