@@ -431,3 +431,20 @@ func TestEditorKeepsEditsOnLockedAndConflict(t *testing.T) {
 		t.Errorf("text.value assignments: %d, unguarded", n)
 	}
 }
+
+// TestSaveLabelCapped: a label over 200 characters is refused with a clear
+// message and no version is made; exactly 200 (multi-byte included) is fine.
+func TestSaveLabelCapped(t *testing.T) {
+	e, m := libEnv(t)
+	text := string(e.versionBody()) + "\n- changed\n"
+	w := e.post("/app/api/library/csvstat/v1/save", saveBody(text, strings.Repeat("x", 201), false), sameOrigin)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "label is longer than 200 characters") {
+		t.Fatalf("201-char label = %d %s", w.Code, w.Body)
+	}
+	if fams, _ := m.lib.List(); len(fams) != 1 || len(fams[0].Versions) != 1 {
+		t.Errorf("a version was made: %+v", fams)
+	}
+	if w := e.post("/app/api/library/csvstat/v1/save", saveBody(text, strings.Repeat("é", 200), false), sameOrigin); w.Code != http.StatusOK && w.Code != http.StatusCreated {
+		t.Errorf("200-char label = %d %s", w.Code, w.Body)
+	}
+}

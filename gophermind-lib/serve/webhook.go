@@ -394,8 +394,17 @@ func resolveToken(opt Options) (string, error) {
 //	GET     /app/briefs/{id}/state         bearer+HMAC  d.Pipeline && Options.BriefsDir (run state JSON)
 //	GET     /app/briefs/{id}/events        bearer+HMAC  d.Pipeline && Options.BriefsDir (SSE of the run state)
 //	POST    /app/briefs/{id}/stop          bearer+HMAC  d.Pipeline && Options.BriefsDir (kill the active run)
-//	POST    /app/briefs/{id}/resubmit      bearer+HMAC  d.Pipeline && Options.BriefsDir (run the stored brief again under the next free id)
+//	POST    /app/briefs/{id}/resubmit      bearer+HMAC  d.Pipeline && Options.BriefsDir (start the run's library version again as a new run; a run with no version goes through the upload flow)
 //	POST    /app/briefs/{id}/answer        bearer+HMAC  d.Pipeline && Options.BriefsDir (answer a clarify question, resume)
+//	GET     /app/library                   sign-in      d.Pipeline && Options.BriefsDir (HTML library of brief families)
+//	GET     /app/library/{f}/{v}           sign-in      d.Pipeline && Options.BriefsDir (HTML editor for one version)
+//	GET     /app/library/{f}/{v}/preview   sign-in      d.Pipeline && Options.BriefsDir (HTML preview before a run)
+//	GET     /app/api/library               bearer+HMAC  d.Pipeline && Options.BriefsDir (JSON families and versions)
+//	GET     /app/api/library/{f}/{v}       bearer+HMAC  d.Pipeline && Options.BriefsDir (JSON one version: text, links, runs)
+//	POST    /app/api/library/{f}/{v}/save  bearer+HMAC  d.Pipeline && Options.BriefsDir (save as a child version, or in place when unlocked)
+//	GET     /app/api/library/{f}/{v}/diff  bearer+HMAC  d.Pipeline && Options.BriefsDir (plain-text diff against ?against=)
+//	GET     /app/api/library/{f}/{v}/preview bearer+HMAC d.Pipeline && Options.BriefsDir (sections, problems, warnings, preview token)
+//	POST    /app/api/library/{f}/{v}/run   bearer+HMAC  d.Pipeline && Options.BriefsDir (start a run; preview_token required)
 //
 // All bearer+HMAC routes share one rate limiter (GOPHERMIND_SERVE_RATE
 // req/min) keyed by the Authorization header, so no route can be used to

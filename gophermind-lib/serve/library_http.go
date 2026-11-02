@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"gophermind/gophermind-lib/library"
 )
@@ -134,6 +136,9 @@ func libraryLockedReply(w http.ResponseWriter) {
 		map[string]any{"locked": true, "hint": "Save as new version"})
 }
 
+// maxLabelChars caps a version label, in characters.
+const maxLabelChars = 200
+
 // librarySave handles POST /app/api/library/{family}/{version}/save.
 func (m *briefManager) librarySave(w http.ResponseWriter, r *http.Request) {
 	family, name := r.PathValue("family"), r.PathValue("version")
@@ -145,6 +150,10 @@ func (m *briefManager) librarySave(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 2*library.MaxTextBytes)
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		briefError(w, http.StatusBadRequest, "send JSON with text, label and in_place", nil)
+		return
+	}
+	if utf8.RuneCountInString(body.Label) > maxLabelChars {
+		briefError(w, http.StatusBadRequest, fmt.Sprintf("the label is longer than %d characters", maxLabelChars), nil)
 		return
 	}
 	text := stripFront(bytes.TrimPrefix([]byte(body.Text), []byte("\xef\xbb\xbf")))
