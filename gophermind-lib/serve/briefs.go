@@ -617,11 +617,21 @@ func withRepo(src []byte, repo string) []byte {
 	return src
 }
 
-// freshID returns the first gm-<today>-NNN with no run folder yet.
+// freshID returns the first gm-<today>-NNN with no run folder yet and no entry
+// in <dir>/library/aliases.json, so a run started after the library migration
+// never reuses an old id that now points at a migrated run. An unreadable alias
+// file is an error rather than a guess.
 func (m *briefManager) freshID() (string, error) {
+	aliases, err := library.LoadAliases(filepath.Join(m.dir, "library"))
+	if err != nil {
+		return "", fmt.Errorf("brief aliases: %w", err)
+	}
 	day := m.now().Format("2006-01-02")
 	for n := 1; n < 1000; n++ {
 		id := fmt.Sprintf("gm-%s-%03d", day, n)
+		if _, taken := aliases[id]; taken {
+			continue
+		}
 		if _, err := os.Lstat(m.runDir(id)); errors.Is(err, fs.ErrNotExist) {
 			return id, nil
 		}
