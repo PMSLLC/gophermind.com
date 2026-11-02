@@ -102,3 +102,58 @@ func TestAliasReloadedWhenFileChanges(t *testing.T) {
 		t.Errorf("bad id resolved to %q", got)
 	}
 }
+
+// Every route and tool that takes a run id resolves an old one: removing
+// resolveID from any of them fails here.
+func TestAliasResolvedByEveryRoute(t *testing.T) {
+	e := newBriefEnv(t)
+	writeRunRecord(t, e.dir, briefRecord{ID: aliasNew, Title: "csvstat", Phase: phaseDone, StartedAt: "2026-10-29T10:00:00Z"}, "the log\n")
+	if err := os.WriteFile(filepath.Join(e.dir, aliasNew, "brief.md"), []byte(e.briefText(aliasNew)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeAliases(t, e.dir, library.Aliases{aliasOld: aliasNew})
+
+	// events: the first state event names the new run, then the stream ends.
+	w := e.get("/app/briefs/" + aliasOld + "/events")
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"id":"`+aliasNew+`"`) || !strings.Contains(w.Body.String(), "event: end") {
+		t.Errorf("events of the old id = %d %s", w.Code, w.Body)
+	}
+	// answer: an unresolved id is 404 no such run; the resolved run is done, so 409.
+	w = e.post("/app/briefs/"+aliasOld+"/answer", `{"question_id":"clarify-q1","answer":"yes"}`, nil)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "not waiting") {
+		t.Errorf("answer to the old id = %d %s", w.Code, w.Body)
+	}
+	// resubmit: an unresolved id has no stored brief (404); the resolved run's brief starts.
+	w = e.post("/app/briefs/"+aliasOld+"/resubmit", "", nil)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("resubmit of the old id = %d %s", w.Code, w.Body)
+	}
+	var started struct {
+		RunID string `json:"run_id"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &started)
+	if started.RunID == "" || started.RunID == aliasNew {
+		t.Fatalf("resubmit started %q: %s", started.RunID, w.Body)
+	}
+	e.waitPhase(started.RunID, phaseDone)
+
+	bm, err := newBriefManager(Options{BriefsDir: e.dir}, e.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &chatTools{bm: bm}
+	raw, _ := json.Marshal(map[string]string{"id": aliasOld, "question_id": "clarify-q1", "text": "yes"})
+	out, err := findTool(t, c, "brief_answer").Run(context.Background(), raw)
+	if err != nil || !strings.Contains(out, "not waiting") {
+		t.Errorf("brief_answer of the old id: %q %v", out, err)
+	}
+	// brief_stop: make the new id the active run (no process, so no signal).
+	bm.mu.Lock()
+	bm.active = &activeBrief{id: aliasNew, done: make(chan struct{})}
+	bm.mu.Unlock()
+	raw, _ = json.Marshal(map[string]string{"id": aliasOld})
+	out, err = findTool(t, c, "brief_stop").Run(context.Background(), raw)
+	if err != nil || !strings.Contains(out, "stop requested for run "+aliasNew) {
+		t.Errorf("brief_stop of the old id: %q %v", out, err)
+	}
+}
