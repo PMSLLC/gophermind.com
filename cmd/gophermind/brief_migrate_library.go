@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -44,6 +46,11 @@ var (
 	// migrateAfterRename is a test hook run after every rename this
 	// invocation makes, with the count so far; an error stops the command.
 	migrateAfterRename func(n int) error
+	// migrateCrash is a test hook at the points between a change and its
+	// journal done line ("rename", "write"); an error stops the command there.
+	migrateCrash func(point string) error
+	// migrateFsync syncs the journal after every line; tests turn it off.
+	migrateFsync = true
 	// migrateNow is the clock of the backup stamp.
 	migrateNow = func() time.Time { return time.Now().UTC() }
 )
@@ -82,6 +89,7 @@ type jEntry struct {
 	Orig    string   `json:"orig,omitempty"` // backup copy of a rewritten file
 	Family  string   `json:"family,omitempty"`
 	Existed bool     `json:"existed,omitempty"` // lib: the family dir was already there
+	Sum     string   `json:"sum,omitempty"`     // sha256 of what the step wrote (rewrite: the file, lib: v1 brief.md)
 	Plan    *migPlan `json:"plan,omitempty"`
 }
 
@@ -120,6 +128,7 @@ func readMigRecord(path string) (migRecord, error) {
 
 type migrator struct {
 	briefs, repos, runs, serverURL string
+	force                          bool // --force-rollback
 	out, errw                      io.Writer
 
 	libDir  string
@@ -139,12 +148,15 @@ func briefMigrateLibrary(args []string, out, errw io.Writer) int {
 	runs := fset.String("runs", "", "the run records dir (<config dir>/runs)")
 	url := fset.String("server-url", migrateDefaultURL, "the server to check is stopped")
 	apply := fset.Bool("apply", false, "migrate (default is a dry run)")
-	rollback := fset.Bool("rollback", false, "undo a migration from its journal")
-	if err := fset.Parse(args); err != nil || fset.NArg() != 0 || *briefs == "" || *repos == "" || *runs == "" || (*apply && *rollback) {
-		fmt.Fprintln(errw, "usage: gophermind brief migrate-library --briefs DIR --repos DIR --runs DIR [--server-url URL] [--apply | --rollback]")
+	rollback := fset.Bool("rollback", false, "undo a migration from its journal; refuses when later work would be lost")
+	force := fset.Bool("force-rollback", false, "undo a migration even over later work: DESTROYS library versions saved since, "+
+		"edits since to files the migration wrote, and v1 lock changes; later run folders are left in place")
+	if err := fset.Parse(args); err != nil || fset.NArg() != 0 || *briefs == "" || *repos == "" || *runs == "" ||
+		(*apply && (*rollback || *force)) || (*rollback && *force) {
+		fmt.Fprintln(errw, "usage: gophermind brief migrate-library --briefs DIR --repos DIR --runs DIR [--server-url URL] [--apply | --rollback | --force-rollback]")
 		return 1
 	}
-	m := &migrator{serverURL: strings.TrimRight(*url, "/"), out: out, errw: errw,
+	m := &migrator{serverURL: strings.TrimRight(*url, "/"), out: out, errw: errw, force: *force,
 		done: map[string]bool{}, begun: map[string]bool{}}
 	for _, p := range []struct {
 		dst *string
@@ -161,7 +173,7 @@ func briefMigrateLibrary(args []string, out, errw io.Writer) int {
 	m.jpath = filepath.Join(m.libDir, migrateJournalName)
 	var err error
 	switch {
-	case *rollback:
+	case *rollback, *force:
 		err = m.rollback()
 	case *apply:
 		err = m.apply()
@@ -266,7 +278,12 @@ func (m *migrator) buildPlan() (plan *migPlan, skipped, problems []string, err e
 			problems = append(problems, fmt.Sprintf("%s: brief.md names id %q", dir, id))
 			continue
 		}
-		all = append(all, found{run: migRun{Old: old, Family: fam, OldRepo: frontLine(src, "repo")},
+		repo := frontLine(src, "repo")
+		if repo == "" || filepath.Dir(repo) != m.repos || filepath.Base(repo) != old {
+			problems = append(problems, fmt.Sprintf("%s: brief.md repo: %q is not %s", dir, repo, filepath.Join(m.repos, old)))
+			continue
+		}
+		all = append(all, found{run: migRun{Old: old, Family: fam, OldRepo: repo},
 			title: title, text: string(serve.StripStamp(src))})
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].run.Old < all[j].run.Old })
@@ -518,8 +535,10 @@ func (m *migrator) record(e jEntry) error {
 	if _, err := m.journal.Write(append(b, '\n')); err != nil {
 		return err
 	}
-	if err := m.journal.Sync(); err != nil {
-		return err
+	if migrateFsync {
+		if err := m.journal.Sync(); err != nil {
+			return err
+		}
 	}
 	switch e.State {
 	case "begin":
@@ -599,6 +618,9 @@ func (m *migrator) apply() error {
 			return fmt.Errorf("the journal was written for --briefs %s --repos %s --runs %s", m.plan.Briefs, m.plan.Repos, m.plan.Runs)
 		}
 		fmt.Fprintf(m.out, "resuming the migration in %s\n", m.jpath)
+		if err := m.cleanTmp(); err != nil {
+			return err
+		}
 	} else {
 		if has, err := m.libraryHasVersions(); err != nil {
 			return err
@@ -831,6 +853,7 @@ func (m *migrator) saveFamilies() error {
 		if m.done[k.key()] {
 			continue
 		}
+		k.Sum = sha256Hex([]byte(f.Text))
 		_, text, gerr := st.Get(f.Name, migrateVersion)
 		switch {
 		case gerr == nil && string(text) != f.Text:
@@ -879,6 +902,11 @@ func (m *migrator) renameStep(from, to string, required bool) error {
 		}
 		if err := os.Rename(from, to); err != nil {
 			return err
+		}
+		if migrateCrash != nil {
+			if err := migrateCrash("rename"); err != nil {
+				return err
+			}
 		}
 		k.State = "done"
 		if err := m.record(k); err != nil {
@@ -1008,12 +1036,17 @@ func (m *migrator) rewriteStep(path, orig string, fn func([]byte) ([]byte, error
 	if ofi, err := os.Lstat(orig); err != nil || !ofi.Mode().IsRegular() {
 		return fmt.Errorf("%s: no backup copy at %s", path, orig)
 	}
-	k.State, k.Orig = "begin", orig
+	k.State, k.Orig, k.Sum = "begin", orig, sha256Hex(nd)
 	if err := m.record(k); err != nil {
 		return err
 	}
 	if err := writeKeep(path, nd, fi.Mode().Perm()); err != nil {
 		return err
+	}
+	if migrateCrash != nil {
+		if err := migrateCrash("write"); err != nil {
+			return err
+		}
 	}
 	k.State = "done"
 	return m.record(k)
@@ -1208,6 +1241,23 @@ func (m *migrator) rollback() error {
 	if plan.Briefs != m.briefs || plan.Repos != m.repos || plan.Runs != m.runs {
 		return fmt.Errorf("the journal was written for --briefs %s --repos %s --runs %s", plan.Briefs, plan.Repos, plan.Runs)
 	}
+	later, keep, err := m.laterWork(entries, plan)
+	if err != nil {
+		return err
+	}
+	if len(later) > 0 {
+		for _, l := range later {
+			fmt.Fprintln(m.out, "later work:", l)
+		}
+		if !m.force {
+			return fmt.Errorf("refusing to roll back, nothing changed: %d changes since the migration would be lost or left behind; "+
+				"--force-rollback goes ahead and destroys them", len(later))
+		}
+		fmt.Fprintf(m.out, "--force-rollback: going ahead over %d later changes\n", len(later))
+	}
+	if err := m.cleanTmp(); err != nil {
+		return err
+	}
 	handled := map[string]bool{}
 	undone := 0
 	for i := len(entries) - 1; i >= 1; i-- {
@@ -1263,6 +1313,16 @@ func (m *migrator) rollback() error {
 			undone++
 		}
 	}
+	if diffs := m.compareWithBackup(plan, keep); len(diffs) > 0 {
+		for i, d := range diffs {
+			if i == 50 {
+				fmt.Fprintf(m.out, "... and %d more\n", len(diffs)-50)
+				break
+			}
+			fmt.Fprintln(m.out, "differs from the backup:", d)
+		}
+		return fmt.Errorf("rolled back %d steps, but %d paths differ from the backup at %s; the journal is kept", undone, len(diffs), plan.Backup)
+	}
 	if err := m.guardedRemove(m.libDir, filepath.Join(m.libDir, library.AliasesFile), false); err != nil {
 		return err
 	}
@@ -1276,4 +1336,252 @@ func (m *migrator) rollback() error {
 	}
 	fmt.Fprintf(m.out, "rolled back %d steps; backup kept at %s\n", undone, plan.Backup)
 	return nil
+}
+
+func sha256Hex(b []byte) string {
+	s := sha256.Sum256(b)
+	return hex.EncodeToString(s[:])
+}
+
+func fileSum(p string) (string, error) {
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return "", err
+	}
+	return sha256Hex(b), nil
+}
+
+// laterWork lists what changed since the migration and a rollback would
+// destroy or leave inconsistent: files the migration wrote that no longer
+// hold what it wrote, library versions other than the migrated v1, a v1 no
+// longer locked or with other text, and run folders of a migrated family
+// that the migration did not make. keep is the run folders, which a forced
+// rollback leaves in place.
+func (m *migrator) laterWork(entries []jEntry, plan *migPlan) (later, keep []string, err error) {
+	type rw struct {
+		sum, orig string
+		done      bool
+	}
+	rws := map[string]*rw{}
+	var rwOrder []string
+	libDone := map[string]string{}
+	fams := map[string]bool{}
+	for _, e := range entries {
+		switch e.Op {
+		case "rewrite":
+			r := rws[e.Path]
+			if r == nil {
+				r = &rw{}
+				rws[e.Path] = r
+				rwOrder = append(rwOrder, e.Path)
+			}
+			if e.Sum != "" {
+				r.sum, r.orig = e.Sum, e.Orig
+			}
+			if e.State == "done" {
+				r.done = true
+			}
+		case "lib":
+			fams[e.Family] = true
+			if e.State == "done" {
+				libDone[e.Family] = e.Sum
+			}
+		}
+	}
+	for _, p := range rwOrder {
+		r := rws[p]
+		got, err := fileSum(p)
+		if err != nil {
+			continue // not there (already renamed back): nothing to compare
+		}
+		if got == r.sum {
+			continue
+		}
+		if !r.done {
+			if o, err := fileSum(r.orig); err == nil && o == got {
+				continue // the write never happened
+			}
+		}
+		later = append(later, p+": changed since the migration wrote it")
+	}
+	var famNames []string
+	for f := range fams {
+		famNames = append(famNames, f)
+	}
+	sort.Strings(famNames)
+	st, err := library.Open(m.libDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, f := range famNames {
+		ents, _ := os.ReadDir(filepath.Join(m.libDir, f))
+		for _, e := range ents {
+			if e.IsDir() && e.Name() != migrateVersion {
+				later = append(later, filepath.Join(m.libDir, f, e.Name())+": a version saved after the migration")
+			}
+		}
+		sum, done := libDone[f]
+		if !done {
+			continue
+		}
+		v, text, err := st.Get(f, migrateVersion)
+		vdir := filepath.Join(m.libDir, f, migrateVersion)
+		switch {
+		case err != nil:
+			later = append(later, vdir+": missing")
+		case !v.Locked:
+			later = append(later, vdir+": no longer locked")
+		case sum != "" && sha256Hex(text) != sum:
+			later = append(later, vdir+": text changed since the migration")
+		}
+	}
+	planned := map[string]bool{}
+	for _, r := range plan.Items {
+		planned[r.New] = true
+	}
+	for _, dir := range []string{m.briefs, m.repos} {
+		ents, _ := os.ReadDir(dir)
+		for _, e := range ents {
+			name := e.Name()
+			if !planner.ValidRunID(name) || planned[name] {
+				continue
+			}
+			for _, f := range famNames {
+				if strings.HasPrefix(name, f+"-v") {
+					p := filepath.Join(dir, name)
+					later = append(later, p+": a run of "+f+" made after the migration")
+					keep = append(keep, p)
+					break
+				}
+			}
+		}
+	}
+	return later, keep, nil
+}
+
+// cleanTmp removes temp files a crash inside writeKeep left behind.
+func (m *migrator) cleanTmp() error {
+	for _, root := range []string{m.briefs, m.repos, m.runs} {
+		var found []string
+		_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+			if err != nil {
+				if d != nil && d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if d.IsDir() && p == m.libDir {
+				return filepath.SkipDir
+			}
+			if d.Type().IsRegular() && strings.HasPrefix(d.Name(), ".migrate-tmp-") {
+				found = append(found, p)
+			}
+			return nil
+		})
+		for _, p := range found {
+			if err := m.guardedRemove(root, p, false); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// snapshot maps every path under root (relative) to its kind, mode and
+// content hash. skipTop is a top-level entry left out.
+func snapshot(root, skipTop string) (map[string]string, error) {
+	out := map[string]string{}
+	if !exists(root) {
+		return out, nil
+	}
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if p == root {
+			return nil
+		}
+		rel, _ := filepath.Rel(root, p)
+		if skipTop != "" && rel == skipTop {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		fi, err := os.Lstat(p)
+		if err != nil {
+			return err
+		}
+		switch {
+		case fi.IsDir():
+			out[rel] = "dir"
+		case fi.Mode()&fs.ModeSymlink != 0:
+			l, err := os.Readlink(p)
+			if err != nil {
+				return err
+			}
+			out[rel] = "link " + l
+		default:
+			sum, err := fileSum(p)
+			if err != nil {
+				return err
+			}
+			out[rel] = fi.Mode().Perm().String() + " " + sum
+		}
+		return nil
+	})
+	return out, err
+}
+
+// compareWithBackup checks the rolled-back briefs/, repos/ and touched run
+// records against the backup and returns the live paths that differ. Paths
+// under keep (later run folders a forced rollback left) are not compared.
+func (m *migrator) compareWithBackup(plan *migPlan, keep []string) []string {
+	var diffs []string
+	kept := func(p string) bool {
+		for _, k := range keep {
+			if p == k || strings.HasPrefix(p, k+string(filepath.Separator)) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, pair := range []struct{ live, bk, skip string }{
+		{m.briefs, filepath.Join(plan.Backup, "briefs"), "library"},
+		{m.repos, filepath.Join(plan.Backup, "repos"), ""},
+	} {
+		a, err := snapshot(pair.live, pair.skip)
+		if err != nil {
+			diffs = append(diffs, pair.live+": "+err.Error())
+			continue
+		}
+		b, err := snapshot(pair.bk, "")
+		if err != nil {
+			diffs = append(diffs, pair.bk+": "+err.Error())
+			continue
+		}
+		for rel, v := range a {
+			if p := filepath.Join(pair.live, rel); b[rel] != v && !kept(p) {
+				diffs = append(diffs, p)
+			}
+		}
+		for rel := range b {
+			if _, ok := a[rel]; !ok {
+				diffs = append(diffs, filepath.Join(pair.live, rel)+" (missing)")
+			}
+		}
+	}
+	for _, r := range plan.Items {
+		live, bk := filepath.Join(m.runs, r.Old+".json"), filepath.Join(plan.Backup, "runs", r.Old+".json")
+		ls, lerr := fileSum(live)
+		bs, berr := fileSum(bk)
+		if (lerr == nil) != (berr == nil) || ls != bs {
+			diffs = append(diffs, live)
+		}
+		if exists(filepath.Join(m.runs, r.New+".json")) {
+			diffs = append(diffs, filepath.Join(m.runs, r.New+".json"))
+		}
+	}
+	sort.Strings(diffs)
+	return diffs
 }

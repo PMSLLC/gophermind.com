@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -50,6 +51,9 @@ var migExpected = map[string]string{
 
 const migUnrelated = "gm-2026-09-29-900"
 
+// The journal is fsynced line by line in real use; the tests skip that.
+func init() { migrateFsync = false }
+
 func migBrief(old, repo, title string) string {
 	return "---\nspec_version: \"2.0\"\nid: " + old + "\nrepo: " + repo + "\ntitle: " + title +
 		"\nlanguage: go\n---\n# " + title + "\n\nThe " + title + " tool.\n"
@@ -65,8 +69,66 @@ func mustWrite(t *testing.T, path, data string) {
 	}
 }
 
-// migTree builds the fake tree under a temp root and returns the root.
+type migTmplEntry struct {
+	rel  string
+	mode fs.FileMode
+	data []byte
+}
+
+// migTmpl is the fake tree built once and kept in memory; migTree writes a
+// copy of it under each test's own root.
+var migTmpl struct {
+	once    sync.Once
+	root    string
+	entries []migTmplEntry
+}
+
+// migTree writes the fake tree under a new temp root and returns the root.
 func migTree(t *testing.T) string {
+	t.Helper()
+	migTmpl.once.Do(func() {
+		migTmpl.root = migBuildTree(t)
+		err := filepath.WalkDir(migTmpl.root, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || p == migTmpl.root {
+				return err
+			}
+			rel, _ := filepath.Rel(migTmpl.root, p)
+			fi, err := os.Lstat(p)
+			if err != nil {
+				return err
+			}
+			e := migTmplEntry{rel: rel, mode: fi.Mode()}
+			if fi.Mode().IsRegular() {
+				if e.data, err = os.ReadFile(p); err != nil {
+					return err
+				}
+			}
+			migTmpl.entries = append(migTmpl.entries, e)
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	root := t.TempDir()
+	for _, e := range migTmpl.entries {
+		p := filepath.Join(root, e.rel)
+		if e.mode.IsDir() {
+			if err := os.MkdirAll(p, e.mode.Perm()); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		data := bytes.ReplaceAll(e.data, []byte(migTmpl.root), []byte(root))
+		if err := os.WriteFile(p, data, e.mode.Perm()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+// migBuildTree builds the fake tree under a temp root and returns the root.
+func migBuildTree(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	briefs, repos, runs := filepath.Join(root, "briefs"), filepath.Join(root, "repos"), filepath.Join(root, "runs")
@@ -458,7 +520,9 @@ func TestMigrateRollbackRestores(t *testing.T) {
 		t.Error("tree differs after rolling back an interrupted migration")
 	}
 	// After a rollback the migration can run again.
-	time.Sleep(1100 * time.Millisecond) // a new backup stamp
+	old := migrateNow
+	migrateNow = func() time.Time { return time.Now().UTC().Add(time.Hour) } // a new backup stamp
+	defer func() { migrateNow = old }()
 	if rc, out := runMigrate(t, root, "--apply"); rc != 0 {
 		t.Fatalf("apply after rollback rc %d\n%s", rc, out)
 	}
@@ -546,5 +610,172 @@ func TestMigrateRefusesUncopyableFile(t *testing.T) {
 	}
 	if treeHash(t, root) != before || len(backups(t, root)) != 0 {
 		t.Error("refused apply changed the tree")
+	}
+}
+
+// migNamed builds the tree, migrates it and returns the root and the
+// pre-migration hash.
+func migApplied(t *testing.T) (string, string) {
+	t.Helper()
+	root := migTree(t)
+	before := treeHash(t, root)
+	if rc, out := runMigrate(t, root, "--apply"); rc != 0 {
+		t.Fatalf("apply rc %d\n%s", rc, out)
+	}
+	return root, before
+}
+
+func TestMigrateRollbackRefusesLaterWork(t *testing.T) {
+	newID := migExpected["gm-2026-10-29-001"]
+	cases := []struct {
+		name   string
+		change func(t *testing.T, root string) string // returns the path the refusal must name
+	}{
+		{"edited run.json", func(t *testing.T, root string) string {
+			p := filepath.Join(root, "briefs", newID, "run.json")
+			b, _ := os.ReadFile(p)
+			mustWrite(t, p, strings.Replace(string(b), `"done"`, `"failed"`, 1))
+			return p
+		}},
+		{"new version", func(t *testing.T, root string) string {
+			st, err := library.Open(filepath.Join(root, "briefs", "library"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, text, _ := st.Get("csvstat", "v1")
+			v, err := st.Save("csvstat", "v1", "", append(text, []byte("\nMore.\n")...))
+			if err != nil || v.Name != "v1.1" {
+				t.Fatalf("save %v %v", v, err)
+			}
+			return filepath.Join(root, "briefs", "library", "csvstat", "v1.1")
+		}},
+		{"new run folder", func(t *testing.T, root string) string {
+			p := filepath.Join(root, "briefs", "csvstat-v1-20261101-r001")
+			mustWrite(t, filepath.Join(p, "run.json"), `{"id":"csvstat-v1-20261101-r001","title":"csvstat","phase":"done","started_at":"x","family":"csvstat","version":"v1"}`)
+			return p
+		}},
+		{"unlocked v1", func(t *testing.T, root string) string {
+			p := filepath.Join(root, "briefs", "library", "roman", "v1", "meta.json")
+			b, _ := os.ReadFile(p)
+			var m map[string]any
+			_ = json.Unmarshal(b, &m)
+			m["locked_at"] = ""
+			b, _ = json.Marshal(m)
+			mustWrite(t, p, string(b))
+			return filepath.Join(root, "briefs", "library", "roman", "v1")
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			root, before := migApplied(t)
+			path := c.change(t, root)
+			changed := treeHash(t, root)
+			rc, out := runMigrate(t, root, "--rollback")
+			if rc == 0 || !strings.Contains(out, path) {
+				t.Fatalf("rollback rc %d, want a refusal naming %s\n%s", rc, path, out)
+			}
+			if treeHash(t, root) != changed {
+				t.Fatal("refused rollback changed the tree")
+			}
+			rc, out = runMigrate(t, root, "--force-rollback")
+			if rc != 0 {
+				t.Fatalf("force rollback rc %d\n%s", rc, out)
+			}
+			for old := range migExpected {
+				if !exists(filepath.Join(root, "briefs", old)) || !exists(filepath.Join(root, "repos", old)) {
+					t.Errorf("%s not restored", old)
+				}
+			}
+			if c.name != "new run folder" && treeHash(t, root) != before {
+				t.Errorf("tree differs after force rollback\n%s", out)
+			}
+		})
+	}
+}
+
+func TestMigrateRollbackChecksResultAgainstBackup(t *testing.T) {
+	root, _ := migApplied(t)
+	// run.log is not a file the migration writes, so the pre-check lets it
+	// through; the result no longer matches the backup.
+	p := filepath.Join(root, "briefs", migExpected["gm-2026-10-30-001"], "run.log")
+	b, _ := os.ReadFile(p)
+	mustWrite(t, p, string(b)+"later line\n")
+	rc, out := runMigrate(t, root, "--rollback")
+	want := filepath.Join(root, "briefs", "gm-2026-10-30-001", "run.log")
+	if rc == 0 || !strings.Contains(out, want) {
+		t.Fatalf("rc %d, want a difference naming %s\n%s", rc, want, out)
+	}
+}
+
+func migCrashAt(point string, n int) {
+	seen := 0
+	migrateCrash = func(p string) error {
+		if p == point {
+			seen++
+			if seen == n {
+				return errors.New("injected crash at " + p)
+			}
+		}
+		return nil
+	}
+}
+
+func TestMigrateCrashBeforeJournalDone(t *testing.T) {
+	for _, point := range []string{"rename", "write"} {
+		t.Run(point+" rerun", func(t *testing.T) {
+			root := migTree(t)
+			migCrashAt(point, 3)
+			rc, out := runMigrate(t, root, "--apply")
+			migrateCrash = nil
+			if rc == 0 || !strings.Contains(out, "injected crash") {
+				t.Fatalf("rc %d\n%s", rc, out)
+			}
+			// A temp file a crash in writeKeep would leave behind.
+			tmp := filepath.Join(root, "briefs", "gm-2026-10-30-002", ".migrate-tmp-123")
+			mustWrite(t, tmp, "partial")
+			rc, out = runMigrate(t, root, "--apply")
+			if rc != 0 {
+				t.Fatalf("rerun rc %d\n%s", rc, out)
+			}
+			if exists(tmp) || exists(filepath.Join(root, "briefs", migExpected["gm-2026-10-30-002"], ".migrate-tmp-123")) {
+				t.Error("temp file left behind")
+			}
+			checkMigrated(t, root)
+		})
+		t.Run(point+" rollback", func(t *testing.T) {
+			root := migTree(t)
+			before := treeHash(t, root)
+			migCrashAt(point, 3)
+			rc, _ := runMigrate(t, root, "--apply")
+			migrateCrash = nil
+			if rc == 0 {
+				t.Fatal("no crash")
+			}
+			tmp := filepath.Join(root, "repos", "gm-2026-10-30-002", ".migrate-tmp-456")
+			mustWrite(t, tmp, "partial")
+			if rc, out := runMigrate(t, root, "--rollback"); rc != 0 {
+				t.Fatalf("rollback rc %d\n%s", rc, out)
+			}
+			if treeHash(t, root) != before {
+				t.Error("tree differs after rolling back a crash")
+			}
+		})
+	}
+}
+
+func TestMigrateRefusesRepoOutsideRepos(t *testing.T) {
+	root := migTree(t)
+	p := filepath.Join(root, "briefs", "gm-2026-10-30-001", "brief.md")
+	b, _ := os.ReadFile(p)
+	mustWrite(t, p, strings.Replace(string(b), "repo: "+filepath.Join(root, "repos"), "repo: /elsewhere", 1))
+	before := treeHash(t, root)
+	for _, args := range [][]string{nil, {"--apply"}} {
+		rc, out := runMigrate(t, root, args...)
+		if rc == 0 || !strings.Contains(out, "/elsewhere/gm-2026-10-30-001") {
+			t.Fatalf("%v rc %d\n%s", args, rc, out)
+		}
+	}
+	if treeHash(t, root) != before || len(backups(t, root)) != 0 {
+		t.Error("tree changed")
 	}
 }

@@ -31,7 +31,7 @@ const briefUsage = `usage:
   gophermind brief vault set <NAME>      (value from a terminal prompt or stdin)
   gophermind brief vault list
   gophermind brief tree check <run-dir>
-  gophermind brief migrate-library --briefs DIR --repos DIR --runs DIR [--server-url URL] [--apply | --rollback]
+  gophermind brief migrate-library --briefs DIR --repos DIR --runs DIR [--server-url URL] [--apply | --rollback | --force-rollback]
                                          (dry run by default: old run ids to library names)`
 
 // runBrief implements `gophermind brief ...` and returns the process exit
