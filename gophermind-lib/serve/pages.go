@@ -14,7 +14,7 @@ import (
 // gm.css is the one stylesheet; pageHandler inlines it and the navigation rail
 // into each page (the page's CSP allows inline styles and scripts only).
 //
-//go:embed assets/home.html assets/chat.html assets/briefs.html assets/brief_new.html assets/brief.html assets/pipeline.html assets/harness.html assets/gm.css assets/brief-spec.md
+//go:embed assets/home.html assets/chat.html assets/briefs.html assets/brief_new.html assets/brief.html assets/library.html assets/library_edit.html assets/pipeline.html assets/harness.html assets/gm.css assets/brief-spec.md
 var pagesAssets embed.FS
 
 // Markers a page carries where the shared parts go.
@@ -25,18 +25,21 @@ const (
 
 // pageNav is the page's entry in the navigation rail ("" for none).
 var pageNav = map[string]string{
-	"assets/home.html":      "home",
-	"assets/briefs.html":    "runs",
-	"assets/brief.html":     "runs",
-	"assets/brief_new.html": "upload",
-	"assets/chat.html":      "chat",
-	"assets/pipeline.html":  "pipeline",
-	"assets/harness.html":   "harness",
+	"assets/home.html":         "home",
+	"assets/briefs.html":       "runs",
+	"assets/brief.html":        "runs",
+	"assets/brief_new.html":    "upload",
+	"assets/library.html":      "library",
+	"assets/library_edit.html": "library",
+	"assets/chat.html":         "chat",
+	"assets/pipeline.html":     "pipeline",
+	"assets/harness.html":      "harness",
 }
 
 // navItems are the rail's links, in order.
 var navItems = []struct{ key, href, label string }{
 	{"runs", "/app/briefs", "Runs"},
+	{"library", "/app/library", "Library"},
 	{"upload", "/app/briefs/new", "Upload brief"},
 	{"chat", "/app/chat", "Chat"},
 	{"pipeline", "/pipeline", "Pipeline"},

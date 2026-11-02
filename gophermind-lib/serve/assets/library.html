@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'">
+<title>Library - GopherMind</title>
+<style>
+/*GM_CSS*/
+.fam{margin:0 0 2rem}
+.fam h2{margin:0;padding:0;border:0;font-size:22px;font-weight:700;letter-spacing:-.01em;line-height:1.25}
+.fam .sub{margin:.1rem 0 .6rem;color:var(--muted);font-size:.8rem}
+.tree{border-left:2px solid var(--line-strong);margin-left:.3rem;font:13px/1.9 var(--mono)}
+.tree .ver{display:flex;flex-wrap:wrap;gap:.2rem .7rem;align-items:center;padding-right:.5rem}
+.tree .ver a{font-weight:600}
+.tree .lock{color:var(--muted);font-size:.8rem}
+.tree .lbl{color:var(--muted);font-family:var(--sans);font-size:.85rem}
+#q{max-width:24rem;margin:0 0 1.6rem}
+</style>
+</head>
+<body class="gm-library">
+<div class="shell">
+<!--GM_RAIL-->
+<main class="main">
+<div class="head"><h1>Library</h1><div class="actions"><a class="btn primary" href="/app/briefs/new">+ New brief</a></div></div>
+<input type="text" id="q" placeholder="Search briefs" aria-label="Search briefs" autocomplete="off">
+<div id="empty" class="meta"></div>
+<div id="fams"></div>
+</main>
+</div>
+<script>
+'use strict';
+let data = [];
+function pill(text){
+  const s = document.createElement('span');
+  s.className = 'pill';
+  s.textContent = text || '-';
+  if (['planning','running','building','waiting'].includes(text)) s.className += ' live';
+  if (['done','verified'].includes(text)) s.className += ' good';
+  if (['failed','stopped','interrupted','escalated','harness_fault'].includes(text)) s.className += ' bad';
+  return s;
+}
+function when(iso){
+  if (!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d) ? iso : d.toLocaleDateString(undefined, { dateStyle: 'medium' });
+}
+function render(){
+  const term = document.getElementById('q').value.trim().toLowerCase();
+  const root = document.getElementById('fams');
+  root.textContent = '';
+  let shown = 0;
+  for (const f of data) {
+    const vs = f.versions.filter(v => !term || f.name.includes(term) || v.name.toLowerCase().includes(term) || (v.label || '').toLowerCase().includes(term));
+    if (!vs.length) continue;
+    shown++;
+    const sec = document.createElement('section');
+    sec.className = 'fam';
+    const h = document.createElement('h2');
+    h.textContent = f.name;
+    sec.appendChild(h);
+    const sub = document.createElement('div');
+    sub.className = 'sub';
+    sub.textContent = f.version_count + (f.version_count === 1 ? ' version' : ' versions') + ', ' + (f.last_run_at ? 'last run ' + when(f.last_run_at) : 'never run');
+    sec.appendChild(sub);
+    const tree = document.createElement('div');
+    tree.className = 'tree';
+    const depth = {};
+    for (const v of f.versions) depth[v.name] = (v.parent && depth[v.parent] !== undefined) ? depth[v.parent] + 1 : 0;
+    for (const v of vs) {
+      const row = document.createElement('div');
+      row.className = 'ver';
+      row.style.paddingLeft = (0.8 + depth[v.name] * 1.6) + 'rem';
+      const a = document.createElement('a');
+      a.href = '/app/library/' + encodeURIComponent(f.name) + '/' + encodeURIComponent(v.name);
+      a.textContent = v.name;
+      row.appendChild(a);
+      row.appendChild(pill(v.state));
+      const l = document.createElement('span');
+      l.className = 'lock';
+      l.textContent = v.locked ? 'locked' : 'editable';
+      row.appendChild(l);
+      if (v.label) {
+        const lb = document.createElement('span');
+        lb.className = 'lbl';
+        lb.textContent = v.label;
+        row.appendChild(lb);
+      }
+      tree.appendChild(row);
+    }
+    sec.appendChild(tree);
+    root.appendChild(sec);
+  }
+  document.getElementById('empty').textContent = shown ? '' : (data.length ? 'No briefs match.' : 'The library is empty. Upload a brief to start it.');
+}
+document.getElementById('q').addEventListener('input', render);
+fetch('/app/api/library', { credentials: 'same-origin' })
+  .then(r => r.ok ? r.json() : Promise.reject(new Error(String(r.status))))
+  .then(j => { data = j.families || []; render(); })
+  .catch(e => { document.getElementById('empty').textContent = 'Could not load the library (' + e.message + ').'; });
+</script>
+</body>
+</html>

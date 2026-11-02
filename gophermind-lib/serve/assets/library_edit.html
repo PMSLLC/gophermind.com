@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'">
+<title>Brief version - GopherMind</title>
+<style>
+/*GM_CSS*/
+.head h1 .ver{font-size:1rem;font-weight:500;color:var(--muted);margin-left:.4rem}
+.head h1{font-size:22px;font-weight:700}
+.notice{max-width:56rem;margin:0 0 1rem;padding:.7rem 1rem;border:1px solid var(--run);border-radius:6px;background:var(--run-bg);color:var(--run);font-weight:550}
+#text{max-width:56rem;min-height:26rem;font:13px/1.55 var(--mono);white-space:pre;overflow:auto}
+#text[readonly]{background:var(--idle-bg)}
+.links{margin:0 0 1rem;color:var(--muted);font-size:.9rem;display:flex;flex-wrap:wrap;gap:.3rem 1.4rem}
+.links a{font-family:var(--mono)}
+.bar{display:flex;flex-wrap:wrap;gap:.6rem;margin:1rem 0}
+#label{max-width:20rem;margin:.8rem 0 0}
+#diff{max-width:56rem;white-space:pre;overflow:auto}
+</style>
+</head>
+<body class="gm-library-edit">
+<div class="shell">
+<!--GM_RAIL-->
+<main class="main">
+<div class="head"><h1><span id="fam"></span><span class="ver" id="ver"></span></h1><div class="actions"><a class="btn" href="/app/library">Back to library</a></div></div>
+<div class="notice" id="notice" hidden>This version has run, so it cannot change. Saving makes a new version.</div>
+<div class="links" id="links"></div>
+<textarea id="text" spellcheck="false" aria-label="Brief text"></textarea>
+<input type="text" id="label" placeholder="Label for a new version (optional)" aria-label="Label" maxlength="80">
+<div class="bar">
+  <button type="button" class="primary" id="savenew"></button>
+  <button type="button" id="savein" hidden>Save changes</button>
+  <button type="button" id="cmp" hidden>Compare with parent</button>
+  <a class="btn" id="run">Run this version</a>
+</div>
+<div id="msg" role="status"></div>
+<pre id="diff" hidden></pre>
+</main>
+</div>
+<script>
+'use strict';
+const parts = location.pathname.split('/');
+const family = decodeURIComponent(parts[3] || '');
+const version = decodeURIComponent(parts[4] || '');
+const base = '/app/api/library/' + encodeURIComponent(family) + '/' + encodeURIComponent(version);
+const msg = document.getElementById('msg');
+const text = document.getElementById('text');
+let cur = null;
+function say(t, isErr, href, linkText){
+  msg.textContent = '';
+  const s = document.createElement('span');
+  s.className = isErr ? 'err' : '';
+  s.textContent = t;
+  msg.appendChild(s);
+  if (href) {
+    msg.appendChild(document.createTextNode(' '));
+    const a = document.createElement('a');
+    a.href = href;
+    a.textContent = linkText;
+    msg.appendChild(a);
+  }
+}
+function libLink(name){
+  const a = document.createElement('a');
+  a.href = '/app/library/' + encodeURIComponent(family) + '/' + encodeURIComponent(name);
+  a.textContent = name;
+  return a;
+}
+function linkRow(label, names){
+  const d = document.createElement('span');
+  d.appendChild(document.createTextNode(label + ': '));
+  if (!names.length) d.appendChild(document.createTextNode('none'));
+  names.forEach((n, i) => { if (i) d.appendChild(document.createTextNode(', ')); d.appendChild(libLink(n)); });
+  return d;
+}
+function show(j){
+  cur = j;
+  document.title = family + ' ' + j.name + ' - GopherMind';
+  document.getElementById('fam').textContent = family;
+  document.getElementById('ver').textContent = j.name + (j.locked ? ' (locked)' : ' (editable)');
+  text.value = j.text;
+  text.readOnly = j.locked;
+  document.getElementById('notice').hidden = !j.locked;
+  document.getElementById('savein').hidden = j.locked;
+  document.getElementById('cmp').hidden = !j.parent;
+  document.getElementById('savenew').textContent = 'Save as new version, child of ' + j.name;
+  document.getElementById('run').href = '/app/library/' + encodeURIComponent(family) + '/' + encodeURIComponent(j.name) + '/preview';
+  const links = document.getElementById('links');
+  links.textContent = '';
+  links.appendChild(linkRow('Parent', j.parent ? [j.parent] : []));
+  links.appendChild(linkRow('Children', j.children || []));
+  const rs = document.createElement('span');
+  rs.appendChild(document.createTextNode('Runs: '));
+  if (!j.runs.length) rs.appendChild(document.createTextNode('none'));
+  j.runs.forEach((r, i) => {
+    if (i) rs.appendChild(document.createTextNode(', '));
+    const a = document.createElement('a');
+    a.href = '/app/briefs/' + encodeURIComponent(r.id);
+    a.textContent = r.id + ' (' + r.phase + ')';
+    rs.appendChild(a);
+  });
+  links.appendChild(rs);
+}
+function load(){
+  fetch(base, { credentials: 'same-origin' })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error(r.status === 404 ? 'No such version.' : 'Error ' + r.status)))
+    .then(show)
+    .catch(e => say(e.message, true));
+}
+async function save(inPlace){
+  const btns = document.querySelectorAll('button');
+  btns.forEach(b => { b.disabled = true; });
+  try {
+    const r = await fetch(base + '/save', {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text.value, label: document.getElementById('label').value, in_place: inPlace })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 409) {
+      say((j.error || 'This version is locked.') + '. ' + (j.hint || 'Save as new version') + ' to keep your edits.', true);
+      load();
+    } else if (!r.ok) {
+      say(j.error || 'Save failed (' + r.status + ').', true);
+    } else if (inPlace) {
+      say('Saved.', false);
+    } else {
+      say('Saved as ' + j.name + '.', false, '/app/library/' + encodeURIComponent(family) + '/' + encodeURIComponent(j.name), 'Open ' + j.name);
+    }
+  } catch (e) {
+    say('Save failed: ' + e.message, true);
+  } finally {
+    btns.forEach(b => { b.disabled = false; });
+  }
+}
+document.getElementById('savenew').addEventListener('click', () => save(false));
+document.getElementById('savein').addEventListener('click', () => save(true));
+document.getElementById('cmp').addEventListener('click', () => {
+  const d = document.getElementById('diff');
+  fetch(base + '/diff?against=' + encodeURIComponent(cur.parent), { credentials: 'same-origin' })
+    .then(r => r.ok ? r.text() : Promise.reject(new Error('Error ' + r.status)))
+    .then(t => { d.textContent = t; d.hidden = false; })
+    .catch(e => say('Compare failed: ' + e.message, true));
+});
+load();
+</script>
+</body>
+</html>

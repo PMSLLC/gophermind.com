@@ -11,11 +11,13 @@ import (
 // place, no marker left over, and the rail marks its own entry as current.
 func TestPagesCarryTheSharedStylesheetAndRail(t *testing.T) {
 	for name, nav := range map[string]string{
-		"assets/home.html":      "",
-		"assets/briefs.html":    `<a href="/app/briefs" aria-current="page">Runs</a>`,
-		"assets/brief.html":     `<a href="/app/briefs" aria-current="page">Runs</a>`,
-		"assets/brief_new.html": `<a href="/app/briefs/new" aria-current="page">Upload brief</a>`,
-		"assets/chat.html":      `<a href="/app/chat" aria-current="page">Chat</a>`,
+		"assets/home.html":         "",
+		"assets/briefs.html":       `<a href="/app/briefs" aria-current="page">Runs</a>`,
+		"assets/brief.html":        `<a href="/app/briefs" aria-current="page">Runs</a>`,
+		"assets/brief_new.html":    `<a href="/app/briefs/new" aria-current="page">Upload brief</a>`,
+		"assets/chat.html":         `<a href="/app/chat" aria-current="page">Chat</a>`,
+		"assets/library.html":      `<a href="/app/library" aria-current="page">Library</a>`,
+		"assets/library_edit.html": `<a href="/app/library" aria-current="page">Library</a>`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			w := httptest.NewRecorder()
