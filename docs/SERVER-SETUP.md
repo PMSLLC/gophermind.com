@@ -119,7 +119,7 @@ Then `sudo systemctl daemon-reload && sudo systemctl restart gophermind`.
 
 ## Briefs from the browser
 
-With `GOPHERMIND_BRIEFS_DIR` set, a signed-in browser can upload a brief and watch it run: `/app/briefs/new` (upload), `/app/briefs` (runs) and `/app/briefs/<id>` (decomposition, attempts, clarify answers, acceptance, log tail, Stop). Routes: `POST /app/briefs` (add `?ask=1` to be asked the clarify questions), `POST /app/briefs/{id}/stop`, `POST /app/briefs/{id}/answer`, `GET /app/briefs/{id}/state`, `GET /app/briefs/{id}/events` (server-sent events), `GET /app/api/briefs`. Design: `docs/design/web-ui.md`.
+With `GOPHERMIND_BRIEFS_DIR` set, a signed-in browser can upload a brief and watch it run: `/app/briefs/new` (upload), `/app/briefs` (runs) and `/app/briefs/<id>` (decomposition, attempts, clarify answers, acceptance, log tail, Stop). Routes: `POST /app/briefs` (add `?ask=1` to be asked the clarify questions), `POST /app/briefs/{id}/stop`, `POST /app/briefs/{id}/answer`, `GET /app/briefs/{id}/state`, `GET /app/briefs/{id}/events` (server-sent events), `GET /app/api/briefs`. Uploads go through the brief library: the server assigns the run id (`<family>-<version>-<yyyymmdd>-rNNN`) and ignores any `id:` or `repo:` line, and `?resubmit=1` is ignored. Library pages, routes and the one-time migration of old `gm-` runs: `docs/brief-library.md`. Design: `docs/design/web-ui.md`.
 
 | Variable | Meaning |
 |---|---|
