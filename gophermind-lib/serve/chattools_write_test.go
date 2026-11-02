@@ -60,6 +60,9 @@ func runDirs(t *testing.T, dir string) []string {
 	ents, _ := os.ReadDir(dir)
 	var names []string
 	for _, e := range ents {
+		if e.Name() == "library" {
+			continue
+		}
 		names = append(names, e.Name())
 	}
 	return names

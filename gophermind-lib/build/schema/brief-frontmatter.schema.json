@@ -20,7 +20,7 @@
     },
     "id": {
       "type": "string",
-      "pattern": "^gm-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3}$",
+      "pattern": "^(?:gm-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3}|[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+[a-z]?(?:\\.[0-9]+[a-z]?)*-[0-9]{8}-r[0-9]{3,})$",
       "description": "gm-YYYY-MM-DD-NNN. Becomes the run ID, tree root ID, and work branch suffix."
     },
     "title": {

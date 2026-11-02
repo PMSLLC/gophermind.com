@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"gophermind/gophermind-lib/build/brief"
+	"gophermind/gophermind-lib/library"
 	"gophermind/gophermind-lib/runview"
 )
 
@@ -51,6 +52,10 @@ type briefRecord struct {
 	// Ask is set when the run was uploaded with ask=1: planning uses the file
 	// gate and stops at open questions instead of taking unattended defaults.
 	Ask bool `json:"ask,omitempty"`
+	// Family and Version name the library version the run was started from;
+	// empty for a run uploaded as plain text.
+	Family  string `json:"family,omitempty"`
+	Version string `json:"version,omitempty"`
 }
 
 // exitWaiting is what `gophermind brief plan|resume` exits with when the file
@@ -72,6 +77,7 @@ type briefManager struct {
 	killGrace time.Duration
 	now       func() time.Time
 	log       *slog.Logger
+	lib       *library.Store // <dir>/library: saved brief versions
 
 	mu       sync.Mutex
 	active   *activeBrief
@@ -119,6 +125,11 @@ func newBriefManager(opt Options, root string) (*briefManager, error) {
 	if err := os.MkdirAll(m.dir, 0o755); err != nil {
 		return nil, fmt.Errorf("briefs dir: %w", err)
 	}
+	lib, err := library.Open(filepath.Join(m.dir, "library"))
+	if err != nil {
+		return nil, fmt.Errorf("brief library: %w", err)
+	}
+	m.lib = lib
 	// A record still live when the server starts lost its process with the
 	// previous server: mark it so the page does not show it running forever.
 	ents, _ := os.ReadDir(m.dir)
@@ -185,6 +196,13 @@ func readSmallFile(path string, max int64) ([]byte, error) {
 // start records a new run and launches it in the background. The slot is
 // taken before anything is written, so two requests cannot both start.
 func (m *briefManager) start(b *brief.Brief, src []byte, ask bool) (briefRecord, error) {
+	return m.startRec(b, src, briefRecord{Ask: ask})
+}
+
+// startRec is start with the record fields the caller already knows (Ask,
+// Family, Version).
+func (m *briefManager) startRec(b *brief.Brief, src []byte, base briefRecord) (briefRecord, error) {
+	ask := base.Ask
 	id := b.Front.ID
 	m.mu.Lock()
 	if m.active != nil {
@@ -210,7 +228,8 @@ func (m *briefManager) start(b *brief.Brief, src []byte, ask bool) (briefRecord,
 		}
 		src = withRepo(src, repo)
 	}
-	rec := briefRecord{ID: id, Title: b.Front.Title, Phase: phasePlanning, StartedAt: m.stamp(), Ask: ask}
+	rec := base
+	rec.ID, rec.Title, rec.Phase, rec.StartedAt = id, b.Front.Title, phasePlanning, m.stamp()
 	briefPath := filepath.Join(dir, "brief.md")
 	logf, err := m.prepare(dir, briefPath, src, rec)
 	if err != nil {

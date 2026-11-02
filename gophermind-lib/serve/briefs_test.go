@@ -240,7 +240,7 @@ func TestBriefCreateRefusals(t *testing.T) {
 	if len(e.calls) != 0 {
 		t.Errorf("a refused brief launched %v", e.calls)
 	}
-	if ents, _ := os.ReadDir(e.dir); len(ents) != 0 {
+	if ents, _ := os.ReadDir(e.dir); len(ents) != 1 || ents[0].Name() != "library" {
 		t.Errorf("a refused brief left %d entries", len(ents))
 	}
 }
