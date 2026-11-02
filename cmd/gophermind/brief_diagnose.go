@@ -44,7 +44,7 @@ func briefDiagnose(args []string, out, errw io.Writer) int {
 	var dir string
 	if repo != "" {
 		if !planner.ValidRunID(id) {
-			fmt.Fprintf(errw, "error: %q is not a run id (want gm-YYYY-MM-DD-NNN)\n", id)
+			fmt.Fprintf(errw, "error: %q is not a run id (want <family>-<version>-<yyyymmdd>-rNNN or gm-YYYY-MM-DD-NNN)\n", id)
 			return exitError
 		}
 		abs, err := filepath.Abs(repo)

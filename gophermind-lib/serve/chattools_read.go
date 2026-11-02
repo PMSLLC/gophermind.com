@@ -320,7 +320,7 @@ func malformedSuffix(m string) string {
 }
 
 var (
-	runIDInReasonRE = regexp.MustCompile(`gm-\d{4}-\d{2}-\d{2}-\d+`)
+	runIDInReasonRE = regexp.MustCompile(`gm-\d{4}-\d{2}-\d{2}-\d+|\b[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+[a-z]?(?:\.[0-9]+[a-z]?)*-[0-9]{8}-r[0-9]{3,}`)
 	timestampRE     = regexp.MustCompile(`\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?`)
 	digitsRE        = regexp.MustCompile(`\d+`)
 	spacesRE        = regexp.MustCompile(`\s+`)

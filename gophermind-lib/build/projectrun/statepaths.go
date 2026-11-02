@@ -23,7 +23,7 @@ const defaultModCache = "~/.gophermind/gomodcache"
 func StatePaths(o Options, b *brief.Brief, env Env) ([]StatePath, error) {
 	id := b.Front.ID
 	if !planner.ValidRunID(id) {
-		return nil, fmt.Errorf("projectrun: %q is not a run id (want gm-YYYY-MM-DD-NNN)", id)
+		return nil, fmt.Errorf("projectrun: %q is not a run id (want <family>-<version>-<yyyymmdd>-rNNN or gm-YYYY-MM-DD-NNN)", id)
 	}
 	repo := o.Repo
 	if repo == "" {

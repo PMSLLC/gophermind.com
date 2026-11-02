@@ -15,12 +15,20 @@ import (
 
 var ErrExists = errors.New("rundir: run directory already exists")
 
-var idRE = regexp.MustCompile(`^gm-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3}$`)
+var idRE = regexp.MustCompile(`^(?:gm-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3}|[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+[a-z]?(?:\.[0-9]+[a-z]?)*-[0-9]{8}-r[0-9]{3,})$`)
+
+// maxIDLen caps a run id.
+const maxIDLen = 120
+
+// ValidID reports whether s is a run id: gm-YYYY-MM-DD-NNN or
+// <family>-<version>-<yyyymmdd>-rNNN. It is the one definition; the planner's
+// ValidRunID delegates here.
+func ValidID(s string) bool { return len(s) <= maxIDLen && idRE.MatchString(s) }
 
 // Create makes <repoRoot>/.gophermind/<briefID>/ with logs/ and a copy of the
 // brief. It refuses to reuse an existing run directory.
 func Create(repoRoot, briefID string, briefSrc []byte) (string, error) {
-	if !idRE.MatchString(briefID) {
+	if !ValidID(briefID) {
 		return "", fmt.Errorf("rundir: invalid brief id %q", briefID)
 	}
 	if err := exclude(repoRoot); err != nil {

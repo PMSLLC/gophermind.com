@@ -701,7 +701,7 @@ func (m *briefManager) createTextOpt(src []byte, ask, resubmit bool) (briefRecor
 		return briefRecord{}, nil, &briefInvalidError{"invalid brief: " + err.Error(), nil}
 	}
 	if !runview.ValidRunID(b.Front.ID) {
-		return briefRecord{}, nil, &briefInvalidError{"invalid brief: id must look like gm-YYYY-MM-DD-NNN", nil}
+		return briefRecord{}, nil, &briefInvalidError{"invalid brief: id must look like <family>-<version>-<yyyymmdd>-rNNN or gm-YYYY-MM-DD-NNN", nil}
 	}
 	// The run folder is made inside the brief's repo; this server only shows
 	// folders under its own root, so any other repo would run unseen.

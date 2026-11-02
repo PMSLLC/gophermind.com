@@ -66,7 +66,7 @@ func runRecordPath(runID string) (string, error) {
 func LookupRun(runID string) (RunRecord, error) {
 	var rec RunRecord
 	if !ValidRunID(runID) {
-		return rec, fmt.Errorf("planner: %q is not a run id (want gm-YYYY-MM-DD-NNN)", runID)
+		return rec, fmt.Errorf("planner: %q is not a run id (want <family>-<version>-<yyyymmdd>-rNNN or gm-YYYY-MM-DD-NNN)", runID)
 	}
 	path, err := runRecordPath(runID)
 	if err != nil {

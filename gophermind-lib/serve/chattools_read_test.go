@@ -489,3 +489,12 @@ func TestBriefsListFlattensTitle(t *testing.T) {
 		t.Errorf("title not flattened: %q", out)
 	}
 }
+
+func TestRunIDInReasonRE_NewShape(t *testing.T) {
+	for _, id := range []string{"csvstat-v1-20261029-r001", "csvstat-v1.1.2-20261029-r004", "ledger-sync-v1-20261029-r001", "gm-2026-10-29-004"} {
+		got := normalizeReason("failed in " + id + " after")
+		if got != "failed in <run> after" {
+			t.Errorf("normalizeReason with %q = %q", id, got)
+		}
+	}
+}

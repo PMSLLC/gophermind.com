@@ -148,3 +148,29 @@ func TestRunDirModes(t *testing.T) {
 		t.Errorf("second Create = %v, want ErrExists", err)
 	}
 }
+
+func TestValidID_NewShape(t *testing.T) {
+	for id, want := range map[string]bool{
+		"csvstat-v1-20261029-r001":                     true,
+		"csvstat-v1.1.2-20261029-r004":                 true,
+		"csvstat-v1.1b.2-20261029-r1000":               true,
+		"ledger-sync-v1-20261029-r001":                 true,
+		"gm-2026-10-29-004":                            true,
+		"csvstat-v1-20261029":                          false,
+		"Csvstat-v1-20261029-r001":                     false,
+		"a/../b-v1-20261029-r001":                      false,
+		"csvstat-v1..1-20261029-r001":                  false,
+		"csvstat-v1-20261029-r001/":                    false,
+		strings.Repeat("a", 130) + "-v1-20261029-r001": false,
+		"": false,
+	} {
+		if got := rundir.ValidID(id); got != want {
+			t.Errorf("ValidID(%q) = %v, want %v", id, got, want)
+		}
+		if want {
+			if _, err := rundir.Create(t.TempDir(), id, nil); err != nil {
+				t.Errorf("Create(%q): %v", id, err)
+			}
+		}
+	}
+}

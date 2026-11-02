@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"gophermind/gophermind-lib/build/brief"
@@ -15,10 +14,9 @@ import (
 	"gophermind/gophermind-lib/build/vault"
 )
 
-var runIDRE = regexp.MustCompile(`^gm-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3}$`)
-
-// ValidRunID reports whether s has the shape of a run id (gm-YYYY-MM-DD-NNN).
-func ValidRunID(s string) bool { return runIDRE.MatchString(s) }
+// ValidRunID reports whether s has the shape of a run id: gm-YYYY-MM-DD-NNN or
+// <family>-<version>-<yyyymmdd>-rNNN, at most 120 characters.
+func ValidRunID(s string) bool { return rundir.ValidID(s) }
 
 // load is the Load stage. For `plan` it validates the brief, makes sure its
 // secrets are in the vault, creates the run folder and writes the
