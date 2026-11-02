@@ -257,7 +257,7 @@ func TestStartVersionRefusesWhenParsedIDDiffers(t *testing.T) {
 	if _, err := m.lib.Save(uploadFamily, "", "", []byte(bad)); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := m.startVersion(uploadFamily, "v1", false)
+	_, _, err := m.startVersion(uploadFamily, "v1", false, "")
 	var inv *briefInvalidError
 	if !errors.As(err, &inv) {
 		t.Fatalf("err = %v, want *briefInvalidError", err)

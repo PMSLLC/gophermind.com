@@ -75,6 +75,17 @@ func runPost(e *briefEnv, v, body string) *httptest.ResponseRecorder {
 	return e.post("/app/api/library/csvstat/"+v+"/run", body, sameOrigin)
 }
 
+// runPostTok posts like the preview page: fields (a JSON object body without
+// braces, may be empty) plus the version's current preview token.
+func runPostTok(t *testing.T, e *briefEnv, v, fields string) *httptest.ResponseRecorder {
+	t.Helper()
+	tok := getPreviewTok(t, e, v)
+	if fields != "" {
+		fields += ","
+	}
+	return runPost(e, v, `{`+fields+`"preview_token":"`+tok+`"}`)
+}
+
 func TestPreviewSections(t *testing.T) {
 	e, _ := libEnv(t)
 	p := getPreview(t, e, "v1")
@@ -113,7 +124,7 @@ func TestPreviewShowsProblems(t *testing.T) {
 		t.Errorf("section 7 = %+v", last)
 	}
 	before := runDirCount(t, e)
-	w := runPost(e, v, `{"ask":false}`)
+	w := runPostTok(t, e, v, `"ask":false`)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("run = %d %s", w.Code, w.Body)
 	}
@@ -136,7 +147,7 @@ func TestPreviewRunNameMatchesNext(t *testing.T) {
 	if !strings.HasSuffix(p.RunName, "-r001") || !strings.HasPrefix(p.RunName, "csvstat-v1-") {
 		t.Fatalf("name %q", p.RunName)
 	}
-	w := runPost(e, "v1", `{"ask":false}`)
+	w := runPostTok(t, e, "v1", `"ask":false`)
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("run = %d %s", w.Code, w.Body)
 	}
@@ -153,7 +164,7 @@ func TestPreviewRunNameMatchesNext(t *testing.T) {
 	if !strings.HasSuffix(p2.RunName, "-r002") || !p2.Locked {
 		t.Errorf("after a run: %q locked=%v", p2.RunName, p2.Locked)
 	}
-	w = runPost(e, "v1", `{"ask":false}`)
+	w = runPostTok(t, e, "v1", `"ask":false`)
 	if w.Code != http.StatusAccepted || !strings.Contains(w.Body.String(), p2.RunName) {
 		t.Errorf("second run = %d %s, want %s", w.Code, w.Body, p2.RunName)
 	}
@@ -192,7 +203,7 @@ func TestRunEndpointBusy(t *testing.T) {
 	if _, err := m.lib.Save("csvstat", "v1", "b", mustGet(t, m, "v1")); err != nil {
 		t.Fatal(err)
 	}
-	w := runPost(e, "v1", `{"ask":false}`)
+	w := runPostTok(t, e, "v1", `"ask":false`)
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("first run = %d %s", w.Code, w.Body)
 	}
@@ -201,7 +212,7 @@ func TestRunEndpointBusy(t *testing.T) {
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &first)
 	defer e.stopAndDrain(first.RunID)
-	w = runPost(e, "v1.1", `{}`)
+	w = runPostTok(t, e, "v1.1", ``)
 	if w.Code != http.StatusConflict {
 		t.Fatalf("busy run = %d %s", w.Code, w.Body)
 	}
@@ -221,9 +232,9 @@ func TestRunEndpointAskDefault(t *testing.T) {
 	for _, tc := range []struct {
 		body string
 		want bool
-	}{{``, true}, {`{}`, true}, {`{"ask":true}`, true}, {`{"ask":false}`, false}} {
+	}{{``, true}, {`"ask":true`, true}, {`"ask":false`, false}} {
 		e, m := libEnv(t)
-		w := runPost(e, "v1", tc.body)
+		w := runPostTok(t, e, "v1", tc.body)
 		if w.Code != http.StatusAccepted {
 			t.Fatalf("%q: run = %d %s", tc.body, w.Code, w.Body)
 		}
@@ -383,4 +394,48 @@ func getPreviewTok(t *testing.T, e *briefEnv, v string) string {
 	w := e.get("/app/api/library/csvstat/" + v + "/preview")
 	_ = json.Unmarshal(w.Body.Bytes(), &j)
 	return j.Token
+}
+
+// TestRunRequiresPreviewToken: a direct POST without the preview's token
+// cannot skip the preview. Nothing starts and the version stays unlocked.
+func TestRunRequiresPreviewToken(t *testing.T) {
+	e, _ := libEnv(t)
+	before := runDirCount(t, e)
+	for _, body := range []string{``, `{}`, `{"ask":false}`, `{"preview_token":""}`} {
+		w := runPost(e, "v1", body)
+		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "preview_token is required") {
+			t.Errorf("body %q: run = %d %s", body, w.Code, w.Body)
+		}
+	}
+	if runDirCount(t, e) != before || getPreview(t, e, "v1").Locked {
+		t.Error("a run without a token started or locked")
+	}
+}
+
+// TestRunPreviewTokenCheckedInsideLock: an in-place edit that lands after the
+// handler read the version but before the family lock is caught by the token
+// check inside the lock.
+func TestRunPreviewTokenCheckedInsideLock(t *testing.T) {
+	e, m := libEnv(t)
+	tok := getPreviewTok(t, e, "v1")
+	edited := append(e.versionBody(), []byte("\n- more\n")...)
+	m.beforeStartLock = func() {
+		if err := m.lib.Update("csvstat", "v1", edited); err != nil {
+			t.Error(err)
+		}
+	}
+	before := runDirCount(t, e)
+	// Call m's handler directly: the hook lives on m, not on the mux's manager.
+	r := httptest.NewRequest(http.MethodPost, "/app/api/library/csvstat/v1/run", strings.NewReader(`{"ask":false,"preview_token":"`+tok+`"}`))
+	r.SetPathValue("family", "csvstat")
+	r.SetPathValue("version", "v1")
+	w := httptest.NewRecorder()
+	m.libraryRun(w, r)
+	m.beforeStartLock = nil
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "the brief changed since you previewed it, reload the preview") {
+		t.Fatalf("run = %d %s", w.Code, w.Body)
+	}
+	if runDirCount(t, e) != before || getPreview(t, e, "v1").Locked {
+		t.Error("an edit between token and start started or locked")
+	}
 }

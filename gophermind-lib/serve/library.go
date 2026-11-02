@@ -95,9 +95,18 @@ func (m *briefManager) nextRunCounter(family, version, day string) (int, error) 
 // startVersion starts a run from a library version. The run id, the repo line
 // and the lock all happen under the family lock, so a version is locked only
 // when its run folder exists. Lock order: family lock, then m.mu (inside start).
-func (m *briefManager) startVersion(family, version string, ask bool) (briefRecord, []brief.Problem, error) {
+//
+// wantSum is the preview token (previewToken of the stored text) the preview
+// page showed, or "" for callers with their own flow (chat, upload, resubmit).
+// When set, the stored text must still hash to it (else errPreviewChanged) and
+// the stamped text must pass brief.Check (else the problems), both checked
+// under the family lock so an edit cannot slip in between check and start.
+func (m *briefManager) startVersion(family, version string, ask bool, wantSum string) (briefRecord, []brief.Problem, error) {
 	var rec briefRecord
 	var warnings []brief.Problem
+	if m.beforeStartLock != nil {
+		m.beforeStartLock()
+	}
 	err := m.lib.LockForRun(family, version, func(v library.Version, text []byte) error {
 		day := m.now().UTC()
 		n, err := m.nextRunCounter(family, version, day.Format("20060102"))
@@ -108,7 +117,15 @@ func (m *briefManager) startVersion(family, version string, ask bool) (briefReco
 		if !runview.ValidRunID(id) {
 			return &briefInvalidError{"run id " + id + " is not a valid run id (family and version names are too long)", nil}
 		}
+		if wantSum != "" && previewToken(text) != wantSum {
+			return errPreviewChanged
+		}
 		stamped := stampFront(text, id, m.root)
+		if wantSum != "" {
+			if probs := brief.Check(stamped); len(probs) > 0 {
+				return invalidFromProblems(probs)
+			}
+		}
 		b, err := brief.Parse(stamped)
 		if err != nil {
 			return &briefInvalidError{"invalid brief: " + err.Error(), nil}

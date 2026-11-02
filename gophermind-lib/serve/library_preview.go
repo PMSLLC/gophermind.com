@@ -157,8 +157,10 @@ func (m *briefManager) libraryPreview(w http.ResponseWriter, r *http.Request) {
 }
 
 // libraryRun handles POST /app/api/library/{family}/{version}/run, the call
-// behind the preview page's Continue button. A brief with problems is refused
-// before anything starts; warnings never block.
+// behind the preview page's Continue button. The preview token is required, so
+// a direct POST cannot skip the preview. The token and the brief's problems are
+// checked inside startVersion under the family lock: a changed brief is a 409,
+// a brief with problems a 400 before anything starts. Warnings never block.
 func (m *briefManager) libraryRun(w http.ResponseWriter, r *http.Request) {
 	family, name := r.PathValue("family"), r.PathValue("version")
 	var body struct {
@@ -167,28 +169,18 @@ func (m *briefManager) libraryRun(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
-		briefError(w, http.StatusBadRequest, "send JSON like {\"ask\": true}", nil)
+		briefError(w, http.StatusBadRequest, "send JSON like {\"ask\": true, \"preview_token\": \"...\"}", nil)
 		return
 	}
 	ask := body.Ask == nil || *body.Ask
-	_, text, err := m.lib.Get(family, name)
-	if err != nil {
+	if _, _, err := m.lib.Get(family, name); err != nil {
 		briefError(w, http.StatusNotFound, "no such version", nil)
 		return
 	}
-	if body.PreviewToken != "" && body.PreviewToken != previewToken(text) {
-		briefError(w, http.StatusConflict, "the brief changed since you previewed it, reload the preview", nil)
+	if body.PreviewToken == "" {
+		briefError(w, http.StatusBadRequest, "preview_token is required: open the preview and press Continue", nil)
 		return
 	}
-	id, err := m.provisionalRunName(family, name)
-	if err != nil {
-		briefError(w, http.StatusInternalServerError, "cannot read the runs", nil)
-		return
-	}
-	if probs := brief.Check(stampFront(text, id, m.root)); len(probs) > 0 {
-		m.startReply(w, briefRecord{}, nil, invalidFromProblems(probs))
-		return
-	}
-	rec, warnings, err := m.startVersion(family, name, ask)
+	rec, warnings, err := m.startVersion(family, name, ask, body.PreviewToken)
 	m.startReply(w, rec, warnings, err)
 }

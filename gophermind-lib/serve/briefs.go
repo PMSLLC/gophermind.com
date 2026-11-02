@@ -94,6 +94,10 @@ type briefManager struct {
 	aliases    library.Aliases
 	aliasMtime time.Time
 	aliasSize  int64
+
+	// beforeStartLock is a test hook run by startVersion just before it takes
+	// the family lock.
+	beforeStartLock func()
 }
 
 type activeBrief struct {
@@ -656,6 +660,8 @@ func (m *briefManager) withFreshID(src []byte) (*brief.Brief, []byte, error) {
 var (
 	errNoSuchRun     = errors.New("no such run")
 	errNoStoredBrief = errors.New("no stored brief for this run")
+	// errPreviewChanged: the stored version no longer matches the preview token.
+	errPreviewChanged = errors.New("the brief changed since you previewed it, reload the preview")
 )
 
 // briefInvalidError is a brief that failed validation. extra is the JSON
@@ -687,7 +693,7 @@ func (m *briefManager) resubmitWarn(id string) (briefRecord, []brief.Problem, er
 	id = m.resolveID(id)
 	old, _ := m.readRecord(id)
 	if old.Family != "" && old.Version != "" {
-		return m.startVersion(old.Family, old.Version, old.Ask)
+		return m.startVersion(old.Family, old.Version, old.Ask, "")
 	}
 	// An older run with no library version: its stored text goes through the
 	// same flow as an upload, which migrates it into the library.
@@ -708,6 +714,8 @@ func (m *briefManager) startReply(w http.ResponseWriter, rec briefRecord, warnin
 		briefError(w, http.StatusNotFound, "no such run", nil)
 	case errors.Is(err, errNoStoredBrief):
 		briefError(w, http.StatusNotFound, "no stored brief for this run", nil)
+	case errors.Is(err, errPreviewChanged):
+		briefError(w, http.StatusConflict, errPreviewChanged.Error(), nil)
 	case errors.As(err, &invalid):
 		briefError(w, http.StatusBadRequest, invalid.msg, invalid.extra)
 	case errors.As(err, &busy):
@@ -773,7 +781,7 @@ func (m *briefManager) createText(src []byte, ask bool) (briefRecord, []brief.Pr
 	if err != nil {
 		return briefRecord{}, nil, err
 	}
-	return m.startVersion(family, version, ask)
+	return m.startVersion(family, version, ask, "")
 }
 
 // saveVersion returns the version of family holding exactly text: an existing
