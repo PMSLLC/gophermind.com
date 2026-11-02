@@ -66,6 +66,7 @@ func (c *chatTools) briefState() tools.Tool {
 			if !validBriefID(a.ID) || !runview.ValidRunID(a.ID) {
 				return "", fmt.Errorf("brief_state: %q is not a valid brief id", a.ID)
 			}
+			a.ID = c.bm.resolveID(a.ID)
 			st, err := c.bm.buildState(a.ID)
 			if err != nil {
 				return "", fmt.Errorf("brief_state: no such brief %q", a.ID)
@@ -237,6 +238,7 @@ func (c *chatTools) briefArtifact() tools.Tool {
 			if !validBriefID(a.ID) || !runview.ValidRunID(a.ID) {
 				return "", fmt.Errorf("brief_artifact: %q is not a valid brief id", a.ID)
 			}
+			a.ID = c.bm.resolveID(a.ID)
 			if a.Node == "" {
 				st, err := c.bm.buildState(a.ID)
 				if err != nil {

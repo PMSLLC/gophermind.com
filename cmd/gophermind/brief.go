@@ -30,7 +30,9 @@ const briefUsage = `usage:
   gophermind brief calls <run-id>
   gophermind brief vault set <NAME>      (value from a terminal prompt or stdin)
   gophermind brief vault list
-  gophermind brief tree check <run-dir>`
+  gophermind brief tree check <run-dir>
+  gophermind brief migrate-library --briefs DIR --repos DIR --runs DIR [--server-url URL] [--apply | --rollback]
+                                         (dry run by default: old run ids to library names)`
 
 // runBrief implements `gophermind brief ...` and returns the process exit
 // code: 0 ok, 1 error, 2 invalid brief, 3 waiting on a human (file gate), 4
@@ -73,6 +75,8 @@ func runBrief(args []string, in *os.File, out, errw io.Writer) int {
 			return briefCoverage(args[1], out, errw)
 		}
 		return briefCalls(args[1], out, errw)
+	case "migrate-library":
+		return briefMigrateLibrary(args[1:], out, errw)
 	case "vault":
 		return briefVault(args[1:], in, out, errw)
 	case "tree":

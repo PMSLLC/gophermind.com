@@ -87,6 +87,13 @@ type briefManager struct {
 	// events: open-stream slots and how often one stream looks at the files.
 	streams    chan struct{}
 	eventEvery time.Duration
+
+	// aliases caches <dir>/library/aliases.json (old run id to new), reloaded
+	// when the file's mtime or size changes.
+	aliasMu    sync.Mutex
+	aliases    library.Aliases
+	aliasMtime time.Time
+	aliasSize  int64
 }
 
 type activeBrief struct {
@@ -148,6 +155,38 @@ func newBriefManager(opt Options, root string) (*briefManager, error) {
 func (m *briefManager) stamp() string { return m.now().Format("2006-01-02T15:04:05Z") }
 
 func (m *briefManager) runDir(id string) string { return filepath.Join(m.dir, id) }
+
+// resolveID maps an old run id renamed by `gophermind brief migrate-library`
+// to its new id through <dir>/library/aliases.json. An id that is itself a run
+// folder, an invalid id and an unknown id are returned unchanged.
+func (m *briefManager) resolveID(id string) string {
+	if !runview.ValidRunID(id) {
+		return id
+	}
+	if _, err := os.Lstat(m.runDir(id)); err == nil {
+		return id
+	}
+	path := filepath.Join(m.dir, "library", library.AliasesFile)
+	m.aliasMu.Lock()
+	defer m.aliasMu.Unlock()
+	fi, err := os.Stat(path)
+	if err != nil {
+		m.aliases, m.aliasMtime, m.aliasSize = nil, time.Time{}, 0
+		return id
+	}
+	if m.aliases == nil || !fi.ModTime().Equal(m.aliasMtime) || fi.Size() != m.aliasSize {
+		a, err := library.LoadAliases(filepath.Dir(path))
+		if err != nil {
+			m.log.Warn("brief aliases unreadable", "path", path, "error", err.Error())
+			return id
+		}
+		m.aliases, m.aliasMtime, m.aliasSize = a, fi.ModTime(), fi.Size()
+	}
+	if n := m.aliases.Resolve(id); runview.ValidRunID(n) {
+		return n
+	}
+	return id
+}
 
 func (m *briefManager) readRecord(id string) (briefRecord, bool) {
 	if !runview.ValidRunID(id) {
@@ -635,6 +674,7 @@ func (m *briefManager) resubmitWarn(id string) (briefRecord, []brief.Problem, er
 	if !runview.ValidRunID(id) {
 		return briefRecord{}, nil, errNoSuchRun
 	}
+	id = m.resolveID(id)
 	old, _ := m.readRecord(id)
 	if old.Family != "" && old.Version != "" {
 		return m.startVersion(old.Family, old.Version, old.Ask)
@@ -763,6 +803,7 @@ func (m *briefManager) stopHandler(w http.ResponseWriter, r *http.Request) {
 		briefError(w, http.StatusNotFound, "no such run", nil)
 		return
 	}
+	id = m.resolveID(id)
 	if err := m.stop(id); err != nil {
 		briefError(w, http.StatusConflict, "run is not active", map[string]any{"active_run_id": m.activeID()})
 		return

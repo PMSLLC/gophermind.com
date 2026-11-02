@@ -49,6 +49,7 @@ func (m *briefManager) eventsHandler(w http.ResponseWriter, r *http.Request) {
 		briefError(w, http.StatusNotFound, "no such run", nil)
 		return
 	}
+	id = m.resolveID(id)
 	fl, ok := w.(http.Flusher)
 	if !ok {
 		briefError(w, http.StatusInternalServerError, "streaming is not supported", nil)

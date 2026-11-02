@@ -432,6 +432,7 @@ func (m *briefManager) state(w http.ResponseWriter, r *http.Request) {
 		briefError(w, http.StatusNotFound, "no such run", nil)
 		return
 	}
+	id = m.resolveID(id)
 	st, err := m.buildState(id)
 	if err != nil {
 		briefError(w, http.StatusNotFound, "no such run", nil)

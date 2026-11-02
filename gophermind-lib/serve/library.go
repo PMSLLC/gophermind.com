@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"gophermind/gophermind-lib/build/brief"
 	"gophermind/gophermind-lib/library"
@@ -149,4 +151,32 @@ func stripFront(src []byte) []byte {
 	out.Write(head)
 	out.Write(src[he:])
 	return out.Bytes()
+}
+
+// StripStamp removes any id and repo lines from the frontmatter of src, the
+// way the server does before it stores a library version.
+func StripStamp(src []byte) []byte { return stripFront(src) }
+
+// CheckRun loads run id the way the brief routes do: its <briefsDir>/<id>/
+// run.json record must read back with that id and, when the run's own repo
+// under reposDir holds a run folder, runview must open it and the state must
+// build. `gophermind brief migrate-library` uses it on every renamed run.
+func CheckRun(briefsDir, reposDir, id string) error {
+	m := &briefManager{dir: briefsDir, repos: reposDir, root: briefsDir,
+		now: func() time.Time { return time.Now().UTC() }, log: slog.Default()}
+	if _, ok := m.readRecord(id); !ok {
+		return fmt.Errorf("%s: run.json does not load with this id", id)
+	}
+	if reposDir != "" {
+		root := filepath.Join(reposDir, id)
+		if fi, err := os.Lstat(filepath.Join(root, ".gophermind", id)); err == nil && fi.IsDir() {
+			if _, err := runview.Open(root, id); err != nil {
+				return fmt.Errorf("%s: run folder does not open: %w", id, err)
+			}
+		}
+	}
+	if _, err := m.buildState(id); err != nil {
+		return fmt.Errorf("%s: state does not build: %w", id, err)
+	}
+	return nil
 }

@@ -256,6 +256,7 @@ func (m *briefManager) answerHandler(w http.ResponseWriter, r *http.Request) {
 		briefError(w, http.StatusNotFound, "no such run", nil)
 		return
 	}
+	id = m.resolveID(id)
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxAnswerBodyBytes))
 	if err != nil {
 		briefError(w, http.StatusRequestEntityTooLarge, "answer body is too large", nil)

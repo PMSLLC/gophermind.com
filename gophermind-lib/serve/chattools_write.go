@@ -131,6 +131,7 @@ func (c *chatTools) briefAnswer() tools.Tool {
 			if !validBriefID(a.ID) || !runview.ValidRunID(a.ID) {
 				return "", fmt.Errorf("brief_answer: %q is not a valid brief id", a.ID)
 			}
+			a.ID = c.bm.resolveID(a.ID)
 			if !questionIDRE.MatchString(a.QuestionID) {
 				return "", fmt.Errorf("brief_answer: %q is not a valid question id", a.QuestionID)
 			}
@@ -165,6 +166,7 @@ func (c *chatTools) briefStop() tools.Tool {
 			if err != nil {
 				return "", err
 			}
+			id = c.bm.resolveID(id)
 			if err := c.bm.stop(id); err != nil {
 				return c.clean(writeOutcome(err)), nil
 			}
