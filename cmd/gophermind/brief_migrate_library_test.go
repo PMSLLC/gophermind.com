@@ -613,7 +613,7 @@ func TestMigrateRefusesUncopyableFile(t *testing.T) {
 	}
 }
 
-// migNamed builds the tree, migrates it and returns the root and the
+// migApplied builds the tree, migrates it and returns the root and the
 // pre-migration hash.
 func migApplied(t *testing.T) (string, string) {
 	t.Helper()
@@ -704,6 +704,37 @@ func TestMigrateRollbackChecksResultAgainstBackup(t *testing.T) {
 	want := filepath.Join(root, "briefs", "gm-2026-10-30-001", "run.log")
 	if rc == 0 || !strings.Contains(out, want) {
 		t.Fatalf("rc %d, want a difference naming %s\n%s", rc, want, out)
+	}
+}
+
+// TestMigrateRollbackAgainAfterCompareFailure: a rollback whose result differs
+// from the backup keeps the journal. Once the difference is fixed, a second
+// plain --rollback finishes (library dirs already gone, renames already undone)
+// and cleans aliases.json, the journal and the library dir.
+func TestMigrateRollbackAgainAfterCompareFailure(t *testing.T) {
+	root, before := migApplied(t)
+	p := filepath.Join(root, "briefs", migExpected["gm-2026-10-30-001"], "run.log")
+	orig, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, p, string(orig)+"later line\n")
+	if rc, out := runMigrate(t, root, "--rollback"); rc == 0 {
+		t.Fatalf("first rollback succeeded\n%s", out)
+	}
+	mustWrite(t, filepath.Join(root, "briefs", "gm-2026-10-30-001", "run.log"), string(orig))
+	rc, out := runMigrate(t, root, "--rollback")
+	if rc != 0 {
+		t.Fatalf("second rollback rc %d\n%s", rc, out)
+	}
+	lib := filepath.Join(root, "briefs", "library")
+	for _, gone := range []string{filepath.Join(lib, library.AliasesFile), filepath.Join(lib, ".migration-journal.jsonl"), lib} {
+		if exists(gone) {
+			t.Errorf("%s survives the second rollback", gone)
+		}
+	}
+	if treeHash(t, root) != before {
+		t.Errorf("tree differs after the second rollback\n%s", out)
 	}
 }
 

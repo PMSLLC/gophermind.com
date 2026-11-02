@@ -1277,6 +1277,8 @@ func (m *migrator) rollback() error {
 				undone++
 			case fromOK && !toOK:
 				// never happened, or already undone
+			case !fromOK && !toOK && !exists(filepath.Dir(e.From)) && !exists(filepath.Dir(e.To)):
+				// inside a folder an earlier rollback already renamed back
 			default:
 				return fmt.Errorf("cannot undo the rename of %s to %s: both or neither exist", e.From, e.To)
 			}
@@ -1343,12 +1345,19 @@ func sha256Hex(b []byte) string {
 	return hex.EncodeToString(s[:])
 }
 
+// fileSum is the sha256 of the file at p, streamed so a large file is not
+// read into memory.
 func fileSum(p string) (string, error) {
-	b, err := os.ReadFile(p)
+	f, err := os.Open(p)
 	if err != nil {
 		return "", err
 	}
-	return sha256Hex(b), nil
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // laterWork lists what changed since the migration and a rollback would
@@ -1413,7 +1422,28 @@ func (m *migrator) laterWork(entries []jEntry, plan *migPlan) (later, keep []str
 	if err != nil {
 		return nil, nil, err
 	}
+	// A family whose library dir is gone and whose renames are all undone was
+	// already rolled back by an earlier --rollback that stopped at the compare
+	// with the backup: nothing of it is left to lose, so it is not later work.
+	famOf := map[string]string{} // new run name (and its record file) -> family
+	for _, r := range plan.Items {
+		famOf[r.New], famOf[r.New+".json"] = r.Family, r.Family
+	}
+	renamesLeft := map[string]bool{}
+	for _, e := range entries {
+		if e.Op != "rename" || e.State == "" || !exists(e.To) {
+			continue
+		}
+		for _, part := range strings.Split(e.To, string(filepath.Separator)) {
+			if f, ok := famOf[part]; ok {
+				renamesLeft[f] = true
+			}
+		}
+	}
 	for _, f := range famNames {
+		if !exists(filepath.Join(m.libDir, f)) && !renamesLeft[f] {
+			continue
+		}
 		ents, _ := os.ReadDir(filepath.Join(m.libDir, f))
 		for _, e := range ents {
 			if e.IsDir() && e.Name() != migrateVersion {
