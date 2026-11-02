@@ -41,7 +41,7 @@ func TestBriefRunLogHidesSudoWarningsAndCountsThem(t *testing.T) {
 	e.script = func(args []string) string {
 		return "cat >&2 <<'EOF'\n" + sudoNoise + "EOF\necho real stderr >&2; echo ran"
 	}
-	id := "gm-2026-10-23-071"
+	id := rid(1)
 	if w := e.post("/app/briefs", e.briefText(id), nil); w.Code != http.StatusAccepted {
 		t.Fatalf("create = %d %s", w.Code, w.Body)
 	}

@@ -19,7 +19,7 @@ Unknown keys are rejected.
 | Key | Required | Rule |
 | --- | --- | --- |
 | `spec_version` | yes | The string `"2.0"`. |
-| `id` | yes | `gm-YYYY-MM-DD-NNN` (for example `gm-2026-10-25-004`). It names the run and must be unique on the server: a second upload with the same id is refused. Use today's date and the next free number. |
+| `id` | yes | Any value that passes the format check, for example the example below. The server assigns the real run id (`<family>-<version>-<yyyymmdd>-rNNN`) and ignores whatever is supplied here; the line is still required so the brief validates as a file. |
 | `title` | yes | 1 to 120 characters. The product name. |
 | `language` | yes | `go`. |
 | `repo` | no | Leave it out for the upload page: the server builds every run in a new repository of its own and ignores this line. Only `gophermind brief plan` on your own machine needs it, as a local path. |
@@ -80,7 +80,7 @@ They come from briefs that failed to build, and they change the result. The vali
 
 ## 7. Complete example
 
-The brief below is accepted as written (change the `id` to a free one before uploading).
+The brief below is accepted as written (the `id` is ignored on upload; the server names the run).
 
 ```markdown
 ---

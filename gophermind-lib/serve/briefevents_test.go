@@ -76,7 +76,7 @@ func fastEvents(t *testing.T) {
 func TestBriefEventsFirstChangeAndCancel(t *testing.T) {
 	fastEvents(t)
 	e := newBriefEnv(t)
-	const id = "gm-2026-10-24-021"
+	id := rid(1)
 	e.startAsking(id)
 	srv := httptest.NewServer(e.h)
 	defer srv.Close()
@@ -133,7 +133,7 @@ closed:
 func TestBriefEventsEndsWhenRunIsFinal(t *testing.T) {
 	fastEvents(t)
 	e := newBriefEnv(t)
-	const id = "gm-2026-10-24-022"
+	id := rid(1)
 	e.post("/app/briefs", e.briefText(id), nil)
 	e.waitPhase(id, phaseDone)
 	srv := httptest.NewServer(e.h)
@@ -151,7 +151,7 @@ func TestBriefEventsEndsWhenRunIsFinal(t *testing.T) {
 func TestBriefEventsCapAndRefusals(t *testing.T) {
 	fastEvents(t)
 	e := newBriefEnv(t)
-	const id = "gm-2026-10-24-023"
+	id := rid(1)
 	e.startAsking(id)
 	srv := httptest.NewServer(e.h)
 	defer srv.Close()

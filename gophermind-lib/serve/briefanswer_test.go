@@ -22,7 +22,7 @@ func (e *briefEnv) askScript(questions string) {
 	e.script = func(args []string) string {
 		id := ""
 		for _, a := range args {
-			if strings.HasPrefix(a, "gm-") {
+			if strings.HasPrefix(a, "gm-") || (strings.Contains(a, "-v1-") && !strings.Contains(a, "/")) {
 				id = a
 			}
 		}
@@ -58,7 +58,7 @@ func (e *briefEnv) startAsking(id string) {
 
 func TestBriefAskPlansWithFileGateAndWaits(t *testing.T) {
 	e := newBriefEnv(t)
-	const id = "gm-2026-10-24-001"
+	id := rid(1)
 	e.startAsking(id)
 	e.mu.Lock()
 	first := strings.Join(e.calls[0], " ")
@@ -82,7 +82,7 @@ func TestBriefAskPlansWithFileGateAndWaits(t *testing.T) {
 
 func TestBriefAnswerResumesPlanning(t *testing.T) {
 	e := newBriefEnv(t)
-	const id = "gm-2026-10-24-002"
+	id := rid(1)
 	e.startAsking(id)
 	w := e.post("/app/briefs/"+id+"/answer", answerBody("clarify-q1", "sqlite"), nil)
 	if w.Code != http.StatusOK {
@@ -123,7 +123,7 @@ func TestBriefAnswerResumesPlanning(t *testing.T) {
 // answered run resumes by itself once the slot is free.
 func TestBriefAnswerWhileAnotherRunIsActiveResumesLater(t *testing.T) {
 	e := newBriefEnv(t)
-	const id, other = "gm-2026-10-24-012", "gm-2026-10-24-013"
+	id, other := rid(1), rid(2)
 	e.startAsking(id)
 	gate := filepath.Join(t.TempDir(), "go")
 	ask := e.script
@@ -159,7 +159,7 @@ func TestBriefAnswerWhileAnotherRunIsActiveResumesLater(t *testing.T) {
 
 func TestBriefAnswerRefusals(t *testing.T) {
 	e := newBriefEnv(t)
-	const id = "gm-2026-10-24-003"
+	id := rid(1)
 	e.startAsking(id)
 	path := "/app/briefs/" + id + "/answer"
 	cases := []struct {
@@ -193,7 +193,7 @@ func TestBriefAnswerRefusals(t *testing.T) {
 
 func TestBriefAnswerWhenNotPausedIs409(t *testing.T) {
 	e := newBriefEnv(t)
-	const id = "gm-2026-10-24-004"
+	id := rid(1)
 	if w := e.post("/app/briefs", e.briefText(id), nil); w.Code != http.StatusAccepted {
 		t.Fatalf("create = %d", w.Code)
 	}
@@ -254,7 +254,7 @@ func TestBriefAnswerFallsBackToTheLauncherWhenTheFolderIsReadOnly(t *testing.T) 
 		t.Skip("root ignores directory modes")
 	}
 	e := newBriefEnv(t)
-	const id = "gm-2026-10-24-003"
+	id := rid(1)
 	e.startAsking(id)
 	dir := filepath.Join(e.root, ".gophermind", id)
 	inner := e.script

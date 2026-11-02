@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
@@ -153,15 +154,15 @@ func decodeMap(t *testing.T, w *httptest.ResponseRecorder) map[string]any {
 
 func TestBriefCreateRunsPlanThenRun(t *testing.T) {
 	e := newBriefEnv(t)
-	w := e.post("/app/briefs", e.briefText("gm-2026-10-23-001"), nil)
+	w := e.post("/app/briefs", e.briefText(rid(1)), nil)
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("create = %d %s", w.Code, w.Body)
 	}
 	m := decodeMap(t, w)
-	if m["run_id"] != "gm-2026-10-23-001" || m["url"] != "/app/briefs/gm-2026-10-23-001" {
+	if m["run_id"] != rid(1) || m["url"] != "/app/briefs/"+rid(1) {
 		t.Errorf("body %v", m)
 	}
-	rec := e.waitPhase("gm-2026-10-23-001", phaseDone, phaseFailed)
+	rec := e.waitPhase(rid(1), phaseDone, phaseFailed)
 	if rec.Phase != phaseDone || rec.ExitCode == nil || *rec.ExitCode != 0 {
 		t.Fatalf("record %+v", rec)
 	}
@@ -171,20 +172,20 @@ func TestBriefCreateRunsPlanThenRun(t *testing.T) {
 		t.Fatalf("calls %v", e.calls)
 	}
 	p := e.calls[0]
-	if len(p) != 4 || p[0] != "brief" || p[1] != "plan" || p[2] != filepath.Join(e.dir, "gm-2026-10-23-001", "brief.md") || p[3] != "--yes" {
+	if len(p) != 4 || p[0] != "brief" || p[1] != "plan" || p[2] != filepath.Join(e.dir, rid(1), "brief.md") || p[3] != "--yes" {
 		t.Errorf("plan call %v", p)
 	}
 	r := e.calls[1]
-	if strings.Join(r, " ") != "brief run gm-2026-10-23-001 --repo "+e.root {
+	if strings.Join(r, " ") != "brief run "+rid(1)+" --repo "+e.root {
 		t.Errorf("run call %v", r)
 	}
-	logb, err := os.ReadFile(filepath.Join(e.dir, "gm-2026-10-23-001", "run.log"))
+	logb, err := os.ReadFile(filepath.Join(e.dir, rid(1), "run.log"))
 	if err != nil || !strings.Contains(string(logb), "ran") || !strings.Contains(string(logb), "== gophermind brief plan") {
 		t.Errorf("log %q %v", logb, err)
 	}
-	saved, _ := os.ReadFile(filepath.Join(e.dir, "gm-2026-10-23-001", "brief.md"))
-	if string(saved) != e.briefText("gm-2026-10-23-001") {
-		t.Error("saved brief differs from the upload")
+	saved, _ := os.ReadFile(filepath.Join(e.dir, rid(1), "brief.md"))
+	if want := stampFront(stripFront([]byte(e.briefText(rid(1)))), rid(1), e.root); string(saved) != string(want) {
+		t.Errorf("saved brief is not the upload stamped with the server id:\n%s", saved)
 	}
 }
 
@@ -193,13 +194,13 @@ func TestBriefCreateMultipart(t *testing.T) {
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	fw, _ := mw.CreateFormFile("brief", "b.md")
-	fw.Write([]byte(e.briefText("gm-2026-10-23-002")))
+	fw.Write([]byte(e.briefText(rid(1))))
 	mw.Close()
 	w := e.post("/app/briefs", buf.String(), map[string]string{"Content-Type": mw.FormDataContentType()})
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("multipart create = %d %s", w.Code, w.Body)
 	}
-	e.waitPhase("gm-2026-10-23-002", phaseDone)
+	e.waitPhase(rid(1), phaseDone)
 
 	// A form without a brief part is a client error.
 	buf.Reset()
@@ -214,16 +215,14 @@ func TestBriefCreateMultipart(t *testing.T) {
 
 func TestBriefCreateRefusals(t *testing.T) {
 	e := newBriefEnv(t)
-	good := e.briefText("gm-2026-10-23-003")
+	good := e.briefText(rid(1))
 	cases := []struct {
 		name, body string
 		want       int
 	}{
 		{"empty", "  \n", http.StatusBadRequest},
 		{"not a brief", "just words, no frontmatter", http.StatusBadRequest},
-		{"bad id", strings.Replace(good, "gm-2026-10-23-003", "../etc", 1), http.StatusBadRequest},
-		{"other repo", strings.Replace(good, "repo: "+e.root, "repo: /somewhere/else", 1), http.StatusBadRequest},
-		{"tilde repo", strings.Replace(good, "repo: "+e.root, "repo: ~/src/x", 1), http.StatusBadRequest},
+		{"no title", strings.Replace(good, "title: Acme Registration API\n", "", 1), http.StatusBadRequest},
 		{"too big", good + strings.Repeat("x", maxBriefBytes), http.StatusRequestEntityTooLarge},
 	}
 	for _, c := range cases {
@@ -258,43 +257,46 @@ func TestBriefValidatedLikeCLI(t *testing.T) {
 func TestBriefConflictWhileActive(t *testing.T) {
 	e := newBriefEnv(t)
 	e.script = func(args []string) string { return "sleep 30" }
-	if w := e.post("/app/briefs", e.briefText("gm-2026-10-23-010"), nil); w.Code != http.StatusAccepted {
+	if w := e.post("/app/briefs", e.briefText(rid(1)), nil); w.Code != http.StatusAccepted {
 		t.Fatalf("first = %d %s", w.Code, w.Body)
 	}
-	w := e.post("/app/briefs", e.briefText("gm-2026-10-23-011"), nil)
+	w := e.post("/app/briefs", e.briefText(rid(2)), nil)
 	if w.Code != http.StatusConflict {
 		t.Fatalf("second = %d %s", w.Code, w.Body)
 	}
-	if m := decodeMap(t, w); m["active_run_id"] != "gm-2026-10-23-010" {
+	if m := decodeMap(t, w); m["active_run_id"] != rid(1) {
 		t.Errorf("conflict body %v", m)
 	}
-	if _, err := os.Stat(filepath.Join(e.dir, "gm-2026-10-23-011")); err == nil {
+	if _, err := os.Stat(filepath.Join(e.dir, rid(2))); err == nil {
 		t.Error("the refused run left a folder")
 	}
-	e.post("/app/briefs/gm-2026-10-23-010/stop", "", nil)
-	e.waitPhase("gm-2026-10-23-010", phaseStopped)
+	e.post("/app/briefs/"+rid(1)+"/stop", "", nil)
+	e.waitPhase(rid(1), phaseStopped)
 }
 
-func TestBriefDuplicateIDConflicts(t *testing.T) {
+// The client's id never names the run, so the same text twice is two runs.
+func TestBriefSameUploadTwiceStartsNextRun(t *testing.T) {
 	e := newBriefEnv(t)
 	body := e.briefText("gm-2026-10-23-012")
 	if w := e.post("/app/briefs", body, nil); w.Code != http.StatusAccepted {
 		t.Fatalf("first = %d", w.Code)
 	}
-	e.waitPhase("gm-2026-10-23-012", phaseDone)
+	e.waitPhase(rid(1), phaseDone)
+	e.waitNotActive(rid(1))
 	w := e.post("/app/briefs", body, nil)
-	if w.Code != http.StatusConflict || decodeMap(t, w)["run_id"] != "gm-2026-10-23-012" {
-		t.Errorf("duplicate = %d %s", w.Code, w.Body)
+	if w.Code != http.StatusAccepted || decodeMap(t, w)["run_id"] != rid(2) {
+		t.Errorf("second = %d %s", w.Code, w.Body)
 	}
+	e.waitPhase(rid(2), phaseDone)
 }
 
 func TestBriefResubmitTakesNextFreeID(t *testing.T) {
 	e := newBriefEnv(t)
-	body := e.briefText("gm-2026-10-23-012")
+	body := e.briefText(rid(1))
 	if w := e.post("/app/briefs", body, nil); w.Code != http.StatusAccepted {
 		t.Fatalf("first = %d", w.Code)
 	}
-	e.waitPhase("gm-2026-10-23-012", phaseDone)
+	e.waitPhase(rid(1), phaseDone)
 
 	// Upload again with ?resubmit=1: a new id, the old run untouched.
 	w := e.post("/app/briefs?resubmit=1", body, nil)
@@ -302,7 +304,7 @@ func TestBriefResubmitTakesNextFreeID(t *testing.T) {
 		t.Fatalf("resubmit upload = %d %s", w.Code, w.Body)
 	}
 	id1, _ := decodeMap(t, w)["run_id"].(string)
-	if id1 == "" || id1 == "gm-2026-10-23-012" {
+	if id1 == "" || id1 == rid(1) {
 		t.Fatalf("run id %q", id1)
 	}
 	e.waitPhase(id1, phaseDone)
@@ -312,12 +314,12 @@ func TestBriefResubmitTakesNextFreeID(t *testing.T) {
 	}
 
 	// Resubmit from a finished run.
-	w = e.post("/app/briefs/gm-2026-10-23-012/resubmit", "", nil)
+	w = e.post("/app/briefs/"+rid(1)+"/resubmit", "", nil)
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("resubmit run = %d %s", w.Code, w.Body)
 	}
 	id2, _ := decodeMap(t, w)["run_id"].(string)
-	if id2 == "" || id2 == id1 || id2 == "gm-2026-10-23-012" {
+	if id2 == "" || id2 == id1 || id2 == rid(1) {
 		t.Errorf("second run id %q", id2)
 	}
 	e.waitPhase(id2, phaseDone)
@@ -338,16 +340,16 @@ func TestBriefRunsGetTheirOwnRepo(t *testing.T) {
 		}
 		return "echo ran"
 	}
-	body := regexp.MustCompile(`(?m)^repo:.*\n`).ReplaceAllString(e.briefText("gm-2026-10-23-020"), "")
+	body := regexp.MustCompile(`(?m)^repo:.*\n`).ReplaceAllString(e.briefText(rid(1)), "")
 	if strings.Contains(body, "\nrepo:") {
 		t.Fatal("test brief still names a repo")
 	}
 	if w := e.post("/app/briefs", body, nil); w.Code != http.StatusAccepted {
 		t.Fatalf("upload = %d %s", w.Code, w.Body)
 	}
-	e.waitPhase("gm-2026-10-23-020", phaseDone)
-	want := filepath.Join(repos, "gm-2026-10-23-020")
-	stored, _ := os.ReadFile(filepath.Join(e.dir, "gm-2026-10-23-020", "brief.md"))
+	e.waitPhase(rid(1), phaseDone)
+	want := filepath.Join(repos, rid(1))
+	stored, _ := os.ReadFile(filepath.Join(e.dir, rid(1), "brief.md"))
 	if !strings.Contains(string(stored), "\nrepo: "+want+"\n") {
 		t.Errorf("stored brief does not name %s:\n%.400s", want, stored)
 	}
@@ -356,7 +358,7 @@ func TestBriefRunsGetTheirOwnRepo(t *testing.T) {
 	for _, c := range e.calls {
 		line := strings.Join(c, " ")
 		sawInit = sawInit || line == "brief init-repo "+want
-		sawRun = sawRun || strings.HasSuffix(line, "brief run gm-2026-10-23-020 --repo "+want) || line == "brief run gm-2026-10-23-020 --repo "+want
+		sawRun = sawRun || strings.HasSuffix(line, "brief run "+rid(1)+" --repo "+want) || line == "brief run "+rid(1)+" --repo "+want
 	}
 	e.mu.Unlock()
 	if !sawInit || !sawRun {
@@ -380,7 +382,7 @@ func TestBriefStopKillsProcessGroup(t *testing.T) {
 	pidFile := filepath.Join(t.TempDir(), "pid")
 	// A grandchild in the same group must die with the run.
 	e.script = func(args []string) string { return "sleep 30 & echo $! > " + pidFile + "; wait" }
-	if w := e.post("/app/briefs", e.briefText("gm-2026-10-23-020"), nil); w.Code != http.StatusAccepted {
+	if w := e.post("/app/briefs", e.briefText(rid(1)), nil); w.Code != http.StatusAccepted {
 		t.Fatalf("create = %d", w.Code)
 	}
 	// Wait until the process is running.
@@ -398,11 +400,11 @@ func TestBriefStopKillsProcessGroup(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	time.Sleep(100 * time.Millisecond)
-	w := e.post("/app/briefs/gm-2026-10-23-020/stop", "", nil)
+	w := e.post("/app/briefs/"+rid(1)+"/stop", "", nil)
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("stop = %d %s", w.Code, w.Body)
 	}
-	rec := e.waitPhase("gm-2026-10-23-020", phaseStopped)
+	rec := e.waitPhase(rid(1), phaseStopped)
 	if rec.FinishedAt == "" {
 		t.Errorf("record %+v", rec)
 	}
@@ -428,17 +430,17 @@ func TestBriefStopKillsProcessGroup(t *testing.T) {
 	// The run is over, so the slot is free and a second stop is a conflict.
 	// The record turns stopped before the run goroutine closes its log and
 	// frees the slot, so wait for the conflict instead of expecting it at once.
-	e.waitNotActive("gm-2026-10-23-020")
-	if w := e.post("/app/briefs/gm-2026-10-23-020/stop", "", nil); w.Code != http.StatusConflict {
+	e.waitNotActive(rid(1))
+	if w := e.post("/app/briefs/"+rid(1)+"/stop", "", nil); w.Code != http.StatusConflict {
 		t.Errorf("second stop = %d", w.Code)
 	}
-	if w := e.post("/app/briefs", e.briefText("gm-2026-10-23-021"), nil); w.Code != http.StatusAccepted {
+	if w := e.post("/app/briefs", e.briefText(rid(2)), nil); w.Code != http.StatusAccepted {
 		t.Fatalf("slot not freed: %d %s", w.Code, w.Body)
 	}
 	// The second run is a live process group writing run.log into the test's
 	// temp dir: stop it and wait until it is reaped and its log closed, or the
 	// directory cleanup races a writer ("directory not empty").
-	e.stopAndDrain("gm-2026-10-23-021")
+	e.stopAndDrain(rid(2))
 }
 
 func TestBriefStopUnknownRun(t *testing.T) {
@@ -454,8 +456,8 @@ func TestBriefStopUnknownRun(t *testing.T) {
 func TestBriefFailedStepRecorded(t *testing.T) {
 	e := newBriefEnv(t)
 	e.script = func(args []string) string { return "echo boom; exit 3" }
-	e.post("/app/briefs", e.briefText("gm-2026-10-23-030"), nil)
-	rec := e.waitPhase("gm-2026-10-23-030", phaseFailed)
+	e.post("/app/briefs", e.briefText(rid(1)), nil)
+	rec := e.waitPhase(rid(1), phaseFailed)
 	if rec.ExitCode == nil || *rec.ExitCode != 3 || !strings.Contains(rec.Error, "plan") {
 		t.Errorf("record %+v", rec)
 	}
@@ -494,7 +496,7 @@ func TestBriefRoutesNeedSignIn(t *testing.T) {
 
 func TestBriefStateChangesRefuseCrossSite(t *testing.T) {
 	e := newBriefEnv(t)
-	body := e.briefText("gm-2026-10-23-040")
+	body := e.briefText(rid(1))
 	for name, hdr := range map[string]map[string]string{
 		"other origin":    {"Origin": "https://evil.example"},
 		"cross-site":      {"Sec-Fetch-Site": "cross-site"},
@@ -503,7 +505,7 @@ func TestBriefStateChangesRefuseCrossSite(t *testing.T) {
 		if w := e.post("/app/briefs", body, hdr); w.Code != http.StatusForbidden {
 			t.Errorf("create, %s = %d, want 403", name, w.Code)
 		}
-		if w := e.post("/app/briefs/gm-2026-10-23-040/stop", "", hdr); w.Code != http.StatusForbidden {
+		if w := e.post("/app/briefs/"+rid(1)+"/stop", "", hdr); w.Code != http.StatusForbidden {
 			t.Errorf("stop, %s = %d, want 403", name, w.Code)
 		}
 	}
@@ -515,16 +517,16 @@ func TestBriefStateChangesRefuseCrossSite(t *testing.T) {
 	if w.Code != http.StatusAccepted {
 		t.Errorf("same origin = %d %s", w.Code, w.Body)
 	}
-	e.waitPhase("gm-2026-10-23-040", phaseDone)
+	e.waitPhase(rid(1), phaseDone)
 }
 
 func TestBriefStateAndListRoutes(t *testing.T) {
 	e := newBriefEnv(t)
 	e.script = func(args []string) string { return "echo first-line; echo second-line" }
-	e.post("/app/briefs", e.briefText("gm-2026-10-23-050"), nil)
-	e.waitPhase("gm-2026-10-23-050", phaseDone)
+	e.post("/app/briefs", e.briefText(rid(1)), nil)
+	e.waitPhase(rid(1), phaseDone)
 
-	w := e.get("/app/briefs/gm-2026-10-23-050/state")
+	w := e.get("/app/briefs/" + rid(1) + "/state")
 	if w.Code != http.StatusOK {
 		t.Fatalf("state = %d %s", w.Code, w.Body)
 	}
@@ -532,7 +534,7 @@ func TestBriefStateAndListRoutes(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &st); err != nil {
 		t.Fatal(err)
 	}
-	if st.Run.ID != "gm-2026-10-23-050" || st.Run.Phase != phaseDone || st.Run.Active || st.Run.Title == "" {
+	if st.Run.ID != rid(1) || st.Run.Phase != phaseDone || st.Run.Active || st.Run.Title == "" {
 		t.Errorf("run %+v", st.Run)
 	}
 	if !strings.Contains(strings.Join(st.LogTail, "\n"), "second-line") {
@@ -551,7 +553,7 @@ func TestBriefStateAndListRoutes(t *testing.T) {
 	w = e.get("/app/api/briefs")
 	m := decodeMap(t, w)
 	runs, _ := m["runs"].([]any)
-	if w.Code != http.StatusOK || len(runs) != 1 || runs[0].(map[string]any)["id"] != "gm-2026-10-23-050" {
+	if w.Code != http.StatusOK || len(runs) != 1 || runs[0].(map[string]any)["id"] != rid(1) {
 		t.Errorf("list = %d %s", w.Code, w.Body)
 	}
 }
@@ -680,4 +682,10 @@ func TestBriefAcceptedWithWarningsListsThem(t *testing.T) {
 	if !found {
 		t.Errorf("warnings = %+v, want the go run warning with its line", got.Warnings)
 	}
+}
+
+// rid is the run id the n-th run of the example brief gets today: the family
+// is the slug of its title, the version v1.
+func rid(n int) string {
+	return fmt.Sprintf("acme-registration-api-v1-%s-r%03d", time.Now().UTC().Format("20060102"), n)
 }

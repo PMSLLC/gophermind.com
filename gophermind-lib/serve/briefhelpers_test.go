@@ -3,6 +3,7 @@ package serve
 import (
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestAnswerTextUnknownRun(t *testing.T) {
@@ -22,7 +23,7 @@ func TestResubmitIDUnknown(t *testing.T) {
 }
 
 func TestCreateTextInvalid(t *testing.T) {
-	m := &briefManager{}
+	m := &briefManager{now: time.Now}
 	m.dir = t.TempDir()
 	_, _, err := m.createText([]byte("not a brief"), false)
 	var inv *briefInvalidError

@@ -77,27 +77,27 @@ func TestWriteToolsRegistered(t *testing.T) {
 
 func TestBriefCreateStartsRun(t *testing.T) {
 	e, ts := writeToolsEnv(t)
-	out, err := callTool(t, ts, "brief_create", map[string]any{"text": e.briefText("gm-2026-10-30-001")})
+	out, err := callTool(t, ts, "brief_create", map[string]any{"text": e.briefText(rid(1))})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "gm-2026-10-30-001") {
+	if !strings.Contains(out, rid(1)) {
 		t.Errorf("out %q lacks run id", out)
 	}
-	e.waitPhase("gm-2026-10-30-001", phaseDone, phaseFailed, phaseRunning, phaseWaiting)
-	if _, err := os.Stat(filepath.Join(e.dir, "gm-2026-10-30-001", "run.json")); err != nil {
+	e.waitPhase(rid(1), phaseDone, phaseFailed, phaseRunning, phaseWaiting)
+	if _, err := os.Stat(filepath.Join(e.dir, rid(1), "run.json")); err != nil {
 		t.Errorf("no record: %v", err)
 	}
-	e.waitNotActive("gm-2026-10-30-001")
+	e.waitNotActive(rid(1))
 }
 
 func TestBriefCreateAskDefaultsTrue(t *testing.T) {
 	e, ts := writeToolsEnv(t)
 	e.askScript(gateFixture)
-	if _, err := callTool(t, ts, "brief_create", map[string]any{"text": e.briefText("gm-2026-10-30-002")}); err != nil {
+	if _, err := callTool(t, ts, "brief_create", map[string]any{"text": e.briefText(rid(1))}); err != nil {
 		t.Fatal(err)
 	}
-	if rec := e.waitPhase("gm-2026-10-30-002", phaseWaiting, phaseFailed, phaseDone); rec.Phase != phaseWaiting {
+	if rec := e.waitPhase(rid(1), phaseWaiting, phaseFailed, phaseDone); rec.Phase != phaseWaiting {
 		t.Fatalf("phase %s, want waiting (ask default true)", rec.Phase)
 	}
 }
@@ -119,29 +119,29 @@ func TestBriefCreateInvalid(t *testing.T) {
 func TestBriefCreateBusy(t *testing.T) {
 	e, ts := writeToolsEnv(t)
 	e.script = func(args []string) string { return "sleep 30" }
-	if _, err := callTool(t, ts, "brief_create", map[string]any{"text": e.briefText("gm-2026-10-30-003"), "ask": false}); err != nil {
+	if _, err := callTool(t, ts, "brief_create", map[string]any{"text": e.briefText(rid(1)), "ask": false}); err != nil {
 		t.Fatal(err)
 	}
-	e.waitPhase("gm-2026-10-30-003", phasePlanning, phaseRunning)
-	out, err := callTool(t, ts, "brief_create", map[string]any{"text": e.briefText("gm-2026-10-30-004"), "ask": false})
+	e.waitPhase(rid(1), phasePlanning, phaseRunning)
+	out, err := callTool(t, ts, "brief_create", map[string]any{"text": e.briefText(rid(2)), "ask": false})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "gm-2026-10-30-003") {
+	if !strings.Contains(out, rid(1)) {
 		t.Errorf("out %q lacks active id", out)
 	}
 	if n := runDirs(t, e.dir); len(n) != 1 {
 		t.Errorf("run dirs %v, want one", n)
 	}
-	e.stopAndDrain("gm-2026-10-30-003")
+	e.stopAndDrain(rid(1))
 }
 
 func TestBriefAnswerUnknownQuestion(t *testing.T) {
 	e, ts := writeToolsEnv(t)
-	e.startAsking("gm-2026-10-30-005")
-	qf := filepath.Join(e.root, ".gophermind", "gm-2026-10-30-005", "QUESTIONS.md")
+	e.startAsking(rid(1))
+	qf := filepath.Join(e.root, ".gophermind", rid(1), "QUESTIONS.md")
 	before, _ := os.ReadFile(qf)
-	out, err := callTool(t, ts, "brief_answer", map[string]any{"id": "gm-2026-10-30-005", "question_id": "clarify-q9", "text": "x"})
+	out, err := callTool(t, ts, "brief_answer", map[string]any{"id": rid(1), "question_id": "clarify-q9", "text": "x"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestBriefAnswerUnknownQuestion(t *testing.T) {
 
 func TestBriefAnswerAlreadyFilled(t *testing.T) {
 	e, ts := writeToolsEnv(t)
-	id := "gm-2026-10-30-006"
+	id := rid(1)
 	e.startAsking(id)
 	if out, err := callTool(t, ts, "brief_answer", map[string]any{"id": id, "question_id": "clarify-q1", "text": "sqlite"}); err != nil || !strings.Contains(out, "1 question") {
 		t.Fatalf("first answer: %q %v", out, err)
@@ -181,7 +181,7 @@ func TestBriefAnswerAlreadyFilled(t *testing.T) {
 // HTTP answer handler still overwrites exactly as before.
 func TestAnswerHandlerStillOverwritesFilled(t *testing.T) {
 	e, ts := writeToolsEnv(t)
-	id := "gm-2026-10-30-012"
+	id := rid(1)
 	e.startAsking(id)
 	if w := e.post("/app/briefs/"+id+"/answer", answerBody("clarify-q1", "sqlite"), nil); w.Code != http.StatusOK {
 		t.Fatalf("answer = %d %s", w.Code, w.Body)
@@ -205,7 +205,7 @@ func TestBriefAnswerLauncherFallbackRefusesFilled(t *testing.T) {
 		t.Skip("root ignores directory modes")
 	}
 	e, ts := writeToolsEnv(t)
-	id := "gm-2026-10-30-014"
+	id := rid(1)
 	e.startAsking(id)
 	dir := filepath.Join(e.root, ".gophermind", id)
 	inner := e.script
@@ -238,7 +238,7 @@ func TestBriefAnswerOldCLIMessage(t *testing.T) {
 		t.Skip("root ignores directory modes")
 	}
 	e, ts := writeToolsEnv(t)
-	id := "gm-2026-10-30-015"
+	id := rid(1)
 	e.startAsking(id)
 	dir := filepath.Join(e.root, ".gophermind", id)
 	inner := e.script
@@ -260,7 +260,7 @@ func TestBriefAnswerOldCLIMessage(t *testing.T) {
 
 func TestBriefAnswerConcurrentOneWrite(t *testing.T) {
 	e, ts := writeToolsEnv(t)
-	id := "gm-2026-10-30-013"
+	id := rid(1)
 	e.startAsking(id)
 	answer := pick(t, ts, "brief_answer")
 	var wg sync.WaitGroup
@@ -335,7 +335,7 @@ func TestBriefStopNotActive(t *testing.T) {
 func TestBriefStopActive(t *testing.T) {
 	e, ts := writeToolsEnv(t)
 	e.script = func(args []string) string { return "sleep 30" }
-	id := "gm-2026-10-30-007"
+	id := rid(1)
 	if _, err := callTool(t, ts, "brief_create", map[string]any{"text": e.briefText(id), "ask": false}); err != nil {
 		t.Fatal(err)
 	}
@@ -363,7 +363,7 @@ func TestBriefResubmitBadID(t *testing.T) {
 
 func TestBriefResubmitStartsNewRun(t *testing.T) {
 	e, ts := writeToolsEnv(t)
-	id := "gm-2026-10-30-010"
+	id := rid(1)
 	if _, err := callTool(t, ts, "brief_create", map[string]any{"text": e.briefText(id), "ask": false}); err != nil {
 		t.Fatal(err)
 	}
@@ -373,7 +373,7 @@ func TestBriefResubmitStartsNewRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	newID := regexp.MustCompile(`started run (gm-[0-9-]+)`).FindStringSubmatch(out)
+	newID := regexp.MustCompile(`started run (\S+) from`).FindStringSubmatch(out)
 	if newID == nil || newID[1] == id {
 		t.Errorf("out %q does not name a new id different from %s", out, id)
 	}
@@ -471,7 +471,7 @@ func TestWriteToolDeniedDoesNothing(t *testing.T) {
 
 func TestWriteToolDeniedAnswerAndStop(t *testing.T) {
 	e, ts := writeToolsEnv(t)
-	id := "gm-2026-10-30-021"
+	id := rid(1)
 	e.startAsking(id)
 	qf := filepath.Join(e.root, ".gophermind", id, "QUESTIONS.md")
 	before, _ := os.ReadFile(qf)
@@ -492,7 +492,7 @@ func TestWriteToolDeniedAnswerAndStop(t *testing.T) {
 
 func TestWriteToolApprovedStartsRun(t *testing.T) {
 	e, ts := writeToolsEnv(t)
-	id := "gm-2026-10-30-022"
+	id := rid(1)
 	asked, toolMsg := sendThroughAgent(t, ts, "brief_create", map[string]any{"text": e.briefText(id), "ask": false},
 		func(string, string) bool { return true })
 	if asked != 1 {

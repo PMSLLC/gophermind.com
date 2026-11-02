@@ -102,3 +102,21 @@ func (m *briefManager) startVersion(family, version string, ask bool) (briefReco
 	}
 	return rec, warnings, err
 }
+
+// stripFront removes any id and repo lines from the frontmatter of src.
+func stripFront(src []byte) []byte {
+	nl := bytes.IndexByte(src, '\n')
+	if nl < 0 || strings.TrimSpace(string(src[:nl])) != "---" {
+		return src
+	}
+	end := bytes.Index(src[nl:], []byte("\n---"))
+	if end < 0 {
+		return src
+	}
+	head := stampedLine.ReplaceAll(src[nl+1:nl+end+1], nil)
+	var out bytes.Buffer
+	out.Write(src[:nl+1])
+	out.Write(head)
+	out.Write(src[nl+end+1:])
+	return out.Bytes()
+}

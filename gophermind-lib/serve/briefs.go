@@ -623,15 +623,14 @@ type briefResubmitError struct{ err error }
 func (e *briefResubmitError) Error() string { return "cannot resubmit: " + e.err.Error() }
 func (e *briefResubmitError) Unwrap() error { return e.err }
 
-// resubmitHandler handles POST /app/briefs/{id}/resubmit: the stored brief of
-// an earlier run goes in again under the next free id.
+// resubmitHandler handles POST /app/briefs/{id}/resubmit: the version of an
+// earlier run starts again as a new run.
 func (m *briefManager) resubmitHandler(w http.ResponseWriter, r *http.Request) {
 	rec, warnings, err := m.resubmitWarn(r.PathValue("id"))
 	m.startReply(w, rec, warnings, err)
 }
 
-// resubmitID starts the stored brief of an earlier run again under the next
-// free id.
+// resubmitID starts the version of an earlier run again as a new run.
 func (m *briefManager) resubmitID(id string) (briefRecord, error) {
 	rec, _, err := m.resubmitWarn(id)
 	return rec, err
@@ -641,20 +640,17 @@ func (m *briefManager) resubmitWarn(id string) (briefRecord, []brief.Problem, er
 	if !runview.ValidRunID(id) {
 		return briefRecord{}, nil, errNoSuchRun
 	}
+	old, _ := m.readRecord(id)
+	if old.Family != "" && old.Version != "" {
+		return m.startVersion(old.Family, old.Version, old.Ask)
+	}
+	// An older run with no library version: its stored text goes through the
+	// same flow as an upload, which migrates it into the library.
 	src, err := readSmallFile(filepath.Join(m.runDir(id), "brief.md"), maxBriefBytes)
 	if err != nil {
 		return briefRecord{}, nil, errNoStoredBrief
 	}
-	b, src, err := m.withFreshID(src)
-	if err != nil {
-		return briefRecord{}, nil, &briefResubmitError{err}
-	}
-	old, _ := m.readRecord(id)
-	rec, err := m.start(b, src, old.Ask)
-	if errors.Is(err, errBriefExists) {
-		rec.ID = b.Front.ID
-	}
-	return rec, brief.Lint(src), err
+	return m.createTextOpt(src, old.Ask, false)
 }
 
 // startReply writes the response for create and resubmit: the error mapped to
@@ -687,8 +683,7 @@ func (m *briefManager) startReply(w http.ResponseWriter, rec briefRecord, warnin
 	}
 }
 
-// create handles POST /app/briefs. With ?resubmit=1 a brief whose id is
-// already used goes in under the next free id instead of being refused.
+// create handles POST /app/briefs. ?resubmit=1 is accepted and ignored.
 func (m *briefManager) create(w http.ResponseWriter, r *http.Request) {
 	src, code, msg := readBriefBody(w, r)
 	if code != 0 {
@@ -705,42 +700,64 @@ func (m *briefManager) createText(src []byte, ask bool) (rec briefRecord, warnin
 	return m.createTextOpt(src, ask, false)
 }
 
-// createTextOpt is createText; resubmit moves a brief whose id is already used
-// to the next free id instead of refusing it.
+// createTextOpt is createText. The text goes through the brief library: any
+// id: or repo: line is dropped (the server assigns the run id), the family is
+// the slug of the title, and the version is new, reused or a child of the
+// newest. resubmit is accepted and ignored: run ids are always server-assigned.
 func (m *briefManager) createTextOpt(src []byte, ask, resubmit bool) (briefRecord, []brief.Problem, error) {
-	if probs := brief.Check(src); len(probs) > 0 {
+	_ = resubmit
+	stripped := stripFront(src)
+	// Validate a provisionally stamped copy, so invalid briefs are refused
+	// with the same messages as before.
+	prov := stampFront(stripped, "provisional-v1-"+m.now().UTC().Format("20060102")+"-r001", m.root)
+	if probs := brief.Check(prov); len(probs) > 0 {
 		summary := "invalid brief: " + probs[0].String()
 		if n := len(probs) - 1; n > 0 {
 			summary += fmt.Sprintf(" (and %d more)", n)
 		}
 		return briefRecord{}, nil, &briefInvalidError{summary, map[string]any{"problems": probs}}
 	}
-	b, err := brief.Parse(src)
+	b, err := brief.Parse(prov)
 	if err != nil {
 		return briefRecord{}, nil, &briefInvalidError{"invalid brief: " + err.Error(), nil}
 	}
-	if !runview.ValidRunID(b.Front.ID) {
-		return briefRecord{}, nil, &briefInvalidError{"invalid brief: id must look like <family>-<version>-<yyyymmdd>-rNNN or gm-YYYY-MM-DD-NNN", nil}
+	family, err := library.Slug(b.Front.Title)
+	if err != nil {
+		return briefRecord{}, nil, &briefInvalidError{"invalid brief: title cannot name a family: " + err.Error(), nil}
 	}
-	// The run folder is made inside the brief's repo; this server only shows
-	// folders under its own root, so any other repo would run unseen.
-	if m.repos == "" && (!filepath.IsAbs(b.Front.Repo) || !sameDir(b.Front.Repo, m.root)) {
-		return briefRecord{}, nil, &briefInvalidError{
-			"invalid brief: repo must be the server's repo root, " + m.root, map[string]any{"repo_root": m.root}}
+	version, err := m.saveVersion(family, stripped)
+	if err != nil {
+		return briefRecord{}, nil, err
 	}
-	if resubmit {
-		if _, err := os.Lstat(m.runDir(b.Front.ID)); err == nil {
-			var ferr error
-			if b, src, ferr = m.withFreshID(src); ferr != nil {
-				return briefRecord{}, nil, &briefResubmitError{ferr}
+	return m.startVersion(family, version, ask)
+}
+
+// saveVersion returns the version of family holding exactly text: an existing
+// identical one, a first v1, or a child of the newest version.
+func (m *briefManager) saveVersion(family string, text []byte) (string, error) {
+	if v, ok := m.lib.FindIdentical(family, text); ok {
+		return v.Name, nil
+	}
+	fams, err := m.lib.List()
+	if err != nil {
+		return "", err
+	}
+	newest, created := "", ""
+	for _, f := range fams {
+		if f.Name != family {
+			continue
+		}
+		for _, v := range f.Versions {
+			if v.Created >= created {
+				newest, created = v.Name, v.Created
 			}
 		}
 	}
-	rec, err := m.start(b, src, ask)
-	if errors.Is(err, errBriefExists) {
-		rec.ID = b.Front.ID
+	v, err := m.lib.Save(family, newest, "", text)
+	if err != nil {
+		return "", err
 	}
-	return rec, brief.Lint(src), err
+	return v.Name, nil
 }
 
 // stopHandler handles POST /app/briefs/{id}/stop.

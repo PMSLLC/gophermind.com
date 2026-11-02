@@ -29,7 +29,7 @@ func (b *lockedBuf) String() string {
 
 func TestBriefEventsAreLogged(t *testing.T) {
 	e := newBriefEnv(t)
-	id := "gm-2026-10-23-081"
+	id := rid(1)
 	e.startAsking(id)
 	secret := "hunter2-the-answer"
 	w := e.post("/app/briefs/"+id+"/answer", answerBody("clarify-q1", secret), nil)
@@ -60,7 +60,7 @@ func TestBriefEventsAreLogged(t *testing.T) {
 
 func TestBriefStopIsLogged(t *testing.T) {
 	e := newBriefEnv(t)
-	id := "gm-2026-10-23-082"
+	id := rid(1)
 	e.script = func(args []string) string { return "sleep 30" }
 	if w := e.post("/app/briefs", e.briefText(id), nil); w.Code != http.StatusAccepted {
 		t.Fatalf("create = %d %s", w.Code, w.Body)
