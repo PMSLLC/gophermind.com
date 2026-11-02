@@ -25,7 +25,7 @@
 <!--GM_RAIL-->
 <main class="main">
 <div class="head"><h1><span id="fam"></span><span class="ver" id="ver"></span></h1><div class="actions"><a class="btn" href="/app/library">Back to library</a></div></div>
-<div class="notice" id="notice" hidden>This version has run, so it cannot change. Saving makes a new version.</div>
+<div class="notice" id="notice" hidden>This version is locked, so it cannot change. Saving makes a new version.</div>
 <div class="links" id="links"></div>
 <textarea id="text" spellcheck="false" aria-label="Brief text"></textarea>
 <input type="text" id="label" placeholder="Label for a new version (optional)" aria-label="Label" maxlength="80">
@@ -42,10 +42,16 @@
 <script>
 'use strict';
 const parts = location.pathname.split('/');
-const family = decodeURIComponent(parts[3] || '');
-const version = decodeURIComponent(parts[4] || '');
-const base = '/app/api/library/' + encodeURIComponent(family) + '/' + encodeURIComponent(version);
 const msg = document.getElementById('msg');
+let family = '', version = '';
+try {
+  family = decodeURIComponent(parts[3] || '');
+  version = decodeURIComponent(parts[4] || '');
+} catch (e) {
+  msg.textContent = 'This address is not a valid brief version.';
+  msg.className = 'err';
+}
+const base = '/app/api/library/' + encodeURIComponent(family) + '/' + encodeURIComponent(version);
 const text = document.getElementById('text');
 let cur = null;
 function say(t, isErr, href, linkText){
@@ -143,7 +149,7 @@ document.getElementById('cmp').addEventListener('click', () => {
     .then(t => { d.textContent = t; d.hidden = false; })
     .catch(e => say('Compare failed: ' + e.message, true));
 });
-load();
+if (family && version) load();
 </script>
 </body>
 </html>

@@ -8,8 +8,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"gophermind/gophermind-lib/library"
 )
@@ -80,7 +82,9 @@ func TestLibraryListJSON(t *testing.T) {
 
 func TestLibraryGetJSON(t *testing.T) {
 	e, m := libEnv(t)
-	m.lib.Save("csvstat", "v1", "", e.versionBody())
+	if _, err := m.lib.Save("csvstat", "v1", "", e.versionBody()); err != nil {
+		t.Fatal(err)
+	}
 	w := e.get("/app/api/library/csvstat/v1")
 	var got struct {
 		Family, Name, Text string
@@ -99,7 +103,9 @@ func TestLibraryGetJSON(t *testing.T) {
 
 func TestSaveLockedMakesChild(t *testing.T) {
 	e, m := libEnv(t)
-	m.lib.Lock("csvstat", "v1")
+	if err := m.lib.Lock("csvstat", "v1"); err != nil {
+		t.Fatal(err)
+	}
 	_, before, _ := m.lib.Get("csvstat", "v1")
 	w := e.post("/app/api/library/csvstat/v1/save", saveBody(string(e.versionBody())+"\nmore\n", "tweak", false), sameOrigin)
 	if w.Code != http.StatusCreated {
@@ -188,7 +194,9 @@ func TestSaveRefusesIDRepoLines(t *testing.T) {
 	if strings.Contains(string(text), "id:") || strings.Contains(string(text), "repo:") || strings.HasPrefix(string(text), "\xef\xbb\xbf") {
 		t.Errorf("stored %q", text)
 	}
-	m.lib.Lock("csvstat", "v1")
+	if err := m.lib.Lock("csvstat", "v1"); err != nil {
+		t.Fatal(err)
+	}
 	if w := e.post("/app/api/library/csvstat/v1/save", saveBody(pasted, "", false), sameOrigin); w.Code != http.StatusCreated {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
@@ -214,8 +222,12 @@ func TestSaveLimitsAndUnknowns(t *testing.T) {
 
 func TestDiffPlain(t *testing.T) {
 	e, m := libEnv(t)
-	m.lib.Update("csvstat", "v1", []byte("a\nb\nc\n"))
-	m.lib.Save("csvstat", "v1", "", []byte("a\nB\nc\nd\n"))
+	if err := m.lib.Update("csvstat", "v1", []byte("a\nb\nc\n")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.lib.Save("csvstat", "v1", "", []byte("a\nB\nc\nd\n")); err != nil {
+		t.Fatal(err)
+	}
 	w := e.get("/app/api/library/csvstat/v1.1/diff?against=v1")
 	if w.Code != 200 || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/plain") {
 		t.Fatalf("%d %q", w.Code, w.Header().Get("Content-Type"))
@@ -263,8 +275,8 @@ func TestEditorRunButtonOnlyLinksToPreview(t *testing.T) {
 	if strings.Contains(s, "<form") {
 		t.Error("the editor has a form")
 	}
-	for _, bad := range []string{"/app/briefs'", "/app/briefs\"", "'/run", "method: 'POST'", `method:"POST"`} {
-		if i := strings.Index(s, bad); i >= 0 && bad != "method: 'POST'" {
+	for _, bad := range []string{"/app/briefs'", "/app/briefs\"", "'/run", `method:"POST"`} {
+		if strings.Contains(s, bad) {
 			t.Errorf("editor references %q", bad)
 		}
 	}
@@ -281,6 +293,7 @@ func TestLibraryRoutesNeedAuth(t *testing.T) {
 	e, _ := libEnv(t)
 	for _, tc := range []struct{ method, path string }{
 		{"GET", "/app/api/library"},
+		{"GET", "/app/library/csvstat/v1"},
 		{"GET", "/app/api/library/csvstat/v1"},
 		{"POST", "/app/api/library/csvstat/v1/save"},
 		{"GET", "/app/api/library/csvstat/v1/diff?against=v1"},
@@ -306,5 +319,79 @@ func TestLibraryHiddenWithoutBriefsDir(t *testing.T) {
 		if r.Code != http.StatusNotFound {
 			t.Errorf("%s = %d, want 404", p, r.Code)
 		}
+	}
+}
+
+func TestDiffNearIdenticalLargeIsFast(t *testing.T) {
+	e, m := libEnv(t)
+	var lines []string
+	for i := 0; i < 5000; i++ {
+		lines = append(lines, "line "+strings.Repeat("x", i%7)+string(rune('a'+i%26)))
+	}
+	old := strings.Join(lines, "\n") + "\n"
+	lines[2500] = "CHANGED"
+	if err := m.lib.Update("csvstat", "v1", []byte(old)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.lib.Save("csvstat", "v1", "", []byte(strings.Join(lines, "\n")+"\n")); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	w := e.get("/app/api/library/csvstat/v1.1/diff?against=v1")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "+ CHANGED\n") || time.Since(start) > 2*time.Second {
+		t.Fatalf("%d in %v", w.Code, time.Since(start))
+	}
+}
+
+func TestDiffFullyDifferentOverCapRefused(t *testing.T) {
+	e, m := libEnv(t)
+	mk := func(p string) []byte {
+		var sb strings.Builder
+		for i := 0; i < 3000; i++ {
+			sb.WriteString(p + strconv.Itoa(i) + "\n")
+		}
+		return []byte(sb.String())
+	}
+	if err := m.lib.Update("csvstat", "v1", mk("a")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.lib.Save("csvstat", "v1", "", mk("b")); err != nil {
+		t.Fatal(err)
+	}
+	w := e.get("/app/api/library/csvstat/v1.1/diff?against=v1")
+	if w.Code != http.StatusRequestEntityTooLarge || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/plain") {
+		t.Fatalf("%d %q", w.Code, w.Header().Get("Content-Type"))
+	}
+}
+
+func TestRunRecordWithoutLockFlagShowsLocked(t *testing.T) {
+	e, m := libEnv(t)
+	if _, err := m.lib.Save("csvstat", "v1", "", e.versionBody()); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.lib.Lock("csvstat", "v1.1"); err != nil {
+		t.Fatal(err)
+	}
+	writeRun(t, e, "csvstat-v1-20261101-r001", "csvstat", "v1", "failed", "2026-11-01T10:00:00Z")
+	var got struct{ Locked bool }
+	w := e.get("/app/api/library/csvstat/v1")
+	if json.Unmarshal(w.Body.Bytes(), &got) != nil || !got.Locked {
+		t.Errorf("get: %s", w.Body)
+	}
+	var list struct {
+		Families []struct {
+			Versions []struct {
+				Name, State string
+				Locked      bool
+			}
+		}
+	}
+	json.Unmarshal(e.get("/app/api/library").Body.Bytes(), &list)
+	v := list.Families[0].Versions
+	if !v[0].Locked || v[0].State != "failed" {
+		t.Errorf("v1 %+v", v[0])
+	}
+	if !v[1].Locked || v[1].State != "locked" {
+		t.Errorf("locked without runs: %+v", v[1])
 	}
 }

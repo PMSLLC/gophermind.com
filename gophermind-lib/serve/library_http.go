@@ -62,7 +62,11 @@ type libFamilyItem struct {
 	Versions     []libVersionItem `json:"versions"`
 }
 
-// libraryList handles GET /app/api/library.
+// libraryList handles GET /app/api/library. A version counts as locked when
+// its lock flag is set or any run record names it, which is what the save
+// route enforces. state is "draft" when it has no runs and is not locked,
+// "locked" when it is locked with no runs, else the phase of its most recent
+// run.
 func (m *briefManager) libraryList(w http.ResponseWriter, r *http.Request) {
 	fams, err := m.lib.List()
 	if err != nil {
@@ -76,7 +80,10 @@ func (m *briefManager) libraryList(w http.ResponseWriter, r *http.Request) {
 		for _, v := range f.Versions {
 			rs := runs[f.Name+"/"+v.Name]
 			it := libVersionItem{Name: v.Name, Parent: v.Parent, Label: v.Label, Created: v.Created,
-				Locked: v.Locked, State: "draft", RunCount: len(rs)}
+				Locked: v.Locked || len(rs) > 0, State: "draft", RunCount: len(rs)}
+			if it.Locked {
+				it.State = "locked"
+			}
 			if len(rs) > 0 {
 				it.State = rs[0].Phase
 				if rs[0].StartedAt > fi.LastRunAt {
@@ -117,7 +124,7 @@ func (m *briefManager) libraryGet(w http.ResponseWriter, r *http.Request) {
 	}
 	briefJSON(w, http.StatusOK, map[string]any{
 		"family": family, "name": v.Name, "parent": v.Parent, "children": children,
-		"label": v.Label, "created": v.Created, "locked": v.Locked, "text": string(text), "runs": rs,
+		"label": v.Label, "created": v.Created, "locked": v.Locked || len(rs) > 0, "text": string(text), "runs": rs,
 	})
 }
 
@@ -184,13 +191,29 @@ func (m *briefManager) librarySave(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// maxDiffLines caps each side of a comparison; the table is lines x lines.
-const maxDiffLines = 4000
+// maxDiffCells caps the LCS table (lines x lines) left after the common
+// prefix and suffix are trimmed: 4M cells of int32 is about 16 MB.
+const maxDiffCells = 4 << 20
+
+var errDiffTooLarge = errors.New("too many differing lines to compare")
 
 // lineDiff returns a line diff from a to b: unchanged lines prefixed with two
 // spaces, removed with "- " and added with "+ ".
-func lineDiff(a, b []string) []string {
+func lineDiff(a, b []string) ([]string, error) {
+	pre := 0
+	for pre < len(a) && pre < len(b) && a[pre] == b[pre] {
+		pre++
+	}
+	suf := 0
+	for suf < len(a)-pre && suf < len(b)-pre && a[len(a)-1-suf] == b[len(b)-1-suf] {
+		suf++
+	}
+	head, tail := a[:pre], a[len(a)-suf:]
+	a, b = a[pre:len(a)-suf], b[pre:len(b)-suf]
 	n, k := len(a), len(b)
+	if (n+1)*(k+1) > maxDiffCells {
+		return nil, errDiffTooLarge
+	}
 	l := make([][]int32, n+1)
 	for i := range l {
 		l[i] = make([]int32, k+1)
@@ -207,6 +230,9 @@ func lineDiff(a, b []string) []string {
 		}
 	}
 	var out []string
+	for _, l := range head {
+		out = append(out, "  "+l)
+	}
 	i, j := 0, 0
 	for i < n && j < k {
 		switch {
@@ -228,7 +254,10 @@ func lineDiff(a, b []string) []string {
 	for ; j < k; j++ {
 		out = append(out, "+ "+b[j])
 	}
-	return out
+	for _, l := range tail {
+		out = append(out, "  "+l)
+	}
+	return out, nil
 }
 
 func splitLines(b []byte) []string {
@@ -252,13 +281,14 @@ func (m *briefManager) libraryDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a, b := splitLines(old), splitLines(cur)
-	if len(a) > maxDiffLines || len(b) > maxDiffLines {
-		briefError(w, http.StatusRequestEntityTooLarge, "too many lines to compare", nil)
+	lines, err := lineDiff(a, b)
+	if err != nil {
+		http.Error(w, "too many differing lines to compare", http.StatusRequestEntityTooLarge)
 		return
 	}
 	var sb strings.Builder
 	sb.WriteString("--- " + family + " " + against + "\n+++ " + family + " " + name + "\n")
-	for _, l := range lineDiff(a, b) {
+	for _, l := range lines {
 		sb.WriteString(l + "\n")
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
