@@ -237,14 +237,9 @@ func readSmallFile(path string, max int64) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(f, max))
 }
 
-// start records a new run and launches it in the background. The slot is
-// taken before anything is written, so two requests cannot both start.
-func (m *briefManager) start(b *brief.Brief, src []byte, ask bool) (briefRecord, error) {
-	return m.startRec(b, src, briefRecord{Ask: ask})
-}
-
-// startRec is start with the record fields the caller already knows (Ask,
-// Family, Version).
+// startRec records a new run and launches it in the background. The slot is
+// taken before anything is written, so two requests cannot both start. base
+// carries the record fields the caller already knows (Ask, Family, Version).
 func (m *briefManager) startRec(b *brief.Brief, src []byte, base briefRecord) (briefRecord, error) {
 	ask := base.Ask
 	id := b.Front.ID
@@ -619,40 +614,6 @@ func withRepo(src []byte, repo string) []byte {
 		return append(append(append(append([]byte{}, src[:loc[1]]...), '\n'), line...), src[loc[1]:]...)
 	}
 	return src
-}
-
-// freshID returns the first gm-<today>-NNN with no run folder yet and no entry
-// in <dir>/library/aliases.json, so a run started after the library migration
-// never reuses an old id that now points at a migrated run. An unreadable alias
-// file is an error rather than a guess.
-func (m *briefManager) freshID() (string, error) {
-	aliases, err := library.LoadAliases(filepath.Join(m.dir, "library"))
-	if err != nil {
-		return "", fmt.Errorf("brief aliases: %w", err)
-	}
-	day := m.now().Format("2006-01-02")
-	for n := 1; n < 1000; n++ {
-		id := fmt.Sprintf("gm-%s-%03d", day, n)
-		if _, taken := aliases[id]; taken {
-			continue
-		}
-		if _, err := os.Lstat(m.runDir(id)); errors.Is(err, fs.ErrNotExist) {
-			return id, nil
-		}
-	}
-	return "", errors.New("no free run id today")
-}
-
-// withFreshID rewrites the frontmatter id of a brief to the next free one and
-// parses the result, so a brief can be submitted again without editing it.
-func (m *briefManager) withFreshID(src []byte) (*brief.Brief, []byte, error) {
-	id, err := m.freshID()
-	if err != nil {
-		return nil, nil, err
-	}
-	src = frontIDLine.ReplaceAllLiteral(src, []byte("id: "+id))
-	b, err := brief.Parse(src)
-	return b, src, err
 }
 
 // Errors the create and resubmit helpers return, so a caller (the HTTP

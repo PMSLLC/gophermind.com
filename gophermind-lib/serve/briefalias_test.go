@@ -157,23 +157,3 @@ func TestAliasResolvedByEveryRoute(t *testing.T) {
 		t.Errorf("brief_stop of the old id: %q %v", out, err)
 	}
 }
-
-// TestFreshIDSkipsAliasedOldIDs: after the library migration renamed
-// gm-<day>-001 and -002, a harness run started the same day must not get either
-// id back, or the alias would point the old id at a different run.
-func TestFreshIDSkipsAliasedOldIDs(t *testing.T) {
-	dir := t.TempDir()
-	m, err := newBriefManager(Options{BriefsDir: dir}, t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	m.now = func() time.Time { return time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC) }
-	writeAliases(t, dir, library.Aliases{aliasOld: aliasNew, "gm-2026-10-29-002": "csvstat-v1-20261029-r002"})
-	id, err := m.freshID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if id != "gm-2026-10-29-003" {
-		t.Errorf("freshID = %q, want gm-2026-10-29-003", id)
-	}
-}

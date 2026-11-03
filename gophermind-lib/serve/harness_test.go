@@ -98,6 +98,16 @@ func TestHarnessRetriesUntilEveryBriefPasses(t *testing.T) {
 	if b := byFile["b-big.md"]; b.Attempts != 2 || b.Passes != 1 || b.LastPhase != phaseDone {
 		t.Errorf("big = %+v, want a failed attempt, then a pass", b)
 	}
+	// Runs carry library names; the retry is a second run of the same version.
+	day := time.Now().UTC().Format("20060102")
+	for file, b := range byFile {
+		if strings.HasPrefix(b.LastRun, "gm-") || !strings.Contains(b.LastRun, "-v1-"+day+"-r") {
+			t.Errorf("%s last run = %q, want a <family>-v1-%s-rNNN library name", file, b.LastRun, day)
+		}
+	}
+	if r := byFile["b-big.md"].LastRun; !strings.HasSuffix(r, "-r002") {
+		t.Errorf("big last run = %q, want the second run of the same version (-r002)", r)
+	}
 }
 
 // A brief whose plan stops at questions is parked: the harness moves on, does

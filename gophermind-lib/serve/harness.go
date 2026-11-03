@@ -228,19 +228,20 @@ func (h *harness) tick() {
 		h.save()
 		return
 	}
-	parsed, src, err := h.m.withFreshID(src)
-	if err != nil {
-		h.st.Note = b.File + " does not parse: " + err.Error()
-		h.st.Next = idx + 1
-		h.save()
-		return
-	}
-	// Planning asks its questions on the run's page rather than failing on
-	// them; a run that stops to ask is parked until it is answered.
-	rec, err := h.m.start(parsed, src, true)
+	// The brief goes through the library like an upload, so its runs get
+	// library names. Planning asks its questions on the run's page rather
+	// than failing on them; a run that stops to ask is parked until answered.
+	rec, _, err := h.m.createText(src, true)
 	var busy *briefBusyError
 	if errors.As(err, &busy) {
 		h.st.Note = "waiting: another run is active (" + busy.activeID + ")"
+		return
+	}
+	var invalid *briefInvalidError
+	if errors.As(err, &invalid) {
+		h.st.Note = b.File + " does not parse: " + invalid.msg
+		h.st.Next = idx + 1
+		h.save()
 		return
 	}
 	if err != nil {

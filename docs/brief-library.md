@@ -31,6 +31,7 @@ Saving from the editor always makes a child of the version that is open. The one
 - An upload with a title that is new creates the family at `v1`.
 - An upload with a known title and changed text becomes a child of the family's newest version. It never makes a new family and never overwrites a version.
 - The `id:` and `repo:` lines of an upload are ignored; the server assigns the run id.
+- Harness runs (the example briefs) go through the same upload flow, so they get library names too. A retry of an unchanged brief is another run of the same version.
 - Resubmitting a run (the run page button, `POST /app/briefs/{id}/resubmit`, the chat `brief_resubmit` tool) starts the same version again under a new run name. An older `gm-` run with no library version goes through the upload flow above, which puts its text into the library first.
 - A `?resubmit=1` query on an upload is ignored.
 
