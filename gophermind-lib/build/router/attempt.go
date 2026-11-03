@@ -60,6 +60,7 @@ func (r *Router) attempt(ctx context.Context, info CallInfo, req provider.Reques
 				row.DurationMS = resp.Duration.Milliseconds()
 			}
 			r.record(ctx, row)
+			r.recordText(ctx, row, r2.Messages, resp.Text)
 			return Result{Response: resp, CallID: row.ID, Entry: entry, ChainPos: pos}, EntryReason{}, true, nil
 		}
 
@@ -193,4 +194,21 @@ func detailOf(err error) string {
 		s = string(r[:maxDetail]) + "..."
 	}
 	return s
+}
+
+// recordText hands a recorded call's prompt and reply to a ledger that keeps
+// text (a verbose run). A failure is reported as a ledger error and never
+// fails the call.
+func (r *Router) recordText(ctx context.Context, row *ledger.Call, msgs []provider.Message, reply string) {
+	tr, ok := r.led.(ledger.TextRecorder)
+	if !ok || row.ID == 0 {
+		return
+	}
+	t := ledger.Text{ID: row.ID, Stage: row.Stage, NodeID: row.NodeID, Provider: row.Provider, Model: row.ModelServed, Response: reply}
+	for _, m := range msgs {
+		t.Messages = append(t.Messages, ledger.TextMessage{Role: string(m.Role), Content: m.Content})
+	}
+	if err := tr.RecordText(context.WithoutCancel(ctx), row.RunID, t); err != nil {
+		r.noteLedgerError(row.Stage, row.NodeID, err)
+	}
 }

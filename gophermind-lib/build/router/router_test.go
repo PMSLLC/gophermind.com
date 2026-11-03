@@ -1229,3 +1229,54 @@ func TestCallParsedSingleModelChainTakesTheConfiguredRetries(t *testing.T) {
 		t.Errorf("mini %d calls, want 5 (first try plus four told retries)", g.mini.Calls())
 	}
 }
+
+// textLedger is a file ledger that also keeps text through a fake recorder.
+type textLedger struct {
+	*ledger.FS
+	err   error
+	texts []ledger.Text
+	runs  []string
+}
+
+func (l *textLedger) RecordText(_ context.Context, runID string, t ledger.Text) error {
+	l.runs = append(l.runs, runID)
+	l.texts = append(l.texts, t)
+	return l.err
+}
+
+func TestARecordedCallHandsItsTextToATextRecorder(t *testing.T) {
+	g := &rig{}
+	g.mini = provider.NewFake("mini", []provider.ModelInfo{{ID: "qwen", ContextTokens: 1000}}, okText("the reply"))
+	tl := &textLedger{FS: ledger.NewFS(runfs.Fixed(t.TempDir()))}
+	g.build(t, testConfig(), map[string]provider.Provider{"mini": g.mini}, tl)
+	res, err := g.r.Call(context.Background(), info(router.TierStrong, router.ScopeNode), req("the prompt"))
+	if err != nil || res.CallID == 0 {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if len(tl.texts) != 1 {
+		t.Fatalf("%d texts, want 1", len(tl.texts))
+	}
+	got := tl.texts[0]
+	if tl.runs[0] != "r" || got.ID != res.CallID || got.Response != "the reply" || got.Model != "qwen" ||
+		got.Provider != "mini" || got.Stage != "testwrite:fn-a" || got.NodeID != "fn-a" ||
+		len(got.Messages) != 1 || got.Messages[0].Content != "the prompt" || got.Messages[0].Role != string(provider.RoleUser) {
+		t.Errorf("%+v run=%v", got, tl.runs)
+	}
+}
+
+func TestATextRecorderFailureDoesNotFailTheCall(t *testing.T) {
+	g := &rig{}
+	g.mini = provider.NewFake("mini", nil, okText("precious answer"))
+	tl := &textLedger{FS: ledger.NewFS(runfs.Fixed(t.TempDir())), err: errors.New("disk full")}
+	g.build(t, testConfig(), map[string]provider.Provider{"mini": g.mini}, tl)
+	res, err := g.r.Call(context.Background(), info(router.TierStrong, router.ScopeNode), req("hi"))
+	if err != nil || res.Text != "precious answer" {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if g.r.LedgerErrors() != 1 {
+		t.Errorf("LedgerErrors = %d, want 1", g.r.LedgerErrors())
+	}
+	if n := len(g.sink.OfKind(events.KindLedgerError)); n != 1 {
+		t.Errorf("%d ledger_error events, want 1", n)
+	}
+}
