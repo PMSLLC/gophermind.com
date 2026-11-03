@@ -40,6 +40,7 @@
 <div class="banner" id="banner" hidden></div>
 <div class="settings" id="settings" hidden>
   <label><input type="checkbox" id="ask" checked> Stop and ask me about open questions</label>
+  <label><input type="checkbox" id="verbose"> Verbose LLM log (save every prompt and reply)</label>
   <div class="meta">Run name: <span id="runname"></span></div>
 </div>
 <div class="bar">
@@ -181,7 +182,7 @@ go.addEventListener('click', async () => {
   try {
     const r = await fetch(base + '/run', {
       method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ask: document.getElementById('ask').checked, preview_token: token })
+      body: JSON.stringify({ ask: document.getElementById('ask').checked, verbose: document.getElementById('verbose').checked, preview_token: token })
     });
     const j = await r.json().catch(() => ({}));
     if (r.ok && j.run_id) {
