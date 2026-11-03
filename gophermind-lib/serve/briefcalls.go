@@ -58,6 +58,7 @@ type callLine struct {
 	At               string `json:"at"`
 	Provider         string `json:"provider"`
 	ModelRequested   string `json:"model_requested"`
+	ModelServed      string `json:"model_served"`
 	ErrorKind        string `json:"error_kind"`
 	ErrorDetail      string `json:"error_detail"`
 }

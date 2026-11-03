@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<!-- Run data is put on the page with textContent only, never as markup; the
+     policy below is a second layer should that ever slip. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'">
+<title>Verbose log - GopherMind</title>
+<style>
+/*GM_CSS*/
+.llm-head{cursor:pointer}
+.llm-head:hover{background:var(--bg)}
+.llm-body td{padding:.2rem .6rem .9rem}
+.llm-role{margin:.6rem 0 .1rem;font-weight:650;font-size:.82rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.llm-text{margin:0;padding:.55rem .8rem;background:var(--bg);border-radius:6px;font:12.5px/1.55 var(--mono);white-space:pre-wrap;word-break:break-word;max-height:none;color:var(--text)}
+</style>
+</head>
+<body class="gm-brief">
+<div class="shell">
+<!--GM_RAIL-->
+<main class="main">
+<div class="head">
+  <h1>Verbose log</h1>
+  <div class="actions"><a id="back" class="btn" href="/app/briefs">Back to the run</a></div>
+  <div class="meta" id="sub"></div>
+</div>
+<div id="load" class="meta">Loading...</div>
+<table id="calls" hidden>
+  <thead><tr><th>#</th><th>Stage</th><th>Node</th><th>Model</th><th>Duration</th><th>Tokens</th><th>Outcome</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+</main>
+</div>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const m = /^\/app\/briefs\/(gm-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3}|[a-z0-9]+(?:-[a-z0-9]+)*-v[0-9]+[a-z]?(?:\.[0-9]+[a-z]?)*-[0-9]{8}-r[0-9]{3,})\/log\/?$/.exec(window.location.pathname);
+const runId = m ? m[1] : '';
+const NOT_VERBOSE = 'This run was started without the verbose option, so no prompts or replies were saved.';
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined && text !== null) e.textContent = text;
+  return e;
+}
+function dur(ms) {
+  if (!ms) return '';
+  return ms < 1000 ? ms + ' ms' : (ms / 1000).toFixed(1) + ' s';
+}
+
+async function showText(c, body, cell) {
+  cell.textContent = 'Loading...';
+  try {
+    const r = await fetch('/app/briefs/' + runId + '/llm/' + c.id, { credentials: 'same-origin', cache: 'no-store' });
+    if (!r.ok) { cell.textContent = r.status === 404 ? 'No text was kept for this call.' : 'Could not load this call (' + r.status + ').'; return; }
+    const t = await r.json();
+    cell.textContent = '';
+    for (const msg of t.messages || []) {
+      cell.appendChild(el('div', 'llm-role', msg.role));
+      cell.appendChild(el('pre', 'llm-text', msg.content));
+    }
+    cell.appendChild(el('div', 'llm-role', 'reply'));
+    cell.appendChild(el('pre', 'llm-text', t.response || ''));
+  } catch (e) {
+    cell.textContent = 'Could not load this call: ' + e.message;
+  }
+}
+
+function addRow(tbody, c) {
+  const tr = el('tr', c.has_text ? 'llm-head' : '');
+  const tokens = (c.prompt_tokens || 0) + (c.completion_tokens || 0);
+  const outcome = c.outcome === 'ok' ? 'ok' : c.outcome + (c.error_kind ? ' (' + c.error_kind + ')' : '');
+  const cells = [c.id, c.stage, c.node_id || '', c.model_served || c.provider || '', dur(c.duration_ms), tokens || '', outcome];
+  for (const v of cells) tr.appendChild(el('td', '', String(v)));
+  tbody.appendChild(tr);
+  if (!c.has_text) return;
+  const body = el('tr', 'llm-body');
+  body.hidden = true;
+  const cell = el('td');
+  cell.colSpan = 7;
+  body.appendChild(cell);
+  tbody.appendChild(body);
+  let loaded = false;
+  tr.addEventListener('click', () => {
+    body.hidden = !body.hidden;
+    if (!body.hidden && !loaded) { loaded = true; showText(c, body, cell); }
+  });
+}
+
+async function main() {
+  if (!runId) { $('load').textContent = 'Bad run id.'; return; }
+  $('back').href = '/app/briefs/' + runId;
+  $('sub').textContent = runId;
+  let j;
+  try {
+    const r = await fetch('/app/briefs/' + runId + '/llm', { credentials: 'same-origin', cache: 'no-store' });
+    if (!r.ok) { $('load').textContent = r.status === 404 ? 'No such run.' : 'Could not load the log (' + r.status + ').'; return; }
+    j = await r.json();
+  } catch (e) {
+    $('load').textContent = 'Could not load the log: ' + e.message;
+    return;
+  }
+  if (!j.verbose) { $('load').textContent = NOT_VERBOSE; return; }
+  const calls = j.calls || [];
+  if (!calls.length) { $('load').textContent = 'No model calls yet.'; return; }
+  $('load').hidden = true;
+  $('calls').hidden = false;
+  for (const c of calls) addRow($('rows'), c);
+}
+main();
+</script>
+</body>
+</html>

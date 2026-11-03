@@ -60,6 +60,7 @@ type BriefRun struct {
 	StartedAt  string                `json:"started_at"`
 	FinishedAt string                `json:"finished_at"`
 	Error      string                `json:"error"`
+	Verbose    bool                  `json:"verbose"`
 	Waves      int                   `json:"waves"`
 	Counts     runview.Counts        `json:"counts"`
 	Coverage   runview.CoverageCount `json:"coverage"`
@@ -275,6 +276,7 @@ func BuildBriefState(root, id string, rec *briefRecord, active bool, logText str
 	if rec != nil {
 		st.Run.Title, st.Run.Phase, st.Run.ExitCode = rec.Title, rec.Phase, rec.ExitCode
 		st.Run.StartedAt, st.Run.FinishedAt, st.Run.Error = rec.StartedAt, rec.FinishedAt, rec.Error
+		st.Run.Verbose = rec.Verbose
 	}
 	v, err := runview.Open(root, id, runview.WithClock(func() time.Time { return now }))
 	if err != nil {

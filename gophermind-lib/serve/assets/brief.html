@@ -18,7 +18,7 @@
 <main class="main">
 <div class="head">
   <h1 id="title">Run</h1>
-  <div class="actions"><button id="resubmit" type="button" hidden>Resubmit this brief</button><button id="stop" type="button" hidden>Stop this run</button><span id="stopmsg" class="err"></span></div>
+  <div class="actions"><button id="resubmit" type="button" hidden>Resubmit this brief</button><button id="stop" type="button" hidden>Stop this run</button><a id="vlog" class="btn" href="#" hidden>Verbose log</a><span id="stopmsg" class="err"></span></div>
   <div class="meta" id="head"></div>
 </div>
 <div id="load" class="meta">Loading...</div>
@@ -164,6 +164,8 @@ function renderHead(run){
   if (run.error) { h.appendChild(document.createTextNode('  ')); h.appendChild(el('span', 'err', run.error)); }
   $('stop').hidden = !run.active;
   $('resubmit').hidden = !!run.active;
+  $('vlog').hidden = !run.verbose;
+  if (run.verbose) $('vlog').href = '/app/briefs/' + runId + '/log';
   const c = run.counts || {};
   renderStrip(c);
   const parts = [];
