@@ -209,3 +209,28 @@ func TestARunIDAndADifferentBriefPathDisagree(t *testing.T) {
 		t.Fatalf("matching run id and brief path: %v", err)
 	}
 }
+
+// A verbose marker next to the brief (the launcher writes <dir>/_state/verbose)
+// is carried into the run folder, so the ledger keeps call text for the run.
+func TestPlanCarriesTheVerboseMarkerIntoTheRunFolder(t *testing.T) {
+	g := newRig(t, approving())
+	state := filepath.Join(filepath.Dir(g.briefPath), "_state")
+	if err := os.MkdirAll(state, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(state, "verbose"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	g.mustPlan(planner.Options{StopAfter: "load", AllowPublic: true})
+	if _, err := os.Stat(filepath.Join(g.runDir, "_state", "verbose")); err != nil {
+		t.Errorf("run folder has no verbose marker: %v", err)
+	}
+}
+
+func TestPlanWithoutAVerboseMarkerWritesNone(t *testing.T) {
+	g := newRig(t, approving())
+	g.mustPlan(planner.Options{StopAfter: "load", AllowPublic: true})
+	if _, err := os.Stat(filepath.Join(g.runDir, "_state", "verbose")); !os.IsNotExist(err) {
+		t.Errorf("unexpected marker: %v", err)
+	}
+}

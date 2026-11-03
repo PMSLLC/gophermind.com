@@ -101,7 +101,7 @@ func (m *briefManager) nextRunCounter(family, version, day string) (int, error) 
 // When set, the stored text must still hash to it (else errPreviewChanged) and
 // the stamped text must pass brief.Check (else the problems), both checked
 // under the family lock so an edit cannot slip in between check and start.
-func (m *briefManager) startVersion(family, version string, ask bool, wantSum string) (briefRecord, []brief.Problem, error) {
+func (m *briefManager) startVersion(family, version string, ask, verbose bool, wantSum string) (briefRecord, []brief.Problem, error) {
 	var rec briefRecord
 	var warnings []brief.Problem
 	if m.beforeStartLock != nil {
@@ -138,7 +138,7 @@ func (m *briefManager) startVersion(family, version string, ask bool, wantSum st
 		if m.repos == "" && (!filepath.IsAbs(b.Front.Repo) || !sameDir(b.Front.Repo, m.root)) {
 			return &briefInvalidError{"invalid brief: the stored version cannot be stamped with the server's repo", nil}
 		}
-		rec, err = m.startRec(b, stamped, briefRecord{Ask: ask, Family: family, Version: version})
+		rec, err = m.startRec(b, stamped, briefRecord{Ask: ask, Verbose: verbose, Family: family, Version: version})
 		if errors.Is(err, errBriefExists) {
 			rec.ID = id
 		}

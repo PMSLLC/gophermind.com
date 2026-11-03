@@ -231,7 +231,7 @@ func (h *harness) tick() {
 	// The brief goes through the library like an upload, so its runs get
 	// library names. Planning asks its questions on the run's page rather
 	// than failing on them; a run that stops to ask is parked until answered.
-	rec, _, err := h.m.createText(src, true)
+	rec, _, err := h.m.createText(src, true, false)
 	var busy *briefBusyError
 	if errors.As(err, &busy) {
 		h.st.Note = "waiting: another run is active (" + busy.activeID + ")"

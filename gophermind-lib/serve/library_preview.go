@@ -165,6 +165,7 @@ func (m *briefManager) libraryRun(w http.ResponseWriter, r *http.Request) {
 	family, name := r.PathValue("family"), r.PathValue("version")
 	var body struct {
 		Ask          *bool  `json:"ask"`
+		Verbose      bool   `json:"verbose"`
 		PreviewToken string `json:"preview_token"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
@@ -181,6 +182,6 @@ func (m *briefManager) libraryRun(w http.ResponseWriter, r *http.Request) {
 		briefError(w, http.StatusBadRequest, "preview_token is required: open the preview and press Continue", nil)
 		return
 	}
-	rec, warnings, err := m.startVersion(family, name, ask, body.PreviewToken)
+	rec, warnings, err := m.startVersion(family, name, ask, body.Verbose, body.PreviewToken)
 	m.startReply(w, rec, warnings, err)
 }

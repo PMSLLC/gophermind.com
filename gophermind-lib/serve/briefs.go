@@ -56,6 +56,9 @@ type briefRecord struct {
 	// empty for a run uploaded as plain text.
 	Family  string `json:"family,omitempty"`
 	Version string `json:"version,omitempty"`
+	// Verbose is set when the run was started with the verbose option: its
+	// model calls keep prompt and reply text under _state/llm.
+	Verbose bool `json:"verbose,omitempty"`
 }
 
 // exitWaiting is what `gophermind brief plan|resume` exits with when the file
@@ -267,6 +270,14 @@ func (m *briefManager) startRec(b *brief.Brief, src []byte, base briefRecord) (b
 		}
 		src = withRepo(src, repo)
 	}
+	if base.Verbose {
+		if err := writeVerboseMarker(dir); err != nil {
+			m.mu.Unlock()
+			_ = os.RemoveAll(dir)
+			m.log.Error("verbose marker not written", "run_id", id, "error", err.Error())
+			return briefRecord{}, err
+		}
+	}
 	rec := base
 	rec.ID, rec.Title, rec.Phase, rec.StartedAt = id, b.Front.Title, phasePlanning, m.stamp()
 	briefPath := filepath.Join(dir, "brief.md")
@@ -282,6 +293,16 @@ func (m *briefManager) startRec(b *brief.Brief, src []byte, base briefRecord) (b
 	m.log.Info("brief upload accepted", "run_id", id, "ask", ask)
 	go m.run(a, rec, planArgs(briefPath, ask), logf)
 	return rec, nil
+}
+
+// writeVerboseMarker makes the empty <dir>/_state/verbose file that tells the
+// planner to keep prompt and reply text for the run.
+func writeVerboseMarker(dir string) error {
+	state := filepath.Join(dir, "_state")
+	if err := os.MkdirAll(state, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(state, "verbose"), nil, 0o644)
 }
 
 // planArgs is the first step: unattended defaults, or the file gate when the
@@ -654,7 +675,7 @@ func (m *briefManager) resubmitWarn(id string) (briefRecord, []brief.Problem, er
 	id = m.resolveID(id)
 	old, _ := m.readRecord(id)
 	if old.Family != "" && old.Version != "" {
-		return m.startVersion(old.Family, old.Version, old.Ask, "")
+		return m.startVersion(old.Family, old.Version, old.Ask, old.Verbose, "")
 	}
 	// An older run with no library version: its stored text goes through the
 	// same flow as an upload, which migrates it into the library.
@@ -662,7 +683,7 @@ func (m *briefManager) resubmitWarn(id string) (briefRecord, []brief.Problem, er
 	if err != nil {
 		return briefRecord{}, nil, errNoStoredBrief
 	}
-	return m.createText(src, old.Ask)
+	return m.createText(src, old.Ask, old.Verbose)
 }
 
 // startReply writes the response for create and resubmit: the error mapped to
@@ -702,7 +723,7 @@ func (m *briefManager) create(w http.ResponseWriter, r *http.Request) {
 		briefError(w, code, msg, nil)
 		return
 	}
-	rec, warnings, err := m.createText(src, r.URL.Query().Get("ask") == "1")
+	rec, warnings, err := m.createText(src, r.URL.Query().Get("ask") == "1", r.URL.Query().Get("verbose") == "1")
 	m.startReply(w, rec, warnings, err)
 }
 
@@ -721,7 +742,7 @@ func invalidFromProblems(probs []brief.Problem) *briefInvalidError {
 // text is saved as a child of the newest version. Invalid briefs come back as
 // *briefInvalidError, a busy slot as *briefBusyError, and a used run id as
 // errBriefExists (which cannot happen: ids are server-assigned).
-func (m *briefManager) createText(src []byte, ask bool) (briefRecord, []brief.Problem, error) {
+func (m *briefManager) createText(src []byte, ask, verbose bool) (briefRecord, []brief.Problem, error) {
 	src = bytes.TrimPrefix(src, []byte("\xef\xbb\xbf"))
 	stripped := stripFront(src)
 	// Validate a provisionally stamped copy, so invalid briefs are refused
@@ -742,7 +763,7 @@ func (m *briefManager) createText(src []byte, ask bool) (briefRecord, []brief.Pr
 	if err != nil {
 		return briefRecord{}, nil, err
 	}
-	return m.startVersion(family, version, ask, "")
+	return m.startVersion(family, version, ask, verbose, "")
 }
 
 // saveVersion returns the version of family holding exactly text: an existing

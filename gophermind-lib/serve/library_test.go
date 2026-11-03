@@ -52,7 +52,7 @@ func libEnv(t *testing.T) (*briefEnv, *briefManager) {
 func TestStartVersionNamesRun(t *testing.T) {
 	_, m := libEnv(t)
 	today := m.now().UTC().Format("20060102")
-	rec, _, err := m.startVersion("csvstat", "v1", false, "")
+	rec, _, err := m.startVersion("csvstat", "v1", false, false, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestStartVersionNamesRun(t *testing.T) {
 		t.Fatalf("id %q want %q", rec.ID, want)
 	}
 	waitIdle(t, m)
-	rec, _, err = m.startVersion("csvstat", "v1", false, "")
+	rec, _, err = m.startVersion("csvstat", "v1", false, false, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestStartVersionNamesRun(t *testing.T) {
 	if _, err := m.lib.Save("csvstat", "v1", "next", []byte(string(mustGet(t, m, "v1")))); err != nil {
 		t.Fatal(err)
 	}
-	rec, _, err = m.startVersion("csvstat", "v1.1", false, "")
+	rec, _, err = m.startVersion("csvstat", "v1.1", false, false, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func waitIdle(t *testing.T, m *briefManager) {
 
 func TestStartVersionLocks(t *testing.T) {
 	_, m := libEnv(t)
-	if _, _, err := m.startVersion("csvstat", "v1", false, ""); err != nil {
+	if _, _, err := m.startVersion("csvstat", "v1", false, false, ""); err != nil {
 		t.Fatal(err)
 	}
 	waitIdle(t, m)
@@ -119,12 +119,12 @@ func TestStartVersionBusyDoesNotLock(t *testing.T) {
 	if _, err := m.lib.Save("csvstat", "v1", "b", mustGet(t, m, "v1")); err != nil {
 		t.Fatal(err)
 	}
-	rec, _, err := m.startVersion("csvstat", "v1", false, "")
+	rec, _, err := m.startVersion("csvstat", "v1", false, false, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var busy *briefBusyError
-	if _, _, err := m.startVersion("csvstat", "v1.1", false, ""); !errors.As(err, &busy) {
+	if _, _, err := m.startVersion("csvstat", "v1.1", false, false, ""); !errors.As(err, &busy) {
 		t.Fatalf("err = %v, want busy", err)
 	}
 	v, _, _ := m.lib.Get("csvstat", "v1.1")
@@ -140,7 +140,7 @@ func TestStartVersionBusyDoesNotLock(t *testing.T) {
 
 func TestStartedBriefHasStamp(t *testing.T) {
 	e, m := libEnv(t)
-	rec, _, err := m.startVersion("csvstat", "v1", false, "")
+	rec, _, err := m.startVersion("csvstat", "v1", false, false, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +209,7 @@ func TestStartVersionTooLongIDLeavesUnlocked(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := library.Version{Name: name}
-	_, _, err := m.startVersion(fam, v.Name, false, "")
+	_, _, err := m.startVersion(fam, v.Name, false, false, "")
 	if err == nil || !strings.Contains(err.Error(), "not a valid run id") {
 		t.Fatalf("err = %v", err)
 	}
@@ -231,7 +231,7 @@ func TestStartVersionWithReposDirNamesRunRepo(t *testing.T) {
 	if _, err := m.lib.Save("csvstat", "", "x", e.versionBody()); err != nil {
 		t.Fatal(err)
 	}
-	rec, _, err := m.startVersion("csvstat", "v1", false, "")
+	rec, _, err := m.startVersion("csvstat", "v1", false, false, "")
 	if err != nil {
 		t.Fatal(err)
 	}

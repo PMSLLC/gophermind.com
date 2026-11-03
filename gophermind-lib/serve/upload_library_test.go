@@ -35,7 +35,7 @@ func versionNames(t *testing.T, m *briefManager) []string {
 func TestUploadNewTitleMakesV1(t *testing.T) {
 	e := newBriefEnv(t)
 	m := e.manager()
-	rec, _, err := m.createText([]byte(e.briefText("gm-2026-10-23-001")), false)
+	rec, _, err := m.createText([]byte(e.briefText("gm-2026-10-23-001")), false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,13 +64,13 @@ func mustGetFam(t *testing.T, m *briefManager, family, v string) (any, []byte) {
 func TestUploadIdenticalReusesVersion(t *testing.T) {
 	e := newBriefEnv(t)
 	m := e.manager()
-	r1, _, err := m.createText([]byte(e.briefText("gm-2026-10-23-001")), false)
+	r1, _, err := m.createText([]byte(e.briefText("gm-2026-10-23-001")), false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	waitIdle(t, m)
 	// A different pasted id and repo must not matter.
-	r2, _, err := m.createText([]byte(e.briefText("gm-2026-10-23-777")), false)
+	r2, _, err := m.createText([]byte(e.briefText("gm-2026-10-23-777")), false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestUploadChangedTextMakesChild(t *testing.T) {
 	e := newBriefEnv(t)
 	m := e.manager()
 	first := e.briefText("gm-2026-10-23-001")
-	if _, _, err := m.createText([]byte(first), false); err != nil {
+	if _, _, err := m.createText([]byte(first), false, false); err != nil {
 		t.Fatal(err)
 	}
 	waitIdle(t, m)
@@ -99,7 +99,7 @@ func TestUploadChangedTextMakesChild(t *testing.T) {
 	if edited == first {
 		t.Fatal("edit did not change the text")
 	}
-	rec, _, err := m.createText([]byte(edited), false)
+	rec, _, err := m.createText([]byte(edited), false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestUploadChangedTextMakesChild(t *testing.T) {
 func TestUploadIgnoresClientID(t *testing.T) {
 	e := newBriefEnv(t)
 	m := e.manager()
-	rec, _, err := m.createText([]byte(e.briefText("gm-2026-10-23-042")), false)
+	rec, _, err := m.createText([]byte(e.briefText("gm-2026-10-23-042")), false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestUploadEmptyTitleIsInvalid(t *testing.T) {
 	e := newBriefEnv(t)
 	m := e.manager()
 	src := strings.Replace(e.briefText("gm-2026-10-23-001"), "title: Acme Registration API", "title: '!!!'", 1)
-	_, _, err := m.createText([]byte(src), false)
+	_, _, err := m.createText([]byte(src), false, false)
 	var inv *briefInvalidError
 	if !errors.As(err, &inv) {
 		t.Fatalf("err = %v, want *briefInvalidError", err)
@@ -150,7 +150,7 @@ func TestUploadEmptyTitleIsInvalid(t *testing.T) {
 func TestResubmitNewRunUsesSameVersion(t *testing.T) {
 	e := newBriefEnv(t)
 	m := e.manager()
-	r1, _, err := m.createText([]byte(e.briefText("gm-2026-10-23-001")), true)
+	r1, _, err := m.createText([]byte(e.briefText("gm-2026-10-23-001")), true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +210,7 @@ func TestUploadBOMCannotChooseIDOrRepo(t *testing.T) {
 	m := e.manager()
 	src := strings.Replace(e.briefText("gm-2026-10-23-042"), "repo: "+e.root, "repo: /somewhere/else", 1)
 	bom := []byte("\xef\xbb\xbf" + src)
-	rec, _, err := m.createText(bom, false)
+	rec, _, err := m.createText(bom, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestUploadBOMCannotChooseIDOrRepo(t *testing.T) {
 	if regexpLine(stored, "id") || regexpLine(stored, "repo") {
 		t.Fatalf("stored version carries id or repo:\n%s", stored)
 	}
-	r2, _, err := m.createText(bom, false)
+	r2, _, err := m.createText(bom, false, false)
 	if err != nil {
 		t.Fatalf("second identical BOM upload: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestStartVersionRefusesWhenParsedIDDiffers(t *testing.T) {
 	if _, err := m.lib.Save(uploadFamily, "", "", []byte(bad)); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := m.startVersion(uploadFamily, "v1", false, "")
+	_, _, err := m.startVersion(uploadFamily, "v1", false, false, "")
 	var inv *briefInvalidError
 	if !errors.As(err, &inv) {
 		t.Fatalf("err = %v, want *briefInvalidError", err)
@@ -284,7 +284,7 @@ func TestConcurrentUploadsMakeOneVersion(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, _, err := m.createText(src, false)
+			_, _, err := m.createText(src, false, false)
 			errs <- err
 		}()
 	}
@@ -324,7 +324,7 @@ func TestUploadChildOfNewestVersion(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	rec, _, err := m.createText(text("e"), false)
+	rec, _, err := m.createText(text("e"), false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,7 +341,7 @@ func TestUploadSecondYAMLDocCannotChooseIDOrRepo(t *testing.T) {
 	e := newBriefEnv(t)
 	m := e.manager()
 	src := strings.Replace(e.briefText("gm-2026-10-23-001"), "\n---\n", "\n--- \nid: gm-evil-001\nrepo: /somewhere/else\n---\n", 1)
-	rec, _, err := m.createText([]byte(src), false)
+	rec, _, err := m.createText([]byte(src), false, false)
 	if err != nil {
 		t.Logf("refused: %v", err) // refused is acceptable
 		return

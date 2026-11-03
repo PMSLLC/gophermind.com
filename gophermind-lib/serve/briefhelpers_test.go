@@ -25,7 +25,7 @@ func TestResubmitIDUnknown(t *testing.T) {
 func TestCreateTextInvalid(t *testing.T) {
 	m := &briefManager{now: time.Now}
 	m.dir = t.TempDir()
-	_, _, err := m.createText([]byte("not a brief"), false)
+	_, _, err := m.createText([]byte("not a brief"), false, false)
 	var inv *briefInvalidError
 	if !errors.As(err, &inv) {
 		t.Fatalf("err = %v, want *briefInvalidError", err)

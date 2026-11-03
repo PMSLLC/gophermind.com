@@ -82,6 +82,9 @@ func (p *Planner) load(ctx context.Context, o Options) (*run, error) {
 	if err != nil {
 		briefPath = o.BriefPath
 	}
+	if err := carryVerboseMarker(briefPath, dir); err != nil {
+		return nil, fmt.Errorf("planner: load: %w", err)
+	}
 	recPath, err := runRecordPath(b.Front.ID)
 	if err != nil {
 		return nil, fmt.Errorf("planner: load: %w", err)
@@ -264,4 +267,18 @@ func untouchedRunDir(dir string) bool {
 		}
 	}
 	return true
+}
+
+// carryVerboseMarker copies the launcher's <brief dir>/_state/verbose marker
+// into the run folder, where the ledger looks for it before it keeps the text
+// of a call. Without the marker it does nothing.
+func carryVerboseMarker(briefPath, runDir string) error {
+	if _, err := os.Stat(filepath.Join(filepath.Dir(briefPath), "_state", "verbose")); err != nil {
+		return nil
+	}
+	state := filepath.Join(runDir, "_state")
+	if err := os.MkdirAll(state, 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(state, "verbose"), nil, 0o600)
 }

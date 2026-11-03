@@ -88,7 +88,7 @@ func (c *chatTools) briefCreate() tools.Tool {
 				return "", fmt.Errorf("brief_create: brief is larger than %d bytes", maxBriefBytes)
 			}
 			ask := a.Ask == nil || *a.Ask
-			rec, warnings, err := c.bm.createText([]byte(a.Text), ask)
+			rec, warnings, err := c.bm.createText([]byte(a.Text), ask, false)
 			if err != nil {
 				return c.clean(writeOutcome(err)), nil
 			}
