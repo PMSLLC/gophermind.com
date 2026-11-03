@@ -1,6 +1,8 @@
 // Package ledger records every model call: who was asked, who answered, how
 // long it took, and how it went. It stores sizes and SHA-256 hashes of the
-// prompt and reply, never their text.
+// prompt and reply. Their text is stored only for a verbose run (one whose
+// _state/verbose marker exists), in _state/llm/<id>.json with secrets redacted;
+// see TextRecorder.
 package ledger
 
 import (
