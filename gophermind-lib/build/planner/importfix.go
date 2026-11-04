@@ -6,12 +6,14 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // dropUnusedImports removes the import specs of a Go source file whose package
@@ -111,12 +113,33 @@ func importName(is *ast.ImportSpec) string {
 
 // isStdlib reports whether p is a package directory of the standard library.
 func isStdlib(p string) bool {
-	root := runtime.GOROOT()
+	root := goRoot()
 	if root == "" || strings.Contains(strings.Split(p, "/")[0], ".") {
 		return false
 	}
 	st, err := os.Stat(filepath.Join(root, "src", filepath.FromSlash(p)))
 	return err == nil && st.IsDir()
+}
+
+// goRoot is the Go root of this process, found once. A binary built with
+// -trimpath (the installed server) has an empty runtime.GOROOT() unless GOROOT
+// is in its environment, so the go tool on PATH is asked; without one the root
+// is empty and no import counts as standard library.
+var goRoot = sync.OnceValue(func() string { return goRootFrom(runtime.GOROOT(), lookGo) })
+
+func goRootFrom(runtimeRoot string, look func(string) (string, error)) string {
+	if runtimeRoot != "" {
+		return runtimeRoot
+	}
+	goBin, err := look("go")
+	if err != nil {
+		return ""
+	}
+	out, err := exec.Command(goBin, "env", "GOROOT").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // srcCut is a byte range of a source file to remove (to exclusive). sep is
