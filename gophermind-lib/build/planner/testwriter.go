@@ -559,7 +559,7 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	renamedHelpers := false
 	var droppedImports []string
 	var droppedComments int
-	cs := callSpec{jsonObject: true, schema: testwriteReplySchema, stage: "testwrite:" + id, taskType: "testwrite", nodeID: id, nodeClass: class, tier: p.tierFor(strField(d, "model_tier")), scope: router.ScopeNode, maxTokens: maxTokensTestwrite}
+	cs := callSpec{stage: "testwrite:" + id, taskType: "testwrite", nodeID: id, nodeClass: class, tier: p.tierFor(strField(d, "model_tier")), scope: router.ScopeNode, maxTokens: maxTokensTestwrite}
 	if mt, msrc, ok := mainEntryTest(sig, file, funcName); ok {
 		tests, source = mt, msrc
 	} else {

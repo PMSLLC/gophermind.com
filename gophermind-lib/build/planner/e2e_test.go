@@ -796,7 +796,7 @@ func TestTreeFinishRefusesADanglingDecisionID(t *testing.T) {
 // check, so the first reply passes and a warning records it.
 func TestAnUnusedTestImportIsDroppedWithAWarning(t *testing.T) {
 	good := string(mustRead(t, filepath.Join(greeter, "testwrite.fn-greet.txt")))
-	bad := strings.Replace(good, `import \"testing\"`, `import (\n\t\"bytes\"\n\t\"testing\"\n)`, 1)
+	bad := strings.Replace(good, `import "testing"`, "import (\n\t\"bytes\"\n\t\"testing\"\n)", 1)
 	if bad == good {
 		t.Fatal("fixture has no testing import to extend")
 	}
@@ -825,7 +825,7 @@ func TestAnUnusedTestImportIsDroppedWithAWarning(t *testing.T) {
 // refused and the model is asked again.
 func TestAnUnformattedTestFileIsWrittenFormatted(t *testing.T) {
 	good := string(mustRead(t, filepath.Join(greeter, "testwrite.fn-greet.txt")))
-	bad := strings.Replace(good, `import \"testing\"`, `import   \"testing\"\n\nvar   padded   =   1`, 1)
+	bad := strings.Replace(good, `import "testing"`, "import   \"testing\"\n\nvar   padded   =   1", 1)
 	if bad == good {
 		t.Fatal("fixture has no testing import to extend")
 	}
@@ -845,7 +845,7 @@ func TestAnUnformattedTestFileIsWrittenFormatted(t *testing.T) {
 
 func TestATestFileWithASyntaxErrorIsStillRefused(t *testing.T) {
 	good := string(mustRead(t, filepath.Join(greeter, "testwrite.fn-greet.txt")))
-	bad := strings.Replace(good, `import \"testing\"`, `import \"testing\"\n\nvar = =`, 1)
+	bad := strings.Replace(good, `import "testing"`, "import \"testing\"\n\nvar = =", 1)
 	if bad == good {
 		t.Fatal("fixture has no testing import to extend")
 	}
@@ -864,7 +864,7 @@ func TestATestFileWithASyntaxErrorIsStillRefused(t *testing.T) {
 // the second one carries the unused import.
 func TestAnUnusedTestImportInTheRepairReplyIsDropped(t *testing.T) {
 	good := string(mustRead(t, filepath.Join(greeter, "testwrite.fn-greet.txt")))
-	bad := strings.Replace(good, `import \"testing\"`, `import (\n\t\"bytes\"\n\t\"testing\"\n)`, 1)
+	bad := strings.Replace(good, `import "testing"`, "import (\n\t\"bytes\"\n\t\"testing\"\n)", 1)
 	g := newRig(t, approving(), variant(t, map[string]string{"testwrite.fn-greet.txt": "nope", "testwrite.fn-greet.2.txt": bad}))
 	g.mustPlan(planner.Options{})
 	src, err := os.ReadFile(filepath.Join(g.repo, "internal/greet/fn_greet_test.go"))
@@ -880,7 +880,7 @@ func TestAnUnusedTestImportInTheRepairReplyIsDropped(t *testing.T) {
 
 func withLongComment(t *testing.T, reply string) string {
 	t.Helper()
-	out := strings.Replace(reply, `func TestGreet`, strings.Repeat(`// secret deliberation\n`, 12)+`func TestGreet`, 1)
+	out := strings.Replace(reply, `func TestGreet`, strings.Repeat("// secret deliberation\n", 12)+`func TestGreet`, 1)
 	if out == reply {
 		t.Fatal("fixture has no TestGreet")
 	}

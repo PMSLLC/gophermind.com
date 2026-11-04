@@ -33,7 +33,9 @@ func TestTestwriterPromptWithoutAModuleHasNoBrokenSentence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(got, "``") || strings.Contains(got, "module is") {
+	// The reply-format fence is three backticks; only an empty pair of
+	// backticks left by an empty module is a broken sentence.
+	if strings.Contains(strings.ReplaceAll(got, "```", ""), "``") || strings.Contains(got, "module is") {
 		t.Fatalf("empty module leaked into the prompt:\n%s", got)
 	}
 }

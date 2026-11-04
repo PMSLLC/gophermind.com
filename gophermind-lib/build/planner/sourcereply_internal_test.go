@@ -65,23 +65,27 @@ func TestSplitSourceReplyWithoutABlock(t *testing.T) {
 	}
 }
 
-// greeterReplies returns the legacy greeter reply, the same reply as JSON
-// tests plus a fenced block, and the Go file both carry.
+// greeterReplies returns the greeter reply as the legacy single JSON object
+// (tests plus a test_file field), the same reply as JSON tests plus a fenced
+// block, and the Go file both carry. The fixture holds the fenced form.
 func greeterReplies(t *testing.T) (legacy, split, file string) {
 	t.Helper()
 	raw, err := os.ReadFile("testdata/greeter/testwrite.fn-greet.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
+	head, file := splitSourceReply(string(raw))
+	if file == "" {
+		t.Fatal("the greeter fixture holds no fenced go block")
+	}
 	var obj map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &obj); err != nil {
+	if err := json.Unmarshal([]byte(head), &obj); err != nil {
 		t.Fatal(err)
 	}
-	if err := json.Unmarshal(obj["test_file"], &file); err != nil {
-		t.Fatal(err)
-	}
+	fileJSON, _ := json.Marshal(file)
+	l, _ := json.Marshal(map[string]json.RawMessage{"tests": obj["tests"], "test_file": fileJSON})
 	tests, _ := json.Marshal(map[string]json.RawMessage{"tests": obj["tests"]})
-	return string(raw), string(tests) + "\n```go\n" + file + "```\n", file
+	return string(l), string(tests) + "\n```go\n" + file + "```\n", file
 }
 
 var greeterCT = map[string]any{"file": "internal/greet/greet.go", "errors": []any{map[string]any{"when": "empty", "returns": "*NameError"}}}

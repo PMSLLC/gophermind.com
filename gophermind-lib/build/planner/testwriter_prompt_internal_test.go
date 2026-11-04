@@ -43,3 +43,22 @@ func TestTestwriterPromptForbidsARealHost(t *testing.T) {
 		t.Error("testwriter.md does not forbid a real host")
 	}
 }
+
+// The test file is Go source; asking for it inside a JSON string made the
+// model escape every quote and newline. Both test-writer prompts ask for the
+// file in a fenced go block instead.
+func TestTestwriterPromptAsksForAFencedGoFile(t *testing.T) {
+	for _, name := range []string{"prompts/testwriter.md", "prompts/testwriter_accept.md"} {
+		b, err := promptFS.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := string(b)
+		if !strings.Contains(p, "one fenced go block") {
+			t.Errorf("%s does not ask for the file in one fenced go block", name)
+		}
+		if strings.Contains(p, `"test_file"`) {
+			t.Errorf("%s still asks for a test_file JSON field", name)
+		}
+	}
+}

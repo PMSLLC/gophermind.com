@@ -17,17 +17,18 @@ func TestOnlyObjectReplyStagesAskForJSONMode(t *testing.T) {
 	for _, rq := range g.fake.Requests() {
 		system := rq.Messages[0].Content
 		switch {
-		case strings.Contains(system, "testwrite:"), strings.HasSuffix(system, "Stage: coverage"):
+		case strings.Contains(system, "testwrite:"):
 			contract++
-			want := "root_tests"
-			if strings.Contains(system, "testwrite:") {
-				want = "test_file"
+			if rq.JSON || len(rq.Schema) != 0 {
+				t.Errorf("a test-writer request (its reply is JSON then a Go file) asked for JSON mode or sent a schema: %q", system)
 			}
-			if !strings.Contains(string(rq.Schema), want) {
-				t.Errorf("a request that knows its reply shape sent no schema naming %q: %q", want, system)
+		case strings.HasSuffix(system, "Stage: coverage"):
+			contract++
+			if !strings.Contains(string(rq.Schema), "root_tests") {
+				t.Errorf("a coverage request sent no schema naming \"root_tests\": %q", system)
 			}
 			if !rq.JSON {
-				t.Errorf("a test-writer or coverage request (its reply is one object) did not ask for JSON mode: %q", system)
+				t.Errorf("a coverage request (its reply is one object) did not ask for JSON mode: %q", system)
 			}
 		case strings.Contains(system, "contract:"):
 			contract++

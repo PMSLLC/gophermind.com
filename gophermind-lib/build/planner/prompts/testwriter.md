@@ -56,5 +56,8 @@ If something you need is not stated and cannot be settled by choosing the most c
 {{.Node}}
 </node>
 
-Respond with one JSON object and nothing else:
-{"tests": [{"name": "...", "given": "...", "expect": "...", "polarity": "success", "covers": "happy"}], "test_file": "<full Go source of the test file>"}
+Respond with the JSON object of tests, then the complete Go test file in one fenced go block, and nothing else:
+{"tests": [{"name": "...", "given": "...", "expect": "...", "polarity": "success", "covers": "happy"}]}
+```go
+<full Go source of the test file>
+```

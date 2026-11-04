@@ -13,11 +13,3 @@ const coverageReplySchema = `{"type":"object","required":["map","root_tests"],"p
  "root_tests":{"type":"array","items":{"type":"object","required":["requirement","name","command"],"properties":{
   "requirement":{"type":"string"},"name":{"type":"string"},"given":{"type":"string"},
   "expect":{"type":"string"},"command":{"type":"string"}}}}}}`
-
-// testwriteReplySchema is the reply of the test-writer stage: the described
-// tests and the Go test file.
-const testwriteReplySchema = `{"type":"object","required":["tests","test_file"],"properties":{
- "tests":{"type":"array","items":{"type":"object","required":["name","given","expect"],"properties":{
-  "name":{"type":"string"},"polarity":{"type":"string"},"covers":{"type":"string"},
-  "given":{"type":"string"},"expect":{"type":"string"}}}},
- "test_file":{"type":"string"}}}`

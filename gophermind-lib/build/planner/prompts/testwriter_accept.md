@@ -23,5 +23,4 @@ Brief excerpt:
 {{.Excerpt}}
 </brief>
 
-Respond with one JSON object and nothing else:
-{"test_file": "<full Go source of {{.File}}>"}
+Respond with the complete Go source of {{.File}} in one fenced go block and nothing else.
