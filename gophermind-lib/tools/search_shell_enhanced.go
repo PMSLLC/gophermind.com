@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"gophermind/gophermind-lib/build/vault"
 	"gophermind/gophermind-lib/gitenv"
 	"gophermind/gophermind-lib/safety"
 )
@@ -246,10 +247,15 @@ func RunShellEnhanced(root string, timeout time.Duration, limits ShellLimits) To
 			// default: env_allow_list is chosen by the model, so honouring
 			// "GIT_DIR" there would let the caller reinstate exactly the
 			// redirection the other branch removes.
+			//
+			// Both branches also drop the vault passphrase. The server process
+			// holds it so the planner can open the vault; a command the model
+			// runs must not see it, because its output goes back into the
+			// model's prompt.
 			var env []string
 			if len(a.EnvAllowList) > 0 {
 				for _, key := range a.EnvAllowList {
-					if strings.HasPrefix(key, "GIT_") {
+					if strings.HasPrefix(key, "GIT_") || key == vault.PassphraseEnv {
 						continue
 					}
 					if val := os.Getenv(key); val != "" {
@@ -257,7 +263,12 @@ func RunShellEnhanced(root string, timeout time.Duration, limits ShellLimits) To
 					}
 				}
 			} else {
-				env = gitenv.SanitizedEnv()
+				for _, kv := range gitenv.SanitizedEnv() {
+					if strings.HasPrefix(kv, vault.PassphraseEnv+"=") {
+						continue
+					}
+					env = append(env, kv)
+				}
 			}
 
 			loginShell := "bash"

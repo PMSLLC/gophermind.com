@@ -113,3 +113,35 @@ func TestRunShellKeepsNonGitEnv(t *testing.T) {
 		t.Errorf("a non-git variable was dropped along with the git ones: %q", out)
 	}
 }
+
+// The server process holds the vault passphrase so the planner can open the
+// vault. A command the model runs must not see it: its output goes back into
+// the model's prompt.
+func TestShellDoesNotPassTheVaultPassphraseByDefault(t *testing.T) {
+	t.Setenv("GOPHERMIND_VAULT_PASSPHRASE", "not-a-real-passphrase")
+
+	sh := RunShellEnhanced(t.TempDir(), 30*time.Second, ShellLimits{})
+	out, _ := sh.Run(context.Background(), args(t, map[string]string{
+		"command": `env`,
+	}))
+	if strings.Contains(out, "not-a-real-passphrase") {
+		t.Errorf("the vault passphrase reached a command the model runs: %q", out)
+	}
+}
+
+// env_allow_list is chosen by the model, so naming the passphrase variable in
+// it must not put it back.
+func TestShellDoesNotPassTheVaultPassphraseFromTheAllowList(t *testing.T) {
+	t.Setenv("GOPHERMIND_VAULT_PASSPHRASE", "not-a-real-passphrase")
+	t.Setenv("HOME", "/tmp/home-canary")
+
+	sh := RunShellEnhanced(t.TempDir(), 30*time.Second, ShellLimits{})
+	out, _ := sh.Run(context.Background(), []byte(
+		`{"command":"env","env_allow_list":["GOPHERMIND_VAULT_PASSPHRASE","HOME"]}`))
+	if strings.Contains(out, "not-a-real-passphrase") {
+		t.Errorf("env_allow_list put the vault passphrase back: %q", out)
+	}
+	if !strings.Contains(out, "HOME=/tmp/home-canary") {
+		t.Errorf("env_allow_list stopped working for HOME: %q", out)
+	}
+}
