@@ -1,0 +1,151 @@
+package check
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+type followMockTransport struct {
+	status    int
+	url       string
+	redirects map[string]string
+}
+
+func (m *followMockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if m.url == "" {
+		return &http.Response{
+			StatusCode: m.status,
+			Status:     "200 OK",
+			Body:       httptest.NewRecorder().Result().Body,
+			Request:    req,
+		}, nil
+	}
+
+	if next, ok := m.redirects[req.URL.String()]; ok {
+		return &http.Response{
+			StatusCode: http.StatusFound,
+			Status:     "302 Found",
+			Header:     make(http.Header),
+			Body:       httptest.NewRecorder().Result().Body,
+			Request:    req,
+		}, nil
+	}
+
+	return &http.Response{
+		StatusCode: m.status,
+		Status:     "200 OK",
+		Body:       httptest.NewRecorder().Result().Body,
+		Request:    req,
+	}, nil
+}
+
+func TestFollow(t *testing.T) {
+	tests := []struct {
+		name      string
+		ctx       context.Context
+		client    *http.Client
+		url       string
+		depth     int
+		wantURL   string
+		wantStat  string
+		wantErr   string
+		polarity  string
+		covers    string
+		cancel    bool
+	}{
+		{
+			name:     "Happy path - no redirects",
+			ctx:      context.Background(),
+			client:   &http.Client{Transport: &followMockTransport{status: 200, url: "http://example.com/a"}},
+			url:      "http://example.com/a",
+			depth:    5,
+			wantURL:  "http://example.com/a",
+			wantStat: "200 OK",
+			wantErr:  "",
+			polarity: "success",
+			covers:   "happy",
+		},
+		{
+			name:     "Follow multiple redirects",
+			ctx:      context.Background(),
+			client:   &http.Client{Transport: &followMockTransport{redirects: map[string]string{"http://a.com": "http://b.com", "http://b.com": "http://c.com"}, status: 200, url: "http://c.com"}},
+			url:      "http://a.com",
+			depth:    3,
+			wantURL:  "http://c.com",
+			wantStat: "200 OK",
+			wantErr:  "",
+			polarity: "success",
+			covers:   "happy",
+		},
+		{
+			name:     "Stop at depth limit",
+			ctx:      context.Background(),
+			client:   &http.Client{Transport: &followMockTransport{redirects: map[string]string{"http://a.com": "http://b.com"}, status: 302, url: "http://b.com"}},
+			url:      "http://a.com",
+			depth:    1,
+			wantURL:  "http://b.com",
+			wantStat: "302 Found",
+			wantErr:  "",
+			polarity: "success",
+			covers:   "boundary",
+		},\n		{
+			name:     "Error on redirect limit exceeded",
+			ctx:      context.Background(),
+			client:   &http.Client{Transport: &followMockTransport{redirects: map[string]string{"http://a.com": "http://b.com", "http://b.com": "http://c.com"}, status: 302, url: "http://c.com"}},
+			url:      "http://a.com",
+			depth:    1,
+			wantURL:  "",
+			wantStat: "",
+			wantErr:  "too many redirects",
+			polarity: "negative",
+			covers:   "boundary",
+		},
+		{
+			name:     "Context timeout",
+			ctx:      context.Background(),
+			client:   &http.Client{Transport: &followMockTransport{status: 200, url: "http://a.com"}},
+			url:      "http://a.com",
+			depth:    5,
+			wantURL:  "",
+			wantStat: "",
+			wantErr:  "context canceled",
+			polarity: "negative",
+			covers:   "boundary",
+			cancel:  true,
+		},\n		{
+			name:     "Empty URL",
+			ctx:      context.Background(),
+			client:   &http.Client{},
+			url:      "",
+			depth:    5,
+			wantURL:  "",
+			wantStat: "",
+			wantErr:  "invalid URL",
+			polarity: "negative",
+			covers:   "input:url",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(tt.ctx)
+			defer cancel()
+			if tt.cancel {
+				cancel()
+			}
+
+			gotURL, gotStat, gotErr := follow(ctx, tt.client, tt.url, tt.depth)
+			if gotURL != tt.wantURL {
+				t.Errorf("gotURL = %q, want %q", gotURL, tt.wantURL)
+			}
+			if gotStat != tt.wantStat {
+				t.Errorf("gotStat = %q, want %q", gotStat, tt.wantStat)
+			}
+			if gotErr != tt.wantErr {
+				t.Errorf("gotErr = %q, want %q", gotErr, tt.wantErr)
+			}
+		})
+	}
+}
