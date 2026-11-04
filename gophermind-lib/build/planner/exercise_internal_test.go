@@ -74,3 +74,13 @@ func TestCheckTestExercisesSkipsMainAndAnEmptyName(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+// The refusal goes back to the model, so it may name the contract function
+// and must not echo anything else from the file.
+func TestCheckTestExercisesRefusalQuotesOnlyTheContractName(t *testing.T) {
+	src := "package cli_test\n\nimport \"testing\"\n\nfunc TestRun(t *testing.T) {\n\tMARKERz9q7 := 1\n\tif MARKERz9q7 != 2 {\n\t\tt.Fatal(\"MARKERz9q7\")\n\t}\n}\n"
+	err := checkTestExercises(src, "CANARY4c81e0x")
+	if err == nil || !strings.Contains(err.Error(), "never calls CANARY4c81e0x") || strings.Contains(err.Error(), "MARKERz9q7") {
+		t.Fatalf("err = %v, want a refusal naming CANARY4c81e0x and nothing from the file", err)
+	}
+}
