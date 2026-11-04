@@ -3,8 +3,10 @@ package router_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1133,7 +1135,7 @@ func TestCallParsedSingleModelChainSucceedsOnTheSecondRetry(t *testing.T) {
 		t.Errorf("mini %d calls, want 3 (first try plus two told retries)", g.mini.Calls())
 	}
 	third := g.mini.Requests()[2].Messages
-	if len(third) < 3 || !strings.Contains(third[len(third)-1].Content, "not JSON") {
+	if len(third) < 2 || !strings.Contains(third[len(third)-1].Content, "not JSON") {
 		t.Errorf("third request does not carry the parse error: %+v", third)
 	}
 	var outcomes []ledger.Outcome
@@ -1142,6 +1144,148 @@ func TestCallParsedSingleModelChainSucceedsOnTheSecondRetry(t *testing.T) {
 	}
 	if len(outcomes) != 3 || outcomes[0] != ledger.OutcomeMalformed || outcomes[1] != ledger.OutcomeMalformed || outcomes[2] != ledger.OutcomeOK {
 		t.Errorf("outcomes = %v, want malformed, malformed, ok", outcomes)
+	}
+}
+
+func rejectBadPrefix(text string) error {
+	if strings.HasPrefix(text, "bad") {
+		return errBad
+	}
+	return nil
+}
+
+func TestCallParsedSecondRetryDropsTheBadReply(t *testing.T) {
+	g := newRig(t, func(call int, r provider.Request) (provider.Response, error) {
+		if call <= 2 {
+			return provider.Response{Text: "bad" + strconv.Itoa(call), Model: r.Model}, nil
+		}
+		return provider.Response{Text: "good", Model: r.Model}, nil
+	}, nil, nil, nil)
+	res, err := g.r.CallParsed(context.Background(), info(router.TierStrong, router.ScopeNode), req("write JSON"), rejectBadPrefix)
+	if err != nil || res.Text != "good" {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if g.mini.Calls() != 3 {
+		t.Fatalf("mini %d calls, want 3", g.mini.Calls())
+	}
+	second := g.mini.Requests()[1].Messages
+	third := g.mini.Requests()[2].Messages
+	if len(second) < 3 || second[len(second)-2].Content != "bad1" {
+		t.Errorf("retry 1 should carry the bad reply: %+v", second)
+	}
+	for _, m := range third {
+		if m.Content == "bad1" || m.Content == "bad2" {
+			t.Errorf("retry 2 carries a bad reply: %+v", third)
+		}
+	}
+	if len(third) != 2 || third[0].Content != "write JSON" {
+		t.Errorf("retry 2 should be the original message plus one note: %+v", third)
+	}
+	last := third[len(third)-1]
+	if last.Role != provider.RoleUser || !strings.Contains(last.Content, "Errors so far") || !strings.Contains(last.Content, "not JSON") {
+		t.Errorf("retry 2 note = %+v", last)
+	}
+	if strings.Count(last.Content, "not JSON") != 1 {
+		t.Errorf("errors should be listed once each: %q", last.Content)
+	}
+}
+
+func TestCallParsedIdenticalReplyGoesStraightToTheFreshForm(t *testing.T) {
+	// Chain of two: mini fails with "bad", kilo is excluded after mini; here the
+	// single-model chain repeats the same reply on the first retry, so retry 2
+	// is fresh and the note says the reply was repeated.
+	g := newRig(t, okText("bad"), nil, nil, nil)
+	_, err := g.r.CallParsed(context.Background(), info(router.TierStrong, router.ScopeNode), req("write JSON"), rejectBad)
+	var ce *router.ChainExhausted
+	if !errors.As(err, &ce) || !errors.Is(ce.ParseErr, errBad) {
+		t.Fatalf("err = %v, want ChainExhausted with ParseErr", err)
+	}
+	if g.mini.Calls() != 3 {
+		t.Fatalf("mini %d calls, want 3", g.mini.Calls())
+	}
+	reqs := g.mini.Requests()
+	second := reqs[1].Messages
+	if len(second) != 3 || second[1].Content != "bad" {
+		t.Errorf("retry 1 should carry the first reply: %+v", second)
+	}
+	third := reqs[2].Messages
+	if len(third) != 2 {
+		t.Fatalf("retry 2 should be the original plus one note: %+v", third)
+	}
+	for _, m := range third {
+		if m.Role == provider.RoleAssistant {
+			t.Errorf("retry 2 carries a reply: %+v", third)
+		}
+	}
+	note := third[1].Content
+	if !strings.Contains(note, "the reply was identical to an earlier one") || !strings.Contains(note, "not JSON") {
+		t.Errorf("note = %q", note)
+	}
+}
+
+func TestCallParsedRepeatOfAnEarlierModelsReplySkipsTheConversationalRetry(t *testing.T) {
+	g := newRig(t, okText("bad"), okText("bad"), nil, nil)
+	_, err := g.r.CallParsed(context.Background(), info(router.TierStandard, router.ScopeNode), req("write JSON"), rejectBad)
+	var ce *router.ChainExhausted
+	if !errors.As(err, &ce) {
+		t.Fatalf("err = %v", err)
+	}
+	// mini: first try plus one retry (conversational, new reply "bad" repeats the first).
+	// kilo: first try repeats mini's reply, so its retry is already the fresh form.
+	if g.kilo.Calls() != 2 {
+		t.Fatalf("kilo %d calls, want 2", g.kilo.Calls())
+	}
+	retry := g.kilo.Requests()[1].Messages
+	if len(retry) != 2 {
+		t.Fatalf("kilo retry should be the original plus one note: %+v", retry)
+	}
+	for _, m := range retry {
+		if m.Role == provider.RoleAssistant {
+			t.Errorf("kilo retry carries a reply: %+v", retry)
+		}
+	}
+	if !strings.Contains(retry[1].Content, "the reply was identical to an earlier one") {
+		t.Errorf("note = %q", retry[1].Content)
+	}
+}
+
+func TestCallParsedErrorNoteIsCapped(t *testing.T) {
+	var n int
+	var mu sync.Mutex
+	g := newRig(t, func(call int, r provider.Request) (provider.Response, error) {
+		return provider.Response{Text: "reply" + strconv.Itoa(call), Model: r.Model}, nil
+	}, nil, nil, func(c *settings.Config) { c.Defaults.MaxParseRetries = 5 })
+	parse := func(text string) error {
+		mu.Lock()
+		defer mu.Unlock()
+		n++
+		return fmt.Errorf("e%d %s", n, strings.Repeat("x", 300))
+	}
+	_, err := g.r.CallParsed(context.Background(), info(router.TierStrong, router.ScopeNode), req("write JSON"), parse)
+	var ce *router.ChainExhausted
+	if !errors.As(err, &ce) || ce.ParseErr == nil {
+		t.Fatalf("err = %v, want ChainExhausted with ParseErr", err)
+	}
+	if g.mini.Calls() != 6 {
+		t.Fatalf("mini %d calls, want 6", g.mini.Calls())
+	}
+	for i, rq := range g.mini.Requests()[2:] {
+		msgs := rq.Messages
+		if len(msgs) != 2 {
+			t.Errorf("request %d: want original plus one note, got %d messages", i+3, len(msgs))
+			continue
+		}
+		note := msgs[1].Content
+		if len(note) > 600 {
+			t.Errorf("request %d: note is %d bytes, want at most 600", i+3, len(note))
+		}
+		newest := "e" + strconv.Itoa(i+2) + " "
+		if !strings.Contains(note, newest) {
+			t.Errorf("request %d: note lacks the newest error %q: %q", i+3, newest, note)
+		}
+		if i >= 2 && strings.Contains(note, "e1 ") {
+			t.Errorf("request %d: oldest error should have been dropped: %q", i+3, note)
+		}
 	}
 }
 
