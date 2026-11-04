@@ -33,3 +33,16 @@ func TestStdShadowLooksAtTheLastPathElement(t *testing.T) {
 		t.Errorf("allowed packages refused: %v", err)
 	}
 }
+
+func TestStdShadowAllowsADomainNameThatIsAlsoADeepStdlibPackage(t *testing.T) {
+	ok := &contract.Contracts{Components: []contract.Component{{ID: "u", Package: "internal/user"}, {ID: "l", Package: "internal/list"}}}
+	if err := stdShadow(ok); err != nil {
+		t.Errorf("domain names refused: %v", err)
+	}
+	for _, pkg := range []string{"internal/json", "internal/http"} {
+		c := &contract.Contracts{Components: []contract.Component{{ID: "x", Package: pkg}}}
+		if err := stdShadow(c); err == nil {
+			t.Errorf("%s: want a refusal", pkg)
+		}
+	}
+}
