@@ -46,3 +46,24 @@ func TestStdShadowAllowsADomainNameThatIsAlsoADeepStdlibPackage(t *testing.T) {
 		}
 	}
 }
+
+// A package under cmd/ is package main, and siblingImports keys packages by
+// their clause, so it can never take over a qualifier. The harness itself
+// writes cmd/<program>.
+func TestStdShadowSparesMainPackages(t *testing.T) {
+	for _, pkg := range []string{"cmd/json", "cmd/sort", "cmd/csv"} {
+		c := &contract.Contracts{Components: []contract.Component{{ID: "main", Package: pkg}}}
+		if err := stdShadow(c); err != nil {
+			t.Errorf("%s: refused: %v", pkg, err)
+		}
+	}
+}
+
+// StdQualifiers has no rand key because ResolveQualifier special-cases it, yet
+// a contract rand package still wins over math/rand.
+func TestStdShadowRefusesRand(t *testing.T) {
+	c := &contract.Contracts{Components: []contract.Component{{ID: "r", Package: "internal/rand"}}}
+	if err := stdShadow(c); err == nil || !strings.Contains(err.Error(), "math/rand") {
+		t.Errorf("internal/rand: err = %v, want a refusal naming math/rand", err)
+	}
+}
