@@ -814,6 +814,12 @@ func unresolved(doc map[string]any, final bool) []string {
 					}
 					u = t
 				}
+				// A standard library name in uses (context, http) is the model
+				// naming an import, not a missing id: asking for it makes the
+				// model declare a package the shadow rule refuses, for ever.
+				if _, std := stdShadowed(u); std {
+					continue
+				}
 				if !declared[u] && !seen[u] {
 					seen[u] = true
 					out = append(out, u)

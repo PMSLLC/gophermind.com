@@ -67,3 +67,19 @@ func TestStdShadowRefusesRand(t *testing.T) {
 		t.Errorf("internal/rand: err = %v, want a refusal naming math/rand", err)
 	}
 }
+
+// A model lists a standard library package in a function's uses (run
+// linkcheck-v1-20261104-r003: fn-ctx used "context"). The repair pass must
+// not ask for that id: the model declares a package named context and the
+// shadow rule refuses it, and the loop ends the run after two passes.
+func TestUnresolvedSkipsNamesTheShadowRuleWouldRefuse(t *testing.T) {
+	doc := map[string]any{
+		"types":     []any{map[string]any{"id": "result", "uses": []any{}}},
+		"functions": []any{map[string]any{"id": "fn-ctx", "uses": []any{"context", "http", "rand", "result", "missing-type", "user"}}},
+	}
+	got := unresolvedFinal(doc)
+	want := []string{"missing-type", "user"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("unresolved = %v, want %v", got, want)
+	}
+}

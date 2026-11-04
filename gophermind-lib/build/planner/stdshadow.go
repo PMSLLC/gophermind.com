@@ -38,11 +38,8 @@ func stdShadow(c *contract.Contracts) error {
 			return nil
 		}
 		base := path.Base(pkg)
-		if base == "rand" {
-			return fmt.Errorf("contract: package rand is named like the standard library package math/rand, which tests import by that qualifier (declared by %s); rename the directory and its package to a name no standard library package uses", boundedID(id))
-		}
-		// base is a StdQualifiers key here, so it is safe to print unquoted.
-		if std, ok := StdQualifiers[base]; ok && (!strings.Contains(std, "/") || deepStdShadows[base]) {
+		if std, ok := stdShadowed(base); ok {
+			// base is a StdQualifiers key or rand here, so it is safe to print unquoted.
 			return fmt.Errorf("contract: package %s is named like the standard library package %s, which tests import by that qualifier (declared by %s); rename the directory and its package to a name no standard library package uses", base, std, boundedID(id))
 		}
 		return nil
@@ -63,4 +60,19 @@ func stdShadow(c *contract.Contracts) error {
 		}
 	}
 	return nil
+}
+
+// stdShadowed reports whether a package or id named base would be refused by
+// stdShadow, and which standard library package it shadows. rand is checked
+// by name because StdQualifiers has no rand key (ResolveQualifier picks math
+// or crypto), yet a contract rand package still wins over math/rand.
+func stdShadowed(base string) (string, bool) {
+	if base == "rand" {
+		return "math/rand", true
+	}
+	std, ok := StdQualifiers[base]
+	if ok && (!strings.Contains(std, "/") || deepStdShadows[base]) {
+		return std, true
+	}
+	return "", false
 }
