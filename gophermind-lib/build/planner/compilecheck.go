@@ -204,17 +204,17 @@ func assembleFile(module, dir, clause, decls string, siblings map[string]string)
 
 var diagRE = regexp.MustCompile(`(?m)^(?:vet: )?(?:\S*/)?([^/\s:]+):(\d+):(\d+): (.*)$`)
 
-// refuseCompile turns the compiler's output into a refusal of the test file
-// base. Only diagnostics located in that file count. Each becomes a phrase, a
-// line number, the compiler's text and the source line.
-func refuseCompile(c *contract.Contracts, dir, base, src, out string) error {
-	if strings.Contains(out, "no required module provides") || strings.Contains(out, "cannot find module") ||
-		strings.Contains(out, "module lookup disabled") || strings.Contains(out, "no matching versions") {
-		return nil
-	}
-	lines := strings.Split(src, "\n")
+// compileDiag is one compiler diagnostic located in the test file.
+type compileDiag struct {
+	Line, Col int
+	Msg       string // the compiler's text after "file:line:col: ", with diagContinuation appended
+}
+
+// compileDiags lists the diagnostics of `go test` output out that are in the
+// file base, in output order, deduplicated by line, capped at maxCompileMessages.
+func compileDiags(base, out string) []compileDiag {
 	seen := map[int]bool{}
-	var msgs []string
+	var diags []compileDiag
 	for _, loc := range diagRE.FindAllStringSubmatchIndex(out, -1) {
 		m := make([]string, 5)
 		for i := range m {
@@ -229,17 +229,40 @@ func refuseCompile(c *contract.Contracts, dir, base, src, out string) error {
 			continue
 		}
 		seen[n] = true
-		text := ""
-		if n >= 1 && n <= len(lines) {
-			text = lines[n-1]
-		}
-		msgs = append(msgs, compileMessage(c, dir, src, text, n, m[4]))
-		if len(msgs) == maxCompileMessages {
+		col, _ := strconv.Atoi(m[3])
+		diags = append(diags, compileDiag{Line: n, Col: col, Msg: m[4]})
+		if len(diags) == maxCompileMessages {
 			break
 		}
 	}
-	if len(msgs) == 0 {
+	return diags
+}
+
+// refuseCompile turns the compiler's output into a refusal of the test file
+// base. Only diagnostics located in that file count. Each becomes a phrase, a
+// line number, the compiler's text and the source line.
+func refuseCompile(c *contract.Contracts, dir, base, src, out string) error {
+	if strings.Contains(out, "no required module provides") || strings.Contains(out, "cannot find module") ||
+		strings.Contains(out, "module lookup disabled") || strings.Contains(out, "no matching versions") {
 		return nil
+	}
+	return refuseCompileDiags(c, dir, src, compileDiags(base, out))
+}
+
+// refuseCompileDiags is refuseCompile for an already extracted list: nil for
+// an empty list.
+func refuseCompileDiags(c *contract.Contracts, dir, src string, diags []compileDiag) error {
+	if len(diags) == 0 {
+		return nil
+	}
+	lines := strings.Split(src, "\n")
+	var msgs []string
+	for _, d := range diags {
+		text := ""
+		if d.Line >= 1 && d.Line <= len(lines) {
+			text = lines[d.Line-1]
+		}
+		msgs = append(msgs, compileMessage(c, dir, src, text, d.Line, d.Msg))
 	}
 	return fmt.Errorf("test file does not compile against the contract: %s", strings.Join(msgs, "; "))
 }
