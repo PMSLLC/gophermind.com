@@ -127,9 +127,9 @@ func jsonString(s string) (string, error) {
 // No error a Test-writer parse path returns may quote the reply. Every case
 // must fail, and the canary planted in it must not appear in the error.
 func TestTestwriterErrorsNeverQuoteTheReply(t *testing.T) {
-	const canary = "CANARY-4c81e0"
+	const canary = "CANARY4c81e0"
 	ct := map[string]any{"file": "internal/greet/greet.go", "errors": []any{map[string]any{"when": "empty", "returns": "*NameError"}}}
-	tests := `[{"name": "a", "given": "g", "expect": "e"}, {"name": "b", "given": "g", "expect": "e"}]`
+	tests := `[{"name": "a", "given": "g", "expect": "e", "polarity": "success", "covers": "happy"}, {"name": "b", "given": "g", "expect": "e", "polarity": "negative", "covers": "error:1"}]`
 	src := func(edit func(string) string) string {
 		s, _ := jsonString(edit(okTestSource))
 		return s
@@ -139,6 +139,8 @@ func TestTestwriterErrorsNeverQuoteTheReply(t *testing.T) {
 	sub := func(from, to string) string {
 		return withFile(src(func(s string) string { return strings.Replace(s, from, to, 1) }))
 	}
+	// A wrong package clause is not here: fixTestPackageClause rewrites it,
+	// so no refusal is left that could quote it.
 	replies := map[string]string{
 		"prose":                 "prose " + canary,
 		"an object of canaries": `{"` + canary + `": 1}`,
@@ -147,9 +149,8 @@ func TestTestwriterErrorsNeverQuoteTheReply(t *testing.T) {
 		"test_file wrong type":  `{"tests": ` + tests + `, "test_file": {"` + canary + `": 1}}`,
 		"an array":              `["` + canary + `"]`,
 		"no name":               `{"tests": [{"name": " ", "given": "` + canary + `", "expect": "e"}, {"name": "b", "given": "g", "expect": "e"}], "test_file": ` + src(same) + `}`,
-		"not Go":                withFile(`"` + canary + ` {"`),
-		"not Go, valid start":   sub("func TestGreet(t *testing.T) {", "var _ = \""+canary+"\"\n\nfunc TestGreet(t *testing.T) { 1 +"),
-		"another package":       sub("package greet", "package "+canary),
+		"not Go":                withFile(`"x {\n// ` + canary + `"`),
+		"not Go, valid start":   sub("func TestGreet(t *testing.T) {", "var _ = \""+canary+"\"\n\nfunc TestGreet(t *testing.T) {\n\t1 +\n}\n"),
 		"third-party import":    sub(`"strings"`, `"github.com/`+canary+`/x"`),
 		"import of a lookalike": sub(`example.com/greeter/internal/names`, `example.com/greeter`+canary+`/internal/names`),
 		"function missing":      sub("func TestGreet(", "func Test"+canary+"("),
