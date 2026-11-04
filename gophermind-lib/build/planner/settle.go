@@ -43,11 +43,11 @@ type settled struct {
 // Any other error is the refusal for the model's own file: a compile refusal
 // names the lines of the file before the mechanical fixes.
 func (p *Planner) settleTestFile(ctx context.Context, r *run, cs callSpec, in settleInput, src string) (settled, error) {
-	s, fixedSrc, refusal, err := p.settleChecks(cs, in, src)
-	if err != nil || refusal == nil {
+	s, fixed, err := p.settleChecks(cs, in, src)
+	if err != nil || fixed.refusal == nil {
 		return s, err
 	}
-	return p.repairAndSettle(ctx, r, cs, in, fixedSrc, refusal)
+	return p.repairAndSettle(ctx, r, cs, in, fixed.src, fixed.errText, fixed.refusal)
 }
 
 // settleSyntax gives a file refused as not valid Go its repair call. The
@@ -55,14 +55,15 @@ func (p *Planner) settleTestFile(ctx context.Context, r *run, cs callSpec, in se
 // repair. A reply with no usable file is refused with the original error; a
 // repaired file that still fails is refused with it prefixed.
 func (p *Planner) settleSyntax(ctx context.Context, r *run, cs callSpec, in settleInput, se *syntaxRefusal) (settled, error) {
-	return p.repairAndSettle(ctx, r, cs, in, se.Src, se)
+	return p.repairAndSettle(ctx, r, cs, in, se.Src, se.Error(), se)
 }
 
-// repairAndSettle makes the one repair call for src, refused with orig, and
-// settles the reply with no further repair. It emits test_file_repaired on
+// repairAndSettle makes the one repair call for src with errText, the errors
+// on src's own lines, and settles the reply with no further repair. orig is
+// the refusal recorded when the repair does not help. It emits test_file_repaired on
 // success and test_file_repair_unusable for a reply with no usable file.
-func (p *Planner) repairAndSettle(ctx context.Context, r *run, cs callSpec, in settleInput, src string, orig error) (settled, error) {
-	fixed, ok, err := p.repairTestFile(ctx, r, cs, src, orig.Error())
+func (p *Planner) repairAndSettle(ctx context.Context, r *run, cs callSpec, in settleInput, src, errText string, orig error) (settled, error) {
+	fixed, ok, err := p.repairTestFile(ctx, r, cs, src, errText)
 	if err != nil {
 		return settled{}, err
 	}
@@ -75,8 +76,8 @@ func (p *Planner) repairAndSettle(ctx context.Context, r *run, cs callSpec, in s
 	if err != nil {
 		return settled{}, fmt.Errorf("after a repair call: %w", orig)
 	}
-	s, _, refusal, err := p.settleChecks(cs, in, norm)
-	if (err != nil && !errors.Is(err, errNoGo)) || refusal != nil {
+	s, failed, err := p.settleChecks(cs, in, norm)
+	if (err != nil && !errors.Is(err, errNoGo)) || failed.refusal != nil {
 		return settled{}, fmt.Errorf("after a repair call: %w", orig)
 	}
 	s.repaired, s.comments = true, comments
@@ -86,19 +87,29 @@ func (p *Planner) repairAndSettle(ctx context.Context, r *run, cs callSpec, in s
 	return s, err
 }
 
+// compileFailure is a file that still fails the compile check after the
+// mechanical fixes. refusal names the diagnostics of the file before the
+// fixes on its lines, the text recorded for the model's own reply; src is the
+// file after the fixes and errText the second compile's diagnostics on its
+// lines, what the repair call sees. With no fixes the two texts are the same.
+type compileFailure struct {
+	refusal error
+	src     string
+	errText string
+}
+
 // settleChecks runs the checks of settleTestFile up to the repair call. err is
 // a refusal that no repair call is made for, or errNoGo (s is then the
-// formatted file). refusal is the compile refusal of the file before the
-// mechanical fixes, and fixedSrc the file after them, for the repair call.
+// formatted file). A non-nil failure.refusal means the file does not compile.
 // Both nil: s compiled.
-func (p *Planner) settleChecks(cs callSpec, in settleInput, src string) (s settled, fixedSrc string, refusal, err error) {
+func (p *Planner) settleChecks(cs callSpec, in settleInput, src string) (s settled, failure compileFailure, err error) {
 	name, _, _ := internalTarget(in.sig)
 	if err := checkTestExercises(src, name); err != nil {
-		return settled{}, "", nil, err
+		return settled{}, compileFailure{}, err
 	}
 	if reachesNetwork(in.c, in.id) || importsNet(src) {
 		if err := checkNoRealHost(src); err != nil {
-			return settled{}, "", nil, err
+			return settled{}, compileFailure{}, err
 		}
 	}
 	dir := path.Dir(in.rel)
@@ -107,34 +118,38 @@ func (p *Planner) settleChecks(cs callSpec, in settleInput, src string) (s settl
 		err = richDeclaredName(src, in.c, dir, err)
 	}
 	if err != nil {
-		return settled{}, "", nil, err
+		return settled{}, compileFailure{}, err
 	}
 	src, dropped := dropUnusedImports(src, moduleImportNames(in.c))
 	formatted, ferr := format.Source([]byte(src))
 	if ferr != nil {
-		return settled{}, "", nil, fmt.Errorf("test file cannot be formatted: %v", ferr)
+		return settled{}, compileFailure{}, fmt.Errorf("test file cannot be formatted: %v", ferr)
 	}
 	src = string(formatted)
 	s = settled{src: src, renamed: renamed, dropped: dropped}
 	diags, err := compileCheckDiags(in.c, in.rel, src, in.others)
 	if err != nil || len(diags) == 0 {
-		return s, "", nil, err
+		return s, compileFailure{}, err
 	}
 	fixedSrc, fixes, unfixed := applyMechanicalFixes(src, diags)
 	for _, f := range fixes {
 		p.emit(events.KindWarning, cs.stage, in.id, "test_file_mechanical_fix: "+f.Kind+" "+f.Name+" in the test file of node "+in.id)
 	}
-	if len(fixes) > 0 {
-		again, err := compileCheckDiags(in.c, in.rel, fixedSrc, in.others)
-		if err != nil || len(again) == 0 {
-			s.src, s.fixes = fixedSrc, fixes
-			return s, "", nil, err
-		}
-		if len(unfixed) == 0 {
-			// The fixed file fails on lines the first compile did not
-			// report; only the fixed file's own lines can name them.
-			return settled{}, fixedSrc, refuseCompileDiags(in.c, dir, fixedSrc, again), nil
-		}
+	if len(fixes) == 0 {
+		refusal := refuseCompileDiags(in.c, dir, src, diags)
+		return settled{}, compileFailure{refusal: refusal, src: src, errText: refusal.Error()}, nil
 	}
-	return settled{}, fixedSrc, refuseCompileDiags(in.c, dir, src, unfixed), nil
+	again, err := compileCheckDiags(in.c, in.rel, fixedSrc, in.others)
+	if err != nil || len(again) == 0 {
+		s.src, s.fixes = fixedSrc, fixes
+		return s, compileFailure{}, err
+	}
+	repairErr := refuseCompileDiags(in.c, dir, fixedSrc, again)
+	refusal := refuseCompileDiags(in.c, dir, src, unfixed)
+	if refusal == nil {
+		// The fixed file fails on lines the first compile did not report;
+		// only the fixed file's own lines can name them.
+		refusal = repairErr
+	}
+	return settled{}, compileFailure{refusal: refusal, src: fixedSrc, errText: repairErr.Error()}, nil
 }

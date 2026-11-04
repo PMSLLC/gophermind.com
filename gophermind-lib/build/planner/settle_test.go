@@ -181,7 +181,7 @@ func TestSettleFailedRepairRefusesTheOriginalErrors(t *testing.T) {
 	if !strings.HasPrefix(refs[0].Text, "after a repair call: test file does not compile") {
 		t.Errorf("refusal = %q, want the prefixed compile refusal", refs[0].Text)
 	}
-	if want := fmt.Sprintf("line %d", lineOf(t, bad, "got != 1")); !strings.Contains(refs[0].Text, want) {
+	if want := fmt.Sprintf("line %d:", lineOf(t, bad, "got != 1")); !strings.Contains(refs[0].Text, want) {
 		t.Errorf("refusal = %q, want %s", refs[0].Text, want)
 	}
 	if n := count(g.stagesCalled(), fixStage); n != 1 {
@@ -275,5 +275,23 @@ func TestSettleRefusalKeepsOriginalLineNumbers(t *testing.T) {
 	}
 	if strings.Contains(refs[0].Text, "unused") {
 		t.Errorf("refusal = %q names the fixed unused variable", refs[0].Text)
+	}
+	// The repair call is shown the fixed file, so its errors name that file's
+	// lines: the inserted "_ = unused" moves the type error down by one.
+	var prompts []string
+	for _, req := range g.fake.Requests() {
+		if planner.StageOf(req) == fixStage {
+			prompts = append(prompts, req.Messages[len(req.Messages)-1].Content)
+		}
+	}
+	if len(prompts) != 1 {
+		t.Fatalf("%s requests = %d, want 1", fixStage, len(prompts))
+	}
+	errs := prompts[0][strings.LastIndex(prompts[0], "Errors:"):]
+	if !strings.Contains(errs, fmt.Sprintf("line %d:", m+1)) || strings.Contains(errs, fmt.Sprintf("line %d:", m)) {
+		t.Errorf("repair errors = %q, want line %d", errs, m+1)
+	}
+	if !strings.Contains(prompts[0], "_ = unused") {
+		t.Error("the repair call was not shown the fixed file")
 	}
 }
