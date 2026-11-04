@@ -45,7 +45,7 @@ seed_placeholder_secrets() {
   [ -s "$BASE/vault-passphrase" ] || return 0
   local pass name stored
   IFS= read -r pass < "$BASE/vault-passphrase"
-  stored="$(GOPHERMIND_VAULT_PASSPHRASE="$pass" "$BASE/bin/gophermind" brief vault list)" || die "could not list the vault (see docs/GOAL-EXAMPLES.md, Secrets for the example briefs)"
+  stored="$(GOPHERMIND_VAULT_PASSPHRASE="$pass" "$BASE/bin/gophermind" brief vault list)" || die "could not open the vault with $BASE/vault-passphrase; nothing was changed but the binaries (see docs/GOAL-EXAMPLES.md, Secrets for the example briefs)"
   for name in $EXAMPLE_SECRETS; do
     if printf '%s\n' "$stored" | grep -qx -- "$name"; then continue; fi
     printf '%s\n' "placeholder-$name-not-a-real-secret" | GOPHERMIND_VAULT_PASSPHRASE="$pass" "$BASE/bin/gophermind" brief vault set "$name" >/dev/null || die "could not store a placeholder for $name"
@@ -123,6 +123,9 @@ export GOPHERMIND_BURROW_TOKEN_FILE=\"$BURROW_TOKEN_FILE\""
     (umask 077; openssl rand -hex 32 > "$BASE/vault-passphrase")
   fi
   chmod 600 "$BASE/vault-passphrase"
+  # Before run-server.sh and the plist are rewritten, so a vault that cannot be
+  # opened stops the install with the running service untouched.
+  seed_placeholder_secrets
 
   # The wrapper reads the token with a read loop, not `source`, so a literal $
   # in a secret is not expanded.
@@ -166,8 +169,6 @@ EOF
 </plist>
 EOF
   plutil -lint "$PLIST" >/dev/null
-
-  seed_placeholder_secrets
 
   launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
   # bootout returns before launchd has finished removing the job; loading it
