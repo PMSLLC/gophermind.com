@@ -51,7 +51,8 @@ func checkNoRealHost(src string) error {
 	return refusal
 }
 
-// localHost reports whether host is loopback or carries a format verb.
+// localHost reports whether host is loopback, carries a format verb, or ends
+// in a reserved label (invalid, test, example, localhost) that never resolves.
 func localHost(host string) bool {
 	h := strings.ToLower(host)
 	if strings.Contains(h, "%") {
