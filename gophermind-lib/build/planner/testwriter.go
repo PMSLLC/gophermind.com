@@ -549,7 +549,8 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 		return writtenTests{}, fmt.Errorf("test file %s already exists and this run did not write it; move it away, then resume", path.Base(rel))
 	}
 	parent, _ := d["parent"].(string)
-	prompt, err := renderTestwriterBrief(mustJSON(withReceiverDecl(c, testwriterView(d))), c.Module, file, funcName, rel, PackageImports(c), briefSection(r, parent))
+	sig, _ := ct["signature"].(string)
+	prompt, err := renderTestwriterBrief(mustJSON(withoutUnexportedDeps(withReceiverDecl(c, testwriterView(d)), sig, path.Dir(file))), c.Module, file, funcName, rel, PackageImports(c), briefSection(r, parent))
 	if err != nil {
 		return writtenTests{}, err
 	}
@@ -559,7 +560,6 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	var droppedImports []string
 	var droppedComments int
 	cs := callSpec{jsonObject: true, schema: testwriteReplySchema, stage: "testwrite:" + id, taskType: "testwrite", nodeID: id, nodeClass: class, tier: p.tierFor(strField(d, "model_tier")), scope: router.ScopeNode, maxTokens: maxTokensTestwrite}
-	sig, _ := ct["signature"].(string)
 	if mt, msrc, ok := mainEntryTest(sig, file, funcName); ok {
 		tests, source = mt, msrc
 	} else {

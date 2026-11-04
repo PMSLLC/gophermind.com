@@ -19,3 +19,17 @@ func TestTestwriterPromptForbidsSharingAReaderAcrossCases(t *testing.T) {
 		t.Error("testwriter.md does not tell the model that every case needs its own reader")
 	}
 }
+
+// The prompt asked for "Exactly one rule" and then listed two requirements, a
+// happy-path success test and a negative test for every error. The wording
+// must count them.
+func TestTestwriterPromptStatesTwoRules(t *testing.T) {
+	b, err := promptFS.ReadFile("prompts/testwriter.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := string(b)
+	if !strings.Contains(p, "Two rules you must meet:") || strings.Contains(p, "Exactly one rule") {
+		t.Error("testwriter.md does not state two rules")
+	}
+}
