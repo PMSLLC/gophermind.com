@@ -250,3 +250,26 @@ func TestParseTestwriteRefusalsBlameTheRightPart(t *testing.T) {
 		t.Errorf("head still holds the go block: %q", head)
 	}
 }
+
+// A legacy JSON reply the model fenced as go by mistake is still accepted.
+func TestParseTestwriteAcceptsLegacyJSONFencedAsGo(t *testing.T) {
+	legacy, _, _ := greeterReplies(t)
+	_, src, err := parseTestwrite("```go\n"+legacy+"\n```\n", greeterCT, "greet", "TestGreet", "example.com/greeter", nil)
+	if err != nil {
+		t.Fatalf("refused: %v", err)
+	}
+	if !strings.Contains(src, "func TestGreet(") {
+		t.Errorf("source = %q", src)
+	}
+}
+
+func TestParseAcceptanceReplyAcceptsLegacyJSONFencedAsGo(t *testing.T) {
+	js, _ := json.Marshal(map[string]string{"test_file": goodAcceptSrc})
+	src, err := parseAcceptanceReply("```go\n"+string(js)+"\n```\n", a4)
+	if err != nil {
+		t.Fatalf("refused: %v", err)
+	}
+	if !strings.Contains(src, "func TestA4(") {
+		t.Errorf("source = %q", src)
+	}
+}

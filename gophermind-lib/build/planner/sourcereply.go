@@ -113,7 +113,8 @@ func hasPackageClause(src string) bool {
 }
 
 // dropGoBlocks removes the fenced blocks whose info string starts with go
-// (any case), an unclosed one to the end of the text. Text that is already
+// (any case), an unclosed one to the end of the text, except a block whose
+// body is valid JSON (a legacy reply fenced as go by mistake). Text that is already
 // valid JSON is returned as it is.
 func dropGoBlocks(text string) string {
 	if json.Valid([]byte(strings.TrimSpace(text))) {
@@ -132,6 +133,11 @@ func dropGoBlocks(text string) string {
 						end = j
 						break
 					}
+				}
+				// A block holding valid JSON is a legacy reply the model fenced
+				// as go by mistake; StripReply pulls it out.
+				if json.Valid([]byte(strings.TrimSpace(fenceBody(lines, i, end)))) {
+					out.WriteString(strings.Join(lines[i:min(end+1, len(lines))], ""))
 				}
 				i = end
 				continue
