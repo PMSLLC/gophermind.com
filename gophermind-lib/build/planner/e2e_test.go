@@ -953,7 +953,7 @@ func TestATestWriterNodeGetsAFreshRoundAfterTheChainIsExhausted(t *testing.T) {
 		t.Fatalf("fn-greet calls = %d, want 4 (3 in round 1, 1 in round 2)", len(fnGreet))
 	}
 	last := fnGreet[3].Messages[len(fnGreet[3].Messages)-1].Content
-	if !strings.Contains(last, "Earlier rounds for this node failed; their errors were:\n- ") || !strings.Contains(last, "tests") {
+	if !strings.Contains(last, "Earlier rounds for this node failed; their errors were:\n- ") || !strings.Contains(last, "test-writer reply has 0 tests") {
 		t.Errorf("round 2 prompt = %q", last)
 	}
 	if strings.Contains(fnGreet[0].Messages[0].Content+fnGreet[0].Messages[len(fnGreet[0].Messages)-1].Content, "Earlier rounds") {
@@ -1006,5 +1006,10 @@ func TestTestWriterRoundsSurviveAResume(t *testing.T) {
 	}
 	if n := len(fnGreetRequests(g)); n != 3 {
 		t.Errorf("fn-greet calls = %d, want 3 (recorded rounds count toward the bound)", n)
+	}
+	if first := fnGreetRequests(g); len(first) > 0 {
+		if c := first[0].Messages[len(first[0].Messages)-1].Content; !strings.Contains(c, "Earlier rounds for this node failed; their errors were:\n- x") {
+			t.Errorf("first resumed request does not carry the recorded error: %q", c)
+		}
 	}
 }
