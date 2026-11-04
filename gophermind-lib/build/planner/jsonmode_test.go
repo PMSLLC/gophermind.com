@@ -13,12 +13,13 @@ import (
 func TestOnlyObjectReplyStagesAskForJSONMode(t *testing.T) {
 	g := newRig(t, approving())
 	g.mustPlan(planner.Options{})
-	var contract, clarify, other int
+	var contract, clarify, other, testwrite int
 	for _, rq := range g.fake.Requests() {
 		system := rq.Messages[0].Content
 		switch {
 		case strings.Contains(system, "testwrite:"):
 			contract++
+			testwrite++
 			if rq.JSON || len(rq.Schema) != 0 {
 				t.Errorf("a test-writer request (its reply is JSON then a Go file) asked for JSON mode or sent a schema: %q", system)
 			}
@@ -43,6 +44,9 @@ func TestOnlyObjectReplyStagesAskForJSONMode(t *testing.T) {
 		default:
 			other++
 		}
+	}
+	if testwrite == 0 {
+		t.Fatal("the fixture plan made no test-writer requests, so the test-writer check proved nothing")
 	}
 	if contract == 0 || clarify == 0 {
 		t.Fatalf("the fixture plan made %d contract and %d clarify requests, want some of each (%d others)", contract, clarify, other)

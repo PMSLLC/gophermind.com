@@ -87,18 +87,7 @@ func (p *Planner) writeAcceptanceTest(ctx context.Context, r *run, c *contract.C
 			"Excerpt": briefExcerpt(r, allFeatureNames(r), level)})
 	}
 	err = p.callSized(ctx, r, cs, build, func(reply string) error {
-		var rep struct {
-			TestFile string `json:"test_file"`
-		}
-		if head, fenced := splitSourceReply(reply); fenced != "" {
-			rep.TestFile = fenced
-		} else if err := json.Unmarshal([]byte(StripReply(head)), &rep); err != nil {
-			return fmt.Errorf("acceptance test reply is not a JSON object (%s)", jsonErr(err))
-		}
-		if err := checkNotPlaceholder(rep.TestFile); err != nil {
-			return err
-		}
-		src, err := checkAcceptanceSource(nudgeSyntax(quoteBareImports(unescapeQuotedSource(rep.TestFile))), b)
+		src, err := parseAcceptanceReply(reply, b)
 		if err != nil {
 			return err
 		}
@@ -121,6 +110,23 @@ func (p *Planner) writeAcceptanceTest(ctx context.Context, r *run, c *contract.C
 		return writtenTests{}, err
 	}
 	return wt, nil
+}
+
+// parseAcceptanceReply turns an acceptance writer's reply (the fenced Go file
+// alone, or the legacy JSON object with test_file) into the file to write.
+func parseAcceptanceReply(reply string, b goBullet) (string, error) {
+	var rep struct {
+		TestFile string `json:"test_file"`
+	}
+	if head, fenced := splitSourceReply(reply); fenced != "" {
+		rep.TestFile = fenced
+	} else if err := json.Unmarshal([]byte(StripReply(head)), &rep); err != nil {
+		return "", fmt.Errorf("acceptance test reply is not a JSON object (%s)", jsonErr(err))
+	}
+	if err := checkNotPlaceholder(rep.TestFile); err != nil {
+		return "", err
+	}
+	return checkAcceptanceSource(nudgeSyntax(quoteBareImports(unescapeQuotedSource(rep.TestFile))), b)
 }
 
 // checkAcceptanceSource checks a model-written acceptance test and returns the

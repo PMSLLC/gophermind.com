@@ -151,3 +151,102 @@ func TestSplitSourceReplyKeepsFenceLinesInsideTheFile(t *testing.T) {
 		})
 	}
 }
+
+// The model writes a build line or a leading comment before the package
+// clause; the block is still the Go file.
+func TestSplitSourceReplyAcceptsALeadingBuildLineOrComment(t *testing.T) {
+	for name, file := range map[string]string{
+		"build line": "//go:build acceptance\n\npackage acceptance\n\nfunc TestA(t *testing.T) {}\n",
+		"comment":    "// Tests for Greet.\npackage cli\n\nfunc TestX(t *testing.T) {}\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			head, src := splitSourceReply(`{"tests": []}` + "\n```go\n" + file + "```\n")
+			if src != file || head != `{"tests": []}` {
+				t.Errorf("head = %q, source = %q", head, src)
+			}
+		})
+	}
+}
+
+func TestParseTestwriteAcceptsALeadingBuildLineOrComment(t *testing.T) {
+	_, split, file := greeterReplies(t)
+	for name, lead := range map[string]string{"build line": "//go:build acceptance\n\n", "comment": "// Tests for Greet.\n"} {
+		t.Run(name, func(t *testing.T) {
+			reply := strings.Replace(split, "```go\n"+file, "```go\n"+lead+file, 1)
+			_, src, err := parseTestwrite(reply, greeterCT, "greet", "TestGreet", "example.com/greeter", nil)
+			if err != nil {
+				t.Fatalf("refused: %v", err)
+			}
+			if !strings.Contains(src, "func TestGreet(") {
+				t.Errorf("source = %q", src)
+			}
+		})
+	}
+}
+
+func TestParseAcceptanceReplyTakesTheFencedFile(t *testing.T) {
+	for name, lead := range map[string]string{"plain": "", "build line": "//go:build acceptance\n\n", "comment": "// Tests for A4.\n"} {
+		t.Run(name, func(t *testing.T) {
+			src, err := parseAcceptanceReply("```go\n"+lead+goodAcceptSrc+"```\n", a4)
+			if err != nil {
+				t.Fatalf("refused: %v", err)
+			}
+			if !strings.HasPrefix(src, "//go:build "+AcceptanceTag+"\n") || !strings.Contains(src, "func TestA4(") {
+				t.Errorf("source = %q", src)
+			}
+		})
+	}
+	// Cut off at the token limit: no closing fence, but the file is whole.
+	if _, err := parseAcceptanceReply("```go\n"+goodAcceptSrc, a4); err != nil {
+		t.Errorf("unclosed block refused: %v", err)
+	}
+}
+
+func TestSplitSourceReplyTakesAnUnclosedTrailingGoBlock(t *testing.T) {
+	head, src := splitSourceReply(`{"tests": []}` + "\n```go\n" + splitSrc)
+	if src != splitSrc || head != `{"tests": []}` {
+		t.Errorf("head = %q, source = %q", head, src)
+	}
+	// Cut mid-function: not Go, so not a file.
+	if _, src := splitSourceReply(`{"tests": []}` + "\n```go\npackage cli\n\nfunc TestX(t *testing.T) {\n"); src != "" {
+		t.Errorf("a cut-off file was taken: %q", src)
+	}
+}
+
+func TestSplitSourceReplyKeepsLookingPastAnUnclosedOpener(t *testing.T) {
+	reply := "```go\nfunc helper() {\n"
+	head, src := splitSourceReply(reply)
+	if src != "" || strings.Contains(head, "helper") {
+		t.Errorf("head = %q, source = %q", head, src)
+	}
+}
+
+func TestParseTestwriteRefusalsBlameTheRightPart(t *testing.T) {
+	_, split, file := greeterReplies(t)
+	cases := map[string]struct{ reply, want, not string }{
+		"unclosed file is accepted": {strings.TrimSuffix(split, "```\n"), "", "not a JSON"},
+		"fenced file alone":         {"```go\n" + file + "```\n", "reply has no tests: put the JSON object of tests before the fenced go block", "not a JSON"},
+		"bad head, go block cut":    {"{\"tests\": [\n```go\npackage a\n\nfunc F() {\n", "not a JSON object", ""},
+		"bad head, go block kept":   {"prose\n```go\nfunc helper() {}\n```\n", "not a JSON object", ""},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := parseTestwrite(c.reply, greeterCT, "greet", "TestGreet", "example.com/greeter", nil)
+			if c.want == "" {
+				if err != nil {
+					t.Fatalf("refused: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("err = %v, want %q", err, c.want)
+			}
+		})
+	}
+	// The JSON error is about the head: the Go block is gone from the text.
+	reply := "{\"tests\": [\n```go\npackage a\n\nfunc F() {\n"
+	head, _ := splitSourceReply(reply)
+	if strings.Contains(head, "package") {
+		t.Errorf("head still holds the go block: %q", head)
+	}
+}

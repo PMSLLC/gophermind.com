@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 )
@@ -93,5 +94,29 @@ func TestPendingReferencesToStandardLibraryNamesAreDropped(t *testing.T) {
 	}
 	if got := strList(objects(doc["functions"])[0]["uses"]); !reflect.DeepEqual(got, []string{"slug|fn-slug", "fn-b"}) {
 		t.Errorf("uses = %v, want the non-standard-library pending reference kept", got)
+	}
+}
+
+// unresolved skips a bare qualifier (http, rand, context), so dropStdlibUses
+// must remove it too, or contract validation refuses an entry nothing repairs.
+func TestBareStandardLibraryQualifiersPassTheFinalValidation(t *testing.T) {
+	var d map[string]any
+	fnUsing := func(uses ...string) string {
+		m := map[string]any{"id": "fn-a", "component": "greeting", "package": "x", "file": "internal/x/a.go", "signature": "func Run(a int) error", "doc": "d", "uses": uses}
+		b, _ := json.Marshal(m)
+		return string(b)
+	}
+	d = docWith(fnUsing("http", "rand", "context"))
+	if _, err := validateContractDoc(d, testRunID); err == nil {
+		t.Fatal("setup: a doc with bare qualifiers in uses validates before the drop")
+	}
+	if un := unresolvedFinal(d); len(un) != 0 {
+		t.Errorf("unresolved = %v, want none", un)
+	}
+	if dropped := dropStdlibUses(d); !reflect.DeepEqual(dropped, []string{"http", "rand", "context"}) {
+		t.Errorf("dropped = %v", dropped)
+	}
+	if _, err := validateContractDoc(d, testRunID); err != nil {
+		t.Errorf("validation after the drop: %v", err)
 	}
 }

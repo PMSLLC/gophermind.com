@@ -799,6 +799,9 @@ func parseTestwriteCounted(text string, ct map[string]any, pkg, funcName, module
 		return dec.Decode(&reply)
 	}
 	head, fenced := splitSourceReply(text)
+	if fenced != "" && strings.TrimSpace(head) == "" {
+		return nil, "", 0, errors.New("reply has no tests: put the JSON object of tests before the fenced go block")
+	}
 	text = StripReply(head)
 	if err := decode(text); err != nil {
 		// Fallback only: an unclosed string on a pretty-printed line is

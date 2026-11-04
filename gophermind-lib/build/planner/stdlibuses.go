@@ -91,7 +91,9 @@ func isStdlibRef(s string, declared map[string]bool) bool {
 		}
 	}
 	for _, f := range forms {
-		if isStdlibName(f) {
+		// A bare qualifier (http, rand, context) is an import too; unresolved
+		// skips it, so it must leave uses here or validation refuses it.
+		if _, std := stdShadowed(f); std || isStdlibName(f) {
 			return true
 		}
 	}
