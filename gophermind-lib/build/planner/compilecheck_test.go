@@ -88,8 +88,8 @@ func TestFnDetect(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "unused import at line 4") {
 		t.Fatalf("got %v", err)
 	}
-	if strings.Contains(err.Error(), "encoding/json") {
-		t.Errorf("message quotes the import: %v", err)
+	if !strings.Contains(err.Error(), `"encoding/json" imported and not used`) {
+		t.Errorf("message lacks the compiler text: %v", err)
 	}
 }
 
@@ -140,13 +140,38 @@ func TestCompileCheckUnresolvableImportIsSkipped(t *testing.T) {
 	}
 }
 
-func TestCompileMessageNeverQuotesDiagnostic(t *testing.T) {
+func TestCompileMessageQuotesTheDiagnosticAndTheLine(t *testing.T) {
 	c := compileCheckContract()
-	for _, diag := range []string{`"SECRETPKG" imported and not used`, "undefined: SECRETNAME", "cannot use SECRETVAL (variable)", "weird SECRET"} {
-		m := compileMessage(c, "internal/stats", "package stats\n", "x := 1", 3, diag)
-		if strings.Contains(m, "SECRET") {
-			t.Errorf("%q leaked: %s", diag, m)
+	line := "\tif next, ok := m.redirects[req.URL.String()]; ok {"
+	m := compileMessage(c, "internal/stats", "package stats\n", line, 27, "declared and not used: next")
+	for _, want := range []string{"unused variable at line 27", "declared and not used: next", "if next, ok := m.redirects"} {
+		if !strings.Contains(m, want) {
+			t.Errorf("message %q lacks %q", m, want)
 		}
+	}
+	m = compileMessage(c, "internal/stats", "package stats\n", "\tctx: context.WithTimeout(context.Background(), 1*time.Millisecond),", 108,
+		"assignment mismatch: 1 variable but context.WithTimeout returns 2 values")
+	if !strings.Contains(m, "does not compile at line 108: assignment mismatch: 1 variable but context.WithTimeout returns 2 values: ctx: context.WithTimeout") {
+		t.Errorf("fallback message = %q", m)
+	}
+}
+
+func TestCompileMessageCapsTheSourceLineAndStripsPaths(t *testing.T) {
+	c := compileCheckContract()
+	long := strings.Repeat("x", 300)
+	m := compileMessage(c, "internal/stats", "package stats\n", long, 3, "/tmp/gm-compilecheck-123/internal/stats/fn_x_test.go:3:1: weird thing")
+	if strings.Contains(m, "/tmp/gm-compilecheck") || strings.Contains(m, strings.Repeat("x", 121)) {
+		t.Errorf("message leaks a path or an uncapped line: %q", m)
+	}
+	if !strings.Contains(m, "weird thing") {
+		t.Errorf("message lost the compiler text: %q", m)
+	}
+}
+
+func TestRefuseCompileIgnoresADiagnosticInAnotherTestFile(t *testing.T) {
+	out := "./zz_other0_test.go:5:2: declared and not used: y\n"
+	if err := refuseCompile(compileCheckContract(), "internal/stats", "fn_detect_test.go", "package stats\n", out); err != nil {
+		t.Fatalf("want nil, got %v", err)
 	}
 }
 
@@ -161,9 +186,6 @@ func TestCompileMessageInterfaceToWriter(t *testing.T) {
 		if !strings.Contains(m, want) {
 			t.Errorf("lacks %q: %s", want, m)
 		}
-	}
-	if strings.Contains(m, " w ") || strings.Contains(m, "missing method") {
-		t.Errorf("leaks compiler text: %s", m)
 	}
 }
 
@@ -183,8 +205,8 @@ func TestCompileMessageMismatchPlaces(t *testing.T) {
 		}
 	}
 	m := compileMessage(c, "internal/stats", "package stats\n", "x", 5, "cannot use f (variable of type func(int) error) as io.Writer value in argument to (*bytes.Buffer).Grow")
-	if strings.Contains(m, "Grow") || strings.Contains(m, "bytes") {
-		t.Errorf("unsafe call name printed: %s", m)
+	if !strings.Contains(m, "type mismatch at line 5") || !strings.Contains(m, "(*bytes.Buffer).Grow") {
+		t.Errorf("want the generic phrase and the compiler text: %s", m)
 	}
 }
 
@@ -199,8 +221,8 @@ func TestCompileMessageModelTypeFallsBack(t *testing.T) {
 		"cannot use w (variable of type []secretHelper) as int value in assignment",
 	} {
 		m := compileMessage(c, "internal/stats", "package stats\n", "x", 7, diag)
-		if m != "type mismatch at line 7" {
-			t.Errorf("%q: want the generic text, got %s", diag, m)
+		if !strings.HasPrefix(m, "type mismatch at line 7: "+diag) {
+			t.Errorf("%q: want the generic phrase then the compiler text, got %s", diag, m)
 		}
 	}
 }
@@ -210,41 +232,41 @@ func TestCompileMessageWrongArgumentCount(t *testing.T) {
 	diag := "not enough arguments in call to Summarize\n\thave ()\n\twant ([][]string)"
 	m := compileMessage(c, "internal/stats", "package stats\n", "x", 9, diag)
 	want := "wrong number of arguments at line 9 in the call to Summarize: it takes ([][]string) and the call passes ()"
-	if m != want {
+	if !strings.HasPrefix(m, want+": ") {
 		t.Errorf("got %s", m)
 	}
 	diag = "too many arguments in call to render.Render\n\thave (io.Writer, []stats.ColumnSummary, number)\n\twant (io.Writer, []stats.ColumnSummary)"
 	m = compileMessage(c, "internal/stats", "package stats\n", "x", 9, diag)
 	want = "wrong number of arguments at line 9 in the call to render.Render: it takes (io.Writer, []stats.ColumnSummary) and the call passes (io.Writer, []stats.ColumnSummary, number)"
-	if m != want {
+	if !strings.HasPrefix(m, want+": ") {
 		t.Errorf("got %s", m)
 	}
 	// An unsafe type drops the lists; an unsafe callee drops its name.
 	diag = "not enough arguments in call to h.secretMethod\n\thave (secretT)\n\twant (int, int)"
 	m = compileMessage(c, "internal/stats", "package stats\n", "x", 9, diag)
-	if m != "wrong number of arguments at line 9" {
+	if !strings.HasPrefix(m, "wrong number of arguments at line 9: ") {
 		t.Errorf("got %s", m)
 	}
 	diag = "not enough arguments in call to Summarize\n\thave (secretT)\n\twant (int, int)"
 	m = compileMessage(c, "internal/stats", "package stats\n", "x", 9, diag)
-	if m != "wrong number of arguments at line 9 in the call to Summarize" {
+	if !strings.HasPrefix(m, "wrong number of arguments at line 9 in the call to Summarize: ") {
 		t.Errorf("got %s", m)
 	}
 }
 
 func TestCompileMessageUnusedVariableMissingReturnUnknownField(t *testing.T) {
 	c := compileCheckContract()
-	if m := compileMessage(c, "internal/stats", "package stats\n", "x", 4, "declared and not used: secretVar"); m != "unused variable at line 4" {
+	if m := compileMessage(c, "internal/stats", "package stats\n", "x", 4, "declared and not used: secretVar"); !strings.HasPrefix(m, "unused variable at line 4: declared and not used: secretVar") {
 		t.Errorf("got %s", m)
 	}
-	if m := compileMessage(c, "internal/stats", "package stats\n", "x", 4, "secretVar declared but not used"); m != "unused variable at line 4" {
+	if m := compileMessage(c, "internal/stats", "package stats\n", "x", 4, "secretVar declared but not used"); !strings.HasPrefix(m, "unused variable at line 4: secretVar declared but not used") {
 		t.Errorf("got %s", m)
 	}
-	if m := compileMessage(c, "internal/stats", "package stats\n", "x", 6, "missing return"); m != "missing return at line 6" {
+	if m := compileMessage(c, "internal/stats", "package stats\n", "x", 6, "missing return"); !strings.HasPrefix(m, "missing return at line 6: missing return") {
 		t.Errorf("got %s", m)
 	}
 	m := compileMessage(c, "internal/stats", "package stats\n", "x", 8, "s.Total undefined (type *stats.ColumnSummary has no field or method Total)")
-	if m != "unknown field or method at line 8 on a value of type *stats.ColumnSummary" {
+	if !strings.HasPrefix(m, "unknown field or method at line 8 on a value of type *stats.ColumnSummary: s.Total undefined") {
 		t.Errorf("got %s", m)
 	}
 	m = compileMessage(c, "internal/stats", "package stats\n", "x", 9, "r.String undefined (type *strings.Reader has no field or method String)")
@@ -252,7 +274,7 @@ func TestCompileMessageUnusedVariableMissingReturnUnknownField(t *testing.T) {
 		t.Errorf("got %s", m)
 	}
 	m = compileMessage(c, "internal/stats", "package stats\n", "x", 8, "s.Total undefined (type secretHelper has no field or method Total)")
-	if m != "unknown field or method at line 8" {
+	if !strings.HasPrefix(m, "unknown field or method at line 8: s.Total undefined (type secretHelper") {
 		t.Errorf("got %s", m)
 	}
 }
@@ -285,9 +307,9 @@ func TestFnRender(t *testing.T) {
 
 // A composite literal that names a field the contract struct does not declare
 // (the csvstat finalize smoke: &columnState{values: ...}). The message names
-// the kind, the line, the type and the contract's declared fields; the invented
-// field name is never copied. A wrong-case spelling of a declared field is the
-// contract's own vocabulary and is named.
+// the kind, the line, the type and the contract's declared fields, then quotes
+// the compiler's text and the model's source line. A wrong-case spelling of a
+// declared field is the contract's own vocabulary and is named.
 func TestCompileMessageUnknownFieldInLiteral(t *testing.T) {
 	c := compileCheckContract()
 	cases := []struct{ dir, diag, want string }{
@@ -306,13 +328,13 @@ func TestCompileMessageUnknownFieldInLiteral(t *testing.T) {
 	}
 	for _, tc := range cases {
 		m := compileMessage(c, tc.dir, "package stats\n", "x", 21, tc.diag)
-		if m != tc.want {
-			t.Errorf("%q: want %q, got %q", tc.diag, tc.want, m)
+		if !strings.HasPrefix(m, tc.want+": "+tc.diag) {
+			t.Errorf("%q: want %q then the compiler text, got %q", tc.diag, tc.want, m)
 		}
 	}
 	c.Types = append(c.Types, contract.Type{ID: "t_emb", Package: "internal/stats", File: "internal/stats/stats.go", Decl: "type Wide struct {\n\tColumnSummary\n\tRows int\n}"})
 	m := compileMessage(c, "internal/stats", "package stats\n", "x", 3, "unknown field secretValues in struct literal of type Wide")
-	if m != "unknown field at line 3 in a composite literal of type Wide; declared fields: Rows; the type embeds other types" {
+	if !strings.HasPrefix(m, "unknown field at line 3 in a composite literal of type Wide; declared fields: Rows; the type embeds other types: unknown field secretValues") {
 		t.Errorf("got %q", m)
 	}
 }
@@ -335,14 +357,14 @@ func TestFnSummarize(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "unknown field at line 8 in a composite literal of type ColumnSummary; declared fields: Name, Count") {
 		t.Fatalf("got %v", err)
 	}
-	if strings.Contains(err.Error(), "secretValues") {
-		t.Errorf("leaked: %v", err)
+	if !strings.Contains(err.Error(), "unknown field secretValues in struct literal of type ColumnSummary") || !strings.Contains(err.Error(), "secretValues: []float64{1, 2},") {
+		t.Errorf("compiler text or source line missing: %v", err)
 	}
 }
 
 // End to end with a wrong-case spelling of a declared field, where the
-// compiler appends its "but does have" hint. The declared fields still reach
-// the message and the hint itself is not echoed.
+// compiler appends its "but does have" hint. The declared fields reach the
+// message and the compiler's text, hint included, is quoted.
 func TestCompileCheckUnknownFieldWrongCase(t *testing.T) {
 	src := `package stats
 
@@ -360,8 +382,8 @@ func TestFnSummarize(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "unknown field name at line 7 in a composite literal of type ColumnSummary; declared fields: Name, Count") {
 		t.Fatalf("got %v", err)
 	}
-	if strings.Contains(err.Error(), "does have") {
-		t.Errorf("hint echoed: %v", err)
+	if !strings.Contains(err.Error(), "but does have Name") {
+		t.Errorf("compiler hint missing: %v", err)
 	}
 }
 
@@ -375,15 +397,15 @@ func TestCompileMessageMissingStdImport(t *testing.T) {
 	if strings.Contains(got, "unexported") {
 		t.Fatalf("message %q gives the unexported advice for a missing import", got)
 	}
-	if other := compileMessage(&contract.Contracts{}, "internal/render", "package render_test\n", "x := secret.Foo()", 3, "undefined: secret"); strings.Contains(other, "secret") {
-		t.Fatalf("message %q quotes a name outside the closed set", other)
+	if other := compileMessage(&contract.Contracts{}, "internal/render", "package render_test\n", "x := secret.Foo()", 3, "undefined: secret"); !strings.Contains(other, "undefined: secret: x := secret.Foo()") {
+		t.Fatalf("message %q lacks the compiler text and the line", other)
 	}
 }
 
 func TestCompileMessageUndeclaredNameListsTheDeclaredOnes(t *testing.T) {
 	c := compileCheckContract()
 	m := compileMessage(c, "internal/stats", "package stats\n", "x := pInt(s)", 126, "undefined: pInt")
-	if !strings.Contains(m, "undefined name at line 126") || !strings.Contains(m, "not declared in the contract") || strings.Contains(m, "pInt") || strings.Contains(m, "external test package") {
+	if !strings.Contains(m, "undefined name at line 126") || !strings.Contains(m, "not declared in the contract") || !strings.Contains(m, "undefined: pInt: x := pInt(s)") || strings.Contains(m, "external test package") {
 		t.Errorf("message %q", m)
 	}
 }
@@ -391,7 +413,7 @@ func TestCompileMessageUndeclaredNameListsTheDeclaredOnes(t *testing.T) {
 func TestCompileMessageCannotAssignToAFunction(t *testing.T) {
 	c := compileCheckContract()
 	m := compileMessage(c, "internal/stats", "package stats\n", "stats.OpenInput = nil", 164, "cannot assign to stats.OpenInput (neither addressable nor a map index expression)")
-	if !strings.HasPrefix(m, "cannot assign at line 164") || strings.Contains(m, "OpenInput") {
+	if !strings.HasPrefix(m, "cannot assign at line 164") || !strings.Contains(m, "cannot assign to stats.OpenInput (neither") {
 		t.Errorf("message %q", m)
 	}
 	m = compileMessage(c, "internal/stats", "package stats\n", "stats.OpenInput = nil", 166, "use of package stats not in selector")
@@ -403,7 +425,7 @@ func TestCompileMessageCannotAssignToAFunction(t *testing.T) {
 func TestCompileMessageStdStreamAssignedAForeignType(t *testing.T) {
 	c := compileCheckContract()
 	m := compileMessage(c, "cmd/csvstat", "package main\n", "os.Stdin = &mockStdin{}", 131, "cannot use &mockStdin{} (value of type *mockStdin) as *os.File value in assignment")
-	if !strings.HasPrefix(m, "type mismatch at line 131: os.Stdin, os.Stdout and os.Stderr are *os.File") || strings.Contains(m, "mockStdin") {
+	if !strings.HasPrefix(m, "type mismatch at line 131: os.Stdin, os.Stdout and os.Stderr are *os.File") || !strings.Contains(m, "value of type *mockStdin") {
 		t.Errorf("message %q", m)
 	}
 }
@@ -414,7 +436,7 @@ func TestCompileMessageInterfaceTypeWording(t *testing.T) {
 	c := compileCheckContract()
 	diag := "cannot use w (variable of interface type io.Writer) as io.Reader value in argument to io.ReadAll: io.Writer does not implement io.Reader (missing method Read)"
 	m := compileMessage(c, "internal/stats", "package stats\n", "x", 34, diag)
-	if !strings.Contains(m, "io.Writer") || !strings.Contains(m, "io.Reader") || strings.Contains(m, " w ") {
+	if !strings.Contains(m, "io.Writer") || !strings.Contains(m, "io.Reader") || !strings.Contains(m, "missing method Read") {
 		t.Errorf("message = %q", m)
 	}
 }
@@ -426,7 +448,7 @@ func TestCompileMessageNamesADuplicateField(t *testing.T) {
 	c := compileCheckContract()
 	for _, diag := range []string{"name redeclared", "duplicate field name SECRETFIELD in struct literal"} {
 		m := compileMessage(c, "internal/stats", "package stats\n", "x", 14, diag)
-		if !strings.Contains(m, "declared twice at line 14") || strings.Contains(m, "SECRET") {
+		if !strings.Contains(m, "declared twice at line 14") || !strings.Contains(m, ": "+diag) {
 			t.Errorf("%q: %s", diag, m)
 		}
 	}

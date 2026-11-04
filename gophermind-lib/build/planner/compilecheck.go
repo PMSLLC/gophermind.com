@@ -48,8 +48,9 @@ var errNoGo = fmt.Errorf("the go tool was not found; the compile check of test f
 // same directory (others). It returns nil when the file compiles, when the
 // check cannot be made (an import that does not resolve offline, a timeout, a
 // failure that is not in the test file) and errNoGo when there is no go tool.
-// A refusal names the kind of defect and a line, never the source or the
-// compiler's text.
+// A refusal names the kind of defect and the line, and quotes the compiler's
+// text and the model's own source line (path removed, capped). The brief's text
+// is never quoted.
 func compileCheckTestFile(c *contract.Contracts, rel, src string, others []string) error {
 	goBin, err := lookGo("go")
 	if err != nil {
@@ -204,8 +205,8 @@ func assembleFile(module, dir, clause, decls string, siblings map[string]string)
 var diagRE = regexp.MustCompile(`(?m)^(?:vet: )?(?:\S*/)?([^/\s:]+):(\d+):(\d+): (.*)$`)
 
 // refuseCompile turns the compiler's output into a refusal of the test file
-// base. Only diagnostics located in that file count. Each is reduced to a
-// fixed phrase and a line number.
+// base. Only diagnostics located in that file count. Each becomes a phrase, a
+// line number, the compiler's text and the source line.
 func refuseCompile(c *contract.Contracts, dir, base, src, out string) error {
 	if strings.Contains(out, "no required module provides") || strings.Contains(out, "cannot find module") ||
 		strings.Contains(out, "module lookup disabled") || strings.Contains(out, "no matching versions") {
@@ -299,9 +300,46 @@ func undeclaredName(s *safeNames, diag string) string {
 	return "that name is not declared in the contract; call only the functions and types the contract declares for this package: " + strings.Join(names, ", ")
 }
 
-// compileMessage is the fixed phrase for one diagnostic. diag is read for its
-// class only and never copied.
+// compileMessage is the refusal for one diagnostic: a phrase or guidance, the
+// line number, then the compiler's text (scratch path removed) and the model's
+// own source line trimmed to maxQuotedLine characters. Both are the model's
+// file and the compiler's words about it; the brief's text is never quoted.
 func compileMessage(c *contract.Contracts, dir, src, line string, n int, diag string) string {
+	tail := ": " + scrubDiag(diag)
+	if l := capLine(line, maxQuotedLine); l != "" {
+		tail += ": " + l
+	}
+	return compilePhrase(c, dir, src, line, n, diag) + tail
+}
+
+// maxQuotedLine bounds the source line quoted in a compile refusal.
+const maxQuotedLine = 120
+
+var (
+	scratchPathRE = regexp.MustCompile(`(?:/[^\s:"']*)?gm-compilecheck-\d+/`)
+	absPathRE     = regexp.MustCompile(`(^|[\s("'])/[^\s:"']*/`)
+	diagPrefixRE  = regexp.MustCompile(`(?m)^(?:vet: )?[^\s:]+\.go:\d+:\d+: `)
+)
+
+// scrubDiag removes the scratch module prefix, any absolute path and any
+// file:line:col prefix from the compiler's text.
+func scrubDiag(diag string) string {
+	diag = scratchPathRE.ReplaceAllString(diag, "")
+	diag = diagPrefixRE.ReplaceAllString(diag, "")
+	diag = absPathRE.ReplaceAllString(diag, "$1")
+	return strings.TrimSpace(diag)
+}
+
+// capLine trims line and cuts it to max characters.
+func capLine(line string, max int) string {
+	line = strings.TrimSpace(line)
+	if r := []rune(line); len(r) > max {
+		line = string(r[:max])
+	}
+	return line
+}
+
+func compilePhrase(c *contract.Contracts, dir, src, line string, n int, diag string) string {
 	safe := newSafeNames(c, dir)
 	switch {
 	case strings.Contains(diag, "imported and not used") || strings.Contains(diag, "imported as") && strings.Contains(diag, "not used"):

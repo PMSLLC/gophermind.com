@@ -10,11 +10,12 @@ import (
 )
 
 // maxRefusalBytes bounds the refusal text recorded for one refused reply.
-const maxRefusalBytes = 400
+const maxRefusalBytes = 800
 
 // Refusal is one line of _state/refusals.jsonl: why the planner refused one
-// model reply. Text is the planner's own refusal wording (the same text a
-// repair prompt carries), never the reply.
+// model reply. Text is the refusal wording the planner builds (the same text a
+// repair prompt carries). It may quote the model's own file and the compiler's
+// text about it; the brief's text never appears in it.
 type Refusal struct {
 	At     string `json:"at"`
 	Stage  string `json:"stage"`

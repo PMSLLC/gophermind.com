@@ -20,7 +20,8 @@ const (
 	KindWarning        = "warning"
 	KindCoverageGap    = "coverage_gap"
 	// KindRefusal is a model reply the planner refused. Message is the fixed
-	// refusal text the planner builds, never the reply.
+	// refusal text the planner builds. It may quote the model's own file and
+	// the compiler's text about it, never the brief's text.
 	KindRefusal = "refusal"
 )
 
