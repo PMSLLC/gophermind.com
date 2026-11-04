@@ -43,7 +43,7 @@ func applyMechanicalFixes(src string, diags []compileDiag) (string, []mechanical
 	seenMissing := map[string]bool{}
 	for _, d := range diags {
 		if m := unusedVarRE.FindStringSubmatch(strings.TrimSpace(d.Msg)); m != nil {
-			ins := unusedVarInserts(fset, f, d, m[1])
+			ins := unusedVarInserts(fset, off, f, d, m[1])
 			if len(ins) == 0 {
 				unfixed = append(unfixed, d)
 				continue
@@ -131,7 +131,7 @@ func importInserts(f *ast.File, off func(token.Pos) int, pkgs []string) []srcIns
 // the declaring identifier cannot be found or has no place the rules cover.
 // The identifier is the one at the diagnostic's line and column; failing that,
 // the first identifier of that name on the line.
-func unusedVarInserts(fset *token.FileSet, f *ast.File, d compileDiag, name string) []srcInsert {
+func unusedVarInserts(fset *token.FileSet, off func(token.Pos) int, f *ast.File, d compileDiag, name string) []srcInsert {
 	var stack, exact, fallback []ast.Node
 	ast.Inspect(f, func(n ast.Node) bool {
 		if n == nil {
@@ -159,7 +159,6 @@ func unusedVarInserts(fset *token.FileSet, f *ast.File, d compileDiag, name stri
 	if nodes == nil {
 		return nil
 	}
-	off := func(p token.Pos) int { return fset.Position(p).Offset }
 	text := "_ = " + name
 	// first puts the statement first in a body whose opening token is at open.
 	first := func(list []ast.Stmt, open token.Pos) srcInsert {
@@ -168,28 +167,46 @@ func unusedVarInserts(fset *token.FileSet, f *ast.File, d compileDiag, name stri
 		}
 		return srcInsert{off(open) + 1, "\n" + text}
 	}
-	for i := len(nodes) - 1; i >= 1; i-- {
-		n, ok := nodes[i].(ast.Stmt)
-		if !ok || !inStmtList(nodes[i-1], n) {
-			continue
-		}
-		switch s := n.(type) {
+	// Walk outward from the identifier. A statement that has the identifier in
+	// its header (anything but its body or else branch) is where the variable is
+	// scoped, so it is checked before a listed statement is looked for. This
+	// also covers an else-if and a labeled loop, whose statement is not itself
+	// a member of a list.
+	for i := len(nodes) - 2; i >= 0; i-- {
+		child := nodes[i+1]
+		switch s := nodes[i].(type) {
 		case *ast.IfStmt:
-			return []srcInsert{first(s.Body.List, s.Body.Lbrace)}
+			if child != ast.Node(s.Body) && child != s.Else {
+				return []srcInsert{first(s.Body.List, s.Body.Lbrace)}
+			}
 		case *ast.ForStmt:
-			return []srcInsert{first(s.Body.List, s.Body.Lbrace)}
+			if child != ast.Node(s.Body) {
+				return []srcInsert{first(s.Body.List, s.Body.Lbrace)}
+			}
 		case *ast.RangeStmt:
-			return []srcInsert{first(s.Body.List, s.Body.Lbrace)}
+			if child != ast.Node(s.Body) {
+				return []srcInsert{first(s.Body.List, s.Body.Lbrace)}
+			}
 		case *ast.SwitchStmt:
-			return clauseInserts(s.Body, first)
+			if child != ast.Node(s.Body) {
+				return clauseInserts(s.Body, first)
+			}
 		case *ast.TypeSwitchStmt:
-			return clauseInserts(s.Body, first)
+			if child != ast.Node(s.Body) {
+				return clauseInserts(s.Body, first)
+			}
 		case *ast.CommClause:
-			return []srcInsert{first(s.Body, s.Colon)}
+			if !inStmtList(s, child) {
+				return []srcInsert{first(s.Body, s.Colon)}
+			}
 		case *ast.CaseClause:
-			return nil
+			if !inStmtList(s, child) {
+				return nil
+			}
 		}
-		return []srcInsert{{off(n.End()), "\n" + text}}
+		if n, ok := nodes[i].(ast.Stmt); ok && i > 0 && inStmtList(nodes[i-1], n) {
+			return []srcInsert{{off(n.End()), "\n" + text}}
+		}
 	}
 	return nil
 }
@@ -206,7 +223,7 @@ func clauseInserts(body *ast.BlockStmt, first func([]ast.Stmt, token.Pos) srcIns
 }
 
 // inStmtList reports whether s is one of the statements of the block or clause parent.
-func inStmtList(parent ast.Node, s ast.Stmt) bool {
+func inStmtList(parent, s ast.Node) bool {
 	var list []ast.Stmt
 	switch p := parent.(type) {
 	case *ast.BlockStmt:

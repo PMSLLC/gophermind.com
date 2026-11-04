@@ -95,3 +95,55 @@ func TestApplyMechanicalFixesNoImportDecl(t *testing.T) {
 		t.Errorf("got %q, %v", got, fixes)
 	}
 }
+
+// TestApplyMechanicalFixesScopes checks the whole result, so a misplaced or
+// extra insertion cannot pass.
+func TestApplyMechanicalFixesScopes(t *testing.T) {
+	const head = "package p\n\nimport \"testing\"\n\nfunc TestX(t *testing.T) {\n"
+	tests := []struct {
+		name  string
+		body  string
+		diag  compileDiag
+		name2 string
+		want  string
+	}{
+		{name: "if header", name2: "v", diag: compileDiag{6, 5, "declared and not used: v"},
+			body: "\tif v := 1; t != nil {\n\t\tt.Log(1)\n\t}\n",
+			want: "\tif v := 1; t != nil {\n\t\t_ = v\n\t\tt.Log(1)\n\t}\n"},
+		{name: "select comm clause", name2: "v", diag: compileDiag{8, 7, "declared and not used: v"},
+			body: "\tch := make(chan int)\n\tselect {\n\tcase v := <-ch:\n\t\tt.Log(1)\n\t}\n",
+			want: "\tch := make(chan int)\n\tselect {\n\tcase v := <-ch:\n\t\t_ = v\n\t\tt.Log(1)\n\t}\n"},
+		{name: "nested block of a loop", name2: "w", diag: compileDiag{7, 3, "declared and not used: w"},
+			body: "\tfor i := 0; i < 1; i++ {\n\t\tw := i\n\t\tt.Log(1)\n\t}\n",
+			want: "\tfor i := 0; i < 1; i++ {\n\t\tw := i\n\t\t_ = w\n\t\tt.Log(1)\n\t}\n"},
+		{name: "else if header", name2: "y", diag: compileDiag{8, 12, "declared and not used: y"},
+			body: "\tif t == nil {\n\t\tt.Log(1)\n\t} else if y := 2; t != nil {\n\t\tt.Log(2)\n\t}\n",
+			want: "\tif t == nil {\n\t\tt.Log(1)\n\t} else if y := 2; t != nil {\n\t\t_ = y\n\t\tt.Log(2)\n\t}\n"},
+		{name: "labeled loop header", name2: "tc", diag: compileDiag{7, 9, "declared and not used: tc"},
+			body: "L:\n\tfor _, tc := range []int{1} {\n\t\tt.Log(1)\n\t\tbreak L\n\t}\n",
+			want: "L:\n\tfor _, tc := range []int{1} {\n\t\t_ = tc\n\t\tt.Log(1)\n\t\tbreak L\n\t}\n"},
+		{name: "wrong column falls back to the name on the line", name2: "wantErr", diag: compileDiag{6, 40, "declared and not used: wantErr"},
+			body: "\twantErr := true\n\tt.Log(1)\n",
+			want: "\twantErr := true\n\t_ = wantErr\n\tt.Log(1)\n"},
+		{name: "name not on the line is left", name2: "wantErr", diag: compileDiag{7, 2, "declared and not used: wantErr"},
+			body: "\twantErr := true\n\tt.Log(1)\n"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			src := head + tc.body + "}\n"
+			got, fixes, unfixed := applyMechanicalFixes(src, []compileDiag{tc.diag})
+			if tc.want == "" {
+				if got != src || len(fixes) != 0 || len(unfixed) != 1 {
+					t.Errorf("got %q, %v, %v", got, fixes, unfixed)
+				}
+				return
+			}
+			if want := head + tc.want + "}\n"; got != want {
+				t.Errorf("got:\n%s\nwant:\n%s", got, want)
+			}
+			if !reflect.DeepEqual(fixes, []mechanicalFix{{"unused variable", tc.name2}}) || len(unfixed) != 0 {
+				t.Errorf("fixes = %v, unfixed = %v", fixes, unfixed)
+			}
+		})
+	}
+}
