@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"go/scanner"
-	"go/token"
-	"sort"
 	"strings"
 )
 
@@ -17,27 +15,26 @@ const maxSyntaxErrors = 10
 // entry carries the line and column, the safe part of the parser message (see
 // syntaxDetail) and the offending source line cut to maxQuotedLine characters.
 // The quoted text is the model's own test file; the brief is never quoted.
-// Cascades are dropped: a later error on a line already reported, and an error
-// at the first token after the previous error (the parser recovering from a bad
-// operand reports "expected ';'" at the next line's first token).
+// Cascades after the first error are dropped, so the model is not sent to fix
+// lines that are fine: an "expected ';'" at the first token of a line (the
+// parser recovering from a bad operand trips over the next declaration), a
+// "found 'EOF'" (an unclosed brace echoed at the end of the file), and a later
+// error on a line already reported.
 func syntaxErrs(err error, src string) string {
 	var list scanner.ErrorList
 	if !errors.As(err, &list) || len(list) == 0 {
 		return syntaxErr(err)
 	}
 	lines := strings.Split(src, "\n")
-	starts := tokenStarts(src)
 	seen := map[int]bool{}
-	prev := -1
 	var entries []string
 	for _, e := range list {
 		n := e.Pos.Line
-		if e.Msg == "too many errors" {
-			continue
+		text := ""
+		if n >= 1 && n <= len(lines) {
+			text = lines[n-1]
 		}
-		adjacent := prev >= 0 && sort.SearchInts(starts, e.Pos.Offset) == sort.SearchInts(starts, prev+1)
-		prev = e.Pos.Offset
-		if seen[n] || adjacent {
+		if len(entries) > 0 && isCascade(e, text) || seen[n] {
 			continue
 		}
 		seen[n] = true
@@ -45,17 +42,12 @@ func syntaxErrs(err error, src string) string {
 		if detail := syntaxDetail(e.Msg); detail != "" {
 			entry += ": " + detail
 		}
-		if n >= 1 && n <= len(lines) {
-			if l := capLine(lines[n-1], maxQuotedLine); l != "" {
-				entry += ": " + l
-			}
+		if l := capLine(text, maxQuotedLine); l != "" {
+			entry += ": " + l
 		}
 		entries = append(entries, entry)
 	}
-	switch {
-	case len(entries) == 0:
-		return syntaxErr(err)
-	case len(entries) == 1:
+	if len(entries) == 1 {
 		return "syntax error at " + entries[0]
 	}
 	msg := fmt.Sprintf("%d syntax errors: ", len(entries))
@@ -65,21 +57,13 @@ func syntaxErrs(err error, src string) string {
 	return msg + strings.Join(entries, "; ")
 }
 
-// tokenStarts returns the offsets of the tokens in src, in order, leaving out
-// the semicolons the scanner inserts at line ends, so two errors with no
-// written token between them can be recognised as one.
-func tokenStarts(src string) []int {
-	var s scanner.Scanner
-	s.Init(token.NewFileSet().AddFile("", -1, len(src)), []byte(src), nil, 0)
-	var starts []int
-	for {
-		pos, tok, lit := s.Scan()
-		if tok == token.EOF {
-			return starts
-		}
-		if tok == token.SEMICOLON && lit == "\n" {
-			continue
-		}
-		starts = append(starts, int(pos)-1)
+// isCascade reports whether e, on source line text, is an echo of an earlier
+// error: an "expected ';'" at the line's first non-blank column, or any error
+// that found the end of the file.
+func isCascade(e *scanner.Error, text string) bool {
+	if strings.HasSuffix(e.Msg, "found 'EOF'") {
+		return true
 	}
+	first := len(text) - len(strings.TrimLeft(text, " \t")) + 1
+	return strings.HasPrefix(e.Msg, "expected ';'") && e.Pos.Column == first
 }

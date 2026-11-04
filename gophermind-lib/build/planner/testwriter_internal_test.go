@@ -141,26 +141,29 @@ func TestTestwriterErrorsNeverQuoteTheReply(t *testing.T) {
 	}
 	// A wrong package clause is not here: fixTestPackageClause rewrites it,
 	// so no refusal is left that could quote it.
-	replies := map[string]string{
-		"prose":                 "prose " + canary,
-		"an object of canaries": `{"` + canary + `": 1}`,
-		"truncated":             `{"tests": [{"name": "` + canary,
-		"tests of wrong type":   `{"tests": "` + canary + `", "test_file": "x"}`,
-		"test_file wrong type":  `{"tests": ` + tests + `, "test_file": {"` + canary + `": 1}}`,
-		"an array":              `["` + canary + `"]`,
-		"no name":               `{"tests": [{"name": " ", "given": "` + canary + `", "expect": "e"}, {"name": "b", "given": "g", "expect": "e"}], "test_file": ` + src(same) + `}`,
-		"not Go":                withFile(`"x {\n// ` + canary + `"`),
-		"not Go, valid start":   sub("func TestGreet(t *testing.T) {", "var _ = \""+canary+"\"\n\nfunc TestGreet(t *testing.T) {\n\t1 +\n}\n"),
-		"third-party import":    sub(`"strings"`, `"github.com/`+canary+`/x"`),
-		"import of a lookalike": sub(`example.com/greeter/internal/names`, `example.com/greeter`+canary+`/internal/names`),
-		"function missing":      sub("func TestGreet(", "func Test"+canary+"("),
-		"function wrong shape":  sub("func TestGreet(t *testing.T)", "func TestGreet("+canary+" *testing.B)"),
+	replies := map[string]struct{ reply, want string }{
+		"prose":                 {"prose " + canary, "not a JSON object"},
+		"an object of canaries": {`{"` + canary + `": 1}`, "has 0 tests"},
+		"truncated":             {`{"tests": [{"name": "` + canary, "the reply ends before the JSON is complete"},
+		"tests of wrong type":   {`{"tests": "` + canary + `", "test_file": "x"}`, `field "tests" has the wrong JSON type`},
+		"test_file wrong type":  {`{"tests": ` + tests + `, "test_file": {"` + canary + `": 1}}`, `field "test_file" has the wrong JSON type`},
+		"an array":              {`["` + canary + `"]`, `field "" has the wrong JSON type`},
+		"no name":               {`{"tests": [{"name": " ", "given": "` + canary + `", "expect": "e"}, {"name": "b", "given": "g", "expect": "e"}], "test_file": ` + src(same) + `}`, "needs a name"},
+		"not Go":                {withFile(`"x {\n// ` + canary + `"`), "not valid Go"},
+		"not Go, valid start":   {sub("func TestGreet(t *testing.T) {", "var _ = \""+canary+"\"\n\nfunc TestGreet(t *testing.T) {\n\t1 +\n}\n"), "not valid Go"},
+		"third-party import":    {sub(`"strings"`, `"github.com/`+canary+`/x"`), "outside the standard library"},
+		"import of a lookalike": {sub(`example.com/greeter/internal/names`, `example.com/greeter`+canary+`/internal/names`), "outside the standard library"},
+		"function missing":      {sub("func TestGreet(", "func Test"+canary+"("), "has no func TestGreet"},
+		"function wrong shape":  {sub("func TestGreet(t *testing.T)", "func TestGreet("+canary+" *testing.B)"), "not as func TestGreet"},
 	}
-	for name, reply := range replies {
+	for name, c := range replies {
 		t.Run(name, func(t *testing.T) {
-			_, _, err := parseTestwrite(reply, ct, "greet", "TestGreet", "example.com/greeter", nil)
+			_, _, err := parseTestwrite(c.reply, ct, "greet", "TestGreet", "example.com/greeter", nil)
 			if err == nil {
 				t.Fatal("the reply was accepted")
+			}
+			if !strings.Contains(err.Error(), c.want) {
+				t.Errorf("the reply was refused by another check: %v, want %q", err, c.want)
 			}
 			if strings.Contains(err.Error(), canary) {
 				t.Errorf("the error quotes the reply: %v", err)
