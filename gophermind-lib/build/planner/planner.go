@@ -110,6 +110,12 @@ type run struct {
 	status runStatus
 }
 
+// rootID is the id of the run's root node, which the contract and the executor
+// call the brief id. Node ids allow only [a-z0-9-], and a library run id carries
+// the version's dots (slugify-v1.1-20261104-r001), so dots become hyphens here.
+// Everything that names the run itself (folder, ledger, run record) keeps id.
+func (r *run) rootID() string { return strings.ReplaceAll(r.id, ".", "-") }
+
 func (r *run) path(name string) string { return filepath.Join(r.dir, filepath.FromSlash(name)) }
 
 func (r *run) saveStatus() error { return writeJSON(r.path(stateStatus), r.status) }

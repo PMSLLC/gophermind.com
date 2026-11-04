@@ -97,7 +97,7 @@ func (p *Planner) testwriter(ctx context.Context, r *run) error {
 	if err != nil {
 		return err
 	}
-	w, err := planWaves(r.id, c, dec)
+	w, err := planWaves(r.rootID(), c, dec)
 	if err != nil {
 		return err
 	}

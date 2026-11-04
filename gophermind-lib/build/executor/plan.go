@@ -220,7 +220,7 @@ func LoadPlan(runDir, repo string) (*Plan, error) {
 	}
 
 	p := &Plan{
-		RunID: c.BriefID, RunDir: runDir, Repo: repo,
+		RunID: b.Front.ID, RunDir: runDir, Repo: repo, // the run id; the contract names its root node by brief_id, which has no dots
 		Brief: b, BriefRepo: b.Front.Repo, Contracts: c,
 		byID: map[string]*Leaf{}, Requirements: reqs, Coverage: cov, Deps: deps, Classes: classes, Hashes: hashes,
 		Serve: cov.Serve, AcceptTests: accept,

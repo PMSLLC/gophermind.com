@@ -266,7 +266,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 					extras = dropped
 				}
 				final := outlinePassIsFinal(first, pick(first, allBatches, st.OutlineBatches), st.OutlineBatchNext, len(unresolved) > 0 || entry != "")
-				doc, ds, n, ign, err := mergeOutline(st.Doc, st.Deps, text, r.id, final)
+				doc, ds, n, ign, err := mergeOutline(st.Doc, st.Deps, text, r.rootID(), final)
 				if err != nil {
 					return err
 				}
@@ -418,7 +418,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 				if err != nil {
 					return err
 				}
-				doc, m, ign, err := mergePass(base, id, text, r.id)
+				doc, m, ign, err := mergePass(base, id, text, r.rootID())
 				if err != nil {
 					return err
 				}
@@ -576,7 +576,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			if err != nil {
 				return err
 			}
-			doc, ign, err := mergeRepair(st.Doc, text, r.id)
+			doc, ign, err := mergeRepair(st.Doc, text, r.rootID())
 			if err != nil {
 				return err
 			}
@@ -633,7 +633,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 		}
 		comp["exports"] = exports
 	}
-	if _, err := validateContractDoc(st.Doc, r.id); err != nil {
+	if _, err := validateContractDoc(st.Doc, r.rootID()); err != nil {
 		return err
 	}
 	return writeJSON(r.path(fileContracts), st.Doc)

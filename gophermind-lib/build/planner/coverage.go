@@ -191,7 +191,7 @@ func (p *Planner) coverageFill(ctx context.Context, r *run, gaps []Gap, weak []Q
 	var next map[string]any // the contract with the reply's declarations added, or nil
 	cs := callSpec{stage: "coverage_fill", taskType: "coverage", scope: router.ScopeBrief, maxTokens: maxTokensFill}
 	if err := p.call(ctx, r, cs, prompt, func(text string) error {
-		cr, cp, err := parseCoverageFill(StripReply(text), r.reqs, doc, r.id)
+		cr, cp, err := parseCoverageFill(StripReply(text), r.reqs, doc, r.rootID())
 		if err != nil {
 			return err
 		}
@@ -276,7 +276,7 @@ func (p *Planner) refreshPlan(ctx context.Context, r *run) error {
 	if err := p.enrichMissing(ctx, r, c, &dec); err != nil {
 		return err
 	}
-	if _, err := planWaves(r.id, c, dec); err != nil {
+	if _, err := planWaves(r.rootID(), c, dec); err != nil {
 		return err
 	}
 	return writeSkeleton(r, p.d.Settings.Defaults.MaxContextTokens, p.d.Settings.Defaults.MaxRevisions, c, dec, nil)

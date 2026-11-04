@@ -78,7 +78,7 @@ func (p *Planner) decompose(ctx context.Context, r *run) error {
 	if err := p.decomposeMissing(ctx, r, c, &dec); err != nil {
 		return err
 	}
-	if _, err := planWaves(r.id, c, dec); err != nil {
+	if _, err := planWaves(r.rootID(), c, dec); err != nil {
 		return err
 	}
 	if err := writeSkeleton(r, p.d.Settings.Defaults.MaxContextTokens, p.d.Settings.Defaults.MaxRevisions, c, dec, nil); err != nil {
@@ -845,7 +845,7 @@ func buildSkeleton(r *run, maxContext, maxRevisions int, c *contract.Contracts, 
 		children = append(children, comp.ID)
 	}
 	root := map[string]any{
-		"spec_version": "2.0", "id": r.id, "kind": "root", "children": children,
+		"spec_version": "2.0", "id": r.rootID(), "kind": "root", "children": children,
 		"title": cut(front.Title, 120), "description": firstParagraph(r.brief.Sections["Overview"]),
 		"brief_ref": "#overview", "status": "pending", "wave": 0, "model_tier": "strong", "revision": 0,
 		"budget": budget,
@@ -896,7 +896,7 @@ func buildSkeleton(r *run, maxContext, maxRevisions int, c *contract.Contracts, 
 			kids = append(kids, d["id"])
 		}
 		doc := map[string]any{
-			"spec_version": "2.0", "id": comp.ID, "kind": "component", "parent": r.id, "children": kids,
+			"spec_version": "2.0", "id": comp.ID, "kind": "component", "parent": r.rootID(), "children": kids,
 			"title": title, "description": desc, "brief_ref": ref,
 			"status": "pending", "wave": 0, "model_tier": "strong", "revision": 0,
 		}

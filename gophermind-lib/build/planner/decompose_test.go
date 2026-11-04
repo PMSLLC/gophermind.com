@@ -348,3 +348,38 @@ func TestFunctionsThatUseEachOtherStillPlan(t *testing.T) {
 	// A resume must not fail again.
 	g.mustPlan(planner.Options{RunID: greeterID, StopAfter: "decompose"})
 }
+
+// A library run id carries the version's dots (greeter-v1.1-20261104-r001).
+// The root node and the contract name it with dots turned into hyphens, since
+// node ids allow only [a-z0-9-]; the run folder and the board keep the real id.
+func TestDottedRunIDPlansWithAHyphenatedRootNode(t *testing.T) {
+	const dotted = "greeter-v1.1-20261104-r001"
+	const root = "greeter-v1-1-20261104-r001"
+	g := newRig(t, approving())
+	g.briefPath = writeBrief(t, g.repo, func(s string) string {
+		return strings.Replace(s, "id: "+greeterID, "id: "+dotted, 1)
+	})
+	g.runDir = filepath.Join(g.repo, ".gophermind", dotted)
+	g.mustPlan(planner.Options{})
+
+	raw, err := os.ReadFile(filepath.Join(g.runDir, "contracts.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c struct {
+		BriefID string `json:"brief_id"`
+	}
+	if err := json.Unmarshal(raw, &c); err != nil || c.BriefID != root {
+		t.Fatalf("contracts.json brief_id = %q (%v), want %q", c.BriefID, err, root)
+	}
+	tr, err := tree.NewStore(g.runDir).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := tr.Nodes[root]; !ok {
+		t.Errorf("task tree has no root node %q", root)
+	}
+	if _, err := g.board.Get(context.Background(), dotted, "greeting"); err != nil {
+		t.Errorf("board row for the real run id %q: %v", dotted, err)
+	}
+}
