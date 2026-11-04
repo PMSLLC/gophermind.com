@@ -521,3 +521,20 @@ func TestToolchainAcceptsCgoEnabled(t *testing.T) {
 		t.Fatal("GOFLAGS in Toolchain must still fail")
 	}
 }
+
+func TestBuildNeverCopiesTheVaultPassphraseFromTheProcessEnvironment(t *testing.T) {
+	t.Setenv("GOPHERMIND_VAULT_PASSPHRASE", "hunter2")
+	env, err := execenv.Build(execenv.Inputs{
+		NodeID:       "fn-a",
+		Secrets:      []string{"JWT_SIGNING_KEY"},
+		SecretValues: secrets(map[string]string{"JWT_SIGNING_KEY": "x"}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "GOPHERMIND_VAULT_PASSPHRASE=") || strings.Contains(kv, "hunter2") {
+			t.Fatal("the passphrase reached the build environment")
+		}
+	}
+}

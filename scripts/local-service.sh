@@ -33,6 +33,25 @@ die() { echo "error: $*" >&2; exit 1; }
 
 healthy() { curl -fsS -m 3 "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1; }
 
+# The secrets the example briefs declare (examples/briefs/06-hookrelay.md,
+# 07-ledger-sync.md, 08-taskboard.md). A brief that declares secrets cannot load
+# unless each one is in the vault, so a name not stored yet gets a placeholder.
+# A stored value is never overwritten. The passphrase is read from its file with
+# a read loop and handed to each gophermind command through that command's own
+# environment, never on argv and never printed.
+EXAMPLE_SECRETS="WEBHOOK_SIGNING_KEY SLACK_WEBHOOK_URL LEDGER_API_TOKEN JWT_SIGNING_KEY SMTP_PASSWORD ADMIN_BOOTSTRAP_TOKEN"
+
+seed_placeholder_secrets() {
+  [ -s "$BASE/vault-passphrase" ] || return 0
+  local pass name stored
+  IFS= read -r pass < "$BASE/vault-passphrase"
+  stored="$(GOPHERMIND_VAULT_PASSPHRASE="$pass" "$BASE/bin/gophermind" brief vault list)" || die "could not list the vault (see docs/GOAL-EXAMPLES.md, Secrets for the example briefs)"
+  for name in $EXAMPLE_SECRETS; do
+    if printf '%s\n' "$stored" | grep -qx -- "$name"; then continue; fi
+    printf '%s\n' "placeholder-$name-not-a-real-secret" | GOPHERMIND_VAULT_PASSPHRASE="$pass" "$BASE/bin/gophermind" brief vault set "$name" >/dev/null || die "could not store a placeholder for $name"
+  done
+}
+
 install() {
   command -v go >/dev/null || die "go is not on PATH"
   [ -d "$repo/gophermind-server" ] || die "run this from a gophermind checkout (no gophermind-server in $repo)"
@@ -98,6 +117,13 @@ export GOPHERMIND_BURROW_TOKEN_FILE=\"$BURROW_TOKEN_FILE\""
   fi
   chmod 600 "$BASE/token"
 
+  # The vault passphrase: random, mode 600, never printed. run-server.sh exports
+  # it so briefs that declare secrets can open the vault without a terminal.
+  if [ ! -s "$BASE/vault-passphrase" ]; then
+    (umask 077; openssl rand -hex 32 > "$BASE/vault-passphrase")
+  fi
+  chmod 600 "$BASE/vault-passphrase"
+
   # The wrapper reads the token with a read loop, not `source`, so a literal $
   # in a secret is not expanded.
   cat > "$BASE/run-server.sh" <<EOF
@@ -105,6 +131,10 @@ export GOPHERMIND_BURROW_TOKEN_FILE=\"$BURROW_TOKEN_FILE\""
 set -eu
 IFS= read -r GOPHERMIND_TOKEN < "$BASE/token"
 export GOPHERMIND_TOKEN
+if [ -s "$BASE/vault-passphrase" ]; then
+  IFS= read -r GOPHERMIND_VAULT_PASSPHRASE < "$BASE/vault-passphrase"
+  export GOPHERMIND_VAULT_PASSPHRASE
+fi
 export GOPHERMIND_LOCAL=1
 export GOPHERMIND_PORT=$PORT
 export GOPHERMIND_ROOT="$BASE/workspace"
@@ -136,6 +166,8 @@ EOF
 </plist>
 EOF
   plutil -lint "$PLIST" >/dev/null
+
+  seed_placeholder_secrets
 
   launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
   # bootout returns before launchd has finished removing the job; loading it
