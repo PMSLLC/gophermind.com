@@ -13,6 +13,8 @@ func TestCheckNoRealHostRefusesALiteralHost(t *testing.T) {
 	for _, c := range []struct{ name, body, host string }{
 		{"https host", `_ = "https://example.com/redir"`, "example.com"},
 		{"http host with a port", `_ = "http://this-does-not-exist-12345.com:8080/x"`, "this-does-not-exist-12345.com:8080"},
+		{"upper-case scheme", `_ = "HTTP://example.com/x"`, "example.com"},
+		{"private ip", `_ = "http://10.0.0.1/x"`, "10.0.0.1"},
 		{"raw string fixture", "_ = `- [a](http://example.org/a)`", "example.org"},
 	} {
 		err := checkNoRealHost(hostSrc(c.body))
@@ -27,6 +29,8 @@ func TestCheckNoRealHostAcceptsLoopbackFormatVerbsAndComments(t *testing.T) {
 		`_ = "http://127.0.0.1:8080/x"`,
 		`_ = "http://localhost/x"`,
 		`_ = "http://[::1]/x"`,
+		"_ = `[a](http://127.0.0.1:8080)`",
+		"_ = `<a href=http://localhost>`",
 		`_ = "http://%s/a"`,
 		`_ = "http://" + "x"`,
 		`srv := "x"; _ = srv + "/a"`,

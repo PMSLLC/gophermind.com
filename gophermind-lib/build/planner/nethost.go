@@ -10,8 +10,10 @@ import (
 	"strings"
 )
 
-// urlHost finds the host part of an http or https URL inside a string.
-var urlHost = regexp.MustCompile("https?://([^/\\s\"'`?#]+)")
+// urlHost finds the host part of an http or https URL inside a string. The
+// host stops at closing punctuation so a path-less URL in markdown or HTML is
+// read cleanly; a bracketed IPv6 host is kept whole.
+var urlHost = regexp.MustCompile("(?i)https?://(\\[[^\\]]*\\](?::\\d+)?|[^/\\s\"'`?#)>,;\\]}]+)")
 
 // checkNoRealHost refuses a test file with a string literal that names a real
 // host. A local model wrote http://example.com/redir twice, so the test went
