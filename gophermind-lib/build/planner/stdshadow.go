@@ -19,7 +19,8 @@ var deepStdShadows = map[string]bool{
 }
 
 // stdShadow refuses a contract package whose last path element is the name of
-// a standard library package. ResolveQualifier prefers a contract package over
+// a top-level standard library package, or one of the deep packages listed in
+// deepStdShadows. ResolveQualifier prefers a contract package over
 // the standard library, so a test that follows the prompt imports the module's
 // package under that name and finds none of the standard library's names in it.
 func stdShadow(c *contract.Contracts) error {
