@@ -52,31 +52,42 @@ var errNoGo = fmt.Errorf("the go tool was not found; the compile check of test f
 // text and the model's own source line (path removed, capped). The brief's text
 // is never quoted.
 func compileCheckTestFile(c *contract.Contracts, rel, src string, others []string) error {
+	diags, err := compileCheckDiags(c, rel, src, others)
+	if err != nil {
+		return err
+	}
+	return refuseCompileDiags(c, path.Dir(rel), src, diags)
+}
+
+// compileCheckDiags is compileCheckTestFile returning the diagnostics located
+// in the test file instead of the refusal: nil, nil when the file compiles or
+// the check cannot be made, errNoGo when there is no go tool.
+func compileCheckDiags(c *contract.Contracts, rel, src string, others []string) ([]compileDiag, error) {
 	goBin, err := lookGo("go")
 	if err != nil {
-		return errNoGo
+		return nil, errNoGo
 	}
 	dir := path.Dir(rel)
 	root, err := os.MkdirTemp("", "gm-compilecheck-")
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	defer os.RemoveAll(root)
 	if !materializeContract(root, c) {
-		return nil
+		return nil, nil
 	}
 	pkgDir := filepath.Join(root, filepath.FromSlash(dir))
 	if err := os.MkdirAll(pkgDir, 0o755); err != nil {
-		return nil
+		return nil, nil
 	}
 	for i, o := range others {
 		if err := os.WriteFile(filepath.Join(pkgDir, "zz_other"+strconv.Itoa(i)+"_test.go"), []byte(o), 0o644); err != nil {
-			return nil
+			return nil, nil
 		}
 	}
 	base := path.Base(rel)
 	if err := os.WriteFile(filepath.Join(pkgDir, base), []byte(src), 0o644); err != nil {
-		return nil
+		return nil, nil
 	}
 	target := "./" + dir
 	if dir == "." {
@@ -86,9 +97,12 @@ func compileCheckTestFile(c *contract.Contracts, rel, src string, others []strin
 	defer cancel()
 	out, err := runGo(ctx, goBin, root, goCheckEnv(root), "test", "-count=1", "-run", "^$", target)
 	if err == nil || ctx.Err() != nil {
-		return nil
+		return nil, nil
 	}
-	return refuseCompile(c, dir, base, src, string(out))
+	if offlineImport(string(out)) {
+		return nil, nil
+	}
+	return compileDiags(base, string(out)), nil
 }
 
 // goCheckEnv is the cleaned environment of the check: no inherited Go
@@ -242,11 +256,17 @@ func compileDiags(base, out string) []compileDiag {
 // base. Only diagnostics located in that file count. Each becomes a phrase, a
 // line number, the compiler's text and the source line.
 func refuseCompile(c *contract.Contracts, dir, base, src, out string) error {
-	if strings.Contains(out, "no required module provides") || strings.Contains(out, "cannot find module") ||
-		strings.Contains(out, "module lookup disabled") || strings.Contains(out, "no matching versions") {
+	if offlineImport(out) {
 		return nil
 	}
 	return refuseCompileDiags(c, dir, src, compileDiags(base, out))
+}
+
+// offlineImport reports whether go test output out failed on an import that
+// does not resolve offline, a failure the check cannot judge.
+func offlineImport(out string) bool {
+	return strings.Contains(out, "no required module provides") || strings.Contains(out, "cannot find module") ||
+		strings.Contains(out, "module lookup disabled") || strings.Contains(out, "no matching versions")
 }
 
 // refuseCompileDiags is refuseCompile for an already extracted list: nil for

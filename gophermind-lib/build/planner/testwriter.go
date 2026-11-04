@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
-	"go/format"
 	"go/parser"
 	"go/token"
 	"go/types"
@@ -77,6 +76,8 @@ type writtenTests struct {
 	Tests    []map[string]any `json:"tests"`
 	TestFile string           `json:"test_file"` // repo-relative, forward slashes
 	SHA256   string           `json:"sha256"`
+	Fixes    []string         `json:"fixes,omitempty"`    // kind and name of each mechanical fix applied to the file
+	Repaired bool             `json:"repaired,omitempty"` // the file came from a repair call
 }
 
 func testwriterDone(r *run) bool { return r.status.PlannedAt != "" }
@@ -559,47 +560,38 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	renamedHelpers := false
 	var droppedImports []string
 	var droppedComments int
+	var fixes []mechanicalFix
+	repaired := false
 	cs := callSpec{stage: "testwrite:" + id, taskType: "testwrite", nodeID: id, nodeClass: class, tier: p.tierFor(strField(d, "model_tier")), scope: router.ScopeNode, maxTokens: maxTokensTestwrite}
 	if mt, msrc, ok := mainEntryTest(sig, file, funcName); ok {
 		tests, source = mt, msrc
 	} else {
 		parse := func(text string) error {
 			ts, src, droppedC, err := parseTestwriteCounted(text, ct, pkg, funcName, c.Module, hookList(d), packageSet(c))
+			var se *syntaxRefusal
+			if err != nil && !errors.As(err, &se) {
+				return err
+			}
+			in := settleInput{c: c, id: id, file: file, rel: rel, funcName: funcName, sig: sig, pkg: pkg, pkgs: packageSet(c),
+				others: otherTestSources(r.repo, path.Dir(rel), id, st), stubs: stubSources(c, path.Dir(file))}
+			var s settled
+			if se != nil {
+				s, err = p.settleSyntax(ctx, r, cs, in, se)
+			} else {
+				s, err = p.settleTestFile(ctx, r, cs, in, src)
+			}
+			if errors.Is(err, errNoGo) {
+				p.noGoWarn.Do(func() { p.emit(events.KindWarning, cs.stage, id, err.Error()) })
+				err = nil
+			}
 			if err != nil {
 				return err
 			}
-			name, _, _ := internalTarget(sig)
-			if err := checkTestExercises(src, name); err != nil {
-				return err
+			if s.repaired {
+				droppedC = s.comments
 			}
-			if reachesNetwork(c, id) || importsNet(src) {
-				if err := checkNoRealHost(src); err != nil {
-					return err
-				}
-			}
-			others := otherTestSources(r.repo, path.Dir(rel), id, st)
-			src, renamed, err := resolveSharedNames(src, strings.TrimPrefix(funcName, "Test"), others, stubSources(c, path.Dir(file)))
-			if err == errDeclaredName {
-				err = richDeclaredName(src, c, path.Dir(rel), err)
-			}
-			if err != nil {
-				return err
-			}
-			src, dropped := dropUnusedImports(src, moduleImportNames(c))
-			formatted, ferr := format.Source([]byte(src))
-			if ferr != nil {
-				return fmt.Errorf("test file cannot be formatted: %v", ferr)
-			}
-			src = string(formatted)
-			if err := compileCheckTestFile(c, rel, src, others); err != nil {
-				if errors.Is(err, errNoGo) {
-					p.noGoWarn.Do(func() { p.emit(events.KindWarning, cs.stage, id, err.Error()) })
-					tests, source, renamedHelpers, droppedImports, droppedComments = ts, src, renamed, dropped, droppedC
-					return nil
-				}
-				return err
-			}
-			tests, source, renamedHelpers, droppedImports, droppedComments = ts, src, renamed, dropped, droppedC
+			tests, source, renamedHelpers, droppedImports, droppedComments = ts, s.src, s.renamed, s.dropped, droppedC
+			fixes, repaired = s.fixes, s.repaired
 			return nil
 		}
 		if st.Rounds[id].Done >= testwriterRounds {
@@ -659,7 +651,10 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 			"test_comment_normalized: %d long comment blocks were removed from the test file of node %s",
 			droppedComments, id))
 	}
-	wt := writtenTests{Tests: tests, TestFile: rel, SHA256: hashHex([]byte(source))}
+	wt := writtenTests{Tests: tests, TestFile: rel, SHA256: hashHex([]byte(source)), Repaired: repaired}
+	for _, f := range fixes {
+		wt.Fixes = append(wt.Fixes, f.Kind+" "+f.Name)
+	}
 	if st.Pending == nil {
 		st.Pending = map[string]writtenTests{}
 	}
@@ -787,7 +782,9 @@ func parseTestwriteIn(text string, ct map[string]any, pkg, funcName, module stri
 }
 
 // parseTestwriteCounted is parseTestwriteIn that also reports how many long
-// comments it removed from the test file before the validator ran.
+// comments it removed from the test file before the validator ran. A file
+// that is not valid Go is refused with a *syntaxRefusal, and the tests are
+// returned with it.
 func parseTestwriteCounted(text string, ct map[string]any, pkg, funcName, module string, hooks []string, pkgs importSet) ([]map[string]any, string, int, error) {
 	var reply struct {
 		Tests    []map[string]any `json:"tests"`
@@ -855,22 +852,52 @@ func parseTestwriteCounted(text string, ct map[string]any, pkg, funcName, module
 	}
 	sig, _ := ct["signature"].(string)
 	_, _, why := internalTarget(sig)
-	var dropped int
-	if err := checkNotPlaceholder(reply.TestFile); err != nil {
+	src, dropped, err := normalizeTestFile(reply.TestFile, pkg, funcName, module, why, pkgs)
+	if err != nil {
+		// A syntax refusal keeps the tests, so a repaired file can use them.
+		var se *syntaxRefusal
+		if errors.As(err, &se) {
+			return tests, "", dropped, err
+		}
 		return nil, "", 0, err
 	}
-	reply.TestFile = nudgeSyntax(quoteBareImports(unescapeQuotedSource(unescapeBareEscapes(reply.TestFile))))
-	reply.TestFile = dropUnusedImportAlias(reply.TestFile)
-	reply.TestFile = fixTestPackageClause(reply.TestFile, pkg)
-	if module != "" {
-		reply.TestFile = dropSelfImport(reply.TestFile, path.Join(module, pkg))
-	}
-	reply.TestFile, dropped = dropLongComments(reply.TestFile)
-	if err := checkTestSourceIn(reply.TestFile, pkg, funcName, module, why, pkgs); err != nil {
-		return nil, "", 0, err
-	}
-	return tests, reply.TestFile, dropped, nil
+	return tests, src, dropped, nil
 }
+
+// normalizeTestFile runs the repairs and checks a test file gets after the
+// reply's JSON is parsed: placeholder check, the escape, quote and syntax
+// repairs, the import alias, package clause and self-import fixes, the long
+// comment removal and checkTestSourceIn. It returns the file and the number
+// of comment blocks removed.
+func normalizeTestFile(file, pkg, funcName, module, why string, pkgs importSet) (string, int, error) {
+	if err := checkNotPlaceholder(file); err != nil {
+		return "", 0, err
+	}
+	file = nudgeSyntax(quoteBareImports(unescapeQuotedSource(unescapeBareEscapes(file))))
+	file = dropUnusedImportAlias(file)
+	file = fixTestPackageClause(file, pkg)
+	if module != "" {
+		file = dropSelfImport(file, path.Join(module, pkg))
+	}
+	file, dropped := dropLongComments(file)
+	if err := checkTestSourceIn(file, pkg, funcName, module, why, pkgs); err != nil {
+		return "", dropped, err
+	}
+	return file, dropped, nil
+}
+
+// syntaxRefusal is the refusal of a test file that is not valid Go. Src is the
+// file as checked, so a repair call sees the lines the error names.
+type syntaxRefusal struct {
+	Src string
+	Err error
+}
+
+// Error is the refusal text, the same as before the type existed.
+func (e *syntaxRefusal) Error() string { return e.Err.Error() }
+
+// Unwrap returns the refusal text's error.
+func (e *syntaxRefusal) Unwrap() error { return e.Err }
 
 func hashHex(b []byte) string {
 	sum := sha256.Sum256(b)
@@ -1006,7 +1033,7 @@ func checkTestSourceIn(src, pkg, funcName, module, why string, pkgs importSet) e
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "", src, parser.ParseComments|parser.SkipObjectResolution|parser.AllErrors)
 	if err != nil {
-		return fmt.Errorf("test file (%d bytes) is not valid Go: %s", len(src), syntaxErrs(err, src))
+		return &syntaxRefusal{Src: src, Err: fmt.Errorf("test file (%d bytes) is not valid Go: %s", len(src), syntaxErrs(err, src))}
 	}
 	if err := checkCommentVolume(fset, f, src); err != nil {
 		return err

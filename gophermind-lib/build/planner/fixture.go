@@ -28,7 +28,8 @@ func StageOf(req provider.Request) string {
 // decompose.greeting.txt; the nth request for the same stage (n >= 2) is
 // served from decompose.greeting.<n>.txt when that file exists, otherwise from
 // the base file again. A fixture set with only contract.outline.txt serves it for
-// the shared outline pass (contract:outline:1) and for each batch. With several directories the first one holding the
+// the shared outline pass (contract:outline:1) and for each batch. A repair call
+// (a stage ending in :fix) with no file gets a reply holding no Go file. With several directories the first one holding the
 // file wins, so a variant folder overrides single replies of a base fixture.
 func FixtureProvider(dirs ...string) (*provider.Fake, error) {
 	if len(dirs) == 0 {
@@ -78,6 +79,12 @@ func FixtureProvider(dirs ...string) (*provider.Fake, error) {
 			// carries the whole outline again, so the feature components arrive
 			// (repeats of ids already written are dropped).
 			raw, ok = find("contract.outline.txt")
+		}
+		if !ok && strings.HasSuffix(stage, ":fix") {
+			// A repair call with no canned reply gets one with no Go file, an
+			// unusable repair, so a fixture set from before the repair call
+			// sees the refusal it always saw instead of a provider failure.
+			raw, ok = []byte("no repaired file"), true
 		}
 		if !ok {
 			return provider.Response{}, fmt.Errorf("planner: no fixture reply for stage %q (looked for %s.txt in %s)", stage, base, strings.Join(dirs, ", "))
