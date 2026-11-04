@@ -24,6 +24,14 @@ var urlHost = regexp.MustCompile("(?i)https?://(\\[[^\\]]*\\](?::\\d+)?|[^/\\s\"
 // model's own text, so it may appear in the refusal, capped; the brief is
 // never quoted. A file that does not parse returns nil: that is reported
 // earlier.
+// hostRuleApplies reports whether checkNoRealHost guards a node of this
+// class. A pure node never does I/O, so a URL in its test is data and a real
+// host there costs the planner rounds for nothing; every other class can
+// reach the network through the code it calls.
+func hostRuleApplies(class string) bool {
+	return class != "pure"
+}
+
 func checkNoRealHost(src string) error {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "", src, parser.SkipObjectResolution)

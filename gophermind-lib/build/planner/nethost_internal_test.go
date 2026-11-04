@@ -63,3 +63,20 @@ func TestCheckNoRealHostAcceptsReservedNames(t *testing.T) {
 		t.Errorf("example.com: err = %v, want a refusal that suggests .invalid and not 127.0.0.1", err)
 	}
 }
+
+// A pure node never does I/O, so a URL in its test is data: run
+// linkcheck-v1-20261104-r002 spent five rounds on fn-calculate-fixed-count
+// and twelve on fn-classify-targets (both pure) because the model kept
+// a.com and example.com in []types.Result rows. Every other class keeps
+// the rule: the cli.Run handler of linkcheck-v1-20261104-r001 fetched
+// example.com for real.
+func TestHostRuleAppliesToEveryClassButPure(t *testing.T) {
+	if hostRuleApplies("pure") {
+		t.Error("the host rule applies to a pure node")
+	}
+	for _, class := range []string{"handler", "client", "wiring", "validation", "storage", "concurrency", "other", ""} {
+		if !hostRuleApplies(class) {
+			t.Errorf("the host rule skips class %q", class)
+		}
+	}
+}

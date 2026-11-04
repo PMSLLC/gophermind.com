@@ -572,8 +572,10 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 			if err := checkTestExercises(src, name); err != nil {
 				return err
 			}
-			if err := checkNoRealHost(src); err != nil {
-				return err
+			if hostRuleApplies(class) {
+				if err := checkNoRealHost(src); err != nil {
+					return err
+				}
 			}
 			others := otherTestSources(r.repo, path.Dir(rel), id, st)
 			src, renamed, err := resolveSharedNames(src, strings.TrimPrefix(funcName, "Test"), others, stubSources(c, path.Dir(file)))
