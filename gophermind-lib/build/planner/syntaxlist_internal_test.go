@@ -97,3 +97,35 @@ func TestSyntaxErrsKeepsAFirstErrorThatExpectsASemicolon(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
+
+// A missing } on a table row sends the parser through the rest of the
+// function; every later error there quotes a line that is fine.
+func TestSyntaxErrsReportsOneErrorPerDeclaration(t *testing.T) {
+	src := "package p\n\nimport \"testing\"\n\nfunc TestF(t *testing.T) {\n" +
+		"\tcases := []struct {\n\t\tin   string\n\t\twant int\n\t}{\n" +
+		"\t\t{\"a\", 1},\n" +
+		"\t\t{\"b\", 2,\n" +
+		"\t\t{\"c\", 3},\n" +
+		"\t}\n" +
+		"\tfor _, c := range cases {\n" +
+		"\t\tif got := len(c.in); got != c.want {\n" +
+		"\t\t\tt.Errorf(\"len(%q) = %d, want %d\", c.in, got, c.want)\n" +
+		"\t\t}\n\t}\n}\n"
+	got := syntaxList(t, src)
+	if !strings.HasPrefix(got, "syntax error at ") {
+		t.Errorf("got %q, want exactly one entry", got)
+	}
+	if strings.Contains(got, "for _, c") || strings.Contains(got, "t.Errorf") {
+		t.Errorf("got %q, quotes a correct line", got)
+	}
+}
+
+// A raw string fixture whose line starts with "func " is not a declaration,
+// so the cascade past it is still dropped.
+func TestSyntaxErrsIgnoresADeclarationKeywordInARawString(t *testing.T) {
+	src := "package p\n\nfunc f() {\n\tx := []int{1, 2,\n\tsrc := `\nfunc g() {}\n`\n\t_ = src\n\tfor range x {\n\t}\n}\n"
+	got := syntaxList(t, src)
+	if !strings.HasPrefix(got, "syntax error at ") || strings.Contains(got, "for range") {
+		t.Errorf("got %q, want one entry that does not quote the for line", got)
+	}
+}
