@@ -154,7 +154,8 @@ func TestTestwriterErrorsNeverQuoteTheReply(t *testing.T) {
 		"third-party import":    {sub(`"strings"`, `"github.com/`+canary+`/x"`), "outside the standard library"},
 		"import of a lookalike": {sub(`example.com/greeter/internal/names`, `example.com/greeter`+canary+`/internal/names`), "outside the standard library"},
 		"function missing":      {sub("func TestGreet(", "func Test"+canary+"("), "has no func TestGreet"},
-		"function wrong shape":  {sub("func TestGreet(t *testing.T)", "func TestGreet("+canary+" *testing.B)"), "not as func TestGreet"},
+		"canary in a fenced block that is not Go": {`{"tests": ` + tests + `}` + "\n```text\n" + canary + "\n```", "not a JSON object"},
+		"function wrong shape":                    {sub("func TestGreet(t *testing.T)", "func TestGreet("+canary+" *testing.B)"), "not as func TestGreet"},
 	}
 	for name, c := range replies {
 		t.Run(name, func(t *testing.T) {

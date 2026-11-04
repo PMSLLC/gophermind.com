@@ -474,7 +474,7 @@ func (p *Planner) reviseTests(ctx context.Context, r *run, c *contract.Contracts
 			return nil
 		}
 		last = ClassReviseInvalid
-		ts, s, perr := parseTestwriteIn(StripReply(text), ct, pkg, funcName, c.Module, hookList(merged), packageSet(c))
+		ts, s, perr := parseTestwriteIn(text, ct, pkg, funcName, c.Module, hookList(merged), packageSet(c))
 		if perr != nil {
 			return perr
 		}

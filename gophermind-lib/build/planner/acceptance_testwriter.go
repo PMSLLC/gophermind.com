@@ -90,7 +90,9 @@ func (p *Planner) writeAcceptanceTest(ctx context.Context, r *run, c *contract.C
 		var rep struct {
 			TestFile string `json:"test_file"`
 		}
-		if err := json.Unmarshal([]byte(StripReply(reply)), &rep); err != nil {
+		if head, fenced := splitSourceReply(reply); fenced != "" {
+			rep.TestFile = fenced
+		} else if err := json.Unmarshal([]byte(StripReply(head)), &rep); err != nil {
 			return fmt.Errorf("acceptance test reply is not a JSON object (%s)", jsonErr(err))
 		}
 		if err := checkNotPlaceholder(rep.TestFile); err != nil {

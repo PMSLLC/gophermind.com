@@ -564,7 +564,7 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 		tests, source = mt, msrc
 	} else {
 		parse := func(text string) error {
-			ts, src, droppedC, err := parseTestwriteCounted(StripReply(text), ct, pkg, funcName, c.Module, hookList(d), packageSet(c))
+			ts, src, droppedC, err := parseTestwriteCounted(text, ct, pkg, funcName, c.Module, hookList(d), packageSet(c))
 			if err != nil {
 				return err
 			}
@@ -798,6 +798,8 @@ func parseTestwriteCounted(text string, ct map[string]any, pkg, funcName, module
 		dec.UseNumber() // a number keeps the digits the model wrote
 		return dec.Decode(&reply)
 	}
+	head, fenced := splitSourceReply(text)
+	text = StripReply(head)
 	if err := decode(text); err != nil {
 		// Fallback only: an unclosed string on a pretty-printed line is
 		// closed in place. The repaired text is kept only if it decodes,
@@ -841,6 +843,12 @@ func parseTestwriteCounted(text string, ct map[string]any, pkg, funcName, module
 	}
 	if err := checkPolarity(tests, len(objects(ct["errors"]))); err != nil {
 		return nil, "", 0, err
+	}
+	if fenced != "" {
+		reply.TestFile = fenced
+	}
+	if strings.TrimSpace(reply.TestFile) == "" {
+		return nil, "", 0, errors.New(errNoTestFile)
 	}
 	sig, _ := ct["signature"].(string)
 	_, _, why := internalTarget(sig)
