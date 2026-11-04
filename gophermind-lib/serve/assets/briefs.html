@@ -15,6 +15,15 @@
 <!--GM_RAIL-->
 <main class="main">
 <div class="head"><h1>Runs</h1><div class="actions"><a class="btn" href="/app/library">Library</a><a class="btn primary" href="/app/briefs/new">Upload brief</a></div></div>
+<div class="filters" id="filters" hidden>
+  <input type="text" id="q" placeholder="Filter by run or title" aria-label="Filter by run or title" autocomplete="off">
+  <label for="launch">Launch</label>
+  <select id="launch" aria-label="Launch filter">
+    <option value="live">All but failed</option>
+    <option value="all">All</option>
+  </select>
+  <span class="meta" id="count"></span>
+</div>
 <div id="empty"></div>
 <div class="tablewrap" id="wrap" hidden>
 <table id="tbl">
@@ -45,24 +54,54 @@ function when(iso){
   const d = new Date(iso);
   return isNaN(d) ? iso : d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
+// The launch filter: "live" hides failed runs (the default), "all" shows
+// every run, any other value is one phase. The text box matches the run id
+// or the title.
+function keep(r, launch, q){
+  if (launch === 'live' && r.phase === 'failed') return false;
+  if (launch !== 'live' && launch !== 'all' && r.phase !== launch) return false;
+  if (q && !((r.id || '').toLowerCase().includes(q) || (r.title || '').toLowerCase().includes(q))) return false;
+  return true;
+}
+function render(runs){
+  const rows = document.getElementById('rows');
+  const launch = document.getElementById('launch').value;
+  const q = document.getElementById('q').value.trim().toLowerCase();
+  rows.replaceChildren();
+  let shown = 0;
+  for (const r of runs) {
+    if (!keep(r, launch, q)) continue;
+    shown++;
+    const tr = document.createElement('tr');
+    const a = document.createElement('a');
+    a.href = '/app/briefs/' + encodeURIComponent(r.id);
+    a.textContent = r.id;
+    cell(tr, a);
+    cell(tr, r.title || '');
+    cell(tr, pill(r.phase));
+    cell(tr, pill(r.status));
+    cell(tr, when(r.started_at));
+    rows.appendChild(tr);
+  }
+  document.getElementById('count').textContent = shown === runs.length ? runs.length + ' runs' : shown + ' of ' + runs.length + ' runs';
+  document.getElementById('wrap').hidden = shown === 0;
+  document.getElementById('empty').textContent = shown === 0 ? 'No runs match the filter.' : '';
+}
 fetch('/app/api/briefs', { credentials: 'same-origin' })
   .then(r => r.ok ? r.json() : Promise.reject(new Error(String(r.status))))
   .then(j => {
-    const rows = document.getElementById('rows');
     if (!j.runs.length) { document.getElementById('empty').textContent = 'No runs yet. Upload a brief to start one.'; return; }
-    document.getElementById('wrap').hidden = false;
-    for (const r of j.runs) {
-      const tr = document.createElement('tr');
-      const a = document.createElement('a');
-      a.href = '/app/briefs/' + encodeURIComponent(r.id);
-      a.textContent = r.id;
-      cell(tr, a);
-      cell(tr, r.title || '');
-      cell(tr, pill(r.phase));
-      cell(tr, pill(r.status));
-      cell(tr, when(r.started_at));
-      rows.appendChild(tr);
+    const launch = document.getElementById('launch');
+    for (const phase of [...new Set(j.runs.map(r => r.phase).filter(Boolean))].sort()) {
+      const o = document.createElement('option');
+      o.value = phase;
+      o.textContent = phase;
+      launch.appendChild(o);
     }
+    document.getElementById('filters').hidden = false;
+    launch.addEventListener('change', () => render(j.runs));
+    document.getElementById('q').addEventListener('input', () => render(j.runs));
+    render(j.runs);
   })
   .catch(e => { document.getElementById('empty').textContent = 'Could not load runs: ' + e.message; });
 </script>

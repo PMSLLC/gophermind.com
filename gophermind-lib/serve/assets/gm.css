@@ -65,6 +65,10 @@ button.primary:hover:not(:disabled),.btn.primary:hover,button[type=submit]:hover
 #stop:hover:not(:disabled){background:var(--bad);border-color:var(--bad);color:#fff}
 textarea,input[type=text]{display:block;width:100%;max-width:42rem;font:inherit;padding:.55rem .7rem;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);color:var(--text)}
 textarea{min-height:5rem;resize:vertical}
+select{font:inherit;padding:.45rem .6rem;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);color:var(--text)}
+.filters{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;margin:0 0 .8rem}
+.filters input[type=text]{width:auto;flex:1 1 14rem;max-width:24rem}
+.filters .meta{margin-left:auto}
 label{cursor:pointer}
 
 /* Status pills: colour carries state, the word stays. */
