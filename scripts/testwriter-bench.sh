@@ -76,7 +76,7 @@ err_text() {
 
 for id in "$@"; do
   case "$id" in
-    ""|-*|*[!a-z0-9.-]*)
+    ""|-*|.*|*..*|*[!a-z0-9.-]*)
       echo "skip=$id reason=bad-id"
       continue ;;
   esac
