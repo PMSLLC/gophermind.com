@@ -33,3 +33,13 @@ func TestTestwriterPromptStatesTwoRules(t *testing.T) {
 		t.Error("testwriter.md does not state two rules")
 	}
 }
+
+func TestTestwriterPromptForbidsARealHost(t *testing.T) {
+	b, err := promptFS.ReadFile("prompts/testwriter.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := string(b); !strings.Contains(p, "never names a real host") || !strings.Contains(p, "srv.URL") {
+		t.Error("testwriter.md does not forbid a real host")
+	}
+}
