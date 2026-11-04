@@ -1236,6 +1236,9 @@ func localChecks(c *contract.Contracts, briefID string) error {
 		}
 		comps[comp.ID] = true
 	}
+	if err := stdShadow(c); err != nil {
+		return err
+	}
 	for _, t := range c.Types {
 		if err := cleanGoFile(t.File); err != nil {
 			return fmt.Errorf("contract: type %s: %w", boundedID(t.ID), err)
