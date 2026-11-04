@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"gophermind/gophermind-lib/build/contract"
 )
 
 // urlHost finds the host part of an http or https URL inside a string. The
@@ -24,12 +26,69 @@ var urlHost = regexp.MustCompile("(?i)https?://(\\[[^\\]]*\\](?::\\d+)?|[^/\\s\"
 // model's own text, so it may appear in the refusal, capped; the brief is
 // never quoted. A file that does not parse returns nil: that is reported
 // earlier.
-// hostRuleApplies reports whether checkNoRealHost guards a node of this
-// class. A pure node never does I/O, so a URL in its test is data and a real
-// host there costs the planner rounds for nothing; every other class can
-// reach the network through the code it calls.
-func hostRuleApplies(class string) bool {
-	return class != "pure"
+// netSigRE matches a signature that takes or returns a network type.
+var netSigRE = regexp.MustCompile(`\b(http|net|tls|rpc|smtp)\.`)
+
+// reachesNetwork reports whether a test of node id can reach the network
+// through the code it calls: the node, or a function it uses transitively,
+// has a network type in its signature or lives in a package that has one.
+// The node class is the model's guess (run linkcheck-v1-20261104-r002 called
+// Extract(r io.Reader) a client), so the contract's uses graph decides. A
+// node the contract does not know is taken to reach the network.
+func reachesNetwork(c *contract.Contracts, id string) bool {
+	if c == nil {
+		return true
+	}
+	byID := map[string]contract.Function{}
+	netPkg := map[string]bool{}
+	for _, f := range c.Functions {
+		byID[f.ID] = f
+		if netSigRE.MatchString(f.Signature) {
+			netPkg[f.Package] = true
+		}
+	}
+	if _, ok := byID[id]; !ok {
+		return true
+	}
+	seen := map[string]bool{}
+	var walk func(string) bool
+	walk = func(id string) bool {
+		f, ok := byID[id]
+		if !ok || seen[id] {
+			return false
+		}
+		seen[id] = true
+		if netPkg[f.Package] {
+			return true
+		}
+		for _, u := range f.Uses {
+			if walk(u) {
+				return true
+			}
+		}
+		return false
+	}
+	return walk(id)
+}
+
+// importsNet reports whether a test file imports a network package itself:
+// net, or anything under net/ other than net/url (a parser) and
+// net/http/httptest (the fixture server the prompt asks for).
+func importsNet(src string) bool {
+	f, err := parser.ParseFile(token.NewFileSet(), "", src, parser.ImportsOnly)
+	if err != nil {
+		return false
+	}
+	for _, im := range f.Imports {
+		p, err := strconv.Unquote(im.Path.Value)
+		if err != nil {
+			continue
+		}
+		if p == "net" || (strings.HasPrefix(p, "net/") && p != "net/url" && p != "net/http/httptest") {
+			return true
+		}
+	}
+	return false
 }
 
 func checkNoRealHost(src string) error {

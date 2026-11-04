@@ -572,7 +572,7 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 			if err := checkTestExercises(src, name); err != nil {
 				return err
 			}
-			if hostRuleApplies(class) {
+			if reachesNetwork(c, id) || importsNet(src) {
 				if err := checkNoRealHost(src); err != nil {
 					return err
 				}

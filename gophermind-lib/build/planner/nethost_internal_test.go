@@ -3,6 +3,8 @@ package planner
 import (
 	"strings"
 	"testing"
+
+	"gophermind/gophermind-lib/build/contract"
 )
 
 func hostSrc(body string) string {
@@ -64,19 +66,44 @@ func TestCheckNoRealHostAcceptsReservedNames(t *testing.T) {
 	}
 }
 
-// A pure node never does I/O, so a URL in its test is data: run
-// linkcheck-v1-20261104-r002 spent five rounds on fn-calculate-fixed-count
-// and twelve on fn-classify-targets (both pure) because the model kept
-// a.com and example.com in []types.Result rows. Every other class keeps
-// the rule: the cli.Run handler of linkcheck-v1-20261104-r001 fetched
-// example.com for real.
-func TestHostRuleAppliesToEveryClassButPure(t *testing.T) {
-	if hostRuleApplies("pure") {
-		t.Error("the host rule applies to a pure node")
+// A URL in the test of a node that cannot reach the network is data: run
+// linkcheck-v1-20261104-r002 spent five rounds on calculateFixedCount, twelve
+// on ClassifyTargets and more on Extract(r io.Reader) because Gemma kept
+// a.com and example.com in fixture rows. The node class is the model's guess
+// (it called Extract a client), so the contract's uses graph decides: cli.Run
+// reaches check.One, whose package holds resolveURL(*http.Client), and its
+// test fetched example.com for real in run r001.
+func TestReachesNetworkFollowsTheUsesGraph(t *testing.T) {
+	c := &contract.Contracts{Functions: []contract.Function{
+		{ID: "fn-run", Package: "cli", Signature: "func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int", Uses: []string{"fn-parse-flags", "fn-process-file"}},
+		{ID: "fn-process-file", Package: "cli", Signature: "func processFile(path string) int", Uses: []string{"fn-extract-links", "fn-one", "fn-run"}},
+		{ID: "fn-parse-flags", Package: "cli", Signature: "func parseFlags(args []string) (config, error)"},
+		{ID: "fn-one", Package: "check", Signature: "func One(url string, cfg CheckConfig) types.Result", Uses: []string{"result"}},
+		{ID: "fn-resolve-url", Package: "check", Signature: "func resolveURL(url string, client *http.Client) (string, error)"},
+		{ID: "fn-extract-links", Package: "links", Signature: "func Extract(r io.Reader) ([]types.Link, error)", Uses: []string{"link"}},
+		{ID: "fn-count", Package: "cli", Signature: "func count(results []types.Result) int", Uses: []string{"result"}},
+	}}
+	for id, want := range map[string]bool{"fn-run": true, "fn-one": true, "fn-resolve-url": true, "fn-extract-links": false, "fn-count": false, "fn-parse-flags": false, "fn-unknown": true} {
+		if got := reachesNetwork(c, id); got != want {
+			t.Errorf("reachesNetwork(%s) = %v, want %v", id, got, want)
+		}
 	}
-	for _, class := range []string{"handler", "client", "wiring", "validation", "storage", "concurrency", "other", ""} {
-		if !hostRuleApplies(class) {
-			t.Errorf("the host rule skips class %q", class)
+	if !reachesNetwork(nil, "fn-count") {
+		t.Error("no contract: the rule must stay on")
+	}
+}
+
+func TestImportsNetSeesTheTestFileItself(t *testing.T) {
+	cases := map[string]bool{
+		"package p\n\nimport \"net/http\"\n\nvar _ = http.Get\n":                            true,
+		"package p\n\nimport \"net\"\n\nvar _ = net.Dial\n":                                 true,
+		"package p\n\nimport (\n\t\"net/http/httptest\"\n\t\"net/url\"\n\t\"testing\"\n)\n": false,
+		"package p\n\nimport \"strings\"\n":                                                 false,
+		"not go":                                                                            false,
+	}
+	for src, want := range cases {
+		if got := importsNet(src); got != want {
+			t.Errorf("importsNet(%q) = %v, want %v", src, got, want)
 		}
 	}
 }
