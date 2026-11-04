@@ -31,16 +31,22 @@ if [ -f "$pass_file" ]; then
   [ -n "$pass" ] && export GOPHERMIND_VAULT_PASSPHRASE="$pass"
 fi
 
-# Refuse while the service is busy.
-active="$(curl -fsS "$base/app/api/briefs" | sed -n 's/.*"active_run_id":"\([^"]*\)".*/\1/p')"
-if [ -n "$active" ]; then
-  echo "refusing: run $active is active" >&2
-  exit 1
-fi
-if curl -fsS "$base/app/api/harness" | grep -q '"running":true'; then
-  echo "refusing: the harness is running" >&2
-  exit 1
-fi
+# Refuse while the service is busy; abort if it cannot be asked.
+check_idle() {
+  local body active
+  body="$(curl -fsS -m 5 "$base/app/api/briefs")" || { echo "aborting: cannot read $base/app/api/briefs" >&2; exit 1; }
+  active="$(printf '%s' "$body" | sed -n 's/.*"active_run_id":"\([^"]*\)".*/\1/p')"
+  if [ -n "$active" ]; then
+    echo "refusing: run $active is active" >&2
+    exit 1
+  fi
+  body="$(curl -fsS -m 5 "$base/app/api/harness")" || { echo "aborting: cannot read $base/app/api/harness" >&2; exit 1; }
+  if printf '%s' "$body" | grep -q '"running":true'; then
+    echo "refusing: the harness is running" >&2
+    exit 1
+  fi
+}
+check_idle
 
 tmp_root="${TMPDIR:-/tmp}"
 tmp_root="${tmp_root%/}"
@@ -69,7 +75,17 @@ err_text() {
 }
 
 for id in "$@"; do
+  case "$id" in
+    ""|-*|*[!a-z0-9.-]*)
+      echo "skip=$id reason=bad-id"
+      continue ;;
+  esac
   state="$local_dir/repos/$id/.gophermind/$id/_state"
+  if [ ! -f "$state/planner_error.json" ]; then
+    echo "skip=$id reason=not-failed"
+    continue
+  fi
+  check_idle
   before="$(err_stage "$state/planner_error.json")"
   out="$tmp/$id.out"
   perl -e 'alarm shift; exec @ARGV' "$limit" "$tmp/gophermind" brief resume "$id" --yes --gate file > "$out" 2>&1
@@ -82,12 +98,13 @@ for id in "$@"; do
     after="unknown"
   fi
   case "$rc" in
-    0|3) result="ok" ;;
-    142) result="failed: timed out after ${limit}s" ;;
+    0) result="ok" ;;
+    3) result="waiting" ;;
+    142) result="failed rc=142: timed out after ${limit}s" ;;
     *)
       msg="$(err_text "$state/planner_error.json")"
       [ -z "$msg" ] && msg="$(tail -n 1 "$out")"
-      result="failed: $(printf '%s' "$msg" | cut -c1-160)" ;;
+      result="failed rc=$rc: $(printf '%s' "$msg" | cut -c1-160)" ;;
   esac
   echo "$id  before=${before:-none}  after=$after  result=$result"
 done
