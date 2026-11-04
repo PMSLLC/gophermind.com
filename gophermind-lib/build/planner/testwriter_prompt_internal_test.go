@@ -39,7 +39,7 @@ func TestTestwriterPromptForbidsARealHost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p := string(b); !strings.Contains(p, "never names a real host") || !strings.Contains(p, "srv.URL") {
+	if p := string(b); !strings.Contains(p, "never names a real host") || !strings.Contains(p, "srv.URL") || !strings.Contains(p, ".invalid") {
 		t.Error("testwriter.md does not forbid a real host")
 	}
 }

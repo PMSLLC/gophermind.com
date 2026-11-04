@@ -42,3 +42,24 @@ func TestCheckNoRealHostAcceptsLoopbackFormatVerbsAndComments(t *testing.T) {
 		}
 	}
 }
+
+// Link extraction and classification need URL data that is never fetched.
+// Reserved top-level names (RFC 2606, RFC 6761) never resolve, so they are
+// safe; example.com does resolve and is exactly what call 113 fetched.
+func TestCheckNoRealHostAcceptsReservedNames(t *testing.T) {
+	for _, body := range []string{
+		`_ = "http://a.invalid/x"`,
+		`_ = "http://host.test/x"`,
+		`_ = "https://docs.example/a"`,
+		`_ = "http://app.localhost:8080/x"`,
+		"_ = `[a](http://A.INVALID)`",
+	} {
+		if err := checkNoRealHost(hostSrc(body)); err != nil {
+			t.Errorf("%s: refused: %v", body, err)
+		}
+	}
+	err := checkNoRealHost(hostSrc(`_ = "http://example.com/x"`))
+	if err == nil || !strings.Contains(err.Error(), ".invalid") || strings.Contains(err.Error(), "127.0.0.1") {
+		t.Errorf("example.com: err = %v, want a refusal that suggests .invalid and not 127.0.0.1", err)
+	}
+}

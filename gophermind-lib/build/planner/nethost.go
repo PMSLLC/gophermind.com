@@ -18,7 +18,9 @@ var urlHost = regexp.MustCompile("(?i)https?://(\\[[^\\]]*\\](?::\\d+)?|[^/\\s\"
 // checkNoRealHost refuses a test file with a string literal that names a real
 // host. A local model wrote http://example.com/redir twice, so the test went
 // out to the network and passed or failed on whatever answered. Loopback
-// hosts and format verbs (a URL built from srv.URL) are fine. The host is the
+// hosts, format verbs (a URL built from srv.URL) and reserved names that never
+// resolve (see reservedTLD) are fine. The refusal does not suggest a literal
+// 127.0.0.1: on a box with a service on port 80 that is a network dependency. The host is the
 // model's own text, so it may appear in the refusal, capped; the brief is
 // never quoted. A file that does not parse returns nil: that is reported
 // earlier.
@@ -40,7 +42,7 @@ func checkNoRealHost(src string) error {
 		}
 		for _, m := range urlHost.FindAllStringSubmatch(text, -1) {
 			if !localHost(m[1]) {
-				refusal = fmt.Errorf("test file reaches the network at line %d: a test never names a real host (%s); serve fixtures with httptest.NewServer and build every URL from srv.URL, or use http://127.0.0.1", fset.Position(lit.Pos()).Line, capLine(m[1], 60))
+				refusal = fmt.Errorf("test file reaches the network at line %d: a test never names a real host (%s); serve fixtures with httptest.NewServer and build every URL from srv.URL, and use a name ending in .invalid for URL data that is never fetched", fset.Position(lit.Pos()).Line, capLine(m[1], 60))
 				break
 			}
 		}
@@ -62,11 +64,20 @@ func localHost(host string) bool {
 	if strings.HasPrefix(h, "[::1]:") {
 		return true
 	}
+	name := h
 	if i := strings.LastIndex(h, ":"); i > 0 && !strings.HasPrefix(h, "[") {
-		switch h[:i] {
+		name = h[:i]
+		switch name {
 		case "localhost", "127.0.0.1", "0.0.0.0":
 			return true
 		}
 	}
-	return false
+	name = strings.TrimSuffix(name, ".")
+	return !strings.HasPrefix(name, "[") && reservedTLD[name[strings.LastIndex(name, ".")+1:]]
 }
+
+// reservedTLD are the top-level names RFC 2606 and RFC 6761 reserve so they
+// never resolve. A function that extracts or classifies links needs URL data
+// it never fetches, and these give it that. example.com is not here: it
+// resolves, and it is what the model fetched.
+var reservedTLD = map[string]bool{"invalid": true, "test": true, "example": true, "localhost": true}
