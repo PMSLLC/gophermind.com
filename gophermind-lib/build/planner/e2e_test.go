@@ -982,8 +982,8 @@ func TestATestWriterNodeFailsAfterThreeRounds(t *testing.T) {
 	if err := json.Unmarshal(g.read("_state/testwriter.json"), &st); err != nil {
 		t.Fatal(err)
 	}
-	if st.Rounds["fn-greet"].Done != 2 || len(st.Rounds["fn-greet"].Errors) == 0 {
-		t.Errorf("rounds = %+v, want fn-greet done 2 with errors", st.Rounds)
+	if st.Rounds["fn-greet"].Done != 3 || len(st.Rounds["fn-greet"].Errors) != 3 {
+		t.Errorf("rounds = %+v, want fn-greet done 3 with three errors", st.Rounds)
 	}
 	for _, f := range g.repoFiles() {
 		if strings.HasSuffix(f, "fn_greet_test.go") {
@@ -1011,5 +1011,23 @@ func TestTestWriterRoundsSurviveAResume(t *testing.T) {
 		if c := first[0].Messages[len(first[0].Messages)-1].Content; !strings.Contains(c, "Earlier rounds for this node failed; their errors were:\n- x") {
 			t.Errorf("first resumed request does not carry the recorded error: %q", c)
 		}
+	}
+}
+
+// A node whose three rounds all failed has had its chances; a resume starts it
+// over with three fresh rounds and no note about the old errors.
+func TestATerminalTestWriterFailureStartsOverOnResume(t *testing.T) {
+	g := newRig(t, approving(), variant(t, badTestwrites(9)))
+	if _, err := g.plan(planner.Options{}); err == nil || !strings.Contains(err.Error(), "node fn-greet") {
+		t.Fatalf("err = %v, want node fn-greet to fail", err)
+	}
+	g.wire()
+	g.mustPlan(planner.Options{RunID: greeterID})
+	reqs := fnGreetRequests(g)
+	if len(reqs) != 1 {
+		t.Fatalf("fn-greet calls in the resume = %d, want 1", len(reqs))
+	}
+	if c := reqs[0].Messages[len(reqs[0].Messages)-1].Content; strings.Contains(c, "Earlier rounds for this node failed") {
+		t.Errorf("the resumed request carries the old errors: %q", c)
 	}
 }

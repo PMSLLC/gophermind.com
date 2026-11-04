@@ -593,6 +593,14 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 			tests, source, renamedHelpers, droppedImports, droppedComments = ts, src, renamed, dropped, droppedC
 			return nil
 		}
+		if st.Rounds[id].Done >= testwriterRounds {
+			// A terminal failure already used its rounds; a rerun wants a
+			// fresh attempt, not the old errors.
+			delete(st.Rounds, id)
+			if werr := writeJSON(r.path(stateTestwriter), *st); werr != nil {
+				return writtenTests{}, werr
+			}
+		}
 		for {
 			asked := prompt
 			if rd := st.Rounds[id]; len(rd.Errors) > 0 {
@@ -600,7 +608,7 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 			}
 			err = p.callAsking(ctx, r, cs, asked, parse)
 			var ce *router.ChainExhausted
-			if !errors.As(err, &ce) || ce.ParseErr == nil || st.Rounds[id].Done >= testwriterRounds-1 {
+			if !errors.As(err, &ce) || ce.ParseErr == nil {
 				break
 			}
 			if st.Rounds == nil {
@@ -612,6 +620,9 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 			st.Rounds[id] = rd
 			if werr := writeJSON(r.path(stateTestwriter), *st); werr != nil {
 				return writtenTests{}, werr
+			}
+			if rd.Done >= testwriterRounds {
+				break
 			}
 		}
 	}
