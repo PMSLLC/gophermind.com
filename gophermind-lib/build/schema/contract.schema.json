@@ -33,7 +33,7 @@
           "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
           "package": {"type": "string"},
           "file": {"type": "string"},
-          "decl": {"type": "string", "description": "Complete Go declaration as it will appear in source, including doc comment. This exact string is what leaves receive."},
+          "decl": {"type": "string", "description": "Complete Go declaration as it will appear in source, including doc comment. This exact string is what leaves receive. It may hold type declarations and methods only (no const, var, import or plain function): write an enum as a named type and let the functions that need its values use literals."},
           "uses": {"type": "array", "items": {"type": "string"}, "description": "IDs of other types this decl references."}
         }
       }
