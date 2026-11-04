@@ -1,47 +1,85 @@
 package planner
 
-import "strings"
+import (
+	"go/parser"
+	"go/token"
+	"strings"
+)
 
 // errNoTestFile is the refusal for a Test-writer reply that decoded but holds
 // no Go file, neither in test_file nor in a fenced block after the object.
 const errNoTestFile = "reply has no test file: after the JSON object, put the complete Go test file in one fenced go block"
 
 // splitSourceReply splits a reply into the JSON head and the Go file that
-// follows it. The file is the body (ending in a newline) of the last fenced block whose info string
-// is empty or starts with go (any case) and whose trimmed body starts with
-// "package ". The head is the text before that block's opening fence,
-// trimmed. With no such block the head is the whole text and the file is "".
+// follows it. The file is the body (ending in a newline) of the last fenced
+// block whose info string is empty or starts with go (any case) and whose
+// trimmed body starts with "package ". The head is the text before that
+// block's opening fence, trimmed. With no such block the head is the whole
+// text and the file is "".
+//
+// A fence closes only on a bare run of backticks at least as long as the
+// opener's (the CommonMark rule), so a fence line with an info string inside
+// the file does not end it. A bare fence inside the file (only a block comment can hold one, since a Go raw string cannot hold a backtick) does close a
+// block by that rule; when the body so cut is not Go but a later closer makes
+// it parse, the later closer ends the file.
 func splitSourceReply(text string) (head, source string) {
-	var (
-		offset    int
-		open      bool
-		info      string
-		openAt    int
-		body      []string
-		foundAt   = -1
-		foundBody string
-	)
-	for _, raw := range strings.SplitAfter(text, "\n") {
-		line := strings.TrimRight(raw, "\r\n")
-		if t := strings.TrimSpace(line); strings.HasPrefix(t, "```") {
-			if !open {
-				open, info, openAt, body = true, strings.TrimSpace(strings.TrimLeft(t, "`")), offset, nil
-			} else {
-				open = false
-				src := strings.Join(body, "\n") + "\n"
-				if goInfo(info) && strings.HasPrefix(strings.TrimSpace(src), "package ") {
-					foundAt, foundBody = openAt, src
+	lines := strings.SplitAfter(text, "\n")
+	offsets := make([]int, len(lines))
+	trimmed := make([]string, len(lines))
+	off := 0
+	for i, raw := range lines {
+		offsets[i], trimmed[i] = off, strings.TrimSpace(raw)
+		off += len(raw)
+	}
+	foundAt, foundBody := -1, ""
+	for i := 0; i < len(lines); i++ {
+		t := trimmed[i]
+		if !strings.HasPrefix(t, "```") {
+			continue
+		}
+		run := len(t) - len(strings.TrimLeft(t, "`"))
+		info := strings.TrimSpace(t[run:])
+		var closers []int
+		for j := i + 1; j < len(lines); j++ {
+			if c := trimmed[j]; c != "" && strings.Trim(c, "`") == "" && len(c) >= run {
+				closers = append(closers, j)
+			}
+		}
+		if len(closers) == 0 {
+			break // an unclosed fence is not a block
+		}
+		end := closers[0]
+		if body := fenceBody(lines, i, end); goInfo(info) && strings.HasPrefix(strings.TrimSpace(body), "package ") {
+			for _, j := range closers {
+				if isGoFile(fenceBody(lines, i, j)) {
+					end, body = j, fenceBody(lines, i, j)
+					break
 				}
 			}
-		} else if open {
-			body = append(body, line)
+			foundAt, foundBody = offsets[i], body
 		}
-		offset += len(raw)
+		i = end
 	}
 	if foundAt < 0 {
 		return text, ""
 	}
 	return strings.TrimSpace(text[:foundAt]), foundBody
+}
+
+// fenceBody is the lines strictly between open and close, \r trimmed, each
+// ended by a newline.
+func fenceBody(lines []string, open, close int) string {
+	var b strings.Builder
+	for _, l := range lines[open+1 : close] {
+		b.WriteString(strings.TrimRight(l, "\r\n"))
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func isGoFile(src string) bool {
+	_, err := parser.ParseFile(token.NewFileSet(), "", src, parser.SkipObjectResolution)
+	return err == nil
 }
 
 func goInfo(info string) bool {

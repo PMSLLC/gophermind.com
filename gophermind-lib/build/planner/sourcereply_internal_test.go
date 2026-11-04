@@ -125,3 +125,25 @@ func TestParseTestwriteRefusesAMissingFile(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+func TestSplitSourceReplyKeepsFenceLinesInsideTheFile(t *testing.T) {
+	file := func(inner string) string {
+		return "package p\n\n/*\n" + inner + "\n*/\n\nfunc TestX(t *testing.T) {}\n"
+	}
+	cases := map[string]struct{ reply, want string }{
+		"inner go fence": {"{\"tests\": []}\n```go\n" + file("```go\npackage inner\n```") + "```", file("```go\npackage inner\n```")},
+		"inner bare":     {"{\"tests\": []}\n```go\n" + file("```\npackage inner\n```") + "```", file("```\npackage inner\n```")},
+		"four backticks": {"{\"tests\": []}\n````go\n" + file("```\nx\n```") + "````", file("```\nx\n```")},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			head, src := splitSourceReply(c.reply)
+			if src != c.want {
+				t.Errorf("source = %q, want %q", src, c.want)
+			}
+			if head != `{"tests": []}` {
+				t.Errorf("head = %q", head)
+			}
+		})
+	}
+}
