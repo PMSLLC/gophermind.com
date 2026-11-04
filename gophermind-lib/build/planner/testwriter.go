@@ -568,6 +568,10 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 			if err != nil {
 				return err
 			}
+			name, _, _ := internalTarget(sig)
+			if err := checkTestExercises(src, name); err != nil {
+				return err
+			}
 			others := otherTestSources(r.repo, path.Dir(rel), id, st)
 			src, renamed, err := resolveSharedNames(src, strings.TrimPrefix(funcName, "Test"), others, stubSources(c, path.Dir(file)))
 			if err == errDeclaredName {

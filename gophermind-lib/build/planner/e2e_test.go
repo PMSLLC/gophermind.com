@@ -964,6 +964,27 @@ func TestATestWriterNodeGetsAFreshRoundAfterTheChainIsExhausted(t *testing.T) {
 	}
 }
 
+// A reply whose test never calls the function is refused, and the retry is
+// told why in the harness's words.
+func TestATestWriterFakeIsRefusedAndTheRetryIsToldWhy(t *testing.T) {
+	fake := `{"tests": [{"name": "greets a name", "polarity": "success", "covers": "happy", "given": "Ada", "expect": "Hello, Ada!"},
+	 {"name": "trims the name", "polarity": "boundary", "covers": "input:name", "given": "  Ada  ", "expect": "Hello, Ada!"},
+	 {"name": "refuses an empty name", "polarity": "negative", "covers": "error:1", "given": "   ", "expect": "a *NameError"}],
+	 "test_file": "package greet\n\nimport \"testing\"\n\nfunc TestGreet(t *testing.T) {\n\tgot := \"Hello, Ada!\"\n\tif got != \"Hello, Ada!\" {\n\t\tt.Fatal(got)\n\t}\n}\n"}`
+	files := map[string]string{"testwrite.fn-greet.txt": fake,
+		"testwrite.fn-greet.2.txt": string(mustRead(t, filepath.Join(greeter, "testwrite.fn-greet.txt")))}
+	g := newRig(t, approving(), variant(t, files))
+	g.mustPlan(planner.Options{})
+	fnGreet := fnGreetRequests(g)
+	if len(fnGreet) != 2 {
+		t.Fatalf("fn-greet calls = %d, want 2", len(fnGreet))
+	}
+	last := fnGreet[1].Messages[len(fnGreet[1].Messages)-1].Content
+	if !strings.Contains(last, "never calls Greet") {
+		t.Errorf("retry prompt = %q, want the refusal", last)
+	}
+}
+
 func TestATestWriterNodeFailsAfterThreeRounds(t *testing.T) {
 	g := newRig(t, approving(), variant(t, badTestwrites(9)))
 	_, err := g.plan(planner.Options{})
