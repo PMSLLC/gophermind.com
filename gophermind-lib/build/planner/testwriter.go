@@ -585,7 +585,7 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 			if err != nil {
 				return err
 			}
-			src, dropped := dropUnusedImports(src)
+			src, dropped := dropUnusedImports(src, moduleImportNames(c))
 			formatted, ferr := format.Source([]byte(src))
 			if ferr != nil {
 				return fmt.Errorf("test file cannot be formatted: %v", ferr)

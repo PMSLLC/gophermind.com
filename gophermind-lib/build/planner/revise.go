@@ -496,7 +496,7 @@ func (p *Planner) reviseTests(ctx context.Context, r *run, c *contract.Contracts
 		if rerr != nil {
 			return rerr
 		}
-		s, _ = dropUnusedImports(s)
+		s, _ = dropUnusedImports(s, moduleImportNames(c))
 		formatted, ferr := format.Source([]byte(s))
 		if ferr != nil {
 			return fmt.Errorf("test file cannot be formatted: %v", ferr)

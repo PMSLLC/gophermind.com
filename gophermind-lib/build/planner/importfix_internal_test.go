@@ -113,10 +113,28 @@ func TestDropUnusedImports(t *testing.T) {
 			src:  "package p\n\nimport (\n\t\"example.com/go-thing\"\n\t\"testing\"\n)\n\nfunc TestX(t *testing.T) {}\n",
 			same: true,
 		},
+		{
+			name:    "unused module import whose package name the contract knows is removed",
+			src:     "package p\n\nimport (\n\t\"example.com/linkcheck/internal/types\"\n\t\"testing\"\n)\n\nfunc TestX(t *testing.T) {}\n",
+			want:    "func TestX(t *testing.T) {}",
+			absent:  "internal/types",
+			removed: []string{"types"},
+		},
+		{
+			name: "used module import whose package name the contract knows is kept",
+			src:  "package p\n\nimport (\n\t\"example.com/linkcheck/internal/types\"\n\t\"testing\"\n)\n\nfunc TestX(t *testing.T) { _ = types.Result{} }\n",
+			same: true,
+		},
+		{
+			name: "module import the contract names differently from its last path element is judged by that name",
+			src:  "package p\n\nimport (\n\t\"example.com/linkcheck/internal/greet\"\n\t\"testing\"\n)\n\nfunc TestX(t *testing.T) { _ = greeter.X }\n",
+			same: true,
+		},
 	}
+	known := map[string]string{"example.com/linkcheck/internal/types": "types", "example.com/linkcheck/internal/greet": "greeter"}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, removed := dropUnusedImports(c.src)
+			got, removed := dropUnusedImports(c.src, known)
 			if c.same {
 				if got != c.src || len(removed) != 0 {
 					t.Fatalf("changed: removed=%v\n%s", removed, got)

@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"gophermind/gophermind-lib/build/contract"
 )
 
 // dropUnusedImports removes the import specs of a Go source file whose package
@@ -21,9 +23,10 @@ import (
 // unambiguous fix, so it is made here instead of costing a repair call. Blank
 // and dot imports are never touched, an import is only ever removed, and a file
 // that does not parse is returned unchanged. The package name is the explicit
-// alias or, for standard library paths only, the last path element; every other
+// alias, the name known maps the import path to (the contract's own packages),
+// or, for standard library paths only, the last path element; every other
 // import without an alias is kept. removed lists the names dropped, in source order.
-func dropUnusedImports(src string) (string, []string) {
+func dropUnusedImports(src string, known map[string]string) (string, []string) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "", src, parser.ParseComments)
 	if err != nil {
@@ -49,7 +52,7 @@ func dropUnusedImports(src string) (string, []string) {
 		var drop []*ast.ImportSpec
 		for _, s := range gd.Specs {
 			is := s.(*ast.ImportSpec)
-			name := importName(is)
+			name := importName(is, known)
 			if name == "" || name == "_" || name == "." || used[name] {
 				continue
 			}
@@ -89,13 +92,16 @@ var versionElem = regexp.MustCompile(`^v([2-9]|[1-9][0-9]+)$`)
 // GOROOT/src; a module path without a dot is not enough) are guessed; any other path without an alias is kept, since
 // its declared package name may differ from its directory. A /vN suffix is a
 // major-version element only for N >= 2 (math/rand/v2 declares rand).
-func importName(is *ast.ImportSpec) string {
+func importName(is *ast.ImportSpec, known map[string]string) string {
 	if is.Name != nil {
 		return is.Name.Name
 	}
 	p, err := strconv.Unquote(is.Path.Value)
 	if err != nil {
 		return ""
+	}
+	if name, ok := known[p]; ok {
+		return name
 	}
 	parts := strings.Split(p, "/")
 	if !isStdlib(p) {
@@ -119,6 +125,20 @@ func isStdlib(p string) bool {
 	}
 	st, err := os.Stat(filepath.Join(root, "src", filepath.FromSlash(p)))
 	return err == nil && st.IsDir()
+}
+
+// moduleImportNames maps each import path of the contract's own packages to
+// its package name, so an unused import of one can be dropped like a standard
+// library import. nil for a nil contract.
+func moduleImportNames(c *contract.Contracts) map[string]string {
+	if c == nil {
+		return nil
+	}
+	out := map[string]string{}
+	for clause, path := range PackageImports(c) {
+		out[path] = clause
+	}
+	return out
 }
 
 // goRoot is the Go root of this process, found once. A binary built with
