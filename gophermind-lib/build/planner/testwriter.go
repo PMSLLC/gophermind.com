@@ -988,9 +988,9 @@ func importRefusal(module string, pkgs importSet) string {
 // the module path against the contract's packages when pkgs is known.
 func checkTestSourceIn(src, pkg, funcName, module, why string, pkgs importSet) error {
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "", src, parser.ParseComments|parser.SkipObjectResolution)
+	f, err := parser.ParseFile(fset, "", src, parser.ParseComments|parser.SkipObjectResolution|parser.AllErrors)
 	if err != nil {
-		return fmt.Errorf("test file (%d bytes) is not valid Go: %s", len(src), syntaxErr(err))
+		return fmt.Errorf("test file (%d bytes) is not valid Go: %s", len(src), syntaxErrs(err, src))
 	}
 	if err := checkCommentVolume(fset, f, src); err != nil {
 		return err

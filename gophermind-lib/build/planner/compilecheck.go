@@ -234,7 +234,7 @@ func refuseCompile(c *contract.Contracts, dir, base, src, out string) error {
 			text = lines[n-1]
 		}
 		msgs = append(msgs, compileMessage(c, dir, src, text, n, m[4]))
-		if len(msgs) == 3 {
+		if len(msgs) == maxCompileMessages {
 			break
 		}
 	}
@@ -314,6 +314,9 @@ func compileMessage(c *contract.Contracts, dir, src, line string, n int, diag st
 
 // maxQuotedLine bounds the source line quoted in a compile refusal.
 const maxQuotedLine = 120
+
+// maxCompileMessages bounds the diagnostics listed in a compile refusal.
+const maxCompileMessages = 10
 
 var (
 	scratchPathRE = regexp.MustCompile(`(?:/[^\s:"']*)?gm-compilecheck-\d+/`)

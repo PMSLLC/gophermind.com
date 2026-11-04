@@ -148,7 +148,7 @@ func TestTestwriterErrorsNeverQuoteTheReply(t *testing.T) {
 		"an array":              `["` + canary + `"]`,
 		"no name":               `{"tests": [{"name": " ", "given": "` + canary + `", "expect": "e"}, {"name": "b", "given": "g", "expect": "e"}], "test_file": ` + src(same) + `}`,
 		"not Go":                withFile(`"` + canary + ` {"`),
-		"not Go, valid start":   sub("func TestGreet(t *testing.T) {", "func TestGreet(t *testing.T) { "+canary+" +"),
+		"not Go, valid start":   sub("func TestGreet(t *testing.T) {", "var _ = \""+canary+"\"\n\nfunc TestGreet(t *testing.T) { 1 +"),
 		"another package":       sub("package greet", "package "+canary),
 		"third-party import":    sub(`"strings"`, `"github.com/`+canary+`/x"`),
 		"import of a lookalike": sub(`example.com/greeter/internal/names`, `example.com/greeter`+canary+`/internal/names`),
