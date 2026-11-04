@@ -641,6 +641,54 @@ func TestReviseDropsAnUnusedImportFromTheRewrittenTest(t *testing.T) {
 	}
 }
 
+// The rewritten test declares a variable it never uses: accepted after the mechanical fix, no :fix call.
+func TestReviseFixesAnUnusedVariableInTheRewrittenTest(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("no go tool")
+	}
+	withUnused := strings.Replace(revisedGreetTest, "\tcases := ", "\tunused := 1\n\tcases := ", 1)
+	g := planned(t, map[string]string{"revise.fn-greet.txt": descriptionPatch, "testwrite.fn-greet-r1.txt": testwriteReply(t, withUnused)})
+	before := len(g.stagesCalled())
+	prop, err := planner.NewReviser(g.deps).Revise(context.Background(), reviseReq(t, g))
+	if err != nil || prop.Outcome != planner.OutcomeRewritten {
+		t.Fatalf("proposal = %+v, %v", prop, err)
+	}
+	if !strings.Contains(prop.TestSource, "_ = unused") {
+		t.Fatalf("the test source was not fixed:\n%s", prop.TestSource)
+	}
+	for _, s := range g.stagesCalled()[before:] {
+		if strings.HasSuffix(s, ":fix") {
+			t.Fatalf("a repair call was made: %v", g.stagesCalled()[before:])
+		}
+	}
+}
+
+// The rewritten test names a real host in a fetched fixture: refused (the host rule now runs in revise).
+func TestReviseRefusesARealHostInTheRewrittenTest(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("no go tool")
+	}
+	withHost := strings.Replace(revisedGreetTest, "import \"testing\"", "import (\n\t\"net/http\"\n\t\"testing\"\n)", 1)
+	withHost = strings.Replace(withHost, "\tcases := ", "\tif resp, err := http.Get(\"http://example.com\"); err == nil {\n\t\tresp.Body.Close()\n\t}\n\tcases := ", 1)
+	g := planned(t, map[string]string{"revise.fn-greet.txt": descriptionPatch, "testwrite.fn-greet-r1.txt": testwriteReply(t, withHost)})
+	nreq := len(g.fake.Requests())
+	prop, err := planner.NewReviser(g.deps).Revise(context.Background(), reviseReq(t, g))
+	if err != nil || prop.Outcome == planner.OutcomeRewritten {
+		t.Fatalf("proposal = %+v, %v; want a refusal", prop, err)
+	}
+	seen := false
+	for _, msgs := range requestsSince(g, nreq) {
+		for _, m := range msgs {
+			if strings.Contains(m.Content, "a test never names a real host") {
+				seen = true
+			}
+		}
+	}
+	if !seen {
+		t.Fatal("no request carries the refusal text \"a test never names a real host\"")
+	}
+}
+
 // A rewritten test that does not compile against the contract's stubs is refused
 // inside the Test-writer's repair loop (the compile check of the first write),
 // not accepted to fail the executor's red check with its reason lost.

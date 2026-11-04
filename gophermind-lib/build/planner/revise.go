@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"go/format"
 	"go/scanner"
 	"go/token"
 	"os"
@@ -18,6 +17,7 @@ import (
 
 	"gophermind/gophermind-lib/build/brief"
 	"gophermind/gophermind-lib/build/contract"
+	"gophermind/gophermind-lib/build/events"
 	"gophermind/gophermind-lib/build/packer"
 	"gophermind/gophermind-lib/build/router"
 	"gophermind/gophermind-lib/build/tree"
@@ -475,36 +475,41 @@ func (p *Planner) reviseTests(ctx context.Context, r *run, c *contract.Contracts
 		}
 		last = ClassReviseInvalid
 		ts, s, perr := parseTestwriteIn(text, ct, pkg, funcName, c.Module, hookList(merged), packageSet(c))
-		if perr != nil {
+		var se *syntaxRefusal
+		if perr != nil && !errors.As(perr, &se) {
 			return perr
 		}
-		if lerr := linkErrorTests(ct, ts); lerr != nil {
-			return lerr
+		if perr == nil {
+			if lerr := linkErrorTests(ct, ts); lerr != nil {
+				return lerr
+			}
 		}
-		// The same steps as the first write (writeTests): a revised test that does
-		// not compile against the stubs would only be refused by the executor's
+		// The same steps as the first write (writeTests): the shared settle
+		// function fixes, repairs and checks the file, so a revised test that
+		// does not compile against the stubs is not refused by the executor's
 		// red check with the compiler's reason thrown away.
 		var st testwriterState
 		if _, rerr := readJSON(r.path(stateTestwriter), &st); rerr != nil {
 			return rerr
 		}
-		others := otherTestSources(r.repo, path.Dir(testFile), id, &st)
-		s, _, rerr := resolveSharedNames(s, strings.TrimPrefix(funcName, "Test"), others, stubSources(c, path.Dir(file)))
-		if rerr == errDeclaredName {
-			rerr = richDeclaredName(s, c, path.Dir(testFile), rerr)
+		sig, _ := ct["signature"].(string)
+		in := settleInput{c: c, id: id, file: file, rel: testFile, funcName: funcName, sig: sig, pkg: pkg, pkgs: packageSet(c),
+			others: otherTestSources(r.repo, path.Dir(testFile), id, &st), stubs: stubSources(c, path.Dir(file))}
+		var sd settled
+		var serr error
+		if se != nil {
+			sd, serr = p.settleSyntax(ctx, r, cs, in, se)
+		} else {
+			sd, serr = p.settleTestFile(ctx, r, cs, in, s)
 		}
-		if rerr != nil {
-			return rerr
+		if errors.Is(serr, errNoGo) {
+			p.noGoWarn.Do(func() { p.emit(events.KindWarning, cs.stage, id, serr.Error()) })
+			serr = nil
 		}
-		s, _ = dropUnusedImports(s, moduleImportNames(c))
-		formatted, ferr := format.Source([]byte(s))
-		if ferr != nil {
-			return fmt.Errorf("test file cannot be formatted: %v", ferr)
+		if serr != nil {
+			return serr
 		}
-		s = string(formatted)
-		if cerr := compileCheckTestFile(c, testFile, s, others); cerr != nil && !errors.Is(cerr, errNoGo) {
-			return cerr
-		}
+		s = sd.src
 		tests, src = ts, s
 		return nil
 	})
