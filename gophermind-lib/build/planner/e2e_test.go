@@ -919,3 +919,92 @@ func TestALongTestCommentIsDroppedWithAWarning(t *testing.T) {
 		})
 	}
 }
+
+const badTestwriteReply = `{"tests": [], "test_file": "package greet\n"}` // too few tests: refused every time
+
+// badTestwrites returns the fixture files for n bad replies to fn-greet.
+func badTestwrites(n int) map[string]string {
+	files := map[string]string{"testwrite.fn-greet.txt": badTestwriteReply}
+	for i := 2; i <= n; i++ {
+		files[fmt.Sprintf("testwrite.fn-greet.%d.txt", i)] = badTestwriteReply
+	}
+	return files
+}
+
+func fnGreetRequests(g *rig) []provider.Request {
+	var out []provider.Request
+	for _, r := range g.fake.Requests() {
+		if planner.StageOf(r) == "testwrite:fn-greet" {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// One router round is three calls (the first plus two parse retries); when
+// the chain is exhausted the node gets a fresh round that carries the errors.
+func TestATestWriterNodeGetsAFreshRoundAfterTheChainIsExhausted(t *testing.T) {
+	files := badTestwrites(3)
+	files["testwrite.fn-greet.4.txt"] = string(mustRead(t, filepath.Join(greeter, "testwrite.fn-greet.txt")))
+	g := newRig(t, approving(), variant(t, files))
+	g.mustPlan(planner.Options{})
+	fnGreet := fnGreetRequests(g)
+	if len(fnGreet) != 4 {
+		t.Fatalf("fn-greet calls = %d, want 4 (3 in round 1, 1 in round 2)", len(fnGreet))
+	}
+	last := fnGreet[3].Messages[len(fnGreet[3].Messages)-1].Content
+	if !strings.Contains(last, "Earlier rounds for this node failed; their errors were:\n- ") || !strings.Contains(last, "tests") {
+		t.Errorf("round 2 prompt = %q", last)
+	}
+	if strings.Contains(fnGreet[0].Messages[0].Content+fnGreet[0].Messages[len(fnGreet[0].Messages)-1].Content, "Earlier rounds") {
+		t.Error("round 1 carries a note about earlier rounds")
+	}
+	if st := g.read("_state/testwriter.json"); !strings.Contains(string(st), `"rounds"`) {
+		t.Error("rounds are not recorded")
+	}
+}
+
+func TestATestWriterNodeFailsAfterThreeRounds(t *testing.T) {
+	g := newRig(t, approving(), variant(t, badTestwrites(9)))
+	_, err := g.plan(planner.Options{})
+	if err == nil || !strings.Contains(err.Error(), "node fn-greet") {
+		t.Fatalf("err = %v, want node fn-greet to fail", err)
+	}
+	if n := len(fnGreetRequests(g)); n != 9 {
+		t.Errorf("fn-greet calls = %d, want 9 (three rounds of three)", n)
+	}
+	var st struct {
+		Rounds map[string]struct {
+			Done   int      `json:"done"`
+			Errors []string `json:"errors"`
+		} `json:"rounds"`
+	}
+	if err := json.Unmarshal(g.read("_state/testwriter.json"), &st); err != nil {
+		t.Fatal(err)
+	}
+	if st.Rounds["fn-greet"].Done != 2 || len(st.Rounds["fn-greet"].Errors) == 0 {
+		t.Errorf("rounds = %+v, want fn-greet done 2 with errors", st.Rounds)
+	}
+	for _, f := range g.repoFiles() {
+		if strings.HasSuffix(f, "fn_greet_test.go") {
+			t.Errorf("a test file was written: %s", f)
+		}
+	}
+}
+
+func TestTestWriterRoundsSurviveAResume(t *testing.T) {
+	g := newRig(t, approving(), variant(t, badTestwrites(3)))
+	g.mustPlan(planner.Options{StopAfter: "approve"})
+	rec := `{"nodes":{},"rounds":{"fn-greet":{"done":2,"errors":["x"]}}}`
+	if err := os.WriteFile(filepath.Join(g.runDir, "_state", "testwriter.json"), []byte(rec), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	g.wire(variant(t, badTestwrites(3)))
+	_, err := g.plan(planner.Options{RunID: greeterID})
+	if err == nil || !strings.Contains(err.Error(), "node fn-greet") {
+		t.Fatalf("err = %v, want node fn-greet to fail", err)
+	}
+	if n := len(fnGreetRequests(g)); n != 3 {
+		t.Errorf("fn-greet calls = %d, want 3 (recorded rounds count toward the bound)", n)
+	}
+}

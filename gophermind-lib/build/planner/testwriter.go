@@ -38,6 +38,39 @@ type testwriterState struct {
 	// the write, so a crash between the write and the save of Nodes is
 	// recognised on resume by the file's hash instead of refused as foreign.
 	Pending map[string]writtenTests `json:"pending,omitempty"`
+	// Rounds counts the router rounds a node has used up and the parse errors
+	// that ended them, so a resume does not start the count again.
+	Rounds map[string]nodeRounds `json:"rounds,omitempty"`
+}
+
+// nodeRounds is the rounds of one node that ended in an exhausted chain.
+type nodeRounds struct {
+	Done   int      `json:"done"`
+	Errors []string `json:"errors"`
+}
+
+// testwriterRounds is how many router rounds one node gets.
+const testwriterRounds = 3
+
+// roundsNoteBytes bounds the errors quoted back to the model.
+const roundsNoteBytes = 600
+
+// roundsNote lists the distinct errors of earlier rounds, within the bound.
+func roundsNote(errs []string) string {
+	note := "\n\nEarlier rounds for this node failed; their errors were:"
+	seen := map[string]bool{}
+	var lines string
+	for _, e := range errs {
+		if seen[e] {
+			continue
+		}
+		seen[e] = true
+		lines += "\n- " + e
+	}
+	if len(lines) > roundsNoteBytes {
+		lines = lines[:roundsNoteBytes]
+	}
+	return note + lines
 }
 
 type writtenTests struct {
@@ -530,7 +563,7 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	if mt, msrc, ok := mainEntryTest(sig, file, funcName); ok {
 		tests, source = mt, msrc
 	} else {
-		err = p.callAsking(ctx, r, cs, prompt, func(text string) error {
+		parse := func(text string) error {
 			ts, src, droppedC, err := parseTestwriteCounted(StripReply(text), ct, pkg, funcName, c.Module, hookList(d), packageSet(c))
 			if err != nil {
 				return err
@@ -559,7 +592,28 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 			}
 			tests, source, renamedHelpers, droppedImports, droppedComments = ts, src, renamed, dropped, droppedC
 			return nil
-		})
+		}
+		for {
+			asked := prompt
+			if rd := st.Rounds[id]; len(rd.Errors) > 0 {
+				asked += roundsNote(rd.Errors)
+			}
+			err = p.callAsking(ctx, r, cs, asked, parse)
+			var ce *router.ChainExhausted
+			if !errors.As(err, &ce) || ce.ParseErr == nil || st.Rounds[id].Done >= testwriterRounds-1 {
+				break
+			}
+			if st.Rounds == nil {
+				st.Rounds = map[string]nodeRounds{}
+			}
+			rd := st.Rounds[id]
+			rd.Done++
+			rd.Errors = append(rd.Errors, safeText(ce.ParseErr.Error(), 300))
+			st.Rounds[id] = rd
+			if werr := writeJSON(r.path(stateTestwriter), *st); werr != nil {
+				return writtenTests{}, werr
+			}
+		}
 	}
 	if err != nil {
 		return writtenTests{}, err
