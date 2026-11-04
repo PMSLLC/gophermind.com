@@ -846,7 +846,7 @@ func parseTestwriteCounted(text string, ct map[string]any, pkg, funcName, module
 	if err := checkNotPlaceholder(reply.TestFile); err != nil {
 		return nil, "", 0, err
 	}
-	reply.TestFile = nudgeSyntax(quoteBareImports(unescapeQuotedSource(reply.TestFile)))
+	reply.TestFile = nudgeSyntax(quoteBareImports(unescapeQuotedSource(unescapeBareEscapes(reply.TestFile))))
 	reply.TestFile = dropUnusedImportAlias(reply.TestFile)
 	reply.TestFile = fixTestPackageClause(reply.TestFile, pkg)
 	if module != "" {
