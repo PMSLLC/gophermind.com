@@ -2,7 +2,12 @@ package planner
 
 import (
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -50,6 +55,47 @@ func fixedInterfaces(arch string) []fixedIface {
 		if isEntryPackage(dir) {
 			out = append(out, fixedIface{Dir: dir, Name: "main", Signature: "func main()"})
 		}
+	}
+	return out
+}
+
+// givenMain is true when the repository already holds func main() in a
+// non-test .go file of package main under dir, so the brief's entry point
+// is given and no component must declare it.
+func givenMain(repo, dir string) bool {
+	full := filepath.Join(repo, filepath.FromSlash(dir))
+	entries, err := os.ReadDir(full)
+	if err != nil {
+		return false
+	}
+	fset := token.NewFileSet()
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, filepath.Join(full, name), nil, parser.SkipObjectResolution)
+		if err != nil || f.Name.Name != "main" {
+			continue
+		}
+		for _, d := range f.Decls {
+			if fd, ok := d.(*ast.FuncDecl); ok && isMainFunc(fd) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// dropGivenMains removes the fixed func main() of every directory in which
+// the repository already provides it.
+func dropGivenMains(ifs []fixedIface, repo string) []fixedIface {
+	var out []fixedIface
+	for _, fi := range ifs {
+		if fi.Name == "main" && fi.Signature == "func main()" && givenMain(repo, fi.Dir) {
+			continue
+		}
+		out = append(out, fi)
 	}
 	return out
 }

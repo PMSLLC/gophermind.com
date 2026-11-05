@@ -394,7 +394,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 	// entry point makes. With such a call the command-line surface belongs to
 	// the function called (cli.Run), not to a run function of the entry point.
 	arch := r.brief.Sections["Architecture"]
-	ifs := fixedInterfaces(arch)
+	ifs := dropGivenMains(fixedInterfaces(arch), r.repo)
 	callPkg, callName := entryCall(arch)
 	runName := "run"
 	if callName != "" {
