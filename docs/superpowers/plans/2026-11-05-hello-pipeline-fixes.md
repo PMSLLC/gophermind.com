@@ -405,6 +405,7 @@ Findings the task and whole-branch reviews recorded but Milestone 1 did not take
 - Fixed interfaces with a receiver or a type parameter are ignored silently; two `cmd/` directories both get the first bullet's `EntryCall`.
 - `packetParts` scans `##` lines inside code fences; `scripts/extract-llm-fixtures.py` raises `KeyError` on a call row without a stage; a case-only package mismatch passes `localChecks`; `Entry` and `EntryName` keys are now equal; the slugify `fn-run` assertion depends on component order (README documents it).
 - Decompose and enrich send the whole brief through `callAsking` with no sizing, so an over-window brief fails there with the router's too-long error, not `tooLongErr`.
+- After the final fix (0f8c8e0c): two sibling components in one directory may each write the fixed function and the first exact match wins silently; `ownPackage` with a bare component name accepts any function path ending in `/name`; a module-prefixed `cmd/` bullet gets no fixed `main` and no entry call.
 - Policy change to put to John: public providers at node scope now see the brief's feature text and every section but Overview (Task 2 ruling; docs updated in the final fix).
 
 ## Out of this plan
