@@ -1,0 +1,53 @@
+{
+  "types": [],
+  "functions": [
+    {
+      "id": "fn-validate-args",
+      "package": "internal/cli",
+      "file": "args.go",
+      "signature": "func validateArgs(args []string) error",
+      "doc": "Validates that the provided arguments meet the required length constraints. Returns an error if the argument count is invalid.",
+      "uses": []
+    },
+    {
+      "id": "fn-format-usage-error",
+      "package": "internal/cli",
+      "file": "errors.go",
+      "signature": "func formatUsageError() string",
+      "doc": "Returns a formatted usage string for the command. The string specifies the correct command syntax.",
+      "uses": []
+    },
+    {
+      "id": "fn-write-usage-error",
+      "package": "internal/cli",
+      "file": "errors.go",
+      "signature": "func writeUsageError(w io.Writer) error",
+      "doc": "Writes the usage error message to the provided writer. The writer is used to direct the error output.",
+      "uses": [
+        "fn-format-usage-error"
+      ]
+    },
+    {
+      "id": "fn-run",
+      "package": "internal/cli",
+      "file": "run.go",
+      "signature": "func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int",
+      "doc": "Orchestrates the execution of the command by parsing arguments and calling feature functions. Returns an exit code representing the result of the operation.",
+      "uses": [
+        "fn-validate-args",
+        "fn-write-usage-error"
+      ]
+    },
+    {
+      "id": "fn-main",
+      "package": "internal/cli",
+      "file": "main.go",
+      "signature": "func main()",
+      "doc": "The entry point of the command. It invokes the run function and exits the process with the returned status code.",
+      "uses": [
+        "fn-run"
+      ]
+    }
+  ],
+  "more": false
+}

@@ -1,0 +1,86 @@
+```go
+package greet
+
+import (
+	"bytes"
+	"errors"
+	"io"
+	"testing"
+)
+
+type errorWriter struct{}
+
+func (e errorWriter) Write(p []byte) (n int, err error) {
+	return 0, io.ErrShortWrite
+}
+
+func TestWriteGreeting(t *testing.T) {
+	tests := []struct {
+		name      string
+		w           func() io.Writer
+		inputName string
+		wantOut   string
+		wantErr   error
+		isErr     bool
+	}{
+		{
+			name:      "Happy Path with Name",
+			w:         func() io.Writer { return &bytes.Buffer{} },
+			inputName: "Ada",
+			wantOut:   "Hello, Ada!\n",
+			wantErr:   nil,
+			isErr:     false,
+		},
+		{
+			name:      "Empty Name",
+			w:         func() io.Writer { return &bytes.Buffer{} },
+			inputName: "",
+			wantOut:   "Hello, World!\n",
+			wantErr:   nil,
+			isErr:     false,
+		},
+		{
+			name:      "Whitespace Name",
+			w:         func() io.Writer { return &bytes.Buffer{} },
+			inputName: "  ",
+			wantOut:   "Hello,   !\n",
+			wantErr:   nil,
+			isErr:     false,
+		},
+		{
+			name:      "Write Error",
+			w:         func() io.Writer { return errorWriter{} },
+			inputName: "Ada",
+			wantOut:   "",
+			wantErr:   io.ErrShortWrite,
+			isErr:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := &bytes.Buffer{}
+			var writer io.Writer = tt.w()
+			// If the test case uses a custom writer like errorWriter,
+			// we need to capture its output if possible, but for errorWriter
+			// it returns 0, so we'll just check the error.
+			if _, ok := writer.(errorWriter); !ok {
+				buf = writer.(*bytes.Buffer)
+			}
+
+			err := WriteGreeting(writer, tt.inputName)
+
+			if (err != nil) != tt.isErr {
+				t.Errorf("WriteGreeting() error = %v, wantErr %v", err, tt.isErr)
+				return
+			}
+			if tt.isErr && !errors.Is(err, tt.wantErr) {
+				t.Errorf("WriteGreeting() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.isErr && buf.String() != tt.wantOut {
+				t.Errorf("WriteGreeting() output = %q, want %q", buf.String(), tt.wantOut)
+			}
+		})
+	}
+}
+```

@@ -1,0 +1,26 @@
+{
+  "types": [],
+  "functions": [
+    {
+      "id": "fn-format-greeting",
+      "package": "internal/greet",
+      "file": "greet.go",
+      "signature": "func FormatGreeting(name string) string",
+      "doc": "Returns a greeting string based on the provided name. If the name is empty, it returns 'Hello, World!'. Otherwise, it returns 'Hello, <name>!'.",
+      "uses": [],
+      "component": "say-hello"
+    },
+    {
+      "id": "fn-write-greeting",
+      "package": "internal/greet",
+      "file": "greet.go",
+      "signature": "func WriteGreeting(w io.Writer, name string) error",
+      "doc": "Writes a formatted greeting to the provided io.Writer followed by a newline. It uses FormatGreeting to determine the content.",
+      "uses": [
+        "fn-format-greeting"
+      ],
+      "component": "say-hello"
+    }
+  ],
+  "more": false
+}

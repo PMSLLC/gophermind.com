@@ -1,0 +1,56 @@
+```json
+{"tests": [{"name": "Empty name", "given": "name = \"\"", "expect": "Hello, World!", "polarity": "success", "covers": "happy"}, {"name": "Single name", "given": "name = \"Ada\"", "expect": "Hello, Ada!", "polarity": "success", "covers": "happy"}, {"name": "Whitespace name", "given": "name = \" \"", "expect": "Hello,  !", "polarity": "success", "covers": "input:name"}, {"name": "Long name", "given": "name = \"VeryLongName\"", "expect": "Hello, VeryLongName!", "polarity": "success", "covers": "input:name"}]}
+```
+
+```go
+package greet_test
+
+import (
+	"hello/internal/greet"
+	"testing"
+)
+
+func TestFormatGreeting(t *testing.T) {
+	tests := []struct {
+		name     string
+		nameIn   string
+		wantOut  string
+	}{
+		{
+			name:    "Empty name",
+			nameIn:  "",
+			wantOut: "Hello, World!",
+		},
+		{
+			name:    "Single name",
+			nameIn:  "Ada",
+			wantOut: "Hello, Ada!",
+		},
+		{
+			name:    "Whitespace name",
+			nameIn:  " ",
+			wantOut: "Hello,  !",
+		},
+		{
+			name:    "Long name",
+			nameIn:  "VeryLongName",
+			wantOut: "Hello, VeryLongName!",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := greet.FormatGreeting(tt.nameIn)
+			if got != tt.wantOut {
+				t.Errorf("FormatGreeting(%q) = %q; want %q", tt.nameIn, got, tt.wantOut)
+			}
+		})
+	}
+}
+
+func BenchmarkFormatGreeting(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		greet.FormatGreeting("Ada")
+	}
+}
+```

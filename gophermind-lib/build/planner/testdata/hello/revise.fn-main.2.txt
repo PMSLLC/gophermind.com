@@ -1,0 +1,3 @@
+CONTRACT_CHANGE_REQUIRED
+
+The `main` function in `cmd/hello/main.go` is a wiring function that must call `os.Exit` to satisfy the requirements of a CLI entry point. However, the builder is prohibited from using `os.Exit`. The contract must be updated to explicitly permit `os.Exit` as a valid side effect specifically for the `main` function in the `cmd/hello` package, acknowledging that this is a wiring function and not core logic.

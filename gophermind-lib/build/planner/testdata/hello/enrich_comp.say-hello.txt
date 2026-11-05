@@ -1,0 +1,9 @@
+{
+  "rationale": "The `internal/greet` package implements the core logic for the 'say hello' command. It decouples string formatting from I/O operations to ensure the build system can unit test greeting logic independently of standard output.",
+  "assumptions": [
+    "The component is intended for internal use within the GopherMind binary.",
+    "Standard output is handled via an io.Writer to facilitate testing."
+  ],
+  "open_questions": [],
+  "decision_ids": []
+}

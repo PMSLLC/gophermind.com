@@ -1,0 +1,100 @@
+```json
+{
+  "tests": [
+    {
+      "name": "single argument",
+      "given": "args=['NAME'], stdin=empty, stdout=ok, stderr=ok",
+      "expect": "result=0, stdout='', stderr=''",
+      "polarity": "success",
+      "covers": "happy"
+    },
+    {
+      "name": "multiple arguments",
+      "given": "args=['NAME', 'EXTRA'], stdin=empty, stdout=ok, stderr=ok",
+      "expect": "result=2, stdout='', stderr='usage: hello [NAME]'",
+      "polarity": "negative",
+      "covers": "boundary"
+    },
+    {
+      "name": "no arguments",
+      "given": "args=[], stdin=empty, stdout=ok, stderr=ok",
+      "expect": "result=0, stdout='', stderr=''",
+      "polarity": "success",
+      "covers": "boundary"
+    }
+  ]
+}
+```
+
+```go
+package cli
+
+import (
+	"bytes"
+	"io"
+	"strings"
+	"testing"
+)
+
+func TestRun(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		stdin      func() io.Reader
+		wantResult int
+		wantStdout string
+		wantStderr string
+	}{
+		{
+			name: "single argument",
+			args: []string{"NAME"},
+			stdin: func() io.Reader {
+				return strings.NewReader("")
+			},
+			wantResult: 0,
+			wantStdout: "",
+			wantStderr: "",
+		},
+		{
+			name: "multiple arguments",
+			args: []string{"NAME", "EXTRA"},
+			stdin: func() io.Reader {
+				return strings.NewReader("")
+			},
+			wantResult: 2,
+			wantStdout: "",
+			wantStderr: "usage: hello [NAME]",
+		},
+		{
+			name: "no arguments",
+			args: []string{},
+			stdin: func() io.Reader {
+				return strings.NewReader("")
+			},
+			wantResult: 0,
+			wantStdout: "",
+			wantStderr: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(strings.ReplaceAll(tt.name, " ", "_"), func(t *testing.T) {
+			stdout := &bytes.Buffer{}
+			stderr := &bytes.Buffer{}
+			stdin := tt.stdin()
+
+			gotResult := Run(tt.args, stdin, stdout, stderr)
+
+			if gotResult != tt.wantResult {
+				t.Errorf("Run() gotResult = %v, want %v", gotResult, tt.wantResult)
+			}
+			if stdout.String() != tt.wantStdout {
+				t.Errorf("Run() stdout = %q, want %q", stdout.String(), tt.wantStdout)
+			}
+			if stderr.String() != tt.wantStderr {
+				t.Errorf("Run() stderr = %q, want %q", stderr.String(), tt.wantStderr)
+			}
+		})
+	}
+}
+```

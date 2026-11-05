@@ -1,0 +1,19 @@
+{
+  "module": "hello",
+  "conventions": {
+    "layout": [
+      "cmd/ for the main entry point",
+      "internal/ for private application logic"
+    ],
+    "naming": [
+      "all component and type ids are lowercase with hyphens",
+      "exported functions follow Go standard exported naming conventions"
+    ],
+    "errors": "errors are returned as values and checked by the caller; exit codes are handled by the main entry point",
+    "logging": "no logging is implemented; output is directed to provided io.Writer interfaces",
+    "testing": "tests must be table-driven and hermetic, using bytes.Buffer for capturing output"
+  },
+  "components": [],
+  "types": [],
+  "dependencies": []
+}

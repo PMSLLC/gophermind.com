@@ -1,0 +1,121 @@
+```json
+[
+  {
+    "id": "fn-format-greeting",
+    "rationale": "This function implements the core string formatting logic required to generate the greeting message as specified in the 'Say hello' brief.",
+    "construction": {
+      "approach_chosen": "String concatenation or fmt.Sprintf for template application.",
+      "steps": [
+        "Check if the provided name is an empty string.",
+        "Return the default 'Hello, World!' or the formatted 'Hello, <name>!' string."
+      ]
+    },
+    "alternatives": [
+      {
+        "approach": "Using fmt.Sprintf",
+        "rejected_because": "String concatenation is more performant for this simple case and avoids reflection."
+      }
+    ],
+    "error_kinds": [],
+    "portability": {
+      "os": [
+        "linux"
+      ],
+      "arch": [
+        "amd64"
+      ],
+      "go_min": "1.22",
+      "cgo": false,
+      "build_tags": [],
+      "deps": []
+    },
+    "security": {
+      "not_applicable": "This is a pure function with no side effects or external input boundaries."
+    },
+    "performance": {
+      "complexity": "O(n)",
+      "max_latency_ms": null,
+      "alloc_budget": "1 allocation",
+      "concurrency": "safe_for_concurrent_use",
+      "hot_path": true
+    },
+    "observability": {
+      "not_applicable": "This is a pure function and should not perform logging or metrics."
+    },
+    "refactor_notes": [],
+    "profile_hooks": [
+      "bench"
+    ],
+    "assumptions": [
+      "The name parameter is treated as a literal string without additional sanitization at this layer."
+    ],
+    "open_questions": [],
+    "decision_ids": []
+  },
+  {
+    "id": "fn-write-greeting",
+    "rationale": "This function handles the I/O component of the greeting, ensuring the formatted string is written to a destination with a trailing newline.",
+    "construction": {
+      "approach_chosen": "Sequential write to the provided io.Writer.",
+      "steps": [
+        "Call FormatGreeting to obtain the greeting string.",
+        "Write the greeting string and a newline character to the writer."
+      ]
+    },
+    "alternatives": [
+      {
+        "approach": "fmt.Fprintln",
+        "rejected_because": "Directly writing the string and a newline provides more explicit control over the output format."
+      }
+    ],
+    "error_kinds": [
+      "wrapped"
+    ],
+    "portability": {
+      "os": [
+        "linux"
+      ],
+      "arch": [
+        "amd64"
+      ],
+      "go_min": "1.22",
+      "cgo": false,
+      "build_tags": [],
+      "deps": []
+    },
+    "security": {
+      "trust_boundary": "external_output",
+      "untrusted_inputs": [
+        "name"
+      ],
+      "authz": "none",
+      "secret_use": [],
+      "threats": [
+        {
+          "threat": "malformed input reaches the writer",
+          "mitigation": "The caller is responsible for sanitizing input before passing it to the build system."
+        }
+      ]
+    },
+    "performance": {
+      "complexity": "O(n)",
+      "max_latency_ms": 200,
+      "alloc_budget": "minimal",
+      "concurrency": "safe_for_concurrent_use",
+      "hot_path": false
+    },
+    "observability": {
+      "log_events": [],
+      "metrics": [],
+      "trace_span": "WriteGreeting"
+    },
+    "refactor_notes": [],
+    "profile_hooks": [],
+    "assumptions": [
+      "The io.Writer is assumed to be non-nil as per the contract."
+    ],
+    "open_questions": [],
+    "decision_ids": []
+  }
+]
+```

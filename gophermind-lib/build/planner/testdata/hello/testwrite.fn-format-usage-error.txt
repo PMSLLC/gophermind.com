@@ -1,0 +1,32 @@
+```json
+{"tests": [{"name": "Happy Path", "given": "No arguments provided", "expect": "usage: hello [NAME]", "polarity": "success", "covers": "happy"}]}
+```
+
+```go
+package cli
+
+import (
+	"testing"
+)
+
+func TestFormatUsageError(t *testing.T) {
+	tests := []struct {
+		name     string
+		want     string
+	}{
+		{
+			name: "Happy Path",
+			want: "usage: hello [NAME]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatUsageError()
+			if got != tt.want {
+				t.Errorf("formatUsageError() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+```

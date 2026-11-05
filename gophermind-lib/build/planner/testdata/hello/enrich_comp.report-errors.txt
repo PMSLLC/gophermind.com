@@ -1,0 +1,9 @@
+{
+  "rationale": "This component implements the error reporting logic required by the brief, specifically handling argument validation and the standardized output of usage errors to stderr with the correct exit code.",
+  "assumptions": [
+    "Standard error (stderr) is the intended destination for usage errors.",
+    "An exit code of 2 is the standard for command-line usage errors."
+  ],
+  "open_questions": [],
+  "decision_ids": []
+}

@@ -1,0 +1,52 @@
+```json
+[
+  {
+    "id": "fn-main",
+    "rationale": "Acts as the process entry point to bridge the OS environment with the application logic, fulfilling the requirement to call Run and exit with the appropriate status code.",
+    "construction": {
+      "approach_chosen": "Delegation pattern",
+      "steps": [
+        "Invoke the Run function passing os.Args[1:], os.Stdin, os.Stdout, and os.Stderr.",
+        "Capture the integer return value from Run and pass it to os.Exit."
+      ]
+    },
+    "alternatives": [
+      {
+        "approach": "Logic implementation within main",
+        "rejected_because": "Violates the separation of concerns and makes the logic untestable via the Run function signature."
+      }
+    ],
+    "error_kinds": [],
+    "portability": {
+      "os": [
+        "linux",
+        "darwin"
+      ],
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "go_min": "1.22",
+      "cgo": false,
+      "build_tags": [],
+      "deps": []
+    },
+    "security": {
+      "not_applicable": "This is a wiring function that only delegates to the core logic and does not handle untrusted data directly."
+    },
+    "performance": {
+      "not_applicable": "This is a wiring function with negligible performance impact."
+    },
+    "observability": {
+      "not_applicable": "This function performs no logging or telemetry."
+    },
+    "refactor_notes": [],
+    "profile_hooks": [],
+    "assumptions": [
+      "os.Args[0] is the executable name and should be excluded from the arguments passed to Run."
+    ],
+    "open_questions": [],
+    "decision_ids": []
+  }
+]
+```

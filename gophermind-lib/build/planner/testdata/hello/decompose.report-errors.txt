@@ -1,0 +1,157 @@
+```json
+[
+  {
+    "id": "fn-validate-args",
+    "title": "validateArgs",
+    "description": "Validates that the provided arguments meet the required length constraints.",
+    "model_tier": "any",
+    "node_class": "validation",
+    "depends_on": [],
+    "contract": {
+      "package": "internal/cli",
+      "file": "internal/cli/args.go",
+      "signature": "func validateArgs(args []string) error",
+      "inputs": [
+        {
+          "name": "args",
+          "type": "[]string",
+          "nil_ability": "non-nil",
+          "empty_input_behavior": "allowed",
+          "units": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "error",
+          "type": "error"
+        }
+      ],
+      "errors": [
+        {
+          "when": "argument count is invalid",
+          "returns": "error"
+        }
+      ],
+      "side_effects": []
+    }
+  },
+  {
+    "id": "fn-format-usage-error",
+    "title": "formatUsageError",
+    "description": "Returns a formatted usage string for the command specifying the correct command syntax.",
+    "model_tier": "any",
+    "node_class": "pure",
+    "depends_on": [],
+    "contract": {
+      "package": "internal/cli",
+      "file": "internal/cli/format_usage_error.go",
+      "signature": "func formatUsageError() string",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "string"
+        }
+      ],
+      "errors": [],
+      "side_effects": []
+    }
+  },
+  {
+    "id": "fn-write-usage-error",
+    "title": "writeUsageError",
+    "description": "Writes the usage error message to the provided writer.",
+    "model_tier": "standard",
+    "node_class": "other",
+    "depends_on": [
+      "fn-format-usage-error"
+    ],
+    "contract": {
+      "package": "internal/cli",
+      "file": "internal/cli/write_usage_error.go",
+      "signature": "func writeUsageError(w io.Writer) error",
+      "inputs": [
+        {
+          "name": "w",
+          "type": "io.Writer",
+          "nil_ability": "non-nil",
+          "empty_input_behavior": "not applicable",
+          "units": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "error",
+          "type": "error"
+        }
+      ],
+      "errors": [
+        {
+          "when": "writing to the writer fails",
+          "returns": "error"
+        }
+      ],
+      "side_effects": [
+        "Writes the formatted usage error to the provided writer."
+      ]
+    }
+  },
+  {
+    "id": "fn-run",
+    "title": "Run",
+    "description": "Orchestrates the execution of the command by parsing arguments and calling feature functions.",
+    "model_tier": "standard",
+    "node_class": "handler",
+    "depends_on": [
+      "fn-validate-args",
+      "fn-write-usage-error"
+    ],
+    "contract": {
+      "package": "internal/cli",
+      "file": "internal/cli/run.go",
+      "signature": "func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int",
+      "inputs": [
+        {
+          "name": "args",
+          "type": "[]string",
+          "nil_ability": "non-nil",
+          "empty_input_behavior": "allowed",
+          "units": ""
+        },
+        {
+          "name": "stdin",
+          "type": "io.Reader",
+          "nil_ability": "non-nil",
+          "empty_input_behavior": "allowed",
+          "units": ""
+        },
+        {
+          "name": "stdout",
+          "type": "io.Writer",
+          "nil_ability": "non-nil",
+          "empty_input_behavior": "not applicable",
+          "units": ""
+        },
+        {
+          "name": "stderr",
+          "type": "io.Writer",
+          "nil_ability": "non-nil",
+          "empty_input_behavior": "not applicable",
+          "units": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "int"
+        }
+      ],
+      "errors": [],
+      "side_effects": [
+        "Writes to stdout.",
+        "Writes to stderr."
+      ]
+    }
+  }
+]
+```

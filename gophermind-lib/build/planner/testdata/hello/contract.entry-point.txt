@@ -1,0 +1,26 @@
+{
+  "types": [],
+  "functions": [
+    {
+      "id": "fn-main",
+      "package": "cmd/hello",
+      "file": "cmd/hello/main.go",
+      "signature": "func main()",
+      "doc": "The entry point of the program that exits with the result of run.",
+      "uses": [
+        "fn-run"
+      ]
+    },
+    {
+      "id": "fn-run",
+      "package": "cmd/hello",
+      "file": "cmd/hello/main.go",
+      "signature": "func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int",
+      "doc": "Parses flags and executes the application logic. Returns exit code 0 for success, or exit code 2 if more than one argument is provided, printing usage to stderr.",
+      "uses": [
+        "fn-run"
+      ]
+    }
+  ],
+  "more": false
+}

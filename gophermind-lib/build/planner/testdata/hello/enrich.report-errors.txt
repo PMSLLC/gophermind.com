@@ -1,0 +1,244 @@
+```json
+[
+  {
+    "id": "fn-validate-args",
+    "rationale": "Ensures the command-line arguments meet the required length constraints as specified in the brief.",
+    "construction": {
+      "approach_chosen": "Direct slice length comparison.",
+      "steps": [
+        "Check if the length of the args slice is greater than the maximum allowed arguments.",
+        "Return a sentinel error if the length constraint is violated."
+      ]
+    },
+    "alternatives": [
+      {
+        "approach": "Parsing flags via flag.Parse()",
+        "rejected_because": "The requirement is a simple length constraint on raw arguments."
+      }
+    ],
+    "error_kinds": [
+      "sentinel"
+    ],
+    "portability": {
+      "os": [
+        "linux"
+      ],
+      "arch": [
+        "amd64"
+      ],
+      "go_min": "1.22",
+      "cgo": false,
+      "build_tags": [],
+      "deps": []
+    },
+    "security": {
+      "trust_boundary": "none",
+      "untrusted_inputs": [],
+      "authz": "none",
+      "secret_use": [],
+      "threats": []
+    },
+    "performance": {
+      "complexity": "O(1)",
+      "max_latency_ms": 1,
+      "alloc_budget": "none",
+      "concurrency": "safe_for_concurrent_use",
+      "hot_path": false
+    },
+    "observability": {
+      "log_events": [],
+      "metrics": [],
+      "trace_span": null
+    },
+    "refactor_notes": [],
+    "profile_hooks": [],
+    "assumptions": [
+      "args includes the program name at index 0 if passed from os.Args."
+    ],
+    "open_questions": [],
+    "decision_ids": []
+  },
+  {
+    "id": "fn-format-usage-error",
+    "rationale": "Provides a consistent, centralized way to generate the usage string required by the brief.",
+    "construction": {
+      "approach_chosen": "Hardcoded string return.",
+      "steps": [
+        "Define the usage pattern string 'usage: hello [NAME]'.",
+        "Return the string constant."
+      ]
+    },
+    "alternatives": [
+      {
+        "approach": "Building string via fmt.Sprintf",
+        "rejected_because": "The usage string is static and doesn't require dynamic injection."
+      }
+    ],
+    "error_kinds": [],
+    "portability": {
+      "os": [
+        "linux"
+      ],
+      "arch": [
+        "amd64"
+      ],
+      "go_min": "1.22",
+      "cgo": false,
+      "build_tags": [],
+      "deps": []
+    },
+    "security": {
+      "not_applicable": "This is a pure function with no external inputs or side effects."
+    },
+    "performance": {
+      "complexity": "O(1)",
+      "max_latency_ms": null,
+      "alloc_budget": "none",
+      "concurrency": "safe_for_concurrent_use",
+      "hot_path": true
+    },
+    "observability": {
+      "not_applicable": "This is a pure function."
+    },
+    "refactor_notes": [],
+    "profile_hooks": [],
+    "assumptions": [],
+    "open_questions": [],
+    "decision_ids": []
+  },
+  {
+    "id": "fn-write-usage-error",
+    "rationale": "Handles the side effect of outputting the usage error to a specific writer, supporting testability via io.Writer.",
+    "construction": {
+      "approach_chosen": "Delegation to formatUsageError and writing to io.Writer.",
+      "steps": [
+        "Call formatUsageError to get the string.",
+        "Write the resulting string to the provided io.Writer."
+      ]
+    },
+    "alternatives": [
+      {
+        "approach": "Directly printing to os.Stderr",
+        "rejected_because": "Prevents dependency injection and makes hermetic testing difficult."
+      }
+    ],
+    "error_kinds": [
+      "wrapped"
+    ],
+    "portability": {
+      "os": [
+        "linux"
+      ],
+      "arch": [
+        "amd64"
+      ],
+      "go_min": "1.22",
+      "cgo": false,
+      "build_tags": [],
+      "deps": []
+    },
+    "security": {
+      "trust_boundary": "none",
+      "untrusted_inputs": [],
+      "authz": "none",
+      "secret_use": [],
+      "threats": []
+    },
+    "performance": {
+      "complexity": "O(n)",
+      "max_latency_ms": null,
+      "alloc_budget": "low",
+      "concurrency": "safe_for_concurrent_use",
+      "hot_path": false
+    },
+    "observability": {
+      "log_events": [],
+      "metrics": [],
+      "trace_span": null
+    },
+    "refactor_notes": [],
+    "profile_hooks": [],
+    "assumptions": [],
+    "open_questions": [],
+    "decision_ids": []
+  },
+  {
+    "id": "fn-run",
+    "rationale": "Acts as the entry point and orchestrator for the CLI, managing lifecycle, error reporting, and exit codes.",
+    "construction": {
+      "approach_chosen": "Sequential orchestration of validation and error reporting.",
+      "steps": [
+        "Invoke validateArgs to check command-line inputs.",
+        "If validation fails, call writeUsageError and return exit code 2.",
+        "Proceed to main logic if validation succeeds."
+      ]
+    },
+    "alternatives": [
+      {
+        "approach": "Directly handling logic in main",
+        "rejected_because": "Reduces testability and violates separation of concerns."
+      }
+    ],
+    "error_kinds": [],
+    "portability": {
+      "os": [
+        "linux"
+      ],
+      "arch": [
+        "amd64"
+      ],
+      "go_min": "1.22",
+      "cgo": false,
+      "build_tags": [],
+      "deps": []
+    },
+    "security": {
+      "trust_boundary": "external_input",
+      "untrusted_inputs": [
+        "args"
+      ],
+      "authz": "none",
+      "secret_use": [],
+      "threats": [
+        {
+          "threat": "malformed input reaches the parser",
+          "mitigation": "validate before use"
+        }
+      ]
+    },
+    "performance": {
+      "complexity": "O(1)",
+      "max_latency_ms": null,
+      "alloc_budget": "low",
+      "concurrency": "single_goroutine",
+      "hot_path": false
+    },
+    "observability": {
+      "log_events": [
+        {
+          "level": "info",
+          "msg": "Command execution started",
+          "fields": [
+            "args"
+          ]
+        }
+      ],
+      "metrics": [],
+      "trace_span": "Run"
+    },
+    "refactor_notes": [
+      {
+        "what": "Move logic to a command pattern",
+        "why": "If more subcommands are added, the Run function will become too large.",
+        "when": "When the CLI grows beyond a single command."
+      }
+    ],
+    "profile_hooks": [],
+    "assumptions": [
+      "The return integer is intended to be used as the process exit code."
+    ],
+    "open_questions": [],
+    "decision_ids": []
+  }
+]
+```

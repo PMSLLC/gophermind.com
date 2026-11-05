@@ -1,0 +1,68 @@
+```json
+{
+  "tests": [
+    {
+      "name": "Happy path with one argument",
+      "given": "args = []string{\"NAME\"}",
+      "expect": "nil",
+      "polarity": "success",
+      "covers": "happy"
+    },
+    {
+      "name": "Empty input is allowed",
+      "given": "args = []string{}",
+      "expect": "nil",
+      "polarity": "success",
+      "covers": "happy"
+    },
+    {
+      "name": "More than one argument",
+      "given": "args = []string{\"NAME\", \"EXTRA\"}",
+      "expect": "error: argument count is invalid",
+      "polarity": "negative",
+      "covers": "error:1"
+    }
+  ]
+}
+```
+
+```go
+package cli
+
+import (
+	"testing"
+)
+
+func TestValidateArgs(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+	}{
+		{
+			name:    "Happy path with one argument",
+			args:    []string{"NAME"},
+			wantErr: false,
+		},
+		{
+			name:    "Empty input is allowed",
+			args:    []string{},
+			wantErr: false,
+		},
+		{
+			name:    "More than one argument",
+			args:    []string{"NAME", "EXTRA"},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateArgs(tt.args)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateArgs() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+```

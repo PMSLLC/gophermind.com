@@ -1,0 +1,156 @@
+```json
+{
+  "tests": [
+    {
+      "name": "Happy path writes usage to writer",
+      "given": "a valid io.Writer",
+      "expect": "writes the formatted usage error to the writer and returns nil",
+      "polarity": "success",
+      "covers": "happy"
+    },
+    {
+      "name": "Returns error when writing to the writer fails",
+      "given": "an io.Writer that returns an error on Write",
+      "expect": "returns the error from the writer",
+      "polarity": "negative",
+      "covers": "error:1"
+    }
+  ]
+}
+```
+
+```go
+package cli
+
+import (
+	"errors"
+	"io"
+	"testing"
+)
+
+type writeUsageErrorWriterErr struct{}
+
+func (w writeUsageErrorWriterErr) Write(p []byte) (n int, err error) {
+	return 0, errors.New("write failed")
+}
+
+func TestWriteUsageError(t *testing.T) {
+	tests := []struct {
+		name    string
+		w       func() io.Writer
+		wantErr bool
+		errStr  string
+	}{
+		{
+			name: "Happy path writes usage to writer",
+			w: func() io.Writer {
+				return new(bytes.Buffer)
+			},
+			wantErr: false,
+		},
+		{
+			name: "Returns error when writing to the writer fails",
+			w: func() io.Writer {
+				return writeUsageErrorWriterErr{}
+			},
+			wantErr: true,
+			errStr:  "write failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			var w io.Writer
+			if tt.w != nil {
+				w = tt.w()
+			} else {
+				w = &buf
+			}
+
+			// Handle the error case where we don't want to capture buffer output
+			// but we need to pass the writer.
+			if tt.wantErr && tt.errStr != "" {
+				// For the error case, we use the error-returning writer directly
+				err := writeUsageError(tt.w())
+				if err == nil || err.Error() != tt.errStr {
+					t.Errorf("writeUsageError() error = %v, wantErr %v", err, tt.wantErr)
+				}
+				return
+			}
+
+			err := writeUsageError(w)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("writeUsageError() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// Re-implementing bytes.Buffer locally to avoid extra imports if needed, 
+// but bytes is standard library, so we use it.
+import "bytes"
+```
+
+Wait, I must ensure I follow the rules: "Every import must be used". I used `bytes` in the test but didn't declare it in the top imports. I'll fix the structure.
+
+```go
+package cli
+
+import (
+	"bytes"
+	"errors"
+	"io"
+	"testing"
+)
+
+type writeUsageErrorWriterErr struct{}
+
+func (w writeUsageErrorWriterErr) Write(p []byte) (n int, err error) {
+	return 0, errors.New("write failed")
+}
+
+func TestWriteUsageError(t *testing.T) {
+	tests := []struct {
+		name    string
+		writer  func() io.Writer
+		wantErr bool
+		errStr  string
+	}{
+		{
+			name: "Happy path writes usage to writer",
+			writer: func() io.Writer {
+				return new(bytes.Buffer)
+			},
+			wantErr: false,
+		},
+		{
+			name: "Returns error when writing to the writer fails",
+			writer: func() io.Writer {
+				return writeUsageErrorWriterErr{}
+			},
+			wantErr: true,
+			errStr:  "write failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := tt.writer()
+			err := writeUsageError(w)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if err.Error() != tt.errStr {
+					t.Errorf("expected error %q, got %q", tt.errStr, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+```

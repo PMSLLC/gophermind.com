@@ -1,0 +1,44 @@
+{
+  "module": "hello",
+  "conventions": {
+    "errors": "errors are returned as values and checked by the caller; exit codes are handled by the main entry point",
+    "layout": [
+      "cmd/ for the main entry point",
+      "internal/ for private application logic"
+    ],
+    "logging": "no logging is implemented; output is directed to provided io.Writer interfaces",
+    "naming": [
+      "all component and type ids are lowercase with hyphens",
+      "exported functions follow Go standard exported naming conventions"
+    ],
+    "testing": "tests must be table-driven and hermetic, using bytes.Buffer for capturing output"
+  },
+  "components": [
+    {
+      "id": "say-hello",
+      "package": "internal/greet",
+      "exports": [],
+      "integration_tests": []
+    },
+    {
+      "id": "report-errors",
+      "package": "internal/cli",
+      "exports": [],
+      "integration_tests": [
+        {
+          "name": "usage error on too many arguments",
+          "given": "args: [\"hello\", \"arg1\", \"arg2\"], stdout: buffer, stderr: buffer",
+          "expect": "exit code 2, stderr contains 'usage: hello [NAME]', stdout is empty",
+          "command": "Run([]string{\"arg1\", \"arg2\"}, stdout, stderr)"
+        }
+      ]
+    },
+    {
+      "id": "entry-point",
+      "package": "cmd/hello",
+      "exports": [],
+      "integration_tests": []
+    }
+  ],
+  "dependencies": []
+}

@@ -1,0 +1,81 @@
+```json
+[
+  {
+    "id": "fn-format-greeting",
+    "title": "Format Greeting",
+    "description": "Returns a greeting string based on the provided name, defaulting to 'Hello, World!' if the name is empty.",
+    "model_tier": "any",
+    "node_class": "pure",
+    "depends_on": [],
+    "contract": {
+      "package": "internal/greet",
+      "file": "internal/greet/format_greeting.go",
+      "signature": "func FormatGreeting(name string) string",
+      "inputs": [
+        {
+          "name": "name",
+          "type": "string",
+          "nil_ability": "non-nil",
+          "empty_input_behavior": "returns 'Hello, World!'",
+          "units": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "string",
+          "type": "string"
+        }
+      ],
+      "errors": [],
+      "side_effects": []
+    }
+  },
+  {
+    "id": "fn-write-greeting",
+    "title": "Write Greeting",
+    "description": "Writes a formatted greeting to the provided writer followed by a newline.",
+    "model_tier": "standard",
+    "node_class": "handler",
+    "depends_on": [
+      "fn-format-greeting"
+    ],
+    "contract": {
+      "package": "internal/greet",
+      "file": "internal/greet/write_greeting.go",
+      "signature": "func WriteGreeting(w io.Writer, name string) error",
+      "inputs": [
+        {
+          "name": "w",
+          "type": "io.Writer",
+          "nil_ability": "non-nil",
+          "empty_input_behavior": null,
+          "units": null
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "nil_ability": "non-nil",
+          "empty_input_behavior": null,
+          "units": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "error",
+          "type": "error"
+        }
+      ],
+      "errors": [
+        {
+          "when": "if writing to the writer fails",
+          "returns": "error"
+        }
+      ],
+      "side_effects": [
+        "Calls fn-format-greeting.",
+        "Writes to the provided io.Writer."
+      ]
+    }
+  }
+]
+```

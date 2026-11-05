@@ -1,0 +1,113 @@
+{
+  "map": [
+    {
+      "requirement": "F1",
+      "nodes": [
+        "fn-format-greeting",
+        "fn-write-greeting",
+        "fn-main"
+      ]
+    },
+    {
+      "requirement": "F2",
+      "nodes": [
+        "fn-validate-args",
+        "fn-format-usage-error",
+        "fn-write-usage-error",
+        "fn-run"
+      ]
+    },
+    {
+      "requirement": "C1",
+      "nodes": []
+    },
+    {
+      "requirement": "C2",
+      "nodes": []
+    },
+    {
+      "requirement": "C3",
+      "nodes": []
+    },
+    {
+      "requirement": "C4",
+      "nodes": []
+    },
+    {
+      "requirement": "A1",
+      "nodes": []
+    },
+    {
+      "requirement": "A2",
+      "nodes": []
+    },
+    {
+      "requirement": "A3",
+      "nodes": []
+    },
+    {
+      "requirement": "A4",
+      "nodes": []
+    },
+    {
+      "requirement": "A5",
+      "nodes": []
+    },
+    {
+      "requirement": "A6",
+      "nodes": []
+    }
+  ],
+  "root_tests": [
+    {
+      "requirement": "C1",
+      "name": "Standard library only",
+      "command": "! grep -rqE 'gorm|entgo|sqlx|github.com/' internal/"
+    },
+    {
+      "requirement": "C2",
+      "name": "Go 1.22 or later",
+      "command": "go version | grep -qE 'go1\\[22-99]'"
+    },
+    {
+      "requirement": "C3",
+      "name": "gofmt and go vet clean",
+      "command": "gofmt -l . | grep -q . || (go vet ./... && exit 0 || exit 1)"
+    },
+    {
+      "requirement": "C4",
+      "name": "Table driven and hermetic tests",
+      "command": "go test -v ./internal/greet ./internal/cli"
+    },
+    {
+      "requirement": "A1",
+      "name": "Build succeeds",
+      "command": "go build ./..."
+    },
+    {
+      "requirement": "A2",
+      "name": "Go vet clean",
+      "command": "go vet ./..."
+    },
+    {
+      "requirement": "A3",
+      "name": "Tests pass",
+      "command": "go test ./..."
+    },
+    {
+      "requirement": "A4",
+      "name": "Default greeting",
+      "command": "hello | grep -qx 'Hello, World!'"
+    },
+    {
+      "requirement": "A5",
+      "name": "Named greeting",
+      "command": "hello Ada | grep -qx 'Hello, Ada!'"
+    },
+    {
+      "requirement": "A6",
+      "name": "Too many arguments error",
+      "command": "hello a b > /dev/null && test $(echo $? -eq 2)"
+    }
+  ]
+}
