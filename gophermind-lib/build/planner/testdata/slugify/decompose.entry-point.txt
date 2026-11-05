@@ -1,0 +1,26 @@
+```json
+[
+  {
+    "id": "fn-main",
+    "title": "Main entry point",
+    "description": "The entry point of the program which exits with the status code returned by run.",
+    "model_tier": "standard",
+    "node_class": "wiring",
+    "depends_on": [
+      "fn-run"
+    ],
+    "contract": {
+      "package": "cmd/slugify",
+      "file": "cmd/slugify/main.go",
+      "signature": "func main()",
+      "inputs": [],
+      "outputs": [],
+      "errors": [],
+      "side_effects": [
+        "Calls fn-run with os.Args[1:], os.Stdin, os.Stdout, and os.Stderr.",
+        "Exits the process with the returned status code."
+      ]
+    }
+  }
+]
+```

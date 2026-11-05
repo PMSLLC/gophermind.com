@@ -1,0 +1,113 @@
+```json
+[
+  {
+    "id": "fn-print-error",
+    "rationale": "Provides a standardized way to format error messages to an io.Writer, ensuring consistent error reporting across the CLI component as required by the brief.",
+    "construction": {
+      "approach_chosen": "Direct write to the provided io.Writer using fmt.Fprintf.",
+      "steps": [
+        "Format the prefix and message into a single string structure.",
+        "Write the formatted string to the io.Writer w."
+      ]
+    },
+    "alternatives": [
+      {
+        "approach": "Using fmt.Println directly to os.Stderr",
+        "rejected_because": "The function must be testable and respect the provided io.Writer dependency."
+      }
+    ],
+    "error_kinds": [],
+    "portability": {
+      "not_applicable": "This function is a standard library wrapper and does not depend on OS-specific features."
+    },
+    "security": {
+      "not_applicable": "This function is an internal utility for outputting error messages and does not handle untrusted input directly."
+    },
+    "observability": {
+      "not_applicable": "Logging is handled by the caller or at a higher level in the application logic."
+    },
+    "refactor_notes": [],
+    "profile_hooks": "not_applicable",
+    "assumptions": [],
+    "open_questions": [],
+    "decision_ids": []
+  },
+  {
+    "id": "fn-run",
+    "rationale": "Acts as the entry point for the CLI logic, coordinating argument parsing, execution, and error reporting to ensure the application lifecycle is managed without calling os.Exit directly.",
+    "construction": {
+      "approach_chosen": "Orchestration pattern using the results of parsing to drive execution.",
+      "steps": [
+        "Call parseArgs to extract configuration and file lists.",
+        "If parsing fails, call printError and return the error exit code.",
+        "Call executeSlugify with the parsed configuration and provided I/O streams.",
+        "Return the exit code returned by executeSlugify."
+      ]
+    },
+    "alternatives": [
+      {
+        "approach": "Directly calling executeSlugify in Run",
+        "rejected_because": "Violates the requirement to parse command line arguments first."
+      }
+    ],
+    "error_kinds": [],
+    "portability": {
+      "os": [
+        "linux",
+        "darwin"
+      ],
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "go_min": "1.22",
+      "cgo": false,
+      "build_tags": [],
+      "deps": []
+    },
+    "security": {
+      "trust_boundary": "external_input",
+      "untrusted_inputs": [
+        "args"
+      ],
+      "authz": "none",
+      "secret_use": [],
+      "threats": [
+        {
+          "threat": "malformed arguments leading to unexpected execution paths",
+          "mitigation": "Validate all arguments through parseArgs before execution."
+        }
+      ]
+    },
+    "performance": {
+      "complexity": "O(n)",
+      "max_latency_ms": null,
+      "alloc_budget": "low",
+      "concurrency": "single_goroutine",
+      "hot_path": false
+    },
+    "observability": {
+      "log_events": [
+        {
+          "level": "info",
+          "msg": "starting slugify execution",
+          "fields": [
+            "args"
+          ]
+        }
+      ],
+      "metrics": [],
+      "trace_span": "Run"
+    },
+    "refactor_notes": [],
+    "profile_hooks": [
+      "trace"
+    ],
+    "assumptions": [
+      "The return value of executeSlugify is a valid process exit code."
+    ],
+    "open_questions": [],
+    "decision_ids": []
+  }
+]
+```

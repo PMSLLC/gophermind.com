@@ -2,7 +2,7 @@
   "types": [],
   "functions": [
     {
-      "id": "fn-cli-run",
+      "id": "fn-run",
       "package": "internal/cli",
       "file": "internal/cli/run.go",
       "signature": "func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int",

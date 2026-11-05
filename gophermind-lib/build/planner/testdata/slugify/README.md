@@ -23,7 +23,28 @@ Corrected replies:
   The recorded `contract.cli-logic.txt` declares `run` (and `main`) in
   package `main`, which the planner now drops as foreign to cli-logic, so
   cli-logic lacks the brief's fixed `Run` and is asked once for it. This
-  reply declares `Run` in `internal/cli` with the brief's signature.
+  reply declares `Run` in `internal/cli` with the brief's signature. Its id
+  is `fn-run` (it was `fn-cli-run` until Task 6), the id the recorded
+  decompose, enrich and testwrite replies use for `Run`; with it the
+  entry-point reply's own `fn-run` (lowercase `run` in package main) is a
+  repeat of an id already written and is dropped.
+- `decompose.entry-point.txt`: a copy of `decompose.entry-point-main.txt`.
+  The fixed planner has one entry component, `entry-point`, and asks
+  `decompose:entry-point`; the recorded reply was for `entry-point-main`.
+  Its content needed no id change (it holds `fn-main` only).
+- `enrich.entry-point.txt`: a copy of `enrich.entry-point-main.txt`, for the
+  same reason (`enrich:entry-point` is asked; the reply holds `fn-main`).
+- `enrich._fix.3.txt`: the third enrich repair call. `fn-run` is now declared
+  last in cli-logic, so the enrich batches are `fn-parse-args`,
+  `fn-execute-slugify`, `fn-read-inputs`, `fn-print-error` and then `fn-run`,
+  `fn-cfg-options`; the recorded batch replies answer the r001 batches, so
+  `fn-print-error` and `fn-run` come back `group_missing`. The recorded
+  `enrich._fix.txt` answers the first cli-logic repair (performance of
+  `fn-print-error` only) and `enrich._fix.2.txt` the `fn-main` repair. This
+  reply holds the recorded groups of `fn-print-error` (from
+  `enrich.cli-logic.2.txt`, without its `performance`, which the repair did
+  not ask for and which was not applicable there) and of `fn-run` (from
+  `enrich.cli-logic.txt`), unchanged.
 
 Files:
 
@@ -41,6 +62,7 @@ Files:
 - `coverage.txt`
 - `decompose.cli-logic.txt`
 - `decompose.entry-point-main.txt`
+- `decompose.entry-point.txt`
 - `decompose.slug-logic.txt`
 - `enrich_comp.cli-logic.txt`
 - `enrich_comp.entry-point-main.txt`
@@ -48,10 +70,12 @@ Files:
 - `enrich_comp.slug-logic.txt`
 - `enrich_root.txt`
 - `enrich._fix.2.txt`
+- `enrich._fix.3.txt`
 - `enrich._fix.txt`
 - `enrich.cli-logic.2.txt`
 - `enrich.cli-logic.txt`
 - `enrich.entry-point-main.txt`
+- `enrich.entry-point.txt`
 - `enrich.slug-logic.txt`
 - `testwrite.fn-cfg-options.txt`
 - `testwrite.fn-execute-slugify.txt`
