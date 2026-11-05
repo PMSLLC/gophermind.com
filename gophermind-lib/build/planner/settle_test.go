@@ -92,6 +92,16 @@ func hasWarning(g *rig, msg string) bool {
 	return false
 }
 
+// warningWith is the message of the first warning that starts with prefix, or "".
+func warningWith(g *rig, prefix string) string {
+	for _, e := range g.sink.OfKind(events.KindWarning) {
+		if strings.HasPrefix(e.Message, prefix) {
+			return e.Message
+		}
+	}
+	return ""
+}
+
 func greetRefusals(g *rig) []planner.Refusal {
 	var out []planner.Refusal
 	for _, r := range planner.ReadRefusals(g.runDir) {
@@ -184,6 +194,11 @@ func TestSettleFailedRepairRefusesTheOriginalErrors(t *testing.T) {
 	if want := fmt.Sprintf("line %d:", lineOf(t, bad, "got != 1")); !strings.Contains(refs[0].Text, want) {
 		t.Errorf("refusal = %q, want %s", refs[0].Text, want)
 	}
+	// The repaired file's own refusal is kept as a warning.
+	w := warningWith(g, "test_file_repair_failed: the repaired test file of node fn-greet was refused: test file does not compile")
+	if w == "" || !strings.Contains(w, "got != 1") {
+		t.Errorf("repair_failed warning = %q, want the repaired file's compile error", w)
+	}
 	if n := count(g.stagesCalled(), fixStage); n != 1 {
 		t.Errorf("%s called %d times, want 1", fixStage, n)
 	}
@@ -244,8 +259,8 @@ func TestSettleRepairInAnotherPackageIsUnusable(t *testing.T) {
 		"testwrite.fn-greet.2.txt":   good,
 	}))
 	g.mustPlan(planner.Options{})
-	if !hasWarning(g, "test_file_repair_unusable: the repair reply for node fn-greet held no Go file") {
-		t.Error("no test_file_repair_unusable warning")
+	if !hasWarning(g, "test_file_repair_unusable: the repair reply for node fn-greet was for another package") {
+		t.Error("no test_file_repair_unusable warning naming the other package")
 	}
 	if refs := greetRefusals(g); len(refs) != 1 || strings.Contains(refs[0].Text, "after a repair call") {
 		t.Errorf("refusals = %+v, want one unprefixed", refs)
@@ -293,5 +308,22 @@ func TestSettleRefusalKeepsOriginalLineNumbers(t *testing.T) {
 	}
 	if !strings.Contains(prompts[0], "_ = unused") {
 		t.Error("the repair call was not shown the fixed file")
+	}
+}
+
+// The fix pass clears the unused variable but a type error remains: the fixed file's second compile fails and says so.
+func TestSettleFixedFileStillFailsIsReported(t *testing.T) {
+	good := goodGreetReply(t)
+	g := newRig(t, approving(), variant(t, map[string]string{
+		"testwrite.fn-greet.txt":     withTypeError(t, withUnused(t, good)),
+		"testwrite.fn-greet.fix.txt": fencedFile(t, good),
+	}))
+	g.mustPlan(planner.Options{})
+	w := warningWith(g, "test_file_fixed_still_fails: the fixed test file of node fn-greet still fails: test file does not compile")
+	if w == "" || !strings.Contains(w, "got != 1") {
+		t.Errorf("fixed_still_fails warning = %q, want the second compile's error", w)
+	}
+	if _, repaired := greetRecord(t, g); !repaired {
+		t.Error("the repaired reply is not recorded as repaired")
 	}
 }

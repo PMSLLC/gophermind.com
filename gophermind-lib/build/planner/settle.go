@@ -63,21 +63,28 @@ func (p *Planner) settleSyntax(ctx context.Context, r *run, cs callSpec, in sett
 // the refusal recorded when the repair does not help. It emits test_file_repaired on
 // success and test_file_repair_unusable for a reply with no usable file.
 func (p *Planner) repairAndSettle(ctx context.Context, r *run, cs callSpec, in settleInput, src, errText string, orig error) (settled, error) {
-	fixed, ok, err := p.repairTestFile(ctx, r, cs, src, errText)
+	fixed, unusable, err := p.repairTestFile(ctx, r, cs, src, errText)
 	if err != nil {
 		return settled{}, err
 	}
-	if !ok {
-		p.emit(events.KindWarning, cs.stage, in.id, "test_file_repair_unusable: the repair reply for node "+in.id+" held no Go file")
+	if unusable != "" {
+		p.emit(events.KindWarning, cs.stage, in.id, "test_file_repair_unusable: the repair reply for node "+in.id+" "+unusable)
 		return settled{}, orig
 	}
 	_, _, why := internalTarget(in.sig)
 	norm, comments, err := normalizeTestFile(fixed, in.pkg, in.funcName, in.c.Module, why, in.pkgs)
 	if err != nil {
+		p.emitRepairFailed(cs, in.id, err)
 		return settled{}, fmt.Errorf("after a repair call: %w", orig)
 	}
 	s, failed, err := p.settleChecks(cs, in, norm)
-	if (err != nil && !errors.Is(err, errNoGo)) || failed.refusal != nil {
+	if err == nil && failed.refusal != nil {
+		err = failed.refusal
+	} else if errors.Is(err, errNoGo) {
+		err = nil
+	}
+	if err != nil {
+		p.emitRepairFailed(cs, in.id, err)
 		return settled{}, fmt.Errorf("after a repair call: %w", orig)
 	}
 	s.repaired, s.comments = true, comments
@@ -85,6 +92,12 @@ func (p *Planner) repairAndSettle(ctx context.Context, r *run, cs callSpec, in s
 		p.emit(events.KindWarning, cs.stage, in.id, "test_file_repaired: the test file of node "+in.id+" compiled after a repair call")
 	}
 	return s, err
+}
+
+// emitRepairFailed warns with the refusal of a repaired file, which the
+// recorded refusal (the model's own file's) does not carry.
+func (p *Planner) emitRepairFailed(cs callSpec, id string, refusal error) {
+	p.emit(events.KindWarning, cs.stage, id, "test_file_repair_failed: the repaired test file of node "+id+" was refused: "+refusal.Error())
 }
 
 // compileFailure is a file that still fails the compile check after the
@@ -145,6 +158,7 @@ func (p *Planner) settleChecks(cs callSpec, in settleInput, src string) (s settl
 		return s, compileFailure{}, err
 	}
 	repairErr := refuseCompileDiags(in.c, dir, fixedSrc, again)
+	p.emit(events.KindWarning, cs.stage, in.id, "test_file_fixed_still_fails: the fixed test file of node "+in.id+" still fails: "+repairErr.Error())
 	refusal := refuseCompileDiags(in.c, dir, src, unfixed)
 	if refusal == nil {
 		// The fixed file fails on lines the first compile did not report;

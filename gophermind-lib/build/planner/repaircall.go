@@ -17,34 +17,35 @@ func renderRepairPrompt(src, errText string) (string, error) {
 	return render("testwriter_fix", map[string]string{"File": src, "Errors": errText})
 }
 
-// repairTestFile asks the model once for a corrected file. ok is false when the
-// call failed, the reply held no Go file, or the file's package clause differs
-// from src's; then fixed is "". err is non-nil only for a planner error
-// (context cancelled, state write failure), never for a bad reply.
-func (p *Planner) repairTestFile(ctx context.Context, r *run, cs callSpec, src, errText string) (fixed string, ok bool, err error) {
+// repairTestFile asks the model once for a corrected file. unusable is empty
+// when fixed is the file; otherwise it names why the reply is no use (the call
+// failed, the reply held no Go file, or its package clause differs from src's)
+// and fixed is "". err is non-nil only for a planner error (context cancelled,
+// state write failure), never for a bad reply.
+func (p *Planner) repairTestFile(ctx context.Context, r *run, cs callSpec, src, errText string) (fixed string, unusable string, err error) {
 	prompt, err := renderRepairPrompt(src, errText)
 	if err != nil {
-		return "", false, err
+		return "", "", err
 	}
 	var text string
 	// The parse never fails, so the router never retries this call.
 	parse := func(t string) error { text = t; return nil }
 	if err := p.call(ctx, r, repairSpec(cs), prompt, parse); err != nil {
 		if ctx.Err() != nil {
-			return "", false, err
+			return "", "", err
 		}
-		return "", false, nil
+		return "", "failed: " + err.Error(), nil
 	}
 	_, source := splitSourceReply(text)
 	if source == "" {
-		return "", false, nil
+		return "", "held no Go file", nil
 	}
 	want, ok1 := packageClauseName(src)
 	got, ok2 := packageClauseName(source)
 	if !ok1 || !ok2 || want != got {
-		return "", false, nil
+		return "", "was for another package", nil
 	}
-	return source, true, nil
+	return source, "", nil
 }
 
 // packageClauseName returns the package name of a Go source, parsing only its package clause.
