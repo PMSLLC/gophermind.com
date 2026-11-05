@@ -1,7 +1,9 @@
 package planner
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,8 +60,11 @@ func safeText(s string, max int) string {
 // recordRefusal emits a refusal event and appends it to _state/refusals.jsonl,
 // so the run folder keeps why a reply was refused after the repair call is
 // made. The round counts the refusals of one stage and node from 1. A write
-// failure is ignored: observability must not fail a planning run.
+// failure is ignored (as is a cancelled context, which refuses nothing): observability must not fail a planning run.
 func (p *Planner) recordRefusal(r *run, stage, nodeID string, cause error) {
+	if errors.Is(cause, context.Canceled) || errors.Is(cause, context.DeadlineExceeded) {
+		return // a stopped run is not a refused reply
+	}
 	text := safeRefusal(cause.Error())
 	p.refusalMu.Lock()
 	if p.refusals == nil {
