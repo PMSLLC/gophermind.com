@@ -188,6 +188,18 @@ git add gophermind-lib/build/packer/reply.go gophermind-lib/build/packer/packer.
 git commit -m "fix(executor): os.Exit allowed only in the validated main; policy preflight; repeated refusal ends the ladder"
 ```
 
+### Task 3a: a given main.go satisfies the fixed func main() (prerequisite, found 2026-11-05)
+
+Milestone 1 (975a54b5) fixes `func main()` for every `cmd/` directory and stops the run when the owning component does not declare it. A repository that already holds the entry point (the executor's greeter fixture: "`main.go` is given") is refused, and the executor suite fails 379 tests. The contract stage now drops the fixed main of a directory whose repository already has `func main()` in a non-test file of package main, decided from the repository, not the prose. Brief: `.superpowers/sdd/2026-11-05-hello-pipeline-fixes/task-3a-brief.md`.
+
+**Files:** Modify `gophermind-lib/build/planner/fixediface.go` (`givenMain`, `dropGivenMains`), `contract_stage.go:397`; tests in the planner package. Proof: `go test ./build/executor/` green.
+
+### Task 3b: a dependency from another package is shown qualified; undefined dependency hint (found in r003, 2026-11-05)
+
+r003 implemented `Run` with a bare `Greeting` call: the packet showed `func Greeting(name string) string` twice as a plain declaration under `package: cli` with a trailing note, the doc comment was doubled (`// //`), and the build failure gave the model only the compiler line. The packet marks each declaration from another package in place (`// From package greet, import "hello/internal/greet". Call it as greet.Greeting, never as Greeting.`), `docComment` strips a slash prefix the model wrote, and `BuildHints` names the import and qualifier for `undefined: <name>` when the name is a dependency from another package. Brief: `.superpowers/sdd/2026-11-05-hello-pipeline-fixes/task-3b-brief.md`.
+
+**Files:** Modify `gophermind-lib/build/contract/contract.go` (`docComment`), `build/packer/packer.go` (`state.render`), `build/packer/prompts/implement.md:8`, `build/planner/compilediag.go` (`BuildHints`); tests in each package.
+
 ### Task 4: Root acceptance test validator catches masked status and inverted checks (brief 17)
 
 **Files:**
