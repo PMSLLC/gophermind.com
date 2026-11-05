@@ -237,8 +237,8 @@ func TestBareFileNameIsNormalizedWithAWarning(t *testing.T) {
 	}
 	g.mustPlan(planner.Options{RunID: greeterID, StopAfter: "contract"})
 	for _, f := range g.contracts().Functions {
-		if f.ID == "fn-g135" && f.File != "greet/g135.go" {
-			t.Errorf("file = %q, want greet/g135.go", f.File)
+		if f.ID == "fn-g135" && f.File != "internal/greet/g135.go" {
+			t.Errorf("file = %q, want internal/greet/g135.go", f.File)
 		}
 	}
 	found := false

@@ -155,7 +155,7 @@ func TestReEmittedIDsAndMoreAreNoise(t *testing.T) {
 		t.Errorf("components = %q", got)
 	}
 	for _, c := range g.contracts().Components {
-		if c.Package != "greet" {
+		if c.Package != "internal/greet" {
 			t.Errorf("component %s package %q, want the first emission", c.ID, c.Package)
 		}
 	}

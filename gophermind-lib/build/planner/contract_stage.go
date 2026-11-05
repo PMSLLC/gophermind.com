@@ -266,9 +266,15 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 					extras = dropped
 				}
 				final := outlinePassIsFinal(first, pick(first, allBatches, st.OutlineBatches), st.OutlineBatchNext, len(unresolved) > 0 || entry != "")
+				text, changes := mapOutlinePackages(st.Doc, text, r.brief.Sections["Architecture"])
 				doc, ds, n, ign, err := mergeOutline(st.Doc, st.Deps, text, r.rootID(), final)
 				if err != nil {
 					return err
+				}
+				if len(changes) > 0 {
+					p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
+						"component_package_mapped: %d component packages were Go names, mapped to the directories the Architecture section names: %s",
+						len(changes), strings.Join(changes, "; ")))
 				}
 				st.Doc, st.Deps, added, ignored, notes = doc, ds, n, append(nt.Ignored, ign...), nt
 				return nil
@@ -1246,6 +1252,8 @@ func localChecks(c *contract.Contracts, briefID string) error {
 			return fmt.Errorf("contract: component id %s is the run id", boundedID(comp.ID))
 		case comps[comp.ID]:
 			return fmt.Errorf("contract: duplicate component id %s", boundedID(comp.ID))
+		case comp.Package == "main":
+			return fmt.Errorf("contract: component %s: package main is a Go package name, not a directory; use the cmd/<name> directory", boundedID(comp.ID))
 		}
 		comps[comp.ID] = true
 	}

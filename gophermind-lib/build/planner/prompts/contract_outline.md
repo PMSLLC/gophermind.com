@@ -7,6 +7,7 @@ Requirements:
 - Every type decl is complete Go source with a doc comment, exactly as it will appear in the file. `uses` lists the ids of other types the decl references.
 - Every type's `file` is a path relative to the repository root.
 - A component has exactly these keys: `id`, `package`, `exports`, `integration_tests`. No other key is allowed, and a component has no `file`.
+- A component's `package` is the directory of its Go package relative to the repository root (`internal/slug`, `cmd/slugify`), never the Go package name alone (`slug`, `main`). The Go name is the last element of the directory; a directory under `cmd/` is package main.
 - Leave each component's `exports` empty; the harness fills it.
 - `integration_tests` for a component describe behavior that needs more than one of its functions. Give `name`, `given`, `expect`, and a `command`.
 - Error handling follows one convention stated in `conventions.errors`.

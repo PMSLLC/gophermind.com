@@ -33,8 +33,8 @@ func TestOutlineDuplicateInOneReplyKeepsTheFirst(t *testing.T) {
 		t.Errorf("components = %q", got)
 	}
 	for _, c := range g.contracts().Components {
-		if c.ID == "greeting" && c.Package != "greet" {
-			t.Errorf("greeting package = %q, want the first emission (greet)", c.Package)
+		if c.ID == "greeting" && c.Package != "internal/greet" {
+			t.Errorf("greeting package = %q, want the first emission (mapped to internal/greet)", c.Package)
 		}
 	}
 	w := dupWarnings(g)
@@ -73,7 +73,7 @@ func TestOutlineDuplicateAcrossPassesKeepsTheFirstAndResumeKeepsTheResult(t *tes
 		t.Errorf("components = %q", got)
 	}
 	for _, c := range g.contracts().Components {
-		if c.ID == "greeting" && c.Package != "greet" {
+		if c.ID == "greeting" && c.Package != "internal/greet" {
 			t.Errorf("greeting package = %q, want the first emission", c.Package)
 		}
 	}
@@ -91,7 +91,7 @@ func TestOutlineDuplicateAcrossPassesKeepsTheFirstAndResumeKeepsTheResult(t *tes
 	r.wire(variant(t, files(nil)))
 	r.mustPlan(planner.Options{RunID: greeterID, StopAfter: "contract"})
 	for _, c := range r.contracts().Components {
-		if c.ID == "greeting" && c.Package != "greet" {
+		if c.ID == "greeting" && c.Package != "internal/greet" {
 			t.Errorf("after resume greeting package = %q", c.Package)
 		}
 	}

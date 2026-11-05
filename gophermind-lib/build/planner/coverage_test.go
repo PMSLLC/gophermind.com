@@ -90,7 +90,7 @@ func TestCoverageFillClosesGapsAndDecomposesNewFunctions(t *testing.T) {
 			redo = r.Messages[1].Content
 		}
 	}
-	for _, want := range []string{"C1 (line", "reason: no node and no root test", "A3 (line", "reason: acceptance bullet has no root test", "greeting (package greet)"} {
+	for _, want := range []string{"C1 (line", "reason: no node and no root test", "A3 (line", "reason: acceptance bullet has no root test", "greeting (package internal/greet)"} {
 		if !strings.Contains(fill, want) {
 			t.Errorf("fill prompt lacks %q", want)
 		}
@@ -190,7 +190,7 @@ func TestCoverageRepliesThatCannotBeUsedAreRetried(t *testing.T) {
 			"coverage_fill.2.txt": string(good),
 		}), greeterGap}, "coverage_fill"},
 		{"a new function whose file leaves the repository", []string{variant(t, map[string]string{
-			"coverage_fill.txt":   strings.Replace(string(good), `internal/greet/imports.go`, `../imports.go`, 1),
+			"coverage_fill.txt":   strings.Replace(string(good), `"greet", "file": "internal/greet/imports.go"`, `"internal/greet", "file": "../imports.go"`, 1),
 			"coverage_fill.2.txt": string(good),
 		}), greeterGap}, "coverage_fill"},
 	}
