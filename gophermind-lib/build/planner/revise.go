@@ -479,11 +479,6 @@ func (p *Planner) reviseTests(ctx context.Context, r *run, c *contract.Contracts
 		if perr != nil && !errors.As(perr, &se) {
 			return perr
 		}
-		if perr == nil {
-			if lerr := linkErrorTests(ct, ts); lerr != nil {
-				return lerr
-			}
-		}
 		// The same steps as the first write (writeTests): the shared settle
 		// function fixes, repairs and checks the file, so a revised test that
 		// does not compile against the stubs is not refused by the executor's
@@ -509,8 +504,17 @@ func (p *Planner) reviseTests(ctx context.Context, r *run, c *contract.Contracts
 		if serr != nil {
 			return serr
 		}
-		s = sd.src
-		tests, src = ts, s
+		if replyHoldsSecret(sd.src, req.Secrets) {
+			// A repair reply is scanned like the first one.
+			secret = true
+			return nil
+		}
+		// The link runs on the tests whichever path the file took, after the
+		// settle step, as in the first write.
+		if lerr := linkErrorTests(ct, ts); lerr != nil {
+			return lerr
+		}
+		tests, src = ts, sd.src
 		return nil
 	})
 	if err != nil {

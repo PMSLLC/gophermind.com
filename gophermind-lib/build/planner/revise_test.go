@@ -689,6 +689,44 @@ func TestReviseRefusesARealHostInTheRewrittenTest(t *testing.T) {
 	}
 }
 
+// A syntax-repaired rewrite still has its errors linked to tests. The parser's
+// own check refuses a tests list with an uncovered error before the file is
+// repaired, so the link cannot be made to fail here; the test pins that the
+// link is made on the syntax path, by renaming the covering test and reading the new name from the accepted node.
+func TestReviseLinksErrorsOfASyntaxRepairedRewrite(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("no go tool")
+	}
+	broken := strings.Replace(revisedGreetTest, "import \"testing\"", "import \"testing\"\n\nvar = =", 1)
+	g := planned(t, map[string]string{"revise.fn-greet.txt": descriptionPatch, "testwrite.fn-greet-r1.txt": strings.Replace(testwriteReply(t, broken), "refuses an empty name", "rejects a blank name", -1),
+		"testwrite.fn-greet-r1.fix.txt": "```go\n" + revisedGreetTest + "```\n"})
+	before := len(g.stagesCalled())
+	prop, err := planner.NewReviser(g.deps).Revise(context.Background(), reviseReq(t, g))
+	if err != nil || prop.Outcome != planner.OutcomeRewritten {
+		t.Fatalf("proposal = %+v, %v", prop, err)
+	}
+	fixed := false
+	for _, s := range g.stagesCalled()[before:] {
+		fixed = fixed || strings.HasSuffix(s, ":fix")
+	}
+	if !fixed {
+		t.Fatalf("no repair call was made: %v", g.stagesCalled()[before:])
+	}
+	var node struct {
+		Contract struct {
+			Errors []struct {
+				Test string `json:"test"`
+			} `json:"errors"`
+		} `json:"contract"`
+	}
+	if err := json.Unmarshal(prop.Body, &node); err != nil {
+		t.Fatal(err)
+	}
+	if len(node.Contract.Errors) != 1 || node.Contract.Errors[0].Test != "rejects a blank name" {
+		t.Fatalf("contract errors = %+v, want the error linked to its test", node.Contract.Errors)
+	}
+}
+
 // A rewritten test that does not compile against the contract's stubs is refused
 // inside the Test-writer's repair loop (the compile check of the first write),
 // not accepted to fail the executor's red check with its reason lost.
