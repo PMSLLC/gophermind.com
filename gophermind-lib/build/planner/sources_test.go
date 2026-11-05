@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"encoding/json"
 	"os"
 	"reflect"
 	"strings"
@@ -37,12 +38,12 @@ func TestComponentBriefAtShrinkLevelsKeepsEveryFeatureWhole(t *testing.T) {
 		for _, want := range []string{"### Make a slug", "### Report errors",
 			"`--max 6` on `Hello, World!` gives `hello`",
 			"prints `usage: slugify [--max N] [FILE]`",
-			"## Architecture", "## Constraints"} {
+			"## Architecture", "## Constraints", "## Acceptance", "## Out of scope"} {
 			if !strings.Contains(s, want) {
 				t.Errorf("level %d lacks %q", level, want)
 			}
 		}
-		for _, bad := range []string{"## Acceptance", "## Overview", "(cut)"} {
+		for _, bad := range []string{"## Overview", "spec_version:", "(cut)"} {
 			if strings.Contains(s, bad) {
 				t.Errorf("level %d contains %q", level, bad)
 			}
@@ -63,7 +64,7 @@ func TestComponentBriefLevel1HasNoOverviewOrFrontmatter(t *testing.T) {
 
 func TestComponentSourcesListsEveryFeature(t *testing.T) {
 	r := slugifyRun(t)
-	want := []string{"section-architecture", "section-data", "section-constraints", "feature-make-a-slug", "feature-report-errors"}
+	want := []string{"feature-make-a-slug", "feature-report-errors", "section-architecture", "section-data", "section-constraints", "section-out-of-scope", "section-acceptance"}
 	if got := componentSources(r, "slug-logic"); !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
 	}
@@ -98,13 +99,26 @@ func TestWriteSourcesRecordsEveryComponent(t *testing.T) {
 	if err := writeSources(r, doc); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile(r.path("sources.json"))
+	raw, err := os.ReadFile(r.path(stateSources))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"slug-logic"`, `"cli-logic"`, `"feature-report-errors"`} {
-		if !strings.Contains(string(raw), want) {
-			t.Errorf("sources.json lacks %s", want)
+	var got struct {
+		Sources    []sourceRef         `json:"sources"`
+		Components map[string][]string `json:"components"`
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Sources, briefSources(r.brief)) {
+		t.Errorf("sources = %+v", got.Sources)
+	}
+	if len(got.Components) != 2 {
+		t.Fatalf("components = %v", got.Components)
+	}
+	for _, id := range []string{"slug-logic", "cli-logic"} {
+		if !reflect.DeepEqual(got.Components[id], componentSources(r, id)) {
+			t.Errorf("components[%s] = %v", id, got.Components[id])
 		}
 	}
 }

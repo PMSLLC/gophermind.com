@@ -16,8 +16,9 @@ import (
 // remains at the last level is the minimum a pass needs.
 //
 //	level 0  everything (the whole brief for an outline pass)
-//	level 1  the brief becomes an excerpt: the main sections and only the
-//	         features the pass concerns, each capped
+//	level 1  the outline and repair excerpts (briefExcerpt) become capped
+//	         excerpts; the component pass and node packets (componentBrief)
+//	         send every feature and main section but Overview whole, never cut
 //	level 2  the declared-ids list is cut down and the excerpt caps tighten
 //	level 3  existing nodes are trimmed to signature and doc, caps tighten again
 const (

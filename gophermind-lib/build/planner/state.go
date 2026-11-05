@@ -24,6 +24,7 @@ const (
 	stateClarify      = "_state/clarify.json"
 	stateQuestion     = "_state/question.json"
 	stateContract     = "_state/contract.json"
+	stateSources      = "_state/sources.json"
 	stateDecomposed   = "_state/decomposed.json"
 	stateClasses      = "_state/classes.json"
 	stateTestwriter   = "_state/testwriter.json"

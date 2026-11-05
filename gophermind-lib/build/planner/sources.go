@@ -15,9 +15,6 @@ type sourceRef struct {
 	Bytes   int    `json:"bytes"`
 }
 
-// packetSections are the main sections a shrunk node packet carries, in order.
-var packetSections = []string{"Architecture", "Data", "Constraints"}
-
 // mainSectionOrder is the order the main sections are listed in; others follow
 // alphabetically.
 var mainSectionOrder = []string{"Overview", "Architecture", "Data", "Constraints", "Out of scope", "Acceptance"}
@@ -52,21 +49,45 @@ func briefSources(b *brief.Brief) []sourceRef {
 	return out
 }
 
+// packetParts is the order of what a shrunk packet carries: every main section
+// except Overview, in brief order, with "Features" standing for the feature
+// bodies. The order is read from the headings of the brief file.
+func packetParts(r *run) []string {
+	var names []string
+	for _, line := range strings.Split(string(r.src), "\n") {
+		if strings.HasPrefix(line, "## ") {
+			names = append(names, strings.TrimSpace(line[3:]))
+		}
+	}
+	if len(names) == 0 {
+		names = append(names, mainSectionOrder...)
+	}
+	var out []string
+	for _, n := range names {
+		if n != "Overview" {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
 // componentBrief is the brief text of a node packet. Level 0 is the whole brief;
-// from level 1 it is Architecture, Data and Constraints and every feature, whole.
+// from level 1 it is every main section except Overview, in brief order, with
+// the features expanded whole in place of Features. No frontmatter, nothing cut.
 // The component is only recorded, not used to select text.
 func componentBrief(r *run, component string, level int) string {
 	if level <= 0 {
 		return string(r.src)
 	}
 	var b strings.Builder
-	for _, sec := range packetSections {
-		if body := r.brief.Sections[sec]; body != "" {
+	for _, sec := range packetParts(r) {
+		if sec == "Features" {
+			for _, f := range r.brief.Features {
+				fmt.Fprintf(&b, "### %s\n\n%s\n\n", f.Name, f.Body)
+			}
+		} else if body := r.brief.Sections[sec]; body != "" {
 			fmt.Fprintf(&b, "## %s\n\n%s\n\n", sec, body)
 		}
-	}
-	for _, f := range r.brief.Features {
-		fmt.Fprintf(&b, "### %s\n\n%s\n\n", f.Name, f.Body)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -74,13 +95,14 @@ func componentBrief(r *run, component string, level int) string {
 // componentSources is the ids of what componentBrief sends from level 1.
 func componentSources(r *run, component string) []string {
 	var ids []string
-	for _, sec := range packetSections {
-		if r.brief.Sections[sec] != "" {
+	for _, sec := range packetParts(r) {
+		if sec == "Features" {
+			for _, f := range r.brief.Features {
+				ids = append(ids, "feature-"+slug(f.Name))
+			}
+		} else if r.brief.Sections[sec] != "" {
 			ids = append(ids, "section-"+slug(sec))
 		}
-	}
-	for _, f := range r.brief.Features {
-		ids = append(ids, "feature-"+slug(f.Name))
 	}
 	return ids
 }
@@ -92,5 +114,5 @@ func writeSources(r *run, doc map[string]any) error {
 		id := fmt.Sprint(c["id"])
 		comps[id] = componentSources(r, id)
 	}
-	return writeJSON(r.path("sources.json"), map[string]any{"sources": briefSources(r.brief), "components": comps})
+	return writeJSON(r.path(stateSources), map[string]any{"sources": briefSources(r.brief), "components": comps})
 }
