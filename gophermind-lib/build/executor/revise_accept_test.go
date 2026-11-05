@@ -283,12 +283,20 @@ func TestComponentScopeReviseCarriesExactlyTheBriefSection(t *testing.T) {
 	if ref := g.plan.Leaf(id); ref == nil || !strings.Contains(string(readFile(t, g.nodeFile(id))), `"brief_ref": "#architecture"`) {
 		t.Fatal("setup: fn-greet's brief_ref is not the Architecture section")
 	}
-	if want := archLines + "\n\n" + briefCanarySentence; section != want {
-		t.Fatalf("brief section = %q, want exactly %q", section, want)
+	// Since 18c77079 a component packet carries every section but Overview
+	// (the planner's componentBrief at level 1), so the Architecture lines, the
+	// canary and the other sections are all present; only Overview is not.
+	if want := archLines + "\n\n" + briefCanarySentence; !strings.Contains(section, want) {
+		t.Fatalf("brief section = %q, want it to contain %q", section, want)
 	}
-	for _, other := range []string{"Goodbye", "### Greeting", "## Overview", "Localisation", "A tiny HTTP server"} {
+	for _, other := range []string{"### Greeting", "## Constraints"} {
+		if !strings.Contains(section, other) {
+			t.Errorf("the component-scope prompt lacks %q, which level 1 carries", other)
+		}
+	}
+	for _, other := range []string{"## Overview", "A tiny HTTP server"} {
 		if strings.Contains(p, other) {
-			t.Errorf("the component-scope prompt carries %q from another brief section", other)
+			t.Errorf("the component-scope prompt carries %q from the Overview section", other)
 		}
 	}
 }
