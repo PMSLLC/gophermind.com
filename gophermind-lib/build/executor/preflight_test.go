@@ -45,7 +45,7 @@ func TestPreflightFailsAPolicyConflictBeforeTheLadder(t *testing.T) {
 	}
 }
 
-// The word must be os.Exit itself: a description that names something else
+// The word must be os.Exit itself: a side effect that names something else
 // does not trip the preflight.
 func TestPreflightMatchesTheWordOnly(t *testing.T) {
 	for _, c := range []struct {
@@ -54,8 +54,9 @@ func TestPreflightMatchesTheWordOnly(t *testing.T) {
 	}{
 		{"calls os.Exit with the code", true},
 		{"ends with os.Exit(1)", true},
-		{"never calls gmos.Exit", false},
+		{"calls gmos.Exit", false},
 		{"returns an exit code", false},
+		{"os.Exited is not a thing", false},
 		{"os.Exiting is not a thing", false},
 	} {
 		if got := mentionsExit(c.text); got != c.want {
@@ -86,9 +87,10 @@ func TestRepeatedForbiddenReplyEndsTheRevision(t *testing.T) {
 	if err != nil || res != revPolicy {
 		t.Fatalf("oneRevision = %v, %v; want revPolicy", res, err)
 	}
-	r := reasonsOf(t, g.board, leafID)
-	if len(r) != 2 || r[1] != "identical_reply" {
-		t.Fatalf("reasons = %v, want malformed then identical_reply", r)
+	// The router's parse retry gets the same reply: one malformed attempt,
+	// two calls on the first entry, none on the next.
+	if r := reasonsOf(t, g.board, leafID); len(r) != 1 || r[0] != "malformed" {
+		t.Fatalf("reasons = %v, want one malformed attempt", r)
 	}
 	var onB int
 	for _, c := range implementCalls(t, g.led, leafID) {
@@ -104,11 +106,12 @@ func TestRepeatedForbiddenReplyEndsTheRevision(t *testing.T) {
 	}
 }
 
-// The preflight rule on its own, without a planned run: only a node outside
-// the validated main that asks for os.Exit is a conflict.
+// The preflight rule on its own, without a planned run: only a side effect
+// of a node outside the validated main that claims os.Exit is a conflict.
+// Description prose is never read.
 func TestPreflightRule(t *testing.T) {
 	t.Parallel()
-	run := &Leaf{ID: "fn-run", Package: "cli", Signature: "func Run() int", SideEffects: []string{"calls os.Exit with the code"}}
+	run := &Leaf{ID: "fn-run", Package: "cli", Signature: "func Run() int", SideEffects: []string{"calls os.Exit with the return code"}}
 	err := (&leafRun{l: run}).preflight()
 	var se *stopError
 	if !errors.As(err, &se) || se.Status != "failed" || se.Reason != reasonPolicyConflict {
@@ -119,15 +122,17 @@ func TestPreflightRule(t *testing.T) {
 			t.Errorf("cause %q does not name %q", se.Message, want)
 		}
 	}
-	desc := &Leaf{ID: "fn-run", NodeDescription: "Run parses the arguments and ends with os.Exit."}
-	if err := (&leafRun{l: desc}).preflight(); err == nil {
-		t.Error("a description that asks for os.Exit passed the preflight")
+	for _, d := range []string{"It never calls os.Exit.", "Run returns the code without calling os.Exit directly."} {
+		prose := &Leaf{ID: "fn-run", Package: "cli", Signature: "func Run() int", Description: d}
+		if err := (&leafRun{l: prose}).preflight(); err != nil {
+			t.Errorf("description %q with no side effects failed the preflight: %v", d, err)
+		}
 	}
-	main := &Leaf{ID: "fn-main", Package: "main", Signature: "func main()", SideEffects: []string{"calls os.Exit with the code cli.Run returns"}}
+	main := &Leaf{ID: "fn-main", Package: "main", Signature: "func main()", SideEffects: []string{"calls os.Exit with the return code"}}
 	if err := (&leafRun{l: main, expect: packer.Expect{AllowExit: true}}).preflight(); err != nil {
 		t.Errorf("the validated main failed the preflight: %v", err)
 	}
-	plain := &Leaf{ID: "fn-run", SideEffects: []string{"writes to stdout"}, NodeDescription: "returns an exit code"}
+	plain := &Leaf{ID: "fn-run", SideEffects: []string{"writes to stdout"}}
 	if err := (&leafRun{l: plain}).preflight(); err != nil {
 		t.Errorf("a node that never names os.Exit failed the preflight: %v", err)
 	}
@@ -147,16 +152,18 @@ func TestRepeatedForbiddenReplyEndsTheEntryUnit(t *testing.T) {
 		name     string
 		prev     string
 		parseErr error
+		retry    bool // the router's retry saw the same forbidden reply
 		want     entryEnd
 	}{
-		{"forbidden repeat", "sha-1", forbidden, endPolicy},
-		{"syntax repeat", "sha-1", syntax, endIdentical},
-		{"forbidden new reply", "sha-0", forbidden, endMalformed},
+		{"forbidden repeat", "sha-1", forbidden, false, endPolicy},
+		{"syntax repeat", "sha-1", syntax, false, endIdentical},
+		{"forbidden new reply", "sha-0", forbidden, false, endMalformed},
+		{"forbidden repeat within the call", "sha-0", forbidden, true, endPolicy},
 	} {
 		lr := unitLeafRun(t)
 		e := ladderEntry{Name: "a/m1", Pos: 1}
 		lr.lastSHA[e.Name] = c.prev
-		end, done, err := lr.providerError(context.Background(), e, time.Now(), &router.ChainExhausted{ParseErr: c.parseErr}, "sha-1", c.parseErr)
+		end, done, err := lr.providerError(context.Background(), e, time.Now(), &router.ChainExhausted{ParseErr: c.parseErr}, "sha-1", c.parseErr, c.retry)
 		if err != nil || !done || end != c.want {
 			t.Errorf("%s: providerError = %v, %v, %v; want %v, done", c.name, end, done, err, c.want)
 		}

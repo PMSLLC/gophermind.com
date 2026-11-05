@@ -441,6 +441,8 @@ func (rc *runCtx) runLeaf(ctx context.Context, l *Leaf, in leafIn) (out leafOutc
 // reasonPolicyConflict is the terminal reason of a leaf whose node asks for
 // something the reply gate always refuses, found before any model call, and
 // the escalation reason of a revision a repeated forbidden reply ended.
+// From the preflight it stops the run (a stopError); after revPolicy it
+// escalates only the one leaf, once its revisions are used up.
 const reasonPolicyConflict = "execution_policy_conflict"
 
 // exitWordRE matches os.Exit as a word: not gmos.Exit, not os.Exiting.
@@ -449,16 +451,18 @@ var exitWordRE = regexp.MustCompile(`(^|[^\w.])os\.Exit\b`)
 func mentionsExit(text string) bool { return exitWordRE.MatchString(text) }
 
 // preflight compares what the node asks for with what the reply gate allows,
-// before the ladder spends a call. A node whose description or side effects
-// say it calls os.Exit, outside the validated main (packer.AllowsExit), can
-// never pass the gate: the plan is at fault, so the leaf fails and the run
-// stops with a cause that names the node, the action and the rule.
+// before the ladder spends a call. A node whose contract side effects say it
+// calls os.Exit, outside the validated main (packer.AllowsExit), can never
+// pass the gate: the plan is at fault, so the leaf fails and the run stops
+// with a cause that names the node, the action and the rule. Only side
+// effects are read: they claim an action, while a description is prose and
+// often says "It never calls os.Exit".
 func (lr *leafRun) preflight() error {
 	l := lr.l
 	if lr.expect.AllowExit {
 		return nil
 	}
-	asks := mentionsExit(l.NodeDescription)
+	asks := false
 	for _, s := range l.SideEffects {
 		asks = asks || mentionsExit(s)
 	}
@@ -1219,9 +1223,13 @@ func (lr *leafRun) attempt(ctx context.Context, e ladderEntry, k int) (end entry
 	var reply packer.Reply
 	lastSHA := "" // hash of the last reply the parse saw, good or not
 	var lastParseErr error
+	forbiddenRepeat := false // the router's retry got the same forbidden reply again
 	parse := func(text string) error {
 		lr.art.raw = text
 		r, perr := packer.ParseReply(text, lr.expect)
+		if perr != nil && packer.ErrorClass(perr) == packer.ClassForbidden && r.SHA256 == lastSHA {
+			forbiddenRepeat = true
+		}
 		reply, lastSHA = r, r.SHA256
 		lastParseErr = perr
 		return perr
@@ -1230,7 +1238,7 @@ func (lr *leafRun) attempt(ctx context.Context, e ladderEntry, k int) (end entry
 		return endFailed, true, err
 	}
 	if _, cerr := rc.o.Caller.CallParsed(ctx, info, req, parse); cerr != nil {
-		return lr.providerError(ctx, e, started, cerr, lastSHA, lastParseErr)
+		return lr.providerError(ctx, e, started, cerr, lastSHA, lastParseErr, forbiddenRepeat)
 	}
 	if n := len(reply.Stripped); n > 0 {
 		rc.emit("leaf_reply_stripped", l.ID, strconv.Itoa(n))
@@ -1342,7 +1350,9 @@ func (lr *leafRun) testSource() (string, error) {
 }
 
 // providerError is what a failed router call means for the entry.
-func (lr *leafRun) providerError(ctx context.Context, e ladderEntry, started time.Time, cerr error, lastSHA string, parseErr error) (entryEnd, bool, error) {
+// forbiddenRepeat says the router's parse retry got the same reply refused
+// for a forbidden call: like a repeat across attempts, it ends the revision.
+func (lr *leafRun) providerError(ctx context.Context, e ladderEntry, started time.Time, cerr error, lastSHA string, parseErr error, forbiddenRepeat bool) (entryEnd, bool, error) {
 	var ce *router.ChainExhausted
 	if ctx.Err() != nil || errors.Is(cerr, context.Canceled) {
 		return endInterrupted, true, nil
@@ -1395,6 +1405,9 @@ func (lr *leafRun) providerError(ctx context.Context, e ladderEntry, started tim
 	}
 	if err := lr.record(ctx, e, started, blackboard.VerdictError, class, failureReason(class, nil), nil, sha); err != nil {
 		return end, true, err
+	}
+	if end == endMalformed && forbiddenRepeat {
+		return endPolicy, true, nil
 	}
 	return end, true, nil
 }

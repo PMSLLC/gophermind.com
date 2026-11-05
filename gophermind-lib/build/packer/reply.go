@@ -490,6 +490,8 @@ func gate(f *ast.File, e Expect, target *ast.FuncDecl) string {
 
 // allowedExit reports an os.Exit or syscall.Exit inside the body of the
 // validated main, the one place Expect.AllowExit lets a process end itself.
+// Any exit inside main's body passes, closures included: the prompt's "only
+// once, at the end of main" is guidance to the model, not a gate rule.
 func allowedExit(e Expect, target *ast.FuncDecl, pkg string, sel *ast.SelectorExpr) bool {
 	if !e.AllowExit || target == nil || target.Body == nil || sel.Sel.Name != "Exit" || (pkg != "os" && pkg != "syscall") {
 		return false
