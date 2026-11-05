@@ -185,10 +185,10 @@ func isEntryPackage(pkg string) bool {
 }
 
 // runFunction is the run function of a component: the one whose signature is
-// func run(...).
-func runFunction(doc map[string]any, component string) map[string]any {
+// func <name>(...), where name is run or the call the brief's entry point makes.
+func runFunction(doc map[string]any, component, name string) map[string]any {
 	for _, f := range objects(doc["functions"]) {
-		if sig, _ := f["signature"].(string); f["component"] == component && strings.HasPrefix(sig, "func run(") {
+		if sig, _ := f["signature"].(string); f["component"] == component && strings.HasPrefix(sig, "func "+name+"(") {
 			return f
 		}
 	}

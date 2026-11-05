@@ -50,6 +50,9 @@ type contractState struct {
 	// SurfaceRepairs counts, per entry-point component, the passes that asked
 	// for the brief's command-line surface the run function left out (one at most).
 	SurfaceRepairs map[string]int `json:"surface_repairs,omitempty"`
+	// FixedRepairs counts, per component, the passes that asked for interfaces
+	// the brief's Architecture section fixes and the component left out (one at most).
+	FixedRepairs map[string]int `json:"fixed_repairs,omitempty"`
 	// SchemaRepairs counts the passes that asked for fields the merged contract
 	// lacked (attempts that failed count too, across restarts).
 	SchemaRepairs int `json:"schema_repairs,omitempty"`
@@ -391,13 +394,41 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 		return err
 	}
 	surface := ExtractCLISurface(string(r.src))
+	// The interfaces the brief's Architecture section fixes, and the call its
+	// entry point makes. With such a call the command-line surface belongs to
+	// the function called (cli.Run), not to a run function of the entry point.
+	arch := r.brief.Sections["Architecture"]
+	ifs := fixedInterfaces(arch)
+	callPkg, callName := entryCall(arch)
+	runName := "run"
+	if callName != "" {
+		runName = callName
+	}
+	surfaceTarget := func(pkg string) bool {
+		if callName != "" {
+			return path.Base(pkg) == callPkg
+		}
+		return isEntryPackage(pkg)
+	}
+	module, _ := st.Doc["module"].(string)
 	for _, comp := range objects(st.Doc["components"]) {
 		id, _ := comp["id"].(string)
 		if contains(st.Done, id) {
 			continue
 		}
 		pkg, _ := comp["package"].(string)
-		entry := isEntryPackage(pkg) && !surface.Empty()
+		entry := surfaceTarget(pkg) && !surface.Empty()
+		dir := stripModule(module, pkg)
+		var own []fixedIface
+		for _, fi := range ifs {
+			if fi.Dir == dir {
+				own = append(own, fi)
+			}
+		}
+		entryCallText := ""
+		if isEntryPackage(dir) && callName != "" {
+			entryCallText = callPkg + "." + callName
+		}
 		defect := ""
 		var dropped map[string]any // the run function, taken out while it is rewritten
 		for {
@@ -413,6 +444,8 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 				return render("contract_component", map[string]string{
 					"Defect":       defect,
 					"Surface":      surfaceText,
+					"Fixed":        fixedInterfacesText(own),
+					"EntryCall":    entryCallText,
 					"Component":    mustJSON(comp),
 					"Outline":      outlineJSONAt(st.Doc, level),
 					"Declared":     declaredTextAt(st.Doc, level),
@@ -450,7 +483,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			if !more && entry && st.SurfaceRepairs[id] == 0 {
 				// The run function must state the brief's command-line surface; a
 				// pass that left items out is asked once to write it again.
-				if run := runFunction(st.Doc, id); run != nil {
+				if run := runFunction(st.Doc, id, runName); run != nil {
 					if miss := surface.Missing(functionText(run)); len(miss) > 0 {
 						if st.SurfaceRepairs == nil {
 							st.SurfaceRepairs = map[string]int{}
@@ -470,6 +503,25 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 					}
 					st.MainRepairs[id]++
 					defect, more = mainDefectText(pkg), true
+				}
+			}
+			if !more {
+				// The brief's Architecture section fixes some interfaces of this
+				// package: a near miss gets the fixed signature, a missing one is
+				// asked for once and then stops the run.
+				applied, missing := applyFixedInterfaces(st.Doc, id, dir, ifs)
+				if len(applied) > 0 {
+					p.emit(events.KindWarning, "contract", "", "fixed_interface_applied: "+strings.Join(applied, "; "))
+				}
+				if len(missing) > 0 {
+					if st.FixedRepairs[id] > 0 {
+						return fmt.Errorf("contract: component %s does not declare the fixed interface %s from the brief's Architecture section", boundedID(id), missing[0].Signature)
+					}
+					if st.FixedRepairs == nil {
+						st.FixedRepairs = map[string]int{}
+					}
+					st.FixedRepairs[id]++
+					defect, more = fixedDefectText(missing), true
 				}
 			}
 			if !more {
@@ -496,8 +548,8 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 		p.emit(events.KindWarning, "contract", "", "main_function_missing: "+mainDefectText(pkg))
 	}
 	for _, comp := range objects(st.Doc["components"]) {
-		if pkg, _ := comp["package"].(string); isEntryPackage(pkg) && !surface.Empty() {
-			if run := runFunction(st.Doc, fmt.Sprint(comp["id"])); run != nil {
+		if pkg, _ := comp["package"].(string); surfaceTarget(pkg) && !surface.Empty() {
+			if run := runFunction(st.Doc, fmt.Sprint(comp["id"]), runName); run != nil {
 				if miss := surface.Missing(functionText(run)); len(miss) > 0 {
 					p.emit(events.KindWarning, "contract", "", "cli_surface_missing: "+surfaceDefectText(fmt.Sprint(run["id"]), miss))
 				}

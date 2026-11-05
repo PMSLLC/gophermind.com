@@ -12,14 +12,10 @@ func archDirs(arch string) []string {
 	var dirs []string
 	seen := map[string]bool{}
 	for _, line := range strings.Split(arch, "\n") {
-		b := archBulletRE.FindStringSubmatch(line)
-		if b == nil {
+		d := archBulletDir(line)
+		if d == "" {
 			continue
 		}
-		if strings.HasSuffix(b[1], ".go") || strings.ContainsAny(b[1], " ()") {
-			continue
-		}
-		d := path.Clean(b[1])
 		if !seen[d] {
 			seen[d] = true
 			dirs = append(dirs, d)

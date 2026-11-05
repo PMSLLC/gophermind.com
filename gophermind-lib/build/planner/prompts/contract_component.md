@@ -9,7 +9,10 @@ Requirements:
 - Every type decl is complete Go source with a doc comment. Declare a type here only when no other component needs it.
 - Every `file` is a path relative to the repository root, inside this component's package.
 - Follow the conventions in the outline. No secrets. Refer to secrets by environment variable name only.
-- A component whose package is under `cmd/` is the entry point of a program and is package main. Its functions live in files of that directory. The component must contain a function with id `fn-main` named `main` whose signature is exactly `func main()` (no parameters, no results); without it the program does not build. `main` only calls `os.Exit` with the result of `run`. `run` has the signature `func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int`: it parses flags, opens the input, calls the feature functions of the other components (list them in `uses`) and returns the exit code, writing errors to stderr. Other small helpers for flags or input are allowed.
+{{if .EntryCall}}- A component whose package is under `cmd/` is the entry point and is package main. It must contain `fn-main` named `main` with the signature exactly `func main()`. `main` only calls `os.Exit` with the result of `{{.EntryCall}}`, passing `os.Args[1:]`, `os.Stdin`, `os.Stdout` and `os.Stderr`; `{{.EntryCall}}` is declared by another component, list its id in `uses`. Write no `run` function.
+{{else}}- A component whose package is under `cmd/` is the entry point of a program and is package main. Its functions live in files of that directory. The component must contain a function with id `fn-main` named `main` whose signature is exactly `func main()` (no parameters, no results); without it the program does not build. `main` only calls `os.Exit` with the result of `run`. `run` has the signature `func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int`: it parses flags, opens the input, calls the feature functions of the other components (list them in `uses`) and returns the exit code, writing errors to stderr. Other small helpers for flags or input are allowed.
+{{end}}- The explicit Architecture section and supplied fixed interfaces are authoritative. Use generic architecture defaults only where the brief is silent.
+- Package directories, owning component IDs, and fixed signatures are supplied facts. If they conflict, report the conflict; do not resolve it by renaming or relocating a function.
 - Do not repeat a function listed under "Already written for this component".
 - There is no limit on the number of functions. Write every function the component needs. If the reply is getting long, stop at a function boundary and set "more" to true; you will be asked to continue. Set "more" to false only when the component is complete.
 
@@ -19,6 +22,11 @@ Requirements:
 </cli_surface>
 
 {{end}}{{if .Defect}}Defect in what is written so far: {{.Defect}}. Write the missing function now; do not repeat the functions already written.
+
+{{end}}{{if .Fixed}}Fixed interfaces of this component's package, from the brief's Architecture section. Declare each with exactly this name and signature, in this package. Do not rename, move or change parameters; private helpers may be added:
+<fixed_interfaces>
+{{.Fixed}}
+</fixed_interfaces>
 
 {{end}}Component:
 <component>
