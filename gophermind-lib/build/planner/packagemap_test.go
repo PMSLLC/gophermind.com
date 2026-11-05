@@ -75,3 +75,31 @@ func TestLocalChecksRefuseMainAsAComponentPackage(t *testing.T) {
 		t.Fatalf("localChecks = %v", err)
 	}
 }
+
+func TestMapComponentPackagesLeavesTheBareModuleName(t *testing.T) {
+	doc := pkgDoc("slugify", [2]string{"a", "slugify"})
+	if changes := mapComponentPackages(doc, pkgMapArch, "slugify"); len(changes) != 0 {
+		t.Fatalf("changes = %v", changes)
+	}
+	if got := docPackages(doc); got[0] != "slugify" {
+		t.Fatalf("packages = %v", got)
+	}
+}
+
+func TestMapComponentPackagesStripsModuleOnlyToAnArchitectureDir(t *testing.T) {
+	doc := pkgDoc("example.com/x", [2]string{"o", "example.com/x/internal/other"})
+	if changes := mapComponentPackages(doc, pkgMapArch, "example.com/x"); len(changes) != 0 {
+		t.Fatalf("changes = %v", changes)
+	}
+	if got := docPackages(doc); got[0] != "example.com/x/internal/other" {
+		t.Fatalf("packages = %v", got)
+	}
+}
+
+func TestArchDirsSkipsFileSpans(t *testing.T) {
+	arch := "- `cmd/slugify`: the binary.\n- `cmd/slugify/main.go`: calls cli.Run.\n- `internal/slug`: pure.\n- `Make(s string)`: x.\n- `internal/cli` (package cli): y.\n"
+	want := []string{"cmd/slugify", "internal/slug", "internal/cli"}
+	if got := archDirs(arch); !reflect.DeepEqual(got, want) {
+		t.Fatalf("archDirs = %v, want %v", got, want)
+	}
+}

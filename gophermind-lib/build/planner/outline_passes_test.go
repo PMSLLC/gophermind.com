@@ -76,12 +76,16 @@ func TestOutlineDropsAnIdenticalDuplicateSilently(t *testing.T) {
 		"contract.outline.1.txt": `{` + outlineHeadJSON + `, "components": [` + comp("types") + `], "types": [` + nameErrorType + `]}`,
 		"contract.outline.2.txt": `{"components": [` + comp("types") + `, ` + comp("greeting") + `, ` + comp("farewell") + `], "types": [` + nameErrorType + `]}`,
 	}))
+	// The fixture replies name the Go package; a bullet that names no directory keeps them as written.
+	g.briefPath = writeBrief(t, greeter, g.repo, func(s string) string {
+		return strings.Replace(s, "- `internal/greet`: pure functions", "- The internal/greet directory: pure functions", 1)
+	})
 	g.mustPlan(planner.Options{StopAfter: "contract"})
 	if got := componentIDs(g); got != "types greeting farewell" || len(g.contracts().Types) != 1 {
 		t.Errorf("components = %q, types %d: identical duplicates must be dropped", got, len(g.contracts().Types))
 	}
 	for _, w := range g.sink.OfKind("warning") {
-		if strings.Contains(w.Message, "duplicate") {
+		if !strings.HasPrefix(w.Message, "component_package_mapped:") {
 			t.Errorf("identical duplicates raised a warning: %v", w)
 		}
 	}

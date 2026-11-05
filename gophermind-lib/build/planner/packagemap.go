@@ -16,6 +16,9 @@ func archDirs(arch string) []string {
 		if b == nil {
 			continue
 		}
+		if strings.HasSuffix(b[1], ".go") || strings.ContainsAny(b[1], " ()") {
+			continue
+		}
 		d := path.Clean(b[1])
 		if !seen[d] {
 			seen[d] = true
@@ -27,7 +30,8 @@ func archDirs(arch string) []string {
 
 // mapComponentPackages turns the component packages a model wrote as Go
 // package names ("slug", "main") into the directories the brief's Architecture
-// section names. In order: a module prefix is stripped; a name equal to the
+// section names. In order: a module prefix is stripped when what remains is
+// one of those directories; a name equal to the
 // last element of exactly one Architecture directory becomes that directory;
 // main becomes the one Architecture directory under cmd/. A package that
 // already is one of the directories, or matches none or several, is left
@@ -49,8 +53,11 @@ func mapComponentPackages(doc map[string]any, arch, module string) []string {
 		if old == "" {
 			continue
 		}
-		pkg := stripModule(module, old)
-		if !isDir[pkg] {
+		pkg := old
+		if rest, ok := strings.CutPrefix(old, module+"/"); ok && module != "" && isDir[rest] {
+			pkg = rest
+		}
+		if !isDir[pkg] && old != module {
 			var match []string
 			for _, d := range dirs {
 				if path.Base(d) == pkg {
