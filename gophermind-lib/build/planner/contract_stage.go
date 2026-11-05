@@ -365,6 +365,13 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			}
 		}
 		st.OutlineDone = true
+		if err := writeSources(r, st.Doc); err != nil {
+			return err
+		}
+		for _, c := range objects(st.Doc["components"]) {
+			id := fmt.Sprint(c["id"])
+			p.emit(KindComponentSources, "contract", id, "component_sources: "+id+" <- "+strings.Join(componentSources(r, id), ", "))
+		}
 		if err := writeJSON(r.path(fileDependencies), st.Deps); err != nil {
 			return err
 		}
@@ -404,7 +411,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 					"Outline":      outlineJSONAt(st.Doc, level),
 					"Declared":     declaredTextAt(st.Doc, level),
 					"Written":      writtenText(base, id),
-					"BriefSection": briefSectionAt(r, id, level),
+					"BriefSection": componentBrief(r, id, level),
 					"Answers":      answersText(as),
 					"ItemSchemas":  itemSchemas,
 				})
@@ -1411,17 +1418,6 @@ var nonSlug = regexp.MustCompile(`[^a-z0-9]+`)
 // slug turns a feature heading into the id its component is expected to have.
 func slug(s string) string {
 	return strings.Trim(nonSlug.ReplaceAllString(strings.ToLower(s), "-"), "-")
-}
-
-// briefSection is the part of the brief a component came from: the feature
-// whose slug is the component id, or the Architecture section.
-func briefSection(r *run, component string) string {
-	for _, f := range r.brief.Features {
-		if slug(f.Name) == component {
-			return "### " + f.Name + "\n\n" + f.Body
-		}
-	}
-	return r.brief.Sections["Architecture"]
 }
 
 // mergeRepair adds a repair reply to a copy of doc. A new function names its

@@ -222,7 +222,7 @@ func (p *Planner) revisePrompt(r *run, c *contract.Contracts, orig map[string]an
 	if component {
 		data["Component"] = "yes"
 		comp, _ := orig["parent"].(string)
-		data["BriefSection"] = briefSection(r, comp)
+		data["BriefSection"] = componentBrief(r, comp, 1)
 		qs, err := loadQStore(r)
 		if err != nil {
 			return "", err
@@ -455,7 +455,7 @@ func (p *Planner) reviseTests(ctx context.Context, r *run, c *contract.Contracts
 	pkg, _ := ct["package"].(string)
 	funcName := testFuncName(id)
 	parent, _ := merged["parent"].(string)
-	prompt, err := renderTestwriterBrief(scrubInput(mustJSON(testwriterView(merged)), req.Secrets, maxReviseTestSource), c.Module, file, funcName, testFile, PackageImports(c), briefSection(r, parent))
+	prompt, err := renderTestwriterBrief(scrubInput(mustJSON(testwriterView(merged)), req.Secrets, maxReviseTestSource), c.Module, file, funcName, testFile, PackageImports(c), componentBrief(r, parent, 1))
 	if err != nil {
 		return "", "", err
 	}

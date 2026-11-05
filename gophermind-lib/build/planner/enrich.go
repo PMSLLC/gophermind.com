@@ -447,7 +447,7 @@ func (p *Planner) enrichCall(ctx context.Context, r *run, c *contract.Contracts,
 	}
 	sort.Strings(secrets)
 	prompt, err := render("enrich", map[string]string{
-		"Component": mustJSON(comp), "Nodes": mustJSON(views), "BriefSection": briefSection(r, comp.ID),
+		"Component": mustJSON(comp), "Nodes": mustJSON(views), "BriefSection": componentBrief(r, comp.ID, 0),
 		"Decisions": decisionsText(qs), "Facts": factsPrompt(facts), "Deps": orNone(deps), "Secrets": orNone(secrets),
 		"Fields": strings.Join(fields, ", "), "Defects": defectsText(fix),
 	})
@@ -715,7 +715,7 @@ func (p *Planner) enrichStructure(ctx context.Context, r *run, c *contract.Contr
 			fns = append(fns, map[string]any{"id": d["id"], "title": d["title"], "description": d["description"]})
 		}
 		subject := mustJSON(map[string]any{"component": comp, "functions": fns})
-		g, warns, err := p.structureCall(ctx, r, "enrich_comp:"+comp.ID, "component", comp.ID, subject, briefSection(r, comp.ID), router.ScopeComponent, qs, env)
+		g, warns, err := p.structureCall(ctx, r, "enrich_comp:"+comp.ID, "component", comp.ID, subject, componentBrief(r, comp.ID, 0), router.ScopeComponent, qs, env)
 		if err != nil {
 			return err
 		}

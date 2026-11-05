@@ -23,6 +23,8 @@ import (
 const (
 	// KindPromptSize is the event kind of a prompt size report (sizes only).
 	KindPromptSize = "prompt_size"
+	// KindComponentSources records which brief sources each component receives.
+	KindComponentSources = "component_sources"
 	// promptHeadroomTokens is the margin kept beyond the estimate and the
 	// reserved reply, because the estimate is rough.
 	promptHeadroomTokens = 1000
@@ -79,7 +81,7 @@ func (p *Planner) callSized(ctx context.Context, r *run, cs callSpec, build func
 }
 
 func tooLongErr(stage string, est, reserved, window int) error {
-	return fmt.Errorf("stage %s: the prompt (about %d tokens plus %d reserved, window %d) is too long for the model even with the optional context removed",
+	return fmt.Errorf("stage %s: the prompt (about %d tokens plus %d reserved, window %d) is too long for the model even with the optional context removed; the brief sources were kept whole and never cut",
 		stage, est, reserved, window)
 }
 
@@ -154,18 +156,9 @@ func allFeatureNames(r *run) []string {
 	return out
 }
 
-// featuresOfComponents maps component ids to the features they came from.
+// featuresOfComponents is every feature name: a component is not tied to one feature.
 func featuresOfComponents(r *run, comps []string) []string {
-	var out []string
-	for _, f := range r.brief.Features {
-		for _, c := range comps {
-			if slug(f.Name) == c {
-				out = append(out, f.Name)
-				break
-			}
-		}
-	}
-	return out
+	return allFeatureNames(r)
 }
 
 // repairExcerptLevel is the excerpt level of a repair pass: repair prompts never
@@ -212,13 +205,4 @@ func declaredTextAt(doc map[string]any, level int) string {
 		return "(nothing yet)"
 	}
 	return strings.TrimRight(b.String(), "\n")
-}
-
-// briefSectionAt is a component's feature section, capped from level 1.
-func briefSectionAt(r *run, component string, level int) string {
-	s := briefSection(r, component)
-	if level <= 0 {
-		return s
-	}
-	return capText(s, excerptCapsAt(level).feature)
 }

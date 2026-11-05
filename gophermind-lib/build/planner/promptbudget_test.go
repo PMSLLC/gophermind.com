@@ -59,17 +59,21 @@ func contractRequests(g *rig) []provider.Request {
 	return out
 }
 
-// A brief of about 55k tokens on a model that holds 32768: every contract call
-// is sized to fit, the run finishes, and each call reports its size.
-func TestContractPromptsFitTheSmallestWindow(t *testing.T) {
+// A brief of about 55k tokens on a model that holds 32768: the outline passes
+// step down through the excerpt, every contract call made fits and reports its
+// size, and the first component pass fails explicitly because the features
+// alone exceed the window (sources are never cut).
+func TestContractPassFailsExplicitlyWhenTheFeaturesExceedTheWindow(t *testing.T) {
 	g := newRig(t, approving())
 	bigBrief(t, g, 100_000)
 	// Clarify carries the whole brief and is not sized; it runs first.
 	g.mustPlan(planner.Options{StopAfter: "clarify"})
 	setWindow(g, miniWindow)
-	g.mustPlan(planner.Options{RunID: greeterID, StopAfter: "contract"})
+	if _, err := g.plan(planner.Options{RunID: greeterID, StopAfter: "contract"}); err == nil || !strings.Contains(err.Error(), "the brief sources were kept whole") {
+		t.Fatalf("err = %v, want the whole-sources too-long error", err)
+	}
 	calls := contractRequests(g)
-	if len(calls) < 5 {
+	if len(calls) < 1 {
 		t.Fatalf("%d contract calls", len(calls))
 	}
 	for _, r := range calls {
@@ -115,8 +119,7 @@ func TestSmallBriefIsStillSentWhole(t *testing.T) {
 	}
 }
 
-// The schema repair asks about the offending node with its feature's section,
-// never the whole brief.
+// The schema repair prompt stays under the window with a big brief.
 func TestSchemaRepairPromptStaysUnderTheWindowWithABigBrief(t *testing.T) {
 	g := newRig(t, approving(), variant(t, map[string]string{"contract.greeting.txt": bigGreeting(136)}))
 	bigBrief(t, g, 100_000)
@@ -134,9 +137,6 @@ func TestSchemaRepairPromptStaysUnderTheWindowWithABigBrief(t *testing.T) {
 	p := fix.Messages[1].Content
 	if est := estTokens(fix); est+fix.MaxTokens > miniWindow {
 		t.Errorf("schema repair prompt: about %d tokens plus %d reserved exceeds %d", est, fix.MaxTokens, miniWindow)
-	}
-	if !strings.Contains(p, "BODY-START-Greeting") || strings.Contains(p, "BODY-START-Farewell") {
-		t.Error("the prompt must carry the owning feature's section and no other feature")
 	}
 	if len(p) > 60_000 {
 		t.Errorf("schema repair prompt is %d bytes", len(p))
@@ -165,11 +165,14 @@ func tooLongRig(t *testing.T, limit int) *rig {
 	return g
 }
 
-// A refusal as too long is not an unusable reply: the prompt is rebuilt with
-// less optional context, one step at a time, and asked again.
+// A refusal as too long is not an unusable reply: the outline prompt is rebuilt
+// with less optional context, one step at a time, and asked again. The
+// component pass does not cut the brief, so the run then fails explicitly.
 func TestTooLongRefusalStepsDownTheContext(t *testing.T) {
 	g := tooLongRig(t, 9000)
-	g.mustPlan(planner.Options{StopAfter: "contract"})
+	if _, err := g.plan(planner.Options{StopAfter: "contract"}); err == nil || !strings.Contains(err.Error(), "the brief sources were kept whole") {
+		t.Fatalf("err = %v, want the whole-sources too-long error", err)
+	}
 	var sizes []int
 	for _, r := range g.fake.Requests() {
 		if planner.StageOf(r) == "contract:outline:1" {

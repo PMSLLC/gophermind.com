@@ -551,7 +551,7 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	}
 	parent, _ := d["parent"].(string)
 	sig, _ := ct["signature"].(string)
-	prompt, err := renderTestwriterBrief(mustJSON(withoutUnexportedDeps(withReceiverDecl(c, testwriterView(d)), sig, path.Dir(file))), c.Module, file, funcName, rel, PackageImports(c), briefSection(r, parent))
+	prompt, err := renderTestwriterBrief(mustJSON(withoutUnexportedDeps(withReceiverDecl(c, testwriterView(d)), sig, path.Dir(file))), c.Module, file, funcName, rel, PackageImports(c), componentBrief(r, parent, 1))
 	if err != nil {
 		return writtenTests{}, err
 	}

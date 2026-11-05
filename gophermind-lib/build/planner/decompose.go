@@ -232,7 +232,7 @@ func (p *Planner) decomposeCall(ctx context.Context, r *run, c *contract.Contrac
 	prompt, err := render("decompose", map[string]string{
 		"Component":     mustJSON(map[string]any{"component": comp, "functions": batch}),
 		"ContractSlice": sliceText,
-		"BriefSection":  briefSection(r, comp.ID),
+		"BriefSection":  componentBrief(r, comp.ID, 0),
 	})
 	if err != nil {
 		return draftResult{}, err
