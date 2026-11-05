@@ -74,13 +74,9 @@ func TestEntryPointPresentIsNotAskedFor(t *testing.T) {
 	for _, r := range g.fake.Requests() {
 		p := r.Messages[1].Content
 		switch planner.StageOf(r) {
-		case "contract:outline:1":
+		case "contract:outline:1", "contract:outline:2":
 			if strings.Contains(p, "cmd/greeter") {
-				t.Errorf("the shared pass must not write the entry point")
-			}
-		case "contract:outline:2":
-			if !strings.Contains(p, "cmd/greeter") {
-				t.Errorf("the last batch pass must ask for the entry point:\n%s", p)
+				t.Errorf("only the entry pass is told about the entry point:\n%s", p)
 			}
 		}
 	}

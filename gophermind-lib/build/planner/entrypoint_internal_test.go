@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"strings"
 	"testing"
 
 	"gophermind/gophermind-lib/build/brief"
@@ -69,5 +70,28 @@ func TestPackageClauseOfAnEntryPointIsMain(t *testing.T) {
 		if got := PackageClause(pkg); got != want {
 			t.Errorf("PackageClause(%q) = %q, want %q", pkg, got, want)
 		}
+	}
+}
+
+// The entry component is written once, by the entry pass: a batch pass is
+// never told to write it too.
+func TestLastBatchPassDoesNotWriteTheEntryPoint(t *testing.T) {
+	data := func(batch, entry string) map[string]string {
+		return map[string]string{"Brief": "b", "Answers": "a", "TypeSchema": "s", "Fixed": "f", "Emitted": "e",
+			"Unresolved": "", "UnresolvedCount": "0", "Batch": batch, "Entry": entry, "EntryName": "slugify"}
+	}
+	out, err := render("contract_outline", data("Make a slug", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "this pass also writes the entry point") {
+		t.Fatal("a batch pass is told to write the entry point")
+	}
+	out, err = render("contract_outline", data("", "slugify"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "package `cmd/slugify`") {
+		t.Fatal("the entry pass does not name package cmd/slugify")
 	}
 }

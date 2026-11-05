@@ -237,13 +237,9 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 				if level > 0 {
 					brief = briefExcerpt(r, names, level)
 				}
-				// The last batch pass writes the entry point of a brief that is run.
-				entryName := entry
-				if entryName == "" && runnable && len(batch) > 0 && st.OutlineBatchNext == len(st.OutlineBatches)-1 {
-					entryName = binName
-				}
+				// Only the entry pass writes the entry point.
 				return render("contract_outline", map[string]string{
-					"EntryName": entryName, "Entry": entry,
+					"EntryName": entry, "Entry": entry,
 					"Brief": brief, "Answers": answersText(as), "TypeSchema": typeSchema,
 					"Fixed": outlineFixedText(st.Doc) + repoModuleText(r, st.Doc), "Emitted": outlineEmittedTextAt(st.Doc, st.OutlineSharedIDs, level),
 					"Batch":      strings.Join(batch, ", "),
