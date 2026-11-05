@@ -52,5 +52,5 @@ func mainDefectText(dir string) string {
 	if dirRE.MatchString(dir) && len(dir) <= maxBoundedID {
 		shown = dir
 	}
-	return "package " + shown + " is a main package but declares no function main; add a function with id fn-main named main and signature func main() that calls the wiring functions and exits with the code of the run function"
+	return "package " + shown + " is a main package but declares no function main; add a function with id fn-main named main and signature func main() that calls the wiring functions and exits with the returned code"
 }

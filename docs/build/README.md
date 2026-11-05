@@ -982,7 +982,9 @@ only check the code (`go build`, `go vet`, `gofmt`, `grep`) are exempt.
 runs without `--fake`: the Mac mini as the one private provider, and two
 providers that need no key. `models` lists, per tier (`strong`, `standard`,
 `any`), the `provider/model` entries to try in order. `privacy.mode` is
-`need_to_know` (public providers see single functions only) or `private_only`.
+`need_to_know` (public providers get only node-scope calls: one function's
+contract, signatures and tests; a public provider at node scope also sees the
+brief's feature text and every section but Overview) or `private_only`.
 A provider's key is never in this file: `api_key_secret` names an entry set with
 `gophermind brief vault set`.
 

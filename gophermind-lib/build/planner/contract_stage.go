@@ -406,6 +406,13 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 		}
 		return isEntryPackage(pkg)
 	}
+	// Every component is told the entry call: the prompt's paragraph on cmd/
+	// applies to whichever component is under it, and without the call it asks
+	// for a run function of package main.
+	entryCallText := ""
+	if callName != "" {
+		entryCallText = callPkg + "." + callName
+	}
 	module, _ := st.Doc["module"].(string)
 	for _, comp := range objects(st.Doc["components"]) {
 		id, _ := comp["id"].(string)
@@ -417,13 +424,9 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 		dir := stripModule(module, pkg)
 		var own []fixedIface
 		for _, fi := range ifs {
-			if fi.Dir == dir {
+			if stripModule(module, fi.Dir) == dir {
 				own = append(own, fi)
 			}
-		}
-		entryCallText := ""
-		if isEntryPackage(dir) && callName != "" {
-			entryCallText = callPkg + "." + callName
 		}
 		defect := ""
 		var dropped map[string]any // the run function, taken out while it is rewritten
@@ -482,6 +485,17 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			p.noteNormalized(&st, "contract:"+id, notes)
 			p.noteIgnored(&st, "contract:"+id, ignored)
 			defect, dropped = "", nil
+			// The brief's Architecture section fixes some interfaces of this
+			// package: a near miss gets the fixed signature first, so a run the
+			// fix renames to Run is the one the surface check reads.
+			var missing []fixedIface
+			if !more {
+				var applied []string
+				applied, missing = fixedMissingNow(st.Doc, id, dir, ifs, st.Done)
+				if len(applied) > 0 {
+					p.emit(events.KindWarning, "contract", "", "fixed_interface_applied: "+strings.Join(applied, "; "))
+				}
+			}
 			if !more && entry && st.SurfaceRepairs[id] == 0 {
 				// The run function must state the brief's command-line surface; a
 				// pass that left items out is asked once to write it again.
@@ -507,24 +521,18 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 					defect, more = mainDefectText(pkg), true
 				}
 			}
-			if !more {
-				// The brief's Architecture section fixes some interfaces of this
-				// package: a near miss gets the fixed signature, a missing one is
-				// asked for once and then stops the run.
-				applied, missing := applyFixedInterfaces(st.Doc, id, dir, ifs)
-				if len(applied) > 0 {
-					p.emit(events.KindWarning, "contract", "", "fixed_interface_applied: "+strings.Join(applied, "; "))
+			if !more && len(missing) > 0 {
+				// A fixed interface no function in the directory declares, with
+				// no later component of the directory to come, is asked of this
+				// component once and then stops the run.
+				if st.FixedRepairs[id] > 0 {
+					return fmt.Errorf("contract: component %s does not declare the fixed interface %s from the brief's Architecture section", boundedID(id), missing[0].Signature)
 				}
-				if len(missing) > 0 {
-					if st.FixedRepairs[id] > 0 {
-						return fmt.Errorf("contract: component %s does not declare the fixed interface %s from the brief's Architecture section", boundedID(id), missing[0].Signature)
-					}
-					if st.FixedRepairs == nil {
-						st.FixedRepairs = map[string]int{}
-					}
-					st.FixedRepairs[id]++
-					defect, more = fixedDefectText(missing), true
+				if st.FixedRepairs == nil {
+					st.FixedRepairs = map[string]int{}
 				}
+				st.FixedRepairs[id]++
+				defect, more = fixedDefectText(missing), true
 			}
 			if !more {
 				st.Done = append(st.Done, id)
@@ -548,6 +556,10 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 
 	for _, pkg := range mainDefects(st.Doc) {
 		p.emit(events.KindWarning, "contract", "", "main_function_missing: "+mainDefectText(pkg))
+	}
+	// A fixed interface whose directory has no component was never asked for.
+	for _, fi := range unownedFixedInterfaces(st.Doc, ifs, module) {
+		p.emit(events.KindWarning, "contract", "", unownedText(fi))
 	}
 	for _, comp := range objects(st.Doc["components"]) {
 		if pkg, _ := comp["package"].(string); surfaceTarget(pkg) && !surface.Empty() {

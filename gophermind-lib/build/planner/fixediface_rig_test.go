@@ -40,3 +40,42 @@ func TestSlugifyFixedInterfaceAppliedIsWarned(t *testing.T) {
 	}
 	t.Errorf("no fixed_interface_applied warning for fn-cli-run; warnings = %v", g.sink.OfKind("warning"))
 }
+
+// promptsOf is the user prompt of every request of stage, in order.
+func promptsOf(g *rig, stage string) []string {
+	var out []string
+	for _, r := range g.fake.Requests() {
+		if planner.StageOf(r) == stage {
+			out = append(out, r.Messages[1].Content)
+		}
+	}
+	return out
+}
+
+// Every component, not only the one under cmd/, is told that main calls the
+// fixed entry call, so none of them is asked for a run function.
+func TestComponentPromptNamesTheFixedEntryCallForEveryComponent(t *testing.T) {
+	g := newRigFor(t, approving(), slugify, slugifyID)
+	_, _ = g.plan(planner.Options{StopAfter: "contract"})
+	prompts := promptsOf(g, "contract:slug-logic")
+	if len(prompts) == 0 {
+		t.Fatal("no contract:slug-logic request")
+	}
+	if p := prompts[0]; !strings.Contains(p, "with the result of `cli.Run`") || strings.Contains(p, "`run` has the signature") {
+		t.Errorf("slug-logic prompt does not name the fixed entry call:\n%s", p)
+	}
+}
+
+// A lowercase run in internal/cli is renamed to Run before the surface check,
+// so the surface repair sees it and asks for its doc again.
+func TestSlugifyFixedRenameComesBeforeTheSurfaceCheck(t *testing.T) {
+	g := newRigFor(t, approving(), slugify, slugifyID,
+		variant(t, map[string]string{"contract.cli-logic.2.txt": `{"types": [], "functions": [{"id": "fn-run", "package": "internal/cli", "file": "internal/cli/run.go",` +
+			` "signature": "func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int", "doc": "Runs the command and returns the exit code.",` +
+			` "uses": ["fn-parse-args"]}], "more": false}`}))
+	_, _ = g.plan(planner.Options{StopAfter: "contract"})
+	prompts := promptsOf(g, "contract:cli-logic")
+	if len(prompts) < 3 || !strings.Contains(prompts[2], "the doc of fn-run does not state these items of the command-line surface") {
+		t.Errorf("no surface repair pass for the renamed fn-run; %d cli-logic passes", len(prompts))
+	}
+}

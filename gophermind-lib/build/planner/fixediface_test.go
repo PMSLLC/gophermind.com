@@ -78,14 +78,15 @@ func cliDoc(fns ...map[string]any) map[string]any {
 		f["component"] = "cli-logic"
 		list = append(list, f)
 	}
-	return map[string]any{"module": "slugify", "functions": list}
+	return map[string]any{"module": "slugify", "functions": list,
+		"components": []any{map[string]any{"id": "cli-logic", "package": "internal/cli"}}}
 }
 
 func TestFixedInterfaceSignatureRestored(t *testing.T) {
 	const want = "func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int"
 	run := map[string]any{"id": "fn-run", "signature": "func run(args []string, in io.Reader, out, errw io.Writer) int"}
 	doc := cliDoc(run)
-	applied, missing := applyFixedInterfaces(doc, "cli-logic", "internal/cli", fixedInterfaces(archOf(t, "slugify")))
+	applied, missing := applyFixedInterfaces(doc, "internal/cli", fixedInterfaces(archOf(t, "slugify")))
 	if got := run["signature"]; got != want {
 		t.Errorf("signature = %v, want %s", got, want)
 	}
@@ -102,7 +103,7 @@ func TestFixedInterfaceSignatureRestored(t *testing.T) {
 
 func TestFixedInterfaceMissingIsADefect(t *testing.T) {
 	doc := cliDoc(map[string]any{"id": "fn-parse-args", "signature": "func parseArgs(args []string) (int, error)"})
-	_, missing := applyFixedInterfaces(doc, "cli-logic", "internal/cli", fixedInterfaces(archOf(t, "slugify")))
+	_, missing := applyFixedInterfaces(doc, "internal/cli", fixedInterfaces(archOf(t, "slugify")))
 	if len(missing) != 1 || missing[0].Name != "Run" {
 		t.Fatalf("missing = %v, want the Run interface", missing)
 	}
@@ -180,7 +181,7 @@ func TestFixedInterfacePrefersTheExactName(t *testing.T) {
 	run := map[string]any{"id": "fn-run", "signature": helper}
 	exported := map[string]any{"id": "fn-cli-run", "signature": "func Run(args []string, in io.Reader, out, errw io.Writer) int"}
 	doc := cliDoc(run, exported)
-	applied, missing := applyFixedInterfaces(doc, "cli-logic", "internal/cli", fixedInterfaces(archOf(t, "slugify")))
+	applied, missing := applyFixedInterfaces(doc, "internal/cli", fixedInterfaces(archOf(t, "slugify")))
 	if run["signature"] != helper {
 		t.Errorf("helper run signature = %v, want it untouched", run["signature"])
 	}
@@ -195,7 +196,7 @@ func TestFixedInterfacePrefersTheExactName(t *testing.T) {
 func TestFixedInterfaceIgnoresMethods(t *testing.T) {
 	method := map[string]any{"id": "fn-server-run", "signature": "func (s *Server) Run(args []string) int"}
 	doc := cliDoc(method)
-	_, missing := applyFixedInterfaces(doc, "cli-logic", "internal/cli", fixedInterfaces(archOf(t, "slugify")))
+	_, missing := applyFixedInterfaces(doc, "internal/cli", fixedInterfaces(archOf(t, "slugify")))
 	if len(missing) != 1 || missing[0].Name != "Run" {
 		t.Errorf("missing = %v, want the Run interface", missing)
 	}
@@ -208,8 +209,146 @@ func TestFixedInterfaceAmbiguousCaseIsMissing(t *testing.T) {
 	a := map[string]any{"id": "fn-run", "signature": "func run(args []string) int"}
 	b := map[string]any{"id": "fn-run-upper", "signature": "func RUN(args []string) int"}
 	doc := cliDoc(a, b)
-	applied, missing := applyFixedInterfaces(doc, "cli-logic", "internal/cli", fixedInterfaces(archOf(t, "slugify")))
+	applied, missing := applyFixedInterfaces(doc, "internal/cli", fixedInterfaces(archOf(t, "slugify")))
 	if len(applied) != 0 || len(missing) != 1 || missing[0].Name != "Run" {
 		t.Errorf("applied = %v, missing = %v; want Run missing and nothing applied", applied, missing)
+	}
+}
+
+// twoCliDoc is a doc with two components in internal/cli; fns belong to the
+// first unless they name a component.
+func twoCliDoc(fns ...map[string]any) map[string]any {
+	var list []any
+	for _, f := range fns {
+		if f["component"] == nil {
+			f["component"] = "cli-logic"
+		}
+		list = append(list, f)
+	}
+	return map[string]any{"module": "slugify", "functions": list, "components": []any{
+		map[string]any{"id": "cli-logic", "package": "internal/cli"},
+		map[string]any{"id": "cli-io", "package": "internal/cli"},
+	}}
+}
+
+func TestFixedInterfaceDeclaredBySiblingComponentIsNotMissing(t *testing.T) {
+	run := map[string]any{"id": "fn-run", "signature": "func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int"}
+	read := map[string]any{"id": "fn-read-input", "component": "cli-io", "signature": "func readInput(r io.Reader) (string, error)"}
+	doc := twoCliDoc(run, read)
+	ifs := fixedInterfaces(archOf(t, "slugify"))
+	// cli-io is processed with its directory, internal/cli: Run is declared
+	// there by its sibling cli-logic, so nothing is missing.
+	if _, missing := applyFixedInterfaces(doc, "internal/cli", ifs); len(missing) != 0 {
+		t.Errorf("missing = %v, want none", missing)
+	}
+	// With no Run in the directory at all, it is missing.
+	if _, missing := applyFixedInterfaces(twoCliDoc(read), "internal/cli", ifs); len(missing) != 1 || missing[0].Name != "Run" {
+		t.Errorf("no Run anywhere: missing = %v, want Run", missing)
+	}
+}
+
+func TestFixedInterfaceWithoutAComponentWarns(t *testing.T) {
+	doc := map[string]any{"module": "slugify", "components": []any{
+		map[string]any{"id": "cli-logic", "package": "internal/cli"},
+		map[string]any{"id": "entry-point", "package": "slugify/cmd/slugify"},
+	}}
+	got := unownedFixedInterfaces(doc, fixedInterfaces(archOf(t, "slugify")), "slugify")
+	if len(got) != 1 || got[0].Dir != "internal/slug" {
+		t.Fatalf("unowned = %v, want the internal/slug interface", got)
+	}
+	if text, want := unownedText(got[0]), "fixed_interface_unowned: internal/slug: func Make(s string, max int) string"; text != want {
+		t.Errorf("warning = %q, want %q", text, want)
+	}
+}
+
+func TestEntryCallSkipsStandardLibraryQualifiers(t *testing.T) {
+	const others = "- `internal/slug`: `Make(s string, max int) string` is pure.\n" +
+		"- `internal/cli`: `Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int` runs.\n"
+	for _, bullet := range []string{
+		"- `cmd/slugify` (package `main`): calls `cli.Run` with `os.Args[1:]`, `os.Stdout` and `os.Stderr`.\n",
+		"- `cmd/slugify` (package `main`): passes `os.Args[1:]` to `cli.Run` and exits with its code.\n",
+	} {
+		if pkg, name := entryCall(bullet + others); pkg != "cli" || name != "Run" {
+			t.Errorf("entryCall(%q) = %q, %q; want cli, Run", bullet, pkg, name)
+		}
+	}
+	// No qualifier names an Architecture package: no entry call.
+	if pkg, name := entryCall("- `cmd/x`: passes `os.Args[1:]` on.\n" + others); pkg != "" || name != "" {
+		t.Errorf("entryCall with only os qualifiers = %q, %q; want empty", pkg, name)
+	}
+}
+
+func TestFixedInterfacesSkipCallExamples(t *testing.T) {
+	arch := "- `internal/slug`: `Make(s string, max int) string` lowercases; `Make(s, 0)` means no limit, as does `Make(text, max)`.\n"
+	wantFixed(t, fixedInterfaces(arch), []fixedIface{
+		{"internal/slug", "Make", "func Make(s string, max int) string"},
+	})
+}
+
+func TestOwnPackageIsSymmetric(t *testing.T) {
+	cases := []struct{ pkg, comp string }{
+		{"internal/greet", "greet"},
+		{"greet", "internal/greet"},
+		{"hello/internal/greet", "greet"},
+	}
+	for _, c := range cases {
+		if !ownPackage(c.pkg, c.comp, "hello") {
+			t.Errorf("ownPackage(%q, %q) = false, want true", c.pkg, c.comp)
+		}
+	}
+	if ownPackage("internal/cli", "greet", "hello") {
+		t.Errorf("ownPackage(internal/cli, greet) = true, want false")
+	}
+}
+
+func TestModuleRootMainIsNotForeign(t *testing.T) {
+	reply := `{"functions": [{"id": "fn-main", "package": "main", "file": "main.go", "signature": "func main()"}]}`
+	for _, comp := range []string{"slugify", "."} {
+		if _, dropped := dropForeignFunctions(reply, comp, "slugify"); len(dropped) != 0 {
+			t.Errorf("module-root component %q dropped %v, want its main kept", comp, dropped)
+		}
+	}
+}
+
+func TestFixedDirIsModuleStripped(t *testing.T) {
+	arch := "- `example.com/slugify/internal/slug`: `Make(s string, max int) string` is pure.\n"
+	mk := map[string]any{"id": "fn-make", "component": "slug-logic", "signature": "func make(s string, n int) string"}
+	doc := map[string]any{"module": "example.com/slugify", "functions": []any{mk}, "components": []any{
+		map[string]any{"id": "slug-logic", "package": "internal/slug"},
+	}}
+	ifs := fixedInterfaces(arch)
+	applied, missing := applyFixedInterfaces(doc, "internal/slug", ifs)
+	if len(applied) != 1 || len(missing) != 0 || mk["signature"] != "func Make(s string, max int) string" {
+		t.Errorf("applied = %v, missing = %v, signature = %v", applied, missing, mk["signature"])
+	}
+	if got := unownedFixedInterfaces(doc, ifs, "example.com/slugify"); len(got) != 0 {
+		t.Errorf("unowned = %v, want none", got)
+	}
+}
+
+func TestMainDefectTextNamesNoRunFunction(t *testing.T) {
+	if msg := mainDefectText("cmd/slugify"); strings.Contains(msg, "run function") || !strings.Contains(msg, "exits with the returned code") {
+		t.Errorf("main defect = %q", msg)
+	}
+}
+
+// The first of two components in internal/cli declares nothing fixed: Run is
+// not asked of it, because its sibling comes later and declares Run; after
+// the sibling's pass nothing is missing.
+func TestFixedInterfaceWaitsForTheSiblingComponent(t *testing.T) {
+	ifs := fixedInterfaces(archOf(t, "slugify"))
+	parse := map[string]any{"id": "fn-parse-args", "signature": "func parseArgs(args []string) (int, error)"}
+	doc := twoCliDoc(parse)
+	if _, missing := fixedMissingNow(doc, "cli-logic", "internal/cli", ifs, nil); len(missing) != 0 {
+		t.Errorf("first component: missing = %v, want none while cli-io is still to come", missing)
+	}
+	doc["functions"] = append(doc["functions"].([]any),
+		map[string]any{"id": "fn-run", "component": "cli-io", "signature": "func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int"})
+	if _, missing := fixedMissingNow(doc, "cli-io", "internal/cli", ifs, []string{"cli-logic"}); len(missing) != 0 {
+		t.Errorf("second component: missing = %v, want none", missing)
+	}
+	// The last component of the directory is asked when Run is still missing.
+	if _, missing := fixedMissingNow(twoCliDoc(parse), "cli-io", "internal/cli", ifs, []string{"cli-logic"}); len(missing) != 1 {
+		t.Errorf("last component without Run: missing = %v, want Run", missing)
 	}
 }

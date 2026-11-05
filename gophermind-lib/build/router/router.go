@@ -32,8 +32,12 @@ type Scope string
 
 const (
 	ScopeBrief     Scope = "brief"     // the whole brief
-	ScopeComponent Scope = "component" // one component's slice of the brief
-	ScopeNode      Scope = "node"      // one function's contract, signatures and tests
+	ScopeComponent Scope = "component" // one component's work, with the whole brief
+	// ScopeNode is one function's contract, signatures and tests, with every
+	// feature, Architecture, Data, Constraints, Out of scope and Acceptance:
+	// a public provider at node scope sees the brief's feature text and every
+	// section but Overview.
+	ScopeNode Scope = "node"
 )
 
 // CallInfo says who is asking and what the call carries.

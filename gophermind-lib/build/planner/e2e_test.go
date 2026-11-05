@@ -454,7 +454,9 @@ func TestTheTestWriterOnlyWritesItsOwnFilesInsideTheRepo(t *testing.T) {
 
 // The privacy rule, end to end: a public provider sits first in the strong
 // chain. It may write tests for one function (node scope) and must never see
-// a call that carries the brief or a component.
+// a brief-scope or component-scope call. Node scope is not brief-free: a
+// public provider at node scope sees the brief's feature text and every
+// section but Overview.
 func TestAPublicProviderOnlyEverSeesNodeScopeCalls(t *testing.T) {
 	g := newRig(t, approving())
 	inner, err := planner.FixtureProvider(greeter)
