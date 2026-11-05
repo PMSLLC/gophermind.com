@@ -83,6 +83,11 @@ type Leaf struct {
 	Revision                                         int
 	Description                                      string
 	Behaviour                                        []string
+	// NodeDescription and SideEffects are the node's description and
+	// contract side effects at every revision, read only by the execution
+	// policy preflight (Description stays empty for an unrevised node).
+	NodeDescription string
+	SideEffects     []string
 }
 
 // NetHost is one host of a leaf's network block.
@@ -369,6 +374,7 @@ func (p *Plan) leaf(n tree.Node, rootNet []NetHost, fns map[string]contract.Func
 		Constraints: d.Context.Constraints, DepSignatures: d.Context.DependencySignatures,
 		MaxContextTokens: d.Budget.MaxContextTokens, MaxRevisions: -1,
 		Guidance: guidance, Revision: d.Revision,
+		NodeDescription: d.Description, SideEffects: d.Contract.SideEffects,
 	}
 	if l.Revision >= 1 {
 		l.Description, l.Behaviour = d.Description, behaviourFrom(d)

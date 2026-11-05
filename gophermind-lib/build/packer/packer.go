@@ -507,8 +507,12 @@ func (s *state) render() (string, error) {
 		}
 		failure = b.String()
 	}
+	allowExit := ""
+	if AllowsExit(s.n.Package, s.n.Signature) {
+		allowExit = "true"
+	}
 	return renderTemplate("implement", escAll(map[string]string{
-		"File": s.n.File, "Package": s.n.Package, "Signature": s.n.Signature,
+		"AllowExit": allowExit, "File": s.n.File, "Package": s.n.Package, "Signature": s.n.Signature,
 		"Contract": s.contract, "Deps": deps, "Constraints": cons, "Notes": notes, "Guidance": guidanceText(s.guidance), "Behaviour": behaviourText(s.desc, s.behaviour),
 		"TestFile": s.n.TestFile, "TestSource": strings.TrimRight(s.testSrc, "\n"), "Failure": failure,
 	}))

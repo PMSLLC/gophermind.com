@@ -21,8 +21,8 @@ func TestMalformedNoteByKind(t *testing.T) {
 		{"not found", "package stats\n\nfunc " + canary + "() {}\n", noteNotFound},
 		{"package", "package " + strings.ToLower(canary) + "\n\nfunc Finalize() int { return 1 }\n", notePackage},
 		{"syntax", "package stats\n\nfunc Finalize( {" + canary + "\n", noteSyntax},
-		{"forbidden", "package stats\n\nimport \"flag\"\n\nfunc Finalize() int { _ = flag.ContinueOnError; return 1 }\n", noteForbiddenCall},
-		{"forbidden exit", "package stats\n\nimport \"os\"\n\nfunc Finalize() int { os.Exit(1); return 1 }\n", noteForbiddenCall},
+		{"forbidden", "package stats\n\nimport \"flag\"\n\nfunc Finalize() int { _ = flag.ContinueOnError; return 1 }\n", noteForbiddenCall(false)},
+		{"forbidden exit", "package stats\n\nimport \"os\"\n\nfunc Finalize() int { os.Exit(1); return 1 }\n", noteForbiddenCall(false)},
 		{"unknown kind", "", noteMalformed},
 	}
 	for _, c := range cases {
@@ -30,12 +30,12 @@ func TestMalformedNoteByKind(t *testing.T) {
 		if perr == nil {
 			t.Fatalf("%s: accepted", c.name)
 		}
-		got := malformedNote(perr)
+		got := malformedNote(perr, false)
 		if got != c.want || strings.Contains(got, canary) {
 			t.Errorf("%s: note %q", c.name, got)
 		}
 	}
-	if malformedNote(errors.New("x")) != noteMalformed {
+	if malformedNote(errors.New("x"), false) != noteMalformed {
 		t.Error("a plain error must keep noteMalformed")
 	}
 	if !strings.Contains(noteDeclaration, "do not declare them again") {

@@ -37,8 +37,20 @@ type Expect struct {
 	// empty non-nil slice means the contract declares nothing else): nil fails
 	// closed, and every helper declaration in the reply is then refused.
 	Declared []string
-	canon    string
-	recvBase string
+	// AllowExit lets the body of the target function call os.Exit or
+	// syscall.Exit. Set it only for the validated entry (AllowsExit): package
+	// main, signature exactly func main(). Every other function, and every
+	// helper beside main, is still refused.
+	AllowExit bool
+	canon     string
+	recvBase  string
+}
+
+// AllowsExit is the structural rule for the one function that may end the
+// process: package clause main and signature exactly func main(). It is the
+// same rule the executor's final source scan applies.
+func AllowsExit(pkg, signature string) bool {
+	return pkg == "main" && strings.TrimSpace(signature) == "func main()"
 }
 
 // Size caps on a reply, checked before anything is parsed.
@@ -459,7 +471,7 @@ func gate(f *ast.File, e Expect, target *ast.FuncDecl) string {
 				kind = "forbidden call (process exit or fatal log)"
 			}
 			if x, ok := v.X.(*ast.Ident); ok {
-				if processControl[alias[x.Name]][v.Sel.Name] {
+				if processControl[alias[x.Name]][v.Sel.Name] && !allowedExit(e, target, alias[x.Name], v) {
 					kind = "forbidden call (process exit or fatal log)"
 				}
 				if alias[x.Name] == "flag" && f.Name.Name != "main" && (v.Sel.Name == "ExitOnError" || v.Sel.Name == "ContinueOnError") {
@@ -474,4 +486,13 @@ func gate(f *ast.File, e Expect, target *ast.FuncDecl) string {
 		return kind == ""
 	})
 	return kind
+}
+
+// allowedExit reports an os.Exit or syscall.Exit inside the body of the
+// validated main, the one place Expect.AllowExit lets a process end itself.
+func allowedExit(e Expect, target *ast.FuncDecl, pkg string, sel *ast.SelectorExpr) bool {
+	if !e.AllowExit || target == nil || target.Body == nil || sel.Sel.Name != "Exit" || (pkg != "os" && pkg != "syscall") {
+		return false
+	}
+	return sel.Pos() >= target.Body.Pos() && sel.End() <= target.Body.End()
 }

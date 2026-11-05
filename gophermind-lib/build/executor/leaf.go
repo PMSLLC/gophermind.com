@@ -9,6 +9,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,14 +41,24 @@ const (
 	noteNotFound       = "The file must declare the function named in the contract."
 	notePackage        = "The file must use exactly the package named in the contract."
 	noteSyntax         = "The previous file is not valid Go source. Reply with exactly one complete Go source file in one code fence."
-	noteForbiddenCall  = "The previous file was refused: it used something model code may not use. Never call os.Exit, log.Fatal, log.Panic, runtime.Goexit or recover. Outside package main never use flag.ExitOnError or flag.ContinueOnError: read the arguments by looping over the slice by hand, and report a bad argument by returning an error or a code."
 	noteStray          = "The previous reply was refused: something other than the target file was written while its tests ran. Write only the target file."
 	noteCritical       = "The previous reply was refused: a request to a critical network host failed while its tests ran."
 )
 
+// noteForbiddenCall is the sentence for a reply the gate refused for a call
+// model code may not make. The validated main (allowExit) may end the process
+// once with the entry call's result; every other function may not.
+func noteForbiddenCall(allowExit bool) string {
+	exit := "Never call os.Exit, log.Fatal, log.Panic, runtime.Goexit or recover."
+	if allowExit {
+		exit = "Call os.Exit only once, at the end of main, with the result of the entry call. Never call log.Fatal, log.Panic, runtime.Goexit or recover."
+	}
+	return "The previous file was refused: it used something model code may not use. " + exit + " Outside package main never use flag.ExitOnError or flag.ContinueOnError: read the arguments by looping over the slice by hand, and report a bad argument by returning an error or a code."
+}
+
 // malformedNote is the fixed sentence for a reply the packer called malformed,
 // chosen by the packer's class. An error with no class keeps noteMalformed.
-func malformedNote(err error) string {
+func malformedNote(err error, allowExit bool) string {
 	switch packer.ErrorClass(err) {
 	case packer.ClassDeclaration:
 		return noteDeclaration
@@ -60,7 +71,7 @@ func malformedNote(err error) string {
 	case packer.ClassSyntax:
 		return noteSyntax
 	case packer.ClassForbidden:
-		return noteForbiddenCall
+		return noteForbiddenCall(allowExit)
 	}
 	return noteMalformed
 }
@@ -103,6 +114,7 @@ const (
 	revTooLong                   // every entry was too small for the prompt floor
 	revInterrupted               // the context ended, or every entry was cooling or failing with nothing charged
 	revCandidate                 // a private pass was saved: the leaf waits for its turn and lands (sub-project F)
+	revPolicy                    // the model repeated a reply the gate refuses for a forbidden call: no other entry is tried
 )
 
 // entryEnd is how one entry of the ladder ended within a revision.
@@ -117,6 +129,7 @@ const (
 	endMalformed // malformed after the router's repair
 	endPermanent // auth, missing model, no provider, privacy
 	endInterrupted
+	endPolicy // the same reply refused for a forbidden call twice: the revision ends
 )
 
 // leafRun is the state of one leaf from claim to a terminal status.
@@ -269,6 +282,7 @@ func (rc *runCtx) newLeafRun(ctx context.Context, l *Leaf, in leafIn) (*leafRun,
 		return nil, &stopError{Status: "failed", Reason: "contract_signature",
 			Message: fmt.Sprintf("executor: leaf %s: the contract signature does not parse as a function", l.ID)}
 	}
+	exp.AllowExit = packer.AllowsExit(l.Package, l.Signature)
 	wt := in.Tree
 	if wt == nil {
 		wt = rc.mainTree()
@@ -380,6 +394,9 @@ func (rc *runCtx) runLeaf(ctx context.Context, l *Leaf, in leafIn) (out leafOutc
 		return lr.exit(ctx, leafOutcome{}, berr)
 	}
 	lr = built
+	if perr := lr.preflight(); perr != nil {
+		return lr.exit(ctx, leafOutcome{}, perr)
+	}
 
 	if in.Repair == 0 && !lr.wt.Private {
 		done, o, aerr := lr.adoptOnDisk(ctx)
@@ -419,6 +436,37 @@ func (rc *runCtx) runLeaf(ctx context.Context, l *Leaf, in leafIn) (out leafOutc
 			return lr.exit(ctx, o, aerr)
 		}
 	}
+}
+
+// reasonPolicyConflict is the terminal reason of a leaf whose node asks for
+// something the reply gate always refuses, found before any model call, and
+// the escalation reason of a revision a repeated forbidden reply ended.
+const reasonPolicyConflict = "execution_policy_conflict"
+
+// exitWordRE matches os.Exit as a word: not gmos.Exit, not os.Exiting.
+var exitWordRE = regexp.MustCompile(`(^|[^\w.])os\.Exit\b`)
+
+func mentionsExit(text string) bool { return exitWordRE.MatchString(text) }
+
+// preflight compares what the node asks for with what the reply gate allows,
+// before the ladder spends a call. A node whose description or side effects
+// say it calls os.Exit, outside the validated main (packer.AllowsExit), can
+// never pass the gate: the plan is at fault, so the leaf fails and the run
+// stops with a cause that names the node, the action and the rule.
+func (lr *leafRun) preflight() error {
+	l := lr.l
+	if lr.expect.AllowExit {
+		return nil
+	}
+	asks := mentionsExit(l.NodeDescription)
+	for _, s := range l.SideEffects {
+		asks = asks || mentionsExit(s)
+	}
+	if !asks {
+		return nil
+	}
+	return &stopError{Status: "failed", Reason: reasonPolicyConflict,
+		Message: fmt.Sprintf("executor: %s requires os.Exit; model code may not end the process (only func main() of package main may call os.Exit)", l.ID)}
 }
 
 // startHeartbeat refreshes the claim every interval until the returned
@@ -546,9 +594,12 @@ func (lr *leafRun) afterRevision(ctx context.Context, res revResult) (out leafOu
 			doRevise = true
 		}
 	default:
-		if lr.rev < rc.maxRevisions(l) {
+		switch {
+		case lr.rev < rc.maxRevisions(l):
 			doRevise = true
-		} else {
+		case res == revPolicy:
+			reason = reasonPolicyConflict
+		default:
 			reason = lr.lastClass(ctx)
 		}
 	}
@@ -758,7 +809,7 @@ func (lr *leafRun) gate(src []byte) (class, note string) {
 	r, err := packer.ParseReply(string(src), lr.expect)
 	switch {
 	case err != nil:
-		return runner.ClassMalformed, malformedNote(err)
+		return runner.ClassMalformed, malformedNote(err, lr.expect.AllowExit)
 	case len(r.Stripped) > 0:
 		// A file taken from disk is not rewritten: what a reply would have
 		// stripped is a refusal here, as before the lenient parse.
@@ -988,6 +1039,8 @@ func (lr *leafRun) oneRevision(ctx context.Context) (revResult, error) {
 			return revInterrupted, nil
 		case endContract:
 			return revContractProblem, nil
+		case endPolicy:
+			return revPolicy, nil
 		case endTooLong:
 			tooLong++
 		case endProvider:
@@ -1306,11 +1359,17 @@ func (lr *leafRun) providerError(ctx context.Context, e ladderEntry, started tim
 			if errors.Is(err, errCancelled) {
 				return endInterrupted, true, nil
 			}
+			if err == nil && packer.ErrorClass(parseErr) == packer.ClassForbidden {
+				// The model repeats a call the gate will always refuse: another
+				// entry is told the same rule, so the revision ends here.
+				lr.prev = failureText(malformedNote(parseErr, lr.expect.AllowExit))
+				return endPolicy, true, nil
+			}
 			return endIdentical, true, err
 		}
 		class, end = runner.ClassMalformed, endMalformed
 		if parseErr != nil {
-			lr.prev = failureText(malformedNote(parseErr))
+			lr.prev = failureText(malformedNote(parseErr, lr.expect.AllowExit))
 			lr.art.malformed = packer.ErrorReason(parseErr)
 		}
 	case len(ce.Reasons) > 0:
