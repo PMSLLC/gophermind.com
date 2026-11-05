@@ -29,6 +29,23 @@ func TestBriefSpecDownload(t *testing.T) {
 	}
 }
 
+func TestBriefSpecV3DraftDownload(t *testing.T) {
+	e := newBriefEnv(t)
+	w := e.get("/app/brief-spec-v3.md")
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /app/brief-spec-v3.md = %d", w.Code)
+	}
+	if cd := w.Header().Get("Content-Disposition"); cd != `attachment; filename="gophermind-brief-spec-v3-draft.md"` {
+		t.Errorf("Content-Disposition %q", cd)
+	}
+	if !strings.HasPrefix(w.Body.String(), "# GopherMind brief specification v3 (draft)") {
+		t.Errorf("body starts %q", w.Body.String()[:50])
+	}
+	if w := do(e.h, "GET", "/app/brief-spec-v3.md", nil); w.Code != http.StatusUnauthorized {
+		t.Errorf("without a session = %d, want 401", w.Code)
+	}
+}
+
 func TestUploadPageLinksTheBriefSpec(t *testing.T) {
 	e := newBriefEnv(t)
 	w := e.get("/app/briefs/new")

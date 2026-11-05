@@ -14,7 +14,7 @@ import (
 // gm.css is the one stylesheet; pageHandler inlines it and the navigation rail
 // into each page (the page's CSP allows inline styles and scripts only).
 //
-//go:embed assets/home.html assets/chat.html assets/briefs.html assets/brief_new.html assets/brief.html assets/brief_llm.html assets/library.html assets/library_edit.html assets/library_preview.html assets/pipeline.html assets/harness.html assets/gm.css assets/brief-spec.md
+//go:embed assets/home.html assets/chat.html assets/briefs.html assets/brief_new.html assets/brief.html assets/brief_llm.html assets/library.html assets/library_edit.html assets/library_preview.html assets/pipeline.html assets/harness.html assets/gm.css assets/brief-spec.md assets/brief-spec-v3.md
 var pagesAssets embed.FS
 
 // Markers a page carries where the shared parts go.
@@ -76,13 +76,22 @@ func railHTML(active string) string {
 // briefSpecHandler serves the brief specification as a Markdown download, for
 // other tools that write briefs.
 func briefSpecHandler(w http.ResponseWriter, r *http.Request) {
-	b, err := pagesAssets.ReadFile("assets/brief-spec.md")
+	serveSpec(w, "assets/brief-spec.md", "gophermind-brief-spec.md")
+}
+
+// briefSpecV3Handler serves the v3 draft of the specification the same way.
+func briefSpecV3Handler(w http.ResponseWriter, r *http.Request) {
+	serveSpec(w, "assets/brief-spec-v3.md", "gophermind-brief-spec-v3-draft.md")
+}
+
+func serveSpec(w http.ResponseWriter, asset, filename string) {
+	b, err := pagesAssets.ReadFile(asset)
 	if err != nil {
 		http.Error(w, "page asset missing", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="gophermind-brief-spec.md"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(b)
 }
