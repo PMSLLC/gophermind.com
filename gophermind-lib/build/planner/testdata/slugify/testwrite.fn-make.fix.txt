@@ -1,0 +1,103 @@
+```go
+package slug
+
+import (
+	"testing"
+)
+
+func TestMake(t *testing.T) {
+	tests := []struct {
+		name     string
+		s        string
+		max      int
+		want     string
+	}{
+		{
+			name: "Happy path with lowercase and hyphens",
+			s:    "Hello, World!",
+			max:  10,
+			want: "hello-world",
+		},
+		{
+			name: "No truncation when max is zero",
+			s:    "Hello World",
+			max:  0,
+			want: "hello-world",
+		},
+		{
+			name: "No truncation when max is negative",
+			s:    "Hello World",
+			max:  -5,
+			want: "hello-world",
+		},
+		{
+			name: "Truncation applied when max is positive",
+			s:    "Hello World",
+			max:  5,
+			want: "hello",
+		},
+		{
+			name: "Empty input string",
+			s:    "",
+			max:  10,
+			want: "",
+		},
+		{
+			name: "Input with only special characters",
+			s:    "!@#$ %^&*()",
+			max:  10,
+			want: "---------",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Make(tt.s, tt.max); got != tt.want {
+				t.Errorf("Make() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func BenchmarkMake(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Make("Hello, World!", 10)
+	}
+}
+
+func BenchmarkMake_Happy_path_with_lowercase_and_hyphens(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Make("Hello, World!", 10)
+	}
+}
+
+func BenchmarkMake_No_truncation_when_max_is_zero(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Make("Hello World", 0)
+	}
+}
+
+func BenchmarkMake_No_truncation_when_max_is_negative(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Make("Hello World", -5)
+	}
+}
+
+func BenchmarkMake_Truncation_applied_when_max_is_positive(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Make("Hello World", 5)
+	}
+}
+
+func BenchmarkMake_Empty_input_string(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Make("", 10)
+	}
+}
+
+func BenchmarkMake_Input_with_only_special_characters(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Make("!@#$ %^&*()", 10)
+	}
+}
+```

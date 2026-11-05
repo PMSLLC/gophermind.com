@@ -1,0 +1,68 @@
+```json
+{"tests": [{"name": "Happy path with max length", "given": "args = []string{\"--max\", \"10\"}", "expect": "max = 10, err = nil", "polarity": "success", "covers": "happy"}, {"name": "No arguments", "given": "args = []string{}", "expect": "max = 0, err = nil", "polarity": "success", "covers": "input:args"}, {"name": "Invalid max value", "given": "args = []string{\"--max\", \"abc\"}", "expect": "max = 0, err != nil", "polarity": "negative", "covers": "error:1"}, {"name": "Missing value for max", "given": "args = []string{\"--max\"}", "expect": "max = 0, err != nil", "polarity": "negative", "covers": "error:1"}]}
+```
+
+```go
+package cli
+
+import (
+	"strconv"
+	"testing"
+)
+
+func TestCfgOptions(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		wantMax   int
+		wantErr   bool
+		isError   bool
+	}{
+		{
+			name:    "Happy path with max length",
+			args:    []string{"--max", "10"},
+			wantMax: 10,
+			wantErr: false,
+		},
+		{
+			name:    "No arguments",
+			args:    []string{},
+			wantMax: 0,
+			wantErr: false,
+		},
+		{
+			name:    "Invalid max value",
+			args:    []string{"--max", "abc"},
+			wantMax: 0,
+			wantErr: true,
+		},
+		{
+			name:    "Missing value for max",
+			args:    []string{"--max"},
+			wantMax: 0,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotMax, err := cfgOptions(tt.args)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("cfgOptions() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if gotMax != tt.wantMax {
+				t.Errorf("cfgOptions() gotMax = %v, wantMax %v", gotMax, tt.wantMax)
+			}
+		})
+	}
+}
+
+func BenchmarkCfgOptions(b *testing.B) {
+	args := []string{"--max", "10"}
+	for i := 0; i < b.N; i++ {
+		_, _ = cfgOptions(args)
+	}
+}
+```

@@ -1,0 +1,14 @@
+```json
+[
+  {
+    "id": "fn-main",
+    "performance": {
+      "complexity": "O(1)",
+      "max_latency_ms": null,
+      "alloc_budget": "negligible",
+      "concurrency": "single_goroutine",
+      "hot_path": false
+    }
+  }
+]
+```

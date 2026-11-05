@@ -1,0 +1,118 @@
+{
+  "map": [
+    {
+      "requirement": "F1",
+      "nodes": [
+        "fn-make"
+      ]
+    },
+    {
+      "requirement": "F2",
+      "nodes": [
+        "fn-parse-args",
+        "fn-print-error"
+      ]
+    },
+    {
+      "requirement": "C1",
+      "nodes": []
+    },
+    {
+      "requirement": "C2",
+      "nodes": []
+    },
+    {
+      "requirement": "C3",
+      "nodes": []
+    },
+    {
+      "requirement": "C4",
+      "nodes": []
+    },
+    {
+      "requirement": "A1",
+      "nodes": []
+    },
+    {
+      "requirement": "A2",
+      "nodes": []
+    },
+    {
+      "requirement": "A3",
+      "nodes": []
+    },
+    {
+      "requirement": "A4",
+      "nodes": []
+    },
+    {
+      "requirement": "A5",
+      "nodes": []
+    },
+    {
+      "requirement": "A6",
+      "nodes": []
+    },
+    {
+      "requirement": "A7",
+      "nodes": []
+    }
+  ],
+  "root_tests": [
+    {
+      "requirement": "C1",
+      "name": "Standard library only",
+      "command": "! grep -rqE '(\"github.com/|\"golang.org/\")' ."
+    },
+    {
+      "requirement": "C2",
+      "name": "Go 1.22 or later",
+      "command": "go version"
+    },
+    {
+      "requirement": "C3",
+      "name": "gofmt and go vet clean",
+      "command": "gofmt -l . | grep -q . || (go vet ./... && exit 0)"
+    },
+    {
+      "requirement": "C4",
+      "name": "Table driven hermetic tests",
+      "command": "go test -v ./... | grep -q '--- Test'"
+    },
+    {
+      "requirement": "A1",
+      "name": "Build succeeds",
+      "command": "go build ./..."
+    },
+    {
+      "requirement": "A2",
+      "name": "Vet reports nothing",
+      "command": "go vet ./..."
+    },
+    {
+      "requirement": "A3",
+      "name": "Tests pass",
+      "command": "go test ./..."
+    },
+    {
+      "requirement": "A4",
+      "name": "Input from stdin",
+      "command": "printf 'Hello, World!\\n' | slugify - | grep -qx 'hello-world'"
+    },
+    {
+      "requirement": "A5",
+      "name": "Max limit works",
+      "command": "printf 'Hello, World!\\n' | slugify --max 6 | grep -qx 'hello'"
+    },
+    {
+      "requirement": "A6",
+      "name": "Max 0 exits 2",
+      "command": "slugify --max 0 2>/dev/null | grep -q . || [ $? -eq 2 ]"
+    },
+    {
+      "requirement": "A7",
+      "name": "Multiple files exits 2",
+      "command": "slugify a b 2>/dev/null | grep -q . || [ $? -eq 2 ]"
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "module": "example.com/slugify",
+  "conventions": {
+    "errors": "Errors are returned as values. Application exit codes are handled by the main entry point based on the return value of the CLI runner.",
+    "layout": [
+      "cmd/slugify for the main entry point",
+      "internal/cli for CLI logic and argument parsing",
+      "internal/slug for pure string transformation logic"
+    ],
+    "logging": "No logging allowed; errors are printed to stderr as specified in the requirements.",
+    "naming": [
+      "component ids: lowercase letters, digits, and dashes",
+      "type ids: lowercase letters, digits, and dashes",
+      "function ids: fn-prefix-with-hyphens"
+    ],
+    "testing": "Tests must be table-driven, hermetic, and use strings.NewReader, bytes.Buffer, and t.TempDir for file operations."
+  },
+  "components": [
+    {
+      "id": "slug-logic",
+      "package": "internal/slug",
+      "exports": [],
+      "integration_tests": []
+    },
+    {
+      "id": "cli-logic",
+      "package": "internal/cli",
+      "exports": [],
+      "integration_tests": [
+        {
+          "name": "max value out of bounds",
+          "given": "a command line argument --max 0",
+          "expect": "exit code 2 and error message to stderr",
+          "command": "slugify --max 0"
+        },
+        {
+          "name": "multiple files provided",
+          "given": "two file arguments",
+          "expect": "exit code 2 and usage message to stderr",
+          "command": "slugify file1.txt file2.txt"
+        }
+      ]
+    },
+    {
+      "id": "entry-point",
+      "package": "cmd/slugify",
+      "exports": [],
+      "integration_tests": []
+    }
+  ],
+  "types": [],
+  "dependencies": []
+}

@@ -1,0 +1,147 @@
+```json
+{
+  "tests": [
+    {
+      "name": "Happy path with max length and files",
+      "given": "args = []string{\"--max\", \"20\", \"file1.txt\", \"file2.txt\"}",
+      "expect": "max = 20, files = []string{\"file1.txt\", \"file2.txt\"}, err = nil",
+      "polarity": "success",
+      "covers": "happy"
+    },
+    {
+      "name": "Empty arguments",
+      "given": "args = []string{}",
+      "expect": "max = 0, files = []string{}, err = nil",
+      "polarity": "success",
+      "covers": "input:args"
+    },
+    {
+      "name": "Only max length provided",
+      "given": "args = []string{\"--max\", \"50\"}",
+      "expect": "max = 50, files = []string{}, err = nil",
+      "polarity": "success",
+      "covers": "input:args"
+    },
+    {
+      "name": "Max length is zero",
+      "given": "args = []string{\"--max\", \"0\"}",
+      "expect": "max = 0, files = []string{}, err = nil",
+      "polarity": "boundary",
+      "covers": "boundary"
+    },
+    {
+      "name": "Max length is negative",
+      "given": "args = []string{\"--max\", \"-1\"}",
+      "expect": "max = -1, files = []string{}, err = <error>",
+      "polarity": "negative",
+      "covers": "error:1"
+    },
+    {
+      "name": "Missing value for max flag",
+      "given": "args = []string{\"--max\"}",
+      "expect": "max = 0, files = []string{}, err = <error>",
+      "polarity": "negative",
+      "covers": "error:1"
+    },
+    {
+      "name": "Invalid value for max flag",
+      "given": "args = []string{\"--max\", \"abc\"}",
+      "expect": "max = 0, files = []string{}, err = <error>",
+      "polarity": "negative",
+      "covers": "error:1"
+    }
+  ]
+}
+```
+
+```go
+package cli
+
+import (
+	"errors"
+	"testing"
+)
+
+func TestParseArgs(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		wantMax   int
+		wantFiles []string
+		wantErr   bool
+	}{
+		{
+			name:      "Happy path with max length and files",
+			args:      []string{"--max", "20", "file1.txt", "file2.txt"},
+			wantMax:   20,
+			wantFiles: []string{"file1.txt", "file2.txt"},
+			wantErr:   false,
+		},
+		{
+			name:      "Empty arguments",
+			args:      []string{},
+			wantMax:   0,
+			wantFiles: []string{},
+			wantErr:   false,
+		},
+		{
+			name:      "Only max length provided",
+			args:      []string{"--max", "50"},
+			wantMax:   50,
+			wantFiles: []string{},
+			wantErr:   false,
+		},
+		{
+			name:      "Max length is zero",
+			args:      []string{"--max", "0"},
+			wantMax:   0,
+			wantFiles: []string{},
+			wantErr:   false,
+		},
+		{
+			name:      "Max length is negative",
+			args:      []string{"--max", "-1"},
+			wantMax:   0,
+			wantFiles: []string{},
+			wantErr:   true,
+		},
+		{
+			name:      "Missing value for max flag",
+			args:      []string{"--max"},
+			wantMax:   0,
+			wantFiles: []string{},
+			wantErr:   true,
+		},
+		{
+			name:      "Invalid value for max flag",
+			args:      []string{"--max", "abc"},
+			wantMax:   0,
+			wantFiles: []string{},
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotMax, gotFiles, err := parseArgs(tt.args)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseArgs() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if gotMax != tt.wantMax {
+				t.Errorf("parseArgs() gotMax = %v, want %v", gotMax, tt.wantMax)
+			}
+			if len(gotFiles) != len(tt.wantFiles) {
+				t.Errorf("parseArgs() gotFiles length = %v, want %v", len(gotFiles), len(tt.wantFiles))
+				return
+			}
+			for i := range gotFiles {
+				if gotFiles[i] != tt.wantFiles[i] {
+					t.Errorf("parseArgs() gotFiles[%d] = %v, want %v", i, gotFiles[i], tt.wantFiles[i])
+				}
+			}
+		})
+	}
+}
+```

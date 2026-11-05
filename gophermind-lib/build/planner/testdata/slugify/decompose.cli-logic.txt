@@ -1,0 +1,301 @@
+```json
+[
+  {
+    "id": "fn-run",
+    "title": "Run the slugify command",
+    "description": "Parses command line arguments and coordinates the execution of the slugify command.",
+    "model_tier": "standard",
+    "node_class": "handler",
+    "depends_on": [
+      "fn-parse-args",
+      "fn-execute-slugify",
+      "fn-print-error"
+    ],
+    "contract": {
+      "package": "cli",
+      "file": "cli/main.go",
+      "signature": "func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int",
+      "inputs": [
+        {
+          "name": "args",
+          "type": "[]string",
+          "nil_ability": "non-nil",
+          "empty_behavior": "allowed",
+          "units": null
+        },
+        {
+          "name": "stdin",
+          "type": "io.Reader",
+          "nil_ability": "non-nil",
+          "empty_behavior": "allowed",
+          "units": null
+        },
+        {
+          "name": "stdout",
+          "type": "io.Writer",
+          "nil_ability": "non-nil",
+          "empty_behavior": "allowed",
+          "units": null
+        },
+        {
+          "name": "stderr",
+          "type": "io.Writer",
+          "nil_ability": "non-nil",
+          "empty_behavior": "allowed",
+          "units": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "int",
+          "type": "int"
+        }
+      ],
+      "errors": [],
+      "side_effects": [
+        "Calls fn-parse-args.",
+        "Calls fn-execute-slugify.",
+        "Calls fn-print-error."
+      ]
+    }
+  },
+  {
+    "id": "fn-parse-args",
+    "title": "Parse command line arguments",
+    "description": "Parses command line flags and positional arguments to determine the max length and input files.",
+    "model_tier": "standard",
+    "node_class": "validation",
+    "depends_on": [
+      "fn-cfg-options"
+    ],
+    "contract": {
+      "package": "cli",
+      "file": "internal/cli/args.go",
+      "signature": "func parseArgs(args []string) (max int, files []string, err error)",
+      "inputs": [
+        {
+          "name": "args",
+          "type": "[]string",
+          "nil_ability": "non-nil",
+          "empty_behavior": "allowed",
+          "units": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "max",
+          "type": "int"
+        },
+        {
+          "name": "files",
+          "type": "[]string"
+        },
+        {
+          "name": "err",
+          "type": "error"
+        }
+      ],
+      "errors": [
+        {
+          "when": "parsing fails",
+          "returns": "err"
+        }
+      ],
+      "side_effects": []
+    }
+  },
+  {
+    "id": "fn-execute-slugify",
+    "title": "Execute slugify transformation",
+    "description": "Reads input from files or stdin, applies the slug transformation, and writes to stdout.",
+    "model_tier": "standard",
+    "node_class": "handler",
+    "depends_on": [
+      "fn-make",
+      "fn-read-inputs"
+    ],
+    "contract": {
+      "package": "cli",
+      "file": "internal/cli/execute.go",
+      "signature": "func executeSlugify(max int, files []string, stdin io.Reader, stdout, stderr io.Writer) int",
+      "inputs": [
+        {
+          "name": "max",
+          "type": "int",
+          "nil_ability": "non-nil",
+          "empty_behavior": "allowed",
+          "units": null
+        },
+        {
+          "name": "files",
+          "type": "[]string",
+          "nil_ability": "non-nil",
+          "empty_behavior": "allowed",
+          "units": null
+        },
+        {
+          "name": "stdin",
+          "type": "io.Reader",
+          "nil_ability": "non-nil",
+          "empty_behavior": "allowed",
+          "units": null
+        },
+        {
+          "name": "stdout",
+          "type": "io.Writer",
+          "nil_ability": "non-nil",
+          "empty_behavior": "allowed",
+          "units": null
+        },
+        {
+          "name": "stderr",
+          "type": "io.Writer",
+          "nil_ability": "non-nil",
+          "empty_behavior": "allowed",
+          "units": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "int",
+          "type": "int"
+        }
+      ],
+      "errors": [],
+      "side_effects": [
+        "Calls fn-read-inputs.",
+        "Calls Make for each input string.",
+        "Writes results to stdout."
+      ]
+    }
+  },
+  {
+    "id": "fn-read-inputs",
+    "title": "Read input data",
+    "description": "Reads the contents of the provided file paths or the standard input into a slice of strings.",
+    "model_tier": "standard",
+    "node_class": "storage",
+    "depends_on": [],
+    "contract": {
+      "package": "cli",
+      "file": "internal/cli/io.go",
+      "signature": "func readInputs(files []string, stdin io.Reader) ([]string, error)",
+      "inputs": [
+        {
+          "name": "files",
+          "type": "[]string",
+          "nil_ability": "non-nil",
+          "empty_behavior": "allowed",
+          "units": null
+        },
+        {
+          "name": "stdin",
+          "type": "io.Reader",
+          "nil_ability": "non-nil",
+          "empty_behavior": "allowed",
+          "units": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "[]string",
+          "type": "[]string"
+        },
+        {
+          "name": "err",
+          "type": "error"
+        }
+      ],
+      "errors": [
+        {
+          "when": "file reading fails",
+          "returns": "err"
+        }
+      ],
+      "side_effects": [
+        "Reads files from the filesystem."
+      ]
+    }
+  },
+  {
+    "id": "fn-print-error",
+    "title": "Print error message",
+    "description": "Formats and writes an error message to the provided writer with a specific prefix.",
+    "model_tier": "any",
+    "node_class": "other",
+    "depends_on": [],
+    "contract": {
+      "package": "cli",
+      "file": "internal/cli/output.go",
+      "signature": "func printError(w io.Writer, prefix, message string)",
+      "inputs": [
+        {
+          "name": "w",
+          "type": "io.Writer",
+          "nil_ability": "non-nil",
+          "empty_behavior": "allowed",
+          "units": null
+        },
+        {
+          "name": "prefix",
+          "type": "string",
+          "nil_ability": "non-nil",
+          "empty_behavior": "allowed",
+          "units": null
+        },
+        {
+          "name": "message",
+          "type": "string",
+          "nil_ability": "non-nil",
+          "empty_behavior": "allowed",
+          "units": null
+        }
+      ],
+      "outputs": [],
+      "errors": [],
+      "side_effects": [
+        "Writes to the provided writer."
+      ]
+    }
+  },
+  {
+    "id": "fn-cfg-options",
+    "title": "Configure options",
+    "description": "Parses command line options to extract configuration settings.",
+    "model_tier": "standard",
+    "node_class": "validation",
+    "depends_on": [],
+    "contract": {
+      "package": "cli",
+      "file": "internal/cli/config.go",
+      "signature": "func cfgOptions(args []string) (max int, err error)",
+      "inputs": [
+        {
+          "name": "args",
+          "type": "[]string",
+          "nil_ability": "non-nil",
+          "empty_behavior": "allowed",
+          "units": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "max",
+          "type": "int"
+        },
+        {
+          "name": "err",
+          "type": "error"
+        }
+      ],
+      "errors": [
+        {
+          "when": "parsing fails",
+          "returns": "err"
+        }
+      ],
+      "side_effects": []
+    }
+  }
+]
+```

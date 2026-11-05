@@ -1,0 +1,59 @@
+{
+  "module": "example.com/slugify",
+  "conventions": {
+    "errors": "Errors are returned as values. Application exit codes are handled by the main entry point based on the return value of the CLI runner.",
+    "layout": [
+      "cmd/slugify for the main entry point",
+      "internal/cli for CLI logic and argument parsing",
+      "internal/slug for pure string transformation logic"
+    ],
+    "logging": "No logging allowed; errors are printed to stderr as specified in the requirements.",
+    "naming": [
+      "component ids: lowercase letters, digits, and dashes",
+      "type ids: lowercase letters, digits, and dashes",
+      "function ids: fn-prefix-with-hyphens"
+    ],
+    "testing": "Tests must be table-driven, hermetic, and use strings.NewReader, bytes.Buffer, and t.TempDir for file operations."
+  },
+  "components": [
+    {
+      "id": "slug-logic",
+      "package": "internal/slug",
+      "exports": [],
+      "integration_tests": []
+    },
+    {
+      "id": "cli-logic",
+      "package": "internal/cli",
+      "exports": [],
+      "integration_tests": [
+        {
+          "name": "valid input with max length",
+          "given": "input is 'Hello, World!' and max is 6",
+          "expect": "output is 'hello'\n",
+          "command": "fn-run(args=['--max', '6'], stdin=strings.NewReader('Hello, World!'), stdout=bytes.Buffer{}, stderr=bytes.Buffer{})"
+        },
+        {
+          "name": "invalid max value",
+          "given": "max is 0",
+          "expect": "stderr contains 'slugify: invalid --max \"0\"' and exit code 2",
+          "command": "fn-run(args=['--max', '0'], stdin=strings.NewReader('test'), stdout=bytes.Buffer{}, stderr=bytes.Buffer{})"
+        },
+        {
+          "name": "multiple files error",
+          "given": "two file arguments provided",
+          "expect": "stderr contains 'usage: slugify [--max N] [FILE]' and exit code 2",
+          "command": "fn-run(args=['file1', 'file2'], stdin=strings.NewReader(''), stdout=bytes.Buffer{}, stderr=bytes.Buffer{})"
+        }
+      ]
+    },
+    {
+      "id": "entry-point",
+      "package": "cmd/slugify",
+      "exports": [],
+      "integration_tests": []
+    }
+  ],
+  "types": [],
+  "dependencies": []
+}

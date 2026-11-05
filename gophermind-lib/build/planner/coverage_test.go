@@ -211,7 +211,7 @@ func TestCoverageRepliesThatCannotBeUsedAreRetried(t *testing.T) {
 
 func TestCoverageWarningsAreRecordedAndReported(t *testing.T) {
 	g := newRig(t, approving())
-	g.briefPath = writeBrief(t, g.repo, func(s string) string {
+	g.briefPath = writeBrief(t, greeter, g.repo, func(s string) string {
 		s = strings.Replace(s, "- `internal/greet`: pure functions", "- `cmd/greeter`: the binary.\n- `internal/greet`: pure functions", 1)
 		return strings.Replace(s, "- `go test ./...` passes.", "- `go test -race ./...` passes.", 1)
 	})

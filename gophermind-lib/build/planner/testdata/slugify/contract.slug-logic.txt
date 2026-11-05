@@ -1,0 +1,14 @@
+{
+  "types": [],
+  "functions": [
+    {
+      "id": "fn-make",
+      "package": "slug",
+      "file": "slug.go",
+      "signature": "func Make(s string, max int) string",
+      "doc": "Returns a URL-friendly version of the input string. If max is greater than zero, the resulting string is truncated to that length. Non-alphanumeric characters are replaced with hyphens.",
+      "uses": []
+    }
+  ],
+  "more": false
+}

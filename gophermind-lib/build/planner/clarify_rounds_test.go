@@ -61,7 +61,7 @@ func readStore(t *testing.T, runDir string) storedState {
 }
 
 func assumeBrief(g *rig) {
-	g.briefPath = writeBrief(g.t, g.repo, func(s string) string {
+	g.briefPath = writeBrief(g.t, greeter, g.repo, func(s string) string {
 		return strings.Replace(s, "on_ambiguity: halt", "on_ambiguity: assume_and_document", 1)
 	})
 }

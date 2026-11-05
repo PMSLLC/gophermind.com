@@ -1,0 +1,65 @@
+{
+  "types": [],
+  "functions": [
+    {
+      "id": "fn-main",
+      "package": "main",
+      "file": "cmd/slugify/main.go",
+      "signature": "func main()",
+      "doc": "The entry point of the program which exits with the status code returned by run.",
+      "uses": [
+        "fn-run"
+      ]
+    },
+    {
+      "id": "fn-run",
+      "package": "main",
+      "file": "cmd/slugify/main.go",
+      "signature": "func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int",
+      "doc": "Parses command line arguments and coordinates the execution of the slugify command.",
+      "uses": [
+        "fn-parse-args",
+        "fn-execute-slugify",
+        "fn-print-error"
+      ]
+    },
+    {
+      "id": "fn-parse-args",
+      "package": "cli",
+      "file": "internal/cli/args.go",
+      "signature": "func parseArgs(args []string) (max int, files []string, err error)",
+      "doc": "Parses command line flags and positional arguments to determine the max length and input files.",
+      "uses": [
+        "cfg-options"
+      ]
+    },
+    {
+      "id": "fn-execute-slugify",
+      "package": "cli",
+      "file": "internal/cli/execute.go",
+      "signature": "func executeSlugify(max int, files []string, stdin io.Reader, stdout, stderr io.Writer) int",
+      "doc": "Reads input from files or stdin, applies the slug transformation, and writes to stdout.",
+      "uses": [
+        "fn-make",
+        "fn-read-inputs"
+      ]
+    },
+    {
+      "id": "fn-read-inputs",
+      "package": "cli",
+      "file": "internal/cli/io.go",
+      "signature": "func readInputs(files []string, stdin io.Reader) ([]string, error)",
+      "doc": "Reads the contents of the provided file paths or the standard input into a slice of strings.",
+      "uses": []
+    },
+    {
+      "id": "fn-print-error",
+      "package": "cli",
+      "file": "internal/cli/output.go",
+      "signature": "func printError(w io.Writer, prefix, message string)",
+      "doc": "Formats and writes an error message to the provided writer with a specific prefix.",
+      "uses": []
+    }
+  ],
+  "more": false
+}

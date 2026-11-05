@@ -15,7 +15,7 @@ var replyNameRE = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
 func TestPlannerSavesStageRepliesFreeOfSecrets(t *testing.T) {
 	g := newRig(t, approving())
-	g.briefPath = writeBrief(t, g.repo, withSecret)
+	g.briefPath = writeBrief(t, greeter, g.repo, withSecret)
 	g.deps.OpenSecrets = func() (planner.Secrets, error) {
 		return &memSecrets{vals: map[string]string{"harness/GREETER_API_KEY": canary}}, nil
 	}

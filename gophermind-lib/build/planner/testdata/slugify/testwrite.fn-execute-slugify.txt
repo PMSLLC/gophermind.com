@@ -1,0 +1,273 @@
+```json
+{
+  "tests": [
+    {
+      "name": "Happy path with stdin",
+      "given": "max=10, files=[], stdin='Hello World!', stdout='', stderr=''",
+      "expect": "0, stdout='hello-world-', stderr=''",
+      "polarity": "success",
+      "covers": "happy"
+    },
+    {
+      "name": "Max length constraint",
+      "given": "max=5, files=[], stdin='Hello World!', stdout='', stderr=''",
+      "expect": "0, stdout='hello-', stderr=''",
+      "polarity": "success",
+      "covers": "boundary"
+    },
+    {
+      "name": "No limit (max <= 0)",
+      "given": "max=0, files=[], stdin='A B C', stdout='', stderr=''",
+      "expect": "0, stdout='a-b-c', stderr=''",
+      "polarity": "success",
+      "covers": "boundary"
+    },
+    {
+      "name": "Empty input files and stdin",
+      "given": "max=10, files=[], stdin='', stdout='', stderr=''",
+      "expect": "0, stdout='', stderr=''",
+      "polarity": "success",
+      "covers": "boundary"
+    },
+    {
+      "name": "Empty input string",
+      "given": "max=10, files=[], stdin='', stdout='', stderr=''",
+      "expect": "0, stdout='', stderr=''",
+      "polarity": "boundary",
+      "covers": "input:stdin"
+    },
+    {
+      "name": "Empty files slice",
+      "given": "max=10, files=[], stdin='test', stdout='', stderr=''",
+      "expect": "0, stdout='test', stderr=''",
+      "polarity": "boundary",
+      "covers": "input:files"
+    },
+    {
+      "name": "Empty max value",
+      "given": "max=0, files=[], stdin='test', stdout='', stderr=''",
+      "expect": "0, stdout='test', stderr=''",
+      "polarity": "boundary",
+      "covers": "input:max"
+    },
+    {
+      "name": "Nil stdin",
+      "given": "max=10, files=[], stdin=nil, stdout='', stderr=''",
+      "expect": "1, stdout='', stderr='error'",
+      "polarity": "negative",
+      "covers": "input:stdin"
+    },
+    {
+      "name": "Nil files",
+      "given": "max=10, files=nil, stdin='test', stdout='', stderr=''",
+      "expect": "0, stdout='test', stderr=''",
+      "polarity": "boundary",
+      "covers": "input:files"
+    },
+    {
+      "name": "Nil stdout",
+      "given": "max=10, files=[], stdin='test', stdout=nil, stderr=''",
+      "expect": "1, stdout='', stderr='error'",
+      "polarity": "negative",
+      "covers": "input:stdout"
+    },
+    {
+      "name": "Nil stderr",
+      "given": "max=10, files=[], stdin='test', stdout='', stderr=nil",
+      "expect": "1, stdout='test', stderr='error'",
+      "polarity": "negative",
+      "covers": "input:stderr"
+    }
+  ]
+}
+```
+
+```go
+package cli
+
+import (
+	"bytes"
+	"io"
+	"strings"
+	"testing"
+)
+
+func TestExecuteSlugify(t *testing.T) {
+	tests := []struct {
+		name         string
+		max          int
+		files        []string
+		stdin        func() io.Reader
+		stdout       *bytes.Buffer
+		stderr       *bytes.Buffer
+		expectStatus int
+		expectStdout string
+		expectStderr string
+	}{
+		{
+			name:         "Happy path with stdin",
+			max:          10,
+			files:        []string{},
+			stdin:        func() io.Reader { return strings.NewReader("Hello World!") },
+			stdout:      &bytes.Buffer{},
+			stderr:      &bytes.Buffer{},
+			expectStatus: 0,
+			expectStdout: "hello-world-",
+			expectStderr: "",
+		},
+		{
+			name:         "Max length constraint",
+			max:          5,
+			files:        []string{},
+			stdin:        func() io.Reader { return strings.NewReader("Hello World!") },
+			stdout:      &bytes.Buffer{},
+			stderr:      &bytes.Buffer{},
+			expectStatus: 0,
+			expectStdout: "hello-",
+			expectStderr: "",
+		},
+		{
+			name:         "No limit (max <= 0)",
+			max:          0,
+			files:        []string{},
+			stdin:        func() io.Reader { return strings.NewReader("A B C") },
+			stdout:      &bytes.Buffer{},
+			stderr:      &bytes.Buffer{},
+			expectStatus: 0,
+			expectStdout: "a-b-c",
+			expectStderr: "",
+		},
+		{
+			name:         "Empty input files and stdin",
+			max:          10,
+			files:        []string{},
+			stdin:        func() io.Reader { return strings.NewReader("") },
+			stdout:      &bytes.Buffer{},
+			stderr:      &bytes.Buffer{},
+			expectStatus: 0,
+			expectStdout: "",
+			expectStderr: "",
+		},
+		{
+			name:         "Empty input string",
+			max:          10,
+			files:        []string{},
+			stdin:        func() io.Reader { return strings.NewReader("") },
+			stdout:      &bytes.Buffer{},
+			stderr:      &bytes.Buffer{},
+			expectStatus: 0,
+			expectStdout: "",
+			expectStderr: "",
+		},
+		{
+			name:         "Empty files slice",
+			max:          10,
+			files:        []string{},
+			stdin:        func() io.Reader { return strings.NewReader("test") },
+			stdout:      &bytes.Buffer{},
+			stderr:      &bytes.Buffer{},
+			expectStatus: 0,
+			expectStdout: "test",
+			expectStderr: "",
+		},
+		{
+			name:         "Empty max value",
+			max:          0,
+			files:        []string{},
+			stdin:        func() io.Reader { return strings.NewReader("test") },
+			stdout:      &bytes.Buffer{},
+			stderr:      &bytes.Buffer{},
+			expectStatus: 0,
+			expectStdout: "test",
+			expectStderr: "",
+		},
+		{
+			name:         "Nil stdin",
+			max:          10,
+			files:        []string{},
+			stdin:        func() io.Reader { return nil },
+			stdout:      &bytes.Buffer{},
+			stderr:      &bytes.Buffer{},
+			expectStatus: 1,
+			expectStdout: "",
+			expectStderr: "error",
+		},
+		{
+			name:         "Nil files",
+			max:          10,
+			files:        nil,
+			stdin:        func() io.Reader { return strings.NewReader("test") },
+			stdout:      &bytes.Buffer{},
+			stderr:      &bytes.Buffer{},
+			expectStatus: 0,
+			expectStdout: "test",
+			expectStderr: "",
+		},
+		{
+			name:         "Nil stdout",
+			max:          10,
+			files:        []string{},
+			stdin:        func() io.Reader { return strings.NewReader("test") },
+			stdout:      nil,
+			stderr:      &bytes.Buffer{},
+			expectStatus: 1,
+			expectStdout: "",
+			expectStderr: "error",
+		},
+		{
+			name:         "Nil stderr",
+			max:          10,
+			files:        []string{},
+			stdin:        func() io.Reader { return strings.NewReader("test") },
+			stdout:      &bytes.Buffer{},
+			stderr:      nil,
+			expectStatus: 1,
+			expectStdout: "test",
+			expectStderr: "error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout io.Writer = tt.stdout
+			if tt.stdout == nil {
+				stdout = io.Discard
+			}
+			var stderr io.Writer = tt.stderr
+			if tt.stderr == nil {
+				stderr = io.Discard
+			}
+
+			// To test the logic of error handling when stdout/stderr are nil, 
+			// we need to be careful because the function signature takes io.Writer.
+			// If the implementation checks for nil, we can't pass nil to a non-pointer 
+			// interface parameter without it being a nil interface.
+			// The contract says they are non-nil, so we test the behavior of 
+			// passing nil interfaces.
+			
+			var actualStdout io.Writer = stdout
+			var actualStderr io.Writer = stderr
+
+			// We use a helper to handle the nil interface case if the implementation 
+			// checks for nil explicitly.
+			status := executeSlugify(tt.max, tt.files, tt.stdin(), actualStdout, actualStderr)
+
+			if status != tt.expectStatus {
+				t.Errorf("executeSlugify() status = %v, want %v", status, tt.expectStatus)
+			}
+			if tt.stdout != nil && tt.expectStdout != "" && !strings.Contains(tt.stdout.String(), tt.expectStdout) {
+				t.Errorf("executeSlugify() stdout = %q, want %q", tt.stdout.String(), tt.expectStdout)
+			}
+			if tt.stderr != nil && tt.expectStderr != "" && !strings.Contains(tt.stderr.String(), tt.expectStderr) {
+				t.Errorf("executeSlugify() stderr = %q, want %q", tt.stderr.String(), tt.expectStderr)
+			}
+		})
+	}
+}
+
+func BenchmarkExecuteSlugify(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		_ = executeSlugify(10, []string{}, strings.NewReader("Hello World!"), io.Discard, io.Discard)
+	}
+}
+```

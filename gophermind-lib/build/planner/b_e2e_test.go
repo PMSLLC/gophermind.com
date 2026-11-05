@@ -253,7 +253,7 @@ func TestDecisionRecordsListTheNodesTheyShaped(t *testing.T) {
 // decision records, the understanding, enriched.json and every node.
 func TestNoSecretValueReachesAnyFileTheNewStagesWrite(t *testing.T) {
 	g := newRig(t, approving())
-	g.briefPath = writeBrief(t, g.repo, withSecret)
+	g.briefPath = writeBrief(t, greeter, g.repo, withSecret)
 	store := &memSecrets{vals: map[string]string{vault.HarnessScope + "/GREETER_API_KEY": canary}}
 	g.deps.OpenSecrets = func() (planner.Secrets, error) { return store, nil }
 	// The model may name a declared secret in secret_use; it never sees a value.

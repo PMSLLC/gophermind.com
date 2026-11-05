@@ -1,0 +1,68 @@
+{"tests": [{"name": "Happy path with truncation", "given": "Make(\"Hello World!\", 5)", "expect": "\"hello-world\"", "polarity": "success", "covers": "happy"}, {"name": "No truncation with zero max", "given": "Make(\"Hello World!\", 0)", "expect": "\"hello-world\"", "polarity": "success", "covers": "boundary"}, {"name": "No truncation with negative max", "given": "Make(\"Hello World!\", -1)", "expect": "\"hello-world\"", "polarity": "success", "covers": "boundary"}, {"name": "Empty input string", "given": "Make(\\"\\", 5)", "expect": "\"\"", "polarity": "boundary", "covers": "input:s"}, {"name": "Exact length match", "given": "Make(\"Abc\", 3)", "expect": "\"abc\"", "polarity": "boundary", "covers": "boundary"}, {"name": "Truncate at boundary", "given": "Make(\"Abcdef\", 3)", "expect": "\"abc\"", "polarity": "boundary", "covers": "boundary"}]}
+
+```go
+package slug
+
+import (
+	"testing"
+)
+
+func TestMake(t *testing.T) {
+	tests := []struct {
+		name     string
+		s        string
+		max      int
+		want     string
+	}{
+		{
+			name: "Happy path with truncation",
+			s:    "Hello World!",
+			max:  5,
+			want: "hello-world",
+		},
+		{
+			name: "No truncation with zero max",
+			s:    "Hello World!",
+			max:  0,
+			want: "hello-world",
+		},
+		{
+			name: "No truncation with negative max",
+			s:    "Hello World!",
+			max:  -1,
+			want: "hello-world",
+		},
+		{
+			name: "Empty input string",
+			s:    "",
+			max:  5,
+			want: "",
+		},
+		{
+			name: "Exact length match",
+			s:    "Abc",
+			max:  3,
+			want: "abc",
+		},
+		{
+			name: "Truncate at boundary",
+			s:    "Abcdef",
+			max:  3,
+			want: "abc",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Make(tt.s, tt.max); got != tt.want {
+				t.Errorf("Make() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func BenchmarkMake(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Make("Hello World!", 5)
+	}
+}
+```

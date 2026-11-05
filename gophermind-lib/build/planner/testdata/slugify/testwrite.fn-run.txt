@@ -1,0 +1,128 @@
+```json
+{
+  "tests": [
+    {
+      "name": "Happy path with input and max length",
+      "given": "args=['--max', '5'], stdin='Hello World!', stdout='', stderr=''",
+      "expect": "1",
+      "polarity": "success",
+      "covers": "happy"
+    },
+    {
+      "name": "Empty input",
+      "given": "args=[], stdin='', stdout='', stderr=''",
+      "expect": "0",
+      "polarity": "success",
+      "covers": "happy"
+    },
+    {
+      "name": "Max length zero or less (no limit)",
+      "given": "args=['--max', '0'], stdin='Test String', stdout='', stderr=''",
+      "expect": "0",
+      "polarity": "success",
+      "covers": "boundary"
+    },
+    {
+      "name": "Non-alphanumeric characters",
+      "given": "args=[], stdin='a!b@c#d', stdout='', stderr=''",
+      "expect": "0",
+      "polarity": "success",
+      "covers": "happy"
+    },
+    {
+      "name": "Large max length",
+      "given": "args=['--max', '100'], stdin='Short', stdout='', stderr=''",
+      "expect": "0",
+      "polarity": "success",
+      "covers": "boundary"
+    }
+  ]
+}
+```
+
+```go
+package cli_test
+
+import (
+	"bytes"
+	"io"
+	"strings"
+	"testing"
+
+	"example.com/slugify/cli"
+)
+
+func TestRun(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		stdinStr  string
+		wantExit  int
+		wantOut   string
+		wantErr   string
+	}{
+		{
+			name:     "Happy path with input and max length",
+			args:     []string{"--max", "5"},
+			stdinStr: "Hello World!",
+			wantExit: 0,
+			wantOut:  "hello-world-",
+		},
+		{
+			name:     "Empty input",
+			args:     []string{},
+			stdinStr: "",
+			wantExit: 0,
+			wantOut:  "",
+		},
+		{
+			name:     "Max length zero or less (no limit)",
+			args:     []string{"--max", "0"},
+			stdinStr: "Test String",
+			wantExit: 0,
+			wantOut:  "test-string",
+		},
+		{
+			name:     "Non-alphanumeric characters",
+			args:     []string{},
+			stdinStr: "a!b@c#d",
+			wantExit: 0,
+			wantOut:  "a-b-c-d",
+		},
+		{
+			name:     "Large max length",
+			args:     []string{"--max", "100"},
+			stdinStr: "Short",
+			wantExit: 0,
+			wantOut:  "short",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stdin := strings.NewReader(tt.stdinStr)
+			stdout := &bytes.Buffer{}
+			stderr := &bytes.Buffer{}
+
+			gotExit := cli.Run(tt.args, stdin, stdout, stderr)
+
+			if gotExit != tt.wantExit {
+				t.Errorf("Run() exit = %v, want %v", gotExit, tt.wantExit)
+			}
+			if tt.wantOut != "" && !strings.Contains(stdout.String(), tt.wantOut) {
+				t.Errorf("Run() stdout = %q, want to contain %q", stdout.String(), tt.wantOut)
+			}
+			if tt.wantErr != "" && !strings.Contains(stderr.String(), tt.wantErr) {
+				t.Errorf("Run() stderr = %q, want to contain %q", stderr.String(), tt.wantErr)
+			}
+		})
+	}
+}
+
+// ErrorWriter is a test double used to provoke errors in the writer.
+type ErrorWriter struct{}
+
+func (e ErrorWriter) Write(p []byte) (n int, err error) {
+	return 0, io.ErrClosedPipe
+}
+```

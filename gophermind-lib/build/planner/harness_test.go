@@ -21,6 +21,8 @@ import (
 const (
 	greeter   = "testdata/greeter"
 	greeterID = "gm-2026-09-29-900"
+	slugify   = "testdata/slugify"
+	slugifyID = "slugify-v1-20261105-r001"
 )
 
 // scriptGate is a human gate that answers at once from a script and records
@@ -107,6 +109,7 @@ type rig struct {
 	repo      string // the target repository (a temp dir)
 	runDir    string // <repo>/.gophermind/<id>
 	briefPath string
+	briefDir  string // the testdata dir holding brief.md, searched last for replies
 	led       ledger.Ledger
 	board     blackboard.Blackboard
 	sink      *events.Collector
@@ -122,13 +125,20 @@ type rig struct {
 // provider over dirs (testdata/greeter is always searched last).
 func newRig(t *testing.T, gate human.Gate, dirs ...string) *rig {
 	t.Helper()
+	return newRigFor(t, gate, greeter, greeterID, dirs...)
+}
+
+// newRigFor is newRig for any brief: briefDir holds brief.md and is searched
+// last for replies, after dirs; id is the brief's run id.
+func newRigFor(t *testing.T, gate human.Gate, briefDir, id string, dirs ...string) *rig {
+	t.Helper()
 	t.Setenv("GOPHERMIND_CONFIG_DIR", t.TempDir())
-	g := &rig{t: t, repo: t.TempDir(), gate: gate}
+	g := &rig{t: t, repo: t.TempDir(), gate: gate, briefDir: briefDir}
 	if resolved, err := filepath.EvalSymlinks(g.repo); err == nil {
 		g.repo = resolved
 	}
-	g.runDir = filepath.Join(g.repo, ".gophermind", greeterID)
-	g.briefPath = writeBrief(t, g.repo, nil)
+	g.runDir = filepath.Join(g.repo, ".gophermind", id)
+	g.briefPath = writeBrief(t, briefDir, g.repo, nil)
 	// The planner creates the run folder and writes the run record; the file
 	// backends find the folder through it, as the commands do.
 	resolve := func(id string) (string, error) {
@@ -140,11 +150,11 @@ func newRig(t *testing.T, gate human.Gate, dirs ...string) *rig {
 	return g
 }
 
-// writeBrief writes the greeter brief with repo filled in and returns its
+// writeBrief writes the brief held in dir with repo filled in and returns its
 // path. edit, when given, changes the text first.
-func writeBrief(t *testing.T, repo string, edit func(string) string) string {
+func writeBrief(t *testing.T, dir, repo string, edit func(string) string) string {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(greeter, "brief.md"))
+	raw, err := os.ReadFile(filepath.Join(dir, "brief.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +173,7 @@ func writeBrief(t *testing.T, repo string, edit func(string) string) string {
 // process would on `resume`. The repo and config dir stay.
 func (g *rig) wire(dirs ...string) {
 	g.t.Helper()
-	fake, err := planner.FixtureProvider(append(dirs, greeter)...)
+	fake, err := planner.FixtureProvider(append(dirs, g.briefDir)...)
 	if err != nil {
 		g.t.Fatal(err)
 	}

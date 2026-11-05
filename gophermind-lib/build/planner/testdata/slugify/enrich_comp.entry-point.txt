@@ -1,0 +1,9 @@
+{
+  "rationale": "The entry-point component serves as the orchestration layer for the `cmd/slugify` command. It implements the required bridge between the operating system's environment (os.Args, os.Stdin, etc.) and the library logic in `internal/cli`, ensuring proper exit code propagation as specified in the brief.",
+  "assumptions": [
+    "The `cli.Run` function is available for import",
+    "The application is intended to be a CLI tool that exits with the code returned by `cli.Run`"
+  ],
+  "open_questions": [],
+  "decision_ids": []
+}

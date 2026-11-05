@@ -1,0 +1,155 @@
+```json
+{
+  "tests": [
+    {
+      "name": "Happy path with files",
+      "given": "files: [file1.txt, file2.txt], stdin: empty",
+      "expect": "strings: [content1, content2], err: nil",
+      "polarity": "success",
+      "covers": "happy"
+    },
+    {
+      "name": "Happy path with stdin",
+      "given": "files: [], stdin: 'hello world'",
+      "expect": "strings: [hello world], err: nil",
+      "polarity": "success",
+      "covers": "happy"
+    },
+    {
+      "name": "Empty files and stdin",
+      "given": "files: [], stdin: ''",
+      "expect": "strings: [], err: nil",
+      "polarity": "success",
+      "covers": "boundary"
+    },
+    {
+      "name": "File reading fails",
+      "given": "files: [nonexistent.txt], stdin: empty",
+      "expect": "strings: nil, err: error",
+      "polarity": "negative",
+      "covers": "error:1"
+    },
+    {
+      "name": "Files and stdin combined",
+      "given": "files: [file1.txt], stdin: 'extra'",
+      "expect": "strings: [content1, extra], err: nil",
+      "polarity": "success",
+      "covers": "happy"
+    },
+    {
+      "name": "Nil stdin",
+      "given": "files: [], stdin: nil",
+      "expect": "strings: nil, err: error",
+      "polarity": "negative",
+      "covers": "input:stdin"
+    }
+  ]
+}
+```
+
+```go
+package cli
+
+import (
+	"io"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+)
+
+type errorReader struct{}
+
+func (e errorReader) Read(p []byte) (n int, err error) {
+	return 0, io.ErrUnexpectedEOF
+}
+
+func TestReadInputs(t *testing.T) {
+	tests := []struct {
+		name        string
+		files       []string
+		stdin       func() io.Reader
+		wantStrings []string
+		wantErr     bool
+	}{
+		{
+			name: "Happy path with files",
+			files: func() []string {
+				tmpDir := t.TempDir()
+				f1 := filepath.Join(tmpDir, "file1.txt")
+				f2 := filepath.Join(tmpDir, "file2.txt")
+				os.WriteFile(f1, []byte("content1"), 0644)
+				os.WriteFile(f2, []byte("content2"), 0644)
+				return []string{f1, f2}
+			}(),
+			stdin:       func() io.Reader { return strings.NewReader("") },
+			wantStrings: []string{"content1", "content2"},
+			wantErr:     false,
+		},
+		{
+			name:        "Happy path with stdin",
+			files:       []string{},
+			stdin:       func() io.Reader { return strings.NewReader("hello world") },
+			wantStrings: []string{"hello world"},
+			wantErr:     false,
+		},
+		{
+			name:        "Empty files and stdin",
+			files:       []string{},
+			stdin:       func() io.Reader { return strings.NewReader("") },
+			wantStrings: []string{},
+			wantErr:     false,
+		},
+		{
+			name:        "File reading fails",
+			files:       []string{"nonexistent.txt"},
+			stdin:       func() io.Reader { return strings.NewReader("") },
+			wantStrings: nil,
+			wantErr:     true,
+		},
+		{
+			name: "Files and stdin combined",
+			files: func() []string {
+				tmpDir := t.TempDir()
+				f1 := filepath.Join(tmpDir, "file1.txt")
+				os.WriteFile(f1, []byte("content1"), 0644)
+				return []string{f1}
+			}(),
+			stdin:       func() io.Reader { return strings.NewReader("extra") },
+			wantStrings: []string{"content1", "extra"},
+			wantErr:     false,
+		},
+		{
+			name:       "Nil stdin",
+			files:      []string{},
+			stdin:      func() io.Reader { return nil },
+			wantStrings: nil,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotStrings, err := readInputs(tt.files, tt.stdin())
+			if (err != nil) != tt.wantErr {
+				t.Errorf("readInputs() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(gotStrings, tt.wantStrings) {
+				t.Errorf("readInputs() gotStrings = %v, want %v", gotStrings, tt.wantStrings)
+			}
+		})
+	}
+}
+
+func BenchmarkReadInputs(b *testing.B) {
+	tmpDir := b.TempDir()
+	f1 := filepath.Join(tmpDir, "file1.txt")
+	os.WriteFile(f1, []byte("content1"), 0644)
+
+	for i := 0; i < b.N; i++ {
+		_, _ = readInputs([]string{f1}, strings.NewReader("extra"))
+	}
+}
+```

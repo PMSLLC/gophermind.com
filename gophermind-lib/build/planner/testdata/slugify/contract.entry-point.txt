@@ -1,0 +1,27 @@
+{
+  "types": [],
+  "functions": [
+    {
+      "id": "fn-main",
+      "package": "main",
+      "file": "cmd/slugify/main.go",
+      "signature": "func main()",
+      "doc": "The entry point of the program that exits with the status code returned by run.",
+      "uses": [
+        "fn-run"
+      ]
+    },
+    {
+      "id": "fn-run",
+      "package": "main",
+      "file": "cmd/slugify/main.go",
+      "signature": "func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int",
+      "doc": "Orchestrates the execution of the slugify command by parsing arguments and executing the CLI logic.",
+      "uses": [
+        "fn-parse-args",
+        "fn-execute-slugify"
+      ]
+    }
+  ],
+  "more": false
+}

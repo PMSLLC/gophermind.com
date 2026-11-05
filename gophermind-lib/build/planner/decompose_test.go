@@ -232,7 +232,7 @@ func TestAQuestionInAssumeModeGoesBackToTheModel(t *testing.T) {
 		"decompose.greeting.txt":   question,
 		"decompose.greeting.2.txt": string(greeting),
 	}))
-	g.briefPath = writeBrief(t, g.repo, func(s string) string {
+	g.briefPath = writeBrief(t, greeter, g.repo, func(s string) string {
 		return strings.Replace(s, "on_ambiguity: halt", "on_ambiguity: assume_and_document", 1)
 	})
 	g.mustPlan(planner.Options{StopAfter: "decompose"})
@@ -356,7 +356,7 @@ func TestDottedRunIDPlansWithAHyphenatedRootNode(t *testing.T) {
 	const dotted = "greeter-v1.1-20261104-r001"
 	const root = "greeter-v1-1-20261104-r001"
 	g := newRig(t, approving())
-	g.briefPath = writeBrief(t, g.repo, func(s string) string {
+	g.briefPath = writeBrief(t, greeter, g.repo, func(s string) string {
 		return strings.Replace(s, "id: "+greeterID, "id: "+dotted, 1)
 	})
 	g.runDir = filepath.Join(g.repo, ".gophermind", dotted)

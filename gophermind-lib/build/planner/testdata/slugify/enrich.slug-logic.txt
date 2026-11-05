@@ -1,0 +1,57 @@
+```json
+[
+  {
+    "id": "fn-make",
+    "rationale": "This function serves the core requirement of converting arbitrary strings into URL-friendly slugs, facilitating the transformation of human-readable text into machine-friendly identifiers for build artifacts or web URLs.",
+    "construction": {
+      "approach_chosen": "Iterative character transformation and slicing.",
+      "steps": [
+        "Iterate through the input string to replace non-alphanumeric characters with hyphens.",
+        "Apply a post-processing step to collapse consecutive hyphens and trim them from the ends.",
+        "If the max parameter is greater than zero, truncate the resulting string to the specified length."
+      ]
+    },
+    "alternatives": [
+      {
+        "approach": "Regular expressions",
+        "rejected_because": "Regex is significantly slower and more memory-intensive than a single pass with a strings.Builder."
+      }
+    ],
+    "error_kinds": [],
+    "portability": {
+      "os": [
+        "linux"
+      ],
+      "arch": [
+        "amd64"
+      ],
+      "go_min": "1.22",
+      "cgo": false,
+      "build_tags": [],
+      "deps": []
+    },
+    "security": {
+      "not_applicable": "This is a pure function with no external input boundary or side effects."
+    },
+    "performance": {
+      "complexity": "O(n)",
+      "max_latency_ms": null,
+      "alloc_budget": "O(n)",
+      "concurrency": "safe_for_concurrent_use",
+      "hot_path": true
+    },
+    "observability": {
+      "not_applicable": "This is a pure function and does not perform any logging or metric collection."
+    },
+    "refactor_notes": [],
+    "profile_hooks": [
+      "bench"
+    ],
+    "assumptions": [
+      "The function treats any character that is not a letter or a digit as a potential hyphen source."
+    ],
+    "open_questions": [],
+    "decision_ids": []
+  }
+]
+```

@@ -64,7 +64,7 @@ func TestPlanRefusesARepoItCannotUse(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			g := newRig(t, approving())
-			g.briefPath = writeBrief(t, g.repo, func(s string) string { return strings.Replace(s, "repo: "+g.repo, "repo: "+c.repo, 1) })
+			g.briefPath = writeBrief(t, greeter, g.repo, func(s string) string { return strings.Replace(s, "repo: "+g.repo, "repo: "+c.repo, 1) })
 			_, err := g.plan(planner.Options{})
 			var inv *brief.InvalidError
 			if !errors.As(err, &inv) || !strings.Contains(err.Error(), c.want) {
@@ -145,7 +145,7 @@ func TestLoadPutsDeclaredSecretsInTheRunScope(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			g := newRig(t, approving())
-			g.briefPath = writeBrief(t, g.repo, withSecret)
+			g.briefPath = writeBrief(t, greeter, g.repo, withSecret)
 			store := &memSecrets{vals: c.have}
 			g.deps.OpenSecrets = func() (planner.Secrets, error) { return store, nil }
 			if c.prompt {
@@ -200,7 +200,7 @@ func TestABriefWithoutSecretsNeverOpensTheVault(t *testing.T) {
 func TestARunIDAndADifferentBriefPathDisagree(t *testing.T) {
 	g := newRig(t, approving())
 	g.mustPlan(planner.Options{StopAfter: "load"})
-	other := writeBrief(t, g.repo, nil)
+	other := writeBrief(t, greeter, g.repo, nil)
 	_, err := g.plan(planner.Options{RunID: greeterID, BriefPath: other, StopAfter: "load"})
 	if err == nil || !strings.Contains(err.Error(), "not both") {
 		t.Fatalf("err = %v, want a disagreement error", err)

@@ -33,7 +33,7 @@ func surfaceRig(t *testing.T, files map[string]string) *rig {
 	t.Helper()
 	files["contract.outline.entry.txt"] = `{"components": [` + entryComp + `]}`
 	g := newRig(t, approving(), variant(t, files))
-	g.briefPath = writeBrief(t, g.repo, surfaceBrief)
+	g.briefPath = writeBrief(t, greeter, g.repo, surfaceBrief)
 	return g
 }
 
@@ -107,7 +107,7 @@ func TestUnattendedClarifyDefaultCannotContradictTheBriefsSurface(t *testing.T) 
  {"id":"q1","question":"Should the tool read standard input?","options":["Yes, with -","No, only -f file"],"recommended":"No, only -f file","recommended_why":"simplest"},
  {"id":"q2","question":"How are greetings ordered?","recommended":"File order"}]`,
 		"clarify.more.txt": "[]"}))
-	g.briefPath = writeBrief(t, g.repo, func(s string) string {
+	g.briefPath = writeBrief(t, greeter, g.repo, func(s string) string {
 		return surfaceBrief(strings.Replace(s, "on_ambiguity: halt", "on_ambiguity: assume_and_document", 1))
 	})
 	if out, err := g.plan(planner.Options{StopAfter: "clarify"}); err != nil || out != planner.Done {
@@ -145,7 +145,7 @@ func TestCsvstatSurfaceTokensAreInTheEntryPointContract(t *testing.T) {
 		"contract.entry-point.txt":   runWithoutSurface,
 		"contract.entry-point.2.txt": runWithSurface,
 	})
-	g.briefPath = writeBrief(t, g.repo, func(string) string {
+	g.briefPath = writeBrief(t, greeter, g.repo, func(string) string {
 		s := strings.Replace(string(raw), "REPO_DIR", g.repo, 1)
 		return strings.Replace(s, "id: gm-2026-09-29-003", "id: gm-2026-09-29-900", 1)
 	})

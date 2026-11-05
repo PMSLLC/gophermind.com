@@ -1,0 +1,105 @@
+```json
+[
+  {
+    "id": "fn-print-error",
+    "rationale": "Provides a standardized way to format error messages to an io.Writer, ensuring consistent error reporting across the CLI component as required by the brief.",
+    "construction": {
+      "approach_chosen": "Direct write to the provided io.Writer using fmt.Fprintf.",
+      "steps": [
+        "Format the prefix and message into a single string structure.",
+        "Write the formatted string to the io.Writer w."
+      ]
+    },
+    "alternatives": [
+      {
+        "approach": "Using fmt.Println directly to os.Stderr",
+        "rejected_because": "The function must be testable and respect the provided io.Writer dependency."
+      }
+    ],
+    "error_kinds": [],
+    "portability": {
+      "not_applicable": "This function is a standard library wrapper and does not depend on OS-specific features."
+    },
+    "security": {
+      "not_applicable": "This function is an internal utility for outputting error messages and does not handle untrusted input directly."
+    },
+    "performance": {
+      "not_applicable": "This is an I/O bound function and is not considered a pure function."
+    },
+    "observability": {
+      "not_applicable": "Logging is handled by the caller or at a higher level in the application logic."
+    },
+    "refactor_notes": [],
+    "profile_hooks": "not_applicable",
+    "assumptions": [],
+    "open_questions": [],
+    "decision_ids": []
+  },
+  {
+    "id": "fn-cfg-options",
+    "rationale": "Extracts the 'max' configuration setting from command line arguments to control the slugification limit.",
+    "construction": {
+      "approach_chosen": "Iterate through the provided string slice to find and parse the max length flag.",
+      "steps": [
+        "Loop through the args slice to identify the max length parameter.",
+        "Convert the subsequent argument from string to integer.",
+        "Return the parsed integer or an error if parsing fails."
+      ]
+    },
+    "alternatives": [
+      {
+        "approach": "Using the flag package",
+        "rejected_because": "The function signature requires parsing a slice of strings directly, making the flag package's global state unsuitable for this specific unit."
+      }
+    ],
+    "error_kinds": [
+      "other"
+    ],
+    "portability": {
+      "os": [
+        "linux",
+        "darwin"
+      ],
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "go_min": "1.22",
+      "cgo": false,
+      "build_tags": [],
+      "deps": []
+    },
+    "security": {
+      "trust_boundary": "external_input",
+      "untrusted_inputs": [
+        "args"
+      ],
+      "authz": "none",
+      "secret_use": [],
+      "threats": [
+        {
+          "threat": "malformed input reaches the parser",
+          "mitigation": "validate before use"
+        }
+      ]
+    },
+    "performance": {
+      "complexity": "O(n)",
+      "max_latency_ms": null,
+      "alloc_budget": "minimal",
+      "concurrency": "safe_for_concurrent_use",
+      "hot_path": false
+    },
+    "observability": {
+      "not_applicable": "This is a pure logic function for argument parsing and does not perform side effects like logging."
+    },
+    "refactor_notes": [],
+    "profile_hooks": "bench",
+    "assumptions": [
+      "The max argument is expected to be followed by a valid integer string."
+    ],
+    "open_questions": [],
+    "decision_ids": []
+  }
+]
+```

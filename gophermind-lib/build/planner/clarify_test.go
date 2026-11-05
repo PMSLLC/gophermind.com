@@ -56,7 +56,7 @@ func TestClarifyAsksThePersonAndStoresTheAnswers(t *testing.T) {
 func TestClarifyTakesTheDefaultsWhenTheBriefSaysToAssume(t *testing.T) {
 	gate := approving()
 	g := newRig(t, gate)
-	g.briefPath = writeBrief(t, g.repo, func(s string) string {
+	g.briefPath = writeBrief(t, greeter, g.repo, func(s string) string {
 		return strings.Replace(s, "on_ambiguity: halt", "on_ambiguity: assume_and_document", 1)
 	})
 	g.mustPlan(planner.Options{StopAfter: "clarify"})

@@ -1,0 +1,14 @@
+{
+  "types": [],
+  "functions": [
+    {
+      "id": "fn-cfg-options",
+      "package": "cli",
+      "file": "internal/cli/config.go",
+      "signature": "func cfgOptions(args []string) (max int, err error)",
+      "doc": "Parses command line options to extract configuration settings. Returns the maximum length allowed for a slug or an error if parsing fails.",
+      "uses": [],
+      "component": "cli-logic"
+    }
+  ]
+}

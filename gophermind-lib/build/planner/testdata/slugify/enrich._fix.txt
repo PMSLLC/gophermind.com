@@ -1,0 +1,14 @@
+```json
+[
+  {
+    "id": "fn-print-error",
+    "performance": {
+      "complexity": "O(n)",
+      "max_latency_ms": 5,
+      "alloc_budget": "minimal",
+      "concurrency": "safe_for_concurrent_use",
+      "hot_path": false
+    }
+  }
+]
+```

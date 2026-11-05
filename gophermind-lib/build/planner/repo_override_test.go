@@ -13,7 +13,7 @@ import (
 
 func TestRepoOverrideUsedForRunFolder(t *testing.T) {
 	g := newRig(t, approving(), chainDir(t))
-	g.briefPath = writeBrief(t, g.repo, func(s string) string {
+	g.briefPath = writeBrief(t, greeter, g.repo, func(s string) string {
 		return strings.Replace(s, g.repo, filepath.Join(t.TempDir(), "missing"), 1)
 	})
 	if _, err := g.plan(planner.Options{StopAfter: "load"}); err == nil {

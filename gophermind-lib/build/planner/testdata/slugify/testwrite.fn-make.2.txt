@@ -1,0 +1,129 @@
+{"tests": [{"name": "Happy path simple", "given": "Make(\"Hello World!\", 10)", "expect": "\"hello-world\"", "polarity": "success", "covers": "happy"}, {"name": "Happy path with special characters", "given": "Make(\"A@B#C$D%E^F&G*", 5)", "expect": "\"a-b-c-d-e\"", "polarity": "success", "covers": "happy"}, {"name": "Empty input", "given": "Make(\"\", 10)", "expect": "\"\"", "polarity": "boundary", "covers": "input:s"}, {"name": "Max zero (no truncation)", "given": "Make(\"Hello World\", 0)", "expect": "\"hello-world\"", "polarity": "boundary", "covers": "input:max"}, {"name": "Max negative (no truncation)", "given": "Make(\"Hello World\", -5)", "expect": "\"hello-world\"", "polarity": "boundary", "covers": "input:max"}, {"name": "Truncation at boundary", "given": "Make(\"Longer String\", 5)", "expect": "\"longe\"", "polarity": "boundary", "covers": "input:max"}, {"name": "Truncation exactly at length", "given": "Make(\"12345\", 5)", "expect": "\"12345\"", "polarity": "boundary", "covers": "input:max"}, {"name": "Whitespace only", "given": "Make(\"   \", 10)", "expect": "\"\"", "polarity": "boundary", "covers": "input:s"}]}
+
+```go
+package slug
+
+import (
+	"testing"
+)
+
+func TestMake(t *testing.T) {
+	tests := []struct {
+		name string
+		s    string
+		max  int
+		want string
+	}{
+		{
+			name: "Happy path simple",
+			s:    "Hello World!",
+			max:  10,
+			want: "hello-world",
+		},
+		{
+			name: "Happy path with special characters",
+			s:    "A@B#C$D%E^F&G*",
+			max:  5,
+			want: "a-b-c-d-e",
+		},
+		{
+			name: "Empty input",
+			s:    "",
+			max:  10,
+			want: "",
+		},
+		{
+			name: "Max zero (no truncation)",
+			s:    "Hello World",
+			max:  0,
+			want: "hello-world",
+		},
+		{
+			name: "Max negative (no truncation)",
+			s:    "Hello World",
+			max:  -5,
+			want: "hello-world",
+		},
+		{
+			name: "Truncation at boundary",
+			s:    "Longer String",
+			max:  5,
+			want: "longe",
+		},
+		{
+			name: "Truncation exactly at length",
+			s:    "12345",
+			max:  5,
+			want: "12345",
+		},
+		{
+			name: "Whitespace only",
+			s:    "   ",
+			max:  10,
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Make(tt.s, tt.max); got != tt.want {
+				t.Errorf("Make() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func BenchmarkMake(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Make("Hello World!", 10)
+	}
+}
+
+func BenchmarkMake_Happy_path_simple(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Make("Hello World!", 10)
+	}
+}
+
+func BenchmarkMake_Happy_path_with_special_characters(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Make("A@B#C$D%E^F&G*", 5)
+	}
+}
+
+func BenchmarkMake_Empty_input(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Make("", 10)
+	}
+}
+
+func BenchmarkMake_Max_zero_(no_truncation)(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Make("Hello World", 0)
+	}
+}
+
+func BenchmarkMake_Max_negative_(no_truncation)(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Make("Hello World", -5)
+	}
+}
+
+func BenchmarkMake_Truncation_at_boundary(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Make("Longer String", 5)
+	}
+}
+
+func BenchmarkMake_Truncation_exactly_at_length(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Make("12345", 5)
+	}
+}
+
+func BenchmarkMake_Whitespace_only(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Make("   ", 10)
+	}
+}
+```

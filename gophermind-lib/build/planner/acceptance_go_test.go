@@ -64,7 +64,7 @@ func goAcceptRig(t *testing.T, serve bool, extra map[string]string) *rig {
 		files[k] = v
 	}
 	g := newRig(t, approving(), variant(t, files))
-	g.briefPath = writeBrief(t, g.repo, narrativeBrief)
+	g.briefPath = writeBrief(t, greeter, g.repo, narrativeBrief)
 	return g
 }
 

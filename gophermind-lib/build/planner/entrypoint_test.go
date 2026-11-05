@@ -25,7 +25,7 @@ const entryFns = `{"types": [], "functions": [
 func cliRig(t *testing.T, files map[string]string) *rig {
 	t.Helper()
 	g := newRig(t, approving(), variant(t, files))
-	g.briefPath = writeBrief(t, g.repo, cliBrief)
+	g.briefPath = writeBrief(t, greeter, g.repo, cliBrief)
 	return g
 }
 

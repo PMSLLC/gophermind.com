@@ -1,0 +1,41 @@
+```json
+[
+  {
+    "id": "fn-make",
+    "title": "Make",
+    "description": "Returns a URL-friendly version of the input string, replacing non-alphanumeric characters with hyphens and optionally truncating to a maximum length.",
+    "model_tier": "any",
+    "node_class": "pure",
+    "depends_on": [],
+    "contract": {
+      "package": "slug",
+      "file": "slug/slug.go",
+      "signature": "func Make(s string, max int) string",
+      "inputs": [
+        {
+          "name": "s",
+          "type": "string",
+          "nil_ability": "no",
+          "empty_input_behavior": "returns empty string",
+          "units": null
+        },
+        {
+          "name": "max",
+          "type": "int",
+          "nil_ability": "no",
+          "empty_input_behavior": "if 0 or less, no truncation is applied",
+          "units": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "string",
+          "type": "string"
+        }
+      ],
+      "errors": [],
+      "side_effects": []
+    }
+  }
+]
+```

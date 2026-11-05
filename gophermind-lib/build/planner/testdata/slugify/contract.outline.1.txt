@@ -1,0 +1,21 @@
+{
+  "module": "example.com/slugify",
+  "conventions": {
+    "layout": [
+      "cmd/slugify for the main entry point",
+      "internal/cli for CLI logic and argument parsing",
+      "internal/slug for pure string transformation logic"
+    ],
+    "naming": [
+      "component ids: lowercase letters, digits, and dashes",
+      "type ids: lowercase letters, digits, and dashes",
+      "function ids: fn-prefix-with-hyphens"
+    ],
+    "errors": "Errors are returned as values. Application exit codes are handled by the main entry point based on the return value of the CLI runner.",
+    "logging": "No logging allowed; errors are printed to stderr as specified in the requirements.",
+    "testing": "Tests must be table-driven, hermetic, and use strings.NewReader, bytes.Buffer, and t.TempDir for file operations."
+  },
+  "components": [],
+  "types": [],
+  "dependencies": []
+}

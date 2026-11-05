@@ -500,7 +500,7 @@ func TestAPublicProviderOnlyEverSeesNodeScopeCalls(t *testing.T) {
 // the repository or the run registry.
 func TestNoSecretValueLeavesTheVault(t *testing.T) {
 	g := newRig(t, approving())
-	g.briefPath = writeBrief(t, g.repo, withSecret)
+	g.briefPath = writeBrief(t, greeter, g.repo, withSecret)
 	store := &memSecrets{vals: map[string]string{vault.HarnessScope + "/GREETER_API_KEY": canary}}
 	g.deps.OpenSecrets = func() (planner.Secrets, error) { return store, nil }
 	g.mustPlan(planner.Options{})

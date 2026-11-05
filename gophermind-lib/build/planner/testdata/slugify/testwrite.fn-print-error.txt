@@ -1,0 +1,143 @@
+```json
+{
+  "tests": [
+    {
+      "name": "Happy path with prefix and message",
+      "given": "w=buf, prefix=\"ERROR: \", message=\"something went wrong\"",
+      "expect": "ERROR: something went wrong\n",
+      "polarity": "success",
+      "covers": "happy"
+    },
+    {
+      "name": "Empty prefix and message",
+      "given": "w=buf, prefix=\"\", message=\"\"",
+      "expect": "\n",
+      "polarity": "success",
+      "covers": "happy"
+    },
+    {
+      "name": "Only prefix provided",
+      "given": "w=buf, prefix=\"FAIL: \", message=\"\"",
+      "expect": "FAIL: \n",
+      "polarity": "success",
+      "covers": "input:prefix"
+    },
+    {
+      "name": "Only message provided",
+      "given": "w=buf, prefix=\"\", message=\"error\"",
+      "expect": "error\n",
+      "polarity": "success",
+      "covers": "input:message"
+    },
+    {
+      "name": "Writer returns error",
+      "given": "w=errWriter, prefix=\"P: \", message=\"M\"",
+      "expect": "error",
+      "polarity": "negative",
+      "covers": "boundary"
+    }
+  ]
+}
+```
+
+```go
+package cli
+
+import (
+	"bytes"
+	"errors"
+	"io"
+	"testing"
+)
+
+type printErrorErrWriter struct {
+	err error
+}
+
+func (e *printErrorErrWriter) Write(p []byte) (n int, err error) {
+	return 0, e.err
+}
+
+func TestPrintError(t *testing.T) {
+	tests := []struct {
+		name      string
+		w         io.Writer
+		prefix    string
+		message   string
+		want      string
+		wantErr   bool
+		isErrBuf  bool
+		errWriter *printErrorErrWriter
+	}{
+		{
+			name:    "Happy path with prefix and message",
+			w:       new(bytes.Buffer),
+			prefix:  "ERROR: ",
+			message: "something went wrong",
+			want:    "ERROR: something went wrong\n",
+		},
+		{
+			name:    "Empty prefix and message",
+			w:       new(bytes.Buffer),
+			prefix:  "",
+			message: "",
+			want:    "\n",
+		},
+		{
+			name:    "Only prefix provided",
+			w:       new(bytes.Buffer),
+			prefix:  "FAIL: ",
+			message: "",
+			want:    "FAIL: \n",
+		},
+		{
+			name:    "Only message provided",
+			w:       new(bytes.Buffer),
+			prefix:  "",
+			message: "error",
+			want:    "error\n",
+		},
+		{
+			name:        "Writer returns error",
+			errWriter:   &printErrorErrWriter{err: errors.New("write failed")},
+			prefix:      "P: ",
+			message:     "M",
+			wantErr:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var w io.Writer
+			if tt.errWriter != nil {
+				w = tt.errWriter
+			} else {
+				w = tt.w
+			}
+
+			// We cannot check the return value because the signature returns void.
+			// However, the contract implies side effects. 
+			// Since we cannot change the signature to return error, 
+			// we test the side effect via the buffer or the fact that it doesn't panic.
+			// For the error case, we'll just ensure it handles the error gracefully (no panic).
+			
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("printError panicked: %v", r)
+				}
+			}()
+
+			printError(w, tt.prefix, tt.message)
+
+			if tt.wantErr {
+				return
+			}
+
+			buf := tt.w.(*bytes.Buffer)
+			if buf.String() != tt.want {
+				t.Errorf("printError() got = %q, want %q", buf.String(), tt.want)
+			}
+		})
+	}
+}
+```

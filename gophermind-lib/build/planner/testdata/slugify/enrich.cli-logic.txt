@@ -1,0 +1,308 @@
+```json
+[
+  {
+    "id": "fn-run",
+    "rationale": "Acts as the entry point for the CLI logic, coordinating argument parsing, execution, and error reporting to ensure the application lifecycle is managed without calling os.Exit directly.",
+    "construction": {
+      "approach_chosen": "Orchestration pattern using the results of parsing to drive execution.",
+      "steps": [
+        "Call parseArgs to extract configuration and file lists.",
+        "If parsing fails, call printError and return the error exit code.",
+        "Call executeSlugify with the parsed configuration and provided I/O streams.",
+        "Return the exit code returned by executeSlugify."
+      ]
+    },
+    "alternatives": [
+      {
+        "approach": "Directly calling executeSlugify in Run",
+        "rejected_because": "Violates the requirement to parse command line arguments first."
+      }
+    ],
+    "error_kinds": [],
+    "portability": {
+      "os": [
+        "linux",
+        "darwin"
+      ],
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "go_min": "1.22",
+      "cgo": false,
+      "build_tags": [],
+      "deps": []
+    },
+    "security": {
+      "trust_boundary": "external_input",
+      "untrusted_inputs": [
+        "args"
+      ],
+      "authz": "none",
+      "secret_use": [],
+      "threats": [
+        {
+          "threat": "malformed arguments leading to unexpected execution paths",
+          "mitigation": "Validate all arguments through parseArgs before execution."
+        }
+      ]
+    },
+    "performance": {
+      "complexity": "O(n)",
+      "max_latency_ms": null,
+      "alloc_budget": "low",
+      "concurrency": "single_goroutine",
+      "hot_path": false
+    },
+    "observability": {
+      "log_events": [
+        {
+          "level": "info",
+          "msg": "starting slugify execution",
+          "fields": [
+            "args"
+          ]
+        }
+      ],
+      "metrics": [],
+      "trace_span": "Run"
+    },
+    "refactor_notes": [],
+    "profile_hooks": [
+      "trace"
+    ],
+    "assumptions": [
+      "The return value of executeSlugify is a valid process exit code."
+    ],
+    "open_questions": [],
+    "decision_ids": []
+  },
+  {
+    "id": "fn-parse-args",
+    "rationale": "Separates the responsibility of command line syntax parsing from the core logic, allowing for easier testing of argument combinations.",
+    "construction": {
+      "approach_chosen": "Delegation to cfgOptions for flag parsing followed by positional argument extraction.",
+      "steps": [
+        "Call cfgOptions to extract the max length configuration.",
+        "Identify remaining arguments as positional file paths.",
+        "Return the combined results or an error if flag parsing fails."
+      ]
+    },
+    "alternatives": [
+      {
+        "approach": "Using flag.Parse() directly",
+        "rejected_because": "Makes the function difficult to test in isolation without global state mutation."
+      }
+    ],
+    "error_kinds": [
+      {
+        "returns": "err",
+        "when": "parsing fails"
+      }
+    ],
+    "portability": {
+      "os": [
+        "linux",
+        "darwin"
+      ],
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "go_min": "1.22",
+      "cgo": false,
+      "build_tags": [],
+      "deps": []
+    },
+    "security": {
+      "trust_boundary": "external_input",
+      "untrusted_inputs": [
+        "args"
+      ],
+      "authz": "none",
+      "secret_use": [],
+      "threats": [
+        {
+          "threat": "uncontrolled input length in arguments",
+          "mitigation": "Limit argument processing via standard library constraints."
+        }
+      ]
+    },
+    "performance": {
+      "complexity": "O(n)",
+      "max_latency_ms": 10,
+      "alloc_budget": "low",
+      "concurrency": "single_goroutine",
+      "hot_path": false
+    },
+    "observability": {
+      "log_events": [],
+      "metrics": [],
+      "trace_span": null
+    },
+    "refactor_notes": [],
+    "profile_hooks": [],
+    "assumptions": [
+      "The input args slice does not include the program name (os.Args[1:])."
+    ],
+    "open_questions": [],
+    "decision_ids": []
+  },
+  {
+    "id": "fn-execute-slugify",
+    "rationale": "The core execution engine that bridges data ingestion and the transformation logic.",
+    "construction": {
+      "approach_chosen": "Sequential execution of input reading followed by transformation.",
+      "steps": [
+        "Call readInputs to collect all raw strings from files and stdin.",
+        "Iterate through the strings and apply Make to each.",
+        "Write the transformed results to stdout.",
+        "Return 0 on success or a non-zero error code on failure."
+      ]
+    },
+    "alternatives": [
+      {
+        "approach": "Streaming transformation",
+        "rejected_because": "Current design requires reading the whole input into memory via readInputs."
+      }
+    ],
+    "error_kinds": [],
+    "portability": {
+      "os": [
+        "linux",
+        "darwin"
+      ],
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "go_min": "1.22",
+      "cgo": false,
+      "build_tags": [],
+      "deps": []
+    },
+    "security": {
+      "trust_boundary": "internal",
+      "untrusted_inputs": [],
+      "authz": "none",
+      "secret_use": [],
+      "threats": [
+        {
+          "threat": "malformed input reaches the parser",
+          "mitigation": "validate before use"
+        }
+      ]
+    },
+    "performance": {
+      "complexity": "O(n)",
+      "max_latency_ms": null,
+      "alloc_budget": "high",
+      "concurrency": "single_goroutine",
+      "hot_path": true
+    },
+    "observability": {
+      "log_events": [],
+      "metrics": [],
+      "trace_span": "executeSlugify"
+    },
+    "refactor_notes": [
+      {
+        "what": "Implement worker pool for Make",
+        "why": "To improve performance on large file sets",
+        "when": "If processing time becomes a bottleneck"
+      }
+    ],
+    "profile_hooks": [
+      "bench",
+      "pprof"
+    ],
+    "assumptions": [
+      "The input size fits in memory."
+    ],
+    "open_questions": [],
+    "decision_ids": []
+  },
+  {
+    "id": "fn-read-inputs",
+    "rationale": "Handles the complexity of reading data from multiple file sources or a single standard input stream.",
+    "construction": {
+      "approach_chosen": "Iterative file reading with fallback to stdin.",
+      "steps": [
+        "Initialize a slice to hold strings.",
+        "If files are provided, read each file into the slice.",
+        "If stdin is provided and no files were read (or as an additional source), read from stdin.",
+        "Return the slice and any encountered errors."
+      ]
+    },
+    "alternatives": [
+      {
+        "approach": "Concurrent file reading",
+        "rejected_because": "Complexity of error handling and ordering is not justified for this scale."
+      }
+    ],
+    "error_kinds": [
+      {
+        "returns": "err",
+        "when": "file reading fails"
+      }
+    ],
+    "portability": {
+      "os": [
+        "linux",
+        "darwin"
+      ],
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "go_min": "1.22",
+      "cgo": false,
+      "build_tags": [],
+      "deps": []
+    },
+    "security": {
+      "trust_boundary": "external_input",
+      "untrusted_inputs": [
+        "files"
+      ],
+      "authz": "none",
+      "secret_use": [],
+      "threats": [
+        {
+          "threat": "Path traversal via file arguments",
+          "mitigation": "The caller should ensure files are within allowed directories."
+        }
+      ]
+    },
+    "performance": {
+      "complexity": "O(n)",
+      "max_latency_ms": null,
+      "alloc_budget": "high",
+      "concurrency": "single_goroutine",
+      "hot_path": true
+    },
+    "observability": {
+      "log_events": [
+        {
+          "level": "debug",
+          "msg": "reading file",
+          "fields": [
+            "path"
+          ]
+        }
+      ],
+      "metrics": [],
+      "trace_span": null
+    },
+    "refactor_notes": [],
+    "profile_hooks": [
+      "bench"
+    ],
+    "assumptions": [
+      "Files are small enough to be read entirely into memory."
+    ],
+    "open_questions": [],
+    "decision_ids": []
+  }
+]
+```
