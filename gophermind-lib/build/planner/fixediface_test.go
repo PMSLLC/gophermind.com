@@ -126,7 +126,50 @@ func TestComponentPromptNamesTheFixedEntryCall(t *testing.T) {
 	if strings.Contains(out, "`run` has the signature") {
 		t.Errorf("prompt still asks for run:\n%s", out)
 	}
+	if !strings.Contains(out, "for each remaining parameter of its fixed signature, the matching `os.Stdin`, `os.Stdout` or `os.Stderr`") {
+		t.Errorf("prompt does not tie the os streams to the fixed signature:\n%s", out)
+	}
 	if !strings.Contains(out, "<fixed_interfaces>\ncmd/slugify: func main()\n</fixed_interfaces>") {
 		t.Errorf("prompt lacks the fixed interfaces block:\n%s", out)
+	}
+}
+
+func TestForeignFunctionsDroppedFromComponentReply(t *testing.T) {
+	reply := `{"types": [], "functions": [` +
+		`{"id": "fn-main", "package": "main", "file": "cmd/slugify/main.go", "signature": "func main()"},` +
+		`{"id": "fn-parse-args", "package": "cli", "file": "internal/cli/args.go", "signature": "func parseArgs(args []string) error"},` +
+		`{"id": "fn-helper", "package": "slugify/internal/cli", "signature": "func helper()"}` +
+		`], "more": false}`
+	out, dropped := dropForeignFunctions(reply, "internal/cli", "slugify")
+	if len(dropped) != 1 || dropped[0] != "fn-main (package main)" {
+		t.Fatalf("dropped = %v, want fn-main", dropped)
+	}
+	if strings.Contains(out, "fn-main") || !strings.Contains(out, "fn-parse-args") || !strings.Contains(out, "fn-helper") {
+		t.Errorf("reply after the drop = %s", out)
+	}
+	if got, want := foreignDroppedText("cli-logic", dropped), "component_foreign_function_dropped: cli-logic: fn-main (package main)"; got != want {
+		t.Errorf("warning = %q, want %q", got, want)
+	}
+	// The entry component keeps its own main, written as package main.
+	if _, dropped := dropForeignFunctions(reply, "cmd/slugify", "slugify"); len(dropped) != 2 {
+		t.Errorf("entry component dropped %v, want the two cli functions", dropped)
+	}
+	// func main() outside cmd/ goes even when its package is the component's.
+	inCli := `{"functions": [{"id": "fn-main", "package": "internal/cli", "signature": "func main()"}]}`
+	if _, dropped := dropForeignFunctions(inCli, "internal/cli", "slugify"); len(dropped) != 1 {
+		t.Errorf("func main() in internal/cli was kept")
+	}
+}
+
+func TestComponentPromptNamesTheSurfaceTarget(t *testing.T) {
+	out, err := render("contract_component", map[string]string{
+		"Defect": "", "Surface": "--max N", "SurfaceName": "Run", "Component": "c", "Outline": "o", "Declared": "d",
+		"Written": "w", "BriefSection": "bs", "Answers": "a", "ItemSchemas": "i", "EntryCall": "", "Fixed": "",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "The doc of `Run` must state every item below") {
+		t.Errorf("surface paragraph does not name Run:\n%s", out)
 	}
 }

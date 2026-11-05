@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"encoding/json"
 	"path"
 	"regexp"
 	"strings"
@@ -118,4 +119,70 @@ func fixedDefectText(missing []fixedIface) string {
 	}
 	return "the brief's Architecture section fixes these interfaces for this package and the component does not declare them: " +
 		strings.Join(sigs, "; ") + ". Write each with exactly that name and signature"
+}
+
+// ownPackage is true when pkg, as a function of a component reply writes it,
+// is the component's package compPkg: the same path, its last element, the
+// same path once the module is stripped, or the package clause of the
+// directory (main for cmd/).
+func ownPackage(pkg, compPkg, module string) bool {
+	dir := stripModule(module, compPkg)
+	return pkg == compPkg || pkg == path.Base(compPkg) || stripModule(module, pkg) == dir || pkg == PackageClause(dir)
+}
+
+// dropForeignFunctions takes out of a component reply the functions declared
+// in another package, and a func main() of a component outside cmd/: the
+// model wrote another component's functions, and merged here they would take
+// that component's ids. It returns the reply and "<id> (package <pkg>)" for
+// each function dropped. A reply that does not parse is returned as it is;
+// the merge reports it.
+func dropForeignFunctions(text, compPkg, module string) (string, []string) {
+	var raw map[string]json.RawMessage
+	if json.Unmarshal([]byte(text), &raw) != nil || raw["functions"] == nil {
+		return text, nil
+	}
+	var fns []any
+	if json.Unmarshal(raw["functions"], &fns) != nil {
+		return text, nil
+	}
+	entry := isEntryPackage(stripModule(module, compPkg))
+	var kept []any
+	var dropped []string
+	for _, x := range fns {
+		f, ok := x.(map[string]any)
+		if !ok {
+			kept = append(kept, x)
+			continue
+		}
+		pkg, _ := f["package"].(string)
+		sig, _ := f["signature"].(string)
+		isMain := strings.Join(strings.Fields(sig), " ") == "func main()"
+		if (pkg != "" && !ownPackage(pkg, compPkg, module)) || (isMain && !entry) {
+			id, _ := f["id"].(string)
+			dropped = append(dropped, id+" (package "+pkg+")")
+			continue
+		}
+		kept = append(kept, x)
+	}
+	if len(dropped) == 0 {
+		return text, nil
+	}
+	if kept == nil {
+		kept = []any{}
+	}
+	b, err := json.Marshal(kept)
+	if err != nil {
+		return text, nil
+	}
+	raw["functions"] = b
+	out, err := json.Marshal(raw)
+	if err != nil {
+		return text, nil
+	}
+	return string(out), dropped
+}
+
+// foreignDroppedText is the warning for the functions dropped from one reply.
+func foreignDroppedText(component string, dropped []string) string {
+	return "component_foreign_function_dropped: " + component + ": " + strings.Join(dropped, ", ")
 }

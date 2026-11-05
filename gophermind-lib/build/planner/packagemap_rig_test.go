@@ -1,7 +1,6 @@
 package planner_test
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -16,21 +15,8 @@ func TestSlugifyOutlineMapsPackagesToArchitectureDirs(t *testing.T) {
 			t.Errorf("the entry pass was asked; stages = %v", g.stagesCalled())
 		}
 	}
-	// The outline as stored: the recorded component replies put main in
-	// cli-logic, so the fixed-interface check stops the run before
-	// contracts.json is written.
-	var st struct {
-		Doc struct {
-			Components []struct {
-				Package string `json:"package"`
-			} `json:"components"`
-		} `json:"doc"`
-	}
-	if err := json.Unmarshal(g.read("_state/contract.json"), &st); err != nil {
-		t.Fatal(err)
-	}
 	var pkgs []string
-	for _, c := range st.Doc.Components {
+	for _, c := range g.contracts().Components {
 		pkgs = append(pkgs, c.Package)
 	}
 	if got := strings.Join(pkgs, ","); got != "internal/slug,internal/cli,cmd/slugify" {

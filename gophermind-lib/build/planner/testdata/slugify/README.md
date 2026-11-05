@@ -17,13 +17,20 @@ Rule for later edits: a recorded file is never changed. A corrected reply a
 later task needs goes in the next `.N.txt` slot, or under the stage name the
 fixed planner now asks for, and is listed below with its reason.
 
-Corrected replies: none yet.
+Corrected replies:
+
+- `contract.cli-logic.2.txt`: the reply to the fixed-interface repair pass.
+  The recorded `contract.cli-logic.txt` declares `run` (and `main`) in
+  package `main`, which the planner now drops as foreign to cli-logic, so
+  cli-logic lacks the brief's fixed `Run` and is asked once for it. This
+  reply declares `Run` in `internal/cli` with the brief's signature.
 
 Files:
 
 - `brief.md`
 - `clarify.txt`
 - `contract._repair.txt`
+- `contract.cli-logic.2.txt`
 - `contract.cli-logic.txt`
 - `contract.entry-point.txt`
 - `contract.outline.1.txt`
