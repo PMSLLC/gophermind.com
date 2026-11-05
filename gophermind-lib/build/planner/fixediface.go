@@ -16,6 +16,7 @@ type fixedIface struct {
 var (
 	backtickSpanRE = regexp.MustCompile("`([^`]+)`")
 	fixedSpanRE    = regexp.MustCompile(`^([A-Z][A-Za-z0-9_]*)\((.*)\)\s*(.*)$`)
+	methodSigRE    = regexp.MustCompile(`^\s*func\s*\(`)
 )
 
 // archBulletDir is the directory an Architecture bullet starts with, the way
@@ -77,35 +78,48 @@ func fixedInterfacesText(ifs []fixedIface) string {
 }
 
 // applyFixedInterfaces holds the functions of component, whose package is dir,
-// to the interfaces fixed for dir. A function whose signature name equals a
-// fixed name (ignoring case) gets the fixed signature, and with it the fixed
-// name; each change is returned as "<id>: <old sig> -> <new sig>". A fixed
-// interface no function of the component matches is missing.
+// to the interfaces fixed for dir. Methods never match. A function whose
+// signature name equals a fixed name exactly matches it; with no exact match,
+// the one function whose name equals it ignoring case does, and several such
+// functions match none. A matched function gets the fixed signature, and with
+// it the fixed name; each change is returned as "<id>: <old sig> -> <new sig>".
+// A fixed interface no function of the component matches is missing.
 func applyFixedInterfaces(doc map[string]any, component, dir string, ifs []fixedIface) (applied []string, missing []fixedIface) {
 	for _, fi := range ifs {
 		if fi.Dir != dir {
 			continue
 		}
-		found := false
+		var exact, folded []map[string]any
 		for _, f := range objects(doc["functions"]) {
 			if f["component"] != component {
 				continue
 			}
 			sig, _ := f["signature"].(string)
 			m := funcSigNameRE.FindStringSubmatch(sig)
-			if m == nil || !strings.EqualFold(m[1], fi.Name) {
+			if m == nil || methodSigRE.MatchString(sig) {
 				continue
 			}
-			found = true
-			if sig != fi.Signature {
-				f["signature"] = fi.Signature
-				id, _ := f["id"].(string)
-				applied = append(applied, id+": "+sig+" -> "+fi.Signature)
+			switch {
+			case m[1] == fi.Name:
+				exact = append(exact, f)
+			case strings.EqualFold(m[1], fi.Name):
+				folded = append(folded, f)
 			}
-			break
 		}
-		if !found {
+		var f map[string]any
+		switch {
+		case len(exact) > 0:
+			f = exact[0]
+		case len(folded) == 1:
+			f = folded[0]
+		default:
 			missing = append(missing, fi)
+			continue
+		}
+		if sig, _ := f["signature"].(string); sig != fi.Signature {
+			f["signature"] = fi.Signature
+			id, _ := f["id"].(string)
+			applied = append(applied, id+": "+sig+" -> "+fi.Signature)
 		}
 	}
 	return applied, missing

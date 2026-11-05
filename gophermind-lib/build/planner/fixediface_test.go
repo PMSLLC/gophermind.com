@@ -173,3 +173,43 @@ func TestComponentPromptNamesTheSurfaceTarget(t *testing.T) {
 		t.Errorf("surface paragraph does not name Run:\n%s", out)
 	}
 }
+
+func TestFixedInterfacePrefersTheExactName(t *testing.T) {
+	const want = "func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int"
+	const helper = "func run(cfg config) int"
+	run := map[string]any{"id": "fn-run", "signature": helper}
+	exported := map[string]any{"id": "fn-cli-run", "signature": "func Run(args []string, in io.Reader, out, errw io.Writer) int"}
+	doc := cliDoc(run, exported)
+	applied, missing := applyFixedInterfaces(doc, "cli-logic", "internal/cli", fixedInterfaces(archOf(t, "slugify")))
+	if run["signature"] != helper {
+		t.Errorf("helper run signature = %v, want it untouched", run["signature"])
+	}
+	if exported["signature"] != want {
+		t.Errorf("Run signature = %v, want %s", exported["signature"], want)
+	}
+	if len(applied) != 1 || !strings.HasPrefix(applied[0], "fn-cli-run: ") || len(missing) != 0 {
+		t.Errorf("applied = %v, missing = %v", applied, missing)
+	}
+}
+
+func TestFixedInterfaceIgnoresMethods(t *testing.T) {
+	method := map[string]any{"id": "fn-server-run", "signature": "func (s *Server) Run(args []string) int"}
+	doc := cliDoc(method)
+	_, missing := applyFixedInterfaces(doc, "cli-logic", "internal/cli", fixedInterfaces(archOf(t, "slugify")))
+	if len(missing) != 1 || missing[0].Name != "Run" {
+		t.Errorf("missing = %v, want the Run interface", missing)
+	}
+	if method["signature"] != "func (s *Server) Run(args []string) int" {
+		t.Errorf("method signature changed to %v", method["signature"])
+	}
+}
+
+func TestFixedInterfaceAmbiguousCaseIsMissing(t *testing.T) {
+	a := map[string]any{"id": "fn-run", "signature": "func run(args []string) int"}
+	b := map[string]any{"id": "fn-run-upper", "signature": "func RUN(args []string) int"}
+	doc := cliDoc(a, b)
+	applied, missing := applyFixedInterfaces(doc, "cli-logic", "internal/cli", fixedInterfaces(archOf(t, "slugify")))
+	if len(applied) != 0 || len(missing) != 1 || missing[0].Name != "Run" {
+		t.Errorf("applied = %v, missing = %v; want Run missing and nothing applied", applied, missing)
+	}
+}
