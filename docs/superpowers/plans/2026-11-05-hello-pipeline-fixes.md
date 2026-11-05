@@ -389,6 +389,24 @@ Each becomes a task in a follow-up plan when scheduled.
 - Brief 5: `localChecks` refuses a `package` with no `/` other than `.`; refuses a function whose `FileDir` is not its `package`.
 - Brief 17 rest: structural check for "table driven" (a `[]struct{` literal in the test file) classified separately from behavioural proof.
 
+## Parked from the Milestone 1 reviews (2026-11-05)
+
+Findings the task and whole-branch reviews recorded but Milestone 1 did not take. Fold each into the task that touches its file, or into Milestone B.
+
+- `planner.FixtureProvider`: a stage with no fixture file is retried by the router until the test's 10 minute timeout; it should return an error the router does not retry. Take in Task 1 (the hello rig is the most exposed).
+- `cli_surface_missing` reads the brief's example text `--Go & Rust` as a flag.
+- `tooLongErr` (`promptbudget.go`) says "the brief sources were kept whole and never cut" for every sized stage, including the outline, repair and schema-fix excerpts that are cut; say it only for `componentBrief` stages.
+- `sources.json` and `component_sources` list the level 1 section set even for level 0 packets, and the file is written only when the outline completes in the same run.
+- The `component_sources` event message repeats its kind prefix.
+- Stale labels after Task 2: `contract_component.md` "Brief section for this component", `decompose.md`, `enrich.md`, `enrich_structure.md`, `testwriter.md` "the part of the program this function belongs to"; `contract_component.md` "report the conflict" has no reply field to report into.
+- `componentBrief` level 1 emits `### <feature>` headings without the `## Features` parent.
+- `featuresOfComponents` ignores its `comps` argument.
+- A missing `main` is now a hard error after two re-asks (`MainRepairs`, `FixedRepairs`) instead of the `main_function_missing` warning: CHANGELOG line.
+- Fixed interfaces with a receiver or a type parameter are ignored silently; two `cmd/` directories both get the first bullet's `EntryCall`.
+- `packetParts` scans `##` lines inside code fences; `scripts/extract-llm-fixtures.py` raises `KeyError` on a call row without a stage; a case-only package mismatch passes `localChecks`; `Entry` and `EntryName` keys are now equal; the slugify `fn-run` assertion depends on component order (README documents it).
+- Decompose and enrich send the whole brief through `callAsking` with no sizing, so an over-window brief fails there with the router's too-long error, not `tooLongErr`.
+- Policy change to put to John: public providers at node scope now see the brief's feature text and every section but Overview (Task 2 ruling; docs updated in the final fix).
+
 ## Out of this plan
 
 - Editable prompts (`docs/superpowers/plans/2026-11-05-editable-prompts.md`), queued separately.
