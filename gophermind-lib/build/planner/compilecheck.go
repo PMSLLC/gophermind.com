@@ -225,9 +225,13 @@ type compileDiag struct {
 }
 
 // compileDiags lists the diagnostics of `go test` output out that are in the
-// file base, in output order, deduplicated by line, capped at maxCompileMessages.
+// file base, in output order, deduplicated by line and message, capped at maxCompileMessages.
 func compileDiags(base, out string) []compileDiag {
-	seen := map[int]bool{}
+	type key struct {
+		line int
+		msg  string
+	}
+	seen := map[key]bool{}
 	var diags []compileDiag
 	for _, loc := range diagRE.FindAllStringSubmatchIndex(out, -1) {
 		m := make([]string, 5)
@@ -239,10 +243,10 @@ func compileDiags(base, out string) []compileDiag {
 			continue
 		}
 		n, _ := strconv.Atoi(m[2])
-		if seen[n] {
+		if seen[key{n, m[4]}] {
 			continue
 		}
-		seen[n] = true
+		seen[key{n, m[4]}] = true
 		col, _ := strconv.Atoi(m[3])
 		diags = append(diags, compileDiag{Line: n, Col: col, Msg: m[4]})
 		if len(diags) == maxCompileMessages {

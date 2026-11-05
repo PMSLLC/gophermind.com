@@ -7,9 +7,9 @@ import (
 )
 
 func TestCompileDiagsKeepsOnlyTheTestFileInOrder(t *testing.T) {
-	out := "# m/p\np/zz_other0_test.go:3:1: other\n./p/fn_x_test.go:9:2: declared and not used: x\np/fn_x_test.go:9:9: second on same line\np/fn_x_test.go:4:2: \"fmt\" imported and not used\n"
+	out := "# m/p\np/zz_other0_test.go:3:1: other\n./p/fn_x_test.go:9:2: declared and not used: x\np/fn_x_test.go:9:9: declared and not used: y\np/fn_x_test.go:9:12: declared and not used: y\np/fn_x_test.go:4:2: \"fmt\" imported and not used\n"
 	got := compileDiags("fn_x_test.go", out)
-	want := []compileDiag{{9, 2, "declared and not used: x"}, {4, 2, `"fmt" imported and not used`}}
+	want := []compileDiag{{9, 2, "declared and not used: x"}, {9, 9, "declared and not used: y"}, {4, 2, `"fmt" imported and not used`}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v", got)
 	}
