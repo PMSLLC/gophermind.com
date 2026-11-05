@@ -74,6 +74,8 @@ Decision 11 was reversed on 2026-10-08: the unification runs first (`docs/GOAL-U
 - v2: coverage checks that ids exist, not that they fit; planning calls ignore a node's `model_tier`; `assumptions` is a dead field; events are not saved; one worker only.
 - Neither version rewrites a node after a failure.
 - A node-scope call may reach a public provider, so Test-writer and implement prompts receive a projection of a node that excludes its reasoning groups and its decisions.
+- A test file that fails to compile is fixed before it is refused. A mechanical pass with no model call fixes two kinds of error, `declared and not used: x` (it inserts `_ = x` in scope) and `undefined: pkg` for a standard package (it adds the import), then recompiles. If errors remain, one repair call per reply runs under stage `testwrite:<id>:fix`; its prompt holds only the file and the error list. The revise rewrite takes the same path. A refusal's line numbers come from the model's own file, not the repaired one.
+- The three events are `test_file_mechanical_fix: <kind> <name> in the test file of node <id>`, `test_file_repaired: the test file of node <id> compiled after a repair call`, and `test_file_repair_unusable: the repair reply for node <id> held no Go file`, all at warning level. The accepted node record in `testwriter.json` carries `fixes` and `repaired`.
 
 ## 7. The graded run
 
