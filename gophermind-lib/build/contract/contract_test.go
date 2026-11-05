@@ -267,3 +267,33 @@ func TestAffectedReportsNodeDependingOnRemovedID(t *testing.T) {
 		t.Errorf("Affected = %v, want [fn-old]", aff)
 	}
 }
+
+func TestDocCommentDoesNotDoubleSlashes(t *testing.T) {
+	cases := map[string]string{
+		"// Greeting builds":    "// Greeting builds\n",
+		"Greeting builds":       "// Greeting builds\n",
+		"Greeting\n\nbuilds":    "// Greeting\n//\n// builds\n",
+		"// Greeting\n//\n// b": "// Greeting\n//\n// b\n",
+	}
+	for doc, want := range cases {
+		raw, _ := json.Marshal(map[string]any{
+			"spec_version": "2.0", "brief_id": "b", "revision": 0, "module": "example.com/m",
+			"conventions": map[string]any{"layout": []string{"x"}, "naming": []string{"y"}, "errors": "z"},
+			"types":       []any{},
+			"functions": []any{map[string]any{"id": "fn-a", "package": "greet", "file": "internal/greet/a.go",
+				"signature": "func G()", "doc": doc, "uses": []string{}, "component": "c"}},
+			"components": []any{},
+		})
+		c, err := contract.Load(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s, err := c.Slice([]string{"fn-a"}, "")
+		if err != nil || len(s) != 1 {
+			t.Fatalf("slice: %v %v", s, err)
+		}
+		if got := s[0]; got != want+"func G()" {
+			t.Errorf("doc %q renders %q, want %q", doc, got, want+"func G()")
+		}
+	}
+}

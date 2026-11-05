@@ -5,7 +5,7 @@ Rules:
 - The signature must be character-for-character the one in the signature section.
 - The reply is the whole Go file, nothing else. Import only the standard library, this module's own packages, and the modules in `<constraints>`.
 - Write only the function and, if you need them, lower-case helpers and types whose names no other part of the package uses. The package's types, constants and other functions are already declared in other files: do not repeat them, even to make the file look complete.
-- Use only the declarations in the dependency section from other files; they already exist, do not redefine them.
+- Use only the declarations in the dependency section from other files; they already exist, do not redefine them. A declaration marked "From package <p>" is in another package: import it and use it only through its qualifier.
 - Do not write tests. Do not modify any other file. Do not add exported identifiers beyond the signature.
 - {{if .AllowExit}}Call os.Exit only once, at the end of main, with the result of the entry call. Never call{{else}}Never call os.Exit,{{end}} log.Fatal, log.Panic, runtime.Goexit or recover, and declare no init function. Outside package main never use flag.ExitOnError or flag.ContinueOnError: read command-line arguments by looping over the slice by hand. Such a file is refused.
 - If the contract is contradictory or impossible, do not guess. Output exactly the single line `CONTRACT_PROBLEM: <one sentence>` and nothing else.

@@ -205,6 +205,12 @@ func docComment(doc string) string {
 	}
 	lines := strings.Split(doc, "\n")
 	for i, l := range lines {
+		l = strings.TrimPrefix(l, "//")
+		l = strings.TrimPrefix(l, " ")
+		if strings.TrimSpace(l) == "" {
+			lines[i] = "//"
+			continue
+		}
 		lines[i] = "// " + l
 	}
 	return strings.Join(lines, "\n") + "\n"

@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"path"
 	"regexp"
 	"strings"
 
@@ -39,6 +40,10 @@ func BuildHints(c *contract.Contracts, out string) []string {
 			if !contains(unused, m[1]) {
 				unused = append(unused, m[1])
 			}
+			continue
+		}
+		if m := undefinedRE.FindStringSubmatch(diag); m != nil {
+			add(undefinedHint(c, out[loc[0]:loc[1]], m[1]))
 			continue
 		}
 		if m := unknownFieldLitRE.FindStringSubmatch(diag); m != nil {
@@ -123,4 +128,56 @@ func callHint(c *contract.Contracts, callee, want string) string {
 		return fmt.Sprintf("%s takes %s: change the call to pass exactly those, or change the declaration of %s so the two agree.", name, want, name)
 	}
 	return ""
+}
+
+var (
+	undefinedRE = regexp.MustCompile(`^undefined: ([A-Za-z_][A-Za-z0-9_]*)$`)
+	diagPathRE  = regexp.MustCompile(`^(?:vet: )?(\S+?):\d+:\d+: `)
+	funcWordRE  = regexp.MustCompile(`^func\s+([A-Za-z_][A-Za-z0-9_]*)`)
+	typeWordRE  = regexp.MustCompile(`(?m)^\s*type\s+([A-Za-z_][A-Za-z0-9_]*)`)
+)
+
+// undefinedHint names the import and qualifier for an `undefined: Name` in a
+// file when Name is an exported function or type the contract declares in a
+// package other than the file's directory. line is the whole diagnostic line.
+func undefinedHint(c *contract.Contracts, line, name string) string {
+	if name == "" || !ast.IsExported(name) {
+		return ""
+	}
+	pm := diagPathRE.FindStringSubmatch(line)
+	if pm == nil {
+		return ""
+	}
+	dir := path.Dir(pm[1])
+	pkg := ""
+	for _, f := range c.Functions {
+		if m := funcWordRE.FindStringSubmatch(f.Signature); m != nil && m[1] == name {
+			pkg, dir = foreignPkg(c, f.Package, f.File, dir, pkg)
+		}
+	}
+	for _, t := range c.Types {
+		for _, m := range typeWordRE.FindAllStringSubmatch(t.Decl, -1) {
+			if m[1] == name {
+				pkg, dir = foreignPkg(c, t.Package, t.File, dir, pkg)
+			}
+		}
+	}
+	if pkg == "" {
+		return ""
+	}
+	imp := c.Module
+	if p := path.Clean(pkg); p != "." {
+		imp = path.Join(c.Module, p)
+	}
+	clause := PackageClause(pkg)
+	return fmt.Sprintf("%s is declared in package %s (%s), not in %s: add import %q and call %s.%s.", name, clause, imp, dir, imp, clause, name)
+}
+
+// foreignPkg returns declPkg when its directory differs from dir, else keeps
+// the package already found.
+func foreignPkg(c *contract.Contracts, declPkg, file, dir, found string) (string, string) {
+	if found == "" && FileDirIn(c.Module, declPkg, file) != dir {
+		return declPkg, dir
+	}
+	return found, dir
 }

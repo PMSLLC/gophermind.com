@@ -472,13 +472,13 @@ func escAll(m map[string]string) map[string]string {
 }
 
 func (s *state) render() (string, error) {
+	contractText, depsList, leftover := markForeign(s.contract, s.deps, s.n.DependencyImports)
 	deps := "(none)"
-	if len(s.deps) > 0 {
-		deps = strings.Join(s.deps, "\n\n")
+	if len(depsList) > 0 {
+		deps = strings.Join(depsList, "\n\n")
 	}
-	if len(s.n.DependencyImports) > 0 {
-		note := "// Declared in other packages: import the package and call each by its qualifier, never by the bare name:\n// " +
-			strings.Join(s.n.DependencyImports, "\n// ")
+	if len(leftover) > 0 {
+		note := "// " + strings.Join(leftover, "\n// ")
 		if deps == "(none)" {
 			deps = note
 		} else {
@@ -513,7 +513,7 @@ func (s *state) render() (string, error) {
 	}
 	return renderTemplate("implement", escAll(map[string]string{
 		"AllowExit": allowExit, "File": s.n.File, "Package": s.n.Package, "Signature": s.n.Signature,
-		"Contract": s.contract, "Deps": deps, "Constraints": cons, "Notes": notes, "Guidance": guidanceText(s.guidance), "Behaviour": behaviourText(s.desc, s.behaviour),
+		"Contract": contractText, "Deps": deps, "Constraints": cons, "Notes": notes, "Guidance": guidanceText(s.guidance), "Behaviour": behaviourText(s.desc, s.behaviour),
 		"TestFile": s.n.TestFile, "TestSource": strings.TrimRight(s.testSrc, "\n"), "Failure": failure,
 	}))
 }
@@ -760,4 +760,101 @@ func dropBlank(src string, extra func(trimmed string) bool) string {
 		}
 	}
 	return strings.Join(keep, "\n") + "\n"
+}
+
+type foreignName struct {
+	line, qual, name, imp string
+}
+
+// parseForeign reads the `greet.Greeting: import "hello/internal/greet"`
+// lines of NodeView.DependencyImports; a line of another shape is skipped.
+func parseForeign(lines []string) []foreignName {
+	var out []foreignName
+	for _, l := range lines {
+		head, rest, ok := strings.Cut(l, ": import ")
+		if !ok {
+			continue
+		}
+		qual, name, ok := strings.Cut(head, ".")
+		imp, err := strconv.Unquote(strings.TrimSpace(rest))
+		if !ok || err != nil || qual == "" || name == "" {
+			continue
+		}
+		out = append(out, foreignName{line: l, qual: qual, name: name, imp: imp})
+	}
+	return out
+}
+
+// declares reports whether line is the top-level declaration of f.name.
+func (f foreignName) declares(line string) (isType bool, ok bool) {
+	for _, p := range []string{"func " + f.name, "type " + f.name} {
+		if !strings.HasPrefix(line, p) || len(line) == len(p) {
+			continue
+		}
+		switch line[len(p)] {
+		case '(', '[':
+			if p[0] == 'f' {
+				return false, true
+			}
+		case ' ', '\t':
+			if p[0] == 't' {
+				return true, true
+			}
+		}
+	}
+	return false, false
+}
+
+// markText puts a "From package" line above every declaration in text of a
+// name in foreign (above its doc comment when it has one) and records the
+// names it marked.
+func markText(text string, foreign []foreignName, marked map[string]bool) string {
+	lines := strings.Split(text, "\n")
+	var out []string
+	for _, l := range lines {
+		for _, f := range foreign {
+			isType, ok := f.declares(l)
+			if !ok {
+				continue
+			}
+			at := len(out)
+			for at > 0 && strings.HasPrefix(out[at-1], "//") {
+				at--
+			}
+			use := fmt.Sprintf("Call it as %s.%s, never as %s.", f.qual, f.name, f.name)
+			if isType {
+				use = fmt.Sprintf("Refer to it as %s.%s, never as %s.", f.qual, f.name, f.name)
+			}
+			mark := fmt.Sprintf("// From package %s, import %q. %s", f.qual, f.imp, use)
+			out = append(out[:at], append([]string{mark}, out[at:]...)...)
+			marked[f.line] = true
+			break
+		}
+		out = append(out, l)
+	}
+	return strings.Join(out, "\n")
+}
+
+// markForeign marks the declarations of other packages' names in the contract
+// text and the dependency signatures. leftover holds the DependencyImports
+// lines whose name no dependency signature declares, so the import is still
+// stated once even when only the contract slice shows the declaration.
+func markForeign(contractText string, deps, imports []string) (string, []string, []string) {
+	if len(imports) == 0 {
+		return contractText, deps, nil
+	}
+	foreign := parseForeign(imports)
+	marked := map[string]bool{}
+	contractText = markText(contractText, foreign, map[string]bool{})
+	outDeps := make([]string, len(deps))
+	for i, d := range deps {
+		outDeps[i] = markText(d, foreign, marked)
+	}
+	var leftover []string
+	for _, l := range imports {
+		if !marked[l] {
+			leftover = append(leftover, l)
+		}
+	}
+	return contractText, outDeps, leftover
 }

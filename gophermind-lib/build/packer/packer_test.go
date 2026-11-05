@@ -745,7 +745,7 @@ func TestPackNamesTheImportOfADependencyInAnotherPackage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`slug.Make: import "example.com/m/internal/slug"`, "never by the bare name"} {
+	for _, want := range []string{`// From package slug, import "example.com/m/internal/slug". Call it as slug.Make, never as Make.` + "\nfunc Make(s string, max int) string"} {
 		if !strings.Contains(p.Text, want) {
 			t.Errorf("prompt lacks %q", want)
 		}
@@ -755,7 +755,79 @@ func TestPackNamesTheImportOfADependencyInAnotherPackage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(p.Text, "never by the bare name") {
+	if strings.Contains(p.Text, "// From package") {
 		t.Error("the import note appears for a leaf with no dependency in another package")
+	}
+}
+
+const foreignContractsJSON = `{
+ "spec_version": "2.0", "brief_id": "b", "revision": 0, "module": "hello",
+ "conventions": {"layout": ["x"], "naming": ["y"], "errors": "z"},
+ "types": [],
+ "functions": [
+  {"id": "fn-greeting", "package": "internal/greet", "file": "internal/greet/greet.go", "signature": "func Greeting(name string) string", "doc": "Greeting builds a line.", "uses": [], "component": "c"},
+  {"id": "fn-run", "package": "internal/cli", "file": "internal/cli/run.go", "signature": "func Run(args []string) int", "doc": "Run runs.", "uses": ["fn-greeting"], "component": "c"}
+ ],
+ "components": []
+}`
+
+func foreignNode() NodeView {
+	return NodeView{
+		ID: "n-run", FuncID: "fn-run", Package: "cli", File: "internal/cli/run.go",
+		Signature:            "func Run(args []string) int",
+		DependencySignatures: []string{"// Greeting builds a line.\nfunc Greeting(name string) string"},
+		DependencyImports:    []string{`greet.Greeting: import "hello/internal/greet"`},
+		TestFile:             "internal/cli/run_test.go", TestSource: "package cli\n\nimport \"testing\"\n\nfunc TestRun(t *testing.T) {\n\tt.Errorf(\"x\")\n}\n",
+	}
+}
+
+func packForeign(t *testing.T, n NodeView) string {
+	t.Helper()
+	c, err := contract.Load([]byte(foreignContractsJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := Pack(n, c, Inputs{Budget: 100000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p.Text
+}
+
+func TestForeignDeclarationIsMarkedWhereItStands(t *testing.T) {
+	text := packForeign(t, foreignNode())
+	mark := `// From package greet, import "hello/internal/greet". Call it as greet.Greeting, never as Greeting.`
+	if strings.Contains(text, "Declared in other packages") {
+		t.Errorf("old header present:\n%s", text)
+	}
+	for _, sec := range []string{"contract", "dependency_signatures"} {
+		i := strings.Index(text, "<"+sec+">")
+		j := strings.Index(text, "</"+sec+">")
+		if i < 0 || j < i {
+			t.Fatalf("no %s section:\n%s", sec, text)
+		}
+		if !strings.Contains(text[i:j], mark+"\n// Greeting builds") {
+			t.Errorf("%s lacks the mark before the doc:\n%s", sec, text[i:j])
+		}
+	}
+	ls := strings.Split(text, "\n")
+	for i, l := range ls {
+		if l == "func Greeting(name string) string" {
+			if i < 2 || (ls[i-2] != mark && ls[i-1] != mark) {
+				t.Errorf("declaration at line %d not marked", i)
+			}
+		}
+	}
+	if strings.Count(text, mark) != 2 {
+		t.Errorf("want 2 marks, got %d", strings.Count(text, mark))
+	}
+}
+
+func TestForeignNameWithoutADeclarationKeepsTheNote(t *testing.T) {
+	n := foreignNode()
+	n.DependencySignatures = nil
+	text := packForeign(t, n)
+	if !strings.Contains(text, `// greet.Greeting: import "hello/internal/greet"`) {
+		t.Errorf("note missing:\n%s", text)
 	}
 }
