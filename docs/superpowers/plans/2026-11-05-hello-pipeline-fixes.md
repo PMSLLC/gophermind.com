@@ -301,6 +301,18 @@ The tenth run left one real literal gap: fn-run's doc did not state the usage li
 
 **Files:** Modify `build/planner/coverage.go`, `build/planner/prompts/coverage_fill.md`; tests.
 
+### Task 4e: root tests run under /bin/sh, compare versions, test empty output, and forbid only what the brief forbids (run hello-v1.1-20261106-r009, 2026-11-05 22:35 MST)
+
+The eleventh run built the right program first try and failed four planner-written root tests: a bash process substitution `/bin/sh` rejects, an enumerated Go version list for "1.22 or later", a `grep -q '^$'` to prove gofmt printed nothing, and a forbidden `os.Args` the brief's Architecture requires. acceptcheck gains `bash_only`, `empty_line_grep`, `version_enumerated`; the planner runs `/bin/sh -n` on every root test and refuses `forbids_brief_token`; the coverage prompt shows the forms that work. Brief: `.superpowers/sdd/2026-11-05-hello-pipeline-fixes/task-4e-brief.md`.
+
+**Files:** Modify `build/acceptcheck/quality.go`, `build/planner/coverage_quality.go`, `build/planner/coverage.go`, `build/planner/prompts/coverage.md`; tests.
+
+### Task 3h: a root test /bin/sh cannot parse stops the run as a test defect; the acceptance total counts only coverable requirements (run hello-v1.1-20261106-r009)
+
+The same run's shell syntax error was attributed to fn-greeting, which was re-asked twice and escalated `identical_reply`. The executor now stops `acceptance_test_invalid` naming the test ("the code was not at fault"), and `acceptance.json` no longer counts test obligations in its requirements total. Brief: `.superpowers/sdd/2026-11-05-hello-pipeline-fixes/task-3h-brief.md`.
+
+**Files:** Modify `build/executor/acceptance.go`; tests.
+
 ### Task 5: Node inputs and tier come from the signature and class (brief 11, 12, 14)
 
 **Files:**
