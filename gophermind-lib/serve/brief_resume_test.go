@@ -139,8 +139,9 @@ func TestResumeRefusesAnUnknownStep(t *testing.T) {
 	}
 	// A package refusal comes back verbatim and leaves the run alone.
 	w = e.post("/app/briefs/"+resumeTestID+"/resume?from=node:fn-greet", "", nil)
-	if w.Code != 400 || decodeMap(t, w)["error"] == "" {
-		t.Errorf("verified node: %d %s", w.Code, w.Body.String())
+	msg, _ := decodeMap(t, w)["error"].(string)
+	if w.Code != 400 || !strings.HasPrefix(msg, "resume: ") {
+		t.Errorf("verified node: %d %q", w.Code, msg)
 	}
 	if w := e.post("/app/briefs/gm-2026-10-08-009/resume?from=coverage", "", nil); w.Code != 404 {
 		t.Errorf("unknown run = %d", w.Code)
@@ -188,5 +189,45 @@ func TestRunPageHasTheResumeControl(t *testing.T) {
 		if !strings.Contains(page, want) {
 			t.Errorf("run page lacks %q", want)
 		}
+	}
+}
+
+func TestResumeUnknownStepWhileActiveIsConflict(t *testing.T) {
+	e := newBriefEnv(t)
+	e.script = func(args []string) string { return "sleep 30" }
+	runviewtest.BuildID(t, e.root, resumeTestID, runviewtest.Failed)
+	e.writeResumeRecord(resumeTestID, phaseFailed)
+	if w := e.post("/app/briefs/"+resumeTestID+"/resume?from=node:fn-bye", "", nil); w.Code != 202 {
+		t.Fatalf("first resume %d: %s", w.Code, w.Body.String())
+	}
+	if w := e.post("/app/briefs/"+resumeTestID+"/resume?from=bogus", "", nil); w.Code != 409 {
+		t.Errorf("unknown step while active = %d, want 409", w.Code)
+	}
+	e.stopAndDrain(resumeTestID)
+}
+
+// A run whose folder is in the shared root, on a server that now makes per-run
+// repos, keeps the shared root: no clone is named or reset.
+func TestResumeStageOfARunInTheSharedRootKeepsTheRoot(t *testing.T) {
+	repos := t.TempDir()
+	e := newBriefEnv(t, func(o *Options, d *Deps) { o.ReposDir = repos; d.Pipeline.ReposDir = repos })
+	runviewtest.BuildID(t, e.root, resumeTestID, runviewtest.Planned)
+	if err := os.WriteFile(filepath.Join(e.root, ".gophermind", resumeTestID, "brief.md"), []byte(e.briefText(resumeTestID)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"init", "-q", "-b", "main"}, {"-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "base"}} {
+		if out, err := exec.Command("git", append([]string{"-C", e.root}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	e.writeResumeRecord(resumeTestID, phaseFailed)
+	w := e.post("/app/briefs/"+resumeTestID+"/resume?from=coverage", "", nil)
+	if w.Code != 202 {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+	e.waitPhase(resumeTestID, phaseDone)
+	e.waitNotActive(resumeTestID)
+	if _, err := os.Stat(filepath.Join(e.root, ".gophermind", resumeTestID, "coverage.json")); err == nil {
+		t.Error("coverage.json was not moved aside")
 	}
 }

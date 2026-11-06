@@ -37,12 +37,7 @@ func (m *briefManager) resumeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	from := r.URL.Query().Get("from")
-	step, err := resume.ParseStep(from)
-	if err != nil {
-		briefError(w, http.StatusBadRequest, err.Error(), nil)
-		return
-	}
-	if err := m.resumeFrom(rec, from, step); err != nil {
+	if err := m.resumeFrom(rec, from); err != nil {
 		var busy *briefBusyError
 		switch {
 		case errors.As(err, &busy):
@@ -70,7 +65,7 @@ func (e *resumeStartError) Unwrap() error { return e.err }
 // resumeFrom takes the slot, discards the run's output from step on, records
 // the resume and starts the process. A refusal frees the slot and changes
 // nothing in the run folder.
-func (m *briefManager) resumeFrom(rec briefRecord, from string, step resume.Step) error {
+func (m *briefManager) resumeFrom(rec briefRecord, from string) error {
 	m.mu.Lock()
 	if m.active != nil {
 		busy := &briefBusyError{activeID: m.active.id}
@@ -87,8 +82,14 @@ func (m *briefManager) resumeFrom(rec briefRecord, from string, step resume.Step
 			m.active = nil
 			m.mu.Unlock()
 			close(a.done)
+			// An answer saved while this refusal held the slot continues now.
+			go m.resumeAnswered()
 		}
 	}()
+	step, err := resume.ParseStep(from)
+	if err != nil {
+		return err
+	}
 
 	root := runRoot(m.repos, m.root, rec.ID)
 	runDir := filepath.Join(root, ".gophermind", rec.ID)
@@ -96,6 +97,11 @@ func (m *briefManager) resumeFrom(rec briefRecord, from string, step resume.Step
 		return errNoSuchRun
 	}
 	repo := m.repoFor(rec.ID)
+	if root == m.root {
+		// A run that predates per-run repos builds in the shared root, which
+		// the service does not own: keep it, never reset it.
+		repo = m.root
+	}
 	var first []string
 	now := m.now()
 	if step.Node != "" {
@@ -106,7 +112,7 @@ func (m *briefManager) resumeFrom(rec briefRecord, from string, step resume.Step
 		rec.Phase = phaseRunning
 	} else {
 		req := resume.RepoRequest{Repo: repo, Mode: resume.RepoKeep}
-		if m.repos != "" {
+		if m.repos != "" && root != m.root {
 			req = resume.RepoRequest{Repo: repo, Mode: resume.RepoOwnedClone, OwnedUnder: m.repos}
 		}
 		if _, err := resume.FromStage(runDir, step.Stage, req, now); err != nil {
