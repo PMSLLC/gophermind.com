@@ -115,6 +115,7 @@ const (
 	revInterrupted               // the context ended, or every entry was cooling or failing with nothing charged
 	revCandidate                 // a private pass was saved: the leaf waits for its turn and lands (sub-project F)
 	revPolicy                    // the model repeated a reply the gate refuses for a forbidden call: no other entry is tried
+	revRepeat                    // two identical replies in a row: the ladder ends with identical_reply
 )
 
 // entryEnd is how one entry of the ladder ended within a revision.
@@ -130,6 +131,7 @@ const (
 	endPermanent // auth, missing model, no provider, privacy
 	endInterrupted
 	endPolicy // the same reply refused for a forbidden call twice: the revision ends
+	endRepeat // an identical reply right after an identical reply: the ladder ends
 )
 
 // leafRun is the state of one leaf from claim to a terminal status.
@@ -147,6 +149,7 @@ type leafRun struct {
 	commit    string     // the short hash finishPass committed, "" in diff_only
 	landing   bool       // the check in progress replays a candidate: finishPass says leaf_landed
 	failClass string     // the class of the last failed attempt record saved (the land_conflict message)
+	sameLast  bool       // the leaf's last attempt, of any revision or round, was an identical_reply
 
 	rev         int
 	cp          map[int]int       // contract problems per revision
@@ -314,6 +317,10 @@ func (rc *runCtx) newLeafRun(ctx context.Context, l *Leaf, in leafIn) (*leafRun,
 		return nil, fmt.Errorf("executor: reading the row of %s failed", l.ID)
 	}
 	lr.rev = row.Revision
+	if n := len(row.Attempts); n > 0 {
+		class, _, _ := strings.Cut(row.Attempts[n-1].FailureReason, ":")
+		lr.sameLast = class == ClassIdentical
+	}
 	if in.Repair > 0 {
 		swap.Track(rc.o.RunDir, in.Repair, row.Revision)
 	}
@@ -591,6 +598,11 @@ func (lr *leafRun) afterRevision(ctx context.Context, res revResult) (out leafOu
 	switch res {
 	case revTooLong:
 		reason = ClassContextTooLong
+	case revRepeat:
+		// The revision cap's path to the gate, without the revise rung: the
+		// packet gave the model no reason to change, so more calls buy nothing.
+		reason = ClassIdentical
+		rc.emit("ladder_ended", l.ID, msgIdenticalTwice)
 	case revContractProblem:
 		if lr.cp[lr.rev] >= 2 || lr.rev >= rc.maxRevisions(l) {
 			reason = ClassContractProblem
@@ -1045,6 +1057,8 @@ func (lr *leafRun) oneRevision(ctx context.Context) (revResult, error) {
 			return revContractProblem, nil
 		case endPolicy:
 			return revPolicy, nil
+		case endRepeat:
+			return revRepeat, nil
 		case endTooLong:
 			tooLong++
 		case endProvider:
@@ -1135,6 +1149,7 @@ func (lr *leafRun) record(ctx context.Context, e ladderEntry, started time.Time,
 		return fmt.Errorf("executor: recording an attempt of %s failed", lr.l.ID)
 	}
 	rc.saveArtifacts(lr, a, class)
+	lr.sameLast = class == ClassIdentical
 	lr.history = append(lr.history, historyLine(len(lr.history)+1, a))
 	if sha != "" {
 		lr.lastSHA[e.Name] = sha
@@ -1248,9 +1263,12 @@ func (lr *leafRun) attempt(ctx context.Context, e ladderEntry, k int) (end entry
 	// A repeat of the previous reply on this entry, whatever the gate would say
 	// of it, is identical: hashed first so a refused reply cannot burn every fix.
 	if reply.ContractProblem == "" {
-		if same, err := lr.identical(ctx, e, started, reply.SHA256); err != nil || same {
+		if same, again, err := lr.identical(ctx, e, started, reply.SHA256); err != nil || same {
 			if errors.Is(err, errCancelled) {
 				return endInterrupted, true, nil
+			}
+			if err == nil && again {
+				return endRepeat, true, nil
 			}
 			return endIdentical, true, err
 		}
@@ -1279,18 +1297,23 @@ func (lr *leafRun) attempt(ctx context.Context, e ladderEntry, k int) (end entry
 }
 
 // identical reports whether sha repeats the last reply of this leaf on the
-// entry. When it does, the attempt is recorded as a failed identical_reply.
-func (lr *leafRun) identical(ctx context.Context, e ladderEntry, started time.Time, sha string) (bool, error) {
+// entry. When it does, the attempt is recorded as a failed identical_reply,
+// and again says the attempt before it was one too: two in a row end the ladder.
+func (lr *leafRun) identical(ctx context.Context, e ladderEntry, started time.Time, sha string) (same, again bool, err error) {
 	prev, err := lr.previousSHA(ctx, e)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	if prev == "" || prev != sha {
-		return false, nil
+		return false, false, nil
 	}
+	again = lr.sameLast
 	err = lr.record(ctx, e, started, blackboard.VerdictFail, ClassIdentical, failureReason(ClassIdentical, nil), nil, sha)
-	return true, err
+	return true, again, err
 }
+
+// msgIdenticalTwice is the event text of a ladder two identical replies ended.
+const msgIdenticalTwice = "the model returned the same file twice in a row; nothing in the packet gives it a reason to change"
 
 // refused records an attempt whose reply was refused before being written.
 // It consumes a fix attempt.
@@ -1365,7 +1388,7 @@ func (lr *leafRun) providerError(ctx context.Context, e ladderEntry, started tim
 	case ce.ParseErr != nil:
 		// Every reply of the entry was unusable. The last one is hashed; one
 		// that repeats the entry's previous reply is an identical reply.
-		if same, err := lr.identical(ctx, e, started, lastSHA); err != nil || same {
+		if same, again, err := lr.identical(ctx, e, started, lastSHA); err != nil || same {
 			if errors.Is(err, errCancelled) {
 				return endInterrupted, true, nil
 			}
@@ -1374,6 +1397,9 @@ func (lr *leafRun) providerError(ctx context.Context, e ladderEntry, started tim
 				// entry is told the same rule, so the revision ends here.
 				lr.prev = failureText(malformedNote(parseErr, lr.expect.AllowExit))
 				return endPolicy, true, nil
+			}
+			if err == nil && again {
+				return endRepeat, true, nil
 			}
 			return endIdentical, true, err
 		}

@@ -8,6 +8,7 @@ import (
 
 	"gophermind/gophermind-lib/build/blackboard"
 	"gophermind/gophermind-lib/build/ledger"
+	"gophermind/gophermind-lib/build/packer"
 	"gophermind/gophermind-lib/build/router"
 	"gophermind/gophermind-lib/build/runner"
 	"gophermind/gophermind-lib/build/settings"
@@ -405,5 +406,43 @@ func reviseRewrite(rev int) func(*rigOpts) {
 			c.Models = map[string][]string{"strong": {"a/m1"}, "standard": {"a/m1"}, "any": {"a/m1"}}
 			c.Revise.Mode = settings.ReviseModeRewrite
 		}
+	}
+}
+
+// Two identical replies in a row end the ladder: a verified leaf reopened
+// for an acceptance repair whose model returns the same file twice escalates
+// with identical_reply after the second, without spending the revision budget.
+func TestIdenticalReplyTwiceEndsLadder(t *testing.T) {
+	t.Parallel()
+	g := newRig(t, oneEntryRevisions(2, 5))
+	id := leafID
+	same := good(id)
+	rc, fc := g.leafRC(t, Script{
+		"implement:" + id: {reply(same), reply(same), reply(same), reply(same), reply(same), reply(same), reply(same)},
+		"revise:" + id:    {reviseHint("one"), reviseHint("two"), reviseHint("three"), reviseHint("four"), reviseHint("five"), reviseHint("six")},
+	}, true)
+	fc.LeafScript[id] = []runner.Verdict{passVerdict()}
+	ctx := context.Background()
+	l := g.plan.Leaf(id)
+	if out, err := rc.runLeaf(ctx, l, leafIn{}); err != nil || out.Status != blackboard.StatusVerified {
+		t.Fatalf("first runLeaf = %+v, %v; want verified", out, err)
+	}
+	if err := rc.reopen(ctx, l, "acceptance"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := rc.runLeaf(ctx, l, leafIn{Previous: packer.NewFailure(nil, "acceptance A1: it greets", nil), Repair: 1})
+	asStop(t, err, "escalated", "human_stop")
+	if n := len(implementCalls(t, g.led, id)); n != 3 {
+		t.Fatalf("implement calls = %d, want 3 (one pass and two identical replies)", n)
+	}
+	escs := g.gate.Escalations()
+	if len(escs) != 1 || escs[0].Reason != ClassIdentical {
+		t.Fatalf("gate escalations = %+v, want one with reason %s", escs, ClassIdentical)
+	}
+	if r := g.row(t, id); r.Status != blackboard.StatusEscalated {
+		t.Fatalf("row = %s, want escalated", r.Status)
+	}
+	if r := reasonsOf(t, g.board, id); len(r) != 3 || r[1] != ClassIdentical || r[2] != ClassIdentical {
+		t.Fatalf("reasons = %v, want the pass then two identical_reply", r)
 	}
 }

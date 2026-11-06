@@ -557,7 +557,7 @@ type failedBullet struct {
 	ExitCode int
 	TimedOut bool
 	Nodes    []string
-	Failure  packer.Failure // packer.NewFailure(nil, output, secrets): capped, secret-stripped, memory only
+	Failure  packer.Failure // bulletFailure: the requirement, the command, the end and the output; capped, secret-stripped, memory only
 }
 
 func firstLine(s string) string {
@@ -604,18 +604,34 @@ func (rc *runCtx) runBullet(ctx context.Context, pb planBullet) (BulletProof, *f
 				Message: "executor: " + proof.Command + " could not create its temp file (" + rc.scrubText(line) + "): give mktemp a template under $TMPDIR; the code was not at fault"}
 		}
 		if fb == nil {
-			text := res.Out.Text()
+			end := fmt.Sprintf("exit code %d", proof.ExitCode)
+			if proof.TimedOut {
+				end = "timed out after " + rc.acceptanceTimeout().String()
+			}
+			head := []string{"command: " + proof.Command + " (" + proof.Test + ")", end}
 			fb = &failedBullet{
 				Req: pb.req, Command: proof.Command, ExitCode: proof.ExitCode, TimedOut: proof.TimedOut,
-				Nodes: pb.nodes, Failure: packer.NewFailure(nil, text, rc.secretValues()),
+				Nodes: pb.nodes, Failure: rc.bulletFailure(pb.req, head, res.Out.Text()),
 			}
 		}
 	}
 	if len(bp.Commands) == 0 { // unreachable through mapAcceptance; never a pass
 		bp.Verdict = "fail"
-		fb = &failedBullet{Req: pb.req, ExitCode: -1, Nodes: pb.nodes}
+		fb = &failedBullet{Req: pb.req, ExitCode: -1, Nodes: pb.nodes,
+			Failure: rc.bulletFailure(pb.req, []string{"exit code none (no command ran)"}, "")}
 	}
 	return bp, fb, nil
+}
+
+// bulletFailure is the failure text of a failed bullet: the requirement, the
+// head lines (the command and how it ended), then the output, or a line that
+// says it printed nothing, so a silent failure still reaches the model with a reason.
+func (rc *runCtx) bulletFailure(req planner.Requirement, head []string, output string) packer.Failure {
+	lines := append([]string{"acceptance " + req.ID + ": " + rc.scrubText(req.Text)}, head...)
+	if strings.TrimSpace(output) == "" {
+		output = "(the command printed nothing)"
+	}
+	return packer.NewFailure(nil, strings.Join(lines, "\n")+"\n"+output, rc.secretValues())
 }
 
 // acceptanceRun runs every bullet once, in requirement order, one command at a
