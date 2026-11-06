@@ -13,6 +13,8 @@ type LeafTest struct {
 	TestFile string `json:"test_file"` // repo-relative, forward slashes
 	TestFunc string `json:"test_func"`
 	SHA256   string `json:"sha256"`
+	// Obligations is the ids of the brief's Tests bullets the node's tests cover.
+	Obligations []string `json:"obligations,omitempty"`
 }
 
 // HashedFiles is a copy of the run folder files (slash paths) whose bytes are

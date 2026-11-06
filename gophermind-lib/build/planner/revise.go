@@ -455,7 +455,7 @@ func (p *Planner) reviseTests(ctx context.Context, r *run, c *contract.Contracts
 	pkg, _ := ct["package"].(string)
 	funcName := testFuncName(id)
 	parent, _ := merged["parent"].(string)
-	prompt, err := renderTestwriterBrief(scrubInput(mustJSON(testwriterView(merged)), req.Secrets, maxReviseTestSource), c.Module, file, funcName, testFile, PackageImports(c), componentBrief(r, parent, 1))
+	prompt, err := renderTestwriterBrief(scrubInput(mustJSON(testwriterView(merged)), req.Secrets, maxReviseTestSource), c.Module, file, funcName, testFile, PackageImports(c), componentBrief(r, parent, 1), nil)
 	if err != nil {
 		return "", "", err
 	}

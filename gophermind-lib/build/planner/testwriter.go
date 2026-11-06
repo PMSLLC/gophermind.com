@@ -78,6 +78,9 @@ type writtenTests struct {
 	SHA256   string           `json:"sha256"`
 	Fixes    []string         `json:"fixes,omitempty"`    // kind and name of each mechanical fix applied to the file
 	Repaired bool             `json:"repaired,omitempty"` // the file came from a repair call
+	// Obligations is the ids of the node's Tests-section obligations the
+	// reply's cases cite.
+	Obligations []string `json:"obligations,omitempty"`
 }
 
 func testwriterDone(r *run) bool { return r.status.PlannedAt != "" }
@@ -142,6 +145,10 @@ func (p *Planner) testwriter(ctx context.Context, r *run) error {
 	if st.Nodes == nil {
 		st.Nodes = map[string]writtenTests{}
 	}
+	obligations, err := p.writeObligations(r, c)
+	if err != nil {
+		return err
+	}
 
 	var drafts []map[string]any
 	for _, comp := range c.Components {
@@ -160,7 +167,7 @@ func (p *Planner) testwriter(ctx context.Context, r *run) error {
 		if _, done := st.Nodes[id]; done {
 			continue
 		}
-		wt, err := p.writeTests(ctx, r, c, d, classes[id], &st)
+		wt, err := p.writeTests(ctx, r, c, d, classes[id], &st, nodeObligations(obligations, id))
 		if err != nil {
 			return fmt.Errorf("node %s: %w", id, err)
 		}
@@ -188,14 +195,16 @@ func renderTestwriter(node, module, file, funcName, testFile string) (string, er
 // every package qualifier the node's signature and dependency signatures use.
 // siblings maps contract package clauses to import paths (PackageImports).
 func renderTestwriterWith(node, module, file, funcName, testFile string, siblings map[string]string) (string, error) {
-	return renderTestwriterBrief(node, module, file, funcName, testFile, siblings, "")
+	return renderTestwriterBrief(node, module, file, funcName, testFile, siblings, "", nil)
 }
 
 // renderTestwriterBrief is renderTestwriterWith that also gives the brief's own
 // section for the node's component. A test writer that saw only the node made
 // up values the brief settles ("max 0 returns an empty slug" where the brief
 // says 0 means no limit), and the revise step then bent the contract to match.
-func renderTestwriterBrief(node, module, file, funcName, testFile string, siblings map[string]string, brief string) (string, error) {
+// obligations are the node's own Tests-section bullets, in id order; each one
+// is a case of the table the reply must cite.
+func renderTestwriterBrief(node, module, file, funcName, testFile string, siblings map[string]string, brief string, obligations []TestObligation) (string, error) {
 	dir := path.Dir(file)
 	importPath := ""
 	if module != "" {
@@ -210,7 +219,11 @@ func renderTestwriterBrief(node, module, file, funcName, testFile string, siblin
 	}
 	data := map[string]string{"MainPackage": mainPkg, "Node": node, "PackageDir": dir,
 		"TestFuncName": funcName, "TestFile": testFile, "Module": module, "ImportPath": importPath,
-		"Imports": qualifierImports(node, siblings), "BriefSection": brief}
+		"Imports": qualifierImports(node, siblings), "BriefSection": brief,
+		"Obligations": obligationsBlock(obligations), "ObligationExample": ""}
+	if len(obligations) > 0 {
+		data["ObligationExample"] = obligations[0].ID
+	}
 	data["MainFunc"] = ""
 	if mainPkg != "" && strings.Join(strings.Fields(nodeSignature(node)), " ") == "func main()" {
 		data["MainFunc"] = "yes"
@@ -529,7 +542,9 @@ func withReceiverDecl(c *contract.Contracts, view map[string]any) map[string]any
 }
 
 // writeTests makes the model call for one node and writes its test file.
-func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts, d map[string]any, class string, st *testwriterState) (writtenTests, error) {
+// obligations are the node's Tests-section bullets; the reply must cite and
+// cover each one.
+func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts, d map[string]any, class string, st *testwriterState, obligations []TestObligation) (writtenTests, error) {
 	id, _ := d["id"].(string)
 	ct, _ := d["contract"].(map[string]any)
 	file, _ := ct["file"].(string)
@@ -551,11 +566,12 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	}
 	parent, _ := d["parent"].(string)
 	sig, _ := ct["signature"].(string)
-	prompt, err := renderTestwriterBrief(mustJSON(withoutUnexportedDeps(withReceiverDecl(c, testwriterView(d)), sig, path.Dir(file))), c.Module, file, funcName, rel, PackageImports(c), componentBrief(r, parent, 1))
+	prompt, err := renderTestwriterBrief(mustJSON(withoutUnexportedDeps(withReceiverDecl(c, testwriterView(d)), sig, path.Dir(file))), c.Module, file, funcName, rel, PackageImports(c), componentBrief(r, parent, 1), obligations)
 	if err != nil {
 		return writtenTests{}, err
 	}
 	var tests []map[string]any
+	var covered []string
 	var source string
 	renamedHelpers := false
 	var droppedImports []string
@@ -567,10 +583,16 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 		tests, source = mt, msrc
 	} else {
 		parse := func(text string) error {
-			ts, src, droppedC, err := parseTestwriteCounted(text, ct, pkg, funcName, c.Module, hookList(d), packageSet(c))
+			ts, src, droppedC, cited, err := parseTestwriteCited(text, ct, pkg, funcName, c.Module, hookList(d), packageSet(c))
 			var se *syntaxRefusal
 			if err != nil && !errors.As(err, &se) {
 				return err
+			}
+			if se == nil {
+				// Before the compile check, which a refusal here makes moot.
+				if err := checkObligations(obligations, cited, src); err != nil {
+					return err
+				}
 			}
 			in := settleInput{c: c, id: id, file: file, rel: rel, funcName: funcName, sig: sig, pkg: pkg, pkgs: packageSet(c),
 				others: otherTestSources(r.repo, path.Dir(rel), id, st), stubs: stubSources(c, path.Dir(file))}
@@ -587,9 +609,15 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 			if err != nil {
 				return err
 			}
+			if se != nil {
+				if err := checkObligations(obligations, cited, s.src); err != nil {
+					return err
+				}
+			}
 			if s.repaired {
 				droppedC = s.comments
 			}
+			covered = coveredObligations(obligations, cited)
 			tests, source, renamedHelpers, droppedImports, droppedComments = ts, s.src, s.renamed, s.dropped, droppedC
 			fixes, repaired = s.fixes, s.repaired
 			return nil
@@ -651,7 +679,7 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 			"test_comment_normalized: %d long comment blocks were removed from the test file of node %s",
 			droppedComments, id))
 	}
-	wt := writtenTests{Tests: tests, TestFile: rel, SHA256: hashHex([]byte(source)), Repaired: repaired}
+	wt := writtenTests{Tests: tests, TestFile: rel, SHA256: hashHex([]byte(source)), Repaired: repaired, Obligations: covered}
 	for _, f := range fixes {
 		wt.Fixes = append(wt.Fixes, f.Kind+" "+f.Name)
 	}
@@ -786,6 +814,14 @@ func parseTestwriteIn(text string, ct map[string]any, pkg, funcName, module stri
 // that is not valid Go is refused with a *syntaxRefusal, and the tests are
 // returned with it.
 func parseTestwriteCounted(text string, ct map[string]any, pkg, funcName, module string, hooks []string, pkgs importSet) ([]map[string]any, string, int, error) {
+	tests, src, dropped, _, err := parseTestwriteCited(text, ct, pkg, funcName, module, hooks, pkgs)
+	return tests, src, dropped, err
+}
+
+// parseTestwriteCited is parseTestwriteCounted that also returns the
+// obligation ids the tests list in "obligations". The ids are not kept in the
+// tests: the node schema has no place for them.
+func parseTestwriteCited(text string, ct map[string]any, pkg, funcName, module string, hooks []string, pkgs importSet) ([]map[string]any, string, int, map[string]bool, error) {
 	var reply struct {
 		Tests    []map[string]any `json:"tests"`
 		TestFile string           `json:"test_file"`
@@ -797,7 +833,7 @@ func parseTestwriteCounted(text string, ct map[string]any, pkg, funcName, module
 	}
 	head, fenced := splitSourceReply(text)
 	if fenced != "" && strings.TrimSpace(head) == "" {
-		return nil, "", 0, errors.New("reply has no tests: put the JSON object of tests before the fenced go block")
+		return nil, "", 0, nil, errors.New("reply has no tests: put the JSON object of tests before the fenced go block")
 	}
 	text = StripReply(head)
 	if err := decode(text); err != nil {
@@ -813,42 +849,46 @@ func parseTestwriteCounted(text string, ct map[string]any, pkg, funcName, module
 			}
 		}
 		if err != nil {
-			return nil, "", 0, fmt.Errorf("test-writer reply is not a JSON object (%s)", jsonErrIn(err, text))
+			return nil, "", 0, nil, fmt.Errorf("test-writer reply is not a JSON object (%s)", jsonErrIn(err, text))
 		}
 	}
 	need := len(objects(ct["errors"])) + 1
 	if len(reply.Tests) < need {
-		return nil, "", 0, fmt.Errorf("test-writer reply has %d tests; the contract lists %d error conditions, so at least %d are needed (the happy path and one per condition)",
+		return nil, "", 0, nil, fmt.Errorf("test-writer reply has %d tests; the contract lists %d error conditions, so at least %d are needed (the happy path and one per condition)",
 			len(reply.Tests), need-1, need)
 	}
 	file, _ := ct["file"].(string)
 	command := testCommand(file, funcName)
 	tests := make([]map[string]any, 0, len(reply.Tests))
+	cited := map[string]bool{}
 	for i, t := range reply.Tests {
+		for _, id := range strList(t["obligations"]) {
+			cited[strings.TrimSpace(id)] = true
+		}
 		name, _ := t["name"].(string)
 		if strings.TrimSpace(name) == "" {
-			return nil, "", 0, fmt.Errorf("test %d needs a name", i+1)
+			return nil, "", 0, nil, fmt.Errorf("test %d needs a name", i+1)
 		}
 		given, err := testField(t, "given", i+1)
 		if err != nil {
-			return nil, "", 0, err
+			return nil, "", 0, nil, err
 		}
 		expect, err := testField(t, "expect", i+1)
 		if err != nil {
-			return nil, "", 0, err
+			return nil, "", 0, nil, err
 		}
 		pol, _ := t["polarity"].(string)
 		cov, _ := t["covers"].(string)
 		tests = append(tests, map[string]any{"name": name, "level": "unit", "given": given, "expect": expect, "command": command, "polarity": pol, "covers": cov})
 	}
 	if err := checkPolarity(tests, len(objects(ct["errors"]))); err != nil {
-		return nil, "", 0, err
+		return nil, "", 0, nil, err
 	}
 	if fenced != "" {
 		reply.TestFile = fenced
 	}
 	if strings.TrimSpace(reply.TestFile) == "" {
-		return nil, "", 0, errors.New(errNoTestFile)
+		return nil, "", 0, nil, errors.New(errNoTestFile)
 	}
 	sig, _ := ct["signature"].(string)
 	_, _, why := internalTarget(sig)
@@ -857,11 +897,11 @@ func parseTestwriteCounted(text string, ct map[string]any, pkg, funcName, module
 		// A syntax refusal keeps the tests, so a repaired file can use them.
 		var se *syntaxRefusal
 		if errors.As(err, &se) {
-			return tests, "", dropped, err
+			return tests, "", dropped, cited, err
 		}
-		return nil, "", 0, err
+		return nil, "", 0, nil, err
 	}
-	return tests, src, dropped, nil
+	return tests, src, dropped, cited, nil
 }
 
 // normalizeTestFile runs the repairs and checks a test file gets after the
@@ -1142,7 +1182,7 @@ func (p *Planner) finishTree(ctx context.Context, r *run, c *contract.Contracts,
 			doc["requirement_ids"] = toAnySlice(requirementIDsFor(cov, id, comp.ID))
 			docs = append(docs, doc)
 			files = append(files, wt.TestFile)
-			leafTests[id] = LeafTest{TestFile: wt.TestFile, TestFunc: testFuncName(id), SHA256: wt.SHA256}
+			leafTests[id] = LeafTest{TestFile: wt.TestFile, TestFunc: testFuncName(id), SHA256: wt.SHA256, Obligations: wt.Obligations}
 		}
 	}
 	qs, err := loadQStore(r)

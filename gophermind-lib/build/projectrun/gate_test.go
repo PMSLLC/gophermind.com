@@ -17,7 +17,11 @@ func gateFor(t *testing.T, reqs, covered []string, writeCov bool) human.Gate {
 	dir := t.TempDir()
 	var rs []map[string]any
 	for _, id := range reqs {
-		rs = append(rs, map[string]any{"id": id, "kind": "constraint", "text": "x", "line": 1})
+		kind := "constraint"
+		if strings.HasPrefix(id, "T") {
+			kind = "test"
+		}
+		rs = append(rs, map[string]any{"id": id, "kind": kind, "text": "x", "line": 1})
 	}
 	b, _ := json.Marshal(rs)
 	if err := os.WriteFile(filepath.Join(dir, "requirements.json"), b, 0o600); err != nil {
@@ -40,6 +44,15 @@ func TestUnattendedGateApprovesFullCoverage(t *testing.T) {
 	g := gateFor(t, []string{"C1", "A1"}, []string{"A1", "C1"}, true)
 	d, err := g.Approve(context.Background(), human.PlanSummary{Markdown: "m", Hash: "0123456789abcdef0123"})
 	if err != nil || !d.Approved || d.By != "unattended" || d.Note != "plan 0123456789ab" {
+		t.Fatalf("%+v %v", d, err)
+	}
+}
+
+// A Tests bullet never has a Covered entry, so it is not a gap.
+func TestUnattendedGateIgnoresTestRequirements(t *testing.T) {
+	g := gateFor(t, []string{"C1", "T1"}, []string{"C1"}, true)
+	d, err := g.Approve(context.Background(), human.PlanSummary{Markdown: "m", Hash: "0123456789abcdef0123"})
+	if err != nil || !d.Approved {
 		t.Fatalf("%+v %v", d, err)
 	}
 }

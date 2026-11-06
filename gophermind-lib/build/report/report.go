@@ -437,7 +437,7 @@ func Build(in Input) (Report, error) {
 	sort.Slice(r.Leaves, func(i, j int) bool { return r.Leaves[i].Model < r.Leaves[j].Model })
 
 	// Proof counts, copied from the planner's files and the caller.
-	r.Requirements = Coverage{Covered: len(in.Coverage.Covered), Total: len(in.Requirements)}
+	r.Requirements = Coverage{Covered: len(in.Coverage.Covered), Total: len(planner.CoverageRequirements(in.Requirements))}
 	kinds := map[string]planner.ReqKind{}
 	accCount := 0
 	for _, q := range in.Requirements {

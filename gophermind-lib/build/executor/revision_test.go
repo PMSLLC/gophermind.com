@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -197,7 +198,7 @@ func TestApplyRevisionRefusesATestThatPassesTheStubOrDoesNotBuild(t *testing.T) 
 			if string(readFile(t, g.nodeFile(leafID))) != string(origNode) || string(readFile(t, testPath(g, l))) != string(origTest) {
 				t.Fatal("a refused revision changed the node or the test file")
 			}
-			if lt, _ := planner.ReadLeafTests(g.runDir); lt[leafID] != lt0[leafID] {
+			if lt, _ := planner.ReadLeafTests(g.runDir); !reflect.DeepEqual(lt[leafID], lt0[leafID]) {
 				t.Fatal("a refused revision changed leaf_tests.json")
 			}
 			if r := g.row(t, leafID); r.Revision != 0 || l.Revision != 0 {

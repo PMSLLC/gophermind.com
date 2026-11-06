@@ -228,7 +228,7 @@ func RenderPlan(runDir string) (markdown, hash string, err error) {
 	for _, cv := range cov.Covered {
 		fmt.Fprintf(&s, "| %s | %s | %s | %s | %s |\n", cv.Requirement, cell(oneLine(text[cv.Requirement], 80)), cell(orNone(cv.Nodes)), cell(orNone(cv.RootTests)), cell(qualityCell(quality, cv.Requirement)))
 	}
-	fmt.Fprintf(&s, "\nRequirements covered: %d of %d\n", len(cov.Covered), len(reqs))
+	fmt.Fprintf(&s, "\nRequirements covered: %d of %d\n", len(cov.Covered), len(CoverageRequirements(reqs)))
 	if cov.Rounds > 0 {
 		fmt.Fprintf(&s, "Coverage fill rounds: %d\n", cov.Rounds)
 	}

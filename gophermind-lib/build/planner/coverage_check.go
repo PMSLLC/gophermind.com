@@ -156,7 +156,8 @@ func contains(list []string, s string) bool {
 // function node under it; the root node and unknown ids cover nothing. A
 // constraint needs a covering node or a root test, a feature needs a covering
 // node, and an acceptance bullet needs a root test. covered and gaps are both
-// in reqs order, and every requirement is in exactly one of them.
+// in reqs order, and every requirement is in exactly one of them, except a
+// kind-test requirement, which is in neither.
 func CheckCoverage(reqs []Requirement, nodes []PlanNode, reply CoverageReply) (covered []Covered, gaps []Gap) {
 	byID := map[string]PlanNode{}
 	hasFunction := map[string]bool{}
@@ -182,7 +183,7 @@ func CheckCoverage(reqs []Requirement, nodes []PlanNode, reply CoverageReply) (c
 	}
 
 	covered, gaps = []Covered{}, []Gap{}
-	for _, q := range reqs {
+	for _, q := range CoverageRequirements(reqs) {
 		if q.IsTestRule() {
 			covered = append(covered, Covered{Requirement: q.ID, Nodes: []string{}, RootTests: []string{}, TestRule: true})
 			continue

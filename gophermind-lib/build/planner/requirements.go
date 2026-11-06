@@ -17,9 +17,12 @@ const (
 	ReqConstraint ReqKind = "constraint"
 	ReqAcceptance ReqKind = "acceptance"
 	ReqFeature    ReqKind = "feature"
+	// ReqTest is a bullet of the brief's Tests section: a test obligation the
+	// test writer meets, never a gap coverage looks for a node for.
+	ReqTest ReqKind = "test"
 )
 
-// Requirement is one obligation the brief states. IDs are C1.., A1.., F1..,
+// Requirement is one obligation the brief states. IDs are C1.., A1.., F1.., T1..,
 // numbered per kind in file order, so they are stable for a given brief text.
 type Requirement struct {
 	ID   string  `json:"id"`
@@ -46,7 +49,7 @@ func (r Requirement) IsTestRule() bool {
 }
 
 // ParseRequirements scans a brief file: every top-level bullet under
-// "## Constraints" and "## Acceptance", and every "### " heading under
+// "## Constraints", "## Acceptance" and "## Tests", and every "### " heading under
 // "## Features", is one requirement. It is code, not a model, so the list a
 // plan is checked against cannot drift from the brief. Returned in file order.
 func ParseRequirements(src []byte) []Requirement {
@@ -65,7 +68,7 @@ func ParseRequirements(src []byte) []Requirement {
 
 	out := []Requirement{}
 	counts := map[ReqKind]int{}
-	prefix := map[ReqKind]string{ReqConstraint: "C", ReqAcceptance: "A", ReqFeature: "F"}
+	prefix := map[ReqKind]string{ReqConstraint: "C", ReqAcceptance: "A", ReqFeature: "F", ReqTest: "T"}
 	var cur *Requirement
 	var body []string
 	flush := func() {
@@ -105,10 +108,13 @@ func ParseRequirements(src []byte) []Requirement {
 			if cur != nil {
 				body = append(body, line)
 			}
-		case "Constraints", "Acceptance":
+		case "Constraints", "Acceptance", "Tests":
 			kind := ReqConstraint
-			if section == "Acceptance" {
+			switch section {
+			case "Acceptance":
 				kind = ReqAcceptance
+			case "Tests":
+				kind = ReqTest
 			}
 			switch {
 			case !inFence && isBullet(line):
@@ -129,6 +135,19 @@ func ParseRequirements(src []byte) []Requirement {
 		}
 	}
 	flush()
+	return out
+}
+
+// CoverageRequirements is reqs without the kind-test ones: the requirements a
+// plan's coverage accounts for, one Covered entry or gap each. A Tests bullet
+// is the test writer's obligation and never appears in coverage.json.
+func CoverageRequirements(reqs []Requirement) []Requirement {
+	out := make([]Requirement, 0, len(reqs))
+	for _, q := range reqs {
+		if q.Kind != ReqTest {
+			out = append(out, q)
+		}
+	}
 	return out
 }
 

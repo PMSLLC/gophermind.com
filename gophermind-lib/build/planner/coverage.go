@@ -302,10 +302,10 @@ func (p *Planner) rewriteSkeleton(r *run, rootTests []RootTest) error {
 }
 
 // requirementsText lists the requirements for the coverage prompt, one per
-// line. A feature is shown by its heading and the start of its text.
+// line; kind-test requirements are the test writer's and are left out. A feature is shown by its heading and the start of its text.
 func requirementsText(reqs []Requirement) string {
 	var b strings.Builder
-	for _, q := range reqs {
+	for _, q := range CoverageRequirements(reqs) {
 		text := oneLine(q.Text, 2000)
 		if q.Kind == ReqFeature {
 			text = q.Name + ": " + oneLine(q.Text, 300)

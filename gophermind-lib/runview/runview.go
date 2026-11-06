@@ -426,7 +426,7 @@ func (v *View) summaryOf(l loaded, nodes []NodeSummary) RunSummary {
 		}
 	}
 	if reqs, err := planner.ReadRequirements(v.dir); err == nil {
-		s.Coverage.Total = len(reqs)
+		s.Coverage.Total = len(planner.CoverageRequirements(reqs))
 	}
 	if cov, err := planner.ReadCoverage(v.dir); err == nil {
 		s.Coverage.Covered = len(cov.Covered)

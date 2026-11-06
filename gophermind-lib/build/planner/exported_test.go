@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -113,7 +114,7 @@ func TestSetLeafTestSHA(t *testing.T) {
 		t.Fatalf("sha = %s", after["fn-greet"].SHA256)
 	}
 	for id, v := range before {
-		if id != "fn-greet" && after[id] != v {
+		if id != "fn-greet" && !reflect.DeepEqual(after[id], v) {
 			t.Errorf("%s changed: %+v -> %+v", id, v, after[id])
 		}
 	}

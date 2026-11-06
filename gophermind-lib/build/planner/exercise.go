@@ -20,7 +20,9 @@ var failingCalls = map[string]bool{
 // syntactic: a call through a helper or a method value counts, since the name
 // still appears. main is skipped because its test is generated, and an empty
 // name means the signature could not be read, which an earlier check reports.
-func checkTestExercises(src, name string) error {
+// hasResults asks the refusal to name a comparison of what the function
+// returns; a function without results has nothing to compare.
+func checkTestExercises(src, name string, hasResults bool) error {
 	if name == "" || name == "main" {
 		return nil
 	}
@@ -48,10 +50,30 @@ func checkTestExercises(src, name string) error {
 		return true
 	})
 	if !named {
-		return fmt.Errorf("test file never calls %s, the function under test: every case must call it and compare what it returns", name)
+		msg := fmt.Sprintf("test file never calls %s, the production function under test: every case must call it", name)
+		if hasResults {
+			msg += " and compare what it returns"
+		}
+		return errors.New(msg)
 	}
 	if !fails {
 		return errors.New("test file cannot fail: it has no t.Error, t.Errorf, t.Fatal or t.Fatalf; compare each case's result with the expected value and report a mismatch")
 	}
 	return nil
+}
+
+// hasResults reports whether a signature declares results. A signature that
+// does not parse counts as having them, so the refusal keeps asking for a
+// comparison.
+func hasResults(sig string) bool {
+	f, err := parser.ParseFile(token.NewFileSet(), "d.go", "package p\n"+sig, 0)
+	if err != nil {
+		return true
+	}
+	for _, d := range f.Decls {
+		if fd, ok := d.(*ast.FuncDecl); ok {
+			return fd.Type.Results != nil && len(fd.Type.Results.List) > 0
+		}
+	}
+	return true
 }

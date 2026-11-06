@@ -117,7 +117,7 @@ type compileFailure struct {
 // Both nil: s compiled.
 func (p *Planner) settleChecks(cs callSpec, in settleInput, src string) (s settled, failure compileFailure, err error) {
 	name, _, _ := internalTarget(in.sig)
-	if err := checkTestExercises(src, name); err != nil {
+	if err := checkTestExercises(src, name, hasResults(in.sig)); err != nil {
 		return settled{}, compileFailure{}, err
 	}
 	if reachesNetwork(in.c, in.id) || importsNet(src) {

@@ -28,7 +28,8 @@ func (unattendedGate) Confirm(context.Context, human.Understanding) (human.Decis
 }
 
 // Approve approves a plan only when every requirement of the brief appears in
-// coverage.json. It reads the two JSON files and parses no markdown.
+// coverage.json, but for its Tests bullets, which coverage never lists. It
+// reads the two JSON files and parses no markdown.
 func (g unattendedGate) Approve(_ context.Context, plan human.PlanSummary) (human.Decision, error) {
 	dir, err := g.runDir()
 	if err != nil {
@@ -41,6 +42,7 @@ func (g unattendedGate) Approve(_ context.Context, plan human.PlanSummary) (huma
 	if err != nil {
 		return human.Decision{}, err
 	}
+	reqs = planner.CoverageRequirements(reqs)
 	cov, err := planner.ReadCoverage(dir)
 	if err != nil {
 		return refuse("no coverage file")

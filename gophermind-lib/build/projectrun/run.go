@@ -495,7 +495,7 @@ func readPlanFacts(rep *ProjectReport, runDir string) {
 		rep.Approval = ApprovalInfo{By: ap.ApprovedBy, PlanHash: ap.PlanHash, UnderstandingHash: ap.UnderstandingHash}
 	}
 	if reqs, err := planner.ReadRequirements(runDir); err == nil {
-		rep.Plan.RequirementsCovered.Total = len(reqs)
+		rep.Plan.RequirementsCovered.Total = len(planner.CoverageRequirements(reqs))
 		for _, r := range reqs {
 			if r.Kind == planner.ReqAcceptance {
 				rep.Plan.AcceptanceTotal++
