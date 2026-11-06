@@ -118,7 +118,7 @@ func (e *EnrichError) Error() string {
 	if len(shown) > 5 {
 		shown = shown[:5]
 	}
-	return fmt.Sprintf("%d node(s) still fail the group checks after %d repairs: %s (to try again, remove _state/enriched.json from the run folder and resume; enriched nodes are kept)", len(e.Items), maxEnrichRepairs, strings.Join(shown, "; "))
+	return fmt.Sprintf("%d node(s) still fail the group checks after %d repairs: %s (to try again, remove _state/enriched.json from the run folder and resume; every node is enriched again)", len(e.Items), maxEnrichRepairs, strings.Join(shown, "; "))
 }
 
 // groupEnvFor gathers what the group checks need that is the same for every node.
