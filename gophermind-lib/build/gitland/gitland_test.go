@@ -1257,3 +1257,38 @@ func TestCommitRevisionRefusesAForeignStagedPathAndStaysRecoverable(t *testing.T
 		t.Fatalf("retry: %v", err)
 	}
 }
+
+// ForeignCommitsBetween reads two branches without switching and shares the
+// subject and trailer test with ForeignCommits; RunCommitsOn finds a landed run.
+func TestForeignCommitsBetweenAndRunCommitsOn(t *testing.T) {
+	c := newRepo(t)
+	if err := c.Start("main", "gm/x", nil); err != nil {
+		t.Fatal(err)
+	}
+	put(t, c, "a.go", "package x\n")
+	if _, err := c.CommitLeaf("fn-a", "A", []string{"a.go"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	gx(t, c, "commit", "--allow-empty", "-m", "someone else")
+	gx(t, c, "switch", "main")
+	if n, err := c.ForeignCommitsBetween("main", "gm/x"); err != nil || n != 1 {
+		t.Fatalf("Between = %d, %v; want 1", n, err)
+	}
+	if got := strings.TrimSpace(gx(t, c, "branch", "--show-current")); got != "main" {
+		t.Errorf("HEAD moved to %q", got)
+	}
+	if n, err := c.RunCommitsOn("main"); err != nil || n != 0 {
+		t.Fatalf("RunCommitsOn(main) = %d, %v; want 0", n, err)
+	}
+	if n, err := c.RunCommitsOn("gm/x"); err != nil || n != 1 {
+		t.Fatalf("RunCommitsOn(gm/x) = %d, %v; want 1", n, err)
+	}
+	if _, err := c.ForeignCommitsBetween("--all", "gm/x"); err == nil {
+		t.Error("an option was accepted as a branch")
+	}
+	args := HardenedArgs()
+	args[0] = "changed"
+	if HardenedArgs()[0] == "changed" {
+		t.Error("HardenedArgs returns the shared slice")
+	}
+}

@@ -103,26 +103,7 @@ func FromStage(runDir, stage string, repo RepoRequest, now time.Time) (Result, e
 	if err != nil {
 		return Result{}, err
 	}
-	var actions []string
-	if repo.Mode == RepoKeep {
-		if started {
-			return Result{}, errors.New(msgExecutorState)
-		}
-		if repo.Repo != "" {
-			kept, err := keptTestFiles(runDir, repo.Repo)
-			if err != nil {
-				return Result{}, err
-			}
-			if len(kept) > 0 {
-				return Result{}, errors.New(msgTestFiles)
-			}
-		}
-	} else {
-		actions, err = ResetRepo(runDir, repo.Repo, repo.Mode, repo.OwnedUnder, RepoState{Branch: branch, Base: base, Started: started})
-		if err != nil {
-			return Result{RepoActions: actions}, err
-		}
-	}
+	// Everything that can still refuse the run folder is checked before the repository changes.
 	var rels []string
 	for _, s := range Stages[idx:] {
 		rels = append(rels, stageFiles(s)...)
@@ -142,6 +123,29 @@ func FromStage(runDir, stage string, repo RepoRequest, now time.Time) (Result, e
 	}
 	rels = append(rels, rt...)
 	dest := discardDir(runDir, now)
+	if present(runDir, dest) {
+		return Result{}, fmt.Errorf("resume: %s already exists; not overwriting", dest)
+	}
+	var actions []string
+	if repo.Mode == RepoKeep {
+		if started {
+			return Result{}, errors.New(msgExecutorState)
+		}
+		if repo.Repo != "" {
+			kept, err := keptTestFiles(runDir, repo.Repo, base)
+			if err != nil {
+				return Result{}, err
+			}
+			if len(kept) > 0 {
+				return Result{}, errors.New(msgTestFiles)
+			}
+		}
+	} else {
+		actions, err = ResetRepo(runDir, repo.Repo, repo.Mode, repo.OwnedUnder, RepoState{Branch: branch, Base: base, Started: started})
+		if err != nil {
+			return Result{RepoActions: actions}, err
+		}
+	}
 	moved, err := moveAll(runDir, dest, rels)
 	res := Result{Discarded: moved, DiscardDir: dest, RepoActions: actions}
 	if err != nil {

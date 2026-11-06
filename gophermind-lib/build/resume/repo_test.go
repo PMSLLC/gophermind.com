@@ -178,6 +178,9 @@ func TestFromStageRefusesWithoutARepoModeWhenTheExecutorRan(t *testing.T) {
 func TestKeepRefusesWhenRunTestFilesExistAndRestoreClearsThem(t *testing.T) {
 	repo := newRepo(t)
 	dir := fullRun(t)
+	if err := os.Remove(filepath.Join(dir, "approval.json")); err != nil { // fullRun's empty approval is not a plan
+		t.Fatal(err)
+	}
 	put(t, dir, "_state/test_files.json", `["pkg/a_test.go"]`)
 	put(t, repo, "pkg/a_test.go", "package pkg\n")
 
@@ -210,5 +213,240 @@ func TestReadExecutorState(t *testing.T) {
 	put(t, dir, "_state/executor.json", `{"started_at":"2026-11-05T10:00:00Z","branch":"gm/x"}`)
 	if b, _, started, err := ReadExecutorState(dir); err != nil || b != "gm/x" || !started {
 		t.Fatalf("started: %q %v %v", b, started, err)
+	}
+}
+
+const trailerMsg = "gm(leaf): fn-a\n\nGopherMind-Run: run1"
+
+func commitFile(t *testing.T, repo, rel, body, msg string) {
+	t.Helper()
+	put(t, repo, rel, body)
+	runGit(t, repo, "add", ".")
+	runGit(t, repo, "commit", "-m", msg)
+}
+
+func TestForeignCommitRefusalLeavesHeadWhereItWas(t *testing.T) {
+	repo := newRepo(t)
+	run := filepath.Join(t.TempDir(), "run1")
+	put(t, run, "_state/test_files.json", `[]`)
+	runGit(t, repo, "checkout", "-b", "gm/x")
+	commitFile(t, repo, "p.txt", "p\n", "a person's commit")
+	runGit(t, repo, "checkout", "-b", "other", "main")
+	_, err := ResetRepo(run, repo, RepoRestoreFiles, "", RepoState{Branch: "gm/x", Base: "main"})
+	if err == nil || !strings.Contains(err.Error(), "did not make") {
+		t.Fatalf("err %v", err)
+	}
+	if got := runGit(t, repo, "branch", "--show-current"); got != "other" {
+		t.Errorf("HEAD moved to %q", got)
+	}
+	// a person on another branch stays there when the run's own branch is deleted
+	runGit(t, repo, "branch", "-D", "gm/x")
+	runGit(t, repo, "checkout", "-b", "gm/x", "main")
+	commitFile(t, repo, "n.txt", "n\n", trailerMsg)
+	runGit(t, repo, "checkout", "other")
+	if _, err := ResetRepo(run, repo, RepoRestoreFiles, "", RepoState{Branch: "gm/x", Base: "main"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := runGit(t, repo, "branch", "--show-current"); got != "other" {
+		t.Errorf("HEAD moved to %q", got)
+	}
+}
+
+func TestStoppedRunOnTheWorkBranchResetsCleanly(t *testing.T) {
+	repo := newRepo(t)
+	run := filepath.Join(t.TempDir(), "run1")
+	put(t, run, "_state/test_files.json", `["a.txt","gen/t_test.go"]`)
+	runGit(t, repo, "checkout", "-b", "gm/x")
+	commitFile(t, repo, "a.txt", "run version\n", trailerMsg)
+	put(t, repo, "a.txt", "uncommitted run edit\n")
+	put(t, repo, "gen/t_test.go", "x\n")
+	acts, err := ResetRepo(run, repo, RepoRestoreFiles, "", RepoState{Branch: "gm/x", Base: "main", Started: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := runGit(t, repo, "branch", "--show-current"); got != "main" {
+		t.Errorf("HEAD on %q", got)
+	}
+	if b, _ := os.ReadFile(filepath.Join(repo, "a.txt")); string(b) != "base a\n" {
+		t.Errorf("a.txt %q", b)
+	}
+	if st := runGit(t, repo, "status", "--porcelain"); st != "" {
+		t.Errorf("tree not clean: %q", st)
+	}
+	if got := strings.Join(acts, "|"); got != "restored a.txt|removed gen/t_test.go|deleted branch gm/x" {
+		t.Errorf("actions %s", got)
+	}
+}
+
+func TestResetRefusesAFolderThatIsNotARepositoryRoot(t *testing.T) {
+	repo := newRepo(t)
+	sub := filepath.Join(repo, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	put(t, repo, "a.txt", "dirty\n")
+	run := filepath.Join(t.TempDir(), "run1")
+	want := "resume: " + sub + " is not a repository root"
+	if _, err := ResetRepo(run, sub, RepoOwnedClone, repo, RepoState{Base: "main"}); err == nil || err.Error() != want {
+		t.Errorf("owned: %v", err)
+	}
+	if _, err := ResetRepo(run, sub, RepoRestoreFiles, "", RepoState{Base: "main"}); err == nil || err.Error() != want {
+		t.Errorf("restore: %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(repo, "a.txt")); string(b) != "dirty\n" {
+		t.Error("the enclosing repository was touched")
+	}
+}
+
+func TestStageResumeChecksTheRunFolderBeforeTheRepository(t *testing.T) {
+	repo := newRepo(t)
+	dir := fullRun(t)
+	if _, err := FromStage(dir, "approve", RepoRequest{Mode: RepoKeep}, fixed); err != nil {
+		t.Fatal(err)
+	}
+	put(t, dir, "approval.json", "") // the stage is reached again, in the same second
+	put(t, repo, "a.txt", "dirty\n")
+	_, err := FromStage(dir, "approve", RepoRequest{Repo: repo, Mode: RepoOwnedClone, OwnedUnder: filepath.Dir(repo)}, fixed)
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("err %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(repo, "a.txt")); string(b) != "dirty\n" {
+		t.Error("the repository was reset although the run folder refused")
+	}
+}
+
+func TestRestoreRefusesWhenTheApprovedPlanCannotBeRead(t *testing.T) {
+	repo := newRepo(t)
+	run := filepath.Join(t.TempDir(), "run1")
+	put(t, run, "approval.json", "{}")
+	put(t, run, "_state/test_files.json", `["a.txt"]`)
+	put(t, repo, "a.txt", "dirty\n")
+	_, err := ResetRepo(run, repo, RepoRestoreFiles, "", RepoState{Base: "main"})
+	if err == nil || !strings.Contains(err.Error(), "resume: the approved plan could not be read: ") || !strings.HasSuffix(err.Error(), "; not resetting") {
+		t.Fatalf("err %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(repo, "a.txt")); string(b) != "dirty\n" {
+		t.Error("a file was restored")
+	}
+}
+
+func TestRestoreRefusesAPlanPathThatIsAFolder(t *testing.T) {
+	repo := newRepo(t)
+	run := filepath.Join(t.TempDir(), "run1")
+	commitFile(t, repo, "dir/f.txt", "base\n", "add dir")
+	put(t, repo, "dir/f.txt", "unlisted dirty\n")
+	for _, listed := range []string{"dir", "newdir"} {
+		put(t, repo, "newdir/x.txt", "x\n")
+		put(t, run, "_state/test_files.json", `["`+listed+`"]`)
+		_, err := ResetRepo(run, repo, RepoRestoreFiles, "", RepoState{Base: "main"})
+		if err == nil || !strings.Contains(err.Error(), "plan path "+listed+" is a ") {
+			t.Fatalf("%s: err %v", listed, err)
+		}
+	}
+	if b, _ := os.ReadFile(filepath.Join(repo, "dir/f.txt")); string(b) != "unlisted dirty\n" {
+		t.Error("a file under a listed folder was overwritten")
+	}
+	if _, err := os.Lstat(filepath.Join(repo, "newdir/x.txt")); err != nil {
+		t.Error("a file under a listed folder was removed")
+	}
+}
+
+func TestRestoreRefusesAParentLinkThatLeavesTheRepository(t *testing.T) {
+	repo := newRepo(t)
+	outside := t.TempDir()
+	put(t, outside, "x.go", "outside\n")
+	if err := os.Symlink(outside, filepath.Join(repo, "link")); err != nil {
+		t.Fatal(err)
+	}
+	run := filepath.Join(t.TempDir(), "run1")
+	put(t, run, "_state/test_files.json", `["link/x.go"]`)
+	_, err := ResetRepo(run, repo, RepoRestoreFiles, "", RepoState{Base: "main"})
+	if err == nil || !strings.Contains(err.Error(), "not a path inside the repository") {
+		t.Fatalf("err %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "x.go")); err != nil {
+		t.Error("a file outside the repository was removed")
+	}
+}
+
+func TestResetRefusesARunThatLanded(t *testing.T) {
+	repo := newRepo(t)
+	commitFile(t, repo, "n.txt", "n\n", trailerMsg)
+	run := filepath.Join(t.TempDir(), "run1")
+	put(t, run, "_state/test_files.json", `[]`)
+	put(t, repo, "a.txt", "dirty\n")
+	want := "resume: run run1 landed on main; a resume cannot undo landed commits"
+	if _, err := ResetRepo(run, repo, RepoRestoreFiles, "", RepoState{Base: "main"}); err == nil || err.Error() != want {
+		t.Errorf("restore: %v", err)
+	}
+	if _, err := ResetRepo(run, repo, RepoOwnedClone, filepath.Dir(repo), RepoState{Base: "main"}); err == nil || err.Error() != want {
+		t.Errorf("owned: %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(repo, "a.txt")); string(b) != "dirty\n" {
+		t.Error("the repository was touched")
+	}
+}
+
+func TestResetRefusesABaseThatIsNotABranchName(t *testing.T) {
+	repo := newRepo(t)
+	run := filepath.Join(t.TempDir(), "run1")
+	for _, base := range []string{"-x", "a..b", "no-such-branch"} {
+		if _, err := ResetRepo(run, repo, RepoOwnedClone, filepath.Dir(repo), RepoState{Base: base}); err == nil {
+			t.Errorf("owned accepted base %q", base)
+		}
+		if _, err := ResetRepo(run, repo, RepoRestoreFiles, "", RepoState{Base: base}); err == nil {
+			t.Errorf("restore accepted base %q", base)
+		}
+	}
+}
+
+func TestKeepCountsOnlyTestFilesThatDifferFromBase(t *testing.T) {
+	repo := newRepo(t)
+	commitFile(t, repo, "pkg/a_test.go", "package pkg\n", "tracked test")
+	dir := fullRun(t)
+	if err := os.Remove(filepath.Join(dir, "approval.json")); err != nil {
+		t.Fatal(err)
+	}
+	put(t, dir, "_state/test_files.json", `["pkg/a_test.go"]`)
+	put(t, dir, "brief.md", string(testBrief("main")))
+	if _, err := FromStage(dir, "testwriter", RepoRequest{Repo: repo, Mode: RepoKeep}, fixed); err != nil {
+		t.Fatalf("a file identical to base counted: %v", err)
+	}
+	dir = fullRun(t)
+	os.Remove(filepath.Join(dir, "approval.json"))
+	put(t, dir, "_state/test_files.json", `["pkg/a_test.go"]`)
+	put(t, dir, "brief.md", string(testBrief("main")))
+	put(t, repo, "pkg/a_test.go", "package pkg // changed\n")
+	if _, err := FromStage(dir, "testwriter", RepoRequest{Repo: repo, Mode: RepoKeep}, fixed); err == nil {
+		t.Fatal("a changed test file was not counted")
+	}
+}
+
+func TestOwnedCloneKeepsARunFolderInsideTheClone(t *testing.T) {
+	repo := newRepo(t)
+	run := filepath.Join(repo, ".gophermind", "run1")
+	put(t, run, "_state/executor.json", "{}")
+	put(t, repo, "untracked.txt", "u\n")
+	if _, err := ResetRepo(run, repo, RepoOwnedClone, filepath.Dir(repo), RepoState{Base: "main"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(run, "_state/executor.json")); err != nil {
+		t.Errorf("run folder lost: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "untracked.txt")); err == nil {
+		t.Error("untracked file kept")
+	}
+}
+
+func testBrief(base string) []byte {
+	return []byte("---\nspec_version: \"2.0\"\nid: gm-2026-10-28-060\ntitle: t\nlanguage: go\nbase_branch: " + base + "\nlanding: commit\non_ambiguity: halt\n---\n\n" +
+		"## Overview\n\no\n\n## Features\n\n### F\n\n- f\n\n## Architecture\n\n- `cmd/tool` (package `main`): wires it up. `Run` takes an `io.Reader`.\n\n## Data\n\nd\n\n## Constraints\n\n- c\n\n## Out of scope\n\n- o\n\n## Acceptance\n\n- `go build ./...` succeeds.\n")
+}
+
+func TestReadExecutorStateReadsTheBaseFromTheBrief(t *testing.T) {
+	dir := t.TempDir()
+	put(t, dir, "brief.md", string(testBrief("develop")))
+	if _, base, _, err := ReadExecutorState(dir); err != nil || base != "develop" {
+		t.Fatalf("base %q %v", base, err)
 	}
 }

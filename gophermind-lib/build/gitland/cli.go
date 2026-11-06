@@ -832,6 +832,51 @@ func (c *CLI) finalCommitExists() (bool, error) {
 	return strings.HasPrefix(subject, "gm(run): ") && strings.TrimSpace(trailer) == c.runID, nil
 }
 
+// RunTrailerKey is the commit trailer that names the run a commit belongs to.
+const RunTrailerKey = "GopherMind-Run"
+
+// HardenedArgs returns a copy of the arguments gitland puts before every git
+// command so nothing in the target repository's configuration can run. Code
+// that must call git itself (the resume reset, which gitland's guard refuses
+// by design) prepends them.
+func HardenedArgs() []string { return append([]string(nil), fixedPrefix...) }
+
+// ValidBranchName says n is a branch name gitland accepts: no leading dash, no "..".
+func ValidBranchName(n string) bool { return validBranch(n) }
+
+// logRecords returns the subject and run trailer of every commit in rng.
+func (c *CLI) logRecords(rng string) ([][2]string, error) {
+	out, err := c.run("log", "--format=%s%x1f%(trailers:key="+RunTrailerKey+",valueonly,unfold)%x1e", rng)
+	if err != nil {
+		return nil, err
+	}
+	var recs [][2]string
+	for _, rec := range strings.Split(string(out), "\x1e") {
+		rec = strings.TrimLeft(rec, "\n")
+		if rec == "" {
+			continue
+		}
+		subject, trailer, _ := strings.Cut(rec, "\x1f")
+		recs = append(recs, [2]string{subject, strings.TrimSpace(trailer)})
+	}
+	return recs, nil
+}
+
+// foreignIn counts the commits in rng that are not this run's own (a gm( subject with this run's trailer).
+func (c *CLI) foreignIn(rng string) (int, error) {
+	recs, err := c.logRecords(rng)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, r := range recs {
+		if !strings.HasPrefix(r[0], "gm(") || r[1] != c.runID {
+			n++
+		}
+	}
+	return n, nil
+}
+
 func (c *CLI) ForeignCommits(since string) (int, error) {
 	rev := c.base
 	if since != "" {
@@ -843,18 +888,31 @@ func (c *CLI) ForeignCommits(since string) (int, error) {
 	if rev == "" {
 		return 0, errors.New("gitland: ForeignCommits called before Start")
 	}
-	out, err := c.run("log", "--format=%s%x1f%(trailers:key=GopherMind-Run,valueonly,unfold)%x1e", rev+"..HEAD")
+	return c.foreignIn(rev + "..HEAD")
+}
+
+// ForeignCommitsBetween counts the commits on branch ref that are not on branch
+// base and are not this run's own. It reads the two branches and never switches.
+func (c *CLI) ForeignCommitsBetween(base, ref string) (int, error) {
+	if !validBranch(base) || !validBranch(ref) {
+		return 0, errors.New("gitland: invalid branch name")
+	}
+	return c.foreignIn("refs/heads/" + base + "..refs/heads/" + ref)
+}
+
+// RunCommitsOn counts the commits on branch that carry this run's trailer: a
+// run that landed has them on its base branch.
+func (c *CLI) RunCommitsOn(branch string) (int, error) {
+	if !validBranch(branch) {
+		return 0, errors.New("gitland: invalid branch name")
+	}
+	recs, err := c.logRecords("refs/heads/" + branch)
 	if err != nil {
 		return 0, err
 	}
 	n := 0
-	for _, rec := range strings.Split(string(out), "\x1e") {
-		rec = strings.TrimLeft(rec, "\n")
-		if rec == "" {
-			continue
-		}
-		subject, trailer, _ := strings.Cut(rec, "\x1f")
-		if !strings.HasPrefix(subject, "gm(") || strings.TrimSpace(trailer) != c.runID {
+	for _, r := range recs {
+		if r[1] == c.runID {
 			n++
 		}
 	}

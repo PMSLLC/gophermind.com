@@ -75,29 +75,60 @@ func ResetRepo(runDir, repo string, mode RepoReset, ownedUnder string, st RepoSt
 	case RepoKeep:
 		return nil, nil
 	case RepoOwnedClone:
-		return resetOwnedClone(repo, ownedUnder, st)
+		return resetOwnedClone(runDir, repo, ownedUnder, st)
 	case RepoRestoreFiles:
 		return restoreFiles(runDir, repo, st)
 	}
 	return nil, fmt.Errorf("resume: unknown repository mode %d", mode)
 }
 
-func resetOwnedClone(repo, ownedUnder string, st RepoState) ([]string, error) {
+func resetOwnedClone(runDir, repo, ownedUnder string, st RepoState) ([]string, error) {
 	real, err := ownedPath(repo, ownedUnder)
 	if err != nil {
 		return nil, err
 	}
-	if st.Base == "" {
-		return nil, errors.New("resume: the base branch is unknown (brief.md); not resetting the repository")
+	if err := openRepo(runDir, real, st.Base); err != nil {
+		return nil, err
 	}
-	if err := git(real, "reset", "--hard", st.Base); err != nil {
+	if _, err := git(real, "reset", "--hard", st.Base); err != nil {
 		return nil, err
 	}
 	actions := []string{"git -C " + real + " reset --hard " + st.Base}
-	if err := git(real, "clean", "-fd"); err != nil {
+	// -e keeps the run folder when it lives inside the clone (.gophermind/<id>).
+	if _, err := git(real, "clean", "-fd", "-e", ".gophermind"); err != nil {
 		return actions, err
 	}
-	return append(actions, "git -C "+real+" clean -fd"), nil
+	return append(actions, "git -C "+real+" clean -fd -e .gophermind"), nil
+}
+
+// openRepo checks that real is a repository root, that base is a usable local
+// branch and that the run has not landed on it.
+func openRepo(runDir, real, base string) error {
+	cli, err := gitland.NewCLI(real, filepath.Base(runDir))
+	if errors.Is(err, gitland.ErrNotRepoRoot) {
+		return fmt.Errorf("resume: %s is not a repository root", real)
+	}
+	if err != nil {
+		return fmt.Errorf("resume: %w", err)
+	}
+	defer cli.Close()
+	if base == "" {
+		return errors.New("resume: the base branch is unknown (brief.md); not resetting the repository")
+	}
+	if !gitland.ValidBranchName(base) {
+		return fmt.Errorf("resume: %q is not a usable base branch", base)
+	}
+	if _, err := git(real, "rev-parse", "--verify", "--quiet", "refs/heads/"+base); err != nil {
+		return fmt.Errorf("resume: base branch %s does not exist in %s", base, real)
+	}
+	n, err := cli.RunCommitsOn(base)
+	if err != nil {
+		return fmt.Errorf("resume: the commits of %s could not be read: %w", base, err)
+	}
+	if n > 0 {
+		return fmt.Errorf("resume: run %s landed on %s; a resume cannot undo landed commits", filepath.Base(runDir), base)
+	}
+	return nil
 }
 
 // ownedPath returns repo, absolute and symlink-resolved, when it lies strictly inside ownedUnder.
@@ -121,91 +152,135 @@ func ownedPath(repo, ownedUnder string) (string, error) {
 	return r, nil
 }
 
+// fileOp is one plan file: restore it from base, or remove it.
+type fileOp struct {
+	file, abs string
+	restore   bool
+}
+
 func restoreFiles(runDir, repo string, st RepoState) ([]string, error) {
 	real, err := realRepo(repo)
 	if err != nil {
 		return nil, err
 	}
-	if st.Base == "" {
-		return nil, errors.New("resume: the base branch is unknown (brief.md); not resetting the repository")
+	if err := openRepo(runDir, real, st.Base); err != nil {
+		return nil, err
 	}
-	_, files, err := planFiles(runDir, real)
+	_, files, err := planFiles(runDir, real, true)
 	if err != nil {
 		return nil, err
 	}
-	// Check every path before anything changes.
-	for _, f := range files {
-		if _, err := repoPath(real, f); err != nil {
-			return nil, err
-		}
-	}
-	var actions []string
-	if st.Branch != "" && st.Branch != st.Base && git(real, "rev-parse", "--verify", "--quiet", "refs/heads/"+st.Branch) == nil {
-		if err := dropWorkBranch(runDir, real, st); err != nil {
-			return nil, err
-		}
-		actions = append(actions, "deleted branch "+st.Branch)
-	}
+	// Decide and check everything before anything changes.
+	var ops []fileOp
 	for _, f := range files {
 		abs, err := repoPath(real, f)
 		if err != nil {
-			return actions, err
+			return nil, err
 		}
-		if git(real, "cat-file", "-e", st.Base+":"+f) == nil {
-			if err := git(real, "checkout", st.Base, "--", f); err != nil {
+		fi, lerr := os.Lstat(abs)
+		if lerr == nil && fi.IsDir() {
+			return nil, fmt.Errorf("resume: plan path %s is a folder; not touching it", f)
+		}
+		kind, kerr := git(real, "cat-file", "-t", st.Base+":"+f)
+		switch {
+		case kerr == nil && kind == "blob":
+			ops = append(ops, fileOp{f, abs, true})
+		case kerr == nil:
+			return nil, fmt.Errorf("resume: plan path %s is a %s at %s, not a file; not touching it", f, kind, st.Base)
+		case lerr == nil:
+			ops = append(ops, fileOp{f, abs, false})
+		}
+	}
+	dropBranch := false
+	if st.Branch != "" && st.Branch != st.Base {
+		if !gitland.ValidBranchName(st.Branch) {
+			return nil, fmt.Errorf("resume: %q is not a usable work branch name", st.Branch)
+		}
+		if _, err := git(real, "rev-parse", "--verify", "--quiet", "refs/heads/"+st.Branch); err == nil {
+			n, err := foreignOnBranch(runDir, real, st)
+			if err != nil {
+				return nil, err
+			}
+			if n > 0 {
+				return nil, fmt.Errorf("resume: branch %s holds %d commit(s) this run did not make; not deleting it", st.Branch, n)
+			}
+			dropBranch = true
+		}
+	}
+
+	var actions []string
+	for _, o := range ops {
+		if o.restore {
+			if _, err := git(real, "checkout", st.Base, "--", o.file); err != nil {
 				return actions, err
 			}
-			actions = append(actions, "restored "+f)
+			actions = append(actions, "restored "+o.file)
 			continue
 		}
-		if _, err := os.Lstat(abs); err != nil {
-			continue
+		if err := os.Remove(o.abs); err != nil {
+			return actions, fmt.Errorf("resume: removing %s: %w", o.file, err)
 		}
-		if err := os.Remove(abs); err != nil {
-			return actions, fmt.Errorf("resume: removing %s: %w", f, err)
+		actions = append(actions, "removed "+o.file)
+	}
+	if dropBranch {
+		// Leave the work branch only when HEAD is on it; any other HEAD stays where it was.
+		if cur, _ := git(real, "symbolic-ref", "--short", "-q", "HEAD"); cur == st.Branch {
+			if _, err := git(real, "checkout", st.Base); err != nil {
+				return actions, err
+			}
 		}
-		actions = append(actions, "removed "+f)
+		if _, err := git(real, "branch", "-D", st.Branch); err != nil {
+			return actions, err
+		}
+		actions = append(actions, "deleted branch "+st.Branch)
 	}
 	return actions, nil
 }
 
-// dropWorkBranch deletes st.Branch after the executor's own foreign-commit
-// check finds no commit on it that the run did not make.
-func dropWorkBranch(runDir, repo string, st RepoState) error {
-	cli, err := gitland.NewCLI(repo, filepath.Base(runDir))
+// foreignOnBranch counts the commits on the work branch that are not the run's
+// own, reading both branches without switching.
+func foreignOnBranch(runDir, real string, st RepoState) (int, error) {
+	cli, err := gitland.NewCLI(real, filepath.Base(runDir))
 	if err != nil {
-		return fmt.Errorf("resume: %w", err)
+		return 0, fmt.Errorf("resume: %w", err)
 	}
 	defer cli.Close()
-	if err := cli.Start(st.Base, st.Branch, nil); err != nil { // the branch exists: Start switches to it
-		return fmt.Errorf("resume: the work branch %s could not be checked out: %w", st.Branch, err)
-	}
-	n, err := cli.ForeignCommits("")
+	n, err := cli.ForeignCommitsBetween(st.Base, st.Branch)
 	if err != nil {
-		return fmt.Errorf("resume: the commits of %s could not be read: %w", st.Branch, err)
+		return 0, fmt.Errorf("resume: the commits of %s could not be read: %w", st.Branch, err)
 	}
-	if n > 0 {
-		return fmt.Errorf("resume: branch %s holds %d commit(s) this run did not make; not deleting it", st.Branch, n)
-	}
-	if err := git(repo, "checkout", st.Base); err != nil {
-		return err
-	}
-	return git(repo, "branch", "-D", st.Branch)
+	return n, nil
 }
 
-// git runs git in repo. The gitland CLI refuses checkout, reset, clean and
-// branch -D by design, so these calls cannot go through it.
-func git(repo string, args ...string) error {
-	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_LITERAL_PATHSPECS=1", "GIT_TERMINAL_PROMPT=0")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		msg := strings.TrimSpace(string(out))
+// git runs git in repo with gitland's hardened arguments and a scratch
+// environment, and returns its trimmed output. The gitland CLI refuses
+// checkout, reset, clean and branch -D by design, so these calls cannot go
+// through it.
+func git(repo string, args ...string) (string, error) {
+	full := append(gitland.HardenedArgs(), "-C", repo)
+	cmd := exec.Command("git", append(full, args...)...)
+	cmd.Env = []string{
+		"PATH=" + os.Getenv("PATH"),
+		"HOME=" + os.TempDir(),
+		"LANG=C",
+		"GIT_CONFIG_GLOBAL=/dev/null",
+		"GIT_CONFIG_SYSTEM=/dev/null",
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_OPTIONAL_LOCKS=0",
+		"GIT_LITERAL_PATHSPECS=1",
+		"GIT_CEILING_DIRECTORIES=" + filepath.Dir(repo),
+	}
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(errOut.String())
 		if len(msg) > 200 {
 			msg = msg[:200]
 		}
-		return fmt.Errorf("resume: git %s: %v: %s", args[0], err, msg)
+		return "", fmt.Errorf("resume: git %s: %v: %s", args[0], err, msg)
 	}
-	return nil
+	return strings.TrimSpace(out.String()), nil
 }
 
 func realRepo(repo string) (string, error) {
@@ -254,8 +329,9 @@ type testRef struct {
 // planFiles lists the repo files the run placed, as slash paths, sorted: tests
 // is the test files only, all adds the contract type files, the stubs, the leaf
 // files and go.mod and go.sum. The saved test lists are read first; the loaded
-// plan adds to them when it can be loaded.
-func planFiles(runDir, repo string) (tests, all []string, err error) {
+// plan adds to them. With strict, a plan that exists but cannot be loaded is an
+// error, not a shorter list.
+func planFiles(runDir, repo string, strict bool) (tests, all []string, err error) {
 	ts, as := map[string]bool{}, map[string]bool{}
 	addTest := func(p string) {
 		if p != "" {
@@ -292,7 +368,11 @@ func planFiles(runDir, repo string) (tests, all []string, err error) {
 		addTest(v.TestFile)
 	}
 	if present(runDir, "approval.json") {
-		if p, e := executor.LoadPlan(runDir, repo); e == nil {
+		p, e := executor.LoadPlan(runDir, repo)
+		if e != nil && strict {
+			return nil, nil, fmt.Errorf("resume: the approved plan could not be read: %w; not resetting", e)
+		}
+		if e == nil {
 			for _, t := range p.Contracts.Types {
 				as[t.File] = true
 			}
@@ -339,15 +419,30 @@ func readJSONFile(runDir, rel string, v any) error {
 	return nil
 }
 
-// keptTestFiles returns the plan test files that still exist in repo.
-func keptTestFiles(runDir, repo string) ([]string, error) {
+// keptTestFiles returns the plan test files that still exist in repo and are
+// absent at base or differ from it: a file identical to base is not the run's.
+// With no usable base every existing file counts.
+func keptTestFiles(runDir, repo, base string) ([]string, error) {
 	real, err := realRepo(repo)
 	if err != nil {
 		return nil, err
 	}
-	tests, _, err := planFiles(runDir, real)
+	cli, err := gitland.NewCLI(real, filepath.Base(runDir))
+	if errors.Is(err, gitland.ErrNotRepoRoot) {
+		return nil, fmt.Errorf("resume: %s is not a repository root", real)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("resume: %w", err)
+	}
+	cli.Close()
+	tests, _, err := planFiles(runDir, real, false)
 	if err != nil {
 		return nil, err
+	}
+	haveBase := false
+	if gitland.ValidBranchName(base) {
+		_, e := git(real, "rev-parse", "--verify", "--quiet", "refs/heads/"+base)
+		haveBase = e == nil
 	}
 	var out []string
 	for _, f := range tests {
@@ -355,9 +450,20 @@ func keptTestFiles(runDir, repo string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		if _, err := os.Lstat(abs); err == nil {
-			out = append(out, f)
+		fi, err := os.Lstat(abs)
+		if err != nil {
+			continue
 		}
+		if haveBase && fi.Mode().IsRegular() {
+			if kind, e := git(real, "cat-file", "-t", base+":"+f); e == nil && kind == "blob" {
+				want, e1 := git(real, "rev-parse", base+":"+f)
+				got, e2 := git(real, "hash-object", "--", abs)
+				if e1 == nil && e2 == nil && want == got {
+					continue
+				}
+			}
+		}
+		out = append(out, f)
 	}
 	return out, nil
 }
