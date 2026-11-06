@@ -630,6 +630,17 @@ func TestResetReturnsARowToReady(t *testing.T) {
 	if row.Status != StatusReady || len(row.Attempts) != 0 || row.Claim != nil || row.Result != nil || row.Revision != 3 {
 		t.Errorf("row after reset: %+v", row)
 	}
+	if !row.HeartbeatAt.IsZero() {
+		t.Errorf("heartbeat not cleared: %v", row.HeartbeatAt)
+	}
+	dir, err := b.resolve("r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev, err := os.ReadFile(filepath.Join(dir, "_state", "events.jsonl"))
+	if err != nil || !strings.Contains(string(ev), `"kind":"reset"`) {
+		t.Errorf("no reset event: %s %v", ev, err)
+	}
 	if _, err := b.Reset(ctx, "r", "nope"); err == nil {
 		t.Error("an unknown node must error")
 	}

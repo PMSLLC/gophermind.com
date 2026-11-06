@@ -13,11 +13,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
 	"gophermind/gophermind-lib/build/blackboard"
 	"gophermind/gophermind-lib/build/planner"
+	"gophermind/gophermind-lib/build/runfs"
 )
 
 const (
@@ -52,7 +54,7 @@ func ParseStep(s string) (Step, error) {
 
 // Result is what a resume moved.
 type Result struct {
-	Discarded  []string // run-relative paths moved, sorted
+	Discarded  []string // run-relative paths moved, plus files written into DiscardDir (leaf-result and attempts copies), sorted
 	DiscardDir string   // run-relative folder they went to
 }
 
@@ -122,9 +124,10 @@ func FromStage(runDir, stage string, now time.Time) (Result, error) {
 
 // FromNode re-enters a finished run at one executor node. It refuses while any
 // node is claimed or in progress, and refuses a node that is verified or has not
-// run. Otherwise it resets the node's row to ready, writes the removed attempts
-// to <discard dir>/attempts-<node>.json, drops the node from leaf-results.json,
-// and moves report.json, _state/project.json and the node's escalation file aside.
+// run. Otherwise it first saves the row's status, result and attempts to
+// <discard dir>/attempts-<node>.json and the node's leaf-results.json entry to
+// <discard dir>/leaf-result-<node>.json, then resets the row to ready, drops the
+// node from leaf-results.json, and moves report.json, _state/project.json and the node's escalation file aside.
 func FromNode(ctx context.Context, runDir string, board blackboard.Blackboard, runID, node string, now time.Time) (Result, error) {
 	if !present(runDir, executorStatePath) {
 		return Result{}, fmt.Errorf("resume: the run never reached the executor")
@@ -163,33 +166,48 @@ func FromNode(ctx context.Context, runDir string, board blackboard.Blackboard, r
 		return Result{}, err
 	}
 
-	removed, err := board.Reset(ctx, runID, node)
-	if err != nil {
-		return Result{}, err
-	}
-	if removed == nil {
-		removed = []blackboard.Attempt{}
-	}
-	data, err := json.MarshalIndent(removed, "", "  ")
+	// Copies first: nothing is changed until what it would lose is saved in the discard dir.
+	safe := unsafeName.ReplaceAllString(node, "_")
+	snap, err := json.MarshalIndent(struct {
+		Status   blackboard.Status    `json:"status"`
+		Result   *blackboard.Result   `json:"result"`
+		Attempts []blackboard.Attempt `json:"attempts"`
+	}{row.Status, row.Result, nonNilAttempts(row.Attempts)}, "", "  ")
 	if err != nil {
 		return Result{}, err
 	}
 	if err := os.MkdirAll(filepath.Dir(attemptsPath), 0o700); err != nil {
 		return Result{}, err
 	}
-	if err := os.WriteFile(attemptsPath, append(data, '\n'), 0o600); err != nil {
+	if err := runfs.WriteFileAtomic(attemptsPath, append(snap, '\n')); err != nil {
 		return Result{}, err
+	}
+	written := []string{attemptsRel}
+	if raw, ok := leaf[node]; ok {
+		rel := dest + "/leaf-result-" + safe + ".json"
+		full, err := inside(runDir, rel)
+		if err != nil {
+			return Result{Discarded: written, DiscardDir: dest}, err
+		}
+		if err := runfs.WriteFileAtomic(full, append([]byte(raw), '\n')); err != nil {
+			return Result{Discarded: written, DiscardDir: dest}, err
+		}
+		written = append(written, rel)
+	}
+	if _, err := board.Reset(ctx, runID, node); err != nil {
+		return Result{Discarded: written, DiscardDir: dest}, err
 	}
 	if hadLeaf {
 		delete(leaf, node)
 		if err := writeLeafResults(runDir, leaf); err != nil {
-			return Result{Discarded: []string{attemptsRel}, DiscardDir: dest}, err
+			return Result{Discarded: written, DiscardDir: dest}, err
 		}
 	}
-	rels := []string{"report.json", "_state/project.json", "ESCALATION-" + unsafeName.ReplaceAllString(node, "_") + ".md"}
+	rels := []string{"report.json", "_state/project.json", "ESCALATION-" + safe + ".md"}
 	moved, err := moveAll(runDir, dest, rels)
-	res := Result{Discarded: append(moved, attemptsRel), DiscardDir: dest}
-	return res, err
+	all := append(moved, written...)
+	sort.Strings(all)
+	return Result{Discarded: all, DiscardDir: dest}, err
 }
 
 func readLeafResults(runDir string) (map[string]json.RawMessage, bool, error) {
@@ -211,7 +229,7 @@ func readLeafResults(runDir string) (map[string]json.RawMessage, bool, error) {
 	return m, true, nil
 }
 
-// writeLeafResults rewrites leaf-results.json through a temporary file in the same folder.
+// writeLeafResults rewrites leaf-results.json atomically.
 func writeLeafResults(runDir string, m map[string]json.RawMessage) error {
 	full, err := inside(runDir, leafResultsPath)
 	if err != nil {
@@ -221,9 +239,12 @@ func writeLeafResults(runDir string, m map[string]json.RawMessage) error {
 	if err != nil {
 		return err
 	}
-	tmp := full + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
-		return err
+	return runfs.WriteFileAtomic(full, append(data, '\n'))
+}
+
+func nonNilAttempts(a []blackboard.Attempt) []blackboard.Attempt {
+	if a == nil {
+		return []blackboard.Attempt{}
 	}
-	return os.Rename(tmp, full)
+	return a
 }
