@@ -710,3 +710,27 @@ func TestConstraintsChecked(t *testing.T) {
 		}
 	})
 }
+
+func TestCheckCoverageTotalIgnoresTestObligations(t *testing.T) {
+	reqs := []planner.Requirement{
+		{ID: "C1", Kind: planner.ReqConstraint, Text: "c"},
+		{ID: "A1", Kind: planner.ReqAcceptance, Text: "a"},
+		{ID: "T1", Kind: planner.ReqTest, Text: "t"},
+	}
+	base := []planner.Covered{
+		{Requirement: "C1"},
+		{Requirement: "A1", RootTests: []string{"rt1"}},
+	}
+	if err := checkCoverageTotal(reqs, planner.CoverageFile{Covered: base}); err != nil {
+		t.Fatalf("T1 uncovered must pass: %v", err)
+	}
+	with := append(append([]planner.Covered{}, base...), planner.Covered{Requirement: "T1"})
+	err := checkCoverageTotal(reqs, planner.CoverageFile{Covered: with})
+	if err == nil || !strings.Contains(err.Error(), "T1 (a test obligation, which coverage.json never covers)") {
+		t.Fatalf("covered T1 error = %v", err)
+	}
+	err = checkCoverageTotal(reqs, planner.CoverageFile{Covered: base[1:]})
+	if err == nil || !strings.Contains(err.Error(), "C1 (not covered)") || strings.Contains(err.Error(), "T1") {
+		t.Fatalf("missing C1 error = %v", err)
+	}
+}

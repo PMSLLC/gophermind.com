@@ -147,7 +147,8 @@ func mapAcceptance(reqs []planner.Requirement, cov planner.CoverageFile, bins ..
 }
 
 // checkCoverageTotal is the other half of the spec 9 tripwire: coverage.json
-// covers every requirement of the plan exactly once, names no requirement the
+// covers every requirement of the plan except the test obligations (kind test,
+// which the test writer satisfies) exactly once, names no requirement the
 // plan does not have, and the entry of an acceptance bullet names a root test.
 // The planner only writes such a file; a file that falls short was changed
 // after approval or comes from a planner that is wrong, and the run must not
@@ -167,12 +168,14 @@ func checkCoverageTotal(reqs []planner.Requirement, cov planner.CoverageFile) er
 			bad = append(bad, c.Requirement+" (not a requirement of the plan)")
 		case seen[c.Requirement] == 2:
 			bad = append(bad, c.Requirement+" (covered twice)")
+		case rq.Kind == planner.ReqTest:
+			bad = append(bad, c.Requirement+" (a test obligation, which coverage.json never covers)")
 		case rq.Kind == planner.ReqAcceptance && len(c.RootTests) == 0:
 			bad = append(bad, c.Requirement+" (an acceptance bullet with no root test)")
 		}
 	}
 	for _, rq := range reqs {
-		if seen[rq.ID] == 0 {
+		if seen[rq.ID] == 0 && rq.Kind != planner.ReqTest {
 			bad = append(bad, rq.ID+" (not covered)")
 		}
 	}
