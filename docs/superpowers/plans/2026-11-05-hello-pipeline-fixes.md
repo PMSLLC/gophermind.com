@@ -218,6 +218,12 @@ Before any model call, `checkTestTarget` fails the stage with `invalid_test_targ
 
 **Files:** Create `testtarget.go`; modify `testwriter.go`, `profilehooks.go`, `enrich.go`, `prompts/enrich.md`, `router/router.go` only if a no-retry sentinel is needed; tests.
 
+### Task 3f: the executor's plan-coverage tripwire ignores test obligations (run hello-v1.1-20261106-r003, 2026-11-05 19:39 MST)
+
+The sixth run planned cleanly and stopped after 86 ms: `checkCoverageTotal` in the executor still demands a `Covered` entry for every requirement, and Task 3d's kind-test requirements (T1 to T9) never get one. The tripwire skips kind test and reports a `Covered` entry naming a T id as a defect. Brief: `.superpowers/sdd/2026-11-05-hello-pipeline-fixes/task-3f-brief.md`.
+
+**Files:** Modify `build/executor/acceptance.go`; test.
+
 ### Task 4: Root acceptance test validator catches masked status and inverted checks (brief 17)
 
 **Files:**
