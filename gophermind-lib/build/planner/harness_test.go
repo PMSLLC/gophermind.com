@@ -23,6 +23,8 @@ const (
 	greeterID = "gm-2026-09-29-900"
 	slugify   = "testdata/slugify"
 	slugifyID = "slugify-v1-20261105-r001"
+	hello     = "testdata/hello"
+	helloID   = "hello-v1-20261105-r001"
 )
 
 // scriptGate is a human gate that answers at once from a script and records

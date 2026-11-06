@@ -14,4 +14,6 @@ What the replies show (the defects `docs/superpowers/specs/2026-11-05-hello-pipe
 
 Files: one `.txt` per recorded planner reply, named `<stage with : as .>.txt`, with `.2.txt` and so on for repeats, as `planner.FixtureProvider` expects. Written by `scripts/extract-llm-fixtures.py`. A recorded file is never changed. A corrected reply a later test needs goes in the next `.N.txt` slot or under the stage name the fixed planner asks for, and is listed here with its reason.
 
-Corrected replies: none yet.
+Corrected replies:
+
+- `contract.say-hello.2.txt`: the `say-hello` component with only `Greeting(name string) string` in `greet.go` (doc: `Hello, World!` for an empty name, `Hello, <name>!` otherwise). The fixed planner's missing-interface defect round (Milestone 1 Task 4) asks the pass a second time, and the recorded first reply (`FormatGreeting`, `WriteGreeting`) lacks the fixed interface.

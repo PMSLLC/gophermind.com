@@ -1,0 +1,15 @@
+{
+  "types": [],
+  "functions": [
+    {
+      "id": "fn-greeting",
+      "package": "internal/greet",
+      "file": "greet.go",
+      "signature": "func Greeting(name string) string",
+      "doc": "Returns the greeting for name. For an empty name it returns 'Hello, World!'. Otherwise it returns 'Hello, <name>!'.",
+      "uses": [],
+      "component": "say-hello"
+    }
+  ],
+  "more": false
+}
