@@ -428,6 +428,25 @@ func (f *FS) SetResult(ctx context.Context, runID, nodeID string, r Result) erro
 	})
 }
 
+// Reset is the one write that bypasses transitionAllowed: a human asked for the
+// node to run again (resume from a node), which is not a worker transition.
+func (f *FS) Reset(ctx context.Context, runID, nodeID string) ([]Attempt, error) {
+	var removed []Attempt
+	err := f.mutate(ctx, runID, nodeID, func(d *fsDoc) (bool, EventKind, error) {
+		old, err := d.row()
+		if err != nil {
+			return false, "", err
+		}
+		removed = old.Attempts
+		d.Status, d.Claim, d.HeartbeatAt, d.Result, d.Attempts = StatusReady, nil, "", nil, []fsAttempt{}
+		return true, EventReset, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return removed, nil
+}
+
 func (f *FS) ReleaseStale(ctx context.Context, runID string, olderThan time.Duration) ([]string, error) {
 	cutoff := f.now().Add(-olderThan)
 	held, err := f.List(ctx, runID, Filter{Statuses: []Status{StatusClaimed, StatusInProgress}})

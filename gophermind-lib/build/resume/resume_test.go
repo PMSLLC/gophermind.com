@@ -1,6 +1,7 @@
 package resume
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -8,6 +9,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gophermind/gophermind-lib/build/blackboard"
+	"gophermind/gophermind-lib/build/runfs"
 )
 
 var fixed = time.Date(2026, 11, 5, 22, 0, 0, 0, time.UTC)
@@ -219,5 +223,198 @@ func TestInsideRefusesEscape(t *testing.T) {
 	}
 	if _, err := inside("/r", "/etc"); err == nil {
 		t.Error("absolute allowed")
+	}
+}
+
+// nodeBoard builds a flat-layout board in runDir with the given statuses.
+func nodeBoard(t *testing.T, runDir string, status map[string]blackboard.Status) *blackboard.FS {
+	t.Helper()
+	ctx := context.Background()
+	b := blackboard.NewFS(runfs.Fixed(runDir), blackboard.WithFlatLayout())
+	var ids []string
+	waves := map[string]int{}
+	for id := range status {
+		ids = append(ids, id)
+		waves[id] = 0
+	}
+	if err := b.InitRun(ctx, "r", ids, waves); err != nil {
+		t.Fatal(err)
+	}
+	for id, st := range status {
+		if err := b.SetStatus(ctx, "r", id, blackboard.StatusPending, blackboard.StatusReady); err != nil {
+			t.Fatal(err)
+		}
+		switch st {
+		case blackboard.StatusReady:
+		case blackboard.StatusClaimed, blackboard.StatusInProgress:
+			if ok, err := b.Claim(ctx, "r", id, "w"); err != nil || !ok {
+				t.Fatalf("claim %s: %v %v", id, ok, err)
+			}
+			if st == blackboard.StatusInProgress {
+				if err := b.SetStatus(ctx, "r", id, blackboard.StatusClaimed, blackboard.StatusInProgress); err != nil {
+					t.Fatal(err)
+				}
+			}
+		default:
+			if ok, err := b.Claim(ctx, "r", id, "w"); err != nil || !ok {
+				t.Fatalf("claim %s: %v %v", id, ok, err)
+			}
+			if err := b.SetStatus(ctx, "r", id, blackboard.StatusClaimed, blackboard.StatusInProgress); err != nil {
+				t.Fatal(err)
+			}
+			if err := b.SetStatus(ctx, "r", id, blackboard.StatusInProgress, blackboard.StatusNeedsRevision); err != nil {
+				t.Fatal(err)
+			}
+			switch st {
+			case blackboard.StatusFailed:
+				// needs_revision cannot go to failed; use escalated then failed.
+				if err := b.SetStatus(ctx, "r", id, blackboard.StatusNeedsRevision, blackboard.StatusEscalated); err != nil {
+					t.Fatal(err)
+				}
+				if err := b.SetStatus(ctx, "r", id, blackboard.StatusEscalated, blackboard.StatusFailed); err != nil {
+					t.Fatal(err)
+				}
+			case blackboard.StatusEscalated:
+				if err := b.SetStatus(ctx, "r", id, blackboard.StatusNeedsRevision, blackboard.StatusEscalated); err != nil {
+					t.Fatal(err)
+				}
+			case blackboard.StatusVerified:
+				t.Fatal("use verifiedNode")
+			}
+		}
+	}
+	return b
+}
+
+func TestFromNodeResetsAFailedNode(t *testing.T) {
+	dir := t.TempDir()
+	b := nodeBoard(t, dir, map[string]blackboard.Status{"fn-a": blackboard.StatusFailed, "fn-b": blackboard.StatusReady})
+	ctx := context.Background()
+	if err := b.AppendAttempt(ctx, "r", "fn-a", blackboard.Attempt{Model: "m", Verdict: blackboard.VerdictFail}); err != nil {
+		t.Fatal(err)
+	}
+	put(t, dir, "_state/executor.json", `{}`)
+	put(t, dir, "_state/leaf-results.json", `{"fn-a":{"status":"failed","reason":"ladder_exhausted"},"fn-b":{"status":"verified"}}`)
+	put(t, dir, "ESCALATION-fn-a.md", "x")
+	put(t, dir, "report.json", "{}")
+	put(t, dir, "_state/project.json", "{}")
+	res, err := FromNode(ctx, dir, b, "r", "fn-a", fixed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, _ := b.Get(ctx, "r", "fn-a")
+	if row.Status != blackboard.StatusReady || len(row.Attempts) != 0 {
+		t.Errorf("fn-a: %+v", row)
+	}
+	other, _ := b.Get(ctx, "r", "fn-b")
+	if other.Status != blackboard.StatusReady {
+		t.Errorf("fn-b touched: %+v", other)
+	}
+	var lr map[string]json.RawMessage
+	data, err := os.ReadFile(filepath.Join(dir, "_state/leaf-results.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &lr); err != nil || len(lr) != 1 || lr["fn-b"] == nil {
+		t.Errorf("leaf-results: %s %v", data, err)
+	}
+	for _, rel := range []string{"report.json", "_state/project.json", "ESCALATION-fn-a.md"} {
+		if !has(res.Discarded, rel) {
+			t.Errorf("%s not listed in Discarded %v", rel, res.Discarded)
+		}
+		if present(dir, rel) {
+			t.Errorf("%s still in place", rel)
+		}
+	}
+	if !present(dir, res.DiscardDir+"/attempts-fn-a.json") || !present(dir, res.DiscardDir+"/report.json") {
+		t.Errorf("discard dir %s lacks files", res.DiscardDir)
+	}
+	if !present(dir, "_state/executor.json") {
+		t.Error("executor.json must stay")
+	}
+}
+
+func TestFromNodeRefusesVerifiedAndUnrun(t *testing.T) {
+	dir := t.TempDir()
+	b := nodeBoard(t, dir, map[string]blackboard.Status{"fn-r": blackboard.StatusReady, "fn-v": blackboard.StatusReady})
+	ctx := context.Background()
+	if ok, _ := b.Claim(ctx, "r", "fn-v", "w"); !ok {
+		t.Fatal("claim")
+	}
+	_ = b.SetStatus(ctx, "r", "fn-v", blackboard.StatusClaimed, blackboard.StatusInProgress)
+	if err := b.SetStatus(ctx, "r", "fn-v", blackboard.StatusInProgress, blackboard.StatusVerified); err != nil {
+		t.Fatal(err)
+	}
+	put(t, dir, "_state/executor.json", `{}`)
+	_, err := FromNode(ctx, dir, b, "r", "fn-v", fixed)
+	if err == nil || err.Error() != "resume: fn-v is verified; a verified node cannot be rerun in this round" {
+		t.Errorf("verified: %v", err)
+	}
+	_, err = FromNode(ctx, dir, b, "r", "fn-r", fixed)
+	if err == nil || err.Error() != "resume: fn-r has not run yet; resume the run without --from" {
+		t.Errorf("ready: %v", err)
+	}
+	if present(dir, "_state/discarded") {
+		t.Error("a refusal must move nothing")
+	}
+}
+
+func TestFromNodeRefusesWithoutExecutorState(t *testing.T) {
+	dir := t.TempDir()
+	b := nodeBoard(t, dir, map[string]blackboard.Status{"fn-a": blackboard.StatusFailed})
+	_, err := FromNode(context.Background(), dir, b, "r", "fn-a", fixed)
+	if err == nil || err.Error() != "resume: the run never reached the executor" {
+		t.Errorf("got %v", err)
+	}
+}
+
+func TestFromNodeRefusesWhileClaimed(t *testing.T) {
+	dir := t.TempDir()
+	b := nodeBoard(t, dir, map[string]blackboard.Status{"fn-a": blackboard.StatusFailed, "fn-b": blackboard.StatusClaimed})
+	put(t, dir, "_state/executor.json", `{}`)
+	_, err := FromNode(context.Background(), dir, b, "r", "fn-a", fixed)
+	if err == nil || err.Error() != "resume: the run is active (node fn-b is claimed)" {
+		t.Errorf("got %v", err)
+	}
+	row, _ := b.Get(context.Background(), "r", "fn-a")
+	if row.Status != blackboard.StatusFailed {
+		t.Errorf("fn-a changed: %s", row.Status)
+	}
+}
+
+func TestPointsListsStagesThenNodes(t *testing.T) {
+	dir := t.TempDir()
+	for _, s := range Stages[:7] {
+		put(t, dir, stageFiles(s)[0], "{}")
+	}
+	put(t, dir, "_state/executor.json", `{}`)
+	b := nodeBoard(t, dir, map[string]blackboard.Status{
+		"fn-a": blackboard.StatusFailed, "fn-b": blackboard.StatusReady, "fn-c": blackboard.StatusEscalated,
+	})
+	ctx := context.Background()
+	pts, err := Points(ctx, dir, b, "r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, p := range pts {
+		got = append(got, p.Step)
+	}
+	want := []string{"clarify", "confirm", "contract", "decompose", "enrich", "coverage", "approve", "node:fn-a", "node:fn-c"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("steps %v, want %v", got, want)
+	}
+	if pts[0].Label != "clarify" || pts[7].Label != "fn-a (failed)" || pts[8].Label != "fn-c (escalated)" {
+		t.Errorf("labels %+v", pts)
+	}
+	b2 := nodeBoard(t, t.TempDir(), map[string]blackboard.Status{"fn-b": blackboard.StatusClaimed})
+	put(t, dir, "x", "")
+	none, err := Points(ctx, dir, b2, "r")
+	if err != nil || none == nil || len(none) != 0 {
+		t.Errorf("claimed: %v %v", none, err)
+	}
+	empty, err := Points(ctx, t.TempDir(), nil, "r")
+	if err != nil || empty == nil || len(empty) != 0 {
+		t.Errorf("empty: %v %v", empty, err)
 	}
 }

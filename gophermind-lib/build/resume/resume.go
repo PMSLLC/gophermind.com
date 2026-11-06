@@ -7,13 +7,26 @@
 package resume
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
+	"gophermind/gophermind-lib/build/blackboard"
 	"gophermind/gophermind-lib/build/planner"
 )
+
+const (
+	executorStatePath = "_state/executor.json"
+	leafResultsPath   = "_state/leaf-results.json"
+)
+
+// unsafeName is the sanitizer the human gate uses for ESCALATION-<node>.md.
+var unsafeName = regexp.MustCompile(`[^A-Za-z0-9._-]`)
 
 // Stages are the planner stages in pipeline order.
 var Stages = []string{"clarify", "confirm", "contract", "decompose", "enrich", "coverage", "approve", "testwriter"}
@@ -105,4 +118,112 @@ func FromStage(runDir, stage string, now time.Time) (Result, error) {
 		return res, err
 	}
 	return res, planner.ClearPlanned(runDir)
+}
+
+// FromNode re-enters a finished run at one executor node. It refuses while any
+// node is claimed or in progress, and refuses a node that is verified or has not
+// run. Otherwise it resets the node's row to ready, writes the removed attempts
+// to <discard dir>/attempts-<node>.json, drops the node from leaf-results.json,
+// and moves report.json, _state/project.json and the node's escalation file aside.
+func FromNode(ctx context.Context, runDir string, board blackboard.Blackboard, runID, node string, now time.Time) (Result, error) {
+	if !present(runDir, executorStatePath) {
+		return Result{}, fmt.Errorf("resume: the run never reached the executor")
+	}
+	rows, err := board.List(ctx, runID, blackboard.Filter{})
+	if err != nil {
+		return Result{}, err
+	}
+	for _, r := range rows {
+		if r.Status == blackboard.StatusClaimed || r.Status == blackboard.StatusInProgress {
+			return Result{}, fmt.Errorf("resume: the run is active (node %s is claimed)", r.NodeID)
+		}
+	}
+	row, err := board.Get(ctx, runID, node)
+	if err != nil {
+		return Result{}, fmt.Errorf("resume: node %s: %w", node, err)
+	}
+	switch row.Status {
+	case blackboard.StatusVerified:
+		return Result{}, fmt.Errorf("resume: %s is verified; a verified node cannot be rerun in this round", node)
+	case blackboard.StatusFailed, blackboard.StatusEscalated, blackboard.StatusNeedsRevision:
+	default:
+		return Result{}, fmt.Errorf("resume: %s has not run yet; resume the run without --from", node)
+	}
+	dest := discardDir(runDir, now)
+	attemptsRel := dest + "/attempts-" + unsafeName.ReplaceAllString(node, "_") + ".json"
+	attemptsPath, err := inside(runDir, attemptsRel)
+	if err != nil {
+		return Result{}, err
+	}
+	if _, err := os.Lstat(attemptsPath); err == nil {
+		return Result{}, fmt.Errorf("resume: %s already exists; not overwriting", attemptsRel)
+	}
+	leaf, hadLeaf, err := readLeafResults(runDir)
+	if err != nil {
+		return Result{}, err
+	}
+
+	removed, err := board.Reset(ctx, runID, node)
+	if err != nil {
+		return Result{}, err
+	}
+	if removed == nil {
+		removed = []blackboard.Attempt{}
+	}
+	data, err := json.MarshalIndent(removed, "", "  ")
+	if err != nil {
+		return Result{}, err
+	}
+	if err := os.MkdirAll(filepath.Dir(attemptsPath), 0o700); err != nil {
+		return Result{}, err
+	}
+	if err := os.WriteFile(attemptsPath, append(data, '\n'), 0o600); err != nil {
+		return Result{}, err
+	}
+	if hadLeaf {
+		delete(leaf, node)
+		if err := writeLeafResults(runDir, leaf); err != nil {
+			return Result{Discarded: []string{attemptsRel}, DiscardDir: dest}, err
+		}
+	}
+	rels := []string{"report.json", "_state/project.json", "ESCALATION-" + unsafeName.ReplaceAllString(node, "_") + ".md"}
+	moved, err := moveAll(runDir, dest, rels)
+	res := Result{Discarded: append(moved, attemptsRel), DiscardDir: dest}
+	return res, err
+}
+
+func readLeafResults(runDir string) (map[string]json.RawMessage, bool, error) {
+	full, err := inside(runDir, leafResultsPath)
+	if err != nil {
+		return nil, false, err
+	}
+	data, err := os.ReadFile(full)
+	if os.IsNotExist(err) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	m := map[string]json.RawMessage{}
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, false, fmt.Errorf("resume: %s: %w", leafResultsPath, err)
+	}
+	return m, true, nil
+}
+
+// writeLeafResults rewrites leaf-results.json through a temporary file in the same folder.
+func writeLeafResults(runDir string, m map[string]json.RawMessage) error {
+	full, err := inside(runDir, leafResultsPath)
+	if err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := full + ".tmp"
+	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, full)
 }

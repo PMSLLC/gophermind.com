@@ -97,6 +97,7 @@ const (
 	EventAttempt  EventKind = "attempt"
 	EventResult   EventKind = "result"
 	EventRevision EventKind = "revision"
+	EventReset    EventKind = "reset"
 )
 
 type Event struct {
@@ -135,6 +136,13 @@ type Blackboard interface {
 
 	AppendAttempt(ctx context.Context, runID, nodeID string, a Attempt) error
 	SetResult(ctx context.Context, runID, nodeID string, r Result) error
+
+	// Reset returns a node to ready, clearing its claim, heartbeat, result and
+	// attempts (the removed attempts are returned) and keeping its revision and
+	// wave. It is the one write that ignores the transition table: a human asked
+	// to run the node again, which no worker is allowed to decide. A missing row
+	// is an error.
+	Reset(ctx context.Context, runID, nodeID string) (removed []Attempt, err error)
 
 	// ReleaseStale returns every claimed/in_progress row whose heartbeat is older than olderThan
 	// to ready, and reports their IDs. Called once at the start of --resume.

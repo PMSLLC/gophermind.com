@@ -594,3 +594,43 @@ func TestSetRevisionEmitsARevisionEvent(t *testing.T) {
 		t.Fatalf("last event = %s (%v)", lines[1], err)
 	}
 }
+
+func TestResetReturnsARowToReady(t *testing.T) {
+	b := newBB(t)
+	ctx := context.Background()
+	initReady(t, b, "r", "n")
+	if ok, err := b.Claim(ctx, "r", "n", "w"); err != nil || !ok {
+		t.Fatalf("claim: %v %v", ok, err)
+	}
+	if err := b.SetStatus(ctx, "r", "n", StatusClaimed, StatusInProgress); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.SetStatus(ctx, "r", "n", StatusInProgress, StatusFailed); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := b.AppendAttempt(ctx, "r", "n", Attempt{Model: "m", Order: i + 1, Verdict: VerdictFail}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := b.SetRevision(ctx, "r", "n", 3); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := b.Reset(ctx, "r", "n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 2 {
+		t.Errorf("removed %d attempts, want 2", len(removed))
+	}
+	row, err := b.Get(ctx, "r", "n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.Status != StatusReady || len(row.Attempts) != 0 || row.Claim != nil || row.Result != nil || row.Revision != 3 {
+		t.Errorf("row after reset: %+v", row)
+	}
+	if _, err := b.Reset(ctx, "r", "nope"); err == nil {
+		t.Error("an unknown node must error")
+	}
+}
