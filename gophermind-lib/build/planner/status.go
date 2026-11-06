@@ -39,7 +39,7 @@ func ReadStatus(runID string) (Status, error) {
 	if _, err := readJSON(r.path(fileRequirements), &reqs); err != nil {
 		return Status{}, err
 	}
-	st.Requirements = len(reqs)
+	st.Requirements = len(CoverageRequirements(reqs))
 	var cov struct {
 		Covered []json.RawMessage `json:"covered"`
 	}

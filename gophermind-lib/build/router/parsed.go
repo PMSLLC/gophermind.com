@@ -39,7 +39,7 @@ func (r *Router) CallParsed(ctx context.Context, info CallInfo, req provider.Req
 			return res, nil
 		}
 		lastParse = perr
-		r.markMalformed(ctx, info.RunID, res)
+		r.markMalformed(ctx, info.RunID, res, perr)
 		if errors.Is(perr, ErrNoRetry) {
 			return Result{}, perr
 		}
@@ -80,7 +80,7 @@ func (r *Router) CallParsed(ctx context.Context, info CallInfo, req provider.Req
 				return res2, nil
 			}
 			lastParse = perr2
-			r.markMalformed(ctx, info.RunID, res2)
+			r.markMalformed(ctx, info.RunID, res2, perr2)
 			if errors.Is(perr2, ErrNoRetry) {
 				return Result{}, perr2
 			}
@@ -92,14 +92,48 @@ func (r *Router) CallParsed(ctx context.Context, info CallInfo, req provider.Req
 	}
 }
 
-func (r *Router) markMalformed(ctx context.Context, runID string, res Result) {
+func (r *Router) markMalformed(ctx context.Context, runID string, res Result, perr error) {
 	if r.led == nil || res.CallID == 0 {
 		return
 	}
 	// The error kind is a fixed word: a parser error can quote the reply, and reply text is never stored.
-	if err := r.led.Amend(context.WithoutCancel(ctx), runID, res.CallID, ledger.OutcomeMalformed, "malformed"); err != nil {
+	if err := r.led.Amend(context.WithoutCancel(ctx), runID, res.CallID, ledger.OutcomeMalformed, errorKind(perr)); err != nil {
 		r.noteLedgerError("", "", err)
 	}
+}
+
+// Kinder is a parse error that names its own kind, a fixed word stored as
+// the malformed row's error kind.
+type Kinder interface{ ErrorKind() string }
+
+// errorKind is the fixed word a malformed row stores for the parse error
+// perr: the kind the error names (Kinder), else the first word of its
+// message before a colon when it is schema, contract, forbidden or conflict
+// (a contract error about a conflicting declaration is conflict), else
+// malformed. No other part of the message is ever returned.
+func errorKind(perr error) string {
+	var k Kinder
+	if errors.As(perr, &k) {
+		return k.ErrorKind()
+	}
+	if perr == nil {
+		return "malformed"
+	}
+	msg := perr.Error()
+	head, _, ok := strings.Cut(msg, ":")
+	if !ok {
+		return "malformed"
+	}
+	switch head {
+	case "contract":
+		if strings.Contains(msg, "conflicting declaration") {
+			return "conflict"
+		}
+		return head
+	case "schema", "forbidden", "conflict":
+		return head
+	}
+	return "malformed"
 }
 
 func withParseErr(err error, parseErr error) error {

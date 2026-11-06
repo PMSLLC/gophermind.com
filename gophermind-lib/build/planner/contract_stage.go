@@ -86,16 +86,96 @@ type contractState struct {
 	// SigTypeIDsNormalized counts the type ids in signatures replaced by Go type
 	// names (signature_type_id_normalized).
 	SigTypeIDsNormalized int `json:"sig_type_ids_normalized,omitempty"`
+	// CandidateStatus says, per pass, why it was kept or refused: accepted,
+	// accepted_with_repairs:<warning kinds> or rejected:<kind>. A component
+	// pass is keyed by the component id, the outline passes by outline (the
+	// shared pass), outline:<batch index>, outline:entry and outline:repair.
+	CandidateStatus map[string]string `json:"candidate_status,omitempty"`
+	// pending holds the kinds a pass went through before it is settled.
+	pending map[string][]string
 }
+
+// note records that pass went through a warning or a re-ask of kind.
+func (st *contractState) note(pass, kind string) {
+	if st.pending == nil {
+		st.pending = map[string][]string{}
+	}
+	if !contains(st.pending[pass], kind) {
+		st.pending[pass] = append(st.pending[pass], kind)
+	}
+}
+
+// settle writes the candidate status of pass once it is stored (err nil) or
+// refused (err the error that ends the stage).
+func (st *contractState) settle(pass string, err error) {
+	if st.CandidateStatus == nil {
+		st.CandidateStatus = map[string]string{}
+	}
+	kinds := append([]string(nil), st.pending[pass]...)
+	delete(st.pending, pass)
+	switch {
+	case err != nil:
+		st.CandidateStatus[pass] = "rejected:" + rejectKind(err)
+	case len(kinds) == 0:
+		st.CandidateStatus[pass] = "accepted"
+	default:
+		sort.Strings(kinds)
+		st.CandidateStatus[pass] = "accepted_with_repairs:" + strings.Join(kinds, ",")
+	}
+}
+
+var kindWordRE = regexp.MustCompile(`^[a-z_]+$`)
+
+// rejectKind is the fixed word for the error that refused a pass: the kind
+// the error names (router.Kinder), conflict for a conflicting declaration,
+// else the first word of the message before its colon; error when that is
+// not a plain word. The last parse error stands for a chain that ran out.
+func rejectKind(err error) string {
+	var k router.Kinder
+	if errors.As(err, &k) {
+		return k.ErrorKind()
+	}
+	var ce *router.ChainExhausted
+	if errors.As(err, &ce) && ce.ParseErr != nil {
+		err = ce.ParseErr
+	}
+	msg := err.Error()
+	head, _, ok := strings.Cut(msg, ":")
+	if head == "contract" && strings.Contains(msg, "conflicting declaration") {
+		return "conflict"
+	}
+	if f := strings.Fields(head); ok && len(f) > 0 && kindWordRE.MatchString(f[0]) {
+		return f[0]
+	}
+	return "error"
+}
+
+// warningKind is the kind a warning's text starts with ("kind: ...").
+func warningKind(text string) string {
+	kind, _, _ := strings.Cut(text, ":")
+	return kind
+}
+
+// kindedErr is an error that names its kind for the candidate status and the
+// ledger (router.Kinder); its message is the wrapped error's.
+type kindedErr struct {
+	kind string
+	err  error
+}
+
+func (e kindedErr) Error() string     { return e.err.Error() }
+func (e kindedErr) Unwrap() error     { return e.err }
+func (e kindedErr) ErrorKind() string { return e.kind }
 
 const maxIgnoredRecorded = 200
 
 // noteIgnored records dropped duplicate emissions in the state and reports
 // them as one warning: ids that pass the id syntax (at most 64 bytes, at most
-// 10 named) and the count, never content.
-func (p *Planner) noteIgnored(st *contractState, stage string, ignored []string) {
+// 10 named) and the count, never content. It returns the warning's kind, or
+// nothing when no emission was dropped.
+func (p *Planner) noteIgnored(st *contractState, stage string, ignored []string) []string {
 	if len(ignored) == 0 {
-		return
+		return nil
 	}
 	st.IgnoredTotal += len(ignored)
 	for _, n := range ignored {
@@ -109,9 +189,11 @@ func (p *Planner) noteIgnored(st *contractState, stage string, ignored []string)
 	if len(shown) > maxUnresolvedInError {
 		shown = shown[:maxUnresolvedInError]
 	}
-	p.emit(events.KindWarning, stage, "", fmt.Sprintf(
+	text := fmt.Sprintf(
 		"outline_duplicate_ignored: %d later emissions of an id already written were dropped and the first kept (%s); %d in all so far",
-		len(ignored), strings.Join(shown, ", "), st.IgnoredTotal))
+		len(ignored), strings.Join(shown, ", "), st.IgnoredTotal)
+	p.emit(events.KindWarning, stage, "", text)
+	return []string{warningKind(text)}
 }
 
 // failedAttempt is true for a model call that failed because of the model: the
@@ -218,7 +300,31 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 	if err != nil {
 		return err
 	}
-	if !found || (st.OutlinePasses > 0 && !st.OutlineDone) {
+	// warn reports a warning of a pass and notes its kind for the pass's
+	// candidate status; notes notes the kinds a helper already reported.
+	warn := func(pass, text string) {
+		p.emit(events.KindWarning, "contract", "", text)
+		st.note(pass, warningKind(text))
+	}
+	notes := func(pass string, kinds []string) {
+		for _, k := range kinds {
+			st.note(pass, k)
+		}
+	}
+	// refuse settles a pass the stage ends on and stores the state, so the
+	// status says why. A stage the caller stopped refuses nothing.
+	refuse := func(pass string, err error) error {
+		if ctx.Err() != nil {
+			return err
+		}
+		st.settle(pass, err)
+		if werr := writeJSON(r.path(stateContract), st); werr != nil {
+			return werr
+		}
+		return err
+	}
+	// A state with no outline doc yet (a shared pass refused) starts the outline.
+	if !found || st.Doc == nil || (st.OutlinePasses > 0 && !st.OutlineDone) {
 		typeSchema, err := contractItemSchemas("types")
 		if err != nil {
 			return err
@@ -253,10 +359,19 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 					"Unresolved": unresolvedPromptText(unresolved), "UnresolvedCount": fmt.Sprint(len(unresolved))})
 			}
 			var ignored []string
-			var notes idNotes
+			var idn idNotes
 			var extras []string
 			added := 0
 			first := st.Doc == nil
+			pass := fmt.Sprintf("outline:%d", st.OutlineBatchNext)
+			switch {
+			case entry != "":
+				pass = "outline:entry"
+			case len(unresolved) > 0:
+				pass = "outline:repair"
+			case first:
+				pass = "outline"
+			}
 			cs := callSpec{stage: stage, taskType: "contract", scope: router.ScopeBrief,
 				maxTokens: maxTokensOutline, maxGrown: maxGrownOutline, jsonObject: true}
 			if err := p.callSized(ctx, r, cs, build, func(text string) error {
@@ -278,11 +393,11 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 					return err
 				}
 				if len(changes) > 0 {
-					p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
+					warn(pass, fmt.Sprintf(
 						"component_package_mapped: %d component packages were Go names, mapped to the directories the Architecture section names: %s",
 						len(changes), strings.Join(changes, "; ")))
 				}
-				st.Doc, st.Deps, added, ignored, notes = doc, ds, n, append(nt.Ignored, ign...), nt
+				st.Doc, st.Deps, added, ignored, idn = doc, ds, n, append(nt.Ignored, ign...), nt
 				return nil
 			}); err != nil {
 				if failedAttempt(ctx, err) && (len(unresolved) > 0 || entry != "") {
@@ -291,11 +406,8 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 					} else {
 						st.OutlineRepairs++
 					}
-					if werr := writeJSON(r.path(stateContract), st); werr != nil {
-						return werr
-					}
 				}
-				return err
+				return refuse(pass, err)
 			}
 			switch {
 			case entry != "":
@@ -303,8 +415,12 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			case len(unresolved) > 0:
 				st.OutlineRepairs++
 			case first:
+				module, _ := st.Doc["module"].(string)
 				if err := p.bindModuleToFacts(r, st.Doc); err != nil {
 					return err
+				}
+				if bound, _ := st.Doc["module"].(string); bound != module {
+					st.note(pass, "contract_module_overridden")
 				}
 				st.OutlinePasses++
 				st.OutlineBatches, st.OutlineBatchesSet = allBatches, true
@@ -313,7 +429,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 				st.OutlinePasses++
 				st.OutlineBatchNext++
 				if added == 0 {
-					p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
+					warn(pass, fmt.Sprintf(
 						"outline_pass_empty: outline batch %d added no component, type or dependency", st.OutlineBatchNext))
 				}
 			}
@@ -322,12 +438,13 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 				if len(shown) > maxUnresolvedInError {
 					shown = shown[:maxUnresolvedInError]
 				}
-				p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
+				warn(pass, fmt.Sprintf(
 					"outline_shared_extra: %d components other than types were dropped from the shared pass, the batches write them (%s)",
 					len(extras), strings.Join(shown, ", ")))
 			}
-			p.noteNormalized(&st, "contract", notes)
-			p.noteIgnored(&st, "contract", ignored)
+			notes(pass, p.noteNormalized(&st, "contract", idn))
+			notes(pass, p.noteIgnored(&st, "contract", ignored))
+			st.settle(pass, nil)
 			return writeJSON(r.path(stateContract), st)
 		}
 		if st.Doc != nil && !st.OutlineBatchesSet {
@@ -473,7 +590,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			}
 			more := false
 			var ignored []string
-			var notes idNotes
+			var idn idNotes
 			var foreign, tests, extras []string
 			cs := callSpec{stage: "contract:" + id, taskType: "contract", scope: router.ScopeComponent, maxTokens: maxTokensContract, jsonObject: true}
 			if err := p.callSized(ctx, r, cs, build, func(text string) error {
@@ -486,6 +603,9 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 				text, extras = dropEntryExtras(text, dir, arch)
 				doc, m, ign, decl, err := mergePassDeclared(base, st.Declared, id, text, r.rootID())
 				if err != nil {
+					if rejectKind(err) == "conflict" {
+						st.note(id, "conflict")
+					}
 					return err
 				}
 				if len(decl) > 0 && st.Declared == nil {
@@ -498,25 +618,25 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 					// The rewrite left the function out: keep the one it replaces.
 					doc["functions"] = append(objectsAsAny(doc["functions"]), dropped)
 				}
-				st.Doc, more, ignored, notes = doc, m, append(nt.Ignored, ign...), nt
+				st.Doc, more, ignored, idn = doc, m, append(nt.Ignored, ign...), nt
 				return nil
 			}); err != nil {
-				return err
+				return refuse(id, err)
 			}
 			if len(foreign) > 0 {
-				p.emit(events.KindWarning, "contract", "", foreignDroppedText(id, foreign))
+				warn(id, foreignDroppedText(id, foreign))
 			}
 			if len(tests) > 0 {
-				p.emit(events.KindWarning, "contract", "", testDroppedText(id, tests))
+				warn(id, testDroppedText(id, tests))
 			}
 			if len(extras) > 0 {
-				p.emit(events.KindWarning, "contract", "", entryExtraDroppedText(id, extras))
+				warn(id, entryExtraDroppedText(id, extras))
 			}
 			if gone := supersededIDs(st.Doc, refused); len(gone) > 0 {
-				p.emit(events.KindWarning, "contract", "", supersededText(id, gone))
+				warn(id, supersededText(id, gone))
 			}
-			p.noteNormalized(&st, "contract:"+id, notes)
-			p.noteIgnored(&st, "contract:"+id, ignored)
+			notes(id, p.noteNormalized(&st, "contract:"+id, idn))
+			notes(id, p.noteIgnored(&st, "contract:"+id, ignored))
 			passIDs := newFunctionIDs(st.Doc, id, before)
 			defect, dropped, refused = "", nil, nil
 			// The brief's Architecture section fixes some interfaces of this
@@ -527,13 +647,13 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 				var applied []string
 				applied, missing = fixedMissingNow(st.Doc, id, dir, ifs, st.Done)
 				if len(applied) > 0 {
-					p.emit(events.KindWarning, "contract", "", "fixed_interface_applied: "+strings.Join(applied, "; "))
+					warn(id, "fixed_interface_applied: "+strings.Join(applied, "; "))
 				}
 			}
 			// A call the Architecture section fixes is a use of the function
 			// called, once both are declared.
 			for _, w := range applyFixedUses(st.Doc, arch) {
-				p.emit(events.KindWarning, "contract", "", w)
+				warn(id, w)
 			}
 			if !more && entry && st.SurfaceRepairs[id] == 0 {
 				// The run function must state the brief's command-line surface; a
@@ -544,6 +664,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 							st.SurfaceRepairs = map[string]int{}
 						}
 						st.SurfaceRepairs[id]++
+						st.note(id, "cli_surface_missing")
 						defect, dropped, more = surfaceDefectText(fmt.Sprint(run["id"]), miss), run, true
 					}
 				}
@@ -557,6 +678,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 						st.MainRepairs = map[string]int{}
 					}
 					st.MainRepairs[id]++
+					st.note(id, "main_function_missing")
 					defect, more = mainDefectText(pkg), true
 				}
 			}
@@ -565,15 +687,17 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 				// no later component of the directory to come, is asked of this
 				// component once and then stops the run.
 				if st.FixedRepairs[id] > 0 {
-					return fmt.Errorf("contract: component %s does not declare the fixed interface %s from the brief's Architecture section", boundedID(id), missing[0].Signature)
+					return refuse(id, kindedErr{"fixed_interface_missing", fmt.Errorf("contract: component %s does not declare the fixed interface %s from the brief's Architecture section", boundedID(id), missing[0].Signature)})
 				}
 				if st.FixedRepairs == nil {
 					st.FixedRepairs = map[string]int{}
 				}
 				st.FixedRepairs[id]++
+				st.note(id, "fixed_interface_missing")
 				defect, more, refused = fixedDefectText(missing), true, passIDs
 			}
 			if !more {
+				st.settle(id, nil)
 				st.Done = append(st.Done, id)
 			}
 			if st.ComponentPasses == nil {
@@ -587,8 +711,8 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 				break
 			}
 			if st.ComponentPasses[id] >= maxComponentPasses {
-				return fmt.Errorf("stage contract:%s did not finish after %d passes; the model keeps adding functions",
-					strings.Trim(boundedID(id), `"`), maxComponentPasses)
+				return refuse(id, fmt.Errorf("stage contract:%s did not finish after %d passes; the model keeps adding functions",
+					strings.Trim(boundedID(id), `"`), maxComponentPasses))
 			}
 		}
 	}

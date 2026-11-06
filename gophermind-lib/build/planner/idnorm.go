@@ -373,36 +373,43 @@ func normalizeReply(doc map[string]any, text string, kind replyKind) (string, id
 
 // noteNormalized records the rewritten ids in the state and reports them as
 // one warning: a count and at most 10 bounded examples, never other reply text.
-func (p *Planner) noteNormalized(st *contractState, stage string, n idNotes) {
+// It returns the kinds of the warnings it emitted.
+func (p *Planner) noteNormalized(st *contractState, stage string, n idNotes) []string {
+	var kinds []string
+	warn := func(text string) {
+		p.emit(events.KindWarning, stage, "", text)
+		kinds = append(kinds, warningKind(text))
+	}
 	if n.SigTypeIDs > 0 {
 		st.SigTypeIDsNormalized += n.SigTypeIDs
-		p.emit(events.KindWarning, stage, "", fmt.Sprintf(
+		warn(fmt.Sprintf(
 			"signature_type_id_normalized: %d type ids in signatures were replaced by Go type names (%s); %d in all so far",
 			n.SigTypeIDs, strings.Join(n.SigExamples, ", "), st.SigTypeIDsNormalized))
 	}
 	if n.DashedTypes > 0 {
-		p.emit(events.KindWarning, stage, "", fmt.Sprintf(
+		warn(fmt.Sprintf(
 			"type_name_camel_cased: %d type names were written with dashes like an id; renamed to camel case", n.DashedTypes))
 	}
 	if n.Unwrapped > 0 {
-		p.emit(events.KindWarning, stage, "", fmt.Sprintf(
+		warn(fmt.Sprintf(
 			"entry_unwrapped: %d entries were wrapped in an object named for their kind, like {\"type\": {...}}; unwrapped", n.Unwrapped))
 	}
 	if n.EmptyTypes > 0 {
-		p.emit(events.KindWarning, stage, "", fmt.Sprintf(
+		warn(fmt.Sprintf(
 			"type_decl_empty_dropped: %d type entries declared nothing once the package clause was removed; dropped", n.EmptyTypes))
 	}
 	if n.PackageClauses > 0 {
-		p.emit(events.KindWarning, stage, "", fmt.Sprintf(
+		warn(fmt.Sprintf(
 			"type_decl_package_clause_removed: %d type declarations carried a package clause, which the harness supplies; removed", n.PackageClauses))
 	}
 	if n.Count == 0 {
-		return
+		return kinds
 	}
 	st.IDsNormalized += n.Count
-	p.emit(events.KindWarning, stage, "", fmt.Sprintf(
+	warn(fmt.Sprintf(
 		"outline_id_normalized: %d ids and references were rewritten to the id syntax (%s); %d in all so far",
 		n.Count, strings.Join(n.Examples, ", "), st.IDsNormalized))
+	return kinds
 }
 
 // pendingSep joins the two candidate forms of a reference that named nothing

@@ -132,3 +132,14 @@ func CheckMergedDoc(orig, merged map[string]any, env ReviseCheckEnv) ([]string, 
 	}
 	return checkMerged(orig, merged, revisePatch{}, mergeEnv{Class: env.Class, Env: ge, Secrets: env.Secrets, N: env.N, TestsRewrite: env.TestsRewrite})
 }
+
+// CandidateStatusAfter notes each kind for one pass, settles it with err and
+// returns the pass's candidate status.
+func CandidateStatusAfter(kinds []string, err error) string {
+	var st contractState
+	for _, k := range kinds {
+		st.note("p", k)
+	}
+	st.settle("p", err)
+	return st.CandidateStatus["p"]
+}
