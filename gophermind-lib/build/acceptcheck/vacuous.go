@@ -86,6 +86,13 @@ type stmt struct {
 // shellParse reads cmd into statements and the scripts hidden in $( ) and
 // backticks. Comments (an unquoted # at the start of a word) are dropped.
 func shellParse(cmd string) (stmts []stmt, subs []string, unterminated bool) {
+	stmts, subs, unterminated, _ = shellParseFull(cmd)
+	return stmts, subs, unterminated
+}
+
+// shellParseFull is shellParse that also reports unclosed: a quote, $( ) or
+// backtick that runs to the end of cmd without its closer.
+func shellParseFull(cmd string) (stmts []stmt, subs []string, unterminated, unclosed bool) {
 	rs := []rune(cmd)
 	var cur strings.Builder
 	var words []word
@@ -167,6 +174,7 @@ func shellParse(cmd string) (stmts []stmt, subs []string, unterminated bool) {
 				}
 			}
 		}
+		unclosed = true
 		return string(rs[start:]), len(rs)
 	}
 	for i := 0; i < len(rs); i++ {
@@ -214,6 +222,9 @@ func shellParse(cmd string) (stmts []stmt, subs []string, unterminated bool) {
 			for i++; i < len(rs) && rs[i] != '\''; i++ {
 				cur.WriteRune(rs[i])
 			}
+			if i >= len(rs) {
+				unclosed = true
+			}
 		case c == '"':
 			have = true
 			for i++; i < len(rs) && rs[i] != '"'; i++ {
@@ -233,6 +244,9 @@ func shellParse(cmd string) (stmts []stmt, subs []string, unterminated bool) {
 					continue
 				}
 				cur.WriteRune(rs[i])
+			}
+			if i >= len(rs) {
+				unclosed = true
 			}
 		case c == '$' && i+1 < len(rs) && rs[i+1] == '(' && !(i+2 < len(rs) && rs[i+2] == '('):
 			have = true
@@ -273,7 +287,7 @@ func shellParse(cmd string) (stmts []stmt, subs []string, unterminated bool) {
 	if len(pending) > 0 {
 		unterminated = true
 	}
-	return stmts, subs, unterminated
+	return stmts, subs, unterminated, unclosed
 }
 
 // commandIndex is the index of the command word: assignments, keywords and

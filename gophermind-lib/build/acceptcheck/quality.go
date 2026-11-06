@@ -56,6 +56,9 @@ const (
 	// with several files prints one file:count line per file; count across
 	// files with cat files | grep -c or grep -ch.
 	FindGrepCountPerFile Finding = "grep_count_per_file"
+	// FindSyntax: the command does not parse: an unterminated quote or
+	// substitution; the shell would exit 2 before running anything.
+	FindSyntax Finding = "syntax_error"
 )
 
 // FindingNames are the findings as strings, in the order given.
@@ -107,6 +110,9 @@ var (
 // Quality returns the quality findings of one root test command, sorted and
 // unique; none means the command can fail for the right reason.
 func Quality(cmd string, o Options) []Finding {
+	if unparsable(cmd, 0) {
+		return []Finding{FindSyntax}
+	}
 	set := map[Finding]bool{}
 	body := cmd
 	for depth := 0; depth < 4; depth++ { // sh -c 'body' is read as its body
@@ -130,6 +136,9 @@ func Quality(cmd string, o Options) []Finding {
 		}
 		body = next
 	}
+	if unparsable(body, 0) {
+		return []Finding{FindSyntax}
+	}
 	qualityPlaceholders(body, o, set)
 	q := &qual{set: set, bins: map[string]bool{}}
 	for _, b := range o.Bins {
@@ -145,6 +154,24 @@ func Quality(cmd string, o Options) []Finding {
 		return nil
 	}
 	return out
+}
+
+// unparsable: the script, or any substitution inside it, has an unterminated
+// quote or substitution.
+func unparsable(script string, depth int) bool {
+	_, subs, unterminated, unclosed := shellParseFull(script)
+	if unterminated || unclosed {
+		return true
+	}
+	if depth >= 4 {
+		return false
+	}
+	for _, s := range subs {
+		if unparsable(s, depth+1) {
+			return true
+		}
+	}
+	return false
 }
 
 func baseOf(cmd string) string {

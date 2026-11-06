@@ -370,3 +370,27 @@ func TestQualityGrepFormsAndPlaceholderWords(t *testing.T) {
 		t.Errorf("corrected A6 = %v, want nil", got)
 	}
 }
+
+// A command the shell cannot parse is refused alone: it exits 2 before running anything.
+func TestQualitySyntaxError(t *testing.T) {
+	t.Parallel()
+	c2 := "test ! -n \"$(go list -m all | grep -v 'go.golang.org/\" | grep -v \"^$ | grep -v \"^module\")\""
+	cases := []struct {
+		name string
+		cmd  string
+		want []Finding
+	}{
+		{"unterminated quote inside substitution", c2, []Finding{FindSyntax}},
+		{"unterminated double quote", `echo "unterminated`, []Finding{FindSyntax}},
+		{"unterminated substitution", `x=$(echo a`, []Finding{FindSyntax}},
+		{"unterminated quote in sh -c body", `sh -c 'echo "oops'`, []Finding{FindSyntax}},
+		{"dependency check parses", `test "$(go list -m all | wc -l)" -eq 1`, nil},
+		{"existing finding unchanged", `grep -r 'gorm' internal/ || echo "No ORM found"`, []Finding{FindMasked}},
+	}
+	for _, c := range cases {
+		got := Quality(c.cmd, qopts)
+		if !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s: Quality(%q) = %v, want %v", c.name, c.cmd, got, c.want)
+		}
+	}
+}
