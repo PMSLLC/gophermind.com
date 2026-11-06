@@ -90,6 +90,13 @@ func resetOwnedClone(runDir, repo, ownedUnder string, st RepoState) ([]string, e
 	if err := openRepo(runDir, real, st.Base); err != nil {
 		return nil, err
 	}
+	gd, err := git(real, "rev-parse", "--absolute-git-dir")
+	if err == nil {
+		gd, err = filepath.EvalSymlinks(gd)
+	}
+	if rel, rerr := filepath.Rel(real, gd); err != nil || rerr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil, fmt.Errorf("resume: refusing to reset %s: its git directory is outside the clone", repo)
+	}
 	if _, err := git(real, "reset", "--hard", st.Base); err != nil {
 		return nil, err
 	}
@@ -171,6 +178,8 @@ func restoreFiles(runDir, repo string, st RepoState) ([]string, error) {
 		return nil, err
 	}
 	// Decide and check everything before anything changes.
+	cur, _ := git(real, "symbolic-ref", "--short", "-q", "HEAD")
+	onWork := st.Branch != "" && cur == st.Branch
 	var ops []fileOp
 	for _, f := range files {
 		abs, err := repoPath(real, f)
@@ -180,6 +189,15 @@ func restoreFiles(runDir, repo string, st RepoState) ([]string, error) {
 		fi, lerr := os.Lstat(abs)
 		if lerr == nil && fi.IsDir() {
 			return nil, fmt.Errorf("resume: plan path %s is a folder; not touching it", f)
+		}
+		if !onWork && lerr == nil {
+			// Off the run's branch a change to a listed path is a person's, not the run's leftover.
+			_, tracked := git(real, "ls-files", "--error-unmatch", "--", f)
+			_, atBase := git(real, "cat-file", "-e", st.Base+":"+f)
+			_, same := git(real, "diff", "--quiet", "HEAD", "--", f)
+			if (tracked == nil && same != nil) || (tracked != nil && atBase == nil) {
+				return nil, fmt.Errorf("resume: %s has uncommitted changes; commit or stash them, then pass --reset-repo again", f)
+			}
 		}
 		kind, kerr := git(real, "cat-file", "-t", st.Base+":"+f)
 		switch {
@@ -224,9 +242,9 @@ func restoreFiles(runDir, repo string, st RepoState) ([]string, error) {
 	}
 	if dropBranch {
 		// Leave the work branch only when HEAD is on it; any other HEAD stays where it was.
-		if cur, _ := git(real, "symbolic-ref", "--short", "-q", "HEAD"); cur == st.Branch {
+		if onWork {
 			if _, err := git(real, "checkout", st.Base); err != nil {
-				return actions, err
+				return actions, fmt.Errorf("resume: the listed files were already restored; the switch to %s was refused, so nothing is lost: %w", st.Base, err)
 			}
 		}
 		if _, err := git(real, "branch", "-D", st.Branch); err != nil {

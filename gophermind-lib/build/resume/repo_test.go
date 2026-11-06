@@ -129,6 +129,7 @@ func TestRestoreFilesDeletesOnlyARunOwnedBranch(t *testing.T) {
 
 func TestRestoreFilesRestoresListedFilesOnly(t *testing.T) {
 	repo := newRepo(t)
+	runGit(t, repo, "checkout", "-b", "gm/x") // the run's branch: its edits are the run's leftovers
 	run := t.TempDir()
 	put(t, run, "_state/test_files.json", `["a.txt","gen/new_test.go","../escape.txt"]`)
 	put(t, repo, "a.txt", "dirty\n")
@@ -136,7 +137,7 @@ func TestRestoreFilesRestoresListedFilesOnly(t *testing.T) {
 	put(t, repo, "gen/new_test.go", "x\n")
 
 	// A listed path that leaves the repository refuses the whole reset.
-	if _, err := ResetRepo(run, repo, RepoRestoreFiles, "", RepoState{Base: "main"}); err == nil {
+	if _, err := ResetRepo(run, repo, RepoRestoreFiles, "", RepoState{Branch: "gm/x", Base: "main"}); err == nil {
 		t.Fatal("a path outside the repository must be refused")
 	}
 	if b, _ := os.ReadFile(filepath.Join(repo, "a.txt")); string(b) != "dirty\n" {
@@ -144,7 +145,7 @@ func TestRestoreFilesRestoresListedFilesOnly(t *testing.T) {
 	}
 
 	put(t, run, "_state/test_files.json", `["a.txt","gen/new_test.go"]`)
-	acts, err := ResetRepo(run, repo, RepoRestoreFiles, "", RepoState{Base: "main"})
+	acts, err := ResetRepo(run, repo, RepoRestoreFiles, "", RepoState{Branch: "gm/x", Base: "main"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +158,7 @@ func TestRestoreFilesRestoresListedFilesOnly(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(repo, "keep.txt")); string(b) != "dirty keep\n" {
 		t.Errorf("unlisted file touched: %q", b)
 	}
-	if strings.Join(acts, "|") != "restored a.txt|removed gen/new_test.go" {
+	if strings.Join(acts, "|") != "restored a.txt|removed gen/new_test.go|deleted branch gm/x" {
 		t.Errorf("actions %v", acts)
 	}
 }
@@ -301,6 +302,7 @@ func TestResetRefusesAFolderThatIsNotARepositoryRoot(t *testing.T) {
 func TestStageResumeChecksTheRunFolderBeforeTheRepository(t *testing.T) {
 	repo := newRepo(t)
 	dir := fullRun(t)
+	put(t, dir, "brief.md", string(testBrief("main")))
 	if _, err := FromStage(dir, "approve", RepoRequest{Mode: RepoKeep}, fixed); err != nil {
 		t.Fatal(err)
 	}
@@ -448,5 +450,72 @@ func TestReadExecutorStateReadsTheBaseFromTheBrief(t *testing.T) {
 	put(t, dir, "brief.md", string(testBrief("develop")))
 	if _, base, _, err := ReadExecutorState(dir); err != nil || base != "develop" {
 		t.Fatalf("base %q %v", base, err)
+	}
+}
+
+func TestRestoreRefusesAPersonsUncommittedChangeByName(t *testing.T) {
+	repo := newRepo(t)
+	run := filepath.Join(t.TempDir(), "run1")
+	put(t, run, "_state/test_files.json", `["a.txt","keep.txt"]`)
+	put(t, repo, "keep.txt", "person edit\n")
+	_, err := ResetRepo(run, repo, RepoRestoreFiles, "", RepoState{Base: "main"})
+	want := "resume: keep.txt has uncommitted changes; commit or stash them, then pass --reset-repo again"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(repo, "keep.txt")); string(b) != "person edit\n" {
+		t.Error("the edit was overwritten")
+	}
+	// an untracked file at a path base holds is a person's too
+	runGit(t, repo, "checkout", "--", "keep.txt")
+	runGit(t, repo, "checkout", "-b", "other")
+	runGit(t, repo, "rm", "-q", "keep.txt")
+	runGit(t, repo, "commit", "-m", "drop keep")
+	put(t, repo, "keep.txt", "untracked person file\n")
+	if _, err := ResetRepo(run, repo, RepoRestoreFiles, "", RepoState{Base: "main"}); err == nil || err.Error() != want {
+		t.Fatalf("untracked: %v", err)
+	}
+	// on the work branch the same edit is the run's leftover and is reset
+	repo2 := newRepo(t)
+	runGit(t, repo2, "checkout", "-b", "gm/x")
+	put(t, repo2, "keep.txt", "run leftover\n")
+	if _, err := ResetRepo(run, repo2, RepoRestoreFiles, "", RepoState{Branch: "gm/x", Base: "main"}); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(repo2, "keep.txt")); string(b) != "base keep\n" {
+		t.Errorf("keep.txt %q", b)
+	}
+}
+
+func TestOwnedCloneRefusesAGitDirectoryOutsideTheClone(t *testing.T) {
+	owned := t.TempDir()
+	outside := newRepo(t)
+	clone := filepath.Join(owned, "clone")
+	put(t, clone, ".git", "gitdir: "+filepath.Join(outside, ".git")+"\n")
+	put(t, outside, "a.txt", "dirty\n")
+	run := filepath.Join(t.TempDir(), "run1")
+	_, err := ResetRepo(run, clone, RepoOwnedClone, owned, RepoState{Base: "main"})
+	want := "resume: refusing to reset " + clone + ": its git directory is outside the clone"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(outside, "a.txt")); string(b) != "dirty\n" {
+		t.Error("the repository behind the gitfile was reset")
+	}
+}
+
+func TestRestoreSaysFilesWereRestoredWhenTheBranchSwitchRefuses(t *testing.T) {
+	repo := newRepo(t)
+	run := filepath.Join(t.TempDir(), "run1")
+	put(t, run, "_state/test_files.json", `["a.txt"]`)
+	runGit(t, repo, "checkout", "-b", "gm/x")
+	commitFile(t, repo, "u.txt", "run\n", trailerMsg)
+	runGit(t, repo, "checkout", "main")
+	commitFile(t, repo, "u.txt", "main version\n", "main adds u")
+	runGit(t, repo, "checkout", "gm/x")
+	put(t, repo, "u.txt", "person edit\n") // conflicts with the switch, not a plan file
+	_, err := ResetRepo(run, repo, RepoRestoreFiles, "", RepoState{Branch: "gm/x", Base: "main"})
+	if err == nil || !strings.Contains(err.Error(), "the listed files were already restored; the switch to main was refused") {
+		t.Fatalf("err %v", err)
 	}
 }
