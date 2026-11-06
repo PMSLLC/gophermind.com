@@ -268,7 +268,7 @@ func fixedDefectText(missing []fixedIface) string {
 		sigs = append(sigs, f.Signature)
 	}
 	return "the brief's Architecture section fixes these interfaces for this package and the component does not declare them: " +
-		strings.Join(sigs, "; ") + ". Write each with exactly that name and signature"
+		strings.Join(sigs, "; ") + ". Write each with exactly that name and signature. This reply replaces the functions of the reply refused here, which are no longer listed as written: write again only the ones the component still needs"
 }
 
 // ownPackage is true when pkg, as a function of a component reply writes it,
@@ -417,4 +417,183 @@ func dropTestFunctionsText(text string) (string, []string) {
 // functions enter the contract.
 func testDroppedText(where string, dropped []string) string {
 	return "test_function_dropped: " + where + ": " + strings.Join(dropped, ", ")
+}
+
+// dropEntryExtras takes out of the reply of the component whose package is
+// pkg every function but func main(), when pkg is an entry package (under
+// cmd/) and the brief's Architecture section fixes the call its entry point
+// makes (entryCall): main only calls that function, so anything else the
+// entry package declares is a helper nobody asked for. Without a fixed call
+// the reply is returned as it is. It returns the reply and the ids dropped.
+// A reply that does not parse is returned as it is; the merge reports it.
+func dropEntryExtras(text, pkg, arch string) (string, []string) {
+	if _, name := entryCall(arch); name == "" || !isEntryPackage(pkg) {
+		return text, nil
+	}
+	var raw map[string]json.RawMessage
+	if json.Unmarshal([]byte(text), &raw) != nil || raw["functions"] == nil {
+		return text, nil
+	}
+	var fns []any
+	if json.Unmarshal(raw["functions"], &fns) != nil {
+		return text, nil
+	}
+	var kept []any
+	var dropped []string
+	for _, x := range fns {
+		if f, ok := x.(map[string]any); ok {
+			sig, _ := f["signature"].(string)
+			if m := funcSigNameRE.FindStringSubmatch(sig); m == nil || m[1] != "main" || methodSigRE.MatchString(sig) {
+				id, _ := f["id"].(string)
+				dropped = append(dropped, id)
+				continue
+			}
+		}
+		kept = append(kept, x)
+	}
+	if len(dropped) == 0 {
+		return text, nil
+	}
+	if kept == nil {
+		kept = []any{}
+	}
+	b, err := json.Marshal(kept)
+	if err != nil {
+		return text, nil
+	}
+	raw["functions"] = b
+	out, err := json.Marshal(raw)
+	if err != nil {
+		return text, nil
+	}
+	return string(out), dropped
+}
+
+// entryExtraDroppedText is the warning for the functions dropped from an
+// entry package's reply.
+func entryExtraDroppedText(component string, dropped []string) string {
+	return "entry_extra_function_dropped: " + component + ": " + strings.Join(dropped, ", ")
+}
+
+// applyFixedUses makes every function the Architecture section fixes use the
+// contract functions its bullet calls: a bullet that fixes an interface
+// (fixedInterfaces, func main() for cmd/) and names a pkg.Func call
+// (archQualRE) of a function another directory of the contract declares. The
+// fixed function is the one of the bullet's directory with the fixed name;
+// a call whose function is not declared yet adds nothing, and a later pass
+// adds it. It returns "fixed_use_added: <id> uses <dep id>" for each use added.
+func applyFixedUses(doc map[string]any, arch string) []string {
+	module, _ := doc["module"].(string)
+	compDirs := componentDirs(doc)
+	type fnRef struct {
+		id, name, dir string
+		f             map[string]any
+	}
+	var refs []fnRef
+	for _, f := range objects(doc["functions"]) {
+		id, _ := f["id"].(string)
+		c, _ := f["component"].(string)
+		sig, _ := f["signature"].(string)
+		m := funcSigNameRE.FindStringSubmatch(sig)
+		dir, ok := compDirs[c]
+		if id == "" || !ok || m == nil || methodSigRE.MatchString(sig) {
+			continue
+		}
+		refs = append(refs, fnRef{id, m[1], dir, f})
+	}
+	var added []string
+	for _, line := range strings.Split(arch, "\n") {
+		calls := archQualRE.FindAllStringSubmatch(line, -1)
+		if len(calls) == 0 {
+			continue
+		}
+		for _, fi := range fixedInterfaces(line) {
+			dir := stripModule(module, fi.Dir)
+			for _, src := range refs {
+				if src.dir != dir || src.name != fi.Name {
+					continue
+				}
+				uses := strList(src.f["uses"])
+				grew := false
+				for _, q := range calls {
+					for _, t := range refs {
+						if t.dir == dir || t.name != q[2] || PackageClause(t.dir) != q[1] || contains(uses, t.id) {
+							continue
+						}
+						uses = append(uses, t.id)
+						grew = true
+						added = append(added, "fixed_use_added: "+src.id+" uses "+t.id)
+					}
+				}
+				if grew {
+					src.f["uses"] = anyStrings(uses)
+				}
+			}
+		}
+	}
+	return added
+}
+
+// functionIDs lists the ids of the functions of component in doc, in order.
+func functionIDs(doc map[string]any, component string) []string {
+	var out []string
+	for _, f := range objects(doc["functions"]) {
+		if c, _ := f["component"].(string); c == component {
+			id, _ := f["id"].(string)
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// newFunctionIDs lists the functions of component in doc whose ids are not in
+// before: the ones the last pass added.
+func newFunctionIDs(doc map[string]any, component string, before []string) []string {
+	var out []string
+	for _, id := range functionIDs(doc, component) {
+		if !contains(before, id) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// withoutFunctionIDs is a shallow copy of doc whose function list lacks the
+// functions with these ids. The missing-interface defect round asks a
+// component again from it, so the reply supersedes the pass it refused.
+func withoutFunctionIDs(doc map[string]any, ids []string) map[string]any {
+	next := map[string]any{}
+	for k, v := range doc {
+		next[k] = v
+	}
+	kept := []any{}
+	for _, f := range objects(doc["functions"]) {
+		if id, _ := f["id"].(string); !contains(ids, id) {
+			kept = append(kept, f)
+		}
+	}
+	next["functions"] = kept
+	return next
+}
+
+// supersededIDs lists the refused ids the re-asked pass did not write again.
+func supersededIDs(doc map[string]any, refused []string) []string {
+	have := map[string]bool{}
+	for _, f := range objects(doc["functions"]) {
+		if id, _ := f["id"].(string); id != "" {
+			have[id] = true
+		}
+	}
+	var out []string
+	for _, id := range refused {
+		if !have[id] {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// supersededText is the warning for the functions a re-asked pass dropped.
+func supersededText(component string, ids []string) string {
+	return "superseded_function_dropped: " + component + ": " + strings.Join(ids, ", ")
 }

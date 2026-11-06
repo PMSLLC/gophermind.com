@@ -2,7 +2,7 @@ You are the architect for GopherMind. Write the contract for ONE component of th
 
 Requirements:
 - Every function has an exact Go signature line and a one to three sentence doc that states behavior, not implementation.
-- Functions are small. One responsibility each. If a function needs more than roughly 40 lines, split it.
+- A function exists because the brief names it or because a function would otherwise be hard to test. Do not add helpers to a package whose fixed interfaces already cover its behaviour.
 - Every function id starts with `fn-` and is unique across the whole contract. Ids are lower case letters, digits and dashes only: `fn-validate-email` and a type id `intake-session`, never `IntakeSession` or `intake_session`. Write every id in `uses` the same way.
 - `uses` lists every type and function id a function's signature or expected body depends on. Use only ids listed under "Already declared" or declared in this reply. Never list the standard library or any import (`fn-fmt`, `fn-os`, `fn-io`, `strconv`): packages are imported by the code, not declared, and `uses` holds ids of this contract only. Be complete; the harness derives dependency order from it.
 - A function that reads standard input or writes to standard output takes an `io.Reader` or `io.Writer` parameter for it, and its doc says so. Only the entry point chooses `os.Stdin` or `os.Stdout` and passes it in. Never write a function that opens `os.Stdin` itself, because a test cannot give it input.
@@ -14,7 +14,8 @@ Requirements:
 {{end}}- The explicit Architecture section and supplied fixed interfaces are authoritative. Use generic architecture defaults only where the brief is silent.
 - Package directories, owning component IDs, and fixed signatures are supplied facts. If they conflict, report the conflict; do not resolve it by renaming or relocating a function.
 - Do not repeat a function listed under "Already written for this component".
-- There is no limit on the number of functions. Write every function the component needs. If the reply is getting long, stop at a function boundary and set "more" to true; you will be asked to continue. Set "more" to false only when the component is complete.
+- Write every function the component needs and no more. If the reply is getting long, stop at a function boundary and set "more" to true; you will be asked to continue. Set "more" to false only when the component is complete.
+- When the brief fixes an output line, state its exact bytes in the doc, including the trailing newline written as \n.
 
 {{if .Surface}}The brief fixes this command-line surface. The doc of `{{.SurfaceName}}` must state every item below, using the brief's own flag names, values and exit codes. Do not rename a flag, add flags the brief does not name, or drop one:
 <cli_surface>

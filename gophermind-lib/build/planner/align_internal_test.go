@@ -64,7 +64,7 @@ func mainFn(component, pkg, file string) map[string]any {
 func TestMainOutsideCmdMovesToTheEntryPointComponent(t *testing.T) {
 	doc := alignDoc([]any{comp("slug", "internal/slug"), comp("cli", "internal/cli"), comp("entry-point", "cmd/slugify")},
 		mainFn("cli", "internal/cli", "internal/cli/main.go"))
-	got := moveMainToEntryPoint(doc)
+	got, _ := moveMainToEntryPoint(doc)
 	if want := []string{"fn-main"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("moved = %v, want %v", got, want)
 	}
@@ -76,12 +76,12 @@ func TestMainOutsideCmdMovesToTheEntryPointComponent(t *testing.T) {
 
 func TestMainAlreadyUnderCmdOrNotMainStaysPut(t *testing.T) {
 	under := alignDoc([]any{comp("entry-point", "cmd/slugify")}, mainFn("entry-point", "cmd/slugify", "cmd/slugify/main.go"))
-	if got := moveMainToEntryPoint(under); len(got) != 0 {
+	if got, _ := moveMainToEntryPoint(under); len(got) != 0 {
 		t.Errorf("moved %v although main was already under cmd/", got)
 	}
 	other := alignDoc([]any{comp("cli", "internal/cli"), comp("entry-point", "cmd/x")},
 		map[string]any{"id": "fn-run", "component": "cli", "package": "internal/cli", "file": "internal/cli/run.go", "signature": "func run() int"})
-	if got := moveMainToEntryPoint(other); len(got) != 0 {
+	if got, _ := moveMainToEntryPoint(other); len(got) != 0 {
 		t.Errorf("moved %v, which is not func main()", got)
 	}
 }
@@ -93,7 +93,7 @@ func TestMainWithNoCmdComponentGetsOneNamedAfterTheModule(t *testing.T) {
 	doc := alignDoc([]any{comp("slug", "internal/slug"), comp("entry-point", "main")},
 		mainFn("entry-point", "main", "main/main.go"))
 	doc["module"] = "slugify"
-	got := moveMainToEntryPoint(doc)
+	got, _ := moveMainToEntryPoint(doc)
 	if want := []string{"fn-main"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("moved = %v, want %v", got, want)
 	}
@@ -111,7 +111,9 @@ func TestMainSharingAComponentGetsANewEntryPointComponent(t *testing.T) {
 		mainFn("cli", "internal/cli", "internal/cli/main.go"),
 		fnFull("fn-run", "cli", "internal/cli", "internal/cli/run.go"))
 	doc["module"] = "example.com/acme/Slug_Tool"
-	moveMainToEntryPoint(doc)
+	if _, err := moveMainToEntryPoint(doc); err != nil {
+		t.Fatal(err)
+	}
 	comps := objects(doc["components"])
 	if len(comps) != 2 || comps[1]["id"] != "entry-point" || comps[1]["package"] != "cmd/slug-tool" {
 		t.Fatalf("components = %v", comps)
@@ -135,7 +137,10 @@ func TestRepairContractShapeAppliesEveryRepair(t *testing.T) {
 	)
 	// main (now in cmd/slugify) uses run in another package, and uses fmt.
 	objects(doc["functions"])[0]["uses"] = []any{"fn-run", "fn-os"}
-	rep := repairContractShape(doc)
+	rep, err := repairContractShape(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !reflect.DeepEqual(rep.Moved, []string{"fn-main"}) {
 		t.Errorf("moved = %v", rep.Moved)
 	}

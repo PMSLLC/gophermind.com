@@ -430,11 +430,18 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 		}
 		defect := ""
 		var dropped map[string]any // the run function, taken out while it is rewritten
+		// The functions of the pass the missing-interface defect round refused:
+		// the pass asked again supersedes them.
+		var refused []string
 		for {
 			base := st.Doc
 			if dropped != nil {
 				base = withoutFunction(st.Doc, dropped)
 			}
+			if refused != nil {
+				base = withoutFunctionIDs(base, refused)
+			}
+			before := functionIDs(base, id)
 			surfaceText := ""
 			if entry {
 				surfaceText = surface.Text()
@@ -458,7 +465,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			more := false
 			var ignored []string
 			var notes idNotes
-			var foreign, tests []string
+			var foreign, tests, extras []string
 			cs := callSpec{stage: "contract:" + id, taskType: "contract", scope: router.ScopeComponent, maxTokens: maxTokensContract, jsonObject: true}
 			if err := p.callSized(ctx, r, cs, build, func(text string) error {
 				text, nt, err := normalizeReply(st.Doc, StripReply(text), replyComponent)
@@ -467,6 +474,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 				}
 				text, foreign = dropForeignFunctions(text, pkg, module)
 				text, tests = dropTestFunctionsText(text)
+				text, extras = dropEntryExtras(text, dir, arch)
 				doc, m, ign, err := mergePass(base, id, text, r.rootID())
 				if err != nil {
 					return err
@@ -486,9 +494,16 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			if len(tests) > 0 {
 				p.emit(events.KindWarning, "contract", "", testDroppedText(id, tests))
 			}
+			if len(extras) > 0 {
+				p.emit(events.KindWarning, "contract", "", entryExtraDroppedText(id, extras))
+			}
+			if gone := supersededIDs(st.Doc, refused); len(gone) > 0 {
+				p.emit(events.KindWarning, "contract", "", supersededText(id, gone))
+			}
 			p.noteNormalized(&st, "contract:"+id, notes)
 			p.noteIgnored(&st, "contract:"+id, ignored)
-			defect, dropped = "", nil
+			passIDs := newFunctionIDs(st.Doc, id, before)
+			defect, dropped, refused = "", nil, nil
 			// The brief's Architecture section fixes some interfaces of this
 			// package: a near miss gets the fixed signature first, so a run the
 			// fix renames to Run is the one the surface check reads.
@@ -499,6 +514,11 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 				if len(applied) > 0 {
 					p.emit(events.KindWarning, "contract", "", "fixed_interface_applied: "+strings.Join(applied, "; "))
 				}
+			}
+			// A call the Architecture section fixes is a use of the function
+			// called, once both are declared.
+			for _, w := range applyFixedUses(st.Doc, arch) {
+				p.emit(events.KindWarning, "contract", "", w)
 			}
 			if !more && entry && st.SurfaceRepairs[id] == 0 {
 				// The run function must state the brief's command-line surface; a
@@ -536,7 +556,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 					st.FixedRepairs = map[string]int{}
 				}
 				st.FixedRepairs[id]++
-				defect, more = fixedDefectText(missing), true
+				defect, more, refused = fixedDefectText(missing), true, passIDs
 			}
 			if !more {
 				st.Done = append(st.Done, id)
@@ -579,7 +599,10 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 	// declared are asked for, not treated as an unusable reply.
 	// A type that signatures use and no type declares is asked for the same way:
 	// without it the function cannot compile, nor can its test.
-	rep := repairContractShape(st.Doc)
+	rep, err := repairContractShape(st.Doc)
+	if err != nil {
+		return err
+	}
 	if len(rep.Moved) > 0 {
 		p.emit(events.KindWarning, "contract", "", fmt.Sprintf(
 			"main_moved_to_entry_point: %d main functions were outside cmd/, so no program would build; moved: %s",
@@ -944,16 +967,18 @@ func unresolvedErr(stage string, ids []string) error {
 		stage, len(ids), maxOutlineRepairs, strings.Join(named, ", "))
 }
 
-// mergeByID appends the new objects to list. A repeat of an id (within the
-// reply or of an earlier one) is dropped and the first emission kept: silently
-// when the content is identical, otherwise it is returned in ignored, named
-// with boundedID (an id that fails the id syntax is reported by length). That
-// is model noise, not a plan defect, and nothing the brief needs is lost
-// because the first emission stays. added counts the objects that were new.
-// prep, when set, normalises an object before it is compared. others holds the
-// ids of the other lists (components, types, functions share one id namespace):
-// an id in it is dropped and reported like any repeat, whatever its content.
-func mergeByID(list any, in []map[string]any, added int, what string, prep func(map[string]any), others map[string]bool) ([]any, int, []string) {
+// mergeByID appends the new objects to list. A repeat of an id is dropped and
+// the first emission kept, silently when the content is identical. A repeat
+// within the reply whose content differs is returned in ignored, named with
+// boundedID (an id that fails the id syntax is reported by length): model
+// noise, and the first emission stays. A repeat of a record list held before
+// this merge whose canonical JSON differs is returned in conflicts, the raw
+// id: the reply declares that id a second time and another way, and the
+// caller decides. added counts the objects that were new. prep, when set,
+// normalises an object before it is compared. others holds the ids of the
+// other lists (components, types, functions share one id namespace): an id in
+// it is dropped and reported in ignored, whatever its content.
+func mergeByID(list any, in []map[string]any, added int, what string, prep func(map[string]any), others map[string]bool) ([]any, int, []string, []string) {
 	out, _ := list.([]any)
 	at := map[string]int{}
 	for i, x := range out {
@@ -963,7 +988,8 @@ func mergeByID(list any, in []map[string]any, added int, what string, prep func(
 			}
 		}
 	}
-	var ignored []string
+	stored := len(out)
+	var ignored, conflicts []string
 	for _, m := range in {
 		if prep != nil {
 			prep(m)
@@ -978,7 +1004,11 @@ func mergeByID(list any, in []map[string]any, added int, what string, prep func(
 		if i, ok := at[id]; ok && id != "" {
 			old, _ := json.Marshal(out[i])
 			cur, _ := json.Marshal(m)
-			if !bytes.Equal(old, cur) {
+			switch {
+			case bytes.Equal(old, cur):
+			case i < stored:
+				conflicts = append(conflicts, id)
+			default:
 				ignored = append(ignored, what+" "+boundedID(id))
 			}
 			continue
@@ -989,13 +1019,24 @@ func mergeByID(list any, in []map[string]any, added int, what string, prep func(
 		out = append(out, m)
 		added++
 	}
-	return out, added, ignored
+	return out, added, ignored, conflicts
 }
 
 // mergeList is mergeByID for the list doc[key] ("components", "types" or
 // "functions"): the ids of the other two lists are the others, and the merged
-// list is stored back in doc.
+// list is stored back in doc. A conflict is reported in ignored like any
+// differing repeat, and the first emission kept; mergePass, which refuses a
+// conflict, uses mergeListConflicts.
 func mergeList(doc map[string]any, key string, in []map[string]any, added int, what string, prep func(map[string]any)) (int, []string) {
+	added, ignored, conflicts := mergeListConflicts(doc, key, in, added, what, prep)
+	for _, id := range conflicts {
+		ignored = append(ignored, what+" "+boundedID(id))
+	}
+	return added, ignored
+}
+
+// mergeListConflicts is mergeList with the conflicts returned apart.
+func mergeListConflicts(doc map[string]any, key string, in []map[string]any, added int, what string, prep func(map[string]any)) (int, []string, []string) {
 	others := map[string]bool{}
 	for _, k := range []string{"components", "types", "functions"} {
 		if k == key {
@@ -1023,9 +1064,9 @@ func mergeList(doc map[string]any, key string, in []map[string]any, added int, w
 			}
 		}
 	}
-	out, added, ignored := mergeByID(doc[key], in, added, what, prep, others)
+	out, added, ignored, conflicts := mergeByID(doc[key], in, added, what, prep, others)
 	doc[key] = out
-	return added, ignored
+	return added, ignored, conflicts
 }
 
 // outlineFixedText is the module and conventions the first pass fixed, for the
@@ -1218,8 +1259,10 @@ func dropSharedExtras(text string) (string, []string, error) {
 // mergePass adds one component pass to a copy of doc and checks the merged
 // contract locally (references wait until every component is written). It
 // never changes doc, so a rejected reply leaves no trace. A function or type
-// that repeats an id already written keeps its first emission; ignored lists
-// the repeats that differed.
+// that repeats an id already written word for word is silent; one that
+// declares it another way is a conflict and refuses the reply, so the model is
+// asked again and the stored contract keeps the first declaration. ignored
+// lists the repeats within the reply that differed.
 func mergePass(doc map[string]any, component, text, briefID string) (map[string]any, bool, []string, error) {
 	var pass struct {
 		Types     []map[string]any `json:"types"`
@@ -1236,15 +1279,35 @@ func mergePass(doc map[string]any, component, text, briefID string) (map[string]
 	for _, f := range pass.Functions {
 		f["component"] = component
 	}
-	added, ignored := mergeList(next, "types", pass.Types, 0, "type", nil)
-	added, ign2 := mergeList(next, "functions", pass.Functions, added, "function", nil)
-	ignored = append(ignored, ign2...)
+	added, ignored, conflicts := mergeListConflicts(next, "types", pass.Types, 0, "type", nil)
+	added, ign2, conf2 := mergeListConflicts(next, "functions", pass.Functions, added, "function", nil)
+	ignored, conflicts = append(ignored, ign2...), append(conflicts, conf2...)
+	if len(conflicts) > 0 {
+		return nil, false, nil, fmt.Errorf("contract: conflicting declaration of %s by component %s", strings.Join(shownIDs(conflicts), ", "), shownID(component))
+	}
 	if err := validateOutlineShape(next, briefID); err != nil {
 		return nil, false, nil, err
 	}
 	// A reply that says more but adds nothing new is the model repeating
 	// itself: the component is finished (a continuation needs progress).
 	return next, pass.More && added > 0, ignored, nil
+}
+
+// shownID is an id as an error names it: as is when it has the id syntax and
+// is short, else its length, so a reply's text never reaches the error.
+func shownID(id string) string {
+	if idSyntaxRE.MatchString(id) && len(id) <= maxBoundedID {
+		return id
+	}
+	return fmt.Sprintf("<%d bytes>", len(id))
+}
+
+func shownIDs(ids []string) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, shownID(id))
+	}
+	return out
 }
 
 var componentIDRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)

@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"fmt"
 	"path"
 	"strings"
 )
@@ -51,8 +52,9 @@ func alignFunctionsToComponents(doc map[string]any) []string {
 // builds into a program, so no acceptance command could run one. When no
 // component is under cmd/ one is made from the module's name: the main
 // function's own component if it holds nothing else, else a new "entry-point".
-// With main already under cmd/, nothing moves. It returns the ids it moved.
-func moveMainToEntryPoint(doc map[string]any) []string {
+// With main already under cmd/, nothing moves. It returns the ids it moved, and
+// an error when the id "entry-point" is taken (see entryComponentFor).
+func moveMainToEntryPoint(doc map[string]any) ([]string, error) {
 	var mains []map[string]any
 	for _, f := range objects(doc["functions"]) {
 		sig, _ := f["signature"].(string)
@@ -65,7 +67,7 @@ func moveMainToEntryPoint(doc map[string]any) []string {
 		mains = append(mains, f)
 	}
 	if len(mains) == 0 {
-		return nil
+		return nil, nil
 	}
 	entryID, entryPkg := "", ""
 	for _, c := range objects(doc["components"]) {
@@ -77,7 +79,10 @@ func moveMainToEntryPoint(doc map[string]any) []string {
 	}
 	if entryID == "" {
 		entryPkg = "cmd/" + programName(doc)
-		entryID = entryComponentFor(doc, mains[0], entryPkg)
+		var err error
+		if entryID, err = entryComponentFor(doc, mains[0], entryPkg); err != nil {
+			return nil, err
+		}
 	}
 	var moved []string
 	for _, f := range mains {
@@ -85,12 +90,14 @@ func moveMainToEntryPoint(doc map[string]any) []string {
 		id, _ := f["id"].(string)
 		moved = append(moved, id)
 	}
-	return moved
+	return moved, nil
 }
 
 // entryComponentFor returns the id of the component that will hold the program:
-// main's own when nothing else is in it, retargeted to pkg; otherwise a new one.
-func entryComponentFor(doc map[string]any, main map[string]any, pkg string) string {
+// main's own when nothing else is in it, retargeted to pkg; otherwise a new one
+// with the id "entry-point". That id is never suffixed: a component that
+// already has it is a conflicting declaration and an error.
+func entryComponentFor(doc map[string]any, main map[string]any, pkg string) (string, error) {
 	own, _ := main["component"].(string)
 	shared := false
 	for _, f := range objects(doc["functions"]) {
@@ -102,22 +109,19 @@ func entryComponentFor(doc map[string]any, main map[string]any, pkg string) stri
 	for _, c := range comps {
 		if id, _ := c["id"].(string); id == own && own != "" && !shared {
 			c["package"] = pkg
-			return id
+			return id, nil
 		}
 	}
-	id := "entry-point"
-	for taken := true; taken; {
-		taken = false
-		for _, c := range comps {
-			if c["id"] == id {
-				id += "-main"
-				taken = true
-			}
+	const id = "entry-point"
+	for _, c := range comps {
+		if c["id"] == id {
+			p, _ := c["package"].(string)
+			return "", fmt.Errorf("contract: conflicting declaration of %s: the id is taken by the component of package %s, and func main() needs its own component under %s", id, shownID(p), pkg)
 		}
 	}
 	list, _ := doc["components"].([]any)
 	doc["components"] = append(list, map[string]any{"id": id, "package": pkg, "exports": []any{}, "integration_tests": []any{}})
-	return id
+	return id, nil
 }
 
 // programName is the name of the program built from cmd/: the last element of
@@ -158,13 +162,17 @@ type contractRepairs struct {
 // exported, and a type used bare from another package is exported and
 // qualified. It runs on the contract proper and on what
 // the coverage fill step adds, since both come from a model.
-func repairContractShape(doc map[string]any) contractRepairs {
+func repairContractShape(doc map[string]any) (contractRepairs, error) {
+	moved, err := moveMainToEntryPoint(doc)
+	if err != nil {
+		return contractRepairs{}, err
+	}
 	return contractRepairs{
-		Moved:     moveMainToEntryPoint(doc),
+		Moved:     moved,
 		Aligned:   alignFunctionsToComponents(doc),
 		Refiled:   moveFilesIntoPackageDir(doc),
 		Dropped:   dropStdlibUses(doc),
 		Exported:  exportCrossPackageUses(doc),
 		Qualified: qualifyCrossPackageTypes(doc),
-	}
+	}, nil
 }

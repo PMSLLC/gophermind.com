@@ -249,7 +249,9 @@ func parseCoverageFill(raw string, reqs []Requirement, doc map[string]any, brief
 	}
 	rev, _ := cp["revision"].(float64)
 	cp["types"], cp["functions"], cp["revision"] = types, fns, int(rev)+1
-	repairContractShape(cp)
+	if _, err := repairContractShape(cp); err != nil {
+		return CoverageReply{}, nil, fmt.Errorf("coverage fill reply: %w", err)
+	}
 	if _, err := validateContractDoc(cp, briefID); err != nil {
 		return CoverageReply{}, nil, fmt.Errorf("coverage fill reply: %w", err)
 	}

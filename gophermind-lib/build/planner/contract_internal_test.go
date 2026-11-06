@@ -128,7 +128,8 @@ func TestSlug(t *testing.T) {
 }
 
 // A repeated id keeps the first emission; identical repeats are silent, a
-// different one is reported by bounded id only.
+// different one within the reply is reported by bounded id only, and a
+// different one of a stored record is a conflict.
 func TestMergeKeepsTheFirstEmission(t *testing.T) {
 	const canary = "CANARY-decl-text"
 	list := []any{map[string]any{"id": "a", "v": "first"}}
@@ -140,14 +141,17 @@ func TestMergeKeepsTheFirstEmission(t *testing.T) {
 		{"id": "has spaces " + canary, "v": "1"},
 		{"id": "has spaces " + canary, "v": "2"},
 	}
-	out, added, ignored := mergeByID(list, in, 0, "type", nil, nil)
+	out, added, ignored, conflicts := mergeByID(list, in, 0, "type", nil, nil)
 	if len(out) != 3 || added != 2 {
 		t.Fatalf("out %d added %d, want 3 and 2", len(out), added)
 	}
 	if out[0].(map[string]any)["v"] != "first" {
 		t.Error("the first emission was replaced")
 	}
-	want := []string{`type "a"`, `type "b"`, fmt.Sprintf("type <%d bytes>", len("has spaces "+canary))}
+	if strings.Join(conflicts, "|") != "a" {
+		t.Errorf("conflicts = %v, want a", conflicts)
+	}
+	want := []string{`type "b"`, fmt.Sprintf("type <%d bytes>", len("has spaces "+canary))}
 	if strings.Join(ignored, "|") != strings.Join(want, "|") {
 		t.Errorf("ignored = %v, want %v", ignored, want)
 	}
