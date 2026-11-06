@@ -3,6 +3,7 @@ package planner
 import (
 	"fmt"
 	"path"
+	"regexp"
 	"strings"
 
 	"gophermind/gophermind-lib/build/acceptcheck"
@@ -127,6 +128,11 @@ func rootTestDefects(reqs []Requirement, tests []RootTest, o acceptcheck.Options
 			add(t.Requirement, FindVacuous)
 		}
 	}
+	for _, q := range reqs {
+		if inv := toolsNotInvoked(q, tests); len(inv) > 0 {
+			add(q.ID, FindToolNotInvoked+": "+strings.Join(inv, ", "))
+		}
+	}
 	var out []QualityItem
 	for _, q := range reqs {
 		set := by[q.ID]
@@ -139,6 +145,77 @@ func rootTestDefects(reqs []Requirement, tests []RootTest, o acceptcheck.Options
 		}
 		sortStrings(names)
 		out = append(out, QualityItem{Requirement: q.ID, Findings: names})
+	}
+	return out
+}
+
+// FindToolNotInvoked is the finding of a constraint that names a tool in
+// backticks whose root tests never run it; the finding lists the invocations.
+const FindToolNotInvoked = "tool_not_invoked"
+
+// namedTools are the tools a constraint's backticked span can name.
+var namedTools = map[string]bool{"gofmt": true, "go": true, "git": true, "golangci-lint": true, "staticcheck": true, "govulncheck": true}
+
+// goVerbs are the go subcommands a backticked span names as an invocation.
+var goVerbs = map[string]bool{"vet": true, "test": true, "build": true}
+
+// shellWordRE is a word of a root test command for the invocation match.
+var shellWordRE = regexp.MustCompile(`[A-Za-z0-9_.+/-]+`)
+
+// toolsNotInvoked is, for a Constraint with root tests, the tool invocations
+// its backticked spans name ("gofmt", "go vet") that its root tests, joined,
+// never contain as a word sequence. Any other requirement is never checked.
+func toolsNotInvoked(req Requirement, tests []RootTest) []string {
+	if req.Kind != ReqConstraint || req.IsTestRule() {
+		return nil
+	}
+	var cmds []string
+	for _, t := range tests {
+		if t.Requirement == req.ID {
+			cmds = append(cmds, t.Command)
+		}
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	words := shellWordRE.FindAllString(strings.Join(cmds, "\n"), -1)
+	contains := func(seq []string) bool {
+		for i := 0; i+len(seq) <= len(words); i++ {
+			match := true
+			for j, w := range seq {
+				if words[i+j] != w {
+					match = false
+					break
+				}
+			}
+			if match {
+				return true
+			}
+		}
+		return false
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, m := range backtickRE.FindAllStringSubmatch(req.Text, -1) {
+		f := strings.Fields(m[1])
+		if len(f) == 0 || !namedTools[f[0]] {
+			continue
+		}
+		seq := f[:1]
+		if f[0] == "go" {
+			if len(f) < 2 || !goVerbs[f[1]] {
+				continue
+			}
+			seq = f[:2]
+		}
+		inv := strings.Join(seq, " ")
+		if seen[inv] {
+			continue
+		}
+		seen[inv] = true
+		if !contains(seq) {
+			out = append(out, inv)
+		}
 	}
 	return out
 }

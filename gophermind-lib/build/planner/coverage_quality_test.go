@@ -189,9 +189,37 @@ func TestCoveragePromptTeachesTheCapturePattern(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"status=$?", `2>"$err"`, "Never write `2>&1`", "may name only constructs the brief forbids everywhere", `mktemp "$TMPDIR/out.XXXXXX"`} {
+	for _, want := range []string{"status=$?", `2>"$err"`, "Never write `2>&1`", "may name only constructs the brief forbids everywhere", `mktemp "$TMPDIR/out.XXXXXX"`,
+		"grep -qxF 'usage: hello [NAME]'", "Compare exact text with grep -qxF", "cat files | grep -c PATTERN", "gofmt -l . must print nothing, go vet ./... must exit 0."} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("coverage prompt lacks %q", want)
 		}
+	}
+	if strings.Contains(string(b), "grep -qx ") || strings.Contains(string(b), "grep -qx`") {
+		t.Error("coverage prompt still shows grep -qx without -F")
+	}
+}
+
+// A constraint that names gofmt and go vet in backticks and is tested without
+// running either is a quality gap named by the tools it never invokes.
+func TestCoverageQualityGateRefusesAConstraintThatSkipsItsTools(t *testing.T) {
+	raw := string(mustRead(t, filepath.Join(greeter, "coverage.txt")))
+	old := `"command": "test -z \"$(gofmt -l .)\" && go vet ./..."`
+	if !strings.Contains(raw, old) {
+		t.Fatal("fixture changed")
+	}
+	g := newRig(t, approving(), variant(t, map[string]string{
+		"coverage.txt":      strings.Replace(raw, old, `"command": "go test ./..."`, 1),
+		"coverage_fill.txt": `{"map": [], "root_tests": [{"requirement": "C2", "name": "formatted and vetted", "given": "g", "expect": "e", "command": "test -z \"$(gofmt -l .)\" && go vet ./..."}]}`,
+	}))
+	g.mustPlan(planner.Options{StopAfter: "coverage"})
+	var seen bool
+	for _, e := range g.sink.OfKind(events.KindCoverageGap) {
+		if strings.Contains(e.Message, "C2 root test quality [tool_not_invoked: gofmt, go vet]") {
+			seen = true
+		}
+	}
+	if !seen {
+		t.Errorf("no coverage_gap event names C2 root test quality [tool_not_invoked: gofmt, go vet]: %+v", g.sink.OfKind(events.KindCoverageGap))
 	}
 }

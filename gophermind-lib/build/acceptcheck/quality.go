@@ -23,7 +23,8 @@ const (
 	FindMasked Finding = "masked_failure"
 	// FindSuccessEcho: a trailing "&& echo OK" is the only thing that "asserts".
 	FindSuccessEcho Finding = "success_echo"
-	// FindPlaceholder: {id}, <id>, ..., TODO or (simulate ...) left in the command.
+	// FindPlaceholder: {id}, <id>, ..., TODO, (simulate ...) or a placeholder
+	// word (expected_output_here, your_name, replace_me) left in the command.
 	FindPlaceholder Finding = "placeholder"
 	// FindUndefinedVar: a $VARIABLE no earlier statement sets and the harness
 	// does not provide.
@@ -47,6 +48,14 @@ const (
 	// /var/folders temp dir, which the run's sandbox denies, so the command
 	// can never pass there.
 	FindTempOutsideTmpdir Finding = "mktemp_outside_tmpdir"
+	// FindGrepRegexExact: grep -x without -F whose pattern has regular
+	// expression metacharacters. Exact-line comparison with such a pattern never
+	// means what it says ([NAME] matches one character); use grep -qxF.
+	FindGrepRegexExact Finding = "grep_regex_exact"
+	// FindGrepCountPerFile: grep -c over two or more files piped on. grep -c
+	// with several files prints one file:count line per file; count across
+	// files with cat files | grep -c or grep -ch.
+	FindGrepCountPerFile Finding = "grep_count_per_file"
 )
 
 // FindingNames are the findings as strings, in the order given.
@@ -86,6 +95,7 @@ var (
 	angleHolderRE  = regexp.MustCompile(`([/=?&:]|(^|\s))<[A-Za-z_][A-Za-z0-9_-]*>($|[/?&\s'"])`)
 	simulateRE     = regexp.MustCompile(`(?i)\(\s*simulat`)
 	todoRE         = regexp.MustCompile(`\b(TODO|FIXME|TBD)\b`)
+	holderWordRE   = regexp.MustCompile(`(?i)^(expected_output(_here)?|output_here|pattern(_here)?|your_[a-z_]+|[a-z_]+_here|placeholder|replace_me|xxx+)$`)
 	varUseRE       = regexp.MustCompile(`\$(?:\{([A-Za-z_][A-Za-z0-9_]*)(:?[-=+?])?|([A-Za-z_][A-Za-z0-9_]*))`)
 	varDefRE       = regexp.MustCompile(`(?:^|[\s;&|(])(?:export\s+|local\s+|readonly\s+|declare\s+(?:-[A-Za-z]+\s+)?)?([A-Za-z_][A-Za-z0-9_]*)\+?=`)
 	varLoopRE      = regexp.MustCompile(`(?:^|[\s;&|(])(?:for|read(?:\s+-[A-Za-z]+)*|getopts\s+\S+)\s+([A-Za-z_][A-Za-z0-9_]*)`)
@@ -208,6 +218,9 @@ func qualityPlaceholders(script string, o Options, set map[Finding]bool) {
 				set[FindPlaceholder] = true
 			}
 			if (base == "echo" || base == "printf") && todoRE.MatchString(a.lit) {
+				set[FindPlaceholder] = true
+			}
+			if holderWordRE.MatchString(a.lit) {
 				set[FindPlaceholder] = true
 			}
 		}
@@ -382,6 +395,14 @@ func (q *qual) script(script string, ctxAsserted, top bool) {
 			case "mktemp":
 				if !mktempUnderTmpdir(args) {
 					q.set[FindTempOutsideTmpdir] = true
+				}
+			case "grep", "egrep", "fgrep":
+				g := readGrep(base, args)
+				if g.exact && !g.fixed && strings.ContainsAny(g.pattern, `[](){}.*+?|^$\`) {
+					q.set[FindGrepRegexExact] = true
+				}
+				if g.count && g.files >= 2 && i+1 < len(stmts) && stmts[i+1].op == "|" {
+					q.set[FindGrepCountPerFile] = true
 				}
 			case "curl":
 				if !curlFail(args) && !checked {
@@ -619,6 +640,88 @@ func mktempUnderTmpdir(args []word) bool {
 		}
 	}
 	return false
+}
+
+// grepArgs is what a grep's arguments say: -x, -F, -c, the pattern and how
+// many file operands follow it.
+type grepArgs struct {
+	exact, fixed, count, havePat bool
+	pattern                      string
+	files                        int
+}
+
+// redirRE is a redirection word (>file, 2>file, <file, 2>&1), not an operand.
+var redirRE = regexp.MustCompile(`^[0-9]*[<>]`)
+
+// readGrep reads a grep's flags (bundled or separate, long forms for -x, -F,
+// -c and -e), its pattern (the first non-flag word, or the word after -e) and
+// its file operands. -f, -m, -A, -B, -C and -d consume the next word.
+func readGrep(base string, args []word) grepArgs {
+	g := grepArgs{fixed: base == "fgrep"}
+	flags := true
+	for i := 0; i < len(args); i++ {
+		l := args[i].lit
+		switch {
+		case redirRE.MatchString(l):
+			if l[len(l)-1] == '>' || l[len(l)-1] == '<' {
+				i++ // the target is the next word
+			}
+			continue
+		case flags && l == "--":
+			flags = false
+			continue
+		case flags && strings.HasPrefix(l, "--"):
+			name, val, hasVal := strings.Cut(l[2:], "=")
+			switch name {
+			case "line-regexp":
+				g.exact = true
+			case "fixed-strings":
+				g.fixed = true
+			case "count":
+				g.count = true
+			case "regexp":
+				if !hasVal && i+1 < len(args) {
+					i++
+					val = args[i].lit
+				}
+				if !g.havePat {
+					g.pattern, g.havePat = val, true
+				}
+			}
+			continue
+		case flags && len(l) > 1 && l[0] == '-':
+			for k := 1; k < len(l); k++ {
+				switch c := l[k]; c {
+				case 'x':
+					g.exact = true
+				case 'F':
+					g.fixed = true
+				case 'c':
+					g.count = true
+				case 'e', 'f', 'm', 'A', 'B', 'C', 'd':
+					val := l[k+1:]
+					if val == "" && i+1 < len(args) {
+						i++
+						val = args[i].lit
+					}
+					if c == 'e' && !g.havePat {
+						g.pattern, g.havePat = val, true
+					}
+					if c == 'f' {
+						g.havePat = true // the patterns are in a file
+					}
+					k = len(l)
+				}
+			}
+			continue
+		}
+		if !g.havePat {
+			g.pattern, g.havePat = l, true
+			continue
+		}
+		g.files++
+	}
+	return g
 }
 
 // jqExit: jq sets its exit status from the last output (-e, --exit-status).

@@ -316,3 +316,57 @@ func TestStatusMaskedInsideAssignmentSubstitution(t *testing.T) {
 		}
 	}
 }
+
+// hello run r004: an exact-line grep whose pattern is a regular expression, a
+// grep -c over several files piped into a number check, and a placeholder word.
+func TestQualityGrepFormsAndPlaceholderWords(t *testing.T) {
+	t.Parallel()
+	o := Options{Bins: []string{"hello"}}
+	cases := []struct {
+		cmd  string
+		want Finding
+		has  bool
+	}{
+		{`grep -qx 'usage: hello [NAME]' "$err"`, FindGrepRegexExact, true},
+		{`grep -xq 'usage: hello [NAME]' "$err"`, FindGrepRegexExact, true},
+		{`grep -q -x 'a.b' "$err"`, FindGrepRegexExact, true},
+		{`grep -qx -e 'a*' "$err"`, FindGrepRegexExact, true},
+		{`grep -qxF 'usage: hello [NAME]' "$err"`, FindGrepRegexExact, false},
+		{`grep -qx --fixed-strings 'usage: hello [NAME]' "$err"`, FindGrepRegexExact, false},
+		{`grep -qx 'Hello, World!' "$out"`, FindGrepRegexExact, false},
+		{`grep -q 'usage: hello [NAME]' "$err"`, FindGrepRegexExact, false},
+		{`grep -cE 'func (Greeting|Run|main)' a.go b.go c.go | grep -q '3'`, FindGrepCountPerFile, true},
+		{`grep -c -E func a.go b.go | grep -qx 3`, FindGrepCountPerFile, true},
+		{`cat a.go b.go | grep -cE 'func' | grep -qx 3`, FindGrepCountPerFile, false},
+		{`grep -c func a.go`, FindGrepCountPerFile, false},
+		{`grep -c func a.go | grep -qx 3`, FindGrepCountPerFile, false},
+		{`grep -c func a.go b.go`, FindGrepCountPerFile, false},
+		{`hello | grep -q 'expected_output_here' || exit 1`, FindPlaceholder, true},
+		{`hello | grep -q your_name`, FindPlaceholder, true},
+		{`hello | grep -q REPLACE_ME`, FindPlaceholder, true},
+		{`hello | grep -qx 'Hello, World!'`, FindPlaceholder, false},
+	}
+	for _, c := range cases {
+		if got := has(Quality(c.cmd, o), c.want); got != c.has {
+			t.Errorf("%s: %s = %v, want %v", c.cmd, c.want, got, c.has)
+		}
+	}
+	runs := []struct {
+		id   string
+		cmd  string
+		want Finding
+	}{
+		{"A6", `out=$(mktemp "$TMPDIR/out.XXXXXX"); err=$(mktemp "$TMPDIR/err.XXXXXX"); hello a b >"$out" 2>"$err"; status=$?; test "$status" -eq 2 && test ! -s "$out" && grep -qx 'usage: hello [NAME]' "$err"`, FindGrepRegexExact},
+		{"C3", `grep -cE 'func (Greeting|Run|main)' cmd/hello/main.go internal/greet/greet.go internal/cli/cli.go | grep -v '0$' | grep -q '3'`, FindGrepCountPerFile},
+		{"C5", `hello | grep -q 'expected_output_here' || exit 1`, FindPlaceholder},
+	}
+	for _, r := range runs {
+		if got := Quality(r.cmd, o); !has(got, r.want) {
+			t.Errorf("%s: want %s, got %v", r.id, r.want, got)
+		}
+	}
+	fixed := `out=$(mktemp "$TMPDIR/out.XXXXXX"); err=$(mktemp "$TMPDIR/err.XXXXXX"); hello a b >"$out" 2>"$err"; status=$?; test "$status" -eq 2 && test ! -s "$out" && grep -qxF 'usage: hello [NAME]' "$err"`
+	if got := Quality(fixed, o); got != nil {
+		t.Errorf("corrected A6 = %v, want nil", got)
+	}
+}
