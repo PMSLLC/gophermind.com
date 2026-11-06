@@ -133,3 +133,15 @@ func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
+
+// ClearPlanned empties PlannedAt and Waiting in <runDir>/_state/status.json so the planner runs its stages again; a missing file is left missing.
+func ClearPlanned(runDir string) error {
+	path := filepath.Join(runDir, filepath.FromSlash(stateStatus))
+	var st runStatus
+	found, err := readJSON(path, &st)
+	if err != nil || !found {
+		return err
+	}
+	st.PlannedAt, st.Waiting = "", ""
+	return writeJSON(path, st)
+}
