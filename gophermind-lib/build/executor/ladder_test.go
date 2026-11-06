@@ -410,8 +410,9 @@ func reviseRewrite(rev int) func(*rigOpts) {
 }
 
 // Two identical replies in a row end the ladder: a verified leaf reopened
-// for an acceptance repair whose model returns the same file twice escalates
-// with identical_reply after the second, without spending the revision budget.
+// for a repair that names no acceptance bullet (leafIn.Acceptance empty) whose
+// model returns the same file twice escalates with identical_reply after the
+// second, without spending the revision budget.
 func TestIdenticalReplyTwiceEndsLadder(t *testing.T) {
 	t.Parallel()
 	g := newRig(t, oneEntryRevisions(2, 5))
@@ -444,5 +445,71 @@ func TestIdenticalReplyTwiceEndsLadder(t *testing.T) {
 	}
 	if r := reasonsOf(t, g.board, id); len(r) != 3 || r[1] != ClassIdentical || r[2] != ClassIdentical {
 		t.Fatalf("reasons = %v, want the pass then two identical_reply", r)
+	}
+}
+
+// A revision an acceptance failure opened, on a leaf whose own tests passed,
+// that ends with the model returning the same file twice is a contradiction
+// between the root test and the node's tests: the run stops
+// acceptance_contradiction and the node is not escalated.
+func TestAcceptanceRevisionIdenticalTwiceStopsAsContradiction(t *testing.T) {
+	t.Parallel()
+	g := newRig(t, oneEntryRevisions(2, 5))
+	id := leafID
+	same := good(id)
+	rc, fc := g.leafRC(t, Script{
+		"implement:" + id: {reply(same), reply(same), reply(same), reply(same), reply(same)},
+		"revise:" + id:    {reviseHint("one"), reviseHint("two"), reviseHint("three")},
+	}, true)
+	fc.LeafScript[id] = []runner.Verdict{passVerdict()}
+	ctx := context.Background()
+	l := g.plan.Leaf(id)
+	if out, err := rc.runLeaf(ctx, l, leafIn{}); err != nil || out.Status != blackboard.StatusVerified {
+		t.Fatalf("first runLeaf = %+v, %v; want verified", out, err)
+	}
+	if err := rc.reopen(ctx, l, "acceptance"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := rc.runLeaf(ctx, l, leafIn{Previous: packer.NewFailure(nil, "acceptance A1: it greets", nil), Repair: 1, Acceptance: []string{"A1"}})
+	asStop(t, err, "failed", "acceptance_contradiction")
+	var se *stopError
+	errors.As(err, &se)
+	want := "executor: A1 fails while " + id + "'s own tests pass and the model returns the same code twice: either the root test or the node's tests are wrong; the code was not revised"
+	if se.Message != want {
+		t.Errorf("message = %q, want %q", se.Message, want)
+	}
+	if escs := g.gate.Escalations(); len(escs) != 0 {
+		t.Fatalf("gate escalations = %+v, want none", escs)
+	}
+	if r := g.row(t, id); r.Status == blackboard.StatusEscalated {
+		t.Fatalf("row = %s, want not escalated", r.Status)
+	}
+}
+
+// The same two identical replies after the node's own test failed still
+// escalate the node with identical_reply, in an acceptance revision too.
+func TestAcceptanceRevisionIdenticalTwiceAfterOwnTestFailureEscalates(t *testing.T) {
+	t.Parallel()
+	g := newRig(t, oneEntryRevisions(2, 5))
+	id := leafID
+	wrong := bad(id, 1)
+	rc, fc := g.leafRC(t, Script{
+		"implement:" + id: {reply(good(id)), reply(wrong), reply(wrong), reply(wrong), reply(wrong), reply(wrong), reply(wrong)},
+		"revise:" + id:    {reviseHint("one"), reviseHint("two"), reviseHint("three"), reviseHint("four")},
+	}, true)
+	fc.LeafScript[id] = []runner.Verdict{passVerdict(), failVerdict("test_failure", "--- FAIL: TestGreet", "TestGreet")}
+	ctx := context.Background()
+	l := g.plan.Leaf(id)
+	if out, err := rc.runLeaf(ctx, l, leafIn{}); err != nil || out.Status != blackboard.StatusVerified {
+		t.Fatalf("first runLeaf = %+v, %v; want verified", out, err)
+	}
+	if err := rc.reopen(ctx, l, "acceptance"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := rc.runLeaf(ctx, l, leafIn{Previous: packer.NewFailure(nil, "acceptance A1: it greets", nil), Repair: 1, Acceptance: []string{"A1"}})
+	asStop(t, err, "escalated", "human_stop")
+	escs := g.gate.Escalations()
+	if len(escs) != 1 || escs[0].Reason != ClassIdentical {
+		t.Fatalf("gate escalations = %+v, want one with reason %s", escs, ClassIdentical)
 	}
 }

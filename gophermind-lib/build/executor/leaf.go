@@ -93,8 +93,11 @@ func noteImports(p packer.ImportPolicy) string {
 type leafIn struct {
 	Previous packer.Failure // seeds the previous-failure text (repair rounds pass integration failure lines, Task 12b)
 	Repair   int            // 0 for a normal run; n >= 1 for repair round n (Swap.Reopen, PassRepair)
-	Tree     *workTree      // where the leaf works; nil is the main tree (sub-project F)
-	Turn     *turn          // the leaf's place in the landing order of a parallel level; nil when serial
+	// Acceptance is the ids of the acceptance bullets and constraints whose
+	// failure opened this repair (Previous is their output); nil otherwise.
+	Acceptance []string
+	Tree       *workTree // where the leaf works; nil is the main tree (sub-project F)
+	Turn       *turn     // the leaf's place in the landing order of a parallel level; nil when serial
 }
 
 // leafOutcome is how one leaf ended.
@@ -599,6 +602,19 @@ func (lr *leafRun) afterRevision(ctx context.Context, res revResult) (out leafOu
 	case revTooLong:
 		reason = ClassContextTooLong
 	case revRepeat:
+		// A repair an acceptance failure opened, where the repeated file is
+		// one that passed the node's own tests: the root test and the node's
+		// tests disagree, and no node revision settles that.
+		if len(lr.in.Acceptance) > 0 {
+			passed, err := lr.repeatPassed(ctx)
+			if err != nil {
+				return leafOutcome{}, true, err
+			}
+			if passed {
+				return leafOutcome{}, true, &stopError{Status: "failed", Reason: "acceptance_contradiction",
+					Message: fmt.Sprintf("executor: %s fails while %s's own tests pass and the model returns the same code twice: either the root test or the node's tests are wrong; the code was not revised", strings.Join(lr.in.Acceptance, ", "), l.ID)}
+			}
+		}
 		// The revision cap's path to the gate, without the revise rung: the
 		// packet gave the model no reason to change, so more calls buy nothing.
 		reason = ClassIdentical
@@ -654,6 +670,32 @@ func (lr *leafRun) afterRevision(ctx context.Context, res revResult) (out leafOu
 		}
 	}
 	return lr.toHuman(ctx, reason)
+}
+
+// repeatPassed reports that the reply the model repeated (the last attempt's)
+// passed the node's own tests when it was first checked: the latest earlier
+// attempt with the same reply hash that is not itself an identical_reply.
+func (lr *leafRun) repeatPassed(ctx context.Context) (bool, error) {
+	row, err := lr.rc.o.Board.Get(ctx, lr.rc.plan.RunID, lr.l.ID)
+	if err != nil {
+		return false, fmt.Errorf("executor: reading the attempts of %s failed", lr.l.ID)
+	}
+	n := len(row.Attempts)
+	if n == 0 || row.Attempts[n-1].ReplySHA256 == "" {
+		return false, nil
+	}
+	sha := row.Attempts[n-1].ReplySHA256
+	for i := n - 2; i >= 0; i-- {
+		a := row.Attempts[i]
+		if a.ReplySHA256 != sha {
+			continue
+		}
+		if class, _, _ := strings.Cut(a.FailureReason, ":"); class == ClassIdentical {
+			continue
+		}
+		return a.Verdict == blackboard.VerdictPass, nil
+	}
+	return false, nil
 }
 
 // lastClass is the class of the last attempt of the leaf: the text of its

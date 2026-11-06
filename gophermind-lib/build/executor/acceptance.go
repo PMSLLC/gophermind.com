@@ -881,6 +881,7 @@ func (rc *runCtx) attributeFor(id string, b failedBullet) []string {
 // capped output as the previous failure, then the last wave is checked again.
 func (rc *runCtx) acceptRepair(ctx context.Context, round int, ids []string, failed map[string]failedBullet) (*stopError, error) {
 	byNode := map[string][]packer.Failure{}
+	bulletsOf := map[string][]string{} // node -> the failing ids it owns
 	var lost []string
 	for _, id := range ids {
 		nodes := rc.attributeFor(id, failed[id])
@@ -889,6 +890,7 @@ func (rc *runCtx) acceptRepair(ctx context.Context, round int, ids []string, fai
 		}
 		for _, n := range nodes {
 			byNode[n] = append(byNode[n], failed[id].Failure)
+			bulletsOf[n] = append(bulletsOf[n], id)
 		}
 	}
 	if len(lost) > 0 {
@@ -912,7 +914,7 @@ func (rc *runCtx) acceptRepair(ctx context.Context, round int, ids []string, fai
 		if err := rc.reopen(ctx, l, "acceptance"); err != nil {
 			return rc.faultOrStop(err)
 		}
-		out, err := rc.runLeaf(ctx, l, leafIn{Previous: mergeFailures(byNode[id]...), Repair: round})
+		out, err := rc.runLeaf(ctx, l, leafIn{Previous: mergeFailures(byNode[id]...), Repair: round, Acceptance: bulletsOf[id]})
 		if err != nil {
 			return rc.faultOrStop(err)
 		}
@@ -1181,7 +1183,7 @@ func (rc *runCtx) finish(ctx context.Context, f runFlags) (finishResult, error) 
 // codes, never output).
 func stopFailure(se *stopError) []string {
 	switch se.Reason {
-	case "acceptance_failed", "constraint_failed", "acceptance_environment", "acceptance_test_invalid", "acceptance_unmapped", "coverage_incomplete", "acceptance_tampered",
+	case "acceptance_failed", "constraint_failed", "acceptance_environment", "acceptance_test_invalid", "acceptance_contradiction", "acceptance_unmapped", "coverage_incomplete", "acceptance_tampered",
 		"acceptance_stray", "acceptance_leak", "acceptance_vacuous", "acceptance_build", "acceptance_serve", "acceptance_not_red", "tree_not_clean", "foreign_dirt", "repo_moved", "base_moved":
 		return []string{strings.TrimPrefix(se.Message, "executor: ")}
 	}
