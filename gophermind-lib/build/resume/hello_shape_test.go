@@ -77,6 +77,29 @@ func TestHelloR003ShapeResumesAtFnRun(t *testing.T) {
 		before[f] = raw
 	}
 	greeting, mainRow := rowBytes("fn-greeting"), rowBytes("fn-main")
+	if pre, err := b.Get(ctx, "r", "fn-run"); err != nil || pre.Status != blackboard.StatusEscalated || len(pre.Attempts) != 2 {
+		t.Fatalf("fn-run before: %+v %v", pre, err)
+	}
+	executorBefore, err := os.ReadFile(filepath.Join(dir, "_state/executor.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	keptLeaf := func() string {
+		raw, err := os.ReadFile(filepath.Join(dir, "_state/leaf-results.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatal(err)
+		}
+		var c bytes.Buffer
+		if err := json.Compact(&c, m["fn-greeting"]); err != nil {
+			t.Fatal(err)
+		}
+		return c.String()
+	}
+	leafBefore := keptLeaf()
 
 	res, err := FromNode(ctx, dir, b, "r", "fn-run", fixed)
 	if err != nil {
@@ -106,6 +129,24 @@ func TestHelloR003ShapeResumesAtFnRun(t *testing.T) {
 		if !present(dir, res.DiscardDir+"/"+name) {
 			t.Errorf("discard dir lacks %s", name)
 		}
+	}
+	executorAfter, err := os.ReadFile(filepath.Join(dir, "_state/executor.json"))
+	if err != nil || !bytes.Equal(executorAfter, executorBefore) {
+		t.Errorf("executor.json changed: %v", err)
+	}
+	if leafBefore == "" || keptLeaf() != leafBefore {
+		t.Errorf("fn-greeting leaf result changed: %q -> %q", leafBefore, keptLeaf())
+	}
+	var snap struct {
+		Status   string            `json:"status"`
+		Attempts []json.RawMessage `json:"attempts"`
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, res.DiscardDir, "attempts-fn-run.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &snap); err != nil || snap.Status != "escalated" || len(snap.Attempts) != 2 {
+		t.Errorf("attempts copy: %s %v", raw, err)
 	}
 	for _, rel := range []string{"report.json", "ESCALATION-fn-run.md"} {
 		if present(dir, rel) {
