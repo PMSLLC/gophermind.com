@@ -17,6 +17,7 @@ type PlanNode struct {
 	Title  string    `json:"title"`
 	File   string    `json:"file,omitempty"` // contract.file, function nodes only
 	Text   string    `json:"-"`              // description, doc, outputs and errors, function nodes only
+	Uses   []string  `json:"uses,omitempty"` // the contract function's uses, function nodes only
 }
 
 // MapEntry names the nodes whose code satisfies one requirement.

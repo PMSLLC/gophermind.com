@@ -254,6 +254,9 @@ func parseCoverageFill(raw string, reqs []Requirement, doc map[string]any, brief
 	for _, t := range add.Types {
 		types = append(types, t)
 	}
+	if err := fillDuplicates(objects(doc["functions"]), add.Functions); err != nil {
+		return CoverageReply{}, nil, err
+	}
 	fns, _ := cp["functions"].([]any)
 	for _, f := range add.Functions {
 		fns = append(fns, f)
@@ -267,6 +270,43 @@ func parseCoverageFill(raw string, reqs []Requirement, doc map[string]any, brief
 		return CoverageReply{}, nil, fmt.Errorf("coverage fill reply: %w", err)
 	}
 	return cr, cp, nil
+}
+
+// fillDuplicates refuses a fill function whose name (with its receiver type,
+// for a method) and package an existing function already has: the fill round
+// of run hello-v1.1-20261106-r007 declared Greeting and Run a second time
+// under new ids. The error names only ids, the name and the package.
+func fillDuplicates(existing, added []map[string]any) error {
+	key := func(f map[string]any) (string, string, bool) {
+		m := funcNameRE.FindStringSubmatch(strings.TrimSpace(strField(f, "signature")))
+		if m == nil {
+			return "", "", false
+		}
+		recv := ""
+		if _, r, ok := strings.Cut(m[1], "("); ok {
+			r, _, _ = strings.Cut(r, ")")
+			if fs := strings.Fields(r); len(fs) > 0 {
+				recv = fs[len(fs)-1] + "."
+			}
+		}
+		return strField(f, "package"), recv + m[2], true
+	}
+	have := map[[2]string]string{}
+	for _, f := range existing {
+		if pkg, name, ok := key(f); ok {
+			have[[2]string{pkg, name}] = strField(f, "id")
+		}
+	}
+	for _, f := range added {
+		pkg, name, ok := key(f)
+		if !ok {
+			continue
+		}
+		if id, dup := have[[2]string{pkg, name}]; dup {
+			return fmt.Errorf("coverage fill reply: function %s duplicates %s (%s in %s); map the requirement to %s instead of declaring it again", strField(f, "id"), id, name, pkg, id)
+		}
+	}
+	return nil
 }
 
 // refreshPlan brings the drafts and the skeleton in line with contracts.json:

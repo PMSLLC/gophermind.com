@@ -13,6 +13,11 @@ var literalVerbs = []string{"prints", "writes", "exits with code", "returns", "l
 // subject of the sentence, an invocation (`hello Ada` prints ...), not a result.
 var subjectVerbRE = regexp.MustCompile(`^\s*(prints|writes|exits|returns)\b`)
 
+// inputWordRE matches a word that ends the text before a span when the span is
+// the input of the sentence (with `Ada` it writes ..., for `x`, given `y`),
+// not its result.
+var inputWordRE = regexp.MustCompile(`(?i)\b(with|for|given|argument|arguments|input|from)$`)
+
 // goTypeRE is a Go type or error value named in a sentence (`*NameError`,
 // `io.EOF`, `ErrEmpty`): what kind of value is returned, which the contract's
 // errors and their tests settle, not output text to carry or assert.
@@ -26,7 +31,8 @@ var exitCodeRE = regexp.MustCompile("\\bcode\\s+`?([0-9]+)`?")
 // printed, written, returned or exited with, plus a non-zero exit code it
 // names. A span that is an invocation is not a literal: one that starts with a
 // binary name followed by a space or the end, or one that is the subject of a
-// trigger verb. Exit
+// trigger verb. Nor is an input: a span right after with, for, given,
+// argument(s), input or from. Exit
 // code 0 is success, which is not a behaviour of its own. Other kinds have none.
 func requirementLiterals(req Requirement, binaries ...string) []string {
 	if req.Kind != ReqFeature {
@@ -47,7 +53,8 @@ func requirementLiterals(req Requirement, binaries ...string) []string {
 		}
 		for _, loc := range backtickRE.FindAllStringSubmatchIndex(sent, -1) {
 			span := sent[loc[2]:loc[3]]
-			if loc[0] < verb || isInvocation(span, binaries) || subjectVerbRE.MatchString(sent[loc[1]:]) || goTypeRE.MatchString(span) {
+			if loc[0] < verb || isInvocation(span, binaries) || subjectVerbRE.MatchString(sent[loc[1]:]) || goTypeRE.MatchString(span) ||
+				inputWordRE.MatchString(strings.TrimSpace(sent[:loc[0]])) {
 				continue
 			}
 			if exitCodeRE.MatchString(sent[max(0, loc[0]-6):loc[1]]) {
@@ -131,8 +138,11 @@ var placeholderRE = regexp.MustCompile(`<[A-Za-z_][A-Za-z0-9_ -]*>`)
 
 // literalIn reports whether text carries lit. A placeholder in lit stands for
 // any text on the line (Hello, <NAME>! is carried by Hello, %s! and by
-// Hello, Ada!), and a number must stand as a word of its own.
+// Hello, Ada!), and a number must stand as a word of its own. An escaped
+// newline in lit (backslash n) is a real one, and a trailing one is dropped:
+// the doc writes the text with a real newline or none, and the test proves it.
 func literalIn(text, lit string) bool {
+	lit = normalLiteral(lit)
 	if isDigits(lit) {
 		return regexp.MustCompile(`(^|[^0-9])` + lit + `($|[^0-9])`).MatchString(text)
 	}
@@ -148,6 +158,78 @@ func literalIn(text, lit string) bool {
 	}
 	b.WriteString(regexp.QuoteMeta(lit[last:]))
 	return regexp.MustCompile(b.String()).MatchString(text)
+}
+
+// normalLiteral replaces each escaped newline of lit with a real one and trims
+// trailing newlines. Other escapes are left alone. A literal that is nothing
+// but newlines is kept as written.
+func normalLiteral(lit string) string {
+	if n := strings.TrimRight(strings.ReplaceAll(lit, `\n`, "\n"), "\n"); n != "" {
+		return n
+	}
+	return lit
+}
+
+// coveredByPattern reports whether lit is an example of one of the pattern
+// literals (those with a placeholder) that all carries: Hello, Ada! of a
+// carried Hello, <name>!. patterns are the ones lit is an example of
+// (examplePatterns).
+func coveredByPattern(all string, lit string, patterns []string) bool {
+	for _, p := range patterns {
+		if literalIn(lit, p) && literalIn(all, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// examplePatterns lists the patterns lit, a literal of requirement text, is an
+// example of: lit is the pattern with each placeholder filled by text that the
+// requirement names in a backticked span that is not one of its literals, lits
+// (the input the example is made from: `Greeting("Ada")` returns
+// `Hello, Ada!`). Hello, World! for an empty name fills the placeholder with
+// text named nowhere else, so it is a behaviour of its own, not an example.
+func examplePatterns(lit, text string, lits, patterns []string) []string {
+	lit = normalLiteral(lit)
+	var inputs []string
+	for _, m := range backtickRE.FindAllStringSubmatch(text, -1) {
+		if !contains(lits, m[1]) {
+			inputs = append(inputs, m[1])
+		}
+	}
+	var out []string
+	for _, p := range patterns {
+		if p == lit || placeholderRE.MatchString(lit) {
+			continue
+		}
+		var b strings.Builder
+		last := 0
+		for _, loc := range placeholderRE.FindAllStringIndex(p, -1) {
+			b.WriteString(regexp.QuoteMeta(p[last:loc[0]]))
+			b.WriteString(`([^\n]+?)`)
+			last = loc[1]
+		}
+		b.WriteString(regexp.QuoteMeta(p[last:]))
+		m := regexp.MustCompile(`^` + b.String() + `$`).FindStringSubmatch(lit)
+		if m == nil {
+			continue
+		}
+		named := true
+		for _, fill := range m[1:] {
+			found := false
+			for _, in := range inputs {
+				if strings.Contains(in, fill) {
+					found = true
+					break
+				}
+			}
+			named = named && found
+		}
+		if named {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func isDigits(s string) bool {
@@ -172,13 +254,29 @@ func nodeBehaviourText(d map[string]any, doc string) string {
 
 // literalGaps checks the behaviour behind each covered feature requirement:
 // every literal it states must appear in the text (title, description, doc,
-// outputs, errors) of at least one node mapped to it, or of a function of a
-// mapped component. A requirement with literals missing is one gap, its reason
-// naming each missing literal, so the fill round sees what the plan lacks.
+// outputs, errors) of at least one node mapped to it, of a function of a
+// mapped component, or of a node those use (transitively). A requirement with
+// literals missing is one gap, its reason naming each missing literal, so the
+// fill round sees what the plan lacks. An example of a pattern literal of any
+// feature (Hello, Ada! of Hello, <name>!, see examplePatterns) is carried when
+// the pattern is, and is not named on its own when the requirement's own
+// missing pattern is.
 func literalGaps(reqs []Requirement, covered []Covered, nodes []PlanNode, binaries ...string) []Gap {
 	byReq := map[string]Covered{}
 	for _, c := range covered {
 		byReq[c.Requirement] = c
+	}
+	byID := map[string]PlanNode{}
+	for _, n := range nodes {
+		byID[n.ID] = n
+	}
+	var patterns []string
+	for _, q := range reqs {
+		for _, lit := range requirementLiterals(q, binaries...) {
+			if placeholderRE.MatchString(lit) && !contains(patterns, lit) {
+				patterns = append(patterns, lit)
+			}
+		}
 	}
 	var gaps []Gap
 	for _, q := range reqs {
@@ -190,15 +288,41 @@ func literalGaps(reqs []Requirement, covered []Covered, nodes []PlanNode, binari
 			continue
 		}
 		var texts []string
+		seen := map[string]bool{}
+		var queue []string
 		for _, n := range nodes {
 			if contains(c.Nodes, n.ID) || contains(c.Nodes, n.Parent) {
-				texts = append(texts, n.Title+"\n"+n.Text)
+				queue = append(queue, n.ID)
 			}
 		}
+		for len(queue) > 0 {
+			id := queue[0]
+			queue = queue[1:]
+			n, ok := byID[id]
+			if !ok || seen[id] {
+				continue
+			}
+			seen[id] = true
+			texts = append(texts, n.Title+"\n"+n.Text)
+			queue = append(queue, n.Uses...)
+		}
 		all := strings.Join(texts, "\n")
+		lits := requirementLiterals(q, binaries...)
+		var missing []string
+		for _, lit := range lits {
+			if !literalIn(all, lit) && !coveredByPattern(all, normalLiteral(lit), examplePatterns(lit, q.Text, lits, patterns)) {
+				missing = append(missing, lit)
+			}
+		}
+		var own []string // this requirement's missing patterns, named in place of their examples
+		for _, lit := range missing {
+			if placeholderRE.MatchString(lit) {
+				own = append(own, lit)
+			}
+		}
 		var why []string
-		for _, lit := range requirementLiterals(q, binaries...) {
-			if !literalIn(all, lit) {
+		for _, lit := range missing {
+			if len(examplePatterns(lit, q.Text, lits, own)) == 0 {
 				why = append(why, "behaviour missing: "+lit)
 			}
 		}
