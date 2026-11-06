@@ -206,6 +206,18 @@ After Tasks 3, 3a, 3b and 4 were installed, the run got past planning's contract
 
 **Files:** Modify `gophermind-lib/build/planner/fixediface.go` (`isTestFunction`, `dropTestFunctions`), `contract_stage.go` (beside `dropForeignFunctions`), `coverage.go` (fill acceptance), `coverage_check.go` (`CheckCoverage`), `requirements.go` (`Requirement.IsTestRule`), `prompts/coverage.md`, `prompts/testwriter.md`; tests in the planner package.
 
+### Task 3d: test obligations attach to the production function and are checked (John's design note, 2026-11-05 18:02 MST)
+
+A `## Tests` bullet becomes a requirement of kind test (`T` ids), attached to the contract function its first backticked call names (`Run(nil, stdout, stderr)` names `Run`), carried into the test writer packet as an `<obligations>` block, and cited by the reply's cases (`"obligations": ["T3"]`). The validator refuses a test file that leaves an obligation uncited or omits its literal arguments and expected text, so `nil` and `[]string{}` are two cases when the brief lists both. Coverage ignores kind test. `checkTestExercises` says "the production function under test" and asks for a return comparison only when the signature has results. Brief: `.superpowers/sdd/2026-11-05-hello-pipeline-fixes/task-3d-brief.md`.
+
+**Files:** Modify `requirements.go`, `testwriter.go`, `finish.go`, `exercise.go`, `exported.go`, the coverage requirement filter, `prompts/testwriter.md`; create `obligations.go`; tests.
+
+### Task 3e: test writer preflight, bounded no-progress, bench only with a reason (same note)
+
+Before any model call, `checkTestTarget` fails the stage with `invalid_test_target` when the target is a Test/Benchmark/Fuzz/Example function, the contract file is a `_test.go`, or the artifact equals the target. Two consecutive identical refusals of the same Go block end the node with `testwriter_no_progress` instead of eighteen rounds. `bench` is dropped from `profile_hooks` (warning `profile_hook_dropped`) unless a requirement mentions performance or a benchmark. Brief: `.superpowers/sdd/2026-11-05-hello-pipeline-fixes/task-3e-brief.md`.
+
+**Files:** Create `testtarget.go`; modify `testwriter.go`, `profilehooks.go`, `enrich.go`, `prompts/enrich.md`, `router/router.go` only if a no-retry sentinel is needed; tests.
+
 ### Task 4: Root acceptance test validator catches masked status and inverted checks (brief 17)
 
 **Files:**
