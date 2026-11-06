@@ -295,6 +295,12 @@ The ninth run, the first with Task 7's literal check, planned the right contract
 
 **Files:** Modify `build/planner/coverage_literals.go`, `coverage_check.go` (`PlanNode.Uses`), `decompose.go`, `coverage.go`; tests.
 
+### Task 7c: a fill round can close a behaviour gap by restating a mapped function's doc; gaps are listed by id (run hello-v1.1-20261106-r008, 2026-11-05 22:08 MST)
+
+The tenth run left one real literal gap: fn-run's doc did not state the usage line F2 requires on stderr. The fill prompt offered no action that changes what a node says it does, and its gap list printed id, line and text together, which the model copied back as the requirement id. The fill reply may restate a mapped function's doc (`docs` entries, applied to `contracts.json` with no further call), and gaps are listed by id. Brief: `.superpowers/sdd/2026-11-05-hello-pipeline-fixes/task-7c-brief.md`.
+
+**Files:** Modify `build/planner/coverage.go`, `build/planner/prompts/coverage_fill.md`; tests.
+
 ### Task 5: Node inputs and tier come from the signature and class (brief 11, 12, 14)
 
 **Files:**
