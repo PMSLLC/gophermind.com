@@ -232,3 +232,34 @@ func TestQualityFindingsAreFixedAndSortedAndQuoteNothing(t *testing.T) {
 		t.Error("not deterministic")
 	}
 }
+
+func TestInvertedGofmtCheckIsRefused(t *testing.T) {
+	t.Parallel()
+	got := Quality(`gofmt -l . | grep -q . || (go vet ./... && exit 0 || exit 1)`, qopts)
+	if !has(got, FindInvertedCheck) {
+		t.Fatalf("want inverted_check, got %v", got)
+	}
+}
+
+func TestGofmtTestZIsClean(t *testing.T) {
+	t.Parallel()
+	if got := Quality(`test -z "$(gofmt -l .)"`, qopts); len(got) != 0 {
+		t.Fatalf("want none, got %v", got)
+	}
+}
+
+func TestStatusMaskedByAndIsRefused(t *testing.T) {
+	t.Parallel()
+	got := Quality(`hello a b > /dev/null && test $(echo $? -eq 2)`, Options{Bins: []string{"hello"}})
+	if !has(got, FindStatusMasked) || !has(got, FindPrintSubstitutionTest) {
+		t.Fatalf("want status_masked and print_substitution_test, got %v", got)
+	}
+}
+
+func TestStatusCapturedAfterSemicolonIsClean(t *testing.T) {
+	t.Parallel()
+	cmd := `out=$(mktemp); err=$(mktemp); hello a b >"$out" 2>"$err"; status=$?; test "$status" -eq 2 && test ! -s "$out"`
+	if got := Quality(cmd, Options{Bins: []string{"hello"}}); len(got) != 0 {
+		t.Fatalf("want none, got %v", got)
+	}
+}

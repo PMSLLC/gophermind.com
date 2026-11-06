@@ -161,3 +161,15 @@ func TestApprovalRefusesAWeakRootTest(t *testing.T) {
 		t.Fatalf("err = %v, approval written = %v", err, g.has("approval.json"))
 	}
 }
+
+func TestCoveragePromptTeachesTheCapturePattern(t *testing.T) {
+	b, err := os.ReadFile("prompts/coverage.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"status=$?", `2>"$err"`, "Never write `2>&1`", "may name only constructs the brief forbids everywhere"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("coverage prompt lacks %q", want)
+		}
+	}
+}

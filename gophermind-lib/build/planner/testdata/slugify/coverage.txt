@@ -72,7 +72,7 @@
     {
       "requirement": "C3",
       "name": "gofmt and go vet clean",
-      "command": "gofmt -l . | grep -q . || (go vet ./... && exit 0)"
+      "command": "test -z \"$(gofmt -l .)\" && go vet ./..."
     },
     {
       "requirement": "C4",

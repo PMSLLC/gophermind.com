@@ -34,6 +34,14 @@ const (
 	FindJqUnasserted Finding = "jq_unasserted"
 	// FindPrintOnly: nothing in the command can fail (echo, cat, ls, find, head).
 	FindPrintOnly Finding = "print_only"
+	// FindInvertedCheck: a lister piped to grep -q then ||, so the check passes
+	// when the lister prints nothing and the fallback decides the verdict.
+	FindInvertedCheck Finding = "inverted_check"
+	// FindStatusMasked: a built binary joined to a later statement by && while
+	// a later statement reads $?, which is the && chain's status, not the binary's.
+	FindStatusMasked Finding = "status_masked"
+	// FindPrintSubstitutionTest: test or [ given $(echo ...) or $(printf ...).
+	FindPrintSubstitutionTest Finding = "print_substitution_test"
 )
 
 // FindingNames are the findings as strings, in the order given.
@@ -108,7 +116,10 @@ func Quality(cmd string, o Options) []Finding {
 		body = next
 	}
 	qualityPlaceholders(body, o, set)
-	q := &qual{set: set}
+	q := &qual{set: set, bins: map[string]bool{}}
+	for _, b := range o.Bins {
+		q.bins[b] = true
+	}
 	q.script(body, false, true)
 	out := make([]Finding, 0, len(set))
 	for f := range set {
@@ -250,7 +261,10 @@ func qualityPlaceholders(script string, o Options, set map[Finding]bool) {
 }
 
 // qual reads the statements of a script and notes findings in set.
-type qual struct{ set map[Finding]bool }
+type qual struct {
+	set  map[Finding]bool
+	bins map[string]bool
+}
 
 type pipeline struct{ idx []int }
 
@@ -390,6 +404,8 @@ func (q *qual) script(script string, ctxAsserted, top bool) {
 		return
 	}
 
+	q.statusShapes(stmts, cmdAt)
+
 	// masking constructs
 	for i, st := range stmts {
 		base, args := cmdAt(i)
@@ -451,6 +467,62 @@ func (q *qual) script(script string, ctxAsserted, top bool) {
 	}
 	if !hasAssert(false) {
 		q.set[FindPrintOnly] = true
+	}
+}
+
+var printSubRE = regexp.MustCompile(`\$\(\s*(echo|printf)\b`)
+
+// statusShapes notes the shapes whose verdict is not the program's: an
+// inverted lister check, a status lost to &&, and a test of printed text.
+func (q *qual) statusShapes(stmts []stmt, cmdAt func(int) (string, []word)) {
+	hasFlag := func(args []word, c rune) bool {
+		for _, a := range args {
+			if len(a.lit) > 1 && a.lit[0] == '-' && a.lit[1] != '-' && strings.ContainsRune(a.lit, c) {
+				return true
+			}
+		}
+		return false
+	}
+	readsStatus := func(from int) bool {
+		for j := from; j < len(stmts); j++ {
+			for _, w := range stmts[j].words {
+				if strings.Contains(w.lit, "$?") || strings.Contains(w.lit, "${?}") {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	for i := range stmts {
+		base, args := cmdAt(i)
+		switch {
+		case base == "test" || base == "[":
+			for _, a := range args {
+				if printSubRE.MatchString(a.lit) {
+					q.set[FindPrintSubstitutionTest] = true
+				}
+			}
+		case q.bins[base] && i+1 < len(stmts) && stmts[i+1].op == "&&" && readsStatus(i+1):
+			q.set[FindStatusMasked] = true
+		case base == "grep" && hasFlag(args, 'q') && stmts[i].op == "|" && i+1 < len(stmts) && stmts[i+1].op == "||":
+			f := i
+			for f > 0 && stmts[f].op == "|" {
+				f--
+			}
+			fb, fargs := cmdAt(f)
+			switch fb {
+			case "gofmt":
+				if hasFlag(fargs, 'l') {
+					q.set[FindInvertedCheck] = true
+				}
+			case "go":
+				if len(fargs) > 0 && fargs[0].lit == "vet" {
+					q.set[FindInvertedCheck] = true
+				}
+			case "golint", "staticcheck":
+				q.set[FindInvertedCheck] = true
+			}
+		}
 	}
 }
 
