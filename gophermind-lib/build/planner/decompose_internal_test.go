@@ -41,8 +41,6 @@ func TestLeafChecks(t *testing.T) {
 	}
 
 	bad := []struct{ name, edit, with, want string }{
-		{"no input for a parameter", `{"name": "times", "type": "int"}`, `{"name": "count", "type": "int"}`, `no entry for parameter "times"`},
-		{"an input without a type", `{"name": "name", "type": "string"}`, `{"name": "name", "type": " "}`, `input "name" has no type`},
 		{"an output missing", `, {"name": "err", "type": "error"}`, ``, "outputs has 1 entries for 2 results"},
 		{"an output without a type", `{"name": "err", "type": "error"}`, `{"name": "err", "type": ""}`, `output 2 has no type`},
 		{"returns error with no errors entry", `{"when": "name is empty", "returns": "*NameError"}`, ``, "returns error but errors lists no condition"},
@@ -95,16 +93,29 @@ func TestLeafChecks(t *testing.T) {
 			t.Errorf("err = %v", err)
 		}
 	})
-	t.Run("unnamed parameters need one input each", func(t *testing.T) {
+	t.Run("unnamed parameters get one input each from the signature", func(t *testing.T) {
 		join := c.Functions[1:]
 		one := `{"id": "fn-join", "title": "Join", "description": "Joins.", "node_class": "pure",
- "contract": {"inputs": [{"name": "a", "type": "string"}], "outputs": [{"name": "s", "type": "string"}]}}`
-		if _, _, err := normalizeDrafts("["+one+"]", "greeting", join, c, r); err == nil || !strings.Contains(err.Error(), "inputs has 1 entries for 2 parameters") {
-			t.Errorf("err = %v", err)
+ "contract": {"inputs": [{"name": "a", "type": "string", "description": "the first"}], "outputs": [{"name": "s", "type": "string"}]}}`
+		drafts, _, err := normalizeDrafts("["+one+"]", "greeting", join, c, r)
+		if err != nil {
+			t.Fatalf("refused: %v", err)
 		}
-		two := strings.Replace(one, `[{"name": "a", "type": "string"}]`, `[{"name": "a", "type": "string"}, {"name": "b", "type": "string"}]`, 1)
-		if _, _, err := normalizeDrafts("["+two+"]", "greeting", join, c, r); err != nil {
-			t.Errorf("two inputs for two unnamed parameters were refused: %v", err)
+		in := objects(drafts[0]["contract"].(map[string]any)["inputs"])
+		if len(in) != 2 || in[0]["name"] != "arg1" || in[0]["description"] != "the first" || in[1]["name"] != "arg2" || in[1]["type"] != "string" {
+			t.Errorf("inputs = %v", in)
+		}
+	})
+	t.Run("a missing or untyped input is filled from the signature", func(t *testing.T) {
+		d := strings.Replace(okDraft, `{"name": "times", "type": "int"}`, `{"name": "count", "type": "int"}`, 1)
+		d = strings.Replace(d, `{"name": "name", "type": "string"}`, `{"name": "name", "type": " "}`, 1)
+		drafts, _, err := normalizeDrafts("["+d+"]", "greeting", greet, c, r)
+		if err != nil {
+			t.Fatalf("refused: %v", err)
+		}
+		in := objects(drafts[0]["contract"].(map[string]any)["inputs"])
+		if len(in) != 2 || in[0]["type"] != "string" || in[1]["name"] != "times" || in[1]["type"] != "int" {
+			t.Errorf("inputs = %v", in)
 		}
 	})
 	t.Run("an input may name a part of a parameter", func(t *testing.T) {
@@ -180,8 +191,6 @@ func TestDecomposeErrorsNeverQuoteTheReply(t *testing.T) {
 		"node_class":             edit(`"node_class": "validation"`, `"node_class": "`+canary+`"`),
 		"depends_on":             edit(`"depends_on": []`, `"depends_on": ["`+canary+`"]`),
 		"title of wrong type":    edit(`"title": "Greet"`, `"title": {"`+canary+`": 1}`),
-		"input name, no type":    edit(`{"name": "times", "type": "int"}`, `{"name": "`+canary+`", "type": ""}`),
-		"undeclared input":       edit(`{"name": "times", "type": "int"}`, `{"name": "`+canary+`", "type": "int"}`),
 		"output without type":    edit(`{"name": "err", "type": "error"}`, `{"name": "`+canary+`", "type": ""}`),
 		"errors entry":           edit(`"returns": "*NameError"`, `"returns": "", "when": "`+canary+`"`),
 		"no contract":            edit(`"contract": {`, `"`+canary+`": {`),

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
+	"go/types"
 	"os"
 	"regexp"
 	"sort"
@@ -256,6 +257,20 @@ func (p *Planner) decomposeCall(ctx context.Context, r *run, c *contract.Contrac
 // nodeClasses is the closed list a draft's node_class must come from.
 var nodeClasses = []string{"pure", "validation", "handler", "client", "storage", "concurrency", "wiring", "other"}
 
+// tierOfClass is the model_tier a node of each class gets: a class that touches
+// I/O, state or goroutines (or whose effects are unknown, other) needs the
+// strong chain; a pure computation or an input check runs on any.
+var tierOfClass = map[string]string{
+	"pure":        "any",
+	"validation":  "any",
+	"handler":     "strong",
+	"client":      "strong",
+	"storage":     "strong",
+	"concurrency": "strong",
+	"wiring":      "strong",
+	"other":       "strong",
+}
+
 // draftDefect kinds, a fixed vocabulary: they name what is wrong with a node
 // without quoting the reply, and say which fields to ask for again.
 const (
@@ -426,7 +441,13 @@ func (e *nodeEnv) normalizeNode(f contract.Function, d map[string]any) (class st
 	if t, _ := d["description"].(string); strings.TrimSpace(t) == "" {
 		defect(defDescription, "description is missing or empty")
 	}
-	if _, ok := d["model_tier"]; !ok {
+	// The tier follows the class; what the reply said is not asked for twice.
+	if tier, ok := tierOfClass[class]; ok {
+		if given, present := d["model_tier"]; present && given != tier {
+			e.notes = append(e.notes, f.ID+" model_tier from node_class")
+		}
+		d["model_tier"] = tier
+	} else if _, ok := d["model_tier"]; !ok {
 		d["model_tier"] = "standard"
 	}
 	ct, ok := d["contract"].(map[string]any)
@@ -437,6 +458,11 @@ func (e *nodeEnv) normalizeNode(f contract.Function, d map[string]any) (class st
 		fd, perr := parseSignature(f.Signature)
 		if perr != nil {
 			return class, kinds, msgs, fmt.Errorf("node %s: %w", f.ID, perr)
+		}
+		inputs, dropped := signatureInputs(fd, objects(ct["inputs"]))
+		ct["inputs"] = inputs
+		for _, name := range dropped {
+			e.notes = append(e.notes, f.ID+" input "+name+" is not a parameter")
 		}
 		declared := map[string]bool{}
 		if fd.Type.Params != nil {
@@ -655,6 +681,80 @@ func leafDefects(ct map[string]any, fd *ast.FuncDecl, declared map[string]bool) 
 		add(defErrorsMissing, "the function returns error but errors lists no condition")
 	}
 	return out
+}
+
+// inputNoteNameRE is a reply input name a note may repeat: an identifier, or a
+// dotted part of one, of bounded length. Anything else is named by position.
+var inputNoteNameRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.]{0,63}$`)
+
+// signatureInputs rebuilds a node's inputs from its signature: one entry per
+// parameter, in order, with the name and type the signature declares. The
+// description (and constraints) come from the reply entry of the same name, or,
+// for an unnamed parameter (named argN as defaultLeaf does), from the reply
+// entry at the same position when that entry names no parameter. It returns
+// the names of the reply entries that matched no parameter.
+func signatureInputs(fd *ast.FuncDecl, reply []map[string]any) (inputs []any, dropped []string) {
+	declared := map[string]bool{}
+	if fd.Type.Params != nil {
+		for _, field := range fd.Type.Params.List {
+			for _, n := range field.Names {
+				declared[n.Name] = true
+			}
+		}
+	}
+	used := make([]bool, len(reply))
+	inputs = []any{}
+	if fd.Type.Params != nil {
+		k := 0
+		for _, field := range fd.Type.Params.List {
+			typ := types.ExprString(field.Type)
+			names := field.Names
+			if len(names) == 0 {
+				names = []*ast.Ident{{Name: ""}}
+			}
+			for _, n := range names {
+				k++
+				name, from := n.Name, -1
+				if name == "" || name == "_" {
+					name = fmt.Sprintf("arg%d", k)
+					if i := k - 1; i < len(reply) && !used[i] {
+						if rn, _ := reply[i]["name"].(string); !declared[rn] {
+							from = i
+						}
+					}
+				} else {
+					for i, in := range reply {
+						if rn, _ := in["name"].(string); rn == name && !used[i] {
+							from = i
+							break
+						}
+					}
+				}
+				entry := map[string]any{"name": name, "type": typ, "description": ""}
+				if from >= 0 {
+					used[from] = true
+					if s, ok := reply[from]["description"].(string); ok {
+						entry["description"] = s
+					}
+					if cs, ok := reply[from]["constraints"]; ok {
+						entry["constraints"] = cs
+					}
+				}
+				inputs = append(inputs, entry)
+			}
+		}
+	}
+	for i, in := range reply {
+		if used[i] {
+			continue
+		}
+		rn, _ := in["name"].(string)
+		if !inputNoteNameRE.MatchString(rn) {
+			rn = fmt.Sprintf("entry %d", i+1)
+		}
+		dropped = append(dropped, rn)
+	}
+	return inputs, dropped
 }
 
 // inputLabel names an input in an error: by name when it is a parameter the

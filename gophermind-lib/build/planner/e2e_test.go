@@ -720,15 +720,16 @@ func TestFinishedTreeCarriesRequirementIDsErrorLinksAndDecisions(t *testing.T) {
 }
 
 // The Test-writer follows the node's model_tier exactly as Enrich does, and is
-// strong for every node when routing is off.
+// strong for every node when routing is off. The tier follows the node class, so
+// the strong variant changes the class (wiring), not the reply's model_tier.
 func TestTestwriterFollowsTheNodeTier(t *testing.T) {
-	std := strings.ReplaceAll(string(mustRead(t, filepath.Join("testdata", "greeter", "decompose.greeting.txt"))), `"model_tier": "any"`, `"model_tier": "standard"`)
+	std := strings.ReplaceAll(string(mustRead(t, filepath.Join("testdata", "greeter", "decompose.greeting.txt"))), `"node_class": "validation"`, `"node_class": "wiring"`)
 	for _, tc := range []struct {
 		name  string
 		route bool
 		dir   string
 		want  string
-	}{{"any node, routing on", true, "", "any"}, {"standard node, routing on", true, "std", "standard"}, {"routing off", false, "", "strong"}} {
+	}{{"any node, routing on", true, "", "any"}, {"wiring node, routing on", true, "std", "strong"}, {"routing off", false, "", "strong"}} {
 		t.Run(tc.name, func(t *testing.T) {
 			var g *rig
 			if tc.dir != "" {

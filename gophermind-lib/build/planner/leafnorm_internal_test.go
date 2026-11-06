@@ -101,7 +101,7 @@ func TestRehearsal10NodesNormaliseWithoutARepair(t *testing.T) {
 		t.Errorf("side effects = %s", got)
 	}
 	d, _, notes, _ := normalizeReal(t, "tier_wiring")
-	if d["model_tier"] != "standard" || !strings.Contains(strings.Join(notes, " "), "model_tier") {
+	if d["model_tier"] != "strong" || !strings.Contains(strings.Join(notes, " "), "model_tier") {
 		t.Errorf("tier %v notes %v", d["model_tier"], notes)
 	}
 }
@@ -132,7 +132,8 @@ func TestNodeShapeNormalisation(t *testing.T) {
 				t.Errorf("depends_on = %v", d["depends_on"])
 			}
 		}},
-		{"enum case and spaces", func(d map[string]any) { d["model_tier"] = "  Strong " },
+		// The tier follows the class (wiring is strong); the case fold must not turn it into a defect.
+		{"enum case and spaces", func(d map[string]any) { d["model_tier"], d["node_class"] = "  Strong ", "wiring" },
 			func(t *testing.T, d map[string]any) {
 				if d["model_tier"] != "strong" {
 					t.Errorf("model_tier = %v", d["model_tier"])
