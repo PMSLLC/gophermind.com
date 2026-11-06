@@ -67,6 +67,50 @@ func TestForbidsBriefTokens(t *testing.T) {
 	}
 }
 
+// An alternation is checked branch by branch: | in an extended grep, \| in a
+// basic one; every -e pattern is checked. The r002 C4 command, verbatim.
+func TestForbidsBriefTokensReadsAlternationAndEveryPattern(t *testing.T) {
+	src := []byte("## Architecture\n\n- `cmd/hello` (package `main`): `main` calls `cli.Run` with `os.Args[1:]`.\n\n## Constraints\n\n- No `init` functions.\n")
+	c4 := Requirement{ID: "C4", Kind: ReqConstraint, Text: "No logging, no flags, no configuration, no file access, no network access, no environment variables, no `init` functions."}
+	cases := []struct {
+		cmd  string
+		want []string
+	}{
+		{`! grep -rqE 'log\[|flag\[|os\.Getenv|os\.Args|net\.|os\.Open|init\(' internal/ cmd/`, []string{"os.Args"}},
+		{`! egrep -rq 'log\[|os\.Args' cmd/`, []string{"os.Args"}},
+		{`! grep -rq 'log\[\|os\.Args' cmd/`, []string{"os.Args"}},
+		{`! grep -rq -e x -e 'os\.Args' .`, []string{"os.Args"}},
+		{`! grep -rq 'log|os\.Args' cmd/`, nil},
+		{`! grep -rqE 'log\|os\.Args' cmd/`, nil},
+		{`! grep -rqE 'log\[|os\.Getenv' internal/ cmd/`, nil},
+	}
+	for _, k := range cases {
+		if got := forbidsBriefTokens(c4, []RootTest{{Requirement: "C4", Command: k.cmd}}, src); !reflect.DeepEqual(got, k.want) {
+			t.Errorf("%s = %q, want %q", k.cmd, got, k.want)
+		}
+	}
+}
+
+// The Out of scope (or Non-goals) section lists what the product must not do,
+// and fenced code is an example: neither is a requirement.
+func TestForbidsBriefTokensSkipsOutOfScopeAndFencedCode(t *testing.T) {
+	c := Requirement{ID: "C4", Kind: ReqConstraint, Text: "No input reading."}
+	cmd := []RootTest{{Requirement: "C4", Command: `! grep -rq 'os\.Stdin' internal/`}}
+	for name, src := range map[string]string{
+		"out of scope": "## Features\n\n- Prints a line.\n\n## Out of scope\n\n- Reading from `os.Stdin`, `--format`.\n",
+		"non-goals":    "## Non-goals\n\n- Reading from `os.Stdin`.\n\n### Detail\n\n- Still `os.Stdin`.\n",
+		"fenced code":  "## Features\n\n```go\nr := `os.Stdin`\n```\n",
+	} {
+		if got := forbidsBriefTokens(c, cmd, []byte(src)); got != nil {
+			t.Errorf("%s: forbids = %q, want nil", name, got)
+		}
+	}
+	after := "## Out of scope\n\n- Reading from `os.Stdin`.\n\n## Architecture\n\n- `internal/in` reads `os.Stdin`.\n"
+	if got := forbidsBriefTokens(c, cmd, []byte(after)); !reflect.DeepEqual(got, []string{"os.Stdin"}) {
+		t.Errorf("a section after Out of scope = %q, want [os.Stdin]", got)
+	}
+}
+
 // A span in a sentence that says never, not or no is a forbidden mention, not
 // a requirement; a negated grep limited to directories no requiring line names
 // does not forbid what the brief requires.

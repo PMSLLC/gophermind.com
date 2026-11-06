@@ -75,10 +75,26 @@ func calleeOf(call string) string {
 	return name
 }
 
+// obligationTarget is the function name a bullet names: the callee of its
+// first backticked call (`Run(nil, stdout, stderr)` names Run), or, when it has
+// no call span, its only backticked span when that is a single identifier
+// (No `Greeting` result ends with a newline. names Greeting). Such a bullet is
+// a text-only obligation: no call means no argument, and an identifier is
+// never expected text. "" for anything else.
+func obligationTarget(text string) string {
+	if call := obligationCall(text); call != "" {
+		return calleeOf(call)
+	}
+	if spans := backtickSpans(text); len(spans) == 1 && identRE.MatchString(spans[0]) && !strings.Contains(spans[0], ".") {
+		return spans[0]
+	}
+	return ""
+}
+
 // testObligations attaches every kind-test requirement to the contract function
-// whose declared name is the callee of the bullet's first backticked call
-// (`Run(nil, stdout, stderr)` names Run). A bullet with no call span, or whose
-// callee matches no function or more than one, is returned in unattached.
+// whose declared name obligationTarget reads from the bullet. A bullet that
+// names no function, or whose name matches no function or more than one, is
+// returned in unattached.
 func testObligations(reqs []Requirement, c *contract.Contracts) (attached []TestObligation, unattached []Requirement) {
 	byName := map[string][]string{}
 	if c != nil {
@@ -93,7 +109,7 @@ func testObligations(reqs []Requirement, c *contract.Contracts) (attached []Test
 		if q.Kind != ReqTest {
 			continue
 		}
-		ids := byName[calleeOf(obligationCall(q.Text))]
+		ids := byName[obligationTarget(q.Text)]
 		if len(ids) != 1 {
 			unattached = append(unattached, q)
 			continue

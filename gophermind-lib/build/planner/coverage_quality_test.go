@@ -191,13 +191,18 @@ func TestCoveragePromptTeachesTheCapturePattern(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"status=$?", `2>"$err"`, "Never write `2>&1`", "may name only constructs the brief forbids everywhere", `mktemp "$TMPDIR/out.XXXXXX"`,
-		"grep -qxF 'usage: hello [NAME]'", "Compare exact text with grep -qxF", "`cat a.go b.go | grep -c 'func '`", "gofmt -l . must print nothing, go vet ./... must exit 0."} {
+		"grep -qxF 'usage: tool [ARG]'", "Compare exact text with grep -qxF", "`cat a.go b.go | grep -c 'func '`", "gofmt -l . must print nothing, go vet ./... must exit 0."} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("coverage prompt lacks %q", want)
 		}
 	}
 	if strings.Contains(string(b), "grep -qx ") || strings.Contains(string(b), "grep -qx`") {
 		t.Error("coverage prompt still shows grep -qx without -F")
+	}
+	for _, lit := range []string{"hello", "Hello", "Ada"} {
+		if strings.Contains(string(b), lit) {
+			t.Errorf("coverage prompt teaches with the hello literal %q", lit)
+		}
 	}
 }
 
@@ -227,7 +232,7 @@ func TestCoverageQualityGateRefusesAConstraintThatSkipsItsTools(t *testing.T) {
 
 // The coverage prompt never teaches a form the checker refuses: every
 // backticked command example in its rules (a span with a space that does not
-// follow "never") is clean under acceptcheck.Quality with the hello binary.
+// follow "never") is clean under acceptcheck.Quality with the hello and tool binaries.
 // The harness contract is cut out: it lists refused forms on purpose.
 func TestCoveragePromptExamplesPassTheQualityGate(t *testing.T) {
 	g := newRig(t, approving())
@@ -255,13 +260,13 @@ func TestCoveragePromptExamplesPassTheQualityGate(t *testing.T) {
 			continue
 		}
 		checked = append(checked, span)
-		if got := acceptcheck.Quality(span, acceptcheck.Options{Bins: []string{"hello"}}); got != nil {
+		if got := acceptcheck.Quality(span, acceptcheck.Options{Bins: []string{"hello", "tool"}}); got != nil {
 			t.Errorf("prompt example %q: %v", span, got)
 		}
 	}
 	var capture, count bool
 	for _, c := range checked {
-		capture = capture || strings.Contains(c, "grep -qxF 'usage: hello [NAME]'")
+		capture = capture || strings.Contains(c, "grep -qxF 'usage: tool [ARG]'")
 		count = count || strings.Contains(c, "| grep -c ")
 	}
 	if !capture || !count {

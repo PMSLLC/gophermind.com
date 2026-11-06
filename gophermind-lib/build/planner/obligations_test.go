@@ -41,7 +41,7 @@ func TestObligationsAttachByCallee(t *testing.T) {
 		got[o.ID] = o.Target
 	}
 	want := map[string]string{
-		"T1": "fn-greeting", "T2": "fn-greeting", "T3": "fn-greeting", "T4": "fn-greeting",
+		"T1": "fn-greeting", "T2": "fn-greeting", "T3": "fn-greeting", "T4": "fn-greeting", "T5": "fn-greeting",
 		"T6": "fn-run", "T7": "fn-run", "T8": "fn-run", "T9": "fn-run",
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -60,8 +60,32 @@ func TestObligationsAttachByCallee(t *testing.T) {
 	for _, q := range unattached {
 		ids = append(ids, q.ID)
 	}
-	if !reflect.DeepEqual(ids, []string{"T5", "T10"}) || unattached[1].Text != "The build is reproducible." {
-		t.Errorf("unattached = %v, want T5 (no call) and T10 (the reproducible bullet)", ids)
+	if !reflect.DeepEqual(ids, []string{"T10"}) || unattached[0].Text != "The build is reproducible." {
+		t.Errorf("unattached = %v, want only T10 (the reproducible bullet)", ids)
+	}
+}
+
+// A bullet whose only backticked span names a contract function attaches to
+// it as a text-only obligation: cited, with no argument or expected text.
+func TestObligationOnlyAFunctionNameIsTextOnly(t *testing.T) {
+	t5 := Requirement{ID: "T5", Kind: ReqTest, Text: "No `Greeting` result ends with a newline.", Line: 9}
+	attached, unattached := testObligations([]Requirement{t5}, helloContracts())
+	if len(unattached) != 0 || len(attached) != 1 || attached[0].Target != "fn-greeting" {
+		t.Fatalf("attached %+v, unattached %+v; want T5 on fn-greeting", attached, unattached)
+	}
+	if a, e := obligationArgs(t5.Text), expectedTexts(t5.Text); a != nil || e != nil {
+		t.Errorf("arguments %q, expected texts %q; want none", a, e)
+	}
+	if err := checkObligations(attached, map[string]bool{"T5": true}, "package greet\n"); err != nil {
+		t.Errorf("cited T5 refused: %v", err)
+	}
+	if err := checkObligations(attached, map[string]bool{}, "package greet\n"); err == nil || !strings.Contains(err.Error(), "no test case covers obligation T5") {
+		t.Errorf("uncited T5: err = %v", err)
+	}
+	for _, text := range []string{"Every case runs on its own.", "`Greeting` and `Run` agree.", "No `Missing` result is empty.", "No `greet.Greeting` result ends with a newline."} {
+		if a, u := testObligations([]Requirement{{ID: "T1", Kind: ReqTest, Text: text}}, helloContracts()); len(a) != 0 || len(u) != 1 {
+			t.Errorf("%q: attached %+v, want unattached", text, a)
+		}
 	}
 }
 

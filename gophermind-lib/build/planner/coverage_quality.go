@@ -274,6 +274,52 @@ func unescapePattern(p string) string {
 	return strings.ReplaceAll(p, `\.`, ".")
 }
 
+// alternatives is a grep pattern's top-level branches: split on | in an
+// extended expression and on \| in a basic one, outside brackets and groups.
+// A pattern with no alternation is its own only branch.
+func alternatives(p string, extended bool) []string {
+	var out []string
+	depth, start := 0, 0
+	for i := 0; i < len(p); i++ {
+		c := p[i]
+		switch {
+		case c == '[':
+			// a bracket expression ends at the first ] after its first character
+			j := i + 1
+			if j < len(p) && p[j] == '^' {
+				j++
+			}
+			if j < len(p) && p[j] == ']' {
+				j++
+			}
+			for j < len(p) && p[j] != ']' {
+				j++
+			}
+			i = j
+		case c == '\\' && i+1 < len(p):
+			n := p[i+1]
+			switch {
+			case !extended && n == '(':
+				depth++
+			case !extended && n == ')' && depth > 0:
+				depth--
+			case !extended && n == '|' && depth == 0:
+				out = append(out, p[start:i])
+				start = i + 2
+			}
+			i++
+		case extended && c == '(':
+			depth++
+		case extended && c == ')' && depth > 0:
+			depth--
+		case extended && c == '|' && depth == 0:
+			out = append(out, p[start:i])
+			start = i + 1
+		}
+	}
+	return append(out, p[start:])
+}
+
 // negationRE is a word that makes a sentence forbid what it names.
 var negationRE = regexp.MustCompile(`(?i)\b(never|not|no|without|cannot|forbidden)\b`)
 
@@ -287,13 +333,40 @@ type briefUse struct {
 	dirs []string
 }
 
+// outOfScopeRE is a heading whose section lists what the product does not do.
+var outOfScopeRE = regexp.MustCompile(`^(#+)\s+(.*)$`)
+
 // briefUses are the backticked spans of src that the brief requires: not one
-// of skip (the constraint's own spans), and not in a sentence whose text
-// before the span says never, not, no, without, cannot or forbidden. Each
+// of skip (the constraint's own spans), not in a sentence whose text before
+// the span says never, not, no, without, cannot or forbidden, not in fenced
+// code, and not in a section whose heading starts with "Out of scope" or
+// "Non-goals" (to the next heading of the same or a higher level). Each
 // carries the line's path-like spans (containing a slash) as its directories.
 func briefUses(src []byte, skip map[string]bool) []briefUse {
 	var out []briefUse
+	fenced, skipLevel := false, 0
 	for _, line := range strings.Split(string(src), "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
+			fenced = !fenced
+			continue
+		}
+		if fenced {
+			continue
+		}
+		if h := outOfScopeRE.FindStringSubmatch(t); h != nil {
+			level, title := len(h[1]), strings.ToLower(strings.TrimSpace(h[2]))
+			if skipLevel > 0 && level <= skipLevel {
+				skipLevel = 0
+			}
+			if skipLevel == 0 && (strings.HasPrefix(title, "out of scope") || strings.HasPrefix(title, "non-goals")) {
+				skipLevel = level
+			}
+			continue
+		}
+		if skipLevel > 0 {
+			continue
+		}
 		ms := backtickRE.FindAllStringSubmatchIndex(line, -1)
 		if len(ms) == 0 {
 			continue
@@ -359,8 +432,8 @@ func covers(operands, dirs []string) bool {
 	return false
 }
 
-// forbidsBriefTokens is, for a Constraint, the patterns of its root tests'
-// negated greps that are tokens the brief requires where the grep searches:
+// forbidsBriefTokens is, for a Constraint, the patterns (each -e, each
+// alternation branch) of its root tests' negated greps that are tokens the brief requires where the grep searches:
 // a span briefUses keeps (not one of the constraint's own spans, not a
 // negated mention) equal to the pattern, or starting with it and then ., (
 // or [ (os.Args against os.Args[1:]), on a line whose directories the grep's
@@ -382,16 +455,18 @@ func forbidsBriefTokens(req Requirement, tests []RootTest, src []byte) []string 
 		}
 		for _, g := range acceptcheck.NegatedGreps(t.Command) {
 			for _, pat := range g.Patterns {
-				p := unescapePattern(pat)
-				if p == "" || seen[p] {
-					continue
-				}
-				for _, u := range uses {
-					rest, ok := strings.CutPrefix(u.span, p)
-					if ok && (rest == "" || strings.ContainsAny(rest[:1], ".([")) && covers(g.Paths, u.dirs) {
-						seen[p] = true
-						out = append(out, p)
-						break
+				for _, branch := range alternatives(pat, g.Extended) {
+					p := unescapePattern(branch)
+					if p == "" || seen[p] {
+						continue
+					}
+					for _, u := range uses {
+						rest, ok := strings.CutPrefix(u.span, p)
+						if ok && (rest == "" || strings.ContainsAny(rest[:1], ".([")) && covers(g.Paths, u.dirs) {
+							seen[p] = true
+							out = append(out, p)
+							break
+						}
 					}
 				}
 			}
