@@ -118,19 +118,19 @@ Run history (from the ledger). The plan found each failure by a live run on the 
 
 | Run | Installed | Result and what it became |
 |---|---|---|
-| early (r002, old binary f5406f49) | f5406f49 | Contract right; failed escalated at fn-main on the os.Exit gate. Task 3. |
-| early (r003, old binary f5406f49) | f5406f49 | fn-run escalated `contract_flagged` (bare `Greeting("")`, undefined); never reached fn-main. Task 3b. |
-| r001 | 2a169056 | Failed in planning: fill added test functions as contract functions, test writer refused 18 rounds. Task 3c. |
-| r002 | bd1d624b | Planning passed; acceptance 3 of 6, root tests used a bare `mktemp` the sandbox denied. Task 4b. |
-| r003 | 63cefbd9 | Stopped after 86 ms: executor tripwire demanded coverage for test obligations. Task 3f. |
-| r004 | cb3271b3 | Acceptance 5 of 6, constraints 3 of 5: bracket grep without -F, per-file counts, placeholder test; five identical replies. Tasks 4c, 3g. |
-| r005 | 45a1aadd | Acceptance 6 of 6, constraints 3 of 4; C2 root test had an unterminated quote. Task 4d. |
-| r006 | 45a1aadd | Acceptance 6 of 6, constraints 3 of 4; C2 root test unparseable again. |
-| r007 | cedeac05 | Stopped at coverage after two rounds on the literal check reading the brief wrongly. Task 7b. |
-| r008 | 947ed674 | One real literal gap left (usage line missing from fn-run doc); fill had no action to change a doc. Task 7c. |
-| r009 | 45a8b0ed | Acceptance 4 of 6, constraints 2 of 5: bash process substitution under /bin/sh, enumerated Go versions, forbidden `os.Args`, empty-output grep. Tasks 4e, 3h. |
-| r010 | a5a38158 | Green: 3 of 3 nodes verified (fn-greeting one revision, fn-run tests rewritten once), acceptance 6 of 6, constraints 5 of 5, requirements 16 of 16. |
-| r011 | 695cef47 | Green and clean, the proof run (below). |
+| hello-v1.1-20261105-r002 | f5406f49 | Contract right; failed escalated at fn-main on the os.Exit gate. Task 3. |
+| hello-v1.1-20261105-r003 | f5406f49 | fn-run escalated `contract_flagged` (bare `Greeting("")`, undefined); never reached fn-main. Task 3b. |
+| hello-v1.1-20261106-r001 | 2a169056 | Failed in planning: fill added test functions as contract functions, test writer refused 18 rounds. Task 3c. |
+| hello-v1.1-20261106-r002 | bd1d624b | Planning passed; acceptance 3 of 6, root tests used a bare `mktemp` the sandbox denied. Task 4b. |
+| hello-v1.1-20261106-r003 | 63cefbd9 | Stopped after 86 ms: executor tripwire demanded coverage for test obligations. Task 3f. |
+| hello-v1.1-20261106-r004 | cb3271b3 | Acceptance 5 of 6, constraints 3 of 5: bracket grep without -F, per-file counts, placeholder test; five identical replies. Tasks 4c, 3g. |
+| hello-v1.1-20261106-r005 | 45a1aadd | Acceptance 6 of 6, constraints 3 of 4; C2 root test had an unterminated quote. Task 4d. |
+| hello-v1.1-20261106-r006 | 45a1aadd | Acceptance 6 of 6, constraints 3 of 4; C2 root test unparseable again. |
+| hello-v1.1-20261106-r007 | cedeac05 | Stopped at coverage after two rounds on the literal check reading the brief wrongly. Task 7b. |
+| hello-v1.1-20261106-r008 | 947ed674 | One real literal gap left (usage line missing from fn-run doc); fill had no action to change a doc. Task 7c. |
+| hello-v1.1-20261106-r009 | 45a8b0ed | Acceptance 4 of 6, constraints 2 of 5: bash process substitution under /bin/sh, enumerated Go versions, forbidden `os.Args`, empty-output grep. Tasks 4e, 3h. |
+| hello-v1.1-20261106-r010 | a5a38158 | Green: 3 of 3 nodes verified (fn-greeting one revision, fn-run tests rewritten once), acceptance 6 of 6, constraints 5 of 5, requirements 16 of 16. |
+| hello-v1.1-20261106-r011 | 695cef47 | Green and clean, the proof run (below). |
 
 Full `gophermind-lib` check at 695cef47 (`go build ./... && go vet ./... && gofmt -l . && go test ./...`), log `/tmp/gm-fulltest-695cef47.log`. The log had no `exit N` line when this report was written: the run was still in progress, and the controller appends the result. Lines so far, verbatim:
 
@@ -154,7 +154,10 @@ ok  	gophermind/gophermind-lib/build/execenv	0.368s
 
 Earlier, the full-tree run at b5c7f76b was clean for build, vet, gofmt and the executor suite, with two failures: the examples count (fixed at 2a169056) and `serve` TestBriefEventsEndsWhenRunIsFinal (passes alone with -count=3; parked as a load-timing flake).
 
-Pending: result of the full run at 695cef47 (appended by the controller).
+Result of the full run at 695cef47 (23:05 to 00:03 MST, while hello r011 and r012 ran on the same machine): build, vet and gofmt clean; 81 packages ok, two FAIL.
+
+- `build/executor` (3497 s under load): `TestLoadPlanGreeter` (fn-serve Tier "strong", want "any") and `TestEveryStageEmitsEvents` (the planner's `leaf_normalized` warning event exceeds the test's 200-character cap). Both fail by name at HEAD in 22 s and pass at 0932dc1 (the commit before this plan), so they are regressions of 8a24ca35 (a node's tier follows its class; wiring is strong) that no task caught because implementers never run the executor suite. Both are stale test expectations against the ruled behaviour; fixed at 7ddb8773 (fn-serve expects strong; the events test skips the leaf_normalized warning like main_function_missing). Both pass by name after the fix (26 s).
+- `serve`: `TestRunPreviewTokenMatchStartsRun` failed on TempDir cleanup ("directory not empty"); passes 3 of 3 alone. Load-timing flake, parked with the one above.
 
 ## Final Hello run stage summary
 
