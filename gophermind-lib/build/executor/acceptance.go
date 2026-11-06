@@ -581,6 +581,19 @@ func tempDirFault(text string) (line string, ok bool) {
 	return "", false
 }
 
+// shellSyntaxFault finds the line where /bin/sh refused to parse a root test
+// (bash-only syntax such as process substitution). The command never ran, so
+// the fault is the test's, not the code's.
+func shellSyntaxFault(text string) (line string, ok bool) {
+	for _, l := range strings.Split(text, "\n") {
+		l = strings.TrimRight(l, "\r")
+		if (strings.HasPrefix(l, "/bin/sh:") || strings.HasPrefix(l, "sh:")) && strings.Contains(l, "syntax error") {
+			return l, true
+		}
+	}
+	return "", false
+}
+
 func (rc *runCtx) runBullet(ctx context.Context, pb planBullet) (BulletProof, *failedBullet, error) {
 	bp := BulletProof{Requirement: pb.req.ID, Text: rc.scrubText(pb.req.Text), Commands: []CommandProof{}, Verdict: "pass"}
 	var fb *failedBullet
@@ -602,6 +615,12 @@ func (rc *runCtx) runBullet(ctx context.Context, pb planBullet) (BulletProof, *f
 		if line, ok := tempDirFault(res.Out.Text()); ok {
 			return bp, nil, &stopError{Status: "failed", Reason: "acceptance_environment",
 				Message: "executor: " + proof.Command + " could not create its temp file (" + rc.scrubText(line) + "): give mktemp a template under $TMPDIR; the code was not at fault"}
+		}
+		if proof.ExitCode == 2 && !proof.TimedOut {
+			if line, ok := shellSyntaxFault(res.Out.Text()); ok {
+				return bp, nil, &stopError{Status: "failed", Reason: "acceptance_test_invalid",
+					Message: "executor: " + proof.Command + " does not parse under /bin/sh (" + rc.scrubText(line) + "): the root test is wrong, the code was not at fault"}
+			}
 		}
 		if fb == nil {
 			end := fmt.Sprintf("exit code %d", proof.ExitCode)
@@ -639,7 +658,7 @@ func (rc *runCtx) bulletFailure(req planner.Requirement, head []string, output s
 // id. A cancelled context returns its error and writes nothing.
 func (rc *runCtx) acceptanceRun(ctx context.Context, p acceptPlan, round int) (AcceptanceFile, map[string]failedBullet, error) {
 	file := AcceptanceFile{
-		RequirementsCovered: Counts{Passed: len(rc.plan.Coverage.Covered), Total: len(rc.plan.Requirements)},
+		RequirementsCovered: Counts{Passed: len(rc.plan.Coverage.Covered), Total: len(planner.CoverageRequirements(rc.plan.Requirements))},
 		Acceptance:          Counts{Total: len(p.acceptance)},
 		ConstraintsChecked:  Counts{Total: len(p.constraints)},
 		Round:               round, Bullets: []BulletProof{}, Constraints: []BulletProof{},
@@ -1162,7 +1181,7 @@ func (rc *runCtx) finish(ctx context.Context, f runFlags) (finishResult, error) 
 // codes, never output).
 func stopFailure(se *stopError) []string {
 	switch se.Reason {
-	case "acceptance_failed", "constraint_failed", "acceptance_environment", "acceptance_unmapped", "coverage_incomplete", "acceptance_tampered",
+	case "acceptance_failed", "constraint_failed", "acceptance_environment", "acceptance_test_invalid", "acceptance_unmapped", "coverage_incomplete", "acceptance_tampered",
 		"acceptance_stray", "acceptance_leak", "acceptance_vacuous", "acceptance_build", "acceptance_serve", "acceptance_not_red", "tree_not_clean", "foreign_dirt", "repo_moved", "base_moved":
 		return []string{strings.TrimPrefix(se.Message, "executor: ")}
 	}
