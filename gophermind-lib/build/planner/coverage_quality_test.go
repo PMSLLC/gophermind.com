@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"gophermind/gophermind-lib/build/acceptcheck"
 	"gophermind/gophermind-lib/build/events"
 	"gophermind/gophermind-lib/build/planner"
 )
@@ -190,7 +191,7 @@ func TestCoveragePromptTeachesTheCapturePattern(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"status=$?", `2>"$err"`, "Never write `2>&1`", "may name only constructs the brief forbids everywhere", `mktemp "$TMPDIR/out.XXXXXX"`,
-		"grep -qxF 'usage: hello [NAME]'", "Compare exact text with grep -qxF", "cat files | grep -c PATTERN", "gofmt -l . must print nothing, go vet ./... must exit 0."} {
+		"grep -qxF 'usage: hello [NAME]'", "Compare exact text with grep -qxF", "`cat a.go b.go | grep -c 'func '`", "gofmt -l . must print nothing, go vet ./... must exit 0."} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("coverage prompt lacks %q", want)
 		}
@@ -221,5 +222,49 @@ func TestCoverageQualityGateRefusesAConstraintThatSkipsItsTools(t *testing.T) {
 	}
 	if !seen {
 		t.Errorf("no coverage_gap event names C2 root test quality [tool_not_invoked: gofmt, go vet]: %+v", g.sink.OfKind(events.KindCoverageGap))
+	}
+}
+
+// The coverage prompt never teaches a form the checker refuses: every
+// backticked command example in its rules (a span with a space that does not
+// follow "never") is clean under acceptcheck.Quality with the hello binary.
+// The harness contract is cut out: it lists refused forms on purpose.
+func TestCoveragePromptExamplesPassTheQualityGate(t *testing.T) {
+	g := newRig(t, approving())
+	g.mustPlan(planner.Options{StopAfter: "coverage"})
+	var prompt string
+	for _, r := range g.fake.Requests() {
+		if planner.StageOf(r) == "coverage" {
+			prompt = r.Messages[1].Content
+		}
+	}
+	_, rules, ok := strings.Cut(prompt, "\nRules:\n")
+	if !ok {
+		t.Fatalf("no rules in the rendered coverage prompt:\n%s", prompt)
+	}
+	harness, err := os.ReadFile("prompts/harness.md")
+	if err != nil || !strings.Contains(rules, strings.TrimSpace(string(harness))) {
+		t.Fatalf("the harness contract is not in the rendered prompt (%v)", err)
+	}
+	rules = strings.Replace(rules, strings.TrimSpace(string(harness)), "", 1)
+	parts := strings.Split(rules, "`")
+	var checked []string
+	for i := 1; i < len(parts); i += 2 {
+		span, before := parts[i], strings.ToLower(strings.TrimSpace(parts[i-1]))
+		if !strings.Contains(span, " ") || strings.HasSuffix(before, "never") {
+			continue
+		}
+		checked = append(checked, span)
+		if got := acceptcheck.Quality(span, acceptcheck.Options{Bins: []string{"hello"}}); got != nil {
+			t.Errorf("prompt example %q: %v", span, got)
+		}
+	}
+	var capture, count bool
+	for _, c := range checked {
+		capture = capture || strings.Contains(c, "grep -qxF 'usage: hello [NAME]'")
+		count = count || strings.Contains(c, "| grep -c ")
+	}
+	if !capture || !count {
+		t.Errorf("capture example checked = %v, count example checked = %v: %q", capture, count, checked)
 	}
 }
