@@ -53,6 +53,13 @@ type contractState struct {
 	// FixedRepairs counts, per component, the passes that asked for interfaces
 	// the brief's Architecture section fixes and the component left out (one at most).
 	FixedRepairs map[string]int `json:"fixed_repairs,omitempty"`
+	// Declared holds, per function and type id a component pass wrote, the
+	// declaration as the model sent it (canonicalDecl), taken at merge before
+	// any harness edit. A later re-emission is compared with it, so a fixed
+	// signature, a fixed use or the component stamp never makes the model's
+	// own replay a conflict. It is stored with the state because the stage
+	// resumes mid-contract from it.
+	Declared map[string]string `json:"declared,omitempty"`
 	// SchemaRepairs counts the passes that asked for fields the merged contract
 	// lacked (attempts that failed count too, across restarts).
 	SchemaRepairs int `json:"schema_repairs,omitempty"`
@@ -441,7 +448,9 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			if refused != nil {
 				base = withoutFunctionIDs(base, refused)
 			}
-			before := functionIDs(base, id)
+			// Taken from the stored doc: a run the surface round took out and
+			// put back is not new.
+			before := functionIDs(st.Doc, id)
 			surfaceText := ""
 			if entry {
 				surfaceText = surface.Text()
@@ -475,9 +484,15 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 				text, foreign = dropForeignFunctions(text, pkg, module)
 				text, tests = dropTestFunctionsText(text)
 				text, extras = dropEntryExtras(text, dir, arch)
-				doc, m, ign, err := mergePass(base, id, text, r.rootID())
+				doc, m, ign, decl, err := mergePassDeclared(base, st.Declared, id, text, r.rootID())
 				if err != nil {
 					return err
+				}
+				if len(decl) > 0 && st.Declared == nil {
+					st.Declared = map[string]string{}
+				}
+				for k, v := range decl {
+					st.Declared[k] = v
 				}
 				if dropped != nil && !hasFunction(doc, dropped) {
 					// The rewrite left the function out: keep the one it replaces.
@@ -977,8 +992,12 @@ func unresolvedErr(stage string, ids []string) error {
 // caller decides. added counts the objects that were new. prep, when set,
 // normalises an object before it is compared. others holds the ids of the
 // other lists (components, types, functions share one id namespace): an id in
-// it is dropped and reported in ignored, whatever its content.
-func mergeByID(list any, in []map[string]any, added int, what string, prep func(map[string]any), others map[string]bool) ([]any, int, []string, []string) {
+// it is dropped and reported in ignored, whatever its content. Contents are
+// compared by canonicalDecl, without the fields the harness owns. decl, when
+// set, holds the model's own declaration of a stored id (decl.prior), which
+// is compared instead of the stored record the harness may have edited since,
+// and receives the declaration of every object added (decl.added).
+func mergeByID(list any, in []map[string]any, added int, what string, prep func(map[string]any), others map[string]bool, decl *declaredForms) ([]any, int, []string, []string) {
 	out, _ := list.([]any)
 	at := map[string]int{}
 	for i, x := range out {
@@ -1002,10 +1021,18 @@ func mergeByID(list any, in []map[string]any, added int, what string, prep func(
 			continue
 		}
 		if i, ok := at[id]; ok && id != "" {
-			old, _ := json.Marshal(out[i])
-			cur, _ := json.Marshal(m)
+			cur := canonicalDecl(m)
+			old := ""
+			if o, ok := out[i].(map[string]any); ok {
+				old = canonicalDecl(o)
+			}
+			if decl != nil && i < stored {
+				if p, ok := decl.prior[id]; ok {
+					old = p
+				}
+			}
 			switch {
-			case bytes.Equal(old, cur):
+			case old == cur:
 			case i < stored:
 				conflicts = append(conflicts, id)
 			default:
@@ -1015,11 +1042,38 @@ func mergeByID(list any, in []map[string]any, added int, what string, prep func(
 		}
 		if id != "" {
 			at[id] = len(out)
+			if decl != nil && decl.added != nil {
+				decl.added[id] = canonicalDecl(m)
+			}
 		}
 		out = append(out, m)
 		added++
 	}
 	return out, added, ignored, conflicts
+}
+
+// declaredForms is the bookkeeping mergeByID compares and records the
+// model's own declarations with: prior is read, added is written.
+type declaredForms struct {
+	prior, added map[string]string
+}
+
+// harnessFields are the fields of a contract object the harness sets, never
+// the model: mergePass stamps the component on every function.
+var harnessFields = []string{"component"}
+
+// canonicalDecl is the canonical JSON of a declaration without the fields
+// the harness owns, the form two declarations of one id are compared in.
+func canonicalDecl(m map[string]any) string {
+	c := make(map[string]any, len(m))
+	for k, v := range m {
+		c[k] = v
+	}
+	for _, k := range harnessFields {
+		delete(c, k)
+	}
+	b, _ := json.Marshal(c)
+	return string(b)
 }
 
 // mergeList is mergeByID for the list doc[key] ("components", "types" or
@@ -1028,7 +1082,7 @@ func mergeByID(list any, in []map[string]any, added int, what string, prep func(
 // differing repeat, and the first emission kept; mergePass, which refuses a
 // conflict, uses mergeListConflicts.
 func mergeList(doc map[string]any, key string, in []map[string]any, added int, what string, prep func(map[string]any)) (int, []string) {
-	added, ignored, conflicts := mergeListConflicts(doc, key, in, added, what, prep)
+	added, ignored, conflicts := mergeListConflicts(doc, key, in, added, what, prep, nil)
 	for _, id := range conflicts {
 		ignored = append(ignored, what+" "+boundedID(id))
 	}
@@ -1036,7 +1090,7 @@ func mergeList(doc map[string]any, key string, in []map[string]any, added int, w
 }
 
 // mergeListConflicts is mergeList with the conflicts returned apart.
-func mergeListConflicts(doc map[string]any, key string, in []map[string]any, added int, what string, prep func(map[string]any)) (int, []string, []string) {
+func mergeListConflicts(doc map[string]any, key string, in []map[string]any, added int, what string, prep func(map[string]any), decl *declaredForms) (int, []string, []string) {
 	others := map[string]bool{}
 	for _, k := range []string{"components", "types", "functions"} {
 		if k == key {
@@ -1064,7 +1118,7 @@ func mergeListConflicts(doc map[string]any, key string, in []map[string]any, add
 			}
 		}
 	}
-	out, added, ignored, conflicts := mergeByID(doc[key], in, added, what, prep, others)
+	out, added, ignored, conflicts := mergeByID(doc[key], in, added, what, prep, others, decl)
 	doc[key] = out
 	return added, ignored, conflicts
 }
@@ -1262,35 +1316,47 @@ func dropSharedExtras(text string) (string, []string, error) {
 // that repeats an id already written word for word is silent; one that
 // declares it another way is a conflict and refuses the reply, so the model is
 // asked again and the stored contract keeps the first declaration. ignored
-// lists the repeats within the reply that differed.
+// lists the repeats within the reply that differed. Declarations are compared
+// against the stored records; mergePassDeclared compares against the model's
+// own earlier declarations.
 func mergePass(doc map[string]any, component, text, briefID string) (map[string]any, bool, []string, error) {
+	next, more, ignored, _, err := mergePassDeclared(doc, nil, component, text, briefID)
+	return next, more, ignored, err
+}
+
+// mergePassDeclared is mergePass that compares a repeated id with declared,
+// the model's own declaration of it as an earlier pass sent it (an id missing
+// there is compared with the stored record). It returns the declarations of
+// the objects this pass added, for the caller to keep; declared is not changed.
+func mergePassDeclared(doc map[string]any, declared map[string]string, component, text, briefID string) (map[string]any, bool, []string, map[string]string, error) {
 	var pass struct {
 		Types     []map[string]any `json:"types"`
 		Functions []map[string]any `json:"functions"`
 		More      bool             `json:"more"`
 	}
 	if err := json.Unmarshal([]byte(text), &pass); err != nil {
-		return nil, false, nil, fmt.Errorf("contract reply for %s is not a JSON object (%s)", component, jsonErrIn(err, text))
+		return nil, false, nil, nil, fmt.Errorf("contract reply for %s is not a JSON object (%s)", component, jsonErrIn(err, text))
 	}
 	next, err := copyDoc(doc)
 	if err != nil {
-		return nil, false, nil, err
+		return nil, false, nil, nil, err
 	}
 	for _, f := range pass.Functions {
 		f["component"] = component
 	}
-	added, ignored, conflicts := mergeListConflicts(next, "types", pass.Types, 0, "type", nil)
-	added, ign2, conf2 := mergeListConflicts(next, "functions", pass.Functions, added, "function", nil)
+	decl := &declaredForms{prior: declared, added: map[string]string{}}
+	added, ignored, conflicts := mergeListConflicts(next, "types", pass.Types, 0, "type", nil, decl)
+	added, ign2, conf2 := mergeListConflicts(next, "functions", pass.Functions, added, "function", nil, decl)
 	ignored, conflicts = append(ignored, ign2...), append(conflicts, conf2...)
 	if len(conflicts) > 0 {
-		return nil, false, nil, fmt.Errorf("contract: conflicting declaration of %s by component %s", strings.Join(shownIDs(conflicts), ", "), shownID(component))
+		return nil, false, nil, nil, fmt.Errorf("contract: conflicting declaration of %s by component %s", strings.Join(shownIDs(conflicts), ", "), shownID(component))
 	}
 	if err := validateOutlineShape(next, briefID); err != nil {
-		return nil, false, nil, err
+		return nil, false, nil, nil, err
 	}
 	// A reply that says more but adds nothing new is the model repeating
 	// itself: the component is finished (a continuation needs progress).
-	return next, pass.More && added > 0, ignored, nil
+	return next, pass.More && added > 0, ignored, decl.added, nil
 }
 
 // shownID is an id as an error names it: as is when it has the id syntax and
@@ -1658,4 +1724,68 @@ func unresolvedOwnersText(doc map[string]any, ids []string) string {
 		text += fmt.Sprintf("\n(and %d more ids not shown)", hidden)
 	}
 	return text
+}
+
+// functionIDs lists the ids of the functions of component in doc, in order.
+func functionIDs(doc map[string]any, component string) []string {
+	var out []string
+	for _, f := range objects(doc["functions"]) {
+		if c, _ := f["component"].(string); c == component {
+			id, _ := f["id"].(string)
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// newFunctionIDs lists the functions of component in doc whose ids are not in
+// before: the ones the last pass added.
+func newFunctionIDs(doc map[string]any, component string, before []string) []string {
+	var out []string
+	for _, id := range functionIDs(doc, component) {
+		if !contains(before, id) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// withoutFunctionIDs is a shallow copy of doc whose function list lacks the
+// functions with these ids. The missing-interface defect round asks a
+// component again from it, so the reply supersedes the pass it refused.
+func withoutFunctionIDs(doc map[string]any, ids []string) map[string]any {
+	next := map[string]any{}
+	for k, v := range doc {
+		next[k] = v
+	}
+	kept := []any{}
+	for _, f := range objects(doc["functions"]) {
+		if id, _ := f["id"].(string); !contains(ids, id) {
+			kept = append(kept, f)
+		}
+	}
+	next["functions"] = kept
+	return next
+}
+
+// supersededIDs lists the refused ids the re-asked pass did not write again.
+func supersededIDs(doc map[string]any, refused []string) []string {
+	have := map[string]bool{}
+	for _, f := range objects(doc["functions"]) {
+		if id, _ := f["id"].(string); id != "" {
+			have[id] = true
+		}
+	}
+	var out []string
+	for _, id := range refused {
+		if !have[id] {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// supersededText is the warning for the functions a re-asked pass dropped.
+func supersededText(component string, ids []string) string {
+	return "superseded_function_dropped: " + component + ": " + strings.Join(ids, ", ")
 }

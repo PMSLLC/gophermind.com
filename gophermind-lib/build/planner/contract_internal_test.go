@@ -141,7 +141,7 @@ func TestMergeKeepsTheFirstEmission(t *testing.T) {
 		{"id": "has spaces " + canary, "v": "1"},
 		{"id": "has spaces " + canary, "v": "2"},
 	}
-	out, added, ignored, conflicts := mergeByID(list, in, 0, "type", nil, nil)
+	out, added, ignored, conflicts := mergeByID(list, in, 0, "type", nil, nil, nil)
 	if len(out) != 3 || added != 2 {
 		t.Fatalf("out %d added %d, want 3 and 2", len(out), added)
 	}

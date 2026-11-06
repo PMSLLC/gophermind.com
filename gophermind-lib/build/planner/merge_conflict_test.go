@@ -45,7 +45,7 @@ func TestIdenticalReplayIsSilent(t *testing.T) {
 	if n := len(objects(next["functions"])); n != 1 {
 		t.Errorf("functions = %d, want 1", n)
 	}
-	out, added, ignored, conflicts := mergeByID(doc["functions"], []map[string]any{objects(doc["functions"])[0]}, 0, "function", nil, nil)
+	out, added, ignored, conflicts := mergeByID(doc["functions"], []map[string]any{objects(doc["functions"])[0]}, 0, "function", nil, nil, nil)
 	if len(out) != 1 || added != 0 || len(ignored) != 0 || len(conflicts) != 0 {
 		t.Errorf("mergeByID replay: out %d added %d ignored %v conflicts %v", len(out), added, ignored, conflicts)
 	}
@@ -61,9 +61,6 @@ func TestEntryExtrasDroppedWhenTheCallIsFixed(t *testing.T) {
 	if strings.Join(dropped, ",") != "fn-run" {
 		t.Fatalf("dropped = %v, want fn-run", dropped)
 	}
-	if strings.Contains(text, "fn-run\", \"package") || !strings.Contains(text, `"fn-main"`) {
-		t.Errorf("reply = %s", text)
-	}
 	var reply struct{ Functions []map[string]any }
 	if err := json.Unmarshal([]byte(text), &reply); err != nil || len(reply.Functions) != 1 || reply.Functions[0]["id"] != "fn-main" {
 		t.Errorf("functions = %v (%v), want only fn-main", reply.Functions, err)
@@ -78,6 +75,11 @@ func TestEntryExtrasDroppedWhenTheCallIsFixed(t *testing.T) {
 }
 
 func TestEntryExtrasKeptWithoutAFixedCall(t *testing.T) {
+	// slugify fixes cli.Run: its run lives in internal/cli, not in cmd/, and stays.
+	cliReply := strings.ReplaceAll(entryReply, "cmd/hello", "internal/cli")
+	if text, dropped := dropEntryExtras(cliReply, "internal/cli", archOf(t, "slugify")); len(dropped) != 0 || text != cliReply {
+		t.Errorf("slugify internal/cli: dropped %v", dropped)
+	}
 	for _, arch := range []string{
 		archOf(t, "greeter"),
 		"- `cmd/hello` (package `main`): parses the flags and prints the greeting.\n- `internal/greet`: builds messages.",
@@ -214,5 +216,104 @@ func TestReaskedPassSupersedesTheRefusedOne(t *testing.T) {
 	}
 	if len(objects(refusedDoc["functions"])) != 3 {
 		t.Error("withoutFunctionIDs changed the doc it was given")
+	}
+}
+
+// declaredOutline is okOutline with a component helper in package y.
+func declaredOutline(t *testing.T) map[string]any {
+	t.Helper()
+	text := strings.Replace(okOutline, `{"id": "greeting", "package": "x"}`, `{"id": "greeting", "package": "x"}, {"id": "helper", "package": "y"}`, 1)
+	doc, _, err := parseOutline(text, testRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return doc
+}
+
+const declaredArch = "- `x`: `Run(args []string) int` checks the arguments and calls `y.Help`.\n- `y`: helpers."
+
+// mergeKeeping merges one pass and keeps its declarations in declared, the
+// way the contract stage does.
+func mergeKeeping(t *testing.T, doc map[string]any, declared map[string]string, component, reply string) map[string]any {
+	t.Helper()
+	next, _, ignored, decl, err := mergePassDeclared(doc, declared, component, reply, testRunID)
+	if err != nil || len(ignored) != 0 {
+		t.Fatalf("merge %s: err %v ignored %v", component, err, ignored)
+	}
+	for k, v := range decl {
+		declared[k] = v
+	}
+	return next
+}
+
+func storedFunction(doc map[string]any, id string) map[string]any {
+	for _, f := range objects(doc["functions"]) {
+		if f["id"] == id {
+			return f
+		}
+	}
+	return nil
+}
+
+const helpReply = `{"functions": [{"id": "fn-help", "package": "y", "file": "y/help.go", "signature": "func Help() string", "doc": "d", "uses": []}]}`
+
+func TestReEmissionAfterFixedUseIsSilent(t *testing.T) {
+	declared := map[string]string{}
+	doc := mergeKeeping(t, declaredOutline(t), declared, "helper", helpReply)
+	runReply := `{"functions": [` + runFn("func Run(args []string) int") + `], "more": true}`
+	doc = mergeKeeping(t, doc, declared, "greeting", runReply)
+	if w := applyFixedUses(doc, declaredArch); strings.Join(w, "|") != "fixed_use_added: fn-run uses fn-help" {
+		t.Fatalf("applyFixedUses = %v", w)
+	}
+	doc = mergeKeeping(t, doc, declared, "greeting", runReply)
+	if u := strList(storedFunction(doc, "fn-run")["uses"]); strings.Join(u, ",") != "fn-help" {
+		t.Errorf("stored uses = %v, want the fixed use kept", u)
+	}
+	// Without the model's own declaration the edited record is the reference.
+	if _, _, _, err := mergePass(doc, "greeting", runReply, testRunID); err == nil {
+		t.Error("compared with the edited record, the replay must conflict; the test no longer proves the rule")
+	}
+}
+
+func TestReEmissionAfterFixedSignatureIsSilent(t *testing.T) {
+	declared := map[string]string{}
+	doc := declaredOutline(t)
+	runReply := `{"functions": [` + runFn("func run(args []string) int") + `]}`
+	doc = mergeKeeping(t, doc, declared, "greeting", runReply)
+	applied, missing := applyFixedInterfaces(doc, "x", fixedInterfaces(declaredArch))
+	if len(applied) != 1 || len(missing) != 0 {
+		t.Fatalf("applied %v missing %v", applied, missing)
+	}
+	doc = mergeKeeping(t, doc, declared, "greeting", runReply)
+	if sig := storedFunction(doc, "fn-run")["signature"]; sig != "func Run(args []string) int" {
+		t.Errorf("stored signature = %v, want the fixed one kept", sig)
+	}
+	if _, _, _, _, err := mergePassDeclared(doc, declared, "greeting", `{"functions": [`+runFn("func run(args []string, n int) int")+`]}`, testRunID); err == nil || !strings.Contains(err.Error(), "conflicting declaration of fn-run") {
+		t.Errorf("a different declaration after the fix: err %v, want a conflict", err)
+	}
+}
+
+func TestSiblingComponentIdenticalReEmissionIsSilent(t *testing.T) {
+	declared := map[string]string{}
+	doc := mergeKeeping(t, declaredOutline(t), declared, "greeting", `{"functions": [`+runFn("func Run(args []string) int")+`]}`)
+	doc = mergeKeeping(t, doc, declared, "types", `{"functions": [`+runFn("func Run(args []string) int")+`]}`)
+	if c := storedFunction(doc, "fn-run")["component"]; c != "greeting" {
+		t.Errorf("stored component = %v, want greeting", c)
+	}
+	if n := len(objects(doc["functions"])); n != 1 {
+		t.Errorf("functions = %d, want 1", n)
+	}
+	// The stored record alone, without the declared forms, is compared without the stamp too.
+	if _, _, _, err := mergePass(doc, "types", `{"functions": [`+runFn("func Run(args []string) int")+`]}`, testRunID); err != nil {
+		t.Errorf("mergePass: %v", err)
+	}
+}
+
+func TestSiblingComponentDifferentDeclarationConflicts(t *testing.T) {
+	declared := map[string]string{}
+	doc := mergeKeeping(t, declaredOutline(t), declared, "greeting", `{"functions": [`+runFn("func Run(args []string) int")+`]}`)
+	_, _, _, _, err := mergePassDeclared(doc, declared, "types", `{"functions": [`+runFn("func Run(args []string, n int) int")+`]}`, testRunID)
+	if err == nil || !strings.Contains(err.Error(), "conflicting declaration of fn-run by component types") {
+		t.Errorf("err = %v, want a conflict naming component types", err)
 	}
 }
