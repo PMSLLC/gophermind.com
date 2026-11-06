@@ -1,5 +1,51 @@
 package planner
 
+import "strings"
+
+// benchWords are what a requirement says when it asks for performance or a
+// benchmark, matched case-insensitively.
+var benchWords = []string{"benchmark", "performance", "latency", "throughput", "faster than", "per second"}
+
+// benchWanted reports whether any requirement, of any kind, asks for
+// performance or a benchmark. Without one a bench profile hook has no reason:
+// the hello run's fn-greeting got bench from the enrich model with no
+// performance requirement in the brief.
+func benchWanted(reqs []Requirement) bool {
+	for _, r := range reqs {
+		text := strings.ToLower(r.Name + " " + r.Text)
+		for _, w := range benchWords {
+			if strings.Contains(text, w) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// dropBench removes bench from a profile_hooks list; with nothing left the
+// group is the not_applicable object. It reports whether it removed bench.
+func dropBench(d map[string]any) bool {
+	list, ok := d["profile_hooks"].([]any)
+	if !ok {
+		return false
+	}
+	kept := make([]any, 0, len(list))
+	for _, e := range list {
+		if s, _ := e.(string); s != "bench" {
+			kept = append(kept, e)
+		}
+	}
+	if len(kept) == len(list) {
+		return false
+	}
+	if len(kept) == 0 {
+		d["profile_hooks"] = map[string]any{"not_applicable": profileHooksNotApplicable}
+	} else {
+		d["profile_hooks"] = kept
+	}
+	return true
+}
+
 // profileHookNames are the values the node schema allows in a profile_hooks list.
 var profileHookNames = map[string]bool{"bench": true, "pprof": true, "trace": true}
 

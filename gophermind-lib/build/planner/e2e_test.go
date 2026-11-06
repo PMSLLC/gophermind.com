@@ -924,11 +924,13 @@ func TestALongTestCommentIsDroppedWithAWarning(t *testing.T) {
 
 const badTestwriteReply = `{"tests": [], "test_file": "package greet\n"}` // too few tests: refused every time
 
-// badTestwrites returns the fixture files for n bad replies to fn-greet.
+// badTestwrites returns the fixture files for n bad replies to fn-greet. Each
+// carries a different Go block: two identical refusals of the same block end
+// the node early (testwriter_no_progress), and these tests are about rounds.
 func badTestwrites(n int) map[string]string {
 	files := map[string]string{"testwrite.fn-greet.txt": badTestwriteReply}
 	for i := 2; i <= n; i++ {
-		files[fmt.Sprintf("testwrite.fn-greet.%d.txt", i)] = badTestwriteReply
+		files[fmt.Sprintf("testwrite.fn-greet.%d.txt", i)] = fmt.Sprintf(`{"tests": [], "test_file": "package greet\n\n// reply %d\n"}`, i)
 	}
 	return files
 }

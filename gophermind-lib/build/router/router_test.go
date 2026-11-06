@@ -685,6 +685,23 @@ func TestCallParsedReportsTheLastParseErrorWhenEveryModelFails(t *testing.T) {
 	}
 }
 
+func TestCallParsedStopsOnANoRetryParseError(t *testing.T) {
+	g := newRig(t, okText("bad"), okText("good"), nil, nil)
+	stop := fmt.Errorf("asking again cannot help: %w", router.ErrNoRetry)
+	_, err := g.r.CallParsed(context.Background(), info(router.TierStandard, router.ScopeNode), req("write JSON"),
+		func(string) error { return stop })
+	var ce *router.ChainExhausted
+	if err != stop || errors.As(err, &ce) {
+		t.Fatalf("err = %v, want the parse error itself", err)
+	}
+	if g.mini.Calls() != 1 || g.kilo.Calls() != 0 {
+		t.Errorf("mini %d kilo %d, want 1 and 0", g.mini.Calls(), g.kilo.Calls())
+	}
+	if rows := g.rows(t); len(rows) != 1 || rows[0].Outcome != ledger.OutcomeMalformed {
+		t.Errorf("rows = %+v, want one malformed row", rows)
+	}
+}
+
 func TestCallParsedMakesOneCallWhenTheFirstReplyParses(t *testing.T) {
 	g := newRig(t, okText("good"), nil, nil, nil)
 	if _, err := g.r.CallParsed(context.Background(), info(router.TierStrong, router.ScopeNode), req("x"), rejectBad); err != nil {

@@ -40,6 +40,9 @@ func (r *Router) CallParsed(ctx context.Context, info CallInfo, req provider.Req
 		}
 		lastParse = perr
 		r.markMalformed(ctx, info.RunID, res)
+		if errors.Is(perr, ErrNoRetry) {
+			return Result{}, perr
+		}
 		var errs []string
 		dup := noteReply(seen, res.Text)
 		errs = addErr(errs, perr, dup)
@@ -78,6 +81,9 @@ func (r *Router) CallParsed(ctx context.Context, info CallInfo, req provider.Req
 			}
 			lastParse = perr2
 			r.markMalformed(ctx, info.RunID, res2)
+			if errors.Is(perr2, ErrNoRetry) {
+				return Result{}, perr2
+			}
 			lastReply, lastErr = res2.Text, perr2
 			dup = noteReply(seen, res2.Text)
 			errs = addErr(errs, perr2, dup)

@@ -551,6 +551,12 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	pkg, _ := ct["package"].(string)
 	funcName := testFuncName(id)
 	rel := testFilePath(id, file)
+	sig, _ := ct["signature"].(string)
+	// A packet no reply can satisfy fails here: no model call, no round.
+	if err := checkTestTarget(id, sig, file, rel); err != nil {
+		p.emit(events.KindWarning, "testwrite:"+id, id, err.Error())
+		return writtenTests{}, err
+	}
 	abs, err := pathsafe.ResolveTest(r.repo, rel)
 	if err != nil {
 		return writtenTests{}, err
@@ -565,7 +571,6 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 		return writtenTests{}, fmt.Errorf("test file %s already exists and this run did not write it; move it away, then resume", path.Base(rel))
 	}
 	parent, _ := d["parent"].(string)
-	sig, _ := ct["signature"].(string)
 	prompt, err := renderTestwriterBrief(mustJSON(withoutUnexportedDeps(withReceiverDecl(c, testwriterView(d)), sig, path.Dir(file))), c.Module, file, funcName, rel, PackageImports(c), componentBrief(r, parent, 1), obligations)
 	if err != nil {
 		return writtenTests{}, err
@@ -582,7 +587,7 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 	if mt, msrc, ok := mainEntryTest(sig, file, funcName); ok {
 		tests, source = mt, msrc
 	} else {
-		parse := func(text string) error {
+		check := func(text string) error {
 			ts, src, droppedC, cited, err := parseTestwriteCited(text, ct, pkg, funcName, c.Module, hookList(d), packageSet(c))
 			var se *syntaxRefusal
 			if err != nil && !errors.As(err, &se) {
@@ -622,6 +627,24 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 			fixes, repaired = s.fixes, s.repaired
 			return nil
 		}
+		// Two refusals in a row with the same text for the same Go block end
+		// the node: the third reply was never different in the recorded runs.
+		var last struct {
+			refusal, block string
+			set            bool
+		}
+		parse := func(text string) error {
+			err := check(text)
+			if err == nil {
+				return nil
+			}
+			block := hashHex([]byte(replyGoBlock(text)))
+			if last.set && last.refusal == err.Error() && last.block == block {
+				return &noProgressError{node: id, refusal: err}
+			}
+			last.refusal, last.block, last.set = err.Error(), block, true
+			return err
+		}
 		if st.Rounds[id].Done >= testwriterRounds {
 			// A terminal failure already used its rounds; a rerun wants a
 			// fresh attempt, not the old errors.
@@ -636,6 +659,11 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 				asked += roundsNote(rd.Errors)
 			}
 			err = p.callAsking(ctx, r, cs, asked, parse)
+			if errors.Is(err, errTestwriterNoProgress) {
+				// The router returned it without retrying; no round is counted.
+				p.emit(events.KindWarning, cs.stage, id, err.Error())
+				break
+			}
 			var ce *router.ChainExhausted
 			if !errors.As(err, &ce) || ce.ParseErr == nil {
 				break

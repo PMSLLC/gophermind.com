@@ -2,6 +2,10 @@
 // tier's models in order, skips the ones that are cooling down, disabled, too
 // small, or not allowed to see the call (the privacy rule), retries transient
 // failures, and writes exactly one ledger row per attempt.
+//
+// A parse error that wraps ErrNoRetry ends CallParsed at once: the reply is
+// marked malformed and the parse error itself is returned, with no further
+// retry of the same model and no other entry of the chain tried.
 package router
 
 import (
@@ -17,6 +21,11 @@ import (
 	"gophermind/gophermind-lib/build/provider"
 	"gophermind/gophermind-lib/build/settings"
 )
+
+// ErrNoRetry, wrapped by a parse error, says that asking again cannot help:
+// CallParsed returns that error at once instead of retrying (see the package
+// comment).
+var ErrNoRetry = errors.New("router: no retry")
 
 type Tier string
 

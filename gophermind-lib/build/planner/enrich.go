@@ -149,6 +149,7 @@ func (p *Planner) groupEnvFor(r *run, c *contract.Contracts) (groupEnv, error) {
 	for _, d := range deps {
 		env.DepMods = append(env.DepMods, d.Module)
 	}
+	env.DropBench = !benchWanted(r.reqs)
 	return env, nil
 }
 
@@ -238,6 +239,9 @@ func mergeEnrichment(draft, reply map[string]any, c *contract.Contracts, env gro
 	}
 	if normalizeProfileHooks(merged) {
 		warnings = append(warnings, fmt.Sprintf("%s: profile_hooks_normalized the profile_hooks group was put in the form the schema allows", boundedID(id)))
+	}
+	if env.DropBench && dropBench(merged) {
+		warnings = append(warnings, fmt.Sprintf("profile_hook_dropped: %s: bench (no performance requirement in the brief)", id))
 	}
 	defects = append(defects, groupDefects(merged, class, env)...)
 	if len(defects) == 0 {

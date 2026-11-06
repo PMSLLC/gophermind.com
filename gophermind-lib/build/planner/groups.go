@@ -42,6 +42,7 @@ type groupEnv struct {
 	Params    map[string]bool // parameter names of the function's signature
 	GoMin     string          // the Go version in the target repo's go.mod; "" when unknown
 	DepMods   []string        // modules a plan may import beyond the standard library; nil skips the check
+	DropBench bool            // no requirement asks for performance, so a bench profile hook is dropped
 }
 
 // naGroups are the groups that may be answered "not applicable" (where

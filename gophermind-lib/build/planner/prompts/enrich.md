@@ -10,7 +10,7 @@ For each function produce one object with `id` (copy it exactly) and these group
 - `performance`: {"complexity": "O(n)", "max_latency_ms": 200, "alloc_budget": "...", "concurrency": "none|safe_for_concurrent_use|single_goroutine", "hot_path": false}, or not applicable. `max_latency_ms` may be null.
 - `observability`: {"log_events": [{"level": "debug|info|warn|error", "msg": "constant text with no format verbs", "fields": ["field"]}], "metrics": [{"name": "...", "kind": "counter|gauge|histogram"}], "trace_span": "name or null"}, or not applicable. Never log a secret or a field named like one.
 - `refactor_notes`: [{"what": "...", "why": "...", "when": "..."}], or not applicable.
-- `profile_hooks`: a list drawn from "bench", "pprof", "trace", or not applicable. "bench" means the test file will include a benchmark.
+- `profile_hooks`: a list drawn from "bench", "pprof", "trace", or not applicable. "bench" means the test file will include a benchmark. Name "bench" only when a requirement asks for performance or a benchmark; otherwise leave it out.
 - `assumptions`: assumptions you made, as strings (an empty array if none).
 - `open_questions`: must be an empty array. If you cannot proceed without an owner decision, reply with a line containing only `QUESTION:` followed by the question on the next lines, and nothing else.
 - `decision_ids`: ids of the settled decisions below that shaped this function (an empty array if none).
