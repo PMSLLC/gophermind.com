@@ -565,6 +565,19 @@ func firstLine(s string) string {
 	return s
 }
 
+// tempDirFault finds the line where mktemp could not create its file or
+// directory. macOS mktemp ignores TMPDIR, so without a template under $TMPDIR
+// it writes where the run's sandbox forbids: an environment fault, not the code's.
+func tempDirFault(text string) (line string, ok bool) {
+	for _, l := range strings.Split(text, "\n") {
+		l = strings.TrimRight(l, "\r")
+		if strings.HasPrefix(l, "mktemp: ") && (strings.Contains(l, "mkstemp failed") || strings.Contains(l, "mkdtemp failed")) {
+			return l, true
+		}
+	}
+	return "", false
+}
+
 func (rc *runCtx) runBullet(ctx context.Context, pb planBullet) (BulletProof, *failedBullet, error) {
 	bp := BulletProof{Requirement: pb.req.ID, Text: rc.scrubText(pb.req.Text), Commands: []CommandProof{}, Verdict: "pass"}
 	var fb *failedBullet
@@ -583,6 +596,10 @@ func (rc *runCtx) runBullet(ctx context.Context, pb planBullet) (BulletProof, *f
 			continue
 		}
 		bp.Verdict = "fail"
+		if line, ok := tempDirFault(res.Out.Text()); ok {
+			return bp, nil, &stopError{Status: "failed", Reason: "acceptance_environment",
+				Message: "executor: " + proof.Command + " could not create its temp file (" + rc.scrubText(line) + "): give mktemp a template under $TMPDIR; the code was not at fault"}
+		}
 		if fb == nil {
 			text := res.Out.Text()
 			fb = &failedBullet{

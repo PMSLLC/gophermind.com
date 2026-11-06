@@ -258,9 +258,43 @@ func TestStatusMaskedByAndIsRefused(t *testing.T) {
 
 func TestStatusCapturedAfterSemicolonIsClean(t *testing.T) {
 	t.Parallel()
-	cmd := `out=$(mktemp); err=$(mktemp); hello a b >"$out" 2>"$err"; status=$?; test "$status" -eq 2 && test ! -s "$out"`
+	cmd := `out=$(mktemp "$TMPDIR/out.XXXXXX"); err=$(mktemp "$TMPDIR/err.XXXXXX"); hello a b >"$out" 2>"$err"; status=$?; test "$status" -eq 2 && test ! -s "$out"`
 	if got := Quality(cmd, Options{Bins: []string{"hello"}}); len(got) != 0 {
 		t.Fatalf("want none, got %v", got)
+	}
+}
+
+// macOS mktemp ignores TMPDIR: only a template under $TMPDIR (or -p "$TMPDIR")
+// lands where the run's sandbox allows a write.
+func TestQualityMktemp(t *testing.T) {
+	t.Parallel()
+	o := Options{Bins: []string{"hello"}}
+	cases := []struct {
+		cmd  string
+		want bool
+	}{
+		{`out=$(mktemp); hello >"$out"`, true},
+		{`d=$(mktemp -d)`, true},
+		{`out=$(mktemp -t x)`, true},
+		{`sh -c 'out=$(mktemp); hello >"$out"'`, true},
+		{`out=$(mktemp "$TMPDIR/out.XXXXXX")`, false},
+		{`out=$(mktemp ${TMPDIR}/o.XXXXXX)`, false},
+		{`d=$(mktemp -d "$TMPDIR/d.XXXXXX")`, false},
+		{`mktemp -p "$TMPDIR" o.XXXXXX`, false},
+		{`mktemp -p ${TMPDIR} o.XXXXXX`, false},
+	}
+	for _, c := range cases {
+		if got := has(Quality(c.cmd, o), FindTempOutsideTmpdir); got != c.want {
+			t.Errorf("%s: mktemp_outside_tmpdir = %v, want %v", c.cmd, got, c.want)
+		}
+	}
+	a4 := `out=$(mktemp); err=$(mktemp); hello >"$out" 2>"$err"; status=$?; test "$status" -eq 0 && grep -qx 'Hello, World!' "$out" && test ! -s "$err"`
+	if got := Quality(a4, o); !reflect.DeepEqual(got, []Finding{FindTempOutsideTmpdir}) {
+		t.Errorf("A4 = %v, want [mktemp_outside_tmpdir]", got)
+	}
+	fixed := `out=$(mktemp "$TMPDIR/out.XXXXXX"); err=$(mktemp "$TMPDIR/err.XXXXXX"); hello >"$out" 2>"$err"; status=$?; test "$status" -eq 0 && grep -qx 'Hello, World!' "$out" && test ! -s "$err"`
+	if got := Quality(fixed, o); got != nil {
+		t.Errorf("corrected A4 = %v, want nil", got)
 	}
 }
 

@@ -42,6 +42,11 @@ const (
 	FindStatusMasked Finding = "status_masked"
 	// FindPrintSubstitutionTest: test or [ given $(echo ...) or $(printf ...).
 	FindPrintSubstitutionTest Finding = "print_substitution_test"
+	// FindTempOutsideTmpdir: a mktemp without a template under $TMPDIR (or
+	// -p "$TMPDIR"). macOS mktemp ignores TMPDIR and writes to the per-user
+	// /var/folders temp dir, which the run's sandbox denies, so the command
+	// can never pass there.
+	FindTempOutsideTmpdir Finding = "mktemp_outside_tmpdir"
 )
 
 // FindingNames are the findings as strings, in the order given.
@@ -374,6 +379,10 @@ func (q *qual) script(script string, ctxAsserted, top bool) {
 		for _, i := range p.idx {
 			base, args := cmdAt(i)
 			switch base {
+			case "mktemp":
+				if !mktempUnderTmpdir(args) {
+					q.set[FindTempOutsideTmpdir] = true
+				}
 			case "curl":
 				if !curlFail(args) && !checked {
 					q.set[FindCurlUnasserted] = true
@@ -571,6 +580,42 @@ func curlFail(args []word) bool {
 		}
 		if len(l) > 1 && l[0] == '-' && l[1] != '-' && strings.ContainsRune(l[1:], 'f') && !strings.ContainsAny(l, "/=:{") {
 			return true
+		}
+	}
+	return false
+}
+
+// underTmpdir: the word's text starts in $TMPDIR, as a path below it or (dir)
+// as the directory itself.
+func underTmpdir(lit string, dir bool) bool {
+	for _, p := range []string{"$TMPDIR", `"$TMPDIR`, "${TMPDIR}", `"${TMPDIR}`} {
+		if strings.HasPrefix(lit, p+"/") || dir && (lit == p || lit == p+`"`) {
+			return true
+		}
+	}
+	return false
+}
+
+// mktempUnderTmpdir: the mktemp's file lands under $TMPDIR, by a template
+// (the first argument that is not a flag) that begins there or by -p "$TMPDIR".
+// -t consumes its prefix, which is not a template; -d, -q, -u are bare flags.
+func mktempUnderTmpdir(args []word) bool {
+	for i := 0; i < len(args); i++ {
+		l := args[i].lit
+		if l == "--" {
+			return i+1 < len(args) && underTmpdir(args[i+1].lit, false)
+		}
+		if len(l) < 2 || l[0] != '-' {
+			return underTmpdir(l, false)
+		}
+		switch {
+		case l[len(l)-1] == 'p' && l[1] != '-':
+			if i+1 < len(args) && underTmpdir(args[i+1].lit, true) {
+				return true
+			}
+			i++
+		case l[len(l)-1] == 't' && l[1] != '-':
+			i++
 		}
 	}
 	return false

@@ -81,6 +81,28 @@ func TestCoverageQualityGateFillReplacesAWeakRootTest(t *testing.T) {
 	}
 }
 
+// A root test whose mktemp has no $TMPDIR template is a quality gap: macOS
+// mktemp ignores TMPDIR and the run's sandbox denies the default temp dir.
+// The hello A4 shape around the fixture's own probe (its contracts build no
+// binary, so a bare program name would also be vacuous).
+func TestCoverageQualityGateRefusesABareMktemp(t *testing.T) {
+	bare := `out=$(mktemp); err=$(mktemp); go test ./... >"$out" 2>"$err"; status=$?; test "$status" -eq 0 && test ! -s "$err"`
+	g := newRig(t, approving(), variant(t, map[string]string{
+		"coverage.txt":      weakCoverage(t, bare),
+		"coverage_fill.txt": fixA3,
+	}))
+	g.mustPlan(planner.Options{StopAfter: "coverage"})
+	var seen bool
+	for _, e := range g.sink.OfKind(events.KindCoverageGap) {
+		if strings.Contains(e.Message, "A3 root test quality [mktemp_outside_tmpdir]") {
+			seen = true
+		}
+	}
+	if !seen {
+		t.Errorf("no coverage_gap event names A3 root test quality [mktemp_outside_tmpdir]: %+v", g.sink.OfKind(events.KindCoverageGap))
+	}
+}
+
 // After the rounds a weak root test stops the planner before approval, with a
 // fixed message of ids and finding names.
 func TestCoverageQualityGateStopsBeforeApproval(t *testing.T) {
@@ -167,7 +189,7 @@ func TestCoveragePromptTeachesTheCapturePattern(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"status=$?", `2>"$err"`, "Never write `2>&1`", "may name only constructs the brief forbids everywhere"} {
+	for _, want := range []string{"status=$?", `2>"$err"`, "Never write `2>&1`", "may name only constructs the brief forbids everywhere", `mktemp "$TMPDIR/out.XXXXXX"`} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("coverage prompt lacks %q", want)
 		}
