@@ -23,7 +23,8 @@ import (
 // RepoOwnedClone under the repos directory (a shared repo is only kept, never
 // reset), then runs `brief resume <id> --yes --gate file`, after which the
 // launcher runs `brief run` as usual. For a node it calls resume.FromNode,
-// which resets the row, and runs `brief run <id> --repo <clone>` alone.
+// which resets the row, and runs `brief run <id> --repo <repo>` alone, where
+// repo is the clone, or the shared root for a run that predates per-run repos.
 func (m *briefManager) resumeHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !runview.ValidRunID(id) {
@@ -63,8 +64,8 @@ func (e *resumeStartError) Error() string { return e.err.Error() }
 func (e *resumeStartError) Unwrap() error { return e.err }
 
 // resumeFrom takes the slot, discards the run's output from step on, records
-// the resume and starts the process. A refusal frees the slot and changes
-// nothing in the run folder.
+// the resume and starts the process. A refusal frees the slot, changes nothing
+// in the run folder and is noted in run.log.
 func (m *briefManager) resumeFrom(rec briefRecord, from string) error {
 	m.mu.Lock()
 	if m.active != nil {
@@ -102,11 +103,42 @@ func (m *briefManager) resumeFrom(rec briefRecord, from string) error {
 		// the service does not own: keep it, never reset it.
 		repo = m.root
 	}
+	// run.log (which the run page tails) records the planned clone reset before
+	// it acts, then what moved and what the reset did, before any process starts.
+	logf, err := os.OpenFile(filepath.Join(m.runDir(rec.ID), "run.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return &resumeStartError{err}
+	}
+	defer func() {
+		if !started {
+			logf.Close()
+		}
+	}()
+	stamp := m.stamp()
+	fmt.Fprintf(logf, "resume from %s at %s\n", from, stamp)
+	// record writes what a package call moved and did, also when it refused
+	// after a partial change.
+	record := func(res resume.Result, err error) error {
+		for _, d := range res.Discarded {
+			fmt.Fprintf(logf, "discarded: %s\n", d)
+		}
+		if res.DiscardDir != "" && len(res.Discarded) > 0 {
+			fmt.Fprintf(logf, "discard dir: %s\n", res.DiscardDir)
+		}
+		for _, act := range res.RepoActions {
+			fmt.Fprintln(logf, act)
+		}
+		if err != nil {
+			fmt.Fprintf(logf, "resume refused: %v\n", err)
+		}
+		return err
+	}
+
 	var first []string
 	now := m.now()
+	board := blackboard.NewFS(runfs.Fixed(runDir))
 	if step.Node != "" {
-		board := blackboard.NewFS(runfs.Fixed(runDir))
-		if _, err := resume.FromNode(context.Background(), runDir, board, rec.ID, step.Node, now); err != nil {
+		if err := record(resume.FromNode(context.Background(), runDir, board, rec.ID, step.Node, now)); err != nil {
 			return err
 		}
 		rec.Phase = phaseRunning
@@ -114,30 +146,30 @@ func (m *briefManager) resumeFrom(rec briefRecord, from string) error {
 		req := resume.RepoRequest{Repo: repo, Mode: resume.RepoKeep}
 		if m.repos != "" && root != m.root {
 			req = resume.RepoRequest{Repo: repo, Mode: resume.RepoOwnedClone, OwnedUnder: m.repos}
+			branch, base, began, err := resume.ReadExecutorState(runDir)
+			if err != nil {
+				return record(resume.Result{}, err)
+			}
+			for _, c := range resume.PlanOwnedClone(repo, resume.RepoState{Branch: branch, Base: base, Started: began}) {
+				fmt.Fprintf(logf, "planned: %s\n", c)
+			}
 		}
-		if _, err := resume.FromStage(runDir, step.Stage, req, now); err != nil {
+		if err := record(resume.FromStage(context.Background(), runDir, board, rec.ID, step.Stage, req, now)); err != nil {
 			return err
 		}
 		first = []string{"brief", "resume", rec.ID, "--yes", "--gate", "file"}
 		rec.Phase = phasePlanning
 	}
 
-	logf, err := os.OpenFile(filepath.Join(m.runDir(rec.ID), "run.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return &resumeStartError{err}
-	}
-	stamp := m.stamp()
-	fmt.Fprintf(logf, "resume from %s at %s\n", from, stamp)
 	rec.Error, rec.ExitCode, rec.FinishedAt = "", nil, ""
 	rec.ResumedAt, rec.ResumedFrom = stamp, from
 	if err := m.writeRecord(rec); err != nil {
-		logf.Close()
 		return &resumeStartError{err}
 	}
 	started = true
 	m.log.Info("brief resume from step", "run_id", rec.ID, "step", from)
 	// For a node there is no first step: brief run, on the reset row, is the
 	// only process.
-	go m.runSteps(a, rec, first, logf)
+	go m.runSteps(a, rec, first, repo, logf)
 	return nil
 }

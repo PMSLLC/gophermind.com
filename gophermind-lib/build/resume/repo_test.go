@@ -1,11 +1,15 @@
 package resume
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"gophermind/gophermind-lib/build/blackboard"
 )
 
 func runGit(t *testing.T, dir string, args ...string) string {
@@ -56,9 +60,109 @@ func TestOwnedCloneIsResetToBase(t *testing.T) {
 	if st := runGit(t, repo, "status", "--porcelain"); st != "" {
 		t.Errorf("tree not clean: %q", st)
 	}
-	if len(acts) != 2 || !strings.Contains(acts[0], repo) || !strings.Contains(acts[1], repo) {
+	want := []string{"git -C " + repo + " checkout -f main", "git -C " + repo + " reset --hard main", "git -C " + repo + " clean -fd -e .gophermind"}
+	if strings.Join(acts, "|") != strings.Join(want, "|") {
 		t.Errorf("actions %v", acts)
 	}
+}
+
+// A run killed inside Finish leaves HEAD on base and its work branch holding
+// the old Wave 0; the owned clone reset drops that branch too.
+func TestOwnedCloneDropsTheWorkBranchWhenHeadIsOnBase(t *testing.T) {
+	repo := newRepo(t)
+	base := runGit(t, repo, "rev-parse", "main")
+	runGit(t, repo, "checkout", "-b", "gm/x")
+	commitFile(t, repo, "old_test.go", "package old\n", trailerMsg)
+	runGit(t, repo, "checkout", "main")
+	put(t, repo, "untracked.txt", "u\n")
+
+	acts, err := ResetRepo(t.TempDir(), repo, RepoOwnedClone, filepath.Dir(repo), RepoState{Branch: "gm/x", Base: "main", Started: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runGit(t, repo, "branch", "--list", "gm/x") != "" {
+		t.Error("the work branch with the old commit was kept")
+	}
+	if got := runGit(t, repo, "branch", "--show-current"); got != "main" {
+		t.Errorf("HEAD on %q", got)
+	}
+	if got := runGit(t, repo, "rev-parse", "HEAD"); got != base {
+		t.Errorf("HEAD %s, want %s", got, base)
+	}
+	if st := runGit(t, repo, "status", "--porcelain"); st != "" {
+		t.Errorf("tree not clean: %q", st)
+	}
+	g := "git -C " + repo + " "
+	want := []string{g + "checkout -f main", g + "reset --hard main", g + "clean -fd -e .gophermind", g + "branch -D gm/x"}
+	if strings.Join(acts, "|") != strings.Join(want, "|") {
+		t.Errorf("actions %v", acts)
+	}
+	if got := PlanOwnedClone(repo, RepoState{Branch: "gm/x", Base: "main"}); strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("plan %v", got)
+	}
+}
+
+// treeDigest maps every file under dir to its content.
+func treeDigest(t *testing.T, dir string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	err := filepath.Walk(dir, func(p string, fi os.FileInfo, err error) error {
+		if err != nil || fi.IsDir() {
+			return err
+		}
+		b, err := os.ReadFile(p)
+		out[p] = string(b)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// A stage resume of a run with a claimed row refuses before the repository
+// reset and before any move, so a live executor keeps its branch and files.
+func TestStageResumeRefusesALiveRunBeforeTheRepository(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepo(t)
+	runGit(t, repo, "checkout", "-b", "gm/x")
+	head := runGit(t, repo, "rev-parse", "HEAD")
+	put(t, repo, "gen/n_test.go", "package gen\n")
+	dir := fullRun(t)
+	if err := os.Remove(filepath.Join(dir, "approval.json")); err != nil {
+		t.Fatal(err)
+	}
+	put(t, dir, "brief.md", string(testBrief("main")))
+	put(t, dir, "_state/executor.json", `{"started_at":"2026-11-05T10:00:00Z","branch":"gm/x"}`)
+	put(t, dir, "_state/test_files.json", `["gen/n_test.go"]`)
+	b := nodeBoard(t, dir, map[string]blackboard.Status{"fn-z": blackboard.StatusClaimed})
+	before := treeDigest(t, dir)
+	check := func(label string) {
+		t.Helper()
+		if got := runGit(t, repo, "branch", "--show-current"); got != "gm/x" {
+			t.Errorf("%s: HEAD on %q", label, got)
+		}
+		if got := runGit(t, repo, "rev-parse", "HEAD"); got != head {
+			t.Errorf("%s: HEAD %s, want %s", label, got, head)
+		}
+		if _, err := os.Stat(filepath.Join(repo, "gen/n_test.go")); err != nil {
+			t.Errorf("%s: the run's file was removed", label)
+		}
+		if !reflect.DeepEqual(treeDigest(t, dir), before) {
+			t.Errorf("%s: the run folder changed", label)
+		}
+	}
+	req := RepoRequest{Repo: repo, Mode: RepoRestoreFiles}
+	_, err := FromStage(ctx, dir, b, "r", "coverage", req, fixed)
+	if err == nil || err.Error() != "resume: the run is active (node fn-z is claimed)" {
+		t.Fatalf("claimed: %v", err)
+	}
+	check("claimed")
+	_, err = FromStage(ctx, dir, nil, "r", "coverage", req, fixed)
+	if err == nil || err.Error() != "resume: executor state exists and no board was given" {
+		t.Fatalf("no board: %v", err)
+	}
+	check("no board")
 }
 
 func TestOwnedCloneRefusesAPathOutsideTheOwner(t *testing.T) {
@@ -166,7 +270,7 @@ func TestRestoreFilesRestoresListedFilesOnly(t *testing.T) {
 func TestFromStageRefusesWithoutARepoModeWhenTheExecutorRan(t *testing.T) {
 	dir := fullRun(t)
 	put(t, dir, "_state/executor.json", `{"started_at":"2026-11-05T10:00:00Z","branch":"gm/x"}`)
-	_, err := FromStage(dir, "coverage", RepoRequest{Mode: RepoKeep}, fixed)
+	_, err := FromStage(context.Background(), dir, boardFor(dir), "r", "coverage", RepoRequest{Mode: RepoKeep}, fixed)
 	want := "resume: executor state exists; pass --reset-repo to discard the run's branch and files, or resume from node:<id>"
 	if err == nil || err.Error() != want {
 		t.Fatalf("err %v", err)
@@ -185,7 +289,7 @@ func TestKeepRefusesWhenRunTestFilesExistAndRestoreClearsThem(t *testing.T) {
 	put(t, dir, "_state/test_files.json", `["pkg/a_test.go"]`)
 	put(t, repo, "pkg/a_test.go", "package pkg\n")
 
-	_, err := FromStage(dir, "testwriter", RepoRequest{Repo: repo, Mode: RepoKeep}, fixed)
+	_, err := FromStage(context.Background(), dir, boardFor(dir), "r", "testwriter", RepoRequest{Repo: repo, Mode: RepoKeep}, fixed)
 	want := "resume: test files from this run exist in the repo; pass --reset-repo to remove them"
 	if err == nil || err.Error() != want {
 		t.Fatalf("err %v", err)
@@ -201,7 +305,7 @@ func TestKeepRefusesWhenRunTestFilesExistAndRestoreClearsThem(t *testing.T) {
 	if len(acts) != 1 || acts[0] != "removed pkg/a_test.go" {
 		t.Errorf("actions %v", acts)
 	}
-	if _, err := FromStage(dir, "testwriter", RepoRequest{Repo: repo, Mode: RepoKeep}, fixed); err != nil {
+	if _, err := FromStage(context.Background(), dir, boardFor(dir), "r", "testwriter", RepoRequest{Repo: repo, Mode: RepoKeep}, fixed); err != nil {
 		t.Fatalf("after the restore: %v", err)
 	}
 }
@@ -303,12 +407,12 @@ func TestStageResumeChecksTheRunFolderBeforeTheRepository(t *testing.T) {
 	repo := newRepo(t)
 	dir := fullRun(t)
 	put(t, dir, "brief.md", string(testBrief("main")))
-	if _, err := FromStage(dir, "approve", RepoRequest{Mode: RepoKeep}, fixed); err != nil {
+	if _, err := FromStage(context.Background(), dir, boardFor(dir), "r", "approve", RepoRequest{Mode: RepoKeep}, fixed); err != nil {
 		t.Fatal(err)
 	}
 	put(t, dir, "approval.json", "") // the stage is reached again, in the same second
 	put(t, repo, "a.txt", "dirty\n")
-	_, err := FromStage(dir, "approve", RepoRequest{Repo: repo, Mode: RepoOwnedClone, OwnedUnder: filepath.Dir(repo)}, fixed)
+	_, err := FromStage(context.Background(), dir, boardFor(dir), "r", "approve", RepoRequest{Repo: repo, Mode: RepoOwnedClone, OwnedUnder: filepath.Dir(repo)}, fixed)
 	if err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("err %v", err)
 	}
@@ -411,7 +515,7 @@ func TestKeepCountsOnlyTestFilesThatDifferFromBase(t *testing.T) {
 	}
 	put(t, dir, "_state/test_files.json", `["pkg/a_test.go"]`)
 	put(t, dir, "brief.md", string(testBrief("main")))
-	if _, err := FromStage(dir, "testwriter", RepoRequest{Repo: repo, Mode: RepoKeep}, fixed); err != nil {
+	if _, err := FromStage(context.Background(), dir, boardFor(dir), "r", "testwriter", RepoRequest{Repo: repo, Mode: RepoKeep}, fixed); err != nil {
 		t.Fatalf("a file identical to base counted: %v", err)
 	}
 	dir = fullRun(t)
@@ -419,7 +523,7 @@ func TestKeepCountsOnlyTestFilesThatDifferFromBase(t *testing.T) {
 	put(t, dir, "_state/test_files.json", `["pkg/a_test.go"]`)
 	put(t, dir, "brief.md", string(testBrief("main")))
 	put(t, repo, "pkg/a_test.go", "package pkg // changed\n")
-	if _, err := FromStage(dir, "testwriter", RepoRequest{Repo: repo, Mode: RepoKeep}, fixed); err == nil {
+	if _, err := FromStage(context.Background(), dir, boardFor(dir), "r", "testwriter", RepoRequest{Repo: repo, Mode: RepoKeep}, fixed); err == nil {
 		t.Fatal("a changed test file was not counted")
 	}
 }

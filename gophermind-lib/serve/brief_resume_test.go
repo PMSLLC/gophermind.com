@@ -73,9 +73,20 @@ func TestResumeFromStageStartsThePlannerStep(t *testing.T) {
 		t.Errorf("second call = %q", got)
 	}
 	e.waitNotActive(resumeTestID)
-	log, _ := os.ReadFile(filepath.Join(e.dir, resumeTestID, "run.log"))
-	if !strings.Contains(string(log), "resume from coverage at ") {
+	raw, _ := os.ReadFile(filepath.Join(e.dir, resumeTestID, "run.log"))
+	log := string(raw)
+	if !strings.Contains(log, "resume from coverage at ") {
 		t.Errorf("log = %q", log)
+	}
+	// The planned clone reset, then what moved and what the reset did, all
+	// before the first process.
+	planned := strings.Index(log, "planned: git -C "+clone+" reset --hard main\n")
+	discarded := strings.Index(log, "discarded: coverage.json\n")
+	dir := strings.Index(log, "discard dir: _state/discarded/")
+	did := strings.Index(log, " clean -fd -e .gophermind\n")
+	proc := strings.Index(log, "== gophermind brief resume ")
+	if planned < 0 || discarded < 0 || dir < 0 || did < 0 || proc < 0 || !(planned < discarded && discarded < proc && dir < proc && did < proc) {
+		t.Errorf("log order planned=%d discarded=%d dir=%d did=%d proc=%d:\n%s", planned, discarded, dir, did, proc, log)
 	}
 	if _, err := os.Stat(filepath.Join(clone, ".gophermind", resumeTestID, "coverage.json")); err == nil {
 		t.Error("coverage.json was not moved aside")
@@ -229,5 +240,26 @@ func TestResumeStageOfARunInTheSharedRootKeepsTheRoot(t *testing.T) {
 	e.waitNotActive(resumeTestID)
 	if _, err := os.Stat(filepath.Join(e.root, ".gophermind", resumeTestID, "coverage.json")); err == nil {
 		t.Error("coverage.json was not moved aside")
+	}
+	if got, want := e.firstCall(1), "brief run "+resumeTestID+" --repo "+e.root; got != want {
+		t.Errorf("second call = %q, want %q", got, want)
+	}
+}
+
+// A node resume of a run in the shared root, on a server that makes per-run
+// repos, runs `brief run` in the shared root, not in a clone that does not exist.
+func TestResumeNodeOfARunInTheSharedRootRunsInTheRoot(t *testing.T) {
+	repos := t.TempDir()
+	e := newBriefEnv(t, func(o *Options, d *Deps) { o.ReposDir = repos; d.Pipeline.ReposDir = repos })
+	runviewtest.BuildID(t, e.root, resumeTestID, runviewtest.Failed)
+	e.writeResumeRecord(resumeTestID, phaseFailed)
+	w := e.post("/app/briefs/"+resumeTestID+"/resume?from=node:fn-bye", "", nil)
+	if w.Code != 202 {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+	e.waitPhase(resumeTestID, phaseDone)
+	e.waitNotActive(resumeTestID)
+	if got, want := e.firstCall(0), "brief run "+resumeTestID+" --repo "+e.root; got != want {
+		t.Errorf("first call = %q, want %q", got, want)
 	}
 }

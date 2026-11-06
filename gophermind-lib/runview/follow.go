@@ -199,8 +199,12 @@ func (f *follower) line(ln []byte) bool {
 		f.v.warn(fmt.Sprintf("events.jsonl line %d: it is not an event", f.seq))
 		return true
 	}
-	if l.Kind == "attempt" {
+	switch blackboard.EventKind(l.Kind) {
+	case blackboard.EventAttempt:
 		f.attempts[l.NodeID]++
+	case blackboard.EventReset:
+		// A reset row starts with no attempts; later attempt lines map onto the new ones.
+		f.attempts[l.NodeID] = 0
 	}
 	if f.seq <= f.since {
 		return true

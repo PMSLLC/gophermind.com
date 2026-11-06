@@ -22,7 +22,7 @@ type RepoReset int
 const (
 	// RepoKeep leaves the repository alone (a node: resume, or a run whose executor never started).
 	RepoKeep RepoReset = iota
-	// RepoOwnedClone hard-resets a clone the service owns to the base branch.
+	// RepoOwnedClone hard-resets a clone the service owns to the base branch and deletes the run's work branch.
 	RepoOwnedClone
 	// RepoRestoreFiles deletes the run's own work branch and puts the plan's files back (CLI --reset-repo).
 	RepoRestoreFiles
@@ -97,15 +97,50 @@ func resetOwnedClone(runDir, repo, ownedUnder string, st RepoState) ([]string, e
 	if rel, rerr := filepath.Rel(real, gd); err != nil || rerr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return nil, fmt.Errorf("resume: refusing to reset %s: its git directory is outside the clone", repo)
 	}
-	if _, err := git(real, "reset", "--hard", st.Base); err != nil {
-		return nil, err
+	if st.Branch != "" && st.Branch != st.Base && !gitland.ValidBranchName(st.Branch) {
+		return nil, fmt.Errorf("resume: %q is not a usable work branch name", st.Branch)
 	}
-	actions := []string{"git -C " + real + " reset --hard " + st.Base}
-	// -e keeps the run folder when it lives inside the clone (.gophermind/<id>).
-	if _, err := git(real, "clean", "-fd", "-e", ".gophermind"); err != nil {
-		return actions, err
+	var actions []string
+	for _, args := range ownedCloneSteps(st) {
+		if args[0] == "branch" {
+			if _, err := git(real, "rev-parse", "--verify", "--quiet", "refs/heads/"+st.Branch); err != nil {
+				continue // the work branch was never made, or is already gone
+			}
+		}
+		if _, err := git(real, args...); err != nil {
+			return actions, err
+		}
+		actions = append(actions, "git -C "+real+" "+strings.Join(args, " "))
 	}
-	return append(actions, "git -C "+real+" clean -fd -e .gophermind"), nil
+	return actions, nil
+}
+
+// ownedCloneSteps are the git commands an owned clone reset runs, in order:
+// check out base with force, reset hard to it, clean (-e keeps the run folder
+// when it lives inside the clone, .gophermind/<id>), then delete the recorded
+// work branch when it differs from base.
+func ownedCloneSteps(st RepoState) [][]string {
+	steps := [][]string{
+		{"checkout", "-f", st.Base},
+		{"reset", "--hard", st.Base},
+		{"clean", "-fd", "-e", ".gophermind"},
+	}
+	if st.Branch != "" && st.Branch != st.Base {
+		steps = append(steps, []string{"branch", "-D", st.Branch})
+	}
+	return steps
+}
+
+// PlanOwnedClone lists the commands a RepoOwnedClone reset of repo would run,
+// so a caller can record them before the reset acts. The branch deletion is
+// listed when st records a work branch; the reset skips it when that branch
+// does not exist.
+func PlanOwnedClone(repo string, st RepoState) []string {
+	var out []string
+	for _, args := range ownedCloneSteps(st) {
+		out = append(out, "git -C "+repo+" "+strings.Join(args, " "))
+	}
+	return out
 }
 
 // openRepo checks that real is a repository root, that base is a usable local

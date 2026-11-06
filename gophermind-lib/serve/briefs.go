@@ -431,12 +431,14 @@ func (m *briefManager) step(a *activeBrief, logf *os.File, args ...string) (int,
 }
 
 func (m *briefManager) run(a *activeBrief, rec briefRecord, first []string, logf *os.File) {
-	m.runSteps(a, rec, first, logf)
+	m.runSteps(a, rec, first, m.repoFor(rec.ID), logf)
 }
 
-// runSteps runs first (when not empty) and then `brief run`. A resume from a
-// node passes no first step: the plan is already approved.
-func (m *briefManager) runSteps(a *activeBrief, rec briefRecord, first []string, logf *os.File) {
+// runSteps runs first (when not empty) and then `brief run` in repo. A resume
+// from a node passes no first step: the plan is already approved. A resume
+// passes the repo that holds the run, the shared root for a run that predates
+// per-run repos.
+func (m *briefManager) runSteps(a *activeBrief, rec briefRecord, first []string, repo string, logf *os.File) {
 	defer func() {
 		m.mu.Lock()
 		hidden := a.sudoHidden
@@ -483,7 +485,7 @@ func (m *briefManager) runSteps(a *activeBrief, rec briefRecord, first []string,
 	}
 	rec.Phase = phaseRunning
 	_ = m.writeRecord(rec)
-	code, err = m.step(a, logf, "brief", "run", rec.ID, "--repo", m.repoFor(rec.ID))
+	code, err = m.step(a, logf, "brief", "run", rec.ID, "--repo", repo)
 	if err != nil || code != 0 {
 		finish(phaseFailed, &code, stepMessage("run", code, err))
 		return

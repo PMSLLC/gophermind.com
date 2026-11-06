@@ -74,6 +74,9 @@ func TestStageFilesAreTheDocumentedTable(t *testing.T) {
 	}
 }
 
+// boardFor is the production-layout board over runDir.
+func boardFor(runDir string) blackboard.Blackboard { return blackboard.NewFS(runfs.Fixed(runDir)) }
+
 func fullRun(t *testing.T) string {
 	dir := t.TempDir()
 	for _, s := range Stages {
@@ -96,7 +99,7 @@ func fullRun(t *testing.T) string {
 			put(t, dir, f, "")
 		}
 	}
-	put(t, dir, "comp/fn-a.runtime.json", "")
+	put(t, dir, "comp/fn-a.runtime.json", `{"node_id":"fn-a","run_id":"r","status":"failed","attempts":[]}`)
 	put(t, dir, "comp/fn-a.runtime.json.lock", "")
 	put(t, dir, "ESCALATION-fn-a.md", "")
 	put(t, dir, "root.json", "")
@@ -110,7 +113,7 @@ func fullRun(t *testing.T) string {
 
 func TestFromStageMovesTheStageAndLater(t *testing.T) {
 	dir := fullRun(t)
-	res, err := FromStage(dir, "coverage", RepoRequest{Mode: RepoKeep}, fixed)
+	res, err := FromStage(context.Background(), dir, boardFor(dir), "r", "coverage", RepoRequest{Mode: RepoKeep}, fixed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +157,7 @@ func TestFromStageMovesTheStageAndLater(t *testing.T) {
 
 func TestFromStageDecomposeMovesNodePlans(t *testing.T) {
 	dir := fullRun(t)
-	res, err := FromStage(dir, "decompose", RepoRequest{Mode: RepoKeep}, fixed)
+	res, err := FromStage(context.Background(), dir, boardFor(dir), "r", "decompose", RepoRequest{Mode: RepoKeep}, fixed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +176,7 @@ func TestFromStageRefusesAnUnreachedStage(t *testing.T) {
 	for _, s := range Stages[:3] {
 		put(t, dir, stageFiles(s)[0], "")
 	}
-	_, err := FromStage(dir, "coverage", RepoRequest{Mode: RepoKeep}, fixed)
+	_, err := FromStage(context.Background(), dir, boardFor(dir), "r", "coverage", RepoRequest{Mode: RepoKeep}, fixed)
 	if err == nil || !strings.Contains(err.Error(), "never reached") || !strings.Contains(err.Error(), `"contract"`) {
 		t.Fatalf("err %v", err)
 	}
@@ -181,20 +184,20 @@ func TestFromStageRefusesAnUnreachedStage(t *testing.T) {
 		t.Error("something was moved")
 	}
 	empty := t.TempDir()
-	if _, err := FromStage(empty, "clarify", RepoRequest{Mode: RepoKeep}, fixed); err == nil || !strings.Contains(err.Error(), "nothing to resume") {
+	if _, err := FromStage(context.Background(), empty, boardFor(empty), "r", "clarify", RepoRequest{Mode: RepoKeep}, fixed); err == nil || !strings.Contains(err.Error(), "nothing to resume") {
 		t.Errorf("empty: %v", err)
 	}
 }
 
 func TestFromStageRefusesAnUnknownStage(t *testing.T) {
-	if _, err := FromStage(t.TempDir(), "build", RepoRequest{Mode: RepoKeep}, fixed); err == nil || !strings.Contains(err.Error(), "unknown step") {
+	if _, err := FromStage(context.Background(), t.TempDir(), nil, "r", "build", RepoRequest{Mode: RepoKeep}, fixed); err == nil || !strings.Contains(err.Error(), "unknown step") {
 		t.Fatalf("err %v", err)
 	}
 }
 
 func TestFromStageKeepsTranscripts(t *testing.T) {
 	dir := fullRun(t)
-	if _, err := FromStage(dir, "clarify", RepoRequest{Mode: RepoKeep}, fixed); err != nil {
+	if _, err := FromStage(context.Background(), dir, boardFor(dir), "r", "clarify", RepoRequest{Mode: RepoKeep}, fixed); err != nil {
 		t.Fatal(err)
 	}
 	for _, rel := range []string{"_state/llm/1.json", "brief.md", "run.log", "_state/status.json"} {
@@ -206,11 +209,11 @@ func TestFromStageKeepsTranscripts(t *testing.T) {
 
 func TestFromStageSecondResumeSameSecondRefuses(t *testing.T) {
 	dir := fullRun(t)
-	if _, err := FromStage(dir, "approve", RepoRequest{Mode: RepoKeep}, fixed); err != nil {
+	if _, err := FromStage(context.Background(), dir, boardFor(dir), "r", "approve", RepoRequest{Mode: RepoKeep}, fixed); err != nil {
 		t.Fatal(err)
 	}
 	put(t, dir, "approval.json", "again")
-	if _, err := FromStage(dir, "approve", RepoRequest{Mode: RepoKeep}, fixed); err == nil {
+	if _, err := FromStage(context.Background(), dir, boardFor(dir), "r", "approve", RepoRequest{Mode: RepoKeep}, fixed); err == nil {
 		t.Fatal("overwrote a discarded file")
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "approval.json")); string(b) != "again" {

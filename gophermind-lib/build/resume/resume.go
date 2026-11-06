@@ -81,8 +81,10 @@ func present(runDir, rel string) bool {
 // FromStage moves aside the output of stage and every later stage, the
 // executor's files and the planner's error and done marks. repo says what to
 // do with the target repository first (see RepoRequest); a refusal leaves the
-// run folder and the repository unchanged.
-func FromStage(runDir, stage string, repo RepoRequest, now time.Time) (Result, error) {
+// run folder and the repository unchanged. When _state/executor.json exists,
+// board must be the run's board: the resume refuses while any node of runID is
+// claimed or in progress. board may be nil only for a run the executor never reached.
+func FromStage(ctx context.Context, runDir string, board blackboard.Blackboard, runID, stage string, repo RepoRequest, now time.Time) (Result, error) {
 	idx := stageIndex(stage)
 	if idx < 0 {
 		return Result{}, fmt.Errorf("resume: unknown step %q (a planner stage or node:<id>)", stage)
@@ -102,6 +104,14 @@ func FromStage(runDir, stage string, repo RepoRequest, now time.Time) (Result, e
 	branch, base, started, err := ReadExecutorState(runDir)
 	if err != nil {
 		return Result{}, err
+	}
+	if present(runDir, executorStatePath) {
+		if board == nil {
+			return Result{}, errors.New("resume: executor state exists and no board was given")
+		}
+		if err := refuseActive(ctx, board, runID); err != nil {
+			return Result{}, err
+		}
 	}
 	// Everything that can still refuse the run folder is checked before the repository changes.
 	var rels []string
@@ -164,14 +174,8 @@ func FromNode(ctx context.Context, runDir string, board blackboard.Blackboard, r
 	if !present(runDir, executorStatePath) {
 		return Result{}, fmt.Errorf("resume: the run never reached the executor")
 	}
-	rows, err := board.List(ctx, runID, blackboard.Filter{})
-	if err != nil {
+	if err := refuseActive(ctx, board, runID); err != nil {
 		return Result{}, err
-	}
-	for _, r := range rows {
-		if r.Status == blackboard.StatusClaimed || r.Status == blackboard.StatusInProgress {
-			return Result{}, fmt.Errorf("resume: the run is active (node %s is claimed)", r.NodeID)
-		}
 	}
 	row, err := board.Get(ctx, runID, node)
 	if err != nil {
@@ -240,6 +244,20 @@ func FromNode(ctx context.Context, runDir string, board blackboard.Blackboard, r
 	all := append(moved, written...)
 	sort.Strings(all)
 	return Result{Discarded: all, DiscardDir: dest}, err
+}
+
+// refuseActive refuses while any node of runID is claimed or in progress.
+func refuseActive(ctx context.Context, board blackboard.Blackboard, runID string) error {
+	rows, err := board.List(ctx, runID, blackboard.Filter{})
+	if err != nil {
+		return err
+	}
+	for _, r := range rows {
+		if r.Status == blackboard.StatusClaimed || r.Status == blackboard.StatusInProgress {
+			return fmt.Errorf("resume: the run is active (node %s is claimed)", r.NodeID)
+		}
+	}
+	return nil
 }
 
 func readLeafResults(runDir string) (map[string]json.RawMessage, bool, error) {

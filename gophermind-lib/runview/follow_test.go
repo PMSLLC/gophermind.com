@@ -203,6 +203,35 @@ func TestFollowShowsAResetNodeWithoutAWarning(t *testing.T) {
 	if w := v.Warnings(); len(w) != 0 {
 		t.Errorf("warnings = %v, want none", w)
 	}
+
+	// A replay after the reset maps the new attempt lines onto the new attempts:
+	// the reset starts the node's attempt count again.
+	for _, m := range []string{"new-1", "new-2"} {
+		if err := f.BB.AppendAttempt(context.Background(), f.RunID, "fn-bye", blackboard.Attempt{Model: m, Verdict: blackboard.VerdictFail}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v2, err := runview.Open(filepath.Dir(filepath.Dir(f.Dir)), runviewtest.RunID, runview.WithPoll(10*time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch2, err := v2.Follow(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var models []string
+	for i := int64(0); i < v2.EventSeq(); i++ {
+		e := next(t, ch2)
+		var d runview.NodeAttemptData
+		if e.Type == runview.EventNodeAttempt && json.Unmarshal(e.Data, &d) == nil && d.ID == "fn-bye" {
+			models = append(models, d.Attempt.Model)
+		}
+	}
+	if len(models) < 2 || strings.Join(models[len(models)-2:], ",") != "new-1,new-2" {
+		t.Errorf("fn-bye attempt models on replay = %v, want the last two new-1,new-2", models)
+	}
 }
 
 func itoa(n int64) string { b, _ := json.Marshal(n); return string(b) }

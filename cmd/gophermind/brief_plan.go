@@ -291,14 +291,14 @@ func resumeFrom(runID, from string, resetRepo bool, out, errw io.Writer) (code i
 		return exitError, true
 	}
 	var res resume.Result
+	board, _ := briefBackends()
 	if step.Stage != "" {
 		req := resume.RepoRequest{Repo: rec.Repo, Mode: resume.RepoKeep}
 		if resetRepo {
 			req.Mode = resume.RepoRestoreFiles
 		}
-		res, err = resume.FromStage(rec.RunDir, step.Stage, req, time.Now())
+		res, err = resume.FromStage(context.Background(), rec.RunDir, board, runID, step.Stage, req, time.Now())
 	} else {
-		board, _ := briefBackends()
 		res, err = resume.FromNode(context.Background(), rec.RunDir, board, runID, step.Node, time.Now())
 	}
 	if err != nil {
