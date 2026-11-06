@@ -195,7 +195,7 @@ func renderTestwriter(node, module, file, funcName, testFile string) (string, er
 // every package qualifier the node's signature and dependency signatures use.
 // siblings maps contract package clauses to import paths (PackageImports).
 func renderTestwriterWith(node, module, file, funcName, testFile string, siblings map[string]string) (string, error) {
-	return renderTestwriterBrief(node, module, file, funcName, testFile, siblings, "", nil)
+	return renderTestwriterBrief(node, module, file, funcName, testFile, siblings, "", nil, "")
 }
 
 // renderTestwriterBrief is renderTestwriterWith that also gives the brief's own
@@ -203,8 +203,9 @@ func renderTestwriterWith(node, module, file, funcName, testFile string, sibling
 // up values the brief settles ("max 0 returns an empty slug" where the brief
 // says 0 means no limit), and the revise step then bent the contract to match.
 // obligations are the node's own Tests-section bullets, in id order; each one
-// is a case of the table the reply must cite.
-func renderTestwriterBrief(node, module, file, funcName, testFile string, siblings map[string]string, brief string, obligations []TestObligation) (string, error) {
+// is a case of the table the reply must cite. requirements is the
+// requirementsBlock of the brief's requirements mapped to the node, "" for none.
+func renderTestwriterBrief(node, module, file, funcName, testFile string, siblings map[string]string, brief string, obligations []TestObligation, requirements string) (string, error) {
 	dir := path.Dir(file)
 	importPath := ""
 	if module != "" {
@@ -220,7 +221,7 @@ func renderTestwriterBrief(node, module, file, funcName, testFile string, siblin
 	data := map[string]string{"MainPackage": mainPkg, "Node": node, "PackageDir": dir,
 		"TestFuncName": funcName, "TestFile": testFile, "Module": module, "ImportPath": importPath,
 		"Imports": qualifierImports(node, siblings), "BriefSection": brief,
-		"Obligations": obligationsBlock(obligations), "ObligationExample": ""}
+		"Obligations": obligationsBlock(obligations), "ObligationExample": "", "Requirements": requirements}
 	if len(obligations) > 0 {
 		data["ObligationExample"] = obligations[0].ID
 	}
@@ -237,6 +238,65 @@ func renderTestwriterBrief(node, module, file, funcName, testFile string, siblin
 		}
 	}
 	return render("testwriter", data)
+}
+
+// nodeRequirements is the requirements, in brief order, that coverage mapped
+// to the node or to its component: features, acceptance bullets and
+// constraints. Tests bullets reach the writer as obligations instead.
+func nodeRequirements(reqs []Requirement, covered []Covered, id, parent string) []Requirement {
+	on := map[string]bool{}
+	for _, c := range covered {
+		if contains(c.Nodes, id) || (parent != "" && contains(c.Nodes, parent)) {
+			on[c.Requirement] = true
+		}
+	}
+	var out []Requirement
+	for _, q := range reqs {
+		if on[q.ID] && q.Kind != ReqTest {
+			out = append(out, q)
+		}
+	}
+	return out
+}
+
+// requirementsBlock is the <requirements> text of the test writer prompt:
+// "<id>: <full text>", one requirement per paragraph.
+func requirementsBlock(reqs []Requirement) string {
+	parts := make([]string, 0, len(reqs))
+	for _, q := range reqs {
+		parts = append(parts, q.ID+": "+strings.TrimSpace(q.Text))
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+// reqLiteral is an output literal of a mapped feature requirement.
+type reqLiteral struct{ req, lit string }
+
+// nodeLiterals is the literals of the mapped feature requirements that the
+// node's own text mentions: those are the node's to produce, so its test must
+// assert them. A literal the node never mentions belongs to another function.
+func nodeLiterals(mapped []Requirement, nodeText string, binaries []string) []reqLiteral {
+	var out []reqLiteral
+	for _, q := range mapped {
+		for _, lit := range requirementLiterals(q, binaries...) {
+			if literalIn(nodeText, lit) {
+				out = append(out, reqLiteral{q.ID, lit})
+			}
+		}
+	}
+	return out
+}
+
+// checkRequirementLiterals refuses a test file that never asserts one of the
+// node's requirement literals. The refusal names the literal, the brief's
+// own words, never the reply.
+func checkRequirementLiterals(lits []reqLiteral, src string) error {
+	for _, l := range lits {
+		if !literalIn(src, l.lit) && !containsText(src, l.lit) {
+			return fmt.Errorf("expected_value_missing: %s (requirement %s states it and this function produces it; assert it in a test case)", l.lit, l.req)
+		}
+	}
+	return nil
 }
 
 // qualifierImports lists, one per line, the import path of every package
@@ -571,7 +631,20 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 		return writtenTests{}, fmt.Errorf("test file %s already exists and this run did not write it; move it away, then resume", path.Base(rel))
 	}
 	parent, _ := d["parent"].(string)
-	prompt, err := renderTestwriterBrief(mustJSON(withoutUnexportedDeps(withReceiverDecl(c, testwriterView(d)), sig, path.Dir(file))), c.Module, file, funcName, rel, PackageImports(c), componentBrief(r, parent, 1), obligations)
+	// The brief's requirements mapped to the node, and the literals of its
+	// features that the node says it produces: the test file must assert them.
+	var mapped []Requirement
+	if cov, cerr := ReadCoverage(r.dir); cerr == nil {
+		mapped = nodeRequirements(r.reqs, cov.Covered, id, parent)
+	}
+	doc := ""
+	for _, f := range c.Functions {
+		if f.ID == id {
+			doc = f.Doc
+		}
+	}
+	lits := nodeLiterals(mapped, nodeBehaviourText(d, doc), contractBins(c))
+	prompt, err := renderTestwriterBrief(mustJSON(withoutUnexportedDeps(withReceiverDecl(c, testwriterView(d)), sig, path.Dir(file))), c.Module, file, funcName, rel, PackageImports(c), componentBrief(r, parent, 1), obligations, requirementsBlock(mapped))
 	if err != nil {
 		return writtenTests{}, err
 	}
@@ -598,6 +671,9 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 				if err := checkObligations(obligations, cited, src); err != nil {
 					return err
 				}
+				if err := checkRequirementLiterals(lits, src); err != nil {
+					return err
+				}
 			}
 			in := settleInput{c: c, id: id, file: file, rel: rel, funcName: funcName, sig: sig, pkg: pkg, pkgs: packageSet(c),
 				others: otherTestSources(r.repo, path.Dir(rel), id, st), stubs: stubSources(c, path.Dir(file))}
@@ -616,6 +692,9 @@ func (p *Planner) writeTests(ctx context.Context, r *run, c *contract.Contracts,
 			}
 			if se != nil {
 				if err := checkObligations(obligations, cited, s.src); err != nil {
+					return err
+				}
+				if err := checkRequirementLiterals(lits, s.src); err != nil {
 					return err
 				}
 			}

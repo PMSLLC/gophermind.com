@@ -460,7 +460,7 @@ func (p *Planner) reviseTests(ctx context.Context, r *run, c *contract.Contracts
 		return "", "", err
 	}
 	obligations := nodeObligations(all, id)
-	prompt, err := renderTestwriterBrief(scrubInput(mustJSON(testwriterView(merged)), req.Secrets, maxReviseTestSource), c.Module, file, funcName, testFile, PackageImports(c), componentBrief(r, parent, 1), obligations)
+	prompt, err := renderTestwriterBrief(scrubInput(mustJSON(testwriterView(merged)), req.Secrets, maxReviseTestSource), c.Module, file, funcName, testFile, PackageImports(c), componentBrief(r, parent, 1), obligations, "")
 	if err != nil {
 		return "", "", err
 	}

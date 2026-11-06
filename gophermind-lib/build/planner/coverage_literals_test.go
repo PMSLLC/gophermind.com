@@ -105,3 +105,10 @@ func TestCoverageLiteralsComeAfterTheVerb(t *testing.T) {
 		t.Errorf("literals = %q, want %q", got, want)
 	}
 }
+
+func TestCoverageLiteralsSkipGoTypes(t *testing.T) {
+	q := Requirement{ID: "F2", Kind: ReqFeature, Text: "`Farewell(name)` returns `Goodbye, <name>!`.\n\n- An empty name returns a `*NameError`, and a closed reader returns `io.EOF` or `ErrClosed`."}
+	if got, want := requirementLiterals(q), []string{"Goodbye, <name>!"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("literals = %q, want %q", got, want)
+	}
+}

@@ -13,6 +13,11 @@ var literalVerbs = []string{"prints", "writes", "exits with code", "returns", "l
 // subject of the sentence, an invocation (`hello Ada` prints ...), not a result.
 var subjectVerbRE = regexp.MustCompile(`^\s*(prints|writes|exits|returns)\b`)
 
+// goTypeRE is a Go type or error value named in a sentence (`*NameError`,
+// `io.EOF`, `ErrEmpty`): what kind of value is returned, which the contract's
+// errors and their tests settle, not output text to carry or assert.
+var goTypeRE = regexp.MustCompile(`^(\*[A-Za-z_][A-Za-z0-9_.]*|[a-z][a-z0-9]*\.[A-Z][A-Za-z0-9_]*|Err[A-Z][A-Za-z0-9_]*|[A-Z][A-Za-z0-9]*Error)$`)
+
 // exitCodeRE is the integer after "code" in a sentence: the exit code it states.
 var exitCodeRE = regexp.MustCompile("\\bcode\\s+`?([0-9]+)`?")
 
@@ -42,7 +47,7 @@ func requirementLiterals(req Requirement, binaries ...string) []string {
 		}
 		for _, loc := range backtickRE.FindAllStringSubmatchIndex(sent, -1) {
 			span := sent[loc[2]:loc[3]]
-			if loc[0] < verb || isInvocation(span, binaries) || subjectVerbRE.MatchString(sent[loc[1]:]) {
+			if loc[0] < verb || isInvocation(span, binaries) || subjectVerbRE.MatchString(sent[loc[1]:]) || goTypeRE.MatchString(span) {
 				continue
 			}
 			if exitCodeRE.MatchString(sent[max(0, loc[0]-6):loc[1]]) {

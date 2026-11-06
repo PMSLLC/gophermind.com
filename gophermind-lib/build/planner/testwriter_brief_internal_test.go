@@ -8,7 +8,7 @@ import (
 func TestTestwriterPromptCarriesBriefSection(t *testing.T) {
 	brief := "### Make a slug\n\n- a `max` of 0 or less means no limit."
 	got, err := renderTestwriterBrief(`{"contract":{"signature":"func Make(s string, max int) string"}}`,
-		"example.com/slugify", "internal/slug/make.go", "TestFnMake", "internal/slug/fn_make_test.go", nil, brief, nil)
+		"example.com/slugify", "internal/slug/make.go", "TestFnMake", "internal/slug/fn_make_test.go", nil, brief, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,7 @@ func TestTestwriterPromptCarriesBriefSection(t *testing.T) {
 
 func TestTestwriterPromptCarriesObligations(t *testing.T) {
 	node := `{"contract":{"signature":"func Run(args []string, stdout, stderr io.Writer) int"}}`
-	got, err := renderTestwriterBrief(node, "hello", "internal/cli/cli.go", "TestRun", "internal/cli/fn_run_test.go", nil, "", runObligations)
+	got, err := renderTestwriterBrief(node, "hello", "internal/cli/cli.go", "TestRun", "internal/cli/fn_run_test.go", nil, "", runObligations, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestTestwriterPromptCarriesObligations(t *testing.T) {
 	if strings.Index(got, "<obligations>") > strings.Index(got, "Node:\n<node>") {
 		t.Error("the obligations block is not before the node")
 	}
-	none, err := renderTestwriterBrief(node, "hello", "internal/cli/cli.go", "TestRun", "internal/cli/fn_run_test.go", nil, "", nil)
+	none, err := renderTestwriterBrief(node, "hello", "internal/cli/cli.go", "TestRun", "internal/cli/fn_run_test.go", nil, "", nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
