@@ -144,6 +144,10 @@ func briefPlan(verb string, args []string, in *os.File, out, errw io.Writer) int
 		return exitError
 	}
 	if *from != "" {
+		if g := *gateMode; g != "" && g != "terminal" && g != "file" {
+			fmt.Fprintf(errw, "error: unknown gate %q (want terminal or file)\n", g)
+			return exitError
+		}
 		if code, done := resumeFrom(target, *from, *resetRepo, out, errw); done {
 			return code
 		}

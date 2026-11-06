@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"gophermind/gophermind-lib/build/blackboard"
+	"gophermind/gophermind-lib/build/resume"
 	"gophermind/gophermind-lib/build/tree"
 )
 
@@ -59,8 +60,10 @@ func TestBriefResumeFromNodeResetsAndExits0(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(runDir, "_state", "executor.json"), []byte(`{}`), 0o600); err != nil {
-		t.Fatal(err)
+	for _, rel := range []string{"_state/executor.json", "report.json"} {
+		if err := os.WriteFile(filepath.Join(runDir, rel), []byte(`{}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	code, out, errs := runBriefCmd(t, "", "resume", id, "--from", "node:"+node)
 	if code != 0 {
@@ -69,6 +72,12 @@ func TestBriefResumeFromNodeResetsAndExits0(t *testing.T) {
 	want := "resumed " + node + "; run: gophermind brief run " + id + " --repo " + repo
 	if !strings.Contains(out, want) {
 		t.Errorf("out=%q lacks %q", out, want)
+	}
+	if !strings.Contains(out, "discarded: ") {
+		t.Errorf("out=%q has no discarded line", out)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, "report.json")); !os.IsNotExist(err) {
+		t.Errorf("report.json still in place: %v", err)
 	}
 	row, err := board.Get(ctx, id, node)
 	if err != nil || row.Status != blackboard.StatusReady {
@@ -92,5 +101,57 @@ func TestBriefResumeRejectsResetRepoWithoutFrom(t *testing.T) {
 		if code != 1 || !strings.Contains(errs, "usage:") {
 			t.Errorf("%v: code=%d err=%q, want usage", args, code, errs)
 		}
+	}
+}
+
+func TestBriefResumeFromStageRefusalExits1(t *testing.T) {
+	id, repo := plannedGreeter(t)
+	runDir := runDirInRepo(repo, id)
+	// Remove a late stage's output so the run never reached it.
+	if err := os.Remove(filepath.Join(runDir, "_state", "testwriter.json")); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errs := runBriefCmd(t, "", "resume", id, "--from", "testwriter", "--reset-repo", "--fake", filepath.Join(greeterExecDir, "planner"))
+	if code != 1 || !strings.Contains(errs, "was never reached") || strings.Contains(out, "discarded:") {
+		t.Fatalf("code=%d out=%q err=%q", code, out, errs)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, "_state", "discarded")); !os.IsNotExist(err) {
+		t.Errorf("a refusal discarded something: %v", err)
+	}
+}
+
+func TestBriefResumeFromStageDiscardsAndContinues(t *testing.T) {
+	id, repo := plannedGreeter(t)
+	runDir := runDirInRepo(repo, id)
+	code, out, errs := runBriefCmd(t, "", "resume", id, "--from", "approve", "--reset-repo", "--yes", "--gate", "file", "--fake", filepath.Join(greeterExecDir, "planner"))
+	if code != 0 && code != 3 {
+		t.Fatalf("code=%d out=%q err=%q", code, out, errs)
+	}
+	if !strings.Contains(out, "discarded: ") {
+		t.Errorf("out=%q has no discarded line", out)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, "_state", "discarded")); err != nil {
+		t.Errorf("no discard folder: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, "approval.json")); err != nil {
+		t.Errorf("the planner did not run again (no approval.json): %v", err)
+	}
+}
+
+func TestBriefResumeFromValidatesFlagsBeforeResetting(t *testing.T) {
+	id, repo := plannedGreeter(t)
+	runDir := runDirInRepo(repo, id)
+	code, out, errs := runBriefCmd(t, "", "resume", id, "--from", "confirm", "--gate", "bogus")
+	if code != 1 || !strings.Contains(errs, `unknown gate "bogus"`) {
+		t.Fatalf("code=%d out=%q err=%q", code, out, errs)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, "_state", "discarded")); !os.IsNotExist(err) {
+		t.Errorf("a bad flag discarded something: %v", err)
+	}
+}
+
+func TestBriefUsageListsEveryResumeStage(t *testing.T) {
+	if !strings.Contains(briefUsage, strings.Join(resume.Stages, " ")) {
+		t.Errorf("briefUsage does not list %v", resume.Stages)
 	}
 }
