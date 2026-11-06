@@ -279,7 +279,7 @@ func nodeLiterals(mapped []Requirement, nodeText string, binaries []string) []re
 	var out []reqLiteral
 	for _, q := range mapped {
 		for _, lit := range requirementLiterals(q, binaries...) {
-			if literalIn(nodeText, lit) {
+			if docCarries(nodeText, lit) {
 				out = append(out, reqLiteral{q.ID, lit})
 			}
 		}

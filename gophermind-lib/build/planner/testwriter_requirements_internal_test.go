@@ -123,3 +123,21 @@ func TestTestFileWithoutTheGreetingIsRefused(t *testing.T) {
 		}
 	}
 }
+
+// A test file writes a trailing newline as the escape \n, exactly as the brief
+// does, so a test that asserts the text without it is refused, while the node
+// doc that writes the newline for real still owns the literal.
+func TestTestFileMustAssertTheEscapedNewline(t *testing.T) {
+	q := Requirement{ID: "F1", Kind: ReqFeature, Text: "With no argument it writes exactly `Hello, World!\\n` to standard output."}
+	lits := nodeLiterals([]Requirement{q}, "Writes 'Hello, World!\n' to stdout.", nil)
+	if len(lits) != 1 || lits[0].lit != `Hello, World!\n` {
+		t.Fatalf("node literals = %+v, want Hello, World!\\n", lits)
+	}
+	err := checkRequirementLiterals(lits, `if got != "Hello, World!" {`)
+	if err == nil || !strings.HasPrefix(err.Error(), `expected_value_missing: Hello, World!\n`) {
+		t.Errorf("err = %v, want expected_value_missing: Hello, World!\\n", err)
+	}
+	if err := checkRequirementLiterals(lits, `if got != "Hello, World!\n" {`); err != nil {
+		t.Errorf("a file asserting the escaped newline was refused: %v", err)
+	}
+}

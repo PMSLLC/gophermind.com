@@ -14,9 +14,9 @@ var literalVerbs = []string{"prints", "writes", "exits with code", "returns", "l
 var subjectVerbRE = regexp.MustCompile(`^\s*(prints|writes|exits|returns)\b`)
 
 // inputWordRE matches a word that ends the text before a span when the span is
-// the input of the sentence (with `Ada` it writes ..., for `x`, given `y`),
-// not its result.
-var inputWordRE = regexp.MustCompile(`(?i)\b(with|for|given|argument|arguments|input|from)$`)
+// not a result of the sentence: an input (with `Ada` it writes ..., for `x`,
+// given `y`) or a destination (writes ... to `stdout`, prints ... on `stderr`).
+var inputWordRE = regexp.MustCompile(`(?i)\b(with|for|given|argument|arguments|input|from|to|on)$`)
 
 // goTypeRE is a Go type or error value named in a sentence (`*NameError`,
 // `io.EOF`, `ErrEmpty`): what kind of value is returned, which the contract's
@@ -31,8 +31,8 @@ var exitCodeRE = regexp.MustCompile("\\bcode\\s+`?([0-9]+)`?")
 // printed, written, returned or exited with, plus a non-zero exit code it
 // names. A span that is an invocation is not a literal: one that starts with a
 // binary name followed by a space or the end, or one that is the subject of a
-// trigger verb. Nor is an input: a span right after with, for, given,
-// argument(s), input or from. Exit
+// trigger verb. Nor is an input or a destination: a span right after with,
+// for, given, argument(s), input, from, to or on. Exit
 // code 0 is success, which is not a behaviour of its own. Other kinds have none.
 func requirementLiterals(req Requirement, binaries ...string) []string {
 	if req.Kind != ReqFeature {
@@ -138,11 +138,10 @@ var placeholderRE = regexp.MustCompile(`<[A-Za-z_][A-Za-z0-9_ -]*>`)
 
 // literalIn reports whether text carries lit. A placeholder in lit stands for
 // any text on the line (Hello, <NAME>! is carried by Hello, %s! and by
-// Hello, Ada!), and a number must stand as a word of its own. An escaped
-// newline in lit (backslash n) is a real one, and a trailing one is dropped:
-// the doc writes the text with a real newline or none, and the test proves it.
+// Hello, Ada!), and a number must stand as a word of its own. lit is matched
+// as written: a test file writes a newline as the escape \n, as the brief does.
+// A node's doc text is read with docCarries instead.
 func literalIn(text, lit string) bool {
-	lit = normalLiteral(lit)
 	if isDigits(lit) {
 		return regexp.MustCompile(`(^|[^0-9])` + lit + `($|[^0-9])`).MatchString(text)
 	}
@@ -176,7 +175,7 @@ func normalLiteral(lit string) string {
 // (examplePatterns).
 func coveredByPattern(all string, lit string, patterns []string) bool {
 	for _, p := range patterns {
-		if literalIn(lit, p) && literalIn(all, p) {
+		if literalIn(lit, p) && docCarries(all, p) {
 			return true
 		}
 	}
@@ -310,7 +309,7 @@ func literalGaps(reqs []Requirement, covered []Covered, nodes []PlanNode, binari
 		lits := requirementLiterals(q, binaries...)
 		var missing []string
 		for _, lit := range lits {
-			if !literalIn(all, lit) && !coveredByPattern(all, normalLiteral(lit), examplePatterns(lit, q.Text, lits, patterns)) {
+			if !docCarries(all, lit) && !coveredByPattern(all, normalLiteral(lit), examplePatterns(lit, q.Text, lits, patterns)) {
 				missing = append(missing, lit)
 			}
 		}
@@ -331,4 +330,12 @@ func literalGaps(reqs []Requirement, covered []Covered, nodes []PlanNode, binari
 		}
 	}
 	return gaps
+}
+
+// docCarries reports whether a node's doc text carries lit, read with
+// normalLiteral first: an escaped newline in lit is a real one, and a trailing
+// one is dropped, because the doc writes the text with a real newline or none
+// and the test proves it.
+func docCarries(text, lit string) bool {
+	return literalIn(text, normalLiteral(lit))
 }

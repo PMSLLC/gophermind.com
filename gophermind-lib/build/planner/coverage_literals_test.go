@@ -144,16 +144,23 @@ func TestLiteralExamplesOfACarriedPatternAreCarried(t *testing.T) {
 }
 
 // The brief writes a trailing newline as the escape \n; a doc writes it as a
-// real newline or not at all.
+// real newline or not at all. A test file writes it as the escape, so the
+// as-written match (literalIn, the test writer's) keeps it.
 func TestLiteralNewlineEscapesMatchDocNewlines(t *testing.T) {
-	if !literalIn("Writes 'usage: hello [NAME]\n' to stderr", `usage: hello [NAME]\n`) {
+	if !docCarries("Writes 'usage: hello [NAME]\n' to stderr", `usage: hello [NAME]\n`) {
 		t.Error("escaped newline not matched by a real one")
 	}
-	if !literalIn("writes usage: hello [NAME] to stderr", `usage: hello [NAME]\n`) {
+	if !docCarries("writes usage: hello [NAME] to stderr", `usage: hello [NAME]\n`) {
 		t.Error("escaped trailing newline not matched by none")
 	}
-	if literalIn("writes nothing", `usage: hello [NAME]\n`) {
+	if docCarries("writes nothing", `usage: hello [NAME]\n`) {
 		t.Error("matched a text without the literal")
+	}
+	if literalIn(`want "usage: hello [NAME]"`, `usage: hello [NAME]\n`) {
+		t.Error("as written: a test text without the escaped newline matched")
+	}
+	if !literalIn(`want "usage: hello [NAME]\n"`, `usage: hello [NAME]\n`) {
+		t.Error("as written: a test text with the escaped newline did not match")
 	}
 }
 
@@ -192,5 +199,21 @@ func TestLiteralsOfUsedNodesCount(t *testing.T) {
 	gaps := literalGaps(reqs, covered, nodes)
 	if len(gaps) != 1 || !strings.Contains(gaps[0].Reason, `behaviour missing: Hello, World!\n`) {
 		t.Errorf("without uses: gaps = %+v, want one F2 gap naming Hello, World!\\n", gaps)
+	}
+}
+
+// Run 9: a span after "to" or "on" (to stdout, on stderr) names where a
+// result goes, not a result.
+func TestLiteralDestinationsAreNotResults(t *testing.T) {
+	got := requirementLiterals(Requirement{ID: "F2", Kind: ReqFeature, Text: helloF2 + " An error prints `bad` on `stderr`."})
+	for _, dest := range []string{"stdout", "stderr"} {
+		if contains(got, dest) {
+			t.Errorf("literals = %q, the destination %q taken as a result", got, dest)
+		}
+	}
+	for _, want := range []string{`Hello, World!\n`, "bad"} {
+		if !contains(got, want) {
+			t.Errorf("literals = %q, missing %q", got, want)
+		}
 	}
 }
