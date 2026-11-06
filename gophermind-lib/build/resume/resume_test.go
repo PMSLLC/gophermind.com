@@ -110,7 +110,7 @@ func fullRun(t *testing.T) string {
 
 func TestFromStageMovesTheStageAndLater(t *testing.T) {
 	dir := fullRun(t)
-	res, err := FromStage(dir, "coverage", fixed)
+	res, err := FromStage(dir, "coverage", RepoRequest{Mode: RepoKeep}, fixed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestFromStageMovesTheStageAndLater(t *testing.T) {
 
 func TestFromStageDecomposeMovesNodePlans(t *testing.T) {
 	dir := fullRun(t)
-	res, err := FromStage(dir, "decompose", fixed)
+	res, err := FromStage(dir, "decompose", RepoRequest{Mode: RepoKeep}, fixed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestFromStageRefusesAnUnreachedStage(t *testing.T) {
 	for _, s := range Stages[:3] {
 		put(t, dir, stageFiles(s)[0], "")
 	}
-	_, err := FromStage(dir, "coverage", fixed)
+	_, err := FromStage(dir, "coverage", RepoRequest{Mode: RepoKeep}, fixed)
 	if err == nil || !strings.Contains(err.Error(), "never reached") || !strings.Contains(err.Error(), `"contract"`) {
 		t.Fatalf("err %v", err)
 	}
@@ -181,20 +181,20 @@ func TestFromStageRefusesAnUnreachedStage(t *testing.T) {
 		t.Error("something was moved")
 	}
 	empty := t.TempDir()
-	if _, err := FromStage(empty, "clarify", fixed); err == nil || !strings.Contains(err.Error(), "nothing to resume") {
+	if _, err := FromStage(empty, "clarify", RepoRequest{Mode: RepoKeep}, fixed); err == nil || !strings.Contains(err.Error(), "nothing to resume") {
 		t.Errorf("empty: %v", err)
 	}
 }
 
 func TestFromStageRefusesAnUnknownStage(t *testing.T) {
-	if _, err := FromStage(t.TempDir(), "build", fixed); err == nil || !strings.Contains(err.Error(), "unknown step") {
+	if _, err := FromStage(t.TempDir(), "build", RepoRequest{Mode: RepoKeep}, fixed); err == nil || !strings.Contains(err.Error(), "unknown step") {
 		t.Fatalf("err %v", err)
 	}
 }
 
 func TestFromStageKeepsTranscripts(t *testing.T) {
 	dir := fullRun(t)
-	if _, err := FromStage(dir, "clarify", fixed); err != nil {
+	if _, err := FromStage(dir, "clarify", RepoRequest{Mode: RepoKeep}, fixed); err != nil {
 		t.Fatal(err)
 	}
 	for _, rel := range []string{"_state/llm/1.json", "brief.md", "run.log", "_state/status.json"} {
@@ -206,11 +206,11 @@ func TestFromStageKeepsTranscripts(t *testing.T) {
 
 func TestFromStageSecondResumeSameSecondRefuses(t *testing.T) {
 	dir := fullRun(t)
-	if _, err := FromStage(dir, "approve", fixed); err != nil {
+	if _, err := FromStage(dir, "approve", RepoRequest{Mode: RepoKeep}, fixed); err != nil {
 		t.Fatal(err)
 	}
 	put(t, dir, "approval.json", "again")
-	if _, err := FromStage(dir, "approve", fixed); err == nil {
+	if _, err := FromStage(dir, "approve", RepoRequest{Mode: RepoKeep}, fixed); err == nil {
 		t.Fatal("overwrote a discarded file")
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "approval.json")); string(b) != "again" {

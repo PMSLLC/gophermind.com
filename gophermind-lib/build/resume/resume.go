@@ -9,6 +9,7 @@ package resume
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -54,8 +55,9 @@ func ParseStep(s string) (Step, error) {
 
 // Result is what a resume moved.
 type Result struct {
-	Discarded  []string // run-relative paths moved, plus files written into DiscardDir (leaf-result and attempts copies), sorted
-	DiscardDir string   // run-relative folder they went to
+	Discarded   []string // run-relative paths moved, plus files written into DiscardDir (leaf-result and attempts copies), sorted
+	DiscardDir  string   // run-relative folder they went to
+	RepoActions []string // what the repository reset did, in order
 }
 
 func stageIndex(stage string) int {
@@ -77,8 +79,10 @@ func present(runDir, rel string) bool {
 }
 
 // FromStage moves aside the output of stage and every later stage, the
-// executor's files and the planner's error and done marks.
-func FromStage(runDir, stage string, now time.Time) (Result, error) {
+// executor's files and the planner's error and done marks. repo says what to
+// do with the target repository first (see RepoRequest); a refusal leaves the
+// run folder and the repository unchanged.
+func FromStage(runDir, stage string, repo RepoRequest, now time.Time) (Result, error) {
 	idx := stageIndex(stage)
 	if idx < 0 {
 		return Result{}, fmt.Errorf("resume: unknown step %q (a planner stage or node:<id>)", stage)
@@ -94,6 +98,30 @@ func FromStage(runDir, stage string, now time.Time) (Result, error) {
 	}
 	if !present(runDir, stageFiles(stage)[0]) {
 		return Result{}, fmt.Errorf("resume: stage %q was never reached; the run completed %q", stage, Stages[last])
+	}
+	branch, base, started, err := ReadExecutorState(runDir)
+	if err != nil {
+		return Result{}, err
+	}
+	var actions []string
+	if repo.Mode == RepoKeep {
+		if started {
+			return Result{}, errors.New(msgExecutorState)
+		}
+		if repo.Repo != "" {
+			kept, err := keptTestFiles(runDir, repo.Repo)
+			if err != nil {
+				return Result{}, err
+			}
+			if len(kept) > 0 {
+				return Result{}, errors.New(msgTestFiles)
+			}
+		}
+	} else {
+		actions, err = ResetRepo(runDir, repo.Repo, repo.Mode, repo.OwnedUnder, RepoState{Branch: branch, Base: base, Started: started})
+		if err != nil {
+			return Result{RepoActions: actions}, err
+		}
 	}
 	var rels []string
 	for _, s := range Stages[idx:] {
@@ -115,7 +143,7 @@ func FromStage(runDir, stage string, now time.Time) (Result, error) {
 	rels = append(rels, rt...)
 	dest := discardDir(runDir, now)
 	moved, err := moveAll(runDir, dest, rels)
-	res := Result{Discarded: moved, DiscardDir: dest}
+	res := Result{Discarded: moved, DiscardDir: dest, RepoActions: actions}
 	if err != nil {
 		return res, err
 	}
