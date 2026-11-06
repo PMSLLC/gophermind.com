@@ -200,6 +200,12 @@ r003 implemented `Run` with a bare `Greeting` call: the packet showed `func Gree
 
 **Files:** Modify `gophermind-lib/build/contract/contract.go` (`docComment`), `build/packer/packer.go` (`state.render`), `build/packer/prompts/implement.md:8`, `build/planner/compilediag.go` (`BuildHints`); tests in each package.
 
+### Task 3c: test functions never enter the contract; test-practice constraints are the test writer's (found in run hello-v1.1-20261106-r001, 2026-11-05)
+
+After Tasks 3, 3a, 3b and 4 were installed, the run got past planning's contract stage correctly, then coverage opened gaps for C6, C7 and C8 (the brief's constraints about how tests are written), the fill round added `TestRunCLI` and `TestRunCLISeparateStreams` to the contract as functions, decompose made nodes of them, and the test writer looped eighteen rounds on a node whose function under test was a test. A function with a `*testing.T/B/M/F` parameter or a `_test.go` file is dropped with `test_function_dropped` wherever functions enter the contract (contract pass merge, coverage fill), and a Constraint that begins with "Tests" is recorded as covered by the test writer instead of a gap. Brief: `.superpowers/sdd/2026-11-05-hello-pipeline-fixes/task-3c-brief.md`.
+
+**Files:** Modify `gophermind-lib/build/planner/fixediface.go` (`isTestFunction`, `dropTestFunctions`), `contract_stage.go` (beside `dropForeignFunctions`), `coverage.go` (fill acceptance), `coverage_check.go` (`CheckCoverage`), `requirements.go` (`Requirement.IsTestRule`), `prompts/coverage.md`, `prompts/testwriter.md`; tests in the planner package.
+
 ### Task 4: Root acceptance test validator catches masked status and inverted checks (brief 17)
 
 **Files:**
