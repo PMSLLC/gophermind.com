@@ -470,6 +470,29 @@ func (q *qual) script(script string, ctxAsserted, top bool) {
 	}
 }
 
+// assignRunsBin: a bare (or local/export/readonly/declare) assignment whose
+// value substitutes a command that is one of the built binaries.
+func (q *qual) assignRunsBin(base string, ws []word) bool {
+	if base != "" && base != "local" && base != "export" && base != "readonly" && base != "declare" {
+		return false
+	}
+	for _, w := range ws {
+		if !assignRE.MatchString(w.lit) {
+			continue
+		}
+		for _, sub := range extractSubs(w.lit) {
+			ss, _, _ := shellParse(sub)
+			if len(ss) == 0 {
+				continue
+			}
+			if k := commandIndex(ss[0].words); k >= 0 && q.bins[baseOf(ss[0].words[k].lit)] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 var printSubRE = regexp.MustCompile(`\$\(\s*(echo|printf)\b`)
 
 // statusShapes notes the shapes whose verdict is not the program's: an
@@ -502,7 +525,7 @@ func (q *qual) statusShapes(stmts []stmt, cmdAt func(int) (string, []word)) {
 					q.set[FindPrintSubstitutionTest] = true
 				}
 			}
-		case q.bins[base] && i+1 < len(stmts) && stmts[i+1].op == "&&" && readsStatus(i+1):
+		case (q.bins[base] || q.assignRunsBin(base, stmts[i].words)) && i+1 < len(stmts) && stmts[i+1].op == "&&" && readsStatus(i+1):
 			q.set[FindStatusMasked] = true
 		case base == "grep" && hasFlag(args, 'q') && stmts[i].op == "|" && i+1 < len(stmts) && stmts[i+1].op == "||":
 			f := i

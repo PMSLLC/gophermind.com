@@ -263,3 +263,22 @@ func TestStatusCapturedAfterSemicolonIsClean(t *testing.T) {
 		t.Fatalf("want none, got %v", got)
 	}
 }
+
+func TestStatusMaskedInsideAssignmentSubstitution(t *testing.T) {
+	t.Parallel()
+	o := Options{Bins: []string{"hello"}}
+	cases := []struct {
+		cmd  string
+		want bool
+	}{
+		{`output=$(hello a b 2>&1) && echo "$output" | grep -q 'usage' && [ $? -eq 2 ] || exit 1`, true},
+		{`out=$(hello a b 2>&1); status=$?; test "$status" -eq 2`, false},
+		{`name=$(cat file) && hello "$name"`, false},
+		{`out=$(hello) && echo "$out" | grep -q Hello`, false},
+	}
+	for _, c := range cases {
+		if got := has(Quality(c.cmd, o), FindStatusMasked); got != c.want {
+			t.Errorf("%q: status_masked = %v, want %v", c.cmd, got, c.want)
+		}
+	}
+}
