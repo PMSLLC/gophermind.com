@@ -289,6 +289,12 @@ The eighth run verified all three functions first try with acceptance 6 of 6; th
 
 **Files:** Modify `build/acceptcheck/quality.go`, `build/planner/prompts/coverage.md`; tests.
 
+### Task 7b: the literal check reads examples, escapes, inputs and used nodes as the brief means them; a fill reply may not duplicate a function (run hello-v1.1-20261106-r007, 2026-11-05 21:43 MST)
+
+The ninth run, the first with Task 7's literal check, planned the right contract and stopped at coverage: the check wanted every example of `Hello, <name>!` spelled out in node text, read an escaped `\n` the doc wrote as a real newline, took the input `Ada` of a sentence for a result, and did not see `Hello, World!` in the function fn-run uses. The fill round then declared `Greeting` and `Run` a second time. Examples of a carried pattern, newline escapes, sentence inputs and used nodes are read the way the brief means them; a fill reply that duplicates a function's name and package is refused. Brief: `.superpowers/sdd/2026-11-05-hello-pipeline-fixes/task-7b-brief.md`.
+
+**Files:** Modify `build/planner/coverage_literals.go`, `coverage_check.go` (`PlanNode.Uses`), `decompose.go`, `coverage.go`; tests.
+
 ### Task 5: Node inputs and tier come from the signature and class (brief 11, 12, 14)
 
 **Files:**
