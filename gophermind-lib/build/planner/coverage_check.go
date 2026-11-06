@@ -54,7 +54,8 @@ type Gap struct {
 type Covered struct {
 	Requirement string   `json:"requirement"`
 	Nodes       []string `json:"nodes"`
-	RootTests   []string `json:"root_tests"` // test names
+	RootTests   []string `json:"root_tests"`          // test names
+	TestRule    bool     `json:"test_rule,omitempty"` // a test-practice constraint, applied by the test writer
 }
 
 // ParseCoverageReply decodes a reply that has already had fences and prose
@@ -182,6 +183,10 @@ func CheckCoverage(reqs []Requirement, nodes []PlanNode, reply CoverageReply) (c
 
 	covered, gaps = []Covered{}, []Gap{}
 	for _, q := range reqs {
+		if q.IsTestRule() {
+			covered = append(covered, Covered{Requirement: q.ID, Nodes: []string{}, RootTests: []string{}, TestRule: true})
+			continue
+		}
 		valid := []string{}
 		var why []string
 		for _, id := range named[q.ID] {

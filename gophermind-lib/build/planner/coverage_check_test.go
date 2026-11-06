@@ -234,12 +234,12 @@ func TestGoldenFailingPlan(t *testing.T) {
 		text[g.Requirement] = g.Text
 	}
 	sort.Strings(ids)
-	want := []string{"A1", "A10", "A11", "A12", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "C1", "C10", "C2", "C4", "C5", "C7", "C9"}
+	want := []string{"A1", "A10", "A11", "A12", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "C1", "C2", "C4", "C5", "C7", "C9"}
 	if !reflect.DeepEqual(ids, want) {
 		t.Fatalf("gaps = %v\nwant   %v", ids, want)
 	}
-	if len(covered) != 22 {
-		t.Fatalf("covered = %d, want 22 (19 features and C3, C6, C8)", len(covered))
+	if len(covered) != 23 {
+		t.Fatalf("covered = %d, want 23 (19 features, C3, C6, C8 and the test rule C10)", len(covered))
 	}
 	for id, part := range map[string]string{
 		"C1":  "`gofmt` and `go vet` clean",
@@ -304,5 +304,32 @@ func TestGoldenPlanHasAStrayCommand(t *testing.T) {
 	want := []string{"`cmd/fake-llm` holds plan files but the brief never names it"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("warnings = %q, want %q", got, want)
+	}
+}
+
+func TestTestRuleConstraintsAreNotGaps(t *testing.T) {
+	reqs := []planner.Requirement{
+		{ID: "C6", Kind: planner.ReqConstraint, Text: "Tests are hermetic and table driven.", Line: 57},
+		{ID: "C7", Kind: planner.ReqConstraint, Text: "Tests for `internal/cli` use separate `bytes.Buffer` values for `stdout` and `stderr`.", Line: 58},
+		{ID: "C8", Kind: planner.ReqConstraint, Text: "Tests never invoke `main` directly, because `main` ends the process.", Line: 59},
+		{ID: "C9", Kind: planner.ReqConstraint, Text: "Go 1.22 or later.", Line: 60},
+		{ID: "F1", Kind: planner.ReqFeature, Name: "Greeting", Text: "Says hello.", Line: 10},
+	}
+	reply := planner.CoverageReply{Map: []planner.MapEntry{{Requirement: "F1", Nodes: []string{"fn-greet"}}}}
+	covered, gaps := planner.CheckCoverage(reqs, testNodes, reply)
+	if len(gaps) != 1 || gaps[0].Requirement != "C9" {
+		t.Fatalf("gaps = %+v, want only C9", gaps)
+	}
+	rule := 0
+	for _, c := range covered {
+		if c.TestRule {
+			rule++
+			if len(c.Nodes) != 0 || len(c.RootTests) != 0 {
+				t.Errorf("%s covered with nodes or tests: %+v", c.Requirement, c)
+			}
+		}
+	}
+	if rule != 3 || len(covered) != 4 {
+		t.Fatalf("covered = %+v", covered)
 	}
 }

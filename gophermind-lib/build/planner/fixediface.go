@@ -339,3 +339,82 @@ func dropForeignFunctions(text, compPkg, module string) (string, []string) {
 func foreignDroppedText(component string, dropped []string) string {
 	return "component_foreign_function_dropped: " + component + ": " + strings.Join(dropped, ", ")
 }
+
+var testingParamRE = regexp.MustCompile(`\*\s*testing\.[TBMF]\b`)
+
+// isTestFunction is true for a contract function the test writer owns: a
+// *testing.T/B/M/F parameter in the signature, or a file ending in _test.go.
+func isTestFunction(f map[string]any) bool {
+	if file, _ := f["file"].(string); strings.HasSuffix(file, "_test.go") {
+		return true
+	}
+	sig, _ := f["signature"].(string)
+	open := strings.Index(sig, "(")
+	if open < 0 {
+		return false
+	}
+	depth := 0
+	for i := open; i < len(sig); i++ {
+		switch sig[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return testingParamRE.MatchString(sig[open : i+1])
+			}
+		}
+	}
+	return testingParamRE.MatchString(sig[open:])
+}
+
+// dropTestFunctions removes test functions from a functions list and names
+// them as "<id> (<signature>)". Entries that are not objects are kept.
+func dropTestFunctions(fns []any) (kept []any, dropped []string) {
+	for _, x := range fns {
+		if f, ok := x.(map[string]any); ok && isTestFunction(f) {
+			id, _ := f["id"].(string)
+			sig, _ := f["signature"].(string)
+			dropped = append(dropped, id+" ("+sig+")")
+			continue
+		}
+		kept = append(kept, x)
+	}
+	return kept, dropped
+}
+
+// dropTestFunctionsText applies dropTestFunctions to a reply's "functions".
+// A reply that does not parse is returned as it is.
+func dropTestFunctionsText(text string) (string, []string) {
+	var raw map[string]json.RawMessage
+	if json.Unmarshal([]byte(text), &raw) != nil || raw["functions"] == nil {
+		return text, nil
+	}
+	var fns []any
+	if json.Unmarshal(raw["functions"], &fns) != nil {
+		return text, nil
+	}
+	kept, dropped := dropTestFunctions(fns)
+	if len(dropped) == 0 {
+		return text, nil
+	}
+	if kept == nil {
+		kept = []any{}
+	}
+	b, err := json.Marshal(kept)
+	if err != nil {
+		return text, nil
+	}
+	raw["functions"] = b
+	out, err := json.Marshal(raw)
+	if err != nil {
+		return text, nil
+	}
+	return string(out), dropped
+}
+
+// testDroppedText is the warning for the test functions dropped where
+// functions enter the contract.
+func testDroppedText(where string, dropped []string) string {
+	return "test_function_dropped: " + where + ": " + strings.Join(dropped, ", ")
+}

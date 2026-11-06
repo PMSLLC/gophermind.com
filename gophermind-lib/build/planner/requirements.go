@@ -29,6 +29,22 @@ type Requirement struct {
 	Line int     `json:"line"`           // 1-based line in the brief file
 }
 
+// IsTestRule is true for a Constraint that governs how tests are written
+// rather than what the code does. The test writer applies it; coverage
+// does not look for a node or a root test.
+func (r Requirement) IsTestRule() bool {
+	if r.Kind != ReqConstraint {
+		return false
+	}
+	t := strings.ToLower(strings.TrimSpace(r.Text))
+	for _, p := range []string{"test", "tests", "unit test", "unit tests", "benchmark", "benchmarks"} {
+		if t == p || strings.HasPrefix(t, p+" ") {
+			return true
+		}
+	}
+	return false
+}
+
 // ParseRequirements scans a brief file: every top-level bullet under
 // "## Constraints" and "## Acceptance", and every "### " heading under
 // "## Features", is one requirement. It is code, not a model, so the list a

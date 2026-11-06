@@ -14,6 +14,8 @@ Cover:
 - every constraint on every input (empty, whitespace, boundary lengths, nil),
 - boundaries on both sides (the last valid value and the first invalid value).
 
+Constraints in the brief that begin with "Tests" are rules for this test file; follow them exactly.
+
 {{if .MainFunc}}The function under test is `func main()`. It takes nothing and returns nothing, and only wires the program together, so no test can call what it calls and its behaviour is covered by the program's acceptance commands. Write exactly one test whose body is `_ = main` (it proves the entry point exists), with the one test entry in `tests` describing that. Call no other function, define no helper, and import only `testing`.
 
 {{end}}{{if .MainPackage}}The package under test is a main package. The test file must declare `package main`, in the same directory, and call the functions directly: no import of the package (Go cannot import a main package), and never `package X_test` or any other package clause. Standard library imports and other packages of this module are fine.

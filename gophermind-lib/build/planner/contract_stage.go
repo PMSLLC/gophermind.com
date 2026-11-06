@@ -458,7 +458,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			more := false
 			var ignored []string
 			var notes idNotes
-			var foreign []string
+			var foreign, tests []string
 			cs := callSpec{stage: "contract:" + id, taskType: "contract", scope: router.ScopeComponent, maxTokens: maxTokensContract, jsonObject: true}
 			if err := p.callSized(ctx, r, cs, build, func(text string) error {
 				text, nt, err := normalizeReply(st.Doc, StripReply(text), replyComponent)
@@ -466,6 +466,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 					return err
 				}
 				text, foreign = dropForeignFunctions(text, pkg, module)
+				text, tests = dropTestFunctionsText(text)
 				doc, m, ign, err := mergePass(base, id, text, r.rootID())
 				if err != nil {
 					return err
@@ -481,6 +482,9 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 			}
 			if len(foreign) > 0 {
 				p.emit(events.KindWarning, "contract", "", foreignDroppedText(id, foreign))
+			}
+			if len(tests) > 0 {
+				p.emit(events.KindWarning, "contract", "", testDroppedText(id, tests))
 			}
 			p.noteNormalized(&st, "contract:"+id, notes)
 			p.noteIgnored(&st, "contract:"+id, ignored)

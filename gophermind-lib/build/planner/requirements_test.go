@@ -145,3 +145,27 @@ func TestParseRequirementsAIVentureStudio(t *testing.T) {
 		}
 	}
 }
+
+func TestIsTestRule(t *testing.T) {
+	cases := []struct {
+		kind planner.ReqKind
+		text string
+		want bool
+	}{
+		{planner.ReqConstraint, "Tests are hermetic and table driven.", true},
+		{planner.ReqConstraint, "Tests for `internal/cli` use separate `bytes.Buffer` values for `stdout` and `stderr`.", true},
+		{planner.ReqConstraint, "Tests never invoke `main` directly, because `main` ends the process; the entry point is verified by running the built binary.", true},
+		{planner.ReqConstraint, "  unit tests run offline.", true},
+		{planner.ReqConstraint, "Benchmarks live beside the code.", true},
+		{planner.ReqConstraint, "Tests", true},
+		{planner.ReqConstraint, "Go 1.22 or later.", false},
+		{planner.ReqConstraint, "`gofmt` clean", false},
+		{planner.ReqConstraint, "Testing is done elsewhere.", false},
+		{planner.ReqFeature, "Tests the greeting.", false},
+	}
+	for _, c := range cases {
+		if got := (planner.Requirement{ID: "C1", Kind: c.kind, Text: c.text}).IsTestRule(); got != c.want {
+			t.Errorf("IsTestRule(%v %q) = %v, want %v", c.kind, c.text, got, c.want)
+		}
+	}
+}

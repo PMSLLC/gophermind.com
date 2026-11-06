@@ -189,9 +189,11 @@ func (p *Planner) coverageFill(ctx context.Context, r *run, gaps []Gap, weak []Q
 
 	var fill CoverageReply
 	var next map[string]any // the contract with the reply's declarations added, or nil
+	var tests []string
 	cs := callSpec{stage: "coverage_fill", taskType: "coverage", scope: router.ScopeBrief, maxTokens: maxTokensFill}
 	if err := p.call(ctx, r, cs, prompt, func(text string) error {
-		cr, cp, err := parseCoverageFill(StripReply(text), r.reqs, doc, r.rootID())
+		text, tests = dropTestFunctionsText(StripReply(text))
+		cr, cp, err := parseCoverageFill(text, r.reqs, doc, r.rootID())
 		if err != nil {
 			return err
 		}
@@ -199,6 +201,9 @@ func (p *Planner) coverageFill(ctx context.Context, r *run, gaps []Gap, weak []Q
 		return nil
 	}); err != nil {
 		return CoverageReply{}, err
+	}
+	if len(tests) > 0 {
+		p.emit(events.KindWarning, "coverage", "", testDroppedText("coverage_fill", tests))
 	}
 	if next != nil {
 		if err := writeJSON(r.path(fileContracts), next); err != nil {
