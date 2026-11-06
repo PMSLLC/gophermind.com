@@ -1,6 +1,6 @@
 You are the coverage auditor for GopherMind. The plan below leaves some requirements of the brief uncovered, or has root tests that a reviewer rejected. Close each one.
 
-Uncovered requirements, each with the reason it counts as uncovered:
+Uncovered requirements (cite each by its id):
 <gaps>
 {{.Gaps}}
 </gaps>
@@ -21,6 +21,7 @@ Components (id, package):
 </components>
 
 For each gap do one of these:
+- A gap whose reason says "behaviour missing" is closed by restating what a function already mapped to it (or a function it uses) does: give "docs": [{"id": "fn-...", "doc": "..."}] with the function's whole doc rewritten so it states the missing text exactly as the requirement writes it. Do not add a function or a root test for such a gap.
 - Map it to function or component nodes from the list that already satisfy it and were overlooked.
 - Add a root test: a shell command, run from the repository root, that exits 0 only when the requirement holds. An acceptance requirement (ids starting with A) always needs one.
 - Declare the functions, and any types, that are missing from the plan. Give each function the `component` it belongs to (an id from the list), and map the requirement to the new function ids.
@@ -34,8 +35,8 @@ A narrative acceptance requirement that describes a multi-step flow against a se
 Use only requirement ids from the gap and rejected lists. Do not repeat a function that is already in the node list. There is no limit on how many functions you may declare.
 
 Respond with one JSON object and nothing else:
-{"map": [{"requirement": "C1", "nodes": ["fn-..."]}], "root_tests": [{"requirement": "A1", "name": "...", "given": "...", "expect": "...", "command": "..."}], "serve": {"command": "...", "ready": "/healthz"}, "types": [<type>], "functions": [<function>]}
-Leave out "serve", "types" and "functions" when you have nothing to add.
+{"map": [{"requirement": "C1", "nodes": ["fn-..."]}], "root_tests": [{"requirement": "A1", "name": "...", "given": "...", "expect": "...", "command": "..."}], "serve": {"command": "...", "ready": "/healthz"}, "types": [<type>], "functions": [<function>], "docs": [{"id": "fn-...", "doc": "..."}]}
+Leave out "serve", "types", "functions" and "docs" when you have nothing to add.
 
 <type> and <function> match these schemas:
 <schema>

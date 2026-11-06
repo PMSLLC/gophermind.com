@@ -169,21 +169,16 @@ func (p *Planner) coverage(ctx context.Context, r *run) error {
 }
 
 // coverageFill asks the model to close the gaps. Its reply may map gaps to
-// nodes, add root tests, and declare contract functions and types that are
-// missing; declarations are appended to contracts.json and decomposed before
-// it returns.
+// nodes, add root tests, declare contract functions and types that are
+// missing, and restate the doc of a function already in the contract;
+// declarations are appended to contracts.json and decomposed, and restated
+// docs written to it, before it returns.
 func (p *Planner) coverageFill(ctx context.Context, r *run, gaps []Gap, weak []QualityItem, nodes []PlanNode) (CoverageReply, error) {
 	var doc map[string]any
 	if _, err := readJSON(r.path(fileContracts), &doc); err != nil {
 		return CoverageReply{}, err
 	}
-	var gapText, compText strings.Builder
-	for _, g := range gaps {
-		fmt.Fprintf(&gapText, "%s (line %d): %s\n  reason: %s\n", g.Requirement, g.Line, oneLine(g.Text, 600), g.Reason)
-	}
-	if len(gaps) == 0 {
-		gapText.WriteString("none\n")
-	}
+	var compText strings.Builder
 	for _, c := range objects(doc["components"]) {
 		fmt.Fprintf(&compText, "%v (package %v)\n", c["id"], c["package"])
 	}
@@ -192,7 +187,7 @@ func (p *Planner) coverageFill(ctx context.Context, r *run, gaps []Gap, weak []Q
 		return CoverageReply{}, err
 	}
 	prompt, err := render("coverage_fill", map[string]string{
-		"Gaps": strings.TrimRight(gapText.String(), "\n"), "Weak": weakText(weak), "Harness": harnessContract(), "Nodes": nodesText(nodes),
+		"Gaps": gapsText(gaps), "Weak": weakText(weak), "Harness": harnessContract(), "Nodes": nodesText(nodes),
 		"Components": strings.TrimRight(compText.String(), "\n"), "ItemSchemas": itemSchemas})
 	if err != nil {
 		return CoverageReply{}, err
@@ -227,10 +222,24 @@ func (p *Planner) coverageFill(ctx context.Context, r *run, gaps []Gap, weak []Q
 	return fill, nil
 }
 
+// gapsText lists the gaps for the fill prompt, the id on a line of its own so
+// the reply cites the id and not the line it is printed on.
+func gapsText(gaps []Gap) string {
+	if len(gaps) == 0 {
+		return "none"
+	}
+	var b strings.Builder
+	for _, g := range gaps {
+		fmt.Fprintf(&b, "id: %s\n  text: %s\n  reason: %s\n", g.Requirement, oneLine(g.Text, 600), g.Reason)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
 // parseCoverageFill decodes a fill reply. Beside the mapping it returns the
-// contract with the reply's declared types and functions added (revision plus
-// one) after the same validation as the Contract stage, or nil when the reply
-// declares nothing. No error quotes the reply.
+// contract with the reply's declared types and functions added and its
+// restated function docs applied (revision plus one) after the same
+// validation as the Contract stage, or nil when the reply declares and
+// restates nothing. No error quotes the reply.
 func parseCoverageFill(raw string, reqs []Requirement, doc map[string]any, briefID string) (CoverageReply, map[string]any, error) {
 	cr, err := ParseCoverageReply(raw, reqs)
 	if err != nil {
@@ -239,16 +248,36 @@ func parseCoverageFill(raw string, reqs []Requirement, doc map[string]any, brief
 	var add struct {
 		Types     []map[string]any `json:"types"`
 		Functions []map[string]any `json:"functions"`
+		Docs      []struct {
+			ID  string `json:"id"`
+			Doc string `json:"doc"`
+		} `json:"docs"`
 	}
 	if err := json.Unmarshal([]byte(raw), &add); err != nil {
 		return CoverageReply{}, nil, fmt.Errorf("coverage fill reply is not usable (%s)", jsonErrIn(err, raw))
 	}
-	if len(add.Types)+len(add.Functions) == 0 {
+	if len(add.Types)+len(add.Functions)+len(add.Docs) == 0 {
 		return cr, nil, nil
 	}
 	cp, err := copyDoc(doc)
 	if err != nil {
 		return CoverageReply{}, nil, err
+	}
+	// A restated doc says what a function already in the contract does, so a
+	// behaviour gap closes without a new function.
+	byID := map[string]map[string]any{}
+	for _, f := range objects(cp["functions"]) {
+		byID[strField(f, "id")] = f
+	}
+	for _, d := range add.Docs {
+		f, ok := byID[d.ID]
+		if !ok {
+			return CoverageReply{}, nil, fmt.Errorf("coverage fill reply: docs names unknown function %s", d.ID)
+		}
+		if strings.TrimSpace(d.Doc) == "" {
+			return CoverageReply{}, nil, fmt.Errorf("coverage fill reply: docs for %s is empty", d.ID)
+		}
+		f["doc"] = d.Doc
 	}
 	types, _ := cp["types"].([]any)
 	for _, t := range add.Types {

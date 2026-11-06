@@ -90,7 +90,7 @@ func TestCoverageFillClosesGapsAndDecomposesNewFunctions(t *testing.T) {
 			redo = r.Messages[1].Content
 		}
 	}
-	for _, want := range []string{"C1 (line", "reason: no node and no root test", "A3 (line", "reason: acceptance bullet has no root test", "greeting (package internal/greet)"} {
+	for _, want := range []string{"id: C1\n  text: ", "reason: no node and no root test", "id: A3\n  text: ", "reason: acceptance bullet has no root test", "greeting (package internal/greet)"} {
 		if !strings.Contains(fill, want) {
 			t.Errorf("fill prompt lacks %q", want)
 		}
@@ -276,4 +276,47 @@ func mustRead(t *testing.T, path string) []byte {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+// A literal gap is closed by restating the mapped function's doc: the fill
+// reply declares nothing, the new doc lands in contracts.json, and the next
+// check finds the literal without a further model call.
+func TestCoverageFillRestatesADocToCloseABehaviourGap(t *testing.T) {
+	g := newRig(t, approving(), variant(t, map[string]string{
+		"coverage_fill.txt": `{"map": [], "root_tests": [], "docs": [{"id": "fn-farewell", "doc": "Farewell trims the name and returns Goodbye, <name>!, then See you soon. An empty name is an error."}]}`,
+	}))
+	g.briefPath = writeBrief(t, greeter, g.repo, func(s string) string {
+		return strings.Replace(s, "`Farewell(name)` returns `Goodbye, <name>!`.", "`Farewell(name)` returns `Goodbye, <name>!`. It then returns `See you soon`.", 1)
+	})
+	g.mustPlan(planner.Options{StopAfter: "coverage"})
+
+	calls := g.stagesCalled()
+	if count(calls, "coverage_fill") != 1 || count(calls, "decompose:farewell") != 1 {
+		t.Fatalf("calls = %v, want one fill and no second decompose", calls)
+	}
+	var fill string
+	for _, r := range g.fake.Requests() {
+		if planner.StageOf(r) == "coverage_fill" {
+			fill = r.Messages[1].Content
+		}
+	}
+	if !strings.Contains(fill, "id: F2\n  text: ") || !strings.Contains(fill, "reason: behaviour missing: See you soon") {
+		t.Errorf("fill prompt lacks the F2 gap by id:\n%s", fill)
+	}
+	c := g.contracts()
+	if c.Revision != 1 || len(c.Functions) != 3 {
+		t.Errorf("contract revision %d with %d functions, want 1 and 3", c.Revision, len(c.Functions))
+	}
+	for _, f := range c.Functions {
+		if f.ID == "fn-farewell" && !strings.Contains(f.Doc, "See you soon") {
+			t.Errorf("fn-farewell doc = %q, want the restated doc", f.Doc)
+		}
+	}
+	cov, err := planner.ReadCoverage(g.runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cov.Rounds != 1 || len(cov.Covered) != 7 {
+		t.Errorf("coverage.json = %d rounds, %d covered", cov.Rounds, len(cov.Covered))
+	}
 }
