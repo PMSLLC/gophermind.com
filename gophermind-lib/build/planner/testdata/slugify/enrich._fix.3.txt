@@ -87,15 +87,7 @@
       "hot_path": false
     },
     "observability": {
-      "log_events": [
-        {
-          "level": "info",
-          "msg": "starting slugify execution",
-          "fields": [
-            "args"
-          ]
-        }
-      ],
+      "log_events": [],
       "metrics": [],
       "trace_span": "Run"
     },
@@ -105,6 +97,80 @@
     ],
     "assumptions": [
       "The return value of executeSlugify is a valid process exit code."
+    ],
+    "open_questions": [],
+    "decision_ids": []
+  },
+  {
+    "id": "fn-read-inputs",
+    "rationale": "Handles the complexity of reading data from multiple file sources or a single standard input stream.",
+    "construction": {
+      "approach_chosen": "Iterative file reading with fallback to stdin.",
+      "steps": [
+        "Initialize a slice to hold strings.",
+        "If files are provided, read each file into the slice.",
+        "If stdin is provided and no files were read (or as an additional source), read from stdin.",
+        "Return the slice and any encountered errors."
+      ]
+    },
+    "alternatives": [
+      {
+        "approach": "Concurrent file reading",
+        "rejected_because": "Complexity of error handling and ordering is not justified for this scale."
+      }
+    ],
+    "error_kinds": [
+      {
+        "returns": "err",
+        "when": "file reading fails"
+      }
+    ],
+    "portability": {
+      "os": [
+        "linux",
+        "darwin"
+      ],
+      "arch": [
+        "amd64",
+        "arm64"
+      ],
+      "go_min": "1.22",
+      "cgo": false,
+      "build_tags": [],
+      "deps": []
+    },
+    "security": {
+      "trust_boundary": "external_input",
+      "untrusted_inputs": [
+        "files"
+      ],
+      "authz": "none",
+      "secret_use": [],
+      "threats": [
+        {
+          "threat": "Path traversal via file arguments",
+          "mitigation": "The caller should ensure files are within allowed directories."
+        }
+      ]
+    },
+    "performance": {
+      "complexity": "O(n)",
+      "max_latency_ms": null,
+      "alloc_budget": "high",
+      "concurrency": "single_goroutine",
+      "hot_path": true
+    },
+    "observability": {
+      "log_events": [],
+      "metrics": [],
+      "trace_span": null
+    },
+    "refactor_notes": [],
+    "profile_hooks": [
+      "bench"
+    ],
+    "assumptions": [
+      "Files are small enough to be read entirely into memory."
     ],
     "open_questions": [],
     "decision_ids": []

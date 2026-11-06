@@ -29,6 +29,7 @@ const (
 	grpPolarity       = "polarity_missing"
 	grpSchema         = "group_schema"
 	grpDecisionsEmbed = "decisions_embed"
+	grpObsUnrequested = "observability_unrequested"
 )
 
 // groupDefect is one thing wrong with a node's groups. field names the group
@@ -43,6 +44,7 @@ type groupEnv struct {
 	GoMin     string          // the Go version in the target repo's go.mod; "" when unknown
 	DepMods   []string        // modules a plan may import beyond the standard library; nil skips the check
 	DropBench bool            // no requirement asks for performance, so a bench profile hook is dropped
+	NoLogging bool            // the brief's Constraints or the outline conventions say no logging
 }
 
 // naGroups are the groups that may be answered "not applicable" (where
@@ -210,6 +212,9 @@ func groupDefects(d map[string]any, class string, env groupEnv) []groupDefect {
 		}
 	}
 	if o := real["observability"]; o != nil {
+		if n := len(objects(o["log_events"])); n > 0 && (class == "pure" || env.NoLogging) {
+			add(grpObsUnrequested, "observability", "%d log event(s) the brief does not ask for; a pure function or a brief that says no logging has none", n)
+		}
 		for i, ev := range objects(o["log_events"]) {
 			if logVerbRE.MatchString(strField(ev, "msg")) {
 				add(grpObsFields, "observability", "log event %d has a format verb in its message; use a constant message and fields", i+1)
@@ -235,6 +240,18 @@ func groupDefects(d map[string]any, class string, env groupEnv) []groupDefect {
 		return out[i].kind < out[j].kind
 	})
 	return out
+}
+
+// noLoggingAsked reports whether a Constraint of the brief or the outline
+// conventions say "no logging", matched case-insensitively. Enrichment then
+// adds no log event: the hello run's nodes got log events nobody asked for.
+func noLoggingAsked(reqs []Requirement, conventions map[string]any) bool {
+	for _, r := range reqs {
+		if r.Kind == ReqConstraint && strings.Contains(strings.ToLower(r.Text), "no logging") {
+			return true
+		}
+	}
+	return conventions != nil && strings.Contains(strings.ToLower(jsonText(conventions)), "no logging")
 }
 
 // openQuestionDefects is the check made at approval: no node may still list an

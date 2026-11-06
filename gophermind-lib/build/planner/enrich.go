@@ -150,6 +150,13 @@ func (p *Planner) groupEnvFor(r *run, c *contract.Contracts) (groupEnv, error) {
 		env.DepMods = append(env.DepMods, d.Module)
 	}
 	env.DropBench = !benchWanted(r.reqs)
+	var outline struct {
+		Conventions map[string]any `json:"conventions"`
+	}
+	if _, err := readJSON(r.path(fileContracts), &outline); err != nil {
+		return env, err
+	}
+	env.NoLogging = noLoggingAsked(r.reqs, outline.Conventions)
 	return env, nil
 }
 

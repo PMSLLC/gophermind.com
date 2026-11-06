@@ -44,7 +44,11 @@ Corrected replies:
   reply holds the recorded groups of `fn-print-error` (from
   `enrich.cli-logic.2.txt`, without its `performance`, which the repair did
   not ask for and which was not applicable there) and of `fn-run` (from
-  `enrich.cli-logic.txt`), unchanged.
+  `enrich.cli-logic.txt`), unchanged. Since the enrichment behaviour fix
+  (Task 6) the outline conventions' "No logging allowed" makes a log event a
+  defect, so `fn-read-inputs` is repaired too: this reply also holds its
+  recorded groups from `enrich.cli-logic.txt`, and the log events of
+  `fn-run` and `fn-read-inputs` are empty lists.
 
 Files:
 
