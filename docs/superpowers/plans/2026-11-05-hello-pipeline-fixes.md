@@ -259,6 +259,12 @@ git add gophermind-lib/build/acceptcheck/quality.go gophermind-lib/build/acceptc
 git commit -m "fix(acceptcheck): refuse status masked by &&, inverted lister checks, tests of print substitutions"
 ```
 
+### Task 4b: acceptance commands create temp files under $TMPDIR (run hello-v1.1-20261106-r002, 2026-11-05 18:21 MST)
+
+The fifth run built and verified all three functions, then acceptance failed A4, A5 and A6 and the executor revised correct code: macOS `mktemp` ignores `TMPDIR` and writes to the per-user `/var/folders` temp dir, which the sandbox denies, and the coverage prompt's own example (Task 4) uses a bare `mktemp`. The prompt example becomes `mktemp "$TMPDIR/out.XXXXXX"`, `acceptcheck.Quality` gains `mktemp_outside_tmpdir` for a `mktemp` without a `$TMPDIR` template, and the executor stops `acceptance_environment`, naming the root test, when a command's output shows `mktemp` could not create its file. The sandbox is not widened. Brief: `.superpowers/sdd/2026-11-05-hello-pipeline-fixes/task-4b-brief.md`.
+
+**Files:** Modify `build/acceptcheck/quality.go`, `build/planner/prompts/coverage.md`, `build/executor/acceptance.go`; tests.
+
 ### Task 5: Node inputs and tier come from the signature and class (brief 11, 12, 14)
 
 **Files:**
