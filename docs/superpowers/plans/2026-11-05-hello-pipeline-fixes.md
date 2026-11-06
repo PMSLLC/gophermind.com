@@ -224,6 +224,12 @@ The sixth run planned cleanly and stopped after 86 ms: `checkCoverageTotal` in t
 
 **Files:** Modify `build/executor/acceptance.go`; test.
 
+### Task 3g: an acceptance failure packet names the bullet, command and output; two identical replies end a ladder (run hello-v1.1-20261106-r004, 2026-11-05 20:07 MST)
+
+The seventh run built the right program and failed three root tests that exited silently; the revise packet carried no failure at all and the model returned the same correct file five times before the node escalated. The failure text now always names the requirement, the command, the exit code and the output or its absence; a second identical reply in a row escalates the node. Brief: `.superpowers/sdd/2026-11-05-hello-pipeline-fixes/task-3g-brief.md`.
+
+**Files:** Modify `build/executor/acceptance.go`, `build/executor/leaf.go`; tests.
+
 ### Task 4: Root acceptance test validator catches masked status and inverted checks (brief 17)
 
 **Files:**
@@ -270,6 +276,12 @@ git commit -m "fix(acceptcheck): refuse status masked by &&, inverted lister che
 The fifth run built and verified all three functions, then acceptance failed A4, A5 and A6 and the executor revised correct code: macOS `mktemp` ignores `TMPDIR` and writes to the per-user `/var/folders` temp dir, which the sandbox denies, and the coverage prompt's own example (Task 4) uses a bare `mktemp`. The prompt example becomes `mktemp "$TMPDIR/out.XXXXXX"`, `acceptcheck.Quality` gains `mktemp_outside_tmpdir` for a `mktemp` without a `$TMPDIR` template, and the executor stops `acceptance_environment`, naming the root test, when a command's output shows `mktemp` could not create its file. The sandbox is not widened. Brief: `.superpowers/sdd/2026-11-05-hello-pipeline-fixes/task-4b-brief.md`.
 
 **Files:** Modify `build/acceptcheck/quality.go`, `build/planner/prompts/coverage.md`, `build/executor/acceptance.go`; tests.
+
+### Task 4c: root tests compare exact text literally, count across files correctly, carry no placeholder words, and invoke the tools a constraint names (run hello-v1.1-20261106-r004)
+
+The seventh run's three failing root tests: `grep -qx 'usage: hello [NAME]'` (a bracket expression; exact text needs `-F`), `grep -cE ... f1 f2 f3 | grep -q '3'` (per-file counts), and `hello | grep -q 'expected_output_here'` for the gofmt and vet constraint. acceptcheck gains `grep_regex_exact`, `grep_count_per_file` and identifier placeholders; the planner's quality round gains `tool_not_invoked`; the coverage prompt shows `grep -qxF`. Brief: `.superpowers/sdd/2026-11-05-hello-pipeline-fixes/task-4c-brief.md`.
+
+**Files:** Modify `build/acceptcheck/quality.go`, `build/planner/coverage_quality.go`, `build/planner/prompts/coverage.md`; tests.
 
 ### Task 5: Node inputs and tier come from the signature and class (brief 11, 12, 14)
 
