@@ -20,6 +20,9 @@ const briefUsage = `usage:
   gophermind brief validate <brief.md>
   gophermind brief plan <brief.md> [--yes] [--gate terminal|file] [--fake <fixture-dir>] [--allow-public]
   gophermind brief resume <run-id> [--yes] [--gate terminal|file] [--fake <fixture-dir>] [--allow-public]
+  gophermind brief resume <run-id> --from <step> [--reset-repo]   (re-enter a run at <step>, then as resume)
+                                         <step> is one of clarify confirm contract decompose enrich coverage approve testwriter, or node:<id>
+                                         --reset-repo (with a stage) discards the run's branch and files in the repository
   gophermind brief answer <run-id> <question-id> <new answer...>
   gophermind brief run <run-id> [--gate terminal|file] [--repo <path>] [--workers n]
   gophermind brief run <run-id> --check-env      (environment preflight, no model call; exit 6 on a failed check)

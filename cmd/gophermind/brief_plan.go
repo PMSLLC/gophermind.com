@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"text/tabwriter"
+	"time"
 
 	"gophermind/gophermind-lib/build/brief"
 	"gophermind/gophermind-lib/build/events"
@@ -20,6 +21,7 @@ import (
 	"gophermind/gophermind-lib/build/planner"
 	"gophermind/gophermind-lib/build/provider"
 	"gophermind/gophermind-lib/build/report"
+	"gophermind/gophermind-lib/build/resume"
 	"gophermind/gophermind-lib/build/router"
 	"gophermind/gophermind-lib/build/settings"
 	"gophermind/gophermind-lib/build/vault"
@@ -112,6 +114,8 @@ func briefPlan(verb string, args []string, in *os.File, out, errw io.Writer) int
 	gateMode := fs.String("gate", "", "terminal or file")
 	fake := fs.String("fake", "", "answer every model call from this fixture directory (several, comma separated: the first holding a reply wins)")
 	allowPublic := fs.Bool("allow-public", false, "let public providers see the brief")
+	from := fs.String("from", "", "resume only: a planner stage or node:<id>")
+	resetRepo := fs.Bool("reset-repo", false, "resume only, with --from <stage>: discard the run's branch and files in the repository")
 	// The target comes first, then the flags; flags first also works.
 	target := ""
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
@@ -129,6 +133,20 @@ func briefPlan(verb string, args []string, in *os.File, out, errw io.Writer) int
 	if target == "" {
 		fmt.Fprintln(errw, briefUsage)
 		return exitError
+	}
+
+	if verb == "plan" && (*from != "" || *resetRepo) {
+		fmt.Fprintln(errw, briefUsage)
+		return exitError
+	}
+	if *resetRepo && *from == "" {
+		fmt.Fprintln(errw, "error: --reset-repo needs --from <stage>")
+		return exitError
+	}
+	if *from != "" {
+		if code, done := resumeFrom(target, *from, *resetRepo, out, errw); done {
+			return code
+		}
 	}
 
 	opts := planner.Options{Yes: *yes, AllowPublic: *allowPublic}
@@ -248,6 +266,52 @@ func briefPlan(verb string, args []string, in *os.File, out, errw io.Writer) int
 	}
 	fmt.Fprintf(out, "planned: %s in %s\nRequirements covered: %d of %d\n", st.RunID, st.RunDir, st.Covered, st.Requirements)
 	return exitDone
+}
+
+// resumeFrom applies `brief resume <run-id> --from <step>`. It reports done
+// with the exit code when the verb is finished (a node resume, or a refusal);
+// done is false after a stage resume, which goes on into the planner.
+func resumeFrom(runID, from string, resetRepo bool, out, errw io.Writer) (code int, done bool) {
+	step, err := resume.ParseStep(from)
+	if err != nil {
+		fmt.Fprintf(errw, "error: %v\n", err)
+		return exitError, true
+	}
+	if resetRepo && step.Stage == "" {
+		fmt.Fprintln(errw, "error: --reset-repo needs --from <stage>")
+		return exitError, true
+	}
+	rec, err := planner.LookupRun(runID)
+	if err != nil {
+		fmt.Fprintf(errw, "error: %v\n", err)
+		return exitError, true
+	}
+	var res resume.Result
+	if step.Stage != "" {
+		req := resume.RepoRequest{Repo: rec.Repo, Mode: resume.RepoKeep}
+		if resetRepo {
+			req.Mode = resume.RepoRestoreFiles
+		}
+		res, err = resume.FromStage(rec.RunDir, step.Stage, req, time.Now())
+	} else {
+		board, _ := briefBackends()
+		res, err = resume.FromNode(context.Background(), rec.RunDir, board, runID, step.Node, time.Now())
+	}
+	if err != nil {
+		fmt.Fprintf(errw, "error: %v\n", err)
+		return exitError, true
+	}
+	for _, d := range res.Discarded {
+		fmt.Fprintf(out, "discarded: %s\n", d)
+	}
+	for _, a := range res.RepoActions {
+		fmt.Fprintln(out, a)
+	}
+	if step.Stage != "" {
+		return exitDone, false
+	}
+	fmt.Fprintf(out, "resumed %s; run: gophermind brief run %s --repo %s\n", step.Node, runID, rec.Repo)
+	return exitDone, true
 }
 
 // briefFail prints err and returns the exit code it deserves: 2 when the
