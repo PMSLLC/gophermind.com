@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -63,5 +64,58 @@ func TestForbidsBriefTokens(t *testing.T) {
 	a := Requirement{ID: "A4", Kind: ReqAcceptance, Text: "`hello` prints `Hello, World!`."}
 	if got := forbidsBriefTokens(a, rt("A4", full), src); got != nil {
 		t.Errorf("acceptance checked = %q, want nil", got)
+	}
+}
+
+// A span in a sentence that says never, not or no is a forbidden mention, not
+// a requirement; a negated grep limited to directories no requiring line names
+// does not forbid what the brief requires.
+func TestForbidsBriefTokensReadsNegationAndPaths(t *testing.T) {
+	src := []byte("## Features\n\n- `Run(args []string, stdout, stderr io.Writer) int` in `internal/cli` handles every successful invocation and every argument-count error. It has exactly these three parameters and never calls `os.Exit`.\n\n" +
+		"## Architecture\n\n- `cmd/hello` (package `main`): `main` calls `cli.Run` with `os.Args[1:]`, `os.Stdout` and `os.Stderr`, and passes the returned integer to `os.Exit`.\n")
+	c := Requirement{ID: "C4", Kind: ReqConstraint, Text: "No logging and no `init` functions."}
+	cases := []struct {
+		cmd  string
+		want []string
+	}{
+		{`! grep -rq 'os\.Exit' internal/`, nil},
+		{`! grep -rq 'os\.Exit' .`, []string{"os.Exit"}},
+		{`! grep -rq 'os\.Exit' cmd/hello`, []string{"os.Exit"}},
+		{`! grep -rq 'os\.Args' cmd/hello`, []string{"os.Args"}},
+		{`! grep -rq 'os\.Args' internal/`, nil},
+		{`! grep -rq 'init(' internal/`, nil},
+	}
+	for _, k := range cases {
+		got := forbidsBriefTokens(c, []RootTest{{Requirement: "C4", Command: k.cmd}}, src)
+		if !reflect.DeepEqual(got, k.want) {
+			t.Errorf("%s = %q, want %q", k.cmd, got, k.want)
+		}
+	}
+}
+
+// Every negated grep the coverage prompt teaches passes the brief-token check
+// against the hello fixture brief.
+func TestCoveragePromptNegatedGrepsPassTheBriefTokenCheck(t *testing.T) {
+	prompt, err := os.ReadFile("prompts/coverage.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := os.ReadFile("testdata/hello/brief.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := Requirement{ID: "C9", Kind: ReqConstraint, Text: "A forbidden construct."}
+	n := 0
+	for _, m := range backtickRE.FindAllStringSubmatch(string(prompt), -1) {
+		if !strings.HasPrefix(m[1], "! grep") {
+			continue
+		}
+		n++
+		if got := forbidsBriefTokens(c, []RootTest{{Requirement: "C9", Command: m[1]}}, src); got != nil {
+			t.Errorf("prompt example %q forbids %q", m[1], got)
+		}
+	}
+	if n < 2 {
+		t.Errorf("negated grep examples checked = %d, want at least 2", n)
 	}
 }

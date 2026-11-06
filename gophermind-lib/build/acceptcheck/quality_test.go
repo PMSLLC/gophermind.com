@@ -435,14 +435,15 @@ func TestQualityShellFormsVersionsAndEmptyOutput(t *testing.T) {
 	}
 }
 
-// The patterns of the greps a command negates with !, as written.
-func TestNegatedGrepPatterns(t *testing.T) {
+// The greps a command negates with !: patterns and paths as written.
+func TestNegatedGreps(t *testing.T) {
 	t.Parallel()
-	c4 := `! grep -rq 'init(' internal/ && go vet ./... && ! grep -rq 'os\.Args' cmd/hello`
-	if got := NegatedGrepPatterns(c4); !reflect.DeepEqual(got, []string{"init(", `os\.Args`}) {
-		t.Errorf("patterns = %q", got)
+	c4 := `! grep -rq 'init(' internal/ && go vet ./... && ! grep -rq 'os\.Args' cmd/hello main.go`
+	want := []NegatedGrep{{Pattern: "init(", Paths: []string{"internal/"}}, {Pattern: `os\.Args`, Paths: []string{"cmd/hello", "main.go"}}}
+	if got := NegatedGreps(c4); !reflect.DeepEqual(got, want) {
+		t.Errorf("greps = %+v", got)
 	}
-	if got := NegatedGrepPatterns(`grep -rq 'os\.Args' cmd/hello`); got != nil {
+	if got := NegatedGreps(`grep -rq 'os\.Args' cmd/hello`); got != nil {
 		t.Errorf("unnegated grep = %q, want nil", got)
 	}
 }

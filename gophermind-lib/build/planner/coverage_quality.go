@@ -274,11 +274,97 @@ func unescapePattern(p string) string {
 	return strings.ReplaceAll(p, `\.`, ".")
 }
 
+// negationRE is a word that makes a sentence forbid what it names.
+var negationRE = regexp.MustCompile(`(?i)\b(never|not|no|without|cannot|forbidden)\b`)
+
+// sentenceEndRE is the end of a sentence inside a line.
+var sentenceEndRE = regexp.MustCompile(`[.!?]\s`)
+
+// briefUse is a backticked span the brief requires, with the directories its
+// line names (none: the whole tree).
+type briefUse struct {
+	span string
+	dirs []string
+}
+
+// briefUses are the backticked spans of src that the brief requires: not one
+// of skip (the constraint's own spans), and not in a sentence whose text
+// before the span says never, not, no, without, cannot or forbidden. Each
+// carries the line's path-like spans (containing a slash) as its directories.
+func briefUses(src []byte, skip map[string]bool) []briefUse {
+	var out []briefUse
+	for _, line := range strings.Split(string(src), "\n") {
+		ms := backtickRE.FindAllStringSubmatchIndex(line, -1)
+		if len(ms) == 0 {
+			continue
+		}
+		// The line with every span blanked, so a dot inside one ends nothing.
+		masked := []byte(line)
+		var dirs []string
+		for _, m := range ms {
+			for i := m[2]; i < m[3]; i++ {
+				masked[i] = 'x'
+			}
+			if sp := line[m[2]:m[3]]; strings.Contains(sp, "/") && !strings.ContainsAny(sp, " \t") {
+				dirs = append(dirs, cleanDir(sp))
+			}
+		}
+		for _, m := range ms {
+			sp := line[m[2]:m[3]]
+			if skip[sp] {
+				continue
+			}
+			before := string(masked[:m[0]])
+			if ends := sentenceEndRE.FindAllStringIndex(before, -1); len(ends) > 0 {
+				before = before[ends[len(ends)-1][1]:]
+			}
+			if negationRE.MatchString(before) {
+				continue
+			}
+			out = append(out, briefUse{span: sp, dirs: dirs})
+		}
+	}
+	return out
+}
+
+// cleanDir is a path operand or span as a slash directory: no leading ./ and
+// no trailing slash; the whole tree is ".".
+func cleanDir(p string) string {
+	p = strings.TrimPrefix(p, "./")
+	p = strings.TrimRight(p, "/")
+	if p == "" {
+		return "."
+	}
+	return p
+}
+
+// covers: a grep over the operands searches one of dirs (none: the whole
+// tree). No operand, or ".", is the whole tree; an operand covers a directory
+// it is, holds, or lies inside.
+func covers(operands, dirs []string) bool {
+	if len(operands) == 0 || len(dirs) == 0 {
+		return true
+	}
+	for _, o := range operands {
+		o = cleanDir(o)
+		if o == "." {
+			return true
+		}
+		for _, d := range dirs {
+			if d == o || strings.HasPrefix(d, o+"/") || strings.HasPrefix(o, d+"/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // forbidsBriefTokens is, for a Constraint, the patterns of its root tests'
-// negated greps that are tokens the brief requires: a backticked span of src
-// (not one of the constraint's own spans, which it forbids on purpose) equal
-// to the pattern, or starting with it and then ., ( or [ (os.Args against
-// os.Args[1:]). Any other requirement is never checked.
+// negated greps that are tokens the brief requires where the grep searches:
+// a span briefUses keeps (not one of the constraint's own spans, not a
+// negated mention) equal to the pattern, or starting with it and then ., (
+// or [ (os.Args against os.Args[1:]), on a line whose directories the grep's
+// operands cover. Any other requirement is never checked.
 func forbidsBriefTokens(req Requirement, tests []RootTest, src []byte) []string {
 	if req.Kind != ReqConstraint || len(src) == 0 {
 		return nil
@@ -287,25 +373,21 @@ func forbidsBriefTokens(req Requirement, tests []RootTest, src []byte) []string 
 	for _, m := range backtickRE.FindAllStringSubmatch(req.Text, -1) {
 		own[m[1]] = true
 	}
-	var spans []string
-	for _, m := range backtickRE.FindAllStringSubmatch(string(src), -1) {
-		if !own[m[1]] {
-			spans = append(spans, m[1])
-		}
-	}
+	uses := briefUses(src, own)
 	var out []string
 	seen := map[string]bool{}
 	for _, t := range tests {
 		if t.Requirement != req.ID {
 			continue
 		}
-		for _, raw := range acceptcheck.NegatedGrepPatterns(t.Command) {
-			p := unescapePattern(raw)
+		for _, g := range acceptcheck.NegatedGreps(t.Command) {
+			p := unescapePattern(g.Pattern)
 			if p == "" || seen[p] {
 				continue
 			}
-			for _, s := range spans {
-				if rest, ok := strings.CutPrefix(s, p); ok && (rest == "" || strings.ContainsAny(rest[:1], ".([")) {
+			for _, u := range uses {
+				rest, ok := strings.CutPrefix(u.span, p)
+				if ok && (rest == "" || strings.ContainsAny(rest[:1], ".([")) && covers(g.Paths, u.dirs) {
 					seen[p] = true
 					out = append(out, p)
 					break

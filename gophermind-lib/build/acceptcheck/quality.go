@@ -703,6 +703,7 @@ type grepArgs struct {
 	exact, fixed, count, havePat bool
 	pattern                      string
 	files                        int
+	paths                        []string // the file operands, as written
 }
 
 // redirRE is a redirection word (>file, 2>file, <file, 2>&1), not an operand.
@@ -775,6 +776,7 @@ func readGrep(base string, args []word) grepArgs {
 			continue
 		}
 		g.files++
+		g.paths = append(g.paths, l)
 	}
 	return g
 }
@@ -841,11 +843,17 @@ func bashOnly(s string) bool {
 	return false
 }
 
-// NegatedGrepPatterns are the patterns, as written, of the grep statements a
-// command negates with ! (! grep -rq 'os\.Exit' internal/), in order.
-func NegatedGrepPatterns(cmd string) []string {
+// NegatedGrep is a grep a command negates with ! (! grep -rq 'os\.Exit'
+// internal/): its pattern and its file operands, as written.
+type NegatedGrep struct {
+	Pattern string
+	Paths   []string
+}
+
+// NegatedGreps are the grep statements a command negates with !, in order.
+func NegatedGreps(cmd string) []NegatedGrep {
 	stmts, _, _ := shellParse(cmd)
-	var out []string
+	var out []NegatedGrep
 	for _, st := range stmts {
 		k := commandIndex(st.words)
 		if k < 0 {
@@ -862,7 +870,7 @@ func NegatedGrepPatterns(cmd string) []string {
 			continue
 		}
 		if g := readGrep(base, st.words[k+1:]); g.havePat && g.pattern != "" {
-			out = append(out, g.pattern)
+			out = append(out, NegatedGrep{Pattern: g.pattern, Paths: g.paths})
 		}
 	}
 	return out
