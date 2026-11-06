@@ -1069,6 +1069,10 @@ func PlanNodes(runDir string) ([]PlanNode, error) {
 	if err != nil {
 		return nil, err
 	}
+	docs := map[string]string{}
+	for _, f := range c.Functions {
+		docs[f.ID] = f.Doc
+	}
 	nodes := []PlanNode{{ID: c.BriefID, Kind: tree.KindRoot, Title: b.Front.Title}}
 	for _, comp := range c.Components {
 		title := comp.ID
@@ -1083,7 +1087,7 @@ func PlanNodes(runDir string) ([]PlanNode, error) {
 			title, _ := d["title"].(string)
 			ct, _ := d["contract"].(map[string]any)
 			file, _ := ct["file"].(string)
-			nodes = append(nodes, PlanNode{ID: id, Kind: tree.KindFunction, Parent: comp.ID, Title: title, File: file})
+			nodes = append(nodes, PlanNode{ID: id, Kind: tree.KindFunction, Parent: comp.ID, Title: title, File: file, Text: nodeBehaviourText(d, docs[id])})
 		}
 	}
 	return nodes, nil

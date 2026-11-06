@@ -107,6 +107,16 @@ func (p *Planner) coverage(ctx context.Context, r *run) error {
 	}
 	reply = reply.withGoAcceptance(r.reqs)
 	covered, gaps := CheckCoverage(r.reqs, nodes, reply)
+	// A mapping is not the behaviour: each feature's output literals must be
+	// carried by a node mapped to it, or the fill round is asked for them.
+	bins := func() []string {
+		c, err := loadContracts(r)
+		if err != nil {
+			return nil
+		}
+		return contractBins(c)
+	}
+	gaps = append(gaps, literalGaps(r.reqs, covered, nodes, bins()...)...)
 	weak, err := quality(reply.RootTests)
 	if err != nil {
 		return err
@@ -129,6 +139,7 @@ func (p *Planner) coverage(ctx context.Context, r *run) error {
 			return err
 		}
 		covered, gaps = CheckCoverage(r.reqs, nodes, reply)
+		gaps = append(gaps, literalGaps(r.reqs, covered, nodes, bins()...)...)
 		if weak, err = quality(reply.RootTests); err != nil {
 			return err
 		}

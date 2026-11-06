@@ -6,7 +6,7 @@
       "package": "internal/cli",
       "file": "internal/cli/run.go",
       "signature": "func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int",
-      "doc": "Parses the arguments, reads the whole input from the named file or from stdin, writes the slug of it to stdout and returns the exit code, writing errors to stderr. It never calls os.Exit.",
+      "doc": "Parses the arguments, reads the whole input from the named file or from stdin, writes the slug of it to stdout and returns the exit code, writing errors to stderr: usage: slugify [--max N] [FILE] or slugify: invalid --max \"<value>\" with exit code 2, and slugify: <error> with exit code 1. It never calls os.Exit.",
       "uses": [
         "fn-parse-args",
         "fn-execute-slugify",

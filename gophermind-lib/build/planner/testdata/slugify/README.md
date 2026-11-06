@@ -27,7 +27,13 @@ Corrected replies:
   is `fn-run` (it was `fn-cli-run` until Task 6), the id the recorded
   decompose, enrich and testwrite replies use for `Run`; with it the
   entry-point reply's own `fn-run` (lowercase `run` in package main) is a
-  repeat of an id already written and is dropped.
+  repeat of an id already written and is dropped. Since coverage checks the
+  behaviour (Task 7), its doc also states the Report errors messages and
+  exit codes, `usage: slugify [--max N] [FILE]` and `slugify: invalid --max
+  "<value>"` with 2 and `slugify: <error>` with 1, as a careful contract does.
+- `coverage_fill.txt`: the fill reply for the Task 7 gap on F2: the recorded
+  map gives F2 to fn-parse-args and fn-print-error, whose text carries none
+  of its messages, and this reply maps F2 to fn-run as well.
 - `decompose.entry-point.txt`: a copy of `decompose.entry-point-main.txt`.
   The fixed planner has one entry component, `entry-point`, and asks
   `decompose:entry-point`; the recorded reply was for `entry-point-main`.
@@ -64,6 +70,7 @@ Files:
 - `contract.outline.entry.txt`
 - `contract.slug-logic.txt`
 - `coverage.txt`
+- `coverage_fill.txt`
 - `decompose.cli-logic.txt`
 - `decompose.entry-point-main.txt`
 - `decompose.entry-point.txt`
