@@ -18,7 +18,7 @@ func vacuousReqs() []Requirement {
 
 func TestRootTestDefectsFlagsGoRunAsVacuous(t *testing.T) {
 	tests := []RootTest{{Requirement: "A1", Name: "n", Command: "printf 'a,b\\n1,2\\n' | go run ./cmd/csvstat - | grep -q count"}}
-	got := rootTestDefects(vacuousReqs(), tests, acceptcheck.Options{Bins: []string{"csvstat"}})
+	got := rootTestDefects(vacuousReqs(), tests, acceptcheck.Options{Bins: []string{"csvstat"}}, nil)
 	want := []QualityItem{{Requirement: "A1", Findings: []string{"acceptance_vacuous"}}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("defects = %+v, want %+v", got, want)
@@ -27,11 +27,11 @@ func TestRootTestDefectsFlagsGoRunAsVacuous(t *testing.T) {
 
 func TestRootTestDefectsAcceptsTheBuiltBinary(t *testing.T) {
 	tests := []RootTest{{Requirement: "A1", Name: "n", Command: "printf 'a,b\\n1,2\\n' | csvstat - | grep -q count"}}
-	if got := rootTestDefects(vacuousReqs(), tests, acceptcheck.Options{Bins: []string{"csvstat"}}); len(got) != 0 {
+	if got := rootTestDefects(vacuousReqs(), tests, acceptcheck.Options{Bins: []string{"csvstat"}}, nil); len(got) != 0 {
 		t.Fatalf("defects = %+v, want none", got)
 	}
 	// The same command with no built binary in the contract proves nothing.
-	if got := rootTestDefects(vacuousReqs(), tests, acceptcheck.Options{}); len(got) != 1 {
+	if got := rootTestDefects(vacuousReqs(), tests, acceptcheck.Options{}, nil); len(got) != 1 {
 		t.Fatalf("defects without a binary = %+v, want one", got)
 	}
 }
@@ -41,7 +41,7 @@ func TestRootTestDefectsLeavesToolCommandsAndConstraintsAlone(t *testing.T) {
 		{Requirement: "A1", Name: "b", Command: "go build ./... && go vet ./... && go test ./..."},
 		{Requirement: "C1", Name: "c", Command: "! grep -rq gorm internal/"},
 	}
-	if got := rootTestDefects(vacuousReqs(), tests, acceptcheck.Options{}); len(got) != 0 {
+	if got := rootTestDefects(vacuousReqs(), tests, acceptcheck.Options{}, nil); len(got) != 0 {
 		t.Fatalf("defects = %+v, want none", got)
 	}
 }
@@ -97,11 +97,11 @@ func TestContractBinsWithBareFileNames(t *testing.T) {
 func TestRootTestDefectsWithBareFileContract(t *testing.T) {
 	o := acceptcheck.Options{Bins: contractBins(realBareFileContract())}
 	built := []RootTest{{Requirement: "A1", Name: "n", Command: "printf 'a,b\\n1,2\\n' | csvstat - | grep -q a"}}
-	if got := rootTestDefects(vacuousReqs(), built, o); len(got) != 0 {
+	if got := rootTestDefects(vacuousReqs(), built, o, nil); len(got) != 0 {
 		t.Fatalf("built binary flagged: %+v", got)
 	}
 	run := []RootTest{{Requirement: "A1", Name: "n", Command: "go run . -"}}
-	if got := rootTestDefects(vacuousReqs(), run, o); len(got) != 1 {
+	if got := rootTestDefects(vacuousReqs(), run, o, nil); len(got) != 1 {
 		t.Fatalf("go run . - = %+v, want one defect", got)
 	}
 }

@@ -1,10 +1,15 @@
 package planner
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"fmt"
+	"os/exec"
 	"path"
 	"regexp"
 	"strings"
+	"time"
 
 	"gophermind/gophermind-lib/build/acceptcheck"
 	"gophermind/gophermind-lib/build/brief"
@@ -105,9 +110,10 @@ func qualityOptions(f brief.Frontmatter, c *contract.Contracts) acceptcheck.Opti
 }
 
 // rootTestDefects is the requirements, in brief order, with a root test that
-// fails the quality level of the shared command checker. A requirement with
-// several root tests collects the findings of all of them.
-func rootTestDefects(reqs []Requirement, tests []RootTest, o acceptcheck.Options) []QualityItem {
+// fails the quality level of the shared command checker, that /bin/sh cannot
+// parse, or (src is brief.md) that forbids a token the brief uses. A
+// requirement with several root tests collects the findings of all of them.
+func rootTestDefects(reqs []Requirement, tests []RootTest, o acceptcheck.Options, src []byte) []QualityItem {
 	by := map[string]map[string]bool{}
 	add := func(id, finding string) {
 		if by[id] == nil {
@@ -123,6 +129,9 @@ func rootTestDefects(reqs []Requirement, tests []RootTest, o acceptcheck.Options
 		for _, f := range acceptcheck.Quality(t.Command, o) {
 			add(t.Requirement, string(f))
 		}
+		if msg, bad := shellSyntax(t.Command); bad {
+			add(t.Requirement, string(acceptcheck.FindSyntax)+": "+msg)
+		}
 		// Only an acceptance bullet is held to the executor's vacuity rule.
 		if kind[t.Requirement] == ReqAcceptance && acceptcheck.Vacuous(t.Command, o.Bins) {
 			add(t.Requirement, FindVacuous)
@@ -131,6 +140,9 @@ func rootTestDefects(reqs []Requirement, tests []RootTest, o acceptcheck.Options
 	for _, q := range reqs {
 		if inv := toolsNotInvoked(q, tests); len(inv) > 0 {
 			add(q.ID, FindToolNotInvoked+": "+strings.Join(inv, ", "))
+		}
+		for _, tok := range forbidsBriefTokens(q, tests, src) {
+			add(q.ID, FindForbidsBriefToken+": "+tok)
 		}
 	}
 	var out []QualityItem
@@ -215,6 +227,90 @@ func toolsNotInvoked(req Requirement, tests []RootTest) []string {
 		seen[inv] = true
 		if !contains(seq) {
 			out = append(out, inv)
+		}
+	}
+	return out
+}
+
+// shellSyntaxTimeout bounds one /bin/sh -n parse.
+const shellSyntaxTimeout = 5 * time.Second
+
+// shellSyntax parses cmd with /bin/sh -n, which reads without running
+// anything, and returns the first line of the shell's message when it reports
+// a syntax error. Root tests run under /bin/sh -c, so this is the shell that
+// decides. A shell that cannot be started reports nothing.
+func shellSyntax(cmd string) (string, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), shellSyntaxTimeout)
+	defer cancel()
+	var stderr bytes.Buffer
+	c := exec.CommandContext(ctx, "/bin/sh", "-n", "-c", cmd)
+	c.Stderr = &stderr
+	err := c.Run()
+	var exit *exec.ExitError
+	if err == nil || !errors.As(err, &exit) || ctx.Err() != nil {
+		return "", false
+	}
+	line, _, _ := strings.Cut(strings.TrimSpace(stderr.String()), "\n")
+	if line == "" {
+		line = "sh -n exited " + fmt.Sprint(exit.ExitCode())
+	}
+	return line, true
+}
+
+// FindForbidsBriefToken is the finding of a constraint whose root test
+// forbids, with a negated grep, a token the brief names in backticks outside
+// the constraint itself; the finding lists the tokens.
+const FindForbidsBriefToken = "forbids_brief_token"
+
+// unescapePattern reads a grep pattern as the token it searches for: \. is a
+// dot and a trailing (, [, \( or \[ is dropped.
+func unescapePattern(p string) string {
+	for _, suf := range []string{`\(`, `\[`, "(", "["} {
+		if strings.HasSuffix(p, suf) {
+			p = strings.TrimSuffix(p, suf)
+			break
+		}
+	}
+	return strings.ReplaceAll(p, `\.`, ".")
+}
+
+// forbidsBriefTokens is, for a Constraint, the patterns of its root tests'
+// negated greps that are tokens the brief requires: a backticked span of src
+// (not one of the constraint's own spans, which it forbids on purpose) equal
+// to the pattern, or starting with it and then ., ( or [ (os.Args against
+// os.Args[1:]). Any other requirement is never checked.
+func forbidsBriefTokens(req Requirement, tests []RootTest, src []byte) []string {
+	if req.Kind != ReqConstraint || len(src) == 0 {
+		return nil
+	}
+	own := map[string]bool{}
+	for _, m := range backtickRE.FindAllStringSubmatch(req.Text, -1) {
+		own[m[1]] = true
+	}
+	var spans []string
+	for _, m := range backtickRE.FindAllStringSubmatch(string(src), -1) {
+		if !own[m[1]] {
+			spans = append(spans, m[1])
+		}
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, t := range tests {
+		if t.Requirement != req.ID {
+			continue
+		}
+		for _, raw := range acceptcheck.NegatedGrepPatterns(t.Command) {
+			p := unescapePattern(raw)
+			if p == "" || seen[p] {
+				continue
+			}
+			for _, s := range spans {
+				if rest, ok := strings.CutPrefix(s, p); ok && (rest == "" || strings.ContainsAny(rest[:1], ".([")) {
+					seen[p] = true
+					out = append(out, p)
+					break
+				}
+			}
 		}
 	}
 	return out

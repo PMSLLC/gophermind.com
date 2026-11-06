@@ -59,6 +59,18 @@ const (
 	// FindSyntax: the command does not parse: an unterminated quote or
 	// substitution; the shell would exit 2 before running anything.
 	FindSyntax Finding = "syntax_error"
+	// FindBashOnly: process substitution <( ) or >( ), [[, ((, &>, |& or $'
+	// outside single quotes. Root tests run under /bin/sh; these forms are bash
+	// and fail with a syntax error there.
+	FindBashOnly Finding = "bash_only"
+	// FindEmptyLineGrep: a grep with no file operand (it reads its pipe) whose
+	// pattern is ^$. A grep for an empty line never proves empty output (no
+	// output has no lines); write test -z "$(command)".
+	FindEmptyLineGrep Finding = "empty_line_grep"
+	// FindVersionEnumerated: a grep whose pattern has an alternation group of
+	// numbers only, like (22|23|24). An enumerated list never means "or
+	// later"; compare the number.
+	FindVersionEnumerated Finding = "version_enumerated"
 )
 
 // FindingNames are the findings as strings, in the order given.
@@ -110,10 +122,17 @@ var (
 // Quality returns the quality findings of one root test command, sorted and
 // unique; none means the command can fail for the right reason.
 func Quality(cmd string, o Options) []Finding {
+	bash := bashOnly(cmd)
 	if unparsable(cmd, 0) {
+		if bash {
+			return []Finding{FindBashOnly, FindSyntax}
+		}
 		return []Finding{FindSyntax}
 	}
 	set := map[Finding]bool{}
+	if bash {
+		set[FindBashOnly] = true
+	}
 	body := cmd
 	for depth := 0; depth < 4; depth++ { // sh -c 'body' is read as its body
 		stmts, _, _ := shellParse(body)
@@ -137,6 +156,9 @@ func Quality(cmd string, o Options) []Finding {
 		body = next
 	}
 	if unparsable(body, 0) {
+		if bash {
+			return []Finding{FindBashOnly, FindSyntax}
+		}
 		return []Finding{FindSyntax}
 	}
 	qualityPlaceholders(body, o, set)
@@ -430,6 +452,12 @@ func (q *qual) script(script string, ctxAsserted, top bool) {
 				}
 				if g.count && g.files >= 2 && i+1 < len(stmts) && stmts[i+1].op == "|" {
 					q.set[FindGrepCountPerFile] = true
+				}
+				if g.havePat && g.files == 0 && g.pattern == "^$" {
+					q.set[FindEmptyLineGrep] = true
+				}
+				if digitAltRE.MatchString(g.pattern) {
+					q.set[FindVersionEnumerated] = true
 				}
 			case "curl":
 				if !curlFail(args) && !checked {
@@ -749,6 +777,95 @@ func readGrep(base string, args []word) grepArgs {
 		g.files++
 	}
 	return g
+}
+
+// digitAltRE is an alternation group whose branches are all numbers: (22|23|24).
+var digitAltRE = regexp.MustCompile(`\((?:[0-9]+\|)+[0-9]+\)`)
+
+// bashOnly: the command uses a bash form outside single quotes (and outside
+// the literal text of double quotes): <( ), >( ), [[, ((, &>, |& or $'.
+// $(( )) is POSIX arithmetic and is not one.
+func bashOnly(s string) bool {
+	rs := []rune(s)
+	at := func(i int) rune {
+		if i < len(rs) {
+			return rs[i]
+		}
+		return 0
+	}
+	wordStart := func(i int) bool { return i == 0 || strings.ContainsRune(" \t\n;&|()", rs[i-1]) }
+	for i := 0; i < len(rs); i++ {
+		c, n := rs[i], at(i+1)
+		switch {
+		case c == '\\':
+			i++
+		case c == '$' && n == '\'':
+			return true
+		case c == '\'':
+			for i++; i < len(rs) && rs[i] != '\''; i++ {
+			}
+		case c == '"':
+			for i++; i < len(rs) && rs[i] != '"'; i++ {
+				switch {
+				case rs[i] == '\\':
+					i++
+				case rs[i] == '$' && at(i+1) == '(' && at(i+2) != '(':
+					depth, j := 1, i+2
+					for ; j < len(rs) && depth > 0; j++ {
+						if rs[j] == '(' {
+							depth++
+						} else if rs[j] == ')' {
+							depth--
+						}
+					}
+					if bashOnly(string(rs[i+2 : j-1])) {
+						return true
+					}
+					i = j - 1
+				}
+			}
+		case c == '#' && wordStart(i):
+			for i < len(rs) && rs[i] != '\n' {
+				i++
+			}
+		case (c == '<' || c == '>') && n == '(':
+			return true
+		case c == '[' && n == '[' && wordStart(i) && (i+2 == len(rs) || strings.ContainsRune(" \t\n", rs[i+2])):
+			return true
+		case c == '(' && n == '(' && wordStart(i):
+			return true
+		case c == '&' && n == '>', c == '|' && n == '&':
+			return true
+		}
+	}
+	return false
+}
+
+// NegatedGrepPatterns are the patterns, as written, of the grep statements a
+// command negates with ! (! grep -rq 'os\.Exit' internal/), in order.
+func NegatedGrepPatterns(cmd string) []string {
+	stmts, _, _ := shellParse(cmd)
+	var out []string
+	for _, st := range stmts {
+		k := commandIndex(st.words)
+		if k < 0 {
+			continue
+		}
+		negated := false
+		for _, w := range st.words[:k] {
+			if w.lit == "!" {
+				negated = true
+			}
+		}
+		base := baseOf(st.words[k].lit)
+		if !negated || base != "grep" && base != "egrep" && base != "fgrep" {
+			continue
+		}
+		if g := readGrep(base, st.words[k+1:]); g.havePat && g.pattern != "" {
+			out = append(out, g.pattern)
+		}
+	}
+	return out
 }
 
 // jqExit: jq sets its exit status from the last output (-e, --exit-status).

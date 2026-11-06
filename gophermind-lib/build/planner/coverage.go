@@ -103,7 +103,7 @@ func (p *Planner) coverage(ctx context.Context, r *run) error {
 		if err != nil {
 			return nil, err
 		}
-		return rootTestDefects(r.reqs, tests, qualityOptions(r.brief.Front, c)), nil
+		return rootTestDefects(r.reqs, tests, qualityOptions(r.brief.Front, c), r.src), nil
 	}
 	reply = reply.withGoAcceptance(r.reqs)
 	covered, gaps := CheckCoverage(r.reqs, nodes, reply)

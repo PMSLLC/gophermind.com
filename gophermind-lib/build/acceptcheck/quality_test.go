@@ -96,7 +96,6 @@ func TestQualityGoodRewritesAreAccepted(t *testing.T) {
 		`test -f go.mod || { echo missing; exit 1; }`,
 		"venture-server serve &\npid=$!\nsleep 1\ncurl -fsS \"$GM_ACCEPTANCE_URL/healthz\" | grep -qx ok\nrc=$?\nkill $pid\nexit $rc",
 		`sh -c 'go vet ./...'`,
-		`diff <(echo a) <(echo a)`,
 		`awk 'END { exit (NR > 3) ? 0 : 1 }' go.mod`,
 		`test "$TEST_DATABASE_URL" = x && go vet ./...`,
 		`STUDIO_FAKE_NOW=${STUDIO_FAKE_NOW:-2023-12-05} venture-server reminder-job`,
@@ -392,5 +391,58 @@ func TestQualitySyntaxError(t *testing.T) {
 		if !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s: Quality(%q) = %v, want %v", c.name, c.cmd, got, c.want)
 		}
+	}
+}
+
+// Root tests run under /bin/sh: bash forms, an empty-line grep for empty
+// output and an enumerated version list are refused by name.
+func TestQualityShellFormsVersionsAndEmptyOutput(t *testing.T) {
+	t.Parallel()
+	o := Options{Bins: []string{"hello"}}
+	a4 := `out=$(mktemp "$TMPDIR/out.XXXXXX"); err=$(mktemp "$TMPDIR/err.XXXXXX"); hello >"$out" 2>"$err"; status=$?; test "$status" -eq 0 && cmp -s "$out" <(printf 'Hello, World!\n') && test ! -s "$err"`
+	cases := []struct {
+		cmd  string
+		want Finding
+		has  bool
+	}{
+		{a4, FindBashOnly, true},
+		{`diff <(echo a) <(echo a)`, FindBashOnly, true},
+		{`echo '<(' | grep -c x`, FindBashOnly, false},
+		{`[[ -s go.mod ]] && go vet ./...`, FindBashOnly, true},
+		{`go vet ./... &>/dev/null`, FindBashOnly, true},
+		{`go vet ./... |& grep -q x`, FindBashOnly, true},
+		{`hello | grep -qxF $'Hello, World!'`, FindBashOnly, true},
+		{`test "$((1 + 1))" -eq 2 && go vet ./...`, FindBashOnly, false},
+		{`hello | grep -q "^[[:upper:]]"`, FindBashOnly, false},
+		{`gofmt -l . | grep -q '^$'`, FindEmptyLineGrep, true},
+		{`grep -q '^$' file`, FindEmptyLineGrep, false},
+		{`go version | grep -qE 'go1\.(22|23|24)'`, FindVersionEnumerated, true},
+		{`go version | grep -qE 'go1\.(2[2-9]|[3-9][0-9])'`, FindVersionEnumerated, false},
+	}
+	for _, c := range cases {
+		if got := has(Quality(c.cmd, o), c.want); got != c.has {
+			t.Errorf("%s: %s = %v, want %v (%v)", c.cmd, c.want, got, c.has, Quality(c.cmd, o))
+		}
+	}
+	for _, cmd := range []string{
+		`test "$(cat "$out")" = 'x' && test "$(wc -l <"$out")" -eq 1`,
+		`test -z "$(gofmt -l .)"`,
+		`test "$(go env GOVERSION | cut -d. -f2)" -ge 22`,
+	} {
+		if got := Quality(cmd, o); got != nil {
+			t.Errorf("%s = %v, want nil", cmd, got)
+		}
+	}
+}
+
+// The patterns of the greps a command negates with !, as written.
+func TestNegatedGrepPatterns(t *testing.T) {
+	t.Parallel()
+	c4 := `! grep -rq 'init(' internal/ && go vet ./... && ! grep -rq 'os\.Args' cmd/hello`
+	if got := NegatedGrepPatterns(c4); !reflect.DeepEqual(got, []string{"init(", `os\.Args`}) {
+		t.Errorf("patterns = %q", got)
+	}
+	if got := NegatedGrepPatterns(`grep -rq 'os\.Args' cmd/hello`); got != nil {
+		t.Errorf("unnegated grep = %q, want nil", got)
 	}
 }

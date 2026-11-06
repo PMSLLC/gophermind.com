@@ -268,3 +268,49 @@ func TestCoveragePromptExamplesPassTheQualityGate(t *testing.T) {
 		t.Errorf("capture example checked = %v, count example checked = %v: %q", capture, count, checked)
 	}
 }
+
+// c2Variant is the greeter fixture with C2's root test replaced by cmd and a
+// fill that restores it.
+func c2Variant(t *testing.T, cmd string) string {
+	t.Helper()
+	raw := string(mustRead(t, filepath.Join(greeter, "coverage.txt")))
+	old := `"command": "test -z \"$(gofmt -l .)\" && go vet ./..."`
+	if !strings.Contains(raw, old) {
+		t.Fatal("fixture changed")
+	}
+	return variant(t, map[string]string{
+		"coverage.txt":      strings.Replace(raw, old, `"command": `+jsonString(cmd), 1),
+		"coverage_fill.txt": `{"map": [], "root_tests": [{"requirement": "C2", "name": "formatted and vetted", "given": "g", "expect": "e", "command": "test -z \"$(gofmt -l .)\" && go vet ./..."}]}`,
+	})
+}
+
+func gapSeen(g *rig, want string) bool {
+	for _, e := range g.sink.OfKind(events.KindCoverageGap) {
+		if strings.Contains(e.Message, want) {
+			return true
+		}
+	}
+	return false
+}
+
+// A constraint's root test that forbids a token the brief's Architecture
+// uses is a quality gap named by the token.
+func TestCoverageQualityGateRefusesAForbiddenBriefToken(t *testing.T) {
+	g := newRig(t, approving(), c2Variant(t, `test -z "$(gofmt -l .)" && go vet ./... && ! grep -rq 'os\.Args' internal/`))
+	g.briefPath = writeBrief(t, greeter, g.repo, func(s string) string {
+		return strings.Replace(s, "- `internal/greet`: pure functions that build messages. No I/O.", "- `internal/greet`: pure functions that build messages. No I/O. A caller passes `os.Args[1:]`.", 1)
+	})
+	g.mustPlan(planner.Options{StopAfter: "coverage"})
+	if !gapSeen(g, "C2 root test quality [forbids_brief_token: os.Args]") {
+		t.Errorf("no coverage_gap event names C2 root test quality [forbids_brief_token: os.Args]: %+v", g.sink.OfKind(events.KindCoverageGap))
+	}
+}
+
+// A root test /bin/sh cannot parse is a quality gap with the shell's message.
+func TestCoverageQualityGateRefusesWhatShCannotParse(t *testing.T) {
+	g := newRig(t, approving(), c2Variant(t, `test -z "$(gofmt -l .)" && go vet ./... && cmp -s go.mod <(cat go.mod)`))
+	g.mustPlan(planner.Options{StopAfter: "coverage"})
+	if !gapSeen(g, "C2 root test quality [") || !gapSeen(g, "syntax_error: ") {
+		t.Errorf("no coverage_gap event names C2 with syntax_error: %+v", g.sink.OfKind(events.KindCoverageGap))
+	}
+}
