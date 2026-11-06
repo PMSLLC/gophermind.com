@@ -283,6 +283,12 @@ The seventh run's three failing root tests: `grep -qx 'usage: hello [NAME]'` (a 
 
 **Files:** Modify `build/acceptcheck/quality.go`, `build/planner/coverage_quality.go`, `build/planner/prompts/coverage.md`; tests.
 
+### Task 4d: a root test that does not parse is refused at planning time (run hello-v1.1-20261106-r005, 2026-11-05 20:49 MST)
+
+The eighth run verified all three functions first try with acceptance 6 of 6; the one failure was the standard-library constraint's root test, which had an unterminated quote. `shellParse` already reports the condition and `Quality` discarded it; it becomes the finding `syntax_error`, and the coverage prompt shows `test "$(go list -m all | wc -l)" -eq 1` for a dependency constraint. Brief: `.superpowers/sdd/2026-11-05-hello-pipeline-fixes/task-4d-brief.md`.
+
+**Files:** Modify `build/acceptcheck/quality.go`, `build/planner/prompts/coverage.md`; tests.
+
 ### Task 5: Node inputs and tier come from the signature and class (brief 11, 12, 14)
 
 **Files:**
