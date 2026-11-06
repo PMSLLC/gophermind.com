@@ -105,3 +105,36 @@ func TestPlanStatusTotalExcludesTestObligations(t *testing.T) {
 		t.Errorf("status requirements = %d, %v; want 2 (the test obligation is not counted)", st.Requirements, err)
 	}
 }
+
+// A fixed-interface stop stores the rejected status on the last saved state:
+// the refused pass's functions are not in the stored doc, so a resume sees the
+// doc it saw before that pass.
+func TestFixedInterfaceStopStoresTheStateBeforeTheRefusedPass(t *testing.T) {
+	g := newRigFor(t, approving(), slugify, slugifyID,
+		variant(t, map[string]string{"contract.cli-logic.2.txt": `{"types": [], "functions": [{"id": "fn-stray-helper", "package": "internal/cli",` +
+			` "file": "internal/cli/stray.go", "signature": "func strayHelper() int", "doc": "Returns zero.", "uses": []}], "more": false}`}))
+	_, err := g.plan(planner.Options{StopAfter: "contract"})
+	if err == nil || !strings.Contains(err.Error(), "does not declare the fixed interface") {
+		t.Fatalf("plan error = %v, want the fixed interface error", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(g.runDir, "_state", "contract.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st struct {
+		Doc             map[string]any    `json:"doc"`
+		CandidateStatus map[string]string `json:"candidate_status"`
+	}
+	if err := json.Unmarshal(raw, &st); err != nil {
+		t.Fatal(err)
+	}
+	fns, _ := st.Doc["functions"].([]any)
+	for _, f := range fns {
+		if m, _ := f.(map[string]any); m["id"] == "fn-stray-helper" {
+			t.Errorf("the stored doc holds fn-stray-helper, a function of the refused pass")
+		}
+	}
+	if got := st.CandidateStatus["cli-logic"]; got != "rejected:fixed_interface_missing" {
+		t.Errorf("candidate_status[cli-logic] = %q, want rejected:fixed_interface_missing (all: %v)", got, st.CandidateStatus)
+	}
+}

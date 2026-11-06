@@ -323,6 +323,20 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 		}
 		return err
 	}
+	// refuseSaved is refuse for a pass already merged into st: the status goes
+	// onto the last saved state, so a resume sees the doc it saw before the pass.
+	refuseSaved := func(pass string, err error) error {
+		var saved contractState
+		if _, rerr := readJSON(r.path(stateContract), &saved); rerr != nil {
+			return rerr
+		}
+		saved.pending = st.pending
+		saved.settle(pass, err)
+		if werr := writeJSON(r.path(stateContract), saved); werr != nil {
+			return werr
+		}
+		return err
+	}
 	// A state with no outline doc yet (a shared pass refused) starts the outline.
 	if !found || st.Doc == nil || (st.OutlinePasses > 0 && !st.OutlineDone) {
 		typeSchema, err := contractItemSchemas("types")
@@ -687,7 +701,7 @@ func (p *Planner) contract(ctx context.Context, r *run) error {
 				// no later component of the directory to come, is asked of this
 				// component once and then stops the run.
 				if st.FixedRepairs[id] > 0 {
-					return refuse(id, kindedErr{"fixed_interface_missing", fmt.Errorf("contract: component %s does not declare the fixed interface %s from the brief's Architecture section", boundedID(id), missing[0].Signature)})
+					return refuseSaved(id, kindedErr{"fixed_interface_missing", fmt.Errorf("contract: component %s does not declare the fixed interface %s from the brief's Architecture section", boundedID(id), missing[0].Signature)})
 				}
 				if st.FixedRepairs == nil {
 					st.FixedRepairs = map[string]int{}
