@@ -1,6 +1,7 @@
 package serve
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -11,6 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"gophermind/gophermind-lib/build/blackboard"
+	"gophermind/gophermind-lib/build/resume"
+	"gophermind/gophermind-lib/build/runfs"
 	"gophermind/gophermind-lib/runview"
 )
 
@@ -64,6 +68,9 @@ type BriefRun struct {
 	Waves      int                   `json:"waves"`
 	Counts     runview.Counts        `json:"counts"`
 	Coverage   runview.CoverageCount `json:"coverage"`
+	// ResumePoints are the steps the run can be resumed from; always an array,
+	// empty while the run is active.
+	ResumePoints []resume.Point `json:"resume_points"`
 }
 
 // BriefNode is one node of the decomposition. Status is the normalized one
@@ -272,7 +279,7 @@ func BuildBriefState(root, id string, rec *briefRecord, active bool, logText str
 		Nodes: []BriefNode{}, Questions: []BriefQuestion{}, WaveChecks: []BriefWave{}, Repairs: BriefRepairs{Open: []BriefRepair{}}, LogTail: tailLines(logText),
 		Stages: []BriefStage{}, SlowCalls: []BriefSlowCall{}, Problems: []BriefProblem{}, CallErrors: []BriefCallError{},
 	}
-	st.Run = BriefRun{ID: id, Active: active, Counts: runview.Counts{ByStatus: map[string]int{}}}
+	st.Run = BriefRun{ID: id, Active: active, Counts: runview.Counts{ByStatus: map[string]int{}}, ResumePoints: []resume.Point{}}
 	if rec != nil {
 		st.Run.Title, st.Run.Phase, st.Run.ExitCode = rec.Title, rec.Phase, rec.ExitCode
 		st.Run.StartedAt, st.Run.FinishedAt, st.Run.Error = rec.StartedAt, rec.FinishedAt, rec.Error
@@ -300,6 +307,12 @@ func BuildBriefState(root, id string, rec *briefRecord, active bool, logText str
 		}
 	}
 	dir := filepath.Join(root, ".gophermind", id)
+	if !active {
+		board := blackboard.NewFS(runfs.Fixed(dir))
+		if pts, err := resume.Points(context.Background(), dir, board, id); err == nil {
+			st.Run.ResumePoints = pts
+		}
+	}
 	for _, ns := range body.Nodes {
 		n := BriefNode{
 			ID: ns.ID, Kind: ns.Kind, Parent: ns.Parent, Title: ns.Title, Wave: ns.Wave,

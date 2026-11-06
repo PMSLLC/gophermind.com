@@ -18,7 +18,7 @@
 <main class="main">
 <div class="head">
   <h1 id="title">Run</h1>
-  <div class="actions"><button id="resubmit" type="button" hidden>Resubmit this brief</button><button id="stop" type="button" hidden>Stop this run</button><a id="vlog" class="btn" href="#" hidden>Verbose log</a><span id="stopmsg" class="err"></span></div>
+  <div class="actions"><button id="resubmit" type="button" hidden>Resubmit this brief</button><select id="resume-from" hidden></select><button id="resume" type="button" hidden>Resume from this step</button><button id="stop" type="button" hidden>Stop this run</button><a id="vlog" class="btn" href="#" hidden>Verbose log</a><span id="stopmsg" class="err"></span></div>
   <div class="meta" id="head"></div>
 </div>
 <div id="load" class="meta">Loading...</div>
@@ -164,6 +164,7 @@ function renderHead(run){
   if (run.error) { h.appendChild(document.createTextNode('  ')); h.appendChild(el('span', 'err', run.error)); }
   $('stop').hidden = !run.active;
   $('resubmit').hidden = !!run.active;
+  renderResume(run);
   $('vlog').hidden = !run.verbose;
   if (run.verbose) $('vlog').href = '/app/briefs/' + runId + '/log';
   const c = run.counts || {};
@@ -581,6 +582,44 @@ function live(){
     refresh();
   };
 }
+
+// renderResume shows the step picker when the run is over and has points to
+// resume from. The options are rebuilt only when the list changes, so a poll
+// does not reset the person's choice.
+let resumeKey = '';
+function renderResume(run) {
+  const pts = run.resume_points || [];
+  const show = pts.length > 0 && !run.active;
+  $('resume-from').hidden = !show;
+  $('resume').hidden = !show;
+  const key = show ? JSON.stringify(pts) : '';
+  if (key === resumeKey) return;
+  resumeKey = key;
+  const sel = $('resume-from');
+  sel.textContent = '';
+  if (!show) return;
+  for (const p of pts) {
+    const o = document.createElement('option');
+    o.value = p.step;
+    o.textContent = p.label || p.step;
+    sel.appendChild(o);
+  }
+}
+
+$('resume').addEventListener('click', async () => {
+  $('resume').disabled = true;
+  $('stopmsg').textContent = '';
+  try {
+    const r = await fetch('/app/briefs/' + runId + '/resume?from=' + encodeURIComponent($('resume-from').value), { method: 'POST', credentials: 'same-origin' });
+    let j = {};
+    try { j = await r.json(); } catch (e) {}
+    if (r.status === 202) { window.location.reload(); return; }
+    $('stopmsg').textContent = (j.error || 'Resume refused (' + r.status + ')') + (j.active_run_id ? ': ' + j.active_run_id : '') + '.';
+  } catch (e) {
+    $('stopmsg').textContent = 'Resume failed: ' + e.message;
+  }
+  $('resume').disabled = false;
+});
 
 $('stop').addEventListener('click', async () => {
   $('stop').disabled = true;

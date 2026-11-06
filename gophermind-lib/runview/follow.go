@@ -206,7 +206,7 @@ func (f *follower) line(ln []byte) bool {
 		return true
 	}
 	switch blackboard.EventKind(l.Kind) {
-	case blackboard.EventStatus, blackboard.EventRevision, blackboard.EventAttempt, blackboard.EventResult:
+	case blackboard.EventStatus, blackboard.EventRevision, blackboard.EventReset, blackboard.EventAttempt, blackboard.EventResult:
 	default:
 		f.v.warn(fmt.Sprintf("events.jsonl line %d: unknown event kind", f.seq))
 		return true
@@ -217,7 +217,7 @@ func (f *follower) line(ln []byte) bool {
 		return true
 	}
 	switch blackboard.EventKind(l.Kind) {
-	case blackboard.EventStatus, blackboard.EventRevision:
+	case blackboard.EventStatus, blackboard.EventRevision, blackboard.EventReset:
 		return f.emit(EventNodeStatus, NodeStatusData{ID: l.NodeID, Status: string(row.Status), Wave: f.waveOf(l.NodeID), Revision: row.Revision})
 	case blackboard.EventAttempt:
 		if len(row.Attempts) == 0 {

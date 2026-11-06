@@ -187,6 +187,24 @@ func TestFollowSkipsACorruptLineAndReportsIt(t *testing.T) {
 	}
 }
 
+func TestFollowShowsAResetNodeWithoutAWarning(t *testing.T) {
+	v, f, ch, _ := follow(t, runviewtest.Failed, func(v *runview.View) int64 { return v.EventSeq() })
+	if _, err := f.BB.Reset(context.Background(), f.RunID, "fn-bye"); err != nil {
+		t.Fatal(err)
+	}
+	e := next(t, ch)
+	if e.Type != runview.EventNodeStatus {
+		t.Fatalf("event after a reset = %s, want node-status", e.Type)
+	}
+	var d runview.NodeStatusData
+	if err := json.Unmarshal(e.Data, &d); err != nil || d.ID != "fn-bye" || d.Status != "ready" {
+		t.Errorf("node-status = %s, %v: want fn-bye ready", e.Data, err)
+	}
+	if w := v.Warnings(); len(w) != 0 {
+		t.Errorf("warnings = %v, want none", w)
+	}
+}
+
 func itoa(n int64) string { b, _ := json.Marshal(n); return string(b) }
 
 func TestFollowStopsWhenTheContextEnds(t *testing.T) {

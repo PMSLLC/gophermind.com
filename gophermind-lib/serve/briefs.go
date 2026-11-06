@@ -59,6 +59,10 @@ type briefRecord struct {
 	// Verbose is set when the run was started with the verbose option: its
 	// model calls keep prompt and reply text under _state/llm.
 	Verbose bool `json:"verbose,omitempty"`
+	// ResumedAt and ResumedFrom are set when a person resumed the run from a
+	// chosen step (planner stage or node:<id>) and name the latest such resume.
+	ResumedAt   string `json:"resumed_at,omitempty"`
+	ResumedFrom string `json:"resumed_from,omitempty"`
 }
 
 // exitWaiting is what `gophermind brief plan|resume` exits with when the file
@@ -427,6 +431,12 @@ func (m *briefManager) step(a *activeBrief, logf *os.File, args ...string) (int,
 }
 
 func (m *briefManager) run(a *activeBrief, rec briefRecord, first []string, logf *os.File) {
+	m.runSteps(a, rec, first, logf)
+}
+
+// runSteps runs first (when not empty) and then `brief run`. A resume from a
+// node passes no first step: the plan is already approved.
+func (m *briefManager) runSteps(a *activeBrief, rec briefRecord, first []string, logf *os.File) {
 	defer func() {
 		m.mu.Lock()
 		hidden := a.sudoHidden
@@ -452,20 +462,24 @@ func (m *briefManager) run(a *activeBrief, rec briefRecord, first []string, logf
 		rec.Phase, rec.ExitCode, rec.Error, rec.FinishedAt = phase, code, msg, m.stamp()
 		_ = m.writeRecord(rec)
 	}
-	code, err := m.step(a, logf, first...)
-	if err == nil && code == exitWaiting && rec.Ask {
-		m.mu.Lock()
-		stopped := a.stopped
-		m.mu.Unlock()
-		if !stopped {
-			rec.Phase, rec.Error = phaseWaiting, ""
-			_ = m.writeRecord(rec)
+	var code int
+	var err error
+	if len(first) > 0 {
+		code, err = m.step(a, logf, first...)
+		if err == nil && code == exitWaiting && rec.Ask {
+			m.mu.Lock()
+			stopped := a.stopped
+			m.mu.Unlock()
+			if !stopped {
+				rec.Phase, rec.Error = phaseWaiting, ""
+				_ = m.writeRecord(rec)
+				return
+			}
+		}
+		if err != nil || code != 0 {
+			finish(phaseFailed, &code, stepMessage("plan", code, err))
 			return
 		}
-	}
-	if err != nil || code != 0 {
-		finish(phaseFailed, &code, stepMessage("plan", code, err))
-		return
 	}
 	rec.Phase = phaseRunning
 	_ = m.writeRecord(rec)
