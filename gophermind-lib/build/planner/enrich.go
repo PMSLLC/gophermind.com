@@ -810,6 +810,16 @@ func (p *Planner) enrich(ctx context.Context, r *run) error {
 	if err != nil {
 		return err
 	}
+	// No enriched.json means the stage starts over (a first pass, or a resume at
+	// enrich): every draft is enriched again, not only those without a rationale.
+	// Progress after that is in enriched.json, so a crash skips what is done.
+	if !exists(r.path(stateEnriched)) {
+		for _, drafts := range dec.Components {
+			for _, d := range drafts {
+				delete(d, "rationale")
+			}
+		}
+	}
 	if err := p.enrichMissing(ctx, r, c, &dec); err != nil {
 		return err
 	}

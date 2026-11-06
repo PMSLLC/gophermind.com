@@ -601,3 +601,25 @@ func TestADecomposeReplyThatPrefillsEnrichGroupsStillGoesThroughEnrich(t *testin
 		}
 	}
 }
+
+// A stage entered with enriched drafts but no _state/enriched.json (a resume at
+// enrich) asks the model for every node again.
+func TestEnrichStageReEnrichesEveryNodeWhenEnrichedJSONIsAbsent(t *testing.T) {
+	g, calls := enrichRig(t, allGood)
+	if out, err := g.plan(planner.Options{StopAfter: "enrich"}); err != nil || out != planner.Done {
+		t.Fatalf("plan = %v, %v", out, err)
+	}
+	first := len(calls.stages)
+	if first == 0 {
+		t.Fatal("no enrich calls in the first pass")
+	}
+	if err := os.Remove(filepath.Join(g.runDir, "_state", "enriched.json")); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := g.plan(planner.Options{RunID: greeterID, StopAfter: "enrich"}); err != nil || out != planner.Done {
+		t.Fatalf("second plan = %v, %v", out, err)
+	}
+	if len(calls.stages) != 2*first {
+		t.Errorf("enrich calls = %d after the second pass, want %d (stages: %v)", len(calls.stages), 2*first, calls.stages)
+	}
+}
