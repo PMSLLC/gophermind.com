@@ -2,6 +2,7 @@ package planner
 
 import (
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -35,45 +36,32 @@ func TestObligationsAttachByCallee(t *testing.T) {
 	src := append(helloTestsBrief(t), []byte("- The build is reproducible.\n")...)
 	reqs := ParseRequirements(src)
 	attached, unattached := testObligations(reqs, helloContracts())
-	byID := map[string]TestObligation{}
+	got := map[string]string{}
 	for _, o := range attached {
-		byID[o.ID] = o
+		got[o.ID] = o.Target
 	}
-	runs, greets := 0, 0
+	want := map[string]string{
+		"T1": "fn-greeting", "T2": "fn-greeting", "T3": "fn-greeting", "T4": "fn-greeting",
+		"T6": "fn-run", "T7": "fn-run", "T8": "fn-run", "T9": "fn-run",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("attached = %v, want %v", got, want)
+	}
+	byID := map[string]Requirement{}
 	for _, q := range reqs {
-		if q.Kind != ReqTest {
-			continue
-		}
-		o, ok := byID[q.ID]
-		switch {
-		case strings.HasPrefix(q.Text, "`Run("):
-			runs++
-			if !ok || o.Target != "fn-run" {
-				t.Errorf("%s (%s) attached to %q, want fn-run", q.ID, q.Text, o.Target)
-			}
-		case strings.HasPrefix(q.Text, "`Greeting("):
-			greets++
-			if !ok || o.Target != "fn-greeting" {
-				t.Errorf("%s (%s) attached to %q, want fn-greeting", q.ID, q.Text, o.Target)
-			}
-		default:
-			if ok {
-				t.Errorf("%s (%s) attached to %s, want unattached", q.ID, q.Text, o.Target)
-			}
-		}
-		if ok && (o.Text != q.Text || o.Line != q.Line) {
-			t.Errorf("%s carries %q line %d, want %q line %d", q.ID, o.Text, o.Line, q.Text, q.Line)
+		byID[q.ID] = q
+	}
+	for _, o := range attached {
+		if q := byID[o.ID]; o.Text != q.Text || o.Line != q.Line {
+			t.Errorf("%s carries %q line %d, want %q line %d", o.ID, o.Text, o.Line, q.Text, q.Line)
 		}
 	}
-	if runs != 5 || greets != 2 {
-		t.Fatalf("the fixture has %d Run and %d Greeting bullets, want 5 and 2", runs, greets)
-	}
-	var texts []string
+	var ids []string
 	for _, q := range unattached {
-		texts = append(texts, q.Text)
+		ids = append(ids, q.ID)
 	}
-	if len(unattached) != 2 || unattached[1].Text != "The build is reproducible." {
-		t.Errorf("unattached = %q, want the bytes.Buffer bullet and the reproducible bullet", texts)
+	if !reflect.DeepEqual(ids, []string{"T5", "T10"}) || unattached[1].Text != "The build is reproducible." {
+		t.Errorf("unattached = %v, want T5 (no call) and T10 (the reproducible bullet)", ids)
 	}
 }
 

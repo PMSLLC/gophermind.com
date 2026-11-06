@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/format"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"gophermind/gophermind-lib/build/contract"
@@ -30,9 +31,11 @@ type obligationsFile struct {
 }
 
 var (
-	identRE    = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$`)
-	numberRE   = regexp.MustCompile(`^[-+]?\.?[0-9]`)
-	compositRE = regexp.MustCompile(`^(\[|\{|map\[|[A-Za-z_][A-Za-z0-9_.]*\{)`)
+	identRE  = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$`)
+	numberRE = regexp.MustCompile(`^[-+]?\.?[0-9]`)
+	// bareNumberRE is a span that is only a Go number literal (0, -1, 2.5, 0x1f).
+	bareNumberRE = regexp.MustCompile(`^[-+]?(0[xXoObB][0-9a-fA-F_]+|[0-9][0-9_]*(\.[0-9_]*)?([eE][-+]?[0-9]+)?|\.[0-9]+([eE][-+]?[0-9]+)?)$`)
+	compositRE   = regexp.MustCompile(`^(\[|\{|map\[|[A-Za-z_][A-Za-z0-9_.]*\{)`)
 )
 
 // backtickSpans is the text of every backticked span of a bullet, in order.
@@ -211,18 +214,52 @@ func literalArgs(call string) []string {
 	return out
 }
 
-// expectedTexts is the backticked spans of a bullet that are neither its call
-// span nor a bare identifier: the values a test must state.
-func expectedTexts(text string) []string {
-	call := obligationCall(text)
+// obligationArgs is the literal arguments of every backticked call in the
+// bullet whose callee is the callee of its first call: a bullet that lists
+// `Run(nil, ...)` and `Run([]string{}, ...)` requires both. A call of another
+// function contributes nothing. Each literal appears once, in order.
+func obligationArgs(text string) []string {
+	callee := calleeOf(obligationCall(text))
+	if callee == "" {
+		return nil
+	}
 	var out []string
 	for _, s := range backtickSpans(text) {
-		if s == call || identRE.MatchString(s) {
+		if !strings.Contains(s, "(") || calleeOf(s) != callee {
+			continue
+		}
+		for _, lit := range literalArgs(s) {
+			if !contains(out, lit) {
+				out = append(out, lit)
+			}
+		}
+	}
+	return out
+}
+
+// expectedTexts is the backticked spans of a bullet that state a value a test
+// must hold: not a call span (of any callee), not a bare identifier or nil,
+// and not a bare number, which any file contains somewhere.
+func expectedTexts(text string) []string {
+	var out []string
+	for _, s := range backtickSpans(text) {
+		if (strings.Contains(s, "(") && calleeOf(s) != "") || identRE.MatchString(s) || bareNumberRE.MatchString(s) {
 			continue
 		}
 		out = append(out, s)
 	}
 	return out
+}
+
+// containsText reports whether src holds want as written or in its Go-quoted
+// form without the outer quotes, the way it appears inside a string literal
+// when it holds a quote or a backslash.
+func containsText(src, want string) bool {
+	if strings.Contains(src, want) {
+		return true
+	}
+	q := strconv.Quote(want)
+	return strings.Contains(src, q[1:len(q)-1])
 }
 
 // noSpace is s without white space, so a literal written `[]string{"a","b"}`
@@ -233,8 +270,8 @@ func noSpace(s string) string {
 
 // checkObligations refuses a test file that leaves one of the node's
 // obligations uncited by every test entry (cited is the ids the reply's
-// entries list), or whose source lacks a literal argument of the obligation's
-// call or one of its expected texts. Only the obligation's own words are
+// entries list), or whose source lacks a literal argument of one of the
+// obligation's calls or one of its expected texts. Only the obligation's own words are
 // quoted back.
 func checkObligations(obs []TestObligation, cited map[string]bool, src string) error {
 	if len(obs) == 0 {
@@ -248,13 +285,13 @@ func checkObligations(obs []TestObligation, cited map[string]bool, src string) e
 		if !cited[o.ID] {
 			return fmt.Errorf("no test case covers obligation %s (%s)", o.ID, oneLine(o.Text, 300))
 		}
-		for _, lit := range literalArgs(obligationCall(o.Text)) {
+		for _, lit := range obligationArgs(o.Text) {
 			if !strings.Contains(flat, noSpace(lit)) {
 				return fmt.Errorf("test file does not cover obligation %s: the argument %s is absent", o.ID, lit)
 			}
 		}
 		for _, want := range expectedTexts(o.Text) {
-			if !strings.Contains(src, want) {
+			if !containsText(src, want) {
 				return fmt.Errorf("test file does not cover obligation %s: expected text %s is absent", o.ID, want)
 			}
 		}
@@ -299,4 +336,29 @@ func (p *Planner) writeObligations(r *run, c *contract.Contracts) ([]TestObligat
 		return nil, err
 	}
 	return attached, nil
+}
+
+// loadObligations is the run's attached obligations as the testwriter stage
+// wrote them in _state/obligations.json; a run planned before that file
+// existed gets them computed from its requirements and contract.
+func loadObligations(r *run, c *contract.Contracts) ([]TestObligation, error) {
+	var f obligationsFile
+	found, err := readJSON(r.path(stateObligations), &f)
+	if err != nil {
+		return nil, err
+	}
+	if found {
+		return f.Obligations, nil
+	}
+	attached, _ := testObligations(r.reqs, c)
+	return attached, nil
+}
+
+// obligationIDs is the ids of obs, in order; nil for none.
+func obligationIDs(obs []TestObligation) []string {
+	var out []string
+	for _, o := range obs {
+		out = append(out, o.ID)
+	}
+	return out
 }

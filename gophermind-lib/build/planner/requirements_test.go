@@ -172,7 +172,7 @@ func TestIsTestRule(t *testing.T) {
 }
 
 // helloWithTests is the hello fixture brief with the Tests section of the
-// library brief hello v1.1 appended.
+// library brief hello v1.1 appended (testdata/hello/tests-section.md, verbatim).
 func helloWithTests(t *testing.T) []byte {
 	t.Helper()
 	b, err := os.ReadFile("testdata/hello/brief.md")
@@ -205,8 +205,8 @@ func TestTestsSectionBulletsGetTIds(t *testing.T) {
 			wants = append(wants, want{strings.TrimPrefix(lines[i], "- "), i + 1})
 		}
 	}
-	if len(wants) != 8 {
-		t.Fatalf("the Tests section has %d bullets, want 8", len(wants))
+	if len(wants) != 9 {
+		t.Fatalf("the Tests section has %d bullets, want 9", len(wants))
 	}
 	var got []planner.Requirement
 	for _, q := range planner.ParseRequirements(src) {

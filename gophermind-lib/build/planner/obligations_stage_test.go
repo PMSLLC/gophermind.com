@@ -1,8 +1,10 @@
 package planner_test
 
 import (
+	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -88,5 +90,83 @@ func TestTestwriterRefusesAnUncitedObligation(t *testing.T) {
 	refusals, _ := os.ReadFile(filepath.Join(g.runDir, "_state", "refusals.jsonl"))
 	if !strings.Contains(string(refusals), "no test case covers obligation T1") {
 		t.Errorf("refusals = %s", refusals)
+	}
+}
+
+// citingReply is testwriteReply for src with its first test citing ids.
+func citingReply(t *testing.T, src string, ids ...string) string {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal([]byte(testwriteReply(t, src)), &m); err != nil {
+		t.Fatal(err)
+	}
+	m["tests"].([]any)[0].(map[string]any)["obligations"] = ids
+	return marshal(t, m)
+}
+
+// plannedWithTests plans the greeter with the Tests section of testsBrief,
+// fn-greet citing T1, and files in front of the fixtures.
+func plannedWithTests(t *testing.T, files map[string]string) *rig {
+	t.Helper()
+	files["testwrite.fn-greet.txt"] = citingGreet(t, true)
+	g := newRig(t, approving(), variant(t, files))
+	g.briefPath = writeBrief(t, greeter, g.repo, testsBrief)
+	g.mustPlan(planner.Options{})
+	return g
+}
+
+func TestReviseChecksTheObligations(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("no go tool")
+	}
+	g := plannedWithTests(t, map[string]string{"revise.fn-greet.txt": descriptionPatch, "testwrite.fn-greet-r1.txt": testwriteReply(t, revisedGreetTest)})
+	nreq := len(g.fake.Requests())
+	prop, err := planner.NewReviser(g.deps).Revise(context.Background(), reviseReq(t, g))
+	if err != nil || prop.Outcome == planner.OutcomeRewritten {
+		t.Fatalf("proposal = %+v, %v; want a refusal: the rewrite cites no obligation", prop, err)
+	}
+	carried, refused := false, false
+	for _, msgs := range requestsSince(g, nreq) {
+		for _, m := range msgs {
+			carried = carried || strings.Contains(m.Content, "<obligations>\nT1: `Greet(\"Ada\")`")
+			refused = refused || strings.Contains(m.Content, "no test case covers obligation T1")
+		}
+	}
+	if !carried || !refused {
+		t.Fatalf("the revise test writer prompt carried the obligation: %v; the refusal reached the model: %v", carried, refused)
+	}
+}
+
+func TestReviseAcceptsARewriteCitingTheObligations(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("no go tool")
+	}
+	g := plannedWithTests(t, map[string]string{"revise.fn-greet.txt": descriptionPatch, "testwrite.fn-greet-r1.txt": citingReply(t, revisedGreetTest, "T1")})
+	prop, err := planner.NewReviser(g.deps).Revise(context.Background(), reviseReq(t, g))
+	if err != nil || prop.Outcome != planner.OutcomeRewritten {
+		t.Fatalf("proposal = %+v, %v; want a rewrite", prop, err)
+	}
+}
+
+func TestSetLeafTestSHARefreshesObligations(t *testing.T) {
+	g := plannedWithTests(t, map[string]string{})
+	path := filepath.Join(g.runDir, "_state", "leaf_tests.json")
+	var m map[string]planner.LeafTest
+	if err := json.Unmarshal(g.read("_state/leaf_tests.json"), &m); err != nil {
+		t.Fatal(err)
+	}
+	lt := m["fn-greet"]
+	lt.Obligations = nil
+	m["fn-greet"] = lt
+	raw, _ := json.Marshal(m)
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := planner.SetLeafTestSHA(g.runDir, "fn-greet", strings.Repeat("b", 64)); err != nil {
+		t.Fatal(err)
+	}
+	after, err := planner.ReadLeafTests(g.runDir)
+	if err != nil || !reflect.DeepEqual(after["fn-greet"].Obligations, []string{"T1"}) || after["fn-farewell"].Obligations != nil {
+		t.Fatalf("leaf tests = %+v, %v", after, err)
 	}
 }

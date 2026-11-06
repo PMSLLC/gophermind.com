@@ -302,7 +302,8 @@ func (p *Planner) rewriteSkeleton(r *run, rootTests []RootTest) error {
 }
 
 // requirementsText lists the requirements for the coverage prompt, one per
-// line; kind-test requirements are the test writer's and are left out. A feature is shown by its heading and the start of its text.
+// line; kind-test requirements are the test writer's and are left out. A
+// feature is shown by its heading and the start of its text.
 func requirementsText(reqs []Requirement) string {
 	var b strings.Builder
 	for _, q := range CoverageRequirements(reqs) {

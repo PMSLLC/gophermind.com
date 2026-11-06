@@ -455,7 +455,12 @@ func (p *Planner) reviseTests(ctx context.Context, r *run, c *contract.Contracts
 	pkg, _ := ct["package"].(string)
 	funcName := testFuncName(id)
 	parent, _ := merged["parent"].(string)
-	prompt, err := renderTestwriterBrief(scrubInput(mustJSON(testwriterView(merged)), req.Secrets, maxReviseTestSource), c.Module, file, funcName, testFile, PackageImports(c), componentBrief(r, parent, 1), nil)
+	all, err := loadObligations(r, c)
+	if err != nil {
+		return "", "", err
+	}
+	obligations := nodeObligations(all, id)
+	prompt, err := renderTestwriterBrief(scrubInput(mustJSON(testwriterView(merged)), req.Secrets, maxReviseTestSource), c.Module, file, funcName, testFile, PackageImports(c), componentBrief(r, parent, 1), obligations)
 	if err != nil {
 		return "", "", err
 	}
@@ -474,10 +479,16 @@ func (p *Planner) reviseTests(ctx context.Context, r *run, c *contract.Contracts
 			return nil
 		}
 		last = ClassReviseInvalid
-		ts, s, perr := parseTestwriteIn(text, ct, pkg, funcName, c.Module, hookList(merged), packageSet(c))
+		ts, s, _, cited, perr := parseTestwriteCited(text, ct, pkg, funcName, c.Module, hookList(merged), packageSet(c))
 		var se *syntaxRefusal
 		if perr != nil && !errors.As(perr, &se) {
 			return perr
+		}
+		if se == nil {
+			// As in the first write: before the compile check.
+			if oerr := checkObligations(obligations, cited, s); oerr != nil {
+				return oerr
+			}
 		}
 		// The same steps as the first write (writeTests): the shared settle
 		// function fixes, repairs and checks the file, so a revised test that
@@ -503,6 +514,11 @@ func (p *Planner) reviseTests(ctx context.Context, r *run, c *contract.Contracts
 		}
 		if serr != nil {
 			return serr
+		}
+		if se != nil {
+			if oerr := checkObligations(obligations, cited, sd.src); oerr != nil {
+				return oerr
+			}
 		}
 		if replyHoldsSecret(sd.src, req.Secrets) {
 			// A repair reply is scanned like the first one.

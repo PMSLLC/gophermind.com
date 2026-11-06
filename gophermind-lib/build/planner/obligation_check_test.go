@@ -106,3 +106,69 @@ func TestObligationLiteralArguments(t *testing.T) {
 		}
 	}
 }
+
+// helloRunObligations is the Run bullets of the real hello v1.1 Tests section,
+// attached on the hello contract.
+func helloRunObligations(t *testing.T) []TestObligation {
+	t.Helper()
+	attached, _ := testObligations(ParseRequirements(helloTestsBrief(t)), helloContracts())
+	obs := nodeObligations(attached, "fn-run")
+	if len(obs) != 4 || obs[0].ID != "T6" {
+		t.Fatalf("fn-run obligations = %+v, want T6 to T9", obs)
+	}
+	return obs
+}
+
+func TestObligationCheckRealTwoCallBullet(t *testing.T) {
+	obs := helloRunObligations(t)
+	t6 := obs[0]
+	if got := obligationArgs(t6.Text); strings.Join(got, "|") != "nil|[]string{}" {
+		t.Errorf("T6 arguments = %q, want nil and []string{}", got)
+	}
+	if got := expectedTexts(t6.Text); strings.Join(got, "|") != `Hello, World!\n` {
+		t.Errorf("T6 expected texts = %q, want only Hello, World!\\n", got)
+	}
+	cited := map[string]bool{"T6": true, "T7": true, "T8": true, "T9": true}
+	if err := checkObligations(obs, cited, johnsTable); err != nil {
+		t.Fatalf("John's table is refused: %v", err)
+	}
+	noEmpty := strings.Replace(johnsTable, "\t\t{name: \"empty args\", args: []string{}, wantOut: \"Hello, World!\\n\", code: 0},\n", "", 1)
+	if noEmpty == johnsTable {
+		t.Fatal("the empty-args row was not removed")
+	}
+	err := checkObligations(obs, cited, noEmpty)
+	if err == nil || !strings.Contains(err.Error(), "test file does not cover obligation T6: the argument []string{} is absent") {
+		t.Fatalf("err = %v, want the argument []string{} is absent", err)
+	}
+}
+
+func TestObligationCallOfAnotherFunctionAddsNothing(t *testing.T) {
+	text := "`Run([]string{\"x\"}, stdout, stderr)` prints what `Greeting(\"x\")` returns."
+	if got := obligationArgs(text); strings.Join(got, "|") != `[]string{"x"}` {
+		t.Errorf("arguments = %q, want only Run's", got)
+	}
+	if got := expectedTexts(text); len(got) != 0 {
+		t.Errorf("expected texts = %q, want none: a call span is never expected text", got)
+	}
+}
+
+func TestObligationExpectedTextRows(t *testing.T) {
+	for name, c := range map[string]struct {
+		text, src string
+		ok        bool
+	}{
+		"a quote matches its escaped form": {"`Say(\"hi\")` returns `say \"hi\"`.", `x := Say("hi"); want := "say \"hi\""`, true},
+		"a quote absent is refused":        {"`Say(\"hi\")` returns `say \"hi\"`.", `x := Say("hi"); want := "say hi"`, false},
+		"a bare number adds no text":       {"`Count(\"\")` returns `0`.", `x := Count("")`, true},
+		"nil adds no text":                 {"`Find(\"\")` returns `nil`.", `x := Find("")`, true},
+	} {
+		obs := []TestObligation{{ID: "T1", Target: "fn-x", Text: c.text}}
+		err := checkObligations(obs, map[string]bool{"T1": true}, c.src)
+		if (err == nil) != c.ok {
+			t.Errorf("%s: err = %v", name, err)
+		}
+	}
+	if got := expectedTexts("`Count(\"\")` returns `0` or `2.5`."); len(got) != 0 {
+		t.Errorf("bare numbers are expected text: %q", got)
+	}
+}

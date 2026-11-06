@@ -1,11 +1,13 @@
-
 ## Tests
 
-- `Greeting("")` returns `Hello, World!`.
-- `Greeting("Ada")` returns `Hello, Ada!`.
-- `Run(nil, stdout, stderr)` returns 0 and writes `Hello, World!` and a newline to stdout; stderr is empty.
-- `Run([]string{}, stdout, stderr)` returns 0 and writes `Hello, World!` and a newline to stdout; stderr is empty.
-- `Run([]string{"Ada"}, stdout, stderr)` returns 0 and writes `Hello, Ada!` and a newline to stdout; stderr is empty.
-- `Run([]string{""}, stdout, stderr)` returns 0 and writes `Hello, World!` and a newline to stdout; stderr is empty.
-- `Run([]string{"a", "b"}, stdout, stderr)` returns 2, writes `usage: hello [NAME]` and a newline to stderr, and writes nothing to stdout.
-- Every case uses its own `bytes.Buffer` for stdout and for stderr.
+
+- `Greeting("")` returns exactly `Hello, World!`.
+- `Greeting("Ada")` returns exactly `Hello, Ada!`.
+- `Greeting("A B")` returns exactly `Hello, A B!`.
+- `Greeting(" Alice ")` returns exactly `Hello,  Alice !`.
+- No `Greeting` result ends with a newline.
+- `Run(nil, stdout, stderr)` and `Run([]string{}, stdout, stderr)` return `0`, write exactly `Hello, World!\n` to stdout and nothing to stderr.
+- `Run([]string{"Ada"}, stdout, stderr)` returns `0`, writes exactly `Hello, Ada!\n` to stdout and nothing to stderr.
+- `Run([]string{""}, stdout, stderr)` returns `0`, writes exactly `Hello, World!\n` to stdout and nothing to stderr.
+- `Run([]string{"a", "b"}, stdout, stderr)` returns `2`, writes nothing to stdout and exactly `usage: hello [NAME]\n` to stderr.
+

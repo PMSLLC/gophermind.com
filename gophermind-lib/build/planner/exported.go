@@ -3,6 +3,7 @@ package planner
 import (
 	"errors"
 	"os"
+	"slices"
 )
 
 // The read-only accessors the executor uses to read a planned run folder.
@@ -199,8 +200,11 @@ func ReadQuestionCounts(runDir string) (QuestionCounts, error) {
 }
 
 // SetLeafTestSHA records the new hash of a function node's test file in
-// _state/leaf_tests.json after a revision rewrote it. Only that entry's sha256
-// changes; the file keeps its format and mode 0600. An unknown node is an error.
+// _state/leaf_tests.json after a revision rewrote it. That entry's sha256
+// changes, and its obligations are refreshed from _state/obligations.json: a
+// revised file passed the obligation check, so it covers every obligation of
+// the node, as finishTree records. The file keeps its format and mode 0600.
+// An unknown node is an error.
 func SetLeafTestSHA(runDir, nodeID, sha string) error {
 	r := &run{dir: runDir}
 	m := map[string]LeafTest{}
@@ -211,10 +215,19 @@ func SetLeafTestSHA(runDir, nodeID, sha string) error {
 	if !ok {
 		return errors.New("planner: the node has no recorded test")
 	}
-	if lt.SHA256 == sha {
+	var f obligationsFile
+	found, err := readJSON(r.path(stateObligations), &f)
+	if err != nil {
+		return err
+	}
+	obs := lt.Obligations
+	if found {
+		obs = obligationIDs(nodeObligations(f.Obligations, nodeID))
+	}
+	if lt.SHA256 == sha && slices.Equal(lt.Obligations, obs) {
 		return nil
 	}
-	lt.SHA256 = sha
+	lt.SHA256, lt.Obligations = sha, obs
 	m[nodeID] = lt
 	return writeJSON(r.path(stateLeafTests), m)
 }
