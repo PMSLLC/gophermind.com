@@ -53,7 +53,7 @@ func TestLoadPlanGreeter(t *testing.T) {
 	checks := []struct{ name, got, want string }{
 		{"FuncID", serve.FuncID, "fn-serve"},
 		{"Class", serve.Class, "wiring"},
-		{"Tier", serve.Tier, "any"},
+		{"Tier", serve.Tier, "strong"},
 		{"Package", serve.Package, "main"},
 		{"File", serve.File, "cmd/greeter/serve.go"},
 		{"Dir", serve.Dir, "cmd/greeter"},

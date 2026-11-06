@@ -554,6 +554,11 @@ func TestEveryStageEmitsEvents(t *testing.T) {
 		if strings.HasPrefix(e.Message, "main_function_missing: ") {
 			continue
 		}
+		// The planner's leaf_normalized warning lists every reshaped value per node
+		// (the greeter's three nodes get their tier from the class), so it runs long.
+		if strings.HasPrefix(e.Message, "leaf_normalized: ") {
+			continue
+		}
 		if e.Kind == "" || len(e.Message) > 200 || strings.Contains(e.Message, "package ") || strings.Contains(e.Message, "func ") {
 			t.Errorf("event %+v is not an id or a class", e)
 		}
