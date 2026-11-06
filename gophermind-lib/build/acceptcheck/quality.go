@@ -48,13 +48,15 @@ const (
 	// /var/folders temp dir, which the run's sandbox denies, so the command
 	// can never pass there.
 	FindTempOutsideTmpdir Finding = "mktemp_outside_tmpdir"
-	// FindGrepRegexExact: grep -x without -F whose pattern has regular
-	// expression metacharacters. Exact-line comparison with such a pattern never
-	// means what it says ([NAME] matches one character); use grep -qxF.
+	// FindGrepRegexExact: grep -x without -F, -E or -P (a basic expression)
+	// whose pattern has regular expression metacharacters. Exact-line
+	// comparison with such a pattern rarely means what it says ([NAME] matches
+	// one character); use grep -qxF. An extended expression is a deliberate
+	// regular expression and is not flagged.
 	FindGrepRegexExact Finding = "grep_regex_exact"
 	// FindGrepCountPerFile: grep -c over two or more files piped on. grep -c
 	// with several files prints one file:count line per file; count across
-	// files with cat files | grep -c or grep -ch.
+	// files with cat files | grep -c or grep -ch (-h is not flagged).
 	FindGrepCountPerFile Finding = "grep_count_per_file"
 	// FindSyntax: the command does not parse: an unterminated quote or
 	// substitution; the shell would exit 2 before running anything.
@@ -64,8 +66,9 @@ const (
 	// and fail with a syntax error there.
 	FindBashOnly Finding = "bash_only"
 	// FindEmptyLineGrep: a grep with no file operand (it reads its pipe) whose
-	// pattern is ^$. A grep for an empty line never proves empty output (no
-	// output has no lines); write test -z "$(command)".
+	// pattern is ^$, without -v. A grep for an empty line never proves empty
+	// output (no output has no lines); write test -z "$(command)". grep -v '^$'
+	// filters blank lines and is not flagged.
 	FindEmptyLineGrep Finding = "empty_line_grep"
 	// FindVersionEnumerated: a grep whose pattern has an alternation group of
 	// numbers only, like (22|23|24). An enumerated list never means "or
@@ -447,13 +450,13 @@ func (q *qual) script(script string, ctxAsserted, top bool) {
 				}
 			case "grep", "egrep", "fgrep":
 				g := readGrep(base, args)
-				if g.exact && !g.fixed && strings.ContainsAny(g.pattern, `[](){}.*+?|^$\`) {
+				if g.exact && !g.fixed && !g.extended && !g.perl && strings.ContainsAny(g.pattern, `[](){}.*+?|^$\`) {
 					q.set[FindGrepRegexExact] = true
 				}
-				if g.count && g.files >= 2 && i+1 < len(stmts) && stmts[i+1].op == "|" {
+				if g.count && !g.noFilename && g.files >= 2 && i+1 < len(stmts) && stmts[i+1].op == "|" {
 					q.set[FindGrepCountPerFile] = true
 				}
-				if g.havePat && g.files == 0 && g.pattern == "^$" {
+				if g.havePat && !g.invert && g.files == 0 && g.pattern == "^$" {
 					q.set[FindEmptyLineGrep] = true
 				}
 				if digitAltRE.MatchString(g.pattern) {
@@ -697,11 +700,14 @@ func mktempUnderTmpdir(args []word) bool {
 	return false
 }
 
-// grepArgs is what a grep's arguments say: -x, -F, -c, the pattern and how
-// many file operands follow it.
+// grepArgs is what a grep's arguments say: -x, -F, -c, -E or -P, -v, -h,
+// the pattern and how many file operands follow it.
 type grepArgs struct {
 	exact, fixed, count, havePat bool
+	extended, perl               bool // -E (or egrep), -P
+	invert, noFilename           bool // -v, -h
 	pattern                      string
+	patterns                     []string // every -e pattern, or the pattern operand
 	files                        int
 	paths                        []string // the file operands, as written
 }
@@ -710,10 +716,11 @@ type grepArgs struct {
 var redirRE = regexp.MustCompile(`^[0-9]*[<>]`)
 
 // readGrep reads a grep's flags (bundled or separate, long forms for -x, -F,
-// -c and -e), its pattern (the first non-flag word, or the word after -e) and
-// its file operands. -f, -m, -A, -B, -C and -d consume the next word.
+// -c, -E, -P, -v, -h and -e), its pattern (the first non-flag word, or the
+// word after the first -e; patterns holds every -e) and its file operands.
+// -f, -m, -A, -B, -C and -d consume the next word.
 func readGrep(base string, args []word) grepArgs {
-	g := grepArgs{fixed: base == "fgrep"}
+	g := grepArgs{fixed: base == "fgrep", extended: base == "egrep"}
 	flags := true
 	for i := 0; i < len(args); i++ {
 		l := args[i].lit
@@ -735,6 +742,14 @@ func readGrep(base string, args []word) grepArgs {
 				g.fixed = true
 			case "count":
 				g.count = true
+			case "extended-regexp":
+				g.extended = true
+			case "perl-regexp":
+				g.perl = true
+			case "invert-match":
+				g.invert = true
+			case "no-filename":
+				g.noFilename = true
 			case "regexp":
 				if !hasVal && i+1 < len(args) {
 					i++
@@ -743,6 +758,7 @@ func readGrep(base string, args []word) grepArgs {
 				if !g.havePat {
 					g.pattern, g.havePat = val, true
 				}
+				g.patterns = append(g.patterns, val)
 			}
 			continue
 		case flags && len(l) > 1 && l[0] == '-':
@@ -754,6 +770,14 @@ func readGrep(base string, args []word) grepArgs {
 					g.fixed = true
 				case 'c':
 					g.count = true
+				case 'E':
+					g.extended = true
+				case 'P':
+					g.perl = true
+				case 'v':
+					g.invert = true
+				case 'h':
+					g.noFilename = true
 				case 'e', 'f', 'm', 'A', 'B', 'C', 'd':
 					val := l[k+1:]
 					if val == "" && i+1 < len(args) {
@@ -762,6 +786,9 @@ func readGrep(base string, args []word) grepArgs {
 					}
 					if c == 'e' && !g.havePat {
 						g.pattern, g.havePat = val, true
+					}
+					if c == 'e' {
+						g.patterns = append(g.patterns, val)
 					}
 					if c == 'f' {
 						g.havePat = true // the patterns are in a file
@@ -773,6 +800,7 @@ func readGrep(base string, args []word) grepArgs {
 		}
 		if !g.havePat {
 			g.pattern, g.havePat = l, true
+			g.patterns = append(g.patterns, l)
 			continue
 		}
 		g.files++
@@ -846,8 +874,9 @@ func bashOnly(s string) bool {
 // NegatedGrep is a grep a command negates with ! (! grep -rq 'os\.Exit'
 // internal/): its pattern and its file operands, as written.
 type NegatedGrep struct {
-	Pattern string
-	Paths   []string
+	Patterns []string // every pattern: each -e, or the one pattern operand
+	Extended bool     // -E, --extended-regexp or egrep: | is alternation
+	Paths    []string
 }
 
 // NegatedGreps are the grep statements a command negates with !, in order.
@@ -869,8 +898,15 @@ func NegatedGreps(cmd string) []NegatedGrep {
 		if !negated || base != "grep" && base != "egrep" && base != "fgrep" {
 			continue
 		}
-		if g := readGrep(base, st.words[k+1:]); g.havePat && g.pattern != "" {
-			out = append(out, NegatedGrep{Pattern: g.pattern, Paths: g.paths})
+		g := readGrep(base, st.words[k+1:])
+		var pats []string
+		for _, p := range g.patterns {
+			if p != "" {
+				pats = append(pats, p)
+			}
+		}
+		if len(pats) > 0 {
+			out = append(out, NegatedGrep{Patterns: pats, Extended: g.extended, Paths: g.paths})
 		}
 	}
 	return out

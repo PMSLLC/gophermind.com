@@ -334,12 +334,19 @@ func TestQualityGrepFormsAndPlaceholderWords(t *testing.T) {
 		{`grep -qx --fixed-strings 'usage: hello [NAME]' "$err"`, FindGrepRegexExact, false},
 		{`grep -qx 'Hello, World!' "$out"`, FindGrepRegexExact, false},
 		{`grep -q 'usage: hello [NAME]' "$err"`, FindGrepRegexExact, false},
+		{`grep -qxE 'mean: [0-9]+(\.[0-9]+)?' "$out"`, FindGrepRegexExact, false},
+		{`grep -qx -P 'a.b' "$out"`, FindGrepRegexExact, false},
+		{`grep -qx --extended-regexp 'a.b' "$out"`, FindGrepRegexExact, false},
+		{`grep -qx --perl-regexp 'a.b' "$out"`, FindGrepRegexExact, false},
+		{`egrep -qx 'a.b' "$out"`, FindGrepRegexExact, false},
 		{`grep -cE 'func (Greeting|Run|main)' a.go b.go c.go | grep -q '3'`, FindGrepCountPerFile, true},
 		{`grep -c -E func a.go b.go | grep -qx 3`, FindGrepCountPerFile, true},
 		{`cat a.go b.go | grep -cE 'func' | grep -qx 3`, FindGrepCountPerFile, false},
 		{`grep -c func a.go`, FindGrepCountPerFile, false},
 		{`grep -c func a.go | grep -qx 3`, FindGrepCountPerFile, false},
 		{`grep -c func a.go b.go`, FindGrepCountPerFile, false},
+		{`grep -ch PAT a b | awk '{s+=$1} END {exit s!=3}'`, FindGrepCountPerFile, false},
+		{`grep -c --no-filename PAT a b | awk '{s+=$1} END {exit s!=3}'`, FindGrepCountPerFile, false},
 		{`hello | grep -q 'expected_output_here' || exit 1`, FindPlaceholder, true},
 		{`hello | grep -q your_name`, FindPlaceholder, true},
 		{`hello | grep -q REPLACE_ME`, FindPlaceholder, true},
@@ -416,6 +423,9 @@ func TestQualityShellFormsVersionsAndEmptyOutput(t *testing.T) {
 		{`hello | grep -q "^[[:upper:]]"`, FindBashOnly, false},
 		{`gofmt -l . | grep -q '^$'`, FindEmptyLineGrep, true},
 		{`grep -q '^$' file`, FindEmptyLineGrep, false},
+		{`test "$(csvstat f | grep -v '^$' | wc -l)" -eq 3`, FindEmptyLineGrep, false},
+		{`csvstat f | grep --invert-match '^$' | wc -l`, FindEmptyLineGrep, false},
+		{`csvstat f | grep -cv '^$'`, FindEmptyLineGrep, false},
 		{`go version | grep -qE 'go1\.(22|23|24)'`, FindVersionEnumerated, true},
 		{`go version | grep -qE 'go1\.(2[2-9]|[3-9][0-9])'`, FindVersionEnumerated, false},
 	}
@@ -439,11 +449,22 @@ func TestQualityShellFormsVersionsAndEmptyOutput(t *testing.T) {
 func TestNegatedGreps(t *testing.T) {
 	t.Parallel()
 	c4 := `! grep -rq 'init(' internal/ && go vet ./... && ! grep -rq 'os\.Args' cmd/hello main.go`
-	want := []NegatedGrep{{Pattern: "init(", Paths: []string{"internal/"}}, {Pattern: `os\.Args`, Paths: []string{"cmd/hello", "main.go"}}}
+	want := []NegatedGrep{{Patterns: []string{"init("}, Paths: []string{"internal/"}}, {Patterns: []string{`os\.Args`}, Paths: []string{"cmd/hello", "main.go"}}}
 	if got := NegatedGreps(c4); !reflect.DeepEqual(got, want) {
 		t.Errorf("greps = %+v", got)
 	}
+	// Every -e pattern, and whether the grep reads extended expressions.
+	multi := `! grep -rq -e x -e 'os\.Args' . && ! grep -rqE 'a|b' cmd/ && ! egrep -q c d && ! grep -q --regexp=y --extended-regexp z`
+	wantMulti := []NegatedGrep{
+		{Patterns: []string{"x", `os\.Args`}, Paths: []string{"."}},
+		{Patterns: []string{"a|b"}, Extended: true, Paths: []string{"cmd/"}},
+		{Patterns: []string{"c"}, Extended: true, Paths: []string{"d"}},
+		{Patterns: []string{"y"}, Extended: true, Paths: []string{"z"}},
+	}
+	if got := NegatedGreps(multi); !reflect.DeepEqual(got, wantMulti) {
+		t.Errorf("multi greps = %+v", got)
+	}
 	if got := NegatedGreps(`grep -rq 'os\.Args' cmd/hello`); got != nil {
-		t.Errorf("unnegated grep = %q, want nil", got)
+		t.Errorf("unnegated grep = %+v, want nil", got)
 	}
 }

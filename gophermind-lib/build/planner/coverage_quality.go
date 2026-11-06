@@ -381,16 +381,18 @@ func forbidsBriefTokens(req Requirement, tests []RootTest, src []byte) []string 
 			continue
 		}
 		for _, g := range acceptcheck.NegatedGreps(t.Command) {
-			p := unescapePattern(g.Pattern)
-			if p == "" || seen[p] {
-				continue
-			}
-			for _, u := range uses {
-				rest, ok := strings.CutPrefix(u.span, p)
-				if ok && (rest == "" || strings.ContainsAny(rest[:1], ".([")) && covers(g.Paths, u.dirs) {
-					seen[p] = true
-					out = append(out, p)
-					break
+			for _, pat := range g.Patterns {
+				p := unescapePattern(pat)
+				if p == "" || seen[p] {
+					continue
+				}
+				for _, u := range uses {
+					rest, ok := strings.CutPrefix(u.span, p)
+					if ok && (rest == "" || strings.ContainsAny(rest[:1], ".([")) && covers(g.Paths, u.dirs) {
+						seen[p] = true
+						out = append(out, p)
+						break
+					}
 				}
 			}
 		}
